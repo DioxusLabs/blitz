@@ -10,6 +10,8 @@ use style::{
         generated::longhands::{
             background_clip::single_value::computed_value::T as StyloBackgroundClip,
             background_origin::single_value::computed_value::T as StyloBackgroundOrigin,
+            mask_clip::single_value::computed_value::T as StyloMaskClip,
+            mask_origin::single_value::computed_value::T as StyloMaskOrigin,
         },
         style_structs::{Background, SVG},
     },
@@ -26,6 +28,57 @@ use style::{
 #[cfg(feature = "tracing")]
 use tracing::warn;
 
+/// A box from the CSS box model. Abstracts over the (structurally identical)
+/// computed value types of the `background-clip`/`background-origin` and
+/// `mask-clip`/`mask-origin` properties.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[allow(clippy::enum_variant_names)] // The variants are named after the CSS keywords
+pub(super) enum BoxModelBox {
+    BorderBox,
+    PaddingBox,
+    ContentBox,
+}
+
+impl From<StyloBackgroundClip> for BoxModelBox {
+    fn from(value: StyloBackgroundClip) -> Self {
+        match value {
+            StyloBackgroundClip::BorderBox => Self::BorderBox,
+            StyloBackgroundClip::PaddingBox => Self::PaddingBox,
+            StyloBackgroundClip::ContentBox => Self::ContentBox,
+        }
+    }
+}
+
+impl From<StyloBackgroundOrigin> for BoxModelBox {
+    fn from(value: StyloBackgroundOrigin) -> Self {
+        match value {
+            StyloBackgroundOrigin::BorderBox => Self::BorderBox,
+            StyloBackgroundOrigin::PaddingBox => Self::PaddingBox,
+            StyloBackgroundOrigin::ContentBox => Self::ContentBox,
+        }
+    }
+}
+
+impl From<StyloMaskClip> for BoxModelBox {
+    fn from(value: StyloMaskClip) -> Self {
+        match value {
+            StyloMaskClip::BorderBox => Self::BorderBox,
+            StyloMaskClip::PaddingBox => Self::PaddingBox,
+            StyloMaskClip::ContentBox => Self::ContentBox,
+        }
+    }
+}
+
+impl From<StyloMaskOrigin> for BoxModelBox {
+    fn from(value: StyloMaskOrigin) -> Self {
+        match value {
+            StyloMaskOrigin::BorderBox => Self::BorderBox,
+            StyloMaskOrigin::PaddingBox => Self::PaddingBox,
+            StyloMaskOrigin::ContentBox => Self::ContentBox,
+        }
+    }
+}
+
 /// The styles which control the sizing/positioning of the layers in a CSS image
 /// layer list. The `background-*` and `mask-*` properties share computed value
 /// types for these, which allows the layer painting code to be shared.
@@ -34,6 +87,8 @@ pub(super) struct ImageLayerStyles<'a> {
     pub position_y: &'a [LengthPercentage],
     pub repeat: &'a [BackgroundRepeat],
     pub size: &'a [BackgroundSize],
+    pub clip: Vec<BoxModelBox>,
+    pub origin: Vec<BoxModelBox>,
 }
 
 impl<'a> ImageLayerStyles<'a> {
@@ -43,6 +98,8 @@ impl<'a> ImageLayerStyles<'a> {
             position_y: &bg_styles.background_position_y.0,
             repeat: &bg_styles.background_repeat.0,
             size: &bg_styles.background_size.0,
+            clip: convert_boxes(&bg_styles.background_clip.0),
+            origin: convert_boxes(&bg_styles.background_origin.0),
         }
     }
 
@@ -52,8 +109,14 @@ impl<'a> ImageLayerStyles<'a> {
             position_y: &svg_styles.mask_position_y.0,
             repeat: &svg_styles.mask_repeat.0,
             size: &svg_styles.mask_size.0,
+            clip: convert_boxes(&svg_styles.mask_clip.0),
+            origin: convert_boxes(&svg_styles.mask_origin.0),
         }
     }
+}
+
+fn convert_boxes<T: Copy + Into<BoxModelBox>>(boxes: &[T]) -> Vec<BoxModelBox> {
+    boxes.iter().map(|b| (*b).into()).collect()
 }
 
 impl ElementCx<'_, '_> {
@@ -61,27 +124,14 @@ impl ElementCx<'_, '_> {
         let bg_styles = &self.style.get_background();
         let layers = ImageLayerStyles::from_background(bg_styles);
 
-        let background_clip = get_cyclic(
-            &bg_styles.background_clip.0,
-            bg_styles.background_image.0.len() - 1,
-        );
-        let background_clip_path = match background_clip {
-            StyloBackgroundClip::BorderBox => self.frame.border_box_path(),
-            StyloBackgroundClip::PaddingBox => self.frame.padding_box_path(),
-            StyloBackgroundClip::ContentBox => self.frame.content_box_path(),
-        };
+        let background_clip = *get_cyclic(&layers.clip, bg_styles.background_image.0.len() - 1);
+        let background_clip_path = self.box_path(background_clip);
 
         // Draw background color (if any)
         self.draw_solid_bg(scene, &background_clip_path);
 
         for (idx, segment) in bg_styles.background_image.0.iter().enumerate().rev() {
-            let background_clip = *get_cyclic(&bg_styles.background_clip.0, idx);
-            let background_origin = *get_cyclic(&bg_styles.background_origin.0, idx);
-            let background_clip_path = match background_clip {
-                StyloBackgroundClip::BorderBox => self.frame.border_box_path(),
-                StyloBackgroundClip::PaddingBox => self.frame.padding_box_path(),
-                StyloBackgroundClip::ContentBox => self.frame.content_box_path(),
-            };
+            let background_clip_path = self.box_path(*get_cyclic(&layers.clip, idx));
 
             self.context.layer_manager.maybe_with_layer(
                 scene,
@@ -97,8 +147,6 @@ impl ElementCx<'_, '_> {
                         segment,
                         idx,
                         &layers,
-                        background_clip,
-                        background_origin,
                         &self.element.background_images,
                     );
                 },
@@ -106,16 +154,31 @@ impl ElementCx<'_, '_> {
         }
     }
 
+    /// The path of the given CSS box model box for this element
+    pub(super) fn box_path(&self, css_box: BoxModelBox) -> BezPath {
+        match css_box {
+            BoxModelBox::BorderBox => self.frame.border_box_path(),
+            BoxModelBox::PaddingBox => self.frame.padding_box_path(),
+            BoxModelBox::ContentBox => self.frame.content_box_path(),
+        }
+    }
+
+    /// The rect of the given CSS box model box for this element
+    fn box_rect(&self, css_box: BoxModelBox) -> Rect {
+        match css_box {
+            BoxModelBox::BorderBox => self.frame.border_box,
+            BoxModelBox::PaddingBox => self.frame.padding_box,
+            BoxModelBox::ContentBox => self.frame.content_box,
+        }
+    }
+
     /// Draw a single layer of a CSS image layer list (`background-image` or `mask-image`)
-    #[allow(clippy::too_many_arguments)]
     pub(super) fn draw_image_layer(
         &self,
         scene: &mut impl PaintScene,
         segment: &ComputedImage,
         idx: usize,
         layers: &ImageLayerStyles,
-        clip: StyloBackgroundClip,
-        origin: StyloBackgroundOrigin,
         images: &[Option<ImageResourceData>],
     ) {
         match segment {
@@ -123,10 +186,10 @@ impl ElementCx<'_, '_> {
                 // Do nothing
             }
             GenericImage::Gradient(gradient) => {
-                self.draw_gradient_layer(scene, gradient, idx, layers, clip, origin)
+                self.draw_gradient_layer(scene, gradient, idx, layers)
             }
             GenericImage::Url(_) => {
-                self.draw_raster_image_layer(scene, idx, layers, origin, images);
+                self.draw_raster_image_layer(scene, idx, layers, images);
                 #[cfg(feature = "svg")]
                 self.draw_svg_image_layer(scene, idx, layers, images);
             }
@@ -258,7 +321,6 @@ impl ElementCx<'_, '_> {
         scene: &mut impl PaintScene,
         idx: usize,
         layers: &ImageLayerStyles,
-        origin: StyloBackgroundOrigin,
         images: &[Option<ImageResourceData>],
     ) {
         use BackgroundRepeatKeyword::*;
@@ -275,11 +337,7 @@ impl ElementCx<'_, '_> {
         let image_rendering = self.style.clone_image_rendering();
         let quality = to_image_quality(image_rendering);
 
-        let origin_rect = match origin {
-            StyloBackgroundOrigin::BorderBox => self.frame.border_box,
-            StyloBackgroundOrigin::PaddingBox => self.frame.padding_box,
-            StyloBackgroundOrigin::ContentBox => self.frame.content_box,
-        };
+        let origin_rect = self.box_rect(*get_cyclic(&layers.origin, idx));
 
         let image_width = image_data.width as f64;
         let image_height = image_data.height as f64;
@@ -447,16 +505,12 @@ impl ElementCx<'_, '_> {
         gradient: &StyloGradient,
         idx: usize,
         layers: &ImageLayerStyles,
-        background_clip: StyloBackgroundClip,
-        background_origin: StyloBackgroundOrigin,
     ) {
         use BackgroundRepeatKeyword::*;
 
-        let origin_rect = match background_origin {
-            StyloBackgroundOrigin::BorderBox => self.frame.border_box,
-            StyloBackgroundOrigin::PaddingBox => self.frame.padding_box,
-            StyloBackgroundOrigin::ContentBox => self.frame.content_box,
-        };
+        let background_clip = *get_cyclic(&layers.clip, idx);
+        let background_origin = *get_cyclic(&layers.origin, idx);
+        let origin_rect = self.box_rect(background_origin);
 
         let (bg_pos, bg_size) = compute_layer_position_and_size(
             layers,
@@ -476,10 +530,8 @@ impl ElementCx<'_, '_> {
         let (origin_rect, transform, width_count, width_gap) = match repeat_x {
             Repeat | Round => {
                 let (origin_rect, extend_width, count) = if (background_clip, background_origin)
-                    == (
-                        StyloBackgroundClip::BorderBox,
-                        StyloBackgroundOrigin::PaddingBox,
-                    ) {
+                    == (BoxModelBox::BorderBox, BoxModelBox::PaddingBox)
+                {
                     let extend_width = extend(self.frame.border_width.x0 + bg_pos_x, bg_size.width);
 
                     let width = self.frame.border_box.width() + extend_width;
@@ -492,10 +544,7 @@ impl ElementCx<'_, '_> {
 
                     (origin_rect, extend_width, count)
                 } else if (background_clip, background_origin)
-                    == (
-                        StyloBackgroundClip::BorderBox,
-                        StyloBackgroundOrigin::ContentBox,
-                    )
+                    == (BoxModelBox::BorderBox, BoxModelBox::ContentBox)
                 {
                     let extend_width = extend(
                         self.frame.border_width.x0 + self.frame.padding_width.x0 + bg_pos_x,
@@ -511,10 +560,7 @@ impl ElementCx<'_, '_> {
 
                     (origin_rect, extend_width, count)
                 } else if (background_clip, background_origin)
-                    == (
-                        StyloBackgroundClip::PaddingBox,
-                        StyloBackgroundOrigin::ContentBox,
-                    )
+                    == (BoxModelBox::PaddingBox, BoxModelBox::ContentBox)
                 {
                     let extend_width =
                         extend(self.frame.padding_width.x0 + bg_pos_x, bg_size.width);
@@ -572,10 +618,8 @@ impl ElementCx<'_, '_> {
         let (origin_rect, transform, height_count, height_gap) = match repeat_y {
             Repeat | Round => {
                 let (origin_rect, extend_height, count) = if (background_clip, background_origin)
-                    == (
-                        StyloBackgroundClip::BorderBox,
-                        StyloBackgroundOrigin::PaddingBox,
-                    ) {
+                    == (BoxModelBox::BorderBox, BoxModelBox::PaddingBox)
+                {
                     let extend_height =
                         extend(self.frame.border_width.y0 + bg_pos_y, bg_size.height);
                     let height = self.frame.border_box.height() + extend_height;
@@ -588,10 +632,7 @@ impl ElementCx<'_, '_> {
 
                     (origin_rect, extend_height, count)
                 } else if (background_clip, background_origin)
-                    == (
-                        StyloBackgroundClip::BorderBox,
-                        StyloBackgroundOrigin::ContentBox,
-                    )
+                    == (BoxModelBox::BorderBox, BoxModelBox::ContentBox)
                 {
                     let extend_height = extend(
                         self.frame.border_width.y0 + self.frame.padding_width.y0 + bg_pos_x,
@@ -607,10 +648,7 @@ impl ElementCx<'_, '_> {
 
                     (origin_rect, extend_height, count)
                 } else if (background_clip, background_origin)
-                    == (
-                        StyloBackgroundClip::PaddingBox,
-                        StyloBackgroundOrigin::ContentBox,
-                    )
+                    == (BoxModelBox::PaddingBox, BoxModelBox::ContentBox)
                 {
                     let extend_height =
                         extend(self.frame.padding_width.y0 + bg_pos_x, bg_size.height);

@@ -18,15 +18,7 @@ use super::ElementCx;
 use super::background::{ImageLayerStyles, get_cyclic};
 use anyrender::PaintScene;
 use peniko::{BlendMode, Compose, Mix};
-use style::{
-    properties::generated::longhands::{
-        background_clip::single_value::computed_value::T as StyloBackgroundClip,
-        background_origin::single_value::computed_value::T as StyloBackgroundOrigin,
-        mask_clip::single_value::computed_value::T as StyloMaskClip,
-        mask_origin::single_value::computed_value::T as StyloMaskOrigin,
-    },
-    values::generics::image::GenericImage,
-};
+use style::values::generics::image::GenericImage;
 
 #[cfg(feature = "tracing")]
 use tracing::warn;
@@ -98,24 +90,7 @@ impl ElementCx<'_, '_> {
         let layers = ImageLayerStyles::from_svg(svg_styles);
 
         for (idx, segment) in svg_styles.mask_image.0.iter().enumerate().rev() {
-            // The `mask-clip`/`mask-origin` and `background-clip`/`background-origin`
-            // longhands have distinct (but identical) computed value types. Map the
-            // mask values to the background ones so layer painting code can be shared.
-            let mask_clip = match get_cyclic(&svg_styles.mask_clip.0, idx) {
-                StyloMaskClip::BorderBox => StyloBackgroundClip::BorderBox,
-                StyloMaskClip::PaddingBox => StyloBackgroundClip::PaddingBox,
-                StyloMaskClip::ContentBox => StyloBackgroundClip::ContentBox,
-            };
-            let mask_origin = match get_cyclic(&svg_styles.mask_origin.0, idx) {
-                StyloMaskOrigin::BorderBox => StyloBackgroundOrigin::BorderBox,
-                StyloMaskOrigin::PaddingBox => StyloBackgroundOrigin::PaddingBox,
-                StyloMaskOrigin::ContentBox => StyloBackgroundOrigin::ContentBox,
-            };
-            let mask_clip_path = match mask_clip {
-                StyloBackgroundClip::BorderBox => self.frame.border_box_path(),
-                StyloBackgroundClip::PaddingBox => self.frame.padding_box_path(),
-                StyloBackgroundClip::ContentBox => self.frame.content_box_path(),
-            };
+            let mask_clip_path = self.box_path(*get_cyclic(&layers.clip, idx));
 
             // TODO: support `mask-mode: luminance` (luminance masks are currently
             // rendered as alpha masks) and `mask-composite` values other than `add`.
@@ -148,15 +123,7 @@ impl ElementCx<'_, '_> {
                 None,
                 None,
                 |scene| {
-                    self.draw_image_layer(
-                        scene,
-                        segment,
-                        idx,
-                        &layers,
-                        mask_clip,
-                        mask_origin,
-                        &self.element.mask_images,
-                    );
+                    self.draw_image_layer(scene, segment, idx, &layers, &self.element.mask_images);
                 },
             );
         }
