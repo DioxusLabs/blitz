@@ -372,12 +372,8 @@ impl BaseDocument {
 
     /// Flush a CSS image layer list (`background-image` or `mask-image`) from style
     /// to dedicated storage on the node, fetching any images which are not yet loaded.
-    fn flush_image_layers_from_style(
-        &mut self,
-        doc_id: usize,
-        node_id: usize,
-        kind: ImageLayerKind,
-    ) {
+    fn flush_image_layers_from_style(&mut self, node_id: usize, kind: ImageLayerKind) {
+        let doc_id = self.id();
         let node = self.nodes.get_mut(node_id).unwrap();
         let stylo_element_data = node.stylo_element_data.get();
         let primary_styles = stylo_element_data
@@ -466,14 +462,12 @@ impl BaseDocument {
         node_id: usize,
         parent_stacking_context: Option<&mut HoistedPaintChildren>,
     ) {
-        let doc_id = self.id();
-
         let mut new_stacking_context: HoistedPaintChildren = HoistedPaintChildren::new();
         let stacking_context = &mut new_stacking_context;
 
         // Flush background/mask images from style to dedicated storage on the node
-        self.flush_image_layers_from_style(doc_id, node_id, ImageLayerKind::Background);
-        self.flush_image_layers_from_style(doc_id, node_id, ImageLayerKind::Mask);
+        self.flush_image_layers_from_style(node_id, ImageLayerKind::Background);
+        self.flush_image_layers_from_style(node_id, ImageLayerKind::Mask);
 
         let display = {
             let node = self.nodes.get_mut(node_id).unwrap();
