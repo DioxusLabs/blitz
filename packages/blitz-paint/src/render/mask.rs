@@ -14,6 +14,8 @@
 //! The mask image layers themselves are positioned/sized/repeated using the same
 //! code as `background-image` layers (see `background.rs`), as the `mask-*` and
 //! `background-*` properties share computed value types.
+use crate::render::background::get_cyclic;
+
 use super::ElementCx;
 use super::background::ImageLayerStyles;
 use anyrender::PaintScene;
@@ -101,7 +103,7 @@ impl ElementCx<'_, '_> {
             {
                 use style::properties::generated::longhands::mask_mode::single_value::computed_value::T as StyloMaskMode;
                 let mask_mode = &svg_styles.mask_mode.0;
-                if matches!(mask_mode[idx % mask_mode.len()], StyloMaskMode::Luminance) {
+                if matches!(get_cyclic(&mask_mode, idx), StyloMaskMode::Luminance) {
                     warn!("mask-mode: luminance is not supported (falling back to alpha)");
                 }
             }
@@ -113,7 +115,7 @@ impl ElementCx<'_, '_> {
                 Compose::SrcOver
             } else {
                 let composite_list = &svg_styles.mask_composite.0;
-                match composite_list[idx % composite_list.len()] {
+                match get_cyclic(&composite_list, idx) {
                     StyloMaskComposite::Add => Compose::SrcOver,
                     StyloMaskComposite::Subtract => Compose::SrcOut,
                     StyloMaskComposite::Intersect => Compose::SrcIn,
