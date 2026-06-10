@@ -495,7 +495,6 @@ impl<Rend: WindowRenderer> View<Rend> {
         let width = size.width.saturating_sub(insets.left + insets.right);
         let height = size.height.saturating_sub(insets.top + insets.bottom);
         self.with_viewport(|v| v.window_size = (width, height));
-        self.request_redraw();
     }
 
     #[cfg(target_os = "macos")]
@@ -546,12 +545,10 @@ impl<Rend: WindowRenderer> View<Rend> {
                     let width = physical_size.width - insets.left - insets.right;
                     let height = physical_size.height - insets.top - insets.bottom;
                     self.with_viewport(|v| v.window_size = (width, height));
-                    self.request_redraw();
                 }
             }
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
                 self.with_viewport(|v| v.set_hidpi_scale(scale_factor as f32));
-                self.request_redraw();
             }
             WindowEvent::ThemeChanged(theme) => {
                 let color_scheme = theme_to_color_scheme(self.theme_override.unwrap_or(theme));
