@@ -57,6 +57,8 @@ pub struct ElementData {
 
     pub background_images: Vec<Option<BackgroundImageData>>,
 
+    pub mask_images: Vec<Option<BackgroundImageData>>,
+
     /// Parley text layout (elements with inline inner display mode only)
     pub inline_layout_data: Option<Box<TextLayout>>,
 
@@ -157,6 +159,7 @@ impl ElementData {
             special_data: SpecialElementData::None,
             template_contents: None,
             background_images: Vec::new(),
+            mask_images: Vec::new(),
         };
         data.flush_is_focussable();
         data
