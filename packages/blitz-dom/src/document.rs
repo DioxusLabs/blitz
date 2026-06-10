@@ -1115,7 +1115,8 @@ impl BaseDocument {
                     let layer_image = node.element_data_mut().and_then(|el| {
                         let images = match image_type {
                             ImageType::Background(_) => &mut el.background_images,
-                            _ => &mut el.mask_images,
+                            ImageType::Mask(_) => &mut el.mask_images,
+                            ImageType::Image => unreachable!(),
                         };
                         images.get_mut(idx)
                     });
