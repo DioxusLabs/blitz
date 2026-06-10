@@ -15,7 +15,7 @@
 //! code as `background-image` layers (see `background.rs`), as the `mask-*` and
 //! `background-*` properties share computed value types.
 use super::ElementCx;
-use super::background::{ImageLayerStyles, get_cyclic};
+use super::background::ImageLayerStyles;
 use anyrender::PaintScene;
 use peniko::{BlendMode, Compose, Mix};
 use style::values::generics::image::GenericImage;
@@ -87,15 +87,18 @@ impl ElementCx<'_, '_> {
     /// Draw the mask image layers (analogous to `draw_background` for `background-image`)
     fn draw_css_mask(&self, scene: &mut impl PaintScene) {
         let svg_styles = self.style.get_svg();
-        let layers = ImageLayerStyles::from_svg(svg_styles, &self.element.mask_images);
+        let image_data = &self.element.mask_images;
+        let layer_count = svg_styles.mask_image.0.len();
 
-        for idx in (0..layers.stylo_image.len()).rev() {
-            let mask_clip_path = self.box_path(*get_cyclic(&layers.clip, idx));
+        for idx in (0..layer_count).rev() {
+            let layer = ImageLayerStyles::from_svg(svg_styles, image_data, idx);
+            let mask_clip_path = self.box_path(layer.clip);
 
             // TODO: support `mask-mode: luminance` (luminance masks are currently
             // rendered as alpha masks) and `mask-composite` values other than `add`.
             #[cfg(feature = "tracing")]
             {
+                use super::background::get_cyclic;
                 use style::properties::generated::longhands::{
                     mask_composite::single_value::computed_value::T as StyloMaskComposite,
                     mask_mode::single_value::computed_value::T as StyloMaskMode,
@@ -123,7 +126,7 @@ impl ElementCx<'_, '_> {
                 None,
                 None,
                 |scene| {
-                    self.draw_image_layer(scene, idx, &layers);
+                    self.draw_image_layer(scene, &layer);
                 },
             );
         }
