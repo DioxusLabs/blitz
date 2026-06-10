@@ -115,7 +115,7 @@ impl ElementCx<'_, '_> {
                 Compose::SrcOver
             } else {
                 let composite_list = &svg_styles.mask_composite.0;
-                match get_cyclic(&composite_list, idx) {
+                match get_cyclic(composite_list, idx) {
                     StyloMaskComposite::Add => Compose::SrcOver,
                     StyloMaskComposite::Subtract => Compose::SrcOut,
                     StyloMaskComposite::Intersect => Compose::SrcIn,
