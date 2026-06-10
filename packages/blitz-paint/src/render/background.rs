@@ -102,15 +102,19 @@ impl<'a> ImageLayerStyles<'a> {
         image_data: &'a [Option<ImageResourceData>],
         idx: usize,
     ) -> Self {
+        // The non-`background-image` property lists repeat cyclically if they are
+        // shorter than the `background-image` list. They all have the same length,
+        // so a single cyclic index can be used for all of them.
+        let cyclic_idx = idx % bg_styles.background_position_x.0.len();
         Self {
             stylo_image: &bg_styles.background_image.0[idx],
             image_data: image_data.get(idx).and_then(Option::as_ref),
-            position_x: get_cyclic(&bg_styles.background_position_x.0, idx),
-            position_y: get_cyclic(&bg_styles.background_position_y.0, idx),
-            repeat: get_cyclic(&bg_styles.background_repeat.0, idx),
-            size: get_cyclic(&bg_styles.background_size.0, idx),
-            clip: (*get_cyclic(&bg_styles.background_clip.0, idx)).into(),
-            origin: (*get_cyclic(&bg_styles.background_origin.0, idx)).into(),
+            position_x: &bg_styles.background_position_x.0[cyclic_idx],
+            position_y: &bg_styles.background_position_y.0[cyclic_idx],
+            repeat: &bg_styles.background_repeat.0[cyclic_idx],
+            size: &bg_styles.background_size.0[cyclic_idx],
+            clip: bg_styles.background_clip.0[cyclic_idx].into(),
+            origin: bg_styles.background_origin.0[cyclic_idx].into(),
         }
     }
 
@@ -119,15 +123,19 @@ impl<'a> ImageLayerStyles<'a> {
         image_data: &'a [Option<ImageResourceData>],
         idx: usize,
     ) -> Self {
+        // The non-`mask-image` property lists repeat cyclically if they are
+        // shorter than the `mask-image` list. They all have the same length,
+        // so a single cyclic index can be used for all of them.
+        let cyclic_idx = idx % svg_styles.mask_position_x.0.len();
         Self {
             stylo_image: &svg_styles.mask_image.0[idx],
             image_data: image_data.get(idx).and_then(Option::as_ref),
-            position_x: get_cyclic(&svg_styles.mask_position_x.0, idx),
-            position_y: get_cyclic(&svg_styles.mask_position_y.0, idx),
-            repeat: get_cyclic(&svg_styles.mask_repeat.0, idx),
-            size: get_cyclic(&svg_styles.mask_size.0, idx),
-            clip: (*get_cyclic(&svg_styles.mask_clip.0, idx)).into(),
-            origin: (*get_cyclic(&svg_styles.mask_origin.0, idx)).into(),
+            position_x: &svg_styles.mask_position_x.0[cyclic_idx],
+            position_y: &svg_styles.mask_position_y.0[cyclic_idx],
+            repeat: &svg_styles.mask_repeat.0[cyclic_idx],
+            size: &svg_styles.mask_size.0[cyclic_idx],
+            clip: svg_styles.mask_clip.0[cyclic_idx].into(),
+            origin: svg_styles.mask_origin.0[cyclic_idx].into(),
         }
     }
 }
@@ -139,8 +147,8 @@ impl ElementCx<'_, '_> {
         let layer_count = bg_styles.background_image.0.len();
 
         // The background color is clipped by the clip of the last layer in the list
-        let background_clip: BoxModelBox =
-            (*get_cyclic(&bg_styles.background_clip.0, layer_count - 1)).into();
+        let clip_list = &bg_styles.background_clip.0;
+        let background_clip: BoxModelBox = clip_list[(layer_count - 1) % clip_list.len()].into();
         let background_clip_path = self.box_path(background_clip);
 
         // Draw background color (if any)
@@ -871,11 +879,6 @@ fn compute_space_count_and_gap(bg_size: f64, size: f64) -> (u32, f64) {
     } + size;
 
     (count, gap)
-}
-
-#[inline]
-pub(super) fn get_cyclic<T>(values: &[T], layer_index: usize) -> &T {
-    &values[layer_index % values.len()]
 }
 
 fn extend(offset: f64, length: f64) -> f64 {

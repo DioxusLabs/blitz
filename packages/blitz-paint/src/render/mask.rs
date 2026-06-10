@@ -98,19 +98,17 @@ impl ElementCx<'_, '_> {
             // rendered as alpha masks) and `mask-composite` values other than `add`.
             #[cfg(feature = "tracing")]
             {
-                use super::background::get_cyclic;
                 use style::properties::generated::longhands::{
                     mask_composite::single_value::computed_value::T as StyloMaskComposite,
                     mask_mode::single_value::computed_value::T as StyloMaskMode,
                 };
-                if matches!(
-                    get_cyclic(&svg_styles.mask_mode.0, idx),
-                    StyloMaskMode::Luminance
-                ) {
+                let mask_mode = &svg_styles.mask_mode.0;
+                if matches!(mask_mode[idx % mask_mode.len()], StyloMaskMode::Luminance) {
                     warn!("mask-mode: luminance is not supported (falling back to alpha)");
                 }
+                let mask_composite = &svg_styles.mask_composite.0;
                 if !matches!(
-                    get_cyclic(&svg_styles.mask_composite.0, idx),
+                    mask_composite[idx % mask_composite.len()],
                     StyloMaskComposite::Add
                 ) {
                     warn!("mask-composite values other than add are not supported");
