@@ -3,7 +3,7 @@ use std::ops::Range;
 use crate::net::ResourceHandler;
 use crate::node::NodeFlags;
 use crate::{
-    BaseDocument, net::ImageHandler, node::BackgroundImageData, node::Status, util::ImageType,
+    BaseDocument, net::ImageHandler, node::ImageResourceData, node::Status, util::ImageType,
 };
 use crate::{NON_INCREMENTAL, Node};
 use style::properties::ComputedValues;
@@ -433,7 +433,7 @@ impl BaseDocument {
                     if let Some(cached_image) = self.image_cache.get(url_str) {
                         #[cfg(feature = "tracing")]
                         tracing::info!("Loading image {url_str} from cache");
-                        Some(BackgroundImageData {
+                        Some(ImageResourceData {
                             url: new_url.clone(),
                             status: Status::Ok,
                             image: cached_image.clone(),
@@ -443,7 +443,7 @@ impl BaseDocument {
                         #[cfg(feature = "tracing")]
                         tracing::info!("Image {url_str} already pending, queueing node {node_id}");
                         waiting_list.push((node_id, kind.image_type(idx)));
-                        Some(BackgroundImageData::new(new_url.clone()))
+                        Some(ImageResourceData::new(new_url.clone()))
                     } else {
                         // Start fetch and track as pending
                         #[cfg(feature = "tracing")]
@@ -466,7 +466,7 @@ impl BaseDocument {
                             ),
                         );
 
-                        Some(BackgroundImageData::new(new_url.clone()))
+                        Some(ImageResourceData::new(new_url.clone()))
                     }
                 }
                 _ => None,
