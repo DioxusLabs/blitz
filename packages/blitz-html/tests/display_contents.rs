@@ -113,3 +113,29 @@ fn contents_in_flex_container_hoists_children_as_flex_items() {
     );
 }
 
+
+#[test]
+fn abspos_child_hoisted_through_contents_stretches() {
+    // The kopuz route-shell chain: scroll container > display:contents shell
+    // > absolute inset:0 page (plus a comment placeholder sibling). The page
+    // must stretch to the scroll container's padding box.
+    let doc = layout_doc(
+        r#"<html><body style="margin:0">
+            <div style="position:relative; width:300px; height:200px; overflow-y:auto;">
+                <!-- placeholder -->
+                <div style="display:contents;">
+                    <div id="page" style="position:absolute; inset:0;">
+                        <div style="height:5000px;"></div>
+                    </div>
+                </div>
+            </div>
+        </body></html>"#,
+    );
+    let page = doc.query_selector("#page").unwrap().expect("#page not found");
+    let layout = doc.get_node(page).unwrap().final_layout;
+    assert_eq!(
+        (layout.size.width, layout.size.height),
+        (300.0, 200.0),
+        "abspos hoisted through display:contents must stretch to the containing block"
+    );
+}
