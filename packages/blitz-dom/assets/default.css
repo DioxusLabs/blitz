@@ -86,6 +86,7 @@ input[type="button"] {
     padding: 1px 6px;
     color: black;
     background-color: #EFEFEF;
+    text-align: center;
 }
 
 input[type="file"] {
