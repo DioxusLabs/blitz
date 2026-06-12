@@ -203,25 +203,44 @@ pub(crate) fn collect_layout_children(
             // Take children array from node to avoid borrow checker issues.
             let children = std::mem::take(&mut doc.nodes[container_node_id].children);
 
+            // display:contents is transparent for box generation: hoist the
+            // children THEMSELVES (not their layout children) into the
+            // parent, recursing only through nested contents nodes.
             for child_id in children.iter().copied() {
-                collect_layout_children(doc, child_id, layout_children, anonymous_block_id)
+                let child = &doc.nodes[child_id];
+                if child.data.kind() == NodeKind::Comment || child.is_whitespace_node() {
+                    continue;
+                }
+                let child_display = child.display_style().unwrap_or(Display::inline());
+                if matches!(child_display.inside(), DisplayInside::Contents) {
+                    collect_layout_children(doc, child_id, layout_children, anonymous_block_id);
+                } else {
+                    layout_children.push(child_id);
+                }
             }
 
             // Put children array back
             doc.nodes[container_node_id].children = children;
         }
         DisplayInside::Flow | DisplayInside::FlowRoot | DisplayInside::TableCell => {
-            // TODO: make "all_inline" detection work in the presence of display:contents nodes
             let mut all_block = true;
             let mut all_inline = true;
             let mut all_out_of_flow = true;
             let mut has_contents = false;
-            for child in doc.nodes[container_node_id]
+            // display:contents children are transparent for box generation:
+            // their children participate in this container's formatting
+            // context, so classification must recurse into them. Work-stack
+            // in place of plain iteration (reversed so order is preserved,
+            // though classification is order-independent).
+            let mut classify_stack: Vec<usize> = doc.nodes[container_node_id]
                 .children
                 .iter()
                 .copied()
-                .map(|child_id| &doc.nodes[child_id])
-            {
+                .rev()
+                .collect();
+            while let Some(child_id) = classify_stack.pop() {
+                let child = &doc.nodes[child_id];
+
                 // Comment nodes generate no boxes and must not affect the
                 // inline-vs-block classification: an unstyled comment would
                 // default to display:inline below and force an inline
@@ -241,6 +260,7 @@ pub(crate) fn collect_layout_children(
                 if matches!(display.inside(), DisplayInside::Contents) {
                     has_contents = true;
                     all_out_of_flow = false;
+                    classify_stack.extend(child.children.iter().copied().rev());
                 } else {
                     let position = style
                         .map(|s| s.clone_position())
@@ -596,7 +616,11 @@ fn collect_complex_layout_children(
             // If anonymous block node only contains whitespace then delete it
             if let Some(anon_id) = *anonymous_block_id {
                 if block_is_only_whitespace(doc, anon_id) {
-                    layout_children.pop();
+                    // Remove by identity, not pop(): hoisted display:contents
+                    // children may have been pushed after the anon block.
+                    if let Some(pos) = layout_children.iter().rposition(|id| *id == anon_id) {
+                        layout_children.remove(pos);
+                    }
                     doc.nodes.remove(anon_id);
                 }
             }
@@ -609,7 +633,9 @@ fn collect_complex_layout_children(
     // If anonymous block node only contains whitespace then delete it
     if let Some(anon_id) = *anonymous_block_id {
         if block_is_only_whitespace(doc, anon_id) {
-            layout_children.pop();
+            if let Some(pos) = layout_children.iter().rposition(|id| *id == anon_id) {
+                layout_children.remove(pos);
+            }
             doc.nodes.remove(anon_id);
             *anonymous_block_id = None;
         }
