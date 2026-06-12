@@ -241,6 +241,9 @@ pub struct BaseDocument {
     pub(crate) click_count: u16,
     /// Whether we're currently in a text selection drag (moved 2px+ from mousedown)
     pub(crate) drag_mode: DragMode,
+    /// The scrollbar thumb (scroll container id, is-horizontal) currently
+    /// under the pointer, if any
+    pub(crate) hovered_scrollbar: Option<(usize, bool)>,
     /// Whether and what kind of scroll animation is currently in progress
     pub(crate) scroll_animation: ScrollAnimationState,
 
@@ -453,6 +456,7 @@ impl BaseDocument {
             mousedown_position: taffy::Point::ZERO,
             click_count: 0,
             drag_mode: DragMode::None,
+            hovered_scrollbar: None,
             scroll_animation: ScrollAnimationState::None,
             text_selection: TextSelection::default(),
         };
@@ -1285,6 +1289,21 @@ impl BaseDocument {
         }
 
         true
+    }
+
+    /// The scrollbar thumb (scroll container id, is-horizontal) currently
+    /// under the pointer, if any.
+    pub fn hovered_scrollbar(&self) -> Option<(usize, bool)> {
+        self.hovered_scrollbar
+    }
+
+    /// The scrollbar thumb (scroll container id, is-horizontal) currently
+    /// being dragged, if any.
+    pub fn scrollbar_drag_target(&self) -> Option<(usize, bool)> {
+        match &self.drag_mode {
+            DragMode::ScrollbarDrag(state) => Some((state.node_id, state.horizontal)),
+            _ => None,
+        }
     }
 
     pub fn set_hover_to(&mut self, x: f32, y: f32) -> bool {

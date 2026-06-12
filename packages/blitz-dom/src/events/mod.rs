@@ -164,6 +164,7 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
                 target_node_id,
                 event.page_x(),
                 event.page_y(),
+                event.button,
                 event.mods,
                 &mut dispatch_event,
             );

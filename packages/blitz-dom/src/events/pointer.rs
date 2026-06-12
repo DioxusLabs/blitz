@@ -46,6 +46,15 @@ pub(crate) struct PanSample {
     pub(crate) dy: f32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct ScrollbarDragState {
+    /// The scroll container whose thumb is being dragged
+    pub(crate) node_id: usize,
+    pub(crate) horizontal: bool,
+    /// Last pointer position along the drag axis, in page coordinates
+    pub(crate) last_pos: f32,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum DragMode {
     /// We are not currently dragging
@@ -54,6 +63,8 @@ pub(crate) enum DragMode {
     Selecting,
     /// We are currently panning the document with a drag (probably touch)
     Panning(PanState),
+    /// We are currently dragging a scrollbar thumb
+    ScrollbarDrag(ScrollbarDragState),
 }
 
 impl DragMode {
@@ -138,6 +149,41 @@ impl PanState {
     }
 }
 
+/// Find the scrollbar thumb under the given page position: walks the layout
+/// ancestor chain of the hit node (the hit test returns the content under
+/// the overlay thumb) looking for a scroll container whose thumb contains
+/// the pointer. Returns (scroll container id, is-horizontal).
+pub(crate) fn scrollbar_thumb_at(
+    doc: &BaseDocument,
+    x: f32,
+    y: f32,
+) -> Option<(usize, bool)> {
+    let hit = doc.hit(x, y)?;
+    let mut cursor = Some(hit.node_id);
+    while let Some(node_id) = cursor {
+        let node = &doc.nodes[node_id];
+        for horizontal in [false, true] {
+            if !node.wants_scrollbar(horizontal) {
+                continue;
+            }
+            let Some(thumb) = node.scrollbar_thumb(horizontal) else {
+                continue;
+            };
+            // absolute_position subtracts the node's own scroll offset
+            // (it maps content coordinates); compensate to get the
+            // border-box origin.
+            let origin = node.absolute_position(0.0, 0.0);
+            let local_x = (x - origin.x) as f64 - node.scroll_offset.x;
+            let local_y = (y - origin.y) as f64 - node.scroll_offset.y;
+            if thumb.contains(local_x, local_y) {
+                return Some((node_id, horizontal));
+            }
+        }
+        cursor = node.layout_parent.get();
+    }
+    None
+}
+
 pub(crate) fn handle_pointermove<F: FnMut(DomEvent)>(
     doc: &mut BaseDocument,
     target: usize,
@@ -202,6 +248,32 @@ pub(crate) fn handle_pointermove<F: FnMut(DomEvent)>(
 
         let has_changed = doc.scroll_by(Some(target), dx, dy, &mut dispatch_event);
         return has_changed;
+    }
+
+    if let DragMode::ScrollbarDrag(state) = &mut doc.drag_mode {
+        let pos = if state.horizontal { x } else { y };
+        let delta_px = (pos - state.last_pos) as f64;
+        state.last_pos = pos;
+        let (node_id, horizontal) = (state.node_id, state.horizontal);
+
+        // Thumb px -> content px. scroll_by uses wheel-delta semantics
+        // (positive delta decreases the offset), so negate.
+        let ratio = doc.nodes[node_id].scrollbar_drag_ratio(horizontal);
+        let (dx, dy) = if horizontal {
+            (-delta_px * ratio, 0.0)
+        } else {
+            (0.0, -delta_px * ratio)
+        };
+        let has_changed = doc.scroll_by(Some(node_id), dx, dy, &mut dispatch_event);
+        return has_changed;
+    }
+
+    // Track which scrollbar thumb the pointer is over (for hover styling);
+    // repaint when it changes.
+    let hovered_scrollbar = scrollbar_thumb_at(doc, x, y);
+    if hovered_scrollbar != doc.hovered_scrollbar {
+        doc.hovered_scrollbar = hovered_scrollbar;
+        changed = true;
     }
 
     let Some(hit) = doc.hit(x, y) else {
@@ -279,6 +351,7 @@ pub(crate) fn handle_pointerdown(
     _target: usize,
     x: f32,
     y: f32,
+    button: MouseEventButton,
     mods: Modifiers,
     dispatch_event: &mut dyn FnMut(DomEvent),
 ) {
@@ -308,6 +381,20 @@ pub(crate) fn handle_pointerdown(
         doc.clear_text_selection();
         return;
     };
+
+    // Scrollbar thumb drags take precedence over content interactions and
+    // are not dispatched to the page (matching native scrollbars).
+    if button == MouseEventButton::Main {
+        if let Some((node_id, horizontal)) = scrollbar_thumb_at(doc, x, y) {
+            doc.drag_mode = DragMode::ScrollbarDrag(ScrollbarDragState {
+                node_id,
+                horizontal,
+                last_pos: if horizontal { x } else { y },
+            });
+            doc.shell_provider.request_redraw();
+            return;
+        }
+    }
 
     // Use hit.node_id for determining the actual clicked element.
     // This may differ from `target` for anonymous blocks (which are layout children
@@ -428,6 +515,11 @@ pub(crate) fn handle_pointerup<F: FnMut(DomEvent)>(
     // Don't dispatch click if we were doing a text selection drag or panning
     // the document with a touch
     let do_click = drag_mode == DragMode::None;
+
+    // Repaint so a dragged scrollbar thumb drops its active styling
+    if matches!(drag_mode, DragMode::ScrollbarDrag(_)) {
+        doc.shell_provider.request_redraw();
+    }
 
     let time_ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)

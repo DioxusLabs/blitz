@@ -539,75 +539,65 @@ impl ElementCx<'_, '_> {
     /// scrollbar UIs, thumbs only appear while the scroll container is
     /// hovered or scrolled away from the origin; this also keeps them out
     /// of (static, unhovered) reftest screenshots.
+    ///
+    /// Geometry comes from [`Node::scrollbar_thumb`], shared with the
+    /// thumb-drag hit testing in blitz-dom.
     fn draw_scrollbars(
         &self,
         scene: &mut impl PaintScene,
-        overflow_x: Overflow,
-        overflow_y: Overflow,
+        _overflow_x: Overflow,
+        _overflow_y: Overflow,
     ) {
+        let drag_target = self.context.dom.scrollbar_drag_target();
+        let hovered_thumb = self.context.dom.hovered_scrollbar();
+
+        let node_id = self.node.id;
+        let is_drag_target =
+            matches!(drag_target, Some((target_id, _)) if target_id == node_id);
         if !self.node.is_hovered()
+            && !is_drag_target
             && self.node.scroll_offset.x == 0.0
             && self.node.scroll_offset.y == 0.0
         {
             return;
         }
-        const THUMB_THICKNESS: f64 = 6.0;
-        const THUMB_MARGIN: f64 = 2.0;
-        const MIN_THUMB_LENGTH: f64 = 16.0;
+
         const THUMB_COLOR: Color = Color::from_rgba8(128, 128, 128, 178);
+        const THUMB_HOVER_COLOR: Color = Color::from_rgba8(152, 152, 152, 222);
+        const THUMB_ACTIVE_COLOR: Color = Color::from_rgba8(170, 170, 170, 255);
 
-        let layout = &self.node.final_layout;
-        let padding_box = self.frame.padding_box;
-
-        let mut draw_thumb = |scroll_extent: f64, scroll_offset: f64, horizontal: bool| {
-            if scroll_extent <= 0.5 {
-                return;
+        for horizontal in [false, true] {
+            if !self.node.wants_scrollbar(horizontal) {
+                continue;
             }
-            let viewport_len = if horizontal {
-                padding_box.width()
-            } else {
-                padding_box.height()
+            let Some(thumb) = self.node.scrollbar_thumb(horizontal) else {
+                continue;
             };
-            let max_scroll = scroll_extent * self.scale;
-            let thumb_len = (viewport_len * viewport_len / (viewport_len + max_scroll))
-                .max(MIN_THUMB_LENGTH * self.scale)
-                .min(viewport_len);
-            let progress = (scroll_offset * self.scale / max_scroll).clamp(0.0, 1.0);
-            let thumb_start = progress * (viewport_len - thumb_len);
-            let thickness = THUMB_THICKNESS * self.scale;
-            let margin = THUMB_MARGIN * self.scale;
-            let rect = if horizontal {
-                Rect::new(
-                    padding_box.x0 + thumb_start,
-                    padding_box.y1 - margin - thickness,
-                    padding_box.x0 + thumb_start + thumb_len,
-                    padding_box.y1 - margin,
-                )
+            let color = if drag_target == Some((node_id, horizontal)) {
+                THUMB_ACTIVE_COLOR
+            } else if hovered_thumb == Some((node_id, horizontal)) {
+                THUMB_HOVER_COLOR
             } else {
-                Rect::new(
-                    padding_box.x1 - margin - thickness,
-                    padding_box.y0 + thumb_start,
-                    padding_box.x1 - margin,
-                    padding_box.y0 + thumb_start + thumb_len,
-                )
+                THUMB_COLOR
             };
-            let thumb = rect.to_rounded_rect(thickness / 2.0);
-            scene.fill(Fill::NonZero, self.transform, THUMB_COLOR, None, &thumb);
-        };
-
-        let wants_bar = |overflow: Overflow, scroll_extent: f64| match overflow {
-            Overflow::Scroll => true,
-            Overflow::Auto => scroll_extent > 0.5,
-            _ => false,
-        };
-
-        let scroll_height = layout.scroll_height() as f64;
-        if wants_bar(overflow_y, scroll_height) {
-            draw_thumb(scroll_height, self.node.scroll_offset.y, false);
-        }
-        let scroll_width = layout.scroll_width() as f64;
-        if wants_bar(overflow_x, scroll_width) {
-            draw_thumb(scroll_width, self.node.scroll_offset.x, true);
+            let rect = Rect::new(
+                thumb.x0 * self.scale,
+                thumb.y0 * self.scale,
+                thumb.x1 * self.scale,
+                thumb.y1 * self.scale,
+            );
+            let radius = if horizontal {
+                rect.height() / 2.0
+            } else {
+                rect.width() / 2.0
+            };
+            scene.fill(
+                Fill::NonZero,
+                self.transform,
+                color,
+                None,
+                &rect.to_rounded_rect(radius),
+            );
         }
     }
 

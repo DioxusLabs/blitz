@@ -494,6 +494,22 @@ pub enum NodeKind {
     Comment,
 }
 
+/// Geometry of an overlay scrollbar thumb, in (unscaled) CSS px relative to
+/// the owning node's border-box origin.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ScrollbarThumb {
+    pub x0: f64,
+    pub y0: f64,
+    pub x1: f64,
+    pub y1: f64,
+}
+
+impl ScrollbarThumb {
+    pub fn contains(&self, x: f64, y: f64) -> bool {
+        x >= self.x0 && x <= self.x1 && y >= self.y0 && y <= self.y1
+    }
+}
+
 /// The different kinds of nodes in the DOM.
 #[derive(Debug, Clone)]
 pub enum NodeData {
@@ -1093,6 +1109,110 @@ impl Node {
         };
 
         Some(offset)
+    }
+
+    /// Whether the node shows an overlay scrollbar in the given axis:
+    /// always for `overflow: scroll`, only when the content overflows for
+    /// `overflow: auto`, never otherwise.
+    pub fn wants_scrollbar(&self, horizontal: bool) -> bool {
+        use style::values::computed::Overflow;
+        let Some(style) = self.primary_styles() else {
+            return false;
+        };
+        let (overflow, scroll_extent) = if horizontal {
+            (
+                style.clone_overflow_x(),
+                self.final_layout.scroll_width() as f64,
+            )
+        } else {
+            (
+                style.clone_overflow_y(),
+                self.final_layout.scroll_height() as f64,
+            )
+        };
+        match overflow {
+            Overflow::Scroll => true,
+            Overflow::Auto => scroll_extent > 0.5,
+            _ => false,
+        }
+    }
+
+    /// Geometry of the overlay scrollbar thumb for the given axis, in
+    /// (unscaled) CSS px relative to the node's border-box origin. `None`
+    /// if there is no scrollable overflow in that axis.
+    pub fn scrollbar_thumb(&self, horizontal: bool) -> Option<ScrollbarThumb> {
+        const THUMB_THICKNESS: f64 = 6.0;
+        const THUMB_MARGIN: f64 = 2.0;
+        const MIN_THUMB_LENGTH: f64 = 16.0;
+
+        let layout = &self.final_layout;
+        let scroll_extent = if horizontal {
+            layout.scroll_width() as f64
+        } else {
+            layout.scroll_height() as f64
+        };
+        if scroll_extent <= 0.5 {
+            return None;
+        }
+
+        // The scrollport is the padding box.
+        let x0 = layout.border.left as f64;
+        let y0 = layout.border.top as f64;
+        let x1 = layout.size.width as f64 - layout.border.right as f64;
+        let y1 = layout.size.height as f64 - layout.border.bottom as f64;
+
+        let (viewport_len, scroll_offset) = if horizontal {
+            (x1 - x0, self.scroll_offset.x)
+        } else {
+            (y1 - y0, self.scroll_offset.y)
+        };
+        let thumb_len = (viewport_len * viewport_len / (viewport_len + scroll_extent))
+            .max(MIN_THUMB_LENGTH)
+            .min(viewport_len);
+        let progress = (scroll_offset / scroll_extent).clamp(0.0, 1.0);
+        let thumb_start = progress * (viewport_len - thumb_len);
+
+        Some(if horizontal {
+            ScrollbarThumb {
+                x0: x0 + thumb_start,
+                y0: y1 - THUMB_MARGIN - THUMB_THICKNESS,
+                x1: x0 + thumb_start + thumb_len,
+                y1: y1 - THUMB_MARGIN,
+            }
+        } else {
+            ScrollbarThumb {
+                x0: x1 - THUMB_MARGIN - THUMB_THICKNESS,
+                y0: y0 + thumb_start,
+                x1: x1 - THUMB_MARGIN,
+                y1: y0 + thumb_start + thumb_len,
+            }
+        })
+    }
+
+    /// Content px scrolled per thumb px dragged, for the given axis.
+    pub fn scrollbar_drag_ratio(&self, horizontal: bool) -> f64 {
+        let Some(thumb) = self.scrollbar_thumb(horizontal) else {
+            return 0.0;
+        };
+        let layout = &self.final_layout;
+        let (scroll_extent, viewport_len, thumb_len) = if horizontal {
+            (
+                layout.scroll_width() as f64,
+                layout.size.width as f64 - layout.border.left as f64 - layout.border.right as f64,
+                thumb.x1 - thumb.x0,
+            )
+        } else {
+            (
+                layout.scroll_height() as f64,
+                layout.size.height as f64 - layout.border.top as f64 - layout.border.bottom as f64,
+                thumb.y1 - thumb.y0,
+            )
+        };
+        let track_play = viewport_len - thumb_len;
+        if track_play <= 0.0 {
+            return 0.0;
+        }
+        scroll_extent / track_play
     }
 
     /// Computes the Document-relative coordinates of the `Node`
