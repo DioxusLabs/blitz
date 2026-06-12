@@ -549,7 +549,9 @@ impl BaseDocument {
                 let z_index = style.clone_z_index().integer_or(0);
 
                 // TODO: more complete hoisting detection
-                if position != Position::Static && z_index != 0 {
+                // z-index applies to static flex/grid items too
+                // (css-flexbox-1 §painting, css-grid-1 §z-order).
+                if z_index != 0 && (position != Position::Static || is_flex_or_grid) {
                     stacking_context.children.push(HoistedPaintChild {
                         node_id: child_id,
                         z_index,
@@ -593,8 +595,11 @@ impl BaseDocument {
 #[inline(always)]
 fn position_to_order(pos: Position) -> i32 {
     match pos {
-        Position::Static | Position::Relative | Position::Sticky => 0,
-        Position::Absolute | Position::Fixed => 2,
+        Position::Static => 0,
+        // All positioned descendants with z-index: auto share one paint
+        // level (CSS 2.1 Appendix E step 8); the stable sort keeps them in
+        // tree order among themselves, above in-flow content and floats.
+        Position::Relative | Position::Sticky | Position::Absolute | Position::Fixed => 2,
     }
 }
 #[inline(always)]
@@ -605,17 +610,25 @@ fn float_to_order(pos: Float) -> i32 {
     }
 }
 
+/// Paint sort key: (paint level, order-modified position). Positioned
+/// (z-index: auto) descendants paint above in-flow content (CSS 2.1
+/// Appendix E step 8); within a level the stable sort preserves
+/// (order-modified) document order.
 #[inline(always)]
-fn node_to_paint_order(node: &Node, is_flex_or_grid: bool) -> i32 {
+fn node_to_paint_order(node: &Node, is_flex_or_grid: bool) -> (i32, i32) {
     let Some(style) = node.primary_styles() else {
-        return 0;
+        return (0, 0);
     };
+    let position = style.clone_position();
     if is_flex_or_grid {
-        match style.clone_position() {
-            Position::Static | Position::Relative | Position::Sticky => style.clone_order(),
-            Position::Absolute | Position::Fixed => 0,
+        match position {
+            Position::Static => (0, style.clone_order()),
+            Position::Relative | Position::Sticky => (2, style.clone_order()),
+            // Out-of-flow children are not flex/grid items: `order` does
+            // not apply; tree order does.
+            Position::Absolute | Position::Fixed => (2, 0),
         }
     } else {
-        position_to_order(style.clone_position()) + float_to_order(style.clone_float())
+        (position_to_order(position) + float_to_order(style.clone_float()), 0)
     }
 }

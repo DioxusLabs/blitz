@@ -894,7 +894,10 @@ dependencies = [
 name = "blitz-html"
 version = "0.3.0-alpha.4"
 dependencies = [
+ "anyrender",
+ "anyrender_vello_cpu",
  "blitz-dom",
+ "blitz-paint",
  "blitz-traits",
  "html5ever",
  "tracing",

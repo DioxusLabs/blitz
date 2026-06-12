@@ -23,3 +23,8 @@ html5ever = { workspace = true }
 xml5ever = { workspace = true }
 
 tracing = { workspace = true, optional = true }
+
+[dev-dependencies]
+blitz-paint = { workspace = true }
+anyrender = { workspace = true }
+anyrender_vello_cpu = { workspace = true }
