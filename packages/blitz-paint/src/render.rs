@@ -582,9 +582,23 @@ impl ElementCx<'_, '_> {
     /// thumb-drag hit testing in blitz-dom.
     #[cfg(feature = "scrollbars")]
     fn draw_scrollbars(&self, scene: &mut impl PaintScene) {
+        // css-scrollbars-1 scrollbar-color: author thumb/track colors
+        use style::values::generics::ui::ScrollbarColor as StyloScrollbarColor;
+        let current_color = self.style.clone_color();
+        let (custom_thumb, custom_track) = match &self.style.clone_scrollbar_color() {
+            StyloScrollbarColor::Auto => (None, None),
+            StyloScrollbarColor::Colors { thumb, track } => (
+                Some(thumb.resolve_to_absolute(&current_color).as_srgb_color()),
+                Some(track.resolve_to_absolute(&current_color).as_srgb_color()),
+            ),
+        };
+
         let drag_target = self.context.dom.scrollbar_drag_target();
         let hovered_thumb = self.context.dom.hovered_scrollbar();
 
+        // scrollbar-color colors the scrollbar; it does not change overlay
+        // visibility behavior (matching Firefox/WebKit rendering of the
+        // property — persistence is UA policy, not author styling).
         let node_id = self.node.id;
         let is_drag_target = matches!(drag_target, Some((target_id, _)) if target_id == node_id);
         if !self.node.is_hovered()
@@ -599,6 +613,18 @@ impl ElementCx<'_, '_> {
         const THUMB_HOVER_COLOR: Color = Color::from_rgba8(152, 152, 152, 222);
         const THUMB_ACTIVE_COLOR: Color = Color::from_rgba8(170, 170, 170, 255);
 
+        /// Move a color towards white (for hover/active states of
+        /// author-specified thumb colors)
+        fn lighten(color: Color, amount: f32) -> Color {
+            let [r, g, b, a] = color.components;
+            Color::new([
+                r + (1.0 - r) * amount,
+                g + (1.0 - g) * amount,
+                b + (1.0 - b) * amount,
+                a,
+            ])
+        }
+
         for horizontal in [false, true] {
             if !self.node.wants_scrollbar(horizontal) {
                 continue;
@@ -606,12 +632,43 @@ impl ElementCx<'_, '_> {
             let Some(thumb) = self.node.scrollbar_thumb(horizontal) else {
                 continue;
             };
-            let color = if drag_target == Some((node_id, horizontal)) {
-                THUMB_ACTIVE_COLOR
-            } else if hovered_thumb == Some((node_id, horizontal)) {
-                THUMB_HOVER_COLOR
-            } else {
-                THUMB_COLOR
+
+            // Track (only when the author specified a track color)
+            if let Some(track_color) = custom_track {
+                let padding_box = self.frame.padding_box;
+                let track_rect = if horizontal {
+                    Rect::new(
+                        padding_box.x0,
+                        thumb.y0 * self.scale,
+                        padding_box.x1,
+                        thumb.y1 * self.scale,
+                    )
+                } else {
+                    Rect::new(
+                        thumb.x0 * self.scale,
+                        padding_box.y0,
+                        thumb.x1 * self.scale,
+                        padding_box.y1,
+                    )
+                };
+                scene.fill(
+                    Fill::NonZero,
+                    self.transform,
+                    track_color,
+                    None,
+                    &track_rect,
+                );
+            }
+
+            let is_active = drag_target == Some((node_id, horizontal));
+            let is_hovered = hovered_thumb == Some((node_id, horizontal));
+            let color = match custom_thumb {
+                Some(base) if is_active => lighten(base, 0.3),
+                Some(base) if is_hovered => lighten(base, 0.15),
+                Some(base) => base,
+                None if is_active => THUMB_ACTIVE_COLOR,
+                None if is_hovered => THUMB_HOVER_COLOR,
+                None => THUMB_COLOR,
             };
             let rect = Rect::new(
                 thumb.x0 * self.scale,

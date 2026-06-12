@@ -1128,12 +1128,18 @@ impl Node {
 
     /// Whether the node shows an overlay scrollbar in the given axis:
     /// always for `overflow: scroll`, only when the content overflows for
-    /// `overflow: auto`, never otherwise.
+    /// `overflow: auto`, never otherwise — and never when
+    /// `scrollbar-width: none`.
     pub fn wants_scrollbar(&self, horizontal: bool) -> bool {
         use style::values::computed::Overflow;
         let Some(style) = self.primary_styles() else {
             return false;
         };
+        if style.clone_scrollbar_width()
+            == style::properties::longhands::scrollbar_width::computed_value::T::None
+        {
+            return false;
+        }
         let (overflow, scroll_extent) = if horizontal {
             (
                 style.clone_overflow_x(),
@@ -1157,6 +1163,7 @@ impl Node {
     /// if there is no scrollable overflow in that axis.
     pub fn scrollbar_thumb(&self, horizontal: bool) -> Option<ScrollbarThumb> {
         const THUMB_THICKNESS: f64 = 6.0;
+        const THIN_THUMB_THICKNESS: f64 = 4.0;
         const THUMB_MARGIN: f64 = 2.0;
         const MIN_THUMB_LENGTH: f64 = 16.0;
 
@@ -1169,6 +1176,13 @@ impl Node {
         if scroll_extent <= 0.5 {
             return None;
         }
+
+        let thickness = match self.primary_styles().map(|s| s.clone_scrollbar_width()) {
+            Some(style::properties::longhands::scrollbar_width::computed_value::T::Thin) => {
+                THIN_THUMB_THICKNESS
+            }
+            _ => THUMB_THICKNESS,
+        };
 
         // The scrollport is the padding box.
         let x0 = layout.border.left as f64;
@@ -1190,13 +1204,13 @@ impl Node {
         Some(if horizontal {
             ScrollbarThumb {
                 x0: x0 + thumb_start,
-                y0: y1 - THUMB_MARGIN - THUMB_THICKNESS,
+                y0: y1 - THUMB_MARGIN - thickness,
                 x1: x0 + thumb_start + thumb_len,
                 y1: y1 - THUMB_MARGIN,
             }
         } else {
             ScrollbarThumb {
-                x0: x1 - THUMB_MARGIN - THUMB_THICKNESS,
+                x0: x1 - THUMB_MARGIN - thickness,
                 y0: y0 + thumb_start,
                 x1: x1 - THUMB_MARGIN,
                 y1: y0 + thumb_start + thumb_len,

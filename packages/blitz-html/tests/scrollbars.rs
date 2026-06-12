@@ -88,3 +88,73 @@ fn horizontal_scroller_paints_a_thumb() {
     );
     assert_ne!(px, BLUE, "expected a horizontal scrollbar thumb");
 }
+
+#[test]
+fn scrollbar_color_styles_the_thumb() {
+    // Scrolled so the thumb is visible without hover.
+    let px = pixel(
+        r#"<html><body style="margin:0">
+            <div id="scroller" style="width:100px; height:100px; overflow-y:auto; scrollbar-color:#ff0000 transparent;">
+                <div style="height:1000px; background:#0000ff;"></div>
+            </div>
+        </body></html>"#,
+        (0.0, 50.0),
+        97,
+        10,
+    );
+    assert!(
+        px[0] > 200 && px[2] < 100,
+        "thumb should be the author's red, got {px:?}"
+    );
+}
+
+#[test]
+fn scrollbar_color_styles_the_track() {
+    let px = pixel(
+        r#"<html><body style="margin:0">
+            <div id="scroller" style="width:100px; height:100px; overflow-y:auto; scrollbar-color:#ff0000 #00ff00;">
+                <div style="height:1000px; background:#0000ff;"></div>
+            </div>
+        </body></html>"#,
+        (0.0, 50.0),
+        97,
+        90,
+    );
+    assert!(
+        px[1] > 200 && px[2] < 100,
+        "track should be the author's green, got {px:?}"
+    );
+}
+
+#[test]
+fn scrollbar_width_none_hides_the_scrollbar() {
+    let px = pixel(
+        r#"<html><body style="margin:0">
+            <div id="scroller" style="width:100px; height:100px; overflow-y:auto; scrollbar-width:none;">
+                <div style="height:1000px; background:#0000ff;"></div>
+            </div>
+        </body></html>"#,
+        (0.0, 50.0),
+        97,
+        10,
+    );
+    assert_eq!(px, BLUE, "scrollbar-width:none must paint no scrollbar");
+}
+
+#[test]
+fn author_styled_scrollbar_still_hides_at_rest() {
+    // scrollbar-color colors the scrollbar; it does not change overlay
+    // visibility behavior (persistence is UA policy, not author styling —
+    // matching Firefox/WebKit rendering of the property).
+    let px = pixel(
+        r#"<html><body style="margin:0">
+            <div id="scroller" style="width:100px; height:100px; overflow-y:auto; scrollbar-color:#ff0000 transparent;">
+                <div style="height:1000px; background:#0000ff;"></div>
+            </div>
+        </body></html>"#,
+        (0.0, 0.0),
+        97,
+        4,
+    );
+    assert_eq!(px, BLUE, "styled overlay scrollbars still hide at rest");
+}
