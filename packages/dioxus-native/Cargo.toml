@@ -42,6 +42,7 @@ vello-cpu-base = ["dep:anyrender_vello_cpu"]
 
 font-embolden = ["blitz-paint/font-embolden"]
 apple-font-embolden = ["blitz-paint/apple-font-embolden"]
+scrollbars = ["blitz-paint/scrollbars"]
 
 # Other features
 # No-op on wasm32 (blitz_net::Provider needs tokio's threaded runtime); launch_cfg

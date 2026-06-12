@@ -26,6 +26,6 @@ tracing = { workspace = true, optional = true }
 
 [dev-dependencies]
 markup5ever = { workspace = true }
-blitz-paint = { workspace = true }
+blitz-paint = { workspace = true, features = ["scrollbars"] }
 anyrender = { workspace = true }
 anyrender_vello_cpu = { workspace = true }

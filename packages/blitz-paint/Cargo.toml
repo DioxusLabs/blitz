@@ -17,6 +17,9 @@ svg = ["dep:anyrender_svg", "dep:usvg", "blitz-dom/svg"]
 custom-widget = ["blitz-dom/custom-widget"]
 font-embolden = []
 apple-font-embolden = []
+# Paint overlay scrollbar thumbs on scroll containers (off by default while
+# the feature matures).
+scrollbars = []
 
 [dependencies]
 # Blitz dependencies
