@@ -441,7 +441,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                         #[cfg(feature = "scrollbars")]
                         {
                             cx.transform = unscrolled_transform;
-                            cx.draw_scrollbars(scene, overflow_x, overflow_y);
+                            cx.draw_scrollbars(scene);
                         }
                     },
                 );
@@ -577,107 +577,59 @@ impl ElementCx<'_, '_> {
     /// scrollbar UIs, thumbs only appear while the scroll container is
     /// hovered or scrolled away from the origin; this also keeps them out
     /// of (static, unhovered) reftest screenshots.
+    ///
+    /// Geometry comes from [`Node::scrollbar_thumb`], shared with the
+    /// thumb-drag hit testing in blitz-dom.
     #[cfg(feature = "scrollbars")]
-    fn draw_scrollbars(
-        &self,
-        scene: &mut impl PaintScene,
-        overflow_x: Overflow,
-        overflow_y: Overflow,
-    ) {
-        /// Whether an axis shows a bar: always for `scroll`, only when the
-        /// content actually overflows for `auto`, never for anything else.
-        fn wants_bar(overflow: Overflow, scroll_extent: f64) -> bool {
-            match overflow {
-                Overflow::Scroll => true,
-                Overflow::Auto => scroll_extent > 0.5,
-                _ => false,
-            }
-        }
+    fn draw_scrollbars(&self, scene: &mut impl PaintScene) {
+        let drag_target = self.context.dom.scrollbar_drag_target();
+        let hovered_thumb = self.context.dom.hovered_scrollbar();
 
-        /// Fill one axis' thumb: length proportional to the visible fraction
-        /// (clamped to a minimum), positioned by scroll progress, inset from
-        /// the padding-box edge. All lengths in scaled device pixels.
-        fn draw_thumb(
-            scene: &mut impl PaintScene,
-            transform: Affine,
-            scale: f64,
-            padding_box: Rect,
-            scroll_extent: f64,
-            scroll_offset: f64,
-            horizontal: bool,
-        ) {
-            const THUMB_THICKNESS: f64 = 6.0;
-            const THUMB_MARGIN: f64 = 2.0;
-            const MIN_THUMB_LENGTH: f64 = 16.0;
-            const THUMB_COLOR: Color = Color::from_rgba8(128, 128, 128, 178);
-
-            if scroll_extent <= 0.5 {
-                return;
-            }
-            let viewport_len = if horizontal {
-                padding_box.width()
-            } else {
-                padding_box.height()
-            };
-            let max_scroll = scroll_extent * scale;
-            let thumb_len = (viewport_len * viewport_len / (viewport_len + max_scroll))
-                .max(MIN_THUMB_LENGTH * scale)
-                .min(viewport_len);
-            let progress = (scroll_offset * scale / max_scroll).clamp(0.0, 1.0);
-            let thumb_start = progress * (viewport_len - thumb_len);
-            let thickness = THUMB_THICKNESS * scale;
-            let margin = THUMB_MARGIN * scale;
-            let rect = if horizontal {
-                Rect::new(
-                    padding_box.x0 + thumb_start,
-                    padding_box.y1 - margin - thickness,
-                    padding_box.x0 + thumb_start + thumb_len,
-                    padding_box.y1 - margin,
-                )
-            } else {
-                Rect::new(
-                    padding_box.x1 - margin - thickness,
-                    padding_box.y0 + thumb_start,
-                    padding_box.x1 - margin,
-                    padding_box.y0 + thumb_start + thumb_len,
-                )
-            };
-            let thumb = rect.to_rounded_rect(thickness / 2.0);
-            scene.fill(Fill::NonZero, transform, THUMB_COLOR, None, &thumb);
-        }
-
+        let node_id = self.node.id;
+        let is_drag_target = matches!(drag_target, Some((target_id, _)) if target_id == node_id);
         if !self.node.is_hovered()
+            && !is_drag_target
             && self.node.scroll_offset.x == 0.0
             && self.node.scroll_offset.y == 0.0
         {
             return;
         }
 
-        let layout = &self.node.final_layout;
-        let padding_box = self.frame.padding_box;
+        const THUMB_COLOR: Color = Color::from_rgba8(128, 128, 128, 178);
+        const THUMB_HOVER_COLOR: Color = Color::from_rgba8(152, 152, 152, 222);
+        const THUMB_ACTIVE_COLOR: Color = Color::from_rgba8(170, 170, 170, 255);
 
-        let scroll_height = layout.scroll_height() as f64;
-        if wants_bar(overflow_y, scroll_height) {
-            draw_thumb(
-                scene,
-                self.transform,
-                self.scale,
-                padding_box,
-                scroll_height,
-                self.node.scroll_offset.y,
-                false,
+        for horizontal in [false, true] {
+            if !self.node.wants_scrollbar(horizontal) {
+                continue;
+            }
+            let Some(thumb) = self.node.scrollbar_thumb(horizontal) else {
+                continue;
+            };
+            let color = if drag_target == Some((node_id, horizontal)) {
+                THUMB_ACTIVE_COLOR
+            } else if hovered_thumb == Some((node_id, horizontal)) {
+                THUMB_HOVER_COLOR
+            } else {
+                THUMB_COLOR
+            };
+            let rect = Rect::new(
+                thumb.x0 * self.scale,
+                thumb.y0 * self.scale,
+                thumb.x1 * self.scale,
+                thumb.y1 * self.scale,
             );
-        }
-        let scroll_width = layout.scroll_width() as f64;
-        if wants_bar(overflow_x, scroll_width) {
-            draw_thumb(
-                scene,
+            let radius = if horizontal {
+                rect.height() / 2.0
+            } else {
+                rect.width() / 2.0
+            };
+            scene.fill(
+                Fill::NonZero,
                 self.transform,
-                self.scale,
-                padding_box,
-                scroll_width,
-                self.node.scroll_offset.x,
-                true,
+                color,
+                None,
+                &rect.to_rounded_rect(radius),
             );
         }
     }

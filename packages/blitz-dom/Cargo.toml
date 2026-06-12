@@ -31,6 +31,9 @@ complex-scripts = ["parley/complex-scripts"]
 autofocus = []
 floats = ["taffy/float_layout", "stylo_taffy/floats"]
 file-input = []
+# Overlay-scrollbar thumb interaction (drag + hover tracking). Normally
+# enabled through `blitz-paint/scrollbars`, which paints the thumbs.
+scrollbars = []
 incremental = []
 parallel-construct = []
 log-phase-times = ["debug_timer/enable"]
