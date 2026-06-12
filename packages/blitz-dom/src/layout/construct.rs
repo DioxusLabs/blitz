@@ -65,6 +65,38 @@ fn push_children_and_pseudos(layout_children: &mut Vec<usize>, node: &Node) {
     }
 }
 
+/// Push the container's children (and ::before/::after pseudos) as layout
+/// children, hoisting transparently through display:contents nodes and
+/// filtering out comments and whitespace.
+fn push_hoisted_children_and_pseudos(
+    doc: &mut BaseDocument,
+    container_node_id: usize,
+    layout_children: &mut Vec<usize>,
+    anonymous_block_id: &mut Option<usize>,
+) {
+    if let Some(before) = doc.nodes[container_node_id].before {
+        layout_children.push(before);
+    }
+    // Take children array from node to avoid borrow checker issues.
+    let children = std::mem::take(&mut doc.nodes[container_node_id].children);
+    for child_id in children.iter().copied() {
+        let child = &doc.nodes[child_id];
+        if child.data.kind() == NodeKind::Comment || child.is_whitespace_node() {
+            continue;
+        }
+        let child_display = child.display_style().unwrap_or(Display::inline());
+        if matches!(child_display.inside(), DisplayInside::Contents) {
+            collect_layout_children(doc, child_id, layout_children, anonymous_block_id);
+        } else {
+            layout_children.push(child_id);
+        }
+    }
+    doc.nodes[container_node_id].children = children;
+    if let Some(after) = doc.nodes[container_node_id].after {
+        layout_children.push(after);
+    }
+}
+
 fn push_non_whitespace_children_and_pseudos(layout_children: &mut Vec<usize>, node: &Node) {
     if let Some(before) = node.before {
         layout_children.push(before);
@@ -200,27 +232,15 @@ pub(crate) fn collect_layout_children(
         DisplayInside::Contents => {
             doc.nodes[container_node_id]
                 .remove_damage(CONSTRUCT_BOX | CONSTRUCT_DESCENDENT | CONSTRUCT_FC);
-            // Take children array from node to avoid borrow checker issues.
-            let children = std::mem::take(&mut doc.nodes[container_node_id].children);
-
             // display:contents is transparent for box generation: hoist the
             // children THEMSELVES (not their layout children) into the
             // parent, recursing only through nested contents nodes.
-            for child_id in children.iter().copied() {
-                let child = &doc.nodes[child_id];
-                if child.data.kind() == NodeKind::Comment || child.is_whitespace_node() {
-                    continue;
-                }
-                let child_display = child.display_style().unwrap_or(Display::inline());
-                if matches!(child_display.inside(), DisplayInside::Contents) {
-                    collect_layout_children(doc, child_id, layout_children, anonymous_block_id);
-                } else {
-                    layout_children.push(child_id);
-                }
-            }
-
-            // Put children array back
-            doc.nodes[container_node_id].children = children;
+            push_hoisted_children_and_pseudos(
+                doc,
+                container_node_id,
+                layout_children,
+                anonymous_block_id,
+            );
         }
         DisplayInside::Flow | DisplayInside::FlowRoot | DisplayInside::TableCell => {
             let mut all_block = true;
@@ -229,9 +249,7 @@ pub(crate) fn collect_layout_children(
             let mut has_contents = false;
             // display:contents children are transparent for box generation:
             // their children participate in this container's formatting
-            // context, so classification must recurse into them. Work-stack
-            // in place of plain iteration (reversed so order is preserved,
-            // though classification is order-independent).
+            // context, so classification must recurse into them.
             let mut classify_stack: Vec<usize> = doc.nodes[container_node_id]
                 .children
                 .iter()
@@ -258,8 +276,9 @@ pub(crate) fn collect_layout_children(
                     .map(|s| s.clone_display())
                     .unwrap_or(Display::inline());
                 if matches!(display.inside(), DisplayInside::Contents) {
+                    // Transparent for box generation: the contents node casts
+                    // no vote itself — its children decide.
                     has_contents = true;
-                    all_out_of_flow = false;
                     classify_stack.extend(child.children.iter().copied().rev());
                 } else {
                     let position = style
@@ -302,9 +321,14 @@ pub(crate) fn collect_layout_children(
             }
 
             if all_out_of_flow {
-                return push_non_whitespace_children_and_pseudos(
+                // Contents-transparent: a display:contents child may be
+                // holding the out-of-flow elements (otherwise the contents
+                // node itself would be pushed as a layout box).
+                return push_hoisted_children_and_pseudos(
+                    doc,
+                    container_node_id,
                     layout_children,
-                    &doc.nodes[container_node_id],
+                    anonymous_block_id,
                 );
             }
 
