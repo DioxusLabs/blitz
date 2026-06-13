@@ -48,7 +48,7 @@ impl BaseDocument {
 
         // Resolve node's preferred/min/max sizes (width/heights) against the available space (percentages resolve to pixel values)
         // For ContentSize mode, we pretend that the node has no size styles as these should be ignored.
-        let (clamped_style_size, min_size, max_size, _aspect_ratio) = match inputs.sizing_mode {
+        let (clamped_style_size, min_size, max_size, aspect_ratio) = match inputs.sizing_mode {
             SizingMode::ContentSize => {
                 let node_size = known_dimensions;
                 let node_min_size = Size::NONE;
@@ -84,9 +84,18 @@ impl BaseDocument {
             _ => None,
         });
 
+        // An aspect-ratio with one definite axis makes the other definite
+        // (css-sizing-4), e.g. aspect-ratio: 1 with a stretched width.
+        // Final-layout only: widths in measure passes are tentative and
+        // must not transfer through the ratio (stale-width).
+        let layout_aspect_ratio = match run_mode {
+            RunMode::PerformLayout => aspect_ratio,
+            _ => None,
+        };
         let styled_based_known_dimensions = known_dimensions
             .or(min_max_definite_size)
             .or(clamped_style_size)
+            .maybe_apply_aspect_ratio(layout_aspect_ratio)
             .maybe_max(padding_border_size);
 
         // Short-circuit layout if the container's size is fully determined by the container's size and the run mode
