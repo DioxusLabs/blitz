@@ -28,9 +28,12 @@ fn doc_with_wide_image(img_style: &str) -> (HtmlDocument, usize) {
     // Inject a 200x100 (2:1 wide) image as if it had loaded.
     {
         let node = doc.get_node_mut(img).unwrap();
-        node.element_data_mut().unwrap().special_data = SpecialElementData::Image(Box::new(
-            ImageData::Raster(RasterImageData::new(200, 100, Arc::new(vec![0u8; 200 * 100 * 4]))),
-        ));
+        node.element_data_mut().unwrap().special_data =
+            SpecialElementData::Image(Box::new(ImageData::Raster(RasterImageData::new(
+                200,
+                100,
+                Arc::new(vec![0u8; 200 * 100 * 4]),
+            ))));
         node.cache.clear();
     }
     doc.resolve(0.0);
@@ -80,9 +83,12 @@ fn wide_image_fills_aspect_ratio_sized_parent() {
     let img = doc.query_selector("#img").unwrap().expect("#img");
     {
         let node = doc.get_node_mut(img).unwrap();
-        node.element_data_mut().unwrap().special_data = SpecialElementData::Image(Box::new(
-            ImageData::Raster(RasterImageData::new(200, 100, Arc::new(vec![0u8; 200 * 100 * 4]))),
-        ));
+        node.element_data_mut().unwrap().special_data =
+            SpecialElementData::Image(Box::new(ImageData::Raster(RasterImageData::new(
+                200,
+                100,
+                Arc::new(vec![0u8; 200 * 100 * 4]),
+            ))));
         node.cache.clear();
     }
     doc.resolve(0.0);
@@ -119,9 +125,12 @@ fn wide_image_in_flex_shelf_card() {
     let img = doc.query_selector("#img").unwrap().expect("#img");
     {
         let node = doc.get_node_mut(img).unwrap();
-        node.element_data_mut().unwrap().special_data = SpecialElementData::Image(Box::new(
-            ImageData::Raster(RasterImageData::new(320, 180, Arc::new(vec![0u8; 320 * 180 * 4]))),
-        ));
+        node.element_data_mut().unwrap().special_data =
+            SpecialElementData::Image(Box::new(ImageData::Raster(RasterImageData::new(
+                320,
+                180,
+                Arc::new(vec![0u8; 320 * 180 * 4]),
+            ))));
         node.cache.clear();
     }
     doc.resolve(0.0);
@@ -132,4 +141,3 @@ fn wide_image_in_flex_shelf_card() {
         "cover img must fill the square card"
     );
 }
-
