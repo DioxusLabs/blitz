@@ -25,6 +25,12 @@ pub enum BlitzShellEvent {
         doc_id: usize,
     },
 
+    /// Close a window programmatically (e.g. a custom titlebar close button).
+    /// Handled identically to `WindowEvent::CloseRequested`.
+    CloseWindow {
+        window_id: WindowId,
+    },
+
     /// An accessibility event from `accesskit`.
     #[cfg(feature = "accessibility")]
     Accessibility {

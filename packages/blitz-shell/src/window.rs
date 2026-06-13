@@ -157,7 +157,7 @@ impl<Rend: WindowRenderer> View<Rend> {
         let viewport = Viewport::new(size.width, size.height, scale, color_scheme);
 
         // Create shell provider
-        let shell_provider = BlitzShellProvider::new(winit_window.clone());
+        let shell_provider = BlitzShellProvider::new(winit_window.clone(), proxy.clone());
 
         let mut doc = config.doc;
         let mut inner = doc.inner_mut();
@@ -604,6 +604,12 @@ impl<Rend: WindowRenderer> View<Rend> {
                                     self.request_redraw();
                                 }
                                 KeyCode::KeyT => self.doc.inner().print_taffy_tree(),
+                                // TEMP (kopuz debugging): dump computed style of
+                                // the route wrapper + its containing block.
+                                KeyCode::KeyY => {
+                                    self.doc.inner().debug_log_node(47);
+                                    self.doc.inner().debug_log_node(49);
+                                }
                                 _ => {}
                             };
                         }
