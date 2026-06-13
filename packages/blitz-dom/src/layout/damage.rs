@@ -629,6 +629,9 @@ fn node_to_paint_order(node: &Node, is_flex_or_grid: bool) -> (i32, i32) {
             Position::Absolute | Position::Fixed => (2, 0),
         }
     } else {
-        (position_to_order(position) + float_to_order(style.clone_float()), 0)
+        (
+            position_to_order(position) + float_to_order(style.clone_float()),
+            0,
+        )
     }
 }
