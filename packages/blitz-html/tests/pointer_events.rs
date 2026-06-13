@@ -46,10 +46,9 @@ fn overlay_with_pointer_events_none_passes_through_to_button() {
     let btn = node_id(&doc, "#btn");
     let hit = hit_id(&doc, 178.0, 18.0);
     // The hit may be the button itself or its text child; resolve via ancestors
-    let hit_or_ancestor = std::iter::successors(Some(hit), |&id| {
-        doc.get_node(id).and_then(|n| n.parent)
-    })
-    .any(|id| id == btn);
+    let hit_or_ancestor =
+        std::iter::successors(Some(hit), |&id| doc.get_node(id).and_then(|n| n.parent))
+            .any(|id| id == btn);
     assert!(
         hit_or_ancestor,
         "expected hit on #btn (node {btn}) but hit node {hit}"
@@ -97,5 +96,8 @@ fn text_inside_pointer_events_none_overlay_is_not_a_target() {
     let label = node_id(&doc, "#label");
     let hit = hit_id(&doc, 30.0, 14.0);
     assert_ne!(hit, overlay);
-    assert_ne!(hit, label, "text in a pointer-events:none subtree must not be hit");
+    assert_ne!(
+        hit, label,
+        "text in a pointer-events:none subtree must not be hit"
+    );
 }
