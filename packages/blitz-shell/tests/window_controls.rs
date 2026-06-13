@@ -233,7 +233,11 @@ impl Window for MockWindow {
     }
 }
 
-fn provider_with_mock() -> (Arc<MockWindow>, BlitzShellProvider, Receiver<BlitzShellEvent>) {
+fn provider_with_mock() -> (
+    Arc<MockWindow>,
+    BlitzShellProvider,
+    Receiver<BlitzShellEvent>,
+) {
     let window = Arc::new(MockWindow::default());
     let (proxy, receiver) = shell_proxy();
     let provider = BlitzShellProvider::new(window.clone() as Arc<dyn Window>, proxy);
