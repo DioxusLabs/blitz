@@ -69,7 +69,10 @@ fn scroller_wrapping_contents_gets_full_scroll_size() {
         .query_selector("#scroller")
         .unwrap()
         .expect("#scroller not found");
-    let tall = doc.query_selector("#tall").unwrap().expect("#tall not found");
+    let tall = doc
+        .query_selector("#tall")
+        .unwrap()
+        .expect("#tall not found");
     let ls = doc.get_node(scroller).unwrap().final_layout;
     let lt = doc.get_node(tall).unwrap().final_layout;
     assert_eq!(
@@ -113,7 +116,6 @@ fn contents_in_flex_container_hoists_children_as_flex_items() {
     );
 }
 
-
 #[test]
 fn abspos_child_hoisted_through_contents_stretches() {
     // The kopuz route-shell chain: scroll container > display:contents shell
@@ -131,7 +133,10 @@ fn abspos_child_hoisted_through_contents_stretches() {
             </div>
         </body></html>"#,
     );
-    let page = doc.query_selector("#page").unwrap().expect("#page not found");
+    let page = doc
+        .query_selector("#page")
+        .unwrap()
+        .expect("#page not found");
     let layout = doc.get_node(page).unwrap().final_layout;
     assert_eq!(
         (layout.size.width, layout.size.height),
