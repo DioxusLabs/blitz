@@ -222,6 +222,16 @@ pub(crate) fn collect_layout_children(
                 .copied()
                 .map(|child_id| &doc.nodes[child_id])
             {
+                // Comment nodes generate no boxes and must not affect the
+                // inline-vs-block classification: an unstyled comment would
+                // default to display:inline below and force an inline
+                // formatting context on the container, swallowing element
+                // siblings into the inline layout (zero-sizing any
+                // out-of-flow ones).
+                if child.data.kind() == NodeKind::Comment {
+                    continue;
+                }
+
                 // Unwraps on Text and SVG nodes
                 let style = child.primary_styles();
                 let style = style.as_ref();
