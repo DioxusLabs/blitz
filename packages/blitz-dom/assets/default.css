@@ -102,6 +102,14 @@ option {
     display: none;
 }
 
+picture {
+    display: contents;
+}
+
+source {
+    display: none;
+}
+
 /* To ensure http://www.w3.org/TR/REC-html40/struct/dirlang.html#style-bidi:
  *
  * "When a block element that does not have a dir attribute is transformed to
