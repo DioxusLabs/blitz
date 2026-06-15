@@ -909,6 +909,7 @@ impl Node {
     /// TODO: z-index
     /// (If multiple children are positioned at the position then a random one will be recursed into)
     pub fn hit(&self, x: f32, y: f32, scale: f64) -> Option<HitResult> {
+        use style::computed_values::pointer_events::T as PointerEvents;
         use style::computed_values::visibility::T as Visibility;
 
         // Don't hit on visbility:hidden elements
@@ -920,6 +921,12 @@ impl Node {
                 return None;
             }
         }
+
+        // pointer-events:none makes this element transparent to hits, but its
+        // descendants are still tested (one may restore pointer-events:auto).
+        let pointer_events_none = self
+            .primary_styles()
+            .is_some_and(|style| style.clone_pointer_events() == PointerEvents::None);
 
         let mut x = x - self.final_layout.location.x + self.scroll_offset.x as f32;
         let mut y = y - self.final_layout.location.y + self.scroll_offset.y as f32;
@@ -1018,18 +1025,24 @@ impl Node {
                 {
                     let style_index = cluster.glyphs().next()?.style_index();
                     let node_id = layout.styles()[style_index].brush.id;
-                    return Some(HitResult {
-                        node_id,
-                        x,
-                        y,
-                        is_text: true,
-                    });
+                    let text_pointer_events_none = self
+                        .with(node_id)
+                        .primary_styles()
+                        .is_some_and(|style| style.clone_pointer_events() == PointerEvents::None);
+                    if !text_pointer_events_none {
+                        return Some(HitResult {
+                            node_id,
+                            x,
+                            y,
+                            is_text: true,
+                        });
+                    }
                 }
             }
         }
 
         // Self (this node)
-        if matches_self {
+        if matches_self && !pointer_events_none {
             return Some(HitResult {
                 node_id: self.id,
                 x,
