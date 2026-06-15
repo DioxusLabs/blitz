@@ -84,18 +84,25 @@ impl BaseDocument {
             _ => None,
         });
 
-        // An aspect-ratio with one definite axis makes the other definite
-        // (css-sizing-4), e.g. aspect-ratio: 1 with a stretched width.
-        // Final-layout only: widths in measure passes are tentative and
-        // must not transfer through the ratio (stale-width).
-        let layout_aspect_ratio = match run_mode {
-            RunMode::PerformLayout => aspect_ratio,
-            _ => None,
+        // css-sizing-4: a definite axis (e.g. a stretched width passed in via
+        // known_dimensions) transfers through the ratio to make the other
+        // definite. This self-gates — blitz's block parent is taffy, which fills
+        // known_dimensions only as a real constraint and leaves it None while
+        // probing intrinsic sizes — so there is no run-mode special case and
+        // measure passes stay content-based. Only a newly-derived axis is
+        // adopted; an incoming known size is left as the parent resolved it.
+        let known_dimensions = {
+            let derived = known_dimensions
+                .maybe_apply_aspect_ratio(aspect_ratio)
+                .maybe_clamp(min_size, max_size);
+            Size {
+                width: known_dimensions.width.or(derived.width),
+                height: known_dimensions.height.or(derived.height),
+            }
         };
         let styled_based_known_dimensions = known_dimensions
             .or(min_max_definite_size)
             .or(clamped_style_size)
-            .maybe_apply_aspect_ratio(layout_aspect_ratio)
             .maybe_max(padding_border_size);
 
         // Short-circuit layout if the container's size is fully determined by the container's size and the run mode
