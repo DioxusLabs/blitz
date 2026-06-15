@@ -821,30 +821,16 @@ fn compute_layer_size(
         BackgroundSize::Cover => match mode {
             BackgroundSizeComputeMode::Auto => (container_w, container_h),
             BackgroundSizeComputeMode::Size(bg_w, bg_h) => {
-                let x_ratio = container_w / bg_w;
-                let y_ratio = container_h / bg_h;
-
-                let ratio = if x_ratio < 1.0 || y_ratio < 1.0 {
-                    x_ratio.min(y_ratio)
-                } else {
-                    x_ratio.max(y_ratio)
-                };
-
+                // Scale to the smallest size that covers both axes
+                let ratio = (container_w / bg_w).max(container_h / bg_h);
                 (bg_w * ratio, bg_h * ratio)
             }
         },
         BackgroundSize::Contain => match mode {
             BackgroundSizeComputeMode::Auto => (container_w, container_h),
             BackgroundSizeComputeMode::Size(bg_w, bg_h) => {
-                let x_ratio = container_w / bg_w;
-                let y_ratio = container_h / bg_h;
-
-                let ratio = if x_ratio < 1.0 || y_ratio < 1.0 {
-                    x_ratio.max(y_ratio)
-                } else {
-                    x_ratio.min(y_ratio)
-                };
-
+                // Scale to the largest size contained by both axes
+                let ratio = (container_w / bg_w).min(container_h / bg_h);
                 (bg_w * ratio, bg_h * ratio)
             }
         },
