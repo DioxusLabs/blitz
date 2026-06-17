@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Text Shadow Examples</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      padding: 32px;
+      line-height: 1.6;
+      color: #1f2937;
+      background: white;
+    }
+
+    p {
+      margin: 24px 0;
+      font-size: 32px;
+      font-weight: 700;
+    }
+
+    .soft-shadow {
+      text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.35);
+    }
+
+    .glow {
+      color: #2563eb;
+      text-shadow: 0 0 8px rgba(37, 99, 235, 0.75);
+    }
+
+    .offset-red {
+      text-shadow: 4px 3px 0 #ef4444;
+    }
+
+    .layered {
+      color: #111827;
+      text-shadow: 1px 1px 0 #facc15, 3px 3px 0 #f97316;
+    }
+
+    .blurred-purple {
+      color: #7c3aed;
+      text-shadow: -3px 3px 6px rgba(124, 58, 237, 0.55);
+    }
+  </style>
+</head>
+<body>
+  <p class="soft-shadow">Soft shadow</p>
+  <p class="glow">Blue glow</p>
+  <p class="offset-red">Red offset</p>
+  <p class="layered">Layered shadow</p>
+  <p class="blurred-purple">Purple blur</p>
+</body>
+</html>
