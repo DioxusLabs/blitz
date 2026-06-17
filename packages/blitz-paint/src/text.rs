@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use anyrender::PaintScene;
+use anyrender::{PaintScene, filters::Filter};
 use blitz_dom::{
     BaseDocument,
     node::TextBrush,
@@ -22,74 +22,143 @@ pub(crate) fn stroke_text<'a>(
     transform: Affine,
     scale: f64,
 ) {
+    let mut text_shadow_batch: Option<TextShadowBatch<'a>> = None;
+
     for line in lines {
         for item in line.items() {
-            if let PositionedLayoutItem::GlyphRun(glyph_run) = item {
-                let metrics = glyph_run.run().metrics();
-                let style = glyph_run.style();
+            match item {
+                PositionedLayoutItem::GlyphRun(glyph_run) => {
+                    let metrics = glyph_run.run().metrics();
+                    let style = glyph_run.style();
 
-                // Styles
-                let styles = doc
-                    .get_node(style.brush.id)
-                    .unwrap()
-                    .primary_styles()
-                    .unwrap();
-                let itext_styles = styles.get_inherited_text();
-                let text_styles = styles.get_text();
-                let text_color = itext_styles.color.as_color_color();
-                let text_decoration_color = text_styles
-                    .text_decoration_color
-                    .as_absolute()
-                    .map(ToColorColor::as_color_color)
-                    .unwrap_or(text_color);
-                let text_decoration_brush = anyrender::Paint::from(text_decoration_color);
-                let text_decoration_line = text_styles.text_decoration_line;
-                let has_underline = text_decoration_line.contains(TextDecorationLine::UNDERLINE);
-                let has_strikethrough =
-                    text_decoration_line.contains(TextDecorationLine::LINE_THROUGH);
-                let text_shadow = styles.clone_text_shadow();
-                let text_shadow_filter = crate::filters::convert_text_shadows(
-                    &text_shadow,
-                    &itext_styles.color,
-                    scale as f32,
-                )
-                .map(Arc::new);
+                    // Styles
+                    let styles = doc
+                        .get_node(style.brush.id)
+                        .unwrap()
+                        .primary_styles()
+                        .unwrap();
+                    let itext_styles = styles.get_inherited_text();
+                    let text_styles = styles.get_text();
+                    let text_color = itext_styles.color.as_color_color();
+                    let text_decoration_color = text_styles
+                        .text_decoration_color
+                        .as_absolute()
+                        .map(ToColorColor::as_color_color)
+                        .unwrap_or(text_color);
+                    let text_decoration_brush = anyrender::Paint::from(text_decoration_color);
+                    let text_decoration_line = text_styles.text_decoration_line;
+                    let has_underline =
+                        text_decoration_line.contains(TextDecorationLine::UNDERLINE);
+                    let has_strikethrough =
+                        text_decoration_line.contains(TextDecorationLine::LINE_THROUGH);
+                    let text_shadow = styles.clone_text_shadow();
+                    let text_shadow_filter = crate::filters::convert_text_shadows(
+                        &text_shadow,
+                        &itext_styles.color,
+                        scale as f32,
+                    )
+                    .map(Arc::new);
 
-                if let Some(filter) = text_shadow_filter {
-                    let mut clip = glyph_run_rect(&glyph_run, metrics);
-                    let expansion = filter.expansion_rect();
-                    clip.x0 += expansion.x0;
-                    clip.y0 += expansion.y0;
-                    clip.x1 += expansion.x1;
-                    clip.y1 += expansion.y1;
+                    if let Some(filter) = text_shadow_filter {
+                        let clip = glyph_run_shadow_clip(&glyph_run, metrics, &filter);
+                        let run = GlyphRunPaint {
+                            glyph_run,
+                            text_color,
+                            text_decoration_brush,
+                            has_underline,
+                            has_strikethrough,
+                        };
 
-                    scene.push_layer(Mix::Normal, 1.0, transform, &clip, Some(filter), None);
-                    draw_glyph_run(
-                        scene,
-                        &glyph_run,
-                        text_color,
-                        &text_decoration_brush,
-                        has_underline,
-                        has_strikethrough,
-                        transform,
-                        scale,
-                    );
-                    scene.pop_layer();
-                } else {
-                    draw_glyph_run(
-                        scene,
-                        &glyph_run,
-                        text_color,
-                        &text_decoration_brush,
-                        has_underline,
-                        has_strikethrough,
-                        transform,
-                        scale,
-                    );
+                        match text_shadow_batch.as_mut() {
+                            Some(batch) if batch.filter.as_ref() == filter.as_ref() => {
+                                batch.clip = batch.clip.union(clip);
+                                batch.runs.push(run);
+                            }
+                            _ => {
+                                flush_text_shadow_batch(
+                                    scene,
+                                    &mut text_shadow_batch,
+                                    transform,
+                                    scale,
+                                );
+                                text_shadow_batch = Some(TextShadowBatch {
+                                    filter,
+                                    clip,
+                                    runs: vec![run],
+                                });
+                            }
+                        }
+                    } else {
+                        flush_text_shadow_batch(scene, &mut text_shadow_batch, transform, scale);
+                        draw_glyph_run(
+                            scene,
+                            &glyph_run,
+                            text_color,
+                            &text_decoration_brush,
+                            has_underline,
+                            has_strikethrough,
+                            transform,
+                            scale,
+                        );
+                    }
+                }
+                PositionedLayoutItem::InlineBox(_) => {
+                    flush_text_shadow_batch(scene, &mut text_shadow_batch, transform, scale);
                 }
             }
         }
     }
+
+    flush_text_shadow_batch(scene, &mut text_shadow_batch, transform, scale);
+}
+
+struct GlyphRunPaint<'a> {
+    glyph_run: GlyphRun<'a, TextBrush>,
+    text_color: Color,
+    text_decoration_brush: anyrender::Paint,
+    has_underline: bool,
+    has_strikethrough: bool,
+}
+
+struct TextShadowBatch<'a> {
+    filter: Arc<Filter>,
+    clip: Rect,
+    runs: Vec<GlyphRunPaint<'a>>,
+}
+
+fn flush_text_shadow_batch(
+    scene: &mut impl PaintScene,
+    batch: &mut Option<TextShadowBatch<'_>>,
+    transform: Affine,
+    scale: f64,
+) {
+    let Some(batch) = batch.take() else {
+        return;
+    };
+
+    scene.push_layer(
+        Mix::Normal,
+        1.0,
+        transform,
+        &batch.clip,
+        Some(batch.filter),
+        None,
+    );
+
+    for run in batch.runs {
+        draw_glyph_run(
+            scene,
+            &run.glyph_run,
+            run.text_color,
+            &run.text_decoration_brush,
+            run.has_underline,
+            run.has_strikethrough,
+            transform,
+            scale,
+        );
+    }
+
+    scene.pop_layer();
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -158,6 +227,20 @@ fn draw_glyph_run(
 
         draw_decoration_line(offset, size, text_decoration_brush);
     }
+}
+
+fn glyph_run_shadow_clip(
+    glyph_run: &GlyphRun<'_, TextBrush>,
+    metrics: &RunMetrics,
+    filter: &Filter,
+) -> Rect {
+    let mut clip = glyph_run_rect(glyph_run, metrics);
+    let expansion = filter.expansion_rect();
+    clip.x0 += expansion.x0;
+    clip.y0 += expansion.y0;
+    clip.x1 += expansion.x1;
+    clip.y1 += expansion.y1;
+    clip
 }
 
 fn glyph_run_rect(glyph_run: &GlyphRun<'_, TextBrush>, metrics: &RunMetrics) -> Rect {
