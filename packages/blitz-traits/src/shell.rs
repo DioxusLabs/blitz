@@ -41,6 +41,25 @@ pub trait ShellProvider: Send + Sync + 'static {
         let _ = filter;
         vec![]
     }
+
+    // Window chrome controls, for documents that draw their own titlebar
+    // (e.g. a frameless window with an HTML titlebar).
+    fn request_window_close(&self) {}
+    fn set_window_minimized(&self, minimized: bool) {
+        let _ = minimized;
+    }
+    fn set_window_maximized(&self, maximized: bool) {
+        let _ = maximized;
+    }
+    fn is_window_maximized(&self) -> bool {
+        false
+    }
+    fn set_window_decorations(&self, decorations: bool) {
+        let _ = decorations;
+    }
+    /// Begin an interactive user-driven move of the window (call from a
+    /// mousedown handler on a drag region)
+    fn drag_window(&self) {}
 }
 
 pub struct DummyShellProvider;
