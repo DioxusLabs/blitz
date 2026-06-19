@@ -3,9 +3,15 @@
 //! inheritance, but a descendant that restores `pointer-events: auto` is
 //! targetable again (css-ui-4).
 
-use blitz_dom::DocumentConfig;
+use blitz_dom::{Document, DocumentConfig};
 use blitz_html::{HtmlDocument, HtmlProvider};
-use blitz_traits::shell::{ColorScheme, Viewport};
+use blitz_traits::{
+    events::{
+        BlitzPointerEvent, BlitzPointerId, MouseEventButton, MouseEventButtons, PointerCoords,
+        PointerDetails, UiEvent,
+    },
+    shell::{ColorScheme, Viewport},
+};
 use std::sync::Arc;
 
 fn doc(html: &str) -> HtmlDocument {
@@ -27,6 +33,39 @@ fn hit_id(doc: &HtmlDocument, x: f32, y: f32) -> usize {
 
 fn node_id(doc: &HtmlDocument, selector: &str) -> usize {
     doc.query_selector(selector).unwrap().expect(selector)
+}
+
+fn pointer_event(x: f32, y: f32) -> BlitzPointerEvent {
+    BlitzPointerEvent {
+        id: BlitzPointerId::Mouse,
+        is_primary: true,
+        coords: PointerCoords {
+            page_x: x,
+            page_y: y,
+            screen_x: x,
+            screen_y: y,
+            client_x: x,
+            client_y: y,
+        },
+        button: MouseEventButton::Main,
+        buttons: MouseEventButtons::from(MouseEventButton::Main),
+        mods: Default::default(),
+        details: PointerDetails::default(),
+    }
+}
+
+fn click(doc: &mut HtmlDocument, x: f32, y: f32) {
+    let event = pointer_event(x, y);
+    doc.handle_ui_event(UiEvent::PointerDown(event.clone()));
+    doc.handle_ui_event(UiEvent::PointerUp(event));
+}
+
+fn is_checked(doc: &HtmlDocument, selector: &str) -> bool {
+    let id = node_id(doc, selector);
+    doc.get_node(id)
+        .and_then(|node| node.element_data())
+        .and_then(|el| el.checkbox_input_checked())
+        .unwrap()
 }
 
 #[test]
@@ -100,4 +139,15 @@ fn text_inside_pointer_events_none_overlay_is_not_a_target() {
         hit, label,
         "text in a pointer-events:none subtree must not be hit"
     );
+}
+
+#[test]
+fn clicking_radio_without_name_does_not_panic() {
+    let mut doc = doc(r#"<html><body style="margin:0">
+            <input id="radio" type="radio" style="width:20px; height:20px;">
+        </body></html>"#);
+
+    click(&mut doc, 10.0, 10.0);
+
+    assert!(is_checked(&doc, "#radio"));
 }

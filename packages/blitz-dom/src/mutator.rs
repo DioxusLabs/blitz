@@ -214,27 +214,30 @@ impl DocumentMutator<'_> {
     }
 
     pub fn set_attribute(&mut self, node_id: usize, name: QualName, value: &str) {
-        self.doc.snapshot_node(node_id);
+        let node_is_in_document = self.doc.nodes[node_id].flags.is_in_document();
+        if node_is_in_document {
+            self.doc.snapshot_node(node_id);
 
-        let node = &mut self.doc.nodes[node_id];
-        if let Some(mut data) = node.stylo_element_data.get_mut() {
-            data.hint |= RestyleHint::restyle_subtree();
-            data.damage.insert(ALL_DAMAGE);
-        }
-
-        // TODO: make this fine grained / conditional based on ElementSelectorFlags
-        let parent = node.parent;
-        if let Some(parent_id) = parent {
-            let parent = &mut self.doc.nodes[parent_id];
-            if let Some(mut data) = parent.stylo_element_data.get_mut() {
+            let node = &mut self.doc.nodes[node_id];
+            if let Some(mut data) = node.stylo_element_data.get_mut() {
                 data.hint |= RestyleHint::restyle_subtree();
+                data.damage.insert(ALL_DAMAGE);
             }
-        }
 
-        // Mark ancestors dirty so the style traversal visits this subtree.
-        // Without this, the traversal may skip nodes with pending RestyleHint/damage
-        // because it uses dirty_descendants flags to determine which subtrees to visit.
-        self.doc.nodes[node_id].mark_ancestors_dirty();
+            // TODO: make this fine grained / conditional based on ElementSelectorFlags
+            let parent = node.parent;
+            if let Some(parent_id) = parent {
+                let parent = &mut self.doc.nodes[parent_id];
+                if let Some(mut data) = parent.stylo_element_data.get_mut() {
+                    data.hint |= RestyleHint::restyle_subtree();
+                }
+            }
+
+            // Mark ancestors dirty so the style traversal visits this subtree.
+            // Without this, the traversal may skip nodes with pending RestyleHint/damage
+            // because it uses dirty_descendants flags to determine which subtrees to visit.
+            self.doc.nodes[node_id].mark_ancestors_dirty();
+        }
 
         let node = &mut self.doc.nodes[node_id];
 
@@ -301,18 +304,23 @@ impl DocumentMutator<'_> {
     }
 
     pub fn clear_attribute(&mut self, node_id: usize, name: QualName) {
-        self.doc.snapshot_node(node_id);
+        let node_is_in_document = self.doc.nodes[node_id].flags.is_in_document();
+        if node_is_in_document {
+            self.doc.snapshot_node(node_id);
 
-        let node = &mut self.doc.nodes[node_id];
+            let node = &mut self.doc.nodes[node_id];
 
-        if let Some(mut data) = node.stylo_element_data.get_mut() {
-            data.hint |= RestyleHint::restyle_subtree();
-            data.damage.insert(ALL_DAMAGE);
+            if let Some(mut data) = node.stylo_element_data.get_mut() {
+                data.hint |= RestyleHint::restyle_subtree();
+                data.damage.insert(ALL_DAMAGE);
+            }
+
+            // Mark ancestors dirty so the style traversal visits this subtree.
+            // Without this, the traversal may skip nodes with pending RestyleHint/damage.
+            node.mark_ancestors_dirty();
         }
 
-        // Mark ancestors dirty so the style traversal visits this subtree.
-        // Without this, the traversal may skip nodes with pending RestyleHint/damage.
-        node.mark_ancestors_dirty();
+        let node = &mut self.doc.nodes[node_id];
 
         let Some(element) = node.element_data_mut() else {
             return;
