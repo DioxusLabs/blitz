@@ -244,10 +244,15 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
     fn handle_pointer_event(
         &mut self,
         target: usize,
-        data: BlitzPointerEvent,
+        mut data: BlitzPointerEvent,
         make_ptr_data: impl FnOnce(BlitzPointerEvent) -> DomEventData,
         make_mouse_data: impl FnOnce(BlitzPointerEvent) -> DomEventData,
     ) {
+        if let Some(rect) = self.doc.inner().get_client_bounding_rect(target) {
+            data.element.x = data.coords.client_x - rect.x as f32;
+            data.element.y = data.coords.client_y - rect.y as f32;
+        }
+
         let mut ptr_event = DomEvent::new(target, make_ptr_data(data.clone()));
         let mut event_state = EventState::default();
         event_state = self.run_handler_event(&mut ptr_event, event_state);

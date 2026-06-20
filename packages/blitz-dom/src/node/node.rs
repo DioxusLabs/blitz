@@ -1147,6 +1147,7 @@ impl Node {
             button: Default::default(),
             buttons: Default::default(),
             details: Default::default(),
+            element: Default::default(),
         }
     }
 }

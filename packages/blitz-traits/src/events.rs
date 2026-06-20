@@ -441,6 +441,12 @@ pub struct PointerDetails {
     pub azimuth: f64,
 }
 
+#[derive(Copy, Clone, Debug, Default)]
+pub struct Point<T> {
+    pub x: T,
+    pub y: T,
+}
+
 #[derive(Clone, Debug)]
 pub struct BlitzPointerEvent {
     pub id: BlitzPointerId,
@@ -450,6 +456,7 @@ pub struct BlitzPointerEvent {
     pub buttons: MouseEventButtons,
     pub mods: Modifiers,
     pub details: PointerDetails,
+    pub element: Point<f32>,
 }
 
 impl BlitzPointerEvent {
@@ -489,6 +496,15 @@ impl BlitzPointerEvent {
     #[inline(always)]
     pub fn screen_y(&self) -> f32 {
         self.coords.screen_y
+    }
+
+    #[inline(always)]
+    pub fn element_x(&self) -> f32 {
+        self.element.x
+    }
+    #[inline(always)]
+    pub fn element_y(&self) -> f32 {
+        self.element.y
     }
 }
 
