@@ -3,7 +3,7 @@ use std::ops::Range;
 use crate::net::ResourceHandler;
 use crate::node::NodeFlags;
 use crate::{
-    BaseDocument, net::ImageHandler, node::BackgroundImageData, node::Status, util::ImageType,
+    BaseDocument, net::ImageHandler, node::ImageResourceData, node::Status, util::ImageLayerKind,
 };
 use crate::{NON_INCREMENTAL, Node};
 use style::properties::ComputedValues;
@@ -370,16 +370,104 @@ impl BaseDocument {
         self.flush_styles_to_layout_impl(node_id, None);
     }
 
+    /// Flush a CSS image layer list (`background-image` or `mask-image`) from style
+    /// to dedicated storage on the node, fetching any images which are not yet loaded.
+    fn flush_image_layers_from_style(&mut self, node_id: usize, kind: ImageLayerKind) {
+        let doc_id = self.id();
+        let node = self.nodes.get_mut(node_id).unwrap();
+        let stylo_element_data = node.stylo_element_data.get();
+        let primary_styles = stylo_element_data
+            .as_ref()
+            .and_then(|data| data.styles.get_primary());
+        let Some(style) = primary_styles else {
+            return;
+        };
+        let Some(elem) = node.data.downcast_element_mut() else {
+            return;
+        };
+
+        let (style_images, elem_images) = match kind {
+            ImageLayerKind::Background => (
+                &style.get_background().background_image.0,
+                &mut elem.background_images,
+            ),
+            ImageLayerKind::Mask => (&style.get_svg().mask_image.0, &mut elem.mask_images),
+        };
+
+        let len = style_images.len();
+        elem_images.resize_with(len, || None);
+
+        for idx in 0..len {
+            let style_image = &style_images[idx];
+            let new_image = match style_image {
+                StyloImage::Url(ComputedUrl::Valid(new_url)) => {
+                    let old_image = elem_images[idx].as_ref();
+                    let old_image_url = old_image.map(|data| &data.url);
+                    if old_image_url.is_some_and(|old_url| **new_url == **old_url) {
+                        break;
+                    }
+
+                    // Check cache first
+                    let url_str = new_url.as_str();
+                    if let Some(cached_image) = self.image_cache.get(url_str) {
+                        #[cfg(feature = "tracing")]
+                        tracing::info!("Loading image {url_str} from cache");
+                        Some(ImageResourceData {
+                            url: new_url.clone(),
+                            status: Status::Ok,
+                            image: cached_image.clone(),
+                        })
+                    } else if let Some(waiting_list) = self.pending_images.get_mut(url_str) {
+                        // Image is already being fetched, queue this node
+                        #[cfg(feature = "tracing")]
+                        tracing::info!("Image {url_str} already pending, queueing node {node_id}");
+                        waiting_list.push((node_id, kind.image_type(idx)));
+                        Some(ImageResourceData::new(new_url.clone()))
+                    } else {
+                        // Start fetch and track as pending
+                        #[cfg(feature = "tracing")]
+                        tracing::info!("Fetching image {url_str}");
+                        self.pending_images
+                            .insert(url_str.to_string(), vec![(node_id, kind.image_type(idx))]);
+
+                        self.net_provider.fetch(
+                            doc_id,
+                            crate::net::stamped_request(
+                                (**new_url).clone(),
+                                self.abort_signal.as_ref(),
+                            ),
+                            ResourceHandler::boxed(
+                                self.tx.clone(),
+                                doc_id,
+                                None, // Don't pass node_id, we'll handle via pending_images
+                                self.shell_provider.clone(),
+                                ImageHandler::new(kind.image_type(idx)),
+                            ),
+                        );
+
+                        Some(ImageResourceData::new(new_url.clone()))
+                    }
+                }
+                _ => None,
+            };
+
+            // Element will always exist due to resize_with above
+            elem_images[idx] = new_image;
+        }
+    }
+
     /// Walk the whole tree, converting styles to layout
     fn flush_styles_to_layout_impl(
         &mut self,
         node_id: usize,
         parent_stacking_context: Option<&mut HoistedPaintChildren>,
     ) {
-        let doc_id = self.id();
-
         let mut new_stacking_context: HoistedPaintChildren = HoistedPaintChildren::new();
         let stacking_context = &mut new_stacking_context;
+
+        // Flush background/mask images from style to dedicated storage on the node
+        self.flush_image_layers_from_style(node_id, ImageLayerKind::Background);
+        self.flush_image_layers_from_style(node_id, ImageLayerKind::Mask);
 
         let display = {
             let node = self.nodes.get_mut(node_id).unwrap();
@@ -397,79 +485,6 @@ impl BaseDocument {
             node.style = stylo_taffy::to_taffy_style(style);
             node.display_constructed_as = style.clone_display();
             // }
-
-            // Flush background image from style to dedicated storage on the node
-            // TODO: handle multiple background images
-            if let Some(elem) = node.data.downcast_element_mut() {
-                let style_bgs = &style.get_background().background_image.0;
-                let elem_bgs = &mut elem.background_images;
-
-                let len = style_bgs.len();
-                elem_bgs.resize_with(len, || None);
-
-                for idx in 0..len {
-                    let background_image = &style_bgs[idx];
-                    let new_bg_image = match background_image {
-                        StyloImage::Url(ComputedUrl::Valid(new_url)) => {
-                            let old_bg_image = elem_bgs[idx].as_ref();
-                            let old_bg_image_url = old_bg_image.map(|data| &data.url);
-                            if old_bg_image_url.is_some_and(|old_url| **new_url == **old_url) {
-                                break;
-                            }
-
-                            // Check cache first
-                            let url_str = new_url.as_str();
-                            if let Some(cached_image) = self.image_cache.get(url_str) {
-                                #[cfg(feature = "tracing")]
-                                tracing::info!("Loading image {url_str} from cache");
-                                Some(BackgroundImageData {
-                                    url: new_url.clone(),
-                                    status: Status::Ok,
-                                    image: cached_image.clone(),
-                                })
-                            } else if let Some(waiting_list) = self.pending_images.get_mut(url_str)
-                            {
-                                // Image is already being fetched, queue this node
-                                #[cfg(feature = "tracing")]
-                                tracing::info!(
-                                    "Image {url_str} already pending, queueing node {node_id}"
-                                );
-                                waiting_list.push((node_id, ImageType::Background(idx)));
-                                Some(BackgroundImageData::new(new_url.clone()))
-                            } else {
-                                // Start fetch and track as pending
-                                #[cfg(feature = "tracing")]
-                                tracing::info!("Fetching image {url_str}");
-                                self.pending_images.insert(
-                                    url_str.to_string(),
-                                    vec![(node_id, ImageType::Background(idx))],
-                                );
-
-                                self.net_provider.fetch(
-                                    doc_id,
-                                    crate::net::stamped_request(
-                                        (**new_url).clone(),
-                                        self.abort_signal.as_ref(),
-                                    ),
-                                    ResourceHandler::boxed(
-                                        self.tx.clone(),
-                                        doc_id,
-                                        None, // Don't pass node_id, we'll handle via pending_images
-                                        self.shell_provider.clone(),
-                                        ImageHandler::new(ImageType::Background(idx)),
-                                    ),
-                                );
-
-                                Some(BackgroundImageData::new(new_url.clone()))
-                            }
-                        }
-                        _ => None,
-                    };
-
-                    // Element will always exist due to resize_with above
-                    elem_bgs[idx] = new_bg_image;
-                }
-            }
 
             // In non-incremental mode we unconditionally clear the Taffy cache.
             // In incremental mode this is handled as part of damage propagation.
@@ -534,7 +549,9 @@ impl BaseDocument {
                 let z_index = style.clone_z_index().integer_or(0);
 
                 // TODO: more complete hoisting detection
-                if position != Position::Static && z_index != 0 {
+                // z-index applies to static flex/grid items too
+                // (css-flexbox-1 §painting, css-grid-1 §z-order).
+                if z_index != 0 && (position != Position::Static || is_flex_or_grid) {
                     stacking_context.children.push(HoistedPaintChild {
                         node_id: child_id,
                         z_index,
@@ -578,8 +595,11 @@ impl BaseDocument {
 #[inline(always)]
 fn position_to_order(pos: Position) -> i32 {
     match pos {
-        Position::Static | Position::Relative | Position::Sticky => 0,
-        Position::Absolute | Position::Fixed => 2,
+        Position::Static => 0,
+        // All positioned descendants with z-index: auto share one paint
+        // level (CSS 2.1 Appendix E step 8); the stable sort keeps them in
+        // tree order among themselves, above in-flow content and floats.
+        Position::Relative | Position::Sticky | Position::Absolute | Position::Fixed => 2,
     }
 }
 #[inline(always)]
@@ -590,17 +610,28 @@ fn float_to_order(pos: Float) -> i32 {
     }
 }
 
+/// Paint sort key: (paint level, order-modified position). Positioned
+/// (z-index: auto) descendants paint above in-flow content (CSS 2.1
+/// Appendix E step 8); within a level the stable sort preserves
+/// (order-modified) document order.
 #[inline(always)]
-fn node_to_paint_order(node: &Node, is_flex_or_grid: bool) -> i32 {
+fn node_to_paint_order(node: &Node, is_flex_or_grid: bool) -> (i32, i32) {
     let Some(style) = node.primary_styles() else {
-        return 0;
+        return (0, 0);
     };
+    let position = style.clone_position();
     if is_flex_or_grid {
-        match style.clone_position() {
-            Position::Static | Position::Relative | Position::Sticky => style.clone_order(),
-            Position::Absolute | Position::Fixed => 0,
+        match position {
+            Position::Static => (0, style.clone_order()),
+            Position::Relative | Position::Sticky => (2, style.clone_order()),
+            // Out-of-flow children are not flex/grid items: `order` does
+            // not apply; tree order does.
+            Position::Absolute | Position::Fixed => (2, 0),
         }
     } else {
-        position_to_order(style.clone_position()) + float_to_order(style.clone_float())
+        (
+            position_to_order(position) + float_to_order(style.clone_float()),
+            0,
+        )
     }
 }

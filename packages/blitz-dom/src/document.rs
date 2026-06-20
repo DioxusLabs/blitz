@@ -36,7 +36,7 @@ use std::rc::Rc;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
-use std::sync::{Arc, Mutex, MutexGuard, RwLockReadGuard, RwLockWriteGuard};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock, RwLockReadGuard, RwLockWriteGuard};
 use std::task::Context as TaskContext;
 use style::Atom;
 use style::animation::DocumentAnimationSet;
@@ -367,6 +367,7 @@ impl BaseDocument {
         style_config::set_pref!("layout.grid.enabled", true);
         style_config::set_pref!("layout.unimplemented", true);
         style_config::set_pref!("layout.columns.enabled", true);
+        style_config::set_pref!("layout.css.basic-shape-shape.enabled", true);
         style_config::set_pref!("layout.threads", -1);
 
         let viewport = config.viewport.unwrap_or_default();
@@ -1022,44 +1023,7 @@ impl BaseDocument {
                     return;
                 };
 
-                // Get all nodes waiting for this image
-                let waiting_nodes = self.pending_images.remove(url).unwrap_or_default();
-
-                #[cfg(feature = "tracing")]
-                tracing::info!(
-                    "Image {url} loaded, applying to {} nodes",
-                    waiting_nodes.len()
-                );
-
-                // Cache the image
-                self.image_cache.insert(url.clone(), image.clone());
-
-                // Apply to all waiting nodes
-                for (node_id, image_type) in waiting_nodes {
-                    let Some(node) = self.get_node_mut(node_id) else {
-                        continue;
-                    };
-
-                    match image_type {
-                        ImageType::Image => {
-                            node.element_data_mut().unwrap().special_data =
-                                SpecialElementData::Image(Box::new(image.clone()));
-
-                            // Clear layout cache
-                            node.cache.clear();
-                            node.insert_damage(ALL_DAMAGE);
-                        }
-                        ImageType::Background(idx) => {
-                            if let Some(Some(bg_image)) = node
-                                .element_data_mut()
-                                .and_then(|el| el.background_images.get_mut(idx))
-                            {
-                                bg_image.status = Status::Ok;
-                                bg_image.image = image.clone();
-                            }
-                        }
-                    }
-                }
+                self.apply_loaded_image(url, image);
             }
             #[cfg(feature = "svg")]
             Resource::Svg(_kind, tree) => {
@@ -1070,44 +1034,7 @@ impl BaseDocument {
                     return;
                 };
 
-                // Get all nodes waiting for this image
-                let waiting_nodes = self.pending_images.remove(url).unwrap_or_default();
-
-                #[cfg(feature = "tracing")]
-                tracing::info!(
-                    "SVG {url} loaded, applying to {} nodes",
-                    waiting_nodes.len()
-                );
-
-                // Cache the image
-                self.image_cache.insert(url.clone(), image.clone());
-
-                // Apply to all waiting nodes
-                for (node_id, image_type) in waiting_nodes {
-                    let Some(node) = self.get_node_mut(node_id) else {
-                        continue;
-                    };
-
-                    match image_type {
-                        ImageType::Image => {
-                            node.element_data_mut().unwrap().special_data =
-                                SpecialElementData::Image(Box::new(image.clone()));
-
-                            // Clear layout cache
-                            node.cache.clear();
-                            node.insert_damage(ALL_DAMAGE);
-                        }
-                        ImageType::Background(idx) => {
-                            if let Some(Some(bg_image)) = node
-                                .element_data_mut()
-                                .and_then(|el| el.background_images.get_mut(idx))
-                            {
-                                bg_image.status = Status::Ok;
-                                bg_image.image = image.clone();
-                            }
-                        }
-                    }
-                }
+                self.apply_loaded_image(url, image);
             }
             Resource::Font(bytes, overrides) => {
                 let font = Blob::new(Arc::new(bytes));
@@ -1154,6 +1081,54 @@ impl BaseDocument {
         }
     }
 
+    /// Cache a loaded image and apply it to all nodes waiting on it
+    /// (`<img>` elements, `background-image` layers and `mask-image` layers).
+    fn apply_loaded_image(&mut self, url: &str, image: ImageData) {
+        // Get all nodes waiting for this image
+        let waiting_nodes = self.pending_images.remove(url).unwrap_or_default();
+
+        #[cfg(feature = "tracing")]
+        tracing::info!(
+            "Image {url} loaded, applying to {} nodes",
+            waiting_nodes.len()
+        );
+
+        // Cache the image
+        self.image_cache.insert(url.to_string(), image.clone());
+
+        // Apply to all waiting nodes
+        for (node_id, image_type) in waiting_nodes {
+            let Some(node) = self.get_node_mut(node_id) else {
+                continue;
+            };
+
+            match image_type {
+                ImageType::Image => {
+                    node.element_data_mut().unwrap().special_data =
+                        SpecialElementData::Image(Box::new(image.clone()));
+
+                    // Clear layout cache
+                    node.cache.clear();
+                    node.insert_damage(ALL_DAMAGE);
+                }
+                ImageType::Background(idx) | ImageType::Mask(idx) => {
+                    let layer_image = node.element_data_mut().and_then(|el| {
+                        let images = match image_type {
+                            ImageType::Background(_) => &mut el.background_images,
+                            ImageType::Mask(_) => &mut el.mask_images,
+                            ImageType::Image => unreachable!(),
+                        };
+                        images.get_mut(idx)
+                    });
+                    if let Some(Some(layer_image)) = layer_image {
+                        layer_image.status = Status::Ok;
+                        layer_image.image = image.clone();
+                    }
+                }
+            }
+        }
+    }
+
     pub fn snapshot_node(&mut self, node_id: usize) {
         let node = &mut self.nodes[node_id];
         let opaque_node_id = TNode::opaque(&&*node);
@@ -1185,7 +1160,7 @@ impl BaseDocument {
                                 .split_ascii_whitespace()
                                 .map(Atom::from)
                                 .collect();
-                            AttrValue::TokenList(attr.value.clone(), classes)
+                            AttrValue::TokenList(OnceLock::from(attr.value.clone()), classes)
                         } else {
                             AttrValue::String(attr.value.clone())
                         };
@@ -1230,7 +1205,7 @@ impl BaseDocument {
             return None;
         }
 
-        self.root_element().hit(x, y)
+        self.root_element().hit(x, y, self.viewport().scale_f64())
     }
 
     pub fn focus_next_node(&mut self) -> Option<usize> {

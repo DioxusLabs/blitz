@@ -40,7 +40,7 @@ impl<Rend: WindowRenderer> BlitzApplication<Rend> {
 
     pub fn handle_blitz_shell_event(
         &mut self,
-        _event_loop: &dyn ActiveEventLoop,
+        event_loop: &dyn ActiveEventLoop,
         event: BlitzShellEvent,
     ) {
         match event {
@@ -48,6 +48,15 @@ impl<Rend: WindowRenderer> BlitzApplication<Rend> {
                 if let Some(window) = self.windows.get_mut(&window_id) {
                     window.poll();
                 };
+            }
+            BlitzShellEvent::CloseWindow { window_id } => {
+                // Drop window before exiting event loop
+                // See https://github.com/rust-windowing/winit/issues/4135
+                let window = self.windows.remove(&window_id);
+                drop(window);
+                if self.windows.is_empty() {
+                    event_loop.exit();
+                }
             }
             BlitzShellEvent::ResumeReady { window_id } => {
                 // The renderer fires `on_ready` after it has sent on the

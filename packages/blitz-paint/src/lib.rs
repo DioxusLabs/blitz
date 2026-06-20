@@ -5,6 +5,7 @@
 
 mod color;
 mod debug_overlay;
+mod filters;
 mod gradient;
 mod kurbo_css;
 mod layers;

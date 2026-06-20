@@ -21,10 +21,10 @@ pub enum StyleThreading {
     /// Use Stylo's parallel traversal via its global rayon thread pool.
     /// Fastest for a single document; panics if another `Parallel` resolve
     /// is in flight on a different thread.
-    #[default]
     Parallel,
     /// Run style traversal sequentially on the calling thread, bypassing
     /// the global pool. Safe to use from many user threads concurrently.
+    #[default]
     Sequential,
 }
 

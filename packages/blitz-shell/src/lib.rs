@@ -86,10 +86,11 @@ pub fn current_android_app() -> android_activity::AndroidApp {
 
 pub struct BlitzShellProvider {
     window: Arc<dyn Window>,
+    proxy: BlitzShellProxy,
 }
 impl BlitzShellProvider {
-    pub fn new(window: Arc<dyn Window>) -> Self {
-        Self { window }
+    pub fn new(window: Arc<dyn Window>, proxy: BlitzShellProxy) -> Self {
+        Self { window, proxy }
     }
 }
 
@@ -119,6 +120,27 @@ impl ShellProvider for BlitzShellProvider {
                 LogicalSize::new(width, height).into(),
             ),
         ));
+    }
+
+    fn request_window_close(&self) {
+        self.proxy.send_event(BlitzShellEvent::CloseWindow {
+            window_id: self.window.id(),
+        });
+    }
+    fn set_window_minimized(&self, minimized: bool) {
+        self.window.set_minimized(minimized);
+    }
+    fn set_window_maximized(&self, maximized: bool) {
+        self.window.set_maximized(maximized);
+    }
+    fn is_window_maximized(&self) -> bool {
+        self.window.is_maximized()
+    }
+    fn set_window_decorations(&self, decorations: bool) {
+        self.window.set_decorations(decorations);
+    }
+    fn drag_window(&self) {
+        let _ = self.window.drag_window();
     }
 
     #[cfg(all(

@@ -27,7 +27,7 @@ exclude = ["sites"]
 resolver = "2"
 
 [workspace.package]
-version = "0.3.0-alpha.4"
+version = "0.3.0-alpha.5"
 license = "MIT OR Apache-2.0"
 homepage = "https://github.com/dioxuslabs/blitz"
 repository = "https://github.com/dioxuslabs/blitz"
@@ -37,14 +37,14 @@ rust-version = "1.89.0"
 
 [workspace.dependencies]
 # Blitz dependencies(in-repo)
-blitz = { version = "=0.3.0-alpha.4", path = "./packages/blitz" }
-blitz-dom = { version = "=0.3.0-alpha.4", path = "./packages/blitz-dom", default-features = false }
-blitz-html = { version = "=0.3.0-alpha.4", path = "./packages/blitz-html", default-features = false }
-blitz-net = { version = "=0.3.0-alpha.4", path = "./packages/blitz-net", default-features = false }
-blitz-paint = { version = "=0.3.0-alpha.4", path = "./packages/blitz-paint", default-features = false }
-blitz-shell = { version = "=0.3.0-alpha.4", path = "./packages/blitz-shell", default-features = false }
-blitz-traits = { version = "=0.3.0-alpha.4", path = "./packages/blitz-traits", default-features = false }
-stylo_taffy = { version = "=0.3.0-alpha.4", path = "./packages/stylo_taffy", default-features = false }
+blitz = { version = "=0.3.0-alpha.5", path = "./packages/blitz" }
+blitz-dom = { version = "=0.3.0-alpha.5", path = "./packages/blitz-dom", default-features = false }
+blitz-html = { version = "=0.3.0-alpha.5", path = "./packages/blitz-html", default-features = false }
+blitz-net = { version = "=0.3.0-alpha.5", path = "./packages/blitz-net", default-features = false }
+blitz-paint = { version = "=0.3.0-alpha.5", path = "./packages/blitz-paint", default-features = false }
+blitz-shell = { version = "=0.3.0-alpha.5", path = "./packages/blitz-shell", default-features = false }
+blitz-traits = { version = "=0.3.0-alpha.5", path = "./packages/blitz-traits", default-features = false }
+stylo_taffy = { version = "=0.3.0-alpha.5", path = "./packages/stylo_taffy", default-features = false }
 dioxus-native = { version = "0.7.0", path = "./packages/dioxus-native", default-features = false }
 dioxus-native-dom = { version = "0.7.0", path = "./packages/dioxus-native-dom", default-features = false }
 debug_timer = { version = "0.1.2", path = "./packages/debug_timer" }
@@ -52,11 +52,11 @@ accesskit_xplat = { version = "0.1", path = "./packages/accesskit_xplat", defaul
 browser-persistence = { path = "./apps/browser/persistence" }
 
 # Servo dependencies
-style = { version = "0.17.0", package = "stylo" }
-style_traits = { version = "0.17.0", package = "stylo_traits" }
-style_atoms = { version = "0.17.0", package = "stylo_atoms" }
-style_config = { version = "0.17.0", package = "stylo_static_prefs" }
-style_dom = { version = "0.17.0", package = "stylo_dom" }
+style = { version = "0.18.0", package = "stylo" }
+style_traits = { version = "0.18.0", package = "stylo_traits" }
+style_atoms = { version = "0.18.0", package = "stylo_atoms" }
+style_config = { version = "0.18.0", package = "stylo_static_prefs" }
+style_dom = { version = "0.18.0", package = "stylo_dom" }
 selectors = { version = "0.38.0", package = "selectors" }
 cssparser = { version = "0.37.0" }
 
@@ -100,19 +100,19 @@ taffy = { version = "=0.11.0-experimental-cache-fix.3", default-features = false
     "calc",
     "detailed_layout_info",
 ] }
-parley = { version = "0.9", default-features = false, features = ["std"] }
+parley = { version = "0.10", default-features = false, features = ["std"] }
 skrifa = { version = "0.42", default-features = false, features = [
     "std",
 ] } # Should match parley and vello versions
 
 # AnyRender
-anyrender = { version = "0.10.0" }
-anyrender_serialize = { version = "0.3.0" }
-anyrender_skia = { version = "0.8.0" }
-anyrender_vello = { version = "0.10.1" }
-anyrender_vello_cpu = { version = "0.12.1" }
-anyrender_vello_hybrid = { version = "0.5.1" }
-anyrender_svg = { version = "0.11.0" }
+anyrender = { version = "0.11.0" }
+anyrender_serialize = { version = "0.5.0" }
+anyrender_skia = { version = "0.9.0" }
+anyrender_vello = { version = "0.11.0" }
+anyrender_vello_cpu = { version = "0.14.0" }
+anyrender_vello_hybrid = { version = "0.7.0" }
+anyrender_svg = { version = "0.12.0" }
 wgpu_context = { version = "0.6.0" }
 
 # Linebender + Fontations + WGPU + SVG
@@ -231,6 +231,11 @@ keywords = ["dom", "ui", "gui", "react", "wasm"]
 rust-version = "1.89.0"
 publish = false
 
+[features]
+logtime = ["log_frame_times", "log_phase_times"]
+log_frame_times = ["dioxus-native/log-frame-times"]
+log_phase_times = ["dioxus-native/log-phase-times"]
+
 [dev-dependencies]
 anyrender = { workspace = true }
 anyrender_vello = { workspace = true }
@@ -273,6 +278,7 @@ tracing-subscriber = "0.3"
 # vello_cpu = { path = "../vello/sparse_strips/vello_cpu" }
 # vello_hybrid = { path = "../vello/sparse_strips/vello_hybrid" }
 # vello_common = { path = "../vello/sparse_strips/vello_common" }
+# glifo = { path = "../vello/glifo" }
 
 # [patch.crates-io]
 # style = { path = "../stylo/style", package = "stylo" }

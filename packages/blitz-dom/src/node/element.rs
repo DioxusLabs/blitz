@@ -55,7 +55,9 @@ pub struct ElementData {
     ///   - The text editor for input/textarea elements
     pub special_data: SpecialElementData,
 
-    pub background_images: Vec<Option<BackgroundImageData>>,
+    pub background_images: Vec<Option<ImageResourceData>>,
+
+    pub mask_images: Vec<Option<ImageResourceData>>,
 
     /// Parley text layout (elements with inline inner display mode only)
     pub inline_layout_data: Option<Box<TextLayout>>,
@@ -157,6 +159,7 @@ impl ElementData {
             special_data: SpecialElementData::None,
             template_contents: None,
             background_images: Vec::new(),
+            mask_images: Vec::new(),
         };
         data.flush_is_focussable();
         data
@@ -514,7 +517,7 @@ pub enum Status {
 }
 
 #[derive(Debug, Clone)]
-pub struct BackgroundImageData {
+pub struct ImageResourceData {
     /// The url of the background image
     pub url: ServoArc<Url>,
     /// The loading status of the background image
@@ -523,7 +526,7 @@ pub struct BackgroundImageData {
     pub image: ImageData,
 }
 
-impl BackgroundImageData {
+impl ImageResourceData {
     pub fn new(url: ServoArc<Url>) -> Self {
         Self {
             url,

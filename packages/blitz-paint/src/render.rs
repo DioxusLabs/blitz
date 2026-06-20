@@ -1,12 +1,16 @@
 mod background;
 mod box_shadow;
+mod clip_path;
 mod form_controls;
+mod mask;
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use super::kurbo_css::{CssBox, Edge};
 use crate::color::{Color, ToColorColor};
 use crate::debug_overlay::render_debug_overlay;
+use crate::filters::convert_filters;
 use crate::kurbo_css::NonUniformRoundedRectRadii;
 use crate::layers::LayerManager;
 use crate::sizing::compute_object_fit;
@@ -33,7 +37,7 @@ use style::{
     },
 };
 
-use kurbo::{self, Affine, BezPath, Insets, Point, Rect, Stroke, Vec2};
+use kurbo::{self, Affine, BezPath, Insets, Point, Rect, Shape, Size, Stroke, Vec2};
 use peniko::{self, Fill, ImageData, ImageSampler};
 use style::values::generics::color::{ColorOrAuto, GenericColor};
 use taffy::Layout;
@@ -86,17 +90,6 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             selection_ranges,
             custom_widget_scenes,
         }
-    }
-
-    fn node_position(&self, node: usize, location: Point) -> (Layout, Point) {
-        let layout = self.layout(node);
-        let pos = location + Vec2::new(layout.location.x as f64, layout.location.y as f64);
-        (layout, pos)
-    }
-
-    fn layout(&self, child: usize) -> Layout {
-        // self.dom.as_ref().tree()[child].unrounded_layout
-        self.dom.as_ref().tree()[child].final_layout
     }
 
     /// Draw the current tree to current render surface
@@ -158,10 +151,10 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         self.render_element(
             scene,
             root_id,
-            Point {
-                x: self.initial_x - viewport_scroll.x,
-                y: self.initial_y - viewport_scroll.y,
-            },
+            Affine::translate(Vec2 {
+                x: self.initial_x - (viewport_scroll.x * self.scale),
+                y: self.initial_y - (viewport_scroll.y * self.scale),
+            }),
         );
 
         // Render debug overlay
@@ -188,7 +181,12 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
     ///
     /// Approaching rendering this way guarantees we have all the styles we need when rendering text with not having
     /// to traverse back to the parent for its styles, or needing to pass down styles
-    fn render_element(&self, scene: &mut impl PaintScene, node_id: usize, location: Point) {
+    fn render_element(
+        &self,
+        scene: &mut impl PaintScene,
+        node_id: usize,
+        parent_style_transform: Affine,
+    ) {
         let node = &self.dom.as_ref().tree()[node_id];
 
         // Early return if the element is hidden
@@ -212,8 +210,8 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             return;
         }
 
-        // We can't fully support opacity yet, but we can hide elements with opacity 0
-        let opacity = styles.get_effects().opacity;
+        let effects = styles.get_effects();
+        let opacity = effects.opacity;
         if opacity == 0.0 {
             return;
         }
@@ -241,14 +239,16 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             || !matches!(overflow_y, Overflow::Visible);
 
         // Apply padding/border offset to inline root
-        let (layout, box_position) = self.node_position(node_id, location);
         let taffy::Layout {
             size,
             border,
             padding,
-            content_size,
+            location,
             ..
         } = node.final_layout;
+        let box_position = Vec2::new(location.x as f64, location.y as f64) * self.scale;
+        let box_size = Size::new(size.width as f64, size.height as f64);
+        let border_box = Rect::from_origin_size(box_position.to_point(), box_size);
         let scaled_pb = (padding + border).map(f64::from);
         let content_position = kurbo::Point {
             x: scaled_pb.left,
@@ -260,15 +260,28 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         };
 
         // Don't render things that are out of view
-        let scaled_y = (box_position.y - self.initial_y) * self.scale;
-        let scaled_content_height = content_size.height.max(size.height) as f64 * self.scale;
-        if scaled_y > self.height as f64 || scaled_y + scaled_content_height < 0.0 {
+        let overflow = node.scrollable_overflow;
+        let transform = parent_style_transform
+            * Affine::translate(box_position)
+            * node.transform.unwrap_or_default();
+
+        let screen_bbox = (Affine::translate(Vec2 {
+            x: -self.initial_x,
+            y: -self.initial_y,
+        }) * transform)
+            .transform_rect_bbox(overflow.union(border_box));
+
+        if screen_bbox.y1 < 0.0 || screen_bbox.y0 > self.height as f64 {
+            return;
+        }
+        if screen_bbox.x1 < 0.0 || screen_bbox.x0 > self.width as f64 {
             return;
         }
 
         // Optimise zero-area (/very small area) clips by not rendering at all
         let clip_area = content_box_size.width * content_box_size.height;
-        if should_clip && clip_area < 0.01 {
+        let overflow_area = node.scrollable_overflow.width() * node.scrollable_overflow.height();
+        if should_clip && clip_area < 0.01 && overflow_area < 0.01 {
             return;
         }
 
@@ -277,78 +290,138 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         #[cfg(not(feature = "custom-widget"))]
         let custom_widget_scene = None;
 
-        let mut cx = self.element_cx(node, layout, box_position, custom_widget_scene);
+        // Apply CSS transform property (where transforms are 2d)
+
+        let mut cx = self.element_cx(node, node.final_layout, transform, custom_widget_scene);
+
+        // Compute clip-path (if any) and wrap all rendering in a clip layer
+        let clip_path_shape = cx.clip_path_shape();
+        let has_clip_path = clip_path_shape.is_some();
+        let default_clip = cx.frame.border_box_path();
+        let mut clip_path_for_layer = clip_path_shape.unwrap_or(default_clip);
+        clip_path_for_layer.apply_affine(Affine::scale(self.scale));
 
         cx.draw_outline(scene);
         cx.draw_outset_box_shadow(scene);
 
-        // Opacity layer if box has opacity. Clipped to border-box as it needs to include
-        // the background and borders.
+        // clip-path clip ayer
         self.layer_manager.maybe_with_layer(
             scene,
-            has_opacity,
-            opacity,
+            has_clip_path,
+            1.0,
             cx.transform,
-            &cx.frame.border_box_path(),
+            &clip_path_for_layer,
+            None,
+            None,
             |scene| {
-                cx.draw_background(scene);
-                cx.draw_inset_box_shadow(scene);
-                cx.draw_table_row_backgrounds(scene);
-                cx.draw_table_borders(scene);
-                cx.draw_border(scene);
-                cx.stroke_devtools(scene);
+                // If the element has a CSS `mask`, then push an isolation layer for the
+                // masked content. The mask is applied when the layer is popped below.
+                let mask_layer_pushed = cx.maybe_push_css_mask_layer(scene);
+                // `cx.transform` is mutated to apply scroll offsets while drawing content.
+                // Save it so that the mask can be drawn untransformed by scroll offsets.
+                let unscrolled_transform = cx.transform;
 
-                // TODO: allow layers with opacity to be unclipped (overflow: visible)
-                let clip = if is_text_input {
-                    &cx.frame.content_box_path()
-                } else {
-                    &cx.frame.padding_box_path()
-                };
+                let filter = convert_filters(&effects.filter.0).map(Arc::new);
+                let backdrop_filter = convert_filters(&effects.backdrop_filter.0).map(Arc::new);
 
-                // Clip layer if box requires clipping. Opacity set to 1.0
+                // Adjust effect layer clip by filter expansion area
+                //
+                // Returns a rectangle centered at the origin representing how much the filter
+                // expands the processing region in each direction. The rect coordinates are:
+                // - x0: negative left expansion
+                // - y0: negative top expansion
+                // - x1: positive right expansion
+                // - y1: positive bottom expansion
+                let filter_expansion_area = filter
+                    .as_ref()
+                    .map(|f| f.expansion_rect())
+                    .unwrap_or(Rect::ZERO);
+
+                let mut effect_layer_clip = cx.frame.border_box_path().bounding_box();
+                effect_layer_clip.x0 += filter_expansion_area.x0;
+                effect_layer_clip.y0 += filter_expansion_area.y0;
+                effect_layer_clip.x1 += filter_expansion_area.x1;
+                effect_layer_clip.y1 += filter_expansion_area.y1;
+
+                // Opacity/Filter layer if box has opacity or a filter.
+                // Clipped to border-box as it needs to include the background and borders.
                 self.layer_manager.maybe_with_layer(
                     scene,
-                    should_clip,
-                    1.0, // opacity
+                    has_opacity || filter.is_some() || backdrop_filter.is_some(),
+                    opacity,
                     cx.transform,
-                    clip,
+                    &effect_layer_clip,
+                    filter,
+                    backdrop_filter,
                     |scene| {
-                        // Now that background has been drawn, offset pos and cx in order to draw our contents scrolled
-                        let content_position = Point {
-                            x: content_position.x - node.scroll_offset.x,
-                            y: content_position.y - node.scroll_offset.y,
+                        cx.draw_background(scene);
+                        cx.draw_inset_box_shadow(scene);
+                        cx.draw_table_row_backgrounds(scene);
+                        cx.draw_table_borders(scene);
+                        cx.draw_border(scene);
+                        cx.stroke_devtools(scene);
+
+                        // TODO: allow layers with opacity to be unclipped (overflow: visible)
+                        let clip = if is_text_input {
+                            &cx.frame.content_box_path()
+                        } else {
+                            &cx.frame.padding_box_path()
                         };
-                        cx.pos = Point {
-                            x: cx.pos.x - node.scroll_offset.x,
-                            y: cx.pos.y - node.scroll_offset.y,
-                        };
-                        cx.transform = cx.transform.then_translate(Vec2 {
-                            x: -node.scroll_offset.x,
-                            y: -node.scroll_offset.y,
-                        });
-                        cx.draw_image(scene);
-                        #[cfg(feature = "svg")]
-                        cx.draw_svg(scene);
-                        #[cfg(feature = "custom-widget")]
-                        cx.draw_custom_widget(scene);
-                        cx.draw_sub_document(scene);
-                        cx.draw_input(scene);
-                        cx.draw_text_input_text(scene, content_position);
-                        cx.draw_inline_layout(scene, content_position);
-                        cx.draw_marker(scene, content_position);
-                        cx.draw_children(scene);
+
+                        // Clip layer if box requires clipping. Opacity set to 1.0
+                        self.layer_manager.maybe_with_layer(
+                            scene,
+                            should_clip,
+                            1.0, // opacity
+                            cx.transform,
+                            clip,
+                            None,
+                            None,
+                            |scene| {
+                                // Now that background has been drawn, offset pos and cx in order to draw our contents scrolled
+                                let content_position = Point {
+                                    x: content_position.x - node.scroll_offset.x,
+                                    y: content_position.y - node.scroll_offset.y,
+                                };
+
+                                cx.transform = cx.transform.then_translate(Vec2 {
+                                    x: -node.scroll_offset.x * self.scale,
+                                    y: -node.scroll_offset.y * self.scale,
+                                });
+                                cx.draw_image(scene);
+                                #[cfg(feature = "svg")]
+                                cx.draw_svg(scene);
+                                #[cfg(feature = "custom-widget")]
+                                cx.draw_custom_widget(scene);
+                                cx.draw_sub_document(scene);
+                                cx.draw_input(scene);
+                                cx.draw_text_input_text(scene, content_position);
+                                cx.draw_inline_layout(scene, content_position);
+                                cx.draw_marker(scene, content_position);
+                                cx.draw_children(scene, cx.transform);
+                            },
+                        );
                     },
                 );
+
+                // Apply the CSS `mask` (if any) to the content drawn above
+                cx.transform = unscrolled_transform;
+                cx.maybe_pop_css_mask_layer(scene, mask_layer_pushed);
             },
         );
     }
 
-    fn render_node(&self, scene: &mut impl PaintScene, node_id: usize, location: Point) {
+    fn render_node(
+        &self,
+        scene: &mut impl PaintScene,
+        node_id: usize,
+        parent_style_transform: Affine,
+    ) {
         let node = &self.dom.as_ref().tree()[node_id];
 
         match &node.data {
             NodeData::Element(_) | NodeData::AnonymousBlock(_) => {
-                self.render_element(scene, node_id, location)
+                self.render_element(scene, node_id, parent_style_transform)
             }
             NodeData::Text(TextNodeData { .. }) => {
                 // Text nodes should never be rendered directly
@@ -365,7 +438,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         &'dom self,
         node: &'dom Node,
         layout: Layout,
-        box_position: Point,
+        transform: Affine,
         custom_widget_scene: Option<&'a Scene>,
     ) -> ElementCx<'dom, 'a> {
         let style = node
@@ -384,29 +457,6 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         // Also! we can cache the bezpaths themselves, saving us a bunch of work
         let frame = create_css_rect(&style, &layout, scale);
 
-        // the bezpaths for every element are (potentially) cached (not yet, tbd)
-        // By performing the transform, we prevent the cache from becoming invalid when the page shifts around
-        let mut transform = Affine::translate(box_position.to_vec2() * scale);
-
-        // Reference box for resolve percentage transforms
-        let reference_box = euclid::Rect::new(
-            euclid::Point2D::new(CSSPixelLength::new(0.0), CSSPixelLength::new(0.0)),
-            euclid::Size2D::new(
-                CSSPixelLength::new(frame.border_box.width() as f32),
-                CSSPixelLength::new(frame.border_box.height() as f32),
-            ),
-        );
-
-        // Apply CSS transform property (where transforms are 2d)
-        //
-        // TODO: Handle hit testing correctly for transformed nodes
-        // TODO: Implement nested transforms
-        if let Some(style_transform) =
-            blitz_dom::resolve_2d_transform(style.get_box(), reference_box, scale)
-        {
-            transform *= style_transform
-        }
-
         let element = node.element_data().unwrap();
 
         ElementCx {
@@ -414,7 +464,6 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             frame,
             scale,
             style,
-            pos: box_position,
             node,
             element,
             transform,
@@ -460,7 +509,6 @@ struct ElementCx<'dom, 'a> {
     context: &'dom BlitzDomPainter<'dom, 'a>,
     frame: CssBox,
     style: style::servo_arc::Arc<ComputedValues>,
-    pos: Point,
     scale: f64,
     node: &'dom Node,
     element: &'dom ElementData,
@@ -490,7 +538,7 @@ impl ElementCx<'_, '_> {
                 });
 
             let transform =
-                Affine::translate((pos.x * self.scale, pos.y * self.scale)) * self.transform;
+                self.transform * Affine::translate((pos.x * self.scale, pos.y * self.scale));
 
             // Render text selection highlight (if any) using cached selection ranges
             if let Some(&(sel_start, sel_end)) = self.context.selection_ranges.get(&self.node.id) {
@@ -526,7 +574,7 @@ impl ElementCx<'_, '_> {
             };
 
             let transform =
-                Affine::translate((pos.x * self.scale, pos.y * self.scale)) * self.transform;
+                self.transform * Affine::translate((pos.x * self.scale, pos.y * self.scale));
 
             if self.node.is_focussed() {
                 // Render selection/caret
@@ -600,7 +648,7 @@ impl ElementCx<'_, '_> {
             };
 
             let transform =
-                Affine::translate((pos.x * self.scale, pos.y * self.scale)) * self.transform;
+                self.transform * Affine::translate((pos.x * self.scale, pos.y * self.scale));
 
             crate::text::stroke_text(
                 scene,
@@ -612,33 +660,42 @@ impl ElementCx<'_, '_> {
         }
     }
 
-    fn draw_children(&self, scene: &mut impl PaintScene) {
+    fn draw_children(&self, scene: &mut impl PaintScene, parent_style_transform: Affine) {
         // Negative z_index hoisted nodes
+
         if let Some(hoisted) = &self.node.stacking_context {
             for hoisted_child in hoisted.neg_z_hoisted_children() {
-                let pos = kurbo::Point {
-                    x: self.pos.x + hoisted_child.position.x as f64,
-                    y: self.pos.y + hoisted_child.position.y as f64,
+                let pos = kurbo::Vec2 {
+                    x: hoisted_child.position.x as f64 * self.scale,
+                    y: hoisted_child.position.y as f64 * self.scale,
                 };
-                self.render_node(scene, hoisted_child.node_id, pos);
+                self.render_node(
+                    scene,
+                    hoisted_child.node_id,
+                    parent_style_transform.pre_translate(pos),
+                );
             }
         }
 
         // Regular children
         if let Some(children) = &*self.node.paint_children.borrow() {
             for child_id in children {
-                self.render_node(scene, *child_id, self.pos);
+                self.render_node(scene, *child_id, parent_style_transform);
             }
         }
 
         // Positive z_index hoisted nodes
         if let Some(hoisted) = &self.node.stacking_context {
             for hoisted_child in hoisted.pos_z_hoisted_children() {
-                let pos = kurbo::Point {
-                    x: self.pos.x + hoisted_child.position.x as f64,
-                    y: self.pos.y + hoisted_child.position.y as f64,
+                let pos = kurbo::Vec2 {
+                    x: hoisted_child.position.x as f64 * self.scale,
+                    y: hoisted_child.position.y as f64 * self.scale,
                 };
-                self.render_node(scene, hoisted_child.node_id, pos);
+                self.render_node(
+                    scene,
+                    hoisted_child.node_id,
+                    parent_style_transform.pre_translate(pos),
+                );
             }
         }
     }
@@ -754,8 +811,11 @@ impl ElementCx<'_, '_> {
             let scale = self.scale;
             let width = self.frame.content_box.width() as u32;
             let height = self.frame.content_box.height() as u32;
-            let initial_x = self.pos.x + self.frame.content_box.origin().x;
-            let initial_y = self.pos.y + self.frame.content_box.origin().y;
+
+            // TODO: Support arbitrary transforms of subdocuments
+            let translation = self.transform.translation();
+            let initial_x = translation.x + self.frame.content_box.origin().x;
+            let initial_y = translation.y + self.frame.content_box.origin().y;
             // let transform = self.transform.then_translate(Vec2 { x, y });
 
             let painter = BlitzDomPainter::new(
