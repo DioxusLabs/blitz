@@ -778,7 +778,19 @@ impl BaseDocument {
     pub fn deep_clone_node(&mut self, node_id: usize) -> usize {
         // Load existing node
         let node = &self.nodes[node_id];
-        let data = node.data.clone();
+        let mut data = node.data.clone();
+
+        match &mut data {
+            NodeData::Element(elem) | NodeData::AnonymousBlock(elem) => {
+                if let Some(arc) = elem.style_attribute.as_mut() {
+                    let read_guard = self.guard().read();
+                    let block = arc.read_with(&read_guard);
+                    *arc = ServoArc::new(self.guard().wrap(block.clone()));
+                }
+            }
+            _ => {}
+        }
+
         let children = node.children.clone();
 
         // Create new node
