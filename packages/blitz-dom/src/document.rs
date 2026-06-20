@@ -782,11 +782,11 @@ impl BaseDocument {
 
         match &mut data {
             NodeData::Element(elem) | NodeData::AnonymousBlock(elem) => {
-                elem.style_attribute.as_mut().map(|arc| {
+                if let Some(arc) = elem.style_attribute.as_mut() {
                     let read_guard = self.guard().read();
                     let block = arc.read_with(&read_guard);
                     *arc = ServoArc::new(self.guard().wrap(block.clone()));
-                });
+                }
             }
             _ => {}
         }
