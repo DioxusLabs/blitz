@@ -442,9 +442,9 @@ pub struct PointerDetails {
 }
 
 #[derive(Copy, Clone, Debug, Default)]
-pub struct ElementData {
-    pub x: f32,
-    pub y: f32,
+pub struct Point<T> {
+    pub x: T,
+    pub y: T,
 }
 
 #[derive(Clone, Debug)]
@@ -456,7 +456,7 @@ pub struct BlitzPointerEvent {
     pub buttons: MouseEventButtons,
     pub mods: Modifiers,
     pub details: PointerDetails,
-    pub element: ElementData,
+    pub element: Point<f32>,
 }
 
 impl BlitzPointerEvent {
