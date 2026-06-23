@@ -7,8 +7,8 @@ use blitz_dom::{Document, DocumentConfig};
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::{
     events::{
-        BlitzPointerEvent, BlitzPointerId, MouseEventButton, MouseEventButtons, PointerCoords,
-        PointerDetails, UiEvent,
+        BlitzPointerEvent, BlitzPointerId, MouseEventButton, MouseEventButtons, Point,
+        PointerCoords, PointerDetails, UiEvent,
     },
     shell::{ColorScheme, Viewport},
 };
@@ -51,6 +51,7 @@ fn pointer_event(x: f32, y: f32) -> BlitzPointerEvent {
         buttons: MouseEventButtons::from(MouseEventButton::Main),
         mods: Default::default(),
         details: PointerDetails::default(),
+        element: Point::default(),
     }
 }
 
