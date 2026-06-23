@@ -503,8 +503,11 @@ pub(crate) fn handle_click(
                     break 'matched true;
                 }
                 local_name!("input") if el.attr(local_name!("type")) == Some("radio") => {
-                    let radio_set = el.attr(local_name!("name")).unwrap().to_string();
-                    BaseDocument::toggle_radio(doc, radio_set, node_id);
+                    if let Some(radio_set) = el.attr(local_name!("name")).map(str::to_string) {
+                        BaseDocument::toggle_radio(doc, radio_set, node_id);
+                    } else if let Some(is_checked) = el.checkbox_input_checked_mut() {
+                        *is_checked = true;
+                    }
 
                     // TODO: make input event conditional on value actually changing
                     let value = String::from("true");
