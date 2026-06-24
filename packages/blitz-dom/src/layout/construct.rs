@@ -63,6 +63,18 @@ pub(crate) struct LayoutChildren {
     pub(crate) anonymous_block_id: Option<usize>,
 }
 
+impl LayoutChildren {
+    /// Append a single layout child.
+    fn push(&mut self, child_id: usize) {
+        self.children.push(child_id);
+    }
+
+    /// Append all layout children in `slice`.
+    fn extend(&mut self, slice: &[usize]) {
+        self.children.extend_from_slice(slice);
+    }
+}
+
 fn push_children_and_pseudos(layout_children: &mut Vec<usize>, node: &Node) {
     if let Some(before) = node.before {
         layout_children.push(before);
@@ -85,7 +97,7 @@ fn push_hoisted_children_and_pseudos(
     out: &mut LayoutChildren,
 ) {
     if let Some(before) = doc.nodes[container_node_id].before {
-        out.children.push(before);
+        out.push(before);
     }
     // Take children array from node to avoid borrow checker issues.
     let children = std::mem::take(&mut doc.nodes[container_node_id].children);
@@ -98,12 +110,12 @@ fn push_hoisted_children_and_pseudos(
         if matches!(child_display.inside(), DisplayInside::Contents) {
             collect_layout_children(doc, child_id, out);
         } else {
-            out.children.push(child_id);
+            out.push(child_id);
         }
     }
     doc.nodes[container_node_id].children = children;
     if let Some(after) = doc.nodes[container_node_id].after {
-        out.children.push(after);
+        out.push(after);
     }
 }
 
@@ -424,11 +436,11 @@ pub(crate) fn collect_layout_children(
                 .unwrap()
                 .special_data = data;
             if let Some(before) = doc.nodes[container_node_id].before {
-                out.children.push(before);
+                out.push(before);
             }
-            out.children.extend_from_slice(&tlayout_children);
+            out.extend(&tlayout_children);
             if let Some(after) = doc.nodes[container_node_id].after {
-                out.children.push(after);
+                out.push(after);
             }
         }
 
@@ -623,7 +635,7 @@ fn collect_complex_layout_children(
                     .layout_parent
                     .set(Some(container_node_id));
 
-                out.children.push(node_id);
+                out.push(node_id);
                 out.anonymous_block_id = Some(node_id);
             }
 
@@ -646,7 +658,7 @@ fn collect_complex_layout_children(
             }
 
             out.anonymous_block_id = None;
-            out.children.push(child_id);
+            out.push(child_id);
         }
     });
 
