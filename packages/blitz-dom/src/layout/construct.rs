@@ -52,6 +52,17 @@ pub(crate) enum ConstructionTaskResultData {
     InlineLayout(Box<TextLayout>),
 }
 
+/// Accumulator threaded through layout-child collection.
+///
+/// `children` is the list of layout children being built up, and
+/// `anonymous_block_id` is the currently-open anonymous block container (if
+/// any) that wrapping children are being appended to.
+#[derive(Default)]
+pub(crate) struct LayoutChildren {
+    pub(crate) children: Vec<usize>,
+    pub(crate) anonymous_block_id: Option<usize>,
+}
+
 fn push_children_and_pseudos(layout_children: &mut Vec<usize>, node: &Node) {
     if let Some(before) = node.before {
         layout_children.push(before);
@@ -71,11 +82,10 @@ fn push_children_and_pseudos(layout_children: &mut Vec<usize>, node: &Node) {
 fn push_hoisted_children_and_pseudos(
     doc: &mut BaseDocument,
     container_node_id: usize,
-    layout_children: &mut Vec<usize>,
-    anonymous_block_id: &mut Option<usize>,
+    out: &mut LayoutChildren,
 ) {
     if let Some(before) = doc.nodes[container_node_id].before {
-        layout_children.push(before);
+        out.children.push(before);
     }
     // Take children array from node to avoid borrow checker issues.
     let children = std::mem::take(&mut doc.nodes[container_node_id].children);
@@ -86,14 +96,14 @@ fn push_hoisted_children_and_pseudos(
         }
         let child_display = child.display_style().unwrap_or(Display::inline());
         if matches!(child_display.inside(), DisplayInside::Contents) {
-            collect_layout_children(doc, child_id, layout_children, anonymous_block_id);
+            collect_layout_children(doc, child_id, out);
         } else {
-            layout_children.push(child_id);
+            out.children.push(child_id);
         }
     }
     doc.nodes[container_node_id].children = children;
     if let Some(after) = doc.nodes[container_node_id].after {
-        layout_children.push(after);
+        out.children.push(after);
     }
 }
 
@@ -122,8 +132,7 @@ fn resolve_line_height(line_height: parley::LineHeight, font_size: f32) -> f32 {
 pub(crate) fn collect_layout_children(
     doc: &mut BaseDocument,
     container_node_id: usize,
-    layout_children: &mut Vec<usize>,
-    anonymous_block_id: &mut Option<usize>,
+    out: &mut LayoutChildren,
 ) {
     // Reset construction flags
     // TODO: make incremental and only remove this if the element is no longer an inline root
@@ -235,12 +244,7 @@ pub(crate) fn collect_layout_children(
             // display:contents is transparent for box generation: hoist the
             // children THEMSELVES (not their layout children) into the
             // parent, recursing only through nested contents nodes.
-            push_hoisted_children_and_pseudos(
-                doc,
-                container_node_id,
-                layout_children,
-                anonymous_block_id,
-            );
+            push_hoisted_children_and_pseudos(doc, container_node_id, out);
         }
         DisplayInside::Flow | DisplayInside::FlowRoot | DisplayInside::TableCell => {
             let mut all_block = true;
@@ -324,12 +328,7 @@ pub(crate) fn collect_layout_children(
                 // Contents-transparent: a display:contents child may be
                 // holding the out-of-flow elements (otherwise the contents
                 // node itself would be pushed as a layout box).
-                return push_hoisted_children_and_pseudos(
-                    doc,
-                    container_node_id,
-                    layout_children,
-                    anonymous_block_id,
-                );
+                return push_hoisted_children_and_pseudos(doc, container_node_id, out);
             }
 
             // TODO: fix display:contents
@@ -349,7 +348,7 @@ pub(crate) fn collect_layout_children(
                     .flags
                     .insert(NodeFlags::IS_INLINE_ROOT);
 
-                find_inline_layout_embedded_boxes(doc, container_node_id, layout_children);
+                find_inline_layout_embedded_boxes(doc, container_node_id, &mut out.children);
                 return;
             }
 
@@ -357,11 +356,11 @@ pub(crate) fn collect_layout_children(
             // as the layout children
             if all_block & !has_contents {
                 return push_non_whitespace_children_and_pseudos(
-                    layout_children,
+                    &mut out.children,
                     &doc.nodes[container_node_id],
                 );
             } else if all_inline & !has_contents {
-                return push_children_and_pseudos(layout_children, &doc.nodes[container_node_id]);
+                return push_children_and_pseudos(&mut out.children, &doc.nodes[container_node_id]);
             }
 
             fn block_item_needs_wrap(
@@ -373,8 +372,7 @@ pub(crate) fn collect_layout_children(
             collect_complex_layout_children(
                 doc,
                 container_node_id,
-                layout_children,
-                anonymous_block_id,
+                out,
                 false,
                 block_item_needs_wrap,
             );
@@ -393,7 +391,7 @@ pub(crate) fn collect_layout_children(
 
             if !has_text_node_or_contents {
                 return push_non_whitespace_children_and_pseudos(
-                    layout_children,
+                    &mut out.children,
                     &doc.nodes[container_node_id],
                 );
             }
@@ -407,8 +405,7 @@ pub(crate) fn collect_layout_children(
             collect_complex_layout_children(
                 doc,
                 container_node_id,
-                layout_children,
-                anonymous_block_id,
+                out,
                 true,
                 flex_or_grid_item_needs_wrap,
             );
@@ -427,17 +424,17 @@ pub(crate) fn collect_layout_children(
                 .unwrap()
                 .special_data = data;
             if let Some(before) = doc.nodes[container_node_id].before {
-                layout_children.push(before);
+                out.children.push(before);
             }
-            layout_children.extend_from_slice(&tlayout_children);
+            out.children.extend_from_slice(&tlayout_children);
             if let Some(after) = doc.nodes[container_node_id].after {
-                layout_children.push(after);
+                out.children.push(after);
             }
         }
 
         _ => {
             push_non_whitespace_children_and_pseudos(
-                layout_children,
+                &mut out.children,
                 &doc.nodes[container_node_id],
             );
         }
@@ -537,8 +534,7 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: usize) {
 fn collect_complex_layout_children(
     doc: &mut BaseDocument,
     container_node_id: usize,
-    layout_children: &mut Vec<usize>,
-    anonymous_block_id: &mut Option<usize>,
+    out: &mut LayoutChildren,
     hide_whitespace: bool,
     needs_wrap: impl Fn(NodeKind, DisplayOutside) -> bool,
 ) {
@@ -580,14 +576,14 @@ fn collect_complex_layout_children(
         }
         // Recurse into `Display::Contents` nodes
         else if display_inside == DisplayInside::Contents {
-            collect_layout_children(doc, child_id, layout_children, anonymous_block_id)
+            collect_layout_children(doc, child_id, out)
         }
         // Push nodes that need wrapping into the current "anonymous block container".
         // If there is not an open one then we create one.
         else if needs_wrap(child_node_kind, display_outside) {
             use style::selector_parser::PseudoElement;
 
-            if anonymous_block_id.is_none() {
+            if out.anonymous_block_id.is_none() {
                 const NAME: QualName = QualName {
                     prefix: None,
                     ns: ns!(html),
@@ -627,41 +623,41 @@ fn collect_complex_layout_children(
                     .layout_parent
                     .set(Some(container_node_id));
 
-                layout_children.push(node_id);
-                *anonymous_block_id = Some(node_id);
+                out.children.push(node_id);
+                out.anonymous_block_id = Some(node_id);
             }
 
-            doc.nodes[anonymous_block_id.unwrap()]
+            doc.nodes[out.anonymous_block_id.unwrap()]
                 .children
                 .push(child_id);
         }
         // Else push the child directly (and close any open "anonymous block container")
         else {
             // If anonymous block node only contains whitespace then delete it
-            if let Some(anon_id) = *anonymous_block_id {
+            if let Some(anon_id) = out.anonymous_block_id {
                 if block_is_only_whitespace(doc, anon_id) {
                     // Remove by identity, not pop(): hoisted display:contents
                     // children may have been pushed after the anon block.
-                    if let Some(pos) = layout_children.iter().rposition(|id| *id == anon_id) {
-                        layout_children.remove(pos);
+                    if let Some(pos) = out.children.iter().rposition(|id| *id == anon_id) {
+                        out.children.remove(pos);
                     }
                     doc.nodes.remove(anon_id);
                 }
             }
 
-            *anonymous_block_id = None;
-            layout_children.push(child_id);
+            out.anonymous_block_id = None;
+            out.children.push(child_id);
         }
     });
 
     // If anonymous block node only contains whitespace then delete it
-    if let Some(anon_id) = *anonymous_block_id {
+    if let Some(anon_id) = out.anonymous_block_id {
         if block_is_only_whitespace(doc, anon_id) {
-            if let Some(pos) = layout_children.iter().rposition(|id| *id == anon_id) {
-                layout_children.remove(pos);
+            if let Some(pos) = out.children.iter().rposition(|id| *id == anon_id) {
+                out.children.remove(pos);
             }
             doc.nodes.remove(anon_id);
-            *anonymous_block_id = None;
+            out.anonymous_block_id = None;
         }
     }
 }

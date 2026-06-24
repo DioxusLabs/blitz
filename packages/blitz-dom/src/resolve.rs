@@ -30,7 +30,8 @@ use crate::{
     layout::{
         construct::{
             ConstructionTask, ConstructionTaskData, ConstructionTaskResult,
-            ConstructionTaskResultData, build_inline_layout_into, collect_layout_children,
+            ConstructionTaskResultData, LayoutChildren, build_inline_layout_into,
+            collect_layout_children,
         },
         damage::{ALL_DAMAGE, CONSTRUCT_BOX, CONSTRUCT_DESCENDENT, CONSTRUCT_FC},
     },
@@ -226,9 +227,9 @@ impl BaseDocument {
 
             if NON_INCREMENTAL || damage.intersects(CONSTRUCT_FC | CONSTRUCT_BOX) {
                 //} || flags.contains(NodeFlags::IS_INLINE_ROOT) {
-                let mut layout_children = Vec::new();
-                let mut anonymous_block: Option<usize> = None;
-                collect_layout_children(doc, node_id, &mut layout_children, &mut anonymous_block);
+                let mut collected = LayoutChildren::default();
+                collect_layout_children(doc, node_id, &mut collected);
+                let layout_children = collected.children;
 
                 // Recurse into newly collected layout children
                 for child_id in layout_children.iter().copied() {
