@@ -65,13 +65,96 @@ pub(crate) struct LayoutChildren {
 
 impl LayoutChildren {
     /// Append a single layout child.
-    fn push(&mut self, child_id: usize) {
+    fn push(&mut self, child_id: usize, doc: &mut BaseDocument) {
+        self.maybe_push_anon_block(doc);
         self.children.push(child_id);
     }
 
     /// Append all layout children in `slice`.
-    fn extend(&mut self, slice: &[usize]) {
+    fn extend(&mut self, slice: &[usize], doc: &mut BaseDocument) {
+        self.maybe_push_anon_block(doc);
         self.children.extend_from_slice(slice);
+    }
+
+    fn maybe_push_anon_block(&mut self, doc: &mut BaseDocument) {
+        fn block_is_only_whitespace(doc: &BaseDocument, node_id: usize) -> bool {
+            for child_id in doc.nodes[node_id].children.iter().copied() {
+                let child = &doc.nodes[child_id];
+                if !child.is_whitespace_node() {
+                    return false;
+                }
+            }
+
+            true
+        }
+
+        // If anonymous block node only contains whitespace then delete it
+        if let Some(anon_id) = self.anonymous_block_id {
+            if block_is_only_whitespace(doc, anon_id) {
+                // Remove by identity, not pop(): hoisted display:contents
+                // children may have been pushed after the anon block.
+                if let Some(pos) = self.children.iter().rposition(|id| *id == anon_id) {
+                    self.children.remove(pos);
+                }
+                doc.nodes.remove(anon_id);
+            }
+        }
+
+        self.anonymous_block_id = None;
+    }
+
+    fn push_wrapped(&mut self, container_node_id: usize, child_id: usize, doc: &mut BaseDocument) {
+        if self.anonymous_block_id.is_none() {
+            self.create_anonymous_block(container_node_id, doc);
+        }
+        doc.nodes[self.anonymous_block_id.unwrap()]
+            .children
+            .push(child_id);
+    }
+
+    fn create_anonymous_block(&mut self, container_node_id: usize, doc: &mut BaseDocument) {
+        use style::selector_parser::PseudoElement;
+
+        const NAME: QualName = QualName {
+            prefix: None,
+            ns: ns!(html),
+            local: local_name!("div"),
+        };
+        let node_id = doc.create_node(NodeData::AnonymousBlock(ElementData::new(NAME, Vec::new())));
+
+        // Set style data
+        let parent_style = doc.nodes[container_node_id].primary_styles().unwrap();
+        let read_guard = doc.guard.read();
+        let guards = StylesheetGuards::same(&read_guard);
+        let style = doc.stylist.style_for_anonymous::<&Node>(
+            &guards,
+            &PseudoElement::ServoAnonymousBox,
+            &parent_style,
+        );
+        let mut stylo_element_data = StyloElementData {
+            damage: ALL_DAMAGE,
+            ..Default::default()
+        };
+        drop(parent_style);
+
+        stylo_element_data.styles.primary = Some(style);
+        stylo_element_data.set_restyled();
+
+        *doc.nodes[node_id].stylo_element_data.ensure_init_mut() = stylo_element_data;
+
+        if doc.nodes[container_node_id]
+            .flags
+            .contains(NodeFlags::IS_IN_DOCUMENT)
+        {
+            doc.nodes[node_id].flags.insert(NodeFlags::IS_IN_DOCUMENT);
+        }
+        doc.nodes[node_id].parent = Some(container_node_id);
+        doc.nodes[node_id]
+            .layout_parent
+            .set(Some(container_node_id));
+
+        self.children.push(node_id);
+        self.anonymous_block_id = Some(node_id);
     }
 }
 
@@ -97,7 +180,7 @@ fn push_hoisted_children_and_pseudos(
     out: &mut LayoutChildren,
 ) {
     if let Some(before) = doc.nodes[container_node_id].before {
-        out.push(before);
+        out.push(before, doc);
     }
     // Take children array from node to avoid borrow checker issues.
     let children = std::mem::take(&mut doc.nodes[container_node_id].children);
@@ -110,12 +193,12 @@ fn push_hoisted_children_and_pseudos(
         if matches!(child_display.inside(), DisplayInside::Contents) {
             collect_layout_children(doc, child_id, out);
         } else {
-            out.push(child_id);
+            out.push(child_id, doc);
         }
     }
     doc.nodes[container_node_id].children = children;
     if let Some(after) = doc.nodes[container_node_id].after {
-        out.push(after);
+        out.push(after, doc);
     }
 }
 
@@ -436,11 +519,11 @@ pub(crate) fn collect_layout_children(
                 .unwrap()
                 .special_data = data;
             if let Some(before) = doc.nodes[container_node_id].before {
-                out.push(before);
+                out.push(before, doc);
             }
-            out.extend(&tlayout_children);
+            out.extend(&tlayout_children, doc);
             if let Some(after) = doc.nodes[container_node_id].after {
-                out.push(after);
+                out.push(after, doc);
             }
         }
 
@@ -550,17 +633,6 @@ fn collect_complex_layout_children(
     hide_whitespace: bool,
     needs_wrap: impl Fn(NodeKind, DisplayOutside) -> bool,
 ) {
-    fn block_is_only_whitespace(doc: &BaseDocument, node_id: usize) -> bool {
-        for child_id in doc.nodes[node_id].children.iter().copied() {
-            let child = &doc.nodes[child_id];
-            if !child.is_whitespace_node() {
-                return false;
-            }
-        }
-
-        true
-    }
-
     doc.iter_children_and_pseudos_mut(container_node_id, |child_id, doc| {
         // Get node kind (text, element, comment, etc)
         let child_node_kind = doc.nodes[child_id].data.kind();
@@ -593,85 +665,16 @@ fn collect_complex_layout_children(
         // Push nodes that need wrapping into the current "anonymous block container".
         // If there is not an open one then we create one.
         else if needs_wrap(child_node_kind, display_outside) {
-            use style::selector_parser::PseudoElement;
-
-            if out.anonymous_block_id.is_none() {
-                const NAME: QualName = QualName {
-                    prefix: None,
-                    ns: ns!(html),
-                    local: local_name!("div"),
-                };
-                let node_id =
-                    doc.create_node(NodeData::AnonymousBlock(ElementData::new(NAME, Vec::new())));
-
-                // Set style data
-                let parent_style = doc.nodes[container_node_id].primary_styles().unwrap();
-                let read_guard = doc.guard.read();
-                let guards = StylesheetGuards::same(&read_guard);
-                let style = doc.stylist.style_for_anonymous::<&Node>(
-                    &guards,
-                    &PseudoElement::ServoAnonymousBox,
-                    &parent_style,
-                );
-                let mut stylo_element_data = StyloElementData {
-                    damage: ALL_DAMAGE,
-                    ..Default::default()
-                };
-                drop(parent_style);
-
-                stylo_element_data.styles.primary = Some(style);
-                stylo_element_data.set_restyled();
-
-                *doc.nodes[node_id].stylo_element_data.ensure_init_mut() = stylo_element_data;
-
-                if doc.nodes[container_node_id]
-                    .flags
-                    .contains(NodeFlags::IS_IN_DOCUMENT)
-                {
-                    doc.nodes[node_id].flags.insert(NodeFlags::IS_IN_DOCUMENT);
-                }
-                doc.nodes[node_id].parent = Some(container_node_id);
-                doc.nodes[node_id]
-                    .layout_parent
-                    .set(Some(container_node_id));
-
-                out.push(node_id);
-                out.anonymous_block_id = Some(node_id);
-            }
-
-            doc.nodes[out.anonymous_block_id.unwrap()]
-                .children
-                .push(child_id);
+            out.push_wrapped(container_node_id, child_id, doc);
         }
         // Else push the child directly (and close any open "anonymous block container")
         else {
-            // If anonymous block node only contains whitespace then delete it
-            if let Some(anon_id) = out.anonymous_block_id {
-                if block_is_only_whitespace(doc, anon_id) {
-                    // Remove by identity, not pop(): hoisted display:contents
-                    // children may have been pushed after the anon block.
-                    if let Some(pos) = out.children.iter().rposition(|id| *id == anon_id) {
-                        out.children.remove(pos);
-                    }
-                    doc.nodes.remove(anon_id);
-                }
-            }
-
-            out.anonymous_block_id = None;
-            out.push(child_id);
+            out.push(child_id, doc);
         }
     });
 
-    // If anonymous block node only contains whitespace then delete it
-    if let Some(anon_id) = out.anonymous_block_id {
-        if block_is_only_whitespace(doc, anon_id) {
-            if let Some(pos) = out.children.iter().rposition(|id| *id == anon_id) {
-                out.children.remove(pos);
-            }
-            doc.nodes.remove(anon_id);
-            out.anonymous_block_id = None;
-        }
-    }
+    // If anonymous block node only contains whitespace then delete it, else push it
+    out.maybe_push_anon_block(doc);
 }
 
 fn create_text_editor(doc: &mut BaseDocument, input_element_id: usize, is_multiline: bool) {
