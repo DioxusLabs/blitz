@@ -37,6 +37,7 @@ pub fn Toolbar(
     let mut is_focused = use_signal(|| false);
     let block_mouse_up = use_hook(|| Rc::new(RefCell::new(false)));
     let mut menu_open = use_signal(|| false);
+    let mut incremental_layout = use_signal(|| cfg!(feature = "incremental"));
     #[cfg(feature = "cache")]
     let net_provider = use_context::<Arc<StdNetProvider>>();
 
@@ -50,6 +51,8 @@ pub fn Toolbar(
         let active_id = active_tab_id();
         let tab = active_tab(tabs, active_id);
         *url_input_value.write_unchecked() = tab.nav_history().current_url().read().url.to_string();
+
+        // TODO: sync state of incremental rendering when changing tabs
     });
 
     let clear_document_focus = use_callback(move |_| {
@@ -262,6 +265,14 @@ pub fn Toolbar(
         });
     });
 
+    let incremental_action = use_callback(move |_| {
+        menu_open.set(false);
+        let tab = active_tab(tabs, active_tab_id());
+        with_sub_doc(tab, |sub_doc| {
+            let was_enabled = sub_doc.incremental_layout();
+            sub_doc.set_incremental_layout(!was_enabled);
+            incremental_layout.set(!was_enabled);
+        });
     });
 
     #[cfg(feature = "screenshot")]
@@ -420,6 +431,9 @@ pub fn Toolbar(
                         {screenshot_item}
                         {capture_item}
                         div { class: "menu-item", onclick: move |_| devtools_action(()), "Toggle DevTools" }
+                        div { class: "menu-item", onclick: move |_| incremental_action(()),
+                            if incremental_layout() { "Disable Incremental Layout" } else { "Enable Incremental Layout" }
+                        }
                         div { class: "menu-item", onclick: move |_| {
                             menu_open.set(false);
                             show_fps.toggle();
