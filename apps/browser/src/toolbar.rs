@@ -1,6 +1,6 @@
 use std::{cell::RefCell, rc::Rc, sync::Arc};
 
-use blitz_dom::DocumentConfig;
+use blitz_dom::{BaseDocument, DocumentConfig};
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::net::{Request, Url};
 use dioxus_native::{NodeHandle, SubDocumentAttr, prelude::*};
@@ -12,6 +12,17 @@ use crate::nav::{is_enter_key, open_in_external_browser, req_from_string};
 use crate::tab::{Tab, TabId, TabStoreExt, TabStoreImplExt, active_tab};
 use crate::url_suggestions::{Suggestion, SuggestionKind, UrlSuggester, UrlSuggestions};
 use crate::{IS_MOBILE, StdNetProvider};
+
+fn with_sub_doc(tab: Store<Tab>, mut cb: impl FnMut(&mut BaseDocument)) {
+    let node_handle_lens = tab.node_handle();
+    let node_handle_guard = node_handle_lens.peek();
+    if let Some(handle) = (*node_handle_guard).as_ref() {
+        let mut doc = handle.doc_mut();
+        if let Some(sub_doc) = doc.subdoc_mut(handle.node_id()) {
+            cb(&mut sub_doc.inner_mut());
+        }
+    }
+}
 
 #[component]
 pub fn Toolbar(
@@ -43,19 +54,7 @@ pub fn Toolbar(
 
     let clear_document_focus = use_callback(move |_| {
         let tab = active_tab(tabs, active_tab_id());
-        let node_handle_lens = tab.node_handle();
-        let node_handle_guard = node_handle_lens.peek();
-        if let Some(handle) = (*node_handle_guard).as_ref() {
-            let node_id = handle.node_id();
-            let mut doc = handle.doc_mut();
-            if let Some(sub_doc) = doc
-                .get_node_mut(node_id)
-                .and_then(|node| node.element_data_mut())
-                .and_then(|el| el.sub_doc_data_mut())
-            {
-                sub_doc.inner_mut().clear_focus();
-            }
-        }
+        with_sub_doc(tab, |sub_doc| sub_doc.clear_focus());
     });
 
     // Closing the dropdown is implicit: its visibility is gated on `is_focused`.
@@ -257,18 +256,12 @@ pub fn Toolbar(
 
     let devtools_action = use_callback(move |_| {
         menu_open.set(false);
-        let node_handle = active_tab(tabs, active_tab_id()).node_handle();
-        if let Some(handle) = node_handle.cloned() {
-            let node_id = handle.node_id();
-            let mut doc = handle.doc_mut();
-            if let Some(sub_doc) = doc
-                .get_node_mut(node_id)
-                .and_then(|node| node.element_data_mut())
-                .and_then(|el| el.sub_doc_data_mut())
-            {
-                sub_doc.inner_mut().devtools_mut().toggle_highlight_hover();
-            }
-        }
+        let tab = active_tab(tabs, active_tab_id());
+        with_sub_doc(tab, |sub_doc| {
+            sub_doc.devtools_mut().toggle_highlight_hover()
+        });
+    });
+
     });
 
     #[cfg(feature = "screenshot")]
