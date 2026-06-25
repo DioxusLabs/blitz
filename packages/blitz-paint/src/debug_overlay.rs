@@ -46,12 +46,13 @@ pub(crate) fn render_debug_overlay(
         abs_y += y - node.scroll_offset.y as f32;
     }
 
-    abs_x = abs_x - viewport_scroll.x as f32 + initial_x as f32;
-    abs_y = abs_y - viewport_scroll.y as f32 + initial_y as f32;
+    abs_x -= viewport_scroll.x as f32;
+    abs_y -= viewport_scroll.y as f32;
 
-    // Hack: scale factor
-    let abs_x = f64::from(abs_x) * scale;
-    let abs_y = f64::from(abs_y) * scale;
+    // Note: initial_x/initial_y are already in physical (scaled) pixels so they must be added after scaling
+    // the other values
+    let abs_x = f64::from(abs_x) * scale + initial_x;
+    let abs_y = f64::from(abs_y) * scale + initial_y;
     let width = f64::from(width) * scale;
     let height = f64::from(height) * scale;
     let content_width = f64::from(content_width) * scale;
