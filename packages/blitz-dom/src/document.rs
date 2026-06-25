@@ -1447,6 +1447,18 @@ impl BaseDocument {
         &mut self.devtool_settings
     }
 
+    pub fn subdoc(&self, node_id: usize) -> Option<&dyn Document> {
+        self.get_node(node_id)
+            .and_then(|node| node.element_data())
+            .and_then(|el| el.sub_doc_data())
+    }
+
+    pub fn subdoc_mut(&mut self, node_id: usize) -> Option<&mut dyn Document> {
+        self.get_node_mut(node_id)
+            .and_then(|node| node.element_data_mut())
+            .and_then(|el| el.sub_doc_data_mut())
+    }
+
     pub fn is_animating(&self) -> bool {
         #[cfg(feature = "custom-widget")]
         let has_custom_widgets = !self.custom_widget_nodes.is_empty();
