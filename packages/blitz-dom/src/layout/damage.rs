@@ -1,11 +1,11 @@
 use std::ops::Range;
 
+use crate::Node;
 use crate::net::ResourceHandler;
 use crate::node::NodeFlags;
 use crate::{
     BaseDocument, net::ImageHandler, node::ImageResourceData, node::Status, util::ImageLayerKind,
 };
-use crate::{NON_INCREMENTAL, Node};
 use style::properties::ComputedValues;
 use style::properties::generated::longhands::position::computed_value::T as Position;
 use style::selector_parser::RestyleDamage;
@@ -31,7 +31,6 @@ pub(crate) const ALL_DAMAGE: RestyleDamage =
     RestyleDamage::from_bits_retain(0b_0000_0000_0111_1111);
 
 impl BaseDocument {
-    #[cfg(feature = "incremental")]
     pub(crate) fn propagate_damage_flags(
         &mut self,
         node_id: usize,
@@ -469,6 +468,7 @@ impl BaseDocument {
         self.flush_image_layers_from_style(node_id, ImageLayerKind::Background);
         self.flush_image_layers_from_style(node_id, ImageLayerKind::Mask);
 
+        let incremental = self.incremental_layout;
         let display = {
             let node = self.nodes.get_mut(node_id).unwrap();
             let _damage = node.damage().unwrap_or(ALL_DAMAGE);
@@ -488,7 +488,7 @@ impl BaseDocument {
 
             // In non-incremental mode we unconditionally clear the Taffy cache.
             // In incremental mode this is handled as part of damage propagation.
-            if NON_INCREMENTAL {
+            if !incremental {
                 node.cache.clear();
                 if let Some(inline_layout) = node
                     .data
