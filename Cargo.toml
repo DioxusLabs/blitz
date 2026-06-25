@@ -100,7 +100,7 @@ taffy = { version = "=0.11.0-experimental-cache-fix.3", default-features = false
     "calc",
     "detailed_layout_info",
 ] }
-parley = { version = "0.10", default-features = false, features = ["std"] }
+parley = { git = "https://github.com/linebender/parley", rev="f9f53108885410786a25098d7d41f023d33a3e25", default-features = false, features = ["std"] }
 skrifa = { version = "0.42", default-features = false, features = [
     "std",
 ] } # Should match parley and vello versions

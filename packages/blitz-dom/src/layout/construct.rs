@@ -942,6 +942,7 @@ pub(crate) fn build_inline_layout_into(
                                 kind: box_kind,
                                 // Overridden by push_inline_box method
                                 index: 0,
+                                baseline: None,
                                 // Width and height are set during layout
                                 width: 0.0,
                                 height: 0.0,
@@ -1022,6 +1023,7 @@ pub(crate) fn build_inline_layout_into(
                             kind: box_kind,
                             // Overridden by push_inline_box method
                             index: 0,
+                            baseline: None,
                             // Width and height are set during layout
                             width: 0.0,
                             height: 0.0,

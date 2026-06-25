@@ -2825,8 +2825,7 @@ dependencies = [
 [[package]]
 name = "fontique"
 version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "274fa4f0f0a926ae182c7c076c078cce8a38471d15e61a102a02cac984be9813"
+source = "git+https://github.com/linebender/parley?rev=f9f53108885410786a25098d7d41f023d33a3e25#f9f53108885410786a25098d7d41f023d33a3e25"
 dependencies = [
  "hashbrown 0.17.1",
  "linebender_resource_handle",
@@ -5246,14 +5245,12 @@ dependencies = [
 [[package]]
 name = "parlance"
 version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4b6937eda350acc1a5d05872c3cbf99fe78619c269096e2be3d4a350058639d5"
+source = "git+https://github.com/linebender/parley?rev=f9f53108885410786a25098d7d41f023d33a3e25#f9f53108885410786a25098d7d41f023d33a3e25"
 
 [[package]]
 name = "parley"
 version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6b1cfcf399c774719fb1fa51bc6b91e86bdf003b03202a0902f1827ba6750746"
+source = "git+https://github.com/linebender/parley?rev=f9f53108885410786a25098d7d41f023d33a3e25#f9f53108885410786a25098d7d41f023d33a3e25"
 dependencies = [
  "fontique",
  "harfrust",
@@ -5270,8 +5267,7 @@ dependencies = [
 [[package]]
 name = "parley_data"
 version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d1d3755e2cc12c0625b0cd2f2773c6a37dd11d1531940c945ade4aeb78f2b145"
+source = "git+https://github.com/linebender/parley?rev=f9f53108885410786a25098d7d41f023d33a3e25#f9f53108885410786a25098d7d41f023d33a3e25"
 dependencies = [
  "icu_properties",
 ]
