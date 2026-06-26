@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+    body {
+        background: #f4f4f4;
+        font-family: sans-serif;
+        padding: 40px;
+    }
+    .card {
+        display: inline-block;
+        width: 180px;
+        height: 120px;
+        margin: 24px;
+        background: white;
+        border-radius: 12px;
+        line-height: 120px;
+        text-align: center;
+        vertical-align: middle;
+        color: #333;
+    }
+
+    /* 1. Simple inset shadow */
+    #s1 {
+        box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.5);
+    }
+
+    /* 2. Offset inset shadow (top-left) */
+    #s2 {
+        box-shadow: inset 16px 16px 24px rgba(0, 0, 0, 0.4);
+    }
+
+    /* 3. Spread inset shadow */
+    #s3 {
+        box-shadow: inset 0 0 20px 8px rgba(255, 0, 0, 0.5);
+    }
+
+    /* 4. Colored inset glow */
+    #s4 {
+        box-shadow: inset 0 0 30px rgba(0, 128, 255, 0.7);
+    }
+
+    /* 5. Multiple inset shadows */
+    #s5 {
+        box-shadow:
+            inset 4px 4px 10px rgba(0, 0, 0, 0.5),
+            inset -4px -4px 10px rgba(255, 255, 255, 0.6);
+    }
+
+    /* 6. Hard inset shadow (zero blur, offset) */
+    #s6 {
+        box-shadow: inset 8px 8px 0 rgba(0, 0, 0, 0.6);
+    }
+
+    /* 7. Hard inset shadow, opposite corner */
+    #s7 {
+        box-shadow: inset -10px -10px 0 rgba(0, 100, 0, 0.7);
+    }
+
+    /* 8. Complex layered inset shadows */
+    #s8 {
+        box-shadow:
+            inset 0 0 0 2px rgba(255, 255, 255, 0.8),
+            inset 0 0 0 6px rgba(0, 0, 0, 0.15),
+            inset 6px 6px 12px rgba(0, 0, 0, 0.4),
+            inset -6px -6px 12px rgba(255, 255, 255, 0.5),
+            inset 0 0 30px rgba(80, 120, 200, 0.3);
+    }
+</style>
+</head>
+<body>
+    <div class="card" id="s1">Simple</div>
+    <div class="card" id="s2">Offset</div>
+    <div class="card" id="s3">Spread</div>
+    <div class="card" id="s4">Glow</div>
+    <div class="card" id="s5">Multiple</div>
+    <div class="card" id="s6">Hard Offset</div>
+    <div class="card" id="s7">Hard Corner</div>
+    <div class="card" id="s8">Complex</div>
+</body>
+</html>
