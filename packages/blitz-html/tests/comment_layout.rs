@@ -65,3 +65,49 @@ fn comment_sibling_does_not_inline_block_child() {
         "block child must fill its parent's width even with a comment sibling"
     );
 }
+
+#[test]
+fn abspos_inset_child_of_scroll_container_sizes_to_padding_box() {
+    // An absolute inset:0 child of a relative scroll container must size to
+    // the container's padding box, not to its scrollable content area.
+    let doc = layout_doc(
+        r#"<html><body style="margin:0">
+            <div style="position:relative; width:300px; height:200px; overflow-y:auto;">
+                <div id="abs" style="position:absolute; inset:0;">
+                    <div style="height:5000px;"></div>
+                </div>
+            </div>
+        </body></html>"#,
+    );
+    let abs_id = doc.query_selector("#abs").unwrap().expect("#abs not found");
+    let layout = doc.get_node(abs_id).unwrap().final_layout;
+    assert_eq!(
+        (layout.size.width, layout.size.height),
+        (300.0, 200.0),
+        "absolute inset:0 child of a scroll container must match the padding box"
+    );
+}
+
+#[test]
+fn abspos_calc_var_inset_stretches() {
+    // Tailwind v4 emits `inset: calc(var(--spacing) * 0)` for inset-0.
+    let doc = layout_doc(
+        r#"<html><head><style>
+            :root { --spacing: 0.25rem; }
+            .inset-0 { inset: calc(var(--spacing) * 0); }
+        </style></head><body style="margin:0">
+            <div style="position:relative; width:300px; height:200px; overflow-y:auto;">
+                <div id="abs" class="inset-0" style="position:absolute;">
+                    <div style="height:5000px;"></div>
+                </div>
+            </div>
+        </body></html>"#,
+    );
+    let abs_id = doc.query_selector("#abs").unwrap().expect("#abs not found");
+    let layout = doc.get_node(abs_id).unwrap().final_layout;
+    assert_eq!(
+        (layout.size.width, layout.size.height),
+        (300.0, 200.0),
+        "calc(var()*0) insets must stretch the abspos child to its containing block"
+    );
+}
