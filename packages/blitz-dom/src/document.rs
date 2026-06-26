@@ -1555,15 +1555,14 @@ impl BaseDocument {
         y: f64,
         mut dispatch_event: F,
     ) -> bool {
-        let Some(node) = self.nodes.get_mut(node_id) else {
+        // Pre-compute scroll capabilities and corrected scroll height using shared references (before mutable borrow)
+        let Some(node) = self.nodes.get(node_id) else {
             return false;
         };
-
         let is_html_or_body = node.data.downcast_element().is_some_and(|e| {
             let tag = &e.name.local;
             tag == "html" || tag == "body"
         });
-
         let (can_x_scroll, can_y_scroll) = node
             .primary_styles()
             .map(|styles| {
@@ -1575,6 +1574,35 @@ impl BaseDocument {
             })
             .unwrap_or((false, false));
 
+        let mut scroll_height = node.final_layout.scroll_height() as f64;
+        if can_y_scroll {
+            let layout = &node.final_layout;
+            let padding_border = (layout.padding.top
+                + layout.padding.bottom
+                + layout.border.top
+                + layout.border.bottom) as f64;
+            if let Some(ref children) = *node.layout_children.borrow() {
+                let mut max_child_bottom: f64 = 0.0;
+                for &child_id in children {
+                    if let Some(child) = self.nodes.get(child_id) {
+                        let child_bottom = (child.final_layout.location.y
+                            + child.final_layout.size.height)
+                            as f64;
+                        if child_bottom > max_child_bottom {
+                            max_child_bottom = child_bottom;
+                        }
+                    }
+                }
+                let children_scroll_height =
+                    (max_child_bottom + padding_border - layout.size.height as f64).max(0.0);
+                scroll_height = scroll_height.max(children_scroll_height);
+            }
+        }
+
+        let Some(node) = self.nodes.get_mut(node_id) else {
+            return false;
+        };
+
         let initial = node.scroll_offset;
         let new_x = node.scroll_offset.x - x;
         let new_y = node.scroll_offset.y - y;
@@ -1583,7 +1611,6 @@ impl BaseDocument {
         let mut bubble_y = 0.0;
 
         let scroll_width = node.final_layout.scroll_width() as f64;
-        let scroll_height = node.final_layout.scroll_height() as f64;
 
         // Handle sub document case
         if let Some(mut sub_doc) = node.subdoc_mut().map(|doc| doc.inner_mut()) {
