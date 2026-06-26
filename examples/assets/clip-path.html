@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+    body {
+        background: #f4f4f4;
+        font-family: sans-serif;
+        padding: 16px 40px 40px;
+    }
+    h2 {
+        margin-top: 48px;
+        border-bottom: 1px solid #ccc;
+        padding-bottom: 8px;
+    }
+    h1 {
+        margin-bottom: 16px;
+    }
+    .wrap {
+        display: inline-block;
+        background: #d9d9d9;
+        padding: 12px;
+        margin: 16px;
+    }
+    .card {
+        display: block;
+        width: 180px;
+        height: 120px;
+        line-height: 120px;
+        text-align: center;
+        vertical-align: middle;
+        color: white;
+        font-weight: bold;
+    }
+
+    /* Per-shape block colours (curated harmonious palette) */
+    #c1  { background: #e63946; } /* coral red    */
+    #c2  { background: #f4a261; } /* sandy orange */
+    #c3  { background: #e9c46a; } /* mustard      */
+    #c4  { background: #2a9d8f; } /* teal         */
+    #c5  { background: #264653; } /* deep slate   */
+    #c6  { background: #457b9d; } /* dusty blue   */
+    #c7  { background: #8338ec; } /* vivid purple */
+    #c8  { background: #3a86ff; } /* bright blue  */
+    #c9  { background: #ff006e; } /* hot pink     */
+    #c10 { background: #fb5607; } /* tangerine    */
+    #c11 { background: #ffbe0b; } /* golden yellow*/
+    #c12 { background: #06d6a0; } /* mint green   */
+    #c13 { background: #118ab2; } /* ocean blue   */
+    #c14 { background: #073b4c; } /* midnight     */
+    #c15 { background: #ef476f; } /* rose         */
+    #c16 { background: #ffd166; } /* sunflower    */
+    #c17 { background: #06aed5; } /* sky cyan     */
+    #c18 { background: #4a4e69; } /* indigo grey  */
+    #c19 { background: #9a8c98; } /* mauve        */
+    #c20 { background: #c9ada7; } /* dusty rose   */
+    #c21 { background: #d62828; } /* crimson      */
+    #c22 { background: #f77f00; } /* pumpkin      */
+    #c23 { background: #fcbf49; } /* amber        */
+    #c24 { background: #43aa8b; } /* emerald      */
+    #c25 { background: #577590; } /* steel blue   */
+
+    /* --- Basic shapes --- */
+
+    /* 1. Circle centered */
+    #c1 {
+        clip-path: circle(60px at 90px 60px);
+    }
+
+    /* 2. Circle at top-left */
+    #c2 {
+        clip-path: circle(50px at 30px 30px);
+    }
+
+    /* 3. Circle percentage radius */
+    #c3 {
+        clip-path: circle(50% at 50% 50%);
+    }
+
+    /* 4. Ellipse centered */
+    #c4 {
+        clip-path: ellipse(80px 50px at 50% 50%);
+    }
+
+    /* 5. Ellipse offset */
+    #c5 {
+        clip-path: ellipse(60px 40px at 30% 70%);
+    }
+
+    /* 6. Inset no rounding */
+    #c6 {
+        clip-path: inset(10px);
+    }
+
+    /* 7. Inset with rounding */
+    #c7 {
+        clip-path: inset(10px round 20px);
+    }
+
+    /* 8. Inset asymmetric */
+    #c8 {
+        clip-path: inset(20px 10px 30px 40px);
+    }
+
+    /* 9. Inset asymmetric with rounding */
+    #c9 {
+        clip-path: inset(10px 20px 30px 40px round 10px 30px 5px 25px);
+    }
+
+    /* 10. Triangle via polygon */
+    #c10 {
+        clip-path: polygon(50% 0%, 100% 100%, 0% 100%);
+    }
+
+    /* 11. Right-pointing arrow */
+    #c11 {
+        clip-path: polygon(0% 20%, 60% 20%, 60% 0%, 100% 50%, 60% 100%, 60% 80%, 0% 80%);
+    }
+
+    /* 12. Diamond */
+    #c12 {
+        clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
+    }
+
+    /* 13. Pentagon */
+    #c13 {
+        clip-path: polygon(50% 0%, 100% 38%, 82% 100%, 18% 100%, 0% 38%);
+    }
+
+    /* 14. Hexagon */
+    #c14 {
+        clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
+    }
+
+    /* 15. Star (5-point) */
+    #c15 {
+        clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
+    }
+
+    /* 16. Chevron */
+    #c16 {
+        clip-path: polygon(0% 0%, 75% 0%, 100% 50%, 75% 100%, 0% 100%, 25% 50%);
+    }
+
+    /* 17. Trapezoid */
+    #c17 {
+        clip-path: polygon(20% 0%, 80% 0%, 100% 100%, 0% 100%);
+    }
+
+    /* 18. Parallelogram */
+    #c18 {
+        clip-path: polygon(25% 0%, 100% 0%, 75% 100%, 0% 100%);
+    }
+
+    /* 19. Cross/plus */
+    #c19 {
+        clip-path: polygon(35% 0%, 65% 0%, 65% 35%, 100% 35%, 100% 65%, 65% 65%, 65% 100%, 35% 100%, 35% 65%, 0% 65%, 0% 35%, 35% 35%);
+    }
+
+    /* 20. Message bubble (rounded rect via polygon approximation) */
+    #c20 {
+        clip-path: polygon(0% 0%, 100% 0%, 100% 75%, 75% 75%, 75% 100%, 50% 75%, 0% 75%);
+    }
+
+    /* --- Complex path() shapes (SVG path syntax, 180x120 viewport) --- */
+
+    /* 21. Heart */
+    #c21 {
+        clip-path: path('M90 105 C 60 80, 20 60, 20 35 C 20 15, 40 5, 60 15 C 75 22, 90 35, 90 35 C 90 35, 105 22, 120 15 C 140 5, 160 15, 160 35 C 160 60, 120 80, 90 105 Z');
+    }
+
+    /* 22. Wave banner */
+    #c22 {
+        clip-path: path('M0 30 C 30 0, 60 0, 90 30 C 120 60, 150 60, 180 30 L 180 120 L 0 120 Z');
+    }
+
+    /* 23. Gear (8-tooth) */
+    #c23 {
+        clip-path: path('M85 0 L 95 0 L 100 15 L 115 12 L 122 22 L 135 25 L 135 38 L 148 45 L 145 58 L 155 65 L 148 78 L 155 90 L 142 95 L 145 108 L 130 110 L 122 118 L 110 115 L 100 120 L 90 120 L 80 115 L 70 118 L 58 110 L 45 108 L 48 95 L 35 90 L 42 78 L 35 65 L 45 58 L 42 45 L 55 38 L 55 25 L 68 22 L 75 12 L 85 15 Z');
+    }
+
+    /* 24. Organic blob */
+    #c24 {
+        clip-path: path('M40 30 C 20 40, 10 70, 30 90 C 50 110, 90 115, 120 100 C 150 85, 175 60, 165 35 C 155 10, 110 5, 80 10 C 65 12, 55 22, 40 30 Z');
+    }
+
+    /* 25. Speech bubble with curved tail */
+    #c25 {
+        clip-path: path('M20 10 L 160 10 C 170 10, 175 15, 175 25 L 175 70 C 175 80, 170 85, 160 85 L 110 85 C 100 85, 95 90, 90 100 C 85 110, 80 115, 70 110 C 60 105, 55 95, 60 85 L 20 85 C 10 85, 5 80, 5 70 L 5 25 C 5 15, 10 10, 20 10 Z');
+    }
+</style>
+</head>
+<body>
+    <h1>Clip-Path Examples</h1>
+    <h2>Basic Shapes</h2>
+    <div class="wrap"><div class="card" id="c1">Circle</div></div>
+    <div class="wrap"><div class="card" id="c2">Circle TL</div></div>
+    <div class="wrap"><div class="card" id="c3">Circle %</div></div>
+    <div class="wrap"><div class="card" id="c4">Ellipse</div></div>
+    <div class="wrap"><div class="card" id="c5">Ellipse Off</div></div>
+    <div class="wrap"><div class="card" id="c6">Inset</div></div>
+    <div class="wrap"><div class="card" id="c7">Inset Round</div></div>
+    <div class="wrap"><div class="card" id="c8">Inset Asym</div></div>
+    <div class="wrap"><div class="card" id="c9">Inset Mix</div></div>
+
+    <h2>Polygon Shapes</h2>
+    <div class="wrap"><div class="card" id="c10">Triangle</div></div>
+    <div class="wrap"><div class="card" id="c11">Arrow</div></div>
+    <div class="wrap"><div class="card" id="c12">Diamond</div></div>
+    <div class="wrap"><div class="card" id="c13">Pentagon</div></div>
+    <div class="wrap"><div class="card" id="c14">Hexagon</div></div>
+    <div class="wrap"><div class="card" id="c15">Star</div></div>
+    <div class="wrap"><div class="card" id="c16">Chevron</div></div>
+    <div class="wrap"><div class="card" id="c17">Trapezoid</div></div>
+    <div class="wrap"><div class="card" id="c18">Parallelogram</div></div>
+    <div class="wrap"><div class="card" id="c19">Cross</div></div>
+    <div class="wrap"><div class="card" id="c20">Bubble</div></div>
+
+    <h2>Complex path() Shapes</h2>
+    <div class="wrap"><div class="card" id="c21">Heart</div></div>
+    <div class="wrap"><div class="card" id="c22">Wave</div></div>
+    <div class="wrap"><div class="card" id="c23">Gear</div></div>
+    <div class="wrap"><div class="card" id="c24">Blob</div></div>
+    <div class="wrap"><div class="card" id="c25">Speech</div></div>
+</body>
+</html>
