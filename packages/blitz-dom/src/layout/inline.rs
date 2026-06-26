@@ -48,7 +48,7 @@ impl BaseDocument {
 
         // Resolve node's preferred/min/max sizes (width/heights) against the available space (percentages resolve to pixel values)
         // For ContentSize mode, we pretend that the node has no size styles as these should be ignored.
-        let (clamped_style_size, min_size, max_size, _aspect_ratio) = match inputs.sizing_mode {
+        let (clamped_style_size, min_size, max_size, aspect_ratio) = match inputs.sizing_mode {
             SizingMode::ContentSize => {
                 let node_size = known_dimensions;
                 let node_min_size = Size::NONE;
@@ -84,6 +84,22 @@ impl BaseDocument {
             _ => None,
         });
 
+        // css-sizing-4: a definite axis (e.g. a stretched width passed in via
+        // known_dimensions) transfers through the ratio to make the other
+        // definite. This self-gates — blitz's block parent is taffy, which fills
+        // known_dimensions only as a real constraint and leaves it None while
+        // probing intrinsic sizes — so there is no run-mode special case and
+        // measure passes stay content-based. Only a newly-derived axis is
+        // adopted; an incoming known size is left as the parent resolved it.
+        let known_dimensions = {
+            let derived = known_dimensions
+                .maybe_apply_aspect_ratio(aspect_ratio)
+                .maybe_clamp(min_size, max_size);
+            Size {
+                width: known_dimensions.width.or(derived.width),
+                height: known_dimensions.height.or(derived.height),
+            }
+        };
         let styled_based_known_dimensions = known_dimensions
             .or(min_max_definite_size)
             .or(clamped_style_size)
