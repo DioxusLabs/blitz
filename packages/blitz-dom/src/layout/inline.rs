@@ -300,6 +300,7 @@ impl BaseDocument {
                 ibox.height = 0.0;
             } else {
                 let output = self.compute_child_layout(NodeId::from(ibox.id), child_inputs);
+                ibox.baseline = output.first_baselines.y;
                 ibox.width = (margin.left + margin.right + output.size.width) * scale;
                 ibox.height = (margin.top + margin.bottom + output.size.height) * scale;
             }
@@ -537,7 +538,7 @@ impl BaseDocument {
                         // dbg!(&layout.size);
                         // dbg!(&layout.location);
 
-                        state.append_inline_box_to_line(box_break_data.advance, 0.0);
+                        state.append_inline_box_to_line(box_break_data.advance, 0.0, 0.0);
 
                         // if float.is_floated() {
                         //     println!("INLINE FLOATED BOX ({}) {:?}", ibox.id, float);
@@ -662,6 +663,11 @@ impl BaseDocument {
         // println!("known_dimensions: w: {:?} h: {:?}", inputs.known_dimensions.width, inputs.known_dimensions.height);
         // println!("\n");
 
+        let first_baseline = inline_layout
+            .layout
+            .first_baseline()
+            .map(|baseline| baseline + content_box_inset.top);
+
         // Put layout back
         self.nodes[node_id]
             .data
@@ -672,7 +678,10 @@ impl BaseDocument {
         LayoutOutput {
             size: final_size,
             content_size: measured_size + padding.sum_axes(),
-            first_baselines: Point::NONE,
+            first_baselines: Point {
+                x: None,
+                y: first_baseline,
+            },
             top_margin: CollapsibleMarginSet::ZERO,
             bottom_margin: CollapsibleMarginSet::ZERO,
             margins_can_collapse_through: !has_styles_preventing_being_collapsed_through
