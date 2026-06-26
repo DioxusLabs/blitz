@@ -5,7 +5,15 @@
     body {
         background: #f4f4f4;
         font-family: sans-serif;
-        padding: 40px;
+        padding: 16px 40px 40px;
+    }
+    h2 {
+        margin-top: 48px;
+        border-bottom: 1px solid #ccc;
+        padding-bottom: 8px;
+    }
+    h1 {
+        margin-bottom: 16px;
     }
     .card {
         display: inline-block;
@@ -20,45 +28,83 @@
         color: #333;
     }
 
+    /* --- Outset shadows --- */
+
+    /* 1. Simple outset shadow */
+    #o1 {
+        box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+    }
+
+    /* 2. Offset outset shadow (bottom-right) */
+    #o2 {
+        box-shadow: 10px 10px 20px rgba(0, 0, 0, 0.4);
+    }
+
+    /* 3. Spread outset shadow */
+    #o3 {
+        box-shadow: 0 0 10px 8px rgba(255, 0, 0, 0.5);
+    }
+
+    /* 4. Colored outset glow */
+    #o4 {
+        box-shadow: 0 0 30px rgba(0, 128, 255, 0.7);
+    }
+
+    /* 5. Hard outset shadow (zero blur, offset) */
+    #o5 {
+        box-shadow: 8px 8px 0 rgba(0, 0, 0, 0.6);
+    }
+
+    /* 6. Complex layered outset shadows */
+    #o6 {
+        box-shadow:
+            0 0 0 2px rgba(255, 255, 255, 0.8),
+            0 0 0 6px rgba(0, 0, 0, 0.15),
+            10px 10px 20px rgba(0, 0, 0, 0.4),
+            -10px -10px 20px rgba(80, 120, 200, 0.3);
+    }
+
+    /* --- Inset shadows --- */
+
     /* 1. Simple inset shadow */
-    #s1 {
+    #i1 {
         box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.5);
     }
 
     /* 2. Offset inset shadow (top-left) */
-    #s2 {
+    #i2 {
         box-shadow: inset 16px 16px 24px rgba(0, 0, 0, 0.4);
     }
 
     /* 3. Spread inset shadow */
-    #s3 {
+    #i3 {
         box-shadow: inset 0 0 20px 8px rgba(255, 0, 0, 0.5);
     }
 
     /* 4. Colored inset glow */
-    #s4 {
+    #i4 {
         box-shadow: inset 0 0 30px rgba(0, 128, 255, 0.7);
     }
 
     /* 5. Multiple inset shadows */
-    #s5 {
+    #i5 {
         box-shadow:
             inset 4px 4px 10px rgba(0, 0, 0, 0.5),
             inset -4px -4px 10px rgba(255, 255, 255, 0.6);
     }
 
     /* 6. Hard inset shadow (zero blur, offset) */
-    #s6 {
+    #i6 {
         box-shadow: inset 8px 8px 0 rgba(0, 0, 0, 0.6);
     }
 
     /* 7. Hard inset shadow, opposite corner */
-    #s7 {
+    #i7 {
         box-shadow: inset -10px -10px 0 rgba(0, 100, 0, 0.7);
     }
 
     /* 8. Complex layered inset shadows */
-    #s8 {
+    #i8 {
         box-shadow:
             inset 0 0 0 2px rgba(255, 255, 255, 0.8),
             inset 0 0 0 6px rgba(0, 0, 0, 0.15),
@@ -69,13 +115,23 @@
 </style>
 </head>
 <body>
-    <div class="card" id="s1">Simple</div>
-    <div class="card" id="s2">Offset</div>
-    <div class="card" id="s3">Spread</div>
-    <div class="card" id="s4">Glow</div>
-    <div class="card" id="s5">Multiple</div>
-    <div class="card" id="s6">Hard Offset</div>
-    <div class="card" id="s7">Hard Corner</div>
-    <div class="card" id="s8">Complex</div>
+    <h1>Box Shadow Examples</h1>
+    <h2>Outset Shadows</h2>
+    <div class="card" id="o1">Simple</div>
+    <div class="card" id="o2">Offset</div>
+    <div class="card" id="o3">Spread</div>
+    <div class="card" id="o4">Glow</div>
+    <div class="card" id="o5">Hard Offset</div>
+    <div class="card" id="o6">Complex</div>
+
+    <h2>Inset Shadows</h2>
+    <div class="card" id="i1">Simple</div>
+    <div class="card" id="i2">Offset</div>
+    <div class="card" id="i3">Spread</div>
+    <div class="card" id="i4">Glow</div>
+    <div class="card" id="i5">Multiple</div>
+    <div class="card" id="i6">Hard Offset</div>
+    <div class="card" id="i7">Hard Corner</div>
+    <div class="card" id="i8">Complex</div>
 </body>
 </html>
