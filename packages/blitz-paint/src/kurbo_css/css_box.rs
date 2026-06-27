@@ -174,6 +174,23 @@ impl CssBox {
         path
     }
 
+    /// Whether the border box is a full ellipse (which includes a circle): every
+    /// corner radius equals half the box in that axis, i.e. `border-radius: 50%`.
+    /// Such a border is a single continuous curve with no straight edges; it is best
+    /// drawn as a stroked circle/ellipse rather than a filled two-contour annulus
+    /// (see `draw_border`), which otherwise leaves seam notches on a thin ring where
+    /// the quarter-arcs meet. (Rounded *rectangles* don't need this — their arc joins
+    /// sit at the straight edges and fill cleanly.)
+    pub fn is_elliptical_border(&self) -> bool {
+        let (rx, ry) = (self.border_box.width() / 2.0, self.border_box.height() / 2.0);
+        let is_half = |c: Vec2| (c.x - rx).abs() < 0.01 && (c.y - ry).abs() < 0.01;
+        let radii = &self.border_radii;
+        is_half(radii.top_left)
+            && is_half(radii.top_right)
+            && is_half(radii.bottom_right)
+            && is_half(radii.bottom_left)
+    }
+
     fn shape(&self, path: &mut BezPath, line: CssBoxKind, direction: Direction) {
         use Corner::*;
 
@@ -545,4 +562,32 @@ fn start_angle(bt_width: f64, br_width: f64, radii: Vec2) -> f64 {
 fn should_solve_properly() {
     // 0.643501
     dbg!(start_angle(4.0, 1.0, Vec2 { x: 1.0, y: 2.0 }));
+}
+
+#[test]
+fn detects_elliptical_border() {
+    let corners = |x: f64, y: f64| NonUniformRoundedRectRadii {
+        top_left: Vec2::new(x, y),
+        top_right: Vec2::new(x, y),
+        bottom_right: Vec2::new(x, y),
+        bottom_left: Vec2::new(x, y),
+    };
+    let css_box = |w: f64, h: f64, radii: NonUniformRoundedRectRadii| {
+        CssBox::new(
+            Rect::new(0.0, 0.0, w, h),
+            Insets::uniform(1.0),
+            Insets::ZERO,
+            0.0,
+            radii,
+        )
+    };
+
+    // Circle: square box, every radius == half the side.
+    assert!(css_box(44.0, 44.0, corners(22.0, 22.0)).is_elliptical_border());
+    // Ellipse: non-square box, radii == half each axis.
+    assert!(css_box(120.0, 64.0, corners(60.0, 32.0)).is_elliptical_border());
+    // Rounded rectangle: radius smaller than half → has straight edges.
+    assert!(!css_box(44.0, 44.0, corners(10.0, 10.0)).is_elliptical_border());
+    // Sharp rectangle: no rounding.
+    assert!(!css_box(44.0, 44.0, corners(0.0, 0.0)).is_elliptical_border());
 }
