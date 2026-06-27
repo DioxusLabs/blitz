@@ -230,6 +230,42 @@ impl CssBox {
         path
     }
 
+    /// Whether the border box is a full ellipse (which includes a circle): every
+    /// corner radius equals half the box in that axis, i.e. `border-radius: 50%`.
+    /// Such a border is a single continuous curve with no straight edges; it is best
+    /// drawn as a stroked ellipse rather than a filled two-contour annulus
+    /// (see `draw_border`), which otherwise leaves seam notches on a thin ring where
+    /// the quarter-arcs meet. Circles are already covered by the stroked-rounded-rect
+    /// path (see [`Self::is_uniform_corner_border`]); this catches the true ellipses
+    /// (unequal axes) that a rounded rect can't represent.
+    pub fn is_elliptical_border(&self) -> bool {
+        let (rx, ry) = (self.border_box.width() / 2.0, self.border_box.height() / 2.0);
+        let is_half = |c: Vec2| (c.x - rx).abs() < 0.01 && (c.y - ry).abs() < 0.01;
+        let radii = &self.border_radii;
+        is_half(radii.top_left)
+            && is_half(radii.top_right)
+            && is_half(radii.bottom_right)
+            && is_half(radii.bottom_left)
+    }
+
+    /// Whether every corner has an equal x and y radius, i.e. each corner is a
+    /// circular (not elliptical) arc. Corners may still differ from one another, so
+    /// this also covers plain rectangles (radius 0) and ordinary rounded rectangles,
+    /// not just circles. Such a border can be drawn as a single stroked
+    /// `kurbo::RoundedRect` rather than the filled per-edge annulus in
+    /// `draw_border` — simpler and faster, since it avoids building and filling a
+    /// separate path per edge. (`draw_border` additionally requires uniform border
+    /// width/color and each radius to be 0 or ≥ the border width for the stroke to
+    /// reproduce the CSS shape exactly.)
+    pub fn is_uniform_corner_border(&self) -> bool {
+        let is_circular = |c: Vec2| (c.x - c.y).abs() < 0.01;
+        let radii = &self.border_radii;
+        is_circular(radii.top_left)
+            && is_circular(radii.top_right)
+            && is_circular(radii.bottom_right)
+            && is_circular(radii.bottom_left)
+    }
+
     fn shape(&self, path: &mut BezPath, line: CssBoxKind, direction: Direction) {
         use Corner::*;
 
@@ -733,4 +769,76 @@ mod tests {
             }
         }
     }
+}
+
+#[test]
+fn detects_elliptical_border() {
+    let corners = |x: f64, y: f64| NonUniformRoundedRectRadii {
+        top_left: Vec2::new(x, y),
+        top_right: Vec2::new(x, y),
+        bottom_right: Vec2::new(x, y),
+        bottom_left: Vec2::new(x, y),
+    };
+    let css_box = |w: f64, h: f64, radii: NonUniformRoundedRectRadii| {
+        CssBox::new(
+            Rect::new(0.0, 0.0, w, h),
+            Insets::uniform(1.0),
+            Insets::ZERO,
+            0.0,
+            radii,
+        )
+    };
+
+    // Circle: square box, every radius == half the side.
+    assert!(css_box(44.0, 44.0, corners(22.0, 22.0)).is_elliptical_border());
+    // Ellipse: non-square box, radii == half each axis.
+    assert!(css_box(120.0, 64.0, corners(60.0, 32.0)).is_elliptical_border());
+    // Rounded rectangle: radius smaller than half → has straight edges.
+    assert!(!css_box(44.0, 44.0, corners(10.0, 10.0)).is_elliptical_border());
+    // Sharp rectangle: no rounding.
+    assert!(!css_box(44.0, 44.0, corners(0.0, 0.0)).is_elliptical_border());
+}
+
+#[test]
+fn detects_uniform_corner_border() {
+    let corners = |x: f64, y: f64| NonUniformRoundedRectRadii {
+        top_left: Vec2::new(x, y),
+        top_right: Vec2::new(x, y),
+        bottom_right: Vec2::new(x, y),
+        bottom_left: Vec2::new(x, y),
+    };
+    let css_box = |w: f64, h: f64, radii: NonUniformRoundedRectRadii| {
+        CssBox::new(
+            Rect::new(0.0, 0.0, w, h),
+            Insets::uniform(1.0),
+            Insets::ZERO,
+            0.0,
+            radii,
+        )
+    };
+
+    // Sharp rectangle: no rounding, still trivially "uniform" (0 == 0).
+    assert!(css_box(44.0, 44.0, corners(0.0, 0.0)).is_uniform_corner_border());
+    // Ordinary rounded rectangle: each corner is a circular arc.
+    assert!(css_box(44.0, 44.0, corners(10.0, 10.0)).is_uniform_corner_border());
+    // Circle: square box, every radius == half the side.
+    assert!(css_box(44.0, 44.0, corners(22.0, 22.0)).is_uniform_corner_border());
+    // Ellipse: non-square box, radii == half each axis → corners aren't circular.
+    assert!(!css_box(120.0, 64.0, corners(60.0, 32.0)).is_uniform_corner_border());
+    // Per-corner elliptical radius (rx != ry) anywhere disqualifies the box, even
+    // if it isn't a full border-radius: 50% ellipse.
+    let mixed = NonUniformRoundedRectRadii {
+        top_left: Vec2::new(10.0, 5.0),
+        ..corners(10.0, 10.0)
+    };
+    assert!(!css_box(44.0, 44.0, mixed).is_uniform_corner_border());
+
+    // Corners may differ in radius from each other, as long as each is circular.
+    let differing = NonUniformRoundedRectRadii {
+        top_left: Vec2::new(10.0, 10.0),
+        top_right: Vec2::new(5.0, 5.0),
+        bottom_right: Vec2::new(8.0, 8.0),
+        bottom_left: Vec2::new(2.0, 2.0),
+    };
+    assert!(css_box(44.0, 44.0, differing).is_uniform_corner_border());
 }

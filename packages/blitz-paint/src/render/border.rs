@@ -1,6 +1,6 @@
 use anyrender::PaintScene;
 use blitz_dom::node::SpecialElementData;
-use kurbo::{BezPath, Cap, Circle, PathEl, Point, Rect, Shape as _, Stroke};
+use kurbo::{BezPath, Cap, Circle, Insets, Join, PathEl, Point, Rect, Shape as _, Stroke, Vec2};
 use peniko::{Color, Fill};
 use smallvec::SmallVec;
 use style::{
@@ -156,6 +156,81 @@ impl ElementCx<'_, '_> {
         let style = &*self.style;
         let border = style.get_border();
         let current_color = style.clone_color();
+
+        // Fast path: a uniform-width, single-color solid border whose corners are
+        // all circular arcs (equal x and y radius — sharp rectangles, ordinary
+        // rounded rectangles and circles all qualify) can be drawn as a single
+        // stroke along its center-line instead of a fill per edge. Besides being
+        // faster, this works around Vello seam artifacts at the quarter-arc joins
+        // when a thin circular/elliptical border is drawn as the
+        // border-box/padding-box annulus.
+        //
+        // A full ellipse (`border-radius: 50%` on a non-square box) has the same
+        // seam problem but no rounded-rect representation, so it is stroked as an
+        // ellipse.
+        let all_solid = border.border_top_style == BorderStyle::Solid
+            && border.border_right_style == BorderStyle::Solid
+            && border.border_bottom_style == BorderStyle::Solid
+            && border.border_left_style == BorderStyle::Solid;
+        if all_solid {
+            let color = border
+                .border_top_color
+                .resolve_to_absolute(&current_color)
+                .as_srgb_color();
+            let same_color = [
+                &border.border_right_color,
+                &border.border_bottom_color,
+                &border.border_left_color,
+            ]
+            .iter()
+            .all(|c| c.resolve_to_absolute(&current_color).as_srgb_color() == color);
+            let bw = self.frame.border_width;
+            let uniform_width = bw.x0 == bw.y0 && bw.x0 == bw.x1 && bw.x0 == bw.y1 && bw.x0 > 0.0;
+            if same_color && uniform_width && color.components[3] > 0.0 {
+                let bb = self.frame.border_box;
+                let pb = self.frame.padding_box;
+                let width = (bb.width() - pb.width()) / 2.0;
+                // Miter join keeps sharp corners square. It has no effect on rounded
+                // corners, whose arcs meet the straight edges tangentially.
+                let stroke = Stroke::new(width).with_join(Join::Miter);
+
+                if self.frame.is_uniform_corner_border() {
+                    let radii = self.frame.border_radii;
+                    // The stroke matches the CSS border shape only when each corner is
+                    // sharp or its radius is at least the border width (outer radius
+                    // `r`, inner radius `r - width`, concentric). For 0 < r < width CSS
+                    // draws a rounded outer edge against a sharp inner corner, which a
+                    // stroke can't represent — leave those to the per-edge fill.
+                    let is_exact = |r: Vec2| r.x == 0.0 || r.x >= width;
+                    let stroke_is_exact = is_exact(radii.top_left)
+                        && is_exact(radii.top_right)
+                        && is_exact(radii.bottom_right)
+                        && is_exact(radii.bottom_left);
+                    if stroke_is_exact {
+                        let half_width = width / 2.0;
+                        // Center-line rect, and corner radii shrunk to match.
+                        let centerline_box = bb - Insets::uniform(half_width);
+                        let centerline_radius = |r: Vec2| (r.x - half_width).max(0.0);
+                        let radii = kurbo::RoundedRectRadii::new(
+                            centerline_radius(radii.top_left),
+                            centerline_radius(radii.top_right),
+                            centerline_radius(radii.bottom_right),
+                            centerline_radius(radii.bottom_left),
+                        );
+                        let rr = kurbo::RoundedRect::from_rect(centerline_box, radii);
+                        scene.stroke(&stroke, self.transform, color, None, &rr);
+                        return;
+                    }
+                } else if self.frame.is_elliptical_border() {
+                    // Center-line radii, straight from the boxes.
+                    let rx = (bb.width() + pb.width()) / 4.0;
+                    let ry = (bb.height() + pb.height()) / 4.0;
+                    let e = kurbo::Ellipse::new(bb.center(), (rx, ry), 0.0);
+                    scene.stroke(&stroke, self.transform, color, None, &e);
+                    return;
+                }
+            }
+        }
 
         // (colour, path) pairs to be filled. Several entries may share a colour;
         // they are grouped before filling so that adjacent same-coloured regions
