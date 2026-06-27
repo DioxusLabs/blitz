@@ -57,6 +57,16 @@ impl BaseDocument {
         let root_node_id = self.root_element().id;
         debug_timer!(timer, feature = "log_phase_times");
 
+        // Compute the shadow DOM flattened tree (shadow-root composition and
+        // <slot> distribution). This must happen *before* style resolution so
+        // that Stylo traverses the composed (flattened) tree and styles shadow
+        // content, and before box construction consumes it.
+        #[cfg(feature = "shadow-dom")]
+        {
+            self.compute_flattened_trees();
+            timer.record_time("shadow");
+        }
+
         // we need to resolve stylist first since it will need to drive our layout bits
         self.resolve_stylist(current_time_for_animations);
         timer.record_time("style");

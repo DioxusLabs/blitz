@@ -20,6 +20,8 @@ default = [
     "custom-widget"
 ]
 custom-widget = ["dep:anyrender", "accessibility"]
+# Shadow DOM and Custom Element support
+shadow-dom = []
 tracing = ["dep:tracing"]
 svg = ["dep:usvg"]
 # WOFF decoding (using the "wuff" crate which is pure Rust)

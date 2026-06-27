@@ -283,6 +283,16 @@ pub struct BaseDocument {
     #[cfg(feature = "custom-widget")]
     pub(crate) pending_resource_deallocations: Vec<anyrender::ResourceId>,
 
+    /// Registry of custom element definitions keyed by tag name
+    #[cfg(feature = "shadow-dom")]
+    pub(crate) custom_element_registry: crate::node::CustomElementRegistry,
+    /// Nodes that are shadow hosts (have an attached shadow root)
+    #[cfg(feature = "shadow-dom")]
+    pub(crate) shadow_host_nodes: HashSet<usize>,
+    /// Nodes that have an attached custom element controller
+    #[cfg(feature = "shadow-dom")]
+    pub(crate) custom_element_nodes: HashSet<usize>,
+
     /// Cache of loaded images, keyed by URL. Allows reusing images across multiple
     /// elements without re-fetching from the network.
     pub(crate) image_cache: HashMap<String, ImageData>,
@@ -443,6 +453,13 @@ impl BaseDocument {
             custom_widget_nodes: HashSet::new(),
             #[cfg(feature = "custom-widget")]
             pending_resource_deallocations: Vec::new(),
+
+            #[cfg(feature = "shadow-dom")]
+            custom_element_registry: crate::node::CustomElementRegistry::new(),
+            #[cfg(feature = "shadow-dom")]
+            shadow_host_nodes: HashSet::new(),
+            #[cfg(feature = "shadow-dom")]
+            custom_element_nodes: HashSet::new(),
 
             changed_nodes: HashSet::new(),
             deferred_construction_nodes: Vec::new(),
@@ -720,6 +737,121 @@ impl BaseDocument {
         self.custom_widget_nodes.remove(&node_id);
     }
 
+    /// Mutable access to the custom element registry. Use
+    /// [`CustomElementRegistry::define`](crate::node::CustomElementRegistry::define)
+    /// to register custom elements by tag name.
+    #[cfg(feature = "shadow-dom")]
+    pub fn custom_elements_mut(&mut self) -> &mut crate::node::CustomElementRegistry {
+        &mut self.custom_element_registry
+    }
+
+    /// Register a custom element definition against a tag name (analogous to
+    /// `customElements.define`).
+    #[cfg(feature = "shadow-dom")]
+    pub fn define_custom_element(
+        &mut self,
+        name: markup5ever::LocalName,
+        definition: crate::node::CustomElementDefinition,
+    ) {
+        self.custom_element_registry.define(name, definition);
+    }
+
+    /// The node ids of all shadow hosts in the document.
+    #[cfg(feature = "shadow-dom")]
+    pub fn shadow_host_node_ids(&self) -> Vec<usize> {
+        self.shadow_host_nodes.iter().copied().collect()
+    }
+
+    /// If `host_id` is a shadow host, returns the node id of its shadow root.
+    #[cfg(feature = "shadow-dom")]
+    pub fn shadow_root_id(&self, host_id: usize) -> Option<usize> {
+        self.get_node(host_id)
+            .and_then(|node| node.shadow_root_id())
+    }
+
+    /// Attach a shadow root to the given host element, returning the node id of
+    /// the newly-created shadow root. If the host already has a shadow root, its
+    /// existing shadow root id is returned unchanged.
+    #[cfg(feature = "shadow-dom")]
+    pub fn attach_shadow(&mut self, host_id: usize, mode: crate::node::ShadowRootMode) -> usize {
+        if let Some(existing) = self.nodes[host_id].shadow_root_id() {
+            return existing;
+        }
+
+        let shadow_root_id = self.create_node(NodeData::ShadowRoot(
+            crate::node::ShadowRootData::new(host_id, mode),
+        ));
+
+        // The shadow root's parent is the host. It is *not* added to the host's
+        // `children` list (which holds light-DOM children); it is referenced via
+        // the host's `ElementData::shadow_root` field instead.
+        self.nodes[shadow_root_id].parent = Some(host_id);
+        if self.nodes[host_id].flags.is_in_document() {
+            self.nodes[shadow_root_id]
+                .flags
+                .insert(NodeFlags::IS_IN_DOCUMENT);
+        }
+
+        self.nodes[host_id]
+            .element_data_mut()
+            .expect("Shadow host must be an element")
+            .shadow_root = Some(shadow_root_id);
+        self.shadow_host_nodes.insert(host_id);
+
+        // Host needs its box tree rebuilt to account for the shadow tree.
+        self.nodes[host_id].insert_damage(ALL_DAMAGE);
+        self.nodes[host_id].mark_ancestors_dirty();
+
+        shadow_root_id
+    }
+
+    /// Detach (and drop) the shadow root of the given host element, if any.
+    #[cfg(feature = "shadow-dom")]
+    pub fn detach_shadow(&mut self, host_id: usize) {
+        let shadow_root_id = self.nodes[host_id]
+            .element_data_mut()
+            .and_then(|el| el.shadow_root.take());
+        if let Some(shadow_root_id) = shadow_root_id {
+            self.drop_node_ignoring_parent(shadow_root_id);
+            self.shadow_host_nodes.remove(&host_id);
+            self.nodes[host_id].insert_damage(ALL_DAMAGE);
+            self.nodes[host_id].mark_ancestors_dirty();
+        }
+    }
+
+    /// Attach a custom element controller to the given node.
+    #[cfg(feature = "shadow-dom")]
+    pub fn set_custom_element(
+        &mut self,
+        node_id: usize,
+        controller: Box<dyn crate::node::CustomElement>,
+    ) {
+        use crate::node::{CustomElementData, SpecialElementData};
+        self.nodes[node_id]
+            .element_data_mut()
+            .expect("Custom element host must be an element")
+            .special_data = SpecialElementData::CustomElement(CustomElementData::new(controller));
+        self.custom_element_nodes.insert(node_id);
+    }
+
+    /// Detach the custom element controller from the given node (without running
+    /// the `disconnected` callback). Returns the controller if present.
+    #[cfg(feature = "shadow-dom")]
+    pub fn take_custom_element(
+        &mut self,
+        node_id: usize,
+    ) -> Option<Box<dyn crate::node::CustomElement>> {
+        use crate::node::SpecialElementData;
+        self.custom_element_nodes.remove(&node_id);
+        let element = self.nodes[node_id].element_data_mut()?;
+        if matches!(element.special_data, SpecialElementData::CustomElement(_)) {
+            if let SpecialElementData::CustomElement(mut data) = element.special_data.take() {
+                return data.controller.take();
+            }
+        }
+        None
+    }
+
     pub fn root_node(&self) -> &Node {
         &self.nodes[0]
     }
@@ -765,6 +897,15 @@ impl BaseDocument {
 
             for &child in &node.children {
                 self.drop_node_ignoring_parent(child);
+            }
+
+            // Drop any attached shadow root (its children are dropped recursively
+            // via the recursive call below).
+            #[cfg(feature = "shadow-dom")]
+            if let Some(shadow_root_id) = node.shadow_root_id() {
+                self.shadow_host_nodes.remove(&node_id);
+                self.custom_element_nodes.remove(&node_id);
+                self.drop_node_ignoring_parent(shadow_root_id);
             }
         }
         node

@@ -6,38 +6,70 @@ use crate::{BaseDocument, Node};
 
 macro_rules! iter_children {
     ($node_expr:expr, $cb:expr) => {{
-        let node = &mut $node_expr;
-        let children = core::mem::take(&mut node.children);
-        for child_id in children.iter().copied() {
-            $cb(child_id)
+        // For shadow hosts and slots, iterate the flattened-tree children
+        // (cloned to avoid borrow conflicts with the callback).
+        #[cfg(feature = "shadow-dom")]
+        if $node_expr.flattened_children.is_some() {
+            let children = $node_expr.flattened_children.clone().unwrap();
+            for child_id in children {
+                $cb(child_id)
+            }
+        } else {
+            let node = &mut $node_expr;
+            let children = core::mem::take(&mut node.children);
+            for child_id in children.iter().copied() {
+                $cb(child_id)
+            }
+            $node_expr.children = children;
         }
-        $node_expr.children = children;
+        #[cfg(not(feature = "shadow-dom"))]
+        {
+            let node = &mut $node_expr;
+            let children = core::mem::take(&mut node.children);
+            for child_id in children.iter().copied() {
+                $cb(child_id)
+            }
+            $node_expr.children = children;
+        }
     }};
 }
 pub(crate) use iter_children;
 
 macro_rules! iter_children_and_pseudos {
     ($node_expr:expr, $cb:expr) => {{
-        // Load node
-        let node = &mut $node_expr;
-
-        // Copy before, after, and take children
-        let before = node.before;
-        let after = node.after;
-        let children = core::mem::take(&mut node.children);
+        let before = $node_expr.before;
+        let after = $node_expr.after;
 
         if let Some(before) = before {
             $cb(before)
         }
-        for child_id in children.iter().copied() {
-            $cb(child_id)
+
+        // For shadow hosts and slots, iterate the flattened-tree children.
+        #[cfg(feature = "shadow-dom")]
+        if $node_expr.flattened_children.is_some() {
+            let children = $node_expr.flattened_children.clone().unwrap();
+            for child_id in children {
+                $cb(child_id)
+            }
+        } else {
+            let children = core::mem::take(&mut $node_expr.children);
+            for child_id in children.iter().copied() {
+                $cb(child_id)
+            }
+            $node_expr.children = children;
         }
+        #[cfg(not(feature = "shadow-dom"))]
+        {
+            let children = core::mem::take(&mut $node_expr.children);
+            for child_id in children.iter().copied() {
+                $cb(child_id)
+            }
+            $node_expr.children = children;
+        }
+
         if let Some(after) = after {
             $cb(after)
         }
-
-        // Reload node and put children back
-        $node_expr.children = children;
     }};
 }
 pub(crate) use iter_children_and_pseudos;
@@ -212,6 +244,40 @@ impl BaseDocument {
             cb(after_node_id, self)
         }
         self.nodes[node_id].after = after;
+    }
+
+    /// Like [`iter_children_mut`](Self::iter_children_mut) but iterates the
+    /// flattened-tree children (used for box construction, so shadow hosts and
+    /// slots compose correctly).
+    pub fn iter_layout_children_mut(
+        &mut self,
+        node_id: usize,
+        mut cb: impl FnMut(usize, &mut BaseDocument),
+    ) {
+        let children = self.nodes[node_id].layout_dom_children().to_vec();
+        for child_id in children {
+            cb(child_id, self);
+        }
+    }
+
+    /// Like [`iter_children_and_pseudos_mut`](Self::iter_children_and_pseudos_mut)
+    /// but iterates the flattened-tree children.
+    pub fn iter_layout_children_and_pseudos_mut(
+        &mut self,
+        node_id: usize,
+        mut cb: impl FnMut(usize, &mut BaseDocument),
+    ) {
+        let before = self.nodes[node_id].before;
+        if let Some(before_node_id) = before {
+            cb(before_node_id, self)
+        }
+
+        self.iter_layout_children_mut(node_id, &mut cb);
+
+        let after = self.nodes[node_id].after;
+        if let Some(after_node_id) = after {
+            cb(after_node_id, self)
+        }
     }
 
     pub fn next_node(&self, start: &Node, mut filter: impl FnMut(&Node) -> bool) -> Option<usize> {

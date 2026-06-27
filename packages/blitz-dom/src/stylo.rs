@@ -255,6 +255,21 @@ impl<'a> TNode for BlitzNode<'a> {
     //
     // For the sake of this demo, we're just going to return the parent node ann
     fn traversal_parent(&self) -> Option<Self::ConcreteElement> {
+        // The flattened-tree parent. For style inheritance and selector
+        // matching, slotted nodes parent to their slot, and shadow-tree nodes
+        // parent to the shadow host (the shadow root itself is transparent).
+        #[cfg(feature = "shadow-dom")]
+        {
+            if let Some(slot_id) = self.element_data().and_then(|el| el.assigned_slot) {
+                return Some(self.with(slot_id));
+            }
+            let parent = self.parent_node()?;
+            if let Some(shadow_data) = parent.shadow_root_data() {
+                return Some(self.with(shadow_data.host));
+            }
+            parent.as_element()
+        }
+        #[cfg(not(feature = "shadow-dom"))]
         self.parent_node().and_then(|node| node.as_element())
     }
 
@@ -1002,7 +1017,10 @@ impl<'a> Iterator for Traverser<'a> {
     type Item = BlitzNode<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let node_id = self.parent.children.get(self.child_index)?;
+        // Iterate the flattened-tree children so Stylo styles the composed tree
+        // (shadow hosts expose their shadow root's children; <slot>s expose
+        // their assigned light-DOM nodes).
+        let node_id = self.parent.layout_dom_children().get(self.child_index)?;
         let node = self.parent.with(*node_id);
 
         self.child_index += 1;

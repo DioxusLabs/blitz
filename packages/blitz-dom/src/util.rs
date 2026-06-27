@@ -116,6 +116,8 @@ pub fn walk_tree(indent: usize, node: &Node) {
 
         NodeData::Comment => println!("<!-- COMMENT {id} -->"),
 
+        NodeData::ShadowRoot(data) => println!("{id} #shadow-root ({:?})", data.mode),
+
         NodeData::AnonymousBlock(_) => println!("{id} AnonymousBlock"),
 
         NodeData::Element(data) => {

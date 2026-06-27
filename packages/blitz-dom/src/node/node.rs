@@ -99,6 +99,14 @@ pub struct Node {
     pub paint_children: RefCell<Option<Vec<usize>>>,
     pub stacking_context: Option<Box<HoistedPaintChildren>>,
 
+    /// The "flattened tree" children of this node used for layout and painting,
+    /// if it differs from [`children`](Self::children). This is set for shadow
+    /// hosts (where it holds the shadow root's children) and `<slot>` elements
+    /// (where it holds the light-DOM nodes assigned to the slot). When `None`,
+    /// [`children`](Self::children) is used directly.
+    #[cfg(feature = "shadow-dom")]
+    pub flattened_children: Option<Vec<usize>>,
+
     // Flags
     pub flags: NodeFlags,
 
@@ -169,6 +177,8 @@ impl Node {
             layout_children: RefCell::new(None),
             paint_children: RefCell::new(None),
             stacking_context: None,
+            #[cfg(feature = "shadow-dom")]
+            flattened_children: None,
 
             flags: NodeFlags::empty(),
             data,
@@ -492,6 +502,48 @@ pub enum NodeKind {
     AnonymousBlock,
     Text,
     Comment,
+    ShadowRoot,
+}
+
+/// The encapsulation mode of a shadow root.
+///
+/// Mirrors the `ShadowRootMode` enum from the DOM specification.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShadowRootMode {
+    /// Elements of the shadow root are accessible from JavaScript outside the
+    /// root (e.g. via `Element.shadowRoot`).
+    Open,
+    /// Elements of the shadow root are not accessible from JavaScript outside
+    /// the root.
+    Closed,
+}
+
+/// Data associated with a [`NodeData::ShadowRoot`] node.
+///
+/// A shadow root is a non-element, non-document node that acts as the root of a
+/// shadow tree. Its `children` (on the owning [`Node`]) are the top-level nodes
+/// of the shadow tree. The light-DOM children of the host element are
+/// distributed into any `<slot>` elements within this tree to form the
+/// "flattened tree" that is used for style resolution, layout and painting.
+#[derive(Debug, Clone)]
+pub struct ShadowRootData {
+    /// The node id of the host element that this shadow root is attached to.
+    pub host: usize,
+    /// The encapsulation mode of this shadow root.
+    pub mode: ShadowRootMode,
+    /// Node ids of `<style>` elements within this shadow root, in document
+    /// order. Used to build the scoped stylesheet set for this shadow tree.
+    pub stylesheet_nodes: Vec<usize>,
+}
+
+impl ShadowRootData {
+    pub fn new(host: usize, mode: ShadowRootMode) -> Self {
+        Self {
+            host,
+            mode,
+            stylesheet_nodes: Vec::new(),
+        }
+    }
 }
 
 /// The different kinds of nodes in the DOM.
@@ -511,6 +563,9 @@ pub enum NodeData {
 
     /// A comment.
     Comment,
+
+    /// The root of a shadow tree attached to a host element.
+    ShadowRoot(ShadowRootData),
     // Comment { contents: String },
 
     // /// A `DOCTYPE` with name, public id, and system id. See
@@ -565,6 +620,21 @@ impl NodeData {
             NodeData::AnonymousBlock(_) => NodeKind::AnonymousBlock,
             NodeData::Text(_) => NodeKind::Text,
             NodeData::Comment => NodeKind::Comment,
+            NodeData::ShadowRoot(_) => NodeKind::ShadowRoot,
+        }
+    }
+
+    pub fn shadow_root_data(&self) -> Option<&ShadowRootData> {
+        match self {
+            Self::ShadowRoot(data) => Some(data),
+            _ => None,
+        }
+    }
+
+    pub fn shadow_root_data_mut(&mut self) -> Option<&mut ShadowRootData> {
+        match self {
+            Self::ShadowRoot(data) => Some(data),
+            _ => None,
         }
     }
 }
@@ -673,6 +743,42 @@ impl Node {
         matches!(self.data, NodeData::AnonymousBlock { .. })
     }
 
+    pub fn is_shadow_root(&self) -> bool {
+        matches!(self.data, NodeData::ShadowRoot { .. })
+    }
+
+    pub fn shadow_root_data(&self) -> Option<&ShadowRootData> {
+        self.data.shadow_root_data()
+    }
+
+    pub fn shadow_root_data_mut(&mut self) -> Option<&mut ShadowRootData> {
+        self.data.shadow_root_data_mut()
+    }
+
+    /// If this node is a shadow host (i.e. has an attached shadow root),
+    /// returns the node id of its shadow root.
+    pub fn shadow_root_id(&self) -> Option<usize> {
+        self.element_data().and_then(|el| el.shadow_root)
+    }
+
+    /// The children to use for layout and painting. For shadow hosts and
+    /// `<slot>` elements this is the "flattened tree" children; for all other
+    /// nodes it is the regular DOM [`children`](Self::children).
+    #[cfg(feature = "shadow-dom")]
+    pub fn layout_dom_children(&self) -> &[usize] {
+        match &self.flattened_children {
+            Some(children) => children,
+            None => &self.children,
+        }
+    }
+
+    /// The children to use for layout and painting.
+    #[cfg(not(feature = "shadow-dom"))]
+    #[inline(always)]
+    pub fn layout_dom_children(&self) -> &[usize] {
+        &self.children
+    }
+
     pub fn is_text_node(&self) -> bool {
         matches!(self.data, NodeData::Text { .. })
     }
@@ -728,6 +834,7 @@ impl Node {
                 // &std::str::from_utf8(data.contents.as_bytes().split_at(10).0).unwrap_or("INVALID UTF8")
             ),
             NodeData::AnonymousBlock(_) => write!(s, "AnonymousBlock"),
+            NodeData::ShadowRoot(data) => write!(s, "#shadow-root ({:?})", data.mode),
             NodeData::Element(data) => {
                 let name = &data.name;
                 let class = self.attr(local_name!("class")).unwrap_or("");
@@ -768,6 +875,7 @@ impl Node {
             NodeData::Document => {}
             NodeData::Comment => {}
             NodeData::AnonymousBlock(_) => {}
+            NodeData::ShadowRoot(_) => {}
             // NodeData::Doctype { name, .. } => write!(s, "DOCTYPE {name}"),
             NodeData::Text(data) => {
                 writer.push_str(data.content.as_str());

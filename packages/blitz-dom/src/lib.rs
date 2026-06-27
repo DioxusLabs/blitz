@@ -51,6 +51,8 @@ mod mutator;
 mod query_selector;
 mod resolve;
 mod selection;
+#[cfg(feature = "shadow-dom")]
+mod shadow;
 /// Implementations that interact with servo's style engine
 mod stylo;
 mod stylo_to_cursor_icon;
@@ -70,6 +72,12 @@ mod accessibility;
 
 #[cfg(feature = "custom-widget")]
 pub use crate::node::Widget;
+
+#[cfg(feature = "shadow-dom")]
+pub use crate::node::{
+    CustomElement, CustomElementCtx, CustomElementDefinition, CustomElementRegistry,
+    ShadowRootData, ShadowRootMode,
+};
 
 pub use config::{DocumentConfig, StyleThreading};
 pub use document::{BaseDocument, DocGuard, DocGuardMut, Document, PlainDocument};

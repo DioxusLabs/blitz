@@ -22,6 +22,8 @@ use super::{Attribute, Attributes};
 use crate::Document;
 use crate::layout::table::TableContext;
 
+#[cfg(feature = "shadow-dom")]
+use super::custom_element::CustomElementData;
 #[cfg(feature = "custom-widget")]
 use super::custom_widget::CustomWidgetData;
 
@@ -68,6 +70,15 @@ pub struct ElementData {
 
     /// The element's template contents (\<template\> elements only)
     pub template_contents: Option<usize>,
+
+    /// The node id of the shadow root attached to this element (if it is a
+    /// shadow host). The shadow root node's children form the shadow tree.
+    pub shadow_root: Option<usize>,
+
+    /// If this element is a light-DOM child of a shadow host, the node id of
+    /// the `<slot>` element it has been assigned to in the host's shadow tree
+    /// (if any). Recomputed during slot assignment.
+    pub assigned_slot: Option<usize>,
     // /// Whether the node is a [HTML integration point] (https://html.spec.whatwg.org/multipage/#html-integration-point)
     // pub mathml_annotation_xml_integration_point: bool,
 }
@@ -95,6 +106,9 @@ pub enum SpecialElementData {
     /// A custom widget
     #[cfg(feature = "custom-widget")]
     CustomWidget(CustomWidgetData),
+    /// A custom element (a Rust object that controls an attached shadow DOM)
+    #[cfg(feature = "shadow-dom")]
+    CustomElement(CustomElementData),
     /// A stylesheet
     Stylesheet(DocumentStyleSheet),
     /// An \<img\> element's image data
@@ -121,6 +135,8 @@ impl Clone for SpecialElementData {
             Self::SubDocument(_) => Self::None, // TODO
             #[cfg(feature = "custom-widget")]
             Self::CustomWidget(_) => Self::None, // TODO
+            #[cfg(feature = "shadow-dom")]
+            Self::CustomElement(_) => Self::None, // TODO
             Self::Stylesheet(data) => Self::Stylesheet(data.clone()),
             Self::Image(data) => Self::Image(data.clone()),
             Self::Canvas(data) => Self::Canvas(data.clone()),
@@ -158,6 +174,8 @@ impl ElementData {
             list_item_data: None,
             special_data: SpecialElementData::None,
             template_contents: None,
+            shadow_root: None,
+            assigned_slot: None,
             background_images: Vec::new(),
             mask_images: Vec::new(),
         };
@@ -271,6 +289,22 @@ impl ElementData {
     pub fn custom_widget_data_mut(&mut self) -> Option<&mut CustomWidgetData> {
         match &mut self.special_data {
             SpecialElementData::CustomWidget(data) => Some(data),
+            _ => None,
+        }
+    }
+
+    #[cfg(feature = "shadow-dom")]
+    pub fn custom_element_data(&self) -> Option<&CustomElementData> {
+        match &self.special_data {
+            SpecialElementData::CustomElement(data) => Some(data),
+            _ => None,
+        }
+    }
+
+    #[cfg(feature = "shadow-dom")]
+    pub fn custom_element_data_mut(&mut self) -> Option<&mut CustomElementData> {
+        match &mut self.special_data {
+            SpecialElementData::CustomElement(data) => Some(data),
             _ => None,
         }
     }
@@ -583,6 +617,8 @@ impl std::fmt::Debug for SpecialElementData {
             SpecialElementData::SubDocument(_) => f.write_str("NodeSpecificData::SubDocument"),
             #[cfg(feature = "custom-widget")]
             SpecialElementData::CustomWidget(_) => f.write_str("NodeSpecificData::CustomWidget"),
+            #[cfg(feature = "shadow-dom")]
+            SpecialElementData::CustomElement(_) => f.write_str("NodeSpecificData::CustomElement"),
             SpecialElementData::Stylesheet(_) => f.write_str("NodeSpecificData::Stylesheet"),
             SpecialElementData::Image(data) => match **data {
                 ImageData::Raster(_) => f.write_str("NodeSpecificData::Image(Raster)"),

@@ -431,6 +431,10 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             NodeData::Document => {}
             // NodeData::Doctype => {}
             NodeData::Comment => {} // NodeData::ProcessingInstruction { .. } => {}
+            // Shadow roots are transparent: a shadow host's flattened children
+            // are the shadow root's children, so the root node itself is never
+            // visited during painting.
+            NodeData::ShadowRoot(_) => {}
         }
     }
 
