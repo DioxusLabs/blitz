@@ -1559,6 +1559,47 @@ impl BaseDocument {
             return false;
         };
 
+        // Text inputs scroll their own internal text content rather than using the generic
+        // overflow mechanism: single-line inputs scroll horizontally, multi-line inputs scroll
+        // vertically. Any delta the input cannot consume is bubbled up to an ancestor scroller.
+        if node
+            .element_data()
+            .is_some_and(|el| el.text_input_data().is_some())
+        {
+            let parent = node.parent;
+            let content_box_width = node.final_layout.content_box_width();
+            let content_box_height = node.final_layout.content_box_height();
+            let input = node
+                .element_data_mut()
+                .and_then(|el| el.text_input_data_mut())
+                .unwrap();
+
+            let (bubble_x, bubble_y) = if input.is_multiline {
+                (
+                    x,
+                    input.scroll_by(y as f32, content_box_width, content_box_height) as f64,
+                )
+            } else {
+                (
+                    input.scroll_by(x as f32, content_box_width, content_box_height) as f64,
+                    y,
+                )
+            };
+
+            let has_changed = bubble_x != x || bubble_y != y;
+
+            if bubble_x != 0.0 || bubble_y != 0.0 {
+                let bubbled = if let Some(parent) = parent {
+                    self.scroll_node_by_has_changed(parent, bubble_x, bubble_y, dispatch_event)
+                } else {
+                    self.scroll_viewport_by_has_changed(bubble_x, bubble_y)
+                };
+                return bubbled | has_changed;
+            }
+
+            return has_changed;
+        }
+
         let is_html_or_body = node.data.downcast_element().is_some_and(|e| {
             let tag = &e.name.local;
             tag == "html" || tag == "body"

@@ -629,6 +629,45 @@ impl TextInputData {
         let max_offset = (content.max(caret_end) - viewport).max(0.0);
         self.scroll_offset = offset.clamp(0.0, max_offset);
     }
+
+    /// The maximum valid value of [`Self::scroll_offset`] (in CSS pixels) given the input's
+    /// content box, i.e. the extent by which the text content overflows the content box along
+    /// the input's scroll axis.
+    ///
+    /// `content_box_width` and `content_box_height` are the dimensions of the input's content
+    /// box in CSS (unscaled) pixels.
+    pub fn max_scroll_offset(&self, content_box_width: f32, content_box_height: f32) -> f32 {
+        let Some(layout) = self.editor.try_layout() else {
+            return 0.0;
+        };
+        let scale = layout.scale();
+        let (content, viewport) = if self.is_multiline {
+            (layout.height() / scale, content_box_height)
+        } else {
+            (layout.full_width() / scale, content_box_width)
+        };
+        (content - viewport).max(0.0)
+    }
+
+    /// Scroll the input's text content by `delta` CSS pixels along its scroll axis (horizontal
+    /// for single-line inputs, vertical for multi-line inputs), clamping to the scrollable
+    /// range.
+    ///
+    /// Returns the portion of `delta` that could not be consumed (because the input was already
+    /// scrolled to its limit), so the caller can bubble it up to an ancestor scroller.
+    pub fn scroll_by(&mut self, delta: f32, content_box_width: f32, content_box_height: f32) -> f32 {
+        let max_offset = self.max_scroll_offset(content_box_width, content_box_height);
+        if max_offset <= 0.0 {
+            return delta;
+        }
+
+        // Match the sign convention used for block scrolling: a positive delta decreases the
+        // scroll offset.
+        let new_offset = (self.scroll_offset - delta).clamp(0.0, max_offset);
+        let consumed = self.scroll_offset - new_offset;
+        self.scroll_offset = new_offset;
+        delta - consumed
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -843,5 +882,48 @@ mod tests {
                 "expected vertical scroll for overflowing multi-line input"
             );
         }
+    }
+
+    #[test]
+    fn scroll_by_clamps_and_bubbles() {
+        let text = (0..40).map(|i| format!("line {i}")).collect::<Vec<_>>().join("\n");
+        let mut data = make_input(true, &text);
+        data.editor.set_width(Some(200.0));
+        data.editor
+            .driver(&mut FontContext::new(), &mut LayoutContext::new())
+            .refresh_layout();
+
+        let content_box_width = 200.0;
+        let content_box_height = 30.0;
+        let max = data.max_scroll_offset(content_box_width, content_box_height);
+        assert!(max > 0.0, "test text should overflow the content box");
+
+        // Scrolling up (positive delta decreases offset) while already at the top is a no-op and
+        // the whole delta bubbles.
+        assert_eq!(data.scroll_offset, 0.0);
+        let bubbled = data.scroll_by(15.0, content_box_width, content_box_height);
+        assert_eq!(data.scroll_offset, 0.0);
+        assert_eq!(bubbled, 15.0);
+
+        // Scrolling down moves the offset and consumes the delta.
+        let bubbled = data.scroll_by(-10.0, content_box_width, content_box_height);
+        assert_eq!(data.scroll_offset, 10.0);
+        assert_eq!(bubbled, 0.0);
+
+        // Scrolling past the end clamps to the maximum and bubbles the remainder. Starting at
+        // offset 10 with max headroom of `max - 10`, a delta of `-(max + 100)` consumes
+        // `max - 10` and bubbles the rest (`-110`).
+        let bubbled = data.scroll_by(-(max + 100.0), content_box_width, content_box_height);
+        assert_eq!(data.scroll_offset, max);
+        assert!((bubbled - (-110.0)).abs() < 1e-3);
+    }
+
+    #[test]
+    fn single_line_does_not_scroll_when_text_fits() {
+        let mut data = make_input(false, "hi");
+        // Wide content box; nothing to scroll, so all delta bubbles.
+        let bubbled = data.scroll_by(-50.0, 1000.0, 100.0);
+        assert_eq!(data.scroll_offset, 0.0);
+        assert_eq!(bubbled, -50.0);
     }
 }
