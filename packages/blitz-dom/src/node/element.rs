@@ -964,7 +964,7 @@ mod tests {
     fn make_input(is_multiline: bool, text: &str) -> TextInputData {
         let mut font_ctx = FontContext::new();
         let mut layout_ctx = LayoutContext::new();
-        let mut data = TextInputData::new(is_multiline);
+        let mut data = TextInputData::new(is_multiline, false);
         data.editor.set_scale(1.0);
         data.editor.set_text(text);
         data.editor
