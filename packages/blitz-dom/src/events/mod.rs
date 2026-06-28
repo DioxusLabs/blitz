@@ -45,6 +45,10 @@ fn map_dom_event_to_ui_event(
             adjust_coords_for_subdocument(&mut event.coords, node_offset, viewport_scroll);
             Some(UiEvent::PointerUp(event))
         }
+        DomEventData::PointerCancel(mut event) => {
+            adjust_coords_for_subdocument(&mut event.coords, node_offset, viewport_scroll);
+            Some(UiEvent::PointerCancel(event))
+        }
 
         // Enter/leave events will be recreated by sub-document's event driver
         // based move events
@@ -68,6 +72,7 @@ fn map_dom_event_to_ui_event(
         DomEventData::TouchStart(_) => None,
         DomEventData::TouchMove(_) => None,
         DomEventData::TouchEnd(_) => None,
+        DomEventData::TouchCancel(_) => None,
 
         DomEventData::KeyDown(data) => Some(UiEvent::KeyDown(data)),
         DomEventData::KeyUp(data) => Some(UiEvent::KeyUp(data)),
@@ -183,6 +188,9 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
         DomEventData::MouseUp(_) => {
             // Do nothing (handled in PointerUp)
         }
+        DomEventData::PointerCancel(_) => {
+            // Do nothing (active state is reset in the event driver)
+        }
         DomEventData::Click(event) => {
             handle_click(doc, target_node_id, event, &mut dispatch_event);
         }
@@ -252,6 +260,9 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
         }
         DomEventData::TouchEnd(_) => {
             // Do nothing (default action handled via PointerUp)
+        }
+        DomEventData::TouchCancel(_) => {
+            // Do nothing (default action handled via PointerCancel)
         }
         DomEventData::Scroll(_) => {
             // Handled elsewhere

@@ -159,6 +159,93 @@ fn pen_input_generates_touch_events() {
 }
 
 #[test]
+fn finger_cancel_generates_pointercancel_and_touchcancel() {
+    let mut doc = target_doc();
+    let finger = BlitzPointerId::Finger(0);
+    let names = drive(
+        &mut doc,
+        [
+            UiEvent::PointerDown(pointer_event(finger, 50.0, 50.0)),
+            UiEvent::PointerCancel(pointer_event(finger, 50.0, 50.0)),
+        ],
+    );
+
+    assert!(
+        names.contains(&"pointercancel".to_string()),
+        "expected a pointercancel event, got {names:?}"
+    );
+    assert!(
+        names.contains(&"touchcancel".to_string()),
+        "expected a touchcancel event, got {names:?}"
+    );
+
+    // A cancelled interaction must not produce up/end events.
+    assert!(
+        !names.contains(&"pointerup".to_string()),
+        "cancel should not produce pointerup, got {names:?}"
+    );
+    assert!(
+        !names.contains(&"touchend".to_string()),
+        "cancel should not produce touchend, got {names:?}"
+    );
+
+    // Finger input must not generate mouse compatibility events.
+    assert!(
+        !names.iter().any(|n| n.starts_with("mouse")),
+        "finger input should not generate mouse events, got {names:?}"
+    );
+}
+
+#[test]
+fn pen_cancel_generates_pointercancel_and_touchcancel() {
+    let mut doc = target_doc();
+    let pen = BlitzPointerId::Pen;
+    let names = drive(
+        &mut doc,
+        [
+            UiEvent::PointerDown(pointer_event(pen, 50.0, 50.0)),
+            UiEvent::PointerCancel(pointer_event(pen, 50.0, 50.0)),
+        ],
+    );
+
+    assert!(
+        names.contains(&"pointercancel".to_string()),
+        "expected a pointercancel event, got {names:?}"
+    );
+    assert!(
+        names.contains(&"touchcancel".to_string()),
+        "expected a touchcancel event, got {names:?}"
+    );
+}
+
+#[test]
+fn mouse_cancel_generates_pointercancel_without_touch_or_mouse() {
+    let mut doc = target_doc();
+    let mouse = BlitzPointerId::Mouse;
+    let names = drive(
+        &mut doc,
+        [
+            UiEvent::PointerDown(pointer_event(mouse, 50.0, 50.0)),
+            UiEvent::PointerCancel(pointer_event(mouse, 50.0, 50.0)),
+        ],
+    );
+
+    assert!(
+        names.contains(&"pointercancel".to_string()),
+        "expected a pointercancel event, got {names:?}"
+    );
+    // Mouse input has no touchcancel and no mouse-cancel compatibility event.
+    assert!(
+        !names.iter().any(|n| n.starts_with("touch")),
+        "mouse input should not generate touch events, got {names:?}"
+    );
+    assert!(
+        !names.contains(&"mousecancel".to_string()),
+        "there is no mousecancel event, got {names:?}"
+    );
+}
+
+#[test]
 fn mouse_input_does_not_generate_touch_events() {
     let mut doc = target_doc();
     let mouse = BlitzPointerId::Mouse;

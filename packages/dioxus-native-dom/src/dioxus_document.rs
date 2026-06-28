@@ -275,6 +275,7 @@ impl EventHandler for DioxusEventHandler<'_> {
             DomEventData::PointerMove(mevent)
             | DomEventData::PointerDown(mevent)
             | DomEventData::PointerUp(mevent)
+            | DomEventData::PointerCancel(mevent)
             | DomEventData::PointerLeave(mevent)
             | DomEventData::PointerEnter(mevent)
             | DomEventData::PointerOver(mevent)
@@ -294,7 +295,8 @@ impl EventHandler for DioxusEventHandler<'_> {
 
             DomEventData::TouchStart(tevent)
             | DomEventData::TouchMove(tevent)
-            | DomEventData::TouchEnd(tevent) => {
+            | DomEventData::TouchEnd(tevent)
+            | DomEventData::TouchCancel(tevent) => {
                 Some(wrap_event_data(NativeTouchData(tevent.clone())))
             }
 
