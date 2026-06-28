@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+    body {
+        background: #f4f4f4;
+        font-family: sans-serif;
+        padding: 16px 40px 40px;
+    }
+    h2 {
+        margin-top: 48px;
+        border-bottom: 1px solid #ccc;
+        padding-bottom: 8px;
+    }
+    h1 {
+        margin-bottom: 16px;
+    }
+    .label {
+        display: inline-block;
+        width: 180px;
+        color: #555;
+        font-size: 13px;
+        vertical-align: middle;
+    }
+    hr {
+        vertical-align: middle;
+        width: 60%;
+        margin: 24px 0;
+    }
+
+    /* --- Default styling --- */
+
+    /* 1. Default <hr> (no styling) */
+    #d1 {
+        /* UA stylesheet only */
+    }
+
+    /* --- Color & background --- */
+
+    /* 2. Solid color via border */
+    #c1 {
+        border: 0;
+        border-top: 2px solid #e63946;
+    }
+
+    /* 3. Background color, no border */
+    #c2 {
+        border: 0;
+        height: 4px;
+        background: #2a9d8f;
+    }
+
+    /* 4. Gradient background */
+    #c3 {
+        border: 0;
+        height: 4px;
+        background: linear-gradient(to right, #e63946, #f4a261, #e9c46a, #2a9d8f, #264653);
+    }
+
+    /* 5. Semi-transparent background */
+    #c4 {
+        border: 0;
+        height: 6px;
+        background: rgba(38, 70, 83, 0.3);
+    }
+
+    /* --- Border styles --- */
+
+    /* 6. Dashed */
+    #b1 {
+        border: 0;
+        border-top: 2px dashed #457b9d;
+    }
+
+    /* 7. Dotted */
+    #b2 {
+        border: 0;
+        border-top: 3px dotted #8338ec;
+    }
+
+    /* 8. Double */
+    #b3 {
+        border: 0;
+        border-top: 6px double #3a86ff;
+    }
+
+    /* 9. Groove */
+    #b4 {
+        border: 0;
+        border-top: 6px groove #ff006e;
+    }
+
+    /* 10. Ridge */
+    #b5 {
+        border: 0;
+        border-top: 6px ridge #fb5607;
+    }
+
+    /* --- Thickness & width --- */
+
+    /* 11. Thick block */
+    #t1 {
+        border: 0;
+        height: 12px;
+        background: #073b4c;
+    }
+
+    /* 12. Thin line */
+    #t2 {
+        border: 0;
+        border-top: 1px solid #999;
+    }
+
+    /* 13. Variable width */
+    #t3 {
+        border: 0;
+        border-top: 2px solid #ef476f;
+        width: 30%;
+    }
+
+    /* --- Decorative styles --- */
+
+    /* 14. Rounded pill */
+    #r1 {
+        border: 0;
+        height: 8px;
+        background: #06d6a0;
+        border-radius: 999px;
+    }
+
+    /* 15. Inset shadow line */
+    #r2 {
+        border: 0;
+        height: 6px;
+        background: #ffd166;
+        border-radius: 999px;
+        box-shadow: inset 0 0 4px rgba(0, 0, 0, 0.4);
+    }
+
+    /* 16. Outset glow */
+    #r3 {
+        border: 0;
+        height: 4px;
+        background: #118ab2;
+        border-radius: 999px;
+        box-shadow: 0 0 12px rgba(17, 138, 178, 0.8);
+    }
+
+    /* 17. Dashed with rounded caps */
+    #r4 {
+        border: 0;
+        border-top: 4px dashed #06aed5;
+        border-radius: 999px;
+    }
+
+    /* 18. Double gradient stripe */
+    #r5 {
+        border: 0;
+        height: 10px;
+        background: linear-gradient(to right, #4a4e69, #9a8c98);
+        border-radius: 4px;
+    }
+
+    /* --- Alignment --- */
+
+    /* 19. Left aligned */
+    #a1 {
+        border: 0;
+        border-top: 2px solid #c9ada7;
+        width: 40%;
+        margin: 24px auto 24px 0;
+    }
+
+    /* 20. Right aligned */
+    #a2 {
+        border: 0;
+        border-top: 2px solid #d62828;
+        width: 40%;
+        margin: 24px 0 24px auto;
+    }
+
+    /* 21. Centered narrow */
+    #a3 {
+        border: 0;
+        border-top: 2px solid #f77f00;
+        width: 20%;
+        margin: 24px auto;
+    }
+</style>
+</head>
+<body>
+    <h1>&lt;hr&gt; Element Examples</h1>
+
+    <h2>Default Styling</h2>
+    <div><span class="label">Default (UA stylesheet)</span><hr id="d1"></div>
+
+    <h2>Color &amp; Background</h2>
+    <div><span class="label">Solid border color</span><hr id="c1"></div>
+    <div><span class="label">Background color</span><hr id="c2"></div>
+    <div><span class="label">Gradient</span><hr id="c3"></div>
+    <div><span class="label">Semi-transparent</span><hr id="c4"></div>
+
+    <h2>Border Styles</h2>
+    <div><span class="label">Dashed</span><hr id="b1"></div>
+    <div><span class="label">Dotted</span><hr id="b2"></div>
+    <div><span class="label">Double</span><hr id="b3"></div>
+    <div><span class="label">Groove</span><hr id="b4"></div>
+    <div><span class="label">Ridge</span><hr id="b5"></div>
+
+    <h2>Thickness &amp; Width</h2>
+    <div><span class="label">Thick block</span><hr id="t1"></div>
+    <div><span class="label">Thin line</span><hr id="t2"></div>
+    <div><span class="label">Variable width</span><hr id="t3"></div>
+
+    <h2>Decorative Styles</h2>
+    <div><span class="label">Rounded pill</span><hr id="r1"></div>
+    <div><span class="label">Inset shadow</span><hr id="r2"></div>
+    <div><span class="label">Outset glow</span><hr id="r3"></div>
+    <div><span class="label">Rounded dashed</span><hr id="r4"></div>
+    <div><span class="label">Gradient stripe</span><hr id="r5"></div>
+
+    <h2>Alignment</h2>
+    <div><span class="label">Left aligned</span><hr id="a1"></div>
+    <div><span class="label">Right aligned</span><hr id="a2"></div>
+    <div><span class="label">Centered narrow</span><hr id="a3"></div>
+</body>
+</html>
