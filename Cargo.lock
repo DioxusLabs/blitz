@@ -958,6 +958,7 @@ dependencies = [
  "android-activity",
  "anyrender",
  "arboard",
+ "atomic_refcell",
  "blitz-dom",
  "blitz-paint",
  "blitz-traits",
@@ -976,6 +977,7 @@ dependencies = [
 name = "blitz-traits"
 version = "0.3.0-alpha.6"
 dependencies = [
+ "atomic_refcell",
  "bitflags 2.13.0",
  "bytes",
  "cursor-icon",

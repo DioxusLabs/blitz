@@ -16,8 +16,8 @@ use blitz_traits::shell::Viewport;
 use winit::dpi::{LogicalPosition, PhysicalInsets, PhysicalPosition};
 use winit::keyboard::PhysicalKey;
 
+use atomic_refcell::AtomicRefCell;
 use std::any::Any;
-use std::collections::HashSet;
 use std::sync::Arc;
 use std::task::Waker;
 use web_time::Instant;
@@ -79,13 +79,21 @@ pub struct View<Rend: WindowRenderer> {
     pub keyboard_modifiers: Modifiers,
     pub buttons: MouseEventButtons,
     pub pointer_pos: PhysicalPosition<f64>,
-    /// The set of non-mouse pointers (touch/pen) that are currently pressed.
+    /// The non-mouse pointers (touch/pen) that are currently pressed, in the
+    /// order they were pressed.
     ///
-    /// Used to detect touch cancellation: winit signals a cancelled touch with a
-    /// [`WindowEvent::PointerLeft`] that is *not* preceded by a
-    /// [`WindowEvent::PointerButton`] with [`ElementState::Released`]. If a
-    /// pointer is still in this set when it leaves, the interaction was cancelled.
-    pub active_pointers: HashSet<BlitzPointerId>,
+    /// This serves two purposes:
+    /// - Multi-touch: it is cloned (cheaply, via [`Arc`]) into every dispatched
+    ///   [`BlitzPointerEvent`] so that touch events can report all concurrent
+    ///   touches via their `touches` list.
+    /// - Cancellation detection: winit signals a cancelled touch with a
+    ///   [`WindowEvent::PointerLeft`] that is *not* preceded by a
+    ///   [`WindowEvent::PointerButton`] with [`ElementState::Released`]. If a
+    ///   pointer is still in this list when it leaves, it was cancelled.
+    ///
+    /// The events stored here always have an empty `active_pointers` list to
+    /// avoid a reference cycle.
+    pub active_events: Arc<AtomicRefCell<Vec<BlitzPointerEvent>>>,
     pub animation_timer: Option<Instant>,
     pub is_visible: bool,
     pub safe_area_insets: PhysicalInsets<u32>,
@@ -192,7 +200,7 @@ impl<Rend: WindowRenderer> View<Rend> {
             doc,
             theme_override: None,
             buttons: MouseEventButtons::None,
-            active_pointers: HashSet::new(),
+            active_events: Arc::new(AtomicRefCell::new(Vec::new())),
             safe_area_insets,
             #[cfg(target_arch = "wasm32")]
             pending_resize: None,
@@ -432,6 +440,40 @@ impl<Rend: WindowRenderer> View<Rend> {
         self.window.id()
     }
 
+    /// Store `event` as an active pointer, replacing any existing entry with the
+    /// same id. The stored event has an empty `active_pointers` list to avoid a
+    /// reference cycle.
+    fn set_active_pointer(&self, event: &BlitzPointerEvent) {
+        let mut stored = event.clone();
+        stored.active_pointers = Default::default();
+
+        let mut active = self.active_events.borrow_mut();
+        if let Some(existing) = active.iter_mut().find(|e| e.id == stored.id) {
+            *existing = stored;
+        } else {
+            active.push(stored);
+        }
+    }
+
+    /// Update the stored position/state of an already-active pointer. Does
+    /// nothing if the pointer is not currently active (e.g. a hovering pen).
+    fn update_active_pointer(&self, event: &BlitzPointerEvent) {
+        let mut active = self.active_events.borrow_mut();
+        if let Some(existing) = active.iter_mut().find(|e| e.id == event.id) {
+            let mut stored = event.clone();
+            stored.active_pointers = Default::default();
+            *existing = stored;
+        }
+    }
+
+    /// Remove an active pointer by id. Returns `true` if it was present.
+    fn remove_active_pointer(&self, id: BlitzPointerId) -> bool {
+        let mut active = self.active_events.borrow_mut();
+        let len_before = active.len();
+        active.retain(|e| e.id != id);
+        active.len() != len_before
+    }
+
     #[inline]
     pub fn with_viewport(&mut self, cb: impl FnOnce(&mut Viewport)) {
         let mut inner = self.doc.inner_mut();
@@ -638,7 +680,10 @@ impl<Rend: WindowRenderer> View<Rend> {
                 // means the system cancelled tracking of this touch/pen. Emit a
                 // pointercancel in that case. A mouse simply leaving the window,
                 // or a touch that was already released, is not a cancellation.
-                if id != BlitzPointerId::Mouse && self.active_pointers.remove(&id) {
+                // Remove from the active list first so the cancelled pointer is
+                // excluded from this event's `touches`. `remove_active_pointer`
+                // reports whether the pointer was actually active.
+                if id != BlitzPointerId::Mouse && self.remove_active_pointer(id) {
                     let position = position.unwrap_or(self.pointer_pos);
                     self.pointer_pos = position;
 
@@ -654,6 +699,7 @@ impl<Rend: WindowRenderer> View<Rend> {
                         mods: winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state()),
                         details: PointerDetails::default(),
                         element: Default::default(),
+                        active_pointers: Arc::clone(&self.active_events),
                     };
 
                     self.doc.handle_ui_event(UiEvent::PointerCancel(event));
@@ -662,17 +708,23 @@ impl<Rend: WindowRenderer> View<Rend> {
             }
             WindowEvent::PointerMoved { position, source, primary, .. } => {
                 self.pointer_pos = position;
-                let event = UiEvent::PointerMove(BlitzPointerEvent {
-                    id: pointer_source_to_blitz(&source),
+                let id = pointer_source_to_blitz(&source);
+                let event = BlitzPointerEvent {
+                    id,
                     is_primary: primary,
                     coords: self.pointer_coords(position),
                     button: Default::default(),
                     buttons: self.buttons,
                     mods: winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state()),
                     details: pointer_source_to_blitz_details(&source),
-                    element: Default::default()
-                });
-                self.doc.handle_ui_event(event);
+                    element: Default::default(),
+                    active_pointers: Arc::clone(&self.active_events),
+                };
+                // Keep multi-touch positions current (no-op for non-active pointers).
+                if id != BlitzPointerId::Mouse {
+                    self.update_active_pointer(&event);
+                }
+                self.doc.handle_ui_event(UiEvent::PointerMove(event));
             }
             WindowEvent::PointerButton { button, state, primary, position, .. } => {
                 let id = button_source_to_blitz(&button);
@@ -694,34 +746,7 @@ impl<Rend: WindowRenderer> View<Rend> {
                     ElementState::Released => self.buttons ^= button.into(),
                 }
 
-                // Track pressed non-mouse pointers so a subsequent `PointerLeft`
-                // can be recognised as a cancellation (see the `PointerLeft` arm).
-                if id != BlitzPointerId::Mouse {
-                    match state {
-                        ElementState::Pressed => {
-                            self.active_pointers.insert(id);
-                        }
-                        ElementState::Released => {
-                            self.active_pointers.remove(&id);
-                        }
-                    }
-                }
-
-                if id != BlitzPointerId::Mouse {
-                    let event = UiEvent::PointerMove(BlitzPointerEvent {
-                        id,
-                        is_primary: primary,
-                        coords,
-                        button: Default::default(),
-                        buttons: self.buttons,
-                        mods: winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state()),
-                        details: PointerDetails::default(),
-                        element: Default::default()
-                    });
-                    self.doc.handle_ui_event(event);
-                }
-
-                let event = BlitzPointerEvent {
+                let pointer_event = BlitzPointerEvent {
                     id,
                     is_primary: primary,
                     coords,
@@ -731,8 +756,42 @@ impl<Rend: WindowRenderer> View<Rend> {
 
                     // TODO: details for pointer up/down events
                     details: PointerDetails::default(),
-                    element: Default::default()
+                    element: Default::default(),
+                    active_pointers: Arc::clone(&self.active_events),
                 };
+
+                // Maintain the list of active (pressed) non-mouse pointers. A
+                // press adds the pointer *before* dispatch (so touchstart's
+                // `touches` includes it). A release is handled after the
+                // synthetic move below so the move still sees it, but before the
+                // pointerup so touchend's `touches` excludes it.
+                if id != BlitzPointerId::Mouse && state == ElementState::Pressed {
+                    self.set_active_pointer(&pointer_event);
+                }
+
+                // Touch input doesn't emit a `PointerMoved` before the button
+                // event the way a mouse does, so synthesise a move to update the
+                // hover/hit position to the touch location.
+                if id != BlitzPointerId::Mouse {
+                    let event = BlitzPointerEvent {
+                        id,
+                        is_primary: primary,
+                        coords,
+                        button: Default::default(),
+                        buttons: self.buttons,
+                        mods: winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state()),
+                        details: PointerDetails::default(),
+                        element: Default::default(),
+                        active_pointers: Arc::clone(&self.active_events),
+                    };
+                    self.doc.handle_ui_event(UiEvent::PointerMove(event));
+                }
+
+                if id != BlitzPointerId::Mouse && state == ElementState::Released {
+                    self.remove_active_pointer(id);
+                }
+
+                let event = pointer_event;
 
                 let event = match state {
                     ElementState::Pressed => UiEvent::PointerDown(event),

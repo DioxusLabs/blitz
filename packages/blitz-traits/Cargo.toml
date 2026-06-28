@@ -11,6 +11,7 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+atomic_refcell = { workspace = true }
 http = { workspace = true }
 url = { workspace = true }
 bytes = { workspace = true }

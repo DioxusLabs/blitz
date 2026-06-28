@@ -38,6 +38,7 @@ accesskit = { workspace = true, optional = true }
 accesskit_xplat = { workspace = true, optional = true }
 
 # Other dependencies
+atomic_refcell = { workspace = true }
 tracing = { workspace = true, optional = true }
 futures-util = { workspace = true }
 data-url = { workspace = true, optional = true }

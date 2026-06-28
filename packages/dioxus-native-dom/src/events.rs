@@ -414,8 +414,9 @@ impl HasPointerData for NativePointerData {
 /// Touch event data exposed to Dioxus Native application code.
 ///
 /// Blitz tracks input via pointer events, so a touch event is generated from the
-/// pointer event of the finger that triggered it. The resulting touch lists
-/// therefore contain a single touch point representing that finger.
+/// pointer event of the finger that triggered it (`touches_changed`). The full
+/// list of concurrent touches is carried on the triggering event's
+/// [`BlitzPointerEvent::active_pointers`] list and reported via `touches`.
 #[derive(Clone)]
 pub struct NativeTouchData(pub(crate) BlitzPointerEvent);
 
@@ -427,18 +428,24 @@ impl ModifiersInteraction for NativeTouchData {
 
 impl HasTouchData for NativeTouchData {
     fn touches(&self) -> Vec<TouchPoint> {
-        // TODO: track multiple touches
-        vec![TouchPoint::new(NativeTouchPointData(self.0.clone()))]
+        // All pointers currently active on the surface (multi-touch).
+        self.0
+            .active_pointers
+            .borrow()
+            .iter()
+            .map(|event| TouchPoint::new(NativeTouchPointData(event.clone())))
+            .collect()
     }
 
     fn touches_changed(&self) -> Vec<TouchPoint> {
-        // TODO: track multiple touches
+        // Just the touch that triggered this event.
         vec![TouchPoint::new(NativeTouchPointData(self.0.clone()))]
     }
 
     fn target_touches(&self) -> Vec<TouchPoint> {
-        // TODO: track multiple touches
-        vec![TouchPoint::new(NativeTouchPointData(self.0.clone()))]
+        // We don't track a per-touch target, so approximate `targetTouches`
+        // (touches that started on the event target) with all active touches.
+        self.touches()
     }
 
     fn as_any(&self) -> &dyn Any {
@@ -589,5 +596,80 @@ impl InteractionLocation for NativeWheelData {
 
     fn page_coordinates(&self) -> PagePoint {
         PagePoint::new(self.0.page_x() as f64, self.0.page_y() as f64)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use blitz_traits::events::{
+        BlitzPointerId, MouseEventButton, MouseEventButtons, Point, PointerCoords, PointerDetails,
+    };
+
+    fn finger_event(id: u64, x: f32, y: f32) -> BlitzPointerEvent {
+        BlitzPointerEvent {
+            id: BlitzPointerId::Finger(id),
+            is_primary: id == 0,
+            coords: PointerCoords {
+                page_x: x,
+                page_y: y,
+                screen_x: x,
+                screen_y: y,
+                client_x: x,
+                client_y: y,
+            },
+            button: MouseEventButton::Main,
+            buttons: MouseEventButtons::from(MouseEventButton::Main),
+            mods: Default::default(),
+            details: PointerDetails::default(),
+            element: Point::default(),
+            active_pointers: Default::default(),
+        }
+    }
+
+    #[test]
+    fn touches_reports_all_active_pointers() {
+        let f0 = finger_event(0, 10.0, 20.0);
+        let f1 = finger_event(1, 30.0, 40.0);
+
+        // The triggering event (second finger down) carries the list of all
+        // currently-active pointers.
+        let trigger = f1.clone();
+        {
+            let mut list = trigger.active_pointers.borrow_mut();
+            list.push(f0.clone());
+            list.push(f1.clone());
+        }
+
+        let data = NativeTouchData(trigger);
+
+        // `touches` reports every active pointer ...
+        let touches = data.touches();
+        assert_eq!(touches.len(), 2);
+        let coords: Vec<(f64, f64)> = touches
+            .iter()
+            .map(|t| {
+                let c = t.client_coordinates();
+                (c.x, c.y)
+            })
+            .collect();
+        assert!(coords.contains(&(10.0, 20.0)));
+        assert!(coords.contains(&(30.0, 40.0)));
+
+        // ... while `changed_touches` reports only the triggering touch.
+        assert_eq!(data.touches_changed().len(), 1);
+        let changed = data.touches_changed();
+        let changed_coords = changed[0].client_coordinates();
+        assert_eq!((changed_coords.x, changed_coords.y), (30.0, 40.0));
+    }
+
+    #[test]
+    fn touches_is_empty_when_no_pointers_are_active() {
+        // e.g. a `touchend` for the last finger: it has been removed from the
+        // active list before dispatch, so `touches` is empty but
+        // `changed_touches` still reports the finger that ended.
+        let data = NativeTouchData(finger_event(0, 1.0, 2.0));
+        assert!(data.touches().is_empty());
+        assert_eq!(data.touches_changed().len(), 1);
     }
 }

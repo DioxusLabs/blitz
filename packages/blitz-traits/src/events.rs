@@ -1,7 +1,9 @@
 //! Types to represent UI and DOM events
 
 use std::str::FromStr;
+use std::sync::Arc;
 
+use atomic_refcell::AtomicRefCell;
 use bitflags::bitflags;
 use keyboard_types::{Code, Key, Location, Modifiers};
 use smol_str::SmolStr;
@@ -500,6 +502,17 @@ pub struct BlitzPointerEvent {
     pub mods: Modifiers,
     pub details: PointerDetails,
     pub element: Point<f32>,
+    /// All pointers that are currently active (pressed) on the surface, including
+    /// the one that triggered this event.
+    ///
+    /// This is shared via [`Arc`] so that it can be cheaply cloned into each
+    /// dispatched event and cheaply mutated as pointers are pressed, moved and
+    /// released. It is primarily used to populate the `touches` list of touch
+    /// events (multi-touch support).
+    ///
+    /// The events stored in this list always have an empty `active_pointers`
+    /// list themselves, to avoid a reference cycle.
+    pub active_pointers: Arc<AtomicRefCell<Vec<BlitzPointerEvent>>>,
 }
 
 impl BlitzPointerEvent {

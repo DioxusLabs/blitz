@@ -52,6 +52,7 @@ fn pointer_event(x: f32, y: f32) -> BlitzPointerEvent {
         mods: Default::default(),
         details: PointerDetails::default(),
         element: Point::default(),
+        active_pointers: Default::default(),
     }
 }
 

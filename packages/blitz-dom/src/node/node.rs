@@ -1148,6 +1148,7 @@ impl Node {
             buttons: Default::default(),
             details: Default::default(),
             element: Default::default(),
+            active_pointers: Default::default(),
         }
     }
 }
