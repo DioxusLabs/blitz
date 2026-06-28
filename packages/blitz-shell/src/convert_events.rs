@@ -5,7 +5,7 @@ use blitz_traits::shell::ColorScheme;
 use keyboard_types::{Code, Key, Location, Modifiers};
 use winit::event::KeyEvent as WinitKeyEvent;
 use winit::event::{ButtonSource, ElementState};
-use winit::event::{Ime, PointerSource};
+use winit::event::{Ime, PointerKind, PointerSource};
 use winit::keyboard::Key as WinitKey;
 use winit::keyboard::KeyCode as WinitKeyCode;
 use winit::keyboard::KeyLocation as WinitKeyLocation;
@@ -73,6 +73,17 @@ pub(crate) fn pointer_source_to_blitz(source: &PointerSource) -> BlitzPointerId 
         // TODO: TabletTool and Unknown events
         PointerSource::TabletTool { .. } => BlitzPointerId::Pen,
         PointerSource::Unknown => BlitzPointerId::Mouse,
+    }
+}
+
+pub(crate) fn pointer_kind_to_blitz(kind: &PointerKind) -> BlitzPointerId {
+    match kind {
+        PointerKind::Mouse => BlitzPointerId::Mouse,
+        PointerKind::Touch(finger_id) => BlitzPointerId::Finger(finger_id.into_raw() as u64),
+
+        // TODO: TabletTool and Unknown events
+        PointerKind::TabletTool(_) => BlitzPointerId::Pen,
+        PointerKind::Unknown => BlitzPointerId::Mouse,
     }
 }
 

@@ -1,6 +1,6 @@
 use crate::BlitzShellProvider;
 use crate::convert_events::{
-    button_source_to_blitz, color_scheme_to_theme, pointer_source_to_blitz,
+    button_source_to_blitz, color_scheme_to_theme, pointer_kind_to_blitz, pointer_source_to_blitz,
     pointer_source_to_blitz_details, theme_to_color_scheme, winit_ime_to_blitz,
     winit_key_event_to_blitz, winit_modifiers_to_kbt_modifiers,
 };
@@ -17,6 +17,7 @@ use winit::dpi::{LogicalPosition, PhysicalInsets, PhysicalPosition};
 use winit::keyboard::PhysicalKey;
 
 use std::any::Any;
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::task::Waker;
 use web_time::Instant;
@@ -78,6 +79,13 @@ pub struct View<Rend: WindowRenderer> {
     pub keyboard_modifiers: Modifiers,
     pub buttons: MouseEventButtons,
     pub pointer_pos: PhysicalPosition<f64>,
+    /// The set of non-mouse pointers (touch/pen) that are currently pressed.
+    ///
+    /// Used to detect touch cancellation: winit signals a cancelled touch with a
+    /// [`WindowEvent::PointerLeft`] that is *not* preceded by a
+    /// [`WindowEvent::PointerButton`] with [`ElementState::Released`]. If a
+    /// pointer is still in this set when it leaves, the interaction was cancelled.
+    pub active_pointers: HashSet<BlitzPointerId>,
     pub animation_timer: Option<Instant>,
     pub is_visible: bool,
     pub safe_area_insets: PhysicalInsets<u32>,
@@ -184,6 +192,7 @@ impl<Rend: WindowRenderer> View<Rend> {
             doc,
             theme_override: None,
             buttons: MouseEventButtons::None,
+            active_pointers: HashSet::new(),
             safe_area_insets,
             #[cfg(target_arch = "wasm32")]
             pending_resize: None,
@@ -621,7 +630,36 @@ impl<Rend: WindowRenderer> View<Rend> {
                 self.doc.handle_ui_event(event);
             }
             WindowEvent::PointerEntered { /*device_id*/.. } => {}
-            WindowEvent::PointerLeft { /*device_id*/.. } => {}
+            WindowEvent::PointerLeft { position, primary, kind, .. } => {
+                let id = pointer_kind_to_blitz(&kind);
+
+                // A `PointerLeft` for a non-mouse pointer that is still pressed
+                // (i.e. we never saw a `PointerButton` with `Released` for it)
+                // means the system cancelled tracking of this touch/pen. Emit a
+                // pointercancel in that case. A mouse simply leaving the window,
+                // or a touch that was already released, is not a cancellation.
+                if id != BlitzPointerId::Mouse && self.active_pointers.remove(&id) {
+                    let position = position.unwrap_or(self.pointer_pos);
+                    self.pointer_pos = position;
+
+                    // The pointer is no longer pressed.
+                    self.buttons ^= MouseEventButton::Main.into();
+
+                    let event = BlitzPointerEvent {
+                        id,
+                        is_primary: primary,
+                        coords: self.pointer_coords(position),
+                        button: MouseEventButton::Main,
+                        buttons: self.buttons,
+                        mods: winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state()),
+                        details: PointerDetails::default(),
+                        element: Default::default(),
+                    };
+
+                    self.doc.handle_ui_event(UiEvent::PointerCancel(event));
+                    self.request_redraw();
+                }
+            }
             WindowEvent::PointerMoved { position, source, primary, .. } => {
                 self.pointer_pos = position;
                 let event = UiEvent::PointerMove(BlitzPointerEvent {
@@ -654,6 +692,19 @@ impl<Rend: WindowRenderer> View<Rend> {
                 match state {
                     ElementState::Pressed => self.buttons |= button.into(),
                     ElementState::Released => self.buttons ^= button.into(),
+                }
+
+                // Track pressed non-mouse pointers so a subsequent `PointerLeft`
+                // can be recognised as a cancellation (see the `PointerLeft` arm).
+                if id != BlitzPointerId::Mouse {
+                    match state {
+                        ElementState::Pressed => {
+                            self.active_pointers.insert(id);
+                        }
+                        ElementState::Released => {
+                            self.active_pointers.remove(&id);
+                        }
+                    }
                 }
 
                 if id != BlitzPointerId::Mouse {
