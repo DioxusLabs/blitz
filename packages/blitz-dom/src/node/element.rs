@@ -546,13 +546,14 @@ pub struct TextInputData {
 // FIXME: Implement Clone for PlainEditor
 impl Clone for TextInputData {
     fn clone(&self) -> Self {
-        TextInputData::new(self.is_multiline)
+        TextInputData::new(self.is_multiline, self.editor.is_password())
     }
 }
 
 impl TextInputData {
-    pub fn new(is_multiline: bool) -> Self {
-        let editor = Box::new(parley::PlainEditor::new(16.0));
+    pub fn new(is_multiline: bool, is_password: bool) -> Self {
+        let mut editor = Box::new(parley::PlainEditor::new(16.0));
+        editor.set_password(is_password);
         Self {
             editor,
             is_multiline,
