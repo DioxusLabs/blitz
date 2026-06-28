@@ -1739,6 +1739,24 @@ impl BaseDocument {
         }
     }
 
+    /// Recompute the scroll offset of the text input at `node_id` (if any) so that its caret
+    /// remains visible within the input's content box.
+    pub(crate) fn refresh_text_input_scroll(&mut self, node_id: usize) {
+        let Some(node) = self.nodes.get_mut(node_id) else {
+            return;
+        };
+
+        let content_box_width = node.final_layout.content_box_width();
+        let content_box_height = node.final_layout.content_box_height();
+
+        if let Some(text_input) = node
+            .element_data_mut()
+            .and_then(|el| el.text_input_data_mut())
+        {
+            text_input.refresh_scroll_offset(content_box_width, content_box_height);
+        }
+    }
+
     pub(crate) fn compute_has_canvas(&self) -> bool {
         TreeTraverser::new(self).any(|node_id| {
             let node = &self.nodes[node_id];

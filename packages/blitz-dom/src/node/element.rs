@@ -541,6 +541,12 @@ pub struct TextInputData {
     pub editor: Box<parley::PlainEditor<TextBrush>>,
     /// Whether the input is a singleline or multiline input
     pub is_multiline: bool,
+    /// The scroll offset of the text content within the input, in CSS (unscaled) pixels.
+    ///
+    /// For single-line inputs this is a horizontal offset; for multi-line inputs it is a
+    /// vertical offset. It is kept up to date so that the caret remains visible within the
+    /// input's content box.
+    pub scroll_offset: f32,
 }
 
 // FIXME: Implement Clone for PlainEditor
@@ -556,6 +562,7 @@ impl TextInputData {
         Self {
             editor,
             is_multiline,
+            scroll_offset: 0.0,
         }
     }
 
@@ -569,6 +576,58 @@ impl TextInputData {
             self.editor.set_text(text);
             self.editor.driver(font_ctx, layout_ctx).refresh_layout();
         }
+    }
+
+    /// Recompute [`Self::scroll_offset`] so that the caret stays visible within the input's
+    /// content box.
+    ///
+    /// `content_box_width` and `content_box_height` are the dimensions of the input's content
+    /// box in CSS (unscaled) pixels.
+    pub fn refresh_scroll_offset(&mut self, content_box_width: f32, content_box_height: f32) {
+        let Some(layout) = self.editor.try_layout() else {
+            return;
+        };
+        // Parley lays out at the editor's scale, so its geometry is in scaled (device) pixels.
+        // We convert into CSS (unscaled) pixels to match `scroll_offset` and the content box.
+        let scale = layout.scale();
+
+        // The caret geometry relative to the start of the text content.
+        let Some(caret) = self.editor.cursor_geometry(1.5) else {
+            return;
+        };
+
+        // Caret bounds and content/viewport extents along the scrolling axis (CSS pixels).
+        let (caret_start, caret_end, content, viewport) = if self.is_multiline {
+            (
+                caret.y0 as f32 / scale,
+                caret.y1 as f32 / scale,
+                layout.height() / scale,
+                content_box_height,
+            )
+        } else {
+            (
+                caret.x0 as f32 / scale,
+                caret.x1 as f32 / scale,
+                layout.full_width() / scale,
+                content_box_width,
+            )
+        };
+
+        let mut offset = self.scroll_offset;
+
+        // Scroll so that both edges of the caret are within the visible region.
+        if caret_end > offset + viewport {
+            offset = caret_end - viewport;
+        }
+        if caret_start < offset {
+            offset = caret_start;
+        }
+
+        // Never scroll past the content, and never scroll into negative space. The content
+        // extent includes the caret so that a caret at the very end remains fully visible
+        // (its rendered width extends slightly past the text).
+        let max_offset = (content.max(caret_end) - viewport).max(0.0);
+        self.scroll_offset = offset.clamp(0.0, max_offset);
     }
 }
 
@@ -693,3 +752,96 @@ mod file_data {
 }
 #[cfg(feature = "file_input")]
 pub use file_data::FileData;
+
+#[cfg(test)]
+mod tests {
+    use super::TextInputData;
+    use parley::{FontContext, LayoutContext};
+
+    /// Build a [`TextInputData`] with the given text laid out at scale 1.0.
+    fn make_input(is_multiline: bool, text: &str) -> TextInputData {
+        let mut font_ctx = FontContext::new();
+        let mut layout_ctx = LayoutContext::new();
+        let mut data = TextInputData::new(is_multiline);
+        data.editor.set_scale(1.0);
+        data.editor.set_text(text);
+        data.editor
+            .driver(&mut font_ctx, &mut layout_ctx)
+            .refresh_layout();
+        data
+    }
+
+    #[test]
+    fn short_text_does_not_scroll() {
+        let mut data = make_input(false, "hi");
+        // A wide content box that comfortably fits the text.
+        data.refresh_scroll_offset(1000.0, 100.0);
+        assert_eq!(data.scroll_offset, 0.0);
+    }
+
+    #[test]
+    fn single_line_scrolls_to_follow_caret() {
+        let text = "the quick brown fox jumps over the lazy dog repeatedly and at length";
+        let mut data = make_input(false, text);
+        let content_box_width = 40.0;
+        let content_box_height = 20.0;
+
+        // Caret at the end of a string that overflows a narrow input should scroll right.
+        data.editor
+            .driver(
+                &mut FontContext::new(),
+                &mut LayoutContext::new(),
+            )
+            .move_to_text_end();
+        data.refresh_scroll_offset(content_box_width, content_box_height);
+
+        let layout_width = data.editor.try_layout().unwrap().full_width();
+        if layout_width > content_box_width {
+            assert!(
+                data.scroll_offset > 0.0,
+                "expected horizontal scroll for overflowing single-line input"
+            );
+            // The caret must be within the visible region after scrolling.
+            let caret = data.editor.cursor_geometry(1.5).unwrap();
+            assert!(caret.x1 as f32 <= data.scroll_offset + content_box_width + 0.5);
+            assert!(caret.x0 as f32 >= data.scroll_offset - 0.5);
+        }
+
+        // Moving the caret back to the start should reset the scroll offset.
+        data.editor
+            .driver(
+                &mut FontContext::new(),
+                &mut LayoutContext::new(),
+            )
+            .move_to_text_start();
+        data.refresh_scroll_offset(content_box_width, content_box_height);
+        assert_eq!(data.scroll_offset, 0.0);
+    }
+
+    #[test]
+    fn multiline_scrolls_vertically_not_horizontally() {
+        let text = (0..40).map(|i| format!("line {i}")).collect::<Vec<_>>().join("\n");
+        let mut data = make_input(true, &text);
+        // Constrain the width so wrapping is well-defined.
+        data.editor.set_width(Some(200.0));
+        data.editor
+            .driver(&mut FontContext::new(), &mut LayoutContext::new())
+            .refresh_layout();
+
+        let content_box_width = 200.0;
+        let content_box_height = 30.0;
+
+        data.editor
+            .driver(&mut FontContext::new(), &mut LayoutContext::new())
+            .move_to_text_end();
+        data.refresh_scroll_offset(content_box_width, content_box_height);
+
+        let layout_height = data.editor.try_layout().unwrap().height();
+        if layout_height > content_box_height {
+            assert!(
+                data.scroll_offset > 0.0,
+                "expected vertical scroll for overflowing multi-line input"
+            );
+        }
+    }
+}

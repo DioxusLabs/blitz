@@ -254,8 +254,17 @@ pub(crate) fn handle_pointermove<F: FnMut(DomEvent)>(
             content_box_offset.y += y_offset;
         }
 
-        let x = (hit.x - content_box_offset.x) as f64 * doc.viewport.scale_f64();
-        let y = (hit.y - content_box_offset.y) as f64 * doc.viewport.scale_f64();
+        // Account for the input's scroll offset (stored in CSS pixels, scaled here to device
+        // pixels) when mapping the pointer location into the text content's coordinate space.
+        let scroll_offset = text_input_data.scroll_offset as f64 * doc.viewport.scale_f64();
+        let (scroll_x, scroll_y) = if text_input_data.is_multiline {
+            (0.0, scroll_offset)
+        } else {
+            (scroll_offset, 0.0)
+        };
+
+        let x = (hit.x - content_box_offset.x) as f64 * doc.viewport.scale_f64() + scroll_x;
+        let y = (hit.y - content_box_offset.y) as f64 * doc.viewport.scale_f64() + scroll_y;
 
         text_input_data
             .editor
@@ -318,6 +327,8 @@ pub(crate) fn handle_pointerdown(
     enum ClickTarget {
         TextInput {
             content_box_offset: taffy::Point<f32>,
+            /// Scroll offset of the input along each axis, in scaled (device) pixels.
+            scroll: taffy::Point<f64>,
         },
         Disabled,
         SelectableText,
@@ -340,7 +351,25 @@ pub(crate) fn handle_pointerdown(
                         let y_offset = ((content_box_height - input_height) / 2.0).max(0.0);
                         content_box_offset.y += y_offset;
                     }
-                    ClickTarget::TextInput { content_box_offset }
+                    // `scroll_offset` is stored in CSS pixels; scale it to device pixels to
+                    // match the editor's coordinate space.
+                    let scroll_offset =
+                        text_input_data.scroll_offset as f64 * doc.viewport.scale_f64();
+                    let scroll = if text_input_data.is_multiline {
+                        taffy::Point {
+                            x: 0.0,
+                            y: scroll_offset,
+                        }
+                    } else {
+                        taffy::Point {
+                            x: scroll_offset,
+                            y: 0.0,
+                        }
+                    };
+                    ClickTarget::TextInput {
+                        content_box_offset,
+                        scroll,
+                    }
                 } else {
                     ClickTarget::SelectableText
                 }
@@ -360,12 +389,15 @@ pub(crate) fn handle_pointerdown(
                 doc.clear_text_selection();
             }
         }
-        ClickTarget::TextInput { content_box_offset } => {
+        ClickTarget::TextInput {
+            content_box_offset,
+            scroll,
+        } => {
             // Clear general text selection when focusing a text input
             doc.clear_text_selection();
 
-            let tx = (hit.x - content_box_offset.x) as f64 * doc.viewport.scale_f64();
-            let ty = (hit.y - content_box_offset.y) as f64 * doc.viewport.scale_f64();
+            let tx = (hit.x - content_box_offset.x) as f64 * doc.viewport.scale_f64() + scroll.x;
+            let ty = (hit.y - content_box_offset.y) as f64 * doc.viewport.scale_f64() + scroll.y;
 
             // Now get mutable access to the text input
             let click_count = doc.click_count;

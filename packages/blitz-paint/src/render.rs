@@ -573,8 +573,21 @@ impl ElementCx<'_, '_> {
                 y: pos.y + y_offset,
             };
 
-            let transform =
-                self.transform * Affine::translate((pos.x * self.scale, pos.y * self.scale));
+            // Apply the scroll offset (stored in CSS pixels, scaled here to device pixels) so
+            // that the caret stays visible. Single-line inputs scroll horizontally; multi-line
+            // inputs scroll vertically.
+            let scroll_offset = input_data.scroll_offset as f64 * self.scale;
+            let (scroll_x, scroll_y) = if input_data.is_multiline {
+                (0.0, scroll_offset)
+            } else {
+                (scroll_offset, 0.0)
+            };
+
+            let transform = self.transform
+                * Affine::translate((
+                    pos.x * self.scale - scroll_x,
+                    pos.y * self.scale - scroll_y,
+                ));
 
             if self.node.is_focussed() {
                 // Render selection/caret
