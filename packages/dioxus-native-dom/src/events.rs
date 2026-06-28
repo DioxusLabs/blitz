@@ -6,10 +6,11 @@ use blitz_traits::events::{
 use dioxus_html::{
     AnimationData, CancelData, ClipboardData, CompositionData, DragData, FocusData, FormData,
     FormValue, HasFileData, HasFocusData, HasFormData, HasKeyboardData, HasMouseData,
-    HasPointerData, HasScrollData, HasWheelData, HtmlEventConverter, ImageData, KeyboardData,
-    MediaData, MountedData, MountedError, MountedResult, MouseData, PlatformEventData, PointerData,
-    RenderedElementBacking, ResizeData, ScrollBehavior, ScrollData, ScrollToOptions, SelectionData,
-    ToggleData, TouchData, TransitionData, VisibleData, WheelData,
+    HasPointerData, HasScrollData, HasTouchData, HasTouchPointData, HasWheelData,
+    HtmlEventConverter, ImageData, KeyboardData, MediaData, MountedData, MountedError,
+    MountedResult, MouseData, PlatformEventData, PointerData, RenderedElementBacking, ResizeData,
+    ScrollBehavior, ScrollData, ScrollToOptions, SelectionData, ToggleData, TouchData, TouchPoint,
+    TransitionData, VisibleData, WheelData,
     geometry::{
         ClientPoint, ElementPoint, PagePoint, PixelsRect, PixelsSize, PixelsVector2D, ScreenPoint,
         WheelDelta,
@@ -111,8 +112,8 @@ impl HtmlEventConverter for NativeConverter {
         unimplemented!("todo: convert_toggle_data in dioxus-native. requires support in blitz")
     }
 
-    fn convert_touch_data(&self, _event: &PlatformEventData) -> TouchData {
-        unimplemented!("todo: convert_touch_data in dioxus-native. requires support in blitz")
+    fn convert_touch_data(&self, event: &PlatformEventData) -> TouchData {
+        event.downcast::<NativeTouchData>().unwrap().clone().into()
     }
 
     fn convert_transition_data(&self, _event: &PlatformEventData) -> TransitionData {
@@ -407,6 +408,85 @@ impl HasPointerData for NativePointerData {
     }
     fn height(&self) -> f64 {
         1.0
+    }
+}
+
+/// Touch event data exposed to Dioxus Native application code.
+///
+/// Blitz tracks input via pointer events, so a touch event is generated from the
+/// pointer event of the finger that triggered it. The resulting touch lists
+/// therefore contain a single touch point representing that finger.
+#[derive(Clone)]
+pub struct NativeTouchData(pub(crate) BlitzPointerEvent);
+
+impl ModifiersInteraction for NativeTouchData {
+    fn modifiers(&self) -> Modifiers {
+        self.0.mods
+    }
+}
+
+impl HasTouchData for NativeTouchData {
+    fn touches(&self) -> Vec<TouchPoint> {
+        // TODO: track multiple touches
+        vec![TouchPoint::new(NativeTouchPointData(self.0.clone()))]
+    }
+
+    fn touches_changed(&self) -> Vec<TouchPoint> {
+        // TODO: track multiple touches
+        vec![TouchPoint::new(NativeTouchPointData(self.0.clone()))]
+    }
+
+    fn target_touches(&self) -> Vec<TouchPoint> {
+        // TODO: track multiple touches
+        vec![TouchPoint::new(NativeTouchPointData(self.0.clone()))]
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self as &dyn Any
+    }
+}
+
+#[derive(Clone)]
+pub struct NativeTouchPointData(BlitzPointerEvent);
+
+impl InteractionLocation for NativeTouchPointData {
+    fn client_coordinates(&self) -> ClientPoint {
+        ClientPoint::new(self.0.client_x() as f64, self.0.client_y() as f64)
+    }
+
+    fn screen_coordinates(&self) -> ScreenPoint {
+        ScreenPoint::new(self.0.screen_x() as f64, self.0.screen_y() as f64)
+    }
+
+    fn page_coordinates(&self) -> PagePoint {
+        PagePoint::new(self.0.page_x() as f64, self.0.page_y() as f64)
+    }
+}
+
+impl HasTouchPointData for NativeTouchPointData {
+    fn identifier(&self) -> i32 {
+        match self.0.id {
+            BlitzPointerId::Finger(id) => id as i32,
+            BlitzPointerId::Mouse | BlitzPointerId::Pen => 0,
+        }
+    }
+
+    fn force(&self) -> f64 {
+        self.0.details.pressure
+    }
+
+    fn radius(&self) -> ScreenPoint {
+        // TODO: expose real touch radius once blitz tracks it
+        ScreenPoint::new(1.0, 1.0)
+    }
+
+    fn rotation(&self) -> f64 {
+        // TODO: expose real touch rotation once blitz tracks it
+        0.0
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self as &dyn Any
     }
 }
 

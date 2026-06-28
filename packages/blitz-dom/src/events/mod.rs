@@ -63,6 +63,12 @@ fn map_dom_event_to_ui_event(
         DomEventData::MouseOver(_) => None,
         DomEventData::MouseOut(_) => None,
 
+        // Touch events will be recreated by sub-document's event driver
+        // based pointer events
+        DomEventData::TouchStart(_) => None,
+        DomEventData::TouchMove(_) => None,
+        DomEventData::TouchEnd(_) => None,
+
         DomEventData::KeyDown(data) => Some(UiEvent::KeyDown(data)),
         DomEventData::KeyUp(data) => Some(UiEvent::KeyUp(data)),
         DomEventData::Ime(data) => Some(UiEvent::Ime(data)),
@@ -237,6 +243,15 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
         }
         DomEventData::MouseOut(_) => {
             // Do nothing (no default action)
+        }
+        DomEventData::TouchStart(_) => {
+            // Do nothing (default action handled via PointerDown)
+        }
+        DomEventData::TouchMove(_) => {
+            // Do nothing (default action handled via PointerMove)
+        }
+        DomEventData::TouchEnd(_) => {
+            // Do nothing (default action handled via PointerUp)
         }
         DomEventData::Scroll(_) => {
             // Handled elsewhere

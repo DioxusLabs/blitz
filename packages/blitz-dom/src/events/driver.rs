@@ -193,6 +193,7 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
                     data,
                     DomEventData::PointerMove,
                     DomEventData::MouseMove,
+                    DomEventData::TouchMove,
                 );
             }
             UiEvent::PointerUp(data) => {
@@ -201,6 +202,7 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
                     data,
                     DomEventData::PointerUp,
                     DomEventData::MouseUp,
+                    DomEventData::TouchEnd,
                 );
             }
             UiEvent::PointerDown(data) => {
@@ -209,6 +211,7 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
                     data,
                     DomEventData::PointerDown,
                     DomEventData::MouseDown,
+                    DomEventData::TouchStart,
                 );
             }
             UiEvent::Wheel(data) => {
@@ -247,6 +250,7 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
         mut data: BlitzPointerEvent,
         make_ptr_data: impl FnOnce(BlitzPointerEvent) -> DomEventData,
         make_mouse_data: impl FnOnce(BlitzPointerEvent) -> DomEventData,
+        make_touch_data: impl FnOnce(BlitzPointerEvent) -> DomEventData,
     ) {
         if let Some(rect) = self.doc.inner().get_client_bounding_rect(target) {
             data.element.x = data.coords.client_x - rect.x as f32;
@@ -256,10 +260,21 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
         let mut ptr_event = DomEvent::new(target, make_ptr_data(data.clone()));
         let mut event_state = EventState::default();
         event_state = self.run_handler_event(&mut ptr_event, event_state);
-        if !event_state.is_cancelled() && data.is_mouse() {
-            let mut mouse_event = DomEvent::new(target, make_mouse_data(data));
-            event_state = self.run_handler_event(&mut mouse_event, event_state);
+
+        // Generate the corresponding compatibility event (mouse events for the
+        // mouse, touch events for fingers and pen/stylus input) and expose it to
+        // script. The default action is always run on the pointer event so that
+        // the shell layer and default actions remain pointer-based.
+        if !event_state.is_cancelled() {
+            if data.is_mouse() {
+                let mut mouse_event = DomEvent::new(target, make_mouse_data(data));
+                event_state = self.run_handler_event(&mut mouse_event, event_state);
+            } else if data.is_finger() || data.is_pen() {
+                let mut touch_event = DomEvent::new(target, make_touch_data(data));
+                event_state = self.run_handler_event(&mut touch_event, event_state);
+            }
         }
+
         if !event_state.is_cancelled() {
             self.run_default_action(&mut ptr_event);
         }

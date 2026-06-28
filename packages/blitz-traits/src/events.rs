@@ -123,6 +123,10 @@ pub enum DomEventKind {
     MouseOver,
     MouseOut,
 
+    TouchStart,
+    TouchMove,
+    TouchEnd,
+
     Scroll,
     Wheel,
 
@@ -168,6 +172,10 @@ impl FromStr for DomEventKind {
             "mouseover" => Ok(Self::MouseOver),
             "mouseout" => Ok(Self::MouseOut),
 
+            "touchstart" => Ok(Self::TouchStart),
+            "touchmove" => Ok(Self::TouchMove),
+            "touchend" => Ok(Self::TouchEnd),
+
             "scroll" => Ok(Self::Scroll),
             "wheel" => Ok(Self::Wheel),
 
@@ -208,6 +216,10 @@ pub enum DomEventData {
     MouseLeave(BlitzPointerEvent),
     MouseOver(BlitzPointerEvent),
     MouseOut(BlitzPointerEvent),
+
+    TouchStart(BlitzPointerEvent),
+    TouchMove(BlitzPointerEvent),
+    TouchEnd(BlitzPointerEvent),
 
     Scroll(BlitzScrollEvent),
     Wheel(BlitzWheelEvent),
@@ -258,6 +270,10 @@ impl DomEventData {
             Self::MouseOver { .. } => "mouseover",
             Self::MouseOut { .. } => "mouseout",
 
+            Self::TouchStart { .. } => "touchstart",
+            Self::TouchMove { .. } => "touchmove",
+            Self::TouchEnd { .. } => "touchend",
+
             Self::Scroll { .. } => "scroll",
             Self::Wheel { .. } => "wheel",
 
@@ -297,6 +313,10 @@ impl DomEventData {
             Self::MouseLeave { .. } => DomEventKind::MouseLeave,
             Self::MouseOver { .. } => DomEventKind::MouseOver,
             Self::MouseOut { .. } => DomEventKind::MouseOut,
+
+            Self::TouchStart { .. } => DomEventKind::TouchStart,
+            Self::TouchMove { .. } => DomEventKind::TouchMove,
+            Self::TouchEnd { .. } => DomEventKind::TouchEnd,
 
             Self::Scroll { .. } => DomEventKind::Scroll,
             Self::Wheel { .. } => DomEventKind::Wheel,
@@ -338,6 +358,10 @@ impl DomEventData {
             Self::MouseOver { .. } => true,
             Self::MouseOut { .. } => true,
 
+            Self::TouchStart { .. } => true,
+            Self::TouchMove { .. } => true,
+            Self::TouchEnd { .. } => true,
+
             Self::Scroll { .. } => false,
             Self::Wheel { .. } => true,
 
@@ -377,6 +401,10 @@ impl DomEventData {
             Self::MouseLeave { .. } => false,
             Self::MouseOver { .. } => true,
             Self::MouseOut { .. } => true,
+
+            Self::TouchStart { .. } => true,
+            Self::TouchMove { .. } => true,
+            Self::TouchEnd { .. } => true,
 
             Self::Scroll { .. } => false,
             Self::Wheel { .. } => true,
