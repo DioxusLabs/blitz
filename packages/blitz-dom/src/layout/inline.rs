@@ -766,9 +766,6 @@ fn layout_abspos_child(
         .maybe_add(box_sizing_adjustment);
     let mut known_dimensions = style_size.maybe_clamp(min_size, max_size);
 
-    dbg!(style_size);
-    dbg!(area_size);
-
     drop(child_style);
 
     // Fill in width from left/right and reapply aspect ratio if:
