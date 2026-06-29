@@ -1,6 +1,5 @@
 use crate::node::{Node, NodeData};
 use color::{AlphaColor, Srgb};
-#[cfg(target_os = "macos")]
 use keyboard_types::Modifiers;
 use std::borrow::Cow;
 use style::color::AbsoluteColor;
