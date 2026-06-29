@@ -584,10 +584,7 @@ impl ElementCx<'_, '_> {
             };
 
             let transform = self.transform
-                * Affine::translate((
-                    pos.x * self.scale - scroll_x,
-                    pos.y * self.scale - scroll_y,
-                ));
+                * Affine::translate((pos.x * self.scale - scroll_x, pos.y * self.scale - scroll_y));
 
             if self.node.is_focussed() {
                 // Render selection/caret

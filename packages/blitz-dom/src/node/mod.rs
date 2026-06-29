@@ -6,6 +6,7 @@ mod custom_widget;
 mod element;
 mod node;
 mod stylo_data;
+mod text;
 
 pub use attributes::{Attribute, Attributes};
 #[cfg(feature = "custom-widget")]
@@ -14,7 +15,7 @@ pub use custom_widget::{
 };
 pub use element::{
     CanvasData, ElementData, ImageData, ImageResourceData, ListItemLayout, ListItemLayoutPosition,
-    Marker, RasterImageData, SpecialElementData, SpecialElementType, Status, TextBrush,
-    TextInputData, TextLayout,
+    Marker, RasterImageData, SpecialElementData, SpecialElementType, Status,
 };
 pub use node::*;
+pub use text::{TextBrush, TextInputData, TextLayout};
