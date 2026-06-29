@@ -100,7 +100,7 @@ impl TextInputData {
     ///
     /// `content_box_width` and `content_box_height` are the dimensions of the input's content
     /// box in CSS (unscaled) pixels.
-    pub fn refresh_scroll_offset(&mut self, content_box_width: f32, content_box_height: f32) {
+    pub fn clamp_scroll_offset(&mut self, content_box_width: f32, content_box_height: f32) {
         let Some(layout) = self.editor.try_layout() else {
             return;
         };
@@ -757,9 +757,9 @@ impl TextInputData {
         let mut driver = editor.driver(font_ctx, layout_ctx);
 
         match event {
-            BlitzImeEvent::Enabled => { 
-            	// Do nothing
-            	None
+            BlitzImeEvent::Enabled => {
+                // Do nothing
+                None
             }
             BlitzImeEvent::Disabled => {
                 driver.clear_compose();

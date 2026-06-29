@@ -1782,7 +1782,7 @@ impl BaseDocument {
 
     /// Recompute the scroll offset of the text input at `node_id` (if any) so that its caret
     /// remains visible within the input's content box.
-    pub(crate) fn refresh_text_input_scroll(&mut self, node_id: usize) {
+    pub(crate) fn clamp_text_input_scroll(&mut self, node_id: usize) {
         let Some(node) = self.nodes.get_mut(node_id) else {
             return;
         };
@@ -1794,7 +1794,7 @@ impl BaseDocument {
             .element_data_mut()
             .and_then(|el| el.text_input_data_mut())
         {
-            text_input.refresh_scroll_offset(content_box_width, content_box_height);
+            text_input.clamp_scroll_offset(content_box_width, content_box_height);
         }
     }
 

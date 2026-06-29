@@ -104,15 +104,16 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
 
     // Whether this event can move the caret/selection (or change the text) of a text input,
     // in which case we need to update the input's scroll offset afterwards.
-    let may_move_text_input_caret = matches!(
-        &event.data,
+    let may_move_text_input_caret = match &event.data {
         DomEventData::KeyDown(_)
-            | DomEventData::AppleStandardKeybinding(_)
-            | DomEventData::Ime(_)
-            | DomEventData::PointerDown(_)
-            | DomEventData::PointerMove(_)
-            | DomEventData::Click(_)
-    );
+        | DomEventData::AppleStandardKeybinding(_)
+        | DomEventData::Ime(_)
+        | DomEventData::Click(_) => true,
+        DomEventData::PointerDown(event) | DomEventData::PointerMove(event) => {
+            !event.buttons.is_empty()
+        }
+        _ => false,
+    };
 
     // Handle event forwarding for sub-document
     if let Some(sub_doc) = node.subdoc_mut() {
@@ -301,7 +302,7 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
     // focused node is the input whose caret may have moved.
     if may_move_text_input_caret {
         if let Some(focus_id) = doc.focus_node_id {
-            doc.refresh_text_input_scroll(focus_id);
+            doc.clamp_text_input_scroll(focus_id);
         }
     }
 }

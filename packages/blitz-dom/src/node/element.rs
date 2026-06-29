@@ -642,7 +642,7 @@ mod tests {
     fn short_text_does_not_scroll() {
         let mut data = make_input(false, "hi");
         // A wide content box that comfortably fits the text.
-        data.refresh_scroll_offset(1000.0, 100.0);
+        data.clamp_scroll_offset(1000.0, 100.0);
         assert_eq!(data.scroll_offset, 0.0);
     }
 
@@ -657,7 +657,7 @@ mod tests {
         data.editor
             .driver(&mut FontContext::new(), &mut LayoutContext::new())
             .move_to_text_end();
-        data.refresh_scroll_offset(content_box_width, content_box_height);
+        data.clamp_scroll_offset(content_box_width, content_box_height);
 
         let layout_width = data.editor.try_layout().unwrap().full_width();
         if layout_width > content_box_width {
@@ -675,7 +675,7 @@ mod tests {
         data.editor
             .driver(&mut FontContext::new(), &mut LayoutContext::new())
             .move_to_text_start();
-        data.refresh_scroll_offset(content_box_width, content_box_height);
+        data.clamp_scroll_offset(content_box_width, content_box_height);
         assert_eq!(data.scroll_offset, 0.0);
     }
 
@@ -698,7 +698,7 @@ mod tests {
         data.editor
             .driver(&mut FontContext::new(), &mut LayoutContext::new())
             .move_to_text_end();
-        data.refresh_scroll_offset(content_box_width, content_box_height);
+        data.clamp_scroll_offset(content_box_width, content_box_height);
 
         let layout_height = data.editor.try_layout().unwrap().height();
         if layout_height > content_box_height {
