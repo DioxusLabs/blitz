@@ -18,4 +18,4 @@ pub use element::{
     Marker, RasterImageData, SpecialElementData, SpecialElementType, Status,
 };
 pub use node::*;
-pub use text::{TextBrush, TextInputData, TextLayout};
+pub use text::{GeneratedTextInputEvent, TextBrush, TextInputData, TextLayout};

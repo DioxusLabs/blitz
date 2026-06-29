@@ -1,7 +1,14 @@
 use crate::node::{Node, NodeData};
 use color::{AlphaColor, Srgb};
+#[cfg(target_os = "macos")]
+use keyboard_types::Modifiers;
 use std::borrow::Cow;
 use style::color::AbsoluteColor;
+
+#[cfg(target_os = "macos")]
+pub(crate) const ACTION_MOD: Modifiers = Modifiers::SUPER;
+#[cfg(not(target_os = "macos"))]
+pub(crate) const ACTION_MOD: Modifiers = Modifiers::CONTROL;
 
 pub type Color = AlphaColor<Srgb>;
 

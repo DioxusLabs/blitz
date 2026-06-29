@@ -1,11 +1,11 @@
-use blitz_traits::events::{BlitzImeEvent, BlitzInputEvent, DomEvent, DomEventData};
+use blitz_traits::events::{BlitzImeEvent, DomEvent};
 
 use crate::BaseDocument;
 
 pub(crate) fn handle_ime_event<F: FnMut(DomEvent)>(
     doc: &mut BaseDocument,
     event: BlitzImeEvent,
-    mut dispatch_event: F,
+    dispatch_event: F,
 ) {
     if let Some(node_id) = doc.focus_node_id {
         let node = &mut doc.nodes[node_id];
@@ -14,42 +14,16 @@ pub(crate) fn handle_ime_event<F: FnMut(DomEvent)>(
             .downcast_element_mut()
             .and_then(|el| el.text_input_data_mut());
         if let Some(input_data) = text_input_data {
-            let editor = &mut input_data.editor;
-            let mut font_ctx = doc.font_ctx.lock().unwrap();
-            let mut driver = editor.driver(&mut font_ctx, &mut doc.layout_ctx);
+            let generated_event = input_data.apply_ime_event(
+                &mut doc.font_ctx.lock().unwrap(),
+                &mut doc.layout_ctx,
+                event,
+            );
 
-            match event {
-                BlitzImeEvent::Enabled => { /* Do nothing */ }
-                BlitzImeEvent::Disabled => {
-                    driver.clear_compose();
-                    doc.shell_provider.request_redraw();
-                }
-                BlitzImeEvent::Commit(text) => {
-                    driver.insert_or_replace_selection(&text);
-                    let value = input_data.editor.raw_text().to_string();
-                    dispatch_event(DomEvent::new(
-                        node_id,
-                        DomEventData::Input(BlitzInputEvent { value }),
-                    ));
-                    doc.shell_provider.request_redraw();
-                }
-                BlitzImeEvent::Preedit(text, cursor) => {
-                    if text.is_empty() {
-                        driver.clear_compose();
-                    } else {
-                        driver.set_compose(&text, cursor);
-                    }
-                    doc.shell_provider.request_redraw();
-                }
-                BlitzImeEvent::DeleteSurrounding {
-                    before_bytes,
-                    after_bytes,
-                } => {
-                    let _ = before_bytes;
-                    let _ = after_bytes;
-                    // TODO
-                }
+            if let Some(generated_event) = generated_event {
+                doc.apply_generated_text_input_event(node_id, generated_event, dispatch_event);
             }
+
             #[cfg(feature = "tracing")]
             tracing::debug!(node_id, "Sent ime event");
         }
