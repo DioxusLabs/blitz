@@ -7015,6 +7015,7 @@ dependencies = [
  "stylo",
  "stylo_atoms",
  "taffy",
+ "tracing",
 ]
 
 [[package]]
