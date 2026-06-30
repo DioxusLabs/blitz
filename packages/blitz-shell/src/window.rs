@@ -286,6 +286,9 @@ impl<Rend: WindowRenderer> View<Rend> {
             inner.viewport().window_size
         };
 
+        // Dispatch events generated during resolution (e.g. transition events).
+        self.doc.flush_pending_events();
+
         let proxy = self.proxy.clone();
         self.renderer
             .resume(Arc::new(self.window.clone()), width, height, move || {
@@ -308,8 +311,14 @@ impl<Rend: WindowRenderer> View<Rend> {
         // (its `set_size` only matches Active), so the surface created during
         // resume could be at a stale size by the time we get here.
         let animation_time = self.current_animation_time();
+        {
+            let mut inner = self.doc.inner_mut();
+            inner.resolve(animation_time);
+        }
+        // Dispatch events generated during resolution (e.g. transition events).
+        self.doc.flush_pending_events();
+
         let mut inner = self.doc.inner_mut();
-        inner.resolve(animation_time);
         let (width, height) = inner.viewport().window_size;
         let scale = inner.viewport().scale_f64();
         let insets = self.safe_area_insets.to_logical(scale);
@@ -377,8 +386,15 @@ impl<Rend: WindowRenderer> View<Rend> {
         let animation_time = self.current_animation_time();
         let is_visible = self.is_visible;
 
+        {
+            let mut inner = self.doc.inner_mut();
+            inner.resolve(animation_time);
+        }
+
+        // Dispatch events generated during resolution (e.g. transition events).
+        self.doc.flush_pending_events();
+
         let mut inner = self.doc.inner_mut();
-        inner.resolve(animation_time);
 
         // Unregister resources (e.g. textures) from dropped custom widget nodes
         #[cfg(feature = "custom-widget")]

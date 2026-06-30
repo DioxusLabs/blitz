@@ -150,6 +150,11 @@ pub enum DomEventKind {
     FocusIn,
     FocusOut,
 
+    TransitionRun,
+    TransitionStart,
+    TransitionEnd,
+    TransitionCancel,
+
     AppleStandardKeybinding,
 }
 impl DomEventKind {
@@ -200,6 +205,11 @@ impl FromStr for DomEventKind {
             "blur" => Ok(Self::Blur),
             "focusin" => Ok(Self::FocusIn),
             "focusout" => Ok(Self::FocusOut),
+
+            "transitionrun" => Ok(Self::TransitionRun),
+            "transitionstart" => Ok(Self::TransitionStart),
+            "transitionend" => Ok(Self::TransitionEnd),
+            "transitioncancel" => Ok(Self::TransitionCancel),
             _ => Err(()),
         }
     }
@@ -247,6 +257,11 @@ pub enum DomEventData {
     Blur(BlitzFocusEvent),
     FocusIn(BlitzFocusEvent),
     FocusOut(BlitzFocusEvent),
+
+    TransitionRun(BlitzTransitionEvent),
+    TransitionStart(BlitzTransitionEvent),
+    TransitionEnd(BlitzTransitionEvent),
+    TransitionCancel(BlitzTransitionEvent),
 
     AppleStandardKeybinding(SmolStr),
 }
@@ -303,6 +318,11 @@ impl DomEventData {
             Self::FocusIn { .. } => "focusin",
             Self::FocusOut { .. } => "focusout",
 
+            Self::TransitionRun { .. } => "transitionrun",
+            Self::TransitionStart { .. } => "transitionstart",
+            Self::TransitionEnd { .. } => "transitionend",
+            Self::TransitionCancel { .. } => "transitioncancel",
+
             Self::AppleStandardKeybinding { .. } => "applekeybinding",
         }
     }
@@ -348,6 +368,11 @@ impl DomEventData {
             Self::Blur { .. } => DomEventKind::Blur,
             Self::FocusIn { .. } => DomEventKind::FocusIn,
             Self::FocusOut { .. } => DomEventKind::FocusOut,
+
+            Self::TransitionRun { .. } => DomEventKind::TransitionRun,
+            Self::TransitionStart { .. } => DomEventKind::TransitionStart,
+            Self::TransitionEnd { .. } => DomEventKind::TransitionEnd,
+            Self::TransitionCancel { .. } => DomEventKind::TransitionCancel,
 
             Self::AppleStandardKeybinding { .. } => DomEventKind::AppleStandardKeybinding,
         }
@@ -395,6 +420,12 @@ impl DomEventData {
             Self::FocusIn { .. } => false,
             Self::FocusOut { .. } => false,
 
+            // Transition events are never cancelable.
+            Self::TransitionRun { .. } => false,
+            Self::TransitionStart { .. } => false,
+            Self::TransitionEnd { .. } => false,
+            Self::TransitionCancel { .. } => false,
+
             Self::AppleStandardKeybinding { .. } => true,
         }
     }
@@ -440,6 +471,12 @@ impl DomEventData {
             Self::Blur { .. } => false,
             Self::FocusIn { .. } => true,
             Self::FocusOut { .. } => true,
+
+            // Transition events bubble.
+            Self::TransitionRun { .. } => true,
+            Self::TransitionStart { .. } => true,
+            Self::TransitionEnd { .. } => true,
+            Self::TransitionCancel { .. } => true,
 
             Self::AppleStandardKeybinding { .. } => false,
         }
@@ -719,6 +756,24 @@ pub struct BlitzInputEvent {
 
 #[derive(Clone, Debug)]
 pub struct BlitzFocusEvent;
+
+/// Data for a CSS transition event (`transitionrun`, `transitionstart`,
+/// `transitionend`, `transitioncancel`).
+///
+/// See the [CSS Transitions specification](https://drafts.csswg.org/css-transitions/#transition-events).
+#[derive(Clone, Debug)]
+pub struct BlitzTransitionEvent {
+    /// The name of the CSS property associated with the transition.
+    pub property_name: String,
+    /// The amount of time the transition has been running, in seconds, at the
+    /// moment the event fired (not counting any time the transition spent in
+    /// its `transition-delay` phase).
+    pub elapsed_time: f32,
+    /// The CSS pseudo-element on which the transition runs, serialized as a
+    /// string (e.g. `"::before"`). Empty if the transition runs on the element
+    /// itself.
+    pub pseudo_element: String,
+}
 
 /// Copy of Winit IME event to avoid lower-level Blitz crates depending on winit
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

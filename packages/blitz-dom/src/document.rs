@@ -137,6 +137,26 @@ pub trait Document: Any + 'static {
         false
     }
 
+    /// Dispatch any DOM events that were generated internally by the document
+    /// (e.g. CSS transition events produced during style resolution).
+    ///
+    /// This should be called after each [`BaseDocument::resolve`]. The default
+    /// implementation dispatches the events through a [`NoopEventHandler`],
+    /// which runs their default actions (transition events have none). Embedders
+    /// that maintain their own event handler (e.g. a `VirtualDom`) should
+    /// override this to route the events to application code.
+    fn flush_pending_events(&mut self) {
+        let mut doc = self.inner_mut();
+        let events = doc.take_pending_events();
+        if events.is_empty() {
+            return;
+        }
+        let mut driver = EventDriver::new(&mut *doc, NoopEventHandler);
+        for event in events {
+            driver.handle_dom_event(event);
+        }
+    }
+
     /// Get the [`Document`]'s id
     fn id(&self) -> usize {
         self.inner().id
@@ -295,6 +315,11 @@ pub struct BaseDocument {
     // Tracks in-flight "critical" resources (e.g. stylesheets linked from the `<head>`)
     pub(crate) pending_critical_resources: HashSet<usize>,
 
+    /// DOM events generated internally by the document (e.g. CSS transition
+    /// events produced during style resolution) that are waiting to be
+    /// dispatched to event handlers. Drained via [`take_pending_events`](BaseDocument::take_pending_events).
+    pub(crate) pending_events: Vec<DomEvent>,
+
     // Service providers
     /// Network provider. Can be used to fetch assets.
     pub net_provider: Arc<dyn NetProvider>,
@@ -449,6 +474,7 @@ impl BaseDocument {
             image_cache: HashMap::new(),
             pending_images: HashMap::new(),
             pending_critical_resources: HashSet::new(),
+            pending_events: Vec::new(),
             controls_to_form: HashMap::new(),
             net_provider,
             navigation_provider,
@@ -576,6 +602,13 @@ impl BaseDocument {
         dispatch_event: F,
     ) {
         handle_dom_event(self, event, dispatch_event)
+    }
+
+    /// Take all pending internally-generated DOM events, leaving the queue
+    /// empty. Embedders should dispatch these through their event handler
+    /// (typically after each call to [`resolve`](Self::resolve)).
+    pub fn take_pending_events(&mut self) -> Vec<DomEvent> {
+        std::mem::take(&mut self.pending_events)
     }
 
     pub fn as_any_mut(&mut self) -> &mut dyn Any {
