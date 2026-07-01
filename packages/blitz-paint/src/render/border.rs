@@ -25,6 +25,14 @@ fn relative_luminance(color: Color) -> f32 {
     0.2126 * linearize(r) + 0.7152 * linearize(g) + 0.0722 * linearize(b)
 }
 
+/// The WCAG contrast ratio (>= 1) between two colours, matching Chrome's
+/// `color_utils::GetContrastRatio`.
+fn contrast_ratio(a: Color, b: Color) -> f32 {
+    let la = relative_luminance(a) + 0.05;
+    let lb = relative_luminance(b) + 0.05;
+    if la > lb { la / lb } else { lb / la }
+}
+
 /// A darker version of a colour (mirrors WebKit/Blink's `Color::Dark`): the
 /// brightest channel is reduced by a fixed amount and the others scaled to match,
 /// preserving hue.
@@ -58,33 +66,34 @@ fn lighten(color: Color) -> Color {
 /// the bottom/right edges the "darker" shade (`inset` is the reverse). The exact
 /// shading matches Chrome's `CalculateInsetOutsetColor`:
 ///
-/// * Very dark colours are lightened on both edges (once on the darker edge,
-///   twice on the lighter edge) to keep enough contrast to read as 3D.
-/// * Otherwise the darker edge is darkened, and the lighter edge is lightened
-///   unless the colour is already very light (in which case it's left unchanged).
+/// * The darker edge is always darkened.
+/// * The lighter edge keeps the base colour unchanged, *except* for colours dark
+///   enough that the darkened edge wouldn't have enough contrast against the base
+///   colour, which are lightened instead so the bevel stays visible.
 fn beveled_edge_color(color: Color, edge: Edge, inset: bool) -> Color {
-    // Luminance thresholds from Chrome: rgb(32, 32, 32) and rgb(235, 235, 235).
-    const BASE_DARK_LUMINANCE: f32 = 0.014443844;
-    const BASE_LIGHT_LUMINANCE: f32 = 0.83077;
-
     let top_or_left = matches!(edge, Edge::Top | Edge::Left);
     let should_darken = top_or_left == inset;
 
-    let luminance = relative_luminance(color);
-    if luminance <= BASE_DARK_LUMINANCE {
-        // Special-case very dark colours to give them extra contrast.
-        if should_darken {
-            lighten(color)
-        } else {
-            lighten(lighten(color))
-        }
-    } else if should_darken {
-        darken(color)
-    } else if luminance > BASE_LIGHT_LUMINANCE {
-        // Lightening a very light colour is invisible, so leave it unchanged.
-        color
-    } else {
+    let dark_color = darken(color);
+    if should_darken {
+        return dark_color;
+    }
+
+    // Lighter edge. Chrome uses the base colour as-is unless the colour is dark
+    // enough that the darkened edge lacks contrast against it. The red/green
+    // shortcut mirrors Chrome: for those colours the contrast is always
+    // sufficient, so the base colour is used without a contrast check.
+    let [r, g, _, _] = color.components;
+    if r >= 150.0 / 255.0 || g >= 92.0 / 255.0 {
+        return color;
+    }
+
+    // Lighten only when the darkened edge would be too low-contrast to read.
+    const MIN_CONTRAST_RATIO: f32 = 1.75;
+    if contrast_ratio(color, dark_color) < MIN_CONTRAST_RATIO {
         lighten(color)
+    } else {
+        color
     }
 }
 
