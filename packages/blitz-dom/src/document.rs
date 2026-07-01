@@ -1525,8 +1525,8 @@ impl BaseDocument {
         // Return text cursor for text nodes
         if self.hover_node_is_text {
             return Some(match user_select {
-                UserSelect::Text => CursorIcon::Text,
-                _ => CursorIcon::Default,
+                UserSelect::Text | UserSelect::All | UserSelect::Auto => CursorIcon::Text,
+                UserSelect::None => CursorIcon::Default,
             });
         }
 
