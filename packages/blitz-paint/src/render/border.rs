@@ -10,13 +10,19 @@ use style::{
 
 use crate::{color::ToColorColor as _, kurbo_css::Edge, render::ElementCx};
 
-/// Whether a colour is closer to black than to white (Euclidean distance in
-/// gamma-encoded sRGB), i.e. a "dark" colour.
-fn is_dark(color: Color) -> bool {
+/// The WCAG relative luminance of a colour (weighted sum of the linearised sRGB
+/// components), matching Chrome's `color_utils::GetRelativeLuminance4f`. Alpha is
+/// ignored.
+fn relative_luminance(color: Color) -> f32 {
+    fn linearize(c: f32) -> f32 {
+        if c <= 0.04045 {
+            c / 12.92
+        } else {
+            ((c + 0.055) / 1.055).powf(2.4)
+        }
+    }
     let [r, g, b, _] = color.components;
-    let to_black = r * r + g * g + b * b;
-    let to_white = (1.0 - r).powi(2) + (1.0 - g).powi(2) + (1.0 - b).powi(2);
-    to_black < to_white
+    0.2126 * linearize(r) + 0.7152 * linearize(g) + 0.0722 * linearize(b)
 }
 
 /// A darker version of a colour (mirrors WebKit/Blink's `Color::Dark`): the
@@ -49,24 +55,36 @@ fn lighten(color: Color) -> Color {
 /// The colour of a single edge of an `inset`/`outset` border.
 ///
 /// An `outset` border is raised: the top/left edges use the "lighter" shade and
-/// the bottom/right edges the "darker" shade (`inset` is the reverse). To keep a
-/// visible 3D effect the base colour is only darkened when it's light enough, and
-/// only lightened when it's dark enough (matching WebKit/Blink); otherwise the
-/// base colour is used unchanged.
+/// the bottom/right edges the "darker" shade (`inset` is the reverse). The exact
+/// shading matches Chrome's `CalculateInsetOutsetColor`:
+///
+/// * Very dark colours are lightened on both edges (once on the darker edge,
+///   twice on the lighter edge) to keep enough contrast to read as 3D.
+/// * Otherwise the darker edge is darkened, and the lighter edge is lightened
+///   unless the colour is already very light (in which case it's left unchanged).
 fn beveled_edge_color(color: Color, edge: Edge, inset: bool) -> Color {
+    // Luminance thresholds from Chrome: rgb(32, 32, 32) and rgb(235, 235, 235).
+    const BASE_DARK_LUMINANCE: f32 = 0.014443844;
+    const BASE_LIGHT_LUMINANCE: f32 = 0.83077;
+
     let top_or_left = matches!(edge, Edge::Top | Edge::Left);
     let should_darken = top_or_left == inset;
 
-    if should_darken {
-        // Darkening a dark colour is invisible, so only darken lighter colours.
-        if is_dark(color) { color } else { darken(color) }
-    } else {
-        // Lightening a light colour is invisible, so only lighten darker colours.
-        if is_dark(color) {
+    let luminance = relative_luminance(color);
+    if luminance <= BASE_DARK_LUMINANCE {
+        // Special-case very dark colours to give them extra contrast.
+        if should_darken {
             lighten(color)
         } else {
-            color
+            lighten(lighten(color))
         }
+    } else if should_darken {
+        darken(color)
+    } else if luminance > BASE_LIGHT_LUMINANCE {
+        // Lightening a very light colour is invisible, so leave it unchanged.
+        color
+    } else {
+        lighten(color)
     }
 }
 
