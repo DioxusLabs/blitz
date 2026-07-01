@@ -47,10 +47,43 @@ impl ElementCx<'_, '_> {
                 BorderStyle::Dotted => self.draw_dashed_border_edge(scene, edge, color, true),
                 BorderStyle::Dashed => self.draw_dashed_border_edge(scene, edge, color, false),
 
-                // Solid (and, for now, the unimplemented 3D/double styles) are
-                // rendered as a solid fill of the edge's region.
+                // A double border is two solid lines separated by a gap, splitting
+                // the border width into three equal parts (outer line / gap / inner
+                // line). Both lines share a color, so both rings are placed into a
+                // single path and batched together with the other solid edges.
+                BorderStyle::Double => {
+                    let edge_width = match edge {
+                        Edge::Top => self.frame.border_width.y0,
+                        Edge::Bottom => self.frame.border_width.y1,
+                        Edge::Left => self.frame.border_width.x0,
+                        Edge::Right => self.frame.border_width.x1,
+                    };
+
+                    // Needs at least 3px (one device pixel per line and per gap) to
+                    // render as two lines; thinner borders fall back to a solid
+                    // fill, matching browser behaviour.
+                    let path = if edge_width < 3.0 * self.scale {
+                        self.frame.border_edge_shape(edge)
+                    } else {
+                        let mut path = self
+                            .frame
+                            .border_slice(0.0, 1.0 / 3.0)
+                            .border_edge_shape(edge);
+                        path.extend(
+                            &self
+                                .frame
+                                .border_slice(2.0 / 3.0, 1.0)
+                                .border_edge_shape(edge),
+                        );
+                        path
+                    };
+                    borders[count] = (color, Some(path));
+                    count += 1;
+                }
+
+                // Solid (and, for now, the unimplemented 3D styles) are rendered as
+                // a solid fill of the edge's region.
                 BorderStyle::Solid
-                | BorderStyle::Double
                 | BorderStyle::Groove
                 | BorderStyle::Ridge
                 | BorderStyle::Inset
