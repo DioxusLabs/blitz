@@ -40,6 +40,21 @@ fn grooved_edge_colors(color: Color, edge: Edge, ridge: bool) -> (Color, Color) 
     (outer, inner)
 }
 
+/// The `(dash, gap)` lengths of a dashed border, as multiples of the border
+/// thickness.
+///
+/// Matches Chrome: borders that are at least 3px use a 2:1 dash-to-gap ratio,
+/// while thinner borders use longer dashes and gaps (3:2) so they still read as
+/// dashes rather than dots or a solid line. `thickness` and `scale` are in device
+/// pixels; the 3px threshold is applied in CSS pixels.
+fn dashed_ratios(thickness: f64, scale: f64) -> (f64, f64) {
+    if thickness >= 3.0 * scale {
+        (2.0, 1.0)
+    } else {
+        (3.0, 2.0)
+    }
+}
+
 /// Return `count` points spaced `spacing` apart (by arc length) along `path`,
 /// starting at its beginning. Used to place dots along a rounded border.
 fn sample_points_along_path(path: &BezPath, spacing: f64, count: usize) -> Vec<Point> {
@@ -293,17 +308,24 @@ impl ElementCx<'_, '_> {
                 }
             }
         } else {
-            // Dashes are rectangles. They are distributed so that the edge both
-            // starts and ends with a dash (covering the corners), with the dashes
-            // and gaps all the same length.
-            let nominal = 2.0 * thickness;
-            let dash_count = ((length / nominal + 1.0) / 2.0).round().max(1.0);
-            let segment = length / (2.0 * dash_count - 1.0);
-            let mut k = 0.0;
-            while k < dash_count {
-                let start = 2.0 * k * segment;
-                path.extend(dash_rect(start, start + segment).path_elements(0.1));
-                k += 1.0;
+            // Dashes are rectangles distributed so the edge both starts and ends
+            // with a dash (covering the corners). The dash and gap lengths keep a
+            // fixed ratio (matching Chrome) but are scaled to fit the edge exactly.
+            let (dash_ratio, gap_ratio) = dashed_ratios(thickness, self.scale);
+            let dash0 = dash_ratio * thickness;
+            let gap0 = gap_ratio * thickness;
+
+            // `count` dashes with `count - 1` gaps between them.
+            let count = ((length + gap0) / (dash0 + gap0)).round().max(1.0);
+            let r = dash_ratio / gap_ratio;
+            let gap = length / (count * r + count - 1.0);
+            let dash = r * gap;
+
+            let mut i = 0.0;
+            while i < count {
+                let start = i * (dash + gap);
+                path.extend(dash_rect(start, start + dash).path_elements(0.1));
+                i += 1.0;
             }
         }
 
@@ -354,16 +376,19 @@ impl ElementCx<'_, '_> {
             }
             scene.fill(Fill::NonZero, self.transform, color, None, &path);
         } else {
-            // Dashes and gaps of equal length, sized so a whole number of them fit
-            // exactly around the perimeter (kurbo merges the dash across the seam).
-            // Butt caps give the dashes flat, square ends (like the straight-corner
-            // dashes) rather than the rounded ends of the default cap.
-            let nominal = 4.0 * thickness;
-            let count = (perimeter / nominal).round().max(1.0);
-            let dash = perimeter / count / 2.0;
+            // Dash and gap keep a fixed ratio (matching Chrome), sized so a whole
+            // number of dash+gap periods fit exactly around the perimeter (kurbo
+            // merges the dash across the seam). Butt caps give the dashes flat,
+            // square ends rather than the rounded ends of the default cap.
+            let (dash_ratio, gap_ratio) = dashed_ratios(thickness, self.scale);
+            let period0 = (dash_ratio + gap_ratio) * thickness;
+            let count = (perimeter / period0).round().max(1.0);
+            let period = perimeter / count;
+            let dash = period * dash_ratio / (dash_ratio + gap_ratio);
+            let gap = period - dash;
             let stroke = Stroke::new(thickness)
                 .with_caps(Cap::Butt)
-                .with_dashes(0.0, [dash, dash]);
+                .with_dashes(0.0, [dash, gap]);
             scene.stroke(&stroke, self.transform, color, None, &centerline);
         }
 
