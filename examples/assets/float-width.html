@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+    body {
+        width: 400px;
+        background-color: white;
+    }
+    .float-box {
+        float: right;
+        clear: right;
+        width: 150px;
+        height: 100px;
+        background-color: lightblue;
+        border: 1px solid blue;
+        margin: 0 0 10px 10px;
+        padding: 8px;
+    }
+    .grid {
+        grid-template-columns: max-content;
+    }
+    p {
+        margin: 0 0 10px 0;
+    }
+</style>
+</head>
+<body>
+    <div class="grid">
+        <div class="float-box">Right-floated box</div>
+        <div class="float-box">Right-floated box</div>
+        <p>First paragraph: Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.</p>
+        <p>Second paragraph: Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.</p>
+        <p>Third paragraph: Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium, totam rem aperiam, eaque ipsa quae ab illo inventore veritatis et quasi architecto beatae vitae dicta sunt explicabo.</p>
+    </div>
+</body>
+</html>
