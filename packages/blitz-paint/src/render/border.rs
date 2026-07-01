@@ -296,7 +296,7 @@ impl ElementCx<'_, '_> {
             // Dashes are rectangles. They are distributed so that the edge both
             // starts and ends with a dash (covering the corners), with the dashes
             // and gaps all the same length.
-            let nominal = 3.0 * thickness;
+            let nominal = 2.0 * thickness;
             let dash_count = ((length / nominal + 1.0) / 2.0).round().max(1.0);
             let segment = length / (2.0 * dash_count - 1.0);
             let mut k = 0.0;
@@ -358,7 +358,7 @@ impl ElementCx<'_, '_> {
             // exactly around the perimeter (kurbo merges the dash across the seam).
             // Butt caps give the dashes flat, square ends (like the straight-corner
             // dashes) rather than the rounded ends of the default cap.
-            let nominal = 6.0 * thickness;
+            let nominal = 4.0 * thickness;
             let count = (perimeter / nominal).round().max(1.0);
             let dash = perimeter / count / 2.0;
             let stroke = Stroke::new(thickness)
