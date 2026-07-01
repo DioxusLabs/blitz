@@ -139,6 +139,62 @@ impl CssBox {
         path
     }
 
+    /// Whether any corner of this box has a non-zero border radius.
+    pub fn has_border_radius(&self) -> bool {
+        let r = &self.border_radii;
+        [r.top_left, r.top_right, r.bottom_right, r.bottom_left]
+            .iter()
+            .any(|radius| radius.x > 0.0 || radius.y > 0.0)
+    }
+
+    /// Construct a new [`CssBox`] representing a "slice" of this box's border,
+    /// running from `start_frac` to `end_frac` of the border width (measured as
+    /// a fraction from the outer border-box edge inwards).
+    ///
+    /// The returned box's border region is exactly the requested slice, so
+    /// [`CssBox::border_edge_shape`] can then be used to render it. This is used
+    /// to draw the two lines of a `double` border.
+    pub fn border_slice(&self, start_frac: f64, end_frac: f64) -> CssBox {
+        use Corner::*;
+
+        let scale_insets = |frac: f64| Insets {
+            x0: self.border_width.x0 * frac,
+            y0: self.border_width.y0 * frac,
+            x1: self.border_width.x1 * frac,
+            y1: self.border_width.y1 * frac,
+        };
+
+        let start_insets = scale_insets(start_frac);
+        let slice_border = scale_insets(end_frac - start_frac);
+
+        // Move the outer edge of the box inwards to the start of the slice.
+        let slice_border_box = self.border_box - start_insets;
+
+        // Border radii shrink as we move inwards through the border, matching the
+        // model used when computing inner (padding/content) box radii.
+        let reduce = |radius: Vec2, corner: Corner| {
+            let inset = get_corner_insets(start_insets, corner);
+            Vec2 {
+                x: (radius.x - inset.x).max(0.0),
+                y: (radius.y - inset.y).max(0.0),
+            }
+        };
+        let slice_radii = NonUniformRoundedRectRadii {
+            top_left: reduce(self.border_radii.top_left, TopLeft),
+            top_right: reduce(self.border_radii.top_right, TopRight),
+            bottom_right: reduce(self.border_radii.bottom_right, BottomRight),
+            bottom_left: reduce(self.border_radii.bottom_left, BottomLeft),
+        };
+
+        CssBox::new(
+            slice_border_box,
+            slice_border,
+            Insets::ZERO,
+            0.0,
+            slice_radii,
+        )
+    }
+
     /// Construct a bezpath drawing the outline
     pub fn outline(&self) -> BezPath {
         let mut path = BezPath::new();

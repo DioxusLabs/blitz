@@ -943,6 +943,7 @@ dependencies = [
  "kurbo",
  "parley",
  "peniko",
+ "smallvec",
  "stylo",
  "taffy",
  "tracing",

@@ -40,4 +40,5 @@ kurbo = { workspace = true }
 usvg = { workspace = true, optional = true }
 
 # Other dependencies
+smallvec = { workspace = true }
 tracing = { workspace = true, optional = true }
