@@ -224,17 +224,25 @@ impl ElementCx<'_, '_> {
         let mut path = BezPath::new();
 
         if dotted {
-            // Dots are circles whose diameter equals the border thickness. They
-            // are distributed evenly, each centred within an equally sized cell so
-            // that the gaps at either end of the edge are symmetrical.
+            // Dots are circles whose diameter equals the border thickness. A dot is
+            // anchored in each corner (both ends of the edge, inset by the radius so
+            // the dot sits snugly in the corner) and the remaining dots are spread
+            // evenly between them, so the corners always contain a dot.
             let radius = thickness / 2.0;
-            let cell_count = (length / (2.0 * thickness)).round().max(1.0);
-            let cell = length / cell_count;
-            let mut k = 0.0;
-            while k < cell_count {
-                let center = dot_center((k + 0.5) * cell);
+            let span = length - thickness;
+            if span <= 0.0 {
+                // Edge too short to fit two dots; place a single centred dot.
+                let center = dot_center(length / 2.0);
                 path.extend(Circle::new(center, radius).path_elements(0.1));
-                k += 1.0;
+            } else {
+                // Aim for a centre-to-centre spacing of about two dot diameters,
+                // then adjust it so the first and last dots land in the corners.
+                let gaps = (span / (2.0 * thickness)).round().max(1.0) as usize;
+                let spacing = span / gaps as f64;
+                for i in 0..=gaps {
+                    let center = dot_center(radius + i as f64 * spacing);
+                    path.extend(Circle::new(center, radius).path_elements(0.1));
+                }
             }
         } else {
             // Dashes are rectangles. They are distributed so that the edge both
