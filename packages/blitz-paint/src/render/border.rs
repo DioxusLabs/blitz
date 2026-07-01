@@ -10,23 +10,63 @@ use style::{
 
 use crate::{color::ToColorColor as _, kurbo_css::Edge, render::ElementCx};
 
-/// Darken a colour by halving its (sRGB) RGB components. Used to derive the
-/// shaded edges of the 3D border styles (`inset`/`outset`/`groove`/`ridge`).
+/// Whether a colour is closer to black than to white (Euclidean distance in
+/// gamma-encoded sRGB), i.e. a "dark" colour.
+fn is_dark(color: Color) -> bool {
+    let [r, g, b, _] = color.components;
+    let to_black = r * r + g * g + b * b;
+    let to_white = (1.0 - r).powi(2) + (1.0 - g).powi(2) + (1.0 - b).powi(2);
+    to_black < to_white
+}
+
+/// A darker version of a colour (mirrors WebKit/Blink's `Color::Dark`): the
+/// brightest channel is reduced by a fixed amount and the others scaled to match,
+/// preserving hue.
 fn darken(color: Color) -> Color {
     let [r, g, b, a] = color.components;
-    Color::new([r * 0.5, g * 0.5, b * 0.5, a])
+    let v = r.max(g).max(b);
+    if v == 0.0 {
+        return color;
+    }
+    let multiplier = ((v - 0.33) / v).max(0.0);
+    Color::new([r * multiplier, g * multiplier, b * multiplier, a])
+}
+
+/// A lighter version of a colour (mirrors WebKit/Blink's `Color::Light`): the
+/// brightest channel is increased by a fixed amount and the others scaled to
+/// match, preserving hue.
+fn lighten(color: Color) -> Color {
+    let [r, g, b, a] = color.components;
+    let v = r.max(g).max(b);
+    if v == 0.0 {
+        // Pure black: WebKit uses a fixed dark grey (0x545454).
+        return Color::new([0.33, 0.33, 0.33, a]);
+    }
+    let multiplier = (v + 0.33).min(1.0) / v;
+    Color::new([r * multiplier, g * multiplier, b * multiplier, a])
 }
 
 /// The colour of a single edge of an `inset`/`outset` border.
 ///
-/// An `outset` border is raised: it keeps the base colour on the top/left edges
-/// and darkens the bottom/right edges. `inset` is the reverse (sunken).
+/// An `outset` border is raised: the top/left edges use the "lighter" shade and
+/// the bottom/right edges the "darker" shade (`inset` is the reverse). To keep a
+/// visible 3D effect the base colour is only darkened when it's light enough, and
+/// only lightened when it's dark enough (matching WebKit/Blink); otherwise the
+/// base colour is used unchanged.
 fn beveled_edge_color(color: Color, edge: Edge, inset: bool) -> Color {
     let top_or_left = matches!(edge, Edge::Top | Edge::Left);
-    if top_or_left ^ inset {
-        color
+    let should_darken = top_or_left == inset;
+
+    if should_darken {
+        // Darkening a dark colour is invisible, so only darken lighter colours.
+        if is_dark(color) { color } else { darken(color) }
     } else {
-        darken(color)
+        // Lightening a light colour is invisible, so only lighten darker colours.
+        if is_dark(color) {
+            lighten(color)
+        } else {
+            color
+        }
     }
 }
 
