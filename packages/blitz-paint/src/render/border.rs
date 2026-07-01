@@ -1,6 +1,6 @@
 use anyrender::PaintScene;
 use blitz_dom::node::SpecialElementData;
-use kurbo::{BezPath, Rect};
+use kurbo::{BezPath, Circle, Point, Rect, Shape as _};
 use peniko::{Color, Fill};
 use style::{
     computed_values::border_collapse::T as BorderCollapse,
@@ -25,18 +25,39 @@ impl ElementCx<'_, '_> {
         let mut count = 0;
 
         for &edge in &[Edge::Top, Edge::Right, Edge::Bottom, Edge::Left] {
-            let color = match edge {
-                Edge::Top => &border.border_top_color,
-                Edge::Right => &border.border_right_color,
-                Edge::Bottom => &border.border_bottom_color,
-                Edge::Left => &border.border_left_color,
-            }
-            .resolve_to_absolute(&current_color)
-            .as_srgb_color();
+            let (color, edge_style) = match edge {
+                Edge::Top => (&border.border_top_color, border.border_top_style),
+                Edge::Right => (&border.border_right_color, border.border_right_style),
+                Edge::Bottom => (&border.border_bottom_color, border.border_bottom_style),
+                Edge::Left => (&border.border_left_color, border.border_left_style),
+            };
+            let color = color.resolve_to_absolute(&current_color).as_srgb_color();
 
-            if color.components[3] > 0.0 {
-                borders[count] = (color, Some(self.frame.border_edge_shape(edge)));
-                count += 1;
+            if color.components[3] <= 0.0 {
+                continue;
+            }
+
+            match edge_style {
+                // `none`/`hidden` produce a zero-width border during layout, but
+                // guard against drawing them anyway.
+                BorderStyle::None | BorderStyle::Hidden => {}
+
+                // Dashed and dotted edges are drawn immediately as their own
+                // (clipped) shapes rather than being batched with the solid edges.
+                BorderStyle::Dotted => self.draw_dashed_border_edge(scene, edge, color, true),
+                BorderStyle::Dashed => self.draw_dashed_border_edge(scene, edge, color, false),
+
+                // Solid (and, for now, the unimplemented 3D/double styles) are
+                // rendered as a solid fill of the edge's region.
+                BorderStyle::Solid
+                | BorderStyle::Double
+                | BorderStyle::Groove
+                | BorderStyle::Ridge
+                | BorderStyle::Inset
+                | BorderStyle::Outset => {
+                    borders[count] = (color, Some(self.frame.border_edge_shape(edge)));
+                    count += 1;
+                }
             }
         }
 
@@ -76,6 +97,95 @@ impl ElementCx<'_, '_> {
             }
             start_border_index = next_border_index;
         }
+    }
+
+    /// Draw a single `dashed` or `dotted` border edge.
+    ///
+    /// The dashes/dots are generated as filled shapes running along the centre of
+    /// the edge and are drawn clipped to the edge's region (the same trapezoid
+    /// used by the solid path). Clipping means the corners are mitred correctly,
+    /// adjacent edges of different styles/colors don't overlap, and any
+    /// border-radius is respected.
+    fn draw_dashed_border_edge(
+        &self,
+        scene: &mut impl PaintScene,
+        edge: Edge,
+        color: Color,
+        dotted: bool,
+    ) {
+        let bb = self.frame.border_box;
+        let bw = self.frame.border_width;
+
+        // `thickness` is the width of this border side, `length` is the distance
+        // the dashes run along the edge (measured along the outer border box).
+        let (thickness, length): (f64, f64) = match edge {
+            Edge::Top => (bw.y0, bb.width()),
+            Edge::Bottom => (bw.y1, bb.width()),
+            Edge::Left => (bw.x0, bb.height()),
+            Edge::Right => (bw.x1, bb.height()),
+        };
+
+        if thickness <= 0.0 || length <= 0.0 {
+            return;
+        }
+
+        // Build a rectangle for a dash spanning `[start, end]` along the run,
+        // covering the full thickness of the border on the cross axis.
+        let dash_rect = |start: f64, end: f64| -> Rect {
+            match edge {
+                Edge::Top => Rect::new(bb.x0 + start, bb.y0, bb.x0 + end, bb.y0 + thickness),
+                Edge::Bottom => Rect::new(bb.x0 + start, bb.y1 - thickness, bb.x0 + end, bb.y1),
+                Edge::Left => Rect::new(bb.x0, bb.y0 + start, bb.x0 + thickness, bb.y0 + end),
+                Edge::Right => Rect::new(bb.x1 - thickness, bb.y0 + start, bb.x1, bb.y0 + end),
+            }
+        };
+
+        // Centre point of a dot placed `along` the run (on the centre line of the
+        // border thickness).
+        let dot_center = |along: f64| -> Point {
+            let half = thickness / 2.0;
+            match edge {
+                Edge::Top => Point::new(bb.x0 + along, bb.y0 + half),
+                Edge::Bottom => Point::new(bb.x0 + along, bb.y1 - half),
+                Edge::Left => Point::new(bb.x0 + half, bb.y0 + along),
+                Edge::Right => Point::new(bb.x1 - half, bb.y0 + along),
+            }
+        };
+
+        let mut path = BezPath::new();
+
+        if dotted {
+            // Dots are circles whose diameter equals the border thickness. They
+            // are distributed evenly, each centred within an equally sized cell so
+            // that the gaps at either end of the edge are symmetrical.
+            let radius = thickness / 2.0;
+            let cell_count = (length / (2.0 * thickness)).round().max(1.0);
+            let cell = length / cell_count;
+            let mut k = 0.0;
+            while k < cell_count {
+                let center = dot_center((k + 0.5) * cell);
+                path.extend(Circle::new(center, radius).path_elements(0.1));
+                k += 1.0;
+            }
+        } else {
+            // Dashes are rectangles. They are distributed so that the edge both
+            // starts and ends with a dash (covering the corners), with the dashes
+            // and gaps all the same length.
+            let nominal = 3.0 * thickness;
+            let dash_count = ((length / nominal + 1.0) / 2.0).round().max(1.0);
+            let segment = length / (2.0 * dash_count - 1.0);
+            let mut k = 0.0;
+            while k < dash_count {
+                let start = 2.0 * k * segment;
+                path.extend(dash_rect(start, start + segment).path_elements(0.1));
+                k += 1.0;
+            }
+        }
+
+        let clip = self.frame.border_edge_shape(edge);
+        scene.push_clip_layer(self.transform, &clip);
+        scene.fill(Fill::NonZero, self.transform, color, None, &path);
+        scene.pop_layer();
     }
 
     pub(crate) fn draw_table_borders(&self, scene: &mut impl PaintScene) {
