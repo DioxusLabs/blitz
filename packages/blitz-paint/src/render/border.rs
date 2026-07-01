@@ -127,8 +127,8 @@ impl ElementCx<'_, '_> {
 
                 // Dashed and dotted edges are drawn immediately as their own
                 // (clipped) shapes rather than being batched with the solid edges.
-                BorderStyle::Dotted => self.draw_dashed_border_edge(scene, edge, color, true),
-                BorderStyle::Dashed => self.draw_dashed_border_edge(scene, edge, color, false),
+                BorderStyle::Dotted => self.draw_dotted_border_edge(scene, edge, color),
+                BorderStyle::Dashed => self.draw_dashed_border_edge(scene, edge, color),
 
                 // A double border is two solid lines separated by a gap, splitting
                 // the border width into three equal parts (outer line / gap / inner
@@ -223,75 +223,142 @@ impl ElementCx<'_, '_> {
         }
     }
 
-    /// Draw a single `dashed` or `dotted` border edge.
+    /// Draw a single `dashed` border edge.
     ///
-    /// The dashes/dots are generated as filled shapes running along the centre of
-    /// the edge and are drawn clipped to the edge's region (the same trapezoid
-    /// used by the solid path). Clipping means the corners are mitred correctly,
-    /// adjacent edges of different styles/colors don't overlap, and any
+    /// The dashes are produced by stroking the centre line of the border with a
+    /// dash pattern (butt caps give them flat, square ends). Everything is clipped
+    /// to the edge's region (the same trapezoid used by the solid path) so corners
+    /// are mitred, adjacent edges of different colors don't overlap, and any
     /// border-radius is respected.
-    fn draw_dashed_border_edge(
-        &self,
-        scene: &mut impl PaintScene,
-        edge: Edge,
-        color: Color,
-        dotted: bool,
-    ) {
-        let bb = self.frame.border_box;
-        let bw = self.frame.border_width;
-
-        // `thickness` is the width of this border side, `length` is the distance
-        // the dashes run along the edge (measured along the outer border box).
-        let (thickness, length): (f64, f64) = match edge {
-            Edge::Top => (bw.y0, bb.width()),
-            Edge::Bottom => (bw.y1, bb.width()),
-            Edge::Left => (bw.x0, bb.height()),
-            Edge::Right => (bw.x1, bb.height()),
-        };
-
-        if thickness <= 0.0 || length <= 0.0 {
+    fn draw_dashed_border_edge(&self, scene: &mut impl PaintScene, edge: Edge, color: Color) {
+        let thickness = self.edge_width(edge);
+        if thickness <= 0.0 {
             return;
         }
 
-        // When the box has rounded corners the dashes/dots must follow the curve,
-        // so they're stroked/placed along the rounded centre line of the border
-        // instead of along straight per-edge lines.
-        if self.frame.has_border_radius() {
-            self.draw_rounded_dashed_border_edge(scene, edge, color, dotted, thickness);
-            return;
-        }
+        let (dash_ratio, gap_ratio) = dashed_ratios(thickness, self.scale);
 
-        // Build a rectangle for a dash spanning `[start, end]` along the run,
-        // covering the full thickness of the border on the cross axis.
-        let dash_rect = |start: f64, end: f64| -> Rect {
-            match edge {
-                Edge::Top => Rect::new(bb.x0 + start, bb.y0, bb.x0 + end, bb.y0 + thickness),
-                Edge::Bottom => Rect::new(bb.x0 + start, bb.y1 - thickness, bb.x0 + end, bb.y1),
-                Edge::Left => Rect::new(bb.x0, bb.y0 + start, bb.x0 + thickness, bb.y0 + end),
-                Edge::Right => Rect::new(bb.x1 - thickness, bb.y0 + start, bb.x1, bb.y0 + end),
+        // Work out the centre line to stroke and the dash/gap lengths along it.
+        let (centerline, dash, gap) = if self.frame.has_border_radius() {
+            // Rounded corners: stroke the rounded centre line running through the
+            // whole perimeter. Every edge uses the same centre line and pattern, so
+            // dashes stay continuous and aligned as they wrap around each corner.
+            // Dash and gap keep their ratio, sized so a whole number of periods fit
+            // exactly around the perimeter (kurbo merges the dash across the seam).
+            let mut centerline = self.frame.border_slice(0.0, 0.5).padding_box_path();
+            centerline.close_path();
+            let perimeter = centerline.perimeter(0.1);
+            if perimeter <= 0.0 {
+                return;
             }
-        };
-
-        // Centre point of a dot placed `along` the run (on the centre line of the
-        // border thickness).
-        let dot_center = |along: f64| -> Point {
+            let period0 = (dash_ratio + gap_ratio) * thickness;
+            let count = (perimeter / period0).round().max(1.0);
+            let period = perimeter / count;
+            let dash = period * dash_ratio / (dash_ratio + gap_ratio);
+            (centerline, dash, period - dash)
+        } else {
+            // Square corners: stroke a straight line through the middle of the edge,
+            // corner to corner. Dash and gap keep their ratio but are scaled so the
+            // edge both starts and ends with a dash (covering the corners).
+            let bb = self.frame.border_box;
             let half = thickness / 2.0;
-            match edge {
-                Edge::Top => Point::new(bb.x0 + along, bb.y0 + half),
-                Edge::Bottom => Point::new(bb.x0 + along, bb.y1 - half),
-                Edge::Left => Point::new(bb.x0 + half, bb.y0 + along),
-                Edge::Right => Point::new(bb.x1 - half, bb.y0 + along),
+            let (start, end, length) = match edge {
+                Edge::Top => (
+                    Point::new(bb.x0, bb.y0 + half),
+                    Point::new(bb.x1, bb.y0 + half),
+                    bb.width(),
+                ),
+                Edge::Bottom => (
+                    Point::new(bb.x0, bb.y1 - half),
+                    Point::new(bb.x1, bb.y1 - half),
+                    bb.width(),
+                ),
+                Edge::Left => (
+                    Point::new(bb.x0 + half, bb.y0),
+                    Point::new(bb.x0 + half, bb.y1),
+                    bb.height(),
+                ),
+                Edge::Right => (
+                    Point::new(bb.x1 - half, bb.y0),
+                    Point::new(bb.x1 - half, bb.y1),
+                    bb.height(),
+                ),
+            };
+            if length <= 0.0 {
+                return;
             }
+            let dash0 = dash_ratio * thickness;
+            let gap0 = gap_ratio * thickness;
+            // `count` dashes with `count - 1` gaps between them.
+            let count = ((length + gap0) / (dash0 + gap0)).round().max(1.0);
+            let r = dash_ratio / gap_ratio;
+            let gap = length / (count * r + count - 1.0);
+
+            let mut line = BezPath::new();
+            line.move_to(start);
+            line.line_to(end);
+            (line, r * gap, gap)
         };
+
+        let stroke = Stroke::new(thickness)
+            .with_caps(Cap::Butt)
+            .with_dashes(0.0, [dash, gap]);
+        let clip = self.frame.border_edge_shape(edge);
+        scene.push_clip_layer(self.transform, &clip);
+        scene.stroke(&stroke, self.transform, color, None, &centerline);
+        scene.pop_layer();
+    }
+
+    /// Draw a single `dotted` border edge.
+    ///
+    /// Dots are filled circles (diameter == border thickness). Unlike dashes they
+    /// can't be produced by stroking, because kurbo doesn't emit zero-length dashes
+    /// (so a round-capped dash pattern would render nothing); drawing them
+    /// explicitly also lets us anchor a dot in each square corner. Everything is
+    /// clipped to the edge's region, as for the other styles.
+    fn draw_dotted_border_edge(&self, scene: &mut impl PaintScene, edge: Edge, color: Color) {
+        let thickness = self.edge_width(edge);
+        if thickness <= 0.0 {
+            return;
+        }
+        let radius = thickness / 2.0;
 
         let mut path = BezPath::new();
+        if self.frame.has_border_radius() {
+            // Rounded corners: dots spaced evenly around the rounded centre line so
+            // the ring wraps seamlessly around the corners.
+            let mut centerline = self.frame.border_slice(0.0, 0.5).padding_box_path();
+            centerline.close_path();
+            let perimeter = centerline.perimeter(0.1);
+            if perimeter <= 0.0 {
+                return;
+            }
+            let count = (perimeter / (2.0 * thickness)).round().max(1.0);
+            let spacing = perimeter / count;
+            for center in sample_points_along_path(&centerline, spacing, count as usize) {
+                path.extend(Circle::new(center, radius).path_elements(0.1));
+            }
+        } else {
+            // Square corners: a dot is anchored in each corner (both ends of the
+            // edge, inset by the radius so it sits snugly in the corner) and the
+            // rest are spread evenly between them.
+            let bb = self.frame.border_box;
+            let length = match edge {
+                Edge::Top | Edge::Bottom => bb.width(),
+                Edge::Left | Edge::Right => bb.height(),
+            };
+            if length <= 0.0 {
+                return;
+            }
+            let dot_center = |along: f64| -> Point {
+                match edge {
+                    Edge::Top => Point::new(bb.x0 + along, bb.y0 + radius),
+                    Edge::Bottom => Point::new(bb.x0 + along, bb.y1 - radius),
+                    Edge::Left => Point::new(bb.x0 + radius, bb.y0 + along),
+                    Edge::Right => Point::new(bb.x1 - radius, bb.y0 + along),
+                }
+            };
 
-        if dotted {
-            // Dots are circles whose diameter equals the border thickness. A dot is
-            // anchored in each corner (both ends of the edge, inset by the radius so
-            // the dot sits snugly in the corner) and the remaining dots are spread
-            // evenly between them, so the corners always contain a dot.
-            let radius = thickness / 2.0;
             let span = length - thickness;
             if span <= 0.0 {
                 // Edge too short to fit two dots; place a single centred dot.
@@ -307,91 +374,11 @@ impl ElementCx<'_, '_> {
                     path.extend(Circle::new(center, radius).path_elements(0.1));
                 }
             }
-        } else {
-            // Dashes are rectangles distributed so the edge both starts and ends
-            // with a dash (covering the corners). The dash and gap lengths keep a
-            // fixed ratio (matching Chrome) but are scaled to fit the edge exactly.
-            let (dash_ratio, gap_ratio) = dashed_ratios(thickness, self.scale);
-            let dash0 = dash_ratio * thickness;
-            let gap0 = gap_ratio * thickness;
-
-            // `count` dashes with `count - 1` gaps between them.
-            let count = ((length + gap0) / (dash0 + gap0)).round().max(1.0);
-            let r = dash_ratio / gap_ratio;
-            let gap = length / (count * r + count - 1.0);
-            let dash = r * gap;
-
-            let mut i = 0.0;
-            while i < count {
-                let start = i * (dash + gap);
-                path.extend(dash_rect(start, start + dash).path_elements(0.1));
-                i += 1.0;
-            }
         }
 
         let clip = self.frame.border_edge_shape(edge);
         scene.push_clip_layer(self.transform, &clip);
         scene.fill(Fill::NonZero, self.transform, color, None, &path);
-        scene.pop_layer();
-    }
-
-    /// Draw the `dashed`/`dotted` portion of a single edge when the box has a
-    /// border-radius, so that the dashes/dots follow the rounded corners.
-    ///
-    /// The dashes are stroked (and the dots placed) along the border's rounded
-    /// centre line, which runs through the whole perimeter. Each edge clips the
-    /// result to its own region (as in the straight case), but because every edge
-    /// uses the same centre line and pattern the dashes/dots stay continuous and
-    /// aligned as they wrap around each corner.
-    fn draw_rounded_dashed_border_edge(
-        &self,
-        scene: &mut impl PaintScene,
-        edge: Edge,
-        color: Color,
-        dotted: bool,
-        thickness: f64,
-    ) {
-        // Rounded rectangle running through the middle of the border.
-        let mut centerline = self.frame.border_slice(0.0, 0.5).padding_box_path();
-        centerline.close_path();
-
-        let perimeter = centerline.perimeter(0.1);
-        if perimeter <= 0.0 {
-            return;
-        }
-
-        let clip = self.frame.border_edge_shape(edge);
-        scene.push_clip_layer(self.transform, &clip);
-
-        if dotted {
-            // Dots are circles (diameter == border thickness) spaced evenly around
-            // the perimeter. Even spacing means the ring of dots wraps seamlessly.
-            let count = (perimeter / (2.0 * thickness)).round().max(1.0);
-            let spacing = perimeter / count;
-            let radius = thickness / 2.0;
-
-            let mut path = BezPath::new();
-            for center in sample_points_along_path(&centerline, spacing, count as usize) {
-                path.extend(Circle::new(center, radius).path_elements(0.1));
-            }
-            scene.fill(Fill::NonZero, self.transform, color, None, &path);
-        } else {
-            // Dash and gap keep a fixed ratio (matching Chrome), sized so a whole
-            // number of dash+gap periods fit exactly around the perimeter (kurbo
-            // merges the dash across the seam). Butt caps give the dashes flat,
-            // square ends rather than the rounded ends of the default cap.
-            let (dash_ratio, gap_ratio) = dashed_ratios(thickness, self.scale);
-            let period0 = (dash_ratio + gap_ratio) * thickness;
-            let count = (perimeter / period0).round().max(1.0);
-            let period = perimeter / count;
-            let dash = period * dash_ratio / (dash_ratio + gap_ratio);
-            let gap = period - dash;
-            let stroke = Stroke::new(thickness)
-                .with_caps(Cap::Butt)
-                .with_dashes(0.0, [dash, gap]);
-            scene.stroke(&stroke, self.transform, color, None, &centerline);
-        }
-
         scene.pop_layer();
     }
 
