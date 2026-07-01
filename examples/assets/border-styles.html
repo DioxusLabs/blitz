@@ -66,6 +66,12 @@
         border-radius: 24px;
     }
 
+    /* Variable radius variant: a different elliptical border-radius per
+       corner (uniform border-width from .box) */
+    .box.varradius {
+        border-radius: 10px 40px 30px 60px / 30px 10px 50px 20px;
+    }
+
     /* Multicolor variant: a different border-color per side */
     .box.multicolor {
         border-color: #d6336c #1c7ed6 #2f9e44 #f59f00;
@@ -265,6 +271,65 @@
             <div class="box rounded bs-mixed"></div>
             <div class="label">mixed (per side)</div>
             <div class="code">border-style: dotted solid dashed double; border-radius: 24px;</div>
+        </div>
+    </div>
+
+    <h1>elliptical border-radius per corner (x / y: top-left top-right bottom-right bottom-left)</h1>
+    <div class="grid">
+        <div class="item">
+            <div class="box varradius bs-none"></div>
+            <div class="label">none</div>
+            <div class="code">border-style: none; border-radius: 10px 40px 30px 60px / 30px 10px 50px 20px;</div>
+        </div>
+        <div class="item">
+            <div class="box varradius bs-hidden"></div>
+            <div class="label">hidden</div>
+            <div class="code">border-style: hidden; border-radius: 10px 40px 30px 60px / 30px 10px 50px 20px;</div>
+        </div>
+        <div class="item">
+            <div class="box varradius bs-dotted"></div>
+            <div class="label">dotted</div>
+            <div class="code">border-style: dotted; border-radius: 10px 40px 30px 60px / 30px 10px 50px 20px;</div>
+        </div>
+        <div class="item">
+            <div class="box varradius bs-dashed"></div>
+            <div class="label">dashed</div>
+            <div class="code">border-style: dashed; border-radius: 10px 40px 30px 60px / 30px 10px 50px 20px;</div>
+        </div>
+        <div class="item">
+            <div class="box varradius bs-solid"></div>
+            <div class="label">solid</div>
+            <div class="code">border-style: solid; border-radius: 10px 40px 30px 60px / 30px 10px 50px 20px;</div>
+        </div>
+        <div class="item">
+            <div class="box varradius bs-double"></div>
+            <div class="label">double</div>
+            <div class="code">border-style: double; border-radius: 10px 40px 30px 60px / 30px 10px 50px 20px;</div>
+        </div>
+        <div class="item">
+            <div class="box varradius bs-groove"></div>
+            <div class="label">groove</div>
+            <div class="code">border-style: groove; border-radius: 10px 40px 30px 60px / 30px 10px 50px 20px;</div>
+        </div>
+        <div class="item">
+            <div class="box varradius bs-ridge"></div>
+            <div class="label">ridge</div>
+            <div class="code">border-style: ridge; border-radius: 10px 40px 30px 60px / 30px 10px 50px 20px;</div>
+        </div>
+        <div class="item">
+            <div class="box varradius bs-inset"></div>
+            <div class="label">inset</div>
+            <div class="code">border-style: inset; border-radius: 10px 40px 30px 60px / 30px 10px 50px 20px;</div>
+        </div>
+        <div class="item">
+            <div class="box varradius bs-outset"></div>
+            <div class="label">outset</div>
+            <div class="code">border-style: outset; border-radius: 10px 40px 30px 60px / 30px 10px 50px 20px;</div>
+        </div>
+        <div class="item">
+            <div class="box varradius bs-mixed"></div>
+            <div class="label">mixed (per side)</div>
+            <div class="code">border-style: dotted solid dashed double; border-radius: 10px 40px 30px 60px / 30px 10px 50px 20px;</div>
         </div>
     </div>
 
