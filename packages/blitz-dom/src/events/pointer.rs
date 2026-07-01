@@ -11,7 +11,7 @@ use blitz_traits::{
 };
 use keyboard_types::Modifiers;
 use markup5ever::local_name;
-use style::values::computed::UserSelect;
+use style::values::computed::{TouchAction, UserSelect};
 
 use crate::{BaseDocument, node::SpecialElementData};
 
@@ -36,6 +36,10 @@ pub(crate) struct PanState {
     pub(crate) target: usize,
     pub(crate) last_x: f32,
     pub(crate) last_y: f32,
+    /// Whether horizontal panning is permitted by the `touch-action` property.
+    pub(crate) allow_x: bool,
+    /// Whether vertical panning is permitted by the `touch-action` property.
+    pub(crate) allow_y: bool,
     pub(crate) samples: VecDeque<PanSample>,
 }
 
@@ -64,8 +68,18 @@ impl DragMode {
 
 impl PanState {
     fn update(&mut self, time_ms: u64, screen_x: f32, screen_y: f32) -> (f64, f64) {
-        let dx = (screen_x - self.last_x) as f64;
-        let dy = (screen_y - self.last_y) as f64;
+        // Constrain panning to the axes permitted by the `touch-action` property. Positions are
+        // still tracked on both axes so that deltas remain correct after a disallowed movement.
+        let dx = if self.allow_x {
+            (screen_x - self.last_x) as f64
+        } else {
+            0.0
+        };
+        let dy = if self.allow_y {
+            (screen_y - self.last_y) as f64
+        } else {
+            0.0
+        };
         self.last_x = screen_x;
         self.last_y = screen_y;
 
@@ -138,6 +152,36 @@ impl PanState {
     }
 }
 
+/// Compute which axes a touch pan gesture starting on `node_id` is allowed to scroll, according to
+/// the `touch-action` property.
+///
+/// Per spec the effective behaviour is the intersection of the `touch-action` values of the target
+/// and all of its ancestors, so we walk up the tree combining the permitted axes. `touch-action:
+/// none` blocks panning entirely, `pan-x`/`pan-y` restrict it to a single axis, and `auto` /
+/// `manipulation` permit both.
+fn touch_action_pan_axes(doc: &BaseDocument, node_id: usize) -> (bool, bool) {
+    let pan_x_flags = TouchAction::AUTO | TouchAction::MANIPULATION | TouchAction::PAN_X;
+    let pan_y_flags = TouchAction::AUTO | TouchAction::MANIPULATION | TouchAction::PAN_Y;
+
+    let mut allow_x = true;
+    let mut allow_y = true;
+    let mut current = Some(node_id);
+    while let Some(id) = current {
+        let node = &doc.nodes[id];
+        if let Some(style) = node.primary_styles() {
+            let touch_action = style.clone_touch_action();
+            allow_x &= touch_action.intersects(pan_x_flags);
+            allow_y &= touch_action.intersects(pan_y_flags);
+            if !allow_x && !allow_y {
+                break;
+            }
+        }
+        current = node.parent;
+    }
+
+    (allow_x, allow_y)
+}
+
 pub(crate) fn handle_pointermove<F: FnMut(DomEvent)>(
     doc: &mut BaseDocument,
     target: usize,
@@ -180,12 +224,19 @@ pub(crate) fn handle_pointermove<F: FnMut(DomEvent)>(
                     }
                 }
                 BlitzPointerId::Finger(_) => {
-                    doc.drag_mode = DragMode::Panning(PanState {
-                        target,
-                        last_x: event.screen_x(),
-                        last_y: event.screen_y(),
-                        samples: VecDeque::with_capacity(200),
-                    });
+                    let (allow_x, allow_y) = touch_action_pan_axes(doc, target);
+                    // If `touch-action` forbids panning on both axes (e.g. `touch-action: none`)
+                    // there is nothing to scroll, so don't enter the panning drag mode.
+                    if allow_x || allow_y {
+                        doc.drag_mode = DragMode::Panning(PanState {
+                            target,
+                            last_x: event.screen_x(),
+                            last_y: event.screen_y(),
+                            allow_x,
+                            allow_y,
+                            samples: VecDeque::with_capacity(200),
+                        });
+                    }
                 }
             }
         }
