@@ -139,6 +139,14 @@ impl CssBox {
         path
     }
 
+    /// Whether any corner of this box has a non-zero border radius.
+    pub fn has_border_radius(&self) -> bool {
+        let r = &self.border_radii;
+        [r.top_left, r.top_right, r.bottom_right, r.bottom_left]
+            .iter()
+            .any(|radius| radius.x > 0.0 || radius.y > 0.0)
+    }
+
     /// Construct a new [`CssBox`] representing a "slice" of this box's border,
     /// running from `start_frac` to `end_frac` of the border width (measured as
     /// a fraction from the outer border-box edge inwards).

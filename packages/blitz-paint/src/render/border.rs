@@ -1,6 +1,6 @@
 use anyrender::PaintScene;
 use blitz_dom::node::SpecialElementData;
-use kurbo::{BezPath, Circle, Point, Rect, Shape as _};
+use kurbo::{BezPath, Cap, Circle, PathEl, Point, Rect, Shape as _, Stroke};
 use peniko::{Color, Fill};
 use style::{
     computed_values::border_collapse::T as BorderCollapse,
@@ -38,6 +38,46 @@ fn grooved_edge_colors(color: Color, edge: Edge, ridge: bool) -> (Color, Color) 
     let outer = beveled_edge_color(color, edge, !ridge);
     let inner = beveled_edge_color(color, edge, ridge);
     (outer, inner)
+}
+
+/// Return `count` points spaced `spacing` apart (by arc length) along `path`,
+/// starting at its beginning. Used to place dots along a rounded border.
+fn sample_points_along_path(path: &BezPath, spacing: f64, count: usize) -> Vec<Point> {
+    // Flatten to a polyline so we can walk it by arc length.
+    let mut poly: Vec<Point> = Vec::new();
+    kurbo::flatten(path.iter(), 0.1, |el| match el {
+        PathEl::MoveTo(p) | PathEl::LineTo(p) => poly.push(p),
+        PathEl::ClosePath => {
+            if let Some(&first) = poly.first() {
+                poly.push(first);
+            }
+        }
+        _ => {}
+    });
+
+    let mut points = Vec::with_capacity(count);
+    if poly.len() < 2 {
+        return points;
+    }
+
+    let mut seg = 0;
+    let mut seg_start = 0.0;
+    let mut seg_len = (poly[1] - poly[0]).hypot();
+    for i in 0..count {
+        let target = i as f64 * spacing;
+        while seg + 2 < poly.len() && target > seg_start + seg_len {
+            seg_start += seg_len;
+            seg += 1;
+            seg_len = (poly[seg + 1] - poly[seg]).hypot();
+        }
+        let t = if seg_len > 0.0 {
+            ((target - seg_start) / seg_len).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        points.push(poly[seg].lerp(poly[seg + 1], t));
+    }
+    points
 }
 
 impl ElementCx<'_, '_> {
@@ -198,6 +238,14 @@ impl ElementCx<'_, '_> {
             return;
         }
 
+        // When the box has rounded corners the dashes/dots must follow the curve,
+        // so they're stroked/placed along the rounded centre line of the border
+        // instead of along straight per-edge lines.
+        if self.frame.has_border_radius() {
+            self.draw_rounded_dashed_border_edge(scene, edge, color, dotted, thickness);
+            return;
+        }
+
         // Build a rectangle for a dash spanning `[start, end]` along the run,
         // covering the full thickness of the border on the cross axis.
         let dash_rect = |start: f64, end: f64| -> Rect {
@@ -262,6 +310,63 @@ impl ElementCx<'_, '_> {
         let clip = self.frame.border_edge_shape(edge);
         scene.push_clip_layer(self.transform, &clip);
         scene.fill(Fill::NonZero, self.transform, color, None, &path);
+        scene.pop_layer();
+    }
+
+    /// Draw the `dashed`/`dotted` portion of a single edge when the box has a
+    /// border-radius, so that the dashes/dots follow the rounded corners.
+    ///
+    /// The dashes are stroked (and the dots placed) along the border's rounded
+    /// centre line, which runs through the whole perimeter. Each edge clips the
+    /// result to its own region (as in the straight case), but because every edge
+    /// uses the same centre line and pattern the dashes/dots stay continuous and
+    /// aligned as they wrap around each corner.
+    fn draw_rounded_dashed_border_edge(
+        &self,
+        scene: &mut impl PaintScene,
+        edge: Edge,
+        color: Color,
+        dotted: bool,
+        thickness: f64,
+    ) {
+        // Rounded rectangle running through the middle of the border.
+        let mut centerline = self.frame.border_slice(0.0, 0.5).padding_box_path();
+        centerline.close_path();
+
+        let perimeter = centerline.perimeter(0.1);
+        if perimeter <= 0.0 {
+            return;
+        }
+
+        let clip = self.frame.border_edge_shape(edge);
+        scene.push_clip_layer(self.transform, &clip);
+
+        if dotted {
+            // Dots are circles (diameter == border thickness) spaced evenly around
+            // the perimeter. Even spacing means the ring of dots wraps seamlessly.
+            let count = (perimeter / (2.0 * thickness)).round().max(1.0);
+            let spacing = perimeter / count;
+            let radius = thickness / 2.0;
+
+            let mut path = BezPath::new();
+            for center in sample_points_along_path(&centerline, spacing, count as usize) {
+                path.extend(Circle::new(center, radius).path_elements(0.1));
+            }
+            scene.fill(Fill::NonZero, self.transform, color, None, &path);
+        } else {
+            // Dashes and gaps of equal length, sized so a whole number of them fit
+            // exactly around the perimeter (kurbo merges the dash across the seam).
+            // Butt caps give the dashes flat, square ends (like the straight-corner
+            // dashes) rather than the rounded ends of the default cap.
+            let nominal = 6.0 * thickness;
+            let count = (perimeter / nominal).round().max(1.0);
+            let dash = perimeter / count / 2.0;
+            let stroke = Stroke::new(thickness)
+                .with_caps(Cap::Butt)
+                .with_dashes(0.0, [dash, dash]);
+            scene.stroke(&stroke, self.transform, color, None, &centerline);
+        }
+
         scene.pop_layer();
     }
 
