@@ -391,7 +391,7 @@ pub(crate) fn fetch_font_face(
                     weight: descriptor
                         .font_weight
                         .as_ref()
-                        .map(|range| range.0.compute().value()),
+                        .map(|range| range.0.compute().map(|w| w.value()).unwrap_or(400.0)),
                     style: descriptor.font_style.as_ref().map(stylo_to_fontique_style),
                 };
                 Some((src, overrides))
@@ -487,10 +487,10 @@ fn stylo_to_fontique_style(style: &StyloFontStyle) -> parley::fontique::FontStyl
             // Stylo emits `Oblique(0deg, 0deg)` for the literal CSS `normal`
             // keyword. Map that back to `Normal` so parley's font matching
             // doesn't misclassify upright fonts.
-            if angle == 0.0 && max.degrees() == 0.0 {
+            if angle.is_none_or(|a| a == 0.0) && max.degrees().is_none_or(|a| a == 0.0) {
                 Fq::Normal
             } else {
-                Fq::Oblique(Some(angle))
+                Fq::Oblique(angle)
             }
         }
     }
