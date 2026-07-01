@@ -891,6 +891,41 @@ impl ElementCx<'_, '_> {
             return;
         }
 
+        // Vello workaround: For uniform-width, single-color circlular/elliptical borders, Vello's
+        // rendering can leaves seam artifacts at the quarter-arc joins when drawn as the
+        // border-box/padding-box annulus.
+        // This replaces that with a stroke of the ellipse's center-line when all four colors on
+        // the borders are the same, and when the width is uniform.
+        if count == 4 {
+            let color = borders[0].0;
+            let same_color =
+                borders[1].0 == color && borders[2].0 == color && borders[3].0 == color;
+            let bw = self.frame.border_width;
+            let uniform_width =
+                bw.x0 == bw.y0 && bw.x0 == bw.x1 && bw.x0 == bw.y1 && bw.x0 > 0.0;
+            if same_color && uniform_width && self.frame.is_elliptical_border() {
+                let bb = self.frame.border_box;
+                let pb = self.frame.padding_box;
+                // Center-line radii and stroke width, straight from the boxes.
+                let rx = (bb.width() + pb.width()) / 4.0;
+                let ry = (bb.height() + pb.height()) / 4.0;
+                let width = (bb.width() - pb.width()) / 2.0;
+                let stroke = Stroke::new(width);
+                if (rx - ry).abs() < f64::EPSILON {
+                    let c = kurbo::Circle::new(bb.center(), rx);
+                    scene.stroke(&stroke, self.transform, color, None, &c);
+                } else {
+                    // Ellipse: `Ellipse::to_path` is open, so close it explicitly —
+                    // an open stroked loop leaves a cap gap at the seam.
+                    let mut path =
+                        kurbo::Ellipse::new(bb.center(), (rx, ry), 0.0).to_path(0.1);
+                    path.close_path();
+                    scene.stroke(&stroke, self.transform, color, None, &path);
+                }
+                return;
+            }
+        }
+
         // Group together identical colors by sorting.
         let active_slice = &mut borders[0..count];
         active_slice.sort_unstable_by(|a, b| {
