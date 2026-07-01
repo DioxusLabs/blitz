@@ -360,17 +360,42 @@ impl BaseDocument {
                         width * scale
                     }
                     AvailableSpace::MaxContent => {
+                        // When computing a max-content size the available width is effectively
+                        // infinite, so floats never wrap onto a new "band" due to a lack of
+                        // horizontal space. They only move below preceding floats when the `clear`
+                        // property forces them to.
+                        //
+                        // Floats that share a band sit side-by-side and so their widths sum, whereas
+                        // floats pushed onto a new band (via `clear`) stack vertically and so we
+                        // take the maximum extent across bands rather than summing.
+                        let mut left_band: f32 = 0.0;
+                        let mut right_band: f32 = 0.0;
                         let mut width: f32 = 0.0;
                         for ibox in inline_layout.layout.inline_boxes_mut() {
                             let style = &self.nodes[ibox.id as usize].style;
+                            let float = style.float;
 
-                            if style.float.is_floated() {
+                            if float.is_floated() {
+                                if matches!(style.clear, Clear::Left | Clear::Both) {
+                                    left_band = 0.0;
+                                }
+                                if matches!(style.clear, Clear::Right | Clear::Both) {
+                                    right_band = 0.0;
+                                }
+
                                 let margin = style
                                     .margin
                                     .resolve_or_zero(inputs.parent_size, resolve_calc_value);
                                 let output =
                                     self.compute_child_layout(NodeId::from(ibox.id), child_inputs);
-                                width += output.size.width + margin.left + margin.right;
+                                let box_width = output.size.width + margin.left + margin.right;
+
+                                match float {
+                                    Float::Left => left_band += box_width,
+                                    Float::Right => right_band += box_width,
+                                    Float::None => {}
+                                }
+                                width = width.max(left_band + right_band);
                             }
                         }
 
