@@ -2,7 +2,7 @@
 use crate::NodeId;
 use crate::events::{
     BlitzKeyboardData, NativeConverter, NativeFocusData, NativeFormData, NativePointerData,
-    NativeScrollData, NativeTouchData, NativeWheelData, NodeHandle,
+    NativeScrollData, NativeTouchData, NativeTransitionData, NativeWheelData, NodeHandle,
 };
 use crate::mutation_writer::{DioxusState, MutationWriter};
 use crate::qual_name;
@@ -248,6 +248,25 @@ impl Document for DioxusDocument {
         let mut driver = EventDriver::new(&mut self.inner, handler);
         driver.handle_ui_event(event);
     }
+
+    fn flush_pending_events(&mut self) {
+        // Drain events generated internally by the document during style
+        // resolution (e.g. CSS transition events) and route them through the
+        // dioxus event handler so application code receives them.
+        let events = self.inner.borrow_mut().take_pending_events();
+        if events.is_empty() {
+            return;
+        }
+
+        let handler = DioxusEventHandler {
+            vdom: &mut self.vdom,
+            vdom_state: &mut self.vdom_state,
+        };
+        let mut driver = EventDriver::new(&mut self.inner, handler);
+        for event in events {
+            driver.handle_dom_event(event);
+        }
+    }
 }
 
 pub struct DioxusEventHandler<'v> {
@@ -307,6 +326,13 @@ impl EventHandler for DioxusEventHandler<'_> {
             DomEventData::Blur(_) => Some(wrap_event_data(NativeFocusData)),
             DomEventData::FocusIn(_) => Some(wrap_event_data(NativeFocusData)),
             DomEventData::FocusOut(_) => Some(wrap_event_data(NativeFocusData)),
+
+            DomEventData::TransitionRun(tevent)
+            | DomEventData::TransitionStart(tevent)
+            | DomEventData::TransitionEnd(tevent)
+            | DomEventData::TransitionCancel(tevent) => {
+                Some(wrap_event_data(NativeTransitionData(tevent.clone())))
+            }
 
             DomEventData::KeyDown(kevent)
             | DomEventData::KeyUp(kevent)
