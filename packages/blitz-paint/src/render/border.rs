@@ -10,26 +10,13 @@ use style::{
 
 use crate::{color::ToColorColor as _, kurbo_css::Edge, render::ElementCx};
 
-/// The WCAG relative luminance of a colour (weighted sum of the linearised sRGB
-/// components), matching Chrome's `color_utils::GetRelativeLuminance4f`. Alpha is
-/// ignored.
-fn relative_luminance(color: Color) -> f32 {
-    fn linearize(c: f32) -> f32 {
-        if c <= 0.04045 {
-            c / 12.92
-        } else {
-            ((c + 0.055) / 1.055).powf(2.4)
-        }
-    }
-    let [r, g, b, _] = color.components;
-    0.2126 * linearize(r) + 0.7152 * linearize(g) + 0.0722 * linearize(b)
-}
-
 /// The WCAG contrast ratio (>= 1) between two colours, matching Chrome's
 /// `color_utils::GetContrastRatio`.
 fn contrast_ratio(a: Color, b: Color) -> f32 {
-    let la = relative_luminance(a) + 0.05;
-    let lb = relative_luminance(b) + 0.05;
+    // `relative_luminance` is defined on `OpaqueColor`; discard the alpha (which
+    // it ignores anyway) with `split`.
+    let la = a.split().0.relative_luminance() + 0.05;
+    let lb = b.split().0.relative_luminance() + 0.05;
     if la > lb { la / lb } else { lb / la }
 }
 
