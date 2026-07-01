@@ -49,6 +49,7 @@ use style::queries::values::PrefersColorScheme;
 use style::selector_parser::ServoElementSnapshot;
 use style::servo_arc::Arc as ServoArc;
 use style::values::GenericAtomIdent;
+use style::values::computed::ui::CursorKind;
 use style::values::computed::{Overflow, UserSelect};
 use style::{
     device::Device,
@@ -1333,8 +1334,7 @@ impl BaseDocument {
         self.hover_node_is_text = new_is_text;
 
         // Update the cursor
-        let cursor = self.get_cursor().unwrap_or_default();
-        self.shell_provider.set_cursor(cursor);
+        self.shell_provider.set_cursor(self.get_cursor());
 
         // Request redraw
         self.shell_provider.request_redraw();
@@ -1356,8 +1356,7 @@ impl BaseDocument {
         self.hover_node_is_text = false;
 
         // Update the cursor
-        let cursor = self.get_cursor().unwrap_or_default();
-        self.shell_provider.set_cursor(cursor);
+        self.shell_provider.set_cursor(self.get_cursor());
 
         // Request redraw
         self.shell_provider.request_redraw();
@@ -1498,11 +1497,11 @@ impl BaseDocument {
 
         let style = node.primary_styles()?;
         let user_select = style.clone_user_select();
-        let keyword = stylo_to_cursor_icon(style.clone_cursor().keyword);
+        let keyword = style.clone_cursor().keyword;
 
         // Return cursor from style if it is non-auto
-        if let Some(cursor) = keyword {
-            return Some(cursor);
+        if keyword != CursorKind::Auto {
+            return stylo_to_cursor_icon(keyword);
         }
 
         // Return text cursor for text inputs

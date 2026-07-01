@@ -3,7 +3,14 @@ use style::values::computed::ui::CursorKind as StyloCursorKind;
 
 pub(crate) fn stylo_to_cursor_icon(cursor: StyloCursorKind) -> Option<CursorIcon> {
     match cursor {
-        StyloCursorKind::None => todo!("set the cursor to none"),
+        // Auto needs special handling so this function should only really be called with
+        // non-Auto values. But better to return a default than panic if it is.
+        StyloCursorKind::Auto => {
+            #[cfg(feature = "tracing")]
+            tracing::warn!("stylo_to_cursor_icon was called with CursorKind::Auto");
+            Some(CursorIcon::Default)
+        }
+        StyloCursorKind::None => None,
         StyloCursorKind::Default => Some(CursorIcon::Default),
         StyloCursorKind::Pointer => Some(CursorIcon::Pointer),
         StyloCursorKind::ContextMenu => Some(CursorIcon::ContextMenu),
@@ -38,11 +45,5 @@ pub(crate) fn stylo_to_cursor_icon(cursor: StyloCursorKind) -> Option<CursorIcon
         StyloCursorKind::AllScroll => Some(CursorIcon::AllScroll),
         StyloCursorKind::ZoomIn => Some(CursorIcon::ZoomIn),
         StyloCursorKind::ZoomOut => Some(CursorIcon::ZoomOut),
-        StyloCursorKind::Auto => {
-            // todo: we should be the ones determining this based on the UA?
-            // https://developer.mozilla.org/en-US/docs/Web/CSS/cursor
-
-            None
-        }
     }
 }

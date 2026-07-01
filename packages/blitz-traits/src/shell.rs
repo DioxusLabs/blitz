@@ -10,7 +10,7 @@ pub struct ClipboardError;
 /// to access that functionality without depending on a specific shell environment.
 pub trait ShellProvider: Send + Sync + 'static {
     fn request_redraw(&self) {}
-    fn set_cursor(&self, icon: CursorIcon) {
+    fn set_cursor(&self, icon: Option<CursorIcon>) {
         let _ = icon;
     }
     fn set_window_title(&self, title: String) {
