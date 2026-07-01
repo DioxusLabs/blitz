@@ -233,6 +233,9 @@ fn resolve_shape_radius(
             .max(primary_size - center_offset_primary)
             .max(center_offset_secondary)
             .max(secondary_size - center_offset_secondary),
+
+        GenericShapeRadius::FarthestCorner => todo!(),
+        GenericShapeRadius::ClosestCorner => todo!(),
     }
 }
 

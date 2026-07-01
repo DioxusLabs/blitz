@@ -47,6 +47,7 @@ use style::properties::ComputedValues;
 use style::properties::style_structs::Font;
 use style::queries::values::PrefersColorScheme;
 use style::selector_parser::ServoElementSnapshot;
+use style::servo::media_features::PointerCapabilities;
 use style::servo_arc::Arc as ServoArc;
 use style::values::GenericAtomIdent;
 use style::values::computed::ui::CursorKind;
@@ -320,12 +321,14 @@ pub(crate) fn make_device(
     let width = viewport.window_size.0 as f32 / viewport.scale();
     let height = viewport.window_size.1 as f32 / viewport.scale();
     let viewport_size = euclid::Size2D::new(width, height);
+    let device_size = euclid::Size2D::new(width, height) * viewport.scale();
     let device_pixel_ratio = euclid::Scale::new(viewport.scale());
 
     Device::new(
         media_type,
         selectors::matching::QuirksMode::NoQuirks,
         viewport_size,
+        device_size,
         device_pixel_ratio,
         Box::new(BlitzFontMetricsProvider { font_ctx }),
         ComputedValues::initial_values_with_font_override(Font::initial_values()),
@@ -333,6 +336,8 @@ pub(crate) fn make_device(
             ColorScheme::Light => PrefersColorScheme::Light,
             ColorScheme::Dark => PrefersColorScheme::Dark,
         },
+        PointerCapabilities::default(),
+        PointerCapabilities::default(),
     )
 }
 

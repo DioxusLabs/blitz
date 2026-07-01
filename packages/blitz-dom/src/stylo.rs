@@ -35,7 +35,8 @@ use style::selector_parser::RestyleDamage;
 use style::stylesheets::layer_rule::LayerOrder;
 use style::stylesheets::scope_rule::ImplicitScopeRoot;
 use style::values::AtomString;
-use style::values::computed::Percentage;
+use style::values::specified::LengthUnit;
+use style::values::specified::NoCalcPercentage;
 use style::{
     Atom,
     context::{
@@ -838,22 +839,26 @@ impl<'a> TElement for BlitzNode<'a> {
             value: &str,
             filter_fn: impl FnOnce(&f32) -> bool,
         ) -> Option<style::values::specified::LengthPercentage> {
-            use style::values::specified::{AbsoluteLength, LengthPercentage, NoCalcLength};
+            use style::values::specified::{LengthPercentage, NoCalcLength};
             if let Some(value) = value.strip_suffix("px") {
                 let val: f32 = value.parse().ok()?;
-                return Some(LengthPercentage::Length(NoCalcLength::Absolute(
-                    AbsoluteLength::Px(val),
+                return Some(LengthPercentage::Length(NoCalcLength::new(
+                    LengthUnit::Px,
+                    val,
                 )));
             }
 
             if let Some(value) = value.strip_suffix("%") {
                 let val: f32 = value.parse().ok()?;
-                return Some(LengthPercentage::Percentage(Percentage(val / 100.0)));
+                return Some(LengthPercentage::Percentage(NoCalcPercentage::new(
+                    val / 100.0,
+                )));
             }
 
             let val: f32 = value.parse().ok().filter(filter_fn)?;
-            Some(LengthPercentage::Length(NoCalcLength::Absolute(
-                AbsoluteLength::Px(val),
+            Some(LengthPercentage::Length(NoCalcLength::new(
+                LengthUnit::Px,
+                val,
             )))
         }
 

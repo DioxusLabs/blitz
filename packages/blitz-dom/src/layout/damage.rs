@@ -9,7 +9,7 @@ use crate::{
 use style::properties::ComputedValues;
 use style::properties::generated::longhands::position::computed_value::T as Position;
 use style::selector_parser::RestyleDamage;
-use style::servo::url::ComputedUrl;
+use style::url::ComputedUrl;
 use style::values::computed::Float;
 use style::values::generics::image::Image as StyloImage;
 use style::values::specified::align::AlignFlags;

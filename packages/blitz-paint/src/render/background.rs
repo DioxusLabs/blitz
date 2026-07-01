@@ -207,6 +207,10 @@ impl ElementCx<'_, '_> {
                 #[cfg(feature = "tracing")]
                 warn!("Implement image layer drawing for Image::CrossFade")
             }
+            GenericImage::Image(_) => {
+                #[cfg(feature = "tracing")]
+                warn!("Implement image layer drawing for Image::Image")
+            }
             GenericImage::ImageSet(_) => {
                 #[cfg(feature = "tracing")]
                 warn!("Implement image layer drawing for Image::ImageSet")

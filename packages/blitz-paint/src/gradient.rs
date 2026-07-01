@@ -322,7 +322,7 @@ fn resolve_length_color_stops(
         |gradient_length: CSSPixelLength, position: &LengthPercentage| -> Option<f32> {
             position
                 .to_percentage_of(gradient_length)
-                .map(|percentage| percentage.to_percentage())
+                .map(|percentage| percentage.to_percentage().unwrap_or(0.0))
         },
     )
 }
@@ -492,7 +492,9 @@ fn resolve_angle_color_stops(
                 AngleOrPercentage::Angle(angle) => {
                     Some(angle.radians() / (std::f64::consts::PI * 2.0) as f32)
                 }
-                AngleOrPercentage::Percentage(percentage) => Some(percentage.to_percentage()),
+                AngleOrPercentage::Percentage(percentage) => {
+                    Some(percentage.to_percentage().unwrap_or(0.0))
+                }
             }
         },
     )

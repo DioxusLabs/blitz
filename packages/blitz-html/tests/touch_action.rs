@@ -91,18 +91,29 @@ fn auto_allows_panning_on_both_axes() {
 fn none_blocks_panning() {
     let mut doc = scroller_doc("none");
     let (x, y) = pan(&mut doc, 60.0, 0.0);
-    assert_eq!((x, y), (0.0, 0.0), "touch-action:none should block horizontal panning");
+    assert_eq!(
+        (x, y),
+        (0.0, 0.0),
+        "touch-action:none should block horizontal panning"
+    );
 
     let mut doc = scroller_doc("none");
     let (x, y) = pan(&mut doc, 0.0, 60.0);
-    assert_eq!((x, y), (0.0, 0.0), "touch-action:none should block vertical panning");
+    assert_eq!(
+        (x, y),
+        (0.0, 0.0),
+        "touch-action:none should block vertical panning"
+    );
 }
 
 #[test]
 fn pan_x_allows_only_horizontal() {
     let mut doc = scroller_doc("pan-x");
     let (x, y) = pan(&mut doc, 60.0, 0.0);
-    assert!(x > 0.0, "touch-action:pan-x should allow horizontal panning");
+    assert!(
+        x > 0.0,
+        "touch-action:pan-x should allow horizontal panning"
+    );
     assert_eq!(y, 0.0, "horizontal pan must not scroll vertically");
 
     let mut doc = scroller_doc("pan-x");
@@ -126,9 +137,15 @@ fn pan_y_allows_only_vertical() {
 fn manipulation_allows_panning_on_both_axes() {
     let mut doc = scroller_doc("manipulation");
     let (x, _) = pan(&mut doc, 60.0, 0.0);
-    assert!(x > 0.0, "touch-action:manipulation should allow horizontal panning");
+    assert!(
+        x > 0.0,
+        "touch-action:manipulation should allow horizontal panning"
+    );
 
     let mut doc = scroller_doc("manipulation");
     let (_, y) = pan(&mut doc, 0.0, 60.0);
-    assert!(y > 0.0, "touch-action:manipulation should allow vertical panning");
+    assert!(
+        y > 0.0,
+        "touch-action:manipulation should allow vertical panning"
+    );
 }
