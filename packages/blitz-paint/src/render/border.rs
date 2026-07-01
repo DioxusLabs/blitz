@@ -2,6 +2,7 @@ use anyrender::PaintScene;
 use blitz_dom::node::SpecialElementData;
 use kurbo::{BezPath, Cap, Circle, PathEl, Point, Rect, Shape as _, Stroke};
 use peniko::{Color, Fill};
+use smallvec::SmallVec;
 use style::{
     computed_values::border_collapse::T as BorderCollapse,
     values::computed::{BorderStyle, OutlineStyle},
@@ -105,7 +106,10 @@ impl ElementCx<'_, '_> {
         // (colour, path) pairs to be filled. Several entries may share a colour;
         // they are grouped before filling so that adjacent same-coloured regions
         // are drawn together, avoiding anti-aliasing seams between them.
-        let mut borders: Vec<(Color, BezPath)> = Vec::new();
+        //
+        // At most 8 entries: 4 edges, each of which can contribute 2 (the outer
+        // and inner halves of a `groove`/`ridge`).
+        let mut borders: SmallVec<[(Color, BezPath); 8]> = SmallVec::new();
 
         for &edge in &[Edge::Top, Edge::Right, Edge::Bottom, Edge::Left] {
             let (color, edge_style) = match edge {
