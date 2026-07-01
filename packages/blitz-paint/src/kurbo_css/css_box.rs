@@ -531,18 +531,70 @@ fn start_angle(bt_width: f64, br_width: f64, radii: Vec2) -> f64 {
 
     b/(w*a) = (cos(t) - 1)/(sin(t) - 1)
 
-    The solution to the system of equations is:
-    https://www.wolframalpha.com/input?i=%28cos%28x%29-1%29%2F%28sin%28x%29-1%29+%3D+a+solve+for+x
+    Substituting s = tan(t/2) turns this into the quadratic
+
+        (k - 2) s² - 2k s + k = 0     where k = b/(w*a) = x
+
+    whose relevant root can be written (after rationalising to remove the
+    catastrophic cancellation / removable singularity the naive quadratic
+    formula has at k == 2) as:
+
+        s = √k / (√k + √2)
+
+    This form is well behaved for all k >= 0 (in particular around k == 2,
+    which occurs for perfectly ordinary elliptical corners, e.g. a 80px/30px
+    radius with 40px/10px border widths), always yielding t in [0, π/2).
     */
 
     use std::f64::consts::SQRT_2;
-    let numerator: f64 = x - x.sqrt() * SQRT_2;
-    let denonimantor: f64 = x - 2.0;
-    (numerator / denonimantor).atan() * 2.0
+    let sqrt_x = x.sqrt();
+    let s = sqrt_x / (sqrt_x + SQRT_2);
+    s.atan() * 2.0
 }
 
-#[test]
-fn should_solve_properly() {
-    // 0.643501
-    dbg!(start_angle(4.0, 1.0, Vec2 { x: 1.0, y: 2.0 }));
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `start_angle` must return the angle `t` at which the border colour split
+    /// line crosses the corner ellipse, i.e. the solution of
+    /// `(cos t - 1) / (sin t - 1) == k` where `k = radii.y / (w * radii.x)`.
+    fn assert_solves(bt: f64, br: f64, radii: Vec2) {
+        let t = start_angle(bt, br, radii);
+        assert!(t.is_finite(), "start_angle returned {t} for {radii:?}");
+        assert!(
+            (0.0..=std::f64::consts::FRAC_PI_2).contains(&t),
+            "t={t} out of range"
+        );
+        let w = bt / br;
+        let k = radii.y / (w * radii.x);
+        let lhs = (t.cos() - 1.0) / (t.sin() - 1.0);
+        assert!((lhs - k).abs() < 1e-9, "t={t} does not solve k={k} (got {lhs})");
+    }
+
+    #[test]
+    fn should_solve_properly() {
+        // 0.643501
+        assert!((start_angle(4.0, 1.0, Vec2 { x: 1.0, y: 2.0 }) - 0.643501).abs() < 1e-5);
+    }
+
+    /// Regression test: when `k == radii.y / (w * radii.x)` is exactly 2 the
+    /// old closed form evaluated `0 / 0` and produced `NaN`, corrupting the
+    /// corner arc. This happens for ordinary elliptical corners such as an
+    /// 80px/30px radius with 40px/10px border widths (inner/padding ellipse
+    /// radii 40/20, widths 30/0 ... => k == 2).
+    #[test]
+    fn handles_k_equal_two() {
+        // k = radii.y / (w * radii.x) = 40 / ((10/40) * 80) = 2.0
+        assert_solves(10.0, 40.0, Vec2 { x: 80.0, y: 40.0 });
+    }
+
+    #[test]
+    fn solves_a_range_of_elliptical_corners() {
+        for &(bt, br) in &[(1.0, 1.0), (1.0, 4.0), (4.0, 1.0), (3.0, 7.0)] {
+            for &(rx, ry) in &[(80.0, 30.0), (30.0, 80.0), (60.0, 60.0), (120.0, 20.0)] {
+                assert_solves(bt, br, Vec2 { x: rx, y: ry });
+            }
+        }
+    }
 }
