@@ -70,6 +70,11 @@
     .box.multicolor {
         border-color: #d6336c #1c7ed6 #2f9e44 #f59f00;
     }
+
+    /* Dark variant: a dark border color */
+    .box.dark {
+        border-color: #1a1a1a;
+    }
 </style>
 </head>
 <body>
@@ -306,6 +311,30 @@
             <div class="box multicolor bs-mixed"></div>
             <div class="label">mixed (per side)</div>
             <div class="code">border-style: dotted solid dashed double; border-color: #d6336c #1c7ed6 #2f9e44 #f59f00;</div>
+        </div>
+    </div>
+
+    <h1>border-color: #1a1a1a (inset, outset, groove, ridge)</h1>
+    <div class="grid">
+        <div class="item">
+            <div class="box dark bs-groove"></div>
+            <div class="label">groove</div>
+            <div class="code">border-style: groove; border-color: #1a1a1a;</div>
+        </div>
+        <div class="item">
+            <div class="box dark bs-ridge"></div>
+            <div class="label">ridge</div>
+            <div class="code">border-style: ridge; border-color: #1a1a1a;</div>
+        </div>
+        <div class="item">
+            <div class="box dark bs-inset"></div>
+            <div class="label">inset</div>
+            <div class="code">border-style: inset; border-color: #1a1a1a;</div>
+        </div>
+        <div class="item">
+            <div class="box dark bs-outset"></div>
+            <div class="label">outset</div>
+            <div class="code">border-style: outset; border-color: #1a1a1a;</div>
         </div>
     </div>
 </body>
