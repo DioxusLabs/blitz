@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+    body {
+        font-family: sans-serif;
+        background: #f5f5f5;
+        margin: 0;
+        padding: 24px;
+    }
+    h1 {
+        margin-top: 0;
+    }
+    .grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 24px;
+    }
+    .item {
+        background: white;
+        padding: 24px;
+    }
+    .box {
+        width: 100%;
+        height: 80px;
+        box-sizing: border-box;
+        background: #fffbe6;
+        border-width: 8px;
+        border-color: #d6336c;
+        margin-bottom: 12px;
+    }
+    .label {
+        font-weight: bold;
+        color: #333;
+        font-size: 14px;
+    }
+    .code {
+        font-family: monospace;
+        font-size: 12px;
+        color: #666;
+    }
+
+    .bs-none      { border-style: none; }
+    .bs-hidden    { border-style: hidden; }
+    .bs-dotted    { border-style: dotted; }
+    .bs-dashed    { border-style: dashed; }
+    .bs-solid     { border-style: solid; }
+    .bs-double    { border-style: double; }
+    .bs-groove    { border-style: groove; }
+    .bs-ridge     { border-style: ridge; }
+    .bs-inset     { border-style: inset; }
+    .bs-outset    { border-style: outset; }
+
+    /* Mixed border-style per side */
+    .bs-mixed {
+        border-style: dotted solid dashed double;
+    }
+
+    /* Thin variant: border-width of 1px */
+    .box.thin {
+        border-width: 1px;
+    }
+</style>
+</head>
+<body>
+    <h1>CSS border-style values</h1>
+    <div class="grid">
+        <div class="item">
+            <div class="box bs-none"></div>
+            <div class="label">none</div>
+            <div class="code">border-style: none;</div>
+        </div>
+        <div class="item">
+            <div class="box bs-hidden"></div>
+            <div class="label">hidden</div>
+            <div class="code">border-style: hidden;</div>
+        </div>
+        <div class="item">
+            <div class="box bs-dotted"></div>
+            <div class="label">dotted</div>
+            <div class="code">border-style: dotted;</div>
+        </div>
+        <div class="item">
+            <div class="box bs-dashed"></div>
+            <div class="label">dashed</div>
+            <div class="code">border-style: dashed;</div>
+        </div>
+        <div class="item">
+            <div class="box bs-solid"></div>
+            <div class="label">solid</div>
+            <div class="code">border-style: solid;</div>
+        </div>
+        <div class="item">
+            <div class="box bs-double"></div>
+            <div class="label">double</div>
+            <div class="code">border-style: double;</div>
+        </div>
+        <div class="item">
+            <div class="box bs-groove"></div>
+            <div class="label">groove</div>
+            <div class="code">border-style: groove;</div>
+        </div>
+        <div class="item">
+            <div class="box bs-ridge"></div>
+            <div class="label">ridge</div>
+            <div class="code">border-style: ridge;</div>
+        </div>
+        <div class="item">
+            <div class="box bs-inset"></div>
+            <div class="label">inset</div>
+            <div class="code">border-style: inset;</div>
+        </div>
+        <div class="item">
+            <div class="box bs-outset"></div>
+            <div class="label">outset</div>
+            <div class="code">border-style: outset;</div>
+        </div>
+        <div class="item">
+            <div class="box bs-mixed"></div>
+            <div class="label">mixed (per side)</div>
+            <div class="code">border-style: dotted solid dashed double;</div>
+        </div>
+    </div>
+
+    <h1>border-width: 1px</h1>
+    <div class="grid">
+        <div class="item">
+            <div class="box thin bs-none"></div>
+            <div class="label">none</div>
+            <div class="code">border-style: none; border-width: 1px;</div>
+        </div>
+        <div class="item">
+            <div class="box thin bs-hidden"></div>
+            <div class="label">hidden</div>
+            <div class="code">border-style: hidden; border-width: 1px;</div>
+        </div>
+        <div class="item">
+            <div class="box thin bs-dotted"></div>
+            <div class="label">dotted</div>
+            <div class="code">border-style: dotted; border-width: 1px;</div>
+        </div>
+        <div class="item">
+            <div class="box thin bs-dashed"></div>
+            <div class="label">dashed</div>
+            <div class="code">border-style: dashed; border-width: 1px;</div>
+        </div>
+        <div class="item">
+            <div class="box thin bs-solid"></div>
+            <div class="label">solid</div>
+            <div class="code">border-style: solid; border-width: 1px;</div>
+        </div>
+        <div class="item">
+            <div class="box thin bs-double"></div>
+            <div class="label">double</div>
+            <div class="code">border-style: double; border-width: 1px;</div>
+        </div>
+        <div class="item">
+            <div class="box thin bs-groove"></div>
+            <div class="label">groove</div>
+            <div class="code">border-style: groove; border-width: 1px;</div>
+        </div>
+        <div class="item">
+            <div class="box thin bs-ridge"></div>
+            <div class="label">ridge</div>
+            <div class="code">border-style: ridge; border-width: 1px;</div>
+        </div>
+        <div class="item">
+            <div class="box thin bs-inset"></div>
+            <div class="label">inset</div>
+            <div class="code">border-style: inset; border-width: 1px;</div>
+        </div>
+        <div class="item">
+            <div class="box thin bs-outset"></div>
+            <div class="label">outset</div>
+            <div class="code">border-style: outset; border-width: 1px;</div>
+        </div>
+        <div class="item">
+            <div class="box thin bs-mixed"></div>
+            <div class="label">mixed (per side)</div>
+            <div class="code">border-style: dotted solid dashed double; border-width: 1px;</div>
+        </div>
+    </div>
+</body>
+</html>
