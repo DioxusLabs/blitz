@@ -9,6 +9,37 @@ use style::{
 
 use crate::{color::ToColorColor as _, kurbo_css::Edge, render::ElementCx};
 
+/// Darken a colour by halving its (sRGB) RGB components. Used to derive the
+/// shaded edges of the 3D border styles (`inset`/`outset`/`groove`/`ridge`).
+fn darken(color: Color) -> Color {
+    let [r, g, b, a] = color.components;
+    Color::new([r * 0.5, g * 0.5, b * 0.5, a])
+}
+
+/// The colour of a single edge of an `inset`/`outset` border.
+///
+/// An `outset` border is raised: it keeps the base colour on the top/left edges
+/// and darkens the bottom/right edges. `inset` is the reverse (sunken).
+fn beveled_edge_color(color: Color, edge: Edge, inset: bool) -> Color {
+    let top_or_left = matches!(edge, Edge::Top | Edge::Left);
+    if top_or_left ^ inset {
+        color
+    } else {
+        darken(color)
+    }
+}
+
+/// The (outer half, inner half) colours of a single edge of a `groove`/`ridge`
+/// border.
+///
+/// A `groove` looks carved into the page: its outer half is shaded like `inset`
+/// and its inner half like `outset`. `ridge` is the reverse (raised).
+fn grooved_edge_colors(color: Color, edge: Edge, ridge: bool) -> (Color, Color) {
+    let outer = beveled_edge_color(color, edge, !ridge);
+    let inner = beveled_edge_color(color, edge, ridge);
+    (outer, inner)
+}
+
 impl ElementCx<'_, '_> {
     /// Draw all borders for a node
     pub(crate) fn draw_border(&self, scene: &mut impl PaintScene) {
@@ -16,13 +47,10 @@ impl ElementCx<'_, '_> {
         let border = style.get_border();
         let current_color = style.clone_color();
 
-        let mut borders: [(Color, Option<BezPath>); 4] = [
-            (Color::TRANSPARENT, None),
-            (Color::TRANSPARENT, None),
-            (Color::TRANSPARENT, None),
-            (Color::TRANSPARENT, None),
-        ];
-        let mut count = 0;
+        // (colour, path) pairs to be filled. Several entries may share a colour;
+        // they are grouped before filling so that adjacent same-coloured regions
+        // are drawn together, avoiding anti-aliasing seams between them.
+        let mut borders: Vec<(Color, BezPath)> = Vec::new();
 
         for &edge in &[Edge::Top, Edge::Right, Edge::Bottom, Edge::Left] {
             let (color, edge_style) = match edge {
@@ -50,19 +78,12 @@ impl ElementCx<'_, '_> {
                 // A double border is two solid lines separated by a gap, splitting
                 // the border width into three equal parts (outer line / gap / inner
                 // line). Both lines share a color, so both rings are placed into a
-                // single path and batched together with the other solid edges.
+                // single path.
                 BorderStyle::Double => {
-                    let edge_width = match edge {
-                        Edge::Top => self.frame.border_width.y0,
-                        Edge::Bottom => self.frame.border_width.y1,
-                        Edge::Left => self.frame.border_width.x0,
-                        Edge::Right => self.frame.border_width.x1,
-                    };
-
                     // Needs at least 3px (one device pixel per line and per gap) to
                     // render as two lines; thinner borders fall back to a solid
                     // fill, matching browser behaviour.
-                    let path = if edge_width < 3.0 * self.scale {
+                    let path = if self.edge_width(edge) < 3.0 * self.scale {
                         self.frame.border_edge_shape(edge)
                     } else {
                         let mut path = self
@@ -77,58 +98,73 @@ impl ElementCx<'_, '_> {
                         );
                         path
                     };
-                    borders[count] = (color, Some(path));
-                    count += 1;
+                    borders.push((color, path));
                 }
 
-                // Solid (and, for now, the unimplemented 3D styles) are rendered as
-                // a solid fill of the edge's region.
-                BorderStyle::Solid
-                | BorderStyle::Groove
-                | BorderStyle::Ridge
-                | BorderStyle::Inset
-                | BorderStyle::Outset => {
-                    borders[count] = (color, Some(self.frame.border_edge_shape(edge)));
-                    count += 1;
+                // `inset`/`outset` are solid, but each edge is shaded lighter or
+                // darker to give a bevelled (3D) appearance.
+                BorderStyle::Inset | BorderStyle::Outset => {
+                    let inset = edge_style == BorderStyle::Inset;
+                    let shade = beveled_edge_color(color, edge, inset);
+                    borders.push((shade, self.frame.border_edge_shape(edge)));
+                }
+
+                // `groove`/`ridge` split each edge into an outer and an inner half,
+                // each shaded as if it were `inset`/`outset`, producing a carved or
+                // raised ridge.
+                BorderStyle::Groove | BorderStyle::Ridge => {
+                    let ridge = edge_style == BorderStyle::Ridge;
+                    let (outer, inner) = grooved_edge_colors(color, edge, ridge);
+                    borders.push((
+                        outer,
+                        self.frame.border_slice(0.0, 0.5).border_edge_shape(edge),
+                    ));
+                    borders.push((
+                        inner,
+                        self.frame.border_slice(0.5, 1.0).border_edge_shape(edge),
+                    ));
+                }
+
+                // Solid fills the whole edge region with the border colour.
+                BorderStyle::Solid => {
+                    borders.push((color, self.frame.border_edge_shape(edge)));
                 }
             }
         }
 
-        if count == 0 {
+        if borders.is_empty() {
             return;
         }
 
-        // Group together identical colors by sorting.
-        let active_slice = &mut borders[0..count];
-        active_slice.sort_unstable_by(|a, b| {
+        // Group together identical colors by sorting, then fill each group as a
+        // single path.
+        borders.sort_unstable_by(|a, b| {
             a.0.components
                 .partial_cmp(&b.0.components)
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
 
-        let mut start_border_index = 0;
-        while start_border_index < count {
-            let color = borders[start_border_index].0;
-            let mut next_border_index = start_border_index + 1;
-            let has_multiple_edges =
-                next_border_index < count && borders[next_border_index].0 == color;
-            if has_multiple_edges {
-                let mut border_path = borders[start_border_index].1.take().unwrap();
-                while next_border_index < count && borders[next_border_index].0 == color {
-                    border_path.extend(&borders[next_border_index].1.take().unwrap());
-                    next_border_index += 1;
-                }
-                scene.fill(Fill::NonZero, self.transform, color, None, &border_path);
-            } else {
-                scene.fill(
-                    Fill::NonZero,
-                    self.transform,
-                    color,
-                    None,
-                    borders[start_border_index].1.as_ref().unwrap(),
-                );
+        let mut start = 0;
+        while start < borders.len() {
+            let color = borders[start].0;
+            let mut path = std::mem::take(&mut borders[start].1);
+            let mut next = start + 1;
+            while next < borders.len() && borders[next].0 == color {
+                path.extend(&borders[next].1);
+                next += 1;
             }
-            start_border_index = next_border_index;
+            scene.fill(Fill::NonZero, self.transform, color, None, &path);
+            start = next;
+        }
+    }
+
+    /// The border width (in device pixels) of a single edge.
+    fn edge_width(&self, edge: Edge) -> f64 {
+        match edge {
+            Edge::Top => self.frame.border_width.y0,
+            Edge::Bottom => self.frame.border_width.y1,
+            Edge::Left => self.frame.border_width.x0,
+            Edge::Right => self.frame.border_width.x1,
         }
     }
 
