@@ -26,6 +26,8 @@ svg = ["dep:usvg"]
 woff = ["dep:wuff"]
 accessibility = ["accesskit"]
 system_fonts = ["parley/system"]
+# complex-scripts: enable dictionary-based line-breaking
+complex-scripts = ["parley/complex-scripts"]
 autofocus = []
 floats = ["taffy/float_layout", "stylo_taffy/floats"]
 file_input = []
