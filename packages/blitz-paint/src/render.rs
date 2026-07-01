@@ -401,6 +401,11 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                                 cx.draw_children(scene, cx.transform);
                             },
                         );
+
+                        // Overlay scrollbars, drawn unscrolled above the
+                        // clipped content.
+                        cx.transform = unscrolled_transform;
+                        cx.draw_scrollbars(scene, overflow_x, overflow_y);
                     },
                 );
 
@@ -528,6 +533,84 @@ fn convert_rect(rect: &parley::BoundingBox) -> kurbo::Rect {
 }
 
 impl ElementCx<'_, '_> {
+    /// Paint overlay scrollbar thumbs for scroll containers (`overflow:
+    /// scroll`, or `auto` when the content overflows — never `hidden`/
+    /// `clip`, which scroll only programmatically). Like other overlay
+    /// scrollbar UIs, thumbs only appear while the scroll container is
+    /// hovered or scrolled away from the origin; this also keeps them out
+    /// of (static, unhovered) reftest screenshots.
+    fn draw_scrollbars(
+        &self,
+        scene: &mut impl PaintScene,
+        overflow_x: Overflow,
+        overflow_y: Overflow,
+    ) {
+        if !self.node.is_hovered()
+            && self.node.scroll_offset.x == 0.0
+            && self.node.scroll_offset.y == 0.0
+        {
+            return;
+        }
+        const THUMB_THICKNESS: f64 = 6.0;
+        const THUMB_MARGIN: f64 = 2.0;
+        const MIN_THUMB_LENGTH: f64 = 16.0;
+        const THUMB_COLOR: Color = Color::from_rgba8(128, 128, 128, 178);
+
+        let layout = &self.node.final_layout;
+        let padding_box = self.frame.padding_box;
+
+        let mut draw_thumb = |scroll_extent: f64, scroll_offset: f64, horizontal: bool| {
+            if scroll_extent <= 0.5 {
+                return;
+            }
+            let viewport_len = if horizontal {
+                padding_box.width()
+            } else {
+                padding_box.height()
+            };
+            let max_scroll = scroll_extent * self.scale;
+            let thumb_len = (viewport_len * viewport_len / (viewport_len + max_scroll))
+                .max(MIN_THUMB_LENGTH * self.scale)
+                .min(viewport_len);
+            let progress = (scroll_offset * self.scale / max_scroll).clamp(0.0, 1.0);
+            let thumb_start = progress * (viewport_len - thumb_len);
+            let thickness = THUMB_THICKNESS * self.scale;
+            let margin = THUMB_MARGIN * self.scale;
+            let rect = if horizontal {
+                Rect::new(
+                    padding_box.x0 + thumb_start,
+                    padding_box.y1 - margin - thickness,
+                    padding_box.x0 + thumb_start + thumb_len,
+                    padding_box.y1 - margin,
+                )
+            } else {
+                Rect::new(
+                    padding_box.x1 - margin - thickness,
+                    padding_box.y0 + thumb_start,
+                    padding_box.x1 - margin,
+                    padding_box.y0 + thumb_start + thumb_len,
+                )
+            };
+            let thumb = rect.to_rounded_rect(thickness / 2.0);
+            scene.fill(Fill::NonZero, self.transform, THUMB_COLOR, None, &thumb);
+        };
+
+        let wants_bar = |overflow: Overflow, scroll_extent: f64| match overflow {
+            Overflow::Scroll => true,
+            Overflow::Auto => scroll_extent > 0.5,
+            _ => false,
+        };
+
+        let scroll_height = layout.scroll_height() as f64;
+        if wants_bar(overflow_y, scroll_height) {
+            draw_thumb(scroll_height, self.node.scroll_offset.y, false);
+        }
+        let scroll_width = layout.scroll_width() as f64;
+        if wants_bar(overflow_x, scroll_width) {
+            draw_thumb(scroll_width, self.node.scroll_offset.x, true);
+        }
+    }
+
     fn draw_inline_layout(&self, scene: &mut impl PaintScene, pos: Point) {
         if self.node.flags.is_inline_root() {
             let text_layout = self.element
