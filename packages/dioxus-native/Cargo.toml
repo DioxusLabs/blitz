@@ -10,7 +10,7 @@ homepage = "https://dioxuslabs.com/learn/0.7/getting_started"
 keywords = ["dom", "ui", "gui", "react"]
 
 [features]
-default = ["accessibility", "hot-reload", "net", "html", "svg", "system-fonts", "clipboard", "file_dialog", "vello-hybrid", "incremental", "woff", "apple-font-embolden"]
+default = ["accessibility", "hot-reload", "net", "html", "svg", "system-fonts", "clipboard", "file-dialog", "vello-hybrid", "incremental", "woff", "apple-font-embolden"]
 prelude = ["dep:dioxus-core-macro", "dep:dioxus-hooks", "dep:dioxus-signals", "dep:dioxus-stores", "dep:manganis"]
 
 # DOM features
@@ -18,7 +18,7 @@ svg = ["blitz-dom/svg", "blitz-paint/svg"]
 floats = ["blitz-dom/floats"]
 incremental = ["blitz-dom/incremental"]
 autofocus = ["blitz-dom/autofocus"]
-system-fonts = ["blitz-dom/system_fonts"]
+system-fonts = ["blitz-dom/system-fonts"]
 # complex-scripts: enable dictionary-based line-breaking
 complex-scripts = ["blitz-dom/complex-scripts"]
 # WOFF/WOFF2 decoder. Default-on so wasm callers (which can't use system fonts)
@@ -27,8 +27,7 @@ woff = ["blitz-dom/woff"]
 
 # Shell Features
 clipboard = ["blitz-shell/clipboard"]
-file_dialog = ["file-dialog"] # Backwards compat. Remove in next breaking version
-file-dialog = ["blitz-shell/file_dialog"]
+file-dialog = ["blitz-shell/file-dialog"]
 accessibility = ["blitz-shell/accessibility", "blitz-dom/accessibility"]
 data-uri = ["blitz-shell/data-uri"]
 
@@ -55,7 +54,7 @@ hot-reload = ["dep:dioxus-devtools"]
 
 # Debug/Logging
 log-times = ["log-phase-times", "log-frame-times"]
-log-phase-times = ["blitz-dom/log_phase_times"]
+log-phase-times = ["blitz-dom/log-phase-times"]
 log-frame-times = [
   "anyrender_vello_cpu?/log_frame_times",
   "anyrender_vello?/log_frame_times",

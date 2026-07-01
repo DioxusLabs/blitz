@@ -357,7 +357,7 @@ impl BaseDocument {
                     collection: Collection::new(CollectionOptions {
                         shared: false,
                         system_fonts: cfg!(all(
-                            feature = "system_fonts",
+                            feature = "system-fonts",
                             not(target_arch = "wasm32")
                         )),
                     }),

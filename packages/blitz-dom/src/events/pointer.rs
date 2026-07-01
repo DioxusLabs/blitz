@@ -595,7 +595,7 @@ pub(crate) fn handle_click(
                         doc.submit_form(*form_owner, node_id);
                     }
                 }
-                #[cfg(feature = "file_input")]
+                #[cfg(feature = "file-input")]
                 local_name!("input") if el.attr(local_name!("type")) == Some("file") => {
                     use crate::qual_name;
                     //TODO: Handle accept attribute https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Attributes/accept by passing an appropriate filter

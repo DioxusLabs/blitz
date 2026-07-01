@@ -15,8 +15,8 @@ default = [
     "svg",
     "woff",
     "accessibility",
-    "system_fonts",
-    "file_input",
+    "system-fonts",
+    "file-input",
     "custom-widget"
 ]
 custom-widget = ["dep:anyrender", "accessibility"]
@@ -25,15 +25,15 @@ svg = ["dep:usvg"]
 # WOFF decoding (using the "wuff" crate which is pure Rust)
 woff = ["dep:wuff"]
 accessibility = ["accesskit"]
-system_fonts = ["parley/system"]
+system-fonts = ["parley/system"]
 # complex-scripts: enable dictionary-based line-breaking
 complex-scripts = ["parley/complex-scripts"]
 autofocus = []
 floats = ["taffy/float_layout", "stylo_taffy/floats"]
-file_input = []
+file-input = []
 incremental = []
 parallel-construct = []
-log_phase_times = ["debug_timer/enable"]
+log-phase-times = ["debug_timer/enable"]
 
 [dependencies]
 # Blitz dependencies

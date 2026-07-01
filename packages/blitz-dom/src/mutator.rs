@@ -725,7 +725,7 @@ impl<'doc> DocumentMutator<'doc> {
                 SpecialElementData::TableRoot(_) => {}
                 SpecialElementData::TextInput(_) => {}
                 SpecialElementData::CheckboxInput(_) => {}
-                #[cfg(feature = "file_input")]
+                #[cfg(feature = "file-input")]
                 SpecialElementData::FileInput(_) => {}
                 SpecialElementData::None => {}
             }
@@ -906,7 +906,7 @@ impl<'doc> DocumentMutator<'doc> {
             self.append_children(target_id, &[id]);
             return;
         }
-        #[cfg(feature = "file_input")]
+        #[cfg(feature = "file-input")]
         if let ("input", Some("file")) = (tagname, type_attr) {
             let button_id = self.create_element(
                 qual_name!("button", html),

@@ -55,7 +55,7 @@ impl BaseDocument {
         self.resolve_scroll_animation();
 
         let root_node_id = self.root_element().id;
-        debug_timer!(timer, feature = "log_phase_times");
+        debug_timer!(timer, feature = "log-phase-times");
 
         // we need to resolve stylist first since it will need to drive our layout bits
         self.resolve_stylist(current_time_for_animations);

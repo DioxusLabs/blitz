@@ -25,7 +25,7 @@ pub use crate::window::{View, WindowConfig};
 pub use crate::net::DataUriNetProvider;
 
 #[cfg(all(
-    feature = "file_dialog",
+    feature = "file-dialog",
     any(
         target_os = "windows",
         target_os = "macos",
@@ -189,7 +189,7 @@ impl ShellProvider for BlitzShellProvider {
     }
 
     #[cfg(all(
-        feature = "file_dialog",
+        feature = "file-dialog",
         any(
             target_os = "windows",
             target_os = "macos",

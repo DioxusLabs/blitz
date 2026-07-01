@@ -81,7 +81,7 @@ pub enum SpecialElementType {
     TableRoot,
     TextInput,
     CheckboxInput,
-    #[cfg(feature = "file_input")]
+    #[cfg(feature = "file-input")]
     FileInput,
     #[default]
     None,
@@ -108,7 +108,7 @@ pub enum SpecialElementData {
     /// Checkbox checked state
     CheckboxInput(bool),
     /// Selected files
-    #[cfg(feature = "file_input")]
+    #[cfg(feature = "file-input")]
     FileInput(FileData),
     /// No data (for nodes that don't need any node-specific data)
     #[default]
@@ -127,7 +127,7 @@ impl Clone for SpecialElementData {
             Self::TableRoot(data) => Self::TableRoot(data.clone()),
             Self::TextInput(data) => Self::TextInput(data.clone()),
             Self::CheckboxInput(data) => Self::CheckboxInput(*data),
-            #[cfg(feature = "file_input")]
+            #[cfg(feature = "file-input")]
             Self::FileInput(data) => Self::FileInput(data.clone()),
             Self::None => Self::None,
         }
@@ -289,7 +289,7 @@ impl ElementData {
         }
     }
 
-    #[cfg(feature = "file_input")]
+    #[cfg(feature = "file-input")]
     pub fn file_data(&self) -> Option<&FileData> {
         match &self.special_data {
             SpecialElementData::FileInput(data) => Some(data),
@@ -297,7 +297,7 @@ impl ElementData {
         }
     }
 
-    #[cfg(feature = "file_input")]
+    #[cfg(feature = "file-input")]
     pub fn file_data_mut(&mut self) -> Option<&mut FileData> {
         match &mut self.special_data {
             SpecialElementData::FileInput(data) => Some(data),
@@ -558,7 +558,7 @@ impl std::fmt::Debug for SpecialElementData {
             SpecialElementData::TableRoot(_) => f.write_str("NodeSpecificData::TableRoot"),
             SpecialElementData::TextInput(_) => f.write_str("NodeSpecificData::TextInput"),
             SpecialElementData::CheckboxInput(_) => f.write_str("NodeSpecificData::CheckboxInput"),
-            #[cfg(feature = "file_input")]
+            #[cfg(feature = "file-input")]
             SpecialElementData::FileInput(_) => f.write_str("NodeSpecificData::FileInput"),
             SpecialElementData::None => f.write_str("NodeSpecificData::None"),
         }
@@ -592,7 +592,7 @@ impl std::fmt::Debug for ListItemLayout {
     }
 }
 
-#[cfg(feature = "file_input")]
+#[cfg(feature = "file-input")]
 mod file_data {
     use std::ops::{Deref, DerefMut};
     use std::path::PathBuf;
@@ -617,7 +617,7 @@ mod file_data {
         }
     }
 }
-#[cfg(feature = "file_input")]
+#[cfg(feature = "file-input")]
 pub use file_data::FileData;
 
 #[cfg(test)]

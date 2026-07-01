@@ -30,14 +30,14 @@ comrak = ["dep:comrak"]
 pulldown_cmark = ["dep:pulldown-cmark"]
 floats = ["blitz-dom/floats"]
 cache = ["blitz-net/cache"]
-logtime = ["log_frame_times", "log_phase_times"]
-log_frame_times = [
+logtime = ["log-frame-times", "log-phase-times"]
+log-frame-times = [
   "anyrender_vello_cpu?/log_frame_times",
   "anyrender_vello_hybrid?/log_frame_times",
   "anyrender_vello?/log_frame_times",
   "anyrender_skia?/log_frame_times",
 ]
-log_phase_times = ["blitz-dom/log_phase_times"]
+log-phase-times = ["blitz-dom/log-phase-times"]
 incremental = ["blitz-dom/incremental"]
 tracing = ["dep:tracing-subscriber", "blitz-shell/tracing", "blitz-net/tracing", "blitz-html/tracing"]
 
