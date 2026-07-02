@@ -78,6 +78,32 @@ pub(crate) enum PointerCaptureOp {
     Release(BlitzPointerId),
 }
 
+/// Context passed to [`Widget::paint`].
+///
+/// Allows the widget to feed requests back to the document while painting.
+#[derive(Default)]
+pub struct WidgetPaintContext {
+    redraw_requested: bool,
+}
+
+impl WidgetPaintContext {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Request that the document be redrawn.
+    ///
+    /// Widgets which animate should call this each time they paint to schedule another frame.
+    pub fn request_redraw(&mut self) {
+        self.redraw_requested = true;
+    }
+
+    /// Whether the widget has requested a redraw
+    pub fn redraw_requested(&self) -> bool {
+        self.redraw_requested
+    }
+}
+
 /// Context passed to [`Widget::handle_event`].
 ///
 /// Provides the widget with information about its environment (such as the size of its box),
@@ -191,6 +217,10 @@ pub trait Widget {
     ///   - Get a handle to the Device and Queue in `can_create_surfaces`
     ///   - Create it's own texture
     ///   - Pass the `ResourceId` of the paint for an Image in the AnyRender `Scene`
+    ///
+    /// Widgets are only repainted when the document is redrawn. Widgets which animate
+    /// should call [`WidgetPaintContext::request_redraw`] each time they paint to
+    /// schedule another frame.
     fn paint(
         &mut self,
         render_ctx: &mut dyn RenderContext,
@@ -198,8 +228,9 @@ pub trait Widget {
         width: u32,
         height: u32,
         scale: f64,
+        ctx: &mut WidgetPaintContext,
     ) -> Scene {
-        let _ = (render_ctx, styles, width, height, scale);
+        let _ = (render_ctx, styles, width, height, scale, ctx);
         Scene::new()
     }
 

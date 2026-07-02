@@ -110,7 +110,7 @@ fn process_custom_widget_node(
     node_id: usize,
     scale: f64,
 ) -> Option<Scene> {
-    use blitz_dom::node::{CustomWidgetStatus, ProxyRenderContext};
+    use blitz_dom::node::{CustomWidgetStatus, ProxyRenderContext, WidgetPaintContext};
 
     let node = doc.get_node_mut(node_id)?;
     let width = (node.final_layout.size.width as f64 * scale) as u32;
@@ -134,9 +134,22 @@ fn process_custom_widget_node(
         widget_data.status = CustomWidgetStatus::Active;
     }
 
-    let widget_scene = widget_data
-        .widget
-        .paint(&mut render_ctx, &style, width, height, scale);
+    let mut paint_ctx = WidgetPaintContext::new();
+    let widget_scene = widget_data.widget.paint(
+        &mut render_ctx,
+        &style,
+        width,
+        height,
+        scale,
+        &mut paint_ctx,
+    );
+    drop(style);
+
+    // If the widget requested a redraw (e.g. because it is animating) then forward
+    // the request to the shell so that another frame is scheduled
+    if paint_ctx.redraw_requested() {
+        doc.shell_provider.request_redraw();
+    }
 
     Some(widget_scene)
 }

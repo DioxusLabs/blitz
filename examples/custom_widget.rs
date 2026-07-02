@@ -5,6 +5,7 @@ use color::parse_color;
 use dioxus_native::CustomWidgetAttr;
 use dioxus_native::Widget;
 use dioxus_native::WidgetEventContext;
+use dioxus_native::WidgetPaintContext;
 use dioxus_native::prelude::*;
 use peniko::Color;
 use peniko::Fill;
@@ -131,9 +132,13 @@ impl Widget for DemoWidget {
         width: u32,
         height: u32,
         scale: f64,
+        ctx: &mut WidgetPaintContext,
     ) -> anyrender::Scene {
         let _ = (render_ctx, width, height, scale);
         let mut scene = anyrender::Scene::new();
+
+        // The cube is continuously animating, so request that another frame be scheduled
+        ctx.request_redraw();
 
         let w = 100.0;
         let h = 100.0;

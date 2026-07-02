@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use blitz_dom::Widget;
+use blitz_dom::{Widget, WidgetPaintContext};
 use dioxus_native::{CustomWidgetAttr, prelude::*};
 
 const RING_LEN: usize = 60;
@@ -79,10 +79,15 @@ impl Widget for FpsWidget {
         _width: u32,
         _height: u32,
         _scale: f64,
+        ctx: &mut WidgetPaintContext,
     ) -> anyrender::Scene {
         if let Ok(mut s) = self.stats.lock() {
             s.record(Instant::now());
         }
+
+        // Continuously request frames so that the achievable frame rate can be measured
+        ctx.request_redraw();
+
         anyrender::Scene::new()
     }
 }

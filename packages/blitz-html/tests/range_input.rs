@@ -114,6 +114,15 @@ fn range_input_has_custom_widget_attached() {
 }
 
 #[test]
+fn custom_widget_does_not_force_continuous_animation() {
+    // Custom widgets should not cause the document to be considered "animating"
+    // (which would cause it to be continuously redrawn). Widgets which animate
+    // should request redraws via `WidgetPaintContext::request_redraw` instead.
+    let doc = slider_doc("");
+    assert!(!doc.inner().is_animating());
+}
+
+#[test]
 fn click_sets_value() {
     let mut doc = slider_doc("");
 

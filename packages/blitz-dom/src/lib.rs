@@ -75,7 +75,7 @@ pub mod util;
 mod accessibility;
 
 #[cfg(feature = "custom-widget")]
-pub use crate::node::{Widget, WidgetEventContext};
+pub use crate::node::{Widget, WidgetEventContext, WidgetPaintContext};
 
 /// Built-in widgets implemented on top of the custom widget API
 #[cfg(feature = "custom-widget")]

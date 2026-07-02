@@ -4,7 +4,7 @@ use keyboard_types::Key;
 use kurbo::{Affine, Circle, RoundedRect};
 use peniko::Fill;
 
-use crate::node::{ComputedStyles, Widget, WidgetEventContext};
+use crate::node::{ComputedStyles, Widget, WidgetEventContext, WidgetPaintContext};
 use crate::qual_name;
 use crate::util::{Color, ToColorColor as _};
 
@@ -175,6 +175,7 @@ impl Widget for RangeInputWidget {
         width: u32,
         height: u32,
         scale: f64,
+        _ctx: &mut WidgetPaintContext,
     ) -> Scene {
         let mut scene = Scene::new();
 

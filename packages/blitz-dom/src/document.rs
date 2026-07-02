@@ -1495,15 +1495,12 @@ impl BaseDocument {
     }
 
     pub fn is_animating(&self) -> bool {
-        #[cfg(feature = "custom-widget")]
-        let has_custom_widgets = !self.custom_widget_nodes.is_empty();
-        #[cfg(not(feature = "custom-widget"))]
-        let has_custom_widgets = false;
-
+        // Note: custom widgets do not cause the document to be considered animating.
+        // Widgets which animate should instead request a redraw each time they paint
+        // (see `WidgetPaintContext::request_redraw`).
         self.has_canvas
             | self.has_active_animations
             | self.subdoc_is_animating
-            | has_custom_widgets
             | (self.scroll_animation != ScrollAnimationState::None)
     }
 
