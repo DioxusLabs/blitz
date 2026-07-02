@@ -4,6 +4,7 @@ use blitz_traits::events::UiEvent;
 use color::parse_color;
 use dioxus_native::CustomWidgetAttr;
 use dioxus_native::Widget;
+use dioxus_native::WidgetEventContext;
 use dioxus_native::prelude::*;
 use peniko::Color;
 use peniko::Fill;
@@ -111,7 +112,7 @@ impl Widget for DemoWidget {
         }
     }
 
-    fn handle_event(&mut self, event: &UiEvent) {
+    fn handle_event(&mut self, event: &UiEvent, _ctx: &mut WidgetEventContext) {
         match event {
             UiEvent::PointerMove(evt) => {
                 self.pos = Some(Point {

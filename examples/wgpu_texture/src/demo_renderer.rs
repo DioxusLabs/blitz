@@ -37,10 +37,6 @@ impl Widget for DemoWidget {
         self.state = DemoRendererState::Suspended;
     }
 
-    fn handle_event(&mut self, event: &blitz_traits::events::UiEvent) {
-        let _ = event;
-    }
-
     fn paint(
         &mut self,
         render_ctx: &mut dyn anyrender::RenderContext,

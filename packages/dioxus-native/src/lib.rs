@@ -53,7 +53,7 @@ pub use {
     wgpu_context::DeviceHandle,
 };
 
-pub use blitz_dom::{FontContext, Widget, build_single_font_ctx};
+pub use blitz_dom::{FontContext, Widget, WidgetEventContext, build_single_font_ctx};
 pub use config::Config;
 pub use winit::dpi::{LogicalSize, PhysicalSize};
 pub use winit::window::WindowAttributes;

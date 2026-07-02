@@ -12,6 +12,7 @@ pub use attributes::{Attribute, Attributes};
 #[cfg(feature = "custom-widget")]
 pub use custom_widget::{
     ComputedStyles, CustomWidgetData, CustomWidgetStatus, ProxyRenderContext, Widget,
+    WidgetEventContext,
 };
 pub use element::{
     CanvasData, ElementData, ImageData, ImageResourceData, ListItemLayout, ListItemLayoutPosition,

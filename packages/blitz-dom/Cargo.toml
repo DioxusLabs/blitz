@@ -19,7 +19,7 @@ default = [
     "file-input",
     "custom-widget"
 ]
-custom-widget = ["dep:anyrender", "accessibility"]
+custom-widget = ["dep:anyrender", "dep:peniko", "accessibility"]
 tracing = ["dep:tracing"]
 svg = ["dep:usvg"]
 # WOFF decoding (using the "wuff" crate which is pure Rust)
@@ -65,6 +65,7 @@ skrifa = { workspace = true }
 linebender_resource_handle = { workspace = true }
 color = { workspace = true }
 kurbo = { workspace = true }
+peniko = { workspace = true, optional = true }
 
 # Other dependencies
 slab = { workspace = true }

@@ -703,10 +703,22 @@ impl BaseDocument {
 
     #[cfg(feature = "custom-widget")]
     pub fn set_custom_widget(&mut self, node_id: usize, widget: Box<dyn crate::Widget>) {
-        self.nodes[node_id]
-            .element_data_mut()
-            .unwrap()
-            .set_custom_widget(widget);
+        let element = self.nodes[node_id].element_data_mut().unwrap();
+        element.set_custom_widget(widget);
+
+        // Sync the element's existing attributes to the newly attached widget
+        let attrs: Vec<_> = element
+            .attrs
+            .iter()
+            .map(|attr| (attr.name.local.clone(), attr.value.clone()))
+            .collect();
+        let widget_data = element.custom_widget_data_mut().unwrap();
+        for (name, value) in attrs {
+            widget_data
+                .widget
+                .attribute_changed(&name, None, Some(&value));
+        }
+
         self.custom_widget_nodes.insert(node_id);
     }
 

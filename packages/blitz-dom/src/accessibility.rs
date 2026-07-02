@@ -58,6 +58,7 @@ impl BaseDocument {
                     match ty {
                         "number" => Role::NumberInput,
                         "checkbox" => Role::CheckBox,
+                        "range" => Role::Slider,
                         _ => Role::TextInput,
                     }
                 }

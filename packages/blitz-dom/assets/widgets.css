@@ -1,0 +1,11 @@
+/* Styles for elements that are rendered using built-in custom widgets.
+ * Only included when the "custom-widget" feature is enabled. */
+
+input[type="range"] {
+    width: 160px;
+    height: 16px;
+    border: none;
+    padding: 0;
+    background-color: transparent;
+    margin: 2px;
+}

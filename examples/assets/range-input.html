@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+    body {
+        background-color: white;
+        margin: 40px;
+        font-family: sans-serif;
+        color: #333;
+    }
+    .container {
+        display: flex;
+        flex-direction: column;
+        gap: 30px;
+        max-width: 500px;
+    }
+    .row {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+    label {
+        font-size: 14px;
+        font-weight: 600;
+    }
+    input[type="range"] {
+        width: 100%;
+        accent-color: #3b82f6;
+    }
+    .value {
+        font-size: 13px;
+        color: #666;
+    }
+</style>
+</head>
+<body>
+    <div class="container">
+        <div class="row">
+            <label for="volume">Volume</label>
+            <input type="range" id="volume" min="0" max="100" value="50">
+            <span class="value">50</span>
+        </div>
+        <div class="row">
+            <label for="brightness">Brightness</label>
+            <input type="range" id="brightness" min="0" max="100" value="75">
+            <span class="value">75</span>
+        </div>
+        <div class="row">
+            <label for="hue">Hue</label>
+            <input type="range" id="hue" min="0" max="360" value="120" step="10">
+            <span class="value">120</span>
+        </div>
+    </div>
+</body>
+</html>

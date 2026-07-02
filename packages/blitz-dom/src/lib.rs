@@ -28,7 +28,13 @@
 //  - `default`: Enables the features listed below.
 //  - `tracing`: Enables tracing support.
 
+#[cfg(not(feature = "custom-widget"))]
 pub const DEFAULT_CSS: &str = include_str!("../assets/default.css");
+#[cfg(feature = "custom-widget")]
+pub const DEFAULT_CSS: &str = concat!(
+    include_str!("../assets/default.css"),
+    include_str!("../assets/widgets.css"),
+);
 pub const BULLET_FONT: &[u8] = include_bytes!("../assets/moz-bullet-font.otf");
 
 /// The DOM implementation.
@@ -69,7 +75,11 @@ pub mod util;
 mod accessibility;
 
 #[cfg(feature = "custom-widget")]
-pub use crate::node::Widget;
+pub use crate::node::{Widget, WidgetEventContext};
+
+/// Built-in widgets implemented on top of the custom widget API
+#[cfg(feature = "custom-widget")]
+pub mod widgets;
 
 pub use config::{DocumentConfig, StyleThreading};
 pub use document::{BaseDocument, DocGuard, DocGuardMut, Document, PlainDocument};

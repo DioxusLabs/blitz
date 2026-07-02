@@ -2,6 +2,7 @@ use std::any::Any;
 
 use anyrender::ResourceId;
 use blitz_traits::events::UiEvent;
+use markup5ever::QualName;
 pub use style::properties::ComputedValues as ComputedStyles;
 // use accesskit::Node as AccessKitNode;
 // use taffy::{LayoutInput, LayoutOutput};
@@ -71,6 +72,54 @@ impl anyrender::RenderContext for ProxyRenderContext<'_, '_> {
     }
 }
 
+/// Context passed to [`Widget::handle_event`].
+///
+/// Provides the widget with information about its environment (such as the size of its box),
+/// and allows it to feed changes back into the document (attribute updates, DOM input events,
+/// redraw requests). Changes are queued and applied by the document once event handling completes.
+pub struct WidgetEventContext {
+    /// The width of the widget's border box in CSS pixels
+    pub width: f32,
+    /// The height of the widget's border box in CSS pixels
+    pub height: f32,
+    /// The scale factor of the document's viewport
+    pub scale: f64,
+    /// Attributes that the widget wants to set on its element
+    pub(crate) queued_attributes: Vec<(QualName, String)>,
+    /// Values for DOM "input" events that the widget wants to dispatch from its element
+    pub(crate) queued_input_events: Vec<String>,
+    /// Whether the widget has requested a redraw
+    pub(crate) redraw_requested: bool,
+}
+
+impl WidgetEventContext {
+    pub(crate) fn new(width: f32, height: f32, scale: f64) -> Self {
+        Self {
+            width,
+            height,
+            scale,
+            queued_attributes: Vec::new(),
+            queued_input_events: Vec::new(),
+            redraw_requested: false,
+        }
+    }
+
+    /// Set an attribute on the widget's element (applied once event handling completes)
+    pub fn set_attribute(&mut self, name: QualName, value: String) {
+        self.queued_attributes.push((name, value));
+    }
+
+    /// Dispatch a DOM "input" event with the given value, targeting the widget's element
+    pub fn dispatch_input_event(&mut self, value: String) {
+        self.queued_input_events.push(value);
+    }
+
+    /// Request that the document be redrawn
+    pub fn request_redraw(&mut self) {
+        self.redraw_requested = true;
+    }
+}
+
 pub trait Widget {
     // DOM lifecycle
 
@@ -97,8 +146,13 @@ pub trait Widget {
     // Other
 
     /// Handle input events (mouse, keyboard, etc)
-    fn handle_event(&mut self, event: &UiEvent) {
-        let _ = event;
+    ///
+    /// Pointer event coordinates are relative to the widget's border box.
+    /// The `ctx` parameter provides the size of the widget's box and allows the widget
+    /// to queue changes (attribute updates, DOM input events, redraw requests) which
+    /// are applied by the document once event handling completes.
+    fn handle_event(&mut self, event: &UiEvent, ctx: &mut WidgetEventContext) {
+        let _ = (event, ctx);
     }
 
     /// Callback for the widget to paint it's content.
