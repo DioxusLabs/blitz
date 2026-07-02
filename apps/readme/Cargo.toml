@@ -43,7 +43,7 @@ tracing = ["dep:tracing-subscriber", "blitz-shell/tracing", "blitz-net/tracing",
 
 [dependencies]
 blitz-traits = { workspace = true }
-blitz-dom = { workspace = true, features = ["default", "parallel-construct"] }
+blitz-dom = { workspace = true, features = ["default", "parallel-construct", "custom-widget"] }
 blitz-html = { workspace = true }
 blitz-paint = { workspace = true, features = ["default"] }
 blitz-net = { workspace = true, features = ["cookies"] }

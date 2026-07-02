@@ -103,6 +103,13 @@ impl BaseDocument {
                 // })
             }
             NodeData::Element(element_data) | NodeData::AnonymousBlock(element_data) => {
+                // If the element has a custom widget attached then it is laid out as a leaf
+                // node, delegating to the widget's `layout` method
+                #[cfg(feature = "custom-widget")]
+                if let Some(widget_data) = element_data.custom_widget_data_mut() {
+                    return widget_data.widget.layout(inputs, &node.style);
+                }
+
                 // TODO: deduplicate with single-line text input
                 if *element_data.name.local == *"textarea" {
                     let rows = element_data
@@ -217,6 +224,7 @@ impl BaseDocument {
                     let replaced_context = ReplacedContext {
                         inherent_size,
                         attr_size,
+                        inherent_aspect_ratio: None,
                     };
 
                     let computed = replaced_measure_function(

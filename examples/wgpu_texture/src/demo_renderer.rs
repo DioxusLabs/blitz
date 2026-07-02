@@ -3,7 +3,7 @@
 use crate::Color;
 use anyrender::{PaintRef, PaintScene, ResourceId};
 use blitz_dom::node::ComputedStyles;
-use blitz_dom::Widget;
+use blitz_dom::{Widget, WidgetPaintContext};
 use peniko::kurbo::{Affine, Rect};
 use peniko::{Fill, ImageBrush, ImageSampler};
 use std::sync::mpsc::{channel, Receiver, Sender};
@@ -37,10 +37,6 @@ impl Widget for DemoWidget {
         self.state = DemoRendererState::Suspended;
     }
 
-    fn handle_event(&mut self, event: &blitz_traits::events::UiEvent) {
-        let _ = event;
-    }
-
     fn paint(
         &mut self,
         render_ctx: &mut dyn anyrender::RenderContext,
@@ -48,8 +44,12 @@ impl Widget for DemoWidget {
         width: u32,
         height: u32,
         _scale: f64,
+        ctx: &mut WidgetPaintContext,
     ) -> anyrender::Scene {
         let mut scene = anyrender::Scene::new();
+
+        // The cube is continuously animating, so request that another frame be scheduled
+        ctx.request_redraw();
 
         // if matches!(self.state, DemoRendererState::Suspended) {
         //     self.can_create_surfaces(render_ctx);

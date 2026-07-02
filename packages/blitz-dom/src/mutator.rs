@@ -37,6 +37,8 @@ enum SpecialOp {
     ProcessButtonInput(usize),
     UnloadSubDocument(usize),
     #[cfg(feature = "custom-widget")]
+    LoadRangeInputWidget(usize),
+    #[cfg(feature = "custom-widget")]
     UnloadCustomWidget(usize),
 }
 
@@ -612,6 +614,8 @@ impl<'doc> DocumentMutator<'doc> {
                 SpecialOp::ProcessButtonInput(node_id) => self.process_button_input(node_id),
                 SpecialOp::UnloadSubDocument(node_id) => self.remove_sub_document(node_id),
                 #[cfg(feature = "custom-widget")]
+                SpecialOp::LoadRangeInputWidget(node_id) => self.load_range_input_widget(node_id),
+                #[cfg(feature = "custom-widget")]
                 SpecialOp::UnloadCustomWidget(node_id) => self.remove_custom_widget(node_id),
             }
         }
@@ -648,6 +652,12 @@ impl<'doc> DocumentMutator<'doc> {
                     self.style_nodes.insert(node_id);
                 }
                 "button" | "fieldset" | "input" | "select" | "textarea" | "object" | "output" => {
+                    // Set up a slider widget for `<input type="range">` elements
+                    #[cfg(feature = "custom-widget")]
+                    if tag == "input" && element.attr(local_name!("type")) == Some("range") {
+                        self.eager_op_queue
+                            .push(SpecialOp::LoadRangeInputWidget(node_id));
+                    }
                     self.eager_op_queue
                         .push(SpecialOp::ProcessButtonInput(node_id));
                     self.form_nodes.insert(node_id);
@@ -687,6 +697,10 @@ impl<'doc> DocumentMutator<'doc> {
             if doc.active_node_id == Some(node_id) {
                 doc.active_node_id = None;
             }
+
+            // Release any pointer captures held by this node.
+            // This prevents stale pointer_captures references.
+            doc.pointer_captures.retain(|_, target| *target != node_id);
 
             // Remove any snapshot for this node to prevent stale snapshot references
             // during style invalidation.
@@ -884,6 +898,21 @@ impl<'doc> DocumentMutator<'doc> {
                 node.element_data_mut().unwrap().special_data = canvas_data;
             }
         }
+    }
+
+    /// Attach a [`RangeInputWidget`](crate::widgets::RangeInputWidget) to an
+    /// `<input type="range">` element to provide "slider" functionality.
+    #[cfg(feature = "custom-widget")]
+    fn load_range_input_widget(&mut self, node_id: usize) {
+        let Some(element) = self.doc.nodes[node_id].element_data() else {
+            return;
+        };
+        // Don't replace an existing widget (e.g. if the node is moved within the document)
+        if element.custom_widget_data().is_some() {
+            return;
+        }
+        self.doc
+            .set_custom_widget(node_id, Box::new(crate::widgets::RangeInputWidget::new()));
     }
 
     fn process_button_input(&mut self, target_id: usize) {
@@ -1100,6 +1129,50 @@ mod test {
         assert!(
             !node.element_state.contains(ElementState::ENABLED),
             "form node is no longer enabled enabled"
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "custom-widget")]
+    fn mutator_attaches_range_input_widget() {
+        let mut document = BaseDocument::new(DocumentConfig::default());
+
+        let mut mutator = document.mutate();
+        let range_input_id = mutator.create_element(
+            qual_name!("input"),
+            vec![Attribute {
+                name: qual_name!("type"),
+                value: "range".into(),
+            }],
+        );
+        let text_input_id = mutator.create_element(
+            qual_name!("input"),
+            vec![Attribute {
+                name: qual_name!("type"),
+                value: "text".into(),
+            }],
+        );
+        mutator.append_children(0, &[range_input_id, text_input_id]);
+        drop(mutator);
+
+        let element = document
+            .get_node(range_input_id)
+            .unwrap()
+            .element_data()
+            .unwrap();
+        assert!(
+            element.custom_widget_data().is_some(),
+            "range input has a custom widget attached"
+        );
+
+        let element = document
+            .get_node(text_input_id)
+            .unwrap()
+            .element_data()
+            .unwrap();
+        assert!(
+            element.custom_widget_data().is_none(),
+            "text input does not have a custom widget attached"
         );
     }
 

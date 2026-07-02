@@ -18,7 +18,9 @@ use crate::{
     TextNodeData,
 };
 use blitz_traits::devtools::DevtoolSettings;
-use blitz_traits::events::{BlitzScrollEvent, DomEvent, DomEventData, HitResult, UiEvent};
+use blitz_traits::events::{
+    BlitzPointerId, BlitzScrollEvent, DomEvent, DomEventData, HitResult, UiEvent,
+};
 use blitz_traits::navigation::{DummyNavigationProvider, NavigationProvider};
 use blitz_traits::net::{AbortSignal, DummyNetProvider, NetProvider, Request};
 use blitz_traits::shell::{ColorScheme, DummyShellProvider, ShellProvider, Viewport};
@@ -239,6 +241,10 @@ pub struct BaseDocument {
     pub(crate) active_node_id: Option<usize>,
     /// The node which recieved a mousedown event (if any)
     pub(crate) mousedown_node_id: Option<usize>,
+    /// Map from pointer ID to the node which has captured that pointer (if any).
+    /// While a pointer is captured, pointer events for that pointer are retargeted
+    /// at the capturing node, even when the pointer is outside of its bounds.
+    pub(crate) pointer_captures: HashMap<BlitzPointerId, usize>,
     /// The last time a mousedown was made (for double-click detection)
     pub(crate) last_mousedown_time: Option<Instant>,
     /// The position where mousedown occurred (for selection drags and double-click detection)
@@ -435,6 +441,7 @@ impl BaseDocument {
             focus_node_id: None,
             active_node_id: None,
             mousedown_node_id: None,
+            pointer_captures: HashMap::new(),
             has_active_animations: false,
             subdoc_is_animating: false,
             has_canvas: false,
@@ -703,10 +710,28 @@ impl BaseDocument {
 
     #[cfg(feature = "custom-widget")]
     pub fn set_custom_widget(&mut self, node_id: usize, widget: Box<dyn crate::Widget>) {
-        self.nodes[node_id]
-            .element_data_mut()
-            .unwrap()
-            .set_custom_widget(widget);
+        let node = &mut self.nodes[node_id];
+
+        // Invalidate the node's layout (the widget is responsible for laying out the node)
+        node.insert_damage(ALL_DAMAGE);
+        node.mark_ancestors_dirty();
+
+        let element = self.nodes[node_id].element_data_mut().unwrap();
+        element.set_custom_widget(widget);
+
+        // Sync the element's existing attributes to the newly attached widget
+        let attrs: Vec<_> = element
+            .attrs
+            .iter()
+            .map(|attr| (attr.name.local.clone(), attr.value.clone()))
+            .collect();
+        let widget_data = element.custom_widget_data_mut().unwrap();
+        for (name, value) in attrs {
+            widget_data
+                .widget
+                .attribute_changed(&name, None, Some(&value));
+        }
+
         self.custom_widget_nodes.insert(node_id);
     }
 
@@ -1246,6 +1271,23 @@ impl BaseDocument {
     pub fn set_mousedown_node_id(&mut self, node_id: Option<usize>) {
         self.mousedown_node_id = node_id;
     }
+
+    /// Capture the given pointer, retargeting all subsequent pointer events for that pointer
+    /// (e.g. `PointerMove`) at the given node, even when the pointer is outside of the node's
+    /// bounds. The capture is automatically released when the pointer is released.
+    pub fn set_pointer_capture(&mut self, pointer_id: BlitzPointerId, node_id: usize) {
+        self.pointer_captures.insert(pointer_id, node_id);
+    }
+
+    /// Release a pointer capture previously set with [`set_pointer_capture`](Self::set_pointer_capture)
+    pub fn release_pointer_capture(&mut self, pointer_id: BlitzPointerId) {
+        self.pointer_captures.remove(&pointer_id);
+    }
+
+    /// The node which has captured the given pointer (if any)
+    pub fn pointer_capture_target(&self, pointer_id: BlitzPointerId) -> Option<usize> {
+        self.pointer_captures.get(&pointer_id).copied()
+    }
     pub fn set_focus_to(&mut self, focus_node_id: usize) -> bool {
         if Some(focus_node_id) == self.focus_node_id {
             return false;
@@ -1459,15 +1501,12 @@ impl BaseDocument {
     }
 
     pub fn is_animating(&self) -> bool {
-        #[cfg(feature = "custom-widget")]
-        let has_custom_widgets = !self.custom_widget_nodes.is_empty();
-        #[cfg(not(feature = "custom-widget"))]
-        let has_custom_widgets = false;
-
+        // Note: custom widgets do not cause the document to be considered animating.
+        // Widgets which animate should instead request a redraw each time they paint
+        // (see `WidgetPaintContext::request_redraw`).
         self.has_canvas
             | self.has_active_animations
             | self.subdoc_is_animating
-            | has_custom_widgets
             | (self.scroll_animation != ScrollAnimationState::None)
     }
 

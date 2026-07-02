@@ -149,12 +149,29 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
         let mut should_clear_hover = false;
         let mut hover_node_id = doc.hover_node_id;
         let focussed_node_id = doc.focus_node_id;
+
+        // If the pointer has been captured (e.g. by a custom widget) then pointer events for
+        // that pointer are retargeted at the capturing node, even when the pointer is outside
+        // of the node's bounds. Captures are automatically released when the pointer is released.
+        let captured_node_id = match &event {
+            UiEvent::PointerMove(event)
+            | UiEvent::PointerUp(event)
+            | UiEvent::PointerCancel(event) => doc.pointer_capture_target(event.id),
+            _ => None,
+        };
+        let release_captured_pointer = match &event {
+            UiEvent::PointerUp(event) | UiEvent::PointerCancel(event) => Some(event.id),
+            _ => None,
+        };
         drop(doc);
 
         // Update document input state (hover, focus, active, etc)
+        // Hover state is not updated while the pointer is captured.
         match &event {
             UiEvent::PointerMove(event) => {
-                hover_node_id = self.handle_pointer_move(event);
+                if captured_node_id.is_none() {
+                    hover_node_id = self.handle_pointer_move(event);
+                }
             }
             UiEvent::PointerDown(event) => {
                 hover_node_id = self.handle_pointer_move(event);
@@ -163,7 +180,9 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
                 doc.set_mousedown_node_id(hover_node_id);
             }
             UiEvent::PointerUp(event) => {
-                hover_node_id = self.handle_pointer_move(event);
+                if captured_node_id.is_none() {
+                    hover_node_id = self.handle_pointer_move(event);
+                }
                 let mut doc = self.doc.inner_mut();
                 doc.unactive_node();
 
@@ -172,7 +191,9 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
                 }
             }
             UiEvent::PointerCancel(event) => {
-                hover_node_id = self.handle_pointer_move(event);
+                if captured_node_id.is_none() {
+                    hover_node_id = self.handle_pointer_move(event);
+                }
                 let mut doc = self.doc.inner_mut();
                 doc.unactive_node();
 
@@ -184,10 +205,10 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
         };
 
         let target = match event {
-            UiEvent::PointerMove(_) => hover_node_id,
-            UiEvent::PointerUp(_) => hover_node_id,
+            UiEvent::PointerMove(_) => captured_node_id.or(hover_node_id),
+            UiEvent::PointerUp(_) => captured_node_id.or(hover_node_id),
             UiEvent::PointerDown(_) => hover_node_id,
-            UiEvent::PointerCancel(_) => hover_node_id,
+            UiEvent::PointerCancel(_) => captured_node_id.or(hover_node_id),
             UiEvent::Wheel(_) => hover_node_id,
             UiEvent::KeyUp(_) => focussed_node_id,
             UiEvent::KeyDown(_) => focussed_node_id,
@@ -253,6 +274,11 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
                 self.run_default_action(&mut dom_event);
             }
         };
+
+        // Release any capture of the pointer now that the pointer itself has been released
+        if let Some(pointer_id) = release_captured_pointer {
+            self.doc.inner_mut().release_pointer_capture(pointer_id);
+        }
 
         // Update document input state (hover, focus, active, etc)
         if should_clear_hover {

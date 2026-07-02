@@ -852,6 +852,7 @@ dependencies = [
  "markup5ever",
  "objc2 0.6.4",
  "parley",
+ "peniko",
  "percent-encoding",
  "rayon",
  "selectors",
@@ -910,6 +911,7 @@ dependencies = [
  "blitz-paint",
  "blitz-traits",
  "html5ever",
+ "keyboard-types 0.7.0",
  "tracing",
  "xml5ever",
 ]

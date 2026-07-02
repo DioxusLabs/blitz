@@ -11,7 +11,7 @@ edition.workspace = true
 rust-version.workspace = true
 
 [features]
-default = ["accessibility", "clipboard", "file-dialog"]
+default = ["accessibility", "clipboard", "file-dialog", "custom-widget"]
 accessibility = [
     "dep:accesskit",
     "dep:accesskit_xplat",
@@ -22,7 +22,7 @@ tracing = ["dep:tracing", "blitz-dom/tracing"]
 file-dialog = ["dep:rfd"]
 # Enables a data-uri-only NetProvider. Only needed if you aren't using the regular NetProvider
 data-uri = ["dep:data-url"]
-custom-widget = ["blitz-dom/custom-widget"]
+custom-widget = ["blitz-dom/custom-widget", "blitz-paint/custom-widget"]
 
 [dependencies]
 # Blitz dependencies

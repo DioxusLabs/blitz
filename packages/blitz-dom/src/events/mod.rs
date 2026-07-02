@@ -144,19 +144,54 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
 
     // Handle event forwarding for custom widget
     #[cfg(feature = "custom-widget")]
-    if let Some(widget_data) = node
-        .element_data_mut()
-        .and_then(|el| el.custom_widget_data_mut())
+    if node
+        .element_data()
+        .is_some_and(|el| el.custom_widget_data().is_some())
     {
         let set_focus = matches!(
             &event.data,
             DomEventData::PointerDown(_) | DomEventData::PointerUp(_)
         );
         let viewport_scroll = Point { x: 0.0, y: 0.0 };
+        let size = node.final_layout.size;
         let ui_event = map_dom_event_to_ui_event(event, pos, viewport_scroll);
 
+        let mut widget_ctx =
+            crate::node::WidgetEventContext::new(size.width, size.height, doc.viewport.scale_f64());
+
         if let Some(ui_event) = ui_event {
-            widget_data.widget.handle_event(&ui_event);
+            let widget_data = doc.nodes[target_node_id]
+                .element_data_mut()
+                .and_then(|el| el.custom_widget_data_mut())
+                .unwrap();
+            widget_data.widget.handle_event(&ui_event, &mut widget_ctx);
+        }
+
+        // Apply any changes that the widget queued while handling the event
+        for op in widget_ctx.queued_pointer_capture_ops.drain(..) {
+            match op {
+                crate::node::PointerCaptureOp::Set(pointer_id) => {
+                    doc.set_pointer_capture(pointer_id, target_node_id)
+                }
+                crate::node::PointerCaptureOp::Release(pointer_id) => {
+                    doc.release_pointer_capture(pointer_id)
+                }
+            }
+        }
+        if !widget_ctx.queued_attributes.is_empty() {
+            let mut mutator = doc.mutate();
+            for (name, value) in widget_ctx.queued_attributes.drain(..) {
+                mutator.set_attribute(target_node_id, name, &value);
+            }
+        }
+        for value in widget_ctx.queued_input_events.drain(..) {
+            dispatch_event(DomEvent::new(
+                target_node_id,
+                DomEventData::Input(blitz_traits::events::BlitzInputEvent { value }),
+            ));
+        }
+        if widget_ctx.redraw_requested {
+            doc.shell_provider.request_redraw();
         }
 
         if set_focus {

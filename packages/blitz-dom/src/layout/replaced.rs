@@ -9,6 +9,9 @@ use crate::layout::resolve_calc_value;
 pub struct ReplacedContext {
     pub inherent_size: taffy::Size<f32>,
     pub attr_size: taffy::Size<Option<f32>>,
+    /// An explicit intrinsic aspect ratio. If `None` then the aspect ratio is
+    /// computed from the `inherent_size`.
+    pub inherent_aspect_ratio: Option<f32>,
 }
 
 /// Whether a height/width value is violating it's min- and max- constraints
@@ -52,7 +55,9 @@ pub fn replaced_measure_function(
 
     // Use aspect_ratio from style, fall back to inherent aspect ratio
     let s_aspect_ratio = style.aspect_ratio;
-    let aspect_ratio = s_aspect_ratio.unwrap_or_else(|| inherent_size.width / inherent_size.height);
+    let aspect_ratio = s_aspect_ratio
+        .or(image_context.inherent_aspect_ratio)
+        .unwrap_or_else(|| inherent_size.width / inherent_size.height);
     let inv_aspect_ratio = 1.0 / aspect_ratio;
 
     // See https://www.w3.org/TR/css-sizing-3/#replaced-percentage-min-contribution

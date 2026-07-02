@@ -25,6 +25,8 @@ xml5ever = { workspace = true }
 tracing = { workspace = true, optional = true }
 
 [dev-dependencies]
+blitz-dom = { workspace = true, features = ["custom-widget"] }
 blitz-paint = { workspace = true }
 anyrender = { workspace = true }
 anyrender_vello_cpu = { workspace = true }
+keyboard-types = { workspace = true }
