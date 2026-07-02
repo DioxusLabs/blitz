@@ -710,6 +710,12 @@ impl BaseDocument {
 
     #[cfg(feature = "custom-widget")]
     pub fn set_custom_widget(&mut self, node_id: usize, widget: Box<dyn crate::Widget>) {
+        let node = &mut self.nodes[node_id];
+
+        // Invalidate the node's layout (the widget is responsible for laying out the node)
+        node.insert_damage(ALL_DAMAGE);
+        node.mark_ancestors_dirty();
+
         let element = self.nodes[node_id].element_data_mut().unwrap();
         element.set_custom_widget(widget);
 

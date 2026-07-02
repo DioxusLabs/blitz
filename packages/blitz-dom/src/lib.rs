@@ -75,7 +75,10 @@ pub mod util;
 mod accessibility;
 
 #[cfg(feature = "custom-widget")]
-pub use crate::node::{Widget, WidgetEventContext, WidgetPaintContext};
+pub use crate::node::{Widget, WidgetEventContext, WidgetIntrinsicSize, WidgetPaintContext};
+
+// Re-export taffy (whose types are used in the `Widget` layout API)
+pub use taffy;
 
 /// Built-in widgets implemented on top of the custom widget API
 #[cfg(feature = "custom-widget")]

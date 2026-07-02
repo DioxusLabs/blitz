@@ -54,7 +54,8 @@ pub use {
 };
 
 pub use blitz_dom::{
-    FontContext, Widget, WidgetEventContext, WidgetPaintContext, build_single_font_ctx,
+    FontContext, Widget, WidgetEventContext, WidgetIntrinsicSize, WidgetPaintContext,
+    build_single_font_ctx,
 };
 pub use config::Config;
 pub use winit::dpi::{LogicalSize, PhysicalSize};

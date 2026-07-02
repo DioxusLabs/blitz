@@ -3,9 +3,10 @@ use std::any::Any;
 use anyrender::ResourceId;
 use blitz_traits::events::{BlitzPointerId, UiEvent};
 use markup5ever::QualName;
+use style::Atom;
 pub use style::properties::ComputedValues as ComputedStyles;
+use taffy::{CollapsibleMarginSet, LayoutInput, LayoutOutput};
 // use accesskit::Node as AccessKitNode;
-// use taffy::{LayoutInput, LayoutOutput};
 
 pub use anyrender::{RenderContext, Scene};
 
@@ -76,6 +77,19 @@ impl anyrender::RenderContext for ProxyRenderContext<'_, '_> {
 pub(crate) enum PointerCaptureOp {
     Set(BlitzPointerId),
     Release(BlitzPointerId),
+}
+
+/// The intrinsic (natural) size of a widget, as returned by [`Widget::intrinsic_size`]
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct WidgetIntrinsicSize {
+    /// The widget's intrinsic width in CSS pixels (if it has one)
+    pub width: Option<f32>,
+    /// The widget's intrinsic height in CSS pixels (if it has one)
+    pub height: Option<f32>,
+    /// The widget's intrinsic aspect ratio (width / height), if it has one.
+    /// If `None` then the aspect ratio is derived from the intrinsic width and height
+    /// (when both are present).
+    pub aspect_ratio: Option<f32>,
 }
 
 /// Context passed to [`Widget::paint`].
@@ -192,6 +206,97 @@ pub trait Widget {
     }
     /// The renderer is no longer active (destroy textures here)
     fn destroy_surfaces(&mut self) {}
+
+    // Layout
+
+    /// The widget's intrinsic (natural) size and aspect ratio.
+    ///
+    /// This is used as an input to the default implementation of [`layout`](Widget::layout),
+    /// which sizes the widget like a "replaced element" (e.g. an image).
+    ///
+    /// The default implementation returns a width of `300` and a height of `150`
+    /// (CSS's default object size) and no explicit aspect ratio.
+    fn intrinsic_size(&mut self) -> WidgetIntrinsicSize {
+        WidgetIntrinsicSize {
+            width: Some(300.0),
+            height: Some(150.0),
+            aspect_ratio: None,
+        }
+    }
+
+    /// Compute the widget's layout (the widget is laid out as a leaf node).
+    ///
+    /// The default implementation runs "replaced layout" (like is done for images and
+    /// form controls), using the values returned by [`intrinsic_size`](Widget::intrinsic_size)
+    /// as inputs. Override this method to implement fully custom sizing logic.
+    fn layout(&mut self, inputs: LayoutInput, style: &taffy::Style<Atom>) -> LayoutOutput {
+        use crate::layout::replaced::{ReplacedContext, replaced_measure_function};
+
+        let intrinsic = self.intrinsic_size();
+
+        // Resolve the intrinsic aspect ratio: use the explicit one if present, else derive
+        // it from the intrinsic width and height (when both are present)
+        let aspect_ratio = intrinsic
+            .aspect_ratio
+            .or(match (intrinsic.width, intrinsic.height) {
+                (Some(width), Some(height)) => Some(width / height),
+                _ => None,
+            });
+
+        // Resolve missing intrinsic dimensions using the aspect ratio, falling back to
+        // CSS's default object size (300x150) (https://drafts.csswg.org/css-images/#default-object-size)
+        let inherent_size = match (intrinsic.width, intrinsic.height, aspect_ratio) {
+            (Some(width), Some(height), _) => taffy::Size { width, height },
+            (Some(width), None, Some(ratio)) => taffy::Size {
+                width,
+                height: width / ratio,
+            },
+            (None, Some(height), Some(ratio)) => taffy::Size {
+                width: height * ratio,
+                height,
+            },
+            (Some(width), None, None) => taffy::Size {
+                width,
+                height: 150.0,
+            },
+            (None, Some(height), None) => taffy::Size {
+                width: 300.0,
+                height,
+            },
+            (None, None, Some(ratio)) => taffy::Size {
+                width: 300.0,
+                height: 300.0 / ratio,
+            },
+            (None, None, None) => taffy::Size {
+                width: 300.0,
+                height: 150.0,
+            },
+        };
+
+        let replaced_context = ReplacedContext {
+            inherent_size,
+            attr_size: taffy::Size::NONE,
+            inherent_aspect_ratio: aspect_ratio,
+        };
+
+        let computed = replaced_measure_function(
+            inputs.known_dimensions,
+            inputs.parent_size,
+            inputs.available_space,
+            &replaced_context,
+            style,
+            false,
+        );
+
+        LayoutOutput {
+            size: computed,
+            content_size: computed,
+            first_baselines: taffy::Point::NONE,
+            top_margin: CollapsibleMarginSet::ZERO,
+            bottom_margin: CollapsibleMarginSet::ZERO,
+            margins_can_collapse_through: false,
+        }
+    }
 
     // Other
 

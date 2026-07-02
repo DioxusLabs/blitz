@@ -4,7 +4,9 @@ use keyboard_types::Key;
 use kurbo::{Affine, Circle, RoundedRect};
 use peniko::Fill;
 
-use crate::node::{ComputedStyles, Widget, WidgetEventContext, WidgetPaintContext};
+use crate::node::{
+    ComputedStyles, Widget, WidgetEventContext, WidgetIntrinsicSize, WidgetPaintContext,
+};
 use crate::qual_name;
 use crate::util::{Color, ToColorColor as _};
 
@@ -124,6 +126,14 @@ impl Widget for RangeInputWidget {
             "value" => self.value = new_value.and_then(parse_float),
             "disabled" => self.disabled = new_value.is_some(),
             _ => {}
+        }
+    }
+
+    fn intrinsic_size(&mut self) -> WidgetIntrinsicSize {
+        WidgetIntrinsicSize {
+            width: Some(160.0),
+            height: Some(16.0),
+            aspect_ratio: None,
         }
     }
 

@@ -14,7 +14,7 @@ pub(crate) use custom_widget::PointerCaptureOp;
 #[cfg(feature = "custom-widget")]
 pub use custom_widget::{
     ComputedStyles, CustomWidgetData, CustomWidgetStatus, ProxyRenderContext, Widget,
-    WidgetEventContext, WidgetPaintContext,
+    WidgetEventContext, WidgetIntrinsicSize, WidgetPaintContext,
 };
 pub use element::{
     CanvasData, ElementData, ImageData, ImageResourceData, ListItemLayout, ListItemLayoutPosition,
