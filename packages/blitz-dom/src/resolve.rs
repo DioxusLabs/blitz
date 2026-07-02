@@ -234,9 +234,20 @@ impl BaseDocument {
 
             if !doc.incremental_layout || damage.intersects(CONSTRUCT_FC | CONSTRUCT_BOX) {
                 //} || flags.contains(NodeFlags::IS_INLINE_ROOT) {
+
+                // Deallocate the anonymous blocks created for this node in the
+                // previous construction round. They live only in the slab, so
+                // reconstructing without freeing them would leak a slab entry per
+                // anonymous block per reconstruction.
+                let old_anonymous_blocks = std::mem::take(&mut doc.nodes[node_id].anonymous_blocks);
+                for anon_id in old_anonymous_blocks {
+                    doc.deallocate_anonymous_block(anon_id);
+                }
+
                 let mut collected = LayoutChildren::default();
                 collect_layout_children(doc, node_id, &mut collected);
                 let layout_children = collected.children;
+                doc.nodes[node_id].anonymous_blocks = collected.anonymous_blocks;
 
                 // Recurse into newly collected layout children
                 for child_id in layout_children.iter().copied() {

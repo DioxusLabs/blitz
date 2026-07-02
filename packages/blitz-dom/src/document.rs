@@ -822,8 +822,32 @@ impl BaseDocument {
             for &child in &node.children {
                 self.drop_node_ignoring_parent_with(child, on_drop);
             }
+
+            // Anonymous blocks live only in the slab, so deallocate the ones this
+            // node owns rather than leaking them.
+            for &anon_id in &node.anonymous_blocks {
+                self.deallocate_anonymous_block(anon_id);
+            }
         }
         node
+    }
+
+    /// Deallocate an anonymous block created in a previous construction
+    /// round, along with any anonymous blocks nested within it.
+    pub(crate) fn deallocate_anonymous_block(&mut self, anon_id: NodeId) {
+        // The block may already have been removed from the slab (e.g. a
+        // whitespace-only anonymous block dropped during construction).
+        if !self.nodes.contains_key(anon_id) {
+            return;
+        }
+
+        // Free any anonymous blocks that this block owns before removing it.
+        let nested = std::mem::take(&mut self.nodes[anon_id].anonymous_blocks);
+        for nested_id in nested {
+            self.deallocate_anonymous_block(nested_id);
+        }
+
+        self.nodes.remove(anon_id);
     }
 
     /// Whether the document has been mutated
@@ -877,6 +901,9 @@ impl BaseDocument {
             if let Some(node) = &mut node {
                 for &child in &node.children {
                     remove_pe_ignoring_parent(doc, child);
+                }
+                for &anon_id in &node.anonymous_blocks {
+                    doc.deallocate_anonymous_block(anon_id);
                 }
             }
             node

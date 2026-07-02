@@ -102,6 +102,12 @@ pub struct Node {
     pub layout_parent: Cell<Option<NodeId>>,
     /// A separate child list that includes anonymous collections of inline elements
     pub layout_children: RefCell<Option<ThinVec<NodeId>>>,
+    /// Anonymous block boxes created for this node during layout construction.
+    ///
+    /// Anonymous blocks live only in the slab (they are not part of the DOM
+    /// `children` list), so we track the ones we own here to be able to
+    /// deallocate them when this node is reconstructed.
+    pub anonymous_blocks: ThinVec<NodeId>,
     /// The same as layout_children, but sorted by z-index
     pub paint_children: RefCell<Option<ThinVec<NodeId>>>,
     pub stacking_context: Option<Box<HoistedPaintChildren>>,
@@ -294,6 +300,7 @@ impl Node {
             children: ThinVec::new(),
             layout_parent: Cell::new(None),
             layout_children: RefCell::new(None),
+            anonymous_blocks: ThinVec::new(),
             paint_children: RefCell::new(None),
             stacking_context: None,
 

@@ -62,6 +62,11 @@ pub(crate) enum ConstructionTaskResultData {
 pub(crate) struct LayoutChildren {
     pub(crate) children: ThinVec<NodeId>,
     pub(crate) anonymous_block_id: Option<NodeId>,
+    /// All anonymous blocks created while collecting these layout children.
+    ///
+    /// These are recorded on the container node so they can be deallocated the
+    /// next time it is reconstructed.
+    pub(crate) anonymous_blocks: ThinVec<NodeId>,
 }
 
 impl LayoutChildren {
@@ -97,6 +102,7 @@ impl LayoutChildren {
                 if let Some(pos) = self.children.iter().rposition(|id| *id == anon_id) {
                     self.children.remove(pos);
                 }
+                self.anonymous_blocks.retain(|id| *id != anon_id);
                 doc.nodes.remove(anon_id);
             }
         }
@@ -166,6 +172,7 @@ impl LayoutChildren {
 
         self.children.push(node_id);
         self.anonymous_block_id = Some(node_id);
+        self.anonymous_blocks.push(node_id);
     }
 }
 
