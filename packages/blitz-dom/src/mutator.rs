@@ -698,6 +698,10 @@ impl<'doc> DocumentMutator<'doc> {
                 doc.active_node_id = None;
             }
 
+            // Release any pointer captures held by this node.
+            // This prevents stale pointer_captures references.
+            doc.pointer_captures.retain(|_, target| *target != node_id);
+
             // Remove any snapshot for this node to prevent stale snapshot references
             // during style invalidation.
             if node.has_snapshot {

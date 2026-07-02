@@ -73,6 +73,15 @@ fn pointer_up(doc: &mut HtmlDocument, x: f32, y: f32) {
     doc.handle_ui_event(UiEvent::PointerUp(event));
 }
 
+fn pointer_cancel(doc: &mut HtmlDocument, x: f32, y: f32) {
+    let event = pointer_event(x, y, MouseEventButtons::None);
+    doc.handle_ui_event(UiEvent::PointerCancel(event));
+}
+
+fn capture_target(doc: &HtmlDocument) -> Option<usize> {
+    doc.inner().pointer_capture_target(BlitzPointerId::Mouse)
+}
+
 fn key_down(doc: &mut HtmlDocument, key: Key, code: Code) {
     doc.handle_ui_event(UiEvent::KeyDown(BlitzKeyEvent {
         key,
@@ -173,6 +182,60 @@ fn arrow_keys_update_value() {
 
     key_down(&mut doc, Key::End, Code::End);
     assert_eq!(slider_value(&doc).as_deref(), Some("100"));
+}
+
+#[test]
+fn drag_captures_pointer_and_works_outside_bounds() {
+    let mut doc = slider_doc("");
+    let slider_id = doc.query_selector("#slider").unwrap().expect("#slider");
+
+    // Pressing on the slider captures the pointer
+    pointer_down(&mut doc, 50.0, 8.0);
+    assert_eq!(capture_target(&doc), Some(slider_id));
+    assert_eq!(slider_value(&doc).as_deref(), Some("50"));
+
+    // Moves outside of the slider's bounds are retargeted at the slider while captured
+    pointer_move(&mut doc, 150.0, 150.0, MouseEventButtons::Primary);
+    assert_eq!(slider_value(&doc).as_deref(), Some("100"));
+
+    pointer_move(&mut doc, 29.0, 190.0, MouseEventButtons::Primary);
+    assert_eq!(slider_value(&doc).as_deref(), Some("25"));
+
+    // Releasing the pointer (outside of the slider's bounds) releases the capture
+    pointer_up(&mut doc, 29.0, 190.0);
+    assert_eq!(capture_target(&doc), None);
+
+    // Subsequent moves outside of the slider no longer update the value
+    pointer_move(&mut doc, 150.0, 150.0, MouseEventButtons::Primary);
+    assert_eq!(slider_value(&doc).as_deref(), Some("25"));
+}
+
+#[test]
+fn pointer_cancel_releases_capture() {
+    let mut doc = slider_doc("");
+    let slider_id = doc.query_selector("#slider").unwrap().expect("#slider");
+
+    pointer_down(&mut doc, 50.0, 8.0);
+    assert_eq!(capture_target(&doc), Some(slider_id));
+
+    pointer_cancel(&mut doc, 150.0, 150.0);
+    assert_eq!(capture_target(&doc), None);
+
+    // The drag has ended: moves over the slider with the button pressed don't update the value
+    pointer_move(&mut doc, 71.0, 8.0, MouseEventButtons::Primary);
+    assert_eq!(slider_value(&doc).as_deref(), Some("50"));
+}
+
+#[test]
+fn removing_capturing_node_releases_capture() {
+    let mut doc = slider_doc("");
+    let slider_id = doc.query_selector("#slider").unwrap().expect("#slider");
+
+    pointer_down(&mut doc, 50.0, 8.0);
+    assert_eq!(capture_target(&doc), Some(slider_id));
+
+    doc.inner_mut().mutate().remove_node(slider_id);
+    assert_eq!(capture_target(&doc), None);
 }
 
 #[test]

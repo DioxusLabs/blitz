@@ -168,6 +168,16 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
         }
 
         // Apply any changes that the widget queued while handling the event
+        for op in widget_ctx.queued_pointer_capture_ops.drain(..) {
+            match op {
+                crate::node::PointerCaptureOp::Set(pointer_id) => {
+                    doc.set_pointer_capture(pointer_id, target_node_id)
+                }
+                crate::node::PointerCaptureOp::Release(pointer_id) => {
+                    doc.release_pointer_capture(pointer_id)
+                }
+            }
+        }
         if !widget_ctx.queued_attributes.is_empty() {
             let mut mutator = doc.mutate();
             for (name, value) in widget_ctx.queued_attributes.drain(..) {

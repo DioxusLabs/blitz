@@ -136,13 +136,16 @@ impl Widget for RangeInputWidget {
         match event {
             UiEvent::PointerDown(evt) if evt.button == MouseEventButton::Main => {
                 self.dragging = true;
+                // Capture the pointer so that the drag continues to work even when
+                // the pointer moves outside of the widget's bounds
+                ctx.set_pointer_capture(evt.id);
                 self.set_value_from_position(evt.coords.page_x, ctx);
             }
             UiEvent::PointerMove(evt) if self.dragging => {
                 if evt.buttons.contains(MouseEventButtons::Primary) {
                     self.set_value_from_position(evt.coords.page_x, ctx);
                 } else {
-                    // The primary button was released outside of the widget
+                    // The primary button is no longer pressed
                     self.dragging = false;
                 }
             }

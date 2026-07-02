@@ -1,7 +1,7 @@
 use std::any::Any;
 
 use anyrender::ResourceId;
-use blitz_traits::events::UiEvent;
+use blitz_traits::events::{BlitzPointerId, UiEvent};
 use markup5ever::QualName;
 pub use style::properties::ComputedValues as ComputedStyles;
 // use accesskit::Node as AccessKitNode;
@@ -72,6 +72,12 @@ impl anyrender::RenderContext for ProxyRenderContext<'_, '_> {
     }
 }
 
+/// A pointer capture change queued by a widget while handling an event
+pub(crate) enum PointerCaptureOp {
+    Set(BlitzPointerId),
+    Release(BlitzPointerId),
+}
+
 /// Context passed to [`Widget::handle_event`].
 ///
 /// Provides the widget with information about its environment (such as the size of its box),
@@ -88,6 +94,8 @@ pub struct WidgetEventContext {
     pub(crate) queued_attributes: Vec<(QualName, String)>,
     /// Values for DOM "input" events that the widget wants to dispatch from its element
     pub(crate) queued_input_events: Vec<String>,
+    /// Pointer capture changes that the widget wants to make
+    pub(crate) queued_pointer_capture_ops: Vec<PointerCaptureOp>,
     /// Whether the widget has requested a redraw
     pub(crate) redraw_requested: bool,
 }
@@ -100,6 +108,7 @@ impl WidgetEventContext {
             scale,
             queued_attributes: Vec::new(),
             queued_input_events: Vec::new(),
+            queued_pointer_capture_ops: Vec::new(),
             redraw_requested: false,
         }
     }
@@ -112,6 +121,21 @@ impl WidgetEventContext {
     /// Dispatch a DOM "input" event with the given value, targeting the widget's element
     pub fn dispatch_input_event(&mut self, value: String) {
         self.queued_input_events.push(value);
+    }
+
+    /// Capture the given pointer so that the widget's element continues to receive pointer
+    /// events (e.g. `PointerMove`) for that pointer, even when the pointer is outside of the
+    /// element's bounds. The capture is automatically released when the pointer is released.
+    pub fn set_pointer_capture(&mut self, pointer_id: BlitzPointerId) {
+        self.queued_pointer_capture_ops
+            .push(PointerCaptureOp::Set(pointer_id));
+    }
+
+    /// Release a pointer capture previously set with
+    /// [`set_pointer_capture`](Self::set_pointer_capture)
+    pub fn release_pointer_capture(&mut self, pointer_id: BlitzPointerId) {
+        self.queued_pointer_capture_ops
+            .push(PointerCaptureOp::Release(pointer_id));
     }
 
     /// Request that the document be redrawn
@@ -149,8 +173,13 @@ pub trait Widget {
     ///
     /// Pointer event coordinates are relative to the widget's border box.
     /// The `ctx` parameter provides the size of the widget's box and allows the widget
-    /// to queue changes (attribute updates, DOM input events, redraw requests) which
-    /// are applied by the document once event handling completes.
+    /// to queue changes (attribute updates, DOM input events, pointer captures, redraw
+    /// requests) which are applied by the document once event handling completes.
+    ///
+    /// By default pointer events are only received while the pointer is within the widget's
+    /// bounds. Use [`WidgetEventContext::set_pointer_capture`] to continue receiving
+    /// `PointerMove`/`PointerUp` events for a pointer when it moves outside of the widget's
+    /// bounds (e.g. for implementing drag interactions).
     fn handle_event(&mut self, event: &UiEvent, ctx: &mut WidgetEventContext) {
         let _ = (event, ctx);
     }
