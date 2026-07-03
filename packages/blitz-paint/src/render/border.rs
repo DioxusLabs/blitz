@@ -8,17 +8,11 @@ use style::{
     values::computed::{BorderStyle, OutlineStyle},
 };
 
-use crate::{color::ToColorColor as _, kurbo_css::Edge, render::ElementCx};
-
-/// The WCAG contrast ratio (>= 1) between two colours, matching Chrome's
-/// `color_utils::GetContrastRatio`.
-fn contrast_ratio(a: Color, b: Color) -> f32 {
-    // `relative_luminance` is defined on `OpaqueColor`; discard the alpha (which
-    // it ignores anyway) with `split`.
-    let la = a.split().0.relative_luminance() + 0.05;
-    let lb = b.split().0.relative_luminance() + 0.05;
-    if la > lb { la / lb } else { lb / la }
-}
+use crate::{
+    color::{ToColorColor as _, contrast_ratio},
+    kurbo_css::Edge,
+    render::ElementCx,
+};
 
 /// A darker version of a colour (mirrors WebKit/Blink's `Color::Dark`): the
 /// brightest channel is reduced by a fixed amount and the others scaled to match,

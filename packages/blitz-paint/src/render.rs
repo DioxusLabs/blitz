@@ -628,65 +628,6 @@ impl ElementCx<'_, '_> {
             )
         };
 
-        /// WCAG relative luminance of an sRGB color (alpha ignored).
-        fn relative_luminance(color: Color) -> f32 {
-            fn lin(c: f32) -> f32 {
-                if c <= 0.04045 {
-                    c / 12.92
-                } else {
-                    ((c + 0.055) / 1.055).powf(2.4)
-                }
-            }
-            let [r, g, b, _] = color.components;
-            0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
-        }
-
-        /// WCAG contrast ratio between two relative luminances.
-        fn contrast_ratio(l1: f32, l2: f32) -> f32 {
-            let (hi, lo) = if l1 > l2 { (l1, l2) } else { (l2, l1) };
-            (hi + 0.05) / (lo + 0.05)
-        }
-
-        /// Per-channel blend towards black (`pole = 0.0`) or white (`1.0`),
-        /// preserving alpha.
-        fn mix_towards(color: Color, pole: f32, t: f32) -> Color {
-            let [r, g, b, a] = color.components;
-            Color::new([
-                r + (pole - r) * t,
-                g + (pole - g) * t,
-                b + (pole - b) * t,
-                a,
-            ])
-        }
-
-        /// Hover/active state of an author-specified thumb color: blend
-        /// towards black or white (whichever has contrast headroom) just far
-        /// enough to reach `target` contrast with the rest state, so feedback
-        /// stays visible for any color. Transparent passes through unchanged.
-        fn blend_for_contrast(color: Color, target: f32) -> Color {
-            if color.components[3] == 0.0 {
-                return color;
-            }
-            let base_lum = relative_luminance(color);
-            let pole = if contrast_ratio(base_lum, 1.0) >= contrast_ratio(base_lum, 0.0) {
-                1.0
-            } else {
-                0.0
-            };
-            // Contrast grows monotonically towards the pole: bisect the blend
-            // fraction to land just past the target ratio.
-            let (mut lo, mut hi) = (0.0_f32, 1.0_f32);
-            for _ in 0..8 {
-                let mid = (lo + hi) / 2.0;
-                let lum = relative_luminance(mix_towards(color, pole, mid));
-                if contrast_ratio(base_lum, lum) < target {
-                    lo = mid;
-                } else {
-                    hi = mid;
-                }
-            }
-            mix_towards(color, pole, hi)
-        }
         // Chromium's hovered/pressed scrollbar contrast ratios.
         const HOVER_CONTRAST: f32 = 1.8;
         const ACTIVE_CONTRAST: f32 = 1.3;
@@ -721,8 +662,8 @@ impl ElementCx<'_, '_> {
             let is_active = drag_target == Some((node_id, horizontal));
             let is_hovered = hovered_thumb == Some((node_id, horizontal));
             let color = match custom_thumb {
-                Some(base) if is_active => blend_for_contrast(base, ACTIVE_CONTRAST),
-                Some(base) if is_hovered => blend_for_contrast(base, HOVER_CONTRAST),
+                Some(base) if is_active => crate::color::blend_for_contrast(base, ACTIVE_CONTRAST),
+                Some(base) if is_hovered => crate::color::blend_for_contrast(base, HOVER_CONTRAST),
                 Some(base) => base,
                 None if is_active => thumb_active,
                 None if is_hovered => thumb_hover,
