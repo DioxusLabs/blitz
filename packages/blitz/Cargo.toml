@@ -15,6 +15,7 @@ default = ["net", "accessibility", "tracing"]
 net = ["dep:tokio", "dep:url", "dep:blitz-net"]
 accessibility = ["blitz-shell/accessibility"]
 tracing = ["dep:tracing", "blitz-shell/tracing", "blitz-html/tracing", "blitz-net/tracing"]
+scrollbars = ["blitz-paint/scrollbars"]
 
 [dependencies]
 # Blitz dependencies
