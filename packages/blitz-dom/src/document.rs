@@ -18,7 +18,9 @@ use crate::{
     TextNodeData,
 };
 use blitz_traits::devtools::DevtoolSettings;
-use blitz_traits::events::{BlitzScrollEvent, DomEvent, DomEventData, HitResult, UiEvent};
+use blitz_traits::events::{
+    BlitzScrollEvent, DomEvent, DomEventData, HitResult, PointerCoords, UiEvent,
+};
 use blitz_traits::navigation::{DummyNavigationProvider, NavigationProvider};
 use blitz_traits::net::{AbortSignal, DummyNetProvider, NetProvider, Request};
 use blitz_traits::shell::{ColorScheme, DummyShellProvider, ShellProvider, Viewport};
@@ -177,6 +179,29 @@ pub enum DocumentEvent {
     ResourceLoad(ResourceLoadResponse),
 }
 
+/// State for render-level "pinch to zoom" zooming (the "visual viewport").
+///
+/// Pinch zoom is separate from the [`Viewport`]'s `zoom` (page zoom): it does not affect
+/// style/layout (the viewport size exposed to style/layout is unchanged). Instead the
+/// laid-out page is rendered scaled up by `scale`, cropped to a visual viewport whose
+/// top-left corner is at `offset` (in CSS pixels) within the layout viewport.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PinchZoomState {
+    /// The pinch-zoom scale factor (`1.0` = not zoomed)
+    pub scale: f64,
+    /// Offset of the zoomed (visual) viewport within the layout viewport in CSS pixels
+    pub offset: crate::Point<f64>,
+}
+
+impl Default for PinchZoomState {
+    fn default() -> Self {
+        Self {
+            scale: 1.0,
+            offset: crate::Point::ZERO,
+        }
+    }
+}
+
 pub struct BaseDocument {
     /// ID of the document
     id: usize,
@@ -190,6 +215,10 @@ pub struct BaseDocument {
     pub(crate) viewport: Viewport,
     // Scroll within our viewport
     pub(crate) viewport_scroll: crate::Point<f64>,
+    /// Render-level pinch-zoom ("visual viewport") state
+    pub(crate) pinch_zoom: PinchZoomState,
+    /// Whether pinch-to-zoom gestures may zoom this document
+    pub(crate) pinch_zoom_enabled: bool,
     /// CSS media type used to evaluate `@media` rules.
     pub(crate) media_type: MediaType,
     /// Strategy for Stylo's style traversal during `resolve`.
@@ -337,10 +366,12 @@ pub(crate) fn make_device(
 }
 
 impl BaseDocument {
-    /// Minimum viewport zoom level for user-driven zooming (e.g. pinch-to-zoom)
+    /// Minimum viewport zoom level for user-driven page zooming (e.g. Ctrl/Cmd+scroll)
     pub const MIN_ZOOM: f32 = 0.25;
-    /// Maximum viewport zoom level for user-driven zooming (e.g. pinch-to-zoom)
+    /// Maximum viewport zoom level for user-driven page zooming (e.g. Ctrl/Cmd+scroll)
     pub const MAX_ZOOM: f32 = 5.0;
+    /// Maximum pinch-zoom (visual viewport) scale factor
+    pub const MAX_PINCH_ZOOM: f64 = 5.0;
 
     /// Create a new (empty) [`BaseDocument`] with the specified configuration
     pub fn new(config: DocumentConfig) -> Self {
@@ -427,6 +458,8 @@ impl BaseDocument {
             incremental_layout: cfg!(feature = "incremental"),
             devtool_settings: DevtoolSettings::default(),
             viewport_scroll: crate::Point::ZERO,
+            pinch_zoom: PinchZoomState::default(),
+            pinch_zoom_enabled: config.pinch_zoom_enabled.unwrap_or(true),
             url: base_url,
             ua_stylesheets: HashMap::new(),
             nodes_to_stylesheet: BTreeMap::new(),
@@ -1454,8 +1487,12 @@ impl BaseDocument {
         self.set_viewport(viewport);
     }
 
-    /// Zoom the viewport by the multiplicative `factor` (e.g. from a pinch-to-zoom gesture),
-    /// clamping the resulting zoom level to the [`Self::MIN_ZOOM`]..=[`Self::MAX_ZOOM`] range.
+    /// Zoom the viewport by the multiplicative `factor` (e.g. from a Ctrl/Cmd+scroll
+    /// gesture), clamping the resulting zoom level to the
+    /// [`Self::MIN_ZOOM`]..=[`Self::MAX_ZOOM`] range.
+    ///
+    /// This adjusts the page zoom (which affects style/layout). For render-level zooming
+    /// which does not affect layout see [`Self::pinch_zoom_by`].
     ///
     /// The viewport scroll position is adjusted such that the content under the
     /// `(client_x, client_y)` anchor point (in CSS pixels relative to the viewport origin)
@@ -1482,6 +1519,170 @@ impl BaseDocument {
         let mut viewport = self.viewport.clone();
         viewport.set_zoom(new_zoom);
         self.set_viewport(viewport);
+    }
+
+    /// Get the current pinch-zoom (visual viewport) state
+    pub fn pinch_zoom(&self) -> PinchZoomState {
+        self.pinch_zoom
+    }
+
+    /// Whether pinch-to-zoom gestures may zoom this document (`true` by default).
+    /// Pinch-to-zoom still applies to subdocuments when disabled.
+    pub fn pinch_zoom_enabled(&self) -> bool {
+        self.pinch_zoom_enabled
+    }
+
+    /// Enable or disable pinch-to-zoom for this document. Disabling resets any current
+    /// pinch-zoom. Pinch-to-zoom still applies to subdocuments when disabled.
+    pub fn set_pinch_zoom_enabled(&mut self, enabled: bool) {
+        self.pinch_zoom_enabled = enabled;
+        if !enabled {
+            self.reset_pinch_zoom();
+        }
+    }
+
+    /// Reset pinch-zoom to its unzoomed state
+    pub fn reset_pinch_zoom(&mut self) {
+        if self.pinch_zoom != PinchZoomState::default() {
+            self.pinch_zoom = PinchZoomState::default();
+            self.shell_provider.request_redraw();
+        }
+    }
+
+    /// Adjust the pinch-zoom (visual viewport) scale by the multiplicative `factor`
+    /// (e.g. from a pinch-to-zoom gesture), clamping the resulting scale to the
+    /// `1.0..=`[`Self::MAX_PINCH_ZOOM`] range.
+    ///
+    /// Pinch zoom does not affect style/layout: the laid-out page is rendered scaled and
+    /// cropped instead (see [`PinchZoomState`]).
+    ///
+    /// `(client_x, client_y)` is the anchor point of the zoom gesture in visual viewport
+    /// coordinates (CSS pixels relative to the viewport origin). The pinch-zoom offset is
+    /// adjusted such that the content under the anchor point remains stationary, with any
+    /// offset overflow beyond the layout viewport converted into document scroll.
+    ///
+    /// If a subdocument is hovered then it is zoomed instead of this document. A hovered
+    /// document for which pinch-zoom is disabled (see [`Self::set_pinch_zoom_enabled`])
+    /// passes the gesture on to its nearest enabled ancestor document.
+    ///
+    /// Returns `true` if the gesture was accepted by this document or a subdocument.
+    pub fn pinch_zoom_by(&mut self, factor: f64, client_x: f32, client_y: f32) -> bool {
+        if !(factor.is_finite() && factor > 0.0) {
+            return false;
+        }
+
+        // Map the anchor point from visual viewport to layout viewport coordinates
+        let PinchZoomState { scale, offset } = self.pinch_zoom;
+        let anchor_x = offset.x + client_x as f64 / scale;
+        let anchor_y = offset.y + client_y as f64 / scale;
+
+        // If a subdocument is hovered then it should be zoomed instead of this document
+        let mut maybe_node_id = self.hover_node_id;
+        let subdoc_node_id = loop {
+            match maybe_node_id {
+                Some(node_id) if self.nodes[node_id].subdoc().is_some() => break Some(node_id),
+                Some(node_id) => maybe_node_id = self.nodes[node_id].parent,
+                None => break None,
+            }
+        };
+        if let Some(node_id) = subdoc_node_id
+            && let Some(rect) = self.get_client_bounding_rect(node_id)
+        {
+            let sub_x = (anchor_x - rect.x) as f32;
+            let sub_y = (anchor_y - rect.y) as f32;
+            let mut sub_doc = self.nodes[node_id].subdoc_mut().unwrap().inner_mut();
+            if sub_doc.pinch_zoom_by(factor, sub_x, sub_y) {
+                return true;
+            }
+        }
+
+        if !self.pinch_zoom_enabled {
+            return false;
+        }
+
+        let new_scale = (scale * factor).clamp(1.0, Self::MAX_PINCH_ZOOM);
+        if new_scale != scale {
+            self.pinch_zoom.scale = new_scale;
+            // Adjust the offset such that the content under the anchor point stays put
+            let target_x = anchor_x - (anchor_x - offset.x) * (scale / new_scale);
+            let target_y = anchor_y - (anchor_y - offset.y) * (scale / new_scale);
+            self.set_pinch_zoom_offset(target_x, target_y);
+            self.shell_provider.request_redraw();
+        }
+
+        true
+    }
+
+    /// Set the pinch-zoom offset, clamped such that the visual viewport stays within the
+    /// layout viewport. Any remainder which the offset could not absorb is converted into
+    /// document scroll.
+    fn set_pinch_zoom_offset(&mut self, x: f64, y: f64) {
+        let (max_x, max_y) = self.max_pinch_zoom_offset();
+        let clamped_x = x.clamp(0.0, max_x);
+        let clamped_y = y.clamp(0.0, max_y);
+        self.pinch_zoom.offset = crate::Point {
+            x: clamped_x,
+            y: clamped_y,
+        };
+
+        let (rem_x, rem_y) = (x - clamped_x, y - clamped_y);
+        if rem_x != 0.0 || rem_y != 0.0 {
+            self.scroll_viewport_by(-rem_x, -rem_y);
+        }
+    }
+
+    /// The maximum valid pinch-zoom offset given the current pinch-zoom scale (the offset
+    /// at which the visual viewport is flush with the bottom-right corner of the layout
+    /// viewport)
+    fn max_pinch_zoom_offset(&self) -> (f64, f64) {
+        let (width, height) = self.viewport.window_size;
+        let viewport_scale = self.viewport.scale_f64();
+        let fraction = 1.0 - 1.0 / self.pinch_zoom.scale;
+        (
+            width as f64 / viewport_scale * fraction,
+            height as f64 / viewport_scale * fraction,
+        )
+    }
+
+    /// Pan the pinch-zoom (visual) viewport within the layout viewport by the given delta,
+    /// using the same sign convention as [`Self::scroll_viewport_by`]. Returns the
+    /// unconsumed portion of the delta and whether the offset changed.
+    fn pan_pinch_zoom_by(&mut self, x: f64, y: f64) -> (f64, f64, bool) {
+        if self.pinch_zoom.scale == 1.0 {
+            return (x, y, false);
+        }
+
+        let (max_x, max_y) = self.max_pinch_zoom_offset();
+        let old = self.pinch_zoom.offset;
+        let new = crate::Point {
+            x: (old.x - x).clamp(0.0, max_x),
+            y: (old.y - y).clamp(0.0, max_y),
+        };
+        self.pinch_zoom.offset = new;
+
+        (x - (old.x - new.x), y - (old.y - new.y), new != old)
+    }
+
+    /// The scroll position of the visual viewport within the document, i.e. the document's
+    /// scroll position plus the pinch-zoom offset
+    pub fn visual_viewport_scroll(&self) -> crate::Point<f64> {
+        crate::Point {
+            x: self.viewport_scroll.x + self.pinch_zoom.offset.x,
+            y: self.viewport_scroll.y + self.pinch_zoom.offset.y,
+        }
+    }
+
+    /// Map pointer coordinates from the visual (pinch-zoomed) viewport to the layout
+    /// viewport, in place
+    pub fn visual_to_layout_coords(&self, coords: &mut PointerCoords) {
+        let PinchZoomState { scale, offset } = self.pinch_zoom;
+        if scale == 1.0 {
+            return;
+        }
+        coords.client_x = (offset.x + coords.client_x as f64 / scale) as f32;
+        coords.client_y = (offset.y + coords.client_y as f64 / scale) as f32;
+        coords.page_x = coords.client_x + self.viewport_scroll.x as f32;
+        coords.page_y = coords.client_y + self.viewport_scroll.y as f32;
     }
 
     pub fn get_viewport(&self) -> Viewport {
@@ -1781,6 +1982,10 @@ impl BaseDocument {
 
     /// Scroll the viewport by the given values
     pub fn scroll_viewport_by_has_changed(&mut self, x: f64, y: f64) -> bool {
+        // When pinch-zoomed, pan the visual viewport within the layout viewport first,
+        // and only scroll the document by the delta which the pan could not consume.
+        let (x, y, pan_has_changed) = self.pan_pinch_zoom_by(x, y);
+
         let content_size = self.root_element().final_layout.size;
         let new_scroll = (self.viewport_scroll.x - x, self.viewport_scroll.y - y);
         let window_width = self.viewport.window_size.0 as f64 / self.viewport.scale() as f64;
@@ -1796,7 +2001,7 @@ impl BaseDocument {
             f64::min(new_scroll.1, content_size.height as f64 - window_height),
         );
 
-        self.viewport_scroll != initial
+        pan_has_changed | (self.viewport_scroll != initial)
     }
 
     pub fn scroll_by(

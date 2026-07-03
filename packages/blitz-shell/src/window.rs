@@ -822,11 +822,11 @@ impl<Rend: WindowRenderer> View<Rend> {
                 // `delta` is the relative magnification change since the last event:
                 // positive values zoom in, negative values zoom out.
                 if delta.is_finite() && delta != 0.0 {
-                    let factor = (1.0 + delta) as f32;
+                    let factor = 1.0 + delta;
                     let coords = self.pointer_coords(self.pointer_pos);
                     self.doc
                         .inner_mut()
-                        .zoom_by_factor_at(factor, coords.client_x, coords.client_y);
+                        .pinch_zoom_by(factor, coords.client_x, coords.client_y);
                 }
             },
             WindowEvent::PanGesture { .. } => {},

@@ -14,7 +14,7 @@ pub(crate) fn render_debug_overlay(
     initial_x: f64,
     initial_y: f64,
 ) {
-    let viewport_scroll = dom.as_ref().viewport_scroll();
+    let viewport_scroll = dom.as_ref().visual_viewport_scroll();
     let mut node = &dom.as_ref().tree()[node_id];
 
     let taffy::Layout {

@@ -79,6 +79,11 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
 
         let layer_manager = LayerManager::default();
 
+        // Pinch zoom (the "visual viewport") is applied at render time: the page is laid
+        // out unzoomed, and painted at an increased scale with the pinch-zoom offset
+        // (composed with the viewport scroll in `paint_scene`) selecting the visible crop.
+        let scale = scale * dom.pinch_zoom().scale;
+
         Self {
             dom,
             scale,
@@ -104,7 +109,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
 
         // Simply render the document (the root element (note that this is not the same as the root node)))
         // scene.reset();
-        let viewport_scroll = self.dom.as_ref().viewport_scroll();
+        let viewport_scroll = self.dom.as_ref().visual_viewport_scroll();
 
         let root_element = self.dom.as_ref().root_element();
         let root_id = root_element.id;
