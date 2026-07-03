@@ -48,6 +48,10 @@ pub struct BlitzDomPainter<'dom, 'a> {
     /// Input parameters (read only) for generating the Scene
     pub(crate) dom: &'dom BaseDocument,
     pub(crate) scale: f64,
+    /// The accumulated pinch-zoom scale factor included in `scale` over and above the
+    /// document's own viewport scale (i.e. this document's pinch-zoom scale multiplied
+    /// by that of any ancestor documents)
+    pub(crate) pinch_zoom_scale: f64,
     pub(crate) width: u32,
     pub(crate) height: u32,
     pub(crate) initial_x: f64,
@@ -82,11 +86,17 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         // Pinch zoom (the "visual viewport") is applied at render time: the page is laid
         // out unzoomed, and painted at an increased scale with the pinch-zoom offset
         // (composed with the viewport scroll in `paint_scene`) selecting the visible crop.
+        //
+        // For subdocuments the incoming `scale` already includes the pinch-zoom scale of
+        // ancestor documents, so the accumulated pinch-zoom factor is recovered by
+        // dividing the final scale by the document's viewport scale.
         let scale = scale * dom.pinch_zoom().scale;
+        let pinch_zoom_scale = scale / dom.viewport().scale_f64();
 
         Self {
             dom,
             scale,
+            pinch_zoom_scale,
             width,
             height,
             initial_x,
@@ -271,8 +281,12 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             height: (size.height as f64 - scaled_pb.top - scaled_pb.bottom) * self.scale,
         };
 
-        // Don't render things that are out of view
-        let overflow = node.scrollable_overflow;
+        // Don't render things that are out of view. `scrollable_overflow` is computed at
+        // the viewport scale, which does not include pinch zoom, so scale it up to match
+        // the pinch-zoomed screen space that culling operates in.
+        let overflow = node
+            .scrollable_overflow
+            .scale_from_origin(self.pinch_zoom_scale);
         let transform = parent_style_transform
             * Affine::translate(box_position)
             * node.transform.unwrap_or_default();
