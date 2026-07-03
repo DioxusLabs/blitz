@@ -694,6 +694,17 @@ pub(crate) fn handle_wheel<F: FnMut(DomEvent)>(
         BlitzWheelDelta::Pixels(x, y) => (x, y),
     };
 
+    // Ctrl+wheel (Cmd+wheel on macOS) zooms the viewport rather than scrolling it.
+    // Touchpad pinch gestures are typically delivered as Ctrl+wheel events on
+    // Windows and Linux, so this also implements pinch-to-zoom on those platforms.
+    if event.mods.intersects(Modifiers::CONTROL | Modifiers::META) {
+        // Map the scroll delta to a multiplicative zoom factor such that
+        // scrolling up (positive delta) zooms in and 100px of scroll doubles/halves the zoom.
+        let factor = (scroll_y / 100.0).exp2() as f32;
+        doc.zoom_by_factor_at(factor, event.client_x(), event.client_y());
+        return;
+    }
+
     let has_changed = doc.scroll_by(
         doc.get_hover_node_id(),
         scroll_x,

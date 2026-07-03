@@ -337,6 +337,11 @@ pub(crate) fn make_device(
 }
 
 impl BaseDocument {
+    /// Minimum viewport zoom level for user-driven zooming (e.g. pinch-to-zoom)
+    pub const MIN_ZOOM: f32 = 0.25;
+    /// Maximum viewport zoom level for user-driven zooming (e.g. pinch-to-zoom)
+    pub const MAX_ZOOM: f32 = 5.0;
+
     /// Create a new (empty) [`BaseDocument`] with the specified configuration
     pub fn new(config: DocumentConfig) -> Self {
         static ID_GENERATOR: AtomicUsize = AtomicUsize::new(1);
@@ -1438,13 +1443,45 @@ impl BaseDocument {
     }
 
     pub fn zoom_by(&mut self, increment: f32) {
-        *self.viewport.zoom_mut() += increment;
-        self.set_viewport(self.viewport.clone());
+        let mut viewport = self.viewport.clone();
+        *viewport.zoom_mut() += increment;
+        self.set_viewport(viewport);
     }
 
     pub fn zoom_to(&mut self, zoom: f32) {
-        *self.viewport.zoom_mut() = zoom;
-        self.set_viewport(self.viewport.clone());
+        let mut viewport = self.viewport.clone();
+        *viewport.zoom_mut() = zoom;
+        self.set_viewport(viewport);
+    }
+
+    /// Zoom the viewport by the multiplicative `factor` (e.g. from a pinch-to-zoom gesture),
+    /// clamping the resulting zoom level to the [`Self::MIN_ZOOM`]..=[`Self::MAX_ZOOM`] range.
+    ///
+    /// The viewport scroll position is adjusted such that the content under the
+    /// `(client_x, client_y)` anchor point (in CSS pixels relative to the viewport origin)
+    /// remains stationary where possible.
+    pub fn zoom_by_factor_at(&mut self, factor: f32, client_x: f32, client_y: f32) {
+        if !factor.is_finite() || factor <= 0.0 {
+            return;
+        }
+
+        let old_zoom = self.viewport.zoom();
+        let new_zoom = (old_zoom * factor).clamp(Self::MIN_ZOOM, Self::MAX_ZOOM);
+        if new_zoom == old_zoom {
+            return;
+        }
+
+        // The anchor point is at `viewport_scroll + client` in the old (CSS pixel) coordinate
+        // space. CSS pixels shrink/grow by a factor of `new_zoom / old_zoom`, so the anchor's
+        // viewport-relative position becomes `client * (old_zoom / new_zoom)` after the zoom.
+        // Adjust the scroll position so the anchor stays put.
+        let zoom_ratio = (old_zoom / new_zoom) as f64;
+        self.viewport_scroll.x += client_x as f64 * (1.0 - zoom_ratio);
+        self.viewport_scroll.y += client_y as f64 * (1.0 - zoom_ratio);
+
+        let mut viewport = self.viewport.clone();
+        viewport.set_zoom(new_zoom);
+        self.set_viewport(viewport);
     }
 
     pub fn get_viewport(&self) -> Viewport {
