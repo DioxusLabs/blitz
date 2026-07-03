@@ -1602,15 +1602,12 @@ impl BaseDocument {
         let anchor_x = offset.x + client_x as f64 / scale;
         let anchor_y = offset.y + client_y as f64 / scale;
 
-        // If a subdocument is hovered then it should be zoomed instead of this document
-        let mut maybe_node_id = self.hover_node_id;
-        let subdoc_node_id = loop {
-            match maybe_node_id {
-                Some(node_id) if self.nodes[node_id].subdoc().is_some() => break Some(node_id),
-                Some(node_id) => maybe_node_id = self.nodes[node_id].parent,
-                None => break None,
-            }
-        };
+        // If a subdocument is hovered then it should be zoomed instead of this document.
+        // Subdocument nodes do not have children, so a hovered subdocument is always the
+        // hover node itself.
+        let subdoc_node_id = self
+            .hover_node_id
+            .filter(|&node_id| self.nodes[node_id].subdoc().is_some());
         if let Some(node_id) = subdoc_node_id
             && let Some(rect) = self.get_client_bounding_rect(node_id)
         {
