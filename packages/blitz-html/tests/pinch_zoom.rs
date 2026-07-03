@@ -22,9 +22,27 @@ fn make_doc(html: &str, width: u32, height: u32) -> HtmlDocument {
         DocumentConfig {
             viewport: Some(Viewport::new(width, height, 1.0, ColorScheme::Light)),
             html_parser_provider: Some(Arc::new(HtmlProvider) as _),
+            pinch_zoom_enabled: Some(true),
             ..Default::default()
         },
     )
+}
+
+#[test]
+fn pinch_zoom_is_disabled_by_default() {
+    let mut doc = HtmlDocument::from_html(
+        HTML,
+        DocumentConfig {
+            viewport: Some(Viewport::new(800, 600, 1.0, ColorScheme::Light)),
+            html_parser_provider: Some(Arc::new(HtmlProvider) as _),
+            ..Default::default()
+        },
+    );
+    doc.resolve(0.0);
+
+    assert!(!doc.pinch_zoom_enabled());
+    assert!(!doc.pinch_zoom_by(2.0, 0.0, 0.0));
+    assert_eq!(doc.pinch_zoom().scale, 1.0);
 }
 
 #[test]

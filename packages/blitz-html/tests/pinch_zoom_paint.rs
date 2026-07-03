@@ -18,6 +18,7 @@ fn zoomed_content_extending_into_view_is_not_culled() {
         DocumentConfig {
             viewport: Some(Viewport::new(100, 100, 1.0, ColorScheme::Light)),
             html_parser_provider: Some(Arc::new(HtmlProvider) as _),
+            pinch_zoom_enabled: Some(true),
             ..Default::default()
         },
     );

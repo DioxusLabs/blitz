@@ -462,7 +462,7 @@ impl BaseDocument {
             devtool_settings: DevtoolSettings::default(),
             viewport_scroll: crate::Point::ZERO,
             pinch_zoom: PinchZoomState::default(),
-            pinch_zoom_enabled: config.pinch_zoom_enabled.unwrap_or(true),
+            pinch_zoom_enabled: config.pinch_zoom_enabled.unwrap_or(false),
             parent_pinch_zoom_scale: 1.0,
             url: base_url,
             ua_stylesheets: HashMap::new(),
@@ -1548,7 +1548,7 @@ impl BaseDocument {
         }
     }
 
-    /// Whether pinch-to-zoom gestures may zoom this document (`true` by default).
+    /// Whether pinch-to-zoom gestures may zoom this document (`false` by default).
     /// Pinch-to-zoom still applies to subdocuments when disabled.
     pub fn pinch_zoom_enabled(&self) -> bool {
         self.pinch_zoom_enabled
