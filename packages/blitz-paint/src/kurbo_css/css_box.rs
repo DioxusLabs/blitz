@@ -239,7 +239,10 @@ impl CssBox {
     /// path (see [`Self::is_uniform_corner_border`]); this catches the true ellipses
     /// (unequal axes) that a rounded rect can't represent.
     pub fn is_elliptical_border(&self) -> bool {
-        let (rx, ry) = (self.border_box.width() / 2.0, self.border_box.height() / 2.0);
+        let (rx, ry) = (
+            self.border_box.width() / 2.0,
+            self.border_box.height() / 2.0,
+        );
         let is_half = |c: Vec2| (c.x - rx).abs() < 0.01 && (c.y - ry).abs() < 0.01;
         let radii = &self.border_radii;
         is_half(radii.top_left)
