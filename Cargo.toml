@@ -295,3 +295,9 @@ tracing-subscriber = "0.3"
 # [patch."https://github.com/linebender/parley"]
 # parley = { path = "../parley/parley" }
 # fontique = { path = "../parley/fontique" }
+# TEMPORARY (draft only — drop before merge): stylo 0.18.0 with the
+# css-scrollbars-1 properties enabled for the servo engine behind the
+# layout.unimplemented pref (which blitz sets), mirroring servo/stylo#413.
+# Replace with a plain version bump once a release ships it.
+[patch.crates-io]
+stylo = { git = "https://github.com/UMCEKO/stylo", rev = "b620178ec7dbe1bc4245610ced415360caacd5ce" }
