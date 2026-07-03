@@ -1159,10 +1159,11 @@ impl Node {
     /// (unscaled) CSS px relative to the node's border-box origin. `None`
     /// if there is no scrollable overflow in that axis.
     pub fn scrollbar_thumb(&self, horizontal: bool) -> Option<KurboRect> {
-        const THUMB_THICKNESS: f64 = 6.0;
-        const THIN_THUMB_THICKNESS: f64 = 4.0;
+        // Matches Chromium's overlay thumb in its interactive state.
+        const THUMB_THICKNESS: f64 = 10.0;
+        const THIN_THUMB_THICKNESS: f64 = 6.0;
         const THUMB_MARGIN: f64 = 2.0;
-        const MIN_THUMB_LENGTH: f64 = 16.0;
+        const MIN_THUMB_LENGTH: f64 = 32.0;
 
         let layout = &self.final_layout;
         let scroll_extent = if horizontal {

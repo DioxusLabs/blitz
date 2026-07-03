@@ -166,10 +166,10 @@ fn author_styled_scrollbar_still_hides_at_rest() {
 #[test]
 fn default_thumb_has_a_contrast_stroke() {
     // Default thumbs paint as fill + a thin contrast stroke. The thumb spans
-    // x in [92, 98]: x=92 lands on the stroke, x=95 on the fill.
+    // x in [88, 98]: x=88 lands on the stroke, x=93 on the fill.
     let html = scroller("auto", 1000);
-    let edge = pixel(&html, (0.0, 50.0), 92, 12);
-    let fill = pixel(&html, (0.0, 50.0), 95, 12);
+    let edge = pixel(&html, (0.0, 50.0), 88, 12);
+    let fill = pixel(&html, (0.0, 50.0), 93, 12);
     assert_ne!(edge, fill, "thumb edge should carry a contrast stroke");
 }
 

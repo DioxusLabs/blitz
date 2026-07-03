@@ -72,14 +72,14 @@ fn dragging_the_thumb_scrolls_the_container() {
     let mut doc = scroller_doc();
     let scroller = doc.query_selector("#scroller").unwrap().unwrap();
 
-    // Thumb starts at the top right (16px long, 6px wide, 2px margin).
-    drag(&mut doc, (97.0, 8.0), (97.0, 50.0));
+    // Thumb starts at the top right (32px long, 10px wide, 2px margin).
+    drag(&mut doc, (97.0, 8.0), (97.0, 42.0));
 
     let offset = doc.get_node(scroller).unwrap().scroll_offset.y;
-    // 42 thumb px * (900 scroll range / 84 track play) = 450 content px
+    // 34 thumb px * (900 scroll range / 68 track play) = 450 content px
     assert!(
         (offset - 450.0).abs() < 1.0,
-        "expected scroll offset ~450 after dragging the thumb 42px, got {offset}"
+        "expected scroll offset ~450 after dragging the thumb 34px, got {offset}"
     );
 }
 
