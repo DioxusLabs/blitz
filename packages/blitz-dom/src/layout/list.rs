@@ -85,7 +85,7 @@ fn node_list_item_child(
             let mut font_ctx = doc.font_ctx.lock().unwrap();
             let mut builder = doc.layout_ctx.tree_builder(
                 &mut font_ctx,
-                doc.viewport.scale(),
+                doc.text_layout_scale(),
                 true,
                 &parley_style,
             );

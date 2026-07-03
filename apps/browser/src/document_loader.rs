@@ -60,6 +60,7 @@ pub fn make_doc_config(
         font_ctx: Some(font_ctx),
         media_type: None,
         abort_signal,
+        pinch_zoom_enabled: Some(true),
         ..Default::default()
     }
 }

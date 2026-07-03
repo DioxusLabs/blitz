@@ -85,6 +85,10 @@ fn build_custom_widget_scenes(
 ) {
     let doc_id = doc.id();
 
+    // Custom widget scenes are appended to the painter's output with a translation only,
+    // so they must be pre-rendered at the document's pinch-zoomed scale to match.
+    let scale = scale * doc.pinch_zoom().scale;
+
     // Process scenes for every custom widget in the document
     let custom_widget_node_ids = doc.custom_widget_node_ids();
     for node_id in custom_widget_node_ids.into_iter() {

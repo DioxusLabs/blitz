@@ -50,6 +50,9 @@ pub struct DocumentConfig {
     /// The CSS media type used to evaluate `@media` rules.
     /// Defaults to [`MediaType::screen`].
     pub media_type: Option<MediaType>,
+    /// Whether pinch-to-zoom gestures may zoom the document (defaults to `false`).
+    /// Pinch-to-zoom still applies to subdocuments when disabled.
+    pub pinch_zoom_enabled: Option<bool>,
     /// Strategy for Stylo's style traversal.
     /// Defaults to [`StyleThreading::Parallel`].
     pub style_threading: StyleThreading,

@@ -748,6 +748,7 @@ fn collect_complex_layout_children(
 }
 
 fn create_text_editor(doc: &mut BaseDocument, input_element_id: usize, is_multiline: bool) {
+    let text_layout_scale = doc.text_layout_scale();
     let node = &mut doc.nodes[input_element_id];
     let parley_style = node
         .primary_styles()
@@ -768,7 +769,7 @@ fn create_text_editor(doc: &mut BaseDocument, input_element_id: usize, is_multil
     };
 
     let editor = &mut text_input_data.editor;
-    editor.set_scale(doc.viewport.scale_f64() as f32);
+    editor.set_scale(text_layout_scale);
     editor.set_width(None);
 
     let styles = editor.edit_styles();

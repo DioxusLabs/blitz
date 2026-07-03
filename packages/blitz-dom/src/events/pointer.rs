@@ -219,6 +219,7 @@ pub(crate) fn handle_pointermove<F: FnMut(DomEvent)>(
         return changed;
     }
 
+    let text_scale = doc.text_layout_scale() as f64;
     let node = &mut doc.nodes[target];
     let Some(el) = node.data.downcast_element_mut() else {
         // Handle text selection extension for non-element nodes
@@ -254,17 +255,18 @@ pub(crate) fn handle_pointermove<F: FnMut(DomEvent)>(
             content_box_offset.y += y_offset;
         }
 
-        // Account for the input's scroll offset (stored in CSS pixels, scaled here to device
-        // pixels) when mapping the pointer location into the text content's coordinate space.
-        let scroll_offset = text_input_data.scroll_offset as f64 * doc.viewport.scale_f64();
+        // Account for the input's scroll offset (stored in CSS pixels, scaled here to the
+        // editor layout's scale) when mapping the pointer location into the text content's
+        // coordinate space.
+        let scroll_offset = text_input_data.scroll_offset as f64 * text_scale;
         let (scroll_x, scroll_y) = if text_input_data.is_multiline {
             (0.0, scroll_offset)
         } else {
             (scroll_offset, 0.0)
         };
 
-        let x = (hit.x - content_box_offset.x) as f64 * doc.viewport.scale_f64() + scroll_x;
-        let y = (hit.y - content_box_offset.y) as f64 * doc.viewport.scale_f64() + scroll_y;
+        let x = (hit.x - content_box_offset.x) as f64 * text_scale + scroll_x;
+        let y = (hit.y - content_box_offset.y) as f64 * text_scale + scroll_y;
 
         text_input_data
             .editor
@@ -351,10 +353,10 @@ pub(crate) fn handle_pointerdown(
                         let y_offset = ((content_box_height - input_height) / 2.0).max(0.0);
                         content_box_offset.y += y_offset;
                     }
-                    // `scroll_offset` is stored in CSS pixels; scale it to device pixels to
-                    // match the editor's coordinate space.
+                    // `scroll_offset` is stored in CSS pixels; scale it to the editor
+                    // layout's scale to match the editor's coordinate space.
                     let scroll_offset =
-                        text_input_data.scroll_offset as f64 * doc.viewport.scale_f64();
+                        text_input_data.scroll_offset as f64 * doc.text_layout_scale() as f64;
                     let scroll = if text_input_data.is_multiline {
                         taffy::Point {
                             x: 0.0,
@@ -396,8 +398,9 @@ pub(crate) fn handle_pointerdown(
             // Clear general text selection when focusing a text input
             doc.clear_text_selection();
 
-            let tx = (hit.x - content_box_offset.x) as f64 * doc.viewport.scale_f64() + scroll.x;
-            let ty = (hit.y - content_box_offset.y) as f64 * doc.viewport.scale_f64() + scroll.y;
+            let text_scale = doc.text_layout_scale() as f64;
+            let tx = (hit.x - content_box_offset.x) as f64 * text_scale + scroll.x;
+            let ty = (hit.y - content_box_offset.y) as f64 * text_scale + scroll.y;
 
             // Now get mutable access to the text input
             let click_count = doc.click_count;
@@ -693,6 +696,20 @@ pub(crate) fn handle_wheel<F: FnMut(DomEvent)>(
         BlitzWheelDelta::Lines(x, y) => (x * 20.0, y * 20.0),
         BlitzWheelDelta::Pixels(x, y) => (x, y),
     };
+
+    // Ctrl+wheel (Cmd+wheel on macOS) adjusts the page zoom rather than scrolling.
+    if event.mods.intersects(Modifiers::CONTROL | Modifiers::META) {
+        // Map the scroll delta to a multiplicative zoom factor such that
+        // scrolling up (positive delta) zooms in and 100px of scroll doubles/halves the zoom.
+        let factor = (scroll_y / 100.0).exp2() as f32;
+        doc.zoom_by_factor_at(factor, event.client_x(), event.client_y());
+        return;
+    }
+
+    // When pinch-zoomed, divide scroll deltas by the pinch-zoom scale so that
+    // panning speed matches the zoomed (visual) scale of the content.
+    let pinch_scale = doc.pinch_zoom().scale;
+    let (scroll_x, scroll_y) = (scroll_x / pinch_scale, scroll_y / pinch_scale);
 
     let has_changed = doc.scroll_by(
         doc.get_hover_node_id(),

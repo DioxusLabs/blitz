@@ -143,8 +143,19 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
         hover_node_id
     }
 
-    pub fn handle_ui_event(&mut self, event: UiEvent) {
+    pub fn handle_ui_event(&mut self, mut event: UiEvent) {
         let doc = self.doc.inner();
+
+        // Map pointer coordinates from the visual (pinch-zoomed) viewport to the
+        // layout viewport
+        match &mut event {
+            UiEvent::PointerMove(event)
+            | UiEvent::PointerUp(event)
+            | UiEvent::PointerDown(event)
+            | UiEvent::PointerCancel(event) => doc.visual_to_layout_coords(&mut event.coords),
+            UiEvent::Wheel(event) => doc.visual_to_layout_coords(&mut event.coords),
+            _ => {}
+        }
 
         let mut should_clear_hover = false;
         let mut hover_node_id = doc.hover_node_id;
