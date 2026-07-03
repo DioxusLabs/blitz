@@ -95,6 +95,7 @@ impl BaseDocument {
         }
 
         let mut subdoc_is_animating = false;
+        let total_pinch_zoom_scale = self.parent_pinch_zoom_scale * self.pinch_zoom.scale;
         for &node_id in &self.sub_document_nodes {
             let node = &mut self.nodes[node_id];
             let size = node.final_layout.size;
@@ -112,6 +113,11 @@ impl BaseDocument {
                     (size.height * viewport_scale) as u32,
                 );
                 drop(sub_viewport);
+
+                // Propagate the accumulated pinch-zoom scale so that the subdocument's
+                // text layouts are computed at the scale they are rendered at.
+                // `set_parent_pinch_zoom_scale` handles change detection/invalidation.
+                sub_doc.set_parent_pinch_zoom_scale(total_pinch_zoom_scale);
 
                 sub_doc.resolve(current_time_for_animations);
 
@@ -281,6 +287,7 @@ impl BaseDocument {
         #[cfg(not(feature = "parallel-construct"))]
         let iter = deferred_construction_nodes.into_iter();
 
+        let text_layout_scale = self.text_layout_scale();
         let results: Vec<ConstructionTaskResult> = iter
             .map(|task: ConstructionTask| match task.data {
                 ConstructionTaskData::InlineLayout(mut layout) => {
@@ -310,7 +317,7 @@ impl BaseDocument {
                         layout_ctx_mut,
                         font_ctx_mut,
                         &mut layout,
-                        self.viewport.scale(),
+                        text_layout_scale,
                         task.node_id,
                     );
 

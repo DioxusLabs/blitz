@@ -389,7 +389,7 @@ impl HoistedPaintChildren {
 
 impl BaseDocument {
     pub(crate) fn invalidate_inline_contexts(&mut self) {
-        let scale = self.viewport.scale();
+        let scale = self.text_layout_scale();
 
         let font_ctx = &self.font_ctx;
         let layout_ctx = &mut self.layout_ctx;

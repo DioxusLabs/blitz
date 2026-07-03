@@ -13,7 +13,7 @@ const HTML: &str = r#"<!DOCTYPE html>
 <html><head><style>
     body { margin: 0; width: 4000px; height: 4000px; }
 </style></head>
-<body></body></html>
+<body><p>Hello, world!</p></body></html>
 "#;
 
 fn make_doc(html: &str, width: u32, height: u32) -> HtmlDocument {
@@ -228,6 +228,53 @@ fn disabled_subdocument_passes_pinch_zoom_to_parent() {
     assert!(doc.pinch_zoom_by(2.0, 300.0, 200.0));
     assert_eq!(doc.pinch_zoom().scale, 2.0);
     assert_eq!(sub_doc_pinch_zoom(&doc, frame_id).scale, 1.0);
+}
+
+fn inline_layout_scale(doc: &blitz_dom::BaseDocument, selector: &str) -> f32 {
+    let node_id = doc.query_selector(selector).unwrap().unwrap();
+    doc.get_node(node_id)
+        .unwrap()
+        .element_data()
+        .unwrap()
+        .inline_layout_data
+        .as_ref()
+        .unwrap()
+        .layout
+        .scale()
+}
+
+#[test]
+fn pinch_zoom_scales_text_layouts() {
+    let mut doc = make_doc(HTML, 800, 600);
+    doc.resolve(0.0);
+    assert_eq!(doc.text_layout_scale(), 1.0);
+    assert_eq!(inline_layout_scale(&doc, "p"), 1.0);
+
+    // Pinch-zooming invalidates inline layouts, which are rebuilt at the zoomed scale
+    doc.pinch_zoom_by(2.0, 0.0, 0.0);
+    doc.resolve(0.0);
+    assert_eq!(doc.text_layout_scale(), 2.0);
+    assert_eq!(inline_layout_scale(&doc, "p"), 2.0);
+
+    doc.reset_pinch_zoom();
+    doc.resolve(0.0);
+    assert_eq!(inline_layout_scale(&doc, "p"), 1.0);
+}
+
+#[test]
+fn parent_pinch_zoom_scales_subdocument_text_layouts() {
+    let (mut doc, frame_id) = make_doc_with_subdoc();
+
+    // Zoom the parent document (pointer not over the subdocument)
+    doc.set_hover_to(700.0, 50.0);
+    assert!(doc.pinch_zoom_by(2.0, 700.0, 50.0));
+    doc.resolve(0.0);
+
+    // The subdocument's text layouts are computed at the accumulated scale
+    let sub_doc = doc.get_node(frame_id).unwrap().subdoc().unwrap().inner();
+    assert_eq!(sub_doc.pinch_zoom().scale, 1.0);
+    assert_eq!(sub_doc.text_layout_scale(), 2.0);
+    assert_eq!(inline_layout_scale(&sub_doc, "p"), 2.0);
 }
 
 #[test]

@@ -219,6 +219,9 @@ pub struct BaseDocument {
     pub(crate) pinch_zoom: PinchZoomState,
     /// Whether pinch-to-zoom gestures may zoom this document
     pub(crate) pinch_zoom_enabled: bool,
+    /// The accumulated pinch-zoom scale of ancestor documents (`1.0` for a top-level
+    /// document). Set by the embedding document when resolving subdocuments.
+    pub(crate) parent_pinch_zoom_scale: f64,
     /// CSS media type used to evaluate `@media` rules.
     pub(crate) media_type: MediaType,
     /// Strategy for Stylo's style traversal during `resolve`.
@@ -460,6 +463,7 @@ impl BaseDocument {
             viewport_scroll: crate::Point::ZERO,
             pinch_zoom: PinchZoomState::default(),
             pinch_zoom_enabled: config.pinch_zoom_enabled.unwrap_or(true),
+            parent_pinch_zoom_scale: 1.0,
             url: base_url,
             ua_stylesheets: HashMap::new(),
             nodes_to_stylesheet: BTreeMap::new(),
@@ -1526,6 +1530,24 @@ impl BaseDocument {
         self.pinch_zoom
     }
 
+    /// The scale factor at which text (Parley) layouts are computed: the viewport scale
+    /// (hidpi scale x page zoom) multiplied by the total pinch-zoom scale (including
+    /// that of ancestor documents), so that glyphs are laid out and hinted at the scale
+    /// they are actually rendered at.
+    pub fn text_layout_scale(&self) -> f32 {
+        self.viewport.scale() * (self.parent_pinch_zoom_scale * self.pinch_zoom.scale) as f32
+    }
+
+    /// Set the accumulated pinch-zoom scale of ancestor documents. Called by the
+    /// embedding document when resolving subdocuments so that text layouts are computed
+    /// at the scale they are rendered at. Invalidates inline layouts if changed.
+    pub fn set_parent_pinch_zoom_scale(&mut self, scale: f64) {
+        if scale != self.parent_pinch_zoom_scale {
+            self.parent_pinch_zoom_scale = scale;
+            self.invalidate_inline_contexts();
+        }
+    }
+
     /// Whether pinch-to-zoom gestures may zoom this document (`true` by default).
     /// Pinch-to-zoom still applies to subdocuments when disabled.
     pub fn pinch_zoom_enabled(&self) -> bool {
@@ -1544,7 +1566,11 @@ impl BaseDocument {
     /// Reset pinch-zoom to its unzoomed state
     pub fn reset_pinch_zoom(&mut self) {
         if self.pinch_zoom != PinchZoomState::default() {
+            let scale_has_changed = self.pinch_zoom.scale != 1.0;
             self.pinch_zoom = PinchZoomState::default();
+            if scale_has_changed {
+                self.invalidate_inline_contexts();
+            }
             self.shell_provider.request_redraw();
         }
     }
@@ -1607,6 +1633,9 @@ impl BaseDocument {
             let target_x = anchor_x - (anchor_x - offset.x) * (scale / new_scale);
             let target_y = anchor_y - (anchor_y - offset.y) * (scale / new_scale);
             self.set_pinch_zoom_offset(target_x, target_y);
+            // Text layouts are computed at the pinch-zoomed scale, so they must be
+            // rebuilt when it changes
+            self.invalidate_inline_contexts();
             self.shell_provider.request_redraw();
         }
 

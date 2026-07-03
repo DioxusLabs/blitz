@@ -132,7 +132,7 @@ impl BaseDocument {
         inputs: taffy::tree::LayoutInput,
         block_ctx: &mut BlockContext<'_>,
     ) -> taffy::LayoutOutput {
-        let scale = self.viewport.scale();
+        let scale = self.text_layout_scale();
         let LayoutInput {
             known_dimensions,
             parent_size,
