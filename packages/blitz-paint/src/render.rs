@@ -571,12 +571,11 @@ fn convert_rect(rect: &parley::BoundingBox) -> kurbo::Rect {
 }
 
 impl ElementCx<'_, '_> {
-    /// Paint overlay scrollbar thumbs for scroll containers (`overflow:
-    /// scroll`, or `auto` when the content overflows — never `hidden`/
-    /// `clip`, which scroll only programmatically). Like other overlay
-    /// scrollbar UIs, thumbs only appear while the scroll container is
-    /// hovered or scrolled away from the origin; this also keeps them out
-    /// of (static, unhovered) reftest screenshots.
+    /// Paint overlay scrollbar thumbs for scroll containers: `overflow:
+    /// scroll`, or `auto` when the content overflows (never `hidden`/`clip`,
+    /// which scroll only programmatically). Thumbs only appear while the
+    /// container is hovered or scrolled away from the origin, which also
+    /// keeps them out of static reftest screenshots.
     ///
     /// Geometry comes from [`Node::scrollbar_thumb`], shared with the
     /// thumb-drag hit testing in blitz-dom.
@@ -596,9 +595,8 @@ impl ElementCx<'_, '_> {
         let drag_target = self.context.dom.scrollbar_drag_target();
         let hovered_thumb = self.context.dom.hovered_scrollbar();
 
-        // scrollbar-color colors the scrollbar; it does not change overlay
-        // visibility behavior (matching Firefox/WebKit rendering of the
-        // property — persistence is UA policy, not author styling).
+        // scrollbar-color doesn't affect overlay visibility: persistence is
+        // UA policy, not author styling.
         let node_id = self.node.id;
         let is_drag_target = matches!(drag_target, Some((target_id, _)) if target_id == node_id);
         if !self.node.is_hovered()
@@ -609,21 +607,89 @@ impl ElementCx<'_, '_> {
             return;
         }
 
-        const THUMB_COLOR: Color = Color::from_rgba8(128, 128, 128, 178);
-        const THUMB_HOVER_COLOR: Color = Color::from_rgba8(152, 152, 152, 222);
-        const THUMB_ACTIVE_COLOR: Color = Color::from_rgba8(170, 170, 170, 255);
+        // Default thumb palette for the used color scheme; thumbs paint as
+        // fill plus a thin contrast stroke so they read over same-colored
+        // content.
+        let dark_scheme =
+            self.context.dom.viewport().color_scheme == blitz_traits::shell::ColorScheme::Dark;
+        let (thumb_rest, thumb_hover, thumb_active, stroke_color) = if dark_scheme {
+            (
+                Color::from_rgba8(214, 214, 214, 178),
+                Color::from_rgba8(190, 190, 190, 222),
+                Color::from_rgba8(172, 172, 172, 255),
+                Color::from_rgba8(0, 0, 0, 102),
+            )
+        } else {
+            (
+                Color::from_rgba8(128, 128, 128, 178),
+                Color::from_rgba8(152, 152, 152, 222),
+                Color::from_rgba8(170, 170, 170, 255),
+                Color::from_rgba8(255, 255, 255, 102),
+            )
+        };
 
-        /// Move a color towards white (for hover/active states of
-        /// author-specified thumb colors)
-        fn lighten(color: Color, amount: f32) -> Color {
+        /// WCAG relative luminance of an sRGB color (alpha ignored).
+        fn relative_luminance(color: Color) -> f32 {
+            fn lin(c: f32) -> f32 {
+                if c <= 0.04045 {
+                    c / 12.92
+                } else {
+                    ((c + 0.055) / 1.055).powf(2.4)
+                }
+            }
+            let [r, g, b, _] = color.components;
+            0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
+        }
+
+        /// WCAG contrast ratio between two relative luminances.
+        fn contrast_ratio(l1: f32, l2: f32) -> f32 {
+            let (hi, lo) = if l1 > l2 { (l1, l2) } else { (l2, l1) };
+            (hi + 0.05) / (lo + 0.05)
+        }
+
+        /// Per-channel blend towards black (`pole = 0.0`) or white (`1.0`),
+        /// preserving alpha.
+        fn mix_towards(color: Color, pole: f32, t: f32) -> Color {
             let [r, g, b, a] = color.components;
             Color::new([
-                r + (1.0 - r) * amount,
-                g + (1.0 - g) * amount,
-                b + (1.0 - b) * amount,
+                r + (pole - r) * t,
+                g + (pole - g) * t,
+                b + (pole - b) * t,
                 a,
             ])
         }
+
+        /// Hover/active state of an author-specified thumb color: blend
+        /// towards black or white (whichever has contrast headroom) just far
+        /// enough to reach `target` contrast with the rest state, so feedback
+        /// stays visible for any color. Transparent passes through unchanged.
+        fn blend_for_contrast(color: Color, target: f32) -> Color {
+            if color.components[3] == 0.0 {
+                return color;
+            }
+            let base_lum = relative_luminance(color);
+            let pole = if contrast_ratio(base_lum, 1.0) >= contrast_ratio(base_lum, 0.0) {
+                1.0
+            } else {
+                0.0
+            };
+            // Contrast grows monotonically towards the pole: bisect the blend
+            // fraction to land just past the target ratio.
+            let (mut lo, mut hi) = (0.0_f32, 1.0_f32);
+            for _ in 0..8 {
+                let mid = (lo + hi) / 2.0;
+                let lum = relative_luminance(mix_towards(color, pole, mid));
+                if contrast_ratio(base_lum, lum) < target {
+                    lo = mid;
+                } else {
+                    hi = mid;
+                }
+            }
+            mix_towards(color, pole, hi)
+        }
+        // Chromium's hovered/pressed scrollbar contrast ratios.
+        const HOVER_CONTRAST: f32 = 1.8;
+        const ACTIVE_CONTRAST: f32 = 1.3;
 
         for horizontal in [false, true] {
             if !self.node.wants_scrollbar(horizontal) {
@@ -633,23 +699,15 @@ impl ElementCx<'_, '_> {
                 continue;
             };
 
+            let rect = thumb.scale_from_origin(self.scale);
+
             // Track (only when the author specified a track color)
             if let Some(track_color) = custom_track {
                 let padding_box = self.frame.padding_box;
                 let track_rect = if horizontal {
-                    Rect::new(
-                        padding_box.x0,
-                        thumb.y0 * self.scale,
-                        padding_box.x1,
-                        thumb.y1 * self.scale,
-                    )
+                    Rect::new(padding_box.x0, rect.y0, padding_box.x1, rect.y1)
                 } else {
-                    Rect::new(
-                        thumb.x0 * self.scale,
-                        padding_box.y0,
-                        thumb.x1 * self.scale,
-                        padding_box.y1,
-                    )
+                    Rect::new(rect.x0, padding_box.y0, rect.x1, padding_box.y1)
                 };
                 scene.fill(
                     Fill::NonZero,
@@ -663,19 +721,13 @@ impl ElementCx<'_, '_> {
             let is_active = drag_target == Some((node_id, horizontal));
             let is_hovered = hovered_thumb == Some((node_id, horizontal));
             let color = match custom_thumb {
-                Some(base) if is_active => lighten(base, 0.3),
-                Some(base) if is_hovered => lighten(base, 0.15),
+                Some(base) if is_active => blend_for_contrast(base, ACTIVE_CONTRAST),
+                Some(base) if is_hovered => blend_for_contrast(base, HOVER_CONTRAST),
                 Some(base) => base,
-                None if is_active => THUMB_ACTIVE_COLOR,
-                None if is_hovered => THUMB_HOVER_COLOR,
-                None => THUMB_COLOR,
+                None if is_active => thumb_active,
+                None if is_hovered => thumb_hover,
+                None => thumb_rest,
             };
-            let rect = Rect::new(
-                thumb.x0 * self.scale,
-                thumb.y0 * self.scale,
-                thumb.x1 * self.scale,
-                thumb.y1 * self.scale,
-            );
             let radius = if horizontal {
                 rect.height() / 2.0
             } else {
@@ -688,6 +740,19 @@ impl ElementCx<'_, '_> {
                 None,
                 &rect.to_rounded_rect(radius),
             );
+            // Contrast stroke, default thumbs only: an author-specified
+            // scrollbar-color is rendered exactly as given.
+            if custom_thumb.is_none() {
+                let stroke_width = self.scale;
+                let stroke_rect = rect.inset(-stroke_width / 2.0);
+                scene.stroke(
+                    &Stroke::new(stroke_width),
+                    self.transform,
+                    stroke_color,
+                    None,
+                    &stroke_rect.to_rounded_rect(radius - stroke_width / 2.0),
+                );
+            }
         }
     }
 

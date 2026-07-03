@@ -16,10 +16,15 @@ const BLUE: [u8; 3] = [0, 0, 255];
 /// Renders `html`, scrolling the `#scroller` element by (dx, dy) first,
 /// and returns the pixel at (x, y).
 fn pixel(html: &str, scroll: (f64, f64), x: usize, y: usize) -> [u8; 3] {
+    pixel_in(html, scroll, x, y, ColorScheme::Light)
+}
+
+/// [`pixel`], with the viewport's color scheme chosen by the caller.
+fn pixel_in(html: &str, scroll: (f64, f64), x: usize, y: usize, scheme: ColorScheme) -> [u8; 3] {
     let mut doc = HtmlDocument::from_html(
         html,
         DocumentConfig {
-            viewport: Some(Viewport::new(100, 100, 1.0, ColorScheme::Light)),
+            viewport: Some(Viewport::new(100, 100, 1.0, scheme)),
             html_parser_provider: Some(Arc::new(HtmlProvider) as _),
             ..Default::default()
         },
@@ -143,9 +148,8 @@ fn scrollbar_width_none_hides_the_scrollbar() {
 
 #[test]
 fn author_styled_scrollbar_still_hides_at_rest() {
-    // scrollbar-color colors the scrollbar; it does not change overlay
-    // visibility behavior (persistence is UA policy, not author styling —
-    // matching Firefox/WebKit rendering of the property).
+    // scrollbar-color doesn't affect overlay visibility (matches how
+    // Firefox/WebKit render the property).
     let px = pixel(
         r#"<html><body style="margin:0">
             <div id="scroller" style="width:100px; height:100px; overflow-y:auto; scrollbar-color:#ff0000 transparent;">
@@ -157,4 +161,23 @@ fn author_styled_scrollbar_still_hides_at_rest() {
         4,
     );
     assert_eq!(px, BLUE, "styled overlay scrollbars still hide at rest");
+}
+
+#[test]
+fn default_thumb_has_a_contrast_stroke() {
+    // Default thumbs paint as fill + a thin contrast stroke. The thumb spans
+    // x in [92, 98]: x=92 lands on the stroke, x=95 on the fill.
+    let html = scroller("auto", 1000);
+    let edge = pixel(&html, (0.0, 50.0), 92, 12);
+    let fill = pixel(&html, (0.0, 50.0), 95, 12);
+    assert_ne!(edge, fill, "thumb edge should carry a contrast stroke");
+}
+
+#[test]
+fn dark_scheme_uses_a_distinct_thumb() {
+    // The default palette follows the viewport color scheme.
+    let html = scroller("auto", 1000);
+    let light = pixel_in(&html, (0.0, 50.0), 95, 12, ColorScheme::Light);
+    let dark = pixel_in(&html, (0.0, 50.0), 95, 12, ColorScheme::Dark);
+    assert_ne!(light, dark, "thumb fill should follow the color scheme");
 }

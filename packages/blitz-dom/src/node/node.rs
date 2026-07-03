@@ -494,22 +494,6 @@ pub enum NodeKind {
     Comment,
 }
 
-/// Geometry of an overlay scrollbar thumb, in (unscaled) CSS px relative to
-/// the owning node's border-box origin.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct ScrollbarThumb {
-    pub x0: f64,
-    pub y0: f64,
-    pub x1: f64,
-    pub y1: f64,
-}
-
-impl ScrollbarThumb {
-    pub fn contains(&self, x: f64, y: f64) -> bool {
-        x >= self.x0 && x <= self.x1 && y >= self.y0 && y <= self.y1
-    }
-}
-
 /// The different kinds of nodes in the DOM.
 #[derive(Debug, Clone)]
 pub enum NodeData {
@@ -1158,10 +1142,23 @@ impl Node {
         }
     }
 
+    /// The scrollport (padding box) in (unscaled) CSS px relative to the
+    /// node's border-box origin. Taffy has content-box helpers but none for
+    /// the padding box.
+    fn scrollport(&self) -> KurboRect {
+        let layout = &self.final_layout;
+        KurboRect::new(
+            layout.border.left as f64,
+            layout.border.top as f64,
+            layout.size.width as f64 - layout.border.right as f64,
+            layout.size.height as f64 - layout.border.bottom as f64,
+        )
+    }
+
     /// Geometry of the overlay scrollbar thumb for the given axis, in
     /// (unscaled) CSS px relative to the node's border-box origin. `None`
     /// if there is no scrollable overflow in that axis.
-    pub fn scrollbar_thumb(&self, horizontal: bool) -> Option<ScrollbarThumb> {
+    pub fn scrollbar_thumb(&self, horizontal: bool) -> Option<KurboRect> {
         const THUMB_THICKNESS: f64 = 6.0;
         const THIN_THUMB_THICKNESS: f64 = 4.0;
         const THUMB_MARGIN: f64 = 2.0;
@@ -1184,37 +1181,37 @@ impl Node {
             _ => THUMB_THICKNESS,
         };
 
-        // The scrollport is the padding box.
-        let x0 = layout.border.left as f64;
-        let y0 = layout.border.top as f64;
-        let x1 = layout.size.width as f64 - layout.border.right as f64;
-        let y1 = layout.size.height as f64 - layout.border.bottom as f64;
-
+        let port = self.scrollport();
         let (viewport_len, scroll_offset) = if horizontal {
-            (x1 - x0, self.scroll_offset.x)
+            (port.width(), self.scroll_offset.x)
         } else {
-            (y1 - y0, self.scroll_offset.y)
+            (port.height(), self.scroll_offset.y)
         };
         let thumb_len = (viewport_len * viewport_len / (viewport_len + scroll_extent))
             .max(MIN_THUMB_LENGTH)
             .min(viewport_len);
         let progress = (scroll_offset / scroll_extent).clamp(0.0, 1.0);
-        let thumb_start = progress * (viewport_len - thumb_len);
+        // Round a sub-pixel displacement up to a whole pixel so any nonzero
+        // scroll visibly moves the thumb off the origin.
+        let thumb_start = match progress * (viewport_len - thumb_len) {
+            start if start > 0.0 && start < 1.0 => 1.0,
+            start => start,
+        };
 
         Some(if horizontal {
-            ScrollbarThumb {
-                x0: x0 + thumb_start,
-                y0: y1 - THUMB_MARGIN - thickness,
-                x1: x0 + thumb_start + thumb_len,
-                y1: y1 - THUMB_MARGIN,
-            }
+            KurboRect::new(
+                port.x0 + thumb_start,
+                port.y1 - THUMB_MARGIN - thickness,
+                port.x0 + thumb_start + thumb_len,
+                port.y1 - THUMB_MARGIN,
+            )
         } else {
-            ScrollbarThumb {
-                x0: x1 - THUMB_MARGIN - thickness,
-                y0: y0 + thumb_start,
-                x1: x1 - THUMB_MARGIN,
-                y1: y0 + thumb_start + thumb_len,
-            }
+            KurboRect::new(
+                port.x1 - THUMB_MARGIN - thickness,
+                port.y0 + thumb_start,
+                port.x1 - THUMB_MARGIN,
+                port.y0 + thumb_start + thumb_len,
+            )
         })
     }
 
@@ -1223,18 +1220,18 @@ impl Node {
         let Some(thumb) = self.scrollbar_thumb(horizontal) else {
             return 0.0;
         };
-        let layout = &self.final_layout;
+        let port = self.scrollport();
         let (scroll_extent, viewport_len, thumb_len) = if horizontal {
             (
-                layout.scroll_width() as f64,
-                layout.size.width as f64 - layout.border.left as f64 - layout.border.right as f64,
-                thumb.x1 - thumb.x0,
+                self.final_layout.scroll_width() as f64,
+                port.width(),
+                thumb.width(),
             )
         } else {
             (
-                layout.scroll_height() as f64,
-                layout.size.height as f64 - layout.border.top as f64 - layout.border.bottom as f64,
-                thumb.y1 - thumb.y0,
+                self.final_layout.scroll_height() as f64,
+                port.height(),
+                thumb.height(),
             )
         };
         let track_play = viewport_len - thumb_len;

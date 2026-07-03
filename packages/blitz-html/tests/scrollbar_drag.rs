@@ -164,3 +164,73 @@ fn thumb_brightens_on_hover_and_drag() {
         "thumb must change appearance while dragged"
     );
 }
+
+#[test]
+fn white_author_thumb_still_signals_hover_and_drag() {
+    // A near-white `scrollbar-color` thumb can't get lighter: hover/drag
+    // feedback must blend towards the pole with contrast headroom (darken).
+    use anyrender::render_to_buffer;
+    use anyrender_vello_cpu::VelloCpuImageRenderer;
+    use blitz_paint::paint_scene;
+
+    fn thumb_pixel(doc: &mut HtmlDocument) -> [u8; 4] {
+        let buffer = render_to_buffer::<VelloCpuImageRenderer, _>(
+            |scene| paint_scene(scene, doc.as_mut(), 1.0, 100, 100, 0, 0),
+            100,
+            100,
+        );
+        let idx = (8 * 100 + 95) * 4;
+        [
+            buffer[idx],
+            buffer[idx + 1],
+            buffer[idx + 2],
+            buffer[idx + 3],
+        ]
+    }
+
+    let mut doc = HtmlDocument::from_html(
+        r#"<html><body style="margin:0">
+            <div id="scroller" style="width:100px; height:100px; overflow-y:auto; scrollbar-color:#ffffff transparent;">
+                <div style="height:1000px;"></div>
+            </div>
+        </body></html>"#,
+        DocumentConfig {
+            viewport: Some(Viewport::new(100, 100, 1.0, ColorScheme::Light)),
+            html_parser_provider: Some(Arc::new(HtmlProvider) as _),
+            ..Default::default()
+        },
+    );
+    doc.resolve(0.0);
+    let scroller = doc.query_selector("#scroller").unwrap().unwrap();
+    doc.get_node_mut(scroller).unwrap().scroll_offset.y = 50.0;
+
+    let base = thumb_pixel(&mut doc);
+
+    {
+        let mut driver = EventDriver::new(&mut doc, NoopEventHandler);
+        driver.handle_ui_event(UiEvent::PointerMove(pointer_event(
+            95.0,
+            8.0,
+            MouseEventButtons::None,
+        )));
+    }
+    let hovered = thumb_pixel(&mut doc);
+    assert_ne!(
+        base, hovered,
+        "a white author thumb must still visibly change on hover"
+    );
+
+    {
+        let mut driver = EventDriver::new(&mut doc, NoopEventHandler);
+        driver.handle_ui_event(UiEvent::PointerDown(pointer_event(
+            95.0,
+            8.0,
+            MouseEventButtons::Primary,
+        )));
+    }
+    let active = thumb_pixel(&mut doc);
+    assert_ne!(
+        hovered, active,
+        "a white author thumb must still visibly change while dragged"
+    );
+}

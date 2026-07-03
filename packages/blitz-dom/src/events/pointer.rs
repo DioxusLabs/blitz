@@ -154,10 +154,8 @@ impl PanState {
 /// the overlay thumb) looking for a scroll container whose thumb contains
 /// the pointer. Returns (scroll container id, is-horizontal).
 ///
-/// This is the single behavioral gate for the `scrollbars` feature: both the
-/// drag entry (pointerdown) and hover tracking (pointermove) resolve thumbs
-/// through here, so returning `None` keeps the whole interaction inert —
-/// nothing may grab pointer events for thumbs that are never painted.
+/// Also the `scrollbars` feature's single behavioral gate: returning `None`
+/// keeps unpainted thumbs from ever claiming pointer events.
 pub(crate) fn scrollbar_thumb_at(doc: &BaseDocument, x: f32, y: f32) -> Option<(usize, bool)> {
     if !cfg!(feature = "scrollbars") {
         return None;
@@ -176,10 +174,15 @@ pub(crate) fn scrollbar_thumb_at(doc: &BaseDocument, x: f32, y: f32) -> Option<(
             // absolute_position subtracts the node's own scroll offset
             // (it maps content coordinates); compensate to get the
             // border-box origin.
+            //
+            // FIXME: absolute_position ignores CSS transforms, so the hit
+            // region is wrong inside transformed ancestors (as is blitz's
+            // other pointer math). Wants a shared transform-aware
+            // page->local conversion, not a scrollbar-local fix.
             let origin = node.absolute_position(0.0, 0.0);
             let local_x = (x - origin.x) as f64 - node.scroll_offset.x;
             let local_y = (y - origin.y) as f64 - node.scroll_offset.y;
-            if thumb.contains(local_x, local_y) {
+            if thumb.contains(kurbo::Point::new(local_x, local_y)) {
                 return Some((node_id, horizontal));
             }
         }
