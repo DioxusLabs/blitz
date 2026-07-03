@@ -582,14 +582,12 @@ impl ElementCx<'_, '_> {
     #[cfg(feature = "scrollbars")]
     fn draw_scrollbars(&self, scene: &mut impl PaintScene) {
         // css-scrollbars-1 scrollbar-color: author thumb/track colors
-        use style::values::generics::ui::ScrollbarColor as StyloScrollbarColor;
-        let current_color = self.style.clone_color();
-        let (custom_thumb, custom_track) = match &self.style.clone_scrollbar_color() {
-            StyloScrollbarColor::Auto => (None, None),
-            StyloScrollbarColor::Colors { thumb, track } => (
-                Some(thumb.resolve_to_absolute(&current_color).as_srgb_color()),
-                Some(track.resolve_to_absolute(&current_color).as_srgb_color()),
-            ),
+        use blitz_dom::node::ScrollbarColor;
+        let (custom_thumb, custom_track) = match self.node.scrollbar_color() {
+            ScrollbarColor::Auto => (None, None),
+            ScrollbarColor::Colors { thumb, track } => {
+                (Some(thumb.as_srgb_color()), Some(track.as_srgb_color()))
+            }
         };
 
         let drag_target = self.context.dom.scrollbar_drag_target();

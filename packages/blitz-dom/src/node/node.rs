@@ -494,6 +494,30 @@ pub enum NodeKind {
     Comment,
 }
 
+/// The computed value of `scrollbar-width` (css-scrollbars-1). A local
+/// mirror of the stylo type, which isn't exposed to the servo engine yet
+/// (servo/stylo#413).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ScrollbarWidth {
+    #[default]
+    Auto,
+    Thin,
+    None,
+}
+
+/// The computed value of `scrollbar-color` (css-scrollbars-1). A local
+/// mirror of the stylo type, which isn't exposed to the servo engine yet
+/// (servo/stylo#413). Colors are fully resolved (no `currentColor`).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub enum ScrollbarColor {
+    #[default]
+    Auto,
+    Colors {
+        thumb: style::color::AbsoluteColor,
+        track: style::color::AbsoluteColor,
+    },
+}
+
 /// The different kinds of nodes in the DOM.
 #[derive(Debug, Clone)]
 pub enum NodeData {
@@ -1110,6 +1134,23 @@ impl Node {
         Some(offset)
     }
 
+    /// The node's used `scrollbar-width`.
+    pub fn scrollbar_width(&self) -> ScrollbarWidth {
+        // TODO: read the computed style once stylo exposes scrollbar-width
+        // to the servo engine (servo/stylo#413):
+        // match self.primary_styles().map(|s| s.clone_scrollbar_width()) { .. }
+        ScrollbarWidth::Auto
+    }
+
+    /// The node's used `scrollbar-color`.
+    pub fn scrollbar_color(&self) -> ScrollbarColor {
+        // TODO: read the computed style once stylo exposes scrollbar-color
+        // to the servo engine (servo/stylo#413), resolving the colors
+        // against the element's `color`:
+        // self.primary_styles().map(|s| s.clone_scrollbar_color()) { .. }
+        ScrollbarColor::Auto
+    }
+
     /// Whether the node shows an overlay scrollbar in the given axis:
     /// always for `overflow: scroll`, only when the content overflows for
     /// `overflow: auto`, never otherwise — and never when
@@ -1119,9 +1160,7 @@ impl Node {
         let Some(style) = self.primary_styles() else {
             return false;
         };
-        if style.clone_scrollbar_width()
-            == style::properties::longhands::scrollbar_width::computed_value::T::None
-        {
+        if self.scrollbar_width() == ScrollbarWidth::None {
             return false;
         }
         let (overflow, scroll_extent) = if horizontal {
@@ -1175,10 +1214,8 @@ impl Node {
             return None;
         }
 
-        let thickness = match self.primary_styles().map(|s| s.clone_scrollbar_width()) {
-            Some(style::properties::longhands::scrollbar_width::computed_value::T::Thin) => {
-                THIN_THUMB_THICKNESS
-            }
+        let thickness = match self.scrollbar_width() {
+            ScrollbarWidth::Thin => THIN_THUMB_THICKNESS,
             _ => THUMB_THICKNESS,
         };
 
