@@ -12,8 +12,12 @@ use blitz_traits::{
 use keyboard_types::Modifiers;
 use markup5ever::local_name;
 use style::values::computed::UserSelect;
+use taffy::AbsoluteAxis;
 
-use crate::{BaseDocument, node::SpecialElementData};
+use crate::{
+    BaseDocument,
+    node::{ScrollbarRef, SpecialElementData},
+};
 
 use super::focus::generate_focus_events;
 
@@ -48,9 +52,8 @@ pub(crate) struct PanSample {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct ScrollbarDragState {
-    /// The scroll container whose thumb is being dragged
-    pub(crate) node_id: usize,
-    pub(crate) horizontal: bool,
+    /// The thumb being dragged
+    pub(crate) scrollbar: ScrollbarRef,
     /// Last pointer position along the drag axis, in page coordinates
     pub(crate) last_pos: f32,
 }
@@ -149,48 +152,6 @@ impl PanState {
     }
 }
 
-/// Find the scrollbar thumb under the given page position: walks the layout
-/// ancestor chain of the hit node (the hit test returns the content under
-/// the overlay thumb) looking for a scroll container whose thumb contains
-/// the pointer. Returns (scroll container id, is-horizontal).
-///
-/// Also the `scrollbars` feature's single behavioral gate: returning `None`
-/// keeps unpainted thumbs from ever claiming pointer events.
-pub(crate) fn scrollbar_thumb_at(doc: &BaseDocument, x: f32, y: f32) -> Option<(usize, bool)> {
-    if !cfg!(feature = "scrollbars") {
-        return None;
-    }
-    let hit = doc.hit(x, y)?;
-    let mut cursor = Some(hit.node_id);
-    while let Some(node_id) = cursor {
-        let node = &doc.nodes[node_id];
-        for horizontal in [false, true] {
-            if !node.wants_scrollbar(horizontal) {
-                continue;
-            }
-            let Some(thumb) = node.scrollbar_thumb(horizontal) else {
-                continue;
-            };
-            // absolute_position subtracts the node's own scroll offset
-            // (it maps content coordinates); compensate to get the
-            // border-box origin.
-            //
-            // FIXME: absolute_position ignores CSS transforms, so the hit
-            // region is wrong inside transformed ancestors (as is blitz's
-            // other pointer math). Wants a shared transform-aware
-            // page->local conversion, not a scrollbar-local fix.
-            let origin = node.absolute_position(0.0, 0.0);
-            let local_x = (x - origin.x) as f64 - node.scroll_offset.x;
-            let local_y = (y - origin.y) as f64 - node.scroll_offset.y;
-            if thumb.contains(kurbo::Point::new(local_x, local_y)) {
-                return Some((node_id, horizontal));
-            }
-        }
-        cursor = node.layout_parent.get();
-    }
-    None
-}
-
 pub(crate) fn handle_pointermove<F: FnMut(DomEvent)>(
     doc: &mut BaseDocument,
     target: usize,
@@ -258,29 +219,23 @@ pub(crate) fn handle_pointermove<F: FnMut(DomEvent)>(
     }
 
     if let DragMode::ScrollbarDrag(state) = &mut doc.drag_mode {
-        let pos = if state.horizontal { x } else { y };
+        let ScrollbarRef { node_id, axis } = state.scrollbar;
+        let pos = match axis {
+            AbsoluteAxis::Horizontal => x,
+            AbsoluteAxis::Vertical => y,
+        };
         let delta_px = (pos - state.last_pos) as f64;
         state.last_pos = pos;
-        let (node_id, horizontal) = (state.node_id, state.horizontal);
 
         // Thumb px -> content px. scroll_by uses wheel-delta semantics
         // (positive delta decreases the offset), so negate.
-        let ratio = doc.nodes[node_id].scrollbar_drag_ratio(horizontal);
-        let (dx, dy) = if horizontal {
-            (-delta_px * ratio, 0.0)
-        } else {
-            (0.0, -delta_px * ratio)
+        let ratio = doc.nodes[node_id].scrollbar_drag_ratio(axis);
+        let (dx, dy) = match axis {
+            AbsoluteAxis::Horizontal => (-delta_px * ratio, 0.0),
+            AbsoluteAxis::Vertical => (0.0, -delta_px * ratio),
         };
         let has_changed = doc.scroll_by(Some(node_id), dx, dy, &mut dispatch_event);
         return has_changed;
-    }
-
-    // Track which scrollbar thumb the pointer is over (for hover styling);
-    // repaint when it changes.
-    let hovered_scrollbar = scrollbar_thumb_at(doc, x, y);
-    if hovered_scrollbar != doc.hovered_scrollbar {
-        doc.hovered_scrollbar = hovered_scrollbar;
-        changed = true;
     }
 
     let Some(hit) = doc.hit(x, y) else {
@@ -401,11 +356,13 @@ pub(crate) fn handle_pointerdown(
     // Scrollbar thumb drags take precedence over content interactions and
     // are not dispatched to the page (matching native scrollbars).
     if button == MouseEventButton::Main {
-        if let Some((node_id, horizontal)) = scrollbar_thumb_at(doc, x, y) {
+        if let (_, Some(scrollbar)) = doc.hit_with_scrollbar(x, y) {
             doc.drag_mode = DragMode::ScrollbarDrag(ScrollbarDragState {
-                node_id,
-                horizontal,
-                last_pos: if horizontal { x } else { y },
+                scrollbar,
+                last_pos: match scrollbar.axis {
+                    AbsoluteAxis::Horizontal => x,
+                    AbsoluteAxis::Vertical => y,
+                },
             });
             doc.shell_provider.request_redraw();
             return;

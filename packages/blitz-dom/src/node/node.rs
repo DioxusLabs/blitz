@@ -494,30 +494,6 @@ pub enum NodeKind {
     Comment,
 }
 
-/// The computed value of `scrollbar-width` (css-scrollbars-1). A local
-/// mirror of the stylo type, which isn't exposed to the servo engine yet
-/// (servo/stylo#413).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum ScrollbarWidth {
-    #[default]
-    Auto,
-    Thin,
-    None,
-}
-
-/// The computed value of `scrollbar-color` (css-scrollbars-1). A local
-/// mirror of the stylo type, which isn't exposed to the servo engine yet
-/// (servo/stylo#413). Colors are fully resolved (no `currentColor`).
-#[derive(Clone, Debug, Default, PartialEq)]
-pub enum ScrollbarColor {
-    #[default]
-    Auto,
-    Colors {
-        thumb: style::color::AbsoluteColor,
-        track: style::color::AbsoluteColor,
-    },
-}
-
 /// The different kinds of nodes in the DOM.
 #[derive(Debug, Clone)]
 pub enum NodeData {
@@ -933,6 +909,20 @@ impl Node {
     /// TODO: z-index
     /// (If multiple children are positioned at the position then a random one will be recursed into)
     pub fn hit(&self, x: f32, y: f32, scale: f64) -> Option<HitResult> {
+        self.hit_inner(x, y, scale, &mut None)
+    }
+
+    /// [`hit`](Self::hit), also resolving the innermost overlay scrollbar
+    /// thumb under the point into `scrollbar` during the same descent (so
+    /// thumb hit-testing shares the exact coordinate handling — transforms
+    /// included — of every other hit test).
+    pub(crate) fn hit_inner(
+        &self,
+        x: f32,
+        y: f32,
+        scale: f64,
+        scrollbar: &mut Option<crate::node::ScrollbarRef>,
+    ) -> Option<HitResult> {
         use style::computed_values::pointer_events::T as PointerEvents;
         use style::computed_values::visibility::T as Visibility;
 
@@ -997,6 +987,17 @@ impl Node {
             return None;
         }
 
+        // Descendants overwrite, so the innermost scroll container's thumb
+        // wins. Thumb coords are border-box relative (unscrolled).
+        if matches_self
+            && let Some(sb) = self.scrollbar_at_local(
+                (x - self.scroll_offset.x as f32) as f64,
+                (y - self.scroll_offset.y as f32) as f64,
+            )
+        {
+            *scrollbar = Some(sb);
+        }
+
         if self.flags.is_inline_root() {
             let content_box_offset = taffy::Point {
                 x: self.final_layout.padding.left + self.final_layout.border.left,
@@ -1012,7 +1013,10 @@ impl Node {
                 for hoisted_child in hoisted.pos_z_hoisted_children().rev() {
                     let x = x - hoisted_child.position.x;
                     let y = y - hoisted_child.position.y;
-                    if let Some(hit) = self.with(hoisted_child.node_id).hit(x, y, scale) {
+                    if let Some(hit) = self
+                        .with(hoisted_child.node_id)
+                        .hit_inner(x, y, scale, scrollbar)
+                    {
                         return Some(hit);
                     }
                 }
@@ -1021,7 +1025,7 @@ impl Node {
 
         // Call `.hit()` on each child in turn. If any return `Some` then return that value. Else return `Some(self.id).
         for child_id in self.paint_children.borrow().iter().flatten().rev() {
-            if let Some(hit) = self.with(*child_id).hit(x, y, scale) {
+            if let Some(hit) = self.with(*child_id).hit_inner(x, y, scale, scrollbar) {
                 return Some(hit);
             }
         }
@@ -1032,7 +1036,10 @@ impl Node {
                 for hoisted_child in hoisted.neg_z_hoisted_children().rev() {
                     let x = x - hoisted_child.position.x;
                     let y = y - hoisted_child.position.y;
-                    if let Some(hit) = self.with(hoisted_child.node_id).hit(x, y, scale) {
+                    if let Some(hit) = self
+                        .with(hoisted_child.node_id)
+                        .hit_inner(x, y, scale, scrollbar)
+                    {
                         return Some(hit);
                     }
                 }
@@ -1132,151 +1139,6 @@ impl Node {
         };
 
         Some(offset)
-    }
-
-    /// The node's used `scrollbar-width`.
-    pub fn scrollbar_width(&self) -> ScrollbarWidth {
-        // TODO: read the computed style once stylo exposes scrollbar-width
-        // to the servo engine (servo/stylo#413):
-        // match self.primary_styles().map(|s| s.clone_scrollbar_width()) { .. }
-        ScrollbarWidth::Auto
-    }
-
-    /// The node's used `scrollbar-color`.
-    pub fn scrollbar_color(&self) -> ScrollbarColor {
-        // TODO: read the computed style once stylo exposes scrollbar-color
-        // to the servo engine (servo/stylo#413), resolving the colors
-        // against the element's `color`:
-        // self.primary_styles().map(|s| s.clone_scrollbar_color()) { .. }
-        ScrollbarColor::Auto
-    }
-
-    /// Whether the node shows an overlay scrollbar in the given axis:
-    /// always for `overflow: scroll`, only when the content overflows for
-    /// `overflow: auto`, never otherwise — and never when
-    /// `scrollbar-width: none`.
-    pub fn wants_scrollbar(&self, horizontal: bool) -> bool {
-        use style::values::computed::Overflow;
-        let Some(style) = self.primary_styles() else {
-            return false;
-        };
-        if self.scrollbar_width() == ScrollbarWidth::None {
-            return false;
-        }
-        let (overflow, scroll_extent) = if horizontal {
-            (
-                style.clone_overflow_x(),
-                self.final_layout.scroll_width() as f64,
-            )
-        } else {
-            (
-                style.clone_overflow_y(),
-                self.final_layout.scroll_height() as f64,
-            )
-        };
-        match overflow {
-            Overflow::Scroll => true,
-            Overflow::Auto => scroll_extent > 0.5,
-            _ => false,
-        }
-    }
-
-    /// The scrollport (padding box) in (unscaled) CSS px relative to the
-    /// node's border-box origin. Taffy has content-box helpers but none for
-    /// the padding box.
-    fn scrollport(&self) -> KurboRect {
-        let layout = &self.final_layout;
-        KurboRect::new(
-            layout.border.left as f64,
-            layout.border.top as f64,
-            layout.size.width as f64 - layout.border.right as f64,
-            layout.size.height as f64 - layout.border.bottom as f64,
-        )
-    }
-
-    /// Geometry of the overlay scrollbar thumb for the given axis, in
-    /// (unscaled) CSS px relative to the node's border-box origin. `None`
-    /// if there is no scrollable overflow in that axis.
-    pub fn scrollbar_thumb(&self, horizontal: bool) -> Option<KurboRect> {
-        // Matches Chromium's overlay thumb in its interactive state.
-        const THUMB_THICKNESS: f64 = 10.0;
-        const THIN_THUMB_THICKNESS: f64 = 6.0;
-        const THUMB_MARGIN: f64 = 2.0;
-        const MIN_THUMB_LENGTH: f64 = 32.0;
-
-        let layout = &self.final_layout;
-        let scroll_extent = if horizontal {
-            layout.scroll_width() as f64
-        } else {
-            layout.scroll_height() as f64
-        };
-        if scroll_extent <= 0.5 {
-            return None;
-        }
-
-        let thickness = match self.scrollbar_width() {
-            ScrollbarWidth::Thin => THIN_THUMB_THICKNESS,
-            _ => THUMB_THICKNESS,
-        };
-
-        let port = self.scrollport();
-        let (viewport_len, scroll_offset) = if horizontal {
-            (port.width(), self.scroll_offset.x)
-        } else {
-            (port.height(), self.scroll_offset.y)
-        };
-        let thumb_len = (viewport_len * viewport_len / (viewport_len + scroll_extent))
-            .max(MIN_THUMB_LENGTH)
-            .min(viewport_len);
-        let progress = (scroll_offset / scroll_extent).clamp(0.0, 1.0);
-        // Round a sub-pixel displacement up to a whole pixel so any nonzero
-        // scroll visibly moves the thumb off the origin.
-        let thumb_start = match progress * (viewport_len - thumb_len) {
-            start if start > 0.0 && start < 1.0 => 1.0,
-            start => start,
-        };
-
-        Some(if horizontal {
-            KurboRect::new(
-                port.x0 + thumb_start,
-                port.y1 - THUMB_MARGIN - thickness,
-                port.x0 + thumb_start + thumb_len,
-                port.y1 - THUMB_MARGIN,
-            )
-        } else {
-            KurboRect::new(
-                port.x1 - THUMB_MARGIN - thickness,
-                port.y0 + thumb_start,
-                port.x1 - THUMB_MARGIN,
-                port.y0 + thumb_start + thumb_len,
-            )
-        })
-    }
-
-    /// Content px scrolled per thumb px dragged, for the given axis.
-    pub fn scrollbar_drag_ratio(&self, horizontal: bool) -> f64 {
-        let Some(thumb) = self.scrollbar_thumb(horizontal) else {
-            return 0.0;
-        };
-        let port = self.scrollport();
-        let (scroll_extent, viewport_len, thumb_len) = if horizontal {
-            (
-                self.final_layout.scroll_width() as f64,
-                port.width(),
-                thumb.width(),
-            )
-        } else {
-            (
-                self.final_layout.scroll_height() as f64,
-                port.height(),
-                thumb.height(),
-            )
-        };
-        let track_play = viewport_len - thumb_len;
-        if track_play <= 0.0 {
-            return 0.0;
-        }
-        scroll_extent / track_play
     }
 
     /// Computes the Document-relative coordinates of the `Node`

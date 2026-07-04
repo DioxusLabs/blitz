@@ -54,6 +54,11 @@ pub struct BlitzDomPainter<'dom, 'a> {
     pub(crate) initial_y: f64,
     /// The id of the document's root element (cached to avoid re-resolving it for every element)
     pub(crate) root_element_id: Option<usize>,
+    /// Scrollbar hover/drag state, resolved once per scene like the root element
+    #[cfg(feature = "scrollbars")]
+    pub(crate) hovered_scrollbar: Option<blitz_dom::node::ScrollbarRef>,
+    #[cfg(feature = "scrollbars")]
+    pub(crate) scrollbar_drag_target: Option<blitz_dom::node::ScrollbarRef>,
     pub(crate) layer_manager: LayerManager,
     /// Cached selection ranges for O(1) lookup: node_id -> (start_offset, end_offset)
     pub(crate) selection_ranges: HashMap<usize, (usize, usize)>,
@@ -90,6 +95,10 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             initial_x,
             initial_y,
             root_element_id,
+            #[cfg(feature = "scrollbars")]
+            hovered_scrollbar: dom.hovered_scrollbar(),
+            #[cfg(feature = "scrollbars")]
+            scrollbar_drag_target: dom.scrollbar_drag_target(),
             layer_manager,
             selection_ranges,
             custom_widget_scenes,
@@ -582,7 +591,8 @@ impl ElementCx<'_, '_> {
     #[cfg(feature = "scrollbars")]
     fn draw_scrollbars(&self, scene: &mut impl PaintScene) {
         // css-scrollbars-1 scrollbar-color: author thumb/track colors
-        use blitz_dom::node::ScrollbarColor;
+        use blitz_dom::node::{ScrollbarColor, ScrollbarRef};
+        use taffy::AbsoluteAxis;
         let (custom_thumb, custom_track) = match self.node.scrollbar_color() {
             ScrollbarColor::Auto => (None, None),
             ScrollbarColor::Colors { thumb, track } => {
@@ -590,13 +600,13 @@ impl ElementCx<'_, '_> {
             }
         };
 
-        let drag_target = self.context.dom.scrollbar_drag_target();
-        let hovered_thumb = self.context.dom.hovered_scrollbar();
+        let drag_target = self.context.scrollbar_drag_target;
+        let hovered_thumb = self.context.hovered_scrollbar;
 
         // scrollbar-color doesn't affect overlay visibility: persistence is
         // UA policy, not author styling.
         let node_id = self.node.id;
-        let is_drag_target = matches!(drag_target, Some((target_id, _)) if target_id == node_id);
+        let is_drag_target = drag_target.is_some_and(|s| s.node_id == node_id);
         if !self.node.is_hovered()
             && !is_drag_target
             && self.node.scroll_offset.x == 0.0
@@ -630,11 +640,11 @@ impl ElementCx<'_, '_> {
         const HOVER_CONTRAST: f32 = 1.8;
         const ACTIVE_CONTRAST: f32 = 1.3;
 
-        for horizontal in [false, true] {
-            if !self.node.wants_scrollbar(horizontal) {
+        for axis in [AbsoluteAxis::Vertical, AbsoluteAxis::Horizontal] {
+            if !self.node.wants_scrollbar(axis) {
                 continue;
             }
-            let Some(thumb) = self.node.scrollbar_thumb(horizontal) else {
+            let Some(thumb) = self.node.scrollbar_thumb(axis) else {
                 continue;
             };
 
@@ -643,10 +653,13 @@ impl ElementCx<'_, '_> {
             // Track (only when the author specified a track color)
             if let Some(track_color) = custom_track {
                 let padding_box = self.frame.padding_box;
-                let track_rect = if horizontal {
-                    Rect::new(padding_box.x0, rect.y0, padding_box.x1, rect.y1)
-                } else {
-                    Rect::new(rect.x0, padding_box.y0, rect.x1, padding_box.y1)
+                let track_rect = match axis {
+                    AbsoluteAxis::Horizontal => {
+                        Rect::new(padding_box.x0, rect.y0, padding_box.x1, rect.y1)
+                    }
+                    AbsoluteAxis::Vertical => {
+                        Rect::new(rect.x0, padding_box.y0, rect.x1, padding_box.y1)
+                    }
                 };
                 scene.fill(
                     Fill::NonZero,
@@ -657,8 +670,9 @@ impl ElementCx<'_, '_> {
                 );
             }
 
-            let is_active = drag_target == Some((node_id, horizontal));
-            let is_hovered = hovered_thumb == Some((node_id, horizontal));
+            let this = ScrollbarRef { node_id, axis };
+            let is_active = drag_target == Some(this);
+            let is_hovered = hovered_thumb == Some(this);
             let color = match custom_thumb {
                 Some(base) if is_active => crate::color::blend_for_contrast(base, ACTIVE_CONTRAST),
                 Some(base) if is_hovered => crate::color::blend_for_contrast(base, HOVER_CONTRAST),
@@ -667,10 +681,9 @@ impl ElementCx<'_, '_> {
                 None if is_hovered => thumb_hover,
                 None => thumb_rest,
             };
-            let radius = if horizontal {
-                rect.height() / 2.0
-            } else {
-                rect.width() / 2.0
+            let radius = match axis {
+                AbsoluteAxis::Horizontal => rect.height() / 2.0,
+                AbsoluteAxis::Vertical => rect.width() / 2.0,
             };
             scene.fill(
                 Fill::NonZero,

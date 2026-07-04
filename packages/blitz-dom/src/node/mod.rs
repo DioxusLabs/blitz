@@ -5,6 +5,7 @@ mod attributes;
 mod custom_widget;
 mod element;
 mod node;
+mod scrollbar;
 mod stylo_data;
 mod text;
 
@@ -18,4 +19,5 @@ pub use element::{
     Marker, RasterImageData, SpecialElementData, SpecialElementType, Status,
 };
 pub use node::*;
+pub use scrollbar::{ScrollbarColor, ScrollbarRef, ScrollbarWidth};
 pub use text::{GeneratedTextInputEvent, TextBrush, TextInputData, TextLayout};

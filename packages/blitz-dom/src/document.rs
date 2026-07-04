@@ -247,9 +247,8 @@ pub struct BaseDocument {
     pub(crate) click_count: u16,
     /// Whether we're currently in a text selection drag (moved 2px+ from mousedown)
     pub(crate) drag_mode: DragMode,
-    /// The scrollbar thumb (scroll container id, is-horizontal) currently
-    /// under the pointer, if any
-    pub(crate) hovered_scrollbar: Option<(usize, bool)>,
+    /// The scrollbar thumb currently under the pointer, if any
+    pub(crate) hovered_scrollbar: Option<crate::node::ScrollbarRef>,
     /// Whether and what kind of scroll animation is currently in progress
     pub(crate) scroll_animation: ScrollAnimationState,
 
@@ -1245,16 +1244,7 @@ impl BaseDocument {
 
     // Takes (x, y) co-ordinates (relative to the )
     pub fn hit(&self, x: f32, y: f32) -> Option<HitResult> {
-        if TDocument::as_node(&&self.nodes[0])
-            .first_element_child()
-            .is_none()
-        {
-            #[cfg(feature = "tracing")]
-            tracing::warn!("No DOM - not resolving hit test");
-            return None;
-        }
-
-        self.root_element().hit(x, y, self.viewport().scale_f64())
+        self.hit_with_scrollbar(x, y).0
     }
 
     pub fn focus_next_node(&mut self) -> Option<usize> {
@@ -1336,29 +1326,55 @@ impl BaseDocument {
         true
     }
 
-    /// The scrollbar thumb (scroll container id, is-horizontal) currently
-    /// under the pointer, if any.
-    pub fn hovered_scrollbar(&self) -> Option<(usize, bool)> {
+    /// The scrollbar thumb currently under the pointer, if any.
+    pub fn hovered_scrollbar(&self) -> Option<crate::node::ScrollbarRef> {
         self.hovered_scrollbar
     }
 
-    /// The scrollbar thumb (scroll container id, is-horizontal) currently
-    /// being dragged, if any.
-    pub fn scrollbar_drag_target(&self) -> Option<(usize, bool)> {
+    /// The scrollbar thumb currently being dragged, if any.
+    pub fn scrollbar_drag_target(&self) -> Option<crate::node::ScrollbarRef> {
         match &self.drag_mode {
-            DragMode::ScrollbarDrag(state) => Some((state.node_id, state.horizontal)),
+            DragMode::ScrollbarDrag(state) => Some(state.scrollbar),
             _ => None,
         }
     }
 
+    /// [`hit`](Self::hit), also resolving the innermost overlay scrollbar
+    /// thumb under the point (shares the traversal, so it costs nothing
+    /// extra).
+    pub(crate) fn hit_with_scrollbar(
+        &self,
+        x: f32,
+        y: f32,
+    ) -> (Option<HitResult>, Option<crate::node::ScrollbarRef>) {
+        if TDocument::as_node(&&self.nodes[0])
+            .first_element_child()
+            .is_none()
+        {
+            #[cfg(feature = "tracing")]
+            tracing::warn!("No DOM - not resolving hit test");
+            return (None, None);
+        }
+        let mut scrollbar = None;
+        let hit = self
+            .root_element()
+            .hit_inner(x, y, self.viewport().scale_f64(), &mut scrollbar);
+        (hit, scrollbar)
+    }
+
     pub fn set_hover_to(&mut self, x: f32, y: f32) -> bool {
-        let hit = self.hit(x, y);
+        let (hit, hovered_scrollbar) = self.hit_with_scrollbar(x, y);
+        // Scrollbar-thumb hover is part of hover state: track it here so a
+        // pointer crossing a thumb restyles it even when the hit node (the
+        // content under the overlay thumb) is unchanged.
+        let scrollbar_changed = hovered_scrollbar != self.hovered_scrollbar;
+        self.hovered_scrollbar = hovered_scrollbar;
         let hover_node_id = hit.map(|hit| hit.node_id);
         let new_is_text = hit.map(|hit| hit.is_text).unwrap_or(false);
 
         // Return early if the new node is the same as the already-hovered node
         if hover_node_id == self.hover_node_id {
-            return false;
+            return scrollbar_changed;
         }
 
         let old_node_path = self.maybe_node_layout_ancestors(self.hover_node_id);
