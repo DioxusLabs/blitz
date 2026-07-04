@@ -582,9 +582,10 @@ fn convert_rect(rect: &parley::BoundingBox) -> kurbo::Rect {
 impl ElementCx<'_, '_> {
     /// Paint overlay scrollbar thumbs for scroll containers: `overflow:
     /// scroll`, or `auto` when the content overflows (never `hidden`/`clip`,
-    /// which scroll only programmatically). Thumbs only appear while the
-    /// container is hovered or scrolled away from the origin, which also
-    /// keeps them out of static reftest screenshots.
+    /// which scroll only programmatically). Thumbs appear on scroll and fade
+    /// out after a delay ([`BaseDocument::scrollbar_opacity`]); never-scrolled
+    /// containers paint nothing, keeping thumbs out of static reftest
+    /// screenshots.
     ///
     /// Geometry comes from [`Node::scrollbar_thumb`], shared with the
     /// thumb-drag hit testing in blitz-dom.
@@ -606,12 +607,8 @@ impl ElementCx<'_, '_> {
         // scrollbar-color doesn't affect overlay visibility: persistence is
         // UA policy, not author styling.
         let node_id = self.node.id;
-        let is_drag_target = drag_target.is_some_and(|s| s.node_id == node_id);
-        if !self.node.is_hovered()
-            && !is_drag_target
-            && self.node.scroll_offset.x == 0.0
-            && self.node.scroll_offset.y == 0.0
-        {
+        let opacity = self.context.dom.scrollbar_opacity(node_id);
+        if opacity == 0.0 {
             return;
         }
 
@@ -664,7 +661,7 @@ impl ElementCx<'_, '_> {
                 scene.fill(
                     Fill::NonZero,
                     self.transform,
-                    track_color,
+                    track_color.multiply_alpha(opacity),
                     None,
                     &track_rect,
                 );
@@ -688,7 +685,7 @@ impl ElementCx<'_, '_> {
             scene.fill(
                 Fill::NonZero,
                 self.transform,
-                color,
+                color.multiply_alpha(opacity),
                 None,
                 &rect.to_rounded_rect(radius),
             );
@@ -700,7 +697,7 @@ impl ElementCx<'_, '_> {
                 scene.stroke(
                     &Stroke::new(stroke_width),
                     self.transform,
-                    stroke_color,
+                    stroke_color.multiply_alpha(opacity),
                     None,
                     &stroke_rect.to_rounded_rect(radius - stroke_width / 2.0),
                 );

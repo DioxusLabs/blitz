@@ -354,9 +354,12 @@ pub(crate) fn handle_pointerdown(
     };
 
     // Scrollbar thumb drags take precedence over content interactions and
-    // are not dispatched to the page (matching native scrollbars).
+    // are not dispatched to the page (matching native scrollbars). A
+    // faded-out thumb doesn't capture: the click goes to the content.
     if button == MouseEventButton::Main {
-        if let (_, Some(scrollbar)) = doc.hit_with_scrollbar(x, y) {
+        if let (_, Some(scrollbar)) = doc.hit_with_scrollbar(x, y)
+            && doc.scrollbar_opacity(scrollbar.node_id) > 0.0
+        {
             doc.drag_mode = DragMode::ScrollbarDrag(ScrollbarDragState {
                 scrollbar,
                 last_pos: match scrollbar.axis {
@@ -512,8 +515,10 @@ pub(crate) fn handle_pointerup<F: FnMut(DomEvent)>(
     // the document with a touch
     let do_click = drag_mode == DragMode::None;
 
-    // Repaint so a dragged scrollbar thumb drops its active styling
-    if matches!(drag_mode, DragMode::ScrollbarDrag(_)) {
+    // Repaint so a dragged scrollbar thumb drops its active styling, and
+    // restart its fade-out delay now that the drag no longer holds it shown
+    if let DragMode::ScrollbarDrag(state) = &drag_mode {
+        doc.show_scrollbars(state.scrollbar.node_id);
         doc.shell_provider.request_redraw();
     }
 

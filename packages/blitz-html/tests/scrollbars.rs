@@ -1,7 +1,7 @@
-//! Scroll containers paint overlay scrollbars while hovered or scrolled:
-//! always for overflow: scroll, only when overflowing for overflow: auto,
-//! never for overflow: hidden. At rest (unhovered, unscrolled) nothing is
-//! painted, like other overlay scrollbar UIs.
+//! Scroll containers paint overlay scrollbars when scrolled, fading them
+//! out after a delay: for overflow: scroll and overflowing overflow: auto,
+//! never for overflow: hidden. At rest nothing is painted, like other
+//! overlay scrollbar UIs.
 
 use anyrender::render_to_buffer;
 use anyrender_vello_cpu::VelloCpuImageRenderer;
@@ -31,9 +31,9 @@ fn pixel_in(html: &str, scroll: (f64, f64), x: usize, y: usize, scheme: ColorSch
     );
     doc.resolve(0.0);
     let scroller = doc.query_selector("#scroller").unwrap().expect("#scroller");
-    let node = doc.get_node_mut(scroller).unwrap();
-    node.scroll_offset.x = scroll.0;
-    node.scroll_offset.y = scroll.1;
+    // Scroll through the scroll API (wheel-delta semantics: negated), so the
+    // scroll registers as scrollbar activity like a real user scroll.
+    doc.scroll_by(Some(scroller), -scroll.0, -scroll.1, &mut |_| {});
     let buffer = render_to_buffer::<VelloCpuImageRenderer, _>(
         |scene| paint_scene(scene, &mut doc, 1.0, 100, 100, 0, 0),
         100,
@@ -67,16 +67,44 @@ fn unscrolled_unhovered_scroller_paints_no_thumb() {
 
 #[test]
 fn non_overflowing_auto_scroller_paints_no_thumb() {
-    // Even with a (stale) scroll offset, a non-overflowing auto container
-    // has no scroll range and paints no thumb.
+    // A non-overflowing auto container has no scroll range: the scroll
+    // doesn't move it and must not summon a thumb.
     let px = pixel(&scroller("auto", 100), (0.0, 10.0), 97, 4);
     assert_eq!(px, BLUE, "no scrollbar for non-overflowing overflow:auto");
 }
 
 #[test]
 fn hidden_scroller_paints_no_thumb() {
+    // overflow:hidden ignores user scrolls entirely.
     let px = pixel(&scroller("hidden", 1000), (0.0, 50.0), 97, 10);
     assert_eq!(px, BLUE, "overflow:hidden must not paint scrollbars");
+}
+
+#[test]
+fn stale_scroll_offset_alone_paints_no_thumb() {
+    // Overlay scrollbar visibility follows scroll *activity*, not scroll
+    // position: an offset applied outside the scroll API (no activity)
+    // paints nothing, like a scrolled-then-idle container after its
+    // scrollbars have faded out.
+    let mut doc = HtmlDocument::from_html(
+        &scroller("auto", 1000),
+        DocumentConfig {
+            viewport: Some(Viewport::new(100, 100, 1.0, ColorScheme::Light)),
+            html_parser_provider: Some(Arc::new(HtmlProvider) as _),
+            ..Default::default()
+        },
+    );
+    doc.resolve(0.0);
+    let scroller = doc.query_selector("#scroller").unwrap().expect("#scroller");
+    doc.get_node_mut(scroller).unwrap().scroll_offset.y = 50.0;
+    let buffer = render_to_buffer::<VelloCpuImageRenderer, _>(
+        |scene| paint_scene(scene, &mut doc, 1.0, 100, 100, 0, 0),
+        100,
+        100,
+    );
+    let idx = (10 * 100 + 97) * 4;
+    let px = [buffer[idx], buffer[idx + 1], buffer[idx + 2]];
+    assert_eq!(px, BLUE, "no scrollbar without scroll activity");
 }
 
 #[test]

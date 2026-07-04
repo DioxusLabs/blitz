@@ -5,7 +5,7 @@ mod attributes;
 mod custom_widget;
 mod element;
 mod node;
-mod scrollbar;
+pub(crate) mod scrollbar;
 mod stylo_data;
 mod text;
 

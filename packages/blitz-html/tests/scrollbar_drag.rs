@@ -67,19 +67,28 @@ fn scroller_doc() -> HtmlDocument {
     doc
 }
 
+/// Scrolls `scroller` down by `dy` content px through the scroll API, which
+/// also shows its overlay scrollbars (thumbs are only interactive while
+/// visible).
+fn scroll_down(doc: &mut HtmlDocument, scroller: usize, dy: f64) {
+    doc.scroll_by(Some(scroller), 0.0, -dy, &mut |_| {});
+}
+
 #[test]
 fn dragging_the_thumb_scrolls_the_container() {
     let mut doc = scroller_doc();
     let scroller = doc.query_selector("#scroller").unwrap().unwrap();
 
-    // Thumb starts at the top right (32px long, 10px wide, 2px margin).
-    drag(&mut doc, (97.0, 8.0), (97.0, 42.0));
+    // Scrolled to 450 (of 900), the 32px thumb sits 34px down its 68px of
+    // track play: y in [36, 68] (2px margin).
+    scroll_down(&mut doc, scroller, 450.0);
+    drag(&mut doc, (97.0, 50.0), (97.0, 16.0));
 
     let offset = doc.get_node(scroller).unwrap().scroll_offset.y;
-    // 34 thumb px * (900 scroll range / 68 track play) = 450 content px
+    // -34 thumb px * (900 scroll range / 68 track play) = -450 content px
     assert!(
-        (offset - 450.0).abs() < 1.0,
-        "expected scroll offset ~450 after dragging the thumb 34px, got {offset}"
+        offset.abs() < 1.0,
+        "expected scroll offset ~0 after dragging the thumb up 34px, got {offset}"
     );
 }
 
@@ -89,10 +98,11 @@ fn dragging_content_does_not_scroll() {
     let scroller = doc.query_selector("#scroller").unwrap().unwrap();
 
     // Same drag, but starting in the content area, left of the thumb.
-    drag(&mut doc, (50.0, 8.0), (50.0, 50.0));
+    scroll_down(&mut doc, scroller, 450.0);
+    drag(&mut doc, (50.0, 50.0), (50.0, 16.0));
 
     let offset = doc.get_node(scroller).unwrap().scroll_offset.y;
-    assert_eq!(offset, 0.0, "content drags must not move the scrollbar");
+    assert_eq!(offset, 450.0, "content drags must not move the scrollbar");
 }
 
 #[test]
@@ -100,13 +110,59 @@ fn drag_clamps_at_the_end_of_the_track() {
     let mut doc = scroller_doc();
     let scroller = doc.query_selector("#scroller").unwrap().unwrap();
 
-    drag(&mut doc, (97.0, 8.0), (97.0, 500.0));
+    scroll_down(&mut doc, scroller, 450.0);
+    drag(&mut doc, (97.0, 50.0), (97.0, 500.0));
 
     let offset = doc.get_node(scroller).unwrap().scroll_offset.y;
     assert!(
         (offset - 900.0).abs() < 1.0,
         "expected scroll offset clamped to 900, got {offset}"
     );
+}
+
+#[test]
+fn faded_out_thumb_does_not_capture_drags() {
+    let mut doc = scroller_doc();
+    let scroller = doc.query_selector("#scroller").unwrap().unwrap();
+
+    // Never scrolled, so the scrollbars are hidden: a drag across where the
+    // thumb would be must fall through to the content.
+    drag(&mut doc, (97.0, 8.0), (97.0, 42.0));
+
+    let offset = doc.get_node(scroller).unwrap().scroll_offset.y;
+    assert_eq!(offset, 0.0, "hidden thumbs must not capture pointer events");
+}
+
+#[test]
+fn pointer_hover_does_not_summon_hidden_scrollbars() {
+    use anyrender::render_to_buffer;
+    use anyrender_vello_cpu::VelloCpuImageRenderer;
+    use blitz_paint::paint_scene;
+
+    fn render(doc: &mut HtmlDocument) -> Vec<u8> {
+        render_to_buffer::<VelloCpuImageRenderer, _>(
+            |scene| paint_scene(scene, doc.as_mut(), 1.0, 100, 100, 0, 0),
+            100,
+            100,
+        )
+    }
+
+    let mut doc = scroller_doc();
+    let at_rest = render(&mut doc);
+
+    // Only scrolling shows overlay scrollbars: hovering where the thumb
+    // would be must not fade them in.
+    {
+        let mut driver = EventDriver::new(&mut doc, NoopEventHandler);
+        driver.handle_ui_event(UiEvent::PointerMove(pointer_event(
+            95.0,
+            8.0,
+            MouseEventButtons::None,
+        )));
+    }
+    let hovered = render(&mut doc);
+
+    assert_eq!(at_rest, hovered, "hovering must not paint a thumb");
 }
 
 #[test]
@@ -133,7 +189,7 @@ fn thumb_brightens_on_hover_and_drag() {
 
     let mut doc = scroller_doc();
     let scroller = doc.query_selector("#scroller").unwrap().unwrap();
-    doc.get_node_mut(scroller).unwrap().scroll_offset.y = 50.0;
+    scroll_down(&mut doc, scroller, 50.0);
 
     let base = thumb_pixel(&mut doc);
 
@@ -203,7 +259,7 @@ fn white_author_thumb_still_signals_hover_and_drag() {
     );
     doc.resolve(0.0);
     let scroller = doc.query_selector("#scroller").unwrap().unwrap();
-    doc.get_node_mut(scroller).unwrap().scroll_offset.y = 50.0;
+    scroll_down(&mut doc, scroller, 50.0);
 
     let base = thumb_pixel(&mut doc);
 

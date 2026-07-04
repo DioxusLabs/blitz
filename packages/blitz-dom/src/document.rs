@@ -249,6 +249,9 @@ pub struct BaseDocument {
     pub(crate) drag_mode: DragMode,
     /// The scrollbar thumb currently under the pointer, if any
     pub(crate) hovered_scrollbar: Option<crate::node::ScrollbarRef>,
+    /// When each scroll container's overlay scrollbars were last shown
+    /// (scrolled, or the pointer left the thumb); drives their fade-out
+    pub(crate) scrollbar_activity: HashMap<usize, Instant>,
     /// Whether and what kind of scroll animation is currently in progress
     pub(crate) scroll_animation: ScrollAnimationState,
 
@@ -463,6 +466,7 @@ impl BaseDocument {
             click_count: 0,
             drag_mode: DragMode::None,
             hovered_scrollbar: None,
+            scrollbar_activity: HashMap::new(),
             scroll_animation: ScrollAnimationState::None,
             text_selection: TextSelection::default(),
         };
@@ -1339,6 +1343,42 @@ impl BaseDocument {
         }
     }
 
+    /// The current opacity of `node_id`'s overlay scrollbars. They show at
+    /// full opacity on scroll and fade out after a delay (Chromium's overlay
+    /// timings); the pointer resting on a thumb, or dragging it, holds them
+    /// visible.
+    pub fn scrollbar_opacity(&self, node_id: usize) -> f32 {
+        let interacting = |scrollbar: &crate::node::ScrollbarRef| scrollbar.node_id == node_id;
+        if self.hovered_scrollbar.as_ref().is_some_and(interacting)
+            || self
+                .scrollbar_drag_target()
+                .as_ref()
+                .is_some_and(interacting)
+        {
+            return 1.0;
+        }
+        self.scrollbar_activity.get(&node_id).map_or(0.0, |last| {
+            crate::node::scrollbar::opacity_at(last.elapsed())
+        })
+    }
+
+    /// Show `node_id`'s overlay scrollbars at full opacity and restart their
+    /// fade-out delay.
+    pub(crate) fn show_scrollbars(&mut self, node_id: usize) {
+        if cfg!(feature = "scrollbars") {
+            self.scrollbar_activity.insert(node_id, Instant::now());
+        }
+    }
+
+    /// Whether any overlay scrollbars are awaiting or animating their
+    /// fade-out (so frames must keep rendering until they finish).
+    fn scrollbars_animating(&self) -> bool {
+        use crate::node::scrollbar::{FADE_DELAY, FADE_DURATION};
+        self.scrollbar_activity
+            .values()
+            .any(|last| last.elapsed() < FADE_DELAY + FADE_DURATION)
+    }
+
     /// [`hit`](Self::hit), also resolving the innermost overlay scrollbar
     /// thumb under the point (shares the traversal, so it costs nothing
     /// extra).
@@ -1364,10 +1404,24 @@ impl BaseDocument {
 
     pub fn set_hover_to(&mut self, x: f32, y: f32) -> bool {
         let (hit, hovered_scrollbar) = self.hit_with_scrollbar(x, y);
+        // A faded-out thumb is not interactive: pointer moves never fade
+        // overlay scrollbars back in (only scrolling shows them).
+        let hovered_scrollbar =
+            hovered_scrollbar.filter(|scrollbar| self.scrollbar_opacity(scrollbar.node_id) > 0.0);
         // Scrollbar-thumb hover is part of hover state: track it here so a
         // pointer crossing a thumb restyles it even when the hit node (the
         // content under the overlay thumb) is unchanged.
         let scrollbar_changed = hovered_scrollbar != self.hovered_scrollbar;
+        if scrollbar_changed {
+            // Entering a thumb restores full opacity mid-fade; leaving one
+            // restarts the fade-out delay.
+            for scrollbar in [self.hovered_scrollbar, hovered_scrollbar]
+                .into_iter()
+                .flatten()
+            {
+                self.show_scrollbars(scrollbar.node_id);
+            }
+        }
         self.hovered_scrollbar = hovered_scrollbar;
         let hover_node_id = hit.map(|hit| hit.node_id);
         let new_is_text = hit.map(|hit| hit.is_text).unwrap_or(false);
@@ -1530,6 +1584,7 @@ impl BaseDocument {
             | self.subdoc_is_animating
             | has_custom_widgets
             | (self.scroll_animation != ScrollAnimationState::None)
+            | self.scrollbars_animating()
     }
 
     /// Update the device and reset the stylist to process the new size
@@ -1777,8 +1832,13 @@ impl BaseDocument {
             dispatch_event(DomEvent::new(node_id, DomEventData::Scroll(event)));
         }
 
+        let parent = node.parent;
+        if has_changed {
+            self.show_scrollbars(node_id);
+        }
+
         if bubble_x != 0.0 || bubble_y != 0.0 {
-            if let Some(parent) = node.parent {
+            if let Some(parent) = parent {
                 return self.scroll_node_by_has_changed(parent, bubble_x, bubble_y, dispatch_event)
                     | has_changed;
             } else {
