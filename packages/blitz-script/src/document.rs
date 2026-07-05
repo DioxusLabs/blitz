@@ -107,11 +107,7 @@ impl ScriptDocument {
         for script in self.collect_scripts() {
             match script.src {
                 Some(src) => {
-                    let resolved = match &self.base_url {
-                        Some(base) => base.join(&src).ok(),
-                        None => Url::parse(&src).ok(),
-                    };
-                    let Some(url) = resolved else {
+                    let Some(url) = self.resolve_script_url(&src) else {
                         eprintln!("blitz-script: could not resolve script URL {src:?}");
                         continue;
                     };
@@ -131,6 +127,29 @@ impl ScriptDocument {
 
         self.request_redraw();
         self.arm_timer_thread();
+    }
+
+    /// The resolved URLs of the document's external (`<script src="...">`) scripts,
+    /// in document order.
+    ///
+    /// The [`ScriptFetcher`] API is synchronous, so embedders with asynchronous
+    /// networking can use this to prefetch script sources before calling
+    /// [`execute_scripts`](Self::execute_scripts), and then serve them from memory
+    /// via a custom fetcher (see [`with_fetcher`](Self::with_fetcher)).
+    pub fn external_script_urls(&self) -> Vec<Url> {
+        self.collect_scripts()
+            .iter()
+            .filter_map(|script| script.src.as_deref())
+            .filter_map(|src| self.resolve_script_url(src))
+            .collect()
+    }
+
+    /// Resolve a script `src` attribute against the document's base URL
+    fn resolve_script_url(&self, src: &str) -> Option<Url> {
+        match &self.base_url {
+            Some(base) => base.join(src).ok(),
+            None => Url::parse(src).ok(),
+        }
     }
 
     /// Evaluate arbitrary JavaScript code in the document's script context
