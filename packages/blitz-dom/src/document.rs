@@ -39,7 +39,7 @@ use std::str::FromStr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock, RwLockReadGuard, RwLockWriteGuard};
-use std::task::Context as TaskContext;
+use std::task::{Context as TaskContext, Waker};
 use style::Atom;
 use style::animation::DocumentAnimationSet;
 use style::attr::{AttrIdentifier, AttrValue};
@@ -761,6 +761,28 @@ impl BaseDocument {
         if let Some(load) = self.iframe_loads.remove(&node_id) {
             load.abort_controller.abort();
         }
+    }
+
+    /// Poll all sub-documents (see [`Document::poll`]), allowing them to make progress
+    /// on any pending async operations (e.g. JavaScript timers). Hosts which poll a
+    /// wrapper around a [`BaseDocument`] should call this from their `poll` implementation.
+    ///
+    /// Returns `true` if any sub-document reported changes.
+    pub fn poll_subdocuments(&mut self, waker: Option<&Waker>) -> bool {
+        let mut has_changes = false;
+        let node_ids: Vec<NodeId> = self.sub_document_nodes.iter().copied().collect();
+        for node_id in node_ids {
+            let Some(sub_doc) = self
+                .nodes
+                .get_mut(node_id)
+                .and_then(|node| node.subdoc_mut())
+            else {
+                continue;
+            };
+            let task_context = waker.map(TaskContext::from_waker);
+            has_changes |= sub_doc.poll(task_context);
+        }
+        has_changes
     }
 
     #[cfg(feature = "custom-widget")]

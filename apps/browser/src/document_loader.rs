@@ -122,7 +122,7 @@ impl DocumentLoader {
                 let base_url = resolved_url.clone();
                 let config = make_doc_config(
                     Some(resolved_url),
-                    net_provider,
+                    Arc::clone(&net_provider),
                     history,
                     font_ctx,
                     Some(signal.clone()),
@@ -136,15 +136,12 @@ impl DocumentLoader {
                     (&*body_text, false)
                 };
 
-                let document = HtmlDocument::from_html(html, config).into_inner();
-                let parsed_title = document
-                    .find_title_node()
-                    .map(|n| n.text_content())
-                    .unwrap_or_default();
+                let (document, parsed_title, favicon_url) =
+                    build_page_document(html, config, &net_provider, &signal).await;
                 let favicon_candidate =
-                    favicon_candidate(base_url.as_str(), document.favicon_url().as_deref());
+                    favicon_candidate(base_url.as_str(), favicon_url.as_deref());
                 LoadedDocument {
-                    document: SubDocumentAttr::new(document),
+                    document,
                     html_source: html.to_string(),
                     title: parsed_title,
                     favicon_candidate,
@@ -186,5 +183,87 @@ impl DocumentLoader {
 impl Drop for DocumentLoader {
     fn drop(&mut self) {
         self.abort_current();
+    }
+}
+
+/// Build the document for a loaded page (without JavaScript support), returning
+/// the document, its title, and its favicon URL (if any).
+#[cfg(not(feature = "javascript"))]
+async fn build_page_document(
+    html: &str,
+    config: DocumentConfig,
+    _net_provider: &Arc<StdNetProvider>,
+    _signal: &AbortSignal,
+) -> (SubDocumentAttr, String, Option<String>) {
+    let document = HtmlDocument::from_html(html, config).into_inner();
+    let title = document
+        .find_title_node()
+        .map(|n| n.text_content())
+        .unwrap_or_default();
+    let favicon_url = document.favicon_url();
+    (SubDocumentAttr::new(document), title, favicon_url)
+}
+
+/// Build the document for a loaded page with JavaScript enabled: parse the page
+/// into a `ScriptDocument`, prefetch external script sources through the
+/// browser's net provider (so caching/cookies apply), then execute the
+/// document's scripts.
+#[cfg(feature = "javascript")]
+async fn build_page_document(
+    html: &str,
+    config: DocumentConfig,
+    net_provider: &Arc<StdNetProvider>,
+    signal: &AbortSignal,
+) -> (SubDocumentAttr, String, Option<String>) {
+    use blitz_dom::Document as _;
+    use blitz_script::ScriptDocument;
+    use std::collections::HashMap;
+
+    let document = ScriptDocument::from_html(html, config);
+
+    // The `ScriptFetcher` API is synchronous, so prefetch external script
+    // sources asynchronously and serve them from memory.
+    let mut scripts: HashMap<Url, String> = HashMap::new();
+    for url in document.external_script_urls() {
+        if scripts.contains_key(&url) {
+            continue;
+        }
+        let request = Request::get(url.clone()).signal(signal.clone());
+        match net_provider.fetch_async(request).await {
+            Ok((_, bytes)) => {
+                scripts.insert(url, String::from_utf8_lossy(&bytes).into_owned());
+            }
+            Err(err) => tracing::error!("Failed to fetch script {url}: {err:?}"),
+        }
+    }
+
+    let mut document = document.with_fetcher(PrefetchedScriptFetcher { scripts });
+    document.execute_scripts();
+
+    let inner = document.inner();
+    let title = inner
+        .find_title_node()
+        .map(|n| n.text_content())
+        .unwrap_or_default();
+    let favicon_url = inner.favicon_url();
+    drop(inner);
+
+    (SubDocumentAttr::new(document), title, favicon_url)
+}
+
+/// A [`blitz_script::ScriptFetcher`] which serves prefetched script sources from
+/// memory, falling back to the default fetcher (`file:` and `data:` URLs)
+#[cfg(feature = "javascript")]
+struct PrefetchedScriptFetcher {
+    scripts: std::collections::HashMap<Url, String>,
+}
+
+#[cfg(feature = "javascript")]
+impl blitz_script::ScriptFetcher for PrefetchedScriptFetcher {
+    fn fetch(&self, url: &Url) -> Result<String, blitz_script::FetchError> {
+        if let Some(source) = self.scripts.get(url) {
+            return Ok(source.clone());
+        }
+        blitz_script::DefaultScriptFetcher.fetch(url)
     }
 }
