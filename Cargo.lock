@@ -1375,6 +1375,7 @@ dependencies = [
  "blitz-html",
  "blitz-net",
  "blitz-paint",
+ "blitz-script",
  "blitz-traits",
  "browser-persistence",
  "dioxus-native",
