@@ -7,6 +7,7 @@ members = [
     "packages/blitz-html",
     "packages/blitz-net",
     "packages/blitz-paint",
+    "packages/blitz-script",
     "packages/blitz-shell",
     "packages/blitz",
     "packages/stylo_taffy",
@@ -45,6 +46,7 @@ blitz-dom = { version = "=0.3.0-beta.2", path = "./packages/blitz-dom", default-
 blitz-html = { version = "=0.3.0-beta.2", path = "./packages/blitz-html", default-features = false }
 blitz-net = { version = "=0.3.0-beta.2", path = "./packages/blitz-net", default-features = false }
 blitz-paint = { version = "=0.3.0-beta.2", path = "./packages/blitz-paint", default-features = false }
+blitz-script = { version = "=0.3.0-beta.2", path = "./packages/blitz-script", default-features = false }
 blitz-shell = { version = "=0.3.0-beta.2", path = "./packages/blitz-shell", default-features = false }
 blitz-traits = { version = "=0.3.0-beta.2", path = "./packages/blitz-traits", default-features = false }
 stylo_taffy = { version = "=0.3.0-beta.2", path = "./packages/stylo_taffy", default-features = false }
@@ -168,6 +170,14 @@ web-sys = "0.3.98"
 web-time = "1"
 console_error_panic_hook = "0.1"
 
+# JavaScript engine (Boa)
+# Pinned to a git revision of Boa's main branch because released versions of Boa
+# (<= 0.21.1) require `icu_normalizer ~2.0.0`, which conflicts with the
+# `icu_normalizer ^2.1.1` requirement of `parley`.
+boa_engine = { git = "https://github.com/boa-dev/boa.git", rev = "8a1e8fe07f626f7a067afc2c9885d5d87de4bb5d" }
+boa_runtime = { git = "https://github.com/boa-dev/boa.git", rev = "8a1e8fe07f626f7a067afc2c9885d5d87de4bb5d" }
+boa_gc = { git = "https://github.com/boa-dev/boa.git", rev = "8a1e8fe07f626f7a067afc2c9885d5d87de4bb5d" }
+
 # Other dependencies
 rustc-hash = "2.1.2"
 bytes = "1.7.1"
@@ -253,6 +263,7 @@ blitz-traits = { workspace = true }
 blitz-paint = { workspace = true }
 blitz-shell = { workspace = true }
 blitz-net = { workspace = true }
+blitz-script = { workspace = true }
 blitz = { workspace = true, features = ["net"] }
 dioxus = { workspace = true }
 dioxus-native = { workspace = true, features = [
@@ -262,6 +273,7 @@ dioxus-native = { workspace = true, features = [
     "prelude",
 ] }
 euclid = { workspace = true }
+url = { workspace = true }
 reqwest = { workspace = true }
 tokio = { workspace = true, features = ["macros"] }
 image = { workspace = true }
