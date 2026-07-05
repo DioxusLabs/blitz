@@ -2685,6 +2685,17 @@ impl BaseDocument {
             None => return Vec::new(),
         };
 
+        // Guard against stale selection endpoints: nodes may have been removed from
+        // the document (e.g. by script) since the selection was made.
+        let node_is_in_doc = |node_id: NodeId| {
+            self.nodes
+                .get(node_id)
+                .is_some_and(|node| node.flags.is_in_document())
+        };
+        if !node_is_in_doc(anchor_node) || !node_is_in_doc(focus_node) {
+            return Vec::new();
+        }
+
         // Single node selection
         if anchor_node == focus_node {
             let start = self
