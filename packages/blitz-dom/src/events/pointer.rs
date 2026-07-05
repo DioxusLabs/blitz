@@ -29,10 +29,29 @@ pub(crate) struct FlingState {
     pub(crate) y_velocity: f64,
 }
 
+/// State driving a smooth (animated) scroll towards a target offset. Used for
+/// fragment navigation (`#anchor` links) and programmatic smooth scrolling.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct ScrollToState {
+    /// Node whose scroll offset is being animated. `None` animates the viewport
+    /// scroll offset instead.
+    pub(crate) target: Option<usize>,
+    /// The scroll offset at the start of the animation.
+    pub(crate) start: crate::util::Point<f64>,
+    /// The scroll offset to animate towards.
+    pub(crate) end: crate::util::Point<f64>,
+    /// Time (in milliseconds since the Unix epoch) at which the animation started.
+    pub(crate) start_time: f64,
+    /// Total duration of the animation in milliseconds.
+    pub(crate) duration: f64,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum ScrollAnimationState {
     None,
     Fling(FlingState),
+    /// A smooth scroll of the viewport towards a target offset.
+    ScrollTo(ScrollToState),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -214,7 +233,7 @@ pub(crate) fn handle_pointermove<F: FnMut(DomEvent)>(
         let target = state.target;
         let (dx, dy) = state.update(time_ms, event.screen_x(), event.screen_y());
 
-        let has_changed = doc.scroll_by(Some(target), dx, dy, &mut dispatch_event);
+        let has_changed = doc.scroll_chain_by(Some(target), dx, dy, &mut dispatch_event);
         return has_changed;
     }
 
@@ -234,7 +253,7 @@ pub(crate) fn handle_pointermove<F: FnMut(DomEvent)>(
             AbsoluteAxis::Horizontal => (-delta_px * ratio, 0.0),
             AbsoluteAxis::Vertical => (0.0, -delta_px * ratio),
         };
-        let has_changed = doc.scroll_by(Some(node_id), dx, dy, &mut dispatch_event);
+        let has_changed = doc.scroll_chain_by(Some(node_id), dx, dy, &mut dispatch_event);
         return has_changed;
     }
 
@@ -763,7 +782,7 @@ pub(crate) fn handle_wheel<F: FnMut(DomEvent)>(
         BlitzWheelDelta::Pixels(x, y) => (x, y),
     };
 
-    let has_changed = doc.scroll_by(
+    let has_changed = doc.scroll_chain_by(
         doc.get_hover_node_id(),
         scroll_x,
         scroll_y,
