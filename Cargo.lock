@@ -2270,6 +2270,7 @@ dependencies = [
  "keyboard-types 0.7.0",
  "manganis",
  "rustc-hash 2.1.3",
+ "slotmap",
  "tokio",
  "tracing",
  "webbrowser",
