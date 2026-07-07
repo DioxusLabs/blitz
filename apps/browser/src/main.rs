@@ -11,7 +11,7 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 use std::sync::Arc;
 
 use blitz_traits::net::Url;
-use dioxus_native::{NodeHandle, WindowAttributes, prelude::*};
+use dioxus_native::{NodeHandle, WindowAttributes, prelude::*, use_back_button};
 
 #[cfg(target_os = "macos")]
 use winit::platform::macos::WindowAttributesMacOS;
@@ -135,6 +135,13 @@ fn app() -> Element {
         if let Some(handle) = url_input_handle() {
             drop(handle.set_focus(true));
         }
+    });
+
+    // Navigate back in the active tab's history when the (Android) hardware
+    // back button is pressed. `go_back` is a no-op when there is no history to
+    // go back to.
+    use_back_button(move || {
+        active_tab(tabs, active_tab_id()).go_back();
     });
 
     // HACK: Winit doesn't support "safe area" on Android yet.
