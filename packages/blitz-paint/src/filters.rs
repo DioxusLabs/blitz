@@ -1,6 +1,8 @@
 use blitz_dom::util::ToColorColor as _;
 use style::color::AbsoluteColor;
 pub(crate) use style::computed_values::filter::single_value::T as StyloFilter;
+pub(crate) use style::properties::generated::longhands::text_shadow::computed_value::T as StyloTextShadows;
+use style::values::computed::SimpleShadow as StyloSimpleShadow;
 
 use anyrender::filters::{Filter, FilterEffect};
 
@@ -14,6 +16,36 @@ pub(crate) fn convert_filters(filters: &[StyloFilter]) -> Option<Filter> {
     ))
 }
 
+pub(crate) fn convert_text_shadows(
+    shadows: &StyloTextShadows,
+    current_color: &AbsoluteColor,
+    scale: f32,
+) -> Option<Filter> {
+    if shadows.0.is_empty() {
+        return None;
+    }
+
+    Some(Filter::linear_list(shadows.0.iter().map(|shadow| {
+        convert_simple_shadow(shadow, current_color, scale)
+    })))
+}
+
+fn convert_simple_shadow(
+    shadow: &StyloSimpleShadow,
+    current_color: &AbsoluteColor,
+    scale: f32,
+) -> FilterEffect {
+    FilterEffect::drop_shadow(
+        shadow.horizontal.px() * scale,
+        shadow.vertical.px() * scale,
+        shadow.blur.px() * scale,
+        shadow
+            .color
+            .resolve_to_absolute(current_color)
+            .as_color_color(),
+    )
+}
+
 pub(crate) fn convert_single_filter(filter: &StyloFilter) -> Option<FilterEffect> {
     Some(match filter {
         StyloFilter::Blur(radius) => FilterEffect::blur(radius.px()),
@@ -25,16 +57,10 @@ pub(crate) fn convert_single_filter(filter: &StyloFilter) -> Option<FilterEffect
         StyloFilter::Opacity(amount) => FilterEffect::opacity(amount.0),
         StyloFilter::Saturate(amount) => FilterEffect::saturate(amount.0),
         StyloFilter::Sepia(amount) => FilterEffect::sepia(amount.0),
-        StyloFilter::DropShadow(shadow) => FilterEffect::drop_shadow(
-            shadow.horizontal.px(),
-            shadow.vertical.px(),
-            shadow.blur.px(),
+        StyloFilter::DropShadow(shadow) => {
             // TODO: pass in correct currentColor
-            shadow
-                .color
-                .resolve_to_absolute(&AbsoluteColor::BLACK)
-                .as_color_color(),
-        ),
+            convert_simple_shadow(shadow, &AbsoluteColor::BLACK, 1.0)
+        }
         StyloFilter::Url(_) => return None,
     })
 }
