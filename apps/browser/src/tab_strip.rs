@@ -1,5 +1,8 @@
 use blitz_traits::net::Url;
 use dioxus_native::prelude::*;
+use dioxus_native::use_window_event;
+use winit::event::WindowEvent;
+use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
 
 use crate::tab::{Favicon, Tab, TabId, TabStoreExt, TabStoreImplExt, tab_display_title};
 
@@ -35,6 +38,37 @@ pub fn TabStrip(
             }
         }
     });
+
+    // Keyboard shortcuts: Cmd+T/W (macOS) / Ctrl+T/W (other platforms) open a new
+    // tab and close the current tab respectively.
+    {
+        let home_url = home_url.clone();
+        let mut modifiers = ModifiersState::empty();
+        use_window_event(move |event, _target| match event {
+            WindowEvent::ModifiersChanged(new_modifiers) => {
+                modifiers = new_modifiers.state();
+            }
+            WindowEvent::KeyboardInput { event, .. } => {
+                let shortcut_modifier = if cfg!(target_os = "macos") {
+                    modifiers.meta_key()
+                } else {
+                    modifiers.control_key()
+                };
+                if !shortcut_modifier || !event.state.is_pressed() {
+                    return;
+                }
+                match event.physical_key {
+                    PhysicalKey::Code(KeyCode::KeyT) => open_new_tab(home_url.clone()),
+                    // Keep at least one tab open, matching the close button.
+                    PhysicalKey::Code(KeyCode::KeyW) if tabs.len() > 1 => {
+                        close_tab(active_tab_id())
+                    }
+                    _ => {}
+                }
+            }
+            _ => {}
+        });
+    }
 
     let tab_count = tabs.len();
     rsx!(
