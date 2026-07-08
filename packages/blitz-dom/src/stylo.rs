@@ -23,7 +23,6 @@ use style::applicable_declarations::ApplicableDeclarationBlock;
 use style::bloom::each_relevant_element_hash;
 use style::color::AbsoluteColor;
 use style::data::{ElementDataMut, ElementDataRef};
-use style::dom::AttributeProvider;
 use style::global_style_data::STYLE_THREAD_POOL;
 use style::invalidation::element::restyle_hints::RestyleHint;
 use style::properties::ComputedValues;
@@ -300,13 +299,6 @@ impl<'a> TNode for BlitzNode<'a> {
     fn as_shadow_root(&self) -> Option<Self::ConcreteShadowRoot> {
         // TODO: implement shadow DOM
         None
-    }
-}
-
-impl AttributeProvider for BlitzNode<'_> {
-    fn get_attr(&self, attr: &style::LocalName, _ns: &style::Namespace) -> Option<String> {
-        // TODO: filter by namespace
-        self.attr(attr.0.clone()).map(|s| s.to_string())
     }
 }
 
@@ -778,6 +770,12 @@ impl<'a> TElement for BlitzNode<'a> {
 
     fn containing_shadow(&self) -> Option<<Self::ConcreteNode as TNode>::ConcreteShadowRoot> {
         None
+    }
+
+    fn get_attr(&self, attr: &style::LocalName, _ns: &style::Namespace) -> Option<String> {
+        // TODO: filter by namespace
+        // TODO: case-insensitive matching for HTML-ns attrs
+        self.attr(attr.0.clone()).map(|s| s.to_string())
     }
 
     fn lang_attr(&self) -> Option<style::selector_parser::AttrValue> {

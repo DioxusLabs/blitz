@@ -5,9 +5,7 @@ use std::{
     sync::{Arc, atomic::AtomicUsize, mpsc::Sender},
 };
 use style::{
-    font_face::{
-        FontFaceSourceFormat, FontFaceSourceFormatKeyword, FontStyle as StyloFontStyle, Source,
-    },
+    font_face::{FontFaceSourceFormat, FontFaceSourceFormatKeyword, FontStyleRange, Source},
     media_queries::MediaList,
     servo_arc::Arc as ServoArc,
     shared_lock::SharedRwLock,
@@ -478,11 +476,11 @@ pub(crate) fn fetch_font_face(
 /// angle distinctly; CSS's bare `normal` is parsed as `Oblique(0deg, 0deg)`
 /// by stylo (see the `FontStyle::parse` impl in stylo's `font_face.rs`), so
 /// that pattern is treated as `Normal` here.
-fn stylo_to_fontique_style(style: &StyloFontStyle) -> parley::fontique::FontStyle {
+fn stylo_to_fontique_style(style: &FontStyleRange) -> parley::fontique::FontStyle {
     use parley::fontique::FontStyle as Fq;
     match style {
-        StyloFontStyle::Italic => Fq::Italic,
-        StyloFontStyle::Oblique(min, max) => {
+        FontStyleRange::Italic => Fq::Italic,
+        FontStyleRange::Oblique(min, max) => {
             let angle = min.degrees();
             // Stylo emits `Oblique(0deg, 0deg)` for the literal CSS `normal`
             // keyword. Map that back to `Normal` so parley's font matching
@@ -555,13 +553,13 @@ mod tests {
     use parley::fontique::FontStyle as Fq;
     use style::values::specified::Angle;
 
-    fn oblique(min_deg: f32, max_deg: f32) -> StyloFontStyle {
-        StyloFontStyle::Oblique(Angle::from_degrees(min_deg), Angle::from_degrees(max_deg))
+    fn oblique(min_deg: f32, max_deg: f32) -> FontStyleRange {
+        FontStyleRange::Oblique(Angle::from_degrees(min_deg), Angle::from_degrees(max_deg))
     }
 
     #[test]
     fn italic_maps_to_italic() {
-        assert_eq!(stylo_to_fontique_style(&StyloFontStyle::Italic), Fq::Italic,);
+        assert_eq!(stylo_to_fontique_style(&FontStyleRange::Italic), Fq::Italic,);
     }
 
     #[test]

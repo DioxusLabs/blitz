@@ -10,7 +10,6 @@ use style::{
         generated::longhands::{
             background_clip::single_value::computed_value::T as StyloBackgroundClip,
             background_origin::single_value::computed_value::T as StyloBackgroundOrigin,
-            mask_clip::single_value::computed_value::T as StyloMaskClip,
             mask_origin::single_value::computed_value::T as StyloMaskOrigin,
         },
         style_structs::{Background, SVG},
@@ -39,12 +38,16 @@ pub(super) enum BoxModelBox {
     ContentBox,
 }
 
+// Also covers MaskClip as the type is the same
 impl From<StyloBackgroundClip> for BoxModelBox {
     fn from(value: StyloBackgroundClip) -> Self {
         match value {
             StyloBackgroundClip::BorderBox => Self::BorderBox,
             StyloBackgroundClip::PaddingBox => Self::PaddingBox,
             StyloBackgroundClip::ContentBox => Self::ContentBox,
+
+            // TODO: support BorderArea
+            StyloBackgroundClip::BorderArea => Self::BorderBox,
         }
     }
 }
@@ -55,16 +58,6 @@ impl From<StyloBackgroundOrigin> for BoxModelBox {
             StyloBackgroundOrigin::BorderBox => Self::BorderBox,
             StyloBackgroundOrigin::PaddingBox => Self::PaddingBox,
             StyloBackgroundOrigin::ContentBox => Self::ContentBox,
-        }
-    }
-}
-
-impl From<StyloMaskClip> for BoxModelBox {
-    fn from(value: StyloMaskClip) -> Self {
-        match value {
-            StyloMaskClip::BorderBox => Self::BorderBox,
-            StyloMaskClip::PaddingBox => Self::PaddingBox,
-            StyloMaskClip::ContentBox => Self::ContentBox,
         }
     }
 }
