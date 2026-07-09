@@ -330,27 +330,26 @@ impl EventHandler for DioxusEventHandler<'_> {
             return;
         };
 
-        for &node_id in chain {
-            // Get dioxus vdom id for node
-            let dioxus_id = doc.inner().get_node(node_id).and_then(get_dioxus_id);
-            let Some(id) = dioxus_id else {
-                continue;
-            };
+        // Get dioxus vdom id for node
+        let dioxus_id = chain
+            .iter()
+            .find_map(|node_id| doc.inner().get_node(*node_id).and_then(get_dioxus_id));
+        let Some(id) = dioxus_id else {
+            return;
+        };
 
-            // Handle event in vdom
-            let dx_event = Event::new(event_data.clone(), event.bubbles);
-            self.vdom
-                .runtime()
-                .handle_event(event.name(), dx_event.clone(), id);
+        // Handle event in vdom
+        let dx_event = Event::new(event_data.clone(), event.bubbles);
+        self.vdom
+            .runtime()
+            .handle_event(event.name(), dx_event.clone(), id);
 
-            // Update event state
-            if !dx_event.default_action_enabled() {
-                event_state.prevent_default();
-            }
-            if !dx_event.propagates() {
-                event_state.stop_propagation();
-                break;
-            }
+        // Update event state
+        if !dx_event.default_action_enabled() {
+            event_state.prevent_default();
+        }
+        if !dx_event.propagates() {
+            event_state.stop_propagation();
         }
     }
 }
