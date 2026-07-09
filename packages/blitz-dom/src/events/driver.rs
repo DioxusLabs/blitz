@@ -1,6 +1,7 @@
 use crate::Document;
 use blitz_traits::events::{
-    BlitzPointerEvent, BlitzPointerId, DomEvent, DomEventData, EventState, UiEvent,
+    BlitzPointerEvent, BlitzPointerId, DomEvent, DomEventData, EventState, Point, PointerCoords,
+    UiEvent,
 };
 use std::collections::VecDeque;
 
@@ -268,16 +269,11 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
     fn handle_pointer_event(
         &mut self,
         target: usize,
-        mut data: BlitzPointerEvent,
+        data: BlitzPointerEvent,
         make_ptr_data: impl FnOnce(BlitzPointerEvent) -> DomEventData,
         make_mouse_data: Option<impl FnOnce(BlitzPointerEvent) -> DomEventData>,
         make_touch_data: impl FnOnce(BlitzPointerEvent) -> DomEventData,
     ) {
-        if let Some(rect) = self.doc.inner().get_client_bounding_rect(target) {
-            data.element.x = data.coords.client_x - rect.x as f32;
-            data.element.y = data.coords.client_y - rect.y as f32;
-        }
-
         let mut ptr_event = DomEvent::new(target, make_ptr_data(data.clone()));
         let mut event_state = EventState::default();
         event_state = self.run_handler_event(&mut ptr_event, event_state);
@@ -316,6 +312,18 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
         }
     }
 
+    fn adjust_element_coords(
+        &self,
+        target: usize,
+        coords: &PointerCoords,
+        element: &mut Point<f32>,
+    ) {
+        if let Some(rect) = self.doc.inner().get_client_bounding_rect(target) {
+            element.x = coords.client_x - rect.x as f32;
+            element.y = coords.client_y - rect.y as f32;
+        }
+    }
+
     fn run_handler_event(
         &mut self,
         event: &mut DomEvent,
@@ -327,6 +335,36 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
         } else {
             vec![event.target]
         };
+
+        match &mut event.data {
+            DomEventData::PointerMove(data)
+            | DomEventData::PointerDown(data)
+            | DomEventData::PointerUp(data)
+            | DomEventData::PointerCancel(data)
+            | DomEventData::PointerEnter(data)
+            | DomEventData::PointerLeave(data)
+            | DomEventData::PointerOver(data)
+            | DomEventData::PointerOut(data)
+            | DomEventData::MouseMove(data)
+            | DomEventData::MouseDown(data)
+            | DomEventData::MouseUp(data)
+            | DomEventData::MouseEnter(data)
+            | DomEventData::MouseLeave(data)
+            | DomEventData::MouseOver(data)
+            | DomEventData::MouseOut(data)
+            | DomEventData::TouchStart(data)
+            | DomEventData::TouchEnd(data)
+            | DomEventData::TouchCancel(data)
+            | DomEventData::Click(data)
+            | DomEventData::ContextMenu(data)
+            | DomEventData::DoubleClick(data) => {
+                self.adjust_element_coords(event.target, &data.coords, &mut data.element)
+            }
+            DomEventData::Wheel(data) => {
+                self.adjust_element_coords(event.target, &data.coords, &mut data.element)
+            }
+            _ => {}
+        }
 
         let mut event_state = initial_event_state;
         self.handler

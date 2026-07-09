@@ -812,6 +812,7 @@ impl<Rend: WindowRenderer> View<Rend> {
                     coords: self.pointer_coords(self.pointer_pos),
                     buttons: self.buttons,
                     mods: winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state()),
+                    element: Default::default()
                 };
 
                 self.doc.handle_ui_event(UiEvent::Wheel(event));

@@ -580,8 +580,7 @@ impl ModifiersInteraction for NativeWheelData {
 
 impl InteractionElementOffset for NativeWheelData {
     fn element_coordinates(&self) -> ElementPoint {
-        // TODO: implement element point
-        ElementPoint::new(0.0, 0.0)
+        ElementPoint::new(self.0.element_x() as f64, self.0.element_y() as f64)
     }
 }
 

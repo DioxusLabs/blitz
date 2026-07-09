@@ -576,6 +576,7 @@ pub struct BlitzWheelEvent {
     pub coords: PointerCoords,
     pub buttons: MouseEventButtons,
     pub mods: Modifiers,
+    pub element: Point<f32>,
 }
 
 impl BlitzWheelEvent {
@@ -602,6 +603,14 @@ impl BlitzWheelEvent {
     #[inline(always)]
     pub fn screen_y(&self) -> f32 {
         self.coords.screen_y
+    }
+    #[inline(always)]
+    pub fn element_x(&self) -> f32 {
+        self.element.x
+    }
+    #[inline(always)]
+    pub fn element_y(&self) -> f32 {
+        self.element.y
     }
 }
 
