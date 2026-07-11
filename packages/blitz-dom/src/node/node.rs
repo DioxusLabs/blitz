@@ -800,7 +800,7 @@ impl Node {
     }
 
     fn write_outer_html_in_style(&self, writer: &mut String, style: OutputStyle, nesting: usize) {
-        const INDENT: &'static str = "  ";
+        const INDENT: &str = "  ";
         let has_children = !self.children.is_empty();
         let current_color = self
             .primary_styles()
