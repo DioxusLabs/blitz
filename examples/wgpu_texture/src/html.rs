@@ -19,11 +19,10 @@ fn create_renderer() -> anyrender_vello::VelloWindowRenderer {
 /// Create renderer
 fn create_renderer() -> anyrender_vello_hybrid::VelloHybridWindowRenderer {
     use anyrender_vello_hybrid::{VelloHybridRendererOptions, VelloHybridWindowRenderer};
-    VelloHybridWindowRenderer::with_options(VelloHybridRendererOptions {
-        features: Some(FEATURES),
-        limits: Some(limits()),
-        ..VelloHybridRendererOptions::default()
-    })
+    let mut options = VelloHybridRendererOptions::default();
+    options.features = Some(FEATURES);
+    options.limits = Some(limits());
+    VelloHybridWindowRenderer::with_options(options)
 }
 
 pub fn launch_html() {
