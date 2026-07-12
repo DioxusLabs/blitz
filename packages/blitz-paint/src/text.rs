@@ -3,7 +3,7 @@ use blitz_dom::{BaseDocument, node::TextBrush, util::ToColorColor};
 use kurbo::{Affine, Rect, Stroke};
 use parley::{Affinity, Cursor, Layout, Line, PositionedLayoutItem, Selection};
 use peniko::Fill;
-use style::values::computed::TextDecorationLine;
+use style::values::computed::{Length, TextDecorationLine};
 
 use crate::color::{Color, ToColorColor as _};
 use crate::{FONT_EMBOLDEN_ENABLED, SELECTION_COLOR};
@@ -137,8 +137,26 @@ pub(crate) fn stroke_text<'a>(
                     };
 
                 if has_underline {
-                    let offset = metrics.underline_offset;
                     let size = metrics.underline_size;
+
+                    // Apply the CSS `text-underline-offset`, which moves the underline further
+                    // away from the text. `auto` keeps the font's suggested position. The value
+                    // is resolved against the font size (percentages are relative to 1em) in CSS
+                    // pixels, then scaled to device pixels to match the (already scaled) glyph
+                    // metrics.
+                    let extra_offset = itext_styles
+                        .text_underline_offset
+                        .non_auto()
+                        .map(|lp| {
+                            let css_font_size = font_size as f64 / scale;
+                            lp.resolve(Length::new(css_font_size as f32)).px() as f64 * scale
+                        })
+                        .unwrap_or(0.0);
+
+                    // `draw_decoration_line` computes `y = baseline - offset + size / 2` and `y`
+                    // grows downward, so subtracting the offset pushes the underline downward,
+                    // away from the text.
+                    let offset = metrics.underline_offset - extra_offset as f32;
 
                     // TODO: intercept line when crossing an descending character like "gqy"
                     draw_decoration_line(offset, size, &text_decoration_brush);
