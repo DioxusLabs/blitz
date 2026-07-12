@@ -813,12 +813,20 @@ impl Node {
             NodeData::AnonymousBlock(_) => {}
             // NodeData::Doctype { name, .. } => write!(s, "DOCTYPE {name}"),
             NodeData::Text(data) => {
+                if matches!(style, OutputStyle::Pretty) {
+                    for _ in 0..nesting {
+                        writer.push_str(INDENT);
+                    }
+                }
                 writer.push_str(data.content.as_str());
+                if matches!(style, OutputStyle::Pretty) {
+                    writer.push('\n');
+                }
             }
             NodeData::Element(data) => {
                 if matches!(style, OutputStyle::Pretty) {
                     for _ in 0..nesting {
-                        writer.push_str(INDENT)
+                        writer.push_str(INDENT);
                     }
                 }
                 writer.push('<');
@@ -854,7 +862,7 @@ impl Node {
 
                     if matches!(style, OutputStyle::Pretty) {
                         for _ in 0..nesting {
-                            writer.push_str(INDENT)
+                            writer.push_str(INDENT);
                         }
                     }
                     writer.push_str("</");
