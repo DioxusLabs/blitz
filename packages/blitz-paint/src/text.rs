@@ -102,6 +102,7 @@ pub(crate) fn stroke_text<'a>(
                 let text_decoration_thickness: TextDecorationLength =
                     text_styles.text_decoration_thickness.clone();
                 let has_underline = text_decoration_line.contains(TextDecorationLine::UNDERLINE);
+                let has_overline = text_decoration_line.contains(TextDecorationLine::OVERLINE);
                 let has_strikethrough =
                     text_decoration_line.contains(TextDecorationLine::LINE_THROUGH);
 
@@ -176,6 +177,15 @@ pub(crate) fn stroke_text<'a>(
                     let offset = metrics.underline_offset - extra_offset as f32;
 
                     // TODO: intercept line when crossing an descending character like "gqy"
+                    draw_decoration_line(offset, size, &text_decoration_brush);
+                }
+                if has_overline {
+                    // Fonts don't provide a dedicated overline metric, so reuse the
+                    // underline thickness and position the line at the top of the text
+                    // (i.e. one ascent above the baseline).
+                    let offset = metrics.ascent;
+                    let size = decoration_size(metrics.underline_size);
+
                     draw_decoration_line(offset, size, &text_decoration_brush);
                 }
                 if has_strikethrough {
