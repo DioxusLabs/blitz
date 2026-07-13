@@ -3,14 +3,14 @@
 //! capture -> target -> bubble dispatch performed by the `EventDriver`.
 
 use blitz_dom::{
-    CallbackEventHandler, Document, DocumentConfig, EventDriver, EventHandler, EventListenerId,
+    CallbackEventHandler, DocumentConfig, EventContext, EventDriver, EventHandler, EventListenerId,
     EventListenerOptions,
 };
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::events::{
-    BlitzFocusEvent, BlitzPointerEvent, BlitzPointerId, DomEvent, DomEventData, DomEventKind,
-    EventPhase, EventState, MouseEventButton, MouseEventButtons, Point, PointerCoords,
-    PointerDetails,
+    BlitzFocusEvent, BlitzInputEvent, BlitzPointerEvent, BlitzPointerId, DomEvent, DomEventData,
+    DomEventKind, EventPhase, EventState, MouseEventButton, MouseEventButtons, Point,
+    PointerCoords, PointerDetails,
 };
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -103,7 +103,7 @@ impl EventHandler for RecordingHandler {
         &self,
         listener: EventListenerId,
         event: &mut DomEvent,
-        _doc: &mut dyn Document,
+        _ctx: &mut EventContext<'_>,
         event_state: &mut EventState,
     ) {
         self.invocations.borrow_mut().push(Invocation {
@@ -377,13 +377,17 @@ fn listener_removed_during_dispatch_does_not_fire() {
             &self,
             listener: EventListenerId,
             _event: &mut DomEvent,
-            doc: &mut dyn Document,
+            ctx: &mut EventContext<'_>,
             _event_state: &mut EventState,
         ) {
             self.invoked.borrow_mut().push(listener);
             let (node_id, listener) = self.remove;
-            doc.inner_mut()
-                .remove_event_listener(node_id, DomEventKind::Click, listener, false);
+            ctx.doc_mut().inner_mut().remove_event_listener(
+                node_id,
+                DomEventKind::Click,
+                listener,
+                false,
+            );
         }
     }
 
@@ -438,13 +442,13 @@ fn once_listener_can_re_register_itself() {
             &self,
             listener: EventListenerId,
             event: &mut DomEvent,
-            doc: &mut dyn Document,
+            ctx: &mut EventContext<'_>,
             _event_state: &mut EventState,
         ) {
             self.call_count.set(self.call_count.get() + 1);
             // The `once` listener has already been removed at this point, so it can
             // register itself again without being immediately deregistered
-            assert!(doc.inner_mut().add_event_listener(
+            assert!(ctx.doc_mut().inner_mut().add_event_listener(
                 event.current_target.unwrap(),
                 DomEventKind::Click,
                 listener,
@@ -570,6 +574,211 @@ fn programmatic_focus_changes_queue_focus_events() {
     EventDriver::new(&mut doc, handler.clone()).flush_pending_events();
     assert_eq!(handler.invoked_listeners(), vec![focus_a, blur_a, focus_b]);
     assert!(!doc.has_pending_events());
+}
+
+#[test]
+fn listeners_can_dispatch_events_synchronously() {
+    /// A handler which logs entry/exit of every listener invocation, and synchronously
+    /// dispatches an input event from within the click listener
+    struct NestedDispatchHandler {
+        log: Rc<RefCell<Vec<String>>>,
+        input_target: usize,
+    }
+
+    impl EventHandler for NestedDispatchHandler {
+        fn handle_event_listener(
+            &self,
+            _listener: EventListenerId,
+            event: &mut DomEvent,
+            ctx: &mut EventContext<'_>,
+            _event_state: &mut EventState,
+        ) {
+            let name = event.name();
+            self.log.borrow_mut().push(format!("{name}:start"));
+            if event.data.kind() == DomEventKind::Click {
+                // The input event's listeners run before dispatch_event returns
+                ctx.dispatch_event(DomEvent::new(
+                    self.input_target,
+                    DomEventData::Input(BlitzInputEvent {
+                        value: String::new(),
+                    }),
+                ));
+            }
+            self.log.borrow_mut().push(format!("{name}:end"));
+        }
+    }
+
+    let mut doc = nested_document();
+    let target = node_id(&doc, "#target");
+    let inner = node_id(&doc, "#inner");
+    assert!(doc.add_event_listener(
+        target,
+        DomEventKind::Click,
+        EventListenerId(1),
+        Default::default()
+    ));
+    assert!(doc.add_event_listener(
+        inner,
+        DomEventKind::Input,
+        EventListenerId(2),
+        Default::default()
+    ));
+
+    let log = Rc::new(RefCell::new(Vec::new()));
+    let handler = NestedDispatchHandler {
+        log: log.clone(),
+        input_target: inner,
+    };
+    EventDriver::new(&mut doc, handler).handle_dom_event(DomEvent::new(target, click_event_data()));
+
+    assert_eq!(
+        *log.borrow(),
+        vec!["click:start", "input:start", "input:end", "click:end"]
+    );
+}
+
+#[test]
+fn focus_listener_can_move_focus_synchronously() {
+    /// A handler which logs `<name>@<target>` for every invocation, and moves the focus
+    /// to `refocus_target` from within the focus listener of `initial_target`
+    struct RefocusingHandler {
+        log: Rc<RefCell<Vec<String>>>,
+        initial_target: usize,
+        refocus_target: usize,
+    }
+
+    impl EventHandler for RefocusingHandler {
+        fn handle_event_listener(
+            &self,
+            _listener: EventListenerId,
+            event: &mut DomEvent,
+            ctx: &mut EventContext<'_>,
+            _event_state: &mut EventState,
+        ) {
+            self.log
+                .borrow_mut()
+                .push(format!("{}@{}", event.name(), event.target));
+            if event.data.kind() == DomEventKind::Focus && event.target == self.initial_target {
+                // Move the focus from within a focus listener: the resulting blur/focus
+                // events dispatch nested, re-entering this handler while it is already
+                // on the stack, before the original event sequence continues
+                ctx.set_focus(self.refocus_target);
+            }
+        }
+    }
+
+    let mut doc = document(
+        r#"<html><body><input id="a" type="text"><input id="b" type="text"></body></html>"#,
+    );
+    let a = node_id(&doc, "#a");
+    let b = node_id(&doc, "#b");
+    let listeners = [
+        (a, DomEventKind::Focus),
+        (a, DomEventKind::Blur),
+        (a, DomEventKind::FocusIn),
+        (b, DomEventKind::Focus),
+        (b, DomEventKind::FocusIn),
+    ];
+    for (idx, (node, kind)) in listeners.into_iter().enumerate() {
+        assert!(doc.add_event_listener(
+            node,
+            kind,
+            EventListenerId(idx as u64 + 1),
+            Default::default()
+        ));
+    }
+
+    doc.set_focus_to(a);
+
+    let log = Rc::new(RefCell::new(Vec::new()));
+    let handler = RefocusingHandler {
+        log: log.clone(),
+        initial_target: a,
+        refocus_target: b,
+    };
+    EventDriver::new(&mut doc, handler).flush_pending_events();
+
+    assert_eq!(
+        *log.borrow(),
+        vec![
+            format!("focus@{a}"),
+            // Nested: the focus listener moved the focus to b
+            format!("blur@{a}"),
+            format!("focus@{b}"),
+            format!("focusin@{b}"),
+            // The original event sequence continues after the nested events complete
+            format!("focusin@{a}"),
+        ]
+    );
+    assert_eq!(doc.get_focussed_node_id(), Some(b));
+}
+
+#[test]
+fn synchronously_dispatched_events_run_their_default_action() {
+    /// A handler which forwards clicks on the outer div to the checkbox, recording the
+    /// checkbox's state as observed immediately after the nested dispatch returns
+    struct ClickForwardingHandler {
+        checkbox: usize,
+        checked_after_dispatch: Rc<Cell<Option<bool>>>,
+    }
+
+    impl EventHandler for ClickForwardingHandler {
+        fn handle_event_listener(
+            &self,
+            _listener: EventListenerId,
+            event: &mut DomEvent,
+            ctx: &mut EventContext<'_>,
+            _event_state: &mut EventState,
+        ) {
+            // Ignore the forwarded click bubbling back up through the outer div
+            if event.target == self.checkbox {
+                return;
+            }
+
+            let node = self.checkbox;
+            let not_cancelled = ctx.dispatch_event(DomEvent::new(
+                node,
+                DomEventData::Click(match &event.data {
+                    DomEventData::Click(data) => data.clone(),
+                    _ => unreachable!(),
+                }),
+            ));
+            assert!(not_cancelled);
+
+            // The checkbox's default action (toggling) has already run
+            let checked = ctx
+                .doc()
+                .inner()
+                .get_node(node)
+                .unwrap()
+                .element_data()
+                .unwrap()
+                .checkbox_input_checked();
+            self.checked_after_dispatch.set(checked);
+        }
+    }
+
+    let mut doc = document(
+        r#"<html><body><div id="outer"><input id="cb" type="checkbox"></div></body></html>"#,
+    );
+    doc.resolve(0.0);
+    let outer = node_id(&doc, "#outer");
+    let checkbox = node_id(&doc, "#cb");
+    assert!(doc.add_event_listener(
+        outer,
+        DomEventKind::Click,
+        EventListenerId(1),
+        Default::default()
+    ));
+
+    let checked_after_dispatch = Rc::new(Cell::new(None));
+    let handler = ClickForwardingHandler {
+        checkbox,
+        checked_after_dispatch: checked_after_dispatch.clone(),
+    };
+    EventDriver::new(&mut doc, handler).handle_dom_event(DomEvent::new(outer, click_event_data()));
+
+    assert_eq!(checked_after_dispatch.get(), Some(true));
 }
 
 #[test]

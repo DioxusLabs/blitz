@@ -8,7 +8,7 @@ use crate::mutation_writer::{DioxusState, MutationWriter};
 use crate::qual_name;
 use blitz_dom::{
     Attribute, BaseDocument, DEFAULT_CSS, DocGuard, DocGuardMut, Document, DocumentConfig,
-    EventDriver, EventHandler, EventListenerId, Node,
+    EventContext, EventDriver, EventHandler, EventListenerId, Node,
 };
 use blitz_traits::events::{DomEvent, DomEventData, EventState, UiEvent};
 use dioxus_core::{ElementId, Event, Runtime, VirtualDom};
@@ -289,7 +289,7 @@ impl EventHandler for DioxusEventHandler {
         &self,
         _listener: EventListenerId,
         event: &mut DomEvent,
-        doc: &mut dyn Document,
+        ctx: &mut EventContext<'_>,
         event_state: &mut EventState,
     ) {
         let event_data = match &event.data {
@@ -355,7 +355,7 @@ impl EventHandler for DioxusEventHandler {
         // attribute. This mirrors dioxus-web's delegated event handling: the target of a
         // delegated event may be a descendant of the element with the vdom event handler.
         let dioxus_id = {
-            let doc = doc.inner();
+            let doc = ctx.doc().inner();
             doc.node_chain(event.target)
                 .into_iter()
                 .find_map(|node_id| doc.get_node(node_id).and_then(get_dioxus_id))

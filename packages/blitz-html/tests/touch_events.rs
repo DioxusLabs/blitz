@@ -4,7 +4,7 @@
 //! and default actions remain driven by the pointer events.
 
 use blitz_dom::{
-    Document, DocumentConfig, EventDriver, EventHandler, EventListenerId, EventListenerOptions,
+    DocumentConfig, EventContext, EventDriver, EventHandler, EventListenerId, EventListenerOptions,
 };
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::{
@@ -63,7 +63,7 @@ impl EventHandler for RecordingHandler {
         &self,
         _listener: EventListenerId,
         event: &mut DomEvent,
-        _doc: &mut dyn Document,
+        _ctx: &mut EventContext<'_>,
         _event_state: &mut EventState,
     ) {
         self.events.borrow_mut().push(event.name().to_string());

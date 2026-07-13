@@ -1,7 +1,7 @@
 //! A closure-based [`EventHandler`] for embedders which use blitz-dom directly
-use crate::events::driver::EventHandler;
+use crate::BaseDocument;
+use crate::events::driver::{EventContext, EventHandler};
 use crate::events::listeners::{EventListenerId, EventListenerOptions};
-use crate::{BaseDocument, Document};
 use blitz_traits::events::{DomEvent, DomEventKind, EventState};
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -13,7 +13,7 @@ use std::rc::Rc;
 /// may synchronously trigger the dispatch of further events (e.g. by changing the focus),
 /// which may re-invoke the same callback while it is already on the stack. Callbacks which
 /// need mutable state should capture it with interior mutability (`Cell`, `RefCell`, etc).
-pub type EventListenerCallback = dyn Fn(&mut DomEvent, &mut dyn Document, &mut EventState);
+pub type EventListenerCallback = dyn Fn(&mut DomEvent, &mut EventContext<'_>, &mut EventState);
 
 /// A convenience [`EventHandler`] which maps [`EventListenerId`]s to Rust closures, giving
 /// applications that use blitz-dom directly (without a framework such as Dioxus) browser-like
@@ -32,7 +32,7 @@ pub type EventListenerCallback = dyn Fn(&mut DomEvent, &mut dyn Document, &mut E
 ///     node_id,
 ///     DomEventKind::Click,
 ///     EventListenerOptions::default(),
-///     |event, _doc, _state| println!("clicked {}", event.target),
+///     |event, _ctx, _state| println!("clicked {}", event.target),
 /// );
 ///
 /// // `CallbackEventHandler` is cheaply cloneable (clones share the same callbacks),
@@ -64,7 +64,7 @@ impl CallbackEventHandler {
     /// The id can then be attached to nodes with [`BaseDocument::add_event_listener`].
     pub fn register_callback(
         &self,
-        callback: impl Fn(&mut DomEvent, &mut dyn Document, &mut EventState) + 'static,
+        callback: impl Fn(&mut DomEvent, &mut EventContext<'_>, &mut EventState) + 'static,
     ) -> EventListenerId {
         let mut registry = self.inner.borrow_mut();
         registry.next_id += 1;
@@ -91,7 +91,7 @@ impl CallbackEventHandler {
         node_id: usize,
         kind: DomEventKind,
         options: EventListenerOptions,
-        callback: impl Fn(&mut DomEvent, &mut dyn Document, &mut EventState) + 'static,
+        callback: impl Fn(&mut DomEvent, &mut EventContext<'_>, &mut EventState) + 'static,
     ) -> EventListenerId {
         let id = self.register_callback(callback);
         doc.add_event_listener(node_id, kind, id, options);
@@ -120,14 +120,14 @@ impl EventHandler for CallbackEventHandler {
         &self,
         listener: EventListenerId,
         event: &mut DomEvent,
-        doc: &mut dyn Document,
+        ctx: &mut EventContext<'_>,
         event_state: &mut EventState,
     ) {
         // Clone the callback out of the registry so that the registry is not borrowed while
         // the callback runs (the callback may register/deregister callbacks itself)
         let callback = self.inner.borrow().callbacks.get(&listener).cloned();
         if let Some(callback) = callback {
-            callback(event, doc, event_state);
+            callback(event, ctx, event_state);
         }
     }
 }

@@ -18,6 +18,10 @@ pub trait EventHandler {
     /// of the event (`prevent_default`, `stop_propagation`, `stop_immediate_propagation`)
     /// through `event_state`.
     ///
+    /// The [`EventContext`] provides access to the document and allows the listener to
+    /// synchronously dispatch further events (see [`EventContext::dispatch_event`] and
+    /// [`EventContext::set_focus`]).
+    ///
     /// This method takes `&self` (rather than `&mut self`) because event dispatch is
     /// reentrant: a listener may synchronously trigger the dispatch of further events
     /// (e.g. by changing the focus), re-entering the handler while it is already on the
@@ -28,7 +32,7 @@ pub trait EventHandler {
         &self,
         listener: EventListenerId,
         event: &mut DomEvent,
-        doc: &mut dyn Document,
+        ctx: &mut EventContext<'_>,
         event_state: &mut EventState,
     );
 }
@@ -39,7 +43,7 @@ impl EventHandler for NoopEventHandler {
         &self,
         _listener: EventListenerId,
         _event: &mut DomEvent,
-        _doc: &mut dyn Document,
+        _ctx: &mut EventContext<'_>,
         _event_state: &mut EventState,
     ) {
         // Do nothing
@@ -337,195 +341,284 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
         }
     }
 
-    fn adjust_element_coords(
-        &self,
-        target: usize,
-        coords: &PointerCoords,
-        element: &mut Point<f32>,
-    ) {
-        if let Some(rect) = self.doc.inner().get_client_bounding_rect(target) {
-            element.x = coords.client_x - rect.x as f32;
-            element.y = coords.client_y - rect.y as f32;
-        }
-    }
-
     fn run_handler_event(
         &mut self,
         event: &mut DomEvent,
         initial_event_state: EventState,
     ) -> EventState {
-        match &mut event.data {
-            DomEventData::PointerMove(data)
-            | DomEventData::PointerDown(data)
-            | DomEventData::PointerUp(data)
-            | DomEventData::PointerCancel(data)
-            | DomEventData::PointerEnter(data)
-            | DomEventData::PointerLeave(data)
-            | DomEventData::PointerOver(data)
-            | DomEventData::PointerOut(data)
-            | DomEventData::MouseMove(data)
-            | DomEventData::MouseDown(data)
-            | DomEventData::MouseUp(data)
-            | DomEventData::MouseEnter(data)
-            | DomEventData::MouseLeave(data)
-            | DomEventData::MouseOver(data)
-            | DomEventData::MouseOut(data)
-            | DomEventData::TouchStart(data)
-            | DomEventData::TouchEnd(data)
-            | DomEventData::TouchMove(data)
-            | DomEventData::TouchCancel(data)
-            | DomEventData::Click(data)
-            | DomEventData::ContextMenu(data)
-            | DomEventData::DoubleClick(data) => {
-                self.adjust_element_coords(event.target, &data.coords, &mut data.element)
-            }
-            DomEventData::Wheel(data) => {
-                self.adjust_element_coords(event.target, &data.coords, &mut data.element)
-            }
-            _ => {}
-        }
-
-        let mut dispatch_state = EventState::default();
-        self.dispatch_event_to_listeners(event, &mut dispatch_state);
-        initial_event_state.merge(&dispatch_state)
+        dispatch_event_to_listeners(&mut *self.doc, &self.handler, event, initial_event_state)
     }
 
-    /// Dispatch an event to the listeners registered on the nodes along its propagation path,
-    /// implementing the DOM event dispatch algorithm: a capture phase from the root down to
-    /// the target, a target phase, and (for bubbling events) a bubble phase from the target
-    /// back up to the root.
-    fn dispatch_event_to_listeners(&mut self, event: &mut DomEvent, event_state: &mut EventState) {
-        // Fast path: skip dispatch entirely if nothing is listening for this kind of event
-        let kind = event.data.kind();
-        if !self
-            .doc
-            .inner()
-            .event_listeners
-            .has_listeners_for_kind(kind)
-        {
-            return;
+    fn run_default_action(&mut self, event: &mut DomEvent) {
+        self.doc.inner_mut().handle_dom_event(event);
+    }
+}
+
+/// The context passed to an [`EventHandler`] for each listener invocation.
+///
+/// As well as providing access to the document, the context allows a listener to
+/// synchronously dispatch further events ([`dispatch_event`](Self::dispatch_event)) and to
+/// synchronously move the focus ([`set_focus`](Self::set_focus)/[`clear_focus`](Self::clear_focus)),
+/// with the resulting events dispatched *nested*, before the current dispatch continues
+/// (matching the DOM's reentrant `dispatchEvent` and focusing steps).
+pub struct EventContext<'a> {
+    doc: &'a mut dyn Document,
+    handler: &'a dyn EventHandler,
+}
+
+impl EventContext<'_> {
+    /// Access the document
+    pub fn doc(&self) -> &dyn Document {
+        self.doc
+    }
+
+    /// Mutably access the document.
+    ///
+    /// Note: state-changing document APIs (such as [`BaseDocument::set_focus_to`]) *queue*
+    /// the events they generate, to be dispatched after the current event completes. Use
+    /// the methods on this context instead for synchronous (nested) dispatch.
+    ///
+    /// [`BaseDocument::set_focus_to`]: crate::BaseDocument::set_focus_to
+    pub fn doc_mut(&mut self) -> &mut dyn Document {
+        self.doc
+    }
+
+    /// Synchronously dispatch an event: the event is dispatched to the listeners along its
+    /// propagation path and then (if not cancelled) has its default action run, all before
+    /// this method returns. This is the equivalent of the DOM `dispatchEvent` API and may
+    /// be called reentrantly from within a listener.
+    ///
+    /// Returns `false` if the event was cancelled with `prevent_default`.
+    pub fn dispatch_event(&mut self, mut event: DomEvent) -> bool {
+        let event_state = dispatch_event_to_listeners(
+            &mut *self.doc,
+            self.handler,
+            &mut event,
+            EventState::default(),
+        );
+        let cancelled = event_state.is_cancelled();
+        if !cancelled {
+            self.doc.inner_mut().handle_dom_event(&mut event);
         }
+        !cancelled
+    }
 
+    /// Focus the given node, synchronously dispatching the blur/focusout events for the
+    /// previously focussed node and the focus/focusin events for the newly focussed node
+    /// (the DOM "focusing steps").
+    ///
+    /// Does nothing if the node is already focussed.
+    pub fn set_focus(&mut self, node_id: usize) {
+        self.dispatch_events_generated_by(|doc| {
+            doc.set_focus_to(node_id);
+        });
+    }
+
+    /// Clear the focussed node, synchronously dispatching its blur/focusout events.
+    pub fn clear_focus(&mut self) {
+        self.dispatch_events_generated_by(|doc| doc.clear_focus());
+    }
+
+    /// Run a document operation and synchronously dispatch exactly the events which it
+    /// queued, leaving any previously queued events in the queue.
+    fn dispatch_events_generated_by(&mut self, operation: impl FnOnce(&mut crate::BaseDocument)) {
+        let generated_events = {
+            let mut doc = self.doc.inner_mut();
+            let queued_len = doc.pending_events.len();
+            operation(&mut doc);
+            doc.pending_events.split_off(queued_len)
+        };
+        for event in generated_events {
+            self.dispatch_event(event);
+        }
+    }
+}
+
+fn adjust_element_coords(
+    doc: &dyn Document,
+    target: usize,
+    coords: &PointerCoords,
+    element: &mut Point<f32>,
+) {
+    if let Some(rect) = doc.inner().get_client_bounding_rect(target) {
+        element.x = coords.client_x - rect.x as f32;
+        element.y = coords.client_y - rect.y as f32;
+    }
+}
+
+/// Dispatch an event to the listeners registered on the nodes along its propagation path,
+/// implementing the DOM event dispatch algorithm: a capture phase from the root down to
+/// the target, a target phase, and (for bubbling events) a bubble phase from the target
+/// back up to the root.
+///
+/// This is a free function (rather than a method on [`EventDriver`]) so that it can also
+/// be called reentrantly from within a listener via [`EventContext::dispatch_event`].
+fn dispatch_event_to_listeners(
+    doc: &mut dyn Document,
+    handler: &dyn EventHandler,
+    event: &mut DomEvent,
+    initial_event_state: EventState,
+) -> EventState {
+    match &mut event.data {
+        DomEventData::PointerMove(data)
+        | DomEventData::PointerDown(data)
+        | DomEventData::PointerUp(data)
+        | DomEventData::PointerCancel(data)
+        | DomEventData::PointerEnter(data)
+        | DomEventData::PointerLeave(data)
+        | DomEventData::PointerOver(data)
+        | DomEventData::PointerOut(data)
+        | DomEventData::MouseMove(data)
+        | DomEventData::MouseDown(data)
+        | DomEventData::MouseUp(data)
+        | DomEventData::MouseEnter(data)
+        | DomEventData::MouseLeave(data)
+        | DomEventData::MouseOver(data)
+        | DomEventData::MouseOut(data)
+        | DomEventData::TouchStart(data)
+        | DomEventData::TouchEnd(data)
+        | DomEventData::TouchMove(data)
+        | DomEventData::TouchCancel(data)
+        | DomEventData::Click(data)
+        | DomEventData::ContextMenu(data)
+        | DomEventData::DoubleClick(data) => {
+            adjust_element_coords(doc, event.target, &data.coords, &mut data.element)
+        }
+        DomEventData::Wheel(data) => {
+            adjust_element_coords(doc, event.target, &data.coords, &mut data.element)
+        }
+        _ => {}
+    }
+
+    let mut dispatch_state = EventState::default();
+
+    // Fast path: skip dispatch entirely if nothing is listening for this kind of event
+    let kind = event.data.kind();
+    if doc.inner().event_listeners.has_listeners_for_kind(kind) {
         // Compute the propagation path (target first, root last)
-        let path = self.doc.inner().node_chain(event.target);
+        let path = doc.inner().node_chain(event.target);
 
-        self.dispatch_phases(&path, event, event_state);
+        dispatch_phases(doc, handler, &path, event, &mut dispatch_state);
 
         // Dispatch is complete: the event is no longer being propagated
         event.phase = EventPhase::None;
         event.current_target = None;
     }
 
-    fn dispatch_phases(&mut self, path: &[usize], event: &mut DomEvent, state: &mut EventState) {
-        // Capture phase: walk down from the root to the target (target excluded),
-        // invoking capture listeners
-        event.phase = EventPhase::Capturing;
-        for &node_id in path[1..].iter().rev() {
-            self.invoke_listeners_on_node(node_id, event, state);
-            if state.propagation_is_stopped() {
-                return;
-            }
-        }
+    initial_event_state.merge(&dispatch_state)
+}
 
-        // Target phase: invoke the target's listeners (both capture and non-capture
-        // listeners, in registration order)
-        event.phase = EventPhase::AtTarget;
-        self.invoke_listeners_on_node(event.target, event, state);
-        if state.propagation_is_stopped() || !event.bubbles {
+fn dispatch_phases(
+    doc: &mut dyn Document,
+    handler: &dyn EventHandler,
+    path: &[usize],
+    event: &mut DomEvent,
+    state: &mut EventState,
+) {
+    // Capture phase: walk down from the root to the target (target excluded),
+    // invoking capture listeners
+    event.phase = EventPhase::Capturing;
+    for &node_id in path[1..].iter().rev() {
+        invoke_listeners_on_node(doc, handler, node_id, event, state);
+        if state.propagation_is_stopped() {
             return;
-        }
-
-        // Bubble phase: walk up from the target (excluded) to the root,
-        // invoking non-capture listeners
-        event.phase = EventPhase::Bubbling;
-        for &node_id in path[1..].iter() {
-            self.invoke_listeners_on_node(node_id, event, state);
-            if state.propagation_is_stopped() {
-                return;
-            }
         }
     }
 
-    /// Invoke the listeners registered on a single node which match the event's kind
-    /// and current propagation phase.
-    fn invoke_listeners_on_node(
-        &mut self,
-        node_id: usize,
-        event: &mut DomEvent,
-        event_state: &mut EventState,
-    ) {
-        let kind = event.data.kind();
+    // Target phase: invoke the target's listeners (both capture and non-capture
+    // listeners, in registration order)
+    event.phase = EventPhase::AtTarget;
+    invoke_listeners_on_node(doc, handler, event.target, event, state);
+    if state.propagation_is_stopped() || !event.bubbles {
+        return;
+    }
 
-        // Snapshot the node's listener list so that listeners added while the event is
-        // being dispatched are not invoked for this event (matching DOM semantics)
-        let listeners: Vec<EventListener> = self
-            .doc
-            .inner()
-            .event_listeners
-            .listeners_for(node_id, kind);
-        if listeners.is_empty() {
+    // Bubble phase: walk up from the target (excluded) to the root,
+    // invoking non-capture listeners
+    event.phase = EventPhase::Bubbling;
+    for &node_id in path[1..].iter() {
+        invoke_listeners_on_node(doc, handler, node_id, event, state);
+        if state.propagation_is_stopped() {
             return;
         }
+    }
+}
 
-        event.current_target = Some(node_id);
+/// Invoke the listeners registered on a single node which match the event's kind
+/// and current propagation phase.
+fn invoke_listeners_on_node(
+    doc: &mut dyn Document,
+    handler: &dyn EventHandler,
+    node_id: usize,
+    event: &mut DomEvent,
+    event_state: &mut EventState,
+) {
+    let kind = event.data.kind();
 
-        for listener in listeners {
-            let phase_matches = match event.phase {
-                EventPhase::Capturing => listener.options.capture,
-                // At the target both capture and non-capture listeners are invoked
-                EventPhase::AtTarget => true,
-                EventPhase::Bubbling => !listener.options.capture,
-                EventPhase::None => false,
-            };
-            if !phase_matches {
-                continue;
-            }
+    // Snapshot the node's listener list so that listeners added while the event is
+    // being dispatched are not invoked for this event (matching DOM semantics)
+    let listeners: Vec<EventListener> = doc.inner().event_listeners.listeners_for(node_id, kind);
+    if listeners.is_empty() {
+        return;
+    }
 
-            // Skip listeners that were removed by an earlier listener during this dispatch
-            let still_registered = self.doc.inner().event_listeners.contains(
+    event.current_target = Some(node_id);
+
+    for listener in listeners {
+        let phase_matches = match event.phase {
+            EventPhase::Capturing => listener.options.capture,
+            // At the target both capture and non-capture listeners are invoked
+            EventPhase::AtTarget => true,
+            EventPhase::Bubbling => !listener.options.capture,
+            EventPhase::None => false,
+        };
+        if !phase_matches {
+            continue;
+        }
+
+        // Skip listeners that were removed by an earlier listener during this dispatch
+        let still_registered = doc.inner().event_listeners.contains(
+            node_id,
+            kind,
+            listener.id,
+            listener.options.capture,
+        );
+        if !still_registered {
+            continue;
+        }
+
+        // `once` listeners are removed *before* they are invoked so that they can
+        // re-register themselves without being immediately deregistered
+        if listener.options.once {
+            doc.inner_mut().event_listeners.remove(
                 node_id,
                 kind,
                 listener.id,
                 listener.options.capture,
             );
-            if !still_registered {
-                continue;
-            }
-
-            // `once` listeners are removed *before* they are invoked so that they can
-            // re-register themselves without being immediately deregistered
-            if listener.options.once {
-                self.doc.inner_mut().event_listeners.remove(
-                    node_id,
-                    kind,
-                    listener.id,
-                    listener.options.capture,
-                );
-            }
-
-            let mut listener_state = EventState::default();
-            self.handler
-                .handle_event_listener(listener.id, event, self.doc, &mut listener_state);
-
-            // A listener may only cancel an event if the event is cancelable and the
-            // listener was not registered as `passive`
-            if listener_state.is_cancelled() && event.cancelable && !listener.options.passive {
-                event_state.prevent_default();
-            }
-            if listener_state.propagation_is_stopped() {
-                event_state.stop_propagation();
-            }
-            if listener_state.redraw_is_requested() {
-                event_state.request_redraw();
-            }
-            if listener_state.immediate_propagation_is_stopped() {
-                event_state.stop_immediate_propagation();
-                break;
-            }
         }
-    }
 
-    fn run_default_action(&mut self, event: &mut DomEvent) {
-        self.doc.inner_mut().handle_dom_event(event);
+        let mut listener_state = EventState::default();
+        let mut ctx = EventContext {
+            doc: &mut *doc,
+            handler,
+        };
+        handler.handle_event_listener(listener.id, event, &mut ctx, &mut listener_state);
+
+        // A listener may only cancel an event if the event is cancelable and the
+        // listener was not registered as `passive`
+        if listener_state.is_cancelled() && event.cancelable && !listener.options.passive {
+            event_state.prevent_default();
+        }
+        if listener_state.propagation_is_stopped() {
+            event_state.stop_propagation();
+        }
+        if listener_state.redraw_is_requested() {
+            event_state.request_redraw();
+        }
+        if listener_state.immediate_propagation_is_stopped() {
+            event_state.stop_immediate_propagation();
+            break;
+        }
     }
 }
