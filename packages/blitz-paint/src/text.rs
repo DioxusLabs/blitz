@@ -141,17 +141,20 @@ pub(crate) fn stroke_text<'a>(
                         scene.stroke(&stroke, transform, brush, None, &line)
                     };
 
-                // Resolve the CSS `text-decoration-thickness` to a device-pixel size. `auto`
-                // and `from-font` keep the font's suggested thickness for the specific
-                // decoration line; a `<length-percentage>` is resolved against the font size
-                // (percentages are relative to 1em) in CSS pixels, then scaled to device pixels.
+                // Resolve the CSS `text-decoration-thickness` to a device-pixel size.
+                //
+                // - Percentages are resolved against the font size,
+                // - `from-font` uses the metrics from Parley
+                // - `auto` uses a thickness of `font-size / 10` (minimum: 1px).
                 let decoration_size = |metric_size: f32| match &text_decoration_thickness {
                     GenericTextDecorationLength::LengthPercentage(lp) => {
                         let css_font_size = font_size as f64 / scale;
                         lp.resolve(Length::new(css_font_size as f32)).px() as f64 * scale
                     }
-                    GenericTextDecorationLength::FromFont | GenericTextDecorationLength::Auto => {
-                        metric_size as f64
+                    GenericTextDecorationLength::FromFont => metric_size as f64,
+                    GenericTextDecorationLength::Auto => {
+                        let css_font_size = font_size as f64 / scale;
+                        (css_font_size / 10.0).max(1.0) * scale
                     }
                 } as f32;
 
