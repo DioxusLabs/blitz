@@ -1,5 +1,7 @@
 //! Integration with blitz-dom's event driver
 
+use std::cell::RefCell;
+
 use blitz_dom::{
     BaseDocument, Document, EventHandler, EventListenerId, EventListenerOptions, NodeId,
 };
@@ -32,12 +34,12 @@ pub(crate) fn register_script_listeners(doc: &mut BaseDocument) {
 /// An [`EventHandler`] which dispatches DOM events to JavaScript event listeners
 /// before Blitz's default actions run.
 pub(crate) struct ScriptEventHandler<'rt> {
-    pub runtime: &'rt mut ScriptRuntime,
+    pub runtime: RefCell<&'rt mut ScriptRuntime>,
 }
 
 impl EventHandler for ScriptEventHandler<'_> {
     fn handle_event_listener(
-        &mut self,
+        &self,
         _listener: EventListenerId,
         event: &mut DomEvent,
         doc: &mut dyn Document,
@@ -48,6 +50,8 @@ impl EventHandler for ScriptEventHandler<'_> {
         } else {
             vec![event.target]
         };
-        self.runtime.dispatch_dom_event(&chain, event, event_state);
+        self.runtime
+            .borrow_mut()
+            .dispatch_dom_event(&chain, event, event_state);
     }
 }

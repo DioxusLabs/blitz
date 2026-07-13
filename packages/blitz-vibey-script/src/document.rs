@@ -274,7 +274,7 @@ impl ScriptDocument {
     pub fn dispatch_dom_event(&mut self, event: DomEvent) {
         register_script_listeners(&mut self.inner.borrow_mut());
         let handler = ScriptEventHandler {
-            runtime: &mut self.runtime,
+            runtime: RefCell::new(&mut self.runtime),
         };
         let mut driver = EventDriver::new(&mut self.inner, handler);
         driver.handle_dom_event(event);
@@ -403,7 +403,7 @@ impl Document for ScriptDocument {
     fn handle_ui_event(&mut self, event: UiEvent) {
         register_script_listeners(&mut self.inner.borrow_mut());
         let handler = ScriptEventHandler {
-            runtime: &mut self.runtime,
+            runtime: RefCell::new(&mut self.runtime),
         };
         let mut driver = EventDriver::new(&mut self.inner, handler);
         driver.handle_ui_event(event);

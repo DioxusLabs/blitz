@@ -100,7 +100,7 @@ impl RecordingHandler {
 
 impl EventHandler for RecordingHandler {
     fn handle_event_listener(
-        &mut self,
+        &self,
         listener: EventListenerId,
         event: &mut DomEvent,
         _doc: &mut dyn Document,
@@ -374,7 +374,7 @@ fn listener_removed_during_dispatch_does_not_fire() {
 
     impl EventHandler for RemovingHandler {
         fn handle_event_listener(
-            &mut self,
+            &self,
             listener: EventListenerId,
             _event: &mut DomEvent,
             doc: &mut dyn Document,
@@ -435,7 +435,7 @@ fn once_listener_can_re_register_itself() {
 
     impl EventHandler for ReRegisteringHandler {
         fn handle_event_listener(
-            &mut self,
+            &self,
             listener: EventListenerId,
             event: &mut DomEvent,
             doc: &mut dyn Document,
