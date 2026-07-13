@@ -339,8 +339,16 @@ pub(crate) fn stroke_text<'a>(
                     draw_decoration_line(offset, size, &text_decoration_brush, -1.0);
                 }
                 if has_strikethrough {
-                    let offset = metrics.strikethrough_offset;
                     let size = decoration_size(metrics.strikethrough_size);
+
+                    // Centre the line-through a third of the ascent above the baseline, matching
+                    // Chrome (which places it `2/3 * ascent` below the text-top). Parley's
+                    // `strikethrough_offset` (the font's `yStrikeoutPosition`) sits lower and would
+                    // draw the line too close to the baseline. `draw_decoration_line` centres the
+                    // stroke on `baseline - offset + size / 2`, so `offset = ascent / 3 + size / 2`
+                    // puts the centre at `baseline - ascent / 3`.
+                    let ascent = win_ascent(run.font(), run.font_size()).unwrap_or(metrics.ascent);
+                    let offset = ascent / 3.0 + size / 2.0;
 
                     draw_decoration_line(offset, size, &text_decoration_brush, 1.0);
                 }
