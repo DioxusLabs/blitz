@@ -71,7 +71,7 @@ fn scroller_doc() -> HtmlDocument {
 /// also shows its overlay scrollbars (thumbs are only interactive while
 /// visible).
 fn scroll_down(doc: &mut HtmlDocument, scroller: usize, dy: f64) {
-    doc.scroll_by(Some(scroller), 0.0, -dy, &mut |_| {});
+    doc.scroll_by(Some(scroller), 0.0, -dy);
 }
 
 #[test]

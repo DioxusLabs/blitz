@@ -22,7 +22,7 @@ use crate::{
 };
 use blitz_traits::devtools::DevtoolSettings;
 use blitz_traits::events::{
-    BlitzScrollEvent, DomEvent, DomEventData, DomEventKind, HitResult, UiEvent,
+    BlitzFocusEvent, BlitzScrollEvent, DomEvent, DomEventData, DomEventKind, HitResult, UiEvent,
 };
 use blitz_traits::navigation::{DummyNavigationProvider, NavigationProvider};
 use blitz_traits::net::{AbortSignal, DummyNetProvider, NetProvider, Request};
@@ -35,7 +35,7 @@ use selectors::{Element, matching::QuirksMode};
 use slab::Slab;
 use std::any::Any;
 use std::cell::RefCell;
-use std::collections::{BTreeMap, Bound, HashMap, HashSet};
+use std::collections::{BTreeMap, Bound, HashMap, HashSet, VecDeque};
 use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
 use std::str::FromStr;
@@ -268,6 +268,11 @@ pub struct BaseDocument {
     /// (via [`add_event_listener`](Self::add_event_listener))
     pub(crate) event_listeners: EventListenerRegistry,
 
+    /// Events which have been generated (by default actions, state changes such as focus
+    /// changes, or embedder code) but not yet dispatched to event listeners. Drained by
+    /// [`EventDriver`] in a run-to-completion loop.
+    pub(crate) pending_events: VecDeque<DomEvent>,
+
     // TODO: collapse animating state into a bitflags
     /// Whether there are active CSS animations/transitions (so we should re-render every frame)
     pub(crate) has_active_animations: bool,
@@ -484,6 +489,7 @@ impl BaseDocument {
             scroll_animation: ScrollAnimationState::None,
             text_selection: TextSelection::default(),
             event_listeners: EventListenerRegistry::default(),
+            pending_events: VecDeque::new(),
         };
 
         // Initialise document with root Document node
@@ -593,12 +599,38 @@ impl BaseDocument {
         DocumentMutator::new(self)
     }
 
-    pub fn handle_dom_event<F: FnMut(DomEvent)>(
-        &mut self,
-        event: &mut DomEvent,
-        dispatch_event: F,
-    ) {
-        handle_dom_event(self, event, dispatch_event)
+    /// Run the default action for an event. Any events generated in the process
+    /// (e.g. focus events, input events) are queued via [`queue_event`](Self::queue_event).
+    pub fn handle_dom_event(&mut self, event: &mut DomEvent) {
+        handle_dom_event(self, event)
+    }
+
+    /// Queue an event for dispatch.
+    ///
+    /// Queued events are dispatched to event listeners (and have their default actions run)
+    /// by an [`EventDriver`] in a run-to-completion loop. Events are queued rather than
+    /// dispatched immediately so that any code with access to the document (state-changing
+    /// document APIs such as [`set_focus_to`](Self::set_focus_to), default actions, or
+    /// embedder code) can generate events without needing access to the driver.
+    pub fn queue_event(&mut self, event: DomEvent) {
+        // Cap the queue length so that events cannot accumulate without bound if events
+        // are generated outside of an event driver and the embedder never drains them.
+        const MAX_PENDING_EVENTS: usize = 1024;
+        if self.pending_events.len() >= MAX_PENDING_EVENTS {
+            self.pending_events.pop_front();
+        }
+        self.pending_events.push_back(event);
+    }
+
+    /// Take the next pending event from the queue (see [`queue_event`](Self::queue_event))
+    pub fn pop_pending_event(&mut self) -> Option<DomEvent> {
+        self.pending_events.pop_front()
+    }
+
+    /// Whether there are pending events waiting to be dispatched
+    /// (see [`queue_event`](Self::queue_event))
+    pub fn has_pending_events(&self) -> bool {
+        !self.pending_events.is_empty()
     }
 
     pub fn as_any_mut(&mut self) -> &mut dyn Any {
@@ -1324,18 +1356,26 @@ impl BaseDocument {
         Some(id)
     }
 
-    /// Clear the focussed node
+    /// Clear the focussed node, queueing blur/focusout events for the previously
+    /// focussed node (if any)
     pub fn clear_focus(&mut self) {
         if let Some(id) = self.focus_node_id {
             let shell_provider = self.shell_provider.clone();
             self.snapshot_node_and(id, |node| node.blur(shell_provider));
             self.focus_node_id = None;
+            self.queue_event(DomEvent::new(id, DomEventData::Blur(BlitzFocusEvent)));
+            self.queue_event(DomEvent::new(id, DomEventData::FocusOut(BlitzFocusEvent)));
         }
     }
 
     pub fn set_mousedown_node_id(&mut self, node_id: Option<usize>) {
         self.mousedown_node_id = node_id;
     }
+
+    /// Focus the given node, queueing blur/focusout events for the previously focussed
+    /// node (if any) and focus/focusin events for the newly focussed node.
+    ///
+    /// Does nothing (and queues no events) if the node is already focussed.
     pub fn set_focus_to(&mut self, focus_node_id: usize) -> bool {
         if Some(focus_node_id) == self.focus_node_id {
             return false;
@@ -1349,12 +1389,22 @@ impl BaseDocument {
         // Remove focus from the old node
         if let Some(id) = self.focus_node_id {
             self.snapshot_node_and(id, |node| node.blur(shell_provider.clone()));
+            self.queue_event(DomEvent::new(id, DomEventData::Blur(BlitzFocusEvent)));
+            self.queue_event(DomEvent::new(id, DomEventData::FocusOut(BlitzFocusEvent)));
         }
 
         // Focus the new node
         self.snapshot_node_and(focus_node_id, |node| node.focus(shell_provider));
 
         self.focus_node_id = Some(focus_node_id);
+        self.queue_event(DomEvent::new(
+            focus_node_id,
+            DomEventData::Focus(BlitzFocusEvent),
+        ));
+        self.queue_event(DomEvent::new(
+            focus_node_id,
+            DomEventData::FocusIn(BlitzFocusEvent),
+        ));
 
         true
     }
@@ -1738,26 +1788,14 @@ impl BaseDocument {
         Some(CursorIcon::Default)
     }
 
-    pub fn scroll_node_by<F: FnMut(DomEvent)>(
-        &mut self,
-        node_id: usize,
-        x: f64,
-        y: f64,
-        dispatch_event: F,
-    ) {
-        self.scroll_node_by_has_changed(node_id, x, y, dispatch_event);
+    pub fn scroll_node_by(&mut self, node_id: usize, x: f64, y: f64) {
+        self.scroll_node_by_has_changed(node_id, x, y);
     }
 
     /// Scroll a node by given x and y
     /// Will bubble scrolling up to parent node once it can no longer scroll further
     /// If we're already at the root node, bubbles scrolling up to the viewport
-    pub fn scroll_node_by_has_changed<F: FnMut(DomEvent)>(
-        &mut self,
-        node_id: usize,
-        x: f64,
-        y: f64,
-        mut dispatch_event: F,
-    ) -> bool {
+    pub fn scroll_node_by_has_changed(&mut self, node_id: usize, x: f64, y: f64) -> bool {
         // Per the CSS overflow propagation rules, the root element's overflow (and usually
         // the <body>'s) is applied to the viewport, and the element itself must not have
         // a scrolling mechanism of its own. So scrolls that reach the root element are
@@ -1775,7 +1813,7 @@ impl BaseDocument {
                     client_width: (self.viewport.window_size.0 as f64 / scale) as i32,
                     client_height: (self.viewport.window_size.1 as f64 / scale) as i32,
                 };
-                dispatch_event(DomEvent::new(node_id, DomEventData::Scroll(event)));
+                self.queue_event(DomEvent::new(node_id, DomEventData::Scroll(event)));
             }
             return has_changed;
         }
@@ -1815,7 +1853,7 @@ impl BaseDocument {
 
             if bubble_x != 0.0 || bubble_y != 0.0 {
                 let bubbled = if let Some(parent) = parent {
-                    self.scroll_node_by_has_changed(parent, bubble_x, bubble_y, dispatch_event)
+                    self.scroll_node_by_has_changed(parent, bubble_x, bubble_y)
                 } else {
                     self.scroll_viewport_by_has_changed(bubble_x, bubble_y)
                 };
@@ -1845,10 +1883,12 @@ impl BaseDocument {
         let scroll_width = node.final_layout.scroll_width() as f64;
         let scroll_height = node.final_layout.scroll_height() as f64;
 
-        // Handle sub document case
+        // Handle sub document case. Any scroll events are queued on the sub-document
+        // itself (they target sub-document nodes) and are dispatched the next time an
+        // event driver runs for the sub-document.
         if let Some(mut sub_doc) = node.subdoc_mut().map(|doc| doc.inner_mut()) {
             let has_changed = if let Some(hover_node_id) = sub_doc.get_hover_node_id() {
-                sub_doc.scroll_node_by_has_changed(hover_node_id, x, y, dispatch_event)
+                sub_doc.scroll_node_by_has_changed(hover_node_id, x, y)
             } else {
                 sub_doc.scroll_viewport_by_has_changed(x, y)
             };
@@ -1883,6 +1923,7 @@ impl BaseDocument {
         }
 
         let has_changed = node.scroll_offset != initial;
+        let parent = node.parent;
 
         if has_changed {
             let layout = node.final_layout;
@@ -1895,18 +1936,13 @@ impl BaseDocument {
                 client_height: layout.size.height as i32,
             };
 
-            dispatch_event(DomEvent::new(node_id, DomEventData::Scroll(event)));
-        }
-
-        let parent = node.parent;
-        if has_changed {
+            self.queue_event(DomEvent::new(node_id, DomEventData::Scroll(event)));
             self.show_scrollbars(node_id);
         }
 
         if bubble_x != 0.0 || bubble_y != 0.0 {
             if let Some(parent) = parent {
-                return self.scroll_node_by_has_changed(parent, bubble_x, bubble_y, dispatch_event)
-                    | has_changed;
+                return self.scroll_node_by_has_changed(parent, bubble_x, bubble_y) | has_changed;
             } else {
                 return self.scroll_viewport_by_has_changed(bubble_x, bubble_y) | has_changed;
             }
@@ -1945,10 +1981,9 @@ impl BaseDocument {
         anchor_node_id: Option<usize>,
         scroll_x: f64,
         scroll_y: f64,
-        dispatch_event: &mut dyn FnMut(DomEvent),
     ) -> bool {
         if let Some(anchor_node_id) = anchor_node_id {
-            self.scroll_node_by_has_changed(anchor_node_id, scroll_x, scroll_y, dispatch_event)
+            self.scroll_node_by_has_changed(anchor_node_id, scroll_x, scroll_y)
         } else {
             self.scroll_viewport_by_has_changed(scroll_x, scroll_y)
         }

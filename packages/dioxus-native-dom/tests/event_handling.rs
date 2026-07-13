@@ -104,6 +104,45 @@ fn non_bubbling_events_reach_vdom_handlers() {
 }
 
 #[test]
+fn programmatic_focus_change_dispatches_focus_events_to_vdom() {
+    static FOCUSSES: AtomicUsize = AtomicUsize::new(0);
+    static BLURS: AtomicUsize = AtomicUsize::new(0);
+
+    fn app() -> Element {
+        rsx! {
+            input {
+                r#type: "text",
+                style: "width: 200px; height: 40px;",
+                onfocus: move |_| {
+                    FOCUSSES.fetch_add(1, Ordering::SeqCst);
+                },
+                onblur: move |_| {
+                    BLURS.fetch_add(1, Ordering::SeqCst);
+                },
+            }
+        }
+    }
+
+    let mut doc = make_doc(app);
+    let input_id = doc.inner.borrow().query_selector("input").unwrap().unwrap();
+
+    // A focus change made by embedder code (outside of any event dispatch, like
+    // `NodeHandle::set_focus` from a `mounted` handler) queues focus events on
+    // the document...
+    doc.inner.borrow_mut().set_focus_to(input_id);
+    assert_eq!(FOCUSSES.load(Ordering::SeqCst), 0);
+
+    // ...which are dispatched to the vdom the next time an event driver runs
+    doc.handle_ui_event(UiEvent::PointerMove(pointer_event(300.0, 300.0)));
+    assert_eq!(FOCUSSES.load(Ordering::SeqCst), 1);
+    assert_eq!(BLURS.load(Ordering::SeqCst), 0);
+
+    doc.inner.borrow_mut().clear_focus();
+    doc.handle_ui_event(UiEvent::PointerMove(pointer_event(300.0, 300.0)));
+    assert_eq!(BLURS.load(Ordering::SeqCst), 1);
+}
+
+#[test]
 fn prevent_default_from_vdom_handler_cancels_default_action() {
     fn checked_app() -> Element {
         rsx! {

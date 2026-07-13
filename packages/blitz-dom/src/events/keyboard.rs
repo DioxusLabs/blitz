@@ -11,11 +11,10 @@ pub(super) enum KeyboardOrTextInputEvent {
     AppleStandardKeyBinding(SmolStr),
 }
 
-pub(crate) fn handle_key_or_input_event<F: FnMut(DomEvent)>(
+pub(crate) fn handle_key_or_input_event(
     doc: &mut BaseDocument,
     target: usize,
     event: KeyboardOrTextInputEvent,
-    dispatch_event: F,
 ) {
     if let KeyboardOrTextInputEvent::KeyPress(event) = &event {
         if event.key == Key::Tab {
@@ -77,18 +76,17 @@ pub(crate) fn handle_key_or_input_event<F: FnMut(DomEvent)>(
             };
 
             if let Some(generated_event) = generated_event {
-                doc.apply_generated_text_input_event(node_id, generated_event, dispatch_event);
+                doc.apply_generated_text_input_event(node_id, generated_event);
             }
         }
     }
 }
 
 impl BaseDocument {
-    pub(crate) fn apply_generated_text_input_event<F: FnMut(DomEvent)>(
+    pub(crate) fn apply_generated_text_input_event(
         &mut self,
         node_id: usize,
         event: GeneratedTextInputEvent,
-        mut dispatch_event: F,
     ) {
         let node = &mut self.nodes[node_id];
         let element_data = node
@@ -101,7 +99,7 @@ impl BaseDocument {
         match event {
             GeneratedTextInputEvent::Input => {
                 let value = input_data.editor.raw_text().to_string();
-                dispatch_event(DomEvent::new(
+                self.queue_event(DomEvent::new(
                     node_id,
                     DomEventData::Input(BlitzInputEvent { value }),
                 ));

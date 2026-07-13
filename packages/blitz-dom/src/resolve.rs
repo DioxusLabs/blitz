@@ -206,7 +206,7 @@ impl BaseDocument {
                 let dx = fling_state.x_velocity * time_diff_ms;
                 let dy = fling_state.y_velocity * time_diff_ms;
 
-                self.scroll_by(Some(fling_state.target), dx, dy, &mut |_| {});
+                self.scroll_by(Some(fling_state.target), dx, dy);
                 if fling_state.x_velocity.abs() < 0.1 && fling_state.y_velocity.abs() < 0.1 {
                     self.scroll_animation = ScrollAnimationState::None;
                 }

@@ -245,6 +245,12 @@ impl Document for DioxusDocument {
         drop(inner);
         self.flush_queued_mounted_events();
 
+        // Dispatch any events queued by the vdom update (e.g. focus events generated
+        // by a `mounted` handler calling `set_focus`)
+        if self.inner.borrow().has_pending_events() {
+            self.flush_pending_dom_events();
+        }
+
         true
     }
 
@@ -254,6 +260,18 @@ impl Document for DioxusDocument {
         };
         let mut driver = EventDriver::new(&mut self.inner, handler);
         driver.handle_ui_event(event);
+    }
+}
+
+impl DioxusDocument {
+    /// Dispatch any events queued on the document (see [`BaseDocument::queue_event`])
+    /// to the Dioxus vdom
+    fn flush_pending_dom_events(&mut self) {
+        let handler = DioxusEventHandler {
+            vdom: &mut self.vdom,
+        };
+        let mut driver = EventDriver::new(&mut self.inner, handler);
+        driver.flush_pending_events();
     }
 }
 
