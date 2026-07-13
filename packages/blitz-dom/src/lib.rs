@@ -123,8 +123,8 @@ pub use style::media_queries::MediaType;
 pub use style::stylist::RegisterCustomPropertyResult;
 pub type SelectorList = selectors::SelectorList<style::selector_parser::SelectorImpl>;
 pub use events::{
-    CallbackEventHandler, EventDriver, EventHandler, EventListener, EventListenerCallback,
-    EventListenerId, EventListenerOptions, NoopEventHandler,
+    CallbackEventHandler, EventContext, EventDriver, EventHandler, EventListener,
+    EventListenerCallback, EventListenerId, EventListenerOptions, NoopEventHandler,
 };
 pub use html::{DummyHtmlParserProvider, HtmlParserProvider};
 pub use util::{Point, decode_font_bytes};

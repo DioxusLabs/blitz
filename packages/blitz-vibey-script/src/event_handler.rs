@@ -3,7 +3,7 @@
 use std::cell::RefCell;
 
 use blitz_dom::{
-    BaseDocument, Document, EventHandler, EventListenerId, EventListenerOptions, NodeId,
+    BaseDocument, EventContext, EventHandler, EventListenerId, EventListenerOptions, NodeId,
 };
 use blitz_traits::events::{DomEvent, DomEventKind, EventState};
 
@@ -42,11 +42,11 @@ impl EventHandler for ScriptEventHandler<'_> {
         &self,
         _listener: EventListenerId,
         event: &mut DomEvent,
-        doc: &mut dyn Document,
+        ctx: &mut EventContext<'_>,
         event_state: &mut EventState,
     ) {
         let chain: Vec<NodeId> = if event.bubbles {
-            doc.inner().node_chain(event.target)
+            ctx.doc().inner().node_chain(event.target)
         } else {
             vec![event.target]
         };

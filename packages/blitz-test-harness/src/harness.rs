@@ -136,7 +136,9 @@ impl<D: Document> Harness<D> {
     /// so document-specific event handling (e.g. forwarding to a Dioxus VirtualDom) is
     /// bypassed. Does not [`pump`](Self::pump).
     pub fn dispatch_recorded(&mut self, events: impl IntoIterator<Item = UiEvent>) -> Vec<String> {
-        use blitz_dom::{EventDriver, EventHandler, EventListenerId, EventListenerOptions};
+        use blitz_dom::{
+            EventContext, EventDriver, EventHandler, EventListenerId, EventListenerOptions,
+        };
         use blitz_traits::events::{DomEvent, DomEventKind, EventState};
         use std::cell::RefCell;
         use std::rc::Rc;
@@ -151,7 +153,7 @@ impl<D: Document> Harness<D> {
                 &self,
                 _listener: EventListenerId,
                 event: &mut DomEvent,
-                _doc: &mut dyn Document,
+                _ctx: &mut EventContext<'_>,
                 _event_state: &mut EventState,
             ) {
                 self.events.borrow_mut().push(event.name().to_string());
