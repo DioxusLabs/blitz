@@ -1,4 +1,3 @@
-use crate::events::focus::generate_focus_events;
 use crate::{BaseDocument, node::GeneratedTextInputEvent, util::ACTION_MOD};
 use blitz_traits::node_id::NodeId;
 use blitz_traits::{
@@ -13,27 +12,20 @@ pub(super) enum KeyboardOrTextInputEvent {
     AppleStandardKeyBinding(SmolStr),
 }
 
-pub(crate) fn handle_key_or_input_event<F: FnMut(DomEvent)>(
+pub(crate) fn handle_key_or_input_event(
     doc: &mut BaseDocument,
     target: NodeId,
     event: KeyboardOrTextInputEvent,
-    mut dispatch_event: F,
 ) {
     if let KeyboardOrTextInputEvent::KeyPress(event) = &event {
         if event.key == Key::Named(NamedKey::Tab) {
             let backwards = event.modifiers.contains(Modifiers::SHIFT);
             let old_focus = doc.focus_node_id;
-            generate_focus_events(
-                doc,
-                &mut |doc| {
-                    if backwards {
-                        doc.focus_prev_node();
-                    } else {
-                        doc.focus_next_node();
-                    }
-                },
-                &mut dispatch_event,
-            );
+            if backwards {
+                doc.focus_prev_node();
+            } else {
+                doc.focus_next_node();
+            }
             if doc.focus_node_id != old_focus {
                 doc.shell_provider.request_redraw();
             }
@@ -94,18 +86,17 @@ pub(crate) fn handle_key_or_input_event<F: FnMut(DomEvent)>(
             };
 
             if let Some(generated_event) = generated_event {
-                doc.apply_generated_text_input_event(node_id, generated_event, dispatch_event);
+                doc.apply_generated_text_input_event(node_id, generated_event);
             }
         }
     }
 }
 
 impl BaseDocument {
-    pub(crate) fn apply_generated_text_input_event<F: FnMut(DomEvent)>(
+    pub(crate) fn apply_generated_text_input_event(
         &mut self,
         node_id: NodeId,
         event: GeneratedTextInputEvent,
-        mut dispatch_event: F,
     ) {
         let node = &mut self.nodes[node_id];
         let element_data = node
@@ -118,7 +109,7 @@ impl BaseDocument {
         match event {
             GeneratedTextInputEvent::Input => {
                 let value = input_data.editor.raw_text().to_string();
-                dispatch_event(DomEvent::new(
+                self.queue_event(DomEvent::new(
                     node_id,
                     DomEventData::Input(BlitzInputEvent { value }),
                 ));

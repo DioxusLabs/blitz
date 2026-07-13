@@ -545,6 +545,34 @@ fn listeners_are_removed_when_their_node_is_dropped() {
 }
 
 #[test]
+fn programmatic_focus_changes_queue_focus_events() {
+    let mut doc = document(
+        r#"<html><body><input id="a" type="text"><input id="b" type="text"></body></html>"#,
+    );
+    let a = node_id(&doc, "#a");
+    let b = node_id(&doc, "#b");
+
+    let focus_a = EventListenerId(1);
+    let blur_a = EventListenerId(2);
+    let focus_b = EventListenerId(3);
+    assert!(doc.add_event_listener(a, DomEventKind::Focus, focus_a, Default::default()));
+    assert!(doc.add_event_listener(a, DomEventKind::Blur, blur_a, Default::default()));
+    assert!(doc.add_event_listener(b, DomEventKind::Focus, focus_b, Default::default()));
+
+    // Focus changes made outside of any event dispatch (e.g. by embedder code) queue
+    // focus events on the document...
+    doc.set_focus_to(a);
+    doc.set_focus_to(b);
+    assert!(doc.has_pending_events());
+
+    // ...which are dispatched (in order) when an event driver runs
+    let handler = RecordingHandler::default();
+    EventDriver::new(&mut doc, handler.clone()).flush_pending_events();
+    assert_eq!(handler.invoked_listeners(), vec![focus_a, blur_a, focus_b]);
+    assert!(!doc.has_pending_events());
+}
+
+#[test]
 fn callback_event_handler_invokes_closures() {
     let mut doc = nested_document();
     let outer = node_id(&doc, "#outer");
