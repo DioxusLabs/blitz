@@ -109,6 +109,7 @@ fn select_best_dash_gap(stroke_length: f64, dash_length: f64, gap_length: f64) -
 /// can be cached on the ancestor stack and reused across every run within the same
 /// decorating box. The `text-decoration-inset` and `text-underline-offset` values
 /// depend on the run's advance/font-size and are resolved lazily when drawing.
+#[derive(Clone)]
 struct ResolvedDecoration {
     line: TextDecorationLine,
     style: TextDecorationStyle,
@@ -181,6 +182,326 @@ fn resolve_decoration_entry(doc: &BaseDocument, node_id: usize) -> DecorationSta
     }
 }
 
+/// The run-dependent geometry used to position and size a decoration, captured from a
+/// single glyph run. Firefox draws a decoration once for the whole decorating box using
+/// the box's own font, so we prefer the values from a run whose innermost node *is* the
+/// decorating box (its own text), falling back to the first run it covers.
+#[derive(Clone)]
+struct DecorationRunGeometry {
+    /// The line's baseline (shared by every run on the line).
+    baseline: f32,
+    ascent: f32,
+    descent: f32,
+    underline_offset: f32,
+    underline_size: f32,
+    strikethrough_size: f32,
+    font: parley::FontData,
+    font_size: f32,
+    css_font_size: f64,
+}
+
+/// A decoration accumulated across the runs of a single line for one decorating box.
+///
+/// The `text-decoration-*` properties describe the whole box, so we gather the horizontal
+/// extent it covers on the line (`min_x`/`max_x`) and the font geometry to draw with, then
+/// paint a single line spanning the box rather than one segment per run.
+struct LineDecoration {
+    node_id: usize,
+    deco: ResolvedDecoration,
+    min_x: f64,
+    max_x: f64,
+    /// Geometry from a run whose innermost node is the decorating box itself.
+    own: Option<DecorationRunGeometry>,
+    /// Geometry from the first run the box covers (fallback when it has no own text on
+    /// this line, e.g. it only wraps differently-sized descendants).
+    first: Option<DecorationRunGeometry>,
+}
+
+/// Resolve the CSS `text-decoration-thickness` to a device-pixel size.
+///
+/// - Percentages are resolved against the font size,
+/// - `from-font` uses the metrics from Parley,
+/// - `auto` uses a thickness of `font-size / 10` (minimum: 1px).
+fn decoration_size(
+    thickness: &TextDecorationLength,
+    metric_size: f32,
+    css_font_size: f64,
+    scale: f64,
+) -> f32 {
+    (match thickness {
+        GenericTextDecorationLength::LengthPercentage(lp) => {
+            lp.resolve(Length::new(css_font_size as f32)).px() as f64 * scale
+        }
+        GenericTextDecorationLength::FromFont => metric_size as f64,
+        GenericTextDecorationLength::Auto => (css_font_size / 10.0).max(1.0) * scale,
+    }) as f32
+}
+
+/// Draws a single decoration line of the given `text-decoration-style` spanning
+/// `[x0, x0 + width]`. `baseline` is the line's baseline and `offset` positions the line
+/// relative to it (`y = baseline - offset + size / 2`, growing downward). Geometry is built
+/// explicitly (rather than relying on backend dash support) so it renders consistently
+/// across renderers.
+///
+/// `double_dir` points away from the text (`+1` = down, `-1` = up) and is used to place the
+/// second line of a `double` decoration.
+#[allow(clippy::too_many_arguments)]
+fn draw_decoration_line(
+    scene: &mut impl PaintScene,
+    transform: Affine,
+    scale: f64,
+    x0: f64,
+    width: f64,
+    baseline: f32,
+    offset: f32,
+    size: f32,
+    brush: &anyrender::Paint,
+    double_dir: f64,
+    deco_style: TextDecorationStyle,
+    inset_start: f64,
+    inset_end: f64,
+) {
+    // Inset the line from the box's start/end edges (assumes LTR: start is the left edge).
+    // Negative insets extend the line past the text.
+    let x = x0 + inset_start;
+    let w = width - inset_start - inset_end;
+    if w <= 0.0 {
+        return;
+    }
+    let y = (baseline - offset + size / 2.0) as f64;
+    let size = size as f64;
+    let butt_stroke = Stroke::new(size).with_caps(Cap::Butt);
+
+    match deco_style {
+        TextDecorationStyle::MozNone => {
+            // no line. Equivalent to `text-decoration-line: none`
+        }
+        // `solid`
+        TextDecorationStyle::Solid => {
+            let line = kurbo::Line::new((x, y), (x + w, y));
+            scene.stroke(&butt_stroke, transform, brush, None, &line);
+        }
+        // Two lines, each `size` thick, separated by a 1px (CSS) gap. This
+        // matches Chrome, where the second line is offset by `thickness + 1px`
+        // and sits further from the text (below for underline, above for
+        // overline).
+        TextDecorationStyle::Double => {
+            let one_css_px = scale;
+            for cy in [y, y + double_dir * (size + one_css_px)] {
+                let line = kurbo::Line::new((x, cy), (x + w, cy));
+                scene.stroke(&butt_stroke, transform, brush, None, &line);
+            }
+        }
+        // Round dots (diameter = line thickness) spaced one dot apart.
+        TextDecorationStyle::Dotted => {
+            let radius = size / 2.0;
+            let step = 2.0 * size;
+            let mut cx = x + radius;
+            while cx <= x + w - radius {
+                let dot = Circle::new((cx, y), radius);
+                scene.fill(Fill::NonZero, transform, brush, None, &dot);
+                cx += step;
+            }
+        }
+        // Dashes as filled rectangles. Dash/gap lengths are relative to the
+        // thickness (matching Blink): thinner lines use proportionally longer
+        // dashes and gaps so they don't read as dotted or solid.
+        TextDecorationStyle::Dashed => {
+            let (dash_ratio, gap_ratio) = if size >= 3.0 { (2.0, 1.0) } else { (3.0, 2.0) };
+            let dash = size * dash_ratio;
+            let nominal_gap = size * gap_ratio;
+            // Nudge the gap so a whole number of dashes fits the run evenly.
+            let gap = if w > 2.0 * dash {
+                select_best_dash_gap(w, dash, nominal_gap)
+            } else {
+                nominal_gap
+            };
+            let mut dx = x;
+            while dx < x + w {
+                let end = (dx + dash).min(x + w);
+                let rect = Rect::new(dx, y - size / 2.0, end, y + size / 2.0);
+                scene.fill(Fill::NonZero, transform, brush, None, &rect);
+                dx += dash + gap;
+            }
+        }
+        // A squiggle built from alternating quadratic Béziers.
+        TextDecorationStyle::Wavy => {
+            let amplitude = size;
+            let half_wave = (2.0 * size).max(1.0);
+            let mut path = BezPath::new();
+            path.move_to((x, y));
+            let mut px = x;
+            let mut up = true;
+            while px < x + w {
+                let nx = (px + half_wave).min(x + w);
+                // A quad Bézier reaches half the control-point offset at its
+                // midpoint, so use `2 * amplitude` to hit the target peak.
+                let ctrl_y = if up {
+                    y - 2.0 * amplitude
+                } else {
+                    y + 2.0 * amplitude
+                };
+                path.quad_to(((px + nx) / 2.0, ctrl_y), (nx, y));
+                px = nx;
+                up = !up;
+            }
+            let stroke = Stroke::new(size).with_caps(Cap::Round);
+            scene.stroke(&stroke, transform, brush, None, &path);
+        }
+    }
+}
+
+/// Paint the decorations accumulated for one line, one line per decorating box.
+fn flush_line_decorations(
+    scene: &mut impl PaintScene,
+    transform: Affine,
+    scale: f64,
+    deco_boxes: &[LineDecoration],
+) {
+    // Draw innermost boxes first so ancestors' decorations paint on top, matching the
+    // per-run drawing order this replaced (`stack.iter().rev()`).
+    for acc in deco_boxes.iter().rev() {
+        let deco = &acc.deco;
+        // Prefer the decorating box's own font; fall back to the first run it covers.
+        let Some(geom) = acc.own.as_ref().or(acc.first.as_ref()) else {
+            continue;
+        };
+        let width = acc.max_x - acc.min_x;
+        if width <= 0.0 {
+            continue;
+        }
+        let brush = anyrender::Paint::from(deco.color);
+
+        // `text-decoration-inset` shortens (or, when negative, extends) the line from the
+        // inline-start/end edges. Percentages resolve against the decoration line length
+        // (the box's total advance on this line); `auto` is no inset.
+        let (inset_start, inset_end) = match &deco.inset {
+            GenericTextDecorationInset::LengthPercentage { start, end } => {
+                // The extent is in device pixels; convert to CSS pixels so the resolved
+                // result can be scaled back.
+                let line_length = Length::new((width / scale) as f32);
+                (
+                    start.resolve(line_length).px() as f64 * scale,
+                    end.resolve(line_length).px() as f64 * scale,
+                )
+            }
+            GenericTextDecorationInset::Auto => (0.0, 0.0),
+        };
+
+        if deco.line.contains(TextDecorationLine::UNDERLINE) {
+            let size = decoration_size(
+                &deco.thickness,
+                geom.underline_size,
+                geom.css_font_size,
+                scale,
+            );
+
+            // `text-underline-offset` moves the underline away from the text. `auto` keeps
+            // the font's suggested position; otherwise it resolves against the font size
+            // (percentages relative to 1em).
+            let extra_underline_offset = deco
+                .underline_offset
+                .as_ref()
+                .map(|lp| lp.resolve(Length::new(geom.css_font_size as f32)).px() as f64 * scale)
+                .unwrap_or(0.0);
+
+            // `text-underline-position: under` places the underline below the glyph box
+            // (below descenders) rather than at the font's suggested position near the
+            // alphabetic baseline. We anchor the top of the line at the descent so it clears
+            // descending glyphs like "gqy".
+            let base_offset = if deco.underline_under {
+                -geom.descent
+            } else {
+                geom.underline_offset
+            };
+            let offset = base_offset - extra_underline_offset as f32;
+
+            // A `double` underline extends downward, away from the text.
+            draw_decoration_line(
+                scene,
+                transform,
+                scale,
+                acc.min_x,
+                width,
+                geom.baseline,
+                offset,
+                size,
+                &brush,
+                1.0,
+                deco.style,
+                inset_start,
+                inset_end,
+            );
+        }
+        if deco.line.contains(TextDecorationLine::OVERLINE) {
+            // Fonts don't provide a dedicated overline metric, so reuse the underline
+            // thickness. The line sits at the top of the "em box": its lower edge rests on
+            // the ascent so it clears the glyphs, and it extends upward from there.
+            //
+            // Browsers use the OS/2 `usWinAscent` for this edge, which is taller than the
+            // hhea-based ascent Parley reports; using the smaller value would draw the
+            // overline too low. Fall back to Parley's ascent for fonts without a usable
+            // OS/2 table.
+            let size = decoration_size(
+                &deco.thickness,
+                geom.underline_size,
+                geom.css_font_size,
+                scale,
+            );
+            let ascent = win_ascent(&geom.font, geom.font_size).unwrap_or(geom.ascent);
+            let offset = ascent + size;
+
+            // A `double` overline extends upward, away from the text.
+            draw_decoration_line(
+                scene,
+                transform,
+                scale,
+                acc.min_x,
+                width,
+                geom.baseline,
+                offset,
+                size,
+                &brush,
+                -1.0,
+                deco.style,
+                inset_start,
+                inset_end,
+            );
+        }
+        if deco.line.contains(TextDecorationLine::LINE_THROUGH) {
+            let size = decoration_size(
+                &deco.thickness,
+                geom.strikethrough_size,
+                geom.css_font_size,
+                scale,
+            );
+
+            // Centre the line-through a third of the ascent above the baseline, matching
+            // Chrome (which places it `2/3 * ascent` below the text-top). Parley's
+            // `strikethrough_offset` (the font's `yStrikeoutPosition`) sits lower and would
+            // draw the line too close to the baseline.
+            let ascent = win_ascent(&geom.font, geom.font_size).unwrap_or(geom.ascent);
+            let offset = ascent / 3.0 + size / 2.0;
+
+            draw_decoration_line(
+                scene,
+                transform,
+                scale,
+                acc.min_x,
+                width,
+                geom.baseline,
+                offset,
+                size,
+                &brush,
+                1.0,
+                deco.style,
+                inset_start,
+                inset_end,
+            );
+        }
+    }
+}
+
 pub(crate) fn stroke_text<'a>(
     scene: &mut impl PaintScene,
     lines: impl Iterator<Item = Line<'a, TextBrush>>,
@@ -200,6 +521,12 @@ pub(crate) fn stroke_text<'a>(
     let mut path_scratch: Vec<usize> = Vec::new();
 
     for line in lines {
+        // Decorations accumulated for this line, keyed by decorating box, so each box is
+        // painted once (spanning all its runs) using its own font — matching Firefox, which
+        // draws one decoration per box rather than one stepped segment per differently-sized
+        // run.
+        let mut deco_boxes: Vec<LineDecoration> = Vec::new();
+
         for item in line.items() {
             if let PositionedLayoutItem::GlyphRun(glyph_run) = item {
                 let run = glyph_run.run();
@@ -267,251 +594,59 @@ pub(crate) fn stroke_text<'a>(
                     }),
                 );
 
-                // Draws a single decoration line of the given `text-decoration-style`. `y` is
-                // the centre of the line; `x`/`w` span the glyph run. Geometry is built
-                // explicitly (rather than relying on backend dash support) so it renders
-                // consistently across renderers.
-                //
-                // `double_dir` points away from the text (`+1` = down, `-1` = up) and is used
-                // to place the second line of a `double` decoration.
-                let mut draw_decoration_line =
-                    |offset: f32,
-                     size: f32,
-                     brush: &anyrender::Paint,
-                     double_dir: f64,
-                     deco_style: TextDecorationStyle,
-                     inset_start: f64,
-                     inset_end: f64| {
-                        // Inset the line from the run's start/end edges (assumes LTR: start is
-                        // the left edge). Negative insets extend the line past the text.
-                        let x = glyph_run.offset() as f64 + inset_start;
-                        let w = glyph_run.advance() as f64 - inset_start - inset_end;
-                        if w <= 0.0 {
-                            return;
-                        }
-                        let y = (glyph_run.baseline() - offset + size / 2.0) as f64;
-                        let size = size as f64;
-                        let butt_stroke = Stroke::new(size).with_caps(Cap::Butt);
+                // Accumulate this run's contribution to each decorating box on its ancestor
+                // path. The decoration is drawn once per box after the whole line has been
+                // walked (see `flush_line_decorations`), so mixed font sizes within a box
+                // produce a single straight line rather than one stepped segment per run.
+                let geometry = DecorationRunGeometry {
+                    baseline: glyph_run.baseline(),
+                    ascent: metrics.ascent,
+                    descent: metrics.descent,
+                    underline_offset: metrics.underline_offset,
+                    underline_size: metrics.underline_size,
+                    strikethrough_size: metrics.strikethrough_size,
+                    font: font.clone(),
+                    font_size,
+                    css_font_size,
+                };
+                let run_node_id = style.brush.id;
+                let run_x0 = glyph_run.offset() as f64;
+                let run_x1 = run_x0 + glyph_run.advance() as f64;
 
-                        match deco_style {
-                            TextDecorationStyle::MozNone => {
-                                // no line. Equivalent to `text-decoration-line: none`
-                            }
-                            // `solid`
-                            TextDecorationStyle::Solid => {
-                                let line = kurbo::Line::new((x, y), (x + w, y));
-                                scene.stroke(&butt_stroke, transform, brush, None, &line);
-                            }
-                            // Two lines, each `size` thick, separated by a 1px (CSS) gap. This
-                            // matches Chrome, where the second line is offset by `thickness + 1px`
-                            // and sits further from the text (below for underline, above for
-                            // overline).
-                            TextDecorationStyle::Double => {
-                                let one_css_px = scale;
-                                for cy in [y, y + double_dir * (size + one_css_px)] {
-                                    let line = kurbo::Line::new((x, cy), (x + w, cy));
-                                    scene.stroke(&butt_stroke, transform, brush, None, &line);
-                                }
-                            }
-                            // Round dots (diameter = line thickness) spaced one dot apart.
-                            TextDecorationStyle::Dotted => {
-                                let radius = size / 2.0;
-                                let step = 2.0 * size;
-                                let mut cx = x + radius;
-                                while cx <= x + w - radius {
-                                    let dot = Circle::new((cx, y), radius);
-                                    scene.fill(Fill::NonZero, transform, brush, None, &dot);
-                                    cx += step;
-                                }
-                            }
-                            // Dashes as filled rectangles. Dash/gap lengths are relative to the
-                            // thickness (matching Blink): thinner lines use proportionally longer
-                            // dashes and gaps so they don't read as dotted or solid.
-                            TextDecorationStyle::Dashed => {
-                                let (dash_ratio, gap_ratio) =
-                                    if size >= 3.0 { (2.0, 1.0) } else { (3.0, 2.0) };
-                                let dash = size * dash_ratio;
-                                let nominal_gap = size * gap_ratio;
-                                // Nudge the gap so a whole number of dashes fits the run evenly.
-                                let gap = if w > 2.0 * dash {
-                                    select_best_dash_gap(w, dash, nominal_gap)
-                                } else {
-                                    nominal_gap
-                                };
-                                let mut dx = x;
-                                while dx < x + w {
-                                    let end = (dx + dash).min(x + w);
-                                    let rect = Rect::new(dx, y - size / 2.0, end, y + size / 2.0);
-                                    scene.fill(Fill::NonZero, transform, brush, None, &rect);
-                                    dx += dash + gap;
-                                }
-                            }
-                            // A squiggle built from alternating quadratic Béziers.
-                            TextDecorationStyle::Wavy => {
-                                let amplitude = size;
-                                let half_wave = (2.0 * size).max(1.0);
-                                let mut path = BezPath::new();
-                                path.move_to((x, y));
-                                let mut px = x;
-                                let mut up = true;
-                                while px < x + w {
-                                    let nx = (px + half_wave).min(x + w);
-                                    // A quad Bézier reaches half the control-point offset at its
-                                    // midpoint, so use `2 * amplitude` to hit the target peak.
-                                    let ctrl_y = if up {
-                                        y - 2.0 * amplitude
-                                    } else {
-                                        y + 2.0 * amplitude
-                                    };
-                                    path.quad_to(((px + nx) / 2.0, ctrl_y), (nx, y));
-                                    px = nx;
-                                    up = !up;
-                                }
-                                let stroke = Stroke::new(size).with_caps(Cap::Round);
-                                scene.stroke(&stroke, transform, brush, None, &path);
-                            }
-                        }
-                    };
-
-                // Resolve the CSS `text-decoration-thickness` to a device-pixel size.
-                //
-                // - Percentages are resolved against the font size,
-                // - `from-font` uses the metrics from Parley
-                // - `auto` uses a thickness of `font-size / 10` (minimum: 1px).
-                let decoration_size =
-                    |thickness: &TextDecorationLength, metric_size: f32| match thickness {
-                        GenericTextDecorationLength::LengthPercentage(lp) => {
-                            lp.resolve(Length::new(css_font_size as f32)).px() as f64 * scale
-                        }
-                        GenericTextDecorationLength::FromFont => metric_size as f64,
-                        GenericTextDecorationLength::Auto => {
-                            (css_font_size / 10.0).max(1.0) * scale
-                        }
-                    }
-                        as f32;
-
-                // Draw each decoration propagated from a decorating box (from the innermost
-                // out to the inline root). Geometry (thickness metrics, ascent/descent) uses
-                // this run's own font.
-                for entry in stack.iter().rev() {
-                    let Some(deco) = &entry.decoration else {
+                for entry in stack.iter() {
+                    if entry.decoration.is_none() {
                         continue;
-                    };
-                    let brush = anyrender::Paint::from(deco.color);
-
-                    // `text-decoration-inset` shortens (or, when negative, extends) the line
-                    // from the inline-start/end edges. Percentages resolve against the
-                    // decoration line length (the glyph run's advance); `auto` is no inset.
-                    // Resolved per run since the advance varies.
-                    let (inset_start, inset_end) = match &deco.inset {
-                        GenericTextDecorationInset::LengthPercentage { start, end } => {
-                            // The advance is already in device pixels; convert to CSS pixels so
-                            // the resolved result can be scaled back.
-                            let line_length = Length::new(glyph_run.advance() / scale as f32);
-                            (
-                                start.resolve(line_length).px() as f64 * scale,
-                                end.resolve(line_length).px() as f64 * scale,
-                            )
+                    }
+                    let idx = match deco_boxes.iter().position(|d| d.node_id == entry.node_id) {
+                        Some(idx) => idx,
+                        None => {
+                            deco_boxes.push(LineDecoration {
+                                node_id: entry.node_id,
+                                deco: entry.decoration.clone().unwrap(),
+                                min_x: f64::INFINITY,
+                                max_x: f64::NEG_INFINITY,
+                                own: None,
+                                first: None,
+                            });
+                            deco_boxes.len() - 1
                         }
-                        GenericTextDecorationInset::Auto => (0.0, 0.0),
                     };
-
-                    if deco.line.contains(TextDecorationLine::UNDERLINE) {
-                        let size = decoration_size(&deco.thickness, metrics.underline_size);
-
-                        // `text-underline-offset` moves the underline away from the text. `auto`
-                        // keeps the font's suggested position; otherwise it resolves against the
-                        // font size (percentages relative to 1em). Resolved per run.
-                        let extra_underline_offset = deco
-                            .underline_offset
-                            .as_ref()
-                            .map(|lp| {
-                                lp.resolve(Length::new(css_font_size as f32)).px() as f64 * scale
-                            })
-                            .unwrap_or(0.0);
-
-                        // `text-underline-position: under` places the underline below the glyph
-                        // box (below descenders) rather than at the font's suggested position near
-                        // the alphabetic baseline. We anchor the top of the line at the descent so
-                        // it clears descending glyphs like "gqy".
-                        //
-                        // `draw_decoration_line` computes `y = baseline - offset + size / 2` and
-                        // `y` grows downward, so a more negative offset pushes the underline
-                        // downward, away from the text.
-                        let base_offset = if deco.underline_under {
-                            -metrics.descent
-                        } else {
-                            metrics.underline_offset
-                        };
-                        let offset = base_offset - extra_underline_offset as f32;
-
-                        // TODO: intercept line when crossing an descending character like "gqy"
-                        // A `double` underline extends downward, away from the text.
-                        draw_decoration_line(
-                            offset,
-                            size,
-                            &brush,
-                            1.0,
-                            deco.style,
-                            inset_start,
-                            inset_end,
-                        );
+                    let acc = &mut deco_boxes[idx];
+                    acc.min_x = acc.min_x.min(run_x0);
+                    acc.max_x = acc.max_x.max(run_x1);
+                    if acc.first.is_none() {
+                        acc.first = Some(geometry.clone());
                     }
-                    if deco.line.contains(TextDecorationLine::OVERLINE) {
-                        // Fonts don't provide a dedicated overline metric, so reuse the underline
-                        // thickness. The line sits at the top of the "em box": its lower edge rests
-                        // on the ascent so it clears the glyphs, and it extends upward from there
-                        // (`draw_decoration_line` centres the stroke on `baseline - offset +
-                        // size / 2`, so `offset = ascent + size` puts the bottom edge at
-                        // `baseline - ascent`).
-                        //
-                        // Browsers use the OS/2 `usWinAscent` for this edge, which is taller than
-                        // the hhea-based ascent Parley reports; using the smaller value would draw
-                        // the overline too low (too close to the glyphs). Fall back to Parley's
-                        // ascent for fonts without a usable OS/2 table.
-                        let size = decoration_size(&deco.thickness, metrics.underline_size);
-                        let ascent =
-                            win_ascent(run.font(), run.font_size()).unwrap_or(metrics.ascent);
-                        let offset = ascent + size;
-
-                        // A `double` overline extends upward, away from the text.
-                        draw_decoration_line(
-                            offset,
-                            size,
-                            &brush,
-                            -1.0,
-                            deco.style,
-                            inset_start,
-                            inset_end,
-                        );
-                    }
-                    if deco.line.contains(TextDecorationLine::LINE_THROUGH) {
-                        let size = decoration_size(&deco.thickness, metrics.strikethrough_size);
-
-                        // Centre the line-through a third of the ascent above the baseline,
-                        // matching Chrome (which places it `2/3 * ascent` below the text-top).
-                        // Parley's `strikethrough_offset` (the font's `yStrikeoutPosition`) sits
-                        // lower and would draw the line too close to the baseline.
-                        // `draw_decoration_line` centres the stroke on `baseline - offset +
-                        // size / 2`, so `offset = ascent / 3 + size / 2` puts the centre at
-                        // `baseline - ascent / 3`.
-                        let ascent =
-                            win_ascent(run.font(), run.font_size()).unwrap_or(metrics.ascent);
-                        let offset = ascent / 3.0 + size / 2.0;
-
-                        draw_decoration_line(
-                            offset,
-                            size,
-                            &brush,
-                            1.0,
-                            deco.style,
-                            inset_start,
-                            inset_end,
-                        );
+                    // A run whose innermost node is the box itself is the box's own text, so
+                    // its font is the one Firefox positions and sizes the decoration with.
+                    if entry.node_id == run_node_id {
+                        acc.own = Some(geometry.clone());
                     }
                 }
             }
         }
+
+        flush_line_decorations(scene, transform, scale, &deco_boxes);
     }
 }
 
