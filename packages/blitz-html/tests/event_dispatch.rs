@@ -714,6 +714,49 @@ fn focus_listener_can_move_focus_synchronously() {
 }
 
 #[test]
+fn nested_dispatch_depth_is_bounded() {
+    /// A pathological handler which synchronously re-dispatches its own event on every
+    /// invocation. Without a depth limit this would recurse until the stack overflows.
+    struct RecursiveHandler {
+        calls: Rc<Cell<u32>>,
+    }
+
+    impl EventHandler for RecursiveHandler {
+        fn handle_event_listener(
+            &self,
+            _listener: EventListenerId,
+            event: &mut DomEvent,
+            ctx: &mut EventContext<'_>,
+            _event_state: &mut EventState,
+        ) {
+            self.calls.set(self.calls.get() + 1);
+            ctx.dispatch_event(DomEvent::new(event.target, click_event_data()));
+        }
+    }
+
+    let mut doc = nested_document();
+    let target = node_id(&doc, "#target");
+    assert!(doc.add_event_listener(
+        target,
+        DomEventKind::Click,
+        EventListenerId(1),
+        Default::default()
+    ));
+
+    let calls = Rc::new(Cell::new(0));
+    let handler = RecursiveHandler {
+        calls: calls.clone(),
+    };
+    EventDriver::new(&mut doc, handler).handle_dom_event(DomEvent::new(target, click_event_data()));
+
+    // The initial (driver-level) dispatch runs at depth 0, and each nested dispatch
+    // increments the depth; the dispatch at the limit is dropped instead of recursing
+    assert_eq!(calls.get(), EventContext::MAX_DISPATCH_DEPTH + 1);
+    // The dropped events are not deferred: nothing is left in the queue
+    assert!(!doc.has_pending_events());
+}
+
+#[test]
 fn synchronously_dispatched_events_run_their_default_action() {
     /// A handler which forwards clicks on the outer div to the checkbox, recording the
     /// checkbox's state as observed immediately after the nested dispatch returns
