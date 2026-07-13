@@ -7,7 +7,7 @@ use style::properties::generated::longhands::text_decoration_style::computed_val
 use style::values::computed::{
     Length, TextDecorationLength, TextDecorationLine, TextUnderlinePosition,
 };
-use style::values::generics::text::GenericTextDecorationLength;
+use style::values::generics::text::{GenericTextDecorationInset, GenericTextDecorationLength};
 
 use crate::color::{Color, ToColorColor as _};
 use crate::{FONT_EMBOLDEN_ENABLED, SELECTION_COLOR};
@@ -139,6 +139,23 @@ pub(crate) fn stroke_text<'a>(
                 let text_decoration_style = text_styles.text_decoration_style;
                 let text_decoration_thickness: TextDecorationLength =
                     text_styles.text_decoration_thickness.clone();
+
+                // `text-decoration-inset` shortens (or, when negative, extends) the decoration
+                // line from the inline-start and inline-end edges of the text. Resolve the
+                // start/end lengths to device pixels; percentages are resolved against the
+                // decoration line length (the glyph run's advance). `auto` is treated as no inset.
+                let (inset_start, inset_end) = match &text_styles.text_decoration_inset {
+                    GenericTextDecorationInset::LengthPercentage { start, end } => {
+                        // The advance is already in device pixels; convert to CSS pixels so the
+                        // resolved (device-pixel) result can be scaled back consistently.
+                        let line_length = Length::new(glyph_run.advance() / scale as f32);
+                        (
+                            start.resolve(line_length).px() as f64 * scale,
+                            end.resolve(line_length).px() as f64 * scale,
+                        )
+                    }
+                    GenericTextDecorationInset::Auto => (0.0, 0.0),
+                };
                 let has_underline = text_decoration_line.contains(TextDecorationLine::UNDERLINE);
                 let has_overline = text_decoration_line.contains(TextDecorationLine::OVERLINE);
                 let has_strikethrough =
@@ -178,8 +195,13 @@ pub(crate) fn stroke_text<'a>(
                 // to place the second line of a `double` decoration.
                 let mut draw_decoration_line =
                     |offset: f32, size: f32, brush: &anyrender::Paint, double_dir: f64| {
-                        let x = glyph_run.offset() as f64;
-                        let w = glyph_run.advance() as f64;
+                        // Inset the line from the run's start/end edges (assumes LTR: start is
+                        // the left edge). Negative insets extend the line past the text.
+                        let x = glyph_run.offset() as f64 + inset_start;
+                        let w = glyph_run.advance() as f64 - inset_start - inset_end;
+                        if w <= 0.0 {
+                            return;
+                        }
                         let y = (glyph_run.baseline() - offset + size / 2.0) as f64;
                         let size = size as f64;
                         let butt_stroke = Stroke::new(size).with_caps(Cap::Butt);
