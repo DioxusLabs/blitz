@@ -1,6 +1,6 @@
 use anyrender::PaintScene;
 use blitz_dom::{BaseDocument, NodeId, node::TextBrush, util::ToColorColor};
-use kurbo::{Affine, Rect, Stroke};
+use kurbo::{Affine, Cap, Rect, Stroke};
 use parley::{Affinity, Cursor, Layout, Line, PositionedLayoutItem, Selection};
 use peniko::Fill;
 use style::values::computed::{Length, TextDecorationLength, TextDecorationLine};
@@ -137,7 +137,8 @@ pub(crate) fn stroke_text<'a>(
                         let w = glyph_run.advance() as f64;
                         let y = (glyph_run.baseline() - offset + size / 2.0) as f64;
                         let line = kurbo::Line::new((x, y), (x + w, y));
-                        scene.stroke(&Stroke::new(size as f64), transform, brush, None, &line)
+                        let stroke = Stroke::new(size as f64).with_caps(Cap::Butt);
+                        scene.stroke(&stroke, transform, brush, None, &line)
                     };
 
                 // Resolve the CSS `text-decoration-thickness` to a device-pixel size. `auto`
