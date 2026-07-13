@@ -40,10 +40,12 @@ pub fn decode_font_bytes(bytes: &[u8]) -> Cow<'_, [u8]> {
 }
 
 #[cfg(feature = "svg")]
-use std::sync::{Arc, LazyLock};
-#[cfg(feature = "svg")]
+use std::sync::Arc;
+#[cfg(feature = "svg-text")]
+use std::sync::LazyLock;
+#[cfg(feature = "svg-text")]
 use usvg::fontdb;
-#[cfg(feature = "svg")]
+#[cfg(feature = "svg-text")]
 pub(crate) static FONT_DB: LazyLock<Arc<fontdb::Database>> = LazyLock::new(|| {
     let mut db = fontdb::Database::new();
     db.load_system_fonts();
@@ -170,10 +172,15 @@ pub fn walk_tree(indent: usize, node: &Node) {
 pub(crate) fn parse_svg_image(source: &[u8]) -> Result<crate::node::SvgImageData, usvg::Error> {
     use usvg::roxmltree;
 
+    #[cfg(feature = "svg-text")]
     let options = usvg::Options {
         fontdb: Arc::clone(&*FONT_DB),
         ..Default::default()
     };
+    // Without svg-text, usvg is built without its `text` feature: <text>
+    // elements inside SVG documents are not shaped or rendered.
+    #[cfg(not(feature = "svg-text"))]
+    let options = usvg::Options::default();
 
     // Transparently decompress gzip-compressed SVGZ, as `Tree::from_data` does.
     let decompressed;

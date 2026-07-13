@@ -11,9 +11,11 @@ edition.workspace = true
 rust-version.workspace = true
 
 [features]
-default = ["svg"]
+default = ["svg", "svg-text"]
 tracing = ["dep:tracing"]
 svg = ["dep:anyrender_svg", "dep:usvg", "blitz-dom/svg"]
+# Text support (<text> elements) within SVG documents; see blitz-dom's svg-text.
+svg-text = ["svg", "blitz-dom/svg-text", "anyrender_svg/text"]
 custom-widget = ["blitz-dom/custom-widget"]
 font-embolden = []
 apple-font-embolden = []

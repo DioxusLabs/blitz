@@ -13,6 +13,7 @@ rust-version.workspace = true
 [features]
 default = [
     "svg",
+    "svg-text",
     "woff",
     "accessibility",
     "system-fonts",
@@ -22,6 +23,10 @@ default = [
 custom-widget = ["dep:anyrender", "accessibility"]
 tracing = ["dep:tracing"]
 svg = ["dep:usvg"]
+# Text support (<text> elements) within SVG documents. Pulls in usvg's text
+# shaping stack (rustybuzz, fontdb). Disable (default-features = false) if you
+# don't render SVG text to slim the dependency tree.
+svg-text = ["svg", "usvg/text", "usvg/system-fonts", "usvg/memmap-fonts"]
 # WOFF decoding (using the "wuff" crate which is pure Rust)
 woff = ["dep:wuff"]
 accessibility = ["accesskit"]
