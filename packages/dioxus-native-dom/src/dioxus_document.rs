@@ -8,7 +8,7 @@ use crate::mutation_writer::{DioxusState, MutationWriter};
 use crate::qual_name;
 use blitz_dom::{
     Attribute, BaseDocument, DEFAULT_CSS, DocGuard, DocGuardMut, Document, DocumentConfig,
-    EventDriver, EventHandler, Node,
+    EventDriver, EventHandler, EventListenerId, Node,
 };
 use blitz_traits::events::{DomEvent, DomEventData, EventState, UiEvent};
 use dioxus_core::{ElementId, Event, VirtualDom};
@@ -121,11 +121,19 @@ impl DioxusDocument {
         mutr.append_children(html_element_id, &[body_element_id]);
 
         // Create another virtual element to hold the root <div id="main"></div> under the html element
-        let main_attr = blitz_dom::Attribute {
-            name: qual_name("id", None),
-            value: "main".to_string(),
-        };
-        let main_element_id = mutr.create_element(qual_name("main", None), vec![main_attr]);
+        let main_attrs = vec![
+            blitz_dom::Attribute {
+                name: qual_name("id", None),
+                value: "main".to_string(),
+            },
+            // The root element maps to ElementId(0) in the vdom (mirrors dioxus-web,
+            // which sets data-dioxus-id="0" on its root element)
+            blitz_dom::Attribute {
+                name: qual_name("data-dioxus-id", None),
+                value: "0".to_string(),
+            },
+        ];
+        let main_element_id = mutr.create_element(qual_name("main", None), main_attrs);
         mutr.append_children(body_element_id, &[main_element_id]);
 
         drop(mutr);
@@ -243,7 +251,6 @@ impl Document for DioxusDocument {
     fn handle_ui_event(&mut self, event: UiEvent) {
         let handler = DioxusEventHandler {
             vdom: &mut self.vdom,
-            vdom_state: &mut self.vdom_state,
         };
         let mut driver = EventDriver::new(&mut self.inner, handler);
         driver.handle_ui_event(event);
@@ -252,25 +259,16 @@ impl Document for DioxusDocument {
 
 pub struct DioxusEventHandler<'v> {
     vdom: &'v mut VirtualDom,
-    vdom_state: &'v mut DioxusState,
 }
 
 impl EventHandler for DioxusEventHandler<'_> {
-    fn handle_event(
+    fn handle_event_listener(
         &mut self,
-        chain: &[usize],
+        _listener: EventListenerId,
         event: &mut DomEvent,
         doc: &mut dyn Document,
         event_state: &mut EventState,
     ) {
-        // As an optimisation we maintain a count of the total number event handlers of a given type
-        // If this count is zero then we can skip handling that kind of event entirely.
-        let event_kind_idx = event.data.discriminant() as usize;
-        let event_kind_count = self.vdom_state.event_handler_counts[event_kind_idx];
-        if event_kind_count == 0 {
-            return;
-        }
-
         let event_data = match &event.data {
             DomEventData::PointerMove(mevent)
             | DomEventData::PointerDown(mevent)
@@ -330,16 +328,21 @@ impl EventHandler for DioxusEventHandler<'_> {
             return;
         };
 
-        // Get dioxus vdom id for node
-        let dioxus_id = chain
-            .iter()
-            .find_map(|node_id| doc.inner().get_node(*node_id).and_then(get_dioxus_id));
+        // Find the nearest element at-or-above the event target with a `data-dioxus-id`
+        // attribute. This mirrors dioxus-web's delegated event handling: the target of a
+        // delegated event may be a descendant of the element with the vdom event handler.
+        let dioxus_id = {
+            let doc = doc.inner();
+            doc.node_chain(event.target)
+                .into_iter()
+                .find_map(|node_id| doc.get_node(node_id).and_then(get_dioxus_id))
+        };
         let Some(id) = dioxus_id else {
             return;
         };
 
-        // Handle event in vdom
-        let dx_event = Event::new(event_data.clone(), event.bubbles);
+        // Handle event in vdom (dioxus-core does its own bubbling through the vdom)
+        let dx_event = Event::new(event_data, event.bubbles);
         self.vdom
             .runtime()
             .handle_event(event.name(), dx_event.clone(), id);

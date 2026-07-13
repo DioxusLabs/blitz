@@ -1,14 +1,28 @@
 use crate::Document;
+use crate::events::listeners::{EventListener, EventListenerId};
 use blitz_traits::events::{
-    BlitzPointerEvent, BlitzPointerId, DomEvent, DomEventData, EventState, Point, PointerCoords,
-    UiEvent,
+    BlitzPointerEvent, BlitzPointerId, DomEvent, DomEventData, EventPhase, EventState, Point,
+    PointerCoords, UiEvent,
 };
 use std::collections::VecDeque;
 
 pub trait EventHandler {
-    fn handle_event(
+    /// Invoked once for each registered event listener that matches a dispatched event.
+    ///
+    /// Blitz does not store listener callbacks itself: listeners are registered on nodes as
+    /// opaque [`EventListenerId`]s (see [`BaseDocument::add_event_listener`]), and the
+    /// implementor of this trait is responsible for mapping each id back to actual behaviour
+    /// (a Rust closure, a Dioxus vdom handler, a script function, etc).
+    ///
+    /// `event.current_target` and `event.phase` describe the point in the propagation path
+    /// at which the listener is being invoked. The listener can influence further processing
+    /// of the event (`prevent_default`, `stop_propagation`, `stop_immediate_propagation`)
+    /// through `event_state`.
+    ///
+    /// [`BaseDocument::add_event_listener`]: crate::BaseDocument::add_event_listener
+    fn handle_event_listener(
         &mut self,
-        chain: &[usize],
+        listener: EventListenerId,
         event: &mut DomEvent,
         doc: &mut dyn Document,
         event_state: &mut EventState,
@@ -17,9 +31,9 @@ pub trait EventHandler {
 
 pub struct NoopEventHandler;
 impl EventHandler for NoopEventHandler {
-    fn handle_event(
+    fn handle_event_listener(
         &mut self,
-        _chain: &[usize],
+        _listener: EventListenerId,
         _event: &mut DomEvent,
         _doc: &mut dyn Document,
         _event_state: &mut EventState,
@@ -329,13 +343,6 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
         event: &mut DomEvent,
         initial_event_state: EventState,
     ) -> EventState {
-        let chain = if event.bubbles {
-            let doc = self.doc.inner();
-            doc.node_chain(event.target)
-        } else {
-            vec![event.target]
-        };
-
         match &mut event.data {
             DomEventData::PointerMove(data)
             | DomEventData::PointerDown(data)
@@ -367,11 +374,144 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
             _ => {}
         }
 
-        let mut event_state = initial_event_state;
-        self.handler
-            .handle_event(&chain, event, self.doc, &mut event_state);
+        let mut dispatch_state = EventState::default();
+        self.dispatch_event_to_listeners(event, &mut dispatch_state);
+        initial_event_state.merge(&dispatch_state)
+    }
 
-        event_state
+    /// Dispatch an event to the listeners registered on the nodes along its propagation path,
+    /// implementing the DOM event dispatch algorithm: a capture phase from the root down to
+    /// the target, a target phase, and (for bubbling events) a bubble phase from the target
+    /// back up to the root.
+    fn dispatch_event_to_listeners(&mut self, event: &mut DomEvent, event_state: &mut EventState) {
+        // Fast path: skip dispatch entirely if nothing is listening for this kind of event
+        let kind = event.data.kind();
+        if !self
+            .doc
+            .inner()
+            .event_listeners
+            .has_listeners_for_kind(kind)
+        {
+            return;
+        }
+
+        // Compute the propagation path (target first, root last)
+        let path = self.doc.inner().node_chain(event.target);
+
+        self.dispatch_phases(&path, event, event_state);
+
+        // Dispatch is complete: the event is no longer being propagated
+        event.phase = EventPhase::None;
+        event.current_target = None;
+    }
+
+    fn dispatch_phases(&mut self, path: &[usize], event: &mut DomEvent, state: &mut EventState) {
+        // Capture phase: walk down from the root to the target (target excluded),
+        // invoking capture listeners
+        event.phase = EventPhase::Capturing;
+        for &node_id in path[1..].iter().rev() {
+            self.invoke_listeners_on_node(node_id, event, state);
+            if state.propagation_is_stopped() {
+                return;
+            }
+        }
+
+        // Target phase: invoke the target's listeners (both capture and non-capture
+        // listeners, in registration order)
+        event.phase = EventPhase::AtTarget;
+        self.invoke_listeners_on_node(event.target, event, state);
+        if state.propagation_is_stopped() || !event.bubbles {
+            return;
+        }
+
+        // Bubble phase: walk up from the target (excluded) to the root,
+        // invoking non-capture listeners
+        event.phase = EventPhase::Bubbling;
+        for &node_id in path[1..].iter() {
+            self.invoke_listeners_on_node(node_id, event, state);
+            if state.propagation_is_stopped() {
+                return;
+            }
+        }
+    }
+
+    /// Invoke the listeners registered on a single node which match the event's kind
+    /// and current propagation phase.
+    fn invoke_listeners_on_node(
+        &mut self,
+        node_id: usize,
+        event: &mut DomEvent,
+        event_state: &mut EventState,
+    ) {
+        let kind = event.data.kind();
+
+        // Snapshot the node's listener list so that listeners added while the event is
+        // being dispatched are not invoked for this event (matching DOM semantics)
+        let listeners: Vec<EventListener> = self
+            .doc
+            .inner()
+            .event_listeners
+            .listeners_for(node_id, kind);
+        if listeners.is_empty() {
+            return;
+        }
+
+        event.current_target = Some(node_id);
+
+        for listener in listeners {
+            let phase_matches = match event.phase {
+                EventPhase::Capturing => listener.options.capture,
+                // At the target both capture and non-capture listeners are invoked
+                EventPhase::AtTarget => true,
+                EventPhase::Bubbling => !listener.options.capture,
+                EventPhase::None => false,
+            };
+            if !phase_matches {
+                continue;
+            }
+
+            // Skip listeners that were removed by an earlier listener during this dispatch
+            let still_registered = self.doc.inner().event_listeners.contains(
+                node_id,
+                kind,
+                listener.id,
+                listener.options.capture,
+            );
+            if !still_registered {
+                continue;
+            }
+
+            // `once` listeners are removed *before* they are invoked so that they can
+            // re-register themselves without being immediately deregistered
+            if listener.options.once {
+                self.doc.inner_mut().event_listeners.remove(
+                    node_id,
+                    kind,
+                    listener.id,
+                    listener.options.capture,
+                );
+            }
+
+            let mut listener_state = EventState::default();
+            self.handler
+                .handle_event_listener(listener.id, event, self.doc, &mut listener_state);
+
+            // A listener may only cancel an event if the event is cancelable and the
+            // listener was not registered as `passive`
+            if listener_state.is_cancelled() && event.cancelable && !listener.options.passive {
+                event_state.prevent_default();
+            }
+            if listener_state.propagation_is_stopped() {
+                event_state.stop_propagation();
+            }
+            if listener_state.redraw_is_requested() {
+                event_state.request_redraw();
+            }
+            if listener_state.immediate_propagation_is_stopped() {
+                event_state.stop_immediate_propagation();
+                break;
+            }
+        }
     }
 
     fn run_default_action(&mut self, event: &mut DomEvent) {

@@ -1,15 +1,20 @@
+mod callback;
 mod driver;
 mod focus;
 mod ime;
 mod keyboard;
+mod listeners;
 mod pointer;
 
 use crate::util::Point;
 use blitz_traits::events::{DomEvent, DomEventData, PointerCoords, UiEvent};
+pub use callback::{CallbackEventHandler, EventListenerCallback};
 pub use driver::{EventDriver, EventHandler, NoopEventHandler};
 use focus::generate_focus_events;
 pub(crate) use ime::handle_ime_event;
 use keyboard::{KeyboardOrTextInputEvent, handle_key_or_input_event};
+pub(crate) use listeners::EventListenerRegistry;
+pub use listeners::{EventListener, EventListenerId, EventListenerOptions};
 pub(crate) use pointer::{DragMode, ScrollAnimationState};
 use pointer::{handle_click, handle_pointerdown, handle_pointermove, handle_pointerup};
 

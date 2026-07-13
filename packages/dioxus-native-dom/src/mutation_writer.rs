@@ -1,6 +1,9 @@
 //! Integration between Dioxus and Blitz
 use crate::{NodeId, qual_name, trace, write_once_attr::WriteOnceAttr};
-use blitz_dom::{BaseDocument, Document as _, DocumentMutator, PlainDocument, Widget};
+use blitz_dom::{
+    BaseDocument, Document as _, DocumentMutator, EventListenerId, EventListenerOptions,
+    PlainDocument, Widget,
+};
 use blitz_traits::events::DomEventKind;
 use dioxus_core::{
     AttributeValue, ElementId, Template, TemplateAttribute, TemplateNode, WriteMutations,
@@ -17,8 +20,10 @@ pub struct DioxusState {
     pub(crate) stack: Vec<NodeId>,
     /// Mapping from vdom ElementId -> rdom NodeId
     pub(crate) node_id_mapping: Vec<Option<NodeId>>,
-    /// Count of each handler type (indexed by `DomEventKind` discriminant)
-    pub(crate) event_handler_counts: [u32; 64],
+    /// Count of vdom event handlers for each bubbling event kind (indexed by `DomEventKind`
+    /// discriminant). Bubbling events are handled by a single delegated listener on the root
+    /// element which is registered while the count for its event kind is non-zero.
+    pub(crate) delegated_listener_counts: [u32; 64],
     /// Mounted events queued as elements are mounted
     pub(crate) queued_mounted_events: Vec<ElementId>,
 }
@@ -30,7 +35,7 @@ impl DioxusState {
             templates: FxHashMap::default(),
             stack: vec![root_id],
             node_id_mapping: vec![Some(root_id)],
-            event_handler_counts: [0; 64],
+            delegated_listener_counts: [0; 64],
             queued_mounted_events: Vec::new(),
         }
     }
@@ -291,29 +296,79 @@ impl WriteMutations for MutationWriter<'_> {
             return;
         }
 
-        // We're going to actually set the listener here as a placeholder - in JS this would also be a placeholder
-        // we might actually just want to attach the attribute to the root element (delegation)
-        let value = AttributeValue::Text("<rust func>".into());
-        self.set_attribute(name, None, &value, id);
-
-        // Also set the data-dioxus-id attribute so we can find the element later
+        // Set the data-dioxus-id attribute so that the element with the vdom event handler
+        // can be found when an event is dispatched
         let value = AttributeValue::Text(id.0.to_string());
         self.set_attribute("data-dioxus-id", None, &value, id);
 
-        // node.add_event_listener(name);
+        // Event kinds which blitz does not support are ignored
+        let Ok(kind) = DomEventKind::from_str(name) else {
+            return;
+        };
 
-        if let Ok(kind) = DomEventKind::from_str(name) {
+        // Mirror the event delegation strategy of dioxus-web:
+        //
+        //  - Bubbling events are handled by a single (ref-counted) listener on the root
+        //    element. Dioxus does its own bubbling through the vdom, so a delegated
+        //    listener must only fire once per event no matter how many elements with vdom
+        //    handlers the event propagates through.
+        //  - Non-bubbling events are listened for on the element itself.
+        if kind.bubbles() {
             let idx = kind.discriminant() as usize;
-            self.state.event_handler_counts[idx] += 1;
+            self.state.delegated_listener_counts[idx] += 1;
+            if self.state.delegated_listener_counts[idx] == 1 {
+                let root_node_id = self.state.element_to_node_id(ElementId(0));
+                self.docm.add_event_listener(
+                    root_node_id,
+                    kind,
+                    dioxus_listener_id(kind),
+                    EventListenerOptions::default(),
+                );
+            }
+        } else {
+            let node_id = self.state.element_to_node_id(id);
+            self.docm.add_event_listener(
+                node_id,
+                kind,
+                dioxus_listener_id(kind),
+                EventListenerOptions::default(),
+            );
         }
     }
 
-    fn remove_event_listener(&mut self, name: &'static str, _id: ElementId) {
-        if let Ok(kind) = DomEventKind::from_str(name) {
+    fn remove_event_listener(&mut self, name: &'static str, id: ElementId) {
+        if name == "mounted" {
+            return;
+        }
+        let Ok(kind) = DomEventKind::from_str(name) else {
+            return;
+        };
+
+        if kind.bubbles() {
             let idx = kind.discriminant() as usize;
-            self.state.event_handler_counts[idx] -= 1;
+            self.state.delegated_listener_counts[idx] -= 1;
+            if self.state.delegated_listener_counts[idx] == 0 {
+                let root_node_id = self.state.element_to_node_id(ElementId(0));
+                self.docm.remove_event_listener(
+                    root_node_id,
+                    kind,
+                    dioxus_listener_id(kind),
+                    false,
+                );
+            }
+        } else if let Some(node_id) = self.state.try_element_to_node_id(id) {
+            self.docm
+                .remove_event_listener(node_id, kind, dioxus_listener_id(kind), false);
         }
     }
+}
+
+/// The [`EventListenerId`] used for listeners registered by the Dioxus integration.
+///
+/// Dioxus registers at most one listener per (node, event kind) pair, so the event kind's
+/// discriminant is sufficient to uniquely identify the listener on a given node.
+fn dioxus_listener_id(kind: DomEventKind) -> EventListenerId {
+    EventListenerId(kind.discriminant() as u64)
 }
 
 fn create_template_node(docm: &mut DocumentMutator<'_>, node: &TemplateNode) -> NodeId {

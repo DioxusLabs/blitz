@@ -3,6 +3,7 @@ use std::mem;
 use std::ops::{Deref, DerefMut};
 
 use crate::document::make_device;
+use crate::events::{EventListenerId, EventListenerOptions};
 use crate::layout::damage::ALL_DAMAGE;
 use crate::net::{ImageHandler, ResourceHandler, StylesheetHandler};
 use crate::node::{CanvasData, NodeFlags, SpecialElementData};
@@ -10,6 +11,7 @@ use crate::util::ImageType;
 use crate::{
     Attribute, BaseDocument, Document, ElementData, Node, NodeData, QualName, local_name, qual_name,
 };
+use blitz_traits::events::DomEventKind;
 use blitz_traits::shell::Viewport;
 use style::Atom;
 use style::invalidation::element::restyle_hints::RestyleHint;
@@ -147,6 +149,34 @@ impl DocumentMutator<'_> {
 
     pub fn deep_clone_node(&mut self, node_id: usize) -> usize {
         self.doc.deep_clone_node(node_id)
+    }
+
+    // Event listener methods
+
+    /// Register an event listener on a node.
+    /// See [`BaseDocument::add_event_listener`].
+    pub fn add_event_listener(
+        &mut self,
+        node_id: usize,
+        kind: DomEventKind,
+        listener: EventListenerId,
+        options: EventListenerOptions,
+    ) -> bool {
+        self.doc
+            .add_event_listener(node_id, kind, listener, options)
+    }
+
+    /// Remove an event listener from a node.
+    /// See [`BaseDocument::remove_event_listener`].
+    pub fn remove_event_listener(
+        &mut self,
+        node_id: usize,
+        kind: DomEventKind,
+        listener: EventListenerId,
+        capture: bool,
+    ) -> bool {
+        self.doc
+            .remove_event_listener(node_id, kind, listener, capture)
     }
 
     // Node mutation methods

@@ -84,7 +84,10 @@ pub use style::Atom;
 pub use style::invalidation::element::restyle_hints::RestyleHint;
 pub use style::media_queries::MediaType;
 pub type SelectorList = selectors::SelectorList<style::selector_parser::SelectorImpl>;
-pub use events::{EventDriver, EventHandler, NoopEventHandler};
+pub use events::{
+    CallbackEventHandler, EventDriver, EventHandler, EventListener, EventListenerCallback,
+    EventListenerId, EventListenerOptions, NoopEventHandler,
+};
 pub use html::{DummyHtmlParserProvider, HtmlParserProvider};
 pub use util::{Point, decode_font_bytes};
 

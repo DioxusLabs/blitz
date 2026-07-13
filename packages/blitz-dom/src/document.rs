@@ -1,4 +1,7 @@
-use crate::events::{DragMode, ScrollAnimationState, handle_dom_event};
+use crate::events::{
+    DragMode, EventListenerId, EventListenerOptions, EventListenerRegistry, ScrollAnimationState,
+    handle_dom_event,
+};
 use crate::font_metrics::BlitzFontMetricsProvider;
 use crate::layout::construct::ConstructionTask;
 use crate::layout::damage::ALL_DAMAGE;
@@ -18,7 +21,9 @@ use crate::{
     TextNodeData,
 };
 use blitz_traits::devtools::DevtoolSettings;
-use blitz_traits::events::{BlitzScrollEvent, DomEvent, DomEventData, HitResult, UiEvent};
+use blitz_traits::events::{
+    BlitzScrollEvent, DomEvent, DomEventData, DomEventKind, HitResult, UiEvent,
+};
 use blitz_traits::navigation::{DummyNavigationProvider, NavigationProvider};
 use blitz_traits::net::{AbortSignal, DummyNetProvider, NetProvider, Request};
 use blitz_traits::shell::{ColorScheme, DummyShellProvider, ShellProvider, Viewport};
@@ -259,6 +264,10 @@ pub struct BaseDocument {
     /// Text selection state (for non-input text)
     pub(crate) text_selection: TextSelection,
 
+    /// Event listeners registered on the nodes of this document
+    /// (via [`add_event_listener`](Self::add_event_listener))
+    pub(crate) event_listeners: EventListenerRegistry,
+
     // TODO: collapse animating state into a bitflags
     /// Whether there are active CSS animations/transitions (so we should re-render every frame)
     pub(crate) has_active_animations: bool,
@@ -474,6 +483,7 @@ impl BaseDocument {
             scrollbar_activity: HashMap::new(),
             scroll_animation: ScrollAnimationState::None,
             text_selection: TextSelection::default(),
+            event_listeners: EventListenerRegistry::default(),
         };
 
         // Initialise document with root Document node
@@ -795,6 +805,8 @@ impl BaseDocument {
     pub(crate) fn drop_node_ignoring_parent(&mut self, node_id: usize) -> Option<Node> {
         let mut node = self.nodes.try_remove(node_id);
         if let Some(node) = &mut node {
+            self.event_listeners.remove_all_for_node(node_id);
+
             if let Some(before) = node.before {
                 self.drop_node_ignoring_parent(before);
             }
@@ -807,6 +819,45 @@ impl BaseDocument {
             }
         }
         node
+    }
+
+    /// Register an event listener on a node.
+    ///
+    /// This is the equivalent of the DOM `addEventListener` API, except that instead of a
+    /// callback an opaque embedder-allocated [`EventListenerId`] is registered. When a matching
+    /// event is dispatched by an [`EventDriver`], the driver's [`EventHandler`] is invoked with
+    /// the listener's id and is responsible for mapping it back to actual behaviour.
+    ///
+    /// Returns `false` (and does nothing) if a listener with the same event kind, id and
+    /// capture flag is already registered on the node (mirroring `addEventListener` semantics).
+    ///
+    /// [`EventDriver`]: crate::EventDriver
+    /// [`EventHandler`]: crate::EventHandler
+    pub fn add_event_listener(
+        &mut self,
+        node_id: usize,
+        kind: DomEventKind,
+        listener: EventListenerId,
+        options: EventListenerOptions,
+    ) -> bool {
+        self.event_listeners.add(node_id, kind, listener, options)
+    }
+
+    /// Remove an event listener from a node.
+    ///
+    /// This is the equivalent of the DOM `removeEventListener` API. The listener to remove is
+    /// identified by the (event kind, listener id, capture flag) triple it was registered with.
+    ///
+    /// Returns `false` if no matching listener was registered.
+    pub fn remove_event_listener(
+        &mut self,
+        node_id: usize,
+        kind: DomEventKind,
+        listener: EventListenerId,
+        capture: bool,
+    ) -> bool {
+        self.event_listeners
+            .remove(node_id, kind, listener, capture)
     }
 
     /// Whether the document has been mutated
