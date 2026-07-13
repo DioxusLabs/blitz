@@ -217,6 +217,15 @@ struct LineDecoration {
     first: Option<DecorationRunGeometry>,
 }
 
+/// Reusable scratch storage for drawing text across all inline formatting contexts in a
+/// document. The vectors are cleared between uses without releasing their allocations.
+#[derive(Default)]
+pub(crate) struct DrawTextContext {
+    stack: Vec<DecorationStackEntry>,
+    path_scratch: Vec<usize>,
+    deco_boxes: Vec<LineDecoration>,
+}
+
 /// Resolve the CSS `text-decoration-thickness` to a device-pixel size.
 ///
 /// - Percentages are resolved against the font size,
@@ -509,7 +518,17 @@ pub(crate) fn stroke_text<'a>(
     transform: Affine,
     scale: f64,
     inline_root_id: usize,
+    context: &mut DrawTextContext,
 ) {
+    let DrawTextContext {
+        stack,
+        path_scratch,
+        deco_boxes,
+    } = context;
+    stack.clear();
+    path_scratch.clear();
+    deco_boxes.clear();
+
     // Persistent stack mirroring the ancestor path (inline root -> current run's
     // node) as we walk the runs. The `text-decoration-*` properties are *not*
     // inherited; instead a decoration set on an ancestor is propagated to the
@@ -517,15 +536,12 @@ pub(crate) fn stroke_text<'a>(
     // ancestor chain on every run, we cache each node's resolved values here and,
     // for each run, only resolve styles for the nodes newly descended into (popping
     // as we ascend). `path_scratch` is a reusable buffer for the run's node path.
-    let mut stack: Vec<DecorationStackEntry> = Vec::new();
-    let mut path_scratch: Vec<usize> = Vec::new();
-
     for line in lines {
         // Decorations accumulated for this line, keyed by decorating box, so each box is
         // painted once (spanning all its runs) using its own font — matching Firefox, which
         // draws one decoration per box rather than one stepped segment per differently-sized
-        // run.
-        let mut deco_boxes: Vec<LineDecoration> = Vec::new();
+        // run. Clearing preserves the allocation for the next line and inline context.
+        deco_boxes.clear();
 
         for item in line.items() {
             if let PositionedLayoutItem::GlyphRun(glyph_run) = item {
@@ -646,7 +662,7 @@ pub(crate) fn stroke_text<'a>(
             }
         }
 
-        flush_line_decorations(scene, transform, scale, &deco_boxes);
+        flush_line_decorations(scene, transform, scale, deco_boxes);
     }
 }
 
