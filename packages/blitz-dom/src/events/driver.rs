@@ -5,6 +5,7 @@ use blitz_traits::events::{
     PointerCoords, UiEvent,
 };
 use blitz_traits::node_id::NodeId;
+use std::cell::Cell;
 
 pub trait EventHandler {
     /// Invoked once for each registered event listener that matches a dispatched event.
@@ -54,11 +55,17 @@ impl EventHandler for NoopEventHandler {
 pub struct EventDriver<'doc, Handler: EventHandler> {
     doc: &'doc mut dyn Document,
     handler: Handler,
+    /// The current depth of nested (reentrant) dispatches (see [`EventContext::dispatch_event`])
+    dispatch_depth: Cell<u32>,
 }
 
 impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
     pub fn new(doc: &'doc mut dyn Document, handler: Handler) -> Self {
-        EventDriver { doc, handler }
+        EventDriver {
+            doc,
+            handler,
+            dispatch_depth: Cell::new(0),
+        }
     }
 
     pub fn handle_pointer_move(&mut self, event: &BlitzPointerEvent) -> Option<NodeId> {
@@ -392,7 +399,13 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
         event: &mut DomEvent,
         initial_event_state: EventState,
     ) -> EventState {
-        dispatch_event_to_listeners(&mut *self.doc, &self.handler, event, initial_event_state)
+        dispatch_event_to_listeners(
+            &mut *self.doc,
+            &self.handler,
+            event,
+            initial_event_state,
+            &self.dispatch_depth,
+        )
     }
 
     fn run_default_action(&mut self, event: &mut DomEvent) {
@@ -410,9 +423,18 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
 pub struct EventContext<'a> {
     doc: &'a mut dyn Document,
     handler: &'a dyn EventHandler,
+    depth: &'a Cell<u32>,
 }
 
 impl EventContext<'_> {
+    /// The maximum depth of nested (reentrant) dispatches.
+    ///
+    /// Beyond this depth [`dispatch_event`](Self::dispatch_event) stops recursing and
+    /// drops the event instead, so that a listener which (transitively) re-dispatches
+    /// its own event cannot overflow the stack. This mirrors browsers, which abort
+    /// scripts that exceed their engine's recursion limit during dispatch.
+    pub const MAX_DISPATCH_DEPTH: u32 = 64;
+
     /// Access the document
     pub fn doc(&self) -> &dyn Document {
         self.doc
@@ -432,20 +454,33 @@ impl EventContext<'_> {
     /// Synchronously dispatch an event: the event is dispatched to the listeners along its
     /// propagation path and then (if not cancelled) has its default action run, all before
     /// this method returns. This is the equivalent of the DOM `dispatchEvent` API and may
-    /// be called reentrantly from within a listener.
+    /// be called reentrantly from within a listener, up to a nesting depth of
+    /// [`MAX_DISPATCH_DEPTH`](Self::MAX_DISPATCH_DEPTH) (beyond which the event is dropped).
     ///
     /// Returns `false` if the event was cancelled with `prevent_default`.
     pub fn dispatch_event(&mut self, mut event: DomEvent) -> bool {
+        if self.depth.get() >= Self::MAX_DISPATCH_DEPTH {
+            #[cfg(feature = "tracing")]
+            tracing::warn!(
+                "Nested event dispatch depth limit reached: dropping {} event",
+                event.name()
+            );
+            return true;
+        }
+
+        self.depth.set(self.depth.get() + 1);
         let event_state = dispatch_event_to_listeners(
             &mut *self.doc,
             self.handler,
             &mut event,
             EventState::default(),
+            self.depth,
         );
         let cancelled = event_state.is_cancelled();
         if !cancelled {
             self.doc.inner_mut().handle_dom_event(&mut event);
         }
+        self.depth.set(self.depth.get() - 1);
         !cancelled
     }
 
@@ -504,6 +539,7 @@ fn dispatch_event_to_listeners(
     handler: &dyn EventHandler,
     event: &mut DomEvent,
     initial_event_state: EventState,
+    depth: &Cell<u32>,
 ) -> EventState {
     match &mut event.data {
         DomEventData::PointerMove(data)
@@ -544,7 +580,7 @@ fn dispatch_event_to_listeners(
         // Compute the propagation path (target first, root last)
         let path = doc.inner().node_chain(event.target);
 
-        dispatch_phases(doc, handler, &path, event, &mut dispatch_state);
+        dispatch_phases(doc, handler, &path, event, &mut dispatch_state, depth);
 
         // Dispatch is complete: the event is no longer being propagated
         event.phase = EventPhase::None;
@@ -560,12 +596,13 @@ fn dispatch_phases(
     path: &[NodeId],
     event: &mut DomEvent,
     state: &mut EventState,
+    depth: &Cell<u32>,
 ) {
     // Capture phase: walk down from the root to the target (target excluded),
     // invoking capture listeners
     event.phase = EventPhase::Capturing;
     for &node_id in path[1..].iter().rev() {
-        invoke_listeners_on_node(doc, handler, node_id, event, state);
+        invoke_listeners_on_node(doc, handler, node_id, event, state, depth);
         if state.propagation_is_stopped() {
             return;
         }
@@ -574,7 +611,7 @@ fn dispatch_phases(
     // Target phase: invoke the target's listeners (both capture and non-capture
     // listeners, in registration order)
     event.phase = EventPhase::AtTarget;
-    invoke_listeners_on_node(doc, handler, event.target, event, state);
+    invoke_listeners_on_node(doc, handler, event.target, event, state, depth);
     if state.propagation_is_stopped() || !event.bubbles {
         return;
     }
@@ -583,7 +620,7 @@ fn dispatch_phases(
     // invoking non-capture listeners
     event.phase = EventPhase::Bubbling;
     for &node_id in path[1..].iter() {
-        invoke_listeners_on_node(doc, handler, node_id, event, state);
+        invoke_listeners_on_node(doc, handler, node_id, event, state, depth);
         if state.propagation_is_stopped() {
             return;
         }
@@ -598,6 +635,7 @@ fn invoke_listeners_on_node(
     node_id: NodeId,
     event: &mut DomEvent,
     event_state: &mut EventState,
+    depth: &Cell<u32>,
 ) {
     let kind = event.data.kind();
 
@@ -648,6 +686,7 @@ fn invoke_listeners_on_node(
         let mut ctx = EventContext {
             doc: &mut *doc,
             handler,
+            depth,
         };
         handler.handle_event_listener(listener.id, event, &mut ctx, &mut listener_state);
 
