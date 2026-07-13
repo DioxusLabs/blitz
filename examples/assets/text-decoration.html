@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+    body {
+        font-family: sans-serif;
+        background: #f5f5f5;
+        margin: 0;
+        padding: 24px;
+        color: #222;
+        line-height: 1.6;
+    }
+    h1 {
+        margin-top: 0;
+    }
+    h2 {
+        font-size: 16px;
+        color: #555;
+        margin-bottom: 8px;
+    }
+    section {
+        background: white;
+        padding: 20px 24px;
+        margin-bottom: 24px;
+    }
+    .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+        gap: 16px;
+    }
+    .item {
+        border: 1px solid #e0e0e0;
+        padding: 12px;
+    }
+    .sample {
+        font-size: 22px;
+        margin: 0 0 8px;
+        /* Base decoration so the sub-property examples are visible. */
+        text-decoration-line: underline;
+        text-decoration-color: #d6336c;
+    }
+    .code {
+        font-family: monospace;
+        font-size: 12px;
+        color: #666;
+    }
+
+    /* text-decoration-line */
+    .line-none { text-decoration-line: none; }
+    .line-underline { text-decoration-line: underline; }
+    .line-overline { text-decoration-line: overline; }
+    .line-through { text-decoration-line: line-through; }
+    .line-underline-overline { text-decoration-line: underline overline; }
+    .line-underline-through { text-decoration-line: underline line-through; }
+    .line-overline-through { text-decoration-line: overline line-through; }
+    .line-all { text-decoration-line: underline overline line-through; }
+
+    /* text-decoration-thickness */
+    .thick-auto { text-decoration-thickness: auto; }
+    .thick-from-font { text-decoration-thickness: from-font; }
+    .thick-1px { text-decoration-thickness: 1px; }
+    .thick-3px { text-decoration-thickness: 3px; }
+    .thick-5px { text-decoration-thickness: 5px; }
+    .thick-0_2em { text-decoration-thickness: 0.2em; }
+
+    /* text-decoration-style */
+    .style-solid { text-decoration-style: solid; }
+    .style-double { text-decoration-style: double; }
+    .style-dotted { text-decoration-style: dotted; }
+    .style-dashed { text-decoration-style: dashed; }
+    .style-wavy { text-decoration-style: wavy; }
+
+    /* Mixed font size / weight inline runs */
+    .mixed {
+        font-size: 22px;
+        margin: 0 0 8px;
+        text-decoration-color: #d6336c;
+    }
+    .mixed .big { font-size: 36px; font-weight: 700; }
+    .mixed .small { font-size: 14px; font-weight: 400; }
+    .mixed .bold { font-weight: 800; }
+    .mixed .light { font-weight: 300; }
+
+    /* text-underline-offset */
+    .offset-auto { text-underline-offset: auto; }
+    .offset-2px { text-underline-offset: 2px; }
+    .offset-4px { text-underline-offset: 4px; }
+    .offset--2px { text-underline-offset: -2px; }
+    .offset-0_2em { text-underline-offset: 0.2em; }
+
+    /* text-underline-position */
+    .pos-auto { text-underline-position: auto; }
+    .pos-from-font { text-underline-position: from-font; }
+    .pos-under { text-underline-position: under; }
+
+    /* text-decoration-inset */
+    .inset-auto { text-decoration-inset: auto; }
+    .inset-4px { text-decoration-inset: 4px; }
+    .inset-8px { text-decoration-inset: 8px; }
+    .inset--4px { text-decoration-inset: -4px; }
+    .inset-4px-12px { text-decoration-inset: 4px 12px; }
+    .inset-10pct { text-decoration-inset: 10%; }
+
+    /* Overlines with different line-heights */
+    .overline {
+        text-decoration-line: overline;
+        text-decoration-color: #2f9e44;
+    }
+    .lh-normal { line-height: normal; }
+    .lh-1 { line-height: 1; }
+    .lh-1_2 { line-height: 1.2; }
+    .lh-1_5 { line-height: 1.5; }
+    .lh-2 { line-height: 2; }
+    .lh-3 { line-height: 3; }
+    .lh-0_8 { line-height: 0.8; }
+
+    /* Combined example */
+    .combined {
+        text-decoration-line: underline;
+        text-decoration-style: wavy;
+        text-decoration-thickness: 3px;
+        text-decoration-color: #1c7ed6;
+        text-underline-offset: 4px;
+        text-decoration-inset: 4px 12px;
+    }
+</style>
+</head>
+<body>
+    <h1>Text decoration examples</h1>
+
+    <section>
+        <h2>text-decoration-line</h2>
+        <div class="grid">
+            <div class="item">
+                <p class="sample line-none">The quick brown fox</p>
+                <div class="code">text-decoration-line: none;</div>
+            </div>
+            <div class="item">
+                <p class="sample line-underline">The quick brown fox</p>
+                <div class="code">text-decoration-line: underline;</div>
+            </div>
+            <div class="item">
+                <p class="sample line-overline">The quick brown fox</p>
+                <div class="code">text-decoration-line: overline;</div>
+            </div>
+            <div class="item">
+                <p class="sample line-through">The quick brown fox</p>
+                <div class="code">text-decoration-line: line-through;</div>
+            </div>
+            <div class="item">
+                <p class="sample line-underline-overline">The quick brown fox</p>
+                <div class="code">text-decoration-line: underline overline;</div>
+            </div>
+            <div class="item">
+                <p class="sample line-underline-through">The quick brown fox</p>
+                <div class="code">text-decoration-line: underline line-through;</div>
+            </div>
+            <div class="item">
+                <p class="sample line-overline-through">The quick brown fox</p>
+                <div class="code">text-decoration-line: overline line-through;</div>
+            </div>
+            <div class="item">
+                <p class="sample line-all">The quick brown fox</p>
+                <div class="code">text-decoration-line: underline overline line-through;</div>
+            </div>
+        </div>
+    </section>
+
+    <section>
+        <h2>text-decoration-thickness</h2>
+        <div class="grid">
+            <div class="item">
+                <p class="sample thick-auto">The quick brown fox</p>
+                <div class="code">text-decoration-thickness: auto;</div>
+            </div>
+            <div class="item">
+                <p class="sample thick-from-font">The quick brown fox</p>
+                <div class="code">text-decoration-thickness: from-font;</div>
+            </div>
+            <div class="item">
+                <p class="sample thick-1px">The quick brown fox</p>
+                <div class="code">text-decoration-thickness: 1px;</div>
+            </div>
+            <div class="item">
+                <p class="sample thick-3px">The quick brown fox</p>
+                <div class="code">text-decoration-thickness: 3px;</div>
+            </div>
+            <div class="item">
+                <p class="sample thick-5px">The quick brown fox</p>
+                <div class="code">text-decoration-thickness: 5px;</div>
+            </div>
+            <div class="item">
+                <p class="sample thick-0_2em">The quick brown fox</p>
+                <div class="code">text-decoration-thickness: 0.2em;</div>
+            </div>
+        </div>
+    </section>
+
+    <section>
+        <h2>text-decoration-style</h2>
+        <div class="grid">
+            <div class="item">
+                <p class="sample style-solid">The quick brown fox</p>
+                <div class="code">text-decoration-style: solid;</div>
+            </div>
+            <div class="item">
+                <p class="sample style-double">The quick brown fox</p>
+                <div class="code">text-decoration-style: double;</div>
+            </div>
+            <div class="item">
+                <p class="sample style-dotted">The quick brown fox</p>
+                <div class="code">text-decoration-style: dotted;</div>
+            </div>
+            <div class="item">
+                <p class="sample style-dashed">The quick brown fox</p>
+                <div class="code">text-decoration-style: dashed;</div>
+            </div>
+            <div class="item">
+                <p class="sample style-wavy">The quick brown fox</p>
+                <div class="code">text-decoration-style: wavy;</div>
+            </div>
+        </div>
+    </section>
+
+    <section>
+        <h2>text-decoration-style with mixed font size and weight</h2>
+        <div class="grid">
+            <div class="item">
+                <p class="mixed style-solid line-underline">The <span class="big">quick</span> <span class="small">brown</span> <span class="bold">fox</span> <span class="light">jumps</span> over</p>
+                <div class="code">text-decoration-style: solid;</div>
+            </div>
+            <div class="item">
+                <p class="mixed style-double line-underline">The <span class="big">quick</span> <span class="small">brown</span> <span class="bold">fox</span> <span class="light">jumps</span> over</p>
+                <div class="code">text-decoration-style: double;</div>
+            </div>
+            <div class="item">
+                <p class="mixed style-dotted line-underline">The <span class="big">quick</span> <span class="small">brown</span> <span class="bold">fox</span> <span class="light">jumps</span> over</p>
+                <div class="code">text-decoration-style: dotted;</div>
+            </div>
+            <div class="item">
+                <p class="mixed style-dashed line-underline">The <span class="big">quick</span> <span class="small">brown</span> <span class="bold">fox</span> <span class="light">jumps</span> over</p>
+                <div class="code">text-decoration-style: dashed;</div>
+            </div>
+            <div class="item">
+                <p class="mixed style-wavy line-underline">The <span class="big">quick</span> <span class="small">brown</span> <span class="bold">fox</span> <span class="light">jumps</span> over</p>
+                <div class="code">text-decoration-style: wavy;</div>
+            </div>
+            <div class="item">
+                <p class="mixed line-through style-solid">The <span class="big">quick</span> <span class="small">brown</span> <span class="bold">fox</span> <span class="light">jumps</span> over</p>
+                <div class="code">line-through / solid;</div>
+            </div>
+            <div class="item">
+                <p class="mixed line-through style-double">The <span class="big">quick</span> <span class="small">brown</span> <span class="bold">fox</span> <span class="light">jumps</span> over</p>
+                <div class="code">line-through / double;</div>
+            </div>
+            <div class="item">
+                <p class="mixed line-through style-wavy">The <span class="big">quick</span> <span class="small">brown</span> <span class="bold">fox</span> <span class="light">jumps</span> over</p>
+                <div class="code">line-through / wavy;</div>
+            </div>
+            <div class="item">
+                <p class="mixed line-all style-solid">The <span class="big">quick</span> <span class="small">brown</span> <span class="bold">fox</span> <span class="light">jumps</span> over</p>
+                <div class="code">underline overline line-through / solid;</div>
+            </div>
+            <div class="item">
+                <p class="mixed line-all style-wavy">The <span class="big">quick</span> <span class="small">brown</span> <span class="bold">fox</span> <span class="light">jumps</span> over</p>
+                <div class="code">underline overline line-through / wavy;</div>
+            </div>
+        </div>
+    </section>
+
+    <section>
+        <h2>text-underline-offset</h2>
+        <div class="grid">
+            <div class="item">
+                <p class="sample offset-auto">The quick brown fox</p>
+                <div class="code">text-underline-offset: auto;</div>
+            </div>
+            <div class="item">
+                <p class="sample offset-2px">The quick brown fox</p>
+                <div class="code">text-underline-offset: 2px;</div>
+            </div>
+            <div class="item">
+                <p class="sample offset-4px">The quick brown fox</p>
+                <div class="code">text-underline-offset: 4px;</div>
+            </div>
+            <div class="item">
+                <p class="sample offset--2px">The quick brown fox</p>
+                <div class="code">text-underline-offset: -2px;</div>
+            </div>
+            <div class="item">
+                <p class="sample offset-0_2em">The quick brown fox</p>
+                <div class="code">text-underline-offset: 0.2em;</div>
+            </div>
+        </div>
+    </section>
+
+    <section>
+        <h2>text-underline-position</h2>
+        <div class="grid">
+            <div class="item">
+                <p class="sample pos-auto">The quick brown fox</p>
+                <div class="code">text-underline-position: auto;</div>
+            </div>
+            <div class="item">
+                <p class="sample pos-from-font">The quick brown fox</p>
+                <div class="code">text-underline-position: from-font;</div>
+            </div>
+            <div class="item">
+                <p class="sample pos-under">The quick brown fox</p>
+                <div class="code">text-underline-position: under;</div>
+            </div>
+        </div>
+    </section>
+
+    <section>
+        <h2>text-decoration-inset</h2>
+        <div class="grid">
+            <div class="item">
+                <p class="sample inset-auto">The quick brown fox</p>
+                <div class="code">text-decoration-inset: auto;</div>
+            </div>
+            <div class="item">
+                <p class="sample inset-4px">The quick brown fox</p>
+                <div class="code">text-decoration-inset: 4px;</div>
+            </div>
+            <div class="item">
+                <p class="sample inset-8px">The quick brown fox</p>
+                <div class="code">text-decoration-inset: 8px;</div>
+            </div>
+            <div class="item">
+                <p class="sample inset--4px">The quick brown fox</p>
+                <div class="code">text-decoration-inset: -4px;</div>
+            </div>
+            <div class="item">
+                <p class="sample inset-4px-12px">The quick brown fox</p>
+                <div class="code">text-decoration-inset: 4px 12px;</div>
+            </div>
+            <div class="item">
+                <p class="sample inset-10pct">The quick brown fox</p>
+                <div class="code">text-decoration-inset: 10%;</div>
+            </div>
+        </div>
+    </section>
+
+    <section>
+        <h2>Overlines with different line-heights</h2>
+        <div class="grid">
+            <div class="item">
+                <p class="sample overline lh-normal">The quick brown fox jumps over the lazy dog</p>
+                <div class="code">text-decoration-line: overline;<br>line-height: normal;</div>
+            </div>
+            <div class="item">
+                <p class="sample overline lh-1">The quick brown fox jumps over the lazy dog</p>
+                <div class="code">text-decoration-line: overline;<br>line-height: 1;</div>
+            </div>
+            <div class="item">
+                <p class="sample overline lh-1_2">The quick brown fox jumps over the lazy dog</p>
+                <div class="code">text-decoration-line: overline;<br>line-height: 1.2;</div>
+            </div>
+            <div class="item">
+                <p class="sample overline lh-1_5">The quick brown fox jumps over the lazy dog</p>
+                <div class="code">text-decoration-line: overline;<br>line-height: 1.5;</div>
+            </div>
+            <div class="item">
+                <p class="sample overline lh-2">The quick brown fox jumps over the lazy dog</p>
+                <div class="code">text-decoration-line: overline;<br>line-height: 2;</div>
+            </div>
+            <div class="item">
+                <p class="sample overline lh-3">The quick brown fox jumps over the lazy dog</p>
+                <div class="code">text-decoration-line: overline;<br>line-height: 3;</div>
+            </div>
+            <div class="item">
+                <p class="sample overline lh-0_8">The quick brown fox jumps over the lazy dog</p>
+                <div class="code">text-decoration-line: overline;<br>line-height: 0.8;</div>
+            </div>
+        </div>
+    </section>
+
+    <section>
+        <h2>Underlines with text-underline-position: under and different line-heights</h2>
+        <div class="grid">
+            <div class="item">
+                <p class="sample pos-under lh-normal">The quick brown fox jumps over the lazy dog</p>
+                <div class="code">text-underline-position: under;<br>line-height: normal;</div>
+            </div>
+            <div class="item">
+                <p class="sample pos-under lh-1">The quick brown fox jumps over the lazy dog</p>
+                <div class="code">text-underline-position: under;<br>line-height: 1;</div>
+            </div>
+            <div class="item">
+                <p class="sample pos-under lh-1_2">The quick brown fox jumps over the lazy dog</p>
+                <div class="code">text-underline-position: under;<br>line-height: 1.2;</div>
+            </div>
+            <div class="item">
+                <p class="sample pos-under lh-1_5">The quick brown fox jumps over the lazy dog</p>
+                <div class="code">text-underline-position: under;<br>line-height: 1.5;</div>
+            </div>
+            <div class="item">
+                <p class="sample pos-under lh-2">The quick brown fox jumps over the lazy dog</p>
+                <div class="code">text-underline-position: under;<br>line-height: 2;</div>
+            </div>
+            <div class="item">
+                <p class="sample pos-under lh-3">The quick brown fox jumps over the lazy dog</p>
+                <div class="code">text-underline-position: under;<br>line-height: 3;</div>
+            </div>
+            <div class="item">
+                <p class="sample pos-under lh-0_8">The quick brown fox jumps over the lazy dog</p>
+                <div class="code">text-underline-position: under;<br>line-height: 0.8;</div>
+            </div>
+        </div>
+    </section>
+
+    <section>
+        <h2>Combined</h2>
+        <div class="grid">
+            <div class="item">
+                <p class="sample combined">The quick brown fox</p>
+                <div class="code">text-decoration-line: underline;<br>
+                             text-decoration-style: wavy;<br>
+                             text-decoration-thickness: 3px;<br>
+                             text-decoration-color: #1c7ed6;<br>
+                             text-underline-offset: 4px;<br>
+                             text-decoration-inset: 4px 12px;</div>
+            </div>
+        </div>
+    </section>
+</body>
+</html>
