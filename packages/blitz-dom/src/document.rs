@@ -34,7 +34,7 @@ use parley::{FontContext, PlainEditorDriver};
 use selectors::{Element, matching::QuirksMode};
 use slab::Slab;
 use std::any::Any;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, Bound, HashMap, HashSet, VecDeque};
 use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
@@ -273,6 +273,11 @@ pub struct BaseDocument {
     /// [`EventDriver`] in a run-to-completion loop.
     pub(crate) pending_events: VecDeque<DomEvent>,
 
+    /// The current depth of nested (reentrant) event dispatches. Lives on the document
+    /// (rather than on the [`EventDriver`]) so that the recursion bound holds even when
+    /// dispatches recurse through freshly-constructed drivers.
+    pub(crate) dispatch_depth: Cell<u32>,
+
     // TODO: collapse animating state into a bitflags
     /// Whether there are active CSS animations/transitions (so we should re-render every frame)
     pub(crate) has_active_animations: bool,
@@ -490,6 +495,7 @@ impl BaseDocument {
             text_selection: TextSelection::default(),
             event_listeners: EventListenerRegistry::default(),
             pending_events: VecDeque::new(),
+            dispatch_depth: Cell::new(0),
         };
 
         // Initialise document with root Document node

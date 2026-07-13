@@ -757,6 +757,71 @@ fn nested_dispatch_depth_is_bounded() {
 }
 
 #[test]
+fn cross_driver_focus_recursion_is_bounded() {
+    /// A focus listener which ping-pongs the focus between two inputs using a *fresh*
+    /// `EventDriver` for each change, the way embedder APIs outside of a listener
+    /// invocation (e.g. dioxus-native's `NodeHandle::set_focus`) drive the focusing
+    /// steps. The dispatch depth lives on the document, so the recursion bound holds
+    /// even across drivers.
+    #[derive(Clone)]
+    struct PingPongHandler {
+        calls: Rc<Cell<u32>>,
+        a: usize,
+        b: usize,
+    }
+
+    impl EventHandler for PingPongHandler {
+        fn handle_event_listener(
+            &self,
+            _listener: EventListenerId,
+            event: &mut DomEvent,
+            ctx: &mut EventContext<'_>,
+            _event_state: &mut EventState,
+        ) {
+            if event.data.kind() != DomEventKind::Focus {
+                return;
+            }
+            self.calls.set(self.calls.get() + 1);
+            let other = if event.target == self.a {
+                self.b
+            } else {
+                self.a
+            };
+            EventDriver::new(ctx.doc_mut(), self.clone()).set_focus(other);
+        }
+    }
+
+    let mut doc = document(
+        r#"<html><body><input id="a" type="text"><input id="b" type="text"></body></html>"#,
+    );
+    let a = node_id(&doc, "#a");
+    let b = node_id(&doc, "#b");
+    assert!(doc.add_event_listener(
+        a,
+        DomEventKind::Focus,
+        EventListenerId(1),
+        Default::default()
+    ));
+    assert!(doc.add_event_listener(
+        b,
+        DomEventKind::Focus,
+        EventListenerId(2),
+        Default::default()
+    ));
+
+    let calls = Rc::new(Cell::new(0));
+    let handler = PingPongHandler {
+        calls: calls.clone(),
+        a,
+        b,
+    };
+    EventDriver::new(&mut doc, handler).set_focus(a);
+
+    // One focus listener invocation per nesting level until the depth limit is reached
+    assert_eq!(calls.get(), EventContext::MAX_DISPATCH_DEPTH);
+}
+
+#[test]
 fn synchronously_dispatched_events_run_their_default_action() {
     /// A handler which forwards clicks on the outer div to the checkbox, recording the
     /// checkbox's state as observed immediately after the nested dispatch returns

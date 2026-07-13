@@ -197,6 +197,7 @@ impl DioxusDocument {
                 let event = Event::new(
                     Rc::new(PlatformEventData::new(Box::new(NodeHandle {
                         doc: Rc::clone(&self.inner),
+                        runtime: self.vdom.runtime(),
                         node_id,
                     }))) as Rc<dyn Any>,
                     false,
@@ -282,6 +283,12 @@ impl DioxusDocument {
 /// (mirroring dioxus-web, whose delegated event handler closure captures an `Rc<Runtime>`).
 pub struct DioxusEventHandler {
     runtime: Rc<Runtime>,
+}
+
+impl DioxusEventHandler {
+    pub fn new(runtime: Rc<Runtime>) -> Self {
+        Self { runtime }
+    }
 }
 
 impl EventHandler for DioxusEventHandler {

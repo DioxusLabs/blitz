@@ -4,7 +4,6 @@ use blitz_traits::events::{
     BlitzPointerEvent, BlitzPointerId, DomEvent, DomEventData, EventPhase, EventState, Point,
     PointerCoords, UiEvent,
 };
-use std::cell::Cell;
 
 pub trait EventHandler {
     /// Invoked once for each registered event listener that matches a dispatched event.
@@ -54,17 +53,46 @@ impl EventHandler for NoopEventHandler {
 pub struct EventDriver<'doc, Handler: EventHandler> {
     doc: &'doc mut dyn Document,
     handler: Handler,
-    /// The current depth of nested (reentrant) dispatches (see [`EventContext::dispatch_event`])
-    dispatch_depth: Cell<u32>,
 }
 
 impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
     pub fn new(doc: &'doc mut dyn Document, handler: Handler) -> Self {
-        EventDriver {
-            doc,
-            handler,
-            dispatch_depth: Cell::new(0),
+        EventDriver { doc, handler }
+    }
+
+    /// Create an [`EventContext`] borrowing this driver's document and handler
+    fn context(&mut self) -> EventContext<'_> {
+        EventContext {
+            doc: &mut *self.doc,
+            handler: &self.handler,
         }
+    }
+
+    /// Synchronously dispatch an event: the event is dispatched to the listeners along its
+    /// propagation path and then (if not cancelled) has its default action run, all before
+    /// this method returns (the equivalent of the DOM `dispatchEvent` API).
+    ///
+    /// Unlike [`handle_dom_event`](Self::handle_dom_event) this does not drain the
+    /// document's pending event queue, and it reports whether the event was cancelled.
+    ///
+    /// Returns `false` if the event was cancelled with `prevent_default`.
+    pub fn dispatch_event(&mut self, event: DomEvent) -> bool {
+        self.context().dispatch_event(event)
+    }
+
+    /// Focus the given node, synchronously dispatching the blur/focusout events for the
+    /// previously focussed node and the focus/focusin events for the newly focussed node
+    /// (the DOM "focusing steps", the equivalent of the `HTMLElement.focus()` API).
+    ///
+    /// Does nothing if the node is already focussed.
+    pub fn set_focus(&mut self, node_id: usize) {
+        self.context().set_focus(node_id);
+    }
+
+    /// Clear the focussed node, synchronously dispatching its blur/focusout events
+    /// (the equivalent of the `HTMLElement.blur()` API).
+    pub fn clear_focus(&mut self) {
+        self.context().clear_focus();
     }
 
     pub fn handle_pointer_move(&mut self, event: &BlitzPointerEvent) -> Option<usize> {
@@ -353,13 +381,7 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
         event: &mut DomEvent,
         initial_event_state: EventState,
     ) -> EventState {
-        dispatch_event_to_listeners(
-            &mut *self.doc,
-            &self.handler,
-            event,
-            initial_event_state,
-            &self.dispatch_depth,
-        )
+        dispatch_event_to_listeners(&mut *self.doc, &self.handler, event, initial_event_state)
     }
 
     fn run_default_action(&mut self, event: &mut DomEvent) {
@@ -377,7 +399,6 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
 pub struct EventContext<'a> {
     doc: &'a mut dyn Document,
     handler: &'a dyn EventHandler,
-    depth: &'a Cell<u32>,
 }
 
 impl EventContext<'_> {
@@ -413,7 +434,12 @@ impl EventContext<'_> {
     ///
     /// Returns `false` if the event was cancelled with `prevent_default`.
     pub fn dispatch_event(&mut self, mut event: DomEvent) -> bool {
-        if self.depth.get() >= Self::MAX_DISPATCH_DEPTH {
+        // The dispatch depth is tracked on the document so that the recursion bound also
+        // holds for dispatches which recurse through freshly-constructed drivers (e.g. a
+        // focus listener triggering an embedder API which drives the focusing steps with
+        // a new EventDriver over the same document).
+        let depth = self.doc.inner().dispatch_depth.get();
+        if depth >= Self::MAX_DISPATCH_DEPTH {
             #[cfg(feature = "tracing")]
             tracing::warn!(
                 "Nested event dispatch depth limit reached: dropping {} event",
@@ -422,19 +448,18 @@ impl EventContext<'_> {
             return true;
         }
 
-        self.depth.set(self.depth.get() + 1);
+        self.doc.inner().dispatch_depth.set(depth + 1);
         let event_state = dispatch_event_to_listeners(
             &mut *self.doc,
             self.handler,
             &mut event,
             EventState::default(),
-            self.depth,
         );
         let cancelled = event_state.is_cancelled();
         if !cancelled {
             self.doc.inner_mut().handle_dom_event(&mut event);
         }
-        self.depth.set(self.depth.get() - 1);
+        self.doc.inner().dispatch_depth.set(depth);
         !cancelled
     }
 
@@ -493,7 +518,6 @@ fn dispatch_event_to_listeners(
     handler: &dyn EventHandler,
     event: &mut DomEvent,
     initial_event_state: EventState,
-    depth: &Cell<u32>,
 ) -> EventState {
     match &mut event.data {
         DomEventData::PointerMove(data)
@@ -534,7 +558,7 @@ fn dispatch_event_to_listeners(
         // Compute the propagation path (target first, root last)
         let path = doc.inner().node_chain(event.target);
 
-        dispatch_phases(doc, handler, &path, event, &mut dispatch_state, depth);
+        dispatch_phases(doc, handler, &path, event, &mut dispatch_state);
 
         // Dispatch is complete: the event is no longer being propagated
         event.phase = EventPhase::None;
@@ -550,13 +574,12 @@ fn dispatch_phases(
     path: &[usize],
     event: &mut DomEvent,
     state: &mut EventState,
-    depth: &Cell<u32>,
 ) {
     // Capture phase: walk down from the root to the target (target excluded),
     // invoking capture listeners
     event.phase = EventPhase::Capturing;
     for &node_id in path[1..].iter().rev() {
-        invoke_listeners_on_node(doc, handler, node_id, event, state, depth);
+        invoke_listeners_on_node(doc, handler, node_id, event, state);
         if state.propagation_is_stopped() {
             return;
         }
@@ -565,7 +588,7 @@ fn dispatch_phases(
     // Target phase: invoke the target's listeners (both capture and non-capture
     // listeners, in registration order)
     event.phase = EventPhase::AtTarget;
-    invoke_listeners_on_node(doc, handler, event.target, event, state, depth);
+    invoke_listeners_on_node(doc, handler, event.target, event, state);
     if state.propagation_is_stopped() || !event.bubbles {
         return;
     }
@@ -574,7 +597,7 @@ fn dispatch_phases(
     // invoking non-capture listeners
     event.phase = EventPhase::Bubbling;
     for &node_id in path[1..].iter() {
-        invoke_listeners_on_node(doc, handler, node_id, event, state, depth);
+        invoke_listeners_on_node(doc, handler, node_id, event, state);
         if state.propagation_is_stopped() {
             return;
         }
@@ -589,7 +612,6 @@ fn invoke_listeners_on_node(
     node_id: usize,
     event: &mut DomEvent,
     event_state: &mut EventState,
-    depth: &Cell<u32>,
 ) {
     let kind = event.data.kind();
 
@@ -640,7 +662,6 @@ fn invoke_listeners_on_node(
         let mut ctx = EventContext {
             doc: &mut *doc,
             handler,
-            depth,
         };
         handler.handle_event_listener(listener.id, event, &mut ctx, &mut listener_state);
 
