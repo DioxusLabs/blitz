@@ -1024,6 +1024,7 @@ dependencies = [
  "kurbo",
  "parley",
  "peniko",
+ "read-fonts",
  "smallvec",
  "stylo",
  "taffy",
