@@ -1,8 +1,9 @@
 use anyrender::PaintScene;
 use blitz_dom::{BaseDocument, NodeId, node::TextBrush, util::ToColorColor};
-use kurbo::{Affine, Cap, Rect, Stroke};
+use kurbo::{Affine, BezPath, Cap, Circle, Rect, Stroke};
 use parley::{Affinity, Cursor, Layout, Line, PositionedLayoutItem, Selection};
 use peniko::Fill;
+use style::properties::generated::longhands::text_decoration_style::computed_value::T as TextDecorationStyle;
 use style::values::computed::{Length, TextDecorationLength, TextDecorationLine};
 use style::values::generics::text::GenericTextDecorationLength;
 
@@ -63,6 +64,27 @@ pub(crate) fn draw_inline_backgrounds<'a>(
     }
 }
 
+/// Mirrors Blink's `SelectBestDashGap`: choose the gap length (as close as possible to
+/// `gap_length`) that fits a whole number of `dash_length` dashes across `stroke_length`,
+/// so dashes are evenly distributed and a dash lands at each end of the line.
+fn select_best_dash_gap(stroke_length: f64, dash_length: f64, gap_length: f64) -> f64 {
+    let available_length = stroke_length + gap_length;
+    let min_num_dashes = (available_length / (dash_length + gap_length)).floor();
+    let max_num_dashes = min_num_dashes + 1.0;
+    let min_num_gaps = min_num_dashes - 1.0;
+    let max_num_gaps = max_num_dashes - 1.0;
+    if min_num_gaps < 1.0 {
+        return gap_length;
+    }
+    let min_gap = (stroke_length - min_num_dashes * dash_length) / min_num_gaps;
+    let max_gap = (stroke_length - max_num_dashes * dash_length) / max_num_gaps;
+    if max_gap <= 0.0 || (min_gap - gap_length).abs() < (max_gap - gap_length).abs() {
+        min_gap
+    } else {
+        max_gap
+    }
+}
+
 pub(crate) fn stroke_text<'a>(
     scene: &mut impl PaintScene,
     lines: impl Iterator<Item = Line<'a, TextBrush>>,
@@ -99,6 +121,7 @@ pub(crate) fn stroke_text<'a>(
                     .unwrap_or(text_color);
                 let text_decoration_brush = anyrender::Paint::from(text_decoration_color);
                 let text_decoration_line = text_styles.text_decoration_line;
+                let text_decoration_style = text_styles.text_decoration_style;
                 let text_decoration_thickness: TextDecorationLength =
                     text_styles.text_decoration_thickness.clone();
                 let has_underline = text_decoration_line.contains(TextDecorationLine::UNDERLINE);
@@ -131,14 +154,99 @@ pub(crate) fn stroke_text<'a>(
                     }),
                 );
 
+                // Draws a single decoration line of the given `text-decoration-style`. `y` is
+                // the centre of the line; `x`/`w` span the glyph run. Geometry is built
+                // explicitly (rather than relying on backend dash support) so it renders
+                // consistently across renderers.
+                //
+                // `double_dir` points away from the text (`+1` = down, `-1` = up) and is used
+                // to place the second line of a `double` decoration.
                 let mut draw_decoration_line =
-                    |offset: f32, size: f32, brush: &anyrender::Paint| {
+                    |offset: f32, size: f32, brush: &anyrender::Paint, double_dir: f64| {
                         let x = glyph_run.offset() as f64;
                         let w = glyph_run.advance() as f64;
                         let y = (glyph_run.baseline() - offset + size / 2.0) as f64;
-                        let line = kurbo::Line::new((x, y), (x + w, y));
-                        let stroke = Stroke::new(size as f64).with_caps(Cap::Butt);
-                        scene.stroke(&stroke, transform, brush, None, &line)
+                        let size = size as f64;
+                        let butt_stroke = Stroke::new(size).with_caps(Cap::Butt);
+
+                        match text_decoration_style {
+                            TextDecorationStyle::MozNone => {
+                                // no line. Equivalent to `text-decoration-line: none`
+                            }
+                            // `solid`
+                            TextDecorationStyle::Solid => {
+                                let line = kurbo::Line::new((x, y), (x + w, y));
+                                scene.stroke(&butt_stroke, transform, brush, None, &line);
+                            }
+                            // Two lines, each `size` thick, separated by a 1px (CSS) gap. This
+                            // matches Chrome, where the second line is offset by `thickness + 1px`
+                            // and sits further from the text (below for underline, above for
+                            // overline).
+                            TextDecorationStyle::Double => {
+                                let one_css_px = scale;
+                                for cy in [y, y + double_dir * (size + one_css_px)] {
+                                    let line = kurbo::Line::new((x, cy), (x + w, cy));
+                                    scene.stroke(&butt_stroke, transform, brush, None, &line);
+                                }
+                            }
+                            // Round dots (diameter = line thickness) spaced one dot apart.
+                            TextDecorationStyle::Dotted => {
+                                let radius = size / 2.0;
+                                let step = 2.0 * size;
+                                let mut cx = x + radius;
+                                while cx <= x + w - radius {
+                                    let dot = Circle::new((cx, y), radius);
+                                    scene.fill(Fill::NonZero, transform, brush, None, &dot);
+                                    cx += step;
+                                }
+                            }
+                            // Dashes as filled rectangles. Dash/gap lengths are relative to the
+                            // thickness (matching Blink): thinner lines use proportionally longer
+                            // dashes and gaps so they don't read as dotted or solid.
+                            TextDecorationStyle::Dashed => {
+                                let (dash_ratio, gap_ratio) =
+                                    if size >= 3.0 { (2.0, 1.0) } else { (3.0, 2.0) };
+                                let dash = size * dash_ratio;
+                                let nominal_gap = size * gap_ratio;
+                                // Nudge the gap so a whole number of dashes fits the run evenly.
+                                let gap = if w > 2.0 * dash {
+                                    select_best_dash_gap(w, dash, nominal_gap)
+                                } else {
+                                    nominal_gap
+                                };
+                                let mut dx = x;
+                                while dx < x + w {
+                                    let end = (dx + dash).min(x + w);
+                                    let rect = Rect::new(dx, y - size / 2.0, end, y + size / 2.0);
+                                    scene.fill(Fill::NonZero, transform, brush, None, &rect);
+                                    dx += dash + gap;
+                                }
+                            }
+                            // A squiggle built from alternating quadratic Béziers.
+                            TextDecorationStyle::Wavy => {
+                                let amplitude = size;
+                                let half_wave = (2.0 * size).max(1.0);
+                                let mut path = BezPath::new();
+                                path.move_to((x, y));
+                                let mut px = x;
+                                let mut up = true;
+                                while px < x + w {
+                                    let nx = (px + half_wave).min(x + w);
+                                    // A quad Bézier reaches half the control-point offset at its
+                                    // midpoint, so use `2 * amplitude` to hit the target peak.
+                                    let ctrl_y = if up {
+                                        y - 2.0 * amplitude
+                                    } else {
+                                        y + 2.0 * amplitude
+                                    };
+                                    path.quad_to(((px + nx) / 2.0, ctrl_y), (nx, y));
+                                    px = nx;
+                                    up = !up;
+                                }
+                                let stroke = Stroke::new(size).with_caps(Cap::Round);
+                                scene.stroke(&stroke, transform, brush, None, &path);
+                            }
+                        }
                     };
 
                 // Resolve the CSS `text-decoration-thickness` to a device-pixel size.
@@ -181,7 +289,8 @@ pub(crate) fn stroke_text<'a>(
                     let offset = metrics.underline_offset - extra_offset as f32;
 
                     // TODO: intercept line when crossing an descending character like "gqy"
-                    draw_decoration_line(offset, size, &text_decoration_brush);
+                    // A `double` underline extends downward, away from the text.
+                    draw_decoration_line(offset, size, &text_decoration_brush, 1.0);
                 }
                 if has_overline {
                     // Fonts don't provide a dedicated overline metric, so reuse the
@@ -190,13 +299,14 @@ pub(crate) fn stroke_text<'a>(
                     let offset = metrics.ascent;
                     let size = decoration_size(metrics.underline_size);
 
-                    draw_decoration_line(offset, size, &text_decoration_brush);
+                    // A `double` overline extends upward, away from the text.
+                    draw_decoration_line(offset, size, &text_decoration_brush, -1.0);
                 }
                 if has_strikethrough {
                     let offset = metrics.strikethrough_offset;
                     let size = decoration_size(metrics.strikethrough_size);
 
-                    draw_decoration_line(offset, size, &text_decoration_brush);
+                    draw_decoration_line(offset, size, &text_decoration_brush, 1.0);
                 }
             }
         }
