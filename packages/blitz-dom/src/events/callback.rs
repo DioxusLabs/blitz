@@ -7,8 +7,13 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-/// The type of callback closures registered with a [`CallbackEventHandler`]
-pub type EventListenerCallback = dyn FnMut(&mut DomEvent, &mut dyn Document, &mut EventState);
+/// The type of callback closures registered with a [`CallbackEventHandler`].
+///
+/// Callbacks are `Fn` (rather than `FnMut`) because event dispatch is reentrant: a callback
+/// may synchronously trigger the dispatch of further events (e.g. by changing the focus),
+/// which may re-invoke the same callback while it is already on the stack. Callbacks which
+/// need mutable state should capture it with interior mutability (`Cell`, `RefCell`, etc).
+pub type EventListenerCallback = dyn Fn(&mut DomEvent, &mut dyn Document, &mut EventState);
 
 /// A convenience [`EventHandler`] which maps [`EventListenerId`]s to Rust closures, giving
 /// applications that use blitz-dom directly (without a framework such as Dioxus) browser-like
@@ -47,7 +52,7 @@ pub struct CallbackEventHandler {
 #[derive(Default)]
 struct CallbackRegistry {
     next_id: u64,
-    callbacks: HashMap<EventListenerId, Rc<RefCell<EventListenerCallback>>>,
+    callbacks: HashMap<EventListenerId, Rc<EventListenerCallback>>,
 }
 
 impl CallbackEventHandler {
@@ -59,14 +64,12 @@ impl CallbackEventHandler {
     /// The id can then be attached to nodes with [`BaseDocument::add_event_listener`].
     pub fn register_callback(
         &self,
-        callback: impl FnMut(&mut DomEvent, &mut dyn Document, &mut EventState) + 'static,
+        callback: impl Fn(&mut DomEvent, &mut dyn Document, &mut EventState) + 'static,
     ) -> EventListenerId {
         let mut registry = self.inner.borrow_mut();
         registry.next_id += 1;
         let id = EventListenerId(registry.next_id);
-        registry
-            .callbacks
-            .insert(id, Rc::new(RefCell::new(callback)));
+        registry.callbacks.insert(id, Rc::new(callback));
         id
     }
 
@@ -88,7 +91,7 @@ impl CallbackEventHandler {
         node_id: usize,
         kind: DomEventKind,
         options: EventListenerOptions,
-        callback: impl FnMut(&mut DomEvent, &mut dyn Document, &mut EventState) + 'static,
+        callback: impl Fn(&mut DomEvent, &mut dyn Document, &mut EventState) + 'static,
     ) -> EventListenerId {
         let id = self.register_callback(callback);
         doc.add_event_listener(node_id, kind, id, options);
@@ -114,7 +117,7 @@ impl CallbackEventHandler {
 
 impl EventHandler for CallbackEventHandler {
     fn handle_event_listener(
-        &mut self,
+        &self,
         listener: EventListenerId,
         event: &mut DomEvent,
         doc: &mut dyn Document,
@@ -124,7 +127,7 @@ impl EventHandler for CallbackEventHandler {
         // the callback runs (the callback may register/deregister callbacks itself)
         let callback = self.inner.borrow().callbacks.get(&listener).cloned();
         if let Some(callback) = callback {
-            (callback.borrow_mut())(event, doc, event_state);
+            callback(event, doc, event_state);
         }
     }
 }

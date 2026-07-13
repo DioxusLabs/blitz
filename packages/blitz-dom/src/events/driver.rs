@@ -18,9 +18,14 @@ pub trait EventHandler {
     /// of the event (`prevent_default`, `stop_propagation`, `stop_immediate_propagation`)
     /// through `event_state`.
     ///
+    /// This method takes `&self` (rather than `&mut self`) because event dispatch is
+    /// reentrant: a listener may synchronously trigger the dispatch of further events
+    /// (e.g. by changing the focus), re-entering the handler while it is already on the
+    /// stack. Handlers which need mutable state should use interior mutability.
+    ///
     /// [`BaseDocument::add_event_listener`]: crate::BaseDocument::add_event_listener
     fn handle_event_listener(
-        &mut self,
+        &self,
         listener: EventListenerId,
         event: &mut DomEvent,
         doc: &mut dyn Document,
@@ -31,7 +36,7 @@ pub trait EventHandler {
 pub struct NoopEventHandler;
 impl EventHandler for NoopEventHandler {
     fn handle_event_listener(
-        &mut self,
+        &self,
         _listener: EventListenerId,
         _event: &mut DomEvent,
         _doc: &mut dyn Document,

@@ -11,7 +11,7 @@ use blitz_dom::{
     EventDriver, EventHandler, EventListenerId, Node,
 };
 use blitz_traits::events::{DomEvent, DomEventData, EventState, UiEvent};
-use dioxus_core::{ElementId, Event, VirtualDom};
+use dioxus_core::{ElementId, Event, Runtime, VirtualDom};
 use dioxus_html::{PlatformEventData, set_event_converter};
 use futures_util::task::noop_waker;
 use std::cell::RefCell;
@@ -256,7 +256,7 @@ impl Document for DioxusDocument {
 
     fn handle_ui_event(&mut self, event: UiEvent) {
         let handler = DioxusEventHandler {
-            vdom: &mut self.vdom,
+            runtime: self.vdom.runtime(),
         };
         let mut driver = EventDriver::new(&mut self.inner, handler);
         driver.handle_ui_event(event);
@@ -268,20 +268,25 @@ impl DioxusDocument {
     /// to the Dioxus vdom
     fn flush_pending_dom_events(&mut self) {
         let handler = DioxusEventHandler {
-            vdom: &mut self.vdom,
+            runtime: self.vdom.runtime(),
         };
         let mut driver = EventDriver::new(&mut self.inner, handler);
         driver.flush_pending_events();
     }
 }
 
-pub struct DioxusEventHandler<'v> {
-    vdom: &'v mut VirtualDom,
+/// An [`EventHandler`] which routes events to Dioxus vdom event handlers.
+///
+/// Holds an `Rc<Runtime>` (rather than a reference to the `VirtualDom`) so that it can be
+/// re-entered if a vdom event handler synchronously triggers the dispatch of further events
+/// (mirroring dioxus-web, whose delegated event handler closure captures an `Rc<Runtime>`).
+pub struct DioxusEventHandler {
+    runtime: Rc<Runtime>,
 }
 
-impl EventHandler for DioxusEventHandler<'_> {
+impl EventHandler for DioxusEventHandler {
     fn handle_event_listener(
-        &mut self,
+        &self,
         _listener: EventListenerId,
         event: &mut DomEvent,
         doc: &mut dyn Document,
@@ -361,8 +366,7 @@ impl EventHandler for DioxusEventHandler<'_> {
 
         // Handle event in vdom (dioxus-core does its own bubbling through the vdom)
         let dx_event = Event::new(event_data, event.bubbles);
-        self.vdom
-            .runtime()
+        self.runtime
             .handle_event(event.name(), dx_event.clone(), id);
 
         // Update event state

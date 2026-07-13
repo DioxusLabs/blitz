@@ -60,7 +60,7 @@ struct RecordingHandler {
 
 impl EventHandler for RecordingHandler {
     fn handle_event_listener(
-        &mut self,
+        &self,
         _listener: EventListenerId,
         event: &mut DomEvent,
         _doc: &mut dyn Document,
