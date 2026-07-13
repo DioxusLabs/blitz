@@ -4,7 +4,9 @@ use kurbo::{Affine, BezPath, Cap, Circle, Rect, Stroke};
 use parley::{Affinity, Cursor, Layout, Line, PositionedLayoutItem, Selection};
 use peniko::Fill;
 use style::properties::generated::longhands::text_decoration_style::computed_value::T as TextDecorationStyle;
-use style::values::computed::{Length, TextDecorationLength, TextDecorationLine};
+use style::values::computed::{
+    Length, TextDecorationLength, TextDecorationLine, TextUnderlinePosition,
+};
 use style::values::generics::text::GenericTextDecorationLength;
 
 use crate::color::{Color, ToColorColor as _};
@@ -283,10 +285,23 @@ pub(crate) fn stroke_text<'a>(
                         })
                         .unwrap_or(0.0);
 
+                    // `text-underline-position: under` places the underline below the glyph
+                    // box (below descenders) rather than at the font's suggested position near
+                    // the alphabetic baseline. We anchor the top of the line at the descent so
+                    // it clears descending glyphs like "gqy".
+                    //
                     // `draw_decoration_line` computes `y = baseline - offset + size / 2` and `y`
-                    // grows downward, so subtracting the offset pushes the underline downward,
+                    // grows downward, so a more negative offset pushes the underline downward,
                     // away from the text.
-                    let offset = metrics.underline_offset - extra_offset as f32;
+                    let base_offset = if itext_styles
+                        .text_underline_position
+                        .contains(TextUnderlinePosition::UNDER)
+                    {
+                        -metrics.descent
+                    } else {
+                        metrics.underline_offset
+                    };
+                    let offset = base_offset - extra_offset as f32;
 
                     // TODO: intercept line when crossing an descending character like "gqy"
                     // A `double` underline extends downward, away from the text.
