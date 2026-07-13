@@ -66,6 +66,19 @@ pub(crate) fn draw_inline_backgrounds<'a>(
     }
 }
 
+/// The font's OS/2 `usWinAscent`, in the same (device) pixels as `font_size`.
+///
+/// This is the ascent browsers use as the top of the "em box" when positioning overlines. It
+/// is typically taller than the hhea ascent Parley exposes via [`parley::layout::run::RunMetrics`].
+/// Returns `None` when the font has no OS/2 table.
+fn win_ascent(font: &parley::FontData, font_size: f32) -> Option<f32> {
+    use read_fonts::{FontRef, TableProvider as _};
+    let font_ref = FontRef::from_index(font.data.as_ref(), font.index).ok()?;
+    let units_per_em = font_ref.head().ok()?.units_per_em();
+    let win_ascent = font_ref.os2().ok()?.us_win_ascent();
+    Some(win_ascent as f32 * font_size / units_per_em as f32)
+}
+
 /// Mirrors Blink's `SelectBestDashGap`: choose the gap length (as close as possible to
 /// `gap_length`) that fits a whole number of `dash_length` dashes across `stroke_length`,
 /// so dashes are evenly distributed and a dash lands at each end of the line.
@@ -308,11 +321,19 @@ pub(crate) fn stroke_text<'a>(
                     draw_decoration_line(offset, size, &text_decoration_brush, 1.0);
                 }
                 if has_overline {
-                    // Fonts don't provide a dedicated overline metric, so reuse the
-                    // underline thickness and position the line at the top of the text
-                    // (i.e. one ascent above the baseline).
-                    let offset = metrics.ascent;
+                    // Fonts don't provide a dedicated overline metric, so reuse the underline
+                    // thickness. The line sits at the top of the "em box": its lower edge rests
+                    // on the ascent so it clears the glyphs, and it extends upward from there
+                    // (`draw_decoration_line` centres the stroke on `baseline - offset + size / 2`,
+                    // so `offset = ascent + size` puts the bottom edge at `baseline - ascent`).
+                    //
+                    // Browsers use the OS/2 `usWinAscent` for this edge, which is taller than the
+                    // hhea-based ascent Parley reports; using the smaller value would draw the
+                    // overline too low (too close to the glyphs). Fall back to Parley's ascent for
+                    // fonts without a usable OS/2 table.
                     let size = decoration_size(metrics.underline_size);
+                    let ascent = win_ascent(run.font(), run.font_size()).unwrap_or(metrics.ascent);
+                    let offset = ascent + size;
 
                     // A `double` overline extends upward, away from the text.
                     draw_decoration_line(offset, size, &text_decoration_brush, -1.0);

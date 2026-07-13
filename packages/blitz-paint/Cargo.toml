@@ -38,6 +38,7 @@ taffy = { workspace = true }
 
 # Linebender + WGPU dependencies
 parley = { workspace = true }
+read-fonts = { workspace = true }
 color = { workspace = true }
 peniko = { workspace = true }
 kurbo = { workspace = true }
