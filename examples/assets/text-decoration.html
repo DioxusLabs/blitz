@@ -123,6 +123,27 @@
         text-underline-offset: 4px;
         text-decoration-inset: 4px 12px;
     }
+
+    /* Inner span overriding outer span's style/thickness */
+    .override {
+        font-size: 22px;
+        margin: 0 0 8px;
+        text-decoration-line: underline;
+        text-decoration-color: #d6336c;
+    }
+    .override .outer-solid { text-decoration-style: solid; }
+    .override .outer-double { text-decoration-style: double; }
+    .override .outer-thick { text-decoration-thickness: 3px; }
+
+    .override .inner-dotted { text-decoration-style: dotted; }
+    .override .inner-dashed { text-decoration-style: dashed; }
+    .override .inner-wavy { text-decoration-style: wavy; }
+    .override .inner-thin { text-decoration-thickness: 1px; }
+    .override .inner-thick { text-decoration-thickness: 5px; }
+    .override .inner-style-thick {
+        text-decoration-style: wavy;
+        text-decoration-thickness: 5px;
+    }
 </style>
 </head>
 <body>
@@ -406,6 +427,50 @@
             <div class="item">
                 <p class="sample pos-under lh-0_8">The quick brown fox jumps over the lazy dog</p>
                 <div class="code">text-underline-position: under;<br>line-height: 0.8;</div>
+            </div>
+        </div>
+    </section>
+
+    <section>
+        <h2>Inner span overriding outer span's text-decoration-style</h2>
+        <div class="grid">
+            <div class="item">
+                <p class="override"><span class="outer-solid">The quick <span class="inner-dotted">brown</span> fox</span></p>
+                <div class="code">outer: style: solid;<br>inner: style: dotted;</div>
+            </div>
+            <div class="item">
+                <p class="override"><span class="outer-solid">The quick <span class="inner-dashed">brown</span> fox</span></p>
+                <div class="code">outer: style: solid;<br>inner: style: dashed;</div>
+            </div>
+            <div class="item">
+                <p class="override"><span class="outer-solid">The quick <span class="inner-wavy">brown</span> fox</span></p>
+                <div class="code">outer: style: solid;<br>inner: style: wavy;</div>
+            </div>
+            <div class="item">
+                <p class="override"><span class="outer-double">The quick <span class="inner-dotted">brown</span> fox</span></p>
+                <div class="code">outer: style: double;<br>inner: style: dotted;</div>
+            </div>
+            <div class="item">
+                <p class="override"><span class="outer-double">The quick <span class="inner-wavy">brown</span> fox</span></p>
+                <div class="code">outer: style: double;<br>inner: style: wavy;</div>
+            </div>
+        </div>
+    </section>
+
+    <section>
+        <h2>Inner span overriding outer span's text-decoration-thickness</h2>
+        <div class="grid">
+            <div class="item">
+                <p class="override"><span class="outer-thick">The quick <span class="inner-thin">brown</span> fox</span></p>
+                <div class="code">outer: thickness: 3px;<br>inner: thickness: 1px;</div>
+            </div>
+            <div class="item">
+                <p class="override"><span class="outer-thick">The quick <span class="inner-thick">brown</span> fox</span></p>
+                <div class="code">outer: thickness: 3px;<br>inner: thickness: 5px;</div>
+            </div>
+            <div class="item">
+                <p class="override"><span class="outer-thick">The quick <span class="inner-style-thick">brown</span> fox</span></p>
+                <div class="code">outer: thickness: 3px;<br>inner: style: wavy; thickness: 5px;</div>
             </div>
         </div>
     </section>
