@@ -22,6 +22,8 @@ mod details_element;
 mod device_coalescing;
 mod dir_attribute;
 mod display_contents;
+mod event_dispatch;
+mod event_handling;
 mod flex_grid_order;
 mod focusability_updates;
 mod fragment_navigation;

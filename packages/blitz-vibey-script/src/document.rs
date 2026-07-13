@@ -12,7 +12,7 @@ use blitz_traits::events::{DomEvent, UiEvent};
 use url::Url;
 use web_time::Instant;
 
-use crate::event_handler::ScriptEventHandler;
+use crate::event_handler::{ScriptEventHandler, register_script_listeners};
 use crate::fetch::{DefaultScriptFetcher, ScriptFetcher};
 use crate::runtime::ScriptRuntime;
 
@@ -272,6 +272,7 @@ impl ScriptDocument {
     /// through the document's event driver. The event is exposed to JavaScript
     /// event listeners, and Blitz's default actions run unless prevented.
     pub fn dispatch_dom_event(&mut self, event: DomEvent) {
+        register_script_listeners(&mut self.inner.borrow_mut());
         let handler = ScriptEventHandler {
             runtime: &mut self.runtime,
         };
@@ -400,6 +401,7 @@ impl Document for ScriptDocument {
     }
 
     fn handle_ui_event(&mut self, event: UiEvent) {
+        register_script_listeners(&mut self.inner.borrow_mut());
         let handler = ScriptEventHandler {
             runtime: &mut self.runtime,
         };

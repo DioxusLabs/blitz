@@ -14,6 +14,7 @@ use crate::NodeId;
 pub struct EventState {
     cancelled: bool,
     propagation_stopped: bool,
+    immediate_propagation_stopped: bool,
     redraw_requested: bool,
 }
 impl EventState {
@@ -25,6 +26,12 @@ impl EventState {
     #[inline(always)]
     pub fn stop_propagation(&mut self) {
         self.propagation_stopped = true;
+    }
+
+    #[inline(always)]
+    pub fn stop_immediate_propagation(&mut self) {
+        self.propagation_stopped = true;
+        self.immediate_propagation_stopped = true;
     }
 
     #[inline(always)]
@@ -43,6 +50,11 @@ impl EventState {
     }
 
     #[inline(always)]
+    pub fn immediate_propagation_is_stopped(&self) -> bool {
+        self.immediate_propagation_stopped
+    }
+
+    #[inline(always)]
     pub fn redraw_is_requested(&self) -> bool {
         self.redraw_requested
     }
@@ -52,9 +64,28 @@ impl EventState {
         EventState {
             cancelled: self.cancelled | other.cancelled,
             propagation_stopped: self.propagation_stopped | other.propagation_stopped,
+            immediate_propagation_stopped: self.immediate_propagation_stopped
+                | other.immediate_propagation_stopped,
             redraw_requested: self.redraw_requested | other.redraw_requested,
         }
     }
+}
+
+/// The phase of event propagation that an event is currently in.
+///
+/// Mirrors the DOM `Event.eventPhase` property
+/// ([MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/Event/eventPhase))
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub enum EventPhase {
+    /// The event is not currently being dispatched
+    #[default]
+    None,
+    /// The event is propagating down from the root towards the target
+    Capturing,
+    /// The event has reached its target
+    AtTarget,
+    /// The event is propagating back up from the target towards the root
+    Bubbling,
 }
 
 #[derive(Debug, Clone)]
@@ -85,6 +116,12 @@ impl UiEvent {
 #[derive(Debug, Clone)]
 pub struct DomEvent {
     pub target: NodeId,
+    /// The node whose listener is currently being invoked (if any).
+    /// Mirrors the DOM `Event.currentTarget` property.
+    pub current_target: Option<NodeId>,
+    /// The propagation phase the event is currently in.
+    /// Mirrors the DOM `Event.eventPhase` property.
+    pub phase: EventPhase,
     /// Which is true if the event bubbles up through the DOM tree.
     pub bubbles: bool,
     /// which is true if the event can be canceled.
@@ -98,6 +135,8 @@ impl DomEvent {
     pub fn new(target: NodeId, data: DomEventData) -> Self {
         Self {
             target,
+            current_target: None,
+            phase: EventPhase::None,
             bubbles: data.bubbles(),
             cancelable: data.cancelable(),
             data,
@@ -157,8 +196,140 @@ pub enum DomEventKind {
     AppleStandardKeybinding,
 }
 impl DomEventKind {
+    /// Every kind of DOM event
+    pub const ALL: [Self; 34] = [
+        Self::PointerMove,
+        Self::PointerDown,
+        Self::PointerUp,
+        Self::PointerCancel,
+        Self::PointerEnter,
+        Self::PointerLeave,
+        Self::PointerOver,
+        Self::PointerOut,
+        Self::MouseMove,
+        Self::MouseDown,
+        Self::MouseUp,
+        Self::MouseEnter,
+        Self::MouseLeave,
+        Self::MouseOver,
+        Self::MouseOut,
+        Self::TouchStart,
+        Self::TouchMove,
+        Self::TouchEnd,
+        Self::TouchCancel,
+        Self::Scroll,
+        Self::Wheel,
+        Self::Click,
+        Self::ContextMenu,
+        Self::DoubleClick,
+        Self::KeyPress,
+        Self::KeyDown,
+        Self::KeyUp,
+        Self::Input,
+        Self::Ime,
+        Self::Focus,
+        Self::Blur,
+        Self::FocusIn,
+        Self::FocusOut,
+        Self::AppleStandardKeybinding,
+    ];
+
     pub fn discriminant(self) -> u8 {
         self as u8
+    }
+
+    /// Returns the name of the event ("click", "mouseover", "keypress", etc)
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::PointerMove => "pointermove",
+            Self::PointerDown => "pointerdown",
+            Self::PointerUp => "pointerup",
+            Self::PointerCancel => "pointercancel",
+            Self::PointerEnter => "pointerenter",
+            Self::PointerLeave => "pointerleave",
+            Self::PointerOver => "pointerover",
+            Self::PointerOut => "pointerout",
+
+            Self::MouseMove => "mousemove",
+            Self::MouseDown => "mousedown",
+            Self::MouseUp => "mouseup",
+            Self::MouseEnter => "mouseenter",
+            Self::MouseLeave => "mouseleave",
+            Self::MouseOver => "mouseover",
+            Self::MouseOut => "mouseout",
+
+            Self::TouchStart => "touchstart",
+            Self::TouchMove => "touchmove",
+            Self::TouchEnd => "touchend",
+            Self::TouchCancel => "touchcancel",
+
+            Self::Scroll => "scroll",
+            Self::Wheel => "wheel",
+
+            Self::Click => "click",
+            Self::ContextMenu => "contextmenu",
+            Self::DoubleClick => "dblclick",
+
+            Self::KeyPress => "keypress",
+            Self::KeyDown => "keydown",
+            Self::KeyUp => "keyup",
+            Self::Input => "input",
+            Self::Ime => "composition",
+
+            Self::Focus => "focus",
+            Self::Blur => "blur",
+            Self::FocusIn => "focusin",
+            Self::FocusOut => "focusout",
+
+            Self::AppleStandardKeybinding => "applekeybinding",
+        }
+    }
+
+    /// Whether events of this kind bubble up through the DOM tree
+    pub fn bubbles(self) -> bool {
+        match self {
+            Self::PointerMove => true,
+            Self::PointerDown => true,
+            Self::PointerUp => true,
+            Self::PointerCancel => true,
+            Self::PointerEnter => false,
+            Self::PointerLeave => false,
+            Self::PointerOver => true,
+            Self::PointerOut => true,
+
+            Self::MouseMove => true,
+            Self::MouseDown => true,
+            Self::MouseUp => true,
+            Self::MouseEnter => false,
+            Self::MouseLeave => false,
+            Self::MouseOver => true,
+            Self::MouseOut => true,
+
+            Self::TouchStart => true,
+            Self::TouchMove => true,
+            Self::TouchEnd => true,
+            Self::TouchCancel => true,
+
+            Self::Scroll => false,
+            Self::Wheel => true,
+
+            Self::Click => true,
+            Self::ContextMenu => true,
+            Self::DoubleClick => true,
+
+            Self::KeyDown => true,
+            Self::KeyUp => true,
+            Self::KeyPress => true,
+            Self::Ime => true,
+            Self::Input => true,
+
+            Self::Focus => false,
+            Self::Blur => false,
+            Self::FocusIn => true,
+            Self::FocusOut => true,
+
+            Self::AppleStandardKeybinding => false,
+        }
     }
 }
 impl FromStr for DomEventKind {
@@ -266,49 +437,7 @@ impl DomEventData {
 
 impl DomEventData {
     pub fn name(&self) -> &'static str {
-        match self {
-            Self::PointerMove { .. } => "pointermove",
-            Self::PointerDown { .. } => "pointerdown",
-            Self::PointerUp { .. } => "pointerup",
-            Self::PointerCancel { .. } => "pointercancel",
-            Self::PointerEnter { .. } => "pointerenter",
-            Self::PointerLeave { .. } => "pointerleave",
-            Self::PointerOver { .. } => "pointerover",
-            Self::PointerOut { .. } => "pointerout",
-
-            Self::MouseMove { .. } => "mousemove",
-            Self::MouseDown { .. } => "mousedown",
-            Self::MouseUp { .. } => "mouseup",
-            Self::MouseEnter { .. } => "mouseenter",
-            Self::MouseLeave { .. } => "mouseleave",
-            Self::MouseOver { .. } => "mouseover",
-            Self::MouseOut { .. } => "mouseout",
-
-            Self::TouchStart { .. } => "touchstart",
-            Self::TouchMove { .. } => "touchmove",
-            Self::TouchEnd { .. } => "touchend",
-            Self::TouchCancel { .. } => "touchcancel",
-
-            Self::Scroll { .. } => "scroll",
-            Self::Wheel { .. } => "wheel",
-
-            Self::Click { .. } => "click",
-            Self::ContextMenu { .. } => "contextmenu",
-            Self::DoubleClick { .. } => "dblclick",
-
-            Self::KeyPress { .. } => "keypress",
-            Self::KeyDown { .. } => "keydown",
-            Self::KeyUp { .. } => "keyup",
-            Self::Input { .. } => "input",
-            Self::Ime { .. } => "composition",
-
-            Self::Focus { .. } => "focus",
-            Self::Blur { .. } => "blur",
-            Self::FocusIn { .. } => "focusin",
-            Self::FocusOut { .. } => "focusout",
-
-            Self::AppleStandardKeybinding { .. } => "applekeybinding",
-        }
+        self.kind().name()
     }
 
     pub fn kind(&self) -> DomEventKind {
@@ -404,49 +533,7 @@ impl DomEventData {
     }
 
     pub fn bubbles(&self) -> bool {
-        match self {
-            Self::PointerMove { .. } => true,
-            Self::PointerDown { .. } => true,
-            Self::PointerUp { .. } => true,
-            Self::PointerCancel { .. } => true,
-            Self::PointerEnter { .. } => false,
-            Self::PointerLeave { .. } => false,
-            Self::PointerOver { .. } => true,
-            Self::PointerOut { .. } => true,
-
-            Self::MouseMove { .. } => true,
-            Self::MouseDown { .. } => true,
-            Self::MouseUp { .. } => true,
-            Self::MouseEnter { .. } => false,
-            Self::MouseLeave { .. } => false,
-            Self::MouseOver { .. } => true,
-            Self::MouseOut { .. } => true,
-
-            Self::TouchStart { .. } => true,
-            Self::TouchMove { .. } => true,
-            Self::TouchEnd { .. } => true,
-            Self::TouchCancel { .. } => true,
-
-            Self::Scroll { .. } => false,
-            Self::Wheel { .. } => true,
-
-            Self::Click { .. } => true,
-            Self::ContextMenu { .. } => true,
-            Self::DoubleClick { .. } => true,
-
-            Self::KeyDown { .. } => true,
-            Self::KeyUp { .. } => true,
-            Self::KeyPress { .. } => true,
-            Self::Ime { .. } => true,
-            Self::Input { .. } => true,
-
-            Self::Focus { .. } => false,
-            Self::Blur { .. } => false,
-            Self::FocusIn { .. } => true,
-            Self::FocusOut { .. } => true,
-
-            Self::AppleStandardKeybinding { .. } => false,
-        }
+        self.kind().bubbles()
     }
 }
 
