@@ -33,17 +33,6 @@ pub fn decode_font_bytes(bytes: &[u8]) -> Cow<'_, [u8]> {
     }
 }
 
-#[cfg(feature = "svg")]
-use std::sync::{Arc, LazyLock};
-#[cfg(feature = "svg")]
-use usvg::fontdb;
-#[cfg(feature = "svg")]
-pub(crate) static FONT_DB: LazyLock<Arc<fontdb::Database>> = LazyLock::new(|| {
-    let mut db = fontdb::Database::new();
-    db.load_system_fonts();
-    Arc::new(db)
-});
-
 #[derive(Clone, Copy, Debug)]
 pub enum ImageType {
     Image,
@@ -129,13 +118,12 @@ pub fn walk_tree(indent: usize, node: &Node) {
     }
 }
 
+// usvg is built without its `text` feature (no `fontdb`, no `rustybuzz`):
+// SVG `<text>` elements are not shaped or rendered. HTML text is shaped by
+// parley, so this only affects text nodes inside SVG documents.
 #[cfg(feature = "svg")]
 pub(crate) fn parse_svg(source: &[u8]) -> Result<usvg::Tree, usvg::Error> {
-    let options = usvg::Options {
-        fontdb: Arc::clone(&*FONT_DB),
-        ..Default::default()
-    };
-
+    let options = usvg::Options::default();
     let tree = usvg::Tree::from_data(source, &options)?;
     Ok(tree)
 }

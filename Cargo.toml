@@ -112,7 +112,7 @@ anyrender_skia = { version = "0.8.0" }
 anyrender_vello = { version = "0.10.1" }
 anyrender_vello_cpu = { version = "0.12.1" }
 anyrender_vello_hybrid = { version = "0.5.1" }
-anyrender_svg = { version = "0.11.0" }
+anyrender_svg = { version = "0.11.0", default-features = false, features = ["image_format_png", "image_format_gif", "image_format_jpeg", "image_format_webp"] }
 wgpu_context = { version = "0.6.0" }
 
 # Linebender + Fontations + WGPU + SVG
@@ -121,7 +121,7 @@ linebender_resource_handle = "0.1"
 peniko = "0.6.0"
 kurbo = "0.13.1"
 wgpu = "29"
-usvg = "0.46"
+usvg = { version = "0.46", default-features = false }
 
 # Windowing & Input
 raw-window-handle = "0.6.0"
