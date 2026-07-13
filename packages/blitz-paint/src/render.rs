@@ -780,6 +780,7 @@ impl ElementCx<'_, '_> {
                 self.context.dom,
                 transform,
                 self.scale,
+                self.node.id,
             );
         }
     }
@@ -843,6 +844,7 @@ impl ElementCx<'_, '_> {
                 self.context.dom,
                 transform,
                 self.scale,
+                self.node.id,
             );
         }
     }
@@ -888,6 +890,7 @@ impl ElementCx<'_, '_> {
                 self.context.dom,
                 transform,
                 self.scale,
+                self.node.id,
             );
         }
     }
