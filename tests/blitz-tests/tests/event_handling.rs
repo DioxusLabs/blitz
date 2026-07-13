@@ -104,6 +104,39 @@ fn non_bubbling_events_reach_vdom_handlers() {
 }
 
 #[test]
+fn mounted_set_focus_dispatches_focus_events_synchronously() {
+    static FOCUSSES: AtomicUsize = AtomicUsize::new(0);
+    static FOCUSSES_SEEN_AFTER_AWAIT: AtomicUsize = AtomicUsize::new(0);
+
+    fn app() -> Element {
+        rsx! {
+            input {
+                r#type: "text",
+                style: "width: 200px; height: 40px;",
+                onmounted: move |event| async move {
+                    let _ = event.set_focus(true).await;
+                    // The focusing steps run synchronously (mirroring `element.focus()`
+                    // on the web): the onfocus handler has already run by this point
+                    FOCUSSES_SEEN_AFTER_AWAIT
+                        .store(FOCUSSES.load(Ordering::SeqCst), Ordering::SeqCst);
+                },
+                onfocus: move |_| {
+                    FOCUSSES.fetch_add(1, Ordering::SeqCst);
+                },
+            }
+        }
+    }
+
+    let mut doc = make_doc(app);
+    // Poll so that the task spawned by the `onmounted` handler runs
+    for _ in 0..5 {
+        doc.poll(None);
+    }
+    assert_eq!(FOCUSSES.load(Ordering::SeqCst), 1);
+    assert_eq!(FOCUSSES_SEEN_AFTER_AWAIT.load(Ordering::SeqCst), 1);
+}
+
+#[test]
 fn programmatic_focus_change_dispatches_focus_events_to_vdom() {
     static FOCUSSES: AtomicUsize = AtomicUsize::new(0);
     static BLURS: AtomicUsize = AtomicUsize::new(0);
