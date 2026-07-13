@@ -5,6 +5,7 @@ mod clip_path;
 mod form_controls;
 mod mask;
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -15,6 +16,7 @@ use crate::filters::convert_filters;
 use crate::kurbo_css::NonUniformRoundedRectRadii;
 use crate::layers::LayerManager;
 use crate::sizing::compute_object_fit;
+use crate::text::DrawTextContext;
 use crate::{CustomWidgetSceneMap, SELECTION_COLOR};
 use anyrender::{PaintScene, Scene};
 use blitz_dom::node::{
@@ -60,6 +62,8 @@ pub struct BlitzDomPainter<'dom, 'a> {
     #[cfg(feature = "scrollbars")]
     pub(crate) scrollbar_drag_target: Option<blitz_dom::node::ScrollbarRef>,
     pub(crate) layer_manager: LayerManager,
+    /// Reusable scratch allocations shared by all text layouts painted for this document.
+    pub(crate) draw_text_context: RefCell<DrawTextContext>,
     /// Cached selection ranges for O(1) lookup: node_id -> (start_offset, end_offset)
     pub(crate) selection_ranges: HashMap<usize, (usize, usize)>,
 
@@ -100,6 +104,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             #[cfg(feature = "scrollbars")]
             scrollbar_drag_target: dom.scrollbar_drag_target(),
             layer_manager,
+            draw_text_context: RefCell::new(DrawTextContext::default()),
             selection_ranges,
             custom_widget_scenes,
         }
@@ -739,6 +744,7 @@ impl ElementCx<'_, '_> {
             }
 
             // Render text
+            let mut draw_text_context = self.context.draw_text_context.borrow_mut();
             crate::text::stroke_text(
                 scene,
                 text_layout.layout.lines(),
@@ -746,6 +752,7 @@ impl ElementCx<'_, '_> {
                 transform,
                 self.scale,
                 self.node.id,
+                &mut draw_text_context,
             );
         }
     }
@@ -803,6 +810,7 @@ impl ElementCx<'_, '_> {
             }
 
             // Render text
+            let mut draw_text_context = self.context.draw_text_context.borrow_mut();
             crate::text::stroke_text(
                 scene,
                 input_data.editor.try_layout().unwrap().lines(),
@@ -810,6 +818,7 @@ impl ElementCx<'_, '_> {
                 transform,
                 self.scale,
                 self.node.id,
+                &mut draw_text_context,
             );
         }
     }
@@ -849,6 +858,7 @@ impl ElementCx<'_, '_> {
             let transform =
                 self.transform * Affine::translate((pos.x * self.scale, pos.y * self.scale));
 
+            let mut draw_text_context = self.context.draw_text_context.borrow_mut();
             crate::text::stroke_text(
                 scene,
                 layout.lines(),
@@ -856,6 +866,7 @@ impl ElementCx<'_, '_> {
                 transform,
                 self.scale,
                 self.node.id,
+                &mut draw_text_context,
             );
         }
     }
