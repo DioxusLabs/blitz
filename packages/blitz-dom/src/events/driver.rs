@@ -252,6 +252,7 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
                 let mut dom_event =
                     DomEvent::new(target, DomEventData::AppleStandardKeybinding(data));
                 self.run_default_action(&mut dom_event);
+                self.process_queue();
             }
         };
 
