@@ -77,6 +77,25 @@ jobs:
           version: 1.0
       - run: cargo test --workspace
 
+  test-blitz-net-features:
+    name: "Test blitz-net [cookies,cache,multipart]"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test -p blitz-net-tests --features cookies,cache
+      - run: cargo test -p blitz-net-tests --features cookies,multipart
+
+  test-blitz-net-windows:
+    name: "Test blitz-net (Windows)"
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test -p blitz-net-tests
+
   build-counter:
     name: "Build counter example"
     runs-on: ubuntu-latest
@@ -135,6 +154,10 @@ jobs:
           packages: libgtk-3-dev libxdo-dev
           version: 1.0
       - run: cargo clippy --workspace -- -D warnings
+      # Lint blitz-net-tests' feature-gated modules — cache and multipart are
+      # mutually incompatible in blitz-net, so they need separate passes.
+      - run: cargo clippy -p blitz-net-tests --tests --features cookies,cache -- -D warnings
+      - run: cargo clippy -p blitz-net-tests --tests --features cookies,multipart -- -D warnings
 
   doc:
     name: Documentation

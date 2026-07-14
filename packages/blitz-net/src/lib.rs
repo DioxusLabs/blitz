@@ -70,15 +70,21 @@ pub struct Provider {
 }
 impl Provider {
     pub fn new(waker: Option<Arc<dyn NetWaker>>) -> Self {
+        #[cfg(feature = "cache")]
+        return Self::with_cache_dir(waker, get_cache_path());
+
+        #[cfg(not(feature = "cache"))]
+        Self::build(waker)
+    }
+
+    #[cfg(feature = "cache")]
+    pub fn with_cache_dir(waker: Option<Arc<dyn NetWaker>>, cache_dir: std::path::PathBuf) -> Self {
         let builder = reqwest::Client::builder();
         #[cfg(feature = "cookies")]
         let builder = builder.cookie_store(true);
         let client = builder.build().unwrap();
 
-        #[cfg(feature = "cache")]
-        let cache_manager = CACacheManager::new(get_cache_path(), true);
-
-        #[cfg(feature = "cache")]
+        let cache_manager = CACacheManager::new(cache_dir, true);
         let client = reqwest_middleware::ClientBuilder::new(client)
             .with(Cache(HttpCache {
                 mode: CacheMode::Default,
@@ -92,8 +98,22 @@ impl Provider {
             client,
             waker,
             per_host_limits: Arc::new(Mutex::new(HashMap::new())),
-            #[cfg(feature = "cache")]
             cache_manager,
+        }
+    }
+
+    #[cfg(not(feature = "cache"))]
+    fn build(waker: Option<Arc<dyn NetWaker>>) -> Self {
+        let builder = reqwest::Client::builder();
+        #[cfg(feature = "cookies")]
+        let builder = builder.cookie_store(true);
+        let client = builder.build().unwrap();
+
+        let waker = waker.unwrap_or(Arc::new(DummyNetWaker));
+        Self {
+            client,
+            waker,
+            per_host_limits: Arc::new(Mutex::new(HashMap::new())),
         }
     }
     pub fn shared(waker: Option<Arc<dyn NetWaker>>) -> Arc<dyn NetProvider> {
@@ -129,7 +149,13 @@ impl Provider {
                 Ok((request.url.to_string(), Bytes::from(decoded.0)))
             }
             "file" => {
-                let file_content = std::fs::read(request.url.path())?;
+                let path = request.url.to_file_path().map_err(|_| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        format!("invalid file URL: {}", request.url),
+                    )
+                })?;
+                let file_content = std::fs::read(path)?;
                 Ok((request.url.to_string(), Bytes::from(file_content)))
             }
             _ => Self::fetch_http(client, request, per_host_limits).await,

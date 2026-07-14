@@ -1,0 +1,22 @@
+[package]
+name = "blitz-net-tests"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[features]
+default = []
+cookies = ["blitz-net/cookies"]
+cache = ["blitz-net/cache"]
+multipart = ["blitz-net/multipart"]
+
+[dev-dependencies]
+blitz-net = { path = "../../packages/blitz-net" }
+blitz-traits = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync", "time"] }
+wiremock = "0.6"
+tempfile = "3"
+futures-util = { workspace = true }
+url = { workspace = true }
+http = { workspace = true }
+bytes = { workspace = true }
