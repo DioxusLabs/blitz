@@ -255,6 +255,7 @@ dioxus-native = { workspace = true, features = [
     "floats",
     "svg",
     "prelude",
+    "net"
 ] }
 euclid = { workspace = true }
 reqwest = { workspace = true }
