@@ -101,7 +101,10 @@ pub fn TabStrip(
             }
             div {
                 class: "tab-new",
-                onclick: move |_| open_new_tab(home_url.clone()),
+                onclick: move |evt| {
+                    open_new_tab(home_url.clone());
+                    evt.prevent_default();
+                },
                 "+"
             }
         }

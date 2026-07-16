@@ -3,11 +3,13 @@
 //! pointer events. Mouse input must NOT generate touch events (and vice-versa),
 //! and default actions remain driven by the pointer events.
 
-use blitz_dom::{Document, DocumentConfig, EventDriver, EventHandler};
+use blitz_dom::{
+    DocumentConfig, EventContext, EventDriver, EventHandler, EventListenerId, EventListenerOptions,
+};
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::{
     events::{
-        BlitzPointerEvent, BlitzPointerId, DomEvent, EventState, MouseEventButton,
+        BlitzPointerEvent, BlitzPointerId, DomEvent, DomEventKind, EventState, MouseEventButton,
         MouseEventButtons, Point, PointerCoords, PointerDetails, UiEvent,
     },
     shell::{ColorScheme, Viewport},
@@ -57,18 +59,59 @@ struct RecordingHandler {
 }
 
 impl EventHandler for RecordingHandler {
-    fn handle_event(
-        &mut self,
-        _chain: &[usize],
+    fn handle_event_listener(
+        &self,
+        _listener: EventListenerId,
         event: &mut DomEvent,
-        _doc: &mut dyn Document,
+        _ctx: &mut EventContext<'_>,
         _event_state: &mut EventState,
     ) {
         self.events.borrow_mut().push(event.name().to_string());
     }
 }
 
+/// All the pointer/mouse/touch event kinds these tests are interested in observing
+const OBSERVED_KINDS: &[DomEventKind] = &[
+    DomEventKind::PointerMove,
+    DomEventKind::PointerDown,
+    DomEventKind::PointerUp,
+    DomEventKind::PointerCancel,
+    DomEventKind::PointerEnter,
+    DomEventKind::PointerLeave,
+    DomEventKind::PointerOver,
+    DomEventKind::PointerOut,
+    DomEventKind::MouseMove,
+    DomEventKind::MouseDown,
+    DomEventKind::MouseUp,
+    DomEventKind::MouseEnter,
+    DomEventKind::MouseLeave,
+    DomEventKind::MouseOver,
+    DomEventKind::MouseOut,
+    DomEventKind::TouchStart,
+    DomEventKind::TouchMove,
+    DomEventKind::TouchEnd,
+    DomEventKind::TouchCancel,
+    DomEventKind::Click,
+];
+
+/// Register a listener for every observed event kind on every element so that both
+/// bubbling and non-bubbling events are recorded no matter which node they target.
+fn register_listeners(doc: &mut HtmlDocument) {
+    for selector in ["html", "body", "#target"] {
+        let node_id = doc.query_selector(selector).unwrap().expect(selector);
+        for &kind in OBSERVED_KINDS {
+            doc.add_event_listener(
+                node_id,
+                kind,
+                EventListenerId(kind.discriminant() as u64),
+                EventListenerOptions::default(),
+            );
+        }
+    }
+}
+
 fn drive(doc: &mut HtmlDocument, events: impl IntoIterator<Item = UiEvent>) -> Vec<String> {
+    register_listeners(doc);
     let handler = RecordingHandler::default();
     let recorded = handler.events.clone();
     let mut driver = EventDriver::new(doc, handler);

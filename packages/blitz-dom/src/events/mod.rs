@@ -1,15 +1,18 @@
+mod callback;
 mod driver;
-mod focus;
 mod ime;
 mod keyboard;
+mod listeners;
 mod pointer;
 
 use crate::util::Point;
 use blitz_traits::events::{DomEvent, DomEventData, PointerCoords, UiEvent};
-pub use driver::{EventDriver, EventHandler, NoopEventHandler};
-use focus::generate_focus_events;
+pub use callback::{CallbackEventHandler, EventListenerCallback};
+pub use driver::{EventContext, EventDriver, EventHandler, NoopEventHandler};
 pub(crate) use ime::handle_ime_event;
 use keyboard::{KeyboardOrTextInputEvent, handle_key_or_input_event};
+pub(crate) use listeners::EventListenerRegistry;
+pub use listeners::{EventListener, EventListenerId, EventListenerOptions};
 pub(crate) use pointer::{DragMode, ScrollAnimationState};
 use pointer::{handle_click, handle_pointerdown, handle_pointermove, handle_pointerup};
 
@@ -93,11 +96,7 @@ fn map_dom_event_to_ui_event(
     }
 }
 
-pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
-    doc: &mut BaseDocument,
-    event: &mut DomEvent,
-    mut dispatch_event: F,
-) {
+pub(crate) fn handle_dom_event(doc: &mut BaseDocument, event: &mut DomEvent) {
     let target_node_id = event.target;
     let node = &mut doc.nodes[target_node_id];
     let pos = node.absolute_position(0.0, 0.0);
@@ -130,13 +129,7 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
         }
 
         if set_focus {
-            generate_focus_events(
-                doc,
-                &mut |doc| {
-                    doc.set_focus_to(target_node_id);
-                },
-                &mut dispatch_event,
-            );
+            doc.set_focus_to(target_node_id);
         }
 
         return;
@@ -160,13 +153,7 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
         }
 
         if set_focus {
-            generate_focus_events(
-                doc,
-                &mut |doc| {
-                    doc.set_focus_to(target_node_id);
-                },
-                &mut dispatch_event,
-            );
+            doc.set_focus_to(target_node_id);
         }
 
         return;
@@ -174,7 +161,7 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
 
     match &event.data {
         DomEventData::PointerMove(event) => {
-            let changed = handle_pointermove(doc, target_node_id, event, dispatch_event);
+            let changed = handle_pointermove(doc, target_node_id, event);
             if changed {
                 doc.shell_provider.request_redraw();
             }
@@ -190,14 +177,13 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
                 event.page_y(),
                 event.button,
                 event.mods,
-                &mut dispatch_event,
             );
         }
         DomEventData::MouseDown(_) => {
             // Do nothing (handled in PointerDown)
         }
         DomEventData::PointerUp(event) => {
-            handle_pointerup(doc, target_node_id, event, dispatch_event);
+            handle_pointerup(doc, target_node_id, event);
         }
         DomEventData::MouseUp(_) => {
             // Do nothing (handled in PointerUp)
@@ -206,14 +192,13 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
             // Do nothing (active state is reset in the event driver)
         }
         DomEventData::Click(event) => {
-            handle_click(doc, target_node_id, event, &mut dispatch_event);
+            handle_click(doc, target_node_id, event);
         }
         DomEventData::KeyDown(event) => {
             handle_key_or_input_event(
                 doc,
                 target_node_id,
                 KeyboardOrTextInputEvent::KeyPress(event.clone()),
-                dispatch_event,
             );
         }
         DomEventData::KeyPress(_) => {
@@ -227,11 +212,10 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
                 doc,
                 target_node_id,
                 KeyboardOrTextInputEvent::AppleStandardKeyBinding(event.clone()),
-                dispatch_event,
             );
         }
         DomEventData::Ime(event) => {
-            handle_ime_event(doc, event.clone(), dispatch_event);
+            handle_ime_event(doc, event.clone());
         }
         DomEventData::Input(_) => {
             // Do nothing (no default action)
@@ -282,7 +266,7 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
             // Handled elsewhere
         }
         DomEventData::Wheel(event) => {
-            handle_wheel(doc, target_node_id, event.clone(), dispatch_event);
+            handle_wheel(doc, target_node_id, event.clone());
         }
         DomEventData::Focus(_) => {
             // Do nothing (no default action)
