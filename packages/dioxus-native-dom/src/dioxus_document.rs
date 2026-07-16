@@ -353,3 +353,51 @@ impl EventHandler for DioxusEventHandler<'_> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use blitz_dom::DocumentConfig;
+    use dioxus::prelude::*;
+    use dioxus_core::ScopeId;
+    use std::cell::RefCell;
+    use std::collections::HashMap;
+
+    #[test]
+    // Regression test for a panic. The keyed `div`s are re-ordered as the (unordered) `HashMap` grows,
+    // which previously caused a crash when moving keyed nodes within their parent.
+    fn keyed_nodes_do_not_crash() {
+        type SharedData = Rc<RefCell<HashMap<usize, usize>>>;
+        let data: SharedData = Rc::new(RefCell::new(HashMap::new()));
+
+        fn app(data: SharedData) -> Element {
+            let entries: Vec<usize> = data.borrow().keys().copied().collect();
+            rsx!(
+                for id in entries {
+                    div {
+                        key: "item_{id}",
+                        "{id}"
+                    }
+                }
+            )
+        }
+
+        let vdom = VirtualDom::new_with_props(app, Rc::clone(&data));
+        let mut doc = DioxusDocument::new(vdom, DocumentConfig::default());
+        doc.initial_build();
+
+        // Mirror `examples/crash.rs`: incrementally insert 100 items, flushing
+        // the resulting mutations after each insert.
+        for i in 0..100 {
+            data.borrow_mut().insert(i, i);
+            doc.vdom.mark_dirty(ScopeId::APP);
+            doc.poll(None);
+        }
+
+        // The `<main>` element should end up with exactly one keyed `div` per
+        // inserted item, and applying the mutations must not have panicked.
+        let inner = doc.inner.borrow();
+        let main = inner.get_node(doc.main_element_id).unwrap();
+        assert_eq!(main.children.len(), 100);
+    }
+}
