@@ -7666,6 +7666,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "transparent"
+version = "0.1.0"
+dependencies = [
+ "android-activity",
+ "blitz-dom",
+ "blitz-paint",
+ "blitz-traits",
+ "dioxus-native",
+ "idna_adapter",
+]
+
+[[package]]
 name = "try-lock"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
