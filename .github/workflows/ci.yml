@@ -215,7 +215,7 @@ jobs:
         if: ${{ matrix.platform.os == 'ubuntu-24.04' || matrix.platform.os == 'ubuntu-24.04-arm' }}
         uses: jlumbroso/free-disk-space@v1.3.1
         with: # speed things up a bit
-          android: false
+          android: ${{ matrix.platform.target != 'aarch64-linux-android' }}
           large-packages: false
           swap-storage: false
 
