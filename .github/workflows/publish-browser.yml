@@ -144,12 +144,6 @@ jobs:
           large-packages: false
           swap-storage: false
 
-      - uses: awalsh128/cache-apt-pkgs-action@latest
-        if: ${{ startsWith(matrix.platform.os, 'ubuntu') }}
-        with:
-          packages: libgtk-3-dev libxdo-dev libwebkit2gtk-4.1-dev build-essential curl wget file libssl-dev libayatana-appindicator3-dev librsvg2-dev
-          version: 1.0
-
       - name: Bundle browser
         run: dx bundle --package browser --release --profile production --target ${{ matrix.platform.target }} --locked --verbose --trace ${{ matrix.platform.args }}
         env:

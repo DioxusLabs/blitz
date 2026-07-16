@@ -34,7 +34,7 @@ jobs:
       - run: perl -pi.bak -e 's/opt-level = 2/opt-level = 0/g' Cargo.toml
       - uses: awalsh128/cache-apt-pkgs-action@latest
         with:
-          packages: libgtk-3-dev libxdo-dev
+          packages: libfontconfig-dev
           version: 1.0
       - run: cargo build --workspace
 
@@ -47,7 +47,7 @@ jobs:
       - run: perl -pi.bak -e 's/opt-level = 2/opt-level = 0/g' Cargo.toml
       - uses: awalsh128/cache-apt-pkgs-action@latest
         with:
-          packages: libgtk-3-dev libxdo-dev
+          packages: libfontconfig-dev
           version: 1.0
       - run: cargo build --workspace
 
@@ -60,7 +60,7 @@ jobs:
       - run: perl -pi.bak -e 's/opt-level = 2/opt-level = 0/g' Cargo.toml
       - uses: awalsh128/cache-apt-pkgs-action@latest
         with:
-          packages: libgtk-3-dev libxdo-dev
+          packages: libfontconfig-dev
           version: 1.0
       - run: cargo build -p rdme --features incremental
 
@@ -73,7 +73,7 @@ jobs:
       - run: perl -pi.bak -e 's/opt-level = 2/opt-level = 0/g' Cargo.toml
       - uses: awalsh128/cache-apt-pkgs-action@latest
         with:
-          packages: libgtk-3-dev libxdo-dev
+          packages: libfontconfig-dev
           version: 1.0
       - run: cargo test --workspace
 
@@ -86,7 +86,7 @@ jobs:
       - run: perl -pi.bak -e 's/opt-level = 2/opt-level = 0/g' Cargo.toml
       - uses: awalsh128/cache-apt-pkgs-action@latest
         with:
-          packages: libgtk-3-dev libxdo-dev
+          packages: libfontconfig-dev
           version: 1.0
       - run: cargo build -p counter
 
@@ -132,7 +132,7 @@ jobs:
       - run: perl -pi.bak -e 's/opt-level = 2/opt-level = 0/g' Cargo.toml
       - uses: awalsh128/cache-apt-pkgs-action@latest
         with:
-          packages: libgtk-3-dev libxdo-dev
+          packages: libfontconfig-dev
           version: 1.0
       - run: cargo clippy --workspace -- -D warnings
 
