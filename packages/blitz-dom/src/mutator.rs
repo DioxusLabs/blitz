@@ -134,7 +134,7 @@ impl DocumentMutator<'_> {
         let mut data = ElementData::new(name, attrs);
         data.flush_style_attribute(self.doc.guard(), &self.doc.url.url_extra_data());
 
-        let id = self.doc.create_node(NodeData::Element(data));
+        let id = self.doc.create_node(NodeData::Element(Box::new(data)));
         let node = self.doc.get_node_mut(id).unwrap();
 
         // Initialise style data

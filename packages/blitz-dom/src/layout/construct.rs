@@ -125,7 +125,10 @@ impl LayoutChildren {
             ns: ns!(html),
             local: local_name!("div"),
         };
-        let node_id = doc.create_node(NodeData::AnonymousBlock(ElementData::new(NAME, Vec::new())));
+        let node_id = doc.create_node(NodeData::AnonymousBlock(Box::new(ElementData::new(
+            NAME,
+            Vec::new(),
+        ))));
 
         // Set style data
         let parent_style = doc.nodes[container_node_id].primary_styles().unwrap();
@@ -619,9 +622,8 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: NodeId) {
 
         // Create pseudo element if it should exist but doesn't
         if let (None, Some(pe_style)) = (pe_node_id, &pe_style) {
-            let new_node_id = doc.create_node(NodeData::AnonymousBlock(ElementData::new(
-                DUMMY_NAME,
-                Vec::new(),
+            let new_node_id = doc.create_node(NodeData::AnonymousBlock(Box::new(
+                ElementData::new(DUMMY_NAME, Vec::new()),
             )));
             doc.nodes[new_node_id].parent = Some(node_id);
             doc.nodes[new_node_id].layout_parent.set(Some(node_id));

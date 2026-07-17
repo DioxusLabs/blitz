@@ -507,10 +507,10 @@ pub enum NodeData {
     Document,
 
     /// An element with attributes.
-    Element(ElementData),
+    Element(Box<ElementData>),
 
     /// An anonymous block box
-    AnonymousBlock(ElementData),
+    AnonymousBlock(Box<ElementData>),
 
     /// A text node.
     Text(TextNodeData),
