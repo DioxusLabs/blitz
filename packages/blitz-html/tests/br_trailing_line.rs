@@ -42,8 +42,8 @@ fn negative_margin_bottom_pulls_up_sibling() {
     );
     let head = doc.query_selector("#head").unwrap().unwrap();
     let comment = doc.query_selector("#comment").unwrap().unwrap();
-    let head_layout = doc.get_node(head).unwrap().final_layout;
-    let comment_layout = doc.get_node(comment).unwrap().final_layout;
+    let head_layout = doc.get_node(head).unwrap().final_layout();
+    let comment_layout = doc.get_node(comment).unwrap().final_layout();
     println!(
         "head: y={} h={}",
         head_layout.location.y, head_layout.size.height
@@ -64,8 +64,8 @@ fn hn_comhead_structure() {
     );
     let head = doc.query_selector("#head").unwrap().unwrap();
     let comment = doc.query_selector("#comment").unwrap().unwrap();
-    let head_layout = doc.get_node(head).unwrap().final_layout;
-    let comment_layout = doc.get_node(comment).unwrap().final_layout;
+    let head_layout = doc.get_node(head).unwrap().final_layout();
+    let comment_layout = doc.get_node(comment).unwrap().final_layout();
     println!(
         "head: y={} h={} margin={:?}",
         head_layout.location.y, head_layout.size.height, head_layout.margin
@@ -89,7 +89,7 @@ fn br_with_trailing_whitespace_is_single_line() {
     );
     let h = |sel: &str| {
         let id = doc.query_selector(sel).unwrap().unwrap();
-        doc.get_node(id).unwrap().unrounded_layout.size.height
+        doc.get_node(id).unwrap().unrounded_layout().size.height
     };
     let one_line = h("#one-line");
     println!(

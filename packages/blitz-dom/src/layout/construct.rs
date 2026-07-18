@@ -149,7 +149,9 @@ impl LayoutChildren {
         stylo_element_data.styles.primary = Some(style);
         stylo_element_data.set_restyled();
 
-        *doc.nodes[node_id].stylo_element_data.ensure_init_mut() = stylo_element_data;
+        *doc.nodes[node_id]
+            .stylo_element_data_mut()
+            .ensure_init_mut() = stylo_element_data;
 
         if doc.nodes[container_node_id]
             .flags
@@ -168,14 +170,14 @@ impl LayoutChildren {
 }
 
 fn push_children_and_pseudos(layout_children: &mut ThinVec<NodeId>, node: &Node) {
-    if let Some(before) = node.before {
+    if let Some(before) = node.before() {
         layout_children.push(before);
     }
     layout_children.extend(node.children.iter().copied().filter(|child_id| {
         let child_node = node.with(*child_id);
         child_node.data.kind() != NodeKind::Comment
     }));
-    if let Some(after) = node.after {
+    if let Some(after) = node.after() {
         layout_children.push(after);
     }
 }
@@ -188,7 +190,7 @@ fn push_hoisted_children_and_pseudos(
     container_node_id: NodeId,
     out: &mut LayoutChildren,
 ) {
-    if let Some(before) = doc.nodes[container_node_id].before {
+    if let Some(before) = doc.nodes[container_node_id].before() {
         out.push(before, doc);
     }
     // Take children array from node to avoid borrow checker issues.
@@ -206,20 +208,20 @@ fn push_hoisted_children_and_pseudos(
         }
     }
     doc.nodes[container_node_id].children = children;
-    if let Some(after) = doc.nodes[container_node_id].after {
+    if let Some(after) = doc.nodes[container_node_id].after() {
         out.push(after, doc);
     }
 }
 
 fn push_non_whitespace_children_and_pseudos(layout_children: &mut ThinVec<NodeId>, node: &Node) {
-    if let Some(before) = node.before {
+    if let Some(before) = node.before() {
         layout_children.push(before);
     }
     layout_children.extend(node.children.iter().copied().filter(|child_id| {
         let child_node = node.with(*child_id);
         !child_node.is_whitespace_node() && child_node.data.kind() != NodeKind::Comment
     }));
-    if let Some(after) = node.after {
+    if let Some(after) = node.after() {
         layout_children.push(after);
     }
 }
@@ -420,7 +422,7 @@ pub(crate) fn collect_layout_children(
     // Skip further construction if the node has no children or psuedo-children
     {
         let node = &doc.nodes[container_node_id];
-        if node.children.is_empty() && node.before.is_none() && node.after.is_none() {
+        if node.children.is_empty() && node.before().is_none() && node.after().is_none() {
             return;
         }
     }
@@ -552,11 +554,11 @@ pub(crate) fn collect_layout_children(
                 .downcast_element_mut()
                 .unwrap()
                 .special_data = data;
-            if let Some(before) = doc.nodes[container_node_id].before {
+            if let Some(before) = doc.nodes[container_node_id].before() {
                 out.push(before, doc);
             }
             out.extend(&tlayout_children, doc);
-            if let Some(after) = doc.nodes[container_node_id].after {
+            if let Some(after) = doc.nodes[container_node_id].after() {
                 out.push(after, doc);
             }
         }
@@ -592,11 +594,11 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: NodeId) {
     let (before_style, after_style, before_node_id, after_node_id) = {
         let node = &doc.nodes[node_id];
 
-        let before_node_id = node.before;
-        let after_node_id = node.after;
+        let before_node_id = node.before();
+        let after_node_id = node.after();
 
         // Note: yes these are kinda backwards
-        let style_data = node.stylo_element_data.get();
+        let style_data = node.stylo_element_data_opt().and_then(|s| s.get());
         let before_style = style_data
             .as_ref()
             .and_then(|d| d.styles.pseudos.as_array()[1].clone());
@@ -645,7 +647,9 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: NodeId) {
             element_data.styles.primary = Some(pe_style.clone());
             element_data.set_restyled();
             element_data.damage = ALL_DAMAGE;
-            *doc.nodes[new_node_id].stylo_element_data.ensure_init_mut() = element_data;
+            *doc.nodes[new_node_id]
+                .stylo_element_data_mut()
+                .ensure_init_mut() = element_data;
 
             let node = &mut doc.nodes[node_id];
             node.set_pe_by_index(idx, Some(new_node_id));
@@ -691,7 +695,9 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: NodeId) {
                 (None, None) => {}
             }
 
-            let mut node_styles = doc.nodes[pe_node_id].stylo_element_data.get_mut();
+            let mut node_styles = doc.nodes[pe_node_id]
+                .stylo_element_data_opt_mut()
+                .and_then(|s| s.get_mut());
             let node_styles = &mut node_styles.as_mut().unwrap();
             node_styles.damage.insert(ALL_DAMAGE);
             let primary_styles = &mut node_styles.styles.primary;
@@ -905,7 +911,7 @@ pub(crate) fn find_inline_layout_embedded_boxes(
             NodeData::Comment | NodeData::Text(_) => {
                 node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
             }
-            NodeData::Document => unreachable!(),
+            NodeData::Document(_) => unreachable!(),
         }
     }
 }
@@ -963,7 +969,7 @@ pub(crate) fn build_inline_layout_into(
         }
     };
 
-    if let Some(before_id) = root_node.before {
+    if let Some(before_id) = root_node.before() {
         build_inline_layout_recursive(
             &mut builder,
             nodes,
@@ -985,7 +991,7 @@ pub(crate) fn build_inline_layout_into(
             root_line_height,
         );
     }
-    if let Some(after_id) = root_node.after {
+    if let Some(after_id) = root_node.after() {
         build_inline_layout_recursive(
             &mut builder,
             nodes,
@@ -1117,7 +1123,7 @@ pub(crate) fn build_inline_layout_into(
 
                             builder.push_style_span(style);
 
-                            if let Some(before_id) = node.before {
+                            if let Some(before_id) = node.before() {
                                 build_inline_layout_recursive(
                                     builder,
                                     nodes,
@@ -1140,7 +1146,7 @@ pub(crate) fn build_inline_layout_into(
                                     root_line_height,
                                 );
                             }
-                            if let Some(after_id) = node.after {
+                            if let Some(after_id) = node.after() {
                                 build_inline_layout_recursive(
                                     builder,
                                     nodes,
@@ -1189,7 +1195,7 @@ pub(crate) fn build_inline_layout_into(
             NodeData::Comment => {
                 // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
             }
-            NodeData::Document => unreachable!(),
+            NodeData::Document(_) => unreachable!(),
         }
     }
 }

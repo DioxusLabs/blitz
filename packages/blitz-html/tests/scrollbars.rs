@@ -96,7 +96,7 @@ fn stale_scroll_offset_alone_paints_no_thumb() {
     );
     doc.resolve(0.0);
     let scroller = doc.query_selector("#scroller").unwrap().expect("#scroller");
-    doc.get_node_mut(scroller).unwrap().scroll_offset.y = 50.0;
+    doc.get_node_mut(scroller).unwrap().scroll_offset_mut().y = 50.0;
     let buffer = render_to_buffer::<VelloCpuImageRenderer, _>(
         |scene| paint_scene(scene, &mut doc, 1.0, 100, 100, 0, 0),
         100,

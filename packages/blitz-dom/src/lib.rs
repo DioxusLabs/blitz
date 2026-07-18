@@ -81,7 +81,7 @@ pub use markup5ever::{
     namespace_prefix, namespace_url, ns,
 };
 pub use mutator::DocumentMutator;
-pub use node::{Attribute, ElementData, Node, NodeData, TextNodeData};
+pub use node::{Attribute, DocumentData, ElementData, Node, NodeData, TextNodeData};
 pub use parley::FontContext;
 pub use tree::NodeTree;
 

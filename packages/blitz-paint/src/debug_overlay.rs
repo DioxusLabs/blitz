@@ -23,7 +23,7 @@ pub(crate) fn render_debug_overlay(
         padding,
         margin,
         ..
-    } = node.final_layout;
+    } = *node.final_layout();
     let taffy::Size { width, height } = size;
 
     let padding_border = padding + border;
@@ -35,15 +35,15 @@ pub(crate) fn render_debug_overlay(
     let content_width = width - padding_border.left - padding_border.right;
     let content_height = height - padding_border.top - padding_border.bottom;
 
-    let taffy::Point { x, y } = node.final_layout.location;
+    let taffy::Point { x, y } = node.final_layout().location;
 
     let mut abs_x = x;
     let mut abs_y = y;
     while let Some(parent_id) = node.layout_parent.get() {
         node = &dom.as_ref().tree()[parent_id];
-        let taffy::Point { x, y } = node.final_layout.location;
-        abs_x += x - node.scroll_offset.x as f32;
-        abs_y += y - node.scroll_offset.y as f32;
+        let taffy::Point { x, y } = node.final_layout().location;
+        abs_x += x - node.scroll_offset().x as f32;
+        abs_y += y - node.scroll_offset().y as f32;
     }
 
     abs_x -= viewport_scroll.x as f32;

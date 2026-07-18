@@ -53,14 +53,14 @@ fn after_pseudo_styles_after_hover(incremental: bool) -> (f32, f32) {
     let after_id = doc
         .get_node(arrow_id)
         .unwrap()
-        .after
+        .after()
         .expect("::after node should exist");
     let after = doc.get_node(after_id).unwrap();
     let styles = after
         .primary_styles()
         .expect("::after node should have styles");
     let color_alpha = styles.clone_color().alpha;
-    let x = after.final_layout.location.x;
+    let x = after.final_layout().location.x;
     (color_alpha, x)
 }
 

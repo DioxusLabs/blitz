@@ -484,7 +484,7 @@ impl BaseDocument {
         };
 
         // Initialise document with root Document node
-        doc.root_node_id = doc.create_node(NodeData::Document);
+        doc.root_node_id = doc.create_node(NodeData::Document(Box::default()));
         doc.root_node_mut().flags.insert(NodeFlags::IS_IN_DOCUMENT);
 
         match config.ua_stylesheets {
@@ -507,7 +507,7 @@ impl BaseDocument {
             },
             ..Default::default()
         };
-        let stylo_data = &mut doc.root_node_mut().stylo_element_data;
+        let stylo_data = doc.root_node_mut().stylo_element_data_mut();
         *stylo_data.ensure_init_mut() = stylo_element_data;
 
         doc
@@ -812,10 +812,10 @@ impl BaseDocument {
         let mut node = self.nodes.remove(node_id);
         if let Some(node) = &mut node {
             on_drop(node_id);
-            if let Some(before) = node.before {
+            if let Some(before) = node.before() {
                 self.drop_node_ignoring_parent_with(before, on_drop);
             }
-            if let Some(after) = node.after {
+            if let Some(after) = node.after() {
                 self.drop_node_ignoring_parent_with(after, on_drop);
             }
 
@@ -1182,7 +1182,7 @@ impl BaseDocument {
                         SpecialElementData::Image(Box::new(image.clone()));
 
                     // Clear layout cache
-                    node.cache.clear();
+                    node.cache_mut().clear();
                     node.insert_damage(ALL_DAMAGE);
                 }
                 ImageType::Background(idx) | ImageType::Mask(idx) => {
@@ -1216,8 +1216,8 @@ impl BaseDocument {
         }
 
         let opaque_node_id = TNode::opaque(&&*node);
-        node.has_snapshot = true;
-        node.snapshot_handled
+        node.set_has_snapshot(true);
+        node.snapshot_handled()
             .store(false, std::sync::atomic::Ordering::SeqCst);
 
         // TODO: handle invalidations other than hover
@@ -1262,7 +1262,7 @@ impl BaseDocument {
             self.snapshots.insert(
                 opaque_node_id,
                 ServoElementSnapshot {
-                    state: Some(node.element_state),
+                    state: Some(*node.element_state()),
                     attrs,
                     changed_attrs,
                     class_changed: true,
@@ -1731,7 +1731,7 @@ impl BaseDocument {
         if self.try_root_element().is_some_and(|el| el.id == node_id) {
             let has_changed = self.scroll_viewport_by_has_changed(x, y);
             if has_changed {
-                let layout = self.root_element().final_layout;
+                let layout = *self.root_element().final_layout();
                 let scale = self.viewport.scale() as f64;
                 let event = BlitzScrollEvent {
                     scroll_top: self.viewport_scroll.y,
@@ -1758,8 +1758,8 @@ impl BaseDocument {
             .is_some_and(|el| el.text_input_data().is_some())
         {
             let parent = node.parent;
-            let content_box_width = node.final_layout.content_box_width();
-            let content_box_height = node.final_layout.content_box_height();
+            let content_box_width = node.final_layout().content_box_width();
+            let content_box_height = node.final_layout().content_box_height();
             let input = node
                 .element_data_mut()
                 .and_then(|el| el.text_input_data_mut())
@@ -1801,15 +1801,15 @@ impl BaseDocument {
             })
             .unwrap_or((false, false));
 
-        let initial = node.scroll_offset;
-        let new_x = node.scroll_offset.x - x;
-        let new_y = node.scroll_offset.y - y;
+        let initial = *node.scroll_offset();
+        let new_x = node.scroll_offset().x - x;
+        let new_y = node.scroll_offset().y - y;
 
         let mut bubble_x = 0.0;
         let mut bubble_y = 0.0;
 
-        let scroll_width = node.final_layout.scroll_width() as f64;
-        let scroll_height = node.final_layout.scroll_height() as f64;
+        let scroll_width = node.final_layout().scroll_width() as f64;
+        let scroll_height = node.final_layout().scroll_height() as f64;
 
         // Handle sub document case
         if let Some(mut sub_doc) = node.subdoc_mut().map(|doc| doc.inner_mut()) {
@@ -1828,33 +1828,33 @@ impl BaseDocument {
             bubble_x = x
         } else if new_x < 0.0 {
             bubble_x = -new_x;
-            node.scroll_offset.x = 0.0;
+            node.scroll_offset_mut().x = 0.0;
         } else if new_x > scroll_width {
             bubble_x = scroll_width - new_x;
-            node.scroll_offset.x = scroll_width;
+            node.scroll_offset_mut().x = scroll_width;
         } else {
-            node.scroll_offset.x = new_x;
+            node.scroll_offset_mut().x = new_x;
         }
 
         if !can_y_scroll {
             bubble_y = y
         } else if new_y < 0.0 {
             bubble_y = -new_y;
-            node.scroll_offset.y = 0.0;
+            node.scroll_offset_mut().y = 0.0;
         } else if new_y > scroll_height {
             bubble_y = scroll_height - new_y;
-            node.scroll_offset.y = scroll_height;
+            node.scroll_offset_mut().y = scroll_height;
         } else {
-            node.scroll_offset.y = new_y;
+            node.scroll_offset_mut().y = new_y;
         }
 
-        let has_changed = node.scroll_offset != initial;
+        let has_changed = *node.scroll_offset() != initial;
 
         if has_changed {
-            let layout = node.final_layout;
+            let layout = *node.final_layout();
             let event = BlitzScrollEvent {
-                scroll_top: node.scroll_offset.y,
-                scroll_left: node.scroll_offset.x,
+                scroll_top: node.scroll_offset().y,
+                scroll_left: node.scroll_offset().x,
                 scroll_width: layout.scroll_width() as i32,
                 scroll_height: layout.scroll_height() as i32,
                 client_width: layout.size.width as i32,
@@ -1890,7 +1890,7 @@ impl BaseDocument {
         // The viewport scrolls the root element's scrollable overflow, which includes both
         // the root element itself and any content which overflows it (e.g. when the root
         // element has a fixed height but its content is taller).
-        let root_layout = &self.root_element().final_layout;
+        let root_layout = self.root_element().final_layout();
         let content_width = root_layout.size.width.max(root_layout.content_size.width) as f64;
         let content_height = root_layout.size.height.max(root_layout.content_size.height) as f64;
         let new_scroll = (self.viewport_scroll.x - x, self.viewport_scroll.y - y);
@@ -1998,8 +1998,8 @@ impl BaseDocument {
         Some(BoundingRect {
             x: pos.x as f64 - self.viewport_scroll.x,
             y: pos.y as f64 - self.viewport_scroll.y,
-            width: node.unrounded_layout.size.width as f64,
-            height: node.unrounded_layout.size.height as f64,
+            width: node.unrounded_layout().size.width as f64,
+            height: node.unrounded_layout().size.height as f64,
         })
     }
 
@@ -2040,8 +2040,8 @@ impl BaseDocument {
             return;
         };
 
-        let content_box_width = node.final_layout.content_box_width();
-        let content_box_height = node.final_layout.content_box_height();
+        let content_box_width = node.final_layout().content_box_width();
+        let content_box_height = node.final_layout().content_box_height();
 
         if let Some(text_input) = node
             .element_data_mut()

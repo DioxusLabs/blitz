@@ -100,7 +100,7 @@ async fn main() {
     timer.time("Resolved styles and layout");
 
     // Determine height to render
-    let computed_height = document.as_ref().root_element().final_layout.size.height;
+    let computed_height = document.as_ref().root_element().final_layout().size.height;
     let render_width = (width as f64 * scale) as u32;
     let render_height = ((computed_height as f64).max(height as f64).min(4000.0) * scale) as u32;
 

@@ -99,7 +99,7 @@ pub fn walk_tree(indent: usize, node: &Node) {
     print!("{}", " ".repeat(indent));
     let id = node.id;
     match &node.data {
-        NodeData::Document => println!("#Document {id}"),
+        NodeData::Document(_) => println!("#Document {id}"),
 
         NodeData::Text(data) => {
             if data.content.chars().all(|c| c.is_ascii_whitespace()) {

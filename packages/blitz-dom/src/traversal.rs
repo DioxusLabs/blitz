@@ -23,8 +23,8 @@ macro_rules! iter_children_and_pseudos {
         let node = &mut $node_expr;
 
         // Copy before, after, and take children
-        let before = node.before;
-        let after = node.after;
+        let before = node.before();
+        let after = node.after();
         let children = core::mem::take(&mut node.children);
 
         if let Some(before) = before {
@@ -102,7 +102,7 @@ impl Iterator for AncestorTraverser<'_> {
 impl Node {
     #[allow(dead_code)]
     pub(crate) fn should_traverse_layout_children(&mut self) -> bool {
-        let prefer_layout_children = match self.display_constructed_as.inside() {
+        let prefer_layout_children = match self.display_constructed_as().inside() {
             DisplayInside::None => return false,
             DisplayInside::Contents => false,
             DisplayInside::Flow | DisplayInside::FlowRoot | DisplayInside::TableCell => {
@@ -200,19 +200,21 @@ impl BaseDocument {
         node_id: NodeId,
         mut cb: impl FnMut(NodeId, &mut BaseDocument),
     ) {
-        let before = self.nodes[node_id].before.take();
+        let before = self.nodes[node_id].before();
+        self.nodes[node_id].set_pe_by_index(1, None);
         if let Some(before_node_id) = before {
             cb(before_node_id, self)
         }
-        self.nodes[node_id].before = before;
+        self.nodes[node_id].set_pe_by_index(1, before);
 
         self.iter_children_mut(node_id, &mut cb);
 
-        let after = self.nodes[node_id].after.take();
+        let after = self.nodes[node_id].after();
+        self.nodes[node_id].set_pe_by_index(0, None);
         if let Some(after_node_id) = after {
             cb(after_node_id, self)
         }
-        self.nodes[node_id].after = after;
+        self.nodes[node_id].set_pe_by_index(0, after);
     }
 
     pub fn next_node(&self, start: &Node, mut filter: impl FnMut(&Node) -> bool) -> Option<NodeId> {

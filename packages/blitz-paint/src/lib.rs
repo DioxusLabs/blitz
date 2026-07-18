@@ -114,14 +114,14 @@ fn process_custom_widget_node(
     use blitz_dom::node::{CustomWidgetStatus, ProxyRenderContext};
 
     let node = doc.get_node_mut(node_id)?;
-    let width = (node.final_layout.size.width as f64 * scale) as u32;
-    let height = (node.final_layout.size.height as f64 * scale) as u32;
+    let width = (node.final_layout().size.width as f64 * scale) as u32;
+    let height = (node.final_layout().size.height as f64 * scale) as u32;
 
     if width == 0 || height == 0 {
         return None;
     }
 
-    let style = node.stylo_element_data.primary_styles()?;
+    let style = (*node.stylo_element_data().primary_styles()?).clone();
     let element = node.data.downcast_element_mut()?;
     let widget_data = element.custom_widget_data_mut()?;
 

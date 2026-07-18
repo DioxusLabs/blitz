@@ -27,7 +27,7 @@ impl RenderSize {
         match self {
             RenderSize::Viewport => doc.viewport().window_size,
             RenderSize::FullDocumentHeight => {
-                let root_element_size = doc.root_element().final_layout.size;
+                let root_element_size = doc.root_element().final_layout().size;
                 (
                     root_element_size.width as u32,
                     root_element_size.height as u32,

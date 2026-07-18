@@ -42,7 +42,7 @@ fn h1_font_size(doc: &HtmlDocument) -> f32 {
 
 fn box_size(doc: &HtmlDocument) -> (f32, f32) {
     let box_id = doc.query_selector("#box").unwrap().unwrap();
-    let layout = &doc.get_node(box_id).unwrap().final_layout;
+    let layout = &doc.get_node(box_id).unwrap().final_layout();
     (layout.size.width, layout.size.height)
 }
 

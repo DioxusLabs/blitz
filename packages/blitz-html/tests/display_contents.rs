@@ -33,8 +33,8 @@ fn contents_block_children_stack_and_fill_width() {
     );
     let a = doc.query_selector("#a").unwrap().expect("#a not found");
     let b = doc.query_selector("#b").unwrap().expect("#b not found");
-    let la = doc.get_node(a).unwrap().final_layout;
-    let lb = doc.get_node(b).unwrap().final_layout;
+    let la = doc.get_node(a).unwrap().final_layout();
+    let lb = doc.get_node(b).unwrap().final_layout();
     assert_eq!(
         (la.size.width, la.size.height),
         (300.0, 50.0),
@@ -73,8 +73,8 @@ fn scroller_wrapping_contents_gets_full_scroll_size() {
         .query_selector("#tall")
         .unwrap()
         .expect("#tall not found");
-    let ls = doc.get_node(scroller).unwrap().final_layout;
-    let lt = doc.get_node(tall).unwrap().final_layout;
+    let ls = doc.get_node(scroller).unwrap().final_layout();
+    let lt = doc.get_node(tall).unwrap().final_layout();
     assert_eq!(
         (lt.size.width, lt.size.height),
         (800.0, 1000.0),
@@ -102,8 +102,8 @@ fn contents_in_flex_container_hoists_children_as_flex_items() {
     );
     let x = doc.query_selector("#x").unwrap().expect("#x not found");
     let y = doc.query_selector("#y").unwrap().expect("#y not found");
-    let lx = doc.get_node(x).unwrap().final_layout;
-    let ly = doc.get_node(y).unwrap().final_layout;
+    let lx = doc.get_node(x).unwrap().final_layout();
+    let ly = doc.get_node(y).unwrap().final_layout();
     assert_eq!(
         (lx.size.width, lx.size.height),
         (300.0, 40.0),
@@ -137,7 +137,7 @@ fn abspos_child_hoisted_through_contents_stretches() {
         .query_selector("#page")
         .unwrap()
         .expect("#page not found");
-    let layout = doc.get_node(page).unwrap().final_layout;
+    let layout = doc.get_node(page).unwrap().final_layout();
     assert_eq!(
         (layout.size.width, layout.size.height),
         (300.0, 200.0),

@@ -69,9 +69,9 @@ pub fn process_attr_test(
 }
 
 pub fn check_node_layout(node: &Node) -> Vec<String> {
-    let layout = &node.final_layout;
+    let layout = node.final_layout();
     let parent_border = if let Some(parent_id) = node.parent {
-        node.with(parent_id).final_layout.border
+        node.with(parent_id).final_layout().border
     } else {
         taffy::Rect::ZERO
     };
@@ -166,9 +166,9 @@ fn total_offset(node: &Node) -> (f32, f32) {
     let mut y = 0.0;
     let mut current = node;
     loop {
-        let layout = &current.final_layout;
+        let layout = current.final_layout();
         let parent_border = if let Some(parent_id) = current.parent {
-            current.with(parent_id).final_layout.border
+            current.with(parent_id).final_layout().border
         } else {
             taffy::Rect::ZERO
         };

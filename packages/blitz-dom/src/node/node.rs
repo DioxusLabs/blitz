@@ -38,7 +38,7 @@ use taffy::{
 use thin_vec::ThinVec;
 
 use super::stylo_data::StyloData;
-use super::{Attribute, ElementData};
+use super::{Attribute, DocumentData, ElementData};
 
 #[derive(Clone, Copy)]
 enum OutputStyle {
@@ -109,62 +109,182 @@ pub struct Node {
     // Flags
     pub flags: NodeFlags,
 
-    /// Node type (Element, TextNode, etc) specific data
+    /// Node type (Element, TextNode, etc) specific data.
+    ///
+    /// For element nodes this holds the [`ElementData`], which stores most of
+    /// the per-node style/layout state. For the document node it holds the
+    /// [`DocumentData`]. Access the moved fields through the forwarding methods
+    /// on [`Node`] (e.g. [`Node::style`], [`Node::final_layout`]).
     pub data: NodeData,
-
-    // This little bundle of joy is our style data from stylo and a lock guard that allows access to it
-    // TODO: See if guard can be hoisted to a higher level
-    pub stylo_element_data: StyloData,
-    pub selector_flags: Cell<ElementSelectorFlags>,
-    pub guard: SharedRwLock,
-    pub element_state: ElementState,
-    pub has_snapshot: bool,
-    pub snapshot_handled: AtomicBool,
-    /// Whether any descendant of this node needs restyling.
-    /// Used by Stylo's incremental style traversal to skip unchanged subtrees.
-    pub dirty_descendants: AtomicBool,
-
-    // Pseudo element nodes
-    pub before: Option<NodeId>,
-    pub after: Option<NodeId>,
-
-    // Taffy layout data:
-    pub style: Style<Atom>,
-    pub display_constructed_as: StyloDisplay,
-    pub cache: Cache,
-    pub unrounded_layout: Layout,
-    pub final_layout: Layout,
-    pub scroll_offset: crate::Point<f64>,
-
-    pub scrollable_overflow: KurboRect,
-    pub transform: Option<Affine>,
 }
 
 unsafe impl Send for Node {}
 unsafe impl Sync for Node {}
+
+/// Generates forwarding accessors for fields that live on both [`ElementData`]
+/// (element / anonymous block nodes) and [`DocumentData`] (the document node).
+macro_rules! universal_accessors {
+    ($($(#[$meta:meta])* $field:ident / $field_mut:ident : $ty:ty),* $(,)?) => {
+        impl Node {
+            $(
+                $(#[$meta])*
+                #[inline]
+                pub fn $field(&self) -> &$ty {
+                    match &self.data {
+                        NodeData::Element(data) | NodeData::AnonymousBlock(data) => &data.$field,
+                        NodeData::Document(data) => &data.$field,
+                        _ => panic!(concat!("`", stringify!($field), "` is not available on this node kind")),
+                    }
+                }
+
+                $(#[$meta])*
+                #[inline]
+                pub fn $field_mut(&mut self) -> &mut $ty {
+                    match &mut self.data {
+                        NodeData::Element(data) | NodeData::AnonymousBlock(data) => &mut data.$field,
+                        NodeData::Document(data) => &mut data.$field,
+                        _ => panic!(concat!("`", stringify!($field), "` is not available on this node kind")),
+                    }
+                }
+            )*
+        }
+    };
+}
+
+/// Generates forwarding accessors for fields that only live on [`ElementData`]
+/// (element / anonymous block nodes).
+macro_rules! element_accessors {
+    ($($(#[$meta:meta])* $field:ident / $field_mut:ident : $ty:ty),* $(,)?) => {
+        impl Node {
+            $(
+                $(#[$meta])*
+                #[inline]
+                pub fn $field(&self) -> &$ty {
+                    match &self.data {
+                        NodeData::Element(data) | NodeData::AnonymousBlock(data) => &data.$field,
+                        _ => panic!(concat!("`", stringify!($field), "` is not available on this node kind")),
+                    }
+                }
+
+                $(#[$meta])*
+                #[inline]
+                pub fn $field_mut(&mut self) -> &mut $ty {
+                    match &mut self.data {
+                        NodeData::Element(data) | NodeData::AnonymousBlock(data) => &mut data.$field,
+                        _ => panic!(concat!("`", stringify!($field), "` is not available on this node kind")),
+                    }
+                }
+            )*
+        }
+    };
+}
+
+universal_accessors! {
+    stylo_element_data / stylo_element_data_mut: StyloData,
+    style / style_mut: Style<Atom>,
+    cache / cache_mut: Cache,
+    unrounded_layout / unrounded_layout_mut: Layout,
+    final_layout / final_layout_mut: Layout,
+    scroll_offset / scroll_offset_mut: crate::Point<f64>,
+    scrollable_overflow / scrollable_overflow_mut: KurboRect,
+    transform / transform_mut: Option<Affine>,
+    display_constructed_as / display_constructed_as_mut: StyloDisplay,
+    // The document node is styled/snapshotted like an element, so it also
+    // carries these:
+    element_state / element_state_mut: ElementState,
+    snapshot_handled / snapshot_handled_mut: AtomicBool,
+}
+
+element_accessors! {
+    selector_flags / selector_flags_mut: Cell<ElementSelectorFlags>,
+}
+
+impl Node {
+    /// Style data from stylo, if this node kind carries it (element or document
+    /// nodes). Returns `None` for text/comment nodes.
+    #[inline]
+    pub fn stylo_element_data_opt(&self) -> Option<&StyloData> {
+        match &self.data {
+            NodeData::Element(data) | NodeData::AnonymousBlock(data) => {
+                Some(&data.stylo_element_data)
+            }
+            NodeData::Document(data) => Some(&data.stylo_element_data),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn stylo_element_data_opt_mut(&mut self) -> Option<&mut StyloData> {
+        match &mut self.data {
+            NodeData::Element(data) | NodeData::AnonymousBlock(data) => {
+                Some(&mut data.stylo_element_data)
+            }
+            NodeData::Document(data) => Some(&mut data.stylo_element_data),
+            _ => None,
+        }
+    }
+
+    /// The `dirty_descendants` flag, if this node kind carries it (element or
+    /// document nodes). Returns `None` for text/comment nodes.
+    #[inline]
+    fn dirty_descendants_flag(&self) -> Option<&AtomicBool> {
+        match &self.data {
+            NodeData::Element(data) | NodeData::AnonymousBlock(data) => {
+                Some(&data.dirty_descendants)
+            }
+            NodeData::Document(data) => Some(&data.dirty_descendants),
+            _ => None,
+        }
+    }
+
+    /// The document's shared style lock. Only available on element nodes.
+    #[inline]
+    pub fn guard(&self) -> &SharedRwLock {
+        self.element_data()
+            .and_then(|data| data.guard.as_ref())
+            .expect("`guard` is not available on this node kind")
+    }
+
+    #[inline]
+    pub fn has_snapshot(&self) -> bool {
+        match &self.data {
+            NodeData::Element(data) | NodeData::AnonymousBlock(data) => data.has_snapshot,
+            NodeData::Document(data) => data.has_snapshot,
+            _ => false,
+        }
+    }
+
+    #[inline]
+    pub fn set_has_snapshot(&mut self, value: bool) {
+        match &mut self.data {
+            NodeData::Element(data) | NodeData::AnonymousBlock(data) => data.has_snapshot = value,
+            NodeData::Document(data) => data.has_snapshot = value,
+            _ => {}
+        }
+    }
+
+    #[inline]
+    pub fn before(&self) -> Option<NodeId> {
+        self.element_data().and_then(|data| data.before)
+    }
+
+    #[inline]
+    pub fn after(&self) -> Option<NodeId> {
+        self.element_data().and_then(|data| data.after)
+    }
+}
 
 impl Node {
     pub(crate) fn new(
         tree: *mut crate::NodeTree,
         id: NodeId,
         guard: SharedRwLock,
-        data: NodeData,
+        mut data: NodeData,
     ) -> Self {
-        // The element state needs to be modified if the element is disabled
-        let state = match &data {
-            NodeData::Element(data) => {
-                let mut state = ElementState::empty();
-                if data.can_be_disabled() {
-                    state.insert(match data.has_attr(local_name!("disabled")) {
-                        true => ElementState::DISABLED,
-                        false => ElementState::ENABLED,
-                    })
-                }
-
-                state
-            }
-            _ => ElementState::empty(),
-        };
+        // Store a handle to the document's shared style lock on the element data.
+        if let Some(element_data) = data.downcast_element_mut() {
+            element_data.guard = Some(guard);
+        }
 
         Self {
             tree,
@@ -179,34 +299,13 @@ impl Node {
 
             flags: NodeFlags::empty(),
             data,
-
-            stylo_element_data: Default::default(),
-            selector_flags: Cell::new(ElementSelectorFlags::empty()),
-            guard,
-            element_state: state,
-
-            before: None,
-            after: None,
-
-            style: Default::default(),
-            has_snapshot: false,
-            snapshot_handled: AtomicBool::new(false),
-            dirty_descendants: AtomicBool::new(true),
-            display_constructed_as: StyloDisplay::Block,
-            cache: Cache::new(),
-            unrounded_layout: Layout::new(),
-            final_layout: Layout::new(),
-            scroll_offset: crate::Point::ZERO,
-
-            scrollable_overflow: KurboRect::ZERO,
-            transform: None,
         }
     }
 
     pub fn set_transform(&mut self, scale: f32) -> Option<Affine> {
-        self.transform = self.primary_styles().and_then(|s| {
-            let w = self.final_layout.size.width * scale;
-            let h = self.final_layout.size.height * scale;
+        let transform = self.primary_styles().and_then(|s| {
+            let w = self.final_layout().size.width * scale;
+            let h = self.final_layout().size.height * scale;
             let reference_box = Rect::new(
                 Point2D::new(CSSPixelLength::new(0.0), CSSPixelLength::new(0.0)),
                 Size2D::new(CSSPixelLength::new(w), CSSPixelLength::new(h)),
@@ -214,21 +313,25 @@ impl Node {
             crate::resolve_2d_transform(s.get_box(), reference_box)
         });
 
-        self.transform
+        *self.transform_mut() = transform;
+        transform
     }
 
     pub fn pe_by_index(&self, index: usize) -> Option<NodeId> {
         match index {
-            0 => self.after,
-            1 => self.before,
+            0 => self.after(),
+            1 => self.before(),
             _ => panic!("Invalid pseudo element index"),
         }
     }
 
     pub fn set_pe_by_index(&mut self, index: usize, value: Option<NodeId>) {
+        let Some(data) = self.element_data_mut() else {
+            return;
+        };
         match index {
-            0 => self.after = value,
-            1 => self.before = value,
+            0 => data.after = value,
+            1 => data.before = value,
             _ => panic!("Invalid pseudo element index"),
         }
     }
@@ -286,8 +389,10 @@ impl Node {
     }
 
     pub fn set_restyle_hint(&mut self, hint: RestyleHint) {
-        if let Some(mut element_data) = self.stylo_element_data.get_mut() {
-            element_data.hint.insert(hint);
+        if let Some(stylo_element_data) = self.stylo_element_data_opt_mut() {
+            if let Some(mut element_data) = stylo_element_data.get_mut() {
+                element_data.hint.insert(hint);
+            }
         }
         // Mark all ancestors as having dirty descendants so the style traversal
         // will visit this node's subtree
@@ -296,23 +401,30 @@ impl Node {
 
     /// Returns whether this node has any descendants that need restyling.
     pub fn has_dirty_descendants(&self) -> bool {
-        self.dirty_descendants.load(Ordering::Relaxed)
+        self.dirty_descendants_flag()
+            .is_some_and(|flag| flag.load(Ordering::Relaxed))
     }
 
     /// Sets the dirty_descendants flag on this node.
     pub fn set_dirty_descendants(&self) {
-        self.dirty_descendants.store(true, Ordering::Relaxed);
+        if let Some(flag) = self.dirty_descendants_flag() {
+            flag.store(true, Ordering::Relaxed);
+        }
     }
 
     /// Clears the dirty_descendants flag on this node.
     pub fn unset_dirty_descendants(&self) {
-        self.dirty_descendants.store(false, Ordering::Relaxed);
+        if let Some(flag) = self.dirty_descendants_flag() {
+            flag.store(false, Ordering::Relaxed);
+        }
     }
 
     /// Set appropriate damage for Stylo when an element's style attribute is updated
     pub(crate) fn mark_style_attr_updated(&mut self) {
-        if let Some(mut data) = self.stylo_element_data.get_mut() {
-            data.hint |= RestyleHint::RESTYLE_STYLE_ATTRIBUTE;
+        if let Some(stylo_element_data) = self.stylo_element_data_opt_mut() {
+            if let Some(mut data) = stylo_element_data.get_mut() {
+                data.hint |= RestyleHint::RESTYLE_STYLE_ATTRIBUTE;
+            }
         }
         self.set_dirty_descendants();
     }
@@ -326,8 +438,10 @@ impl Node {
             let parent = &self.tree()[parent_id];
             // If this ancestor already has dirty_descendants set, we can stop
             // because all further ancestors must also have it set
-            if parent.dirty_descendants.swap(true, Ordering::Relaxed) {
-                break;
+            if let Some(flag) = parent.dirty_descendants_flag() {
+                if flag.swap(true, Ordering::Relaxed) {
+                    break;
+                }
             }
             current_id = parent.parent;
         }
@@ -340,50 +454,66 @@ impl Node {
     // }
 
     pub fn damage(&self) -> Option<RestyleDamage> {
-        self.stylo_element_data.get().map(|data| data.damage)
+        self.stylo_element_data_opt()
+            .and_then(|stylo| stylo.get().map(|data| data.damage))
     }
 
     pub fn set_damage(&mut self, damage: RestyleDamage) {
-        if let Some(mut data) = self.stylo_element_data.get_mut() {
-            data.damage = damage;
+        if let Some(stylo) = self.stylo_element_data_opt_mut() {
+            if let Some(mut data) = stylo.get_mut() {
+                data.damage = damage;
+            }
         }
     }
 
     pub fn insert_damage(&mut self, damage: RestyleDamage) {
-        if let Some(mut data) = self.stylo_element_data.get_mut() {
-            data.damage |= damage;
+        if let Some(stylo) = self.stylo_element_data_opt_mut() {
+            if let Some(mut data) = stylo.get_mut() {
+                data.damage |= damage;
+            }
         }
     }
 
     pub fn remove_damage(&mut self, damage: RestyleDamage) {
-        if let Some(mut data) = self.stylo_element_data.get_mut() {
-            data.damage.remove(damage);
+        if let Some(stylo) = self.stylo_element_data_opt_mut() {
+            if let Some(mut data) = stylo.get_mut() {
+                data.damage.remove(damage);
+            }
         }
     }
 
     pub fn clear_damage_mut(&mut self) {
-        if let Some(mut data) = self.stylo_element_data.get_mut() {
-            data.damage = RestyleDamage::empty();
+        if let Some(stylo) = self.stylo_element_data_opt_mut() {
+            if let Some(mut data) = stylo.get_mut() {
+                data.damage = RestyleDamage::empty();
+            }
         }
     }
 
     pub fn hover(&mut self) {
-        self.element_state.insert(ElementState::HOVER);
+        if let Some(data) = self.element_data_mut() {
+            data.element_state.insert(ElementState::HOVER);
+        }
         self.set_restyle_hint(RestyleHint::restyle_subtree());
     }
 
     pub fn unhover(&mut self) {
-        self.element_state.remove(ElementState::HOVER);
+        if let Some(data) = self.element_data_mut() {
+            data.element_state.remove(ElementState::HOVER);
+        }
         self.set_restyle_hint(RestyleHint::restyle_subtree());
     }
 
     pub fn is_hovered(&self) -> bool {
-        self.element_state.contains(ElementState::HOVER)
+        self.element_data()
+            .is_some_and(|data| data.element_state.contains(ElementState::HOVER))
     }
 
     pub fn focus(&mut self, shell_provider: Arc<dyn ShellProvider>) {
-        self.element_state
-            .insert(ElementState::FOCUS | ElementState::FOCUSRING);
+        if let Some(data) = self.element_data_mut() {
+            data.element_state
+                .insert(ElementState::FOCUS | ElementState::FOCUSRING);
+        }
         self.set_restyle_hint(RestyleHint::restyle_subtree());
 
         // If focussing a text input, enable IME and set IME area
@@ -394,17 +524,19 @@ impl Node {
         {
             shell_provider.set_ime_enabled(true);
             let mut pos = self.absolute_position(0.0, 0.0);
-            pos.x += self.final_layout.content_box_x();
-            pos.y += self.final_layout.content_box_y();
-            let width = self.final_layout.content_box_width();
-            let height = self.final_layout.content_box_height();
+            pos.x += self.final_layout().content_box_x();
+            pos.y += self.final_layout().content_box_y();
+            let width = self.final_layout().content_box_width();
+            let height = self.final_layout().content_box_height();
             shell_provider.set_ime_cursor_area(pos.x, pos.y, width, height);
         }
     }
 
     pub fn blur(&mut self, shell_provider: Arc<dyn ShellProvider>) {
-        self.element_state
-            .remove(ElementState::FOCUS | ElementState::FOCUSRING);
+        if let Some(data) = self.element_data_mut() {
+            data.element_state
+                .remove(ElementState::FOCUS | ElementState::FOCUSRING);
+        }
         self.set_restyle_hint(RestyleHint::restyle_subtree());
 
         // If blurring a text input, disable IME
@@ -418,33 +550,37 @@ impl Node {
     }
 
     pub fn is_focussed(&self) -> bool {
-        self.element_state.contains(ElementState::FOCUS)
+        self.element_data()
+            .is_some_and(|data| data.element_state.contains(ElementState::FOCUS))
     }
 
     pub fn active(&mut self) {
-        self.element_state.insert(ElementState::ACTIVE);
+        if let Some(data) = self.element_data_mut() {
+            data.element_state.insert(ElementState::ACTIVE);
+        }
         self.set_restyle_hint(RestyleHint::restyle_subtree());
     }
 
     pub fn unactive(&mut self) {
-        self.element_state.remove(ElementState::ACTIVE);
+        if let Some(data) = self.element_data_mut() {
+            data.element_state.remove(ElementState::ACTIVE);
+        }
         self.set_restyle_hint(RestyleHint::restyle_subtree());
     }
 
     pub fn is_active(&self) -> bool {
-        self.element_state.contains(ElementState::ACTIVE)
+        self.element_data()
+            .is_some_and(|data| data.element_state.contains(ElementState::ACTIVE))
     }
 
     // Marks the node as disabled if it can be.
     // It does not disable any children which should be disabled as well (relevant for the `select` element).
     pub fn disable(&mut self) {
-        if self
-            .data
-            .downcast_element()
-            .is_some_and(|data| data.can_be_disabled())
-        {
-            self.element_state.insert(ElementState::DISABLED);
-            self.element_state.remove(ElementState::ENABLED);
+        if let Some(data) = self.element_data_mut() {
+            if data.can_be_disabled() {
+                data.element_state.insert(ElementState::DISABLED);
+                data.element_state.remove(ElementState::ENABLED);
+            }
         }
         self.set_restyle_hint(RestyleHint::restyle_subtree());
     }
@@ -452,13 +588,11 @@ impl Node {
     // Marks the node as enabled if it can be.
     // It does not enable any children which should be enabled as well (relevant for the `select` element).
     pub fn enable(&mut self) {
-        if self
-            .data
-            .downcast_element()
-            .is_some_and(|data| data.can_be_disabled())
-        {
-            self.element_state.insert(ElementState::ENABLED);
-            self.element_state.remove(ElementState::DISABLED);
+        if let Some(data) = self.element_data_mut() {
+            if data.can_be_disabled() {
+                data.element_state.insert(ElementState::ENABLED);
+                data.element_state.remove(ElementState::DISABLED);
+            }
         }
         self.set_restyle_hint(RestyleHint::restyle_subtree());
     }
@@ -480,7 +614,7 @@ impl Node {
             .and_then(|el| el.text_input_data())
         {
             if !input_data.is_multiline {
-                let content_box_height = self.final_layout.content_box_height();
+                let content_box_height = self.final_layout().content_box_height();
                 let input_height = input_data.editor.try_layout().unwrap().height() / scale as f32;
                 let y_offset = ((content_box_height - input_height) / 2.0).max(0.0);
 
@@ -505,7 +639,7 @@ pub enum NodeKind {
 #[derive(Debug, Clone)]
 pub enum NodeData {
     /// The `Document` itself - the root node of a HTML document.
-    Document,
+    Document(Box<DocumentData>),
 
     /// An element with attributes.
     Element(Box<ElementData>),
@@ -567,7 +701,7 @@ impl NodeData {
 
     pub fn kind(&self) -> NodeKind {
         match self {
-            NodeData::Document => NodeKind::Document,
+            NodeData::Document(_) => NodeKind::Document,
             NodeData::Element(_) => NodeKind::Element,
             NodeData::AnonymousBlock(_) => NodeKind::AnonymousBlock,
             NodeData::Text(_) => NodeKind::Text,
@@ -718,7 +852,7 @@ impl Node {
         let mut s = String::new();
 
         match &self.data {
-            NodeData::Document => write!(s, "DOCUMENT"),
+            NodeData::Document(_) => write!(s, "DOCUMENT"),
             // NodeData::Doctype { name, .. } => write!(s, "DOCTYPE {name}"),
             NodeData::Text(data) => {
                 let bytes = data.content.as_bytes();
@@ -739,7 +873,7 @@ impl Node {
                 let name = &data.name;
                 let class = self.attr(local_name!("class")).unwrap_or("");
                 let id = self.attr(local_name!("id")).unwrap_or("");
-                let display = self.display_constructed_as.to_css_string();
+                let display = self.display_constructed_as().to_css_string();
                 write!(s, "<{}", name.local).unwrap();
                 if !id.is_empty() {
                     write!(s, " #{id}").unwrap();
@@ -809,7 +943,7 @@ impl Node {
             .map(|color| color.to_css_string());
 
         match &self.data {
-            NodeData::Document => {}
+            NodeData::Document(_) => {}
             NodeData::Comment => {}
             NodeData::AnonymousBlock(_) => {}
             // NodeData::Doctype { name, .. } => write!(s, "DOCTYPE {name}"),
@@ -887,7 +1021,8 @@ impl Node {
     }
 
     pub fn primary_styles(&self) -> Option<impl Deref<Target = ServoArc<ComputedValues>>> {
-        self.stylo_element_data.primary_styles()
+        self.stylo_element_data_opt()
+            .and_then(|stylo| stylo.primary_styles())
     }
 
     pub fn text_content(&self) -> String {
@@ -912,7 +1047,9 @@ impl Node {
 
     pub fn flush_style_attribute(&mut self, url_extra_data: &UrlExtraData) {
         if let NodeData::Element(ref mut elem_data) = self.data {
-            elem_data.flush_style_attribute(&self.guard, url_extra_data);
+            if let Some(guard) = elem_data.guard.clone() {
+                elem_data.flush_style_attribute(&guard, url_extra_data);
+            }
         }
     }
 
@@ -954,7 +1091,7 @@ impl Node {
             return true;
         }
 
-        if self.transform.is_some() {
+        if self.transform().is_some() {
             return true;
         }
 
@@ -1010,41 +1147,41 @@ impl Node {
             .primary_styles()
             .is_some_and(|style| style.clone_pointer_events() == PointerEvents::None);
 
-        let mut x = x - self.final_layout.location.x + self.scroll_offset.x as f32;
-        let mut y = y - self.final_layout.location.y + self.scroll_offset.y as f32;
+        let mut x = x - self.final_layout().location.x + self.scroll_offset().x as f32;
+        let mut y = y - self.final_layout().location.y + self.scroll_offset().y as f32;
 
-        if let Some(t) = self.transform {
+        if let Some(t) = *self.transform() {
             let p = t.inverse() * kurbo::Point::new(x as f64 * scale, y as f64 * scale);
             x = (p.x / scale) as f32;
             y = (p.y / scale) as f32;
         }
 
-        let size = self.final_layout.size;
+        let size = self.final_layout().size;
         let matches_self = !(x < 0.0
-            || x > size.width + self.scroll_offset.x as f32
+            || x > size.width + self.scroll_offset().x as f32
             || y < 0.0
-            || y > size.height + self.scroll_offset.y as f32);
+            || y > size.height + self.scroll_offset().y as f32);
 
-        let content_size = self.final_layout.content_size;
+        let content_size = self.final_layout().content_size;
         let matches_content = !(x < 0.0
-            || x > content_size.width + self.scroll_offset.x as f32
+            || x > content_size.width + self.scroll_offset().x as f32
             || y < 0.0
-            || y > content_size.height + self.scroll_offset.y as f32);
+            || y > content_size.height + self.scroll_offset().y as f32);
 
         let matches_hoisted_content = match &self.stacking_context {
             Some(sc) => {
                 let content_area = sc.content_area;
-                x >= content_area.left + self.scroll_offset.x as f32
-                    && x <= content_area.right + self.scroll_offset.x as f32
-                    && y >= content_area.top + self.scroll_offset.y as f32
-                    && y <= content_area.bottom + self.scroll_offset.y as f32
+                x >= content_area.left + self.scroll_offset().x as f32
+                    && x <= content_area.right + self.scroll_offset().x as f32
+                    && y >= content_area.top + self.scroll_offset().y as f32
+                    && y <= content_area.bottom + self.scroll_offset().y as f32
             }
             None => false,
         };
 
         // `scrollable_overflow` is stored in device (scaled) pixels, whereas the
         // coordinates here are in CSS pixels, so unscale it before comparing.
-        let overflow = self.scrollable_overflow;
+        let overflow = *self.scrollable_overflow();
 
         let matches_overflow = x >= (overflow.x0 / scale) as f32
             && x <= (overflow.x1 / scale) as f32
@@ -1059,8 +1196,8 @@ impl Node {
         // wins. Thumb coords are border-box relative (unscrolled).
         if matches_self
             && let Some(sb) = self.scrollbar_at_local(
-                (x - self.scroll_offset.x as f32) as f64,
-                (y - self.scroll_offset.y as f32) as f64,
+                (x - self.scroll_offset().x as f32) as f64,
+                (y - self.scroll_offset().y as f32) as f64,
             )
         {
             *scrollbar = Some(sb);
@@ -1068,8 +1205,8 @@ impl Node {
 
         if self.flags.is_inline_root() {
             let content_box_offset = taffy::Point {
-                x: self.final_layout.padding.left + self.final_layout.border.left,
-                y: self.final_layout.padding.top + self.final_layout.border.top,
+                x: self.final_layout().padding.left + self.final_layout().border.left,
+                y: self.final_layout().padding.top + self.final_layout().border.top,
             };
             x -= content_box_offset.x;
             y -= content_box_offset.y;
@@ -1209,8 +1346,8 @@ impl Node {
 
     /// Computes the Document-relative coordinates of the `Node`
     pub fn absolute_position(&self, x: f32, y: f32) -> crate::util::Point<f32> {
-        let x = x + self.final_layout.location.x - self.scroll_offset.x as f32;
-        let y = y + self.final_layout.location.y - self.scroll_offset.y as f32;
+        let x = x + self.final_layout().location.x - self.scroll_offset().x as f32;
+        let y = y + self.final_layout().location.y - self.scroll_offset().y as f32;
 
         // Recurse up the layout hierarchy
         self.layout_parent
@@ -1226,8 +1363,8 @@ impl Node {
 
     pub fn synthetic_click_event_data(&self, mods: Modifiers) -> BlitzPointerEvent {
         let absolute_position = self.absolute_position(0.0, 0.0);
-        let x = absolute_position.x + (self.final_layout.size.width / 2.0);
-        let y = absolute_position.y + (self.final_layout.size.height / 2.0);
+        let x = absolute_position.x + (self.final_layout().size.width / 2.0);
+        let y = absolute_position.y + (self.final_layout().size.height / 2.0);
 
         BlitzPointerEvent {
             id: BlitzPointerId::Mouse,
@@ -1272,7 +1409,7 @@ impl std::fmt::Debug for Node {
             .field("layout_children", &self.layout_children.borrow())
             // .field("style", &self.style)
             .field("node", &self.data)
-            .field("stylo_element_data", &self.stylo_element_data)
+            .field("stylo_element_data", &self.stylo_element_data_opt())
             // .field("unrounded_layout", &self.unrounded_layout)
             // .field("final_layout", &self.final_layout)
             .finish()
@@ -1288,21 +1425,21 @@ mod test {
     #[test]
     fn create_node_with_disabled_attr() {
         let mut document = BaseDocument::new(DocumentConfig::default());
-        let node = document.create_node(NodeData::Element(ElementData::new(
+        let node = document.create_node(NodeData::Element(Box::new(ElementData::new(
             qual_name!("button"),
             vec![Attribute {
                 name: qual_name!("disabled"),
                 value: "".into(),
             }],
-        )));
+        ))));
         let node = document.get_node(node).unwrap();
 
         assert!(
-            node.element_state.contains(ElementState::DISABLED),
+            node.element_state().contains(ElementState::DISABLED),
             "form node is disabled"
         );
         assert!(
-            !node.element_state.contains(ElementState::ENABLED),
+            !node.element_state().contains(ElementState::ENABLED),
             "form node is not enabled"
         );
     }
@@ -1310,21 +1447,21 @@ mod test {
     #[test]
     fn ignore_disabled_attr_content() {
         let mut document = BaseDocument::new(DocumentConfig::default());
-        let node = document.create_node(NodeData::Element(ElementData::new(
+        let node = document.create_node(NodeData::Element(Box::new(ElementData::new(
             qual_name!("button"),
             vec![Attribute {
                 name: qual_name!("disabled"),
                 value: "false".into(),
             }],
-        )));
+        ))));
         let node = document.get_node(node).unwrap();
 
         assert!(
-            node.element_state.contains(ElementState::DISABLED),
+            node.element_state().contains(ElementState::DISABLED),
             "form node is disabled"
         );
         assert!(
-            !node.element_state.contains(ElementState::ENABLED),
+            !node.element_state().contains(ElementState::ENABLED),
             "form node is not enabled"
         );
     }
@@ -1332,21 +1469,21 @@ mod test {
     #[test]
     fn create_node_with_ignored_disable() {
         let mut document = BaseDocument::new(DocumentConfig::default());
-        let node = document.create_node(NodeData::Element(ElementData::new(
+        let node = document.create_node(NodeData::Element(Box::new(ElementData::new(
             qual_name!("a"),
             vec![Attribute {
                 name: qual_name!("disabled"),
                 value: "".into(),
             }],
-        )));
+        ))));
         let node = document.get_node(node).unwrap();
 
         assert!(
-            !node.element_state.contains(ElementState::DISABLED),
+            !node.element_state().contains(ElementState::DISABLED),
             "Non form node cannot be disabled"
         );
         assert!(
-            !node.element_state.contains(ElementState::ENABLED),
+            !node.element_state().contains(ElementState::ENABLED),
             "Non form node cannot be enabled"
         );
     }
@@ -1354,14 +1491,14 @@ mod test {
     #[test]
     fn create_empty_enabled_node() {
         let mut document = BaseDocument::new(DocumentConfig::default());
-        let node = document.create_node(NodeData::Element(ElementData::new(
+        let node = document.create_node(NodeData::Element(Box::new(ElementData::new(
             qual_name!("button"),
             vec![],
-        )));
+        ))));
         let node = document.get_node(node).unwrap();
 
         assert!(
-            node.element_state.contains(ElementState::ENABLED),
+            node.element_state().contains(ElementState::ENABLED),
             "Button should be enabled by default"
         );
     }

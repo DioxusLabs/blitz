@@ -35,7 +35,7 @@ fn comment_sibling_does_not_zero_abspos_child() {
         </body></html>"#,
     );
     let abs_id = doc.query_selector("#abs").unwrap().expect("#abs not found");
-    let layout = doc.get_node(abs_id).unwrap().final_layout;
+    let layout = doc.get_node(abs_id).unwrap().final_layout();
     assert_eq!(
         (layout.size.width, layout.size.height),
         (300.0, 200.0),
@@ -58,7 +58,7 @@ fn comment_sibling_does_not_inline_block_child() {
         .query_selector("#block")
         .unwrap()
         .expect("#block not found");
-    let layout = doc.get_node(block_id).unwrap().final_layout;
+    let layout = doc.get_node(block_id).unwrap().final_layout();
     assert_eq!(
         (layout.size.width, layout.size.height),
         (300.0, 50.0),
@@ -80,7 +80,7 @@ fn abspos_inset_child_of_scroll_container_sizes_to_padding_box() {
         </body></html>"#,
     );
     let abs_id = doc.query_selector("#abs").unwrap().expect("#abs not found");
-    let layout = doc.get_node(abs_id).unwrap().final_layout;
+    let layout = doc.get_node(abs_id).unwrap().final_layout();
     assert_eq!(
         (layout.size.width, layout.size.height),
         (300.0, 200.0),
@@ -104,7 +104,7 @@ fn abspos_calc_var_inset_stretches() {
         </body></html>"#,
     );
     let abs_id = doc.query_selector("#abs").unwrap().expect("#abs not found");
-    let layout = doc.get_node(abs_id).unwrap().final_layout;
+    let layout = doc.get_node(abs_id).unwrap().final_layout();
     assert_eq!(
         (layout.size.width, layout.size.height),
         (300.0, 200.0),

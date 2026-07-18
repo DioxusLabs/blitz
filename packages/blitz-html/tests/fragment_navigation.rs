@@ -53,7 +53,7 @@ fn scroll_to_fragment_scrolls_to_element() {
     let mut doc = layout_doc(HTML);
 
     let target = doc.query_selector("#target").unwrap().unwrap();
-    let target_y = doc.get_node(target).unwrap().final_layout.location.y as f64;
+    let target_y = doc.get_node(target).unwrap().final_layout().location.y as f64;
     assert!(target_y > 0.0);
 
     let found = doc.scroll_to_fragment("target");

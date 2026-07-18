@@ -277,12 +277,12 @@ pub(crate) fn handle_pointermove<F: FnMut(DomEvent)>(
         }
 
         let mut content_box_offset = taffy::Point {
-            x: node.final_layout.padding.left + node.final_layout.border.left,
-            y: node.final_layout.padding.top + node.final_layout.border.top,
+            x: el.final_layout.padding.left + el.final_layout.border.left,
+            y: el.final_layout.padding.top + el.final_layout.border.top,
         };
         if !text_input_data.is_multiline {
             let layout = text_input_data.editor.try_layout().unwrap();
-            let content_box_height = node.final_layout.content_box_height();
+            let content_box_height = el.final_layout.content_box_height();
             let input_height = layout.height() / layout.scale();
             let y_offset = ((content_box_height - input_height) / 2.0).max(0.0);
 
@@ -396,12 +396,12 @@ pub(crate) fn handle_pointerdown(
             Some(el) => {
                 if let SpecialElementData::TextInput(ref text_input_data) = el.special_data {
                     let mut content_box_offset = taffy::Point {
-                        x: node.final_layout.padding.left + node.final_layout.border.left,
-                        y: node.final_layout.padding.top + node.final_layout.border.top,
+                        x: node.final_layout().padding.left + node.final_layout().border.left,
+                        y: node.final_layout().padding.top + node.final_layout().border.top,
                     };
                     if !text_input_data.is_multiline {
                         let layout = text_input_data.editor.try_layout().unwrap();
-                        let content_box_height = node.final_layout.content_box_height();
+                        let content_box_height = node.final_layout().content_box_height();
                         let input_height = layout.height() / layout.scale();
                         let y_offset = ((content_box_height - input_height) / 2.0).max(0.0);
                         content_box_offset.y += y_offset;

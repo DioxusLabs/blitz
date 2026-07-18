@@ -13,8 +13,8 @@ impl BaseDocument {
 
         #[cfg(feature = "tracing")]
         {
-            tracing::info!("Layout: {:?}", &node.final_layout);
-            tracing::info!("Style: {:?}", &node.style);
+            tracing::info!("Layout: {:?}", node.final_layout());
+            tracing::info!("Style: {:?}", node.style());
         }
 
         println!("\nNode {} {}", node.id, node.node_debug_str());
@@ -78,7 +78,7 @@ impl BaseDocument {
             }
         }
 
-        let layout = &node.final_layout;
+        let layout = node.final_layout();
         println!("Layout:");
         println!(
             "  x: {x} y: {y} w: {width} h: {height} content_w: {content_width} content_h: {content_height}",

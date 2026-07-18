@@ -139,7 +139,7 @@ impl DocumentMutator<'_> {
         let node = self.doc.get_node_mut(id).unwrap();
 
         // Initialise style data
-        *node.stylo_element_data.ensure_init_mut() = style::data::ElementData {
+        *node.stylo_element_data_mut().ensure_init_mut() = style::data::ElementData {
             damage: ALL_DAMAGE,
             ..Default::default()
         };
@@ -225,7 +225,7 @@ impl DocumentMutator<'_> {
             self.doc.snapshot_node(node_id);
 
             let node = &mut self.doc.nodes[node_id];
-            if let Some(mut data) = node.stylo_element_data.get_mut() {
+            if let Some(mut data) = node.stylo_element_data_opt_mut().and_then(|s| s.get_mut()) {
                 data.hint |= RestyleHint::restyle_subtree();
                 data.damage.insert(ALL_DAMAGE);
             }
@@ -234,7 +234,10 @@ impl DocumentMutator<'_> {
             let parent = node.parent;
             if let Some(parent_id) = parent {
                 let parent = &mut self.doc.nodes[parent_id];
-                if let Some(mut data) = parent.stylo_element_data.get_mut() {
+                if let Some(mut data) = parent
+                    .stylo_element_data_opt_mut()
+                    .and_then(|s| s.get_mut())
+                {
                     data.hint |= RestyleHint::restyle_subtree();
                 }
             }
@@ -316,7 +319,7 @@ impl DocumentMutator<'_> {
 
             let node = &mut self.doc.nodes[node_id];
 
-            if let Some(mut data) = node.stylo_element_data.get_mut() {
+            if let Some(mut data) = node.stylo_element_data_opt_mut().and_then(|s| s.get_mut()) {
                 data.hint |= RestyleHint::restyle_subtree();
                 data.damage.insert(ALL_DAMAGE);
             }
@@ -446,7 +449,10 @@ impl DocumentMutator<'_> {
 
             // TODO: make this fine grained / conditional based on ElementSelectorFlags
             if parent_is_in_doc {
-                if let Some(mut data) = parent.stylo_element_data.get_mut() {
+                if let Some(mut data) = parent
+                    .stylo_element_data_opt_mut()
+                    .and_then(|s| s.get_mut())
+                {
                     data.hint |= RestyleHint::restyle_subtree();
                 }
                 // Mark ancestors dirty so the style traversal visits this subtree.
@@ -466,7 +472,10 @@ impl DocumentMutator<'_> {
 
         // TODO: make this fine grained / conditional based on ElementSelectorFlags
         if parent_is_in_doc {
-            if let Some(mut data) = parent.stylo_element_data.get_mut() {
+            if let Some(mut data) = parent
+                .stylo_element_data_opt_mut()
+                .and_then(|s| s.get_mut())
+            {
                 data.hint |= RestyleHint::restyle_subtree();
             }
             // Mark ancestors dirty so the style traversal visits this subtree.
@@ -541,7 +550,10 @@ impl DocumentMutator<'_> {
 
             // TODO: make this fine grained / conditional based on ElementSelectorFlags
             if child_was_in_doc {
-                if let Some(mut data) = old_parent.stylo_element_data.get_mut() {
+                if let Some(mut data) = old_parent
+                    .stylo_element_data_opt_mut()
+                    .and_then(|s| s.get_mut())
+                {
                     data.hint |= RestyleHint::restyle_subtree();
                 }
                 // Mark ancestors dirty so the style traversal visits this subtree.
@@ -558,7 +570,10 @@ impl DocumentMutator<'_> {
 
         // TODO: make this fine grained / conditional based on ElementSelectorFlags
         if new_parent_is_in_doc {
-            if let Some(mut data) = new_parent.stylo_element_data.get_mut() {
+            if let Some(mut data) = new_parent
+                .stylo_element_data_opt_mut()
+                .and_then(|s| s.get_mut())
+            {
                 data.hint |= RestyleHint::restyle_subtree();
             }
             // Mark ancestors dirty so the style traversal visits this subtree.
@@ -728,10 +743,10 @@ impl<'doc> DocumentMutator<'doc> {
 
             // Remove any snapshot for this node to prevent stale snapshot references
             // during style invalidation.
-            if node.has_snapshot {
+            if node.has_snapshot() {
                 let opaque_id = style::dom::TNode::opaque(&&*node);
                 doc.snapshots.remove(&opaque_id);
-                node.has_snapshot = false;
+                node.set_has_snapshot(false);
             }
 
             // If the node has an "id" attribute remove it from the ID map.
@@ -876,7 +891,7 @@ impl<'doc> DocumentMutator<'doc> {
                     let node = &mut self.doc.nodes[target_id];
                     node.element_data_mut().unwrap().special_data =
                         SpecialElementData::Image(Box::new(cached_image.clone()));
-                    node.cache.clear();
+                    node.cache_mut().clear();
                     node.insert_damage(ALL_DAMAGE);
                     return;
                 }
@@ -1074,21 +1089,21 @@ mod test {
     #[test]
     fn mutator_remove_disabled() {
         let mut document = BaseDocument::new(DocumentConfig::default());
-        let id = document.create_node(NodeData::Element(ElementData::new(
+        let id = document.create_node(NodeData::Element(Box::new(ElementData::new(
             qual_name!("button"),
             vec![Attribute {
                 name: qual_name!("disabled"),
                 value: "".into(),
             }],
-        )));
+        ))));
 
         let node = document.get_node(id).unwrap();
         assert!(
-            node.element_state.contains(ElementState::DISABLED),
+            node.element_state().contains(ElementState::DISABLED),
             "form node is disabled"
         );
         assert!(
-            !node.element_state.contains(ElementState::ENABLED),
+            !node.element_state().contains(ElementState::ENABLED),
             "form node is not enabled yet"
         );
 
@@ -1098,11 +1113,11 @@ mod test {
 
         let node = document.get_node(id).unwrap();
         assert!(
-            !node.element_state.contains(ElementState::DISABLED),
+            !node.element_state().contains(ElementState::DISABLED),
             "form node is no longer disabled"
         );
         assert!(
-            node.element_state.contains(ElementState::ENABLED),
+            node.element_state().contains(ElementState::ENABLED),
             "form node is enabled"
         );
     }
@@ -1110,18 +1125,18 @@ mod test {
     #[test]
     fn mutator_set_disabled() {
         let mut document = BaseDocument::new(DocumentConfig::default());
-        let id = document.create_node(NodeData::Element(ElementData::new(
+        let id = document.create_node(NodeData::Element(Box::new(ElementData::new(
             qual_name!("button"),
             vec![],
-        )));
+        ))));
 
         let node = document.get_node(id).unwrap();
         assert!(
-            !node.element_state.contains(ElementState::DISABLED),
+            !node.element_state().contains(ElementState::DISABLED),
             "form node is not disabled"
         );
         assert!(
-            node.element_state.contains(ElementState::ENABLED),
+            node.element_state().contains(ElementState::ENABLED),
             "form node is enabled"
         );
 
@@ -1132,11 +1147,11 @@ mod test {
         let node = document.get_node(id).unwrap();
 
         assert!(
-            node.element_state.contains(ElementState::DISABLED),
+            node.element_state().contains(ElementState::DISABLED),
             "form node is disabled"
         );
         assert!(
-            !node.element_state.contains(ElementState::ENABLED),
+            !node.element_state().contains(ElementState::ENABLED),
             "form node is no longer enabled enabled"
         );
     }
@@ -1144,15 +1159,18 @@ mod test {
     #[test]
     fn mutator_set_disabled_invalid_node() {
         let mut document = BaseDocument::new(DocumentConfig::default());
-        let id = document.create_node(NodeData::Element(ElementData::new(qual_name!("a"), vec![])));
+        let id = document.create_node(NodeData::Element(Box::new(ElementData::new(
+            qual_name!("a"),
+            vec![],
+        ))));
 
         let node = document.get_node(id).unwrap();
         assert!(
-            !node.element_state.contains(ElementState::DISABLED),
+            !node.element_state().contains(ElementState::DISABLED),
             "form node is not disabled"
         );
         assert!(
-            !node.element_state.contains(ElementState::ENABLED),
+            !node.element_state().contains(ElementState::ENABLED),
             "form node is enabled"
         );
 
@@ -1162,11 +1180,11 @@ mod test {
 
         let node = document.get_node(id).unwrap();
         assert!(
-            !node.element_state.contains(ElementState::DISABLED),
+            !node.element_state().contains(ElementState::DISABLED),
             "form node is not disabled"
         );
         assert!(
-            !node.element_state.contains(ElementState::ENABLED),
+            !node.element_state().contains(ElementState::ENABLED),
             "form node is enabled"
         );
     }

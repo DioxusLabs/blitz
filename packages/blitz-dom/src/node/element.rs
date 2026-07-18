@@ -1,23 +1,33 @@
 use blitz_traits::node_id::NodeId;
 use cssparser::ParserInput;
+use kurbo::{Affine, Rect as KurboRect};
 use linebender_resource_handle::Blob;
 use markup5ever::{LocalName, QualName, local_name};
-use selectors::matching::QuirksMode;
+use selectors::matching::{ElementSelectorFlags, QuirksMode};
+use std::cell::Cell;
 use std::str::FromStr;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use style::Atom;
 use style::parser::ParserContext;
 use style::properties::{Importance, PropertyDeclaration, PropertyId, SourcePropertyDeclaration};
 use style::stylesheets::{DocumentStyleSheet, Origin, UrlExtraData};
+use style::values::computed::Display as StyloDisplay;
 use style::{
     properties::{PropertyDeclarationBlock, parse_style_attribute},
     servo_arc::Arc as ServoArc,
     shared_lock::{Locked, SharedRwLock},
     stylesheets::CssRuleType,
 };
+use style_dom::ElementState;
 use style_traits::ParsingMode;
+use taffy::{
+    Cache,
+    prelude::{Layout, Style},
+};
 use url::Url;
 
+use super::stylo_data::StyloData;
 use super::{Attribute, Attributes};
 use crate::Document;
 use crate::layout::table::TableContext;
@@ -32,7 +42,6 @@ macro_rules! local_names {
     };
 }
 
-#[derive(Debug, Clone)]
 pub struct ElementData {
     /// The elements tag name, namespace and prefix
     pub name: QualName,
@@ -71,6 +80,155 @@ pub struct ElementData {
     pub template_contents: Option<NodeId>,
     // /// Whether the node is a [HTML integration point] (https://html.spec.whatwg.org/multipage/#html-integration-point)
     // pub mathml_annotation_xml_integration_point: bool,
+
+    // ---------------------------------------------------------------------
+    // Fields moved from `Node`. These live on the element data so that the
+    // `Node` struct itself only carries tree-structure information.
+    // ---------------------------------------------------------------------
+    /// Style data from stylo, plus a lock guard that allows access to it.
+    pub stylo_element_data: StyloData,
+    pub selector_flags: Cell<ElementSelectorFlags>,
+    /// A clone of the document's shared style lock. Set when the owning
+    /// [`Node`](super::Node) is constructed.
+    pub guard: Option<SharedRwLock>,
+    pub element_state: ElementState,
+    pub has_snapshot: bool,
+    pub snapshot_handled: AtomicBool,
+    /// Whether any descendant of this node needs restyling.
+    /// Used by Stylo's incremental style traversal to skip unchanged subtrees.
+    pub dirty_descendants: AtomicBool,
+
+    // Pseudo element nodes
+    pub before: Option<NodeId>,
+    pub after: Option<NodeId>,
+
+    // Taffy layout data:
+    pub style: Style<Atom>,
+    pub display_constructed_as: StyloDisplay,
+    pub cache: Cache,
+    pub unrounded_layout: Layout,
+    pub final_layout: Layout,
+    pub scroll_offset: crate::Point<f64>,
+    pub scrollable_overflow: KurboRect,
+    pub transform: Option<Affine>,
+}
+
+/// Data specific to the [`Document`](super::super::Document) root node.
+///
+/// The document node participates in layout and styling like an element, so it
+/// carries the same style/layout fields that were previously stored directly on
+/// [`Node`](super::Node).
+#[derive(Debug)]
+pub struct DocumentData {
+    pub stylo_element_data: StyloData,
+    pub dirty_descendants: AtomicBool,
+    pub element_state: ElementState,
+    pub has_snapshot: bool,
+    pub snapshot_handled: AtomicBool,
+    pub style: Style<Atom>,
+    pub display_constructed_as: StyloDisplay,
+    pub cache: Cache,
+    pub unrounded_layout: Layout,
+    pub final_layout: Layout,
+    pub scroll_offset: crate::Point<f64>,
+    pub scrollable_overflow: KurboRect,
+    pub transform: Option<Affine>,
+}
+
+impl DocumentData {
+    pub fn new() -> Self {
+        Self {
+            stylo_element_data: Default::default(),
+            dirty_descendants: AtomicBool::new(true),
+            element_state: ElementState::empty(),
+            has_snapshot: false,
+            snapshot_handled: AtomicBool::new(false),
+            style: Default::default(),
+            display_constructed_as: StyloDisplay::Block,
+            cache: Cache::new(),
+            unrounded_layout: Layout::new(),
+            final_layout: Layout::new(),
+            scroll_offset: crate::Point::ZERO,
+            scrollable_overflow: KurboRect::ZERO,
+            transform: None,
+        }
+    }
+}
+
+impl Default for DocumentData {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Clone for DocumentData {
+    fn clone(&self) -> Self {
+        // Runtime style/layout state is reset (the document node is not
+        // meaningfully cloneable), matching `ElementData`'s clone semantics.
+        Self::new()
+    }
+}
+
+impl std::fmt::Debug for ElementData {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ElementData")
+            .field("name", &self.name)
+            .field("id", &self.id)
+            .field("attrs", &self.attrs)
+            .field("is_focussable", &self.is_focussable)
+            .field("style_attribute", &self.style_attribute)
+            .field("special_data", &self.special_data)
+            .field("background_images", &self.background_images)
+            .field("mask_images", &self.mask_images)
+            .field("inline_layout_data", &self.inline_layout_data)
+            .field("list_item_data", &self.list_item_data)
+            .field("template_contents", &self.template_contents)
+            .field("element_state", &self.element_state)
+            .field("display_constructed_as", &self.display_constructed_as)
+            .finish_non_exhaustive()
+    }
+}
+
+impl Clone for ElementData {
+    /// Clones the *content* of the element (name, attributes, style attribute,
+    /// special data, etc.). Runtime style/layout state (stylo data, taffy
+    /// layout, caches, pseudo-element ids, ...) is reset to its default so that
+    /// the clone behaves like a freshly-created element that has not yet been
+    /// styled or laid out.
+    fn clone(&self) -> Self {
+        Self {
+            name: self.name.clone(),
+            id: self.id.clone(),
+            attrs: self.attrs.clone(),
+            is_focussable: self.is_focussable,
+            style_attribute: self.style_attribute.clone(),
+            special_data: self.special_data.clone(),
+            background_images: self.background_images.clone(),
+            mask_images: self.mask_images.clone(),
+            inline_layout_data: self.inline_layout_data.clone(),
+            list_item_data: self.list_item_data.clone(),
+            template_contents: self.template_contents,
+
+            // Runtime state: reset to defaults.
+            stylo_element_data: Default::default(),
+            selector_flags: Cell::new(ElementSelectorFlags::empty()),
+            guard: self.guard.clone(),
+            element_state: self.element_state,
+            has_snapshot: false,
+            snapshot_handled: AtomicBool::new(false),
+            dirty_descendants: AtomicBool::new(true),
+            before: None,
+            after: None,
+            style: Default::default(),
+            display_constructed_as: StyloDisplay::Block,
+            cache: Cache::new(),
+            unrounded_layout: Layout::new(),
+            final_layout: Layout::new(),
+            scroll_offset: crate::Point::ZERO,
+            scrollable_overflow: KurboRect::ZERO,
+            transform: None,
+        }
+    }
 }
 
 #[derive(Copy, Clone, Default)]
@@ -161,8 +319,36 @@ impl ElementData {
             template_contents: None,
             background_images: Vec::new(),
             mask_images: Vec::new(),
+
+            stylo_element_data: Default::default(),
+            selector_flags: Cell::new(ElementSelectorFlags::empty()),
+            guard: None,
+            element_state: ElementState::empty(),
+            has_snapshot: false,
+            snapshot_handled: AtomicBool::new(false),
+            dirty_descendants: AtomicBool::new(true),
+            before: None,
+            after: None,
+            style: Default::default(),
+            display_constructed_as: StyloDisplay::Block,
+            cache: Cache::new(),
+            unrounded_layout: Layout::new(),
+            final_layout: Layout::new(),
+            scroll_offset: crate::Point::ZERO,
+            scrollable_overflow: KurboRect::ZERO,
+            transform: None,
         };
         data.flush_is_focussable();
+
+        // The element state needs to be modified if the element can be disabled.
+        if data.can_be_disabled() {
+            data.element_state
+                .insert(match data.has_attr(local_name!("disabled")) {
+                    true => ElementState::DISABLED,
+                    false => ElementState::ENABLED,
+                });
+        }
+
         data
     }
 

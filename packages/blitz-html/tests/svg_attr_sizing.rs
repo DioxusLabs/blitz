@@ -33,7 +33,7 @@ fn svg_size(html: &str) -> (f32, f32) {
         .query_selector("#icon")
         .unwrap()
         .expect("#icon not found");
-    let layout = doc.get_node(svg_id).unwrap().final_layout;
+    let layout = doc.get_node(svg_id).unwrap().final_layout();
     (layout.size.width, layout.size.height)
 }
 

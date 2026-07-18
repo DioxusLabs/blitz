@@ -153,7 +153,7 @@ impl crate::document::BaseDocument {
         for opaque in self.snapshots.keys() {
             let id = NodeId::from_u64(opaque.id() as u64);
             if let Some(node) = self.nodes.get_mut(id) {
-                node.has_snapshot = false;
+                node.set_has_snapshot(false);
             }
         }
         self.snapshots.clear();
@@ -200,7 +200,7 @@ impl<'a> TDocument for BlitzNode<'a> {
     }
 
     fn shared_lock(&self) -> &SharedRwLock {
-        &self.guard
+        self.guard()
     }
 }
 
@@ -297,7 +297,7 @@ impl<'a> TNode for BlitzNode<'a> {
 
     fn as_document(&self) -> Option<Self::ConcreteDocument> {
         match self.data {
-            NodeData::Document => Some(self),
+            NodeData::Document(_) => Some(self),
             _ => None,
         }
     }
@@ -405,7 +405,7 @@ impl selectors::Element for BlitzNode<'_> {
         _context: &mut MatchingContext<Self::Impl>,
     ) -> bool {
         match *pseudo_class {
-            NonTSPseudoClass::Active => self.element_state.contains(ElementState::ACTIVE),
+            NonTSPseudoClass::Active => self.element_state().contains(ElementState::ACTIVE),
             NonTSPseudoClass::AnyLink => self
                 .data
                 .downcast_element()
@@ -422,13 +422,13 @@ impl selectors::Element for BlitzNode<'_> {
             NonTSPseudoClass::Valid => false,
             NonTSPseudoClass::Invalid => false,
             NonTSPseudoClass::Defined => false,
-            NonTSPseudoClass::Disabled => self.element_state.contains(ElementState::DISABLED),
-            NonTSPseudoClass::Enabled => self.element_state.contains(ElementState::ENABLED),
-            NonTSPseudoClass::Focus => self.element_state.contains(ElementState::FOCUS),
+            NonTSPseudoClass::Disabled => self.element_state().contains(ElementState::DISABLED),
+            NonTSPseudoClass::Enabled => self.element_state().contains(ElementState::ENABLED),
+            NonTSPseudoClass::Focus => self.element_state().contains(ElementState::FOCUS),
             NonTSPseudoClass::FocusWithin => false,
             NonTSPseudoClass::FocusVisible => false,
             NonTSPseudoClass::Fullscreen => false,
-            NonTSPseudoClass::Hover => self.element_state.contains(ElementState::HOVER),
+            NonTSPseudoClass::Hover => self.element_state().contains(ElementState::HOVER),
             NonTSPseudoClass::Indeterminate => false,
             NonTSPseudoClass::Lang(_) => false,
             NonTSPseudoClass::CustomState(_) => false,
@@ -469,7 +469,7 @@ impl selectors::Element for BlitzNode<'_> {
         pe: &PseudoElement,
         _context: &mut MatchingContext<Self::Impl>,
     ) -> bool {
-        let pseudo = match self.stylo_element_data.get() {
+        let pseudo = match self.stylo_element_data_opt().and_then(|s| s.get()) {
             Some(el) => el.styles.primary().pseudo().or(match &self.data {
                 NodeData::AnonymousBlock(_) => Some(PseudoElement::ServoAnonymousBox),
                 _ => None,
@@ -484,8 +484,8 @@ impl selectors::Element for BlitzNode<'_> {
         // Handle flags that apply to the element.
         let self_flags = flags.for_self();
         if !self_flags.is_empty() {
-            self.selector_flags
-                .set(self.selector_flags.get() | self_flags);
+            self.selector_flags()
+                .set(self.selector_flags().get() | self_flags);
         }
 
         // Handle flags that apply to the parent.
@@ -493,8 +493,8 @@ impl selectors::Element for BlitzNode<'_> {
         if !parent_flags.is_empty() {
             if let Some(parent) = self.parent_node() {
                 parent
-                    .selector_flags
-                    .set(parent.selector_flags.get() | parent_flags);
+                    .selector_flags()
+                    .set(parent.selector_flags().get() | parent_flags);
             }
         }
     }
@@ -622,7 +622,7 @@ impl<'a> TElement for BlitzNode<'a> {
     }
 
     fn state(&self) -> ElementState {
-        self.element_state
+        *self.element_state()
     }
 
     fn has_part_attr(&self) -> bool {
@@ -667,15 +667,15 @@ impl<'a> TElement for BlitzNode<'a> {
     }
 
     fn has_snapshot(&self) -> bool {
-        self.has_snapshot
+        Node::has_snapshot(self)
     }
 
     fn handled_snapshot(&self) -> bool {
-        self.snapshot_handled.load(Ordering::SeqCst)
+        self.snapshot_handled().load(Ordering::SeqCst)
     }
 
     unsafe fn set_handled_snapshot(&self) {
-        self.snapshot_handled.store(true, Ordering::SeqCst);
+        self.snapshot_handled().store(true, Ordering::SeqCst);
     }
 
     unsafe fn set_dirty_descendants(&self) {
@@ -697,24 +697,24 @@ impl<'a> TElement for BlitzNode<'a> {
 
     unsafe fn ensure_data(&self) -> ElementDataMut<'_> {
         // SAFETY: stylo traversal has exclusive access to nodes
-        unsafe { self.stylo_element_data.ensure_init() }
+        unsafe { self.stylo_element_data().ensure_init() }
     }
 
     unsafe fn clear_data(&self) {
         // SAFETY: stylo traversal has exclusive access to nodes
-        unsafe { self.stylo_element_data.clear() }
+        unsafe { self.stylo_element_data().clear() }
     }
 
     fn has_data(&self) -> bool {
-        self.stylo_element_data.has_data()
+        self.stylo_element_data_opt().is_some_and(|s| s.has_data())
     }
 
     fn borrow_data(&self) -> Option<ElementDataRef<'_>> {
-        self.stylo_element_data.get()
+        self.stylo_element_data_opt().and_then(|s| s.get())
     }
 
     fn mutate_data(&self) -> Option<ElementDataMut<'_>> {
-        unsafe { self.stylo_element_data.unsafe_stylo_only_mut() }
+        unsafe { self.stylo_element_data().unsafe_stylo_only_mut() }
     }
 
     fn skip_item_display_fixup(&self) -> bool {
@@ -755,7 +755,7 @@ impl<'a> TElement for BlitzNode<'a> {
         context.animations.get_animation_declarations(
             &AnimationSetKey::new_for_non_pseudo(opaque),
             context.current_time_for_animations,
-            &self.guard,
+            self.guard(),
         )
     }
 
@@ -767,7 +767,7 @@ impl<'a> TElement for BlitzNode<'a> {
         context.animations.get_transition_declarations(
             &AnimationSetKey::new_for_non_pseudo(opaque),
             context.current_time_for_animations,
-            &self.guard,
+            self.guard(),
         )
     }
 
@@ -830,7 +830,7 @@ impl<'a> TElement for BlitzNode<'a> {
         let mut push_style = |decl: PropertyDeclaration| {
             hints.push(ApplicableDeclarationBlock::from_declarations(
                 Arc::new(
-                    self.guard
+                    self.guard()
                         .wrap(PropertyDeclarationBlock::with_one(decl, Importance::Normal)),
                 ),
                 CascadeLevel::new(CascadeOrigin::PresHints),
@@ -1024,11 +1024,11 @@ impl<'a> TElement for BlitzNode<'a> {
     }
 
     fn has_selector_flags(&self, flags: ElementSelectorFlags) -> bool {
-        self.selector_flags.get().contains(flags)
+        self.selector_flags().get().contains(flags)
     }
 
     fn relative_selector_search_direction(&self) -> ElementSelectorFlags {
-        let flags = self.selector_flags.get();
+        let flags = self.selector_flags().get();
         if flags.contains(ElementSelectorFlags::RELATIVE_SELECTOR_SEARCH_DIRECTION_ANCESTOR_SIBLING)
         {
             ElementSelectorFlags::RELATIVE_SELECTOR_SEARCH_DIRECTION_ANCESTOR_SIBLING

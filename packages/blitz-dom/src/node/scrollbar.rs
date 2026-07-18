@@ -89,11 +89,11 @@ impl Node {
         let (overflow, scroll_extent) = match axis {
             AbsoluteAxis::Horizontal => (
                 style.clone_overflow_x(),
-                self.final_layout.scroll_width() as f64,
+                self.final_layout().scroll_width() as f64,
             ),
             AbsoluteAxis::Vertical => (
                 style.clone_overflow_y(),
-                self.final_layout.scroll_height() as f64,
+                self.final_layout().scroll_height() as f64,
             ),
         };
         match overflow {
@@ -107,7 +107,7 @@ impl Node {
     /// node's border-box origin. Taffy has content-box helpers but none for
     /// the padding box.
     fn scrollport(&self) -> KurboRect {
-        let layout = &self.final_layout;
+        let layout = self.final_layout();
         KurboRect::new(
             layout.border.left as f64,
             layout.border.top as f64,
@@ -126,7 +126,7 @@ impl Node {
         const THUMB_MARGIN: f64 = 2.0;
         const MIN_THUMB_LENGTH: f64 = 32.0;
 
-        let layout = &self.final_layout;
+        let layout = self.final_layout();
         let scroll_extent = match axis {
             AbsoluteAxis::Horizontal => layout.scroll_width() as f64,
             AbsoluteAxis::Vertical => layout.scroll_height() as f64,
@@ -142,8 +142,8 @@ impl Node {
 
         let port = self.scrollport();
         let (viewport_len, scroll_offset) = match axis {
-            AbsoluteAxis::Horizontal => (port.width(), self.scroll_offset.x),
-            AbsoluteAxis::Vertical => (port.height(), self.scroll_offset.y),
+            AbsoluteAxis::Horizontal => (port.width(), self.scroll_offset().x),
+            AbsoluteAxis::Vertical => (port.height(), self.scroll_offset().y),
         };
         let thumb_len = (viewport_len * viewport_len / (viewport_len + scroll_extent))
             .max(MIN_THUMB_LENGTH)
@@ -180,12 +180,12 @@ impl Node {
         let port = self.scrollport();
         let (scroll_extent, viewport_len, thumb_len) = match axis {
             AbsoluteAxis::Horizontal => (
-                self.final_layout.scroll_width() as f64,
+                self.final_layout().scroll_width() as f64,
                 port.width(),
                 thumb.width(),
             ),
             AbsoluteAxis::Vertical => (
-                self.final_layout.scroll_height() as f64,
+                self.final_layout().scroll_height() as f64,
                 port.height(),
                 thumb.height(),
             ),

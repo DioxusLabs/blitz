@@ -17,8 +17,9 @@ pub use custom_widget::{
 #[cfg(feature = "svg")]
 pub use element::SvgImageData;
 pub use element::{
-    CanvasData, ElementData, ImageData, ImageResourceData, ListItemLayout, ListItemLayoutPosition,
-    Marker, RasterImageData, SpecialElementData, SpecialElementType, Status,
+    CanvasData, DocumentData, ElementData, ImageData, ImageResourceData, ListItemLayout,
+    ListItemLayoutPosition, Marker, RasterImageData, SpecialElementData, SpecialElementType,
+    Status,
 };
 pub use node::*;
 pub use scrollbar::{ScrollbarColor, ScrollbarRef, ScrollbarWidth};
