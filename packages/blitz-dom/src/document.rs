@@ -62,6 +62,7 @@ use style::{
     stylesheets::{AllowImportRules, DocumentStyleSheet, Origin, Stylesheet},
     stylist::Stylist,
 };
+use thin_vec::ThinVec;
 use url::Url;
 use web_time::Instant;
 
@@ -858,7 +859,7 @@ impl BaseDocument {
         let new_node_id = self.create_node(data);
 
         // Recursively clone children
-        let new_children: Vec<NodeId> = children
+        let new_children: ThinVec<NodeId> = children
             .into_iter()
             .map(|child_id| self.deep_clone_node(child_id))
             .collect();

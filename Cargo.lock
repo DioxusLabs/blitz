@@ -864,6 +864,7 @@ dependencies = [
  "stylo_taffy",
  "stylo_traits",
  "taffy",
+ "thin-vec",
  "thread_local",
  "tracing",
  "url",

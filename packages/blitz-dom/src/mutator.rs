@@ -15,6 +15,7 @@ use blitz_traits::shell::Viewport;
 use style::Atom;
 use style::invalidation::element::restyle_hints::RestyleHint;
 use style::stylesheets::OriginSet;
+use thin_vec::ThinVec;
 
 macro_rules! tag_and_attr {
     ($tag:tt, $attr:tt) => {
@@ -103,7 +104,7 @@ impl DocumentMutator<'_> {
         self.doc.nodes[node_id].children.last().copied()
     }
 
-    pub fn child_ids(&self, node_id: NodeId) -> Vec<NodeId> {
+    pub fn child_ids(&self, node_id: NodeId) -> ThinVec<NodeId> {
         self.doc.nodes[node_id].children.clone()
     }
 

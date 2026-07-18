@@ -35,6 +35,7 @@ use taffy::{
     Cache,
     prelude::{Layout, Style},
 };
+use thin_vec::ThinVec;
 
 use super::stylo_data::StyloData;
 use super::{Attribute, ElementData};
@@ -96,13 +97,13 @@ pub struct Node {
     /// Our parent's ID
     pub parent: Option<NodeId>,
     // What are our children?
-    pub children: Vec<NodeId>,
+    pub children: ThinVec<NodeId>,
     /// Our parent in the layout hierachy: a separate list that includes anonymous collections of inline elements
     pub layout_parent: Cell<Option<NodeId>>,
     /// A separate child list that includes anonymous collections of inline elements
-    pub layout_children: RefCell<Option<Vec<NodeId>>>,
+    pub layout_children: RefCell<Option<ThinVec<NodeId>>>,
     /// The same as layout_children, but sorted by z-index
-    pub paint_children: RefCell<Option<Vec<NodeId>>>,
+    pub paint_children: RefCell<Option<ThinVec<NodeId>>>,
     pub stacking_context: Option<Box<HoistedPaintChildren>>,
 
     // Flags
@@ -170,7 +171,7 @@ impl Node {
 
             id,
             parent: None,
-            children: vec![],
+            children: ThinVec::new(),
             layout_parent: Cell::new(None),
             layout_children: RefCell::new(None),
             paint_children: RefCell::new(None),

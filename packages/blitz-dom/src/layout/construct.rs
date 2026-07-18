@@ -16,6 +16,7 @@ use style::{
         specified::box_::{DisplayInside, DisplayOutside},
     },
 };
+use thin_vec::ThinVec;
 
 use crate::{
     BaseDocument, ElementData, Node, NodeData,
@@ -59,7 +60,7 @@ pub(crate) enum ConstructionTaskResultData {
 /// any) that wrapping children are being appended to.
 #[derive(Default)]
 pub(crate) struct LayoutChildren {
-    pub(crate) children: Vec<NodeId>,
+    pub(crate) children: ThinVec<NodeId>,
     pub(crate) anonymous_block_id: Option<NodeId>,
 }
 
@@ -166,7 +167,7 @@ impl LayoutChildren {
     }
 }
 
-fn push_children_and_pseudos(layout_children: &mut Vec<NodeId>, node: &Node) {
+fn push_children_and_pseudos(layout_children: &mut ThinVec<NodeId>, node: &Node) {
     if let Some(before) = node.before {
         layout_children.push(before);
     }
@@ -210,7 +211,7 @@ fn push_hoisted_children_and_pseudos(
     }
 }
 
-fn push_non_whitespace_children_and_pseudos(layout_children: &mut Vec<NodeId>, node: &Node) {
+fn push_non_whitespace_children_and_pseudos(layout_children: &mut ThinVec<NodeId>, node: &Node) {
     if let Some(before) = node.before {
         layout_children.push(before);
     }
@@ -804,7 +805,7 @@ fn create_checkbox_input(doc: &mut BaseDocument, input_element_id: NodeId) {
 pub(crate) fn find_inline_layout_embedded_boxes(
     doc: &mut BaseDocument,
     inline_context_root_node_id: NodeId,
-    layout_children: &mut Vec<NodeId>,
+    layout_children: &mut ThinVec<NodeId>,
 ) {
     flush_inline_pseudos_recursive(doc, inline_context_root_node_id);
 
@@ -838,7 +839,7 @@ pub(crate) fn find_inline_layout_embedded_boxes(
         nodes: &mut crate::NodeTree,
         parent_id: NodeId,
         node_id: NodeId,
-        layout_children: &mut Vec<NodeId>,
+        layout_children: &mut ThinVec<NodeId>,
     ) {
         let node = &mut nodes[node_id];
 

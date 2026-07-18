@@ -17,6 +17,7 @@ use style::values::specified::align::AlignFlags;
 use style::values::specified::box_::DisplayInside;
 use style::values::specified::box_::DisplayOutside;
 use taffy::Rect;
+use thin_vec::ThinVec;
 
 pub(crate) const CONSTRUCT_BOX: RestyleDamage =
     RestyleDamage::from_bits_retain(0b_0000_0000_0001_0000);
@@ -592,7 +593,7 @@ impl BaseDocument {
             // Reserve space for paint_children
             let mut paint_children = self.nodes[node_id].paint_children.borrow_mut();
             if paint_children.is_none() {
-                *paint_children = Some(Vec::new());
+                *paint_children = Some(ThinVec::new());
             }
             let paint_children = paint_children.as_mut().unwrap();
             paint_children.clear();
