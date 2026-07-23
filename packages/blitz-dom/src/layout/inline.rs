@@ -284,6 +284,7 @@ impl BaseDocument {
         };
 
         // Update inline boxes
+        let mut has_inflow_inline_boxes = false;
         for ibox in inline_layout.layout.inline_boxes_mut() {
             let style = &self.nodes[ibox.id as usize].style;
             let margin = style
@@ -299,6 +300,7 @@ impl BaseDocument {
                 ibox.width = 0.0;
                 ibox.height = 0.0;
             } else {
+                has_inflow_inline_boxes = true;
                 let output = self.compute_child_layout(NodeId::from(ibox.id), child_inputs);
                 ibox.width = (margin.left + margin.right + output.size.width) * scale;
                 ibox.height = (margin.top + margin.bottom + output.size.height) * scale;
@@ -330,12 +332,15 @@ impl BaseDocument {
             .width
             .map(|w| (w * scale) - pbw)
             .unwrap_or_else(|| {
-                // TODO: Cache content widths.
-                //
-                // This is a little tricky as the size of the inline boxes may depend on whether we are sizing under
-                // and a min-content or max-content constraint. So if we want to compute both widths in one pass then
-                // we need to store both a min-content and max-content size on each box.
-                let content_sizes = inline_layout.layout.calculate_content_widths();
+                // The size of in-flow inline boxes may depend on whether we are sizing under a min-content
+                // or max-content constraint, so the content widths can only be cached when there are none.
+                // Caching both a min-content and max-content size on each box would allow the cache to be
+                // used unconditionally.
+                let content_sizes = if has_inflow_inline_boxes {
+                    inline_layout.layout.calculate_content_widths()
+                } else {
+                    inline_layout.content_widths()
+                };
                 let min_content_width = content_sizes.min;
                 let max_content_width = content_sizes.max;
 
