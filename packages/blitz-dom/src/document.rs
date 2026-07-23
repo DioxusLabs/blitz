@@ -793,17 +793,28 @@ impl BaseDocument {
     }
 
     pub(crate) fn drop_node_ignoring_parent(&mut self, node_id: usize) -> Option<Node> {
+        self.drop_node_ignoring_parent_with(node_id, &mut |_| {})
+    }
+
+    /// Like [`Self::drop_node_ignoring_parent`], but calls `on_drop` with the id of
+    /// every dropped node (the node itself and all of its descendants).
+    pub(crate) fn drop_node_ignoring_parent_with(
+        &mut self,
+        node_id: usize,
+        on_drop: &mut dyn FnMut(usize),
+    ) -> Option<Node> {
         let mut node = self.nodes.try_remove(node_id);
         if let Some(node) = &mut node {
+            on_drop(node_id);
             if let Some(before) = node.before {
-                self.drop_node_ignoring_parent(before);
+                self.drop_node_ignoring_parent_with(before, on_drop);
             }
             if let Some(after) = node.after {
-                self.drop_node_ignoring_parent(after);
+                self.drop_node_ignoring_parent_with(after, on_drop);
             }
 
             for &child in &node.children {
-                self.drop_node_ignoring_parent(child);
+                self.drop_node_ignoring_parent_with(child, on_drop);
             }
         }
         node

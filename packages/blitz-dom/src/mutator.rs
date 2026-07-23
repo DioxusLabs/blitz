@@ -418,9 +418,19 @@ impl DocumentMutator<'_> {
     }
 
     pub fn remove_and_drop_node(&mut self, node_id: usize) -> Option<Node> {
+        self.remove_and_drop_node_with(node_id, &mut |_| {})
+    }
+
+    /// Like [`Self::remove_and_drop_node`], but calls `on_drop` with the id of
+    /// every dropped node (the node itself and all of its descendants).
+    pub fn remove_and_drop_node_with(
+        &mut self,
+        node_id: usize,
+        on_drop: &mut dyn FnMut(usize),
+    ) -> Option<Node> {
         self.process_removed_subtree(node_id);
 
-        let node = self.doc.drop_node_ignoring_parent(node_id);
+        let node = self.doc.drop_node_ignoring_parent_with(node_id, on_drop);
 
         // Update child_idx values
         if let Some(parent_id) = node.as_ref().and_then(|node| node.parent) {
@@ -467,9 +477,19 @@ impl DocumentMutator<'_> {
 
     // Tree mutation methods
     pub fn remove_node_if_unparented(&mut self, node_id: usize) {
+        self.remove_node_if_unparented_with(node_id, &mut |_| {});
+    }
+
+    /// Like [`Self::remove_node_if_unparented`], but calls `on_drop` with the id of
+    /// every dropped node (the node itself and all of its descendants).
+    pub fn remove_node_if_unparented_with(
+        &mut self,
+        node_id: usize,
+        on_drop: &mut dyn FnMut(usize),
+    ) {
         if let Some(node) = self.doc.get_node(node_id) {
             if node.parent.is_none() {
-                self.remove_and_drop_node(node_id);
+                self.remove_and_drop_node_with(node_id, on_drop);
             }
         }
     }
