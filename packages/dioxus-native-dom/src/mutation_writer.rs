@@ -17,6 +17,8 @@ pub struct DioxusState {
     pub(crate) stack: Vec<NodeId>,
     /// Mapping from vdom ElementId -> rdom NodeId
     pub(crate) node_id_mapping: Vec<Option<NodeId>>,
+    /// Reverse mapping from rdom NodeId -> vdom ElementId
+    pub(crate) element_id_mapping: FxHashMap<NodeId, ElementId>,
     /// Count of each handler type (indexed by `DomEventKind` discriminant)
     pub(crate) event_handler_counts: [u32; 64],
     /// Mounted events queued as elements are mounted
@@ -30,6 +32,7 @@ impl DioxusState {
             templates: FxHashMap::default(),
             stack: vec![root_id],
             node_id_mapping: vec![Some(root_id)],
+            element_id_mapping: FxHashMap::from_iter([(root_id, ElementId(0))]),
             event_handler_counts: [0; 64],
             queued_mounted_events: Vec::new(),
         }
@@ -87,8 +90,15 @@ impl MutationWriter<'_> {
             self.state.node_id_mapping.resize(element_id + 1, None);
         }
 
-        // Set the new mapping
-        self.state.node_id_mapping[element_id] = Some(node_id);
+        // Set the new mapping (and keep the reverse mapping in sync)
+        if let Some(old_node_id) = self.state.node_id_mapping[element_id].replace(node_id)
+            && self.state.element_id_mapping.get(&old_node_id) == Some(&ElementId(element_id))
+        {
+            self.state.element_id_mapping.remove(&old_node_id);
+        }
+        self.state
+            .element_id_mapping
+            .insert(node_id, ElementId(element_id));
     }
 
     /// Create a ElementId -> NodeId mapping and push the node to the stack
@@ -108,10 +118,22 @@ impl WriteMutations for MutationWriter<'_> {
     fn assign_node_id(&mut self, path: &'static [u8], id: ElementId) {
         trace!("assign_node_id path:{:?} id:{}", path, id.0);
 
-        // If there is an existing node already mapped to that ID and it has no parent, then drop it
+        // If there is an existing node already mapped to that ID and it has no parent, then drop it.
+        // Dropping the node also drops all of its descendants, so clear the mappings of every
+        // dropped node to prevent them dangling and aliasing onto unrelated nodes when the
+        // underlying slab slots are reused.
         // TODO: more automated GC/ref-counted semantics for node lifetimes
         if let Some(node_id) = self.state.try_element_to_node_id(id) {
-            self.docm.remove_node_if_unparented(node_id);
+            let state = &mut *self.state;
+            self.docm
+                .remove_node_if_unparented_with(node_id, &mut |dropped_node_id| {
+                    if let Some(element_id) = state.element_id_mapping.remove(&dropped_node_id)
+                        && state.node_id_mapping.get(element_id.0).copied().flatten()
+                            == Some(dropped_node_id)
+                    {
+                        state.node_id_mapping[element_id.0] = None;
+                    }
+                });
         }
 
         // Map the node at specified path
