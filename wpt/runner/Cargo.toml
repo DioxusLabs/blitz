@@ -22,6 +22,7 @@ anyrender_vello = { workspace = true, optional = true }
 anyrender_vello_cpu = { workspace = true, optional = true }
 
 taffy = { workspace = true }
+style_traits = { workspace = true }
 parley = { workspace = true }
 peniko = { workspace = true }
 image = { workspace = true, features = ["png"] }
