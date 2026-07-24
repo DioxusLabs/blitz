@@ -83,25 +83,20 @@ def render(diff, run_url):
         headline = "No changes in test results compared to `main`."
     else:
         sign = "+" if net > 0 else ""
-        headline = (
-            f"**{len(diff.newly_passing)}** newly passing, "
-            f"**{len(diff.newly_failing)}** newly failing "
-            f"(net {sign}{net})."
-        )
+        parts = [
+            f"**{len(diff.newly_passing)}** newly passing",
+            f"**{len(diff.newly_failing)}** newly failing (net {sign}{net})",
+        ]
+        for count, label in [
+            (len(diff.other_changes), "other status change"),
+            (len(diff.added), "added test"),
+            (len(diff.removed), "removed test"),
+        ]:
+            if count:
+                parts.append(f"**{count}** {label}{'s' if count != 1 else ''}")
+        headline = ", ".join(parts) + "."
 
     out = [START_MARKER, "## WPT results", "", headline, ""]
-
-    rows = [
-        ("Newly passing", len(diff.newly_passing)),
-        ("Newly failing", len(diff.newly_failing)),
-        ("Other status changes", len(diff.other_changes)),
-        ("Added tests", len(diff.added)),
-        ("Removed tests", len(diff.removed)),
-    ]
-    out.append("| Change | Count |")
-    out.append("| --- | --- |")
-    out.extend(f"| {name} | {count} |" for name, count in rows)
-    out.append("")
 
     if not diff.is_empty:
         lines = format_lines(diff)
