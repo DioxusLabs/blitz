@@ -46,8 +46,8 @@ pub fn process_ref_test(
     if ctx.subgrid_re.is_match(&ref_html) {
         *flags |= TestFlags::USES_SUBGRID;
     }
-    if ctx.masonry_re.is_match(&ref_html) {
-        *flags |= TestFlags::USES_MASONRY;
+    if ctx.grid_lanes_re.is_match(&ref_html) {
+        *flags |= TestFlags::USES_GRID_LANES;
     }
 
     let test_out_path = ctx
