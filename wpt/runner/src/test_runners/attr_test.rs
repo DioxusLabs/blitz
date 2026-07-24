@@ -182,9 +182,11 @@ fn total_offset(node: &Node) -> (f32, f32) {
 }
 
 fn check_attr(attr_name: &str, attr_val: &str, actual: f32) -> Result<(), String> {
-    let expected: f32 = attr_val
-        .parse()
-        .expect("Failed to parse check attribute as f32");
+    let Ok(expected) = attr_val.parse::<f32>() else {
+        return Err(format!(
+            "assert_equals: failed to parse {attr_name} value {attr_val} as f32"
+        ));
+    };
 
     let equal = assert_with_tolerance(expected, actual);
 
