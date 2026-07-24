@@ -66,6 +66,20 @@ impl<'m, 'doc> DocumentHtmlParser<'m, 'doc> {
         }
     }
 
+    /// Detects documents without an XML or DOCTYPE declaration whose root `<html>` element
+    /// declares the XHTML namespace (e.g. `<html xmlns="http://www.w3.org/1999/xhtml">`)
+    fn root_element_has_xhtml_namespace(html: &str) -> bool {
+        let rest = html.trim_start_matches('\u{feff}').trim_start();
+        let Some(rest) = rest.strip_prefix("<html") else {
+            return false;
+        };
+        let Some(tag_end) = rest.find('>') else {
+            return false;
+        };
+        rest[..tag_end].contains("xmlns=\"http://www.w3.org/1999/xhtml\"")
+            || rest[..tag_end].contains("xmlns='http://www.w3.org/1999/xhtml'")
+    }
+
     pub fn parse_into_mutator<'a, 'd>(mutr: &'a mut DocumentMutator<'d>, html: &str) {
         let mut sink = DocumentHtmlParser::new(mutr);
 
@@ -73,7 +87,8 @@ impl<'m, 'doc> DocumentHtmlParser<'m, 'doc> {
             || html.starts_with("<!DOCTYPE") && {
                 let first_line = html.lines().next().unwrap();
                 first_line.contains("XHTML") || first_line.contains("xhtml")
-            };
+            }
+            || Self::root_element_has_xhtml_namespace(html);
 
         if is_xhtml_doc {
             // Parse as XHTML
