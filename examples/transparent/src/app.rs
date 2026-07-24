@@ -24,7 +24,7 @@ pub fn launch() {
     //    and to clear each frame to a fully transparent color.
     let config = Config::new()
         .with_window_attributes(window_attributes)
-        .with_alpha_mode(CompositeAlphaMode::PostMultiplied)
+        .with_alpha_mode(CompositeAlphaMode::Transparent)
         .with_base_color(Color::TRANSPARENT);
 
     let configs: Vec<Box<dyn Any>> = vec![Box::new(config)];
