@@ -19,6 +19,7 @@ use std::ops::Deref;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use style::Atom;
+use style::computed_values::white_space_collapse::T as WhiteSpaceCollapse;
 use style::invalidation::element::restyle_hints::RestyleHint;
 use style::properties::ComputedValues;
 use style::properties::generated::longhands::position::computed_value::T as Position;
@@ -270,9 +271,33 @@ impl Node {
         }
     }
 
+    /// Whether the node is a text node that consists entirely of collapsible white space
+    /// (and can therefore be ignored for layout purposes).
     pub fn is_whitespace_node(&self) -> bool {
         match &self.data {
-            NodeData::Text(data) => data.content.chars().all(|c| c.is_ascii_whitespace()),
+            NodeData::Text(data) => {
+                data.content.chars().all(|c| c.is_ascii_whitespace())
+                    && self
+                        .primary_styles()
+                        .or_else(|| {
+                            self.parent
+                                .and_then(|parent_id| self.tree()[parent_id].primary_styles())
+                        })
+                        .map(|s| {
+                            match s.get_inherited_text().white_space_collapse {
+                                WhiteSpaceCollapse::Collapse => true,
+                                // Newlines are preserved, so the node is ignorable only if it
+                                // contains none.
+                                WhiteSpaceCollapse::PreserveBreaks => {
+                                    !data.content.contains(['\n', '\r'])
+                                }
+                                WhiteSpaceCollapse::Preserve | WhiteSpaceCollapse::BreakSpaces => {
+                                    false
+                                }
+                            }
+                        })
+                        .unwrap_or(true)
+            }
             _ => false,
         }
     }
@@ -1123,7 +1148,7 @@ impl Node {
                 if let Some((cluster, _side)) =
                     Cluster::from_point_exact(layout, x * scale, y * scale)
                 {
-                    let style_index = cluster.glyphs().next()?.style_index();
+                    let style_index = usize::from(cluster.style_index());
                     let node_id = layout.styles()[style_index].brush.id;
                     let text_pointer_events_none = self
                         .with(node_id)

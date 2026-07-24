@@ -3,8 +3,8 @@ use std::sync::Arc;
 
 use markup5ever::{QualName, local_name, ns};
 use parley::{
-    FontContext, InlineBox, InlineBoxKind, LayoutContext, StyleProperty, TreeBuilder,
-    WhiteSpaceCollapse,
+    BaseDirection, FontContext, InlineBox, InlineBoxKind, LayoutContext, StyleProperty,
+    TreeBuilder, WhiteSpaceCollapse,
 };
 use slab::Slab;
 use style::{
@@ -936,6 +936,13 @@ pub(crate) fn build_inline_layout_into(
         .unwrap_or(WhiteSpaceCollapse::Collapse);
     builder.set_white_space_mode(collapse_mode);
 
+    // Set base (paragraph) direction from the CSS `direction` property
+    let base_direction = root_node_style
+        .as_ref()
+        .map(|s| stylo_to_parley::direction(s.clone_direction()))
+        .unwrap_or(BaseDirection::Auto);
+    builder.set_base_direction(base_direction);
+
     let text_transform = root_node_style
         .as_ref()
         .map(|s| s.clone_text_transform() & TextTransform::CASE_TRANSFORMS)
@@ -1077,6 +1084,7 @@ pub(crate) fn build_inline_layout_into(
                                 // Width and height are set during layout
                                 width: 0.0,
                                 height: 0.0,
+                                baseline: None,
                             });
                         } else if *tag_name == local_name!("br") {
                             // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
@@ -1157,6 +1165,7 @@ pub(crate) fn build_inline_layout_into(
                             // Width and height are set during layout
                             width: 0.0,
                             height: 0.0,
+                            baseline: None,
                         });
                     }
                 };

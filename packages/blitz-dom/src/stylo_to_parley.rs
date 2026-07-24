@@ -7,6 +7,7 @@ use crate::node::TextBrush;
 
 // Module of type aliases so we can refer to stylo types with nicer names
 pub(crate) mod stylo {
+    pub(crate) use style::computed_values::direction::T as Direction;
     pub(crate) use style::computed_values::font_variant_caps::T as FontVariantCaps;
     pub(crate) use style::computed_values::font_variant_position::T as FontVariantPosition;
     pub(crate) use style::computed_values::text_wrap_mode::T as TextWrapMode;
@@ -34,6 +35,13 @@ pub(crate) mod parley {
     pub(crate) use parley::fontique::QueryFamily;
     pub(crate) use parley::setting::*;
     pub(crate) use parley::style::*;
+}
+
+pub(crate) fn direction(input: stylo::Direction) -> parley::BaseDirection {
+    match input {
+        stylo::Direction::Ltr => parley::BaseDirection::Ltr,
+        stylo::Direction::Rtl => parley::BaseDirection::Rtl,
+    }
 }
 
 pub(crate) fn generic_font_family(input: stylo::GenericFontFamily) -> parley::GenericFamily {
@@ -281,10 +289,8 @@ pub(crate) fn white_space_collapse(input: stylo::WhiteSpaceCollapse) -> parley::
     match input {
         stylo::WhiteSpaceCollapse::Collapse => parley::WhiteSpaceCollapse::Collapse,
         stylo::WhiteSpaceCollapse::Preserve => parley::WhiteSpaceCollapse::Preserve,
-
-        // TODO: Implement PreserveBreaks and BreakSpaces modes
-        stylo::WhiteSpaceCollapse::PreserveBreaks => parley::WhiteSpaceCollapse::Preserve,
-        stylo::WhiteSpaceCollapse::BreakSpaces => parley::WhiteSpaceCollapse::Preserve,
+        stylo::WhiteSpaceCollapse::PreserveBreaks => parley::WhiteSpaceCollapse::PreserveBreaks,
+        stylo::WhiteSpaceCollapse::BreakSpaces => parley::WhiteSpaceCollapse::BreakSpaces,
     }
 }
 
