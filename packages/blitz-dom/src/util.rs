@@ -193,14 +193,72 @@ pub(crate) fn parse_svg_image(source: &[u8]) -> Result<crate::node::SvgImageData
         .map_err(usvg::Error::ParsingFailed)?;
 
     let (has_width, has_height) = svg_has_absolute_dimensions(&doc);
+    let viewbox_aspect_ratio = svg_viewbox_aspect_ratio(&doc);
 
-    let tree = usvg::Tree::from_xmltree(&doc, &options)?;
-    let size = tree.size();
+    let mut tree = usvg::Tree::from_xmltree(&doc, &options)?;
+    let mut size = tree.size();
+
+    // usvg resolves a missing `width`/`height` from the `viewBox` dimensions,
+    // but per CSS a missing dimension is computed from the declared one and
+    // the `viewBox` aspect ratio. When that produces a different canvas size,
+    // inject the CSS-resolved dimension as an explicit attribute and re-parse
+    // so the tree's canvas (and the `viewBox` -> canvas mapping baked into it)
+    // matches the CSS intrinsic dimensions.
+    if let Some(ratio) = viewbox_aspect_ratio {
+        let (missing_attr, css_value) = match (has_width, has_height) {
+            (true, false) => ("height", size.width() / ratio),
+            (false, true) => ("width", size.height() * ratio),
+            _ => ("", 0.0),
+        };
+        if !missing_attr.is_empty()
+            && doc.root_element().attribute(missing_attr).is_none()
+            && css_value.is_finite()
+            && css_value > 0.0
+        {
+            let tag_start = doc.root_element().range().start;
+            let tag_name_len = text[tag_start + 1..]
+                .find([' ', '\t', '\n', '\r', '>', '/'])
+                .unwrap_or(0);
+            let insert_at = tag_start + 1 + tag_name_len;
+            let mut modified = String::with_capacity(text.len() + 32);
+            modified.push_str(&text[..insert_at]);
+            modified.push_str(&format!(" {missing_attr}=\"{css_value}\""));
+            modified.push_str(&text[insert_at..]);
+            let xml_opt = roxmltree::ParsingOptions {
+                allow_dtd: true,
+                ..Default::default()
+            };
+            if let Ok(modified_doc) = roxmltree::Document::parse_with_options(&modified, xml_opt)
+                && let Ok(modified_tree) = usvg::Tree::from_xmltree(&modified_doc, &options)
+            {
+                tree = modified_tree;
+                size = tree.size();
+            }
+        }
+    }
+
     Ok(crate::node::SvgImageData {
         intrinsic_width: has_width.then(|| size.width()),
         intrinsic_height: has_height.then(|| size.height()),
+        viewbox_aspect_ratio,
         tree: Arc::new(tree),
     })
+}
+
+/// Returns the aspect ratio of the root `<svg>` element's `viewBox`, if it
+/// declares one with positive width and height.
+#[cfg(feature = "svg")]
+fn svg_viewbox_aspect_ratio(doc: &usvg::roxmltree::Document) -> Option<f32> {
+    let value = doc.root_element().attribute("viewBox")?;
+    let mut parts = value
+        .split([',', ' ', '\t', '\n', '\r'])
+        .filter(|s| !s.is_empty());
+    let _min_x: f32 = parts.next()?.parse().ok()?;
+    let _min_y: f32 = parts.next()?.parse().ok()?;
+    let width: f32 = parts.next()?.parse().ok()?;
+    let height: f32 = parts.next()?.parse().ok()?;
+    (width > 0.0 && height > 0.0 && width.is_finite() && height.is_finite())
+        .then_some(width / height)
 }
 
 /// Returns whether the root `<svg>` element declares absolute (non-percentage)
@@ -251,6 +309,18 @@ impl ToColorColor for AbsoluteColor {
 #[cfg(all(test, feature = "svg"))]
 mod svg_tests {
     use super::parse_svg_image;
+
+    #[test]
+    fn missing_height_is_computed_from_width_and_viewbox_ratio() {
+        let src = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="200"><rect width="100%" height="100%" fill="green"/></svg>"#;
+        let svg = parse_svg_image(src).unwrap();
+        assert_eq!(svg.intrinsic_width, Some(200.0));
+        assert_eq!(svg.intrinsic_height, None);
+        assert_eq!(svg.viewbox_aspect_ratio, Some(1.0));
+        assert_eq!(svg.tree.size().width(), 200.0);
+        assert_eq!(svg.tree.size().height(), 200.0);
+        assert_eq!(svg.intrinsic_size(), (200.0, 200.0));
+    }
 
     #[test]
     fn viewbox_only_has_no_intrinsic_dimensions() {

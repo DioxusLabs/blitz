@@ -201,15 +201,23 @@ impl BaseDocument {
                             },
                             #[cfg(feature = "svg")]
                             ImageData::Svg(svg) => {
-                                let size = svg.tree.size();
-                                taffy::Size {
-                                    width: size.width(),
-                                    height: size.height(),
-                                }
+                                let (width, height) = svg.intrinsic_size();
+                                taffy::Size { width, height }
                             }
                             ImageData::None => taffy::Size::ZERO,
                         },
-                        SpecialElementData::Canvas(_) => taffy::Size::ZERO,
+                        // A canvas's intrinsic size is given by its width/height attributes,
+                        // defaulting to 300x150
+                        SpecialElementData::Canvas(_) => taffy::Size {
+                            width: attr_size.width.unwrap_or(300.0),
+                            height: attr_size.height.unwrap_or(150.0),
+                        },
+                        SpecialElementData::None if *element_data.name.local == *"canvas" => {
+                            taffy::Size {
+                                width: attr_size.width.unwrap_or(300.0),
+                                height: attr_size.height.unwrap_or(150.0),
+                            }
+                        }
                         SpecialElementData::None => taffy::Size::ZERO,
                         _ => unreachable!(),
                     };
@@ -225,7 +233,8 @@ impl BaseDocument {
                         inputs.available_space,
                         &replaced_context,
                         node.style(),
-                        false,
+                        inputs.sizing_mode,
+                        inputs.axis,
                     );
 
                     return taffy::LayoutOutput {
