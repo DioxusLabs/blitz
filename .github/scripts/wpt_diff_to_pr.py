@@ -69,12 +69,15 @@ def parse_diff(text):
 
 
 def format_lines(diff):
+    """Render the changes as diff-syntax lines sorted by test name."""
     lines = []
-    for before, after, test in diff.newly_passing + diff.newly_failing + diff.other_changes:
-        lines.append(f"{before} => {after} {test}")
-    lines.extend(f"ADD  {test}" for test in diff.added)
-    lines.extend(f"REM  {test}" for test in diff.removed)
-    return lines
+    for marker, entries in [("+", diff.newly_passing), ("-", diff.newly_failing), ("!", diff.other_changes)]:
+        for before, after, test in entries:
+            lines.append((test, f"{marker} {before} => {after} {test}"))
+    lines.extend((test, f"+ ADD {test}") for test in diff.added)
+    lines.extend((test, f"- REM {test}") for test in diff.removed)
+    lines.sort()
+    return [line for _, line in lines]
 
 
 def render(diff, run_url):
@@ -105,10 +108,10 @@ def render(diff, run_url):
         out.append("<details>")
         out.append(f"<summary>Full diff ({len(lines)} changed tests)</summary>")
         out.append("")
-        out.append("```")
+        out.append("```diff")
         out.extend(shown)
         if truncated:
-            out.append(f"... and {len(lines) - len(shown)} more (see the workflow logs)")
+            out.append(f"# ... and {len(lines) - len(shown)} more (see the workflow logs)")
         out.append("```")
         out.append("")
         out.append("</details>")
