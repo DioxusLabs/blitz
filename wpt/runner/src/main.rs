@@ -10,7 +10,7 @@ use blitz_traits::shell::{ColorScheme, Viewport};
 use panic_backtrace::StashedPanicInfo;
 use parley::FontContext;
 use report::{generate_expectations, generate_report};
-use supports_hyperlinks::supports_hyperlinks;
+use supports_hyperlinks::Stream as HyperlinkStream;
 use terminal_link::Link;
 use test_runners::{SubtestResult, process_test_file};
 use thread_local::ThreadLocal;
@@ -29,6 +29,7 @@ use std::io::{BufWriter, IsTerminal, Write, stdout};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{self, Path, PathBuf};
 use std::sync::Arc;
+use std::sync::LazyLock;
 use std::sync::atomic::Ordering;
 use std::sync::atomic::{AtomicU32, AtomicUsize};
 use std::time::{Duration, Instant, SystemTime};
@@ -49,6 +50,17 @@ fn unix_timestamp() -> u64 {
         .unwrap()
         .as_secs()
 }
+
+/// Whether to wrap test names in OSC 8 hyperlink escape sequences.
+///
+/// `supports_hyperlinks::supports_hyperlinks()` only sniffs environment variables, so it returns
+/// `true` even when stdout is redirected to a file or a pipe. That leaks half-written hyperlink
+/// sequences into captured output: if the consumer of that output truncates it (or dies mid-line,
+/// e.g. `| head`), the terminal never sees the closing `OSC 8 ; ; ST` and styles all subsequent
+/// output as a link. `supports_hyperlinks::on` additionally requires stdout to be a terminal
+/// (while still honouring the `FORCE_HYPERLINK` override).
+static USE_HYPERLINKS: LazyLock<bool> =
+    LazyLock::new(|| supports_hyperlinks::on(HyperlinkStream::Stdout));
 
 const WIDTH: u32 = 800;
 const HEIGHT: u32 = 600;
@@ -261,7 +273,7 @@ struct TestResult {
 
 impl TestResult {
     fn print_to(&self, mut out: impl Write) {
-        let result_str = if supports_hyperlinks() {
+        let result_str = if *USE_HYPERLINKS {
             let url = format!("https://wpt.live/{}", self.name);
             let link = Link::new(&self.name, &url);
             format!(
