@@ -33,7 +33,7 @@ jobs:
           REPO: ${{ github.repository }}
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
-          PR_NUMBER="$(gh api "repos/$REPO/commits/$HEAD_SHA/pulls" --jq '.[] | select(.base.repo.full_name == env.REPO) | .number' | head -n 1)"
+          PR_NUMBER="$(gh api --paginate "repos/$REPO/pulls?state=open&per_page=100" --jq '.[] | select(.head.sha == env.HEAD_SHA) | .number' | head -n 1)"
           if [ -z "$PR_NUMBER" ]; then
             echo "No pull request targeting $REPO found for commit $HEAD_SHA; skipping."
             echo "number=" >> "$GITHUB_OUTPUT"
