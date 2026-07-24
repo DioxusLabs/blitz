@@ -319,7 +319,22 @@ pub(crate) fn style(
     let font_style = self::font_style(font_styles.font_style);
     let font_width = self::font_width(font_styles.font_stretch);
     let font_variations = self::font_variations(&font_styles.font_variation_settings);
-    let font_features = self::font_features(font_styles);
+    let mut font_features = self::font_features(font_styles);
+
+    // Per css-text-3, when the spacing between characters is not zero user agents
+    // should not apply optional ligatures. Disabling features are inserted at the
+    // start of the list so that explicit author settings take precedence.
+    if letter_spacing != 0.0 {
+        font_features.splice(
+            0..0,
+            [
+                feature(b"liga", 0),
+                feature(b"clig", 0),
+                feature(b"dlig", 0),
+                feature(b"hlig", 0),
+            ],
+        );
+    }
 
     // Convert font family
     let families: Vec<_> = font_styles
