@@ -31,6 +31,8 @@ pub struct TableContext {
     pub computed_grid_info: AtomicRefCell<Option<DetailedGridInfo>>,
     pub border_style: Option<ServoArc<Border>>,
     pub border_collapse: BorderCollapse,
+    /// Number of top table-caption boxes, which occupy the leading rows of the grid
+    pub top_caption_count: u16,
 }
 
 // #[derive(Debug, Clone, Eq, PartialEq)]
@@ -47,6 +49,14 @@ pub struct TableCell {
 }
 
 #[derive(Debug, Clone)]
+pub struct TableCaption {
+    node_id: usize,
+    style: taffy::Style<Atom>,
+    /// Whether the caption appeared before any row in the table
+    is_top: bool,
+}
+
+#[derive(Debug, Clone)]
 pub struct TableRow {
     // kind: TableItemKind,
     pub node_id: usize,
@@ -58,6 +68,7 @@ pub(crate) fn build_table_context(
     table_root_node_id: usize,
 ) -> (TableContext, Vec<usize>) {
     let mut cells: Vec<TableCell> = Vec::new();
+    let mut captions: Vec<TableCaption> = Vec::new();
     let mut rows: Vec<TableRow> = Vec::new();
     let mut row = 0u16;
     let mut col = 0u16;
@@ -102,6 +113,7 @@ pub(crate) fn build_table_context(
             &mut row,
             &mut col,
             &mut cells,
+            &mut captions,
             &mut rows,
             &mut column_sizes,
             &mut first_cell_border,
@@ -109,14 +121,59 @@ pub(crate) fn build_table_context(
     }
     column_sizes.resize(col as usize, style_helpers::auto());
 
+    // Table-caption boxes are placed in their own grid rows, spanning every column.
+    // Top captions occupy the leading rows so the grid rows of cells are shifted down.
+    let top_caption_count = captions.iter().filter(|c| c.is_top).count() as u16;
+    if top_caption_count > 0 {
+        for cell in cells.iter_mut() {
+            if let taffy::GridPlacement::Line(line) = cell.style.grid_row.start {
+                cell.style.grid_row.start =
+                    style_helpers::line(line.as_i16() + top_caption_count as i16);
+            }
+        }
+    }
+    let mut bottom_caption_row = row + top_caption_count;
+    let mut top_caption_row = 0i16;
+    for mut caption in captions {
+        let caption_row = if caption.is_top {
+            top_caption_row += 1;
+            top_caption_row
+        } else {
+            bottom_caption_row += 1;
+            bottom_caption_row as i16
+        };
+        caption.style.grid_row = taffy::Line {
+            start: style_helpers::line(caption_row),
+            end: style_helpers::span(1),
+        };
+        cells.push(TableCell {
+            node_id: caption.node_id,
+            style: caption.style,
+        });
+    }
+    let row_count = bottom_caption_row.max(row + top_caption_count);
+
     style.grid_template_columns = column_sizes.into_iter().map(|dim| dim.into()).collect();
-    style.grid_template_rows = vec![style_helpers::auto(); row as usize];
+    style.grid_template_rows = vec![style_helpers::auto(); row_count as usize];
 
     style.gap = match border_collapse {
-        BorderCollapse::Separate => taffy::Size {
-            width: style_helpers::length(border_spacing.width.px()),
-            height: style_helpers::length(border_spacing.height.px()),
-        },
+        BorderCollapse::Separate => {
+            // In the separated borders model, `border-spacing` also applies between
+            // the table border and the outermost cells, in addition to between cells.
+            let spacing_x = border_spacing.width.px();
+            let spacing_y = border_spacing.height.px();
+            let padding = style.padding.resolve_or_zero(None, resolve_calc_value);
+            style.padding = taffy::Rect {
+                left: style_helpers::length(padding.left + spacing_x),
+                right: style_helpers::length(padding.right + spacing_x),
+                top: style_helpers::length(padding.top + spacing_y),
+                bottom: style_helpers::length(padding.bottom + spacing_y),
+            };
+            taffy::Size {
+                width: style_helpers::length(spacing_x),
+                height: style_helpers::length(spacing_y),
+            }
+        }
         BorderCollapse::Collapse => first_cell_border
             .as_ref()
             .map(|border| {
@@ -159,6 +216,7 @@ pub(crate) fn build_table_context(
             computed_grid_info: AtomicRefCell::new(None),
             border_collapse,
             border_style: first_cell_border,
+            top_caption_count,
         },
         layout_children,
     )
@@ -173,6 +231,7 @@ pub(crate) fn collect_table_cells(
     row: &mut u16,
     col: &mut u16,
     cells: &mut Vec<TableCell>,
+    captions: &mut Vec<TableCaption>,
     rows: &mut Vec<TableRow>,
     columns: &mut Vec<TrackSizingFunction>,
     first_cell_border: &mut Option<ServoArc<Border>>,
@@ -194,6 +253,22 @@ pub(crate) fn collect_table_cells(
         return;
     }
 
+    if display.outside() == DisplayOutside::TableCaption {
+        let stylo_style = &node.primary_styles().unwrap();
+        let mut style = stylo_taffy::to_taffy_style(stylo_style);
+        // A caption box spans the full width of the table grid
+        style.grid_column = taffy::Line {
+            start: style_helpers::line(1),
+            end: style_helpers::line(-1),
+        };
+        captions.push(TableCaption {
+            node_id,
+            style,
+            is_top: *row == 0,
+        });
+        return;
+    }
+
     match display.inside() {
         DisplayInside::TableRowGroup
         | DisplayInside::TableHeaderGroup
@@ -211,6 +286,7 @@ pub(crate) fn collect_table_cells(
                     row,
                     col,
                     cells,
+                    captions,
                     rows,
                     columns,
                     first_cell_border,
@@ -238,6 +314,7 @@ pub(crate) fn collect_table_cells(
                     row,
                     col,
                     cells,
+                    captions,
                     rows,
                     columns,
                     first_cell_border,
@@ -263,13 +340,18 @@ pub(crate) fn collect_table_cells(
                 *first_cell_border = Some(stylo_style.clone_border());
             }
 
-            // TODO: account for padding/border/margin
             if *row == 1 {
                 let column = match style.size.width.tag() {
                     taffy::CompactLength::LENGTH_TAG => {
                         let len = style.size.width.value();
                         let padding = style.padding.resolve_or_zero(None, resolve_calc_value);
-                        style_helpers::length(len + padding.left + padding.right)
+                        let border = style.border.resolve_or_zero(None, resolve_calc_value);
+                        match style.box_sizing {
+                            taffy::BoxSizing::ContentBox => style_helpers::length(
+                                len + padding.left + padding.right + border.left + border.right,
+                            ),
+                            taffy::BoxSizing::BorderBox => style_helpers::length(len),
+                        }
                     }
                     taffy::CompactLength::PERCENT_TAG => {
                         if is_fixed {
@@ -289,6 +371,9 @@ pub(crate) fn collect_table_cells(
             if border_collapse == BorderCollapse::Collapse {
                 style.border = taffy::Rect::ZERO.map(style_helpers::length);
             }
+
+            // The margin properties do not apply to table-internal elements
+            style.margin = taffy::Rect::ZERO.map(style_helpers::length);
 
             // Let Taffy auto-place the column. Combined with
             // `grid_auto_flow: RowDense` set on the table root, each cell
