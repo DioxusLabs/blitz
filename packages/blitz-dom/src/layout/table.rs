@@ -113,10 +113,23 @@ pub(crate) fn build_table_context(
     style.grid_template_rows = vec![style_helpers::auto(); row as usize];
 
     style.gap = match border_collapse {
-        BorderCollapse::Separate => taffy::Size {
-            width: style_helpers::length(border_spacing.width.px()),
-            height: style_helpers::length(border_spacing.height.px()),
-        },
+        BorderCollapse::Separate => {
+            // In the separated borders model, `border-spacing` also applies between
+            // the table border and the outermost cells, in addition to between cells.
+            let spacing_x = border_spacing.width.px();
+            let spacing_y = border_spacing.height.px();
+            let padding = style.padding.resolve_or_zero(None, resolve_calc_value);
+            style.padding = taffy::Rect {
+                left: style_helpers::length(padding.left + spacing_x),
+                right: style_helpers::length(padding.right + spacing_x),
+                top: style_helpers::length(padding.top + spacing_y),
+                bottom: style_helpers::length(padding.bottom + spacing_y),
+            };
+            taffy::Size {
+                width: style_helpers::length(spacing_x),
+                height: style_helpers::length(spacing_y),
+            }
+        }
         BorderCollapse::Collapse => first_cell_border
             .as_ref()
             .map(|border| {
@@ -263,13 +276,18 @@ pub(crate) fn collect_table_cells(
                 *first_cell_border = Some(stylo_style.clone_border());
             }
 
-            // TODO: account for padding/border/margin
             if *row == 1 {
                 let column = match style.size.width.tag() {
                     taffy::CompactLength::LENGTH_TAG => {
                         let len = style.size.width.value();
                         let padding = style.padding.resolve_or_zero(None, resolve_calc_value);
-                        style_helpers::length(len + padding.left + padding.right)
+                        let border = style.border.resolve_or_zero(None, resolve_calc_value);
+                        match style.box_sizing {
+                            taffy::BoxSizing::ContentBox => style_helpers::length(
+                                len + padding.left + padding.right + border.left + border.right,
+                            ),
+                            taffy::BoxSizing::BorderBox => style_helpers::length(len),
+                        }
                     }
                     taffy::CompactLength::PERCENT_TAG => {
                         if is_fixed {
@@ -289,6 +307,9 @@ pub(crate) fn collect_table_cells(
             if border_collapse == BorderCollapse::Collapse {
                 style.border = taffy::Rect::ZERO.map(style_helpers::length);
             }
+
+            // The margin properties do not apply to table-internal elements
+            style.margin = taffy::Rect::ZERO.map(style_helpers::length);
 
             // Let Taffy auto-place the column. Combined with
             // `grid_auto_flow: RowDense` set on the table root, each cell
