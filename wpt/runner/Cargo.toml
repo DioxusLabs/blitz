@@ -23,6 +23,7 @@ anyrender_vello_cpu = { workspace = true, optional = true }
 
 taffy = { workspace = true }
 parley = { workspace = true }
+peniko = { workspace = true }
 image = { workspace = true, features = ["png"] }
 url = { workspace = true }
 data-url = { workspace = true }
