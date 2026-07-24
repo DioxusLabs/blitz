@@ -52,8 +52,8 @@ pub fn process_test_file(
     if ctx.subgrid_re.is_match(&file_contents) {
         flags |= TestFlags::USES_SUBGRID;
     }
-    if ctx.masonry_re.is_match(&file_contents) {
-        flags |= TestFlags::USES_MASONRY;
+    if ctx.grid_lanes_re.is_match(&file_contents) {
+        flags |= TestFlags::USES_GRID_LANES;
     }
     if ctx.script_re.is_match(&file_contents) {
         flags |= TestFlags::USES_SCRIPT;

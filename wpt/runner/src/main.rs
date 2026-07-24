@@ -63,7 +63,7 @@ bitflags! {
         const USES_DIRECTION = 0b00001000;
         const USES_WRITING_MODE = 0b00010000;
         const USES_SUBGRID = 0b00100000;
-        const USES_MASONRY = 0b01000000;
+        const USES_GRID_LANES = 0b01000000;
         const USES_SCRIPT = 0b10000000;
     }
 }
@@ -240,7 +240,7 @@ struct ThreadCtx {
     direction_re: Regex,
     writing_mode_re: Regex,
     subgrid_re: Regex,
-    masonry_re: Regex,
+    grid_lanes_re: Regex,
     script_re: Regex,
     out_dir: PathBuf,
     wpt_dir: PathBuf,
@@ -324,7 +324,7 @@ impl TestResult {
             if self.flags.contains(TestFlags::USES_SUBGRID) {
                 write!(out, "{}", "S".bright_black()).unwrap();
             }
-            if self.flags.contains(TestFlags::USES_MASONRY) {
+            if self.flags.contains(TestFlags::USES_GRID_LANES) {
                 write!(out, "{}", "M".bright_black()).unwrap();
             }
             if self.kind == TestKind::Ref && self.flags.contains(TestFlags::USES_SCRIPT) {
@@ -388,7 +388,7 @@ fn main() {
 
     let fractional_pass_count = AtomicF64::new(0.0);
 
-    let masonry_fail_count = AtomicU32::new(0);
+    let grid_lanes_fail_count = AtomicU32::new(0);
     let subgrid_fail_count = AtomicU32::new(0);
     let writing_mode_fail_count = AtomicU32::new(0);
     let direction_fail_count = AtomicU32::new(0);
@@ -433,7 +433,7 @@ fn main() {
                     let direction_re = Regex::new(r#"direction:|directionRTL"#).unwrap();
                     let writing_mode_re = Regex::new(r#"writing-mode:|vertical(RL|LR)"#).unwrap();
                     let subgrid_re = Regex::new(r#"subgrid"#).unwrap();
-                    let masonry_re = Regex::new(r#"masonry"#).unwrap();
+                    let grid_lanes_re = Regex::new(r#"grid-lanes"#).unwrap();
                     let script_re = Regex::new(r#"<script|onload="#).unwrap();
 
                     let attrtest_re =
@@ -460,7 +460,7 @@ fn main() {
                         direction_re,
                         writing_mode_re,
                         subgrid_re,
-                        masonry_re,
+                        grid_lanes_re,
                         script_re,
                         out_dir: out_dir.clone(),
                         wpt_dir: wpt_dir.clone(),
@@ -507,8 +507,8 @@ fn main() {
             match status {
                 TestStatus::Pass => pass_count.fetch_add(1, Ordering::Relaxed),
                 TestStatus::Fail => {
-                    if flags.contains(TestFlags::USES_MASONRY) {
-                        masonry_fail_count.fetch_add(1, Ordering::Relaxed);
+                    if flags.contains(TestFlags::USES_GRID_LANES) {
+                        grid_lanes_fail_count.fetch_add(1, Ordering::Relaxed);
                     } else if flags.contains(TestFlags::USES_SUBGRID) {
                         subgrid_fail_count.fetch_add(1, Ordering::Relaxed);
                     } else if flags.contains(TestFlags::USES_WRITING_MODE) {
@@ -590,7 +590,7 @@ fn main() {
     let subtest_pass_count = subtest_pass_count.load(Ordering::SeqCst);
 
     let subgrid_fail_count = subgrid_fail_count.load(Ordering::SeqCst);
-    let masonry_fail_count = masonry_fail_count.load(Ordering::SeqCst);
+    let grid_lanes_fail_count = grid_lanes_fail_count.load(Ordering::SeqCst);
     let writing_mode_fail_count = writing_mode_fail_count.load(Ordering::SeqCst);
     let direction_fail_count = direction_fail_count.load(Ordering::SeqCst);
     let float_fail_count = float_fail_count.load(Ordering::SeqCst);
@@ -657,8 +657,8 @@ fn main() {
     if subgrid_fail_count > 0 {
         println!("{subgrid_fail_count:>4} use subgrid (S)");
     }
-    if masonry_fail_count > 0 {
-        println!("{masonry_fail_count:>4} use masonry (M)");
+    if grid_lanes_fail_count > 0 {
+        println!("{grid_lanes_fail_count:>4} use grid-lanes (M)");
     }
 
     // Generate wpt_expectations.txt
