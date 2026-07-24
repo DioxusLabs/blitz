@@ -2,7 +2,7 @@ use std::{fs, sync::Arc, time::Instant};
 
 use blitz_dom::{BaseDocument, DocumentConfig};
 use blitz_html::HtmlDocument;
-use log::info;
+use log::debug;
 
 use crate::{SubtestCounts, TestFlags, TestKind, TestStatus, ThreadCtx};
 
@@ -28,7 +28,7 @@ pub fn process_test_file(
     SubtestCounts,
     Vec<SubtestResult>,
 ) {
-    info!("Processing test file: {relative_path}");
+    debug!("Processing test file: {relative_path}");
 
     let file_contents = fs::read_to_string(ctx.wpt_dir.join(relative_path)).unwrap();
 
@@ -88,7 +88,7 @@ pub fn process_test_file(
         let selector = captures.get(1).unwrap().as_str().to_string();
         drop(matches);
 
-        println!("{selector}");
+        debug!("{selector}");
 
         let (status, counts, results) =
             process_attr_test(ctx, &selector, &file_contents, relative_path);

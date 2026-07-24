@@ -583,7 +583,7 @@ fn main() {
                     let mut out = stdout().lock();
                     write!(
                         out,
-                        "\x1b[{up}A\x1b[2K\r[{completed_num}/{count}] thread {worker_index}: {} {}\x1b[{up}B\r",
+                        "\x1b[?7l\x1b[{up}A\x1b[2K\r[{completed_num}/{count}] thread {worker_index}: {} {}\x1b[{up}B\r\x1b[?7h",
                         result.status.as_str(),
                         result.name
                     )

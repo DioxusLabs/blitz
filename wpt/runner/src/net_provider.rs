@@ -1,5 +1,6 @@
 use blitz_traits::net::{Bytes, NetHandler, NetProvider, Request};
 use data_url::DataUrl;
+use log::{debug, warn};
 use std::{
     collections::HashMap,
     panic::{AssertUnwindSafe, catch_unwind},
@@ -75,7 +76,7 @@ impl<D: Send + Sync + 'static> WptNetProvider<D> {
                     .unwrap_or(request.url.path());
                 let path = self.base_path.join(relative_path);
                 let file_content = std::fs::read(&path).inspect_err(|err| {
-                    eprintln!("Error loading {}: {}", path.display(), err);
+                    warn!("Error loading {}: {}", path.display(), err);
                     callback.queue.record_failure(request_id);
                 })?;
                 catch_unwind(AssertUnwindSafe(|| {
@@ -106,7 +107,7 @@ impl<D: Send + Sync + 'static> NetProvider for WptNetProvider<D> {
         if let Err(e) = res {
             self.queue.record_failure(request_id);
             // if !matches!(e, WptNetProviderError::Io(_)) {
-            eprintln!("Error loading {url}: {e:?}");
+            warn!("Error loading {url}: {e:?}");
             // }
         }
     }
@@ -201,7 +202,7 @@ impl<T> InternalQueue<T> {
     pub fn record_failure(&self, request_id: usize) {
         let mut requests = self.requests.lock().unwrap_or_else(|err| err.into_inner());
         if let Some(req) = requests.get_mut(&request_id) {
-            println!("Error loading {}", req.url);
+            warn!("Error loading {}", req.url);
             req.status = RequestStatus::Error;
         }
     }
@@ -216,7 +217,7 @@ impl<T> InternalQueue<T> {
     pub fn log_pending_items(&self) {
         let requests = self.requests.lock().unwrap_or_else(|err| err.into_inner());
         for (id, req) in requests.iter() {
-            println!("Req {}: {} ({:?})", id, req.url, req.status);
+            debug!("Req {}: {} ({:?})", id, req.url, req.status);
         }
     }
 
