@@ -101,7 +101,9 @@ taffy = { version = "0.12.1", default-features = false, features = [
     "calc",
     "detailed_layout_info",
 ] }
-parley = { version = "0.10", default-features = false, features = ["std"] }
+# TODO: point back at a crates-io release once the white-space-collapse work
+# (parley#680 + follow-ups) is merged and published.
+parley = { git = "https://github.com/DioxusLabs/parley", branch = "devin/1784926372-css-text-wpt-fixes", default-features = false, features = ["std"] }
 skrifa = { version = "0.42", default-features = false, features = [
     "std",
 ] } # Should match parley and vello versions
@@ -297,3 +299,7 @@ tracing-subscriber = "0.3"
 # [patch."https://github.com/linebender/parley"]
 # parley = { path = "../parley/parley" }
 # fontique = { path = "../parley/fontique" }
+
+# TODO: remove once a taffy release including DioxusLabs/taffy#994 is published.
+[patch.crates-io]
+taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "8602368" }

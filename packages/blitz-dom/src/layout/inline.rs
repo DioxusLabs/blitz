@@ -409,13 +409,12 @@ impl BaseDocument {
                 let float_width = 0.0;
 
                 let computed_width = match available_space.width {
-                    AvailableSpace::MinContent => min_content_width.max(float_width),
-                    AvailableSpace::MaxContent => max_content_width + float_width,
+                    AvailableSpace::MinContent => min_content_width.max(float_width).ceil(),
+                    AvailableSpace::MaxContent => (max_content_width + float_width).ceil(),
                     AvailableSpace::Definite(limit) => (limit * scale)
-                        .min(max_content_width + float_width)
-                        .max(min_content_width),
-                }
-                .ceil();
+                        .min((max_content_width + float_width).ceil())
+                        .max(min_content_width.ceil()),
+                };
 
                 let style_width = node_size.width.map(|w| w * scale);
                 let min_width = node_min_size.width.map(|w| w * scale);
@@ -471,9 +470,17 @@ impl BaseDocument {
             return LayoutOutput::from_outer_size(clamped_size);
         }
 
+        // Tolerance for treating content that overflows the container by a subpixel-invisible
+        // amount as fitting, compensating for floating-point rounding error in a width derived
+        // from font metrics (e.g. a CSS `ch`-based width intended to exactly fit a whole number
+        // of characters). A thousandth of a (scaled) pixel is well below visible size differences.
+        const FIT_TOLERANCE: f32 = 0.001;
+
         #[cfg(not(feature = "floats"))]
         {
-            inline_layout.layout.break_all_lines(Some(width));
+            inline_layout
+                .layout
+                .break_all_lines(Some(width + FIT_TOLERANCE));
         }
 
         // Perform inline layout
@@ -484,6 +491,7 @@ impl BaseDocument {
             let mut has_active_floats = initial_slot.segment_id.is_some();
             let state = breaker.state_mut();
             state.set_layout_max_advance(width);
+            state.set_max_advance_fit_tolerance(FIT_TOLERANCE);
             state.set_line_max_advance(initial_slot.width * scale);
             state.set_line_x(initial_slot.x * scale);
             state.set_line_y((initial_slot.y * scale) as f64);
@@ -542,8 +550,20 @@ impl BaseDocument {
 
                         let margin_sum = margin.sum_axes();
 
-                        let output =
-                            self.compute_child_layout(NodeId::from(node_id), float_child_inputs);
+                        // A float with `width: auto` is shrink-to-fit (fit-content) sized:
+                        // the available space clamped between its min-content and max-content
+                        // sizes, rather than its max-content size outright.
+                        let available_width = (width / scale) - margin_sum.width;
+                        let output = self.compute_child_layout(
+                            NodeId::from(node_id),
+                            taffy::tree::LayoutInput {
+                                available_space: taffy::Size {
+                                    width: AvailableSpace::Definite(available_width),
+                                    height: AvailableSpace::MaxContent,
+                                },
+                                ..float_child_inputs
+                            },
+                        );
                         let min_y = state.line_y() as f32 / scale;
 
                         // Note: `pos` is content-box relative
@@ -559,7 +579,7 @@ impl BaseDocument {
                             block_ctx.find_content_slot(min_y as f32, Clear::None, None);
                         has_active_floats = next_slot.segment_id.is_some();
 
-                        state.set_line_max_advance(next_slot.width * scale);
+                        state.set_line_max_advance(next_slot.width * scale + FIT_TOLERANCE);
                         state.set_line_x(next_slot.x * scale);
                         state.set_line_y((next_slot.y * scale) as f64);
 
@@ -571,7 +591,7 @@ impl BaseDocument {
                         // dbg!(&layout.size);
                         // dbg!(&layout.location);
 
-                        state.append_inline_box_to_line(box_break_data.advance, 0.0);
+                        state.append_inline_box_to_line(box_break_data.advance, 0.0, 0.0);
 
                         // if float.is_floated() {
                         //     println!("INLINE FLOATED BOX ({}) {:?}", ibox.id, float);
@@ -616,19 +636,16 @@ impl BaseDocument {
         #[allow(unused_mut)]
         let mut height = inline_layout.layout.height();
 
-        // HACK. TODO: fix in Parley.
-        //
         // A forced line break (e.g. `<br>` or a preserved newline) at the end of the
         // inline content ends the final line box but must not generate an extra empty
         // line box after it. Parley produces a trailing empty line in this case
         // (text-editor semantics), so we exclude that line from the measured height.
-        // if inline_layout.text.ends_with('\n') {
-        //     if let Some(last_line) = inline_layout.layout.lines().last() {
-        //         if last_line.items().next().is_none() {
-        //             height -= last_line.metrics().line_height;
-        //         }
-        //     }
-        // }
+        if inline_layout.layout.len() > 1
+            && let Some(last_line) = inline_layout.layout.lines().last()
+            && last_line.text_range().is_empty()
+        {
+            height -= last_line.metrics().line_height;
+        }
 
         #[cfg(feature = "floats")]
         {
