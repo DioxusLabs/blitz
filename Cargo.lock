@@ -9252,6 +9252,7 @@ dependencies = [
  "rayon",
  "regex",
  "serde_json",
+ "stylo_traits",
  "supports-hyperlinks",
  "taffy",
  "terminal-link",
