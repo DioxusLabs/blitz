@@ -25,12 +25,12 @@ use owo_colors::OwoColorize;
 use std::cell::RefCell;
 use std::fmt::Display;
 use std::fs::File;
-use std::io::{BufWriter, Write, stdout};
+use std::io::{BufWriter, IsTerminal, Write, stdout};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{self, Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::AtomicU32;
 use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicU32, AtomicUsize};
 use std::time::{Duration, Instant, SystemTime};
 use std::{env, fs};
 
@@ -224,6 +224,7 @@ impl Buffers {
     }
 }
 struct ThreadCtx {
+    worker_index: usize,
     viewport: Viewport,
     net_provider: Arc<WptNetProvider<Resource>>,
     navigation_provider: Arc<dyn NavigationProvider>,
@@ -360,6 +361,7 @@ fn main() {
     env_logger::init();
     std::panic::set_hook(Box::new(panic_backtrace::stash_panic_handler));
 
+    let verbose = env::args().any(|arg| arg == "--verbose" || arg == "-v");
     let wpt_dir = path::absolute(env::var("WPT_DIR").expect("WPT_DIR is not set")).unwrap();
     info!("WPT_DIR: {}", wpt_dir.display());
     if !wpt_dir.exists() {
@@ -401,16 +403,28 @@ fn main() {
     let start_timestamp = unix_timestamp();
 
     let num = AtomicU32::new(0);
+    let completed_num = AtomicU32::new(0);
 
     let base_font_context = parley::FontContext::default();
 
     let thread_state: ThreadLocal<RefCell<ThreadCtx>> = ThreadLocal::new();
+    let worker_counter = AtomicUsize::new(0);
+    let stdout_is_terminal = stdout().is_terminal();
+
+    if !verbose && stdout_is_terminal {
+        let mut out = stdout().lock();
+        for _ in 0..rayon::current_num_threads() {
+            writeln!(out).unwrap();
+        }
+        out.flush().unwrap();
+    }
 
     let mut results: Vec<TestResult> = test_paths
         .into_par_iter()
         .map(|path| {
             let mut ctx = thread_state
                 .get_or(|| {
+                    let worker_index = worker_counter.fetch_add(1, Ordering::Relaxed);
                     let renderer = VelloImageRenderer::new(WIDTH, HEIGHT);
                     let font_ctx = base_font_context.clone();
                     let test_buffer = Vec::with_capacity((WIDTH * HEIGHT * 4) as usize);
@@ -444,6 +458,7 @@ fn main() {
                     let navigation_provider = Arc::new(DummyNavigationProvider);
 
                     RefCell::new(ThreadCtx {
+                        worker_index,
                         viewport,
                         net_provider,
                         renderer,
@@ -554,10 +569,30 @@ fn main() {
                 panic_info,
             };
 
-            // Print status line
-            let mut out = stdout().lock();
-            write!(out, "[{num}/{count}] ").unwrap();
-            result.print_to(out);
+            if verbose {
+                // Print status line
+                let mut out = stdout().lock();
+                write!(out, "[{num}/{count}] ").unwrap();
+                result.print_to(out);
+            } else {
+                let completed_num = completed_num.fetch_add(1, Ordering::Relaxed) + 1;
+                if stdout_is_terminal {
+                    let worker_index = ctx.worker_index;
+                    let worker_count = rayon::current_num_threads();
+                    let up = worker_count - worker_index;
+                    let mut out = stdout().lock();
+                    write!(
+                        out,
+                        "\x1b[?7l\x1b[{up}A\x1b[2K\r[{completed_num}/{count}] thread {worker_index:>2}: {} {}\x1b[{up}B\r\x1b[?7h",
+                        result.status.as_str(),
+                        result.name
+                    )
+                    .unwrap();
+                    out.flush().unwrap();
+                } else if completed_num.is_multiple_of(1000) || completed_num == count as u32 {
+                    println!("[{completed_num}/{count}] ...");
+                }
+            }
 
             result
         })

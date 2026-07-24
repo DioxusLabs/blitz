@@ -1,4 +1,5 @@
 use blitz_dom::Node;
+use log::warn;
 use style_traits::ToCss;
 
 use super::{SubtestResult, parse_and_resolve_document};
@@ -24,7 +25,7 @@ pub fn process_attr_test(
         panic!("Err parsing subtest selector \"{subtest_selector}\"");
     };
     if subtest_roots.is_empty() {
-        println!("No matching nodes found for subtest selector \"{subtest_selector}\"");
+        warn!("No matching nodes found for subtest selector \"{subtest_selector}\"");
         return (TestStatus::Fail, SubtestCounts::ZERO_OF_ZERO, Vec::new());
     }
 
