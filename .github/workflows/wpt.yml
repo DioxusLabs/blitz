@@ -67,7 +67,7 @@ jobs:
       - name: Diff WPT results
         run: wpt diff ./wpt/output/main-wptreport.json ./wpt/output/wptreport.json | tee ./wpt/output/wptdiff.txt
       - name: Post results to PR description
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
