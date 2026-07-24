@@ -433,7 +433,7 @@ fn main() {
                     let direction_re = Regex::new(r#"direction:|directionRTL"#).unwrap();
                     let writing_mode_re = Regex::new(r#"writing-mode:|vertical(RL|LR)"#).unwrap();
                     let subgrid_re = Regex::new(r#"subgrid"#).unwrap();
-                    let masonry_re = Regex::new(r#"masonry"#).unwrap();
+                    let masonry_re = Regex::new(r#"masonry|grid-lanes"#).unwrap();
                     let script_re = Regex::new(r#"<script|onload="#).unwrap();
 
                     let attrtest_re =
