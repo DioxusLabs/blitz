@@ -22,7 +22,7 @@ jobs:
       - name: Download WPT diff
         uses: actions/download-artifact@v7
         with:
-          name: wpt-diff
+          name: wptdiff.txt
           path: ./wpt/output
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}

@@ -74,7 +74,7 @@ jobs:
         if: github.event_name == 'pull_request'
         uses: actions/upload-artifact@v7
         with:
-          name: wpt-diff
+          name: wptdiff.txt
           path: ./wpt/output/wptdiff.txt
           archive: false
       - name: Setup Github Pages
