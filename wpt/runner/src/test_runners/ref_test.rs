@@ -1,6 +1,9 @@
 use anyrender::{ImageRenderer as _, PaintScene as _};
+use blitz_dom::util::Color;
 use blitz_paint::paint_scene;
 use image::{ImageBuffer, ImageFormat};
+use peniko::Fill;
+use peniko::kurbo::Rect;
 use std::fs;
 use std::fs::File;
 use std::io::Write;
@@ -118,6 +121,16 @@ fn render_html_to_buffer(
     ctx.renderer.render_to_vec(
         |scene| {
             scene.reset();
+
+            // Render white background
+            scene.fill(
+                Fill::NonZero,
+                Default::default(),
+                Color::WHITE,
+                Default::default(),
+                &Rect::new(0.0, 0.0, WIDTH as f64, HEIGHT as f64),
+            );
+
             paint_scene(scene, &mut document, SCALE, WIDTH, HEIGHT, 0, 0);
         },
         buf,
