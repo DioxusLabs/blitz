@@ -902,6 +902,14 @@ pub(crate) fn find_inline_layout_embedded_boxes(
     }
 }
 
+/// Flag set on the `id` of synthetic [`InlineBox`]es that reserve space for the
+/// margin/border/padding of a non-replaced inline element's left or right edge.
+/// The remaining bits contain the id of the inline element's node.
+pub(crate) const INLINE_EDGE_STRUT_FLAG: u64 = 1 << 63;
+/// Flag distinguishing right-edge struts from left-edge struts.
+pub(crate) const INLINE_EDGE_RIGHT_FLAG: u64 = 1 << 62;
+pub(crate) const INLINE_EDGE_ID_MASK: u64 = !(INLINE_EDGE_STRUT_FLAG | INLINE_EDGE_RIGHT_FLAG);
+
 pub(crate) fn build_inline_layout_into(
     nodes: &Slab<Node>,
     layout_ctx: &mut LayoutContext<TextBrush>,
@@ -1088,6 +1096,58 @@ pub(crate) fn build_inline_layout_into(
                             builder.set_white_space_mode(collapse_mode);
                         } else {
                             // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
+
+                            // Push zero-height inline boxes to reserve space for the element's
+                            // left/right margin/border/padding (widths resolved during layout).
+                            // Note: cannot use `node.style` here as Taffy styles have not
+                            // necessarily been flushed at inline layout construction time.
+                            let (has_left_edge, has_right_edge) = style
+                                .map(|s| {
+                                    use style::values::computed::BorderStyle;
+                                    use style::values::generics::length::GenericMargin;
+                                    let margin = s.get_margin();
+                                    let padding = s.get_padding();
+                                    let border = s.get_border();
+                                    let border_px = |width: f32, style: BorderStyle| match style {
+                                        BorderStyle::None | BorderStyle::Hidden => 0.0,
+                                        _ => width,
+                                    };
+                                    // Nonzero unless the value is a definite zero length
+                                    // (percentage/calc values are resolved during layout)
+                                    let lp_nonzero =
+                                        |lp: &style::values::computed::LengthPercentage| {
+                                            lp.to_length().is_none_or(|l| l.px() != 0.0)
+                                        };
+                                    let margin_nonzero = |m: &GenericMargin<_>| match m {
+                                        GenericMargin::LengthPercentage(lp) => lp_nonzero(lp),
+                                        _ => false,
+                                    };
+                                    let left = margin_nonzero(&margin.margin_left)
+                                        || lp_nonzero(&padding.padding_left.0)
+                                        || border_px(
+                                            border.border_left_width.0.to_f32_px(),
+                                            border.border_left_style,
+                                        ) != 0.0;
+                                    let right = margin_nonzero(&margin.margin_right)
+                                        || lp_nonzero(&padding.padding_right.0)
+                                        || border_px(
+                                            border.border_right_width.0.to_f32_px(),
+                                            border.border_right_style,
+                                        ) != 0.0;
+                                    (left, right)
+                                })
+                                .unwrap_or((false, false));
+
+                            if has_left_edge {
+                                builder.push_inline_box(InlineBox {
+                                    id: node_id as u64 | INLINE_EDGE_STRUT_FLAG,
+                                    kind: InlineBoxKind::InFlow,
+                                    index: 0,
+                                    width: 0.0,
+                                    height: 0.0,
+                                });
+                            }
+
                             let mut style = node
                                 .primary_styles()
                                 .map(|s| stylo_to_parley::style(node.id, &s))
@@ -1145,6 +1205,18 @@ pub(crate) fn build_inline_layout_into(
                             }
 
                             builder.pop_style_span();
+
+                            if has_right_edge {
+                                builder.push_inline_box(InlineBox {
+                                    id: node_id as u64
+                                        | INLINE_EDGE_STRUT_FLAG
+                                        | INLINE_EDGE_RIGHT_FLAG,
+                                    kind: InlineBoxKind::InFlow,
+                                    index: 0,
+                                    width: 0.0,
+                                    height: 0.0,
+                                });
+                            }
                         }
                     }
                     // Inline box

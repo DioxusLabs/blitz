@@ -12,6 +12,7 @@ use parley::YieldData;
 #[cfg(feature = "floats")]
 use taffy::{Clear, Float, prelude::TaffyMaxContent};
 
+use super::construct::{INLINE_EDGE_ID_MASK, INLINE_EDGE_RIGHT_FLAG, INLINE_EDGE_STRUT_FLAG};
 use super::resolve_calc_value;
 use crate::BaseDocument;
 
@@ -285,6 +286,53 @@ impl BaseDocument {
 
         // Update inline boxes
         for ibox in inline_layout.layout.inline_boxes_mut() {
+            // Synthetic boxes reserving space for an inline element's left/right
+            // margin/border/padding edge
+            if ibox.id & INLINE_EDGE_STRUT_FLAG != 0 {
+                let strut_node_id = (ibox.id & INLINE_EDGE_ID_MASK) as usize;
+                // Note: Taffy styles are not flushed for inline elements, so the
+                // edge widths must be resolved from the stylo computed styles.
+                let width = self.nodes[strut_node_id]
+                    .primary_styles()
+                    .map(|s| {
+                        use style::values::computed::BorderStyle;
+                        use style::values::generics::length::GenericMargin;
+                        let basis = CSSPixelLength::new(inputs.parent_size.width.unwrap_or(0.0));
+                        let margin = s.get_margin();
+                        let padding = s.get_padding();
+                        let border = s.get_border();
+                        let margin_px = |m: &GenericMargin<
+                            style::values::computed::LengthPercentage,
+                        >| match m {
+                            GenericMargin::LengthPercentage(lp) => lp.resolve(basis).px(),
+                            _ => 0.0,
+                        };
+                        let border_px = |width: f32, style: BorderStyle| match style {
+                            BorderStyle::None | BorderStyle::Hidden => 0.0,
+                            _ => width,
+                        };
+                        if ibox.id & INLINE_EDGE_RIGHT_FLAG != 0 {
+                            margin_px(&margin.margin_right)
+                                + padding.padding_right.0.resolve(basis).px()
+                                + border_px(
+                                    border.border_right_width.0.to_f32_px(),
+                                    border.border_right_style,
+                                )
+                        } else {
+                            margin_px(&margin.margin_left)
+                                + padding.padding_left.0.resolve(basis).px()
+                                + border_px(
+                                    border.border_left_width.0.to_f32_px(),
+                                    border.border_left_style,
+                                )
+                        }
+                    })
+                    .unwrap_or(0.0);
+                ibox.width = width.max(0.0) * scale;
+                ibox.height = 0.0;
+                continue;
+            }
+
             let style = &self.nodes[ibox.id as usize].style;
             let margin = style
                 .margin
@@ -347,6 +395,9 @@ impl BaseDocument {
                     AvailableSpace::MinContent => {
                         let mut width: f32 = 0.0;
                         for ibox in inline_layout.layout.inline_boxes_mut() {
+                            if ibox.id & INLINE_EDGE_STRUT_FLAG != 0 {
+                                continue;
+                            }
                             let style = &self.nodes[ibox.id as usize].style;
 
                             if style.float.is_floated() {
@@ -374,6 +425,9 @@ impl BaseDocument {
                         let mut right_band: f32 = 0.0;
                         let mut width: f32 = 0.0;
                         for ibox in inline_layout.layout.inline_boxes_mut() {
+                            if ibox.id & INLINE_EDGE_STRUT_FLAG != 0 {
+                                continue;
+                            }
                             let style = &self.nodes[ibox.id as usize].style;
                             let float = style.float;
 
@@ -669,6 +723,10 @@ impl BaseDocument {
         for line in inline_layout.layout.lines() {
             for item in line.items() {
                 if let parley::layout::PositionedLayoutItem::InlineBox(ibox) = item {
+                    // Synthetic edge struts don't correspond to a node to be positioned
+                    if ibox.id & INLINE_EDGE_STRUT_FLAG != 0 {
+                        continue;
+                    }
                     let node = &mut self.nodes[ibox.id as usize];
                     let padding = node
                         .style
