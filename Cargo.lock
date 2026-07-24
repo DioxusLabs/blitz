@@ -9246,6 +9246,7 @@ dependencies = [
  "os_info",
  "owo-colors",
  "parley",
+ "peniko",
  "png 0.17.16",
  "pollster",
  "rayon",
