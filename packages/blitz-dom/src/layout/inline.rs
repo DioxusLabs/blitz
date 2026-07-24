@@ -301,7 +301,9 @@ impl BaseDocument {
             } else {
                 let output = self.compute_child_layout(NodeId::from(ibox.id), child_inputs);
                 ibox.width = (margin.left + margin.right + output.size.width) * scale;
-                ibox.height = (margin.top + margin.bottom + output.size.height) * scale;
+                // Vertical margins adjust the space the box reserves in the line, but the
+                // reserved space cannot be negative.
+                ibox.height = (margin.top + margin.bottom + output.size.height).max(0.0) * scale;
             }
         }
 
@@ -694,11 +696,21 @@ impl BaseDocument {
                         layout.padding = padding; //.map(|p| p / scale);
                         layout.border = border; //.map(|p| p / scale);
                     } else {
+                        // Re-measure the box to get its border-box size (this hits the layout
+                        // cache). The size cannot be recovered from `ibox` dimensions as the
+                        // space reserved in the line is clamped to be non-negative.
+                        let size = self
+                            .compute_child_layout(NodeId::from(ibox.id), child_inputs)
+                            .size;
+                        let node = &mut self.nodes[ibox.id as usize];
                         let layout = &mut node.unrounded_layout;
-                        layout.size.width = (ibox.width / scale) - margin.left - margin.right;
-                        layout.size.height = (ibox.height / scale) - margin.top - margin.bottom;
+                        layout.size = size;
                         layout.location.x = (ibox.x / scale) + margin.left + container_pb.left;
-                        layout.location.y = (ibox.y / scale) + margin.top + container_pb.top;
+                        // A negative `margin-top` shrinks the space the box reserves in the
+                        // line but does not move the box itself, which stays anchored to the
+                        // bottom of the reserved space.
+                        layout.location.y =
+                            (ibox.y / scale) + margin.top.max(0.0) + container_pb.top;
                         layout.padding = padding; //.map(|p| p / scale);
                         layout.border = border; //.map(|p| p / scale);
                     }
