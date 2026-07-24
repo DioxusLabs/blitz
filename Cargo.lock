@@ -2840,7 +2840,7 @@ dependencies = [
 [[package]]
 name = "fontique"
 version = "0.11.0"
-source = "git+https://github.com/nicoburns/parley?branch=better-white-space-collapse#2460f9c3eb3c67c84d147f896797ac6fc2610f3b"
+source = "git+https://github.com/DioxusLabs/parley?branch=devin%2F1784926372-css-text-wpt-fixes#2ef11adbe3d1fe93e11894b0bc7e8a4ba98a2d60"
 dependencies = [
  "hashbrown 0.17.1",
  "linebender_resource_handle",
@@ -5257,12 +5257,12 @@ dependencies = [
 [[package]]
 name = "parlance"
 version = "0.1.0"
-source = "git+https://github.com/nicoburns/parley?branch=better-white-space-collapse#2460f9c3eb3c67c84d147f896797ac6fc2610f3b"
+source = "git+https://github.com/DioxusLabs/parley?branch=devin%2F1784926372-css-text-wpt-fixes#2ef11adbe3d1fe93e11894b0bc7e8a4ba98a2d60"
 
 [[package]]
 name = "parley"
 version = "0.11.0"
-source = "git+https://github.com/nicoburns/parley?branch=better-white-space-collapse#2460f9c3eb3c67c84d147f896797ac6fc2610f3b"
+source = "git+https://github.com/DioxusLabs/parley?branch=devin%2F1784926372-css-text-wpt-fixes#2ef11adbe3d1fe93e11894b0bc7e8a4ba98a2d60"
 dependencies = [
  "fontique",
  "harfrust",
@@ -5278,7 +5278,7 @@ dependencies = [
 [[package]]
 name = "parley_core"
 version = "0.11.0"
-source = "git+https://github.com/nicoburns/parley?branch=better-white-space-collapse#2460f9c3eb3c67c84d147f896797ac6fc2610f3b"
+source = "git+https://github.com/DioxusLabs/parley?branch=devin%2F1784926372-css-text-wpt-fixes#2ef11adbe3d1fe93e11894b0bc7e8a4ba98a2d60"
 dependencies = [
  "icu_normalizer",
  "icu_properties",
@@ -5290,7 +5290,7 @@ dependencies = [
 [[package]]
 name = "parley_data"
 version = "0.11.0"
-source = "git+https://github.com/nicoburns/parley?branch=better-white-space-collapse#2460f9c3eb3c67c84d147f896797ac6fc2610f3b"
+source = "git+https://github.com/DioxusLabs/parley?branch=devin%2F1784926372-css-text-wpt-fixes#2ef11adbe3d1fe93e11894b0bc7e8a4ba98a2d60"
 dependencies = [
  "icu_properties",
 ]
