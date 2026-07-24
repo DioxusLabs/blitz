@@ -724,6 +724,12 @@ impl BaseDocument {
         // println!("known_dimensions: w: {:?} h: {:?}", inputs.known_dimensions.width, inputs.known_dimensions.height);
         // println!("\n");
 
+        let first_baseline = inline_layout
+            .layout
+            .lines()
+            .next()
+            .map(|line| (line.metrics().baseline / scale) + container_pb.top);
+
         // Put layout back
         self.nodes[node_id]
             .data
@@ -734,7 +740,10 @@ impl BaseDocument {
         LayoutOutput {
             size: final_size,
             content_size: measured_size + padding.sum_axes(),
-            first_baselines: Point::NONE,
+            first_baselines: Point {
+                x: None,
+                y: first_baseline,
+            },
             top_margin: CollapsibleMarginSet::ZERO,
             bottom_margin: CollapsibleMarginSet::ZERO,
             margins_can_collapse_through: !has_styles_preventing_being_collapsed_through
