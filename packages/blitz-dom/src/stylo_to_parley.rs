@@ -324,6 +324,7 @@ pub(crate) fn style(
     // Per css-text-3, when the spacing between characters is not zero user agents
     // should not apply optional ligatures. Disabling features are inserted at the
     // start of the list so that explicit author settings take precedence.
+    // TODO: move this fix into parley
     if letter_spacing != 0.0 {
         font_features.splice(
             0..0,
