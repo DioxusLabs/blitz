@@ -263,7 +263,8 @@ pub fn aspect_ratio(input: stylo::AspectRatio) -> Option<f32> {
 
 #[inline]
 pub fn content_alignment(input: stylo::ContentDistribution) -> Option<taffy::AlignContent> {
-    match input.primary().value() {
+    let primary = input.primary();
+    let mut align = match primary.value() {
         stylo::AlignFlags::NORMAL => None,
         stylo::AlignFlags::AUTO => None,
         stylo::AlignFlags::START => Some(taffy::AlignContent::START),
@@ -279,12 +280,16 @@ pub fn content_alignment(input: stylo::ContentDistribution) -> Option<taffy::Ali
         stylo::AlignFlags::SPACE_EVENLY => Some(taffy::AlignContent::SPACE_EVENLY),
         // Should never be hit. But no real reason to panic here.
         _ => None,
+    }?;
+    if primary.flags().contains(stylo::AlignFlags::SAFE) {
+        align.safety = taffy::AlignmentSafety::Safe;
     }
+    Some(align)
 }
 
 #[inline]
 pub fn item_alignment(input: stylo::AlignFlags) -> Option<taffy::AlignItems> {
-    match input.value() {
+    let mut align = match input.value() {
         stylo::AlignFlags::AUTO => None,
         stylo::AlignFlags::NORMAL => Some(taffy::AlignItems::STRETCH),
         stylo::AlignFlags::STRETCH => Some(taffy::AlignItems::STRETCH),
@@ -300,7 +305,11 @@ pub fn item_alignment(input: stylo::AlignFlags) -> Option<taffy::AlignItems> {
         stylo::AlignFlags::BASELINE => Some(taffy::AlignItems::BASELINE),
         // Should never be hit. But no real reason to panic here.
         _ => None,
+    }?;
+    if input.flags().contains(stylo::AlignFlags::SAFE) {
+        align.safety = taffy::AlignmentSafety::Safe;
     }
+    Some(align)
 }
 
 #[inline]
