@@ -19,7 +19,6 @@ permissions:
   contents: read
   pages: write
   id-token: write
-  pull-requests: write
 
 jobs:
   wpt:
@@ -66,13 +65,18 @@ jobs:
         run: curl https://dioxuslabs.github.io/blitz/wptreport.json -o ./wpt/output/main-wptreport.json
       - name: Diff WPT results
         run: wpt diff ./wpt/output/main-wptreport.json ./wpt/output/wptreport.json | tee ./wpt/output/wptdiff.txt
-      - name: Post results to PR description
-        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+      - name: Render results in step summary
+        if: github.event_name == 'pull_request'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: python3 ./.github/scripts/wpt_diff_to_pr.py ./wpt/output/wptdiff.txt
+        run: python3 ./.github/scripts/wpt_diff_to_pr.py --dry-run ./wpt/output/wptdiff.txt
+      - name: Upload WPT diff
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v7
+        with:
+          name: wpt-diff
+          path: ./wpt/output/wptdiff.txt
+          archive: false
       - name: Setup Github Pages
         if: github.ref == 'refs/heads/main'
         uses: actions/configure-pages@v6
