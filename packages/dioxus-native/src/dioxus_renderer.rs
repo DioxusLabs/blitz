@@ -82,9 +82,7 @@ impl DioxusNativeWindowRenderer {
 
         cfg_if::cfg_if! {
             if #[cfg(any(feature = "vello", feature = "vello-hybrid"))] {
-                let mut inner_options: InnerRendererOptions = config
-                    .try_into()
-                    .expect("Invalid renderer configuration");
+                let mut inner_options: InnerRendererOptions = config.into();
                 if let Some(features) = options.features {
                     inner_options = inner_options.features(features);
                 }
