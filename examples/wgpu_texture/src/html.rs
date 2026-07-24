@@ -8,22 +8,22 @@ use crate::{limits, DemoWidget, FEATURES, STYLES};
 /// Create renderer
 fn create_renderer() -> anyrender_vello::VelloWindowRenderer {
     use anyrender_vello::{VelloRendererOptions, VelloWindowRenderer};
-    VelloWindowRenderer::with_options(VelloRendererOptions {
-        features: Some(FEATURES),
-        limits: Some(limits()),
-        ..VelloRendererOptions::default()
-    })
+    VelloWindowRenderer::with_options(
+        VelloRendererOptions::default()
+            .features(FEATURES)
+            .limits(limits()),
+    )
 }
 
 #[cfg(feature = "vello-hybrid")]
 /// Create renderer
 fn create_renderer() -> anyrender_vello_hybrid::VelloHybridWindowRenderer {
     use anyrender_vello_hybrid::{VelloHybridRendererOptions, VelloHybridWindowRenderer};
-    VelloHybridWindowRenderer::with_options(VelloHybridRendererOptions {
-        features: Some(FEATURES),
-        limits: Some(limits()),
-        ..VelloHybridRendererOptions::default()
-    })
+    VelloHybridWindowRenderer::with_options(
+        VelloHybridRendererOptions::default()
+            .features(FEATURES)
+            .limits(limits()),
+    )
 }
 
 pub fn launch_html() {

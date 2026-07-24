@@ -75,6 +75,7 @@ blitz-shell = { workspace = true }
 
 # AnyRender dependencies
 anyrender = { workspace = true }
+peniko = { workspace = true }
 anyrender_vello = { workspace = true, optional = true}
 anyrender_vello_hybrid = { workspace = true, optional = true}
 anyrender_vello_cpu = { workspace = true, optional = true}
