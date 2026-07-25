@@ -22,6 +22,7 @@ use crate::runtime::ScriptRuntime;
 struct PendingScript {
     src: Option<String>,
     inline_text: String,
+    is_module: bool,
 }
 
 /// A [`Document`] which executes the JavaScript contained in the document's
@@ -36,7 +37,8 @@ pub struct ScriptDocument {
     inner: Rc<RefCell<BaseDocument>>,
     runtime: ScriptRuntime,
     base_url: Option<Url>,
-    fetcher: Box<dyn ScriptFetcher>,
+    /// Shared with the module loader registered on the Boa context
+    fetcher: Rc<RefCell<Box<dyn ScriptFetcher>>>,
     scripts_executed: bool,
 
     // Timer wakeups: a background thread which wakes the event loop (via the
@@ -63,34 +65,48 @@ impl ScriptDocument {
             config.html_parser_provider = Some(Arc::new(HtmlProvider));
         }
 
-        let base_url = config
-            .base_url
-            .as_deref()
-            .and_then(|url| Url::parse(url).ok());
-
         let mut doc = BaseDocument::new(config);
         let mut mutr = doc.mutate();
         DocumentHtmlParser::parse_into_mutator(&mut mutr, html);
         drop(mutr);
 
+        Self::from_base_document(doc)
+    }
+
+    /// Wrap an already-parsed [`BaseDocument`] in a [`ScriptDocument`] without
+    /// reparsing the HTML.
+    ///
+    /// The base URL for resolving external script sources is taken from the
+    /// document ([`BaseDocument::base_url`]).
+    ///
+    /// Note: for `innerHTML` support the document must have been created with
+    /// an HTML parser provider (e.g. `blitz_html::HtmlProvider`) set in its
+    /// [`DocumentConfig`].
+    pub fn from_base_document(doc: BaseDocument) -> Self {
+        // The default base url (set when `DocumentConfig.base_url` is `None`) is a
+        // meaningless data url. Treat it as "no base url".
+        let base_url = Some(doc.base_url().clone()).filter(|url| url.scheme() != "data");
+
         let inner = Rc::new(RefCell::new(doc));
-        let runtime = ScriptRuntime::new(Rc::clone(&inner), base_url.as_ref());
+        let fetcher: Rc<RefCell<Box<dyn ScriptFetcher>>> =
+            Rc::new(RefCell::new(Box::new(DefaultScriptFetcher)));
+        let runtime = ScriptRuntime::new(Rc::clone(&inner), base_url.as_ref(), Rc::clone(&fetcher));
 
         Self {
             inner,
             runtime,
             base_url,
-            fetcher: Box::new(DefaultScriptFetcher),
+            fetcher,
             scripts_executed: false,
             waker: Arc::new(Mutex::new(None)),
             timer_thread: None,
         }
     }
 
-    /// Override the [`ScriptFetcher`] used to load external (`src="..."`) scripts.
-    /// The default fetcher supports `file:` and `data:` URLs.
-    pub fn with_fetcher(mut self, fetcher: impl ScriptFetcher) -> Self {
-        self.fetcher = Box::new(fetcher);
+    /// Override the [`ScriptFetcher`] used to load external (`src="..."`) scripts
+    /// and ES module imports. The default fetcher supports `file:` and `data:` URLs.
+    pub fn with_fetcher(self, fetcher: impl ScriptFetcher) -> Self {
+        *self.fetcher.borrow_mut() = Box::new(fetcher);
         self
     }
 
@@ -105,24 +121,46 @@ impl ScriptDocument {
         self.scripts_executed = true;
 
         for script in self.collect_scripts() {
-            match script.src {
+            // HTML named element access: elements with ids are exposed as globals
+            self.runtime.sync_named_element_globals();
+            let (code, url) = match script.src {
                 Some(src) => {
                     let Some(url) = self.resolve_script_url(&src) else {
                         eprintln!("blitz-script: could not resolve script URL {src:?}");
                         continue;
                     };
-                    match self.fetcher.fetch(&url) {
-                        Ok(code) => self.runtime.eval(&code, url.as_str()),
+                    let code = match self.fetcher.borrow().fetch(&url) {
+                        Ok(code) => code,
                         Err(error) => {
-                            eprintln!("blitz-script: failed to fetch script {url}: {error}")
+                            eprintln!("blitz-script: failed to fetch script {url}: {error}");
+                            continue;
                         }
-                    }
+                    };
+                    (code, Some(url))
                 }
-                None => self.runtime.eval(&script.inline_text, "<inline script>"),
+                None => (script.inline_text, None),
+            };
+
+            if script.is_module {
+                // Inline modules resolve imports against the document base URL
+                let module_url = url.or_else(|| self.base_url.clone());
+                self.runtime.eval_module(&code, module_url.as_ref());
+            } else {
+                let description = url
+                    .as_ref()
+                    .map(Url::as_str)
+                    .unwrap_or("<inline script>")
+                    .to_string();
+                self.runtime.eval(&code, &description);
             }
         }
 
+        self.runtime
+            .set_ready_state(crate::state::ReadyState::Interactive);
         self.runtime.dispatch_document_event("DOMContentLoaded");
+        self.runtime
+            .set_ready_state(crate::state::ReadyState::Complete);
+        self.runtime.install_body_onload_attribute();
         self.runtime.dispatch_window_event("load");
 
         self.request_redraw();
@@ -154,9 +192,37 @@ impl ScriptDocument {
 
     /// Evaluate arbitrary JavaScript code in the document's script context
     pub fn eval(&mut self, code: &str) {
+        self.runtime.sync_named_element_globals();
         self.runtime.eval(code, "<eval>");
         self.request_redraw();
         self.arm_timer_thread();
+    }
+
+    /// Drain messages sent from JavaScript via the global
+    /// `__blitz_send_message(message)` native function.
+    ///
+    /// This provides a simple JS -> embedder communication channel (used, for
+    /// example, by the WPT runner to collect testharness.js results).
+    pub fn take_messages(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.runtime.ctx.state.borrow_mut().outbound_messages)
+    }
+
+    /// Drain uncaught JavaScript errors (from script evaluation, event
+    /// listeners, timer callbacks and promise jobs).
+    ///
+    /// Errors are also printed to stderr as they occur; this method allows
+    /// embedders (e.g. test runners) to detect and react to them.
+    pub fn take_js_errors(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.runtime.ctx.state.borrow_mut().uncaught_errors)
+    }
+
+    /// The deadline of the soonest pending JS timer (if any).
+    ///
+    /// Embedders which drive the document manually (rather than through an
+    /// event loop `Waker`) can sleep until this deadline and then call
+    /// [`poll`](Document::poll) to run due timers.
+    pub fn next_timer_deadline(&self) -> Option<Instant> {
+        self.runtime.next_timer_deadline()
     }
 
     /// Dispatch a synthetic DOM event (e.g. a click created with
@@ -187,8 +253,7 @@ impl ScriptDocument {
 
             if let Some(element) = node.element_data() {
                 if element.name.local == blitz_dom::local_name!("script") {
-                    // Skip non-JavaScript script types (e.g. JSON data blocks).
-                    // `module` scripts are treated as classic scripts for now.
+                    // Skip non-JavaScript script types (e.g. JSON data blocks)
                     let script_type = element
                         .attr(blitz_dom::local_name!("type"))
                         .unwrap_or("")
@@ -204,6 +269,7 @@ impl ScriptDocument {
                                 .attr(blitz_dom::local_name!("src"))
                                 .map(str::to_string),
                             inline_text: node.text_content(),
+                            is_module: script_type == "module",
                         });
                     }
                     continue;

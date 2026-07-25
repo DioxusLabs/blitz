@@ -10064,6 +10064,7 @@ dependencies = [
  "blitz-dom",
  "blitz-html",
  "blitz-paint",
+ "blitz-script",
  "blitz-traits",
  "data-url",
  "dify",

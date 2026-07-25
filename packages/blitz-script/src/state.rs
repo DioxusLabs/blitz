@@ -19,6 +19,26 @@ pub(crate) struct DomProtos {
     pub document: JsObject,
     pub event: JsObject,
     pub style: JsObject,
+    pub computed_style: JsObject,
+}
+
+/// The document's `readyState`
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) enum ReadyState {
+    #[default]
+    Loading,
+    Interactive,
+    Complete,
+}
+
+impl ReadyState {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Loading => "loading",
+            Self::Interactive => "interactive",
+            Self::Complete => "complete",
+        }
+    }
 }
 
 /// An event listener registered via `addEventListener`
@@ -53,6 +73,16 @@ pub(crate) struct RuntimeState {
     pub window_listeners: ListenerMap,
     /// Pending timers (`setTimeout`/`setInterval`/`requestAnimationFrame`)
     pub timers: TimerQueue,
+    /// Messages sent from JavaScript to the embedder via the
+    /// `__blitz_send_message` native function. Drained with
+    /// [`ScriptDocument::take_messages`](crate::ScriptDocument::take_messages).
+    pub outbound_messages: Vec<String>,
+    /// The value exposed as `document.readyState`
+    pub ready_state: ReadyState,
+    /// Uncaught JavaScript errors (from script evaluation, event listeners,
+    /// timer callbacks and promise jobs). Drained with
+    /// [`ScriptDocument::take_js_errors`](crate::ScriptDocument::take_js_errors).
+    pub uncaught_errors: Vec<String>,
 }
 
 impl RuntimeState {

@@ -2,28 +2,281 @@
 //! dispatches events / timers into JavaScript.
 
 use std::cell::RefCell;
+use std::path::Path;
 use std::rc::Rc;
 
 use blitz_dom::{BaseDocument, NodeId};
 use blitz_traits::events::{DomEvent, DomEventData, EventState};
+use boa_engine::builtins::promise::PromiseState;
+use boa_engine::module::{Module, ModuleLoader, ModuleRequest, Referrer};
 use boa_engine::object::{JsObject, ObjectInitializer};
 use boa_engine::property::Attribute;
 use boa_engine::value::JsValue;
-use boa_engine::{Context, JsResult, JsString, NativeFunction, Source, js_string};
+use boa_engine::{
+    Context, JsError, JsNativeError, JsResult, JsString, NativeFunction, Source, js_string,
+};
 use boa_runtime::Console;
 use boa_runtime::console::DefaultLogger;
 use url::Url;
 use web_time::{Duration, Instant};
 
 use crate::dom::event::{EventRef, create_event, create_event_for_dom_event};
-use crate::dom::{dom_ctx, node_wrapper};
-use crate::state::{DomCtx, Listener};
+use crate::dom::{NodeRef, dom_ctx, node_id_of_value, node_wrapper, wrap_style_object};
+use crate::fetch::ScriptFetcher;
+use crate::state::{DomCtx, Listener, ReadyState};
 
-/// Print an unhandled JavaScript error
-fn report_js_error(what: &str, error: &boa_engine::JsError) {
+/// JS bootstrap for APIs that are easiest to define in JS
+const BOOTSTRAP_JS: &str = r#"
+(function () {
+    if (typeof globalThis.queueMicrotask !== "function") {
+        globalThis.queueMicrotask = function (callback) {
+            Promise.resolve().then(callback);
+        };
+    }
+
+    if (typeof globalThis.DOMException !== "function") {
+        globalThis.DOMException = class DOMException extends Error {
+            constructor(message = "", name = "Error") {
+                super(message);
+                this.name = name;
+            }
+        };
+    }
+
+    // A Proxy wrapper for CSSStyleDeclaration objects which maps camelCase
+    // property access (e.g. `style.gridTemplateColumns`) onto
+    // `getPropertyValue`/`setProperty` calls with kebab-case property names.
+    const KEBAB_OVERRIDES = { cssFloat: "float" };
+    const toKebab = (prop) =>
+        KEBAB_OVERRIDES[prop] ?? prop.replace(/[A-Z]/g, (c) => "-" + c.toLowerCase());
+    // camelCase (`gridTemplateColumns`) or kebab-case (`grid-template-columns`,
+    // via indexed access) property names
+    const isCssPropName = (prop) =>
+        typeof prop === "string" && /^-?[a-zA-Z][a-zA-Z0-9-]*$/.test(prop);
+    globalThis.__blitz_wrap_style = function (native) {
+        return new Proxy(native, {
+            get(target, prop) {
+                if (isCssPropName(prop) && !(prop in target)) {
+                    return target.getPropertyValue(toKebab(prop));
+                }
+                const value = Reflect.get(target, prop, target);
+                return typeof value === "function" ? value.bind(target) : value;
+            },
+            set(target, prop, value) {
+                if (isCssPropName(prop) && !(prop in target)) {
+                    target.setProperty(
+                        toKebab(prop),
+                        value === null || value === undefined ? "" : String(value)
+                    );
+                    return true;
+                }
+                return Reflect.set(target, prop, value, target);
+            },
+        });
+    };
+
+    // DOM interface objects (`Node`, `Element`, ...) wired up to the native
+    // wrapper prototypes so that constants and `instanceof` checks work.
+    const makeInterface = (name, proto) => {
+        const iface = function () {
+            throw new TypeError("Illegal constructor");
+        };
+        Object.defineProperty(iface, "name", { value: name, configurable: true });
+        iface.prototype = proto;
+        Object.defineProperty(proto, "constructor", {
+            value: iface,
+            writable: true,
+            configurable: true,
+        });
+        return iface;
+    };
+
+    const documentProto = Object.getPrototypeOf(document);
+    const nodeProto = Object.getPrototypeOf(documentProto);
+    globalThis.Node = makeInterface("Node", nodeProto);
+    globalThis.Document = makeInterface("Document", documentProto);
+    globalThis.HTMLDocument = globalThis.Document;
+    if (document.documentElement) {
+        const elementProto = Object.getPrototypeOf(document.documentElement);
+        globalThis.Element = makeInterface("Element", elementProto);
+        globalThis.HTMLElement = globalThis.Element;
+
+        // `classList` (DOMTokenList), backed by the `class` attribute
+        Object.defineProperty(elementProto, "classList", {
+            configurable: true,
+            get() {
+                const el = this;
+                const classes = () =>
+                    (el.getAttribute("class") || "").split(/\s+/).filter(Boolean);
+                const write = (list) => el.setAttribute("class", list.join(" "));
+                return {
+                    add(...names) {
+                        const list = classes();
+                        for (const name of names.map(String)) {
+                            if (!list.includes(name)) list.push(name);
+                        }
+                        write(list);
+                    },
+                    remove(...names) {
+                        const removed = names.map(String);
+                        write(classes().filter((name) => !removed.includes(name)));
+                    },
+                    toggle(name, force) {
+                        name = String(name);
+                        const list = classes();
+                        const has = list.includes(name);
+                        const shouldHave = force !== undefined ? Boolean(force) : !has;
+                        if (shouldHave && !has) list.push(name);
+                        if (!shouldHave && has) list.splice(list.indexOf(name), 1);
+                        write(list);
+                        return shouldHave;
+                    },
+                    contains(name) {
+                        return classes().includes(String(name));
+                    },
+                    item(index) {
+                        return classes()[index] ?? null;
+                    },
+                    get length() {
+                        return classes().length;
+                    },
+                    get value() {
+                        return el.getAttribute("class") || "";
+                    },
+                    toString() {
+                        return el.getAttribute("class") || "";
+                    },
+                    forEach(callback, thisArg) {
+                        classes().forEach(callback, thisArg);
+                    },
+                };
+            },
+        });
+
+        // `dataset` (DOMStringMap), backed by `data-*` attributes
+        Object.defineProperty(elementProto, "dataset", {
+            configurable: true,
+            get() {
+                const el = this;
+                const toAttr = (prop) =>
+                    "data-" + prop.replace(/[A-Z]/g, (c) => "-" + c.toLowerCase());
+                return new Proxy(Object.create(null), {
+                    get(_, prop) {
+                        if (typeof prop !== "string") return undefined;
+                        const value = el.getAttribute(toAttr(prop));
+                        return value === null ? undefined : value;
+                    },
+                    set(_, prop, value) {
+                        if (typeof prop === "string") el.setAttribute(toAttr(prop), String(value));
+                        return true;
+                    },
+                    has(_, prop) {
+                        return typeof prop === "string" && el.getAttribute(toAttr(prop)) !== null;
+                    },
+                    deleteProperty(_, prop) {
+                        if (typeof prop === "string") el.removeAttribute(toAttr(prop));
+                        return true;
+                    },
+                });
+            },
+        });
+    }
+
+    // `document.fonts` (FontFaceSet) stub: all fonts report as loaded
+    const fontFaceSet = {
+        status: "loaded",
+        size: 0,
+        check: () => true,
+        load: () => Promise.resolve([]),
+        forEach() {},
+        addEventListener() {},
+        removeEventListener() {},
+        dispatchEvent() {
+            return true;
+        },
+    };
+    fontFaceSet.ready = Promise.resolve(fontFaceSet);
+    document.fonts = fontFaceSet;
+
+    const NODE_CONSTANTS = {
+        ELEMENT_NODE: 1,
+        ATTRIBUTE_NODE: 2,
+        TEXT_NODE: 3,
+        CDATA_SECTION_NODE: 4,
+        ENTITY_REFERENCE_NODE: 5,
+        ENTITY_NODE: 6,
+        PROCESSING_INSTRUCTION_NODE: 7,
+        COMMENT_NODE: 8,
+        DOCUMENT_NODE: 9,
+        DOCUMENT_TYPE_NODE: 10,
+        DOCUMENT_FRAGMENT_NODE: 11,
+        NOTATION_NODE: 12,
+    };
+    for (const [name, value] of Object.entries(NODE_CONSTANTS)) {
+        globalThis.Node[name] = value;
+        nodeProto[name] = value;
+    }
+})();
+"#;
+
+/// Print an unhandled JavaScript error and record it in the runtime state
+/// (see [`ScriptDocument::take_js_errors`](crate::ScriptDocument::take_js_errors))
+fn report_js_error(ctx: &DomCtx, what: &str, error: &boa_engine::JsError) {
     #[cfg(feature = "tracing")]
     tracing::error!("Uncaught JS error in {what}: {error}");
     eprintln!("Uncaught JS error in {what}: {error}");
+    ctx.state
+        .borrow_mut()
+        .uncaught_errors
+        .push(format!("Uncaught JS error in {what}: {error}"));
+}
+
+/// A [`ModuleLoader`] which fetches ES module imports synchronously via the
+/// document's [`ScriptFetcher`], resolving specifiers as URLs (relative to the
+/// importing module, or to the document base URL).
+struct BlitzModuleLoader {
+    fetcher: Rc<RefCell<Box<dyn ScriptFetcher>>>,
+    base_url: Option<Url>,
+}
+
+impl BlitzModuleLoader {
+    fn resolve_specifier(&self, referrer: &Referrer, specifier: &str) -> Option<Url> {
+        if let Ok(url) = Url::parse(specifier) {
+            return Some(url);
+        }
+        let referrer_url = referrer
+            .path()
+            .and_then(|path| path.to_str())
+            .and_then(|path| Url::parse(path).ok());
+        let base = referrer_url.or_else(|| self.base_url.clone())?;
+        base.join(specifier).ok()
+    }
+}
+
+impl ModuleLoader for BlitzModuleLoader {
+    async fn load_imported_module(
+        self: Rc<Self>,
+        referrer: Referrer,
+        request: ModuleRequest,
+        context: &RefCell<&mut Context>,
+    ) -> JsResult<Module> {
+        let specifier = request.specifier().to_std_string_escaped();
+        let url = self
+            .resolve_specifier(&referrer, &specifier)
+            .ok_or_else(|| {
+                JsError::from(
+                    JsNativeError::typ()
+                        .with_message(format!("could not resolve module specifier {specifier:?}")),
+                )
+            })?;
+        let code = self.fetcher.borrow().fetch(&url).map_err(|error| {
+            JsError::from(
+                JsNativeError::typ().with_message(format!("failed to fetch module {url}: {error}")),
+            )
+        })?;
+        let source = Source::from_reader(code.as_bytes(), Some(Path::new(url.as_str())));
+        Module::parse(source, None, &mut context.borrow_mut())
+    }
 }
 
 pub(crate) struct ScriptRuntime {
@@ -32,8 +285,19 @@ pub(crate) struct ScriptRuntime {
 }
 
 impl ScriptRuntime {
-    pub fn new(doc: Rc<RefCell<BaseDocument>>, base_url: Option<&Url>) -> Self {
-        let mut context = Context::default();
+    pub fn new(
+        doc: Rc<RefCell<BaseDocument>>,
+        base_url: Option<&Url>,
+        fetcher: Rc<RefCell<Box<dyn ScriptFetcher>>>,
+    ) -> Self {
+        let module_loader = Rc::new(BlitzModuleLoader {
+            fetcher,
+            base_url: base_url.cloned(),
+        });
+        let mut context = Context::builder()
+            .module_loader(module_loader)
+            .build()
+            .expect("failed to build JS context");
         let ctx = DomCtx::new(doc);
         context.insert_data(ctx.clone());
 
@@ -50,7 +314,12 @@ impl ScriptRuntime {
         // `window` and friends (aliases for the global object)
         let global: JsValue = context.global_object().into();
         register_global(&mut context, "window", global.clone());
-        register_global(&mut context, "self", global);
+        register_global(&mut context, "self", global.clone());
+        // There is only ever a single frame, so `parent` and `top` refer to the
+        // window itself and `opener` is null
+        register_global(&mut context, "parent", global.clone());
+        register_global(&mut context, "top", global);
+        register_global(&mut context, "opener", JsValue::null());
 
         // `location`
         let location = build_location(base_url, &mut context);
@@ -91,19 +360,16 @@ impl ScriptRuntime {
             window_remove_event_listener,
         );
 
+        // Embedder message channel (see `ScriptDocument::take_messages`)
+        register_global_fn(&mut context, "__blitz_send_message", 1, send_message);
+
+        // `getComputedStyle`
+        register_global_fn(&mut context, "getComputedStyle", 1, get_computed_style);
+
         let mut runtime = Self { context, ctx };
 
         // Small JS bootstrap for APIs that are easiest to define in JS
-        runtime.eval_internal(
-            r#"
-            if (typeof globalThis.queueMicrotask !== "function") {
-                globalThis.queueMicrotask = function (callback) {
-                    Promise.resolve().then(callback);
-                };
-            }
-            "#,
-            "<blitz-bootstrap>",
-        );
+        runtime.eval_internal(BOOTSTRAP_JS, "<blitz-bootstrap>");
 
         runtime
     }
@@ -117,20 +383,145 @@ impl ScriptRuntime {
 
     fn eval_internal(&mut self, code: &str, description: &str) {
         if let Err(error) = self.context.eval(Source::from_bytes(code)) {
-            report_js_error(description, &error);
+            report_js_error(&self.ctx, description, &error);
         }
     }
 
     /// Run pending promise jobs (microtasks)
     pub fn run_jobs(&mut self, description: &str) {
         if let Err(error) = self.context.run_jobs() {
-            report_js_error(description, &error);
+            report_js_error(&self.ctx, description, &error);
+        }
+    }
+
+    /// Evaluate an ES module script: parse it, load its imports (via the module
+    /// loader), then link and evaluate it. Uncaught errors are logged (but not
+    /// propagated), matching [`eval`](Self::eval).
+    pub fn eval_module(&mut self, code: &str, url: Option<&Url>) {
+        let description = url
+            .map(Url::as_str)
+            .unwrap_or("<inline module>")
+            .to_string();
+        let path = url.map(|url| Path::new(url.as_str()));
+        let source = Source::from_reader(code.as_bytes(), path);
+
+        let module = match Module::parse(source, None, &mut self.context) {
+            Ok(module) => module,
+            Err(error) => {
+                report_js_error(&self.ctx, &description, &error);
+                return;
+            }
+        };
+
+        let promise = module.load_link_evaluate(&mut self.context);
+        self.run_jobs(&description);
+        if let PromiseState::Rejected(reason) = promise.state() {
+            report_js_error(&self.ctx, &description, &JsError::from_opaque(reason));
         }
     }
 
     /// The deadline of the soonest pending timer (if any)
     pub fn next_timer_deadline(&self) -> Option<Instant> {
         self.ctx.state.borrow().timers.next_deadline()
+    }
+
+    /// Set the value exposed as `document.readyState`
+    pub fn set_ready_state(&mut self, ready_state: ReadyState) {
+        self.ctx.state.borrow_mut().ready_state = ready_state;
+    }
+
+    /// Install the `<body onload="...">` attribute (if any) as the window's
+    /// `load` event handler, per the HTML spec (event handler attributes on
+    /// `<body>` apply to the window). Handlers assigned to `window.onload` by
+    /// scripts take precedence.
+    pub fn install_body_onload_attribute(&mut self) {
+        let code: Option<String> = {
+            let doc = self.ctx.doc.borrow();
+            let mut stack = vec![doc.root_node().id];
+            let mut code = None;
+            while let Some(node_id) = stack.pop() {
+                let Some(node) = doc.get_node(node_id) else {
+                    continue;
+                };
+                if let Some(element) = node.element_data() {
+                    if element.name.local == blitz_dom::local_name!("body") {
+                        code = element
+                            .attr(blitz_dom::local_name!("onload"))
+                            .map(str::to_string);
+                        break;
+                    }
+                }
+                stack.extend(node.children.iter().rev().copied());
+            }
+            code
+        };
+        let Some(code) = code else { return };
+
+        // Don't override a handler assigned via `window.onload = ...`
+        let already_set = self
+            .context
+            .global_object()
+            .get(js_string!("onload"), &mut self.context)
+            .ok()
+            .and_then(|value| value.as_object())
+            .is_some_and(|obj| obj.is_callable());
+        if already_set {
+            return;
+        }
+
+        let script = format!("window.onload = function (event) {{\n{code}\n}};");
+        self.eval_internal(&script, "<body onload attribute>");
+    }
+
+    /// HTML named element access: expose elements with an `id` attribute as
+    /// properties of the global (`window`) object, without overriding existing
+    /// globals. Should be called before evaluating scripts so that newly
+    /// parsed/created ids are visible.
+    pub fn sync_named_element_globals(&mut self) {
+        use boa_engine::property::{PropertyDescriptor, PropertyKey};
+
+        let ids: Vec<(String, NodeId)> = {
+            let doc = self.ctx.doc.borrow();
+            let mut ids = Vec::new();
+            let mut stack = vec![doc.root_node().id];
+            while let Some(node_id) = stack.pop() {
+                let Some(node) = doc.get_node(node_id) else {
+                    continue;
+                };
+                if let Some(id) = node
+                    .element_data()
+                    .and_then(|element| element.attr(blitz_dom::local_name!("id")))
+                {
+                    if !id.is_empty() {
+                        ids.push((id.to_string(), node_id));
+                    }
+                }
+                stack.extend(node.children.iter().rev().copied());
+            }
+            ids
+        };
+
+        let global = self.context.global_object();
+        for (id, node_id) in ids {
+            let key = PropertyKey::from(JsString::from(id));
+            let already_defined = global
+                .has_own_property(key.clone(), &mut self.context)
+                .unwrap_or(true);
+            if already_defined {
+                continue;
+            }
+            let wrapper = node_wrapper(&self.ctx, node_id, &mut self.context);
+            let _ = global.define_property_or_throw(
+                key,
+                PropertyDescriptor::builder()
+                    .value(wrapper)
+                    .writable(true)
+                    .enumerable(false)
+                    .configurable(true)
+                    .build(),
+                &mut self.context,
+            );
+        }
     }
 
     /// Run all timers that are currently due. Returns `true` if any JavaScript was run.
@@ -145,7 +536,7 @@ impl ScriptRuntime {
                     .callback
                     .call(&JsValue::undefined(), &timer.args, &mut self.context)
             {
-                report_js_error("timer callback", &error);
+                report_js_error(&self.ctx, "timer callback", &error);
             }
         }
         self.run_jobs("timer microtasks");
@@ -310,7 +701,7 @@ impl ScriptRuntime {
                 if let Err(error) =
                     callback.call(&current_target, &[event_obj.clone().into()], context)
                 {
-                    report_js_error("event listener", &error);
+                    report_js_error(&ctx, "event listener", &error);
                 }
                 if event_ref(&event_obj, &|event| event.stopped_immediate.get()) {
                     break 'chain;
@@ -345,7 +736,7 @@ impl ScriptRuntime {
                             .callback
                             .call(&global, &[event_obj.clone().into()], context)
                     {
-                        report_js_error("event listener", &error);
+                        report_js_error(&ctx, "event listener", &error);
                     }
                     if event_ref(&event_obj, &|event| event.stopped_immediate.get()) {
                         break;
@@ -416,7 +807,7 @@ impl ScriptRuntime {
                     .callback
                     .call(&global, &[event_obj.clone().into()], context)
             {
-                report_js_error("event listener", &error);
+                report_js_error(&ctx, "event listener", &error);
             }
         }
 
@@ -427,7 +818,7 @@ impl ScriptRuntime {
                 if handler.is_callable() {
                     any_called = true;
                     if let Err(error) = handler.call(&global, &[event_obj.into()], context) {
-                        report_js_error("event listener", &error);
+                        report_js_error(&ctx, "event listener", &error);
                     }
                 }
             }
@@ -594,6 +985,29 @@ fn request_animation_frame(
         vec![timestamp],
     );
     Ok(JsValue::from(id as f64))
+}
+
+fn get_computed_style(_: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    let ctx = dom_ctx(context)?;
+    let Some(node_id) = args.first().and_then(node_id_of_value) else {
+        return Err(boa_engine::JsNativeError::typ()
+            .with_message("getComputedStyle: argument is not an Element")
+            .into());
+    };
+    let proto = ctx.state.borrow().protos().computed_style.clone();
+    let obj = JsObject::from_proto_and_data(Some(proto), NodeRef { node_id });
+    Ok(wrap_style_object(obj, context))
+}
+
+fn send_message(_: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    let ctx = dom_ctx(context)?;
+    let message = args
+        .first()
+        .unwrap_or(&JsValue::undefined())
+        .to_string(context)?
+        .to_std_string_lossy();
+    ctx.state.borrow_mut().outbound_messages.push(message);
+    Ok(JsValue::undefined())
 }
 
 fn clear_timer(_: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {

@@ -69,6 +69,14 @@ pub(crate) fn init_element_proto(proto: &JsObject, context: &mut Context) {
     );
     define_accessor(proto, "outerHTML", Some(get_outer_html), None, context);
     define_accessor(proto, "children", Some(children), None, context);
+    define_accessor(proto, "offsetWidth", Some(offset_width), None, context);
+    define_accessor(proto, "offsetHeight", Some(offset_height), None, context);
+    define_accessor(proto, "offsetLeft", Some(offset_left), None, context);
+    define_accessor(proto, "offsetTop", Some(offset_top), None, context);
+    define_accessor(proto, "clientWidth", Some(client_width), None, context);
+    define_accessor(proto, "clientHeight", Some(client_height), None, context);
+    define_accessor(proto, "scrollWidth", Some(scroll_width), None, context);
+    define_accessor(proto, "scrollHeight", Some(scroll_height), None, context);
 
     define_method(proto, "getAttribute", 1, get_attribute, context);
     define_method(proto, "setAttribute", 2, set_attribute, context);
@@ -85,6 +93,20 @@ pub(crate) fn init_element_proto(proto: &JsObject, context: &mut Context) {
     );
     define_method(proto, "querySelector", 1, query_selector, context);
     define_method(proto, "querySelectorAll", 1, query_selector_all, context);
+    define_method(
+        proto,
+        "getElementsByTagName",
+        1,
+        get_elements_by_tag_name,
+        context,
+    );
+    define_method(
+        proto,
+        "getElementsByClassName",
+        1,
+        get_elements_by_class_name,
+        context,
+    );
 }
 
 // === Attribute helpers ===
@@ -368,7 +390,8 @@ fn get_style(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<J
     let ctx = dom_ctx(context)?;
     let node_id = this_node_id(this)?;
     let proto = ctx.state.borrow().protos().style.clone();
-    Ok(JsObject::from_proto_and_data(Some(proto), super::NodeRef { node_id }).into())
+    let obj = JsObject::from_proto_and_data(Some(proto), super::NodeRef { node_id });
+    Ok(super::wrap_style_object(obj, context))
 }
 
 // === innerHTML / outerHTML ===
@@ -433,6 +456,86 @@ fn blur(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValu
 
 // === Geometry ===
 
+/// Look up a node and compute a geometry value from its layout, resolving
+/// style/layout first so that the values reflect any recent DOM mutations.
+/// Returns 0.0 if the node does not exist.
+fn layout_value(
+    this: &JsValue,
+    context: &mut Context,
+    f: impl FnOnce(&blitz_dom::Node) -> f32,
+) -> JsResult<JsValue> {
+    let ctx = dom_ctx(context)?;
+    let node_id = this_node_id(this)?;
+    let mut doc = ctx.doc.borrow_mut();
+    doc.resolve(0.0);
+    let value = doc.get_node(node_id).map(f).unwrap_or(0.0);
+    Ok(JsValue::from(value as f64))
+}
+
+fn offset_width(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    layout_value(this, context, |node| node.final_layout().size.width.round())
+}
+
+fn offset_height(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    layout_value(this, context, |node| {
+        node.final_layout().size.height.round()
+    })
+}
+
+fn offset_left(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    layout_value(this, context, |node| {
+        let parent_border = match node.parent {
+            Some(parent_id) => node.with(parent_id).final_layout().border.left,
+            None => 0.0,
+        };
+        (node.final_layout().location.x - parent_border).round()
+    })
+}
+
+fn offset_top(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    layout_value(this, context, |node| {
+        let parent_border = match node.parent {
+            Some(parent_id) => node.with(parent_id).final_layout().border.top,
+            None => 0.0,
+        };
+        (node.final_layout().location.y - parent_border).round()
+    })
+}
+
+fn client_width_of(node: &blitz_dom::Node) -> f32 {
+    let layout = node.final_layout();
+    layout.size.width - layout.border.left - layout.border.right - layout.scrollbar_size.width
+}
+
+fn client_height_of(node: &blitz_dom::Node) -> f32 {
+    let layout = node.final_layout();
+    layout.size.height - layout.border.top - layout.border.bottom - layout.scrollbar_size.height
+}
+
+fn client_width(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    layout_value(this, context, |node| client_width_of(node).round())
+}
+
+fn client_height(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    layout_value(this, context, |node| client_height_of(node).round())
+}
+
+fn scroll_width(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    layout_value(this, context, |node| {
+        client_width_of(node)
+            .max(node.final_layout().content_size.width)
+            .round()
+    })
+}
+
+fn scroll_height(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    layout_value(this, context, |node| {
+        client_height_of(node)
+            .max(node.final_layout().content_size.height)
+            .round()
+    })
+}
+
 fn get_bounding_client_rect(
     this: &JsValue,
     _: &[JsValue],
@@ -440,6 +543,7 @@ fn get_bounding_client_rect(
 ) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
     let node_id = this_node_id(this)?;
+    ctx.doc.borrow_mut().resolve(0.0);
     let rect = ctx.doc.borrow().get_client_bounding_rect(node_id);
     let (x, y, width, height) = match rect {
         Some(rect) => (rect.x, rect.y, rect.width, rect.height),
@@ -507,6 +611,53 @@ fn query_selector_all(
             })
             .unwrap_or_default()
     };
+    let wrappers: Vec<JsValue> = matches
+        .into_iter()
+        .map(|match_id| node_wrapper(&ctx, match_id, context).into())
+        .collect();
+    Ok(boa_engine::object::builtins::JsArray::from_iter(wrappers, context).into())
+}
+
+fn get_elements_by_tag_name(
+    this: &JsValue,
+    args: &[JsValue],
+    context: &mut Context,
+) -> JsResult<JsValue> {
+    let ctx = dom_ctx(context)?;
+    let node_id = this_node_id(this)?;
+    let tag = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?
+        .to_ascii_lowercase();
+    let match_all = tag == "*";
+
+    let matches = super::collect_matching_descendants(&ctx.doc.borrow(), node_id, |element| {
+        match_all || &*element.name.local == tag.as_str()
+    });
+
+    let wrappers: Vec<JsValue> = matches
+        .into_iter()
+        .map(|match_id| node_wrapper(&ctx, match_id, context).into())
+        .collect();
+    Ok(boa_engine::object::builtins::JsArray::from_iter(wrappers, context).into())
+}
+
+fn get_elements_by_class_name(
+    this: &JsValue,
+    args: &[JsValue],
+    context: &mut Context,
+) -> JsResult<JsValue> {
+    let ctx = dom_ctx(context)?;
+    let node_id = this_node_id(this)?;
+    let class_arg = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
+    let class_names: Vec<&str> = class_arg.split_whitespace().collect();
+
+    let matches = if class_names.is_empty() {
+        Vec::new()
+    } else {
+        super::collect_matching_descendants(&ctx.doc.borrow(), node_id, |element| {
+            super::matches_class_names(element, &class_names)
+        })
+    };
+
     let wrappers: Vec<JsValue> = matches
         .into_iter()
         .map(|match_id| node_wrapper(&ctx, match_id, context).into())

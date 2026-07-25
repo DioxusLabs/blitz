@@ -24,12 +24,28 @@ pub(crate) fn init_document_proto(proto: &JsObject, context: &mut Context) {
     define_accessor(proto, "head", Some(head), None, context);
     define_accessor(proto, "activeElement", Some(active_element), None, context);
     define_accessor(proto, "defaultView", Some(default_view), None, context);
+    define_accessor(proto, "title", Some(title), None, context);
+    define_accessor(proto, "readyState", Some(ready_state), None, context);
 
     define_method(proto, "createElement", 1, create_element, context);
     define_method(proto, "createElementNS", 2, create_element_ns, context);
     define_method(proto, "createTextNode", 1, create_text_node, context);
     define_method(proto, "createComment", 1, create_comment, context);
     define_method(proto, "getElementById", 1, get_element_by_id, context);
+    define_method(
+        proto,
+        "getElementsByTagName",
+        1,
+        get_elements_by_tag_name,
+        context,
+    );
+    define_method(
+        proto,
+        "getElementsByClassName",
+        1,
+        get_elements_by_class_name,
+        context,
+    );
     define_method(proto, "querySelector", 1, query_selector, context);
     define_method(proto, "querySelectorAll", 1, query_selector_all, context);
 }
@@ -94,6 +110,25 @@ fn default_view(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResul
     Ok(context.global_object().into())
 }
 
+fn title(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    let ctx = dom_ctx(context)?;
+    let _ = this_node_id(this)?;
+    let title = ctx
+        .doc
+        .borrow()
+        .find_title_node()
+        .map(|node| node.text_content())
+        .unwrap_or_default();
+    Ok(super::js_str(&title))
+}
+
+fn ready_state(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    let ctx = dom_ctx(context)?;
+    let _ = this_node_id(this)?;
+    let ready_state = ctx.state.borrow().ready_state;
+    Ok(super::js_str(ready_state.as_str()))
+}
+
 // === Node creation ===
 
 fn create_element(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
@@ -151,6 +186,55 @@ fn get_element_by_id(this: &JsValue, args: &[JsValue], context: &mut Context) ->
     let id = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
     let node_id = ctx.doc.borrow().get_element_by_id(&id);
     Ok(node_or_null(&ctx, node_id, context))
+}
+
+fn get_elements_by_tag_name(
+    this: &JsValue,
+    args: &[JsValue],
+    context: &mut Context,
+) -> JsResult<JsValue> {
+    let ctx = dom_ctx(context)?;
+    let _ = this_node_id(this)?;
+    let tag = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?
+        .to_ascii_lowercase();
+    let match_all = tag == "*";
+
+    let root_id = ctx.doc.borrow().root_node().id;
+    let matches = super::collect_matching_descendants(&ctx.doc.borrow(), root_id, |element| {
+        match_all || &*element.name.local == tag.as_str()
+    });
+
+    let wrappers: Vec<JsValue> = matches
+        .into_iter()
+        .map(|match_id| node_wrapper(&ctx, match_id, context).into())
+        .collect();
+    Ok(JsArray::from_iter(wrappers, context).into())
+}
+
+fn get_elements_by_class_name(
+    this: &JsValue,
+    args: &[JsValue],
+    context: &mut Context,
+) -> JsResult<JsValue> {
+    let ctx = dom_ctx(context)?;
+    let _ = this_node_id(this)?;
+    let class_arg = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
+    let class_names: Vec<&str> = class_arg.split_whitespace().collect();
+
+    let matches = if class_names.is_empty() {
+        Vec::new()
+    } else {
+        let root_id = ctx.doc.borrow().root_node().id;
+        super::collect_matching_descendants(&ctx.doc.borrow(), root_id, |element| {
+            super::matches_class_names(element, &class_names)
+        })
+    };
+
+    let wrappers: Vec<JsValue> = matches
+        .into_iter()
+        .map(|match_id| node_wrapper(&ctx, match_id, context).into())
+        .collect();
+    Ok(JsArray::from_iter(wrappers, context).into())
 }
 
 fn query_selector(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
