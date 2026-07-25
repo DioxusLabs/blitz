@@ -21,6 +21,48 @@ pub(crate) fn init_style_proto(proto: &JsObject, context: &mut Context) {
     define_method(proto, "getPropertyValue", 1, get_property_value, context);
 }
 
+/// The prototype for the read-only `CSSStyleDeclaration`s returned by
+/// `getComputedStyle()`. Property reads return *resolved* values.
+pub(crate) fn init_computed_style_proto(proto: &JsObject, context: &mut Context) {
+    define_accessor(proto, "cssText", Some(get_empty_string), None, context);
+    define_method(proto, "setProperty", 2, noop, context);
+    define_method(proto, "removeProperty", 1, noop, context);
+    define_method(
+        proto,
+        "getPropertyValue",
+        1,
+        get_resolved_property_value,
+        context,
+    );
+}
+
+fn get_empty_string(_: &JsValue, _: &[JsValue], _: &mut Context) -> JsResult<JsValue> {
+    Ok(js_str(""))
+}
+
+fn noop(_: &JsValue, _: &[JsValue], _: &mut Context) -> JsResult<JsValue> {
+    Ok(JsValue::undefined())
+}
+
+fn get_resolved_property_value(
+    this: &JsValue,
+    args: &[JsValue],
+    context: &mut Context,
+) -> JsResult<JsValue> {
+    let ctx = dom_ctx(context)?;
+    let node_id = this_node_id(this)?;
+    let name = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?
+        .trim()
+        .to_ascii_lowercase();
+
+    let mut doc = ctx.doc.borrow_mut();
+    // Resolved values of layout-dependent properties are used values, so make
+    // sure style and layout are up to date before reading.
+    doc.resolve(0.0);
+    let value = doc.resolved_style_value(node_id, &name);
+    Ok(js_str(&value))
+}
+
 fn get_css_text(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
     let node_id = this_node_id(this)?;
@@ -86,10 +128,18 @@ fn set_property(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsRe
     let node_id = this_node_id(this)?;
     let name = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
     let value = to_rust_string(args.get(1).unwrap_or(&JsValue::undefined()), context)?;
+
+    // Setting a property to the empty string removes it; invalid declarations
+    // are ignored (per CSSOM)
+    let value = value.trim();
+    if !value.is_empty() && !ctx.doc.borrow().css_declaration_is_valid(&name, value) {
+        return Ok(JsValue::undefined());
+    }
+
     update_style_attr(&ctx, node_id, |decls| {
         decls.retain(|(prop, _)| !prop.eq_ignore_ascii_case(&name));
         if !value.is_empty() {
-            decls.push((name.to_ascii_lowercase(), value));
+            decls.push((name.to_ascii_lowercase(), value.to_string()));
         }
     });
     Ok(JsValue::undefined())

@@ -1,6 +1,8 @@
 use anyrender::{ImageRenderer as _, PaintScene as _};
 use blitz_dom::util::Color;
+use blitz_dom::{BaseDocument, Document as _};
 use blitz_paint::paint_scene;
+use blitz_script::ScriptDocument;
 use image::{ImageBuffer, ImageFormat};
 use log::warn;
 use peniko::Fill;
@@ -12,7 +14,8 @@ use std::path::Path;
 use url::Url;
 
 use super::fuzzy::{FuzzySpec, fuzzy_buffer_diff, parse_fuzzy_metas, tolerance_for_reference};
-use super::parse_and_resolve_document;
+use super::harness_test::WptScriptFetcher;
+use super::{has_inline_script, parse_and_resolve_document, pump_net_provider};
 use crate::{BufferKind, HEIGHT, SCALE, SubtestCounts, TestFlags, ThreadCtx, WIDTH};
 
 pub fn process_ref_test(
@@ -213,6 +216,31 @@ fn render_html_to_buffer(
 ) {
     let mut document = parse_and_resolve_document(ctx, html, relative_path);
 
+    if has_inline_script(ctx, html) {
+        // The document contains an inline script, so it (probably) requires
+        // JavaScript to render correctly: upgrade it to a `ScriptDocument`
+        // (without reparsing) and execute its scripts before rendering.
+        let mut script_document = ScriptDocument::from_base_document(document)
+            .with_fetcher(WptScriptFetcher::new(ctx.wpt_dir.clone()));
+        script_document.execute_scripts();
+
+        // Scripts may have mutated the DOM: re-resolve and load any
+        // newly-requested resources
+        let mut doc = script_document.inner_mut();
+        doc.resolve(0.0);
+        pump_net_provider(ctx, &mut doc);
+        render_document_to_buffer(ctx, buffer_kind, out_path, &mut doc);
+    } else {
+        render_document_to_buffer(ctx, buffer_kind, out_path, &mut document);
+    }
+}
+
+fn render_document_to_buffer(
+    ctx: &mut ThreadCtx,
+    buffer_kind: BufferKind,
+    out_path: &Path,
+    document: &mut BaseDocument,
+) {
     // Determine height to render
     // let computed_height = document.as_ref().root_element().final_layout.size.height;
     // let render_height = (computed_height as u32).clamp(HEIGHT, 4000);
@@ -233,7 +261,7 @@ fn render_html_to_buffer(
                 &Rect::new(0.0, 0.0, WIDTH as f64, HEIGHT as f64),
             );
 
-            paint_scene(scene, &mut document, SCALE, WIDTH, HEIGHT, 0, 0);
+            paint_scene(scene, document, SCALE, WIDTH, HEIGHT, 0, 0);
         },
         buf,
     );

@@ -74,7 +74,9 @@ pub(crate) fn node_wrapper(ctx: &DomCtx, node_id: NodeId, _context: &mut Context
             Some(NodeData::Element(_)) | Some(NodeData::AnonymousBlock(_)) => {
                 protos.element.clone()
             }
-            Some(NodeData::Text(_)) | Some(NodeData::Comment { .. }) => protos.character_data.clone(),
+            Some(NodeData::Text(_)) | Some(NodeData::Comment { .. }) => {
+                protos.character_data.clone()
+            }
             None => protos.node.clone(),
         }
     };
@@ -273,6 +275,9 @@ pub(crate) fn init_protos(ctx: &DomCtx, context: &mut Context) {
     let style_proto = JsObject::with_object_proto(context.intrinsics());
     style::init_style_proto(&style_proto, context);
 
+    let computed_style_proto = JsObject::with_object_proto(context.intrinsics());
+    style::init_computed_style_proto(&computed_style_proto, context);
+
     let _ = object_proto;
 
     ctx.state.borrow_mut().protos = Some(DomProtos {
@@ -282,5 +287,59 @@ pub(crate) fn init_protos(ctx: &DomCtx, context: &mut Context) {
         document: document_proto,
         event: event_proto,
         style: style_proto,
+        computed_style: computed_style_proto,
     });
+}
+
+/// Collect the descendants of `root_id` (excluding `root_id` itself, in document
+/// order) whose element data matches `filter`.
+pub(crate) fn collect_matching_descendants(
+    doc: &blitz_dom::BaseDocument,
+    root_id: NodeId,
+    filter: impl Fn(&blitz_dom::ElementData) -> bool,
+) -> Vec<NodeId> {
+    let mut matches = Vec::new();
+    let mut stack: Vec<NodeId> = doc
+        .get_node(root_id)
+        .map(|root| root.children.iter().rev().copied().collect())
+        .unwrap_or_default();
+    while let Some(node_id) = stack.pop() {
+        let Some(node) = doc.get_node(node_id) else {
+            continue;
+        };
+        if let Some(element) = node.element_data() {
+            if filter(element) {
+                matches.push(node_id);
+            }
+        }
+        stack.extend(node.children.iter().rev().copied());
+    }
+    matches
+}
+
+/// `getElementsByClassName` filter: the element's `class` attribute must contain
+/// every (whitespace-separated) class in `class_names`
+pub(crate) fn matches_class_names(element: &blitz_dom::ElementData, class_names: &[&str]) -> bool {
+    let class_attr = element.attr(blitz_dom::local_name!("class")).unwrap_or("");
+    class_names
+        .iter()
+        .all(|name| class_attr.split_whitespace().any(|class| class == *name))
+}
+
+/// Wrap a native `CSSStyleDeclaration` object in the JS `Proxy` (defined by the
+/// runtime bootstrap script) which maps camelCase property access
+/// (e.g. `style.gridTemplateColumns`) to `getPropertyValue`/`setProperty` calls.
+pub(crate) fn wrap_style_object(obj: JsObject, context: &mut Context) -> JsValue {
+    let wrapper = context
+        .global_object()
+        .get(boa_engine::js_string!("__blitz_wrap_style"), context)
+        .ok()
+        .and_then(|value| value.as_object())
+        .filter(|obj| obj.is_callable());
+    if let Some(wrapper) = wrapper {
+        if let Ok(wrapped) = wrapper.call(&JsValue::undefined(), &[obj.clone().into()], context) {
+            return wrapped;
+        }
+    }
+    obj.into()
 }
