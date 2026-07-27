@@ -741,6 +741,12 @@ impl<'doc> DocumentMutator<'doc> {
                 doc.active_node_id = None;
             }
 
+            // Clear focus state if this node was focused
+            // This prevents stale focus_node_id references.
+            if doc.focus_node_id == Some(node_id) {
+                doc.focus_node_id = None;
+            }
+
             // Remove any snapshot for this node to prevent stale snapshot references
             // during style invalidation.
             if node.has_snapshot() {

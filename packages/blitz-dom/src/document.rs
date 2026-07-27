@@ -798,6 +798,23 @@ impl BaseDocument {
         id
     }
 
+    /// Remove a node from the node tree, clearing any interaction state
+    /// (hover/active/focus) that references it so that stale NodeIds are
+    /// never dereferenced after the slot is freed.
+    pub(crate) fn remove_node_from_tree(&mut self, node_id: NodeId) -> Option<Node> {
+        if self.hover_node_id == Some(node_id) {
+            self.hover_node_id = None;
+            self.hover_node_is_text = false;
+        }
+        if self.active_node_id == Some(node_id) {
+            self.active_node_id = None;
+        }
+        if self.focus_node_id == Some(node_id) {
+            self.focus_node_id = None;
+        }
+        self.nodes.remove(node_id)
+    }
+
     pub(crate) fn drop_node_ignoring_parent(&mut self, node_id: NodeId) -> Option<Node> {
         self.drop_node_ignoring_parent_with(node_id, &mut |_| {})
     }
@@ -809,7 +826,7 @@ impl BaseDocument {
         node_id: NodeId,
         on_drop: &mut dyn FnMut(NodeId),
     ) -> Option<Node> {
-        let mut node = self.nodes.remove(node_id);
+        let mut node = self.remove_node_from_tree(node_id);
         if let Some(node) = &mut node {
             on_drop(node_id);
             if let Some(before) = node.before() {
@@ -847,7 +864,7 @@ impl BaseDocument {
             self.deallocate_anonymous_block(nested_id);
         }
 
-        self.nodes.remove(anon_id);
+        self.remove_node_from_tree(anon_id);
     }
 
     /// Whether the document has been mutated
@@ -897,7 +914,7 @@ impl BaseDocument {
 
     pub(crate) fn remove_and_drop_pe(&mut self, node_id: NodeId) -> Option<Node> {
         fn remove_pe_ignoring_parent(doc: &mut BaseDocument, node_id: NodeId) -> Option<Node> {
-            let mut node = doc.nodes.remove(node_id);
+            let mut node = doc.remove_node_from_tree(node_id);
             if let Some(node) = &mut node {
                 for &child in &node.children {
                     remove_pe_ignoring_parent(doc, child);
