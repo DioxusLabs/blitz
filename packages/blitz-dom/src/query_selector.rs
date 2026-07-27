@@ -1,3 +1,4 @@
+use blitz_traits::node_id::NodeId;
 use selectors::SelectorList;
 use smallvec::SmallVec;
 use style::dom_apis::{MayUseInvalidation, QueryAll, QueryFirst, query_selector};
@@ -8,7 +9,7 @@ use crate::{BaseDocument, Node};
 
 impl BaseDocument {
     /// Find the node with the specified id attribute (if one exists)
-    pub fn get_element_by_id(&self, id: &str) -> Option<usize> {
+    pub fn get_element_by_id(&self, id: &str) -> Option<NodeId> {
         self.nodes_to_id.get(id).copied()
     }
 
@@ -20,13 +21,13 @@ impl BaseDocument {
     pub fn query_selector<'input>(
         &self,
         selector: &'input str,
-    ) -> Result<Option<usize>, ParseError<'input>> {
+    ) -> Result<Option<NodeId>, ParseError<'input>> {
         let selector_list = self.try_parse_selector_list(selector)?;
         Ok(self.query_selector_raw(&selector_list))
     }
 
     /// Find the first node that matches the selector(s) specified in selector_list
-    pub fn query_selector_raw(&self, selector_list: &SelectorList<SelectorImpl>) -> Option<usize> {
+    pub fn query_selector_raw(&self, selector_list: &SelectorList<SelectorImpl>) -> Option<NodeId> {
         let root_node = self.root_node();
         let mut result = None;
         query_selector::<&Node, QueryFirst>(
@@ -46,7 +47,7 @@ impl BaseDocument {
     pub fn query_selector_all<'input>(
         &self,
         selector: &'input str,
-    ) -> Result<SmallVec<[usize; 32]>, ParseError<'input>> {
+    ) -> Result<SmallVec<[NodeId; 32]>, ParseError<'input>> {
         let selector_list = self.try_parse_selector_list(selector)?;
         Ok(self.query_selector_all_raw(&selector_list))
     }
@@ -55,7 +56,7 @@ impl BaseDocument {
     pub fn query_selector_all_raw(
         &self,
         selector_list: &SelectorList<SelectorImpl>,
-    ) -> SmallVec<[usize; 32]> {
+    ) -> SmallVec<[NodeId; 32]> {
         let root_node = self.root_node();
         let mut results = SmallVec::new();
         query_selector::<&Node, QueryAll>(

@@ -1,3 +1,4 @@
+use blitz_traits::node_id::NodeId;
 use markup5ever::local_name;
 use parley::FontFamily;
 use style::computed_values::list_style_type::T as ListStyleType;
@@ -15,7 +16,7 @@ pub(super) fn collect_list_item_children(
     doc: &mut BaseDocument,
     index: &mut usize,
     reversed: bool,
-    node_id: usize,
+    node_id: NodeId,
 ) {
     let mut children = doc.nodes[node_id].children.clone();
     if reversed {
@@ -40,7 +41,7 @@ pub(super) fn collect_list_item_children(
 // Return a child node which is of display: list-item
 fn node_list_item_child(
     doc: &mut BaseDocument,
-    child_id: usize,
+    child_id: NodeId,
     index: usize,
 ) -> Option<ListItemLayout> {
     let node = &doc.nodes[child_id];

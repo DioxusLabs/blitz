@@ -57,6 +57,8 @@ mod stylo_to_cursor_icon;
 mod stylo_to_kurbo;
 mod stylo_to_parley;
 mod traversal;
+/// Versioned storage for the nodes of the DOM tree.
+mod tree;
 
 mod url;
 
@@ -71,6 +73,7 @@ mod accessibility;
 #[cfg(feature = "custom-widget")]
 pub use crate::node::Widget;
 
+pub use blitz_traits::node_id::NodeId;
 pub use config::{DocumentConfig, StyleThreading};
 pub use document::{BaseDocument, DocGuard, DocGuardMut, Document, PlainDocument};
 pub use markup5ever::{
@@ -80,6 +83,19 @@ pub use markup5ever::{
 pub use mutator::DocumentMutator;
 pub use node::{Attribute, ElementData, Node, NodeData, TextNodeData};
 pub use parley::FontContext;
+pub use tree::NodeTree;
+
+/// Convert a Blitz [`NodeId`] into a [`taffy::NodeId`] (which wraps a `u64`).
+#[inline]
+pub fn taffy_node_id(id: NodeId) -> taffy::NodeId {
+    taffy::NodeId::from(id.as_u64())
+}
+
+/// Convert a [`taffy::NodeId`] produced by [`taffy_node_id`] back into a Blitz [`NodeId`].
+#[inline]
+pub fn dom_node_id(id: taffy::NodeId) -> NodeId {
+    NodeId::from_u64(u64::from(id))
+}
 pub use style::Atom;
 pub use style::invalidation::element::restyle_hints::RestyleHint;
 pub use style::media_queries::MediaType;

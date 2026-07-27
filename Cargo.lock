@@ -856,7 +856,7 @@ dependencies = [
  "rayon",
  "selectors",
  "skrifa",
- "slab",
+ "slotmap",
  "smallvec",
  "stylo",
  "stylo_dom",

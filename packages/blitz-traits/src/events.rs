@@ -8,6 +8,8 @@ use bitflags::bitflags;
 use keyboard_types::{Code, Key, Location, Modifiers};
 use smol_str::SmolStr;
 
+use crate::NodeId;
+
 #[derive(Default)]
 pub struct EventState {
     cancelled: bool,
@@ -80,7 +82,7 @@ impl UiEvent {
 
 #[derive(Debug, Clone)]
 pub struct DomEvent {
-    pub target: usize,
+    pub target: NodeId,
     /// Which is true if the event bubbles up through the DOM tree.
     pub bubbles: bool,
     /// which is true if the event can be canceled.
@@ -91,7 +93,7 @@ pub struct DomEvent {
 }
 
 impl DomEvent {
-    pub fn new(target: usize, data: DomEventData) -> Self {
+    pub fn new(target: NodeId, data: DomEventData) -> Self {
         Self {
             target,
             bubbles: data.bubbles(),
@@ -449,7 +451,7 @@ impl DomEventData {
 #[derive(Debug, Clone, Copy)]
 pub struct HitResult {
     /// The node_id of the node identified as the hit target
-    pub node_id: usize,
+    pub node_id: NodeId,
     /// Whether the hit content is text
     pub is_text: bool,
     /// The x coordinate of the hit within the hit target's border-box

@@ -4,6 +4,8 @@
 //! including support for anonymous blocks which have unstable IDs across
 //! layout reconstruction.
 
+use blitz_traits::node_id::NodeId;
+
 /// Represents one endpoint (anchor or focus) of a text selection.
 ///
 /// For regular nodes, `node_or_parent` contains the node ID directly.
@@ -13,7 +15,7 @@
 pub struct SelectionEndpoint {
     /// For regular nodes: the node ID directly.
     /// For anonymous blocks: the parent ID (requires lookup via sibling_index).
-    pub(crate) node_or_parent: Option<usize>,
+    pub(crate) node_or_parent: Option<NodeId>,
     /// Byte offset within the inline root's text
     pub offset: usize,
     /// For anonymous blocks only: index among anonymous siblings.
@@ -23,7 +25,7 @@ pub struct SelectionEndpoint {
 
 impl SelectionEndpoint {
     /// Create a new endpoint at the given node and offset (for non-anonymous nodes)
-    fn new(node: usize, offset: usize) -> Self {
+    fn new(node: NodeId, offset: usize) -> Self {
         Self {
             node_or_parent: Some(node),
             offset,
@@ -46,8 +48,8 @@ impl SelectionEndpoint {
     /// Resolve the node ID, using a lookup function for anonymous blocks.
     pub fn resolve_node_id(
         &self,
-        lookup_fn: impl FnOnce(usize, usize) -> Option<usize>,
-    ) -> Option<usize> {
+        lookup_fn: impl FnOnce(NodeId, usize) -> Option<NodeId>,
+    ) -> Option<NodeId> {
         match (self.node_or_parent, self.sibling_index) {
             (Some(node), None) => Some(node),
             (Some(parent), Some(idx)) => lookup_fn(parent, idx),
@@ -56,14 +58,14 @@ impl SelectionEndpoint {
     }
 
     /// Set as a direct node reference (for regular nodes)
-    pub fn set_node(&mut self, node: usize, offset: usize) {
+    pub fn set_node(&mut self, node: NodeId, offset: usize) {
         self.node_or_parent = Some(node);
         self.offset = offset;
         self.sibling_index = None;
     }
 
     /// Set as an anonymous block reference
-    pub fn set_anonymous(&mut self, parent: usize, sibling_index: usize, offset: usize) {
+    pub fn set_anonymous(&mut self, parent: NodeId, sibling_index: usize, offset: usize) {
         self.node_or_parent = Some(parent);
         self.offset = offset;
         self.sibling_index = Some(sibling_index);
@@ -86,9 +88,9 @@ pub struct TextSelection {
 impl TextSelection {
     /// Create a selection spanning from anchor to focus
     pub fn new(
-        anchor_node: usize,
+        anchor_node: NodeId,
         anchor_offset: usize,
-        focus_node: usize,
+        focus_node: NodeId,
         focus_offset: usize,
     ) -> Self {
         Self {
@@ -114,7 +116,7 @@ impl TextSelection {
     }
 
     /// Update the focus endpoint (for non-anonymous nodes)
-    pub fn set_focus(&mut self, node: usize, offset: usize) {
+    pub fn set_focus(&mut self, node: NodeId, offset: usize) {
         self.focus.set_node(node, offset);
     }
 }

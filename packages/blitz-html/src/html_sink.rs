@@ -7,7 +7,7 @@ use std::borrow::Cow;
 use std::cell::{Cell, Ref, RefCell, RefMut};
 
 use blitz_dom::node::Attribute;
-use blitz_dom::{DocumentMutator, HtmlParserProvider};
+use blitz_dom::{DocumentMutator, HtmlParserProvider, NodeId};
 use html5ever::{
     QualName,
     tendril::{StrTendril, TendrilSink},
@@ -30,7 +30,7 @@ impl HtmlParserProvider for HtmlProvider {
     fn parse_inner_html<'m2, 'doc2>(
         &self,
         mutr: &'m2 mut DocumentMutator<'doc2>,
-        element_id: usize,
+        element_id: NodeId,
         html: &str,
     ) {
         DocumentHtmlParser::parse_inner_html_into_mutator(mutr, element_id, html);
@@ -119,7 +119,7 @@ impl<'m, 'doc> DocumentHtmlParser<'m, 'doc> {
 
     pub fn parse_inner_html_into_mutator<'a, 'd>(
         mutr: &'a mut DocumentMutator<'d>,
-        element_id: usize,
+        element_id: NodeId,
         html: &str,
     ) {
         let sink = DocumentHtmlParser::new(mutr);
@@ -141,7 +141,8 @@ impl<'m, 'doc> DocumentHtmlParser<'m, 'doc> {
 
         // html5ever creates a new fragment root node under the document node and parses the nodes into that fragment root.
         // So here we move the children of the fragment root to element_id and then remove the fragment root
-        let fragment_root_id = mutr.last_child_id(0).unwrap();
+        let document_id = mutr.doc.root_node().id;
+        let fragment_root_id = mutr.last_child_id(document_id).unwrap();
         let child_ids = mutr.child_ids(fragment_root_id);
         mutr.append_children(element_id, &child_ids);
         mutr.remove_node(fragment_root_id);
@@ -152,7 +153,7 @@ impl<'m, 'doc> TreeSink for DocumentHtmlParser<'m, 'doc> {
     type Output = ();
 
     // we use the ID of the nodes in the tree as the handle
-    type Handle = usize;
+    type Handle = NodeId;
 
     type ElemName<'a>
         = Ref<'a, QualName>
@@ -171,7 +172,7 @@ impl<'m, 'doc> TreeSink for DocumentHtmlParser<'m, 'doc> {
     }
 
     fn get_document(&self) -> Self::Handle {
-        0
+        self.document_mutator.borrow().doc.root_node().id
     }
 
     fn elem_name<'a>(&'a self, target: &'a Self::Handle) -> Self::ElemName<'a> {

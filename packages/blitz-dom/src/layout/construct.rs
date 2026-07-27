@@ -1,3 +1,4 @@
+use blitz_traits::node_id::NodeId;
 use core::str;
 use std::sync::Arc;
 
@@ -6,7 +7,6 @@ use parley::{
     FontContext, InlineBox, InlineBoxKind, LayoutContext, StyleProperty, TreeBuilder,
     WhiteSpaceCollapse,
 };
-use slab::Slab;
 use style::{
     computed_values::position::T as PositionProperty,
     data::ElementData as StyloElementData,
@@ -34,12 +34,12 @@ const DUMMY_NAME: QualName = qual_name!("div", html);
 
 #[derive(Clone)]
 pub(crate) struct ConstructionTask {
-    pub(crate) node_id: usize,
+    pub(crate) node_id: NodeId,
     pub(crate) data: ConstructionTaskData,
 }
 
 pub(crate) struct ConstructionTaskResult {
-    pub(crate) node_id: usize,
+    pub(crate) node_id: NodeId,
     pub(crate) data: ConstructionTaskResultData,
 }
 
@@ -59,25 +59,25 @@ pub(crate) enum ConstructionTaskResultData {
 /// any) that wrapping children are being appended to.
 #[derive(Default)]
 pub(crate) struct LayoutChildren {
-    pub(crate) children: Vec<usize>,
-    pub(crate) anonymous_block_id: Option<usize>,
+    pub(crate) children: Vec<NodeId>,
+    pub(crate) anonymous_block_id: Option<NodeId>,
 }
 
 impl LayoutChildren {
     /// Append a single layout child.
-    fn push(&mut self, child_id: usize, doc: &mut BaseDocument) {
+    fn push(&mut self, child_id: NodeId, doc: &mut BaseDocument) {
         self.maybe_push_anon_block(doc);
         self.children.push(child_id);
     }
 
     /// Append all layout children in `slice`.
-    fn extend(&mut self, slice: &[usize], doc: &mut BaseDocument) {
+    fn extend(&mut self, slice: &[NodeId], doc: &mut BaseDocument) {
         self.maybe_push_anon_block(doc);
         self.children.extend_from_slice(slice);
     }
 
     fn maybe_push_anon_block(&mut self, doc: &mut BaseDocument) {
-        fn block_is_only_whitespace(doc: &BaseDocument, node_id: usize) -> bool {
+        fn block_is_only_whitespace(doc: &BaseDocument, node_id: NodeId) -> bool {
             for child_id in doc.nodes[node_id].children.iter().copied() {
                 let child = &doc.nodes[child_id];
                 if !child.is_whitespace_node() {
@@ -103,7 +103,12 @@ impl LayoutChildren {
         self.anonymous_block_id = None;
     }
 
-    fn push_wrapped(&mut self, container_node_id: usize, child_id: usize, doc: &mut BaseDocument) {
+    fn push_wrapped(
+        &mut self,
+        container_node_id: NodeId,
+        child_id: NodeId,
+        doc: &mut BaseDocument,
+    ) {
         if self.anonymous_block_id.is_none() {
             self.create_anonymous_block(container_node_id, doc);
         }
@@ -112,7 +117,7 @@ impl LayoutChildren {
             .push(child_id);
     }
 
-    fn create_anonymous_block(&mut self, container_node_id: usize, doc: &mut BaseDocument) {
+    fn create_anonymous_block(&mut self, container_node_id: NodeId, doc: &mut BaseDocument) {
         use style::selector_parser::PseudoElement;
 
         const NAME: QualName = QualName {
@@ -158,7 +163,7 @@ impl LayoutChildren {
     }
 }
 
-fn push_children_and_pseudos(layout_children: &mut Vec<usize>, node: &Node) {
+fn push_children_and_pseudos(layout_children: &mut Vec<NodeId>, node: &Node) {
     if let Some(before) = node.before {
         layout_children.push(before);
     }
@@ -176,7 +181,7 @@ fn push_children_and_pseudos(layout_children: &mut Vec<usize>, node: &Node) {
 /// filtering out comments and whitespace.
 fn push_hoisted_children_and_pseudos(
     doc: &mut BaseDocument,
-    container_node_id: usize,
+    container_node_id: NodeId,
     out: &mut LayoutChildren,
 ) {
     if let Some(before) = doc.nodes[container_node_id].before {
@@ -202,7 +207,7 @@ fn push_hoisted_children_and_pseudos(
     }
 }
 
-fn push_non_whitespace_children_and_pseudos(layout_children: &mut Vec<usize>, node: &Node) {
+fn push_non_whitespace_children_and_pseudos(layout_children: &mut Vec<NodeId>, node: &Node) {
     if let Some(before) = node.before {
         layout_children.push(before);
     }
@@ -249,7 +254,7 @@ impl Default for FlowClassification {
 /// container's formatting context).
 fn classify_flow_children(
     doc: &BaseDocument,
-    children: &[usize],
+    children: &[NodeId],
     classification: &mut FlowClassification,
 ) {
     for child_id in children.iter().copied() {
@@ -317,7 +322,7 @@ fn classify_flow_children(
 
 pub(crate) fn collect_layout_children(
     doc: &mut BaseDocument,
-    container_node_id: usize,
+    container_node_id: NodeId,
     out: &mut LayoutChildren,
 ) {
     // Reset construction flags
@@ -366,7 +371,7 @@ pub(crate) fn collect_layout_children(
             }
 
             // Remove contruction damage from subtree
-            doc.iter_subtree_mut(container_node_id, |id: usize, doc: &mut BaseDocument| {
+            doc.iter_subtree_mut(container_node_id, |id: NodeId, doc: &mut BaseDocument| {
                 doc.nodes[id].remove_damage(CONSTRUCT_BOX | CONSTRUCT_DESCENDENT | CONSTRUCT_FC);
             });
 
@@ -382,7 +387,7 @@ pub(crate) fn collect_layout_children(
                 Err(err) => {
                     #[cfg(feature = "tracing")]
                     tracing::warn!(
-                        node_id = container_node_id,
+                        node_id = ?container_node_id,
                         html = outer_html,
                         error = ?err,
                         "SVG parse failed",
@@ -579,7 +584,7 @@ fn pe_content_text(style: &style::properties::ComputedValues) -> Option<&str> {
     }
 }
 
-fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: usize) {
+fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: NodeId) {
     let (before_style, after_style, before_node_id, after_node_id) = {
         let node = &doc.nodes[node_id];
 
@@ -677,7 +682,7 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: usize) {
                     doc.nodes[pe_node_id]
                         .children
                         .retain(|&child_id| child_id != text_node_id);
-                    doc.nodes.try_remove(text_node_id);
+                    doc.nodes.remove(text_node_id);
                     doc.nodes[node_id].insert_damage(ALL_DAMAGE);
                 }
                 (None, None) => {}
@@ -699,7 +704,7 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: usize) {
 /// Handles the cases where there are text nodes or inline nodes that need to be wrapped in an anonymous block node
 fn collect_complex_layout_children(
     doc: &mut BaseDocument,
-    container_node_id: usize,
+    container_node_id: NodeId,
     out: &mut LayoutChildren,
     hide_whitespace: bool,
     needs_wrap: impl Fn(NodeKind, DisplayOutside) -> bool,
@@ -748,7 +753,7 @@ fn collect_complex_layout_children(
     out.maybe_push_anon_block(doc);
 }
 
-fn create_text_editor(doc: &mut BaseDocument, input_element_id: usize, is_multiline: bool) {
+fn create_text_editor(doc: &mut BaseDocument, input_element_id: NodeId, is_multiline: bool) {
     let node = &mut doc.nodes[input_element_id];
     let parley_style = node
         .primary_styles()
@@ -781,7 +786,7 @@ fn create_text_editor(doc: &mut BaseDocument, input_element_id: usize, is_multil
     editor.refresh_layout(&mut doc.font_ctx.lock().unwrap(), &mut doc.layout_ctx);
 }
 
-fn create_checkbox_input(doc: &mut BaseDocument, input_element_id: usize) {
+fn create_checkbox_input(doc: &mut BaseDocument, input_element_id: NodeId) {
     let node = &mut doc.nodes[input_element_id];
 
     let element = &mut node.data.downcast_element_mut().unwrap();
@@ -796,8 +801,8 @@ fn create_checkbox_input(doc: &mut BaseDocument, input_element_id: usize) {
 /// construction of the Parley layout (which invokes text shaping) to a paralell phase.
 pub(crate) fn find_inline_layout_embedded_boxes(
     doc: &mut BaseDocument,
-    inline_context_root_node_id: usize,
-    layout_children: &mut Vec<usize>,
+    inline_context_root_node_id: NodeId,
+    layout_children: &mut Vec<NodeId>,
 ) {
     flush_inline_pseudos_recursive(doc, inline_context_root_node_id);
 
@@ -810,7 +815,7 @@ pub(crate) fn find_inline_layout_embedded_boxes(
         );
     });
 
-    fn flush_inline_pseudos_recursive(doc: &mut BaseDocument, node_id: usize) {
+    fn flush_inline_pseudos_recursive(doc: &mut BaseDocument, node_id: NodeId) {
         doc.iter_children_mut(node_id, |child_id, doc| {
             flush_pseudo_elements(doc, child_id);
             let display = doc.nodes[node_id]
@@ -828,10 +833,10 @@ pub(crate) fn find_inline_layout_embedded_boxes(
     }
 
     fn find_inline_layout_embedded_boxes_recursive(
-        nodes: &mut Slab<Node>,
-        parent_id: usize,
-        node_id: usize,
-        layout_children: &mut Vec<usize>,
+        nodes: &mut crate::NodeTree,
+        parent_id: NodeId,
+        node_id: NodeId,
+        layout_children: &mut Vec<NodeId>,
     ) {
         let node = &mut nodes[node_id];
 
@@ -903,12 +908,12 @@ pub(crate) fn find_inline_layout_embedded_boxes(
 }
 
 pub(crate) fn build_inline_layout_into(
-    nodes: &Slab<Node>,
+    nodes: &crate::NodeTree,
     layout_ctx: &mut LayoutContext<TextBrush>,
     font_ctx: &mut FontContext,
     text_layout: &mut TextLayout,
     scale: f32,
-    inline_context_root_node_id: usize,
+    inline_context_root_node_id: NodeId,
 ) {
     // Get the inline context's root node's text styles
     let root_node = &nodes[inline_context_root_node_id];
@@ -994,9 +999,9 @@ pub(crate) fn build_inline_layout_into(
 
     fn build_inline_layout_recursive(
         builder: &mut TreeBuilder<TextBrush>,
-        nodes: &Slab<Node>,
-        parent_id: usize,
-        node_id: usize,
+        nodes: &crate::NodeTree,
+        parent_id: NodeId,
+        node_id: NodeId,
         collapse_mode: WhiteSpaceCollapse,
         parent_text_transform: TextTransform,
         root_line_height: f32,
@@ -1070,7 +1075,7 @@ pub(crate) fn build_inline_layout_into(
                             || *tag_name == local_name!("button")
                         {
                             builder.push_inline_box(InlineBox {
-                                id: node_id as u64,
+                                id: node_id.as_u64(),
                                 kind: box_kind,
                                 // Overridden by push_inline_box method
                                 index: 0,
@@ -1150,7 +1155,7 @@ pub(crate) fn build_inline_layout_into(
                     // Inline box
                     (_, _) => {
                         builder.push_inline_box(InlineBox {
-                            id: node_id as u64,
+                            id: node_id.as_u64(),
                             kind: box_kind,
                             // Overridden by push_inline_box method
                             index: 0,

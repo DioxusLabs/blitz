@@ -4,6 +4,7 @@ use bitflags::bitflags;
 use blitz_traits::events::{
     BlitzPointerEvent, BlitzPointerId, DomEventData, HitResult, PointerCoords,
 };
+use blitz_traits::node_id::NodeId;
 use blitz_traits::shell::ShellProvider;
 use euclid::{Point2D, Rect, Size2D};
 use html_escape::encode_quoted_attribute_to_string;
@@ -12,7 +13,6 @@ use kurbo::{Affine, Rect as KurboRect};
 use markup5ever::{LocalName, local_name};
 use parley::{BreakReason, Cluster, ClusterSide};
 use selectors::matching::ElementSelectorFlags;
-use slab::Slab;
 use std::cell::{Cell, RefCell};
 use std::fmt::Write;
 use std::ops::Deref;
@@ -89,20 +89,20 @@ impl NodeFlags {
 
 pub struct Node {
     // The actual tree we belong to. This is unsafe!!
-    tree: *mut Slab<Node>,
+    tree: *mut crate::NodeTree,
 
     /// Our Id
-    pub id: usize,
+    pub id: NodeId,
     /// Our parent's ID
-    pub parent: Option<usize>,
+    pub parent: Option<NodeId>,
     // What are our children?
-    pub children: Vec<usize>,
+    pub children: Vec<NodeId>,
     /// Our parent in the layout hierachy: a separate list that includes anonymous collections of inline elements
-    pub layout_parent: Cell<Option<usize>>,
+    pub layout_parent: Cell<Option<NodeId>>,
     /// A separate child list that includes anonymous collections of inline elements
-    pub layout_children: RefCell<Option<Vec<usize>>>,
+    pub layout_children: RefCell<Option<Vec<NodeId>>>,
     /// The same as layout_children, but sorted by z-index
-    pub paint_children: RefCell<Option<Vec<usize>>>,
+    pub paint_children: RefCell<Option<Vec<NodeId>>>,
     pub stacking_context: Option<Box<HoistedPaintChildren>>,
 
     // Flags
@@ -124,8 +124,8 @@ pub struct Node {
     pub dirty_descendants: AtomicBool,
 
     // Pseudo element nodes
-    pub before: Option<usize>,
-    pub after: Option<usize>,
+    pub before: Option<NodeId>,
+    pub after: Option<NodeId>,
 
     // Taffy layout data:
     pub style: Style<Atom>,
@@ -144,8 +144,8 @@ unsafe impl Sync for Node {}
 
 impl Node {
     pub(crate) fn new(
-        tree: *mut Slab<Node>,
-        id: usize,
+        tree: *mut crate::NodeTree,
+        id: NodeId,
         guard: SharedRwLock,
         data: NodeData,
     ) -> Self {
@@ -216,7 +216,7 @@ impl Node {
         self.transform
     }
 
-    pub fn pe_by_index(&self, index: usize) -> Option<usize> {
+    pub fn pe_by_index(&self, index: usize) -> Option<NodeId> {
         match index {
             0 => self.after,
             1 => self.before,
@@ -224,7 +224,7 @@ impl Node {
         }
     }
 
-    pub fn set_pe_by_index(&mut self, index: usize, value: Option<usize>) {
+    pub fn set_pe_by_index(&mut self, index: usize, value: Option<NodeId>) {
         match index {
             0 => self.after = value,
             1 => self.before = value,
@@ -612,12 +612,12 @@ impl TextNodeData {
 // }
 
 impl Node {
-    pub fn tree(&self) -> &Slab<Node> {
+    pub fn tree(&self) -> &crate::NodeTree {
         unsafe { &*self.tree }
     }
 
     #[track_caller]
-    pub fn with(&self, id: usize) -> &Node {
+    pub fn with(&self, id: NodeId) -> &Node {
         self.tree().get(id).unwrap()
     }
 
@@ -638,7 +638,7 @@ impl Node {
     }
 
     // Get the index of the current node in the parents child list
-    pub fn index_of_child(&self, child_id: usize) -> Option<usize> {
+    pub fn index_of_child(&self, child_id: NodeId) -> Option<usize> {
         self.children.iter().position(|id| *id == child_id)
     }
 

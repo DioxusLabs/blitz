@@ -1,6 +1,7 @@
 //! Enable the dom to participate in styling by servo
 //!
 
+use blitz_traits::node_id::NodeId;
 use std::ptr::NonNull;
 use std::sync::atomic::Ordering;
 
@@ -66,7 +67,7 @@ impl crate::document::BaseDocument {
             ua_or_user: &guard.read(),
         };
 
-        let root = TDocument::as_node(&&self.nodes[0])
+        let root = TDocument::as_node(&&self.nodes[self.root_node_id])
             .first_element_child()
             .unwrap()
             .as_element()
@@ -79,7 +80,7 @@ impl crate::document::BaseDocument {
         // Mark actively animating nodes as dirty
         let mut sets = self.animations.sets.write();
         for (key, set) in sets.iter_mut() {
-            let node_id = key.node.id();
+            let node_id = NodeId::from_u64(key.node.id() as u64);
 
             // Drop animations belonging to nodes that are no longer in the
             // document. A removed element is never restyled, so it would never
@@ -150,7 +151,7 @@ impl crate::document::BaseDocument {
         }
 
         for opaque in self.snapshots.keys() {
-            let id = opaque.id();
+            let id = NodeId::from_u64(opaque.id() as u64);
             if let Some(node) = self.nodes.get_mut(id) {
                 node.has_snapshot = false;
             }
@@ -259,7 +260,12 @@ impl<'a> TNode for BlitzNode<'a> {
     }
 
     fn owner_doc(&self) -> Self::ConcreteDocument {
-        self.with(1)
+        // Walk up the (layout-)parent chain to the root Document node.
+        let mut node = *self;
+        while let Some(parent_id) = node.parent {
+            node = node.with(parent_id);
+        }
+        node
     }
 
     fn is_in_document(&self) -> bool {
@@ -275,11 +281,11 @@ impl<'a> TNode for BlitzNode<'a> {
     }
 
     fn opaque(&self) -> OpaqueNode {
-        OpaqueNode(self.id)
+        OpaqueNode(self.id.as_u64() as usize)
     }
 
     fn debug_id(self) -> usize {
-        self.id
+        self.id.as_u64() as usize
     }
 
     fn as_element(&self) -> Option<Self::ConcreteElement> {
@@ -313,7 +319,8 @@ impl selectors::Element for BlitzNode<'_> {
         // We should see if selectors will accept a PR that allows us to use 128bits for the OpaqueElement. Or
         // find some other solution that will enable "rehydration". This is required to enable and use the
         // Shadow DOM functionality in Stylo.
-        let non_null = NonNull::new((self.id + 1) as *mut ()).unwrap();
+        let non_null =
+            NonNull::new((self.id.as_u64() as usize).wrapping_add(1) as *mut ()).unwrap();
         OpaqueElement::from_non_null_ptr(non_null)
     }
 
@@ -800,7 +807,7 @@ impl<'a> TElement for BlitzNode<'a> {
         }
 
         // If it is then check if it is a child of the root (<html>) element
-        let root_node = &self.tree()[0];
+        let root_node = TNode::owner_doc(self);
         let root_element = TDocument::as_node(&root_node)
             .first_element_child()
             .unwrap();
@@ -1082,7 +1089,7 @@ impl<'a> Iterator for Traverser<'a> {
 
 impl std::hash::Hash for BlitzNode<'_> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        state.write_usize(self.id)
+        state.write_u64(self.id.as_u64())
     }
 }
 

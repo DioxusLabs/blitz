@@ -1,3 +1,4 @@
+use blitz_traits::node_id::NodeId;
 use std::collections::VecDeque;
 
 use web_time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -23,7 +24,7 @@ use super::focus::generate_focus_events;
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct FlingState {
-    pub(crate) target: usize,
+    pub(crate) target: NodeId,
     pub(crate) last_seen_time: f64,
     pub(crate) x_velocity: f64,
     pub(crate) y_velocity: f64,
@@ -37,7 +38,7 @@ pub(crate) enum ScrollAnimationState {
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct PanState {
-    pub(crate) target: usize,
+    pub(crate) target: NodeId,
     pub(crate) last_x: f32,
     pub(crate) last_y: f32,
     pub(crate) samples: VecDeque<PanSample>,
@@ -154,7 +155,7 @@ impl PanState {
 
 pub(crate) fn handle_pointermove<F: FnMut(DomEvent)>(
     doc: &mut BaseDocument,
-    target: usize,
+    target: NodeId,
     event: &BlitzPointerEvent,
     mut dispatch_event: F,
 ) -> bool {
@@ -319,7 +320,7 @@ pub(crate) fn handle_pointermove<F: FnMut(DomEvent)>(
 
 pub(crate) fn handle_pointerdown(
     doc: &mut BaseDocument,
-    _target: usize,
+    _target: NodeId,
     x: f32,
     y: f32,
     button: MouseEventButton,
@@ -491,7 +492,7 @@ pub(crate) fn handle_pointerdown(
 
 pub(crate) fn handle_pointerup<F: FnMut(DomEvent)>(
     doc: &mut BaseDocument,
-    target: usize,
+    target: NodeId,
     event: &BlitzPointerEvent,
     mut dispatch_event: F,
 ) {
@@ -550,7 +551,7 @@ pub(crate) fn handle_pointerup<F: FnMut(DomEvent)>(
 
 pub(crate) fn handle_click(
     doc: &mut BaseDocument,
-    target: usize,
+    target: NodeId,
     event: &BlitzPointerEvent,
     dispatch_event: &mut dyn FnMut(DomEvent),
 ) {
@@ -754,7 +755,7 @@ pub(crate) fn handle_click(
 
 pub(crate) fn handle_wheel<F: FnMut(DomEvent)>(
     doc: &mut BaseDocument,
-    _: usize,
+    _: NodeId,
     event: BlitzWheelEvent,
     mut dispatch_event: F,
 ) {

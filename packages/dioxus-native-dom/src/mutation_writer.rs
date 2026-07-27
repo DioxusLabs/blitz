@@ -27,7 +27,7 @@ pub struct DioxusState {
 
 impl DioxusState {
     /// Initialize the DioxusState in the RealDom
-    pub fn create(root_id: usize) -> Self {
+    pub fn create(root_id: NodeId) -> Self {
         Self {
             templates: FxHashMap::default(),
             stack: vec![root_id],
@@ -48,13 +48,13 @@ impl DioxusState {
         self.node_id_mapping.get(element_id.0).copied().flatten()
     }
 
-    pub(crate) fn anchor_and_nodes(&mut self, id: ElementId, m: usize) -> (usize, Vec<usize>) {
+    pub(crate) fn anchor_and_nodes(&mut self, id: ElementId, m: usize) -> (NodeId, Vec<NodeId>) {
         let anchor_node_id = self.element_to_node_id(id);
         let new_nodes = self.m_stack_nodes(m);
         (anchor_node_id, new_nodes)
     }
 
-    pub(crate) fn m_stack_nodes(&mut self, m: usize) -> Vec<usize> {
+    pub(crate) fn m_stack_nodes(&mut self, m: usize) -> Vec<NodeId> {
         self.stack.split_off(self.stack.len() - m)
     }
 
@@ -383,7 +383,7 @@ fn set_attribute_inner(
     ns: Option<&'static str>,
     value: Option<&str>,
     is_falsy: bool,
-    node_id: usize,
+    node_id: NodeId,
 ) {
     trace!("set_attribute node_id:{node_id} ns: {ns:?} name:{local_name}, value:{value:?}");
 

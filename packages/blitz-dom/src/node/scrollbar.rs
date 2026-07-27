@@ -2,6 +2,7 @@
 //! [`Node`]. Geometry is shared between painting (blitz-paint) and thumb
 //! hit-testing so the two cannot drift.
 
+use blitz_traits::node_id::NodeId;
 use kurbo::Rect as KurboRect;
 use taffy::AbsoluteAxis;
 use web_time::Duration;
@@ -27,7 +28,7 @@ pub(crate) fn opacity_at(elapsed: Duration) -> f32 {
 /// A specific scrollbar: one axis of one scroll container.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ScrollbarRef {
-    pub node_id: usize,
+    pub node_id: NodeId,
     pub axis: AbsoluteAxis,
 }
 

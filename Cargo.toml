@@ -166,7 +166,6 @@ console_error_panic_hook = "0.1"
 # Other dependencies
 rustc-hash = "2.1.2"
 bytes = "1.7.1"
-slab = "0.4.9"
 slotmap = "1.0.7"
 tracing = "0.1.40"
 tracing-subscriber = "0.3"

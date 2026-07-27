@@ -1,3 +1,4 @@
+use blitz_traits::node_id::NodeId;
 use selectors::context::QuirksMode;
 use std::sync::atomic::Ordering as Ao;
 use std::{
@@ -66,7 +67,7 @@ pub enum Resource {
 pub(crate) struct ResourceHandler<T: Send + Sync + 'static> {
     doc_id: usize,
     request_id: usize,
-    node_id: Option<usize>,
+    node_id: Option<NodeId>,
     tx: Sender<DocumentEvent>,
     shell_provider: Arc<dyn ShellProvider>,
     data: T,
@@ -76,7 +77,7 @@ impl<T: Send + Sync + 'static> ResourceHandler<T> {
     pub(crate) fn new(
         tx: Sender<DocumentEvent>,
         doc_id: usize,
-        node_id: Option<usize>,
+        node_id: Option<NodeId>,
         shell_provider: Arc<dyn ShellProvider>,
         data: T,
     ) -> Self {
@@ -94,7 +95,7 @@ impl<T: Send + Sync + 'static> ResourceHandler<T> {
     pub(crate) fn boxed(
         tx: Sender<DocumentEvent>,
         doc_id: usize,
-        node_id: Option<usize>,
+        node_id: Option<NodeId>,
         shell_provider: Arc<dyn ShellProvider>,
         data: T,
     ) -> Box<dyn NetHandler>
@@ -123,7 +124,7 @@ impl<T: Send + Sync + 'static> ResourceHandler<T> {
 #[allow(unused)]
 pub struct ResourceLoadResponse {
     pub request_id: usize,
-    pub node_id: Option<usize>,
+    pub node_id: Option<NodeId>,
     pub resolved_url: Option<String>,
     pub result: Result<Resource, String>,
 }
@@ -365,7 +366,7 @@ impl FontFaceHandler {
 pub(crate) fn fetch_font_face(
     tx: Sender<DocumentEvent>,
     doc_id: usize,
-    node_id: Option<usize>,
+    node_id: Option<NodeId>,
     sheet: &Stylesheet,
     network_provider: &Arc<dyn NetProvider>,
     shell_provider: &Arc<dyn ShellProvider>,

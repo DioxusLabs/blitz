@@ -1,6 +1,6 @@
 //! Dragging an overlay scrollbar thumb scrolls the container.
 
-use blitz_dom::{DocumentConfig, EventDriver, NoopEventHandler};
+use blitz_dom::{DocumentConfig, EventDriver, NodeId, NoopEventHandler};
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::events::{
     BlitzPointerEvent, BlitzPointerId, MouseEventButton, MouseEventButtons, Point, PointerCoords,
@@ -70,7 +70,7 @@ fn scroller_doc() -> HtmlDocument {
 /// Scrolls `scroller` down by `dy` content px through the scroll API, which
 /// also shows its overlay scrollbars (thumbs are only interactive while
 /// visible).
-fn scroll_down(doc: &mut HtmlDocument, scroller: usize, dy: f64) {
+fn scroll_down(doc: &mut HtmlDocument, scroller: NodeId, dy: f64) {
     doc.scroll_by(Some(scroller), 0.0, -dy, &mut |_| {});
 }
 

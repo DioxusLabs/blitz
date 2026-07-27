@@ -1,4 +1,5 @@
 //! Conversion functions from Stylo types to Parley types
+use blitz_traits::node_id::NodeId;
 use std::borrow::Cow;
 
 use style::values::computed::Length;
@@ -289,7 +290,7 @@ pub(crate) fn white_space_collapse(input: stylo::WhiteSpaceCollapse) -> parley::
 }
 
 pub(crate) fn style(
-    span_id: usize,
+    span_id: NodeId,
     style: &stylo::ComputedValues,
 ) -> parley::TextStyle<'static, 'static, TextBrush> {
     let font_styles = style.get_font();

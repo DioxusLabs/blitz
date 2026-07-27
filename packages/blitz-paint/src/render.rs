@@ -21,7 +21,7 @@ use blitz_dom::node::{
     ListItemLayout, ListItemLayoutPosition, Marker, NodeData, RasterImageData, TextInputData,
     TextNodeData,
 };
-use blitz_dom::{BaseDocument, ElementData, Node, local_name};
+use blitz_dom::{BaseDocument, ElementData, Node, NodeId, local_name};
 use blitz_traits::devtools::DevtoolSettings;
 
 use style::values::computed::{BorderCornerRadius, ColorOrAuto};
@@ -53,7 +53,7 @@ pub struct BlitzDomPainter<'dom, 'a> {
     pub(crate) initial_x: f64,
     pub(crate) initial_y: f64,
     /// The id of the document's root element (cached to avoid re-resolving it for every element)
-    pub(crate) root_element_id: Option<usize>,
+    pub(crate) root_element_id: Option<NodeId>,
     /// Scrollbar hover/drag state, resolved once per scene like the root element
     #[cfg(feature = "scrollbars")]
     pub(crate) hovered_scrollbar: Option<blitz_dom::node::ScrollbarRef>,
@@ -61,7 +61,7 @@ pub struct BlitzDomPainter<'dom, 'a> {
     pub(crate) scrollbar_drag_target: Option<blitz_dom::node::ScrollbarRef>,
     pub(crate) layer_manager: LayerManager,
     /// Cached selection ranges for O(1) lookup: node_id -> (start_offset, end_offset)
-    pub(crate) selection_ranges: HashMap<usize, (usize, usize)>,
+    pub(crate) selection_ranges: HashMap<NodeId, (usize, usize)>,
 
     // Pre-computed `Scene`s for each CustomWidget
     pub(crate) custom_widget_scenes: &'a CustomWidgetSceneMap,
@@ -78,7 +78,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         initial_y: f64,
         custom_widget_scenes: &'a CustomWidgetSceneMap,
     ) -> Self {
-        let selection_ranges: HashMap<usize, (usize, usize)> = dom
+        let selection_ranges: HashMap<NodeId, (usize, usize)> = dom
             .get_text_selection_ranges()
             .into_iter()
             .map(|(node_id, start, end)| (node_id, (start, end)))
@@ -203,7 +203,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
     fn render_element(
         &self,
         scene: &mut impl PaintScene,
-        node_id: usize,
+        node_id: NodeId,
         parent_style_transform: Affine,
         clip_rect: Rect,
     ) {
@@ -465,7 +465,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
     fn render_node(
         &self,
         scene: &mut impl PaintScene,
-        node_id: usize,
+        node_id: NodeId,
         parent_style_transform: Affine,
         clip_rect: Rect,
     ) {

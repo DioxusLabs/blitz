@@ -5,6 +5,8 @@ pub mod devtools;
 pub mod events;
 pub mod navigation;
 pub mod net;
+pub mod node_id;
 pub mod shell;
 
+pub use node_id::NodeId;
 pub use smol_str::SmolStr;

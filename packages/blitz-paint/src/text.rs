@@ -1,5 +1,5 @@
 use anyrender::PaintScene;
-use blitz_dom::{BaseDocument, node::TextBrush, util::ToColorColor};
+use blitz_dom::{BaseDocument, NodeId, node::TextBrush, util::ToColorColor};
 use kurbo::{Affine, Rect, Stroke};
 use parley::{Affinity, Cursor, Layout, Line, PositionedLayoutItem, Selection};
 use peniko::Fill;
@@ -22,7 +22,7 @@ pub(crate) fn draw_inline_backgrounds<'a>(
     lines: impl Iterator<Item = Line<'a, TextBrush>>,
     doc: &BaseDocument,
     transform: Affine,
-    inline_root_id: usize,
+    inline_root_id: NodeId,
 ) {
     for line in lines {
         for item in line.items() {

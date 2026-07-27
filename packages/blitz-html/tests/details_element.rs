@@ -2,7 +2,7 @@
 //! child toggles the `open` attribute of its <details> ancestor, and the
 //! user-agent stylesheet hides everything except that summary while closed.
 
-use blitz_dom::{Document, DocumentConfig};
+use blitz_dom::{Document, DocumentConfig, NodeId};
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::{
     events::{
@@ -36,7 +36,7 @@ fn doc_scaled(html: &str, scale: f32) -> HtmlDocument {
     doc
 }
 
-fn node_id(doc: &HtmlDocument, selector: &str) -> usize {
+fn node_id(doc: &HtmlDocument, selector: &str) -> NodeId {
     doc.query_selector(selector).unwrap().expect(selector)
 }
 

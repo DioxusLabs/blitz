@@ -28,7 +28,7 @@ impl BaseDocument {
             tree_id: TreeId::ROOT,
             nodes,
             tree: Some(tree),
-            focus: NodeId(self.focus_node_id.map(|id| id as u64).unwrap_or(u64::MAX)),
+            focus: NodeId(self.focus_node_id.map(|id| id.as_u64()).unwrap_or(u64::MAX)),
         }
     }
 
@@ -37,10 +37,10 @@ impl BaseDocument {
         node: &BlitzDomNode,
         parent: &mut AccessKitNode,
     ) -> (NodeId, AccessKitNode) {
-        let id = NodeId(node.id as u64);
+        let id = NodeId(node.id.as_u64());
 
         let mut builder = AccessKitNode::default();
-        if node.id == 0 {
+        if node.parent.is_none() {
             builder.set_role(Role::Window)
         } else if let Some(element_data) = node.element_data() {
             let name = element_data.name.local.to_string();

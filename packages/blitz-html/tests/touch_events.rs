@@ -3,7 +3,7 @@
 //! pointer events. Mouse input must NOT generate touch events (and vice-versa),
 //! and default actions remain driven by the pointer events.
 
-use blitz_dom::{Document, DocumentConfig, EventDriver, EventHandler};
+use blitz_dom::{Document, DocumentConfig, EventDriver, EventHandler, NodeId};
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::{
     events::{
@@ -59,7 +59,7 @@ struct RecordingHandler {
 impl EventHandler for RecordingHandler {
     fn handle_event(
         &mut self,
-        _chain: &[usize],
+        _chain: &[NodeId],
         event: &mut DomEvent,
         _doc: &mut dyn Document,
         _event_state: &mut EventState,

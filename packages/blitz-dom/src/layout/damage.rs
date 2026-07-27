@@ -1,3 +1,4 @@
+use blitz_traits::node_id::NodeId;
 use std::ops::Range;
 
 use crate::Node;
@@ -33,7 +34,7 @@ pub(crate) const ALL_DAMAGE: RestyleDamage =
 impl BaseDocument {
     pub(crate) fn propagate_damage_flags(
         &mut self,
-        node_id: usize,
+        node_id: NodeId,
         damage_from_parent: RestyleDamage,
     ) -> RestyleDamage {
         let mut damage = if let Some(data) = self.nodes[node_id].stylo_element_data.get_mut() {
@@ -131,7 +132,7 @@ impl BaseDocument {
     /// animations/transitions of repaint- or relayout-only properties) must still
     /// be flushed to the pseudo-element's node - along with the damage they imply -
     /// so that layout and paint see the new style.
-    fn sync_pseudo_element_styles(&mut self, node_id: usize) {
+    fn sync_pseudo_element_styles(&mut self, node_id: NodeId) {
         let node = &self.nodes[node_id];
 
         let before_node_id = node.before;
@@ -303,7 +304,7 @@ pub(crate) fn compute_layout_damage(old: &ComputedValues, new: &ComputedValues) 
 /// A child with a z_index that is hoisted up to it's containing Stacking Context for paint purposes
 #[derive(Debug, Clone)]
 pub struct HoistedPaintChild {
-    pub node_id: usize,
+    pub node_id: NodeId,
     pub z_index: i32,
     pub position: taffy::Point<f32>,
 }
@@ -426,13 +427,13 @@ impl BaseDocument {
         }
     }
 
-    pub fn flush_styles_to_layout(&mut self, node_id: usize) {
+    pub fn flush_styles_to_layout(&mut self, node_id: NodeId) {
         self.flush_styles_to_layout_impl(node_id, None);
     }
 
     /// Flush a CSS image layer list (`background-image` or `mask-image`) from style
     /// to dedicated storage on the node, fetching any images which are not yet loaded.
-    fn flush_image_layers_from_style(&mut self, node_id: usize, kind: ImageLayerKind) {
+    fn flush_image_layers_from_style(&mut self, node_id: NodeId, kind: ImageLayerKind) {
         let doc_id = self.id();
         let node = self.nodes.get_mut(node_id).unwrap();
         let stylo_element_data = node.stylo_element_data.get();
@@ -519,7 +520,7 @@ impl BaseDocument {
     /// Walk the whole tree, converting styles to layout
     fn flush_styles_to_layout_impl(
         &mut self,
-        node_id: usize,
+        node_id: NodeId,
         parent_stacking_context: Option<&mut HoistedPaintChildren>,
     ) {
         let mut new_stacking_context: HoistedPaintChildren = HoistedPaintChildren::new();

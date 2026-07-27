@@ -1,3 +1,4 @@
+use blitz_traits::node_id::NodeId;
 use parley::layout::PositionedLayoutItem;
 
 use crate::BaseDocument;
@@ -7,7 +8,7 @@ impl BaseDocument {
         taffy::print_tree(self, taffy::NodeId::from(0usize));
     }
 
-    pub fn debug_log_node(&self, node_id: usize) {
+    pub fn debug_log_node(&self, node_id: NodeId) {
         let node = &self.nodes[node_id];
 
         #[cfg(feature = "tracing")]

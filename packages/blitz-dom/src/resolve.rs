@@ -1,5 +1,6 @@
 //! Resolve style and layout
 
+use blitz_traits::node_id::NodeId;
 use std::{
     cell::RefCell,
     time::{SystemTime, UNIX_EPOCH},
@@ -40,7 +41,7 @@ use crate::{
 impl BaseDocument {
     /// Restyle the tree and then relayout it
     pub fn resolve(&mut self, current_time_for_animations: f64) {
-        if TDocument::as_node(&&self.nodes[0])
+        if TDocument::as_node(&self.root_node())
             .first_element_child()
             .is_none()
         {
@@ -132,8 +133,8 @@ impl BaseDocument {
         timer.print_times(&format!("Resolve({}): ", self.id()));
     }
 
-    fn resolve_transforms(&mut self, node_id: usize) -> Rect {
-        if !self.nodes.contains(node_id) {
+    fn resolve_transforms(&mut self, node_id: NodeId) -> Rect {
+        if !self.nodes.contains_key(node_id) {
             return Rect::ZERO;
         }
 
@@ -221,7 +222,7 @@ impl BaseDocument {
     pub fn resolve_layout_children(&mut self) {
         resolve_layout_children_recursive(self, self.root_node().id);
 
-        fn resolve_layout_children_recursive(doc: &mut BaseDocument, node_id: usize) {
+        fn resolve_layout_children_recursive(doc: &mut BaseDocument, node_id: NodeId) {
             // Anonymous blocks and pseudo-elements can be removed from the slab
             // between render passes. Bail out rather than panicking on a stale key.
             if doc.nodes.get(node_id).is_none() {
@@ -259,7 +260,7 @@ impl BaseDocument {
                     for child_id in layout_children.iter().copied() {
                         // Anonymous blocks and pseudo-elements can be removed from the
                         // slab between render passes; skip stale IDs.
-                        if !doc.nodes.contains(child_id) {
+                        if !doc.nodes.contains_key(child_id) {
                             continue;
                         }
                         resolve_layout_children_recursive(doc, child_id);
@@ -368,7 +369,7 @@ impl BaseDocument {
             height: AvailableSpace::Definite(size.height.to_f32_px()),
         };
 
-        let root_element_id = taffy::NodeId::from(self.root_element().id);
+        let root_element_id = crate::taffy_node_id(self.root_element().id);
 
         // println!("\n\nRESOLVE LAYOUT\n===========\n");
 

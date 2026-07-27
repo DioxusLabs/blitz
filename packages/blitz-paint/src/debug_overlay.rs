@@ -1,5 +1,5 @@
 use anyrender::PaintScene;
-use blitz_dom::BaseDocument;
+use blitz_dom::{BaseDocument, NodeId};
 use kurbo::{Affine, Rect, Vec2};
 
 use crate::color::Color;
@@ -9,7 +9,7 @@ use crate::color::Color;
 pub(crate) fn render_debug_overlay(
     scene: &mut impl PaintScene,
     dom: &BaseDocument,
-    node_id: usize,
+    node_id: NodeId,
     scale: f64,
     initial_x: f64,
     initial_y: f64,

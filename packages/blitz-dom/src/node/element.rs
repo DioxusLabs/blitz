@@ -1,3 +1,4 @@
+use blitz_traits::node_id::NodeId;
 use cssparser::ParserInput;
 use linebender_resource_handle::Blob;
 use markup5ever::{LocalName, QualName, local_name};
@@ -67,7 +68,7 @@ pub struct ElementData {
     pub list_item_data: Option<Box<ListItemLayout>>,
 
     /// The element's template contents (\<template\> elements only)
-    pub template_contents: Option<usize>,
+    pub template_contents: Option<NodeId>,
     // /// Whether the node is a [HTML integration point] (https://html.spec.whatwg.org/multipage/#html-integration-point)
     // pub mathml_annotation_xml_integration_point: bool,
 }

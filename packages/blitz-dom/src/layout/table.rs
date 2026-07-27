@@ -1,3 +1,4 @@
+use blitz_traits::node_id::NodeId;
 use std::{ops::Range, sync::Arc};
 
 use atomic_refcell::AtomicRefCell;
@@ -42,21 +43,21 @@ pub struct TableContext {
 #[derive(Debug, Clone)]
 pub struct TableCell {
     // kind: TableItemKind,
-    node_id: usize,
+    node_id: NodeId,
     style: taffy::Style<Atom>,
 }
 
 #[derive(Debug, Clone)]
 pub struct TableRow {
     // kind: TableItemKind,
-    pub node_id: usize,
+    pub node_id: NodeId,
     pub height: f32,
 }
 
 pub(crate) fn build_table_context(
     doc: &mut BaseDocument,
-    table_root_node_id: usize,
-) -> (TableContext, Vec<usize>) {
+    table_root_node_id: NodeId,
+) -> (TableContext, Vec<NodeId>) {
     let mut cells: Vec<TableCell> = Vec::new();
     let mut rows: Vec<TableRow> = Vec::new();
     let mut row = 0u16;
@@ -180,7 +181,7 @@ pub(crate) fn build_table_context(
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn collect_table_cells(
     doc: &mut BaseDocument,
-    node_id: usize,
+    node_id: NodeId,
     is_fixed: bool,
     border_collapse: BorderCollapse,
     row: &mut u16,
@@ -401,7 +402,7 @@ impl taffy::LayoutPartialTree for TableTreeWrapper<'_> {
     }
 
     fn set_unrounded_layout(&mut self, node_id: taffy::NodeId, layout: &taffy::Layout) {
-        let node_id = taffy::NodeId::from(self.ctx.cells[usize::from(node_id)].node_id);
+        let node_id = crate::taffy_node_id(self.ctx.cells[usize::from(node_id)].node_id);
         self.doc.set_unrounded_layout(node_id, layout)
     }
 
@@ -411,7 +412,7 @@ impl taffy::LayoutPartialTree for TableTreeWrapper<'_> {
         inputs: taffy::tree::LayoutInput,
     ) -> taffy::LayoutOutput {
         let cell = &self.ctx.cells[usize::from(node_id)];
-        let node_id = taffy::NodeId::from(cell.node_id);
+        let node_id = crate::taffy_node_id(cell.node_id);
         self.doc.compute_child_layout(node_id, inputs)
     }
 }

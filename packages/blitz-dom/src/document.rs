@@ -1,3 +1,4 @@
+use crate::NodeTree;
 use crate::events::{DragMode, ScrollAnimationState, handle_dom_event};
 use crate::font_metrics::BlitzFontMetricsProvider;
 use crate::layout::construct::ConstructionTask;
@@ -21,13 +22,13 @@ use blitz_traits::devtools::DevtoolSettings;
 use blitz_traits::events::{BlitzScrollEvent, DomEvent, DomEventData, HitResult, UiEvent};
 use blitz_traits::navigation::{DummyNavigationProvider, NavigationProvider};
 use blitz_traits::net::{AbortSignal, DummyNetProvider, NetProvider, Request};
+use blitz_traits::node_id::NodeId;
 use blitz_traits::shell::{ColorScheme, DummyShellProvider, ShellProvider, Viewport};
 use cursor_icon::CursorIcon;
 use linebender_resource_handle::Blob;
 use markup5ever::local_name;
 use parley::{FontContext, PlainEditorDriver};
 use selectors::{Element, matching::QuirksMode};
-use slab::Slab;
 use std::any::Any;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, Bound, HashMap, HashSet};
@@ -206,11 +207,14 @@ pub struct BaseDocument {
     // rx will always be Some, except temporarily while processing events
     pub(crate) rx: Option<Receiver<DocumentEvent>>,
 
-    /// A slab-backed tree of nodes
+    /// A slotmap-backed tree of nodes
     ///
     /// We pin the tree to a guarantee to the nodes it creates that the tree is stable in memory.
     /// There is no way to create the tree - publicly or privately - that would invalidate that invariant.
-    pub(crate) nodes: Box<Slab<Node>>,
+    pub(crate) nodes: Box<NodeTree>,
+
+    /// The id of the root node (a Document node)
+    pub(crate) root_node_id: NodeId,
 
     // Stylo
     /// The Stylo engine
@@ -231,15 +235,15 @@ pub struct BaseDocument {
     pub(crate) layout_ctx: parley::LayoutContext<TextBrush>,
 
     /// The node which is currently hovered (if any)
-    pub(crate) hover_node_id: Option<usize>,
+    pub(crate) hover_node_id: Option<NodeId>,
     /// Whether the node which is currently hovered is a text node/span
     pub(crate) hover_node_is_text: bool,
     /// The node which is currently focussed (if any)
-    pub(crate) focus_node_id: Option<usize>,
+    pub(crate) focus_node_id: Option<NodeId>,
     /// The node which is currently active (if any)
-    pub(crate) active_node_id: Option<usize>,
+    pub(crate) active_node_id: Option<NodeId>,
     /// The node which recieved a mousedown event (if any)
-    pub(crate) mousedown_node_id: Option<usize>,
+    pub(crate) mousedown_node_id: Option<NodeId>,
     /// The last time a mousedown was made (for double-click detection)
     pub(crate) last_mousedown_time: Option<Instant>,
     /// The position where mousedown occurred (for selection drags and double-click detection)
@@ -252,7 +256,7 @@ pub struct BaseDocument {
     pub(crate) hovered_scrollbar: Option<crate::node::ScrollbarRef>,
     /// When each scroll container's overlay scrollbars were last shown
     /// (scrolled, or the pointer left the thumb); drives their fade-out
-    pub(crate) scrollbar_activity: HashMap<usize, Instant>,
+    pub(crate) scrollbar_activity: HashMap<NodeId, Instant>,
     /// Whether and what kind of scroll animation is currently in progress
     pub(crate) scroll_animation: ScrollAnimationState,
 
@@ -268,24 +272,24 @@ pub struct BaseDocument {
     pub(crate) subdoc_is_animating: bool,
 
     /// Map of node ID's for fast lookups
-    pub(crate) nodes_to_id: HashMap<String, usize>,
+    pub(crate) nodes_to_id: HashMap<String, NodeId>,
     /// Map of `<style>` and `<link>` node IDs to their associated stylesheet
-    pub(crate) nodes_to_stylesheet: BTreeMap<usize, DocumentStyleSheet>,
+    pub(crate) nodes_to_stylesheet: BTreeMap<NodeId, DocumentStyleSheet>,
     /// Stylesheets added by the useragent
     /// where the key is the hashed CSS
     pub(crate) ua_stylesheets: HashMap<String, DocumentStyleSheet>,
     /// Map from form control node ID's to their associated forms node ID's
-    pub(crate) controls_to_form: HashMap<usize, usize>,
+    pub(crate) controls_to_form: HashMap<NodeId, NodeId>,
     /// Nodes that contain sub documents
-    pub(crate) sub_document_nodes: HashSet<usize>,
+    pub(crate) sub_document_nodes: HashSet<NodeId>,
     /// Set of changed nodes for updating the accessibility tree
-    pub(crate) changed_nodes: HashSet<usize>,
+    pub(crate) changed_nodes: HashSet<NodeId>,
     /// Set of changed nodes for updating the accessibility tree
     pub(crate) deferred_construction_nodes: Vec<ConstructionTask>,
 
     /// Nodes that contain custom widgets
     #[cfg(feature = "custom-widget")]
-    pub(crate) custom_widget_nodes: HashSet<usize>,
+    pub(crate) custom_widget_nodes: HashSet<NodeId>,
     /// Rendering resources allocated by custom widgets that should be deallocated during the next render
     #[cfg(feature = "custom-widget")]
     pub(crate) pending_resource_deallocations: Vec<anyrender::ResourceId>,
@@ -297,9 +301,10 @@ pub struct BaseDocument {
     /// Tracks in-flight image requests. When an image is being fetched, additional
     /// requests for the same URL are queued here instead of starting new fetches.
     /// Value is a list of (node_id, image_type) pairs waiting for the image.
-    pub(crate) pending_images: HashMap<String, Vec<(usize, ImageType)>>,
+    pub(crate) pending_images: HashMap<String, Vec<(NodeId, ImageType)>>,
 
-    // Tracks in-flight "critical" resources (e.g. stylesheets linked from the `<head>`)
+    // Tracks in-flight "critical" resources (e.g. stylesheets linked from the `<head>`),
+    // keyed by request id
     pub(crate) pending_critical_resources: HashSet<usize>,
 
     // Service providers
@@ -391,7 +396,7 @@ impl BaseDocument {
         let device = make_device(&viewport, media_type.clone(), font_ctx.clone());
         let stylist = Stylist::new(device, QuirksMode::NoQuirks);
         let snapshots = SnapshotMap::new();
-        let nodes = Box::new(Slab::new());
+        let nodes = Box::new(NodeTree::new());
         let guard = SharedRwLock::new();
         let nodes_to_id = HashMap::new();
 
@@ -422,6 +427,7 @@ impl BaseDocument {
 
             guard,
             nodes,
+            root_node_id: NodeId::default(),
             stylist,
             animations: DocumentAnimationSet::default(),
             snapshots,
@@ -477,7 +483,7 @@ impl BaseDocument {
         };
 
         // Initialise document with root Document node
-        doc.create_node(NodeData::Document);
+        doc.root_node_id = doc.create_node(NodeData::Document);
         doc.root_node_mut().flags.insert(NodeFlags::IS_IN_DOCUMENT);
 
         match config.ua_stylesheets {
@@ -535,7 +541,7 @@ impl BaseDocument {
         &self.guard
     }
 
-    pub fn tree(&self) -> &Slab<Node> {
+    pub fn tree(&self) -> &NodeTree {
         &self.nodes
     }
 
@@ -566,15 +572,15 @@ impl BaseDocument {
         })
     }
 
-    pub fn get_node(&self, node_id: usize) -> Option<&Node> {
+    pub fn get_node(&self, node_id: NodeId) -> Option<&Node> {
         self.nodes.get(node_id)
     }
 
-    pub fn get_node_mut(&mut self, node_id: usize) -> Option<&mut Node> {
+    pub fn get_node_mut(&mut self, node_id: NodeId) -> Option<&mut Node> {
         self.nodes.get_mut(node_id)
     }
 
-    pub fn get_focussed_node_id(&self) -> Option<usize> {
+    pub fn get_focussed_node_id(&self) -> Option<NodeId> {
         self.focus_node_id
             .or(self.try_root_element().map(|el| el.id))
     }
@@ -601,7 +607,7 @@ impl BaseDocument {
     /// Note that although there should only be one bound element,
     /// we return all possibilities instead of just the first
     /// in order to allow the caller to decide which one is correct
-    pub fn label_bound_input_element(&self, label_node_id: usize) -> Option<&Node> {
+    pub fn label_bound_input_element(&self, label_node_id: NodeId) -> Option<&Node> {
         let label_element = self.nodes[label_node_id].element_data()?;
         if let Some(target_element_dom_id) = label_element.attr(local_name!("for")) {
             TreeTraverser::new(self)
@@ -643,9 +649,8 @@ impl BaseDocument {
         *is_checked
     }
 
-    pub fn toggle_radio(&mut self, radio_set_name: String, target_radio_id: usize) {
-        for i in 0..self.nodes.len() {
-            let node = &mut self.nodes[i];
+    pub fn toggle_radio(&mut self, radio_set_name: String, target_radio_id: NodeId) {
+        for (i, node) in self.nodes.iter_mut() {
             if let Some(node_data) = node.data.downcast_element_mut() {
                 if node_data.attr(local_name!("name")) == Some(&radio_set_name) {
                     let was_clicked = i == target_radio_id;
@@ -661,7 +666,7 @@ impl BaseDocument {
     /// Toggle the `open` attribute of a `<details>` element, expanding or
     /// collapsing it. This is the default action triggered when the element's
     /// first `<summary>` child is activated.
-    pub fn toggle_details_open(&mut self, details_id: usize) {
+    pub fn toggle_details_open(&mut self, details_id: NodeId) {
         use crate::qual_name;
 
         let node = &self.nodes[details_id];
@@ -684,7 +689,7 @@ impl BaseDocument {
         self.shell_provider.request_redraw();
     }
 
-    pub fn set_style_property(&mut self, node_id: usize, name: &str, value: &str) {
+    pub fn set_style_property(&mut self, node_id: NodeId, name: &str, value: &str) {
         let node = &mut self.nodes[node_id];
         let did_change = node.element_data_mut().unwrap().set_style_property(
             name,
@@ -697,7 +702,7 @@ impl BaseDocument {
         }
     }
 
-    pub fn remove_style_property(&mut self, node_id: usize, name: &str) {
+    pub fn remove_style_property(&mut self, node_id: NodeId, name: &str) {
         let node = &mut self.nodes[node_id];
         let did_change = node.element_data_mut().unwrap().remove_style_property(
             name,
@@ -709,11 +714,11 @@ impl BaseDocument {
         }
     }
 
-    pub fn sub_document_node_ids(&self) -> Vec<usize> {
+    pub fn sub_document_node_ids(&self) -> Vec<NodeId> {
         self.sub_document_nodes.iter().copied().collect()
     }
 
-    pub fn set_sub_document(&mut self, node_id: usize, sub_document: Box<dyn Document>) {
+    pub fn set_sub_document(&mut self, node_id: NodeId, sub_document: Box<dyn Document>) {
         self.nodes[node_id]
             .element_data_mut()
             .unwrap()
@@ -721,7 +726,7 @@ impl BaseDocument {
         self.sub_document_nodes.insert(node_id);
     }
 
-    pub fn remove_sub_document(&mut self, node_id: usize) {
+    pub fn remove_sub_document(&mut self, node_id: NodeId) {
         self.nodes[node_id]
             .element_data_mut()
             .unwrap()
@@ -730,7 +735,7 @@ impl BaseDocument {
     }
 
     #[cfg(feature = "custom-widget")]
-    pub fn custom_widget_node_ids(&self) -> Vec<usize> {
+    pub fn custom_widget_node_ids(&self) -> Vec<NodeId> {
         self.custom_widget_nodes.iter().copied().collect()
     }
 
@@ -740,7 +745,7 @@ impl BaseDocument {
     }
 
     #[cfg(feature = "custom-widget")]
-    pub fn set_custom_widget(&mut self, node_id: usize, widget: Box<dyn crate::Widget>) {
+    pub fn set_custom_widget(&mut self, node_id: NodeId, widget: Box<dyn crate::Widget>) {
         self.nodes[node_id]
             .element_data_mut()
             .unwrap()
@@ -749,7 +754,7 @@ impl BaseDocument {
     }
 
     #[cfg(feature = "custom-widget")]
-    pub fn remove_custom_widget(&mut self, node_id: usize) {
+    pub fn remove_custom_widget(&mut self, node_id: NodeId) {
         let resources_to_deallocate = self.nodes[node_id]
             .element_data_mut()
             .unwrap()
@@ -760,11 +765,11 @@ impl BaseDocument {
     }
 
     pub fn root_node(&self) -> &Node {
-        &self.nodes[0]
+        &self.nodes[self.root_node_id]
     }
 
     pub fn root_node_mut(&mut self) -> &mut Node {
-        &mut self.nodes[0]
+        &mut self.nodes[self.root_node_id]
     }
 
     pub fn try_root_element(&self) -> Option<&Node> {
@@ -779,20 +784,20 @@ impl BaseDocument {
             .unwrap()
     }
 
-    pub fn create_node(&mut self, node_data: NodeData) -> usize {
-        let slab_ptr = self.nodes.as_mut() as *mut Slab<Node>;
+    pub fn create_node(&mut self, node_data: NodeData) -> NodeId {
+        let tree_ptr = self.nodes.as_mut() as *mut NodeTree;
         let guard = self.guard.clone();
 
-        let entry = self.nodes.vacant_entry();
-        let id = entry.key();
-        entry.insert(Node::new(slab_ptr, id, guard, node_data));
+        let id = self
+            .nodes
+            .insert_with_key(|id| Node::new(tree_ptr, id, guard, node_data));
 
         // Mark the new node as changed.
         self.changed_nodes.insert(id);
         id
     }
 
-    pub(crate) fn drop_node_ignoring_parent(&mut self, node_id: usize) -> Option<Node> {
+    pub(crate) fn drop_node_ignoring_parent(&mut self, node_id: NodeId) -> Option<Node> {
         self.drop_node_ignoring_parent_with(node_id, &mut |_| {})
     }
 
@@ -800,10 +805,10 @@ impl BaseDocument {
     /// every dropped node (the node itself and all of its descendants).
     pub(crate) fn drop_node_ignoring_parent_with(
         &mut self,
-        node_id: usize,
-        on_drop: &mut dyn FnMut(usize),
+        node_id: NodeId,
+        on_drop: &mut dyn FnMut(NodeId),
     ) -> Option<Node> {
-        let mut node = self.nodes.try_remove(node_id);
+        let mut node = self.nodes.remove(node_id);
         if let Some(node) = &mut node {
             on_drop(node_id);
             if let Some(before) = node.before {
@@ -825,13 +830,13 @@ impl BaseDocument {
         self.changed_nodes.is_empty()
     }
 
-    pub fn create_text_node(&mut self, text: &str) -> usize {
+    pub fn create_text_node(&mut self, text: &str) -> NodeId {
         let content = text.to_string();
         let data = NodeData::Text(TextNodeData::new(content));
         self.create_node(data)
     }
 
-    pub fn deep_clone_node(&mut self, node_id: usize) -> usize {
+    pub fn deep_clone_node(&mut self, node_id: NodeId) -> NodeId {
         // Load existing node
         let node = &self.nodes[node_id];
         let mut data = node.data.clone();
@@ -853,7 +858,7 @@ impl BaseDocument {
         let new_node_id = self.create_node(data);
 
         // Recursively clone children
-        let new_children: Vec<usize> = children
+        let new_children: Vec<NodeId> = children
             .into_iter()
             .map(|child_id| self.deep_clone_node(child_id))
             .collect();
@@ -865,9 +870,9 @@ impl BaseDocument {
         new_node_id
     }
 
-    pub(crate) fn remove_and_drop_pe(&mut self, node_id: usize) -> Option<Node> {
-        fn remove_pe_ignoring_parent(doc: &mut BaseDocument, node_id: usize) -> Option<Node> {
-            let mut node = doc.nodes.try_remove(node_id);
+    pub(crate) fn remove_and_drop_pe(&mut self, node_id: NodeId) -> Option<Node> {
+        fn remove_pe_ignoring_parent(doc: &mut BaseDocument, node_id: NodeId) -> Option<Node> {
+            let mut node = doc.nodes.remove(node_id);
             if let Some(node) = &mut node {
                 for &child in &node.children {
                     remove_pe_ignoring_parent(doc, child);
@@ -900,7 +905,7 @@ impl BaseDocument {
         crate::util::walk_tree(0, self.root_node());
     }
 
-    pub fn print_subtree(&self, node_id: usize) {
+    pub fn print_subtree(&self, node_id: NodeId) {
         crate::util::walk_tree(0, &self.nodes[node_id]);
     }
 
@@ -938,7 +943,7 @@ impl BaseDocument {
         }
     }
 
-    pub fn process_style_element(&mut self, target_id: usize) {
+    pub fn process_style_element(&mut self, target_id: NodeId) {
         let css = self.nodes[target_id].text_content();
         let css = html_escape::decode_html_entities(&css);
         let sheet = self.make_stylesheet(&css, Origin::Author);
@@ -979,13 +984,13 @@ impl BaseDocument {
         DocumentStyleSheet(ServoArc::new(data))
     }
 
-    pub fn upsert_stylesheet_for_node(&mut self, node_id: usize) {
+    pub fn upsert_stylesheet_for_node(&mut self, node_id: NodeId) {
         let raw_styles = self.nodes[node_id].text_content();
         let sheet = self.make_stylesheet(raw_styles, Origin::Author);
         self.add_stylesheet_for_node(sheet, node_id);
     }
 
-    pub fn add_stylesheet_for_node(&mut self, stylesheet: DocumentStyleSheet, node_id: usize) {
+    pub fn add_stylesheet_for_node(&mut self, stylesheet: DocumentStyleSheet, node_id: NodeId) {
         let old = self.nodes_to_stylesheet.insert(node_id, stylesheet.clone());
 
         if let Some(old) = old {
@@ -1197,7 +1202,7 @@ impl BaseDocument {
         }
     }
 
-    pub fn snapshot_node(&mut self, node_id: usize) {
+    pub fn snapshot_node(&mut self, node_id: NodeId) {
         let node = &mut self.nodes[node_id];
 
         // Do not snapshot nodes that have never been styled. A snapshot records an element's
@@ -1267,7 +1272,7 @@ impl BaseDocument {
         }
     }
 
-    pub fn snapshot_node_and(&mut self, node_id: usize, cb: impl FnOnce(&mut Node)) {
+    pub fn snapshot_node_and(&mut self, node_id: NodeId, cb: impl FnOnce(&mut Node)) {
         self.snapshot_node(node_id);
         cb(&mut self.nodes[node_id]);
     }
@@ -1277,7 +1282,7 @@ impl BaseDocument {
         self.hit_with_scrollbar(x, y).0
     }
 
-    pub fn focus_next_node(&mut self) -> Option<usize> {
+    pub fn focus_next_node(&mut self) -> Option<NodeId> {
         let focussed_node_id = self.get_focussed_node_id()?;
         let id = self.next_node(&self.nodes[focussed_node_id], |node| node.is_focussable())?;
         self.set_focus_to(id);
@@ -1293,10 +1298,10 @@ impl BaseDocument {
         }
     }
 
-    pub fn set_mousedown_node_id(&mut self, node_id: Option<usize>) {
+    pub fn set_mousedown_node_id(&mut self, node_id: Option<NodeId>) {
         self.mousedown_node_id = node_id;
     }
-    pub fn set_focus_to(&mut self, focus_node_id: usize) -> bool {
+    pub fn set_focus_to(&mut self, focus_node_id: NodeId) -> bool {
         if Some(focus_node_id) == self.focus_node_id {
             return false;
         }
@@ -1373,7 +1378,7 @@ impl BaseDocument {
     /// full opacity on scroll and fade out after a delay (Chromium's overlay
     /// timings); the pointer resting on a thumb, or dragging it, holds them
     /// visible.
-    pub fn scrollbar_opacity(&self, node_id: usize) -> f32 {
+    pub fn scrollbar_opacity(&self, node_id: NodeId) -> f32 {
         let interacting = |scrollbar: &crate::node::ScrollbarRef| scrollbar.node_id == node_id;
         if self.hovered_scrollbar.as_ref().is_some_and(interacting)
             || self
@@ -1390,7 +1395,7 @@ impl BaseDocument {
 
     /// Show `node_id`'s overlay scrollbars at full opacity and restart their
     /// fade-out delay.
-    pub(crate) fn show_scrollbars(&mut self, node_id: usize) {
+    pub(crate) fn show_scrollbars(&mut self, node_id: NodeId) {
         if cfg!(feature = "scrollbars") {
             self.scrollbar_activity.insert(node_id, Instant::now());
         }
@@ -1413,7 +1418,7 @@ impl BaseDocument {
         x: f32,
         y: f32,
     ) -> (Option<HitResult>, Option<crate::node::ScrollbarRef>) {
-        if TDocument::as_node(&&self.nodes[0])
+        if TDocument::as_node(&self.root_node())
             .first_element_child()
             .is_none()
         {
@@ -1505,7 +1510,7 @@ impl BaseDocument {
         true
     }
 
-    pub fn get_hover_node_id(&self) -> Option<usize> {
+    pub fn get_hover_node_id(&self) -> Option<NodeId> {
         self.hover_node_id
     }
 
@@ -1587,13 +1592,13 @@ impl BaseDocument {
         &mut self.devtool_settings
     }
 
-    pub fn subdoc(&self, node_id: usize) -> Option<&dyn Document> {
+    pub fn subdoc(&self, node_id: NodeId) -> Option<&dyn Document> {
         self.get_node(node_id)
             .and_then(|node| node.element_data())
             .and_then(|el| el.sub_doc_data())
     }
 
-    pub fn subdoc_mut(&mut self, node_id: usize) -> Option<&mut dyn Document> {
+    pub fn subdoc_mut(&mut self, node_id: NodeId) -> Option<&mut dyn Document> {
         self.get_node_mut(node_id)
             .and_then(|node| node.element_data_mut())
             .and_then(|el| el.sub_doc_data_mut())
@@ -1700,7 +1705,7 @@ impl BaseDocument {
 
     pub fn scroll_node_by<F: FnMut(DomEvent)>(
         &mut self,
-        node_id: usize,
+        node_id: NodeId,
         x: f64,
         y: f64,
         dispatch_event: F,
@@ -1713,7 +1718,7 @@ impl BaseDocument {
     /// If we're already at the root node, bubbles scrolling up to the viewport
     pub fn scroll_node_by_has_changed<F: FnMut(DomEvent)>(
         &mut self,
-        node_id: usize,
+        node_id: NodeId,
         x: f64,
         y: f64,
         mut dispatch_event: F,
@@ -1902,7 +1907,7 @@ impl BaseDocument {
 
     pub fn scroll_by(
         &mut self,
-        anchor_node_id: Option<usize>,
+        anchor_node_id: Option<NodeId>,
         scroll_x: f64,
         scroll_y: f64,
         dispatch_event: &mut dyn FnMut(DomEvent),
@@ -1926,7 +1931,7 @@ impl BaseDocument {
     ///
     /// Per the HTML spec, this is the element whose `id` matches the fragment, falling
     /// back to the first `<a>` element whose `name` attribute matches.
-    pub fn get_fragment_target(&self, fragment: &str) -> Option<usize> {
+    pub fn get_fragment_target(&self, fragment: &str) -> Option<NodeId> {
         if let Some(node_id) = self.get_element_by_id(fragment) {
             return Some(node_id);
         }
@@ -1940,7 +1945,7 @@ impl BaseDocument {
     }
 
     /// Scroll the viewport so that the given node is aligned with the top of the viewport.
-    pub fn scroll_to_node(&mut self, node_id: usize) {
+    pub fn scroll_to_node(&mut self, node_id: NodeId) {
         let Some(node) = self.nodes.get(node_id) else {
             return;
         };
@@ -1985,7 +1990,7 @@ impl BaseDocument {
     }
 
     /// Computes the size and position of the `Node` relative to the viewport
-    pub fn get_client_bounding_rect(&self, node_id: usize) -> Option<BoundingRect> {
+    pub fn get_client_bounding_rect(&self, node_id: NodeId) -> Option<BoundingRect> {
         let node = self.get_node(node_id)?;
         let pos = node.absolute_position(0.0, 0.0);
 
@@ -2009,7 +2014,7 @@ impl BaseDocument {
 
     pub fn with_text_input(
         &mut self,
-        node_id: usize,
+        node_id: NodeId,
         cb: impl FnOnce(PlainEditorDriver<TextBrush>),
     ) {
         let Some(node) = self.nodes.get_mut(node_id) else {
@@ -2029,7 +2034,7 @@ impl BaseDocument {
 
     /// Recompute the scroll offset of the text input at `node_id` (if any) so that its caret
     /// remains visible within the input's content box.
-    pub(crate) fn clamp_text_input_scroll(&mut self, node_id: usize) {
+    pub(crate) fn clamp_text_input_scroll(&mut self, node_id: NodeId) {
         let Some(node) = self.nodes.get_mut(node_id) else {
             return;
         };
@@ -2064,7 +2069,7 @@ impl BaseDocument {
     /// Find the text position (inline_root_id, byte_offset) at a given point.
     /// Uses hit() for proper coordinate transformation, then finds the inline root
     /// and byte offset.
-    pub fn find_text_position(&self, x: f32, y: f32) -> Option<(usize, usize)> {
+    pub fn find_text_position(&self, x: f32, y: f32) -> Option<(NodeId, usize)> {
         let hit = self.hit(x, y)?;
         let hit_node = self.get_node(hit.node_id)?;
         let inline_root = hit_node.inline_root_ancestor()?;
@@ -2075,9 +2080,9 @@ impl BaseDocument {
     /// Set the text selection range (creates a new selection from anchor to focus)
     pub fn set_text_selection(
         &mut self,
-        anchor_node: usize,
+        anchor_node: NodeId,
         anchor_offset: usize,
-        focus_node: usize,
+        focus_node: NodeId,
         focus_offset: usize,
     ) {
         self.text_selection =
@@ -2098,7 +2103,7 @@ impl BaseDocument {
 
     /// Get the parent ID and sibling index for a node if it's an anonymous block.
     /// Returns (None, None) for non-anonymous blocks.
-    fn anonymous_block_location(&self, node_id: usize) -> (Option<usize>, Option<usize>) {
+    fn anonymous_block_location(&self, node_id: NodeId) -> (Option<NodeId>, Option<usize>) {
         let Some(node) = self.get_node(node_id) else {
             return (None, None);
         };
@@ -2140,7 +2145,7 @@ impl BaseDocument {
     }
 
     /// Update the selection focus point (used during mouse drag to extend selection).
-    pub fn update_selection_focus(&mut self, focus_node: usize, focus_offset: usize) {
+    pub fn update_selection_focus(&mut self, focus_node: NodeId, focus_offset: usize) {
         // For anonymous blocks, store parent+sibling_index; otherwise store node directly
         if let (Some(parent), Some(idx)) = self.anonymous_block_location(focus_node) {
             self.text_selection
@@ -2170,9 +2175,9 @@ impl BaseDocument {
     /// Find the Nth anonymous block under a parent.
     fn find_anonymous_block_by_index(
         &self,
-        parent_id: usize,
+        parent_id: NodeId,
         target_index: usize,
-    ) -> Option<usize> {
+    ) -> Option<NodeId> {
         let parent = self.get_node(parent_id)?;
         let layout_children = parent.layout_children.borrow();
         let children = layout_children.as_ref()?;
@@ -2221,7 +2226,7 @@ impl BaseDocument {
 
     /// Get all selection ranges as Vec<(node_id, start_offset, end_offset)>.
     /// Returns empty vec if no selection.
-    pub fn get_text_selection_ranges(&self) -> Vec<(usize, usize, usize)> {
+    pub fn get_text_selection_ranges(&self) -> Vec<(NodeId, usize, usize)> {
         let lookup = |parent_id, idx| self.find_anonymous_block_by_index(parent_id, idx);
 
         let anchor_node = match self.text_selection.anchor.resolve_node_id(lookup) {

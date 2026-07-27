@@ -1,3 +1,4 @@
+use blitz_traits::node_id::NodeId;
 use markup5ever::{LocalName, local_name};
 
 use crate::{
@@ -33,7 +34,7 @@ impl BaseDocument {
     /// * `node_id` - The ID of the node whose form owner needs to be reset
     ///
     /// <https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#reset-the-form-owner>
-    pub fn reset_form_owner(&mut self, node_id: usize) {
+    pub fn reset_form_owner(&mut self, node_id: NodeId) {
         let node = &self.nodes[node_id];
         let Some(element) = node.element_data() else {
             return;
@@ -68,7 +69,7 @@ impl BaseDocument {
     /// * `submitter_id` - The ID of the node that triggered the submission
     ///
     /// <https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#form-submission-algorithm>
-    pub fn submit_form(&self, node_id: usize, submitter_id: usize) {
+    pub fn submit_form(&self, node_id: NodeId, submitter_id: NodeId) {
         let node = &self.nodes[node_id];
         let Some(element) = node.element_data() else {
             return;
@@ -181,7 +182,7 @@ impl BaseDocument {
 /// Returns an EntryList containing all valid form control entries
 ///
 /// https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#constructing-the-form-data-set
-fn construct_entry_list(doc: &BaseDocument, form_id: usize, submitter_id: usize) -> FormData {
+fn construct_entry_list(doc: &BaseDocument, form_id: NodeId, submitter_id: NodeId) -> FormData {
     let mut entry_list = FormData::new();
 
     let mut create_entry = |name: &str, value: EntryValue| {
@@ -191,7 +192,7 @@ fn construct_entry_list(doc: &BaseDocument, form_id: usize, submitter_id: usize)
         });
     };
 
-    fn datalist_ancestor(doc: &BaseDocument, node_id: usize) -> bool {
+    fn datalist_ancestor(doc: &BaseDocument, node_id: NodeId) -> bool {
         AncestorTraverser::new(doc, node_id).any(|node_id| {
             doc.nodes[node_id]
                 .data
@@ -326,7 +327,7 @@ fn get_form_attr<'a>(
     doc: &'a BaseDocument,
     form: &'a ElementData,
     form_local: impl PartialEq<LocalName>,
-    submitter_id: usize,
+    submitter_id: NodeId,
     submitter_local: impl PartialEq<LocalName>,
 ) -> Option<&'a str> {
     get_submitter_attr(doc, submitter_id, submitter_local).or_else(|| form.attr(form_local))
@@ -334,7 +335,7 @@ fn get_form_attr<'a>(
 
 fn get_submitter_attr(
     doc: &BaseDocument,
-    submitter_id: usize,
+    submitter_id: NodeId,
     local_name: impl PartialEq<LocalName>,
 ) -> Option<&str> {
     doc.get_node(submitter_id)

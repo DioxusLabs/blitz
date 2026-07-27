@@ -5,7 +5,7 @@
 //! This is slower, yes, but happens fast enough that it's not a huge issue.
 
 use crate::node::{ImageData, NodeData, SpecialElementData};
-use crate::{document::BaseDocument, node::Node};
+use crate::{document::BaseDocument, dom_node_id, node::Node, taffy_node_id};
 use markup5ever::local_name;
 use std::cell::Ref;
 use std::sync::Arc;
@@ -37,10 +37,10 @@ pub(crate) fn resolve_calc_value(calc_ptr: *const (), parent_size: f32) -> f32 {
 
 impl BaseDocument {
     fn node_from_id(&self, node_id: taffy::prelude::NodeId) -> &Node {
-        &self.nodes[node_id.into()]
+        &self.nodes[dom_node_id(node_id)]
     }
     fn node_from_id_mut(&mut self, node_id: taffy::prelude::NodeId) -> &mut Node {
-        &mut self.nodes[node_id.into()]
+        &mut self.nodes[dom_node_id(node_id)]
     }
 }
 
@@ -51,7 +51,7 @@ impl BaseDocument {
         inputs: taffy::tree::LayoutInput,
         block_ctx: Option<&mut BlockContext<'_>>,
     ) -> taffy::tree::LayoutOutput {
-        let node = &mut self.nodes[node_id.into()];
+        let node = &mut self.nodes[dom_node_id(node_id)];
 
         let font_styles = node.primary_styles().map(|style| {
             use style::values::computed::font::LineHeight;
@@ -74,7 +74,7 @@ impl BaseDocument {
                 // and should therefore never be measured individually.
                 #[cfg(feature = "tracing")]
                 tracing::error!(
-                    node_id = usize::from(node_id),
+                    node_id = ?dom_node_id(node_id),
                     data = ?data,
                     "Tried to lay out text node individually",
                 );
@@ -239,7 +239,7 @@ impl BaseDocument {
                 }
 
                 if node.flags.is_table_root() {
-                    let SpecialElementData::TableRoot(context) = &self.nodes[node_id.into()]
+                    let SpecialElementData::TableRoot(context) = &self.nodes[dom_node_id(node_id)]
                         .data
                         .downcast_element()
                         .unwrap()
@@ -263,7 +263,7 @@ impl BaseDocument {
                 }
 
                 if node.flags.is_inline_root() {
-                    return self.compute_inline_layout(usize::from(node_id), inputs, block_ctx);
+                    return self.compute_inline_layout(dom_node_id(node_id), inputs, block_ctx);
                 }
 
                 // The default CSS file will set
@@ -301,7 +301,7 @@ impl TraversePartialTree for BaseDocument {
     }
 
     fn get_child_id(&self, node_id: NodeId, index: usize) -> NodeId {
-        NodeId::from(
+        taffy_node_id(
             self.node_from_id(node_id)
                 .layout_children
                 .borrow()
@@ -494,11 +494,11 @@ impl PrintTree for BaseDocument {
 // }
 
 pub struct RefCellChildIter<'a> {
-    items: Ref<'a, [usize]>,
+    items: Ref<'a, [crate::NodeId]>,
     idx: usize,
 }
 impl<'a> RefCellChildIter<'a> {
-    fn new(items: Ref<'a, [usize]>) -> RefCellChildIter<'a> {
+    fn new(items: Ref<'a, [crate::NodeId]>) -> RefCellChildIter<'a> {
         RefCellChildIter { items, idx: 0 }
     }
 }
@@ -508,7 +508,7 @@ impl Iterator for RefCellChildIter<'_> {
     fn next(&mut self) -> Option<Self::Item> {
         self.items.get(self.idx).map(|id| {
             self.idx += 1;
-            NodeId::from(*id)
+            taffy_node_id(*id)
         })
     }
 }

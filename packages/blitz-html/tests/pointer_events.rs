@@ -3,7 +3,7 @@
 //! inheritance, but a descendant that restores `pointer-events: auto` is
 //! targetable again (css-ui-4).
 
-use blitz_dom::{Document, DocumentConfig};
+use blitz_dom::{Document, DocumentConfig, NodeId};
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::{
     events::{
@@ -27,11 +27,11 @@ fn doc(html: &str) -> HtmlDocument {
     doc
 }
 
-fn hit_id(doc: &HtmlDocument, x: f32, y: f32) -> usize {
+fn hit_id(doc: &HtmlDocument, x: f32, y: f32) -> NodeId {
     doc.hit(x, y).expect("hit should land somewhere").node_id
 }
 
-fn node_id(doc: &HtmlDocument, selector: &str) -> usize {
+fn node_id(doc: &HtmlDocument, selector: &str) -> NodeId {
     doc.query_selector(selector).unwrap().expect(selector)
 }
 

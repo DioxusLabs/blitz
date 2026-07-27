@@ -1,5 +1,6 @@
 use blitz_traits::{
     events::{BlitzImeEvent, BlitzKeyEvent},
+    node_id::NodeId,
     shell::ShellProvider,
 };
 use keyboard_types::{Key, Modifiers};
@@ -11,11 +12,11 @@ use crate::util::ACTION_MOD;
 /// Parley Brush type for Blitz which contains the Blitz node id
 pub struct TextBrush {
     /// The node id for the span
-    pub id: usize,
+    pub id: NodeId,
 }
 
 impl TextBrush {
-    pub(crate) fn from_id(id: usize) -> Self {
+    pub(crate) fn from_id(id: NodeId) -> Self {
         Self { id }
     }
 }

@@ -1,3 +1,4 @@
+use blitz_traits::node_id::NodeId;
 use std::cmp::Ordering;
 
 use style::{dom::TNode as _, values::specified::box_::DisplayInside};
@@ -46,24 +47,24 @@ pub(crate) use iter_children_and_pseudos;
 /// An pre-order tree traverser for a [BaseDocument](crate::document::BaseDocument).
 pub struct TreeTraverser<'a> {
     doc: &'a BaseDocument,
-    stack: Vec<usize>,
+    stack: Vec<NodeId>,
 }
 
 impl<'a> TreeTraverser<'a> {
     /// Creates a new tree traverser for the given document which starts at the root node.
     pub fn new(doc: &'a BaseDocument) -> Self {
-        Self::new_with_root(doc, 0)
+        Self::new_with_root(doc, doc.root_node().id)
     }
 
     /// Creates a new tree traverser for the given document which starts at the specified node.
-    pub fn new_with_root(doc: &'a BaseDocument, root: usize) -> Self {
+    pub fn new_with_root(doc: &'a BaseDocument, root: NodeId) -> Self {
         let mut stack = Vec::with_capacity(32);
         stack.push(root);
         TreeTraverser { doc, stack }
     }
 }
 impl Iterator for TreeTraverser<'_> {
-    type Item = usize;
+    type Item = NodeId;
 
     fn next(&mut self) -> Option<Self::Item> {
         let id = self.stack.pop()?;
@@ -77,11 +78,11 @@ impl Iterator for TreeTraverser<'_> {
 /// An ancestor traverser for a [BaseDocument](crate::document::BaseDocument).
 pub struct AncestorTraverser<'a> {
     doc: &'a BaseDocument,
-    current: usize,
+    current: NodeId,
 }
 impl<'a> AncestorTraverser<'a> {
     /// Creates a new ancestor traverser for the given document and node ID.
-    pub fn new(doc: &'a BaseDocument, node_id: usize) -> Self {
+    pub fn new(doc: &'a BaseDocument, node_id: NodeId) -> Self {
         AncestorTraverser {
             doc,
             current: node_id,
@@ -89,7 +90,7 @@ impl<'a> AncestorTraverser<'a> {
     }
 }
 impl Iterator for AncestorTraverser<'_> {
-    type Item = usize;
+    type Item = NodeId;
 
     fn next(&mut self) -> Option<Self::Item> {
         let current_node = self.doc.get_node(self.current)?;
@@ -125,7 +126,7 @@ impl Node {
 
 impl BaseDocument {
     /// Collect the nodes into a chain by traversing upwards
-    pub fn node_chain(&self, node_id: usize) -> Vec<usize> {
+    pub fn node_chain(&self, node_id: NodeId) -> Vec<NodeId> {
         let mut chain = Vec::with_capacity(16);
         chain.push(node_id);
         chain.extend(
@@ -136,14 +137,14 @@ impl BaseDocument {
 
     pub fn visit<F>(&self, mut visit: F)
     where
-        F: FnMut(usize, &Node),
+        F: FnMut(NodeId, &Node),
     {
         TreeTraverser::new(self).for_each(|node_id| visit(node_id, &self.nodes[node_id]));
     }
 
     /// If the node is non-anonymous then returns the node's id
     /// Else find's the first non-anonymous ancester of the node
-    pub fn non_anon_ancestor_if_anon(&self, mut node_id: usize) -> usize {
+    pub fn non_anon_ancestor_if_anon(&self, mut node_id: NodeId) -> NodeId {
         loop {
             let node = &self.nodes[node_id];
 
@@ -163,8 +164,8 @@ impl BaseDocument {
 
     pub fn iter_children_mut(
         &mut self,
-        node_id: usize,
-        mut cb: impl FnMut(usize, &mut BaseDocument),
+        node_id: NodeId,
+        mut cb: impl FnMut(NodeId, &mut BaseDocument),
     ) {
         let children = std::mem::take(&mut self.nodes[node_id].children);
         for child_id in children.iter().cloned() {
@@ -175,15 +176,15 @@ impl BaseDocument {
 
     pub fn iter_subtree_mut(
         &mut self,
-        node_id: usize,
-        mut cb: impl FnMut(usize, &mut BaseDocument),
+        node_id: NodeId,
+        mut cb: impl FnMut(NodeId, &mut BaseDocument),
     ) {
         cb(node_id, self);
         iter_subtree_mut_inner(self, node_id, &mut cb);
         fn iter_subtree_mut_inner(
             doc: &mut BaseDocument,
-            node_id: usize,
-            cb: &mut impl FnMut(usize, &mut BaseDocument),
+            node_id: NodeId,
+            cb: &mut impl FnMut(NodeId, &mut BaseDocument),
         ) {
             let children = std::mem::take(&mut doc.nodes[node_id].children);
             for child_id in children.iter().cloned() {
@@ -196,8 +197,8 @@ impl BaseDocument {
 
     pub fn iter_children_and_pseudos_mut(
         &mut self,
-        node_id: usize,
-        mut cb: impl FnMut(usize, &mut BaseDocument),
+        node_id: NodeId,
+        mut cb: impl FnMut(NodeId, &mut BaseDocument),
     ) {
         let before = self.nodes[node_id].before.take();
         if let Some(before_node_id) = before {
@@ -214,7 +215,7 @@ impl BaseDocument {
         self.nodes[node_id].after = after;
     }
 
-    pub fn next_node(&self, start: &Node, mut filter: impl FnMut(&Node) -> bool) -> Option<usize> {
+    pub fn next_node(&self, start: &Node, mut filter: impl FnMut(&Node) -> bool) -> Option<NodeId> {
         let start_id = start.id;
         let mut node = start;
         let mut look_in_children = true;
@@ -259,7 +260,7 @@ impl BaseDocument {
         }
     }
 
-    pub fn node_layout_ancestors(&self, node_id: usize) -> Vec<usize> {
+    pub fn node_layout_ancestors(&self, node_id: NodeId) -> Vec<NodeId> {
         let mut ancestors = Vec::with_capacity(12);
         let mut maybe_id = Some(node_id);
         while let Some(id) = maybe_id {
@@ -270,7 +271,7 @@ impl BaseDocument {
         ancestors
     }
 
-    pub fn maybe_node_layout_ancestors(&self, node_id: Option<usize>) -> Vec<usize> {
+    pub fn maybe_node_layout_ancestors(&self, node_id: Option<NodeId>) -> Vec<NodeId> {
         node_id
             .map(|id| self.node_layout_ancestors(id))
             .unwrap_or_default()
@@ -280,7 +281,7 @@ impl BaseDocument {
     /// Returns Ordering::Less if node_a comes before node_b in document order.
     /// Returns Ordering::Greater if node_a comes after node_b.
     /// Returns Ordering::Equal if they are the same node.
-    pub fn compare_document_order(&self, node_a: usize, node_b: usize) -> Ordering {
+    pub fn compare_document_order(&self, node_a: NodeId, node_b: NodeId) -> Ordering {
         if node_a == node_b {
             return Ordering::Equal;
         }
@@ -334,7 +335,7 @@ impl BaseDocument {
     }
 
     /// Build ancestor chain from root to node (inclusive), ordered [root, ..., node].
-    fn ancestor_chain_from_root(&self, node_id: usize) -> Vec<usize> {
+    fn ancestor_chain_from_root(&self, node_id: NodeId) -> Vec<NodeId> {
         let mut ancestors = Vec::with_capacity(16);
         let mut current = Some(node_id);
         while let Some(id) = current {
@@ -348,7 +349,11 @@ impl BaseDocument {
     /// Collect all inline root nodes between start_node and end_node in document order.
     /// Both start and end are assumed to be inline roots.
     /// Returns the nodes in document order (from first to last).
-    pub fn collect_inline_roots_in_range(&self, start_node: usize, end_node: usize) -> Vec<usize> {
+    pub fn collect_inline_roots_in_range(
+        &self,
+        start_node: NodeId,
+        end_node: NodeId,
+    ) -> Vec<NodeId> {
         // Resolve nodes: for anonymous blocks, get (parent_id, Some(anon_id)); for regular, (node_id, None)
         let (start_anchor, start_anon) = self.resolve_for_traversal(start_node);
         let (end_anchor, end_anon) = self.resolve_for_traversal(end_node);
@@ -447,7 +452,7 @@ impl BaseDocument {
     /// Resolve a node for traversal purposes.
     /// For anonymous blocks: returns (parent_id, Some(node_id))
     /// For regular nodes: returns (node_id, None)
-    fn resolve_for_traversal(&self, node_id: usize) -> (usize, Option<usize>) {
+    fn resolve_for_traversal(&self, node_id: NodeId) -> (NodeId, Option<NodeId>) {
         let node = &self.nodes[node_id];
         if node.is_anonymous() {
             (node.parent.unwrap_or(node_id), Some(node_id))
@@ -458,7 +463,12 @@ impl BaseDocument {
 
     /// Collect anonymous block siblings between start and end (inclusive)
     /// Also recursively collects inline roots from any block children in between
-    fn collect_anonymous_siblings(&self, parent_id: usize, start: usize, end: usize) -> Vec<usize> {
+    fn collect_anonymous_siblings(
+        &self,
+        parent_id: NodeId,
+        start: NodeId,
+        end: NodeId,
+    ) -> Vec<NodeId> {
         let parent = &self.nodes[parent_id];
         let layout_children = parent.layout_children.borrow();
         let Some(children) = layout_children.as_ref() else {
@@ -488,7 +498,7 @@ impl BaseDocument {
     }
 
     /// Recursively collect all inline roots from a node's layout_children subtree
-    fn collect_all_inline_roots_in_subtree(&self, node_id: usize, result: &mut Vec<usize>) {
+    fn collect_all_inline_roots_in_subtree(&self, node_id: NodeId, result: &mut Vec<NodeId>) {
         let node = &self.nodes[node_id];
         let layout_children = node.layout_children.borrow();
         let Some(children) = layout_children.as_ref() else {
@@ -511,10 +521,10 @@ impl BaseDocument {
     /// - `until`: If Some, stop when we reach this node OR a node that contains it; if None, collect to end
     fn collect_layout_children_inline_roots(
         &self,
-        parent_id: usize,
-        from: Option<usize>,
-        until: Option<usize>,
-        result: &mut Vec<usize>,
+        parent_id: NodeId,
+        from: Option<NodeId>,
+        until: Option<NodeId>,
+        result: &mut Vec<NodeId>,
     ) {
         let parent = &self.nodes[parent_id];
         let layout_children = parent.layout_children.borrow();
@@ -550,7 +560,7 @@ impl BaseDocument {
     }
 
     /// Check if `ancestor_id` is an ancestor of `descendant_id`
-    fn is_ancestor_of(&self, ancestor_id: usize, descendant_id: usize) -> bool {
+    fn is_ancestor_of(&self, ancestor_id: NodeId, descendant_id: NodeId) -> bool {
         let mut current = descendant_id;
         while let Some(parent) = self.nodes[current].parent {
             if parent == ancestor_id {

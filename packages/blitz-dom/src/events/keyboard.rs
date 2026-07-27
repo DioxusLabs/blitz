@@ -1,4 +1,5 @@
 use crate::{BaseDocument, node::GeneratedTextInputEvent, util::ACTION_MOD};
+use blitz_traits::node_id::NodeId;
 use blitz_traits::{
     SmolStr,
     events::{BlitzInputEvent, BlitzKeyEvent, DomEvent, DomEventData},
@@ -13,7 +14,7 @@ pub(super) enum KeyboardOrTextInputEvent {
 
 pub(crate) fn handle_key_or_input_event<F: FnMut(DomEvent)>(
     doc: &mut BaseDocument,
-    target: usize,
+    target: NodeId,
     event: KeyboardOrTextInputEvent,
     dispatch_event: F,
 ) {
@@ -86,7 +87,7 @@ pub(crate) fn handle_key_or_input_event<F: FnMut(DomEvent)>(
 impl BaseDocument {
     pub(crate) fn apply_generated_text_input_event<F: FnMut(DomEvent)>(
         &mut self,
-        node_id: usize,
+        node_id: NodeId,
         event: GeneratedTextInputEvent,
         mut dispatch_event: F,
     ) {
@@ -119,7 +120,7 @@ impl BaseDocument {
 }
 
 /// https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#field-that-blocks-implicit-submission
-fn implicit_form_submission(doc: &BaseDocument, text_target: usize) {
+fn implicit_form_submission(doc: &BaseDocument, text_target: NodeId) {
     let Some(form_owner_id) = doc.controls_to_form.get(&text_target) else {
         return;
     };
