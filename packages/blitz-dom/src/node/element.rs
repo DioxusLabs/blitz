@@ -121,6 +121,9 @@ pub struct ElementData {
 #[derive(Debug)]
 pub struct DocumentData {
     pub stylo_element_data: StyloData,
+    /// A clone of the document's shared style lock. Set when the owning
+    /// [`Node`](super::Node) is constructed.
+    pub guard: Option<SharedRwLock>,
     pub dirty_descendants: AtomicBool,
     pub element_state: ElementState,
     pub has_snapshot: bool,
@@ -139,6 +142,7 @@ impl DocumentData {
     pub fn new() -> Self {
         Self {
             stylo_element_data: Default::default(),
+            guard: None,
             dirty_descendants: AtomicBool::new(true),
             element_state: ElementState::empty(),
             has_snapshot: false,
@@ -165,7 +169,10 @@ impl Clone for DocumentData {
     fn clone(&self) -> Self {
         // Runtime style/layout state is reset (the document node is not
         // meaningfully cloneable), matching `ElementData`'s clone semantics.
-        Self::new()
+        Self {
+            guard: self.guard.clone(),
+            ..Self::new()
+        }
     }
 }
 

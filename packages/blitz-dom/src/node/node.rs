@@ -243,12 +243,16 @@ impl Node {
         }
     }
 
-    /// The document's shared style lock. Only available on element nodes.
+    /// The document's shared style lock. Only available on element and
+    /// document nodes.
     #[inline]
     pub fn guard(&self) -> &SharedRwLock {
-        self.element_data()
-            .and_then(|data| data.guard.as_ref())
-            .expect("`guard` is not available on this node kind")
+        let guard = match &self.data {
+            NodeData::Element(data) | NodeData::AnonymousBlock(data) => data.guard.as_ref(),
+            NodeData::Document(data) => data.guard.as_ref(),
+            _ => None,
+        };
+        guard.expect("`guard` is not available on this node kind")
     }
 
     #[inline]
@@ -287,9 +291,14 @@ impl Node {
         guard: SharedRwLock,
         mut data: NodeData,
     ) -> Self {
-        // Store a handle to the document's shared style lock on the element data.
-        if let Some(element_data) = data.downcast_element_mut() {
-            element_data.guard = Some(guard);
+        // Store a handle to the document's shared style lock on the node data.
+        // Both element and document nodes are styled by stylo and so need it.
+        match &mut data {
+            NodeData::Element(data) | NodeData::AnonymousBlock(data) => {
+                data.guard = Some(guard);
+            }
+            NodeData::Document(data) => data.guard = Some(guard),
+            _ => {}
         }
 
         Self {
