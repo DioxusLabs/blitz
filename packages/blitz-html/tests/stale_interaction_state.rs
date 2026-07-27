@@ -7,11 +7,38 @@
 //! DOM subtree removal). The stale NodeId then panics with "invalid SlotMap
 //! key used" on the next hover/active/focus update.
 
-use blitz_dom::DocumentConfig;
+use blitz_dom::{Document, DocumentConfig};
 use blitz_html::{HtmlDocument, HtmlProvider};
-use blitz_traits::shell::{ColorScheme, Viewport};
+use blitz_traits::{
+    events::{
+        BlitzPointerEvent, BlitzPointerId, MouseEventButton, MouseEventButtons, Point,
+        PointerCoords, PointerDetails, UiEvent,
+    },
+    shell::{ColorScheme, Viewport},
+};
 use markup5ever::{QualName, local_name, ns};
 use std::sync::Arc;
+
+fn pointer_event(x: f32, y: f32, buttons: MouseEventButtons) -> BlitzPointerEvent {
+    BlitzPointerEvent {
+        id: BlitzPointerId::Mouse,
+        is_primary: true,
+        coords: PointerCoords {
+            page_x: x,
+            page_y: y,
+            screen_x: x,
+            screen_y: y,
+            client_x: x,
+            client_y: y,
+        },
+        button: MouseEventButton::Main,
+        buttons,
+        mods: Default::default(),
+        details: PointerDetails::default(),
+        element: Point::default(),
+        active_pointers: Default::default(),
+    }
+}
 
 const HTML: &str = r#"<!DOCTYPE html>
 <html><head><style>
@@ -87,6 +114,35 @@ fn active_state_is_cleared_when_active_pseudo_element_is_dropped() {
 
     // Must not panic with "invalid SlotMap key used"
     doc.unactive_node();
+}
+
+#[test]
+fn mousedown_state_is_cleared_when_mousedown_node_is_dropped() {
+    let mut doc = make_doc();
+    let hover_id = hover_pseudo_element(&mut doc);
+
+    // Press the mouse on the pseudo-element so mousedown_node_id references it
+    doc.handle_ui_event(UiEvent::PointerDown(pointer_event(
+        5.0,
+        5.0,
+        MouseEventButtons::from(MouseEventButton::Main),
+    )));
+
+    remove_pseudo(&mut doc);
+    assert!(doc.get_node(hover_id).is_none());
+
+    // Drag with the button held (starts a selection drag from the mousedown
+    // node). Must not panic with "invalid SlotMap key used".
+    doc.handle_ui_event(UiEvent::PointerMove(pointer_event(
+        20.0,
+        20.0,
+        MouseEventButtons::from(MouseEventButton::Main),
+    )));
+    doc.handle_ui_event(UiEvent::PointerUp(pointer_event(
+        20.0,
+        20.0,
+        MouseEventButtons::None,
+    )));
 }
 
 #[test]

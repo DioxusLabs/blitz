@@ -747,6 +747,19 @@ impl<'doc> DocumentMutator<'doc> {
                 doc.focus_node_id = None;
             }
 
+            // Clear mousedown state if this node was the mousedown target
+            // This prevents stale mousedown_node_id references.
+            if doc.mousedown_node_id == Some(node_id) {
+                doc.mousedown_node_id = None;
+            }
+
+            // Clear the text selection if either endpoint references this node
+            if doc.text_selection.anchor.node_or_parent == Some(node_id)
+                || doc.text_selection.focus.node_or_parent == Some(node_id)
+            {
+                doc.text_selection.clear();
+            }
+
             // Remove any snapshot for this node to prevent stale snapshot references
             // during style invalidation.
             if node.has_snapshot() {

@@ -799,8 +799,8 @@ impl BaseDocument {
     }
 
     /// Remove a node from the node tree, clearing any interaction state
-    /// (hover/active/focus) that references it so that stale NodeIds are
-    /// never dereferenced after the slot is freed.
+    /// (hover/active/focus/mousedown/selection/drag/scrollbar) that references
+    /// it so that stale NodeIds are never dereferenced after the slot is freed.
     pub(crate) fn remove_node_from_tree(&mut self, node_id: NodeId) -> Option<Node> {
         if self.hover_node_id == Some(node_id) {
             self.hover_node_id = None;
@@ -812,6 +812,29 @@ impl BaseDocument {
         if self.focus_node_id == Some(node_id) {
             self.focus_node_id = None;
         }
+        if self.mousedown_node_id == Some(node_id) {
+            self.mousedown_node_id = None;
+        }
+        if self.text_selection.anchor.node_or_parent == Some(node_id)
+            || self.text_selection.focus.node_or_parent == Some(node_id)
+        {
+            self.text_selection.clear();
+        }
+        if self
+            .hovered_scrollbar
+            .is_some_and(|scrollbar| scrollbar.node_id == node_id)
+        {
+            self.hovered_scrollbar = None;
+        }
+        let drag_references_node = match &self.drag_mode {
+            DragMode::Panning(state) => state.target == node_id,
+            DragMode::ScrollbarDrag(state) => state.scrollbar.node_id == node_id,
+            DragMode::Selecting | DragMode::None => false,
+        };
+        if drag_references_node {
+            self.drag_mode = DragMode::None;
+        }
+        self.scrollbar_activity.remove(&node_id);
         self.nodes.remove(node_id)
     }
 
