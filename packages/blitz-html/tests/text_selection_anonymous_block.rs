@@ -110,7 +110,10 @@ fn drag_selection_within_anonymous_block_wrapped_text() {
 
     drag(&mut doc, OUTER_POS, (35.0, OUTER_POS.1));
 
-    assert!(doc.has_text_selection(), "expected an active text selection");
+    assert!(
+        doc.has_text_selection(),
+        "expected an active text selection"
+    );
     let selected = doc.get_selected_text().expect("expected selected text");
     assert!(
         !selected.is_empty() && "Outer".contains(&selected),
@@ -132,7 +135,10 @@ fn drag_selection_extends_from_anonymous_block_into_sibling_block() {
     let inner_center = node_center(&doc, inner_id);
     drag(&mut doc, OUTER_POS, inner_center);
 
-    assert!(doc.has_text_selection(), "expected an active text selection");
+    assert!(
+        doc.has_text_selection(),
+        "expected an active text selection"
+    );
     let selected = doc.get_selected_text().expect("expected selected text");
     let (outer_part, inner_part) = selected
         .split_once(' ')
