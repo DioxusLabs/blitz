@@ -11,14 +11,13 @@ edition.workspace = true
 rust-version.workspace = true
 
 [features]
-accessibility = ["blitz-dom/accessibility", "dep:accesskit"]
+accessibility = ["blitz-dom/accessibility"]
 tracing = ["dep:tracing", "blitz-dom/tracing"]
 
 [dependencies]
 # Blitz dependencies
 blitz-dom = { workspace = true }
 blitz-traits = { workspace = true }
-accesskit = { workspace = true, optional = true }
 
 # Servo dependencies
 html5ever = { workspace = true }
@@ -27,6 +26,10 @@ xml5ever = { workspace = true }
 tracing = { workspace = true, optional = true }
 
 [dev-dependencies]
+# Enable blitz-dom features for tests
+blitz-dom = { workspace = true, features = ["accessibility"] }
+
+accesskit = { workspace = true }
 markup5ever = { workspace = true }
 blitz-paint = { workspace = true, features = ["scrollbars", "svg"] }
 anyrender = { workspace = true }

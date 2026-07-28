@@ -6,8 +6,6 @@
 //!
 //! <https://www.w3.org/TR/html-aam-1.0/>
 
-#![cfg(feature = "accessibility")]
-
 use accesskit::{NodeId, Role};
 use blitz_dom::DocumentConfig;
 use blitz_html::{HtmlDocument, HtmlProvider};
