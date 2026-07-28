@@ -56,8 +56,17 @@ pub fn resolve_2d_transform(
             .transform
             .to_transform_3d_matrix(Some(&reference_box))
             .ok()
-            .filter(|(_t, has_3d)| !has_3d)
-            .map(|(t, _has_3d)| {
+            // The `has_3d` flag means a 3d function appeared in the list, not that the
+            // matrix needs 3d: `translate3d(x, y, 0)` sets it while resolving to a
+            // plain 2d translation.
+            //
+            // TODO: support 3D transforms. Outside a 3d rendering context the spec
+            // still applies the transform as a painting effect -- its own example
+            // paints `rotateY(50deg)` narrower -- so dropping one is wrong. `is_2d()`
+            // is closer than the flag, not the rule.
+            // See: https://drafts.csswg.org/css-transforms-2/#3d-transform-rendering
+            .filter(|(t, _has_3d)| t.is_2d())
+            .map(|(t, _)| {
                 // See: https://drafts.csswg.org/css-transforms-2/#two-dimensional-subset
                 // And https://docs.rs/kurbo/latest/kurbo/struct.Affine.html#method.new
                 Affine::new([t.m11, t.m12, t.m21, t.m22, t.m41, t.m42].map(|v| v as f64))
