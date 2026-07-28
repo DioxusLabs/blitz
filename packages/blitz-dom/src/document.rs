@@ -812,17 +812,64 @@ impl BaseDocument {
     /// (hover/active/focus/mousedown/selection/drag/scrollbar) that references
     /// it so that stale NodeIds are never dereferenced after the slot is freed.
     pub(crate) fn remove_node_from_tree(&mut self, node_id: NodeId) -> Option<Node> {
+        self.clear_interaction_state_for_removed_node(node_id);
+        self.nodes.remove(node_id)
+    }
+
+    /// The nearest element ancestor of `node_id` that is still in the
+    /// document. Used to retarget hover/active state when the node they
+    /// reference is removed. Tolerates already-removed ancestors (subtree
+    /// teardown proceeds root-first) by giving up and returning `None`.
+    fn nearest_surviving_element_ancestor(&self, node_id: NodeId) -> Option<NodeId> {
+        let mut current = self.get_node(node_id)?.parent;
+        while let Some(id) = current {
+            let node = self.get_node(id)?;
+            if node.is_element() && node.flags.is_in_document() {
+                return Some(id);
+            }
+            current = node.parent;
+        }
+        None
+    }
+
+    /// Clear any interaction state (hover/active/focus/mousedown/selection/
+    /// drag/scrollbar) that references `node_id`, which is being removed from
+    /// the document, running the usual teardown steps. `node_id` must still be
+    /// present in the slab.
+    ///
+    /// This matches browser semantics (WebKit `hoveredElementDidDetach` /
+    /// `elementInActiveChainDidDetach`, Blink `HoveredElementDetached` /
+    /// `ActiveChainNodeDetached`):
+    /// - Hover and active retarget to the nearest surviving element ancestor
+    ///   as a *transient bridge*: the HOVER/ACTIVE element-state bits along
+    ///   the surviving chain stay lit (no one-frame gap in `:hover`/`:active`
+    ///   styling), and the subsequent hover diff can unset exactly the right
+    ///   bits. Hover is then re-resolved against the pointer position by
+    ///   [`Self::refresh_hover`] at the end of the next resolve pass (the
+    ///   analogue of WebKit's "fake mouse move"), which corrects the bridge
+    ///   value — including cases where the removed node overflowed its
+    ///   ancestor's box, so the ancestor was never truly under the pointer.
+    /// - Focus resets to the body (encoded as `None`), running blur
+    ///   side-effects (clearing focus element state and disabling IME for
+    ///   text inputs).
+    pub(crate) fn clear_interaction_state_for_removed_node(&mut self, node_id: NodeId) {
+        if !self.nodes.contains_key(node_id) {
+            return;
+        }
+
         if self.hover_node_id == Some(node_id) {
-            self.hover_node_id = None;
+            self.hover_node_id = self.nearest_surviving_element_ancestor(node_id);
             self.hover_node_is_text = false;
         }
         if self.hover_hit_node_id == Some(node_id) {
             self.hover_hit_node_id = None;
         }
         if self.active_node_id == Some(node_id) {
-            self.active_node_id = None;
+            self.active_node_id = self.nearest_surviving_element_ancestor(node_id);
         }
         if self.focus_node_id == Some(node_id) {
+            let shell_provider = self.shell_provider.clone();
+            self.nodes[node_id].blur(shell_provider);
             self.focus_node_id = None;
         }
         if self.mousedown_node_id == Some(node_id) {
@@ -848,7 +895,6 @@ impl BaseDocument {
             self.drag_mode = DragMode::None;
         }
         self.scrollbar_activity.remove(&node_id);
-        self.nodes.remove(node_id)
     }
 
     pub(crate) fn drop_node_ignoring_parent(&mut self, node_id: NodeId) -> Option<Node> {
