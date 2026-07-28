@@ -250,7 +250,11 @@ pub(crate) fn handle_pointermove<F: FnMut(DomEvent)>(
         ));
     }
 
-    if hit.node_id != target {
+    // `target` is the event's canonicalized target (never a layout-generated
+    // node), while the hit may be an anonymous block (e.g. bare text wrapped
+    // in an anonymous box). Compare against the hit's canonical DOM ancestor
+    // so selection drags keep working over anonymous blocks.
+    if doc.nearest_non_anonymous_ancestor(hit.node_id) != Some(target) {
         return changed;
     }
 

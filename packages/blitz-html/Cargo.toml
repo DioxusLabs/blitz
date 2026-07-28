@@ -27,7 +27,7 @@ tracing = { workspace = true, optional = true }
 
 [dev-dependencies]
 # Enable blitz-dom features for tests
-blitz-dom = { workspace = true, features = ["accessibility"] }
+blitz-dom = { workspace = true, features = ["accessibility", "system-fonts"] }
 
 accesskit = { workspace = true }
 markup5ever = { workspace = true }
