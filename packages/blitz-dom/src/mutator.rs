@@ -411,6 +411,11 @@ impl DocumentMutator<'_> {
 
     /// Remove the node from it's parent but don't drop it
     pub fn remove_node(&mut self, node_id: NodeId) {
+        // Process the subtree *before* severing the parent link so that
+        // interaction state referencing removed nodes can retarget to the
+        // nearest surviving ancestor.
+        self.process_removed_subtree(node_id);
+
         let node = &mut self.doc.nodes[node_id];
 
         // Update child_idx values
@@ -422,8 +427,6 @@ impl DocumentMutator<'_> {
             parent.children.retain(|id| *id != node_id);
             self.maybe_record_node(parent_id);
         }
-
-        self.process_removed_subtree(node_id);
     }
 
     pub fn remove_and_drop_node(&mut self, node_id: NodeId) -> Option<Node> {
@@ -725,21 +728,16 @@ impl<'doc> DocumentMutator<'doc> {
 
     fn process_removed_subtree(&mut self, node_id: NodeId) {
         self.doc.iter_subtree_mut(node_id, |node_id, doc| {
+            doc.nodes[node_id]
+                .flags
+                .set(NodeFlags::IS_IN_DOCUMENT, false);
+
+            // Clear any interaction state that references this node, running
+            // the usual teardown steps (unhover/unactive the surviving
+            // ancestor chain, IME disable on blur of a focused input).
+            doc.clear_interaction_state_for_removed_node(node_id);
+
             let node = &mut doc.nodes[node_id];
-            node.flags.set(NodeFlags::IS_IN_DOCUMENT, false);
-
-            // Clear hover state if this node was being hovered.
-            // This prevents stale hover_node_id references.
-            if doc.hover_node_id == Some(node_id) {
-                doc.hover_node_id = None;
-                doc.hover_node_is_text = false;
-            }
-
-            // Clear active state if this node was active
-            // This prevents stale active_node_id references.
-            if doc.active_node_id == Some(node_id) {
-                doc.active_node_id = None;
-            }
 
             // Remove any snapshot for this node to prevent stale snapshot references
             // during style invalidation.

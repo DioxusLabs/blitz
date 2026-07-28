@@ -103,7 +103,7 @@ impl LayoutChildren {
                     self.children.remove(pos);
                 }
                 self.anonymous_blocks.retain(|id| *id != anon_id);
-                doc.nodes.remove(anon_id);
+                doc.remove_node_from_tree(anon_id);
             }
         }
 
@@ -696,7 +696,7 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: NodeId) {
                     doc.nodes[pe_node_id]
                         .children
                         .retain(|&child_id| child_id != text_node_id);
-                    doc.nodes.remove(text_node_id);
+                    doc.remove_node_from_tree(text_node_id);
                     doc.nodes[node_id].insert_damage(ALL_DAMAGE);
                 }
                 (None, None) => {}
