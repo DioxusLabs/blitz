@@ -45,19 +45,90 @@ impl BaseDocument {
         } else if let Some(element_data) = node.element_data() {
             let name = element_data.name.local.to_string();
 
-            // TODO match more roles
+            // <https://www.w3.org/TR/html-aam-1.0/>
             let role = match &*name {
-                "button" => Role::Button,
-                "div" => Role::GenericContainer,
+                // Document structure
+                "article" => Role::Article,
+                "aside" => Role::Complementary,
+                "footer" => Role::Footer,
                 "header" => Role::Header,
+                "main" => Role::Main,
+                "nav" => Role::Navigation,
+                "search" => Role::Search,
+                "section" => Role::Section,
                 "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => Role::Heading,
                 "p" => Role::Paragraph,
-                "section" => Role::Section,
+                "blockquote" => Role::Blockquote,
+                "figure" => Role::Figure,
+                "figcaption" | "caption" => Role::Caption,
+                "hr" => Role::Splitter,
+
+                // Grouping
+                "ul" | "ol" | "menu" => Role::List,
+                "li" => Role::ListItem,
+                "dl" => Role::DescriptionList,
+                "dt" => Role::Term,
+                "dd" => Role::Definition,
+                "dialog" => Role::Dialog,
+                "fieldset" => Role::Group,
+                "form" => Role::Form,
+                "div" => Role::GenericContainer,
+
+                // Tables
+                "table" => Role::Table,
+                "thead" | "tbody" | "tfoot" => Role::RowGroup,
+                "tr" => Role::Row,
+                "td" => Role::Cell,
+                "th" => match element_data.attr(local_name!("scope")) {
+                    Some("row") | Some("rowgroup") => Role::RowHeader,
+                    _ => Role::ColumnHeader,
+                },
+
+                // Interactive
+                // An <a> is only a link when it has an href.
+                "a" => match element_data.attr(local_name!("href")) {
+                    Some(_) => Role::Link,
+                    None => Role::GenericContainer,
+                },
+                "button" => Role::Button,
+                "label" => Role::Label,
+                "legend" => Role::Label,
+                "select" => match element_data.attr(local_name!("multiple")) {
+                    Some(_) => Role::ListBox,
+                    None => Role::ComboBox,
+                },
+                "option" => Role::ListBoxOption,
+                "textarea" => Role::MultilineTextInput,
+                "progress" => Role::ProgressIndicator,
+                "meter" => Role::Meter,
+                "output" => Role::Status,
+                "summary" => Role::DisclosureTriangle,
+
+                // Inline semantics
+                "code" => Role::Code,
+                "em" => Role::Emphasis,
+                "strong" => Role::Strong,
+                "mark" => Role::Mark,
+                "time" => Role::Time,
+                "img" => Role::Image,
+                "iframe" => Role::Iframe,
+
                 "input" => {
                     let ty = element_data.attr(local_name!("type")).unwrap_or("text");
                     match ty {
-                        "number" => Role::NumberInput,
+                        "button" | "submit" | "reset" => Role::Button,
                         "checkbox" => Role::CheckBox,
+                        "color" => Role::ColorWell,
+                        "date" => Role::DateInput,
+                        "datetime-local" => Role::DateTimeInput,
+                        "email" => Role::EmailInput,
+                        "number" => Role::NumberInput,
+                        "password" => Role::PasswordInput,
+                        "radio" => Role::RadioButton,
+                        "range" => Role::Slider,
+                        "search" => Role::SearchInput,
+                        "tel" => Role::PhoneNumberInput,
+                        "time" => Role::TimeInput,
                         _ => Role::TextInput,
                     }
                 }
