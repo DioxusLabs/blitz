@@ -946,6 +946,7 @@ dependencies = [
 name = "blitz-html"
 version = "0.3.0-beta.1"
 dependencies = [
+ "accesskit",
  "anyrender",
  "anyrender_vello_cpu",
  "blitz-dom",
