@@ -62,12 +62,17 @@ pub(crate) fn draw_inline_backgrounds<'a>(
     }
 }
 
+/// `color_override` replaces the colour a run would otherwise inherit from the
+/// node its brush points at. It exists for text that is styled by a
+/// pseudo-element rather than by its originating element, such as
+/// `::placeholder`.
 pub(crate) fn stroke_text<'a>(
     scene: &mut impl PaintScene,
     lines: impl Iterator<Item = Line<'a, TextBrush>>,
     doc: &BaseDocument,
     transform: Affine,
     scale: f64,
+    color_override: Option<Color>,
 ) {
     for line in lines {
         for item in line.items() {
@@ -90,7 +95,8 @@ pub(crate) fn stroke_text<'a>(
                     .unwrap();
                 let itext_styles = styles.get_inherited_text();
                 let text_styles = styles.get_text();
-                let text_color = itext_styles.color.as_color_color();
+                let text_color =
+                    color_override.unwrap_or_else(|| itext_styles.color.as_color_color());
                 let text_decoration_color = text_styles
                     .text_decoration_color
                     .as_absolute()

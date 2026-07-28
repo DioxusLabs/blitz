@@ -77,6 +77,10 @@ textarea:focus {
     outline: 2px #4D90FE;
 }
 
+::placeholder {
+    color: color-mix(in srgb, currentColor 54%, transparent);
+}
+
 button,
 input[type="submit"],
 input[type="reset"],
