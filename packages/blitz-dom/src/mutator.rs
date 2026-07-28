@@ -734,6 +734,9 @@ impl<'doc> DocumentMutator<'doc> {
                 doc.hover_node_id = None;
                 doc.hover_node_is_text = false;
             }
+            if doc.hover_hit_node_id == Some(node_id) {
+                doc.hover_hit_node_id = None;
+            }
 
             // Clear active state if this node was active
             // This prevents stale active_node_id references.

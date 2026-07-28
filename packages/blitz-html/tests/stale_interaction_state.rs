@@ -1,11 +1,17 @@
-//! Interaction state (hover/active/focus) must not retain NodeIds for nodes
-//! that have been removed from the node tree.
+//! Interaction state (hover/active/focus/mousedown) must never retain NodeIds
+//! for layout-generated nodes (anonymous boxes, pseudo-elements), and must not
+//! retain NodeIds for DOM nodes that have been removed from the node tree.
 //!
 //! Regression test for https://github.com/DioxusLabs/blitz/issues/545: the
-//! hovered/active/focused node can be removed from the tree (e.g. a
-//! pseudo-element or anonymous block dropped during box reconstruction, or a
-//! DOM subtree removal). The stale NodeId then panics with "invalid SlotMap
-//! key used" on the next hover/active/focus update.
+//! hovered/active/focused node could be a pseudo-element or anonymous block
+//! dropped during box reconstruction (or a removed DOM subtree). The stale
+//! NodeId then panics with "invalid SlotMap key used" on the next
+//! hover/active/focus update.
+//!
+//! Interaction state is canonicalized when stored: hits on layout-generated
+//! nodes resolve to the nearest DOM ancestor (e.g. a pseudo-element's
+//! originating element), whose id is stable across box-tree reconstruction.
+//! State referencing genuinely removed DOM nodes is cleared.
 
 use blitz_dom::{Document, DocumentConfig};
 use blitz_html::{HtmlDocument, HtmlProvider};
@@ -62,21 +68,28 @@ fn make_doc() -> HtmlDocument {
     doc
 }
 
-/// Hover the ::before pseudo-element of #target and sanity-check that the
-/// hovered node is indeed the pseudo-element.
-fn hover_pseudo_element(doc: &mut HtmlDocument) -> blitz_traits::node_id::NodeId {
+/// Hover the ::before pseudo-element of #target. The stored hover target must
+/// be the *originating element* (#target), not the pseudo-element node itself.
+fn hover_pseudo_region(doc: &mut HtmlDocument) -> blitz_traits::node_id::NodeId {
     let target_id = doc.query_selector("#target").unwrap().unwrap();
     let before_id = doc
         .get_node(target_id)
         .unwrap()
         .before()
         .expect("::before node should exist");
+    assert_eq!(
+        doc.hit(5.0, 5.0)
+            .expect("hit should land somewhere")
+            .node_id,
+        before_id,
+        "expected the hit-test to hit the ::before pseudo-element"
+    );
 
     doc.set_hover_to(5.0, 5.0);
     let hover_id = doc.get_hover_node_id().expect("expected a hover node");
     assert_eq!(
-        hover_id, before_id,
-        "expected the hovered node to be the ::before pseudo-element"
+        hover_id, target_id,
+        "expected the stored hover target to be the pseudo's originating element"
     );
     hover_id
 }
@@ -91,45 +104,49 @@ fn remove_pseudo(doc: &mut HtmlDocument) {
 }
 
 #[test]
-fn hover_state_is_cleared_when_hovered_pseudo_element_is_dropped() {
+fn hover_state_survives_hovered_pseudo_element_being_dropped() {
     let mut doc = make_doc();
-    let hover_id = hover_pseudo_element(&mut doc);
+    let hover_id = hover_pseudo_region(&mut doc);
 
     remove_pseudo(&mut doc);
-    assert!(doc.get_node(hover_id).is_none());
 
+    // The canonical hover target (#target) is a real DOM node and survives the
+    // pseudo-element being dropped.
+    assert_eq!(doc.get_hover_node_id(), Some(hover_id));
+    assert!(doc.get_node(hover_id).is_some());
     // Must not panic with "invalid SlotMap key used"
-    assert!(doc.get_hover_node_id().is_none());
     doc.set_hover_to(5.0, 5.0);
 }
 
 #[test]
-fn active_state_is_cleared_when_active_pseudo_element_is_dropped() {
+fn active_state_survives_active_pseudo_element_being_dropped() {
     let mut doc = make_doc();
-    let hover_id = hover_pseudo_element(&mut doc);
+    let hover_id = hover_pseudo_region(&mut doc);
     doc.active_node();
 
     remove_pseudo(&mut doc);
-    assert!(doc.get_node(hover_id).is_none());
+    assert!(doc.get_node(hover_id).is_some());
 
     // Must not panic with "invalid SlotMap key used"
     doc.unactive_node();
 }
 
 #[test]
-fn mousedown_state_is_cleared_when_mousedown_node_is_dropped() {
+fn mousedown_state_survives_mousedown_pseudo_element_being_dropped() {
     let mut doc = make_doc();
-    let hover_id = hover_pseudo_element(&mut doc);
+    let target_id = doc.query_selector("#target").unwrap().unwrap();
 
-    // Press the mouse on the pseudo-element so mousedown_node_id references it
+    // Press the mouse on the pseudo-element. The stored mousedown target must
+    // be the originating element.
     doc.handle_ui_event(UiEvent::PointerDown(pointer_event(
         5.0,
         5.0,
         MouseEventButtons::from(MouseEventButton::Main),
     )));
+    assert_eq!(doc.get_mousedown_node_id(), Some(target_id));
 
     remove_pseudo(&mut doc);
-    assert!(doc.get_node(hover_id).is_none());
+    assert_eq!(doc.get_mousedown_node_id(), Some(target_id));
 
     // Drag with the button held (starts a selection drag from the mousedown
     // node). Must not panic with "invalid SlotMap key used".
@@ -143,6 +160,26 @@ fn mousedown_state_is_cleared_when_mousedown_node_is_dropped() {
         20.0,
         MouseEventButtons::None,
     )));
+}
+
+#[test]
+fn hover_state_is_reresolved_when_hovered_element_is_removed() {
+    let mut doc = make_doc();
+    let hover_id = hover_pseudo_region(&mut doc);
+
+    doc.mutate().remove_and_drop_node(hover_id);
+    doc.resolve(0.0);
+    assert!(doc.get_node(hover_id).is_none());
+
+    // The stale id must be gone, and hover must have been re-resolved against
+    // the new layout (the pointer is now over the <body>).
+    let new_hover_id = doc.get_hover_node_id();
+    assert_ne!(new_hover_id, Some(hover_id));
+    if let Some(id) = new_hover_id {
+        assert!(doc.get_node(id).is_some());
+    }
+    // Must not panic with "invalid SlotMap key used"
+    doc.set_hover_to(5.0, 5.0);
 }
 
 #[test]

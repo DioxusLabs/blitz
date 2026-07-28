@@ -91,7 +91,13 @@ impl BaseDocument {
         self.resolve_layout();
         timer.record_time("layout");
 
+        // Resolve transforms
+        //
+        // And the re-resolve hover node from point position against the fresh layout. Any
+        // resulting restyle is picked up on the next resolve pass. A redraw is requested
+        // if the hovered node actually changes.
         self.resolve_transforms(root_node_id);
+        self.refresh_hover();
         timer.record_time("transform");
 
         // Clear all damage and dirty flags

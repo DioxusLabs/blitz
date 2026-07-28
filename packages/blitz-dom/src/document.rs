@@ -235,10 +235,18 @@ pub struct BaseDocument {
     /// A Parley layout context
     pub(crate) layout_ctx: parley::LayoutContext<TextBrush>,
 
-    /// The node which is currently hovered (if any)
+    /// The real (non-anonymous) node which is currently hovered (if any).
+    /// This is never a layout-generated (anonymous) node, so it remains valid
+    /// across box-tree reconstruction.
     pub(crate) hover_node_id: Option<NodeId>,
+    /// The precise (may be anonymous) layout node under the pointer (if any).
+    /// This can be invalidated by box-tree reconstruction, and is re-resolved against
+    /// fresh layout at the end of every `resolve` pass.
+    pub(crate) hover_hit_node_id: Option<NodeId>,
     /// Whether the node which is currently hovered is a text node/span
     pub(crate) hover_node_is_text: bool,
+    /// The last known pointer position in client coordinates (viewport-relative, unscrolled).
+    pub(crate) last_client_pointer_position: Option<taffy::Point<f32>>,
     /// The node which is currently focussed (if any)
     pub(crate) focus_node_id: Option<NodeId>,
     /// The node which is currently active (if any)
@@ -448,7 +456,9 @@ impl BaseDocument {
             layout_ctx: parley::LayoutContext::new(),
 
             hover_node_id: None,
+            hover_hit_node_id: None,
             hover_node_is_text: false,
+            last_client_pointer_position: None,
             focus_node_id: None,
             active_node_id: None,
             mousedown_node_id: None,
@@ -805,6 +815,9 @@ impl BaseDocument {
         if self.hover_node_id == Some(node_id) {
             self.hover_node_id = None;
             self.hover_node_is_text = false;
+        }
+        if self.hover_hit_node_id == Some(node_id) {
+            self.hover_hit_node_id = None;
         }
         if self.active_node_id == Some(node_id) {
             self.active_node_id = None;
@@ -1350,6 +1363,23 @@ impl BaseDocument {
         self.hit_with_scrollbar(x, y).0
     }
 
+    /// Walk up the layout tree until a node that is not an anonymous block is
+    /// found. Anonymous blocks always have a non-anonymous parent, so this always terminates.
+    ///
+    /// Returns `None` if `node_id` (or an ancestor) no longer exists.
+    pub fn nearest_non_anonymous_ancestor(&self, node_id: NodeId) -> Option<NodeId> {
+        let mut canonical = node_id;
+        let mut current = Some(node_id);
+        while let Some(id) = current {
+            let node = self.get_node(id)?;
+            if node.is_anonymous() {
+                canonical = node.parent?;
+            }
+            current = node.parent;
+        }
+        Some(canonical)
+    }
+
     pub fn focus_next_node(&mut self) -> Option<NodeId> {
         let focussed_node_id = self.get_focussed_node_id()?;
         let id = self.next_node(&self.nodes[focussed_node_id], |node| node.is_focussable())?;
@@ -1367,9 +1397,12 @@ impl BaseDocument {
     }
 
     pub fn set_mousedown_node_id(&mut self, node_id: Option<NodeId>) {
-        self.mousedown_node_id = node_id;
+        self.mousedown_node_id = node_id.and_then(|id| self.nearest_non_anonymous_ancestor(id));
     }
     pub fn set_focus_to(&mut self, focus_node_id: NodeId) -> bool {
+        let Some(focus_node_id) = self.nearest_non_anonymous_ancestor(focus_node_id) else {
+            return false;
+        };
         if Some(focus_node_id) == self.focus_node_id {
             return false;
         }
@@ -1404,6 +1437,12 @@ impl BaseDocument {
             self.unactive_node();
         }
 
+        // hover_node_id is canonicalized when stored, so this always holds.
+        debug_assert!(
+            self.get_node(hover_node_id)
+                .is_some_and(|node| !node.is_anonymous()),
+            "interaction state must reference DOM nodes, not layout-generated nodes"
+        );
         let active_node_id = Some(hover_node_id);
 
         let node_path = self.maybe_node_layout_ancestors(active_node_id);
@@ -1502,6 +1541,14 @@ impl BaseDocument {
     }
 
     pub fn set_hover_to(&mut self, x: f32, y: f32) -> bool {
+        // Record the pointer position in client (unscrolled) coordinates so
+        // that `refresh_hover` can re-resolve hover state after layout or
+        // scroll changes.
+        self.last_client_pointer_position = Some(taffy::Point {
+            x: x - self.viewport_scroll.x as f32,
+            y: y - self.viewport_scroll.y as f32,
+        });
+
         let (hit, hovered_scrollbar) = self.hit_with_scrollbar(x, y);
         // A faded-out thumb is not interactive: pointer moves never fade
         // overlay scrollbars back in (only scrolling shows them).
@@ -1522,11 +1569,28 @@ impl BaseDocument {
             }
         }
         self.hovered_scrollbar = hovered_scrollbar;
-        let hover_node_id = hit.map(|hit| hit.node_id);
+
+        // Store both the precise layout node that was hit (transient: used for
+        // cursor/style queries) and its canonical DOM target (persistent: must
+        // not reference layout-generated nodes, whose ids die on box-tree
+        // reconstruction).
+        let hit_node_id = hit.map(|hit| hit.node_id);
+        let hover_node_id = hit_node_id.and_then(|id| self.nearest_non_anonymous_ancestor(id));
         let new_is_text = hit.map(|hit| hit.is_text).unwrap_or(false);
+
+        let hit_changed =
+            hit_node_id != self.hover_hit_node_id || new_is_text != self.hover_node_is_text;
+        self.hover_hit_node_id = hit_node_id;
+        self.hover_node_is_text = new_is_text;
 
         // Return early if the new node is the same as the already-hovered node
         if hover_node_id == self.hover_node_id {
+            if hit_changed {
+                // The canonical target is unchanged (so no restyle is needed)
+                // but the precise hit node changed, which can change the cursor
+                // (e.g. moving between text and non-text within one element).
+                self.shell_provider.set_cursor(self.get_cursor());
+            }
             return scrollbar_changed;
         }
 
@@ -1545,7 +1609,6 @@ impl BaseDocument {
         }
 
         self.hover_node_id = hover_node_id;
-        self.hover_node_is_text = new_is_text;
 
         // Update the cursor
         self.shell_provider.set_cursor(self.get_cursor());
@@ -1557,6 +1620,11 @@ impl BaseDocument {
     }
 
     pub fn clear_hover(&mut self) -> bool {
+        // The pointer is no longer over the document, so stop re-resolving
+        // hover state against it.
+        self.last_client_pointer_position = None;
+        self.hover_hit_node_id = None;
+
         let Some(hover_node_id) = self.hover_node_id else {
             return false;
         };
@@ -1578,8 +1646,26 @@ impl BaseDocument {
         true
     }
 
+    /// Re-resolve hover state against the current layout using the last known
+    /// pointer position.
+    ///
+    /// TODO: synthesizing pointerenter/pointerleave DOM events for
+    /// hover changes caused by layout shifts.
+    pub fn refresh_hover(&mut self) -> bool {
+        let Some(pos) = self.last_client_pointer_position else {
+            return false;
+        };
+        let x = pos.x + self.viewport_scroll.x as f32;
+        let y = pos.y + self.viewport_scroll.y as f32;
+        self.set_hover_to(x, y)
+    }
+
     pub fn get_hover_node_id(&self) -> Option<NodeId> {
         self.hover_node_id
+    }
+
+    pub fn get_mousedown_node_id(&self) -> Option<NodeId> {
+        self.mousedown_node_id
     }
 
     pub fn set_viewport(&mut self, viewport: Viewport) {
@@ -1726,7 +1812,15 @@ impl BaseDocument {
     }
 
     pub fn get_cursor(&self) -> Option<CursorIcon> {
-        let node = &self.nodes[self.get_hover_node_id()?];
+        // Prefer the precise hit node: `cursor` and `user-select` may be set on
+        // a pseudo-element or resolved on an anonymous box, and text hits carry
+        // is_text via the hit node. Fall back to the canonical hover node if
+        // the hit node has been removed (it is transient across resolves).
+        let node_id = self
+            .hover_hit_node_id
+            .filter(|&id| self.nodes.contains_key(id))
+            .or(self.get_hover_node_id())?;
+        let node = &self.nodes[node_id];
 
         if let Some(subdoc) = node.subdoc().map(|doc| doc.inner()) {
             return subdoc.get_cursor();
@@ -2408,6 +2502,97 @@ impl AsRef<BaseDocument> for BaseDocument {
 impl AsMut<BaseDocument> for BaseDocument {
     fn as_mut(&mut self) -> &mut BaseDocument {
         self
+    }
+}
+
+#[cfg(test)]
+mod hover_state_tests {
+    use super::*;
+    use crate::{Attribute, qual_name};
+    use blitz_traits::shell::ColorScheme;
+
+    /// Build `<html><body style="margin:0"><div style="width:300px">some text
+    /// <div style="height:50px"></div></div></body></html>` manually (the HTML
+    /// parser lives in blitz-html, which would be a circular dev-dependency).
+    /// The bare text next to a block sibling gets wrapped in an anonymous
+    /// block, which becomes the inline root: text hits report the anonymous
+    /// block as the hit node.
+    fn make_doc() -> (BaseDocument, NodeId) {
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
+            ..Default::default()
+        });
+        let root_id = doc.root_node().id;
+        let style = |value: &str| Attribute {
+            name: qual_name!("style"),
+            value: value.to_string(),
+        };
+
+        let mut mutator = doc.mutate();
+        let html = mutator.create_element(qual_name!("html"), vec![]);
+        let body = mutator.create_element(qual_name!("body"), vec![style("margin:0")]);
+        let container = mutator.create_element(qual_name!("div"), vec![style("width:300px")]);
+        let text = mutator.create_text_node("some text");
+        let block = mutator.create_element(qual_name!("div"), vec![style("height:50px")]);
+        mutator.append_children(container, &[text, block]);
+        mutator.append_children(body, &[container]);
+        mutator.append_children(html, &[body]);
+        mutator.append_children(root_id, &[html]);
+        drop(mutator);
+
+        doc.resolve(0.0);
+        (doc, container)
+    }
+
+    /// Whether text laid out with a real (non-zero-metric) font. Without the
+    /// `system-fonts` feature text measures 0x0 and text hits are impossible,
+    /// making these tests vacuous.
+    fn text_has_size(doc: &BaseDocument, container: NodeId) -> bool {
+        doc.nodes[container].final_layout().size.height > 50.0
+    }
+
+    /// Regression test: hovering bare text wrapped in an anonymous block must
+    /// report a text cursor. The hit node for such text is the anonymous
+    /// inline root itself, while the *stored* hover target is canonicalized to
+    /// the containing element — the cursor must be derived from the precise
+    /// hit node, not the canonical target.
+    #[test]
+    fn hovering_text_in_anonymous_block_reports_text_cursor() {
+        let (mut doc, container) = make_doc();
+        if !text_has_size(&doc, container) {
+            eprintln!("skipping: no usable font (text measures 0x0)");
+            return;
+        }
+
+        doc.set_hover_to(5.0, 8.0);
+        assert!(doc.hover_node_is_text, "expected a text hit");
+        let hit_id = doc.hover_hit_node_id.expect("expected a hit node");
+        assert!(
+            doc.nodes[hit_id].is_anonymous(),
+            "expected the hit node to be the anonymous inline root"
+        );
+        assert_eq!(
+            doc.get_hover_node_id(),
+            Some(container),
+            "expected the stored hover target to be the containing element"
+        );
+        assert_eq!(doc.get_cursor(), Some(CursorIcon::Text));
+    }
+
+    /// Hovering the empty region of the anonymous block (right of the text) is
+    /// not a text hit: default cursor, same canonical hover target.
+    #[test]
+    fn hovering_anonymous_block_whitespace_reports_default_cursor() {
+        let (mut doc, container) = make_doc();
+        if !text_has_size(&doc, container) {
+            eprintln!("skipping: no usable font (text measures 0x0)");
+            return;
+        }
+
+        doc.set_hover_to(250.0, 8.0);
+        assert!(!doc.hover_node_is_text);
+        assert_eq!(doc.get_hover_node_id(), Some(container));
+        assert_eq!(doc.get_cursor(), Some(CursorIcon::Default));
     }
 }
 
