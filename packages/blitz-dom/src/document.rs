@@ -1409,21 +1409,33 @@ impl BaseDocument {
         self.hit_with_scrollbar(x, y).0
     }
 
-    /// Walk up the layout tree until a node that is not an anonymous block is
-    /// found. Anonymous blocks always have a non-anonymous parent, so this always terminates.
+    /// Walk up the tree to the nearest DOM node whose id is stable across
+    /// box-tree reconstruction, so canonicalized interaction state never goes
+    /// stale.
+    ///
+    /// Layout-generated nodes (anonymous blocks and `::before`/`::after`
+    /// pseudo-elements, both stored as anonymous blocks) get new ids on every
+    /// reconstruction, so we skip any anonymous node *and* a non-anonymous node
+    /// whose parent is anonymous (the pseudo's text content). The first
+    /// non-anonymous node with a non-anonymous parent is a real DOM node; the
+    /// root element's `Document` parent guarantees termination.
     ///
     /// Returns `None` if `node_id` (or an ancestor) no longer exists.
     pub fn nearest_non_anonymous_ancestor(&self, node_id: NodeId) -> Option<NodeId> {
-        let mut canonical = node_id;
-        let mut current = Some(node_id);
-        while let Some(id) = current {
-            let node = self.get_node(id)?;
-            if node.is_anonymous() {
-                canonical = node.parent?;
+        // Recurse up the tree keeping a window of the current node and its
+        // parent, advancing one step per iteration so each node is looked up
+        // exactly once.
+        let mut node = self.get_node(node_id)?;
+        loop {
+            let parent = match node.parent {
+                Some(parent_id) => self.get_node(parent_id)?,
+                None => return Some(node.id),
+            };
+            if !node.is_anonymous() && !parent.is_anonymous() {
+                return Some(node.id);
             }
-            current = node.parent;
+            node = parent;
         }
-        Some(canonical)
     }
 
     pub fn focus_next_node(&mut self) -> Option<NodeId> {

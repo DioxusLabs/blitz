@@ -92,12 +92,7 @@ impl BaseDocument {
         timer.record_time("layout");
 
         // Resolve transforms
-        //
-        // And the re-resolve hover node from point position against the fresh layout. Any
-        // resulting restyle is picked up on the next resolve pass. A redraw is requested
-        // if the hovered node actually changes.
         self.resolve_transforms(root_node_id);
-        self.refresh_hover();
         timer.record_time("transform");
 
         // Clear all damage and dirty flags
@@ -108,6 +103,15 @@ impl BaseDocument {
             }
             timer.record_time("c_damage");
         }
+
+        // Re-resolve the hover node from the pointer position against the fresh
+        // layout. This must run *after* the damage/dirty flags are cleared
+        // above, so that the restyle hint and ancestor `dirty_descendants`
+        // flags set by any resulting hover change survive into the next resolve
+        // pass (the clearing loop would otherwise wipe them). Any resulting
+        // restyle is picked up on the next resolve pass; a redraw is requested
+        // if the hovered node actually changes.
+        self.refresh_hover();
 
         let mut subdoc_is_animating = false;
         for &node_id in &self.sub_document_nodes {
