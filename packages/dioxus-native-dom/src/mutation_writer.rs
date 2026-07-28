@@ -1,6 +1,6 @@
 //! Integration between Dioxus and Blitz
 use crate::{NodeId, qual_name, trace, write_once_attr::WriteOnceAttr};
-use blitz_dom::{BaseDocument, Document as _, DocumentMutator, PlainDocument, Widget};
+use blitz_dom::{BaseDocument, Document, DocumentMutator, Widget};
 use blitz_traits::events::DomEventKind;
 use dioxus_core::{
     AttributeValue, ElementId, Template, TemplateAttribute, TemplateNode, WriteMutations,
@@ -229,7 +229,7 @@ impl WriteMutations for MutationWriter<'_> {
                 AttributeValue::Any(value) => {
                     if let Some(value) = value
                         .as_any()
-                        .downcast_ref::<WriteOnceAttr<Box<PlainDocument>>>()
+                        .downcast_ref::<WriteOnceAttr<Box<dyn Document>>>()
                         && let Some(mut sub_document) = value.take()
                     {
                         sub_document

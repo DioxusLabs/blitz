@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Preact • TodoMVC</title>
+  <style>
+    :root { color-scheme: light; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      background: #f5f5f5;
+      color: #111;
+    }
+    .app { max-width: 520px; margin: 40px auto; }
+    h1 { text-align: center; font-weight: 200; font-size: 64px; color: #b83f45; margin: 0 0 16px; }
+    .card { background: #fff; box-shadow: 0 2px 4px rgba(0,0,0,.15); }
+    .new-todo {
+      width: 100%; padding: 16px; border: 0; border-bottom: 1px solid #ededed;
+      font-size: 20px; outline: none;
+    }
+    ul { list-style: none; margin: 0; padding: 0; }
+    li { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-bottom: 1px solid #ededed; }
+    li input[type=checkbox] { width: 20px; height: 20px; }
+    .label { flex: 1; }
+    .done .label { color: #949494; text-decoration: line-through; }
+    .destroy {
+      border: 0; background: none; color: #949494; font-size: 22px; cursor: pointer; line-height: 1;
+    }
+    .destroy:hover { color: #c18585; }
+    .footer {
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      padding: 12px 16px; color: #777; font-size: 14px;
+    }
+    .filters { display: flex; gap: 6px; }
+    .filters button { border: 1px solid transparent; background: none; padding: 3px 8px; cursor: pointer; color: inherit; border-radius: 3px; }
+    .filters button.selected { border-color: rgba(184,63,69,.4); }
+    .clear { border: 0; background: none; cursor: pointer; color: inherit; }
+    .clear:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+
+  <!-- Vendored, unmodified copy of the Preact library (UMD builds) -->
+  <script src="./vendor/preact.min.js"></script>
+  <script src="./vendor/hooks.umd.js"></script>
+
+  <script>
+    const { h, render } = preact;
+    const { useState } = preactHooks;
+
+    let nextId = 1;
+
+    function App() {
+      const [todos, setTodos] = useState([]);
+      const [filter, setFilter] = useState("all");
+
+      const add = (text) => {
+        text = text.trim();
+        if (text) setTodos([...todos, { id: nextId++, text, done: false }]);
+      };
+      const toggle = (id) =>
+        setTodos(todos.map((t) => (t.id === id ? { ...t, done: !t.done } : t)));
+      const remove = (id) => setTodos(todos.filter((t) => t.id !== id));
+      const clearDone = () => setTodos(todos.filter((t) => !t.done));
+
+      const visible = todos.filter((t) =>
+        filter === "active" ? !t.done : filter === "completed" ? t.done : true
+      );
+      const left = todos.filter((t) => !t.done).length;
+
+      return h("div", { class: "app" }, [
+        h("h1", null, "todos"),
+        h("div", { class: "card" }, [
+          h("input", {
+            class: "new-todo",
+            placeholder: "What needs to be done?",
+            autofocus: true,
+            onKeyDown: (e) => {
+              if (e.key === "Enter") {
+                add(e.target.value);
+                e.target.value = "";
+              }
+            },
+          }),
+          h(
+            "ul",
+            null,
+            visible.map((t) =>
+              h("li", { key: t.id, class: t.done ? "done" : "" }, [
+                h("input", {
+                  type: "checkbox",
+                  checked: t.done,
+                  onChange: () => toggle(t.id),
+                }),
+                h("span", { class: "label" }, t.text),
+                h(
+                  "button",
+                  { class: "destroy", onClick: () => remove(t.id) },
+                  "\u00d7"
+                ),
+              ])
+            )
+          ),
+          todos.length > 0 &&
+            h("div", { class: "footer" }, [
+              h(
+                "span",
+                null,
+                `${left} item${left === 1 ? "" : "s"} left`
+              ),
+              h(
+                "div",
+                { class: "filters" },
+                ["all", "active", "completed"].map((f) =>
+                  h(
+                    "button",
+                    {
+                      class: filter === f ? "selected" : "",
+                      onClick: () => setFilter(f),
+                    },
+                    f
+                  )
+                )
+              ),
+              h(
+                "button",
+                { class: "clear", onClick: clearDone },
+                "Clear completed"
+              ),
+            ]),
+        ]),
+      ]);
+    }
+
+    render(h(App), document.getElementById("app"));
+  </script>
+</body>
+</html>
