@@ -56,8 +56,8 @@ pub fn resolve_2d_transform(
             .transform
             .to_transform_3d_matrix(Some(&reference_box))
             .ok()
-            .filter(|(_t, has_3d)| !has_3d)
-            .map(|(t, _has_3d)| {
+            .filter(|(t, _)| t.is_2d())
+            .map(|(t, _)| {
                 // See: https://drafts.csswg.org/css-transforms-2/#two-dimensional-subset
                 // And https://docs.rs/kurbo/latest/kurbo/struct.Affine.html#method.new
                 Affine::new([t.m11, t.m12, t.m21, t.m22, t.m41, t.m42].map(|v| v as f64))
