@@ -8,6 +8,7 @@ members = [
     "packages/blitz-net",
     "packages/blitz-paint",
     "packages/blitz-shell",
+    "packages/blitz-shell-baseview",
     "packages/blitz",
     "packages/stylo_taffy",
     "packages/dioxus-native",
