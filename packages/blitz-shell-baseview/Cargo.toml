@@ -1,0 +1,39 @@
+[package]
+name = "blitz-shell-baseview"
+description = "Blitz application shell for baseview (audio plugin GUIs)"
+documentation = "https://docs.rs/blitz-shell-baseview"
+version.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+categories.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+# Blitz dependencies
+blitz-traits = { workspace = true }
+blitz-dom = { workspace = true }
+blitz-paint = { workspace = true }
+anyrender = { workspace = true }
+
+# Windowing & Input
+baseview = "0.2.2"
+raw-window-handle = { workspace = true }
+keyboard-types = { workspace = true }
+# baseview's keyboard events use a newer keyboard-types than blitz-traits
+keyboard-types-08 = { package = "keyboard-types", version = "0.8.3" }
+cursor-icon = { workspace = true }
+
+# Other dependencies
+atomic_refcell = { workspace = true }
+
+[dev-dependencies]
+blitz-dom = { workspace = true, features = ["system-fonts"] }
+blitz-html = { workspace = true }
+anyrender_vello = { workspace = true }
+winit = { workspace = true }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
