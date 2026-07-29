@@ -233,7 +233,11 @@ impl BaseDocument {
                     // (https://www.w3.org/TR/CSS22/visudet.html#block-replaced-width),
                     // so ignore the stretched width for them.
                     let mut known_dimensions = inputs.known_dimensions;
-                    if parent_is_block_container && node.style().size.width.is_auto() {
+                    let style = node.style();
+                    if parent_is_block_container
+                        && style.position != taffy::Position::Absolute
+                        && style.size.width.is_auto()
+                    {
                         known_dimensions.width = None;
                     }
 
