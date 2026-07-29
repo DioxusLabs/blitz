@@ -51,6 +51,14 @@ impl BaseDocument {
         inputs: taffy::tree::LayoutInput,
         block_ctx: Option<&mut BlockContext<'_>>,
     ) -> taffy::tree::LayoutOutput {
+        let parent_is_block_container = self.nodes[dom_node_id(node_id)]
+            .layout_parent
+            .get()
+            .is_some_and(|parent_id| {
+                let parent = &self.nodes[parent_id];
+                parent.style().display == Display::Block && !parent.flags.is_inline_root()
+            });
+
         let node = &mut self.nodes[dom_node_id(node_id)];
 
         let font_styles = node.primary_styles().map(|style| {
@@ -219,8 +227,18 @@ impl BaseDocument {
                         attr_size,
                     };
 
+                    // Block layout stretch-sizes in-flow children, passing the stretched
+                    // width down as a known dimension. But block-level replaced elements
+                    // are not stretched: an auto width resolves to the intrinsic size
+                    // (https://www.w3.org/TR/CSS22/visudet.html#block-replaced-width),
+                    // so ignore the stretched width for them.
+                    let mut known_dimensions = inputs.known_dimensions;
+                    if parent_is_block_container && node.style().size.width.is_auto() {
+                        known_dimensions.width = None;
+                    }
+
                     let computed = replaced_measure_function(
-                        inputs.known_dimensions,
+                        known_dimensions,
                         inputs.parent_size,
                         inputs.available_space,
                         &replaced_context,
