@@ -550,7 +550,7 @@ impl BaseDocument {
             // Compute the owned taffy style and display in an inner scope so the
             // immutable borrow of `node` (held by the stylo element data guard)
             // is released before we mutably access `node` below.
-            let (taffy_style, display_constructed_as) = {
+            let (mut taffy_style, display_constructed_as) = {
                 let stylo_element_data = node.stylo_element_data_opt().and_then(|s| s.get());
                 let primary_styles = stylo_element_data
                     .as_ref()
@@ -562,6 +562,14 @@ impl BaseDocument {
 
                 (stylo_taffy::to_taffy_style(style), style.clone_display())
             };
+
+            // Replaced elements resolve an auto width to their intrinsic size rather
+            // than being stretch-sized by block layout
+            if let Some(element_data) = node.data.downcast_element() {
+                taffy_style.item_is_replaced = *element_data.name.local == *"img"
+                    || *element_data.name.local == *"canvas"
+                    || (cfg!(feature = "svg") && *element_data.name.local == *"svg");
+            }
 
             // if damage.intersects(RestyleDamage::RELAYOUT | CONSTRUCT_BOX) {
             *node.style_mut() = taffy_style;
