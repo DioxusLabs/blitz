@@ -143,6 +143,75 @@ fn elements_panel_session() {
     });
 }
 
+/// Closing a connection must clear any inspect-mode/highlight state its
+/// session set on the document (e.g. DevTools window closed mid-picking)
+#[test]
+fn connection_close_clears_devtools_state() {
+    let html = "<html><body><div id=\"d\">Hello</div></body></html>";
+    let mut doc: BaseDocument = HtmlDocument::from_html(
+        html,
+        DocumentConfig {
+            viewport: Some(Viewport::new(1200, 800, 1.0, ColorScheme::Light)),
+            ..Default::default()
+        },
+    )
+    .into();
+    doc.resolve(0.0);
+    let mut provider = SingleDocProvider(doc);
+    let doc_id = provider.0.id();
+
+    let (wake_sender, wake_receiver) = channel();
+    let mut server = CdpServer::new(Arc::new(TestWaker(Mutex::new(wake_sender))));
+    server.start_listening("127.0.0.1:0");
+    let addr = server
+        .wait_for_local_addr(Duration::from_secs(10))
+        .expect("server should start listening");
+
+    let mut pump = |server: &mut CdpServer,
+                    provider: &mut SingleDocProvider,
+                    until: &dyn Fn(&SingleDocProvider) -> bool| {
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while !until(provider) {
+            assert!(std::time::Instant::now() < deadline, "timed out waiting");
+            if wake_receiver
+                .recv_timeout(Duration::from_millis(50))
+                .is_ok()
+            {
+                server.process_messages(provider);
+            }
+        }
+    };
+
+    let (mut ws, _response) =
+        tungstenite::connect(format!("ws://{addr}/devtools/page/{doc_id}")).expect("ws connect");
+
+    // Enter inspect mode and highlight a node during hover
+    send_command(
+        &mut ws,
+        1,
+        "Overlay.setInspectMode",
+        json!({ "mode": "searchForNode", "highlightConfig": {} }),
+    );
+    pump(&mut server, &mut provider, &|p| {
+        p.0.devtools().element_picker
+    });
+    server.notify_picker_event(
+        PickerEvent::Hovered {
+            doc_id,
+            x: 10.0,
+            y: 10.0,
+        },
+        &mut provider,
+    );
+    assert!(provider.0.devtools().highlight_node.is_some());
+
+    // Closing the connection clears the state left on the document
+    ws.close(None).expect("close ws");
+    pump(&mut server, &mut provider, &|p| {
+        !p.0.devtools().element_picker && p.0.devtools().highlight_node.is_none()
+    });
+}
+
 enum PickerKind {
     Hovered(f32, f32),
     Picked(f32, f32),
