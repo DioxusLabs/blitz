@@ -1084,6 +1084,22 @@ impl BaseDocument {
         }
     }
 
+    /// The document's base URL
+    pub fn url(&self) -> &url::Url {
+        &self.url
+    }
+
+    /// Iterate over the author stylesheets (from `<style>` and `<link>` nodes)
+    /// currently associated with this document
+    pub fn author_stylesheets(&self) -> impl Iterator<Item = &DocumentStyleSheet> {
+        self.nodes_to_stylesheet.values()
+    }
+
+    /// Iterate over the user-agent stylesheets currently associated with this document
+    pub fn useragent_stylesheets(&self) -> impl Iterator<Item = &DocumentStyleSheet> {
+        self.ua_stylesheets.values()
+    }
+
     pub fn add_user_agent_stylesheet(&mut self, css: &str) {
         let sheet = self.make_stylesheet(css, Origin::UserAgent);
         self.ua_stylesheets.insert(css.to_string(), sheet.clone());
