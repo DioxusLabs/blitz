@@ -1818,14 +1818,19 @@ impl BaseDocument {
 
     pub fn is_animating(&self) -> bool {
         #[cfg(feature = "custom-widget")]
-        let has_custom_widgets = !self.custom_widget_nodes.is_empty();
+        let custom_widget_is_animating = self.custom_widget_nodes.iter().any(|&node_id| {
+            self.nodes[node_id]
+                .element_data()
+                .and_then(|el| el.custom_widget_data())
+                .is_some_and(|data| data.widget.requires_redraw())
+        });
         #[cfg(not(feature = "custom-widget"))]
-        let has_custom_widgets = false;
+        let custom_widget_is_animating = false;
 
         self.has_canvas
             | self.has_active_animations
             | self.subdoc_is_animating
-            | has_custom_widgets
+            | custom_widget_is_animating
             | (self.scroll_animation != ScrollAnimationState::None)
             | self.scrollbars_animating()
     }

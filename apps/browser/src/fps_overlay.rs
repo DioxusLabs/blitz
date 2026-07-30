@@ -66,6 +66,10 @@ impl FpsWidget {
 }
 
 impl Widget for FpsWidget {
+    fn requires_redraw(&self) -> bool {
+        true
+    }
+
     fn destroy_surfaces(&mut self) {
         if let Ok(mut s) = self.stats.lock() {
             s.reset();

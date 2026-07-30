@@ -102,6 +102,10 @@ impl Widget for DemoWidget {
     fn can_create_surfaces(&mut self, _render_ctx: &mut dyn anyrender::RenderContext) {}
     fn destroy_surfaces(&mut self) {}
 
+    fn requires_redraw(&self) -> bool {
+        true
+    }
+
     fn attribute_changed(&mut self, name: &str, _old_value: Option<&str>, new_value: Option<&str>) {
         if name == "color" {
             self.color = new_value
