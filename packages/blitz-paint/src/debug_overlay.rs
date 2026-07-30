@@ -14,6 +14,25 @@ pub(crate) fn render_debug_overlay(
     initial_x: f64,
     initial_y: f64,
 ) {
+    // Non-atomic inline elements have no layout box of their own: they are laid
+    // out as style spans within an inline root's text layout and may fragment
+    // across multiple line boxes. Highlight each fragment's content box.
+    if let Some(rects) = dom.as_ref().inline_fragment_rects(node_id) {
+        let fill_color = Color::from_rgba8(66, 144, 245, 128); // blue
+        for r in rects {
+            let rect = Rect::new(0.0, 0.0, r.width * scale, r.height * scale);
+            let translation = Vec2::new(r.x * scale + initial_x, r.y * scale + initial_y);
+            scene.fill(
+                peniko::Fill::NonZero,
+                Affine::translate(translation),
+                fill_color,
+                None,
+                &rect,
+            );
+        }
+        return;
+    }
+
     let viewport_scroll = dom.as_ref().viewport_scroll();
     let mut node = &dom.as_ref().tree()[node_id];
 
