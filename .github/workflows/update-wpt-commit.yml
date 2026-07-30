@@ -1,0 +1,34 @@
+name: Update WPT commit
+
+on:
+  schedule:
+    - cron: "0 5 * * 1" # Every Monday at 05:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-wpt-commit:
+    name: "Update pinned WPT commit"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Fetch latest WPT commit
+        id: wpt
+        run: |
+          LATEST=$(git ls-remote https://github.com/web-platform-tests/wpt HEAD | head -n1 | cut -f1)
+          echo "latest=$LATEST" >> "$GITHUB_OUTPUT"
+      - name: Update pinned commit in workflow
+        run: |
+          sed -i "s/^  WPT_COMMIT: \".*\"/  WPT_COMMIT: \"${{ steps.wpt.outputs.latest }}\"/" .github/workflows/wpt.yml
+      - name: Create pull request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: update-wpt-commit
+          title: "Update pinned WPT commit to latest"
+          commit-message: "Update pinned WPT commit to ${{ steps.wpt.outputs.latest }}"
+          body: |
+            Automated update of the pinned WPT commit (`WPT_COMMIT` in `.github/workflows/wpt.yml`) to the latest upstream commit: web-platform-tests/wpt@${{ steps.wpt.outputs.latest }}
+          delete-branch: true
