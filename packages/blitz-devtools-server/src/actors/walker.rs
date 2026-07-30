@@ -332,6 +332,33 @@ impl Actor for WalkerActor {
                 ctx.write_msg(self.name(), json!({ "value": selector }));
                 Ok(())
             }
+            // Firefox resolves flex-item/grid actors to DOM nodes via this
+            // request
+            "getNodeFromActor" => {
+                let msg = message.data.json()?;
+                let actor_id = msg
+                    .get("actorID")
+                    .and_then(|v| v.as_str())
+                    .ok_or(ActorMessageErr::MissingParameter)?;
+                let node_id = ctx
+                    .actors
+                    .get(actor_id)
+                    .and_then(|actor| {
+                        let any: &dyn std::any::Any = actor.as_ref();
+                        any.downcast_ref::<crate::actors::layout::FlexItemActor>()
+                            .map(|a| a.node_id)
+                    })
+                    .ok_or(ActorMessageErr::NoSuchNode)?;
+                let form = ctx
+                    .with_doc(doc_id, |doc| self.node_form(doc, node_id))
+                    .flatten()
+                    .ok_or(ActorMessageErr::NoSuchNode)?;
+                ctx.write_msg(
+                    self.name(),
+                    json!({ "node": { "node": form, "newParents": [] } }),
+                );
+                Ok(())
+            }
             "getOffsetParent" => {
                 ctx.write_msg(self.name(), json!({ "node": null }));
                 Ok(())

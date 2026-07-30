@@ -271,7 +271,7 @@ fn client_session(mut stream: TcpStream) {
             serde_json::json!({ "to": flexbox_actor, "type": "getFlexItems" }),
         );
         let msg = read_packet(&mut stream);
-        let items = msg["flexItems"].as_array().expect("flex items");
+        let items = msg["flexitems"].as_array().expect("flex items");
         assert_eq!(items.len(), 2);
     }
 }

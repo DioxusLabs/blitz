@@ -354,7 +354,7 @@ impl Actor for FlexboxActor {
                         InspectorActor::with_walker(ctx, &self.walker_name, |walker, _| {
                             walker.actor_for_node(item.node_id)
                         });
-                    let item_actor = crate::actors::stubs::StubActor::new("flex-item");
+                    let item_actor = FlexItemActor::new(item.node_id);
                     let item_actor_name = item_actor.name();
                     ctx.push_actor(Box::new(item_actor));
 
@@ -385,11 +385,44 @@ impl Actor for FlexboxActor {
                     }));
                 }
 
-                ctx.write_msg(self.name(), json!({ "flexItems": item_forms }));
+                // Firefox's layout spec names this response property
+                // "flexitems" (all lowercase)
+                ctx.write_msg(self.name(), json!({ "flexitems": item_forms }));
                 Ok(())
             }
             _ => Err(ActorMessageErr::UnrecognizedPacketType),
         }
+    }
+}
+
+/// A flex-item actor that remembers the DOM node it represents, so
+/// `walker.getNodeFromActor` can resolve it
+pub(crate) struct FlexItemActor {
+    name: String,
+    pub(crate) node_id: NodeId,
+}
+
+impl FlexItemActor {
+    pub(crate) fn new(node_id: NodeId) -> Self {
+        Self {
+            name: generate_name("flex-item"),
+            node_id,
+        }
+    }
+}
+
+impl Actor for FlexItemActor {
+    fn name(&self) -> ActorId {
+        self.name.clone()
+    }
+
+    fn handle_message(
+        &mut self,
+        ctx: &mut DevtoolContext<'_>,
+        _message: GenericClientMessage,
+    ) -> Result<(), ActorMessageErr> {
+        ctx.write_msg(self.name(), json!({}));
+        Ok(())
     }
 }
 
