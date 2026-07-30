@@ -60,7 +60,7 @@ fn write_packet(stream: &mut TcpStream, packet: serde_json::Value) {
 fn session_initialization() {
     let html = "<html><head><title>Test Page</title></head>\
          <body><div id=\"container\" style=\"display: flex\">\
-         <span class=\"a\">Hello</span><span class=\"b\">World</span>\
+         <span class=\"a\">Hello</span> <span class=\"b\">World</span>\
          </div></body></html>";
     let mut doc: BaseDocument = HtmlDocument::from_html(
         html,
