@@ -84,7 +84,9 @@ fn elements_panel_session() {
          </div><p id=\"para\" style=\"width: 100px\">aaaa aaaa \
          <span id=\"wrapped\">bbbb bbbb bbbb bbbb</span> aaaa</p>\
          <div id=\"abs\" style=\"position: absolute; top: 20px; left: 30px; \
-         width: 50px; height: 40px\"></div><!-- marker comment --></body></html>";
+         width: 50px; height: 40px\"></div><div id=\"bb\" style=\"box-sizing: \
+         border-box; width: 60px; height: 50px; padding: 5px; \
+         border: 2px solid black\"></div><!-- marker comment --></body></html>";
     let mut doc: BaseDocument = HtmlDocument::from_html(
         html,
         DocumentConfig {
@@ -437,9 +439,9 @@ fn client_session(addr: std::net::SocketAddr, doc_id: usize, picker_sender: Send
         .expect("DOM.setChildNodes event");
     assert_eq!(set_children["params"]["parentId"], body_id);
     let body_children = set_children["params"]["nodes"].as_array().unwrap();
-    assert_eq!(body_children.len(), 4);
+    assert_eq!(body_children.len(), 5);
     assert_eq!(body_children[0]["nodeName"], "DIV");
-    let comment = &body_children[3];
+    let comment = &body_children[4];
     assert_eq!(comment["nodeName"], "#comment");
     assert_eq!(comment["nodeValue"], " marker comment ");
     events.clear();
@@ -531,6 +533,33 @@ fn client_session(addr: std::net::SocketAddr, doc_id: usize, picker_sender: Send
             .and_then(|p| p["value"].as_str())
             .unwrap();
         assert_eq!(value, expected, "used value for {name}");
+    }
+
+    // Reported width/height are box-sizing aware: border-box elements
+    // report their border-box size
+    let id = send(
+        &mut ws,
+        "DOM.querySelector",
+        json!({ "nodeId": root_id, "selector": "#bb" }),
+    );
+    let result = read_reply(&mut ws, id, &mut events);
+    let bb_id = result["nodeId"].as_u64().unwrap();
+    assert_ne!(bb_id, 0);
+    events.clear();
+    let id = send(
+        &mut ws,
+        "CSS.getComputedStyleForNode",
+        json!({ "nodeId": bb_id }),
+    );
+    let result = read_reply(&mut ws, id, &mut events);
+    let computed = result["computedStyle"].as_array().unwrap();
+    for (name, expected) in [("width", "60px"), ("height", "50px")] {
+        let value = computed
+            .iter()
+            .find(|p| p["name"] == name)
+            .and_then(|p| p["value"].as_str())
+            .unwrap();
+        assert_eq!(value, expected, "border-box used value for {name}");
     }
 
     // CSS.getInlineStylesForNode
