@@ -7,7 +7,7 @@ use std::sync::mpsc::{Sender, channel};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use blitz_devtools_server::{DevtoolsServer, DevtoolsWaker, DocumentProvider};
+use blitz_devtools_server::{DevtoolsServer, DevtoolsWaker, DocumentProvider, PickerEvent};
 use blitz_dom::{BaseDocument, DocumentConfig};
 use blitz_html::HtmlDocument;
 use blitz_traits::shell::{ColorScheme, Viewport};
@@ -90,12 +90,25 @@ fn session_initialization() {
     // Run the client on a separate thread; process messages when woken on
     // this thread (which owns the document), simulating the embedder's
     // event loop. `BaseDocument` is not `Send`, so it must stay here.
+    // Channel used by the client thread to simulate embedder-side element
+    // picker input events (mouse moves/clicks while picking)
+    let (picker_sender, picker_receiver) = channel::<PickerKind>();
+    let doc_id = provider.0.id();
+
     let done = Arc::new(Mutex::new(false));
     std::thread::scope(|scope| {
         let done2 = Arc::clone(&done);
         scope.spawn(move || {
-            client_session(stream);
-            *done2.lock().unwrap() = true;
+            // Set the done flag even if the client panics, so the server
+            // loop below doesn't spin forever on test failure
+            struct DoneGuard(Arc<Mutex<bool>>);
+            impl Drop for DoneGuard {
+                fn drop(&mut self) {
+                    *self.0.lock().unwrap() = true;
+                }
+            }
+            let _guard = DoneGuard(done2);
+            client_session(stream, picker_sender);
         });
 
         while !*done.lock().unwrap() {
@@ -105,11 +118,23 @@ fn session_initialization() {
             {
                 server.process_messages(&mut provider);
             }
+            while let Ok(kind) = picker_receiver.try_recv() {
+                let event = match kind {
+                    PickerKind::Hovered(x, y) => PickerEvent::Hovered { doc_id, x, y },
+                    PickerKind::Picked(x, y) => PickerEvent::Picked { doc_id, x, y },
+                };
+                server.notify_picker_event(event, &mut provider);
+            }
         }
     });
 }
 
-fn client_session(mut stream: TcpStream) {
+enum PickerKind {
+    Hovered(f32, f32),
+    Picked(f32, f32),
+}
+
+fn client_session(mut stream: TcpStream, picker_sender: Sender<PickerKind>) {
     {
         // Initial notification from the root actor
         let msg = read_packet(&mut stream);
@@ -348,5 +373,34 @@ fn client_session(mut stream: TcpStream) {
             serde_json::json!({ "to": highlighter_actor, "type": "hide" }),
         );
         let _ = read_packet(&mut stream);
+
+        // Element picker: `pick` is one-way (no reply); simulated mouse
+        // events should produce pickerNodeHovered/pickerNodePicked events
+        write_packet(
+            &mut stream,
+            serde_json::json!({ "to": walker_actor, "type": "pick", "doFocus": false }),
+        );
+        // `pick` has no reply to synchronize on: give the server loop time to
+        // process it before simulating picker input
+        std::thread::sleep(Duration::from_millis(300));
+        picker_sender.send(PickerKind::Hovered(10.0, 10.0)).unwrap();
+        let msg = read_packet(&mut stream);
+        assert_eq!(msg["from"], walker_actor);
+        assert_eq!(msg["type"], "pickerNodeHovered");
+        let hovered_actor = msg["node"]["node"]["actor"].as_str().unwrap().to_string();
+
+        picker_sender.send(PickerKind::Picked(10.0, 10.0)).unwrap();
+        let msg = read_packet(&mut stream);
+        assert_eq!(msg["type"], "pickerNodePicked");
+        assert_eq!(msg["node"]["node"]["actor"], hovered_actor.as_str());
+        assert_eq!(msg["node"]["node"]["nodeType"], 1);
+
+        // cancelPick after picking has stopped is a no-op with an empty reply
+        write_packet(
+            &mut stream,
+            serde_json::json!({ "to": walker_actor, "type": "cancelPick" }),
+        );
+        let msg = read_packet(&mut stream);
+        assert_eq!(msg["from"], walker_actor);
     }
 }

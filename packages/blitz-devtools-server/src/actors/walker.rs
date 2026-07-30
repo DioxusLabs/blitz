@@ -25,6 +25,11 @@ pub(crate) struct WalkerActor {
     layout_actor_name: Option<String>,
     node_to_actor: HashMap<NodeId, String>,
     actor_to_node: HashMap<String, NodeId>,
+    /// Whether the element picker is currently active for this walker
+    pub(crate) picking: bool,
+    /// The node last reported via a `pickerNodeHovered` event (used to
+    /// avoid re-sending events while hovering the same node)
+    pub(crate) last_picker_node: Option<NodeId>,
 }
 
 impl WalkerActor {
@@ -35,6 +40,8 @@ impl WalkerActor {
             layout_actor_name: None,
             node_to_actor: HashMap::new(),
             actor_to_node: HashMap::new(),
+            picking: false,
+            last_picker_node: None,
         }
     }
 
@@ -158,6 +165,118 @@ impl WalkerActor {
         result.flatten()
     }
 
+    /// Build the form of a node plus the forms of any of its ancestors the
+    /// client doesn't know about yet, so that it can connect the node to its
+    /// existing tree (the protocol's "disconnectedNode" type)
+    pub(crate) fn disconnected_node(
+        &mut self,
+        doc: &BaseDocument,
+        node_id: NodeId,
+    ) -> Option<(JsonValue, Vec<JsonValue>)> {
+        let known_nodes: Vec<NodeId> = self.node_to_actor.keys().copied().collect();
+        let node_form = self.node_form(doc, node_id)?;
+
+        let mut new_parents = Vec::new();
+        let mut current = doc.get_node(node_id).and_then(|n| n.parent);
+        while let Some(ancestor_id) = current {
+            let already_known = known_nodes.contains(&ancestor_id);
+            if let Some(form) = self.node_form(doc, ancestor_id) {
+                new_parents.push(form);
+            }
+            if already_known {
+                break;
+            }
+            current = doc.get_node(ancestor_id).and_then(|n| n.parent);
+        }
+
+        Some((node_form, new_parents))
+    }
+
+    /// Resolve the DOM node to report for a picker event at the given
+    /// viewport position: the topmost hit node, mapped to the nearest
+    /// ancestor that is shown in the devtools tree (non-anonymous and not a
+    /// whitespace-only text node)
+    fn picker_target(doc: &BaseDocument, x: f32, y: f32) -> Option<NodeId> {
+        let hit = doc.hit(x, y)?;
+        let mut node_id = doc.nearest_non_anonymous_ancestor(hit.node_id)?;
+        while let Some(node) = doc.get_node(node_id) {
+            if !node.is_whitespace_node() {
+                return Some(node_id);
+            }
+            node_id = node.parent?;
+        }
+        None
+    }
+
+    /// React to an element-picker input event reported by the embedder,
+    /// emitting the corresponding `pickerNode*` event to the client
+    pub(crate) fn handle_picker_event(
+        &mut self,
+        ctx: &mut DevtoolContext<'_>,
+        event: &crate::PickerEvent,
+    ) {
+        use crate::PickerEvent;
+        let doc_id = self.doc_id;
+        match *event {
+            PickerEvent::Hovered { x, y, .. } => {
+                let result = ctx
+                    .with_doc(doc_id, |doc| {
+                        let node_id = Self::picker_target(doc, x, y)?;
+                        if self.last_picker_node == Some(node_id) {
+                            return None;
+                        }
+                        self.last_picker_node = Some(node_id);
+                        doc.devtools_mut().highlight_node = Some(node_id);
+                        doc.shell_provider.request_redraw();
+                        self.disconnected_node(doc, node_id)
+                    })
+                    .flatten();
+                if let Some((node, new_parents)) = result {
+                    ctx.write_msg(
+                        self.name(),
+                        json!({
+                            "type": "pickerNodeHovered",
+                            "node": { "node": node, "newParents": new_parents },
+                        }),
+                    );
+                }
+            }
+            PickerEvent::Picked { x, y, .. } => {
+                self.picking = false;
+                self.last_picker_node = None;
+                let result = ctx
+                    .with_doc(doc_id, |doc| {
+                        let node_id = Self::picker_target(doc, x, y);
+                        doc.devtools_mut().element_picker = false;
+                        doc.devtools_mut().highlight_node = None;
+                        doc.shell_provider.request_redraw();
+                        let node_id = node_id?;
+                        self.disconnected_node(doc, node_id)
+                    })
+                    .flatten();
+                if let Some((node, new_parents)) = result {
+                    ctx.write_msg(
+                        self.name(),
+                        json!({
+                            "type": "pickerNodePicked",
+                            "node": { "node": node, "newParents": new_parents },
+                        }),
+                    );
+                }
+            }
+            PickerEvent::Canceled { .. } => {
+                self.picking = false;
+                self.last_picker_node = None;
+                ctx.with_doc(doc_id, |doc| {
+                    doc.devtools_mut().element_picker = false;
+                    doc.devtools_mut().highlight_node = None;
+                    doc.shell_provider.request_redraw();
+                });
+                ctx.write_msg(self.name(), json!({ "type": "pickerNodeCanceled" }));
+            }
+        }
+    }
+
     /// Build a "unique" selector for a node (best effort)
     fn unique_selector(doc: &BaseDocument, node: &Node) -> String {
         let Some(element) = node.element_data() else {
@@ -254,28 +373,9 @@ impl Actor for WalkerActor {
                     .node_for_actor(node_actor)
                     .ok_or(ActorMessageErr::NoSuchNode)?;
 
-                let known_nodes: Vec<NodeId> = self.node_to_actor.keys().copied().collect();
                 let result = ctx.with_doc(doc_id, |doc| {
                     let node_id = doc.query_selector(&selector).ok().flatten()?;
-                    let node_form = self.node_form(doc, node_id)?;
-
-                    // Send forms for any ancestors that the client doesn't
-                    // know about yet, so that it can connect the node to
-                    // its existing tree
-                    let mut new_parents = Vec::new();
-                    let mut current = doc.get_node(node_id).and_then(|n| n.parent);
-                    while let Some(ancestor_id) = current {
-                        let already_known = known_nodes.contains(&ancestor_id);
-                        if let Some(form) = self.node_form(doc, ancestor_id) {
-                            new_parents.push(form);
-                        }
-                        if already_known {
-                            break;
-                        }
-                        current = doc.get_node(ancestor_id).and_then(|n| n.parent);
-                    }
-
-                    Some((node_form, new_parents))
+                    self.disconnected_node(doc, node_id)
                 });
 
                 match result.ok_or(ActorMessageErr::NoSuchDocument)? {
@@ -358,6 +458,30 @@ impl Actor for WalkerActor {
                     self.name(),
                     json!({ "node": { "node": form, "newParents": [] } }),
                 );
+                Ok(())
+            }
+            // Enter element-picking mode: mouse events over the page are
+            // intercepted and reported via pickerNodeHovered/pickerNodePicked
+            // events instead of being delivered to the page. `pick` is one-way
+            // (no reply).
+            "pick" => {
+                self.picking = true;
+                self.last_picker_node = None;
+                ctx.with_doc(doc_id, |doc| {
+                    doc.devtools_mut().element_picker = true;
+                    doc.shell_provider.request_redraw();
+                });
+                Ok(())
+            }
+            "cancelPick" => {
+                self.picking = false;
+                self.last_picker_node = None;
+                ctx.with_doc(doc_id, |doc| {
+                    doc.devtools_mut().element_picker = false;
+                    doc.devtools_mut().highlight_node = None;
+                    doc.shell_provider.request_redraw();
+                });
+                ctx.write_msg(self.name(), json!({}));
                 Ok(())
             }
             "getOffsetParent" => {

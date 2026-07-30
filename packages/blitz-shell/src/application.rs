@@ -87,6 +87,71 @@ impl<Rend: WindowRenderer> BlitzApplication<Rend> {
         self.windows.values_mut().find(|w| w.doc.id() == doc_id)
     }
 
+    /// Intercept window input events while the devtools element picker is
+    /// active: mouse movement and clicks are reported to the devtools client
+    /// (which highlights/selects the corresponding node) instead of being
+    /// delivered to the page, and Escape cancels picking. Returns `true` if
+    /// the event was consumed.
+    #[cfg(feature = "devtools")]
+    fn handle_picker_event(&mut self, window_id: WindowId, event: &WindowEvent) -> bool {
+        use blitz_devtools_server::PickerEvent;
+        use winit::event::ElementState;
+        use winit::keyboard::{Key, NamedKey};
+
+        if self.devtools.is_none() {
+            return false;
+        }
+        let Some(window) = self.windows.get(&window_id) else {
+            return false;
+        };
+        if !window.doc.inner().devtools().element_picker {
+            return false;
+        }
+        let doc_id = window.doc.id();
+
+        let picker_event = match event {
+            WindowEvent::PointerMoved { position, .. } => {
+                let coords = window.pointer_coords(*position);
+                PickerEvent::Hovered {
+                    doc_id,
+                    x: coords.page_x,
+                    y: coords.page_y,
+                }
+            }
+            WindowEvent::PointerButton {
+                state, position, ..
+            } => {
+                if *state != ElementState::Pressed {
+                    return true;
+                }
+                let coords = window.pointer_coords(*position);
+                PickerEvent::Picked {
+                    doc_id,
+                    x: coords.page_x,
+                    y: coords.page_y,
+                }
+            }
+            WindowEvent::KeyboardInput { event, .. } => {
+                if event.state != ElementState::Pressed
+                    || event.logical_key != Key::Named(NamedKey::Escape)
+                {
+                    return false;
+                }
+                PickerEvent::Canceled { doc_id }
+            }
+            _ => return false,
+        };
+
+        if let Some(mut devtools) = self.devtools.take() {
+            let mut provider = WindowsDocumentProvider {
+                windows: &mut self.windows,
+            };
+            devtools.notify_picker_event(picker_event, &mut provider);
+            self.devtools = Some(devtools);
+        }
+        true
+    }
+
     pub fn handle_blitz_shell_event(
         &mut self,
         event_loop: &dyn ActiveEventLoop,
@@ -215,6 +280,11 @@ impl<Rend: WindowRenderer> ApplicationHandler for BlitzApplication<Rend> {
             if self.windows.is_empty() {
                 event_loop.exit();
             }
+            return;
+        }
+
+        #[cfg(feature = "devtools")]
+        if self.handle_picker_event(window_id, &event) {
             return;
         }
 

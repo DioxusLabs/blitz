@@ -122,6 +122,17 @@ impl DevtoolsServer {
         }
     }
 
+    /// Notify the server of an element-picker input event (called by the
+    /// embedder from its input handling path while
+    /// [`DevtoolSettings::element_picker`](blitz_traits::devtools::DevtoolSettings)
+    /// is set). Emits the corresponding `pickerNode*` walker events to any
+    /// devtools client currently picking on that document.
+    pub fn notify_picker_event(&mut self, event: PickerEvent, docs: &mut dyn DocumentProvider) {
+        for conn in self.connections.values_mut() {
+            conn.notify_picker_event(&event, docs);
+        }
+    }
+
     fn handle_event(&mut self, event: DevtoolsEvent, docs: &mut dyn DocumentProvider) {
         match event.data {
             DevtoolsEventData::ConnectionOpened(connection) => {
@@ -169,6 +180,19 @@ struct Connection {
     writer_task: JoinHandle<()>,
     writer: MessageWriter,
     actors: HashMap<ActorId, Box<dyn Actor>>,
+}
+
+/// An element-picker input event, reported by the embedder while picker mode
+/// is active. Coordinates are in the same viewport-relative CSS pixel space
+/// as [`BaseDocument::hit`](blitz_dom::BaseDocument::hit).
+#[derive(Debug, Clone, Copy)]
+pub enum PickerEvent {
+    /// The mouse moved over the document
+    Hovered { doc_id: usize, x: f32, y: f32 },
+    /// The primary mouse button was pressed over the document
+    Picked { doc_id: usize, x: f32, y: f32 },
+    /// Picking was cancelled (e.g. the user pressed Escape)
+    Canceled { doc_id: usize },
 }
 
 pub struct DevtoolsEvent {
