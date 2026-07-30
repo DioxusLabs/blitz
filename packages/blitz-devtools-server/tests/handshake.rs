@@ -374,15 +374,14 @@ fn client_session(mut stream: TcpStream, picker_sender: Sender<PickerKind>) {
         );
         let _ = read_packet(&mut stream);
 
-        // Element picker: `pick` is one-way (no reply); simulated mouse
-        // events should produce pickerNodeHovered/pickerNodePicked events
+        // Element picker: after `pick`'s empty reply, simulated mouse events
+        // should produce pickerNodeHovered/pickerNodePicked events
         write_packet(
             &mut stream,
             serde_json::json!({ "to": walker_actor, "type": "pick", "doFocus": false }),
         );
-        // `pick` has no reply to synchronize on: give the server loop time to
-        // process it before simulating picker input
-        std::thread::sleep(Duration::from_millis(300));
+        let msg = read_packet(&mut stream);
+        assert_eq!(msg["from"], walker_actor);
         picker_sender.send(PickerKind::Hovered(10.0, 10.0)).unwrap();
         let msg = read_packet(&mut stream);
         assert_eq!(msg["from"], walker_actor);
