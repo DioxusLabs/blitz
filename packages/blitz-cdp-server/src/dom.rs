@@ -44,7 +44,7 @@ pub(crate) fn node_json(
             (ELEMENT_NODE, el.name.local.to_uppercase(), String::new())
         }
         NodeData::Text(_) => (TEXT_NODE, "#text".to_string(), node.text_content()),
-        NodeData::Comment => (COMMENT_NODE, "#comment".to_string(), String::new()),
+        NodeData::Comment { contents } => (COMMENT_NODE, "#comment".to_string(), contents.clone()),
     };
 
     let local_name = match &node.data {
@@ -197,8 +197,10 @@ fn serialize_node(doc: &BaseDocument, node: &Node, out: &mut String) {
                     .replace('<', "&lt;"),
             );
         }
-        NodeData::Comment => {
-            out.push_str("<!---->");
+        NodeData::Comment { contents } => {
+            out.push_str("<!--");
+            out.push_str(contents);
+            out.push_str("-->");
         }
     }
 }
