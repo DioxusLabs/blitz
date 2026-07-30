@@ -21,9 +21,7 @@ cssparser = { workspace = true }
 # Networking dependencies
 serde = { workspace = true }
 serde_json = { workspace = true }
-tokio = { workspace = true, features = ["rt", "rt-multi-thread", "net", "sync", "io-util", "macros", "time"] }
-tokio-tungstenite = "0.28"
-futures-util = { version = "0.3", default-features = false, features = ["sink"] }
+tungstenite = "0.28"
 
 [dev-dependencies]
 blitz-html = { workspace = true }
