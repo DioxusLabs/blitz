@@ -80,7 +80,7 @@ fn elements_panel_session() {
          </div><p id=\"para\" style=\"width: 100px\">aaaa aaaa \
          <span id=\"wrapped\">bbbb bbbb bbbb bbbb</span> aaaa</p>\
          <div id=\"abs\" style=\"position: absolute; top: 20px; left: 30px; \
-         width: 50px; height: 40px\"></div></body></html>";
+         width: 50px; height: 40px\"></div><!-- marker comment --></body></html>";
     let mut doc: BaseDocument = HtmlDocument::from_html(
         html,
         DocumentConfig {
@@ -243,8 +243,11 @@ fn client_session(addr: std::net::SocketAddr, doc_id: usize, picker_sender: Send
         .expect("DOM.setChildNodes event");
     assert_eq!(set_children["params"]["parentId"], body_id);
     let body_children = set_children["params"]["nodes"].as_array().unwrap();
-    assert_eq!(body_children.len(), 3);
+    assert_eq!(body_children.len(), 4);
     assert_eq!(body_children[0]["nodeName"], "DIV");
+    let comment = &body_children[3];
+    assert_eq!(comment["nodeName"], "#comment");
+    assert_eq!(comment["nodeValue"], " marker comment ");
     events.clear();
 
     // DOM.querySelector for the flex container
