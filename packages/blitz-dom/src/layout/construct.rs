@@ -915,7 +915,7 @@ pub(crate) fn find_inline_layout_embedded_boxes(
                     }
                 };
             }
-            NodeData::Comment | NodeData::Text(_) => {
+            NodeData::Comment { .. } | NodeData::Text(_) => {
                 node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
             }
             NodeData::Document(_) => unreachable!(),
@@ -1199,7 +1199,7 @@ pub(crate) fn build_inline_layout_into(
                     }
                 }
             }
-            NodeData::Comment => {
+            NodeData::Comment { .. } => {
                 // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
             }
             NodeData::Document(_) => unreachable!(),

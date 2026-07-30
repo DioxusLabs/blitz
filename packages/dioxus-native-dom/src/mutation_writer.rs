@@ -142,7 +142,7 @@ impl WriteMutations for MutationWriter<'_> {
 
     fn create_placeholder(&mut self, id: ElementId) {
         trace!("create_placeholder id:{}", id.0);
-        let node_id = self.docm.create_comment_node();
+        let node_id = self.docm.create_comment_node("");
         self.map_new_node(node_id, id);
     }
 
@@ -373,7 +373,7 @@ fn create_template_node(docm: &mut DocumentMutator<'_>, node: &TemplateNode) -> 
             node_id
         }
         TemplateNode::Text { text } => docm.create_text_node(text),
-        TemplateNode::Dynamic { .. } => docm.create_comment_node(),
+        TemplateNode::Dynamic { .. } => docm.create_comment_node(""),
     }
 }
 

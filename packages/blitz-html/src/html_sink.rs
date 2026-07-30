@@ -192,12 +192,12 @@ impl<'m, 'doc> TreeSink for DocumentHtmlParser<'m, 'doc> {
         self.mutr().create_element(name, attrs)
     }
 
-    fn create_comment(&self, _text: StrTendril) -> Self::Handle {
-        self.mutr().create_comment_node()
+    fn create_comment(&self, text: StrTendril) -> Self::Handle {
+        self.mutr().create_comment_node(&text)
     }
 
     fn create_pi(&self, _target: StrTendril, _data: StrTendril) -> Self::Handle {
-        self.mutr().create_comment_node()
+        self.mutr().create_comment_node("")
     }
 
     fn append(&self, parent_id: &Self::Handle, child: NodeOrText<Self::Handle>) {
