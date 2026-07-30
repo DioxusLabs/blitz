@@ -296,6 +296,17 @@ fn client_session(addr: std::net::SocketAddr, doc_id: usize, picker_sender: Send
             .iter()
             .any(|p| p["name"] == "display" && p["value"] == "flex")
     );
+    // width/height report used (post-layout) pixel values, not the
+    // specified `auto`, so the Box Model diagram shows real dimensions
+    for name in ["width", "height"] {
+        let value = computed
+            .iter()
+            .find(|p| p["name"] == name)
+            .and_then(|p| p["value"].as_str())
+            .unwrap();
+        assert!(value.ends_with("px"), "{name} should be in px: {value}");
+        assert!(value.trim_end_matches("px").parse::<f64>().unwrap() > 0.0);
+    }
 
     // CSS.getInlineStylesForNode
     let id = send(
