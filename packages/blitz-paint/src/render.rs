@@ -483,7 +483,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             }
             NodeData::Document(_) => {}
             // NodeData::Doctype => {}
-            NodeData::Comment => {} // NodeData::ProcessingInstruction { .. } => {}
+            NodeData::Comment { .. } => {} // NodeData::ProcessingInstruction { .. } => {}
         }
     }
 

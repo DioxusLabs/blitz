@@ -667,9 +667,10 @@ pub enum NodeData {
     Text(TextNodeData),
 
     /// A comment.
-    Comment,
-    // Comment { contents: String },
-
+    Comment {
+        /// The textual content of the comment
+        contents: String,
+    },
     // /// A `DOCTYPE` with name, public id, and system id. See
     // /// [document type declaration on wikipedia][https://en.wikipedia.org/wiki/Document_type_declaration]
     // Doctype { name: String, public_id: String, system_id: String },
@@ -721,7 +722,7 @@ impl NodeData {
             NodeData::Element(_) => NodeKind::Element,
             NodeData::AnonymousBlock(_) => NodeKind::AnonymousBlock,
             NodeData::Text(_) => NodeKind::Text,
-            NodeData::Comment => NodeKind::Comment,
+            NodeData::Comment { .. } => NodeKind::Comment,
         }
     }
 }
@@ -879,11 +880,7 @@ impl Node {
                         .unwrap_or("INVALID UTF8")
                 )
             }
-            NodeData::Comment => write!(
-                s,
-                "COMMENT",
-                // &std::str::from_utf8(data.contents.as_bytes().split_at(10).0).unwrap_or("INVALID UTF8")
-            ),
+            NodeData::Comment { .. } => write!(s, "COMMENT"),
             NodeData::AnonymousBlock(_) => write!(s, "AnonymousBlock"),
             NodeData::Element(data) => {
                 let name = &data.name;
@@ -960,7 +957,7 @@ impl Node {
 
         match &self.data {
             NodeData::Document(_) => {}
-            NodeData::Comment => {}
+            NodeData::Comment { .. } => {}
             NodeData::AnonymousBlock(_) => {}
             // NodeData::Doctype { name, .. } => write!(s, "DOCTYPE {name}"),
             NodeData::Text(data) => {

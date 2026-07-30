@@ -123,8 +123,10 @@ impl DocumentMutator<'_> {
 
     // Node creation methods
 
-    pub fn create_comment_node(&mut self) -> NodeId {
-        self.doc.create_node(NodeData::Comment)
+    pub fn create_comment_node(&mut self, contents: &str) -> NodeId {
+        self.doc.create_node(NodeData::Comment {
+            contents: contents.to_string(),
+        })
     }
 
     pub fn create_text_node(&mut self, text: &str) -> NodeId {
