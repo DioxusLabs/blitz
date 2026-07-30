@@ -442,6 +442,17 @@ impl taffy::LayoutGridContainer for BaseDocument {
     fn get_grid_child_style(&self, child_node_id: NodeId) -> Self::GridItemStyle<'_> {
         self.get_core_container_style(child_node_id)
     }
+
+    fn set_detailed_grid_info(
+        &mut self,
+        node_id: NodeId,
+        detailed_grid_info: taffy::DetailedGridInfo,
+    ) {
+        let node = self.node_from_id_mut(node_id);
+        if let Some(element) = node.element_data_mut() {
+            element.detailed_grid_info = Some(Box::new(detailed_grid_info));
+        }
+    }
 }
 
 impl RoundTree for BaseDocument {
