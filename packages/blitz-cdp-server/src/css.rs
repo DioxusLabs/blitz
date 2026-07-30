@@ -4,6 +4,7 @@ use blitz_dom::BaseDocument;
 use blitz_traits::node_id::NodeId;
 use cssparser::ToCss as _;
 use serde_json::json;
+use style::computed_values::position::T as Position;
 use style::properties::{
     LonghandId, NonCustomPropertyId, PropertyDeclarationBlock, PropertyDeclarationId, PropertyId,
 };
@@ -349,6 +350,33 @@ fn used_box_values(doc: &BaseDocument, node_id: NodeId) -> HashMap<&'static str,
     map.insert("border-right-width", px(border.right as f64));
     map.insert("border-bottom-width", px(border.bottom as f64));
     map.insert("border-left-width", px(border.left as f64));
+
+    // Inset properties resolve to used px values for positioned elements
+    // (the offsets from the parent's padding box); for statically
+    // positioned elements they compute to `auto`, as in browsers
+    let is_positioned = node
+        .primary_styles()
+        .is_some_and(|styles| styles.get_box().position != Position::Static);
+    if is_positioned
+        && !is_inline_fragment
+        && let Some(parent) = node.parent.and_then(|parent_id| doc.get_node(parent_id))
+    {
+        let parent_layout = parent.final_layout();
+        let loc = layout.location;
+        let top = (loc.y - parent_layout.border.top) as f64;
+        let left = (loc.x - parent_layout.border.left) as f64;
+        let right = (parent_layout.size.width
+            - parent_layout.border.right
+            - (loc.x + layout.size.width)) as f64;
+        let bottom = (parent_layout.size.height
+            - parent_layout.border.bottom
+            - (loc.y + layout.size.height)) as f64;
+        map.insert("top", px(top));
+        map.insert("left", px(left));
+        map.insert("right", px(right));
+        map.insert("bottom", px(bottom));
+    }
+
     map
 }
 
