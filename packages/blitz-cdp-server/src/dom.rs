@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use blitz_dom::BaseDocument;
 use blitz_dom::node::{Node, NodeData};
 use blitz_traits::node_id::NodeId;
@@ -24,8 +26,16 @@ pub(crate) fn dom_children<'doc>(doc: &'doc BaseDocument, node: &Node) -> Vec<&'
 
 /// Serialize a node to its CDP `DOM.Node` form. `depth` controls how many
 /// levels of children are included: 0 for none, a negative value for the
-/// entire subtree.
-pub(crate) fn node_json(doc: &BaseDocument, node_id: NodeId, depth: i64) -> Option<JsonValue> {
+/// entire subtree. Nodes whose children are included are recorded in
+/// `children_sent`, so that later `DOM.setChildNodes` events can avoid
+/// resending children the frontend already knows about (which would replace
+/// its node objects and break e.g. revealing a picked node in the tree).
+pub(crate) fn node_json(
+    doc: &BaseDocument,
+    node_id: NodeId,
+    depth: i64,
+    children_sent: &mut HashSet<NodeId>,
+) -> Option<JsonValue> {
     let node = doc.get_node(node_id)?;
 
     let (node_type, node_name, node_value) = match &node.data {
@@ -79,9 +89,12 @@ pub(crate) fn node_json(doc: &BaseDocument, node_id: NodeId, depth: i64) -> Opti
     if depth != 0 || single_text_child {
         let child_forms: Vec<JsonValue> = children
             .iter()
-            .filter_map(|child| node_json(doc, child.id, depth.saturating_sub(1).max(0)))
+            .filter_map(|child| {
+                node_json(doc, child.id, depth.saturating_sub(1).max(0), children_sent)
+            })
             .collect();
         form["children"] = json!(child_forms);
+        children_sent.insert(node_id);
     }
 
     Some(form)

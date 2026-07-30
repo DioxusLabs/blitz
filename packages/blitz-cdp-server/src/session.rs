@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use blitz_dom::BaseDocument;
 use blitz_traits::node_id::NodeId;
 use serde_json::json;
@@ -132,6 +134,11 @@ pub(crate) struct Session {
     /// The node last reported via an `Overlay.nodeHighlightRequested` event
     /// (used to avoid re-sending events while hovering the same node)
     last_picker_node: Option<NodeId>,
+    /// Nodes whose children have already been sent to the frontend (inline
+    /// in a `DOM.getDocument` reply or via `DOM.setChildNodes`). Resending
+    /// children replaces the frontend's node objects, breaking tree state
+    /// such as revealing a picked node, so they are only sent once.
+    children_sent: HashSet<NodeId>,
 }
 
 impl Session {
@@ -140,6 +147,7 @@ impl Session {
             doc_id_hint,
             picking: false,
             last_picker_node: None,
+            children_sent: HashSet::new(),
         }
     }
 
@@ -226,8 +234,10 @@ impl Session {
             "DOM.getDocument" => {
                 let doc_id = self.doc_id(docs).ok_or_else(no_document)?;
                 let depth = params.get("depth").and_then(|d| d.as_i64()).unwrap_or(1);
+                self.children_sent.clear();
+                let children_sent = &mut self.children_sent;
                 let root = with_doc(docs, doc_id, |doc| {
-                    crate::dom::node_json(doc, doc.root_node().id, depth)
+                    crate::dom::node_json(doc, doc.root_node().id, depth, children_sent)
                 })
                 .flatten()
                 .ok_or_else(no_document)?;
@@ -238,16 +248,20 @@ impl Session {
                 let doc_id = self.doc_id(docs).ok_or_else(no_document)?;
                 let node_id = node_id_param(params, "nodeId")?;
                 let depth = params.get("depth").and_then(|d| d.as_i64()).unwrap_or(1);
+                let children_sent = &mut self.children_sent;
                 let nodes = with_doc(docs, doc_id, |doc| {
                     let node = doc.get_node(node_id)?;
                     let children: Vec<JsonValue> = crate::dom::dom_children(doc, node)
                         .iter()
-                        .filter_map(|child| crate::dom::node_json(doc, child.id, depth - 1))
+                        .filter_map(|child| {
+                            crate::dom::node_json(doc, child.id, depth - 1, children_sent)
+                        })
                         .collect();
                     Some(children)
                 })
                 .flatten()
                 .ok_or_else(no_node)?;
+                self.children_sent.insert(node_id);
                 writer.event(
                     "DOM.setChildNodes",
                     json!({ "parentId": cdp_node_id(node_id), "nodes": nodes }),
@@ -262,9 +276,10 @@ impl Session {
                     .and_then(|s| s.as_str())
                     .ok_or_else(|| CdpError::invalid_params("Missing selector"))?
                     .to_string();
+                let children_sent = &mut self.children_sent;
                 let found = with_doc(docs, doc_id, |doc| {
                     let node_id = doc.query_selector(&selector).ok().flatten()?;
-                    Self::emit_node_path(writer, doc, node_id);
+                    Self::emit_node_path(writer, doc, node_id, children_sent);
                     Some(node_id)
                 })
                 .ok_or_else(no_document)?;
@@ -281,6 +296,7 @@ impl Session {
                     .and_then(|ids| ids.as_array())
                     .ok_or_else(|| CdpError::invalid_params("Missing backendNodeIds"))?
                     .clone();
+                let children_sent = &mut self.children_sent;
                 let node_ids = with_doc(docs, doc_id, |doc| {
                     backend_ids
                         .iter()
@@ -288,7 +304,7 @@ impl Session {
                             let node_id = id.as_u64().and_then(blitz_node_id);
                             match node_id.and_then(|id| doc.get_node(id).map(|_| id)) {
                                 Some(node_id) => {
-                                    Self::emit_node_path(writer, doc, node_id);
+                                    Self::emit_node_path(writer, doc, node_id, children_sent);
                                     cdp_node_id(node_id)
                                 }
                                 None => 0,
@@ -413,8 +429,16 @@ impl Session {
 
     /// Emit `DOM.setChildNodes` events describing the path from the document
     /// root down to (and including the siblings of) the given node, so that
-    /// the frontend can connect the node to its existing tree
-    fn emit_node_path(writer: &mut MessageWriter, doc: &BaseDocument, node_id: NodeId) {
+    /// the frontend can connect the node to its existing tree. Ancestors
+    /// whose children were already sent are skipped: resending them would
+    /// replace the frontend's node objects and detach its current tree
+    /// selection/expansion state.
+    fn emit_node_path(
+        writer: &mut MessageWriter,
+        doc: &BaseDocument,
+        node_id: NodeId,
+        children_sent: &mut HashSet<NodeId>,
+    ) {
         // Collect the ancestor chain (excluding the node itself), root first
         let mut chain = Vec::new();
         let mut current = doc.get_node(node_id).and_then(|node| node.parent);
@@ -425,13 +449,17 @@ impl Session {
         chain.reverse();
 
         for ancestor_id in chain {
+            if children_sent.contains(&ancestor_id) {
+                continue;
+            }
             let Some(ancestor) = doc.get_node(ancestor_id) else {
                 continue;
             };
             let nodes: Vec<JsonValue> = crate::dom::dom_children(doc, ancestor)
                 .iter()
-                .filter_map(|child| crate::dom::node_json(doc, child.id, 0))
+                .filter_map(|child| crate::dom::node_json(doc, child.id, 0, children_sent))
                 .collect();
+            children_sent.insert(ancestor_id);
             writer.event(
                 "DOM.setChildNodes",
                 json!({ "parentId": cdp_node_id(ancestor_id), "nodes": nodes }),
