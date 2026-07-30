@@ -266,6 +266,70 @@ fn depth_client_session(addr: std::net::SocketAddr, doc_id: usize) {
     assert!(!events.iter().any(|e| e["method"] == "DOM.setChildNodes"));
 }
 
+/// A target id supplied in the WebSocket path is fixed for the session's
+/// lifetime: if that document does not exist (e.g. it has closed), commands
+/// fail rather than falling back to another document
+#[test]
+fn unknown_target_id_errors() {
+    let html = "<html><body><div>Hello</div></body></html>";
+    let mut doc: BaseDocument = HtmlDocument::from_html(
+        html,
+        DocumentConfig {
+            viewport: Some(Viewport::new(1200, 800, 1.0, ColorScheme::Light)),
+            ..Default::default()
+        },
+    )
+    .into();
+    doc.resolve(0.0);
+    let mut provider = SingleDocProvider(doc);
+    let doc_id = provider.0.id();
+
+    let (wake_sender, wake_receiver) = channel();
+    let mut server = CdpServer::new(Arc::new(TestWaker(Mutex::new(wake_sender))));
+    server.start_listening("127.0.0.1:0");
+    let addr = server
+        .wait_for_local_addr(Duration::from_secs(10))
+        .expect("server should start listening");
+
+    let done = Arc::new(Mutex::new(false));
+    std::thread::scope(|scope| {
+        let done2 = Arc::clone(&done);
+        scope.spawn(move || {
+            struct DoneGuard(Arc<Mutex<bool>>);
+            impl Drop for DoneGuard {
+                fn drop(&mut self) {
+                    *self.0.lock().unwrap() = true;
+                }
+            }
+            let _guard = DoneGuard(done2);
+
+            // A session bound to a nonexistent document id errors
+            let (mut ws, _response) =
+                tungstenite::connect(format!("ws://{addr}/devtools/page/{}", doc_id + 1))
+                    .expect("ws connect");
+            send_command(&mut ws, 1, "DOM.getDocument", json!({ "depth": 1 }));
+            loop {
+                let msg = ws.read().expect("read ws message");
+                let Message::Text(text) = msg else { continue };
+                let parsed: serde_json::Value = serde_json::from_str(&text).expect("valid json");
+                if parsed.get("id").and_then(|i| i.as_u64()) == Some(1) {
+                    assert_eq!(parsed["error"]["message"], "No document");
+                    break;
+                }
+            }
+        });
+
+        while !*done.lock().unwrap() {
+            if wake_receiver
+                .recv_timeout(Duration::from_millis(50))
+                .is_ok()
+            {
+                server.process_messages(&mut provider);
+            }
+        }
+    });
+}
+
 /// Closing a connection must clear any inspect-mode/highlight state its
 /// session set on the document (e.g. DevTools window closed mid-picking)
 #[test]
