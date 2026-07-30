@@ -14,6 +14,7 @@ env:
   RUSTDOCFLAGS: "-D warnings"
   CARGO_REGISTRIES_CRATES_IO_PROTOCOL: "sparse"
   WPT_DIR: "./wpt/tests"
+  WPT_COMMIT: "a95401e4e06351eb1e15f0e15cf50abf08fa545f"
 
 permissions:
   contents: read
@@ -38,7 +39,7 @@ jobs:
           packages: libfontconfig1-dev
           version: 1.0
       - name: Clone WPT tests
-        run: git clone --depth 1 --single-branch https://github.com/web-platform-tests/wpt ./wpt/tests
+        run: git clone --depth 1 --revision "$WPT_COMMIT" https://github.com/web-platform-tests/wpt ./wpt/tests
       - name: Build WPT runner
         run: cargo build -rp wpt
       - name: Run WPT tests
