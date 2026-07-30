@@ -194,6 +194,14 @@ impl Actor for PageStyleActor {
                                 "value": decl.value,
                                 "priority": if decl.important { "important" } else { "" },
                                 "important": decl.important,
+                                // These declarations come from Stylo's
+                                // PropertyDeclarationBlock, which has already
+                                // dropped anything it couldn't parse. Without
+                                // these flags the Rules view shows an
+                                // "invalid property name" warning on every
+                                // declaration.
+                                "isNameValid": true,
+                                "isValid": true,
                                 "isUsed": { "used": true },
                                 "terminator": "",
                             })
