@@ -881,6 +881,7 @@ dependencies = [
  "serde",
  "serde_json",
  "stylo",
+ "tracing",
  "tungstenite",
 ]
 
