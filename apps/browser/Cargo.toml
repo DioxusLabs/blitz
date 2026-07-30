@@ -38,6 +38,7 @@ scrollbars = ["blitz-dom/scrollbars", "blitz-paint/scrollbars"]
 mimalloc = ["dep:mimalloc"]
 font-embolden = ["dioxus-native/font-embolden"]
 apple-font-embolden = ["dioxus-native/apple-font-embolden"]
+devtools = ["dioxus-native/devtools"]
 
 [dependencies]
 dioxus-native = { workspace = true, features = [
