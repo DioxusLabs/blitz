@@ -190,7 +190,13 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             }
         }
         if let Some(node_id) = self.dom.devtools().highlight_node {
-            if self.dom.as_ref().get_node(node_id).is_some() {
+            // Only nodes with element data have a layout to visualise
+            if self
+                .dom
+                .as_ref()
+                .get_node(node_id)
+                .is_some_and(|node| node.element_data().is_some())
+            {
                 render_debug_overlay(
                     scene,
                     self.dom,

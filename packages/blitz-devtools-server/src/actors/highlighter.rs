@@ -53,7 +53,20 @@ impl Actor for HighlighterActor {
 
                 if let Some(node_id) = node_id {
                     ctx.with_doc(doc_id, |doc| {
-                        doc.devtools_mut().highlight_node = Some(node_id);
+                        // Text and comment nodes don't have a layout of their
+                        // own: highlight the nearest element ancestor instead
+                        let mut highlight_id = Some(node_id);
+                        while let Some(id) = highlight_id {
+                            let Some(node) = doc.get_node(id) else {
+                                highlight_id = None;
+                                break;
+                            };
+                            if node.element_data().is_some() {
+                                break;
+                            }
+                            highlight_id = node.parent;
+                        }
+                        doc.devtools_mut().highlight_node = highlight_id;
                         doc.shell_provider.request_redraw();
                     });
                 }
