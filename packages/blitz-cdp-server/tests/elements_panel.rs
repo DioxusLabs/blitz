@@ -55,14 +55,18 @@ fn read_reply(ws: &mut Ws, id: u64, events: &mut Vec<serde_json::Value>) -> serd
     }
 }
 
-/// Read WebSocket messages until an event with the given method arrives
-fn read_event(ws: &mut Ws, method: &str) -> serde_json::Value {
+/// Read WebSocket messages until an event with the given method arrives,
+/// collecting other events into `events`
+fn read_event(ws: &mut Ws, method: &str, events: &mut Vec<serde_json::Value>) -> serde_json::Value {
     loop {
         let msg = ws.read().expect("read ws message");
         let Message::Text(text) = msg else { continue };
         let parsed: serde_json::Value = serde_json::from_str(&text).expect("valid json");
         if parsed.get("method").and_then(|m| m.as_str()) == Some(method) {
             return parsed["params"].clone();
+        }
+        if parsed.get("method").is_some() {
+            events.push(parsed);
         }
     }
 }
@@ -416,12 +420,16 @@ fn client_session(addr: std::net::SocketAddr, doc_id: usize, picker_sender: Send
     read_reply(&mut ws, id, &mut events);
 
     picker_sender.send(PickerKind::Hovered(10.0, 10.0)).unwrap();
-    let params = read_event(&mut ws, "Overlay.nodeHighlightRequested");
+    let params = read_event(&mut ws, "Overlay.nodeHighlightRequested", &mut events);
     let hovered_id = params["nodeId"].as_u64().unwrap();
     assert_ne!(hovered_id, 0);
+    // The hovered node's ancestor path is described (before the highlight
+    // event) via setChildNodes, so the frontend can reveal it in realtime
+    assert!(events.iter().any(|e| e["method"] == "DOM.setChildNodes"));
+    events.clear();
 
     picker_sender.send(PickerKind::Picked(10.0, 10.0)).unwrap();
-    let params = read_event(&mut ws, "Overlay.inspectNodeRequested");
+    let params = read_event(&mut ws, "Overlay.inspectNodeRequested", &mut events);
     let backend_id = params["backendNodeId"].as_u64().unwrap();
     assert_eq!(backend_id, hovered_id);
 
@@ -433,8 +441,9 @@ fn client_session(addr: std::net::SocketAddr, doc_id: usize, picker_sender: Send
     );
     let result = read_reply(&mut ws, id, &mut events);
     assert_eq!(result["nodeIds"][0].as_u64().unwrap(), backend_id);
-    // The node's ancestor path was described via setChildNodes events
-    assert!(events.iter().any(|e| e["method"] == "DOM.setChildNodes"));
+    // The node's ancestor path was already sent while hovering, so it is
+    // not resent here
+    assert!(!events.iter().any(|e| e["method"] == "DOM.setChildNodes"));
     events.clear();
 
     // Pushing the same node again must not resend children the frontend
