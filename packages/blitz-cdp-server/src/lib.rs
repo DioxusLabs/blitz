@@ -148,7 +148,9 @@ impl CdpServer {
                 self.connections.insert(event.connection_id, connection);
             }
             CdpEventData::ConnectionClosed => {
-                self.connections.remove(&event.connection_id);
+                if let Some(mut conn) = self.connections.remove(&event.connection_id) {
+                    conn.session.close(docs);
+                }
             }
             CdpEventData::Command(command) => {
                 println!(">> {} {}", command.method, command.params);

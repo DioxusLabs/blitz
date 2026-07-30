@@ -131,6 +131,8 @@ pub(crate) struct Session {
     doc_id_hint: Option<usize>,
     /// Whether inspect mode (the element picker) is currently active
     pub(crate) picking: bool,
+    /// Whether this session currently has a node highlighted on the document
+    highlighting: bool,
     /// The node last reported via an `Overlay.nodeHighlightRequested` event
     /// (used to avoid re-sending events while hovering the same node)
     last_picker_node: Option<NodeId>,
@@ -146,6 +148,7 @@ impl Session {
         Session {
             doc_id_hint,
             picking: false,
+            highlighting: false,
             last_picker_node: None,
             children_sent: HashSet::new(),
         }
@@ -372,8 +375,10 @@ impl Session {
             "Overlay.highlightNode" => {
                 let doc_id = self.doc_id(docs).ok_or_else(no_document)?;
                 let node_id = any_node_id_param(params)?;
+                let highlighting = &mut self.highlighting;
                 with_doc(docs, doc_id, |doc| {
                     let highlight_id = nearest_element_ancestor(doc, node_id);
+                    *highlighting = highlight_id.is_some();
                     doc.devtools_mut().highlight_node = highlight_id;
                     doc.shell_provider.request_redraw();
                 });
@@ -382,6 +387,7 @@ impl Session {
 
             "Overlay.hideHighlight" | "DOM.hideHighlight" => {
                 let doc_id = self.doc_id(docs).ok_or_else(no_document)?;
+                self.highlighting = false;
                 with_doc(docs, doc_id, |doc| {
                     doc.devtools_mut().highlight_node = None;
                     doc.shell_provider.request_redraw();
@@ -413,6 +419,9 @@ impl Session {
                 let picking = mode == "searchForNode";
                 self.picking = picking;
                 self.last_picker_node = None;
+                if !picking {
+                    self.highlighting = false;
+                }
                 with_doc(docs, doc_id, |doc| {
                     doc.devtools_mut().element_picker = picking;
                     if !picking {
@@ -505,6 +514,7 @@ impl Session {
 
         match *event {
             PickerEvent::Hovered { x, y, .. } => {
+                self.highlighting = true;
                 let last_picker_node = &mut self.last_picker_node;
                 let children_sent = &mut self.children_sent;
                 let hovered = with_doc(docs, event_doc_id, |doc| {
@@ -531,6 +541,7 @@ impl Session {
             }
             PickerEvent::Picked { x, y, .. } => {
                 self.picking = false;
+                self.highlighting = false;
                 self.last_picker_node = None;
                 let picked = with_doc(docs, event_doc_id, |doc| {
                     let node_id = Self::picker_target(doc, x, y);
@@ -549,6 +560,7 @@ impl Session {
             }
             PickerEvent::Canceled { .. } => {
                 self.picking = false;
+                self.highlighting = false;
                 self.last_picker_node = None;
                 with_doc(docs, event_doc_id, |doc| {
                     doc.devtools_mut().element_picker = false;
@@ -558,6 +570,25 @@ impl Session {
                 writer.event("Overlay.inspectModeCanceled", json!({}));
             }
         }
+    }
+
+    /// Clean up any state this session holds on its document (inspect mode,
+    /// node highlight), called when the client connection closes
+    pub(crate) fn close(&mut self, docs: &mut dyn DocumentProvider) {
+        if !self.picking && !self.highlighting {
+            return;
+        }
+        self.picking = false;
+        self.highlighting = false;
+        self.last_picker_node = None;
+        let Some(doc_id) = self.doc_id(docs) else {
+            return;
+        };
+        with_doc(docs, doc_id, |doc| {
+            doc.devtools_mut().element_picker = false;
+            doc.devtools_mut().highlight_node = None;
+            doc.shell_provider.request_redraw();
+        });
     }
 }
 
