@@ -237,6 +237,12 @@ publish = false
 logtime = ["log-frame-times", "log-phase-times"]
 log-frame-times = ["dioxus-native/log-frame-times"]
 log-phase-times = ["dioxus-native/log-phase-times"]
+scrollbars = ["dioxus-native/scrollbars"]
+
+[[example]]
+name = "scrollbar"
+path = "examples/scrollbar.rs"
+required-features = ["scrollbars"]
 
 [dev-dependencies]
 anyrender = { workspace = true }
@@ -265,6 +271,7 @@ png = { workspace = true }
 peniko = { workspace = true }
 color = { workspace = true }
 env_logger = "0.11"
+tracing = { workspace = true }
 tracing-subscriber = "0.3"
 
 # [patch.crates-io]
