@@ -23,6 +23,9 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 tungstenite = "0.28"
 
+# Logging
+tracing = { workspace = true }
+
 [dev-dependencies]
 blitz-html = { workspace = true }
 # Text must be laid out with real fonts for inline fragment geometry to be non-zero
