@@ -106,8 +106,12 @@ impl WatcherActor {
                 "browsingContextID": doc_id,
                 "isTopLevelTarget": true,
                 "targetType": "frame",
+                // We have no subframes; this tells the client not to query
+                // them (the `frames` trait must still be true, as the toolbox
+                // gates the element picker button on it)
+                "ignoreSubFrames": true,
                 "traits": {
-                    "frames": false,
+                    "frames": true,
                     "isBrowsingContext": true,
                     "logInPage": false,
                     "navigation": false,
