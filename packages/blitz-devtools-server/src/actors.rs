@@ -131,6 +131,51 @@ impl Connection {
             self.insert_actor(actor);
         }
     }
+
+    pub(crate) fn notify_picker_event(
+        &mut self,
+        event: &crate::PickerEvent,
+        docs: &mut dyn DocumentProvider,
+    ) {
+        use crate::PickerEvent;
+        use crate::actors::walker::WalkerActor;
+
+        let event_doc_id = match *event {
+            PickerEvent::Hovered { doc_id, .. }
+            | PickerEvent::Picked { doc_id, .. }
+            | PickerEvent::Canceled { doc_id } => doc_id,
+        };
+
+        // Find this connection's walkers that are currently picking on the
+        // document the event is for
+        let walker_names: Vec<ActorId> = self
+            .actors
+            .values()
+            .filter_map(|actor| {
+                let any: &dyn Any = actor.as_ref();
+                let walker = any.downcast_ref::<WalkerActor>()?;
+                (walker.picking && walker.doc_id == event_doc_id).then(|| walker.name())
+            })
+            .collect();
+
+        for walker_name in walker_names {
+            let Some(mut actor) = self.actors.remove(&walker_name) else {
+                continue;
+            };
+            {
+                let any: &mut dyn Any = actor.as_mut();
+                let walker = any.downcast_mut::<WalkerActor>().unwrap();
+                let mut ctx = DevtoolContext {
+                    writer: &mut self.writer,
+                    actors: &mut self.actors,
+                    actors_to_create: Vec::new(),
+                    docs,
+                };
+                walker.handle_picker_event(&mut ctx, event);
+            }
+            self.insert_actor(actor);
+        }
+    }
 }
 
 pub(crate) struct DevtoolContext<'a> {

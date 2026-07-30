@@ -15,6 +15,10 @@ pub struct DevtoolSettings {
     /// padding, border, and margin of a specific node (set by e.g. a
     /// remote devtools inspector)
     pub highlight_node: Option<NodeId>,
+    /// Element picker mode: mouse events are intercepted (not delivered to
+    /// the page) and reported to a remote devtools inspector so the user
+    /// can pick an element by hovering/clicking it
+    pub element_picker: bool,
 }
 
 impl DevtoolSettings {
