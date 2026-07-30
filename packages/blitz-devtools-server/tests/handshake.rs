@@ -273,5 +273,41 @@ fn client_session(mut stream: TcpStream) {
         let msg = read_packet(&mut stream);
         let items = msg["flexitems"].as_array().expect("flex items");
         assert_eq!(items.len(), 2);
+
+        // Highlighting a text node must not crash (it should highlight the
+        // nearest element ancestor instead)
+        write_packet(
+            &mut stream,
+            serde_json::json!({
+                "to": inspector_actor,
+                "type": "getHighlighterByType",
+                "typeName": "BoxModelHighlighter",
+            }),
+        );
+        let msg = read_packet(&mut stream);
+        let highlighter_actor = msg["highlighter"]["actor"].as_str().unwrap().to_string();
+
+        let span_actor = children[0]["actor"].as_str().unwrap().to_string();
+        write_packet(
+            &mut stream,
+            serde_json::json!({ "to": walker_actor, "type": "children", "node": span_actor }),
+        );
+        let msg = read_packet(&mut stream);
+        let span_children = msg["nodes"].as_array().expect("span children");
+        let text_node = &span_children[0];
+        assert_eq!(text_node["nodeType"], 3);
+        let text_actor = text_node["actor"].as_str().unwrap().to_string();
+
+        write_packet(
+            &mut stream,
+            serde_json::json!({ "to": highlighter_actor, "type": "show", "node": text_actor }),
+        );
+        let msg = read_packet(&mut stream);
+        assert_eq!(msg["value"], true);
+        write_packet(
+            &mut stream,
+            serde_json::json!({ "to": highlighter_actor, "type": "hide" }),
+        );
+        let _ = read_packet(&mut stream);
     }
 }

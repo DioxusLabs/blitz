@@ -288,6 +288,8 @@ fn px(value: f32) -> String {
 /// Build the `getLayout` (box model) response for a node
 fn layout_form(doc: &BaseDocument, node_id: NodeId) -> Option<JsonValue> {
     let node = doc.get_node(node_id)?;
+    // Text and comment nodes don't carry a layout of their own
+    node.element_data()?;
     let layout = node.final_layout();
 
     let styles = node.primary_styles();
