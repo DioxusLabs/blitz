@@ -878,12 +878,9 @@ dependencies = [
  "blitz-html",
  "blitz-traits",
  "cssparser",
- "futures-util",
  "serde",
  "serde_json",
  "stylo",
- "tokio",
- "tokio-tungstenite",
  "tungstenite",
 ]
 
@@ -7455,18 +7452,6 @@ dependencies = [
  "futures-core",
  "pin-project-lite",
  "tokio",
-]
-
-[[package]]
-name = "tokio-tungstenite"
-version = "0.28.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d25a406cddcc431a75d3d9afc6a7c0f7428d4891dd973e4d54c56b46127bf857"
-dependencies = [
- "futures-util",
- "log",
- "tokio",
- "tungstenite",
 ]
 
 [[package]]
