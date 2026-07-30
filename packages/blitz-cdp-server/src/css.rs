@@ -5,6 +5,7 @@ use blitz_traits::node_id::NodeId;
 use cssparser::ToCss as _;
 use serde_json::json;
 use style::computed_values::position::T as Position;
+use style::properties::generated::longhands::box_sizing::computed_value::T as BoxSizing;
 use style::properties::{
     LonghandId, NonCustomPropertyId, PropertyDeclarationBlock, PropertyDeclarationId, PropertyId,
 };
@@ -331,13 +332,23 @@ fn used_box_values(doc: &BaseDocument, node_id: NodeId) -> HashMap<&'static str,
         (layout.border, layout.padding, layout.margin)
     };
 
-    let content_width =
-        rect.width - (border.left + border.right + padding.left + padding.right) as f64;
-    let content_height =
-        rect.height - (border.top + border.bottom + padding.top + padding.bottom) as f64;
+    // Like Chrome, the reported width/height are box-sizing aware: the
+    // border-box size for `box-sizing: border-box` elements, the content-box
+    // size otherwise
+    let is_border_box = node
+        .primary_styles()
+        .is_some_and(|styles| styles.get_position().box_sizing == BoxSizing::BorderBox);
+    let (width, height) = if is_border_box {
+        (rect.width, rect.height)
+    } else {
+        (
+            rect.width - (border.left + border.right + padding.left + padding.right) as f64,
+            rect.height - (border.top + border.bottom + padding.top + padding.bottom) as f64,
+        )
+    };
 
-    map.insert("width", px(content_width.max(0.0)));
-    map.insert("height", px(content_height.max(0.0)));
+    map.insert("width", px(width.max(0.0)));
+    map.insert("height", px(height.max(0.0)));
     map.insert("margin-top", px(margin.top as f64));
     map.insert("margin-right", px(margin.right as f64));
     map.insert("margin-bottom", px(margin.bottom as f64));
