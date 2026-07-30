@@ -20,6 +20,12 @@ pub struct BlitzApplication<Rend: WindowRenderer> {
     pub event_queue: Receiver<BlitzShellEvent>,
     #[cfg(feature = "devtools")]
     pub devtools: Option<blitz_devtools_server::DevtoolsServer>,
+    /// Windows with a swallowed element-picker button press whose matching
+    /// release must also be swallowed (picking ends on the press, so by
+    /// release time the picker flag is already off; letting the release
+    /// through would corrupt the view's pressed-buttons state)
+    #[cfg(feature = "devtools")]
+    picker_pressed_windows: std::collections::HashSet<WindowId>,
 }
 
 /// Adapter that gives devtools actors access to the application's documents
@@ -53,6 +59,8 @@ impl<Rend: WindowRenderer> BlitzApplication<Rend> {
             event_queue,
             #[cfg(feature = "devtools")]
             devtools: None,
+            #[cfg(feature = "devtools")]
+            picker_pressed_windows: std::collections::HashSet::new(),
         };
 
         // Opt-in devtools server: enabled by setting the BLITZ_DEVTOOLS_PORT
@@ -101,6 +109,12 @@ impl<Rend: WindowRenderer> BlitzApplication<Rend> {
         if self.devtools.is_none() {
             return false;
         }
+        if let WindowEvent::PointerButton { state, .. } = event
+            && *state == ElementState::Released
+            && self.picker_pressed_windows.remove(&window_id)
+        {
+            return true;
+        }
         let Some(window) = self.windows.get(&window_id) else {
             return false;
         };
@@ -124,6 +138,7 @@ impl<Rend: WindowRenderer> BlitzApplication<Rend> {
                 if *state != ElementState::Pressed {
                     return true;
                 }
+                self.picker_pressed_windows.insert(window_id);
                 let coords = window.pointer_coords(*position);
                 PickerEvent::Picked {
                     doc_id,
