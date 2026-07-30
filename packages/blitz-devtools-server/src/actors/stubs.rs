@@ -40,6 +40,9 @@ impl Actor for StubActor {
             "listWorkers" => {
                 ctx.write_msg(self.name(), json!({ "workers": [] }));
             }
+            // The reflow actor's "start"/"stop" are oneway in the Firefox
+            // spec; replying produces "Unexpected packet" errors in the client
+            "start" | "stop" => {}
             _ => {
                 ctx.write_msg(self.name(), json!({}));
             }
