@@ -462,8 +462,9 @@ impl Actor for WalkerActor {
             }
             // Enter element-picking mode: mouse events over the page are
             // intercepted and reported via pickerNodeHovered/pickerNodePicked
-            // events instead of being delivered to the page. `pick` is one-way
-            // (no reply).
+            // events instead of being delivered to the page. Unlike
+            // `clearPicker`, `pick` is not oneway: the client awaits an empty
+            // reply.
             "pick" => {
                 self.picking = true;
                 self.last_picker_node = None;
@@ -471,6 +472,7 @@ impl Actor for WalkerActor {
                     doc.devtools_mut().element_picker = true;
                     doc.shell_provider.request_redraw();
                 });
+                ctx.write_msg(self.name(), json!({}));
                 Ok(())
             }
             "cancelPick" => {
