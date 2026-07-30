@@ -55,12 +55,13 @@ impl WalkerActor {
     }
 
     /// The DOM children of a node (excluding anonymous boxes, which live in
-    /// the layout tree rather than the DOM tree)
+    /// the layout tree rather than the DOM tree, and whitespace-only text
+    /// nodes, which are just noise in the inspector)
     fn dom_children<'doc>(doc: &'doc BaseDocument, node: &Node) -> Vec<&'doc Node> {
         node.children
             .iter()
             .filter_map(|child_id| doc.get_node(*child_id))
-            .filter(|child| !child.is_anonymous())
+            .filter(|child| !child.is_anonymous() && !child.is_whitespace_node())
             .collect()
     }
 
