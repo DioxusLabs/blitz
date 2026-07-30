@@ -871,6 +871,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "blitz-devtools-server"
+version = "0.3.0-beta.1"
+dependencies = [
+ "blitz-dom",
+ "blitz-html",
+ "blitz-traits",
+ "bytes",
+ "cssparser",
+ "serde",
+ "serde_json",
+ "stylo",
+ "stylo_traits",
+ "taffy",
+ "tokio",
+ "tokio-stream",
+ "tokio-util",
+]
+
+[[package]]
 name = "blitz-dom"
 version = "0.3.0-beta.1"
 dependencies = [
@@ -1005,6 +1024,7 @@ dependencies = [
  "anyrender",
  "arboard",
  "atomic_refcell",
+ "blitz-devtools-server",
  "blitz-dom",
  "blitz-paint",
  "blitz-traits",

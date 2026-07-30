@@ -1,0 +1,32 @@
+[package]
+name = "blitz-devtools-server"
+description = "(Firefox) devtools protocol server implementation"
+documentation = "https://docs.rs/blitz-devtools-server"
+version.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+categories.workspace = true
+edition.workspace = true
+
+[dependencies]
+# Blitz dependencies
+blitz-traits = { workspace = true }
+blitz-dom = { workspace = true }
+
+# Style / layout dependencies
+style = { workspace = true }
+style_traits = { workspace = true }
+cssparser = { workspace = true }
+taffy = { workspace = true }
+
+# Networking dependencies
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["rt", "rt-multi-thread", "net", "sync", "io-util", "macros"] }
+tokio-util = { workspace = true, features = ["codec"] }
+tokio-stream = "0.1.17"
+bytes = { workspace = true }
+
+[dev-dependencies]
+blitz-html = { workspace = true }
