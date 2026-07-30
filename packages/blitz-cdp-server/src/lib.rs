@@ -116,7 +116,7 @@ impl CdpServer {
         let local_addr = Arc::clone(&self.local_addr);
         std::thread::spawn(move || {
             if let Err(err) = run_cdp_server(addr, msg_cb, local_addr) {
-                println!("CDP: server error: {err}");
+                tracing::warn!("CDP: server error: {err}");
             }
         });
     }
@@ -153,9 +153,10 @@ impl CdpServer {
                 }
             }
             CdpEventData::Command(command) => {
-                println!(">> {} {}", command.method, command.params);
+                tracing::debug!("CDP: >> {}", command.method);
+                tracing::trace!("CDP: >> {} {}", command.method, command.params);
                 let Some(conn) = self.connections.get_mut(&event.connection_id) else {
-                    println!("Error: CDP message from closed connection");
+                    tracing::warn!("CDP: message from closed connection");
                     return;
                 };
                 conn.session.handle_command(&mut conn.writer, docs, command);
@@ -220,7 +221,7 @@ pub(crate) struct MessageWriter(Sender<Message>);
 
 impl MessageWriter {
     fn send_json(&mut self, msg: JsonValue) {
-        println!("<< {msg}");
+        tracing::trace!("CDP: << {msg}");
         let _ = self.0.send(Message::text(msg.to_string()));
     }
 
@@ -256,7 +257,7 @@ fn run_cdp_server(
     let server = TcpListener::bind(&addr)?;
     let bound_addr = server.local_addr()?;
     *local_addr.lock().unwrap() = Some(bound_addr);
-    println!("CDP: listening on: {addr}");
+    tracing::info!("CDP: listening on: {addr}");
 
     let mut connection_id_counter: usize = 0;
 
@@ -267,7 +268,7 @@ fn run_cdp_server(
         let sender = Arc::clone(&sender);
         std::thread::spawn(move || {
             if let Err(err) = handle_connection(stream, connection_id, sender, bound_addr) {
-                println!("CDP: connection error: {err}");
+                tracing::warn!("CDP: connection error: {err}");
             }
         });
     }
@@ -389,7 +390,7 @@ fn handle_connection(
     );
     stream.write_all(response.as_bytes())?;
 
-    println!("CDP: new connection (id: {connection_id}, path: {path})");
+    tracing::debug!("CDP: new connection (id: {connection_id}, path: {path})");
 
     // The document id requested via the WebSocket path (`/devtools/page/{id}`)
     let doc_id_hint = path
@@ -435,11 +436,11 @@ fn connection_loop(
         match ws.read() {
             Ok(Message::Text(text)) => {
                 let Ok(parsed) = serde_json::from_str::<JsonValue>(&text) else {
-                    println!("CDP: invalid JSON message: {text}");
+                    tracing::warn!("CDP: invalid JSON message: {text}");
                     continue;
                 };
                 let Some(method) = parsed.get("method").and_then(|m| m.as_str()) else {
-                    println!("CDP: message without method: {text}");
+                    tracing::warn!("CDP: message without method: {text}");
                     continue;
                 };
                 let command = CdpCommand {
