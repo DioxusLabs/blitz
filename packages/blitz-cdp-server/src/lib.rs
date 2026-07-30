@@ -12,18 +12,16 @@
 
 use serde_json::json;
 use std::collections::HashMap;
-use std::sync::mpsc::{Receiver, Sender, channel};
-use std::{error::Error, sync::Arc};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpStream;
-use tokio::sync::mpsc::Sender as TokioSender;
-use tokio::{net::TcpListener, task::JoinHandle};
-use tokio_tungstenite::WebSocketStream;
-use tokio_tungstenite::tungstenite::Message;
-use tokio_tungstenite::tungstenite::handshake::derive_accept_key;
-use tokio_tungstenite::tungstenite::protocol::Role;
-
-use futures_util::{SinkExt, StreamExt};
+use std::error::Error;
+use std::io::{Read, Write};
+use std::net::{TcpListener, TcpStream};
+use std::sync::Arc;
+use std::sync::mpsc::{Receiver, Sender, SyncSender, channel, sync_channel};
+use std::time::Duration;
+use tungstenite::Message;
+use tungstenite::WebSocket;
+use tungstenite::handshake::derive_accept_key;
+use tungstenite::protocol::Role;
 
 mod css;
 mod dom;
@@ -65,8 +63,6 @@ pub enum PickerEvent {
 }
 
 pub struct CdpServer {
-    runtime: Option<tokio::runtime::Runtime>,
-    listener: Option<JoinHandle<()>>,
     connections: HashMap<usize, Connection>,
     waker: Arc<dyn DevtoolsWaker>,
     event_queue: Receiver<CdpEvent>,
@@ -78,8 +74,6 @@ impl CdpServer {
     pub fn new(waker: Arc<dyn DevtoolsWaker>) -> Self {
         let (sender, receiver) = channel();
         CdpServer {
-            runtime: None,
-            listener: None,
             connections: HashMap::new(),
             waker,
             event_sender: sender,
@@ -90,10 +84,7 @@ impl CdpServer {
 
     /// The address the server is listening on (available once the listener
     /// has started). Waits up to `timeout` for the listener to start.
-    pub fn wait_for_local_addr(
-        &self,
-        timeout: std::time::Duration,
-    ) -> Option<std::net::SocketAddr> {
+    pub fn wait_for_local_addr(&self, timeout: Duration) -> Option<std::net::SocketAddr> {
         let deadline = std::time::Instant::now() + timeout;
         loop {
             if let Some(addr) = *self.local_addr.lock().unwrap() {
@@ -102,16 +93,17 @@ impl CdpServer {
             if std::time::Instant::now() > deadline {
                 return None;
             }
-            std::thread::sleep(std::time::Duration::from_millis(10));
+            std::thread::sleep(Duration::from_millis(10));
         }
     }
 
     /// Start listening for CDP connections on the given address
     /// (e.g. `127.0.0.1:9222`).
     ///
-    /// The listener runs on a dedicated background thread. Incoming messages
-    /// are queued, and the waker is used to notify the embedder that it
-    /// should call [`process_messages`](Self::process_messages).
+    /// The listener runs on a dedicated background thread (with one thread
+    /// per accepted connection). Incoming messages are queued, and the waker
+    /// is used to notify the embedder that it should call
+    /// [`process_messages`](Self::process_messages).
     pub fn start_listening(&mut self, addr: &str) {
         let sender = self.event_sender.clone();
         let waker = self.waker.clone();
@@ -120,19 +112,13 @@ impl CdpServer {
                 waker.wake();
             }
         }) as _;
-        let runtime = tokio::runtime::Builder::new_multi_thread()
-            .worker_threads(1)
-            .enable_io()
-            .enable_time()
-            .build()
-            .expect("failed to build CDP tokio runtime");
-        let listener = runtime.spawn(start_cdp_server_no_err(
-            addr.to_string(),
-            msg_cb,
-            Arc::clone(&self.local_addr),
-        ));
-        self.runtime = Some(runtime);
-        self.listener = Some(listener);
+        let addr = addr.to_string();
+        let local_addr = Arc::clone(&self.local_addr);
+        std::thread::spawn(move || {
+            if let Err(err) = run_cdp_server(addr, msg_cb, local_addr) {
+                println!("CDP: server error: {err}");
+            }
+        });
     }
 
     /// Process any pending messages from CDP clients. Must be called on
@@ -162,10 +148,7 @@ impl CdpServer {
                 self.connections.insert(event.connection_id, connection);
             }
             CdpEventData::ConnectionClosed => {
-                if let Some(conn) = self.connections.remove(&event.connection_id) {
-                    conn.reader_task.abort();
-                    conn.writer_task.abort();
-                }
+                self.connections.remove(&event.connection_id);
             }
             CdpEventData::Command(command) => {
                 println!(">> {} {}", command.method, command.params);
@@ -196,24 +179,7 @@ impl CdpServer {
     }
 }
 
-impl Drop for CdpServer {
-    fn drop(&mut self) {
-        if let Some(listener) = self.listener.take() {
-            listener.abort();
-        }
-        for conn in self.connections.values() {
-            conn.reader_task.abort();
-            conn.writer_task.abort();
-        }
-        if let Some(runtime) = self.runtime.take() {
-            runtime.shutdown_background();
-        }
-    }
-}
-
 struct Connection {
-    reader_task: JoinHandle<()>,
-    writer_task: JoinHandle<()>,
     writer: MessageWriter,
     session: Session,
 }
@@ -231,7 +197,7 @@ enum CdpEventData {
     /// A CDP command received from the client
     Command(CdpCommand),
     /// An HTTP `/json/list` request needs the current target list
-    TargetListRequest(tokio::sync::oneshot::Sender<Vec<TargetInfo>>),
+    TargetListRequest(SyncSender<Vec<TargetInfo>>),
 }
 
 /// A CDP command sent by the client: `{id, method, params?, sessionId?}`
@@ -248,12 +214,12 @@ struct TargetInfo {
     url: String,
 }
 
-pub(crate) struct MessageWriter(TokioSender<Message>);
+pub(crate) struct MessageWriter(Sender<Message>);
 
 impl MessageWriter {
     fn send_json(&mut self, msg: JsonValue) {
         println!("<< {msg}");
-        let _ = self.0.try_send(Message::text(msg.to_string()));
+        let _ = self.0.send(Message::text(msg.to_string()));
     }
 
     /// Send a successful reply to a command
@@ -280,22 +246,12 @@ impl MessageWriter {
     }
 }
 
-async fn start_cdp_server_no_err(
-    addr: String,
-    msg_cb: Arc<dyn Fn(CdpEvent) + Send + Sync>,
-    local_addr: Arc<std::sync::Mutex<Option<std::net::SocketAddr>>>,
-) {
-    if let Err(err) = start_cdp_server(addr, msg_cb, local_addr).await {
-        println!("CDP: server error: {err}");
-    }
-}
-
-async fn start_cdp_server(
+fn run_cdp_server(
     addr: String,
     sender: Arc<dyn Fn(CdpEvent) + Send + Sync>,
     local_addr: Arc<std::sync::Mutex<Option<std::net::SocketAddr>>>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    let server = TcpListener::bind(&addr).await?;
+    let server = TcpListener::bind(&addr)?;
     let bound_addr = server.local_addr()?;
     *local_addr.lock().unwrap() = Some(bound_addr);
     println!("CDP: listening on: {addr}");
@@ -303,12 +259,12 @@ async fn start_cdp_server(
     let mut connection_id_counter: usize = 0;
 
     loop {
-        let (stream, _) = server.accept().await?;
+        let (stream, _) = server.accept()?;
         connection_id_counter += 1;
         let connection_id = connection_id_counter;
         let sender = Arc::clone(&sender);
-        tokio::spawn(async move {
-            if let Err(err) = handle_connection(stream, connection_id, sender, bound_addr).await {
+        std::thread::spawn(move || {
+            if let Err(err) = handle_connection(stream, connection_id, sender, bound_addr) {
                 println!("CDP: connection error: {err}");
             }
         });
@@ -318,7 +274,7 @@ async fn start_cdp_server(
 /// Handle a newly-accepted TCP connection: parse the HTTP request head, then
 /// either serve the `/json` discovery endpoints or upgrade to a WebSocket
 /// CDP session.
-async fn handle_connection(
+fn handle_connection(
     mut stream: TcpStream,
     connection_id: usize,
     sender: Arc<dyn Fn(CdpEvent) + Send + Sync>,
@@ -328,7 +284,7 @@ async fn handle_connection(
     let mut head = Vec::new();
     let mut buf = [0u8; 1024];
     let head_end = loop {
-        let n = stream.read(&mut buf).await?;
+        let n = stream.read(&mut buf)?;
         if n == 0 {
             return Ok(());
         }
@@ -364,17 +320,14 @@ async fn handle_connection(
         let body = match path.as_str() {
             "/json" | "/json/list" => {
                 // Ask the main thread for the current target list
-                let (reply_sender, reply_receiver) = tokio::sync::oneshot::channel();
+                let (reply_sender, reply_receiver) = sync_channel(1);
                 sender(CdpEvent {
                     connection_id,
                     data: CdpEventData::TargetListRequest(reply_sender),
                 });
-                let targets =
-                    tokio::time::timeout(std::time::Duration::from_secs(10), reply_receiver)
-                        .await
-                        .ok()
-                        .and_then(|r| r.ok())
-                        .unwrap_or_default();
+                let targets = reply_receiver
+                    .recv_timeout(Duration::from_secs(10))
+                    .unwrap_or_default();
 
                 let list: Vec<JsonValue> = targets
                     .iter()
@@ -419,25 +372,20 @@ async fn handle_connection(
             None => "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
                 .to_string(),
         };
-        stream.write_all(response.as_bytes()).await?;
+        stream.write_all(response.as_bytes())?;
         return Ok(());
     }
 
     // WebSocket upgrade
     let Some(key) = headers.get("sec-websocket-key") else {
-        stream
-            .write_all(b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n")
-            .await?;
+        stream.write_all(b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n")?;
         return Err("WebSocket upgrade without Sec-WebSocket-Key".into());
     };
     let accept_key = derive_accept_key(key.as_bytes());
     let response = format!(
         "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {accept_key}\r\n\r\n"
     );
-    stream.write_all(response.as_bytes()).await?;
-
-    let ws = WebSocketStream::from_raw_socket(stream, Role::Server, None).await;
-    let (mut ws_sink, mut ws_stream) = ws.split();
+    stream.write_all(response.as_bytes())?;
 
     println!("CDP: new connection (id: {connection_id}, path: {path})");
 
@@ -446,74 +394,89 @@ async fn handle_connection(
         .strip_prefix("/devtools/page/")
         .and_then(|id| id.parse::<usize>().ok());
 
-    // Spawn stream writer task
-    let (outgoing_sender, mut outgoing_receiver) = tokio::sync::mpsc::channel::<Message>(100);
-    let writer_task = tokio::spawn(async move {
-        while let Some(msg) = outgoing_receiver.recv().await {
-            if ws_sink.send(msg).await.is_err() {
-                break;
-            }
-        }
-    });
+    // A short read timeout lets the single connection thread alternate
+    // between blocking reads and draining the outgoing message queue
+    stream.set_read_timeout(Some(Duration::from_millis(20)))?;
+    let mut ws = WebSocket::from_raw_socket(stream, Role::Server, None);
 
-    // Spawn stream reader task
-    let reader_task = tokio::spawn({
-        let sender = Arc::clone(&sender);
-        let outgoing_sender = outgoing_sender.clone();
-        async move {
-            while let Some(msg) = ws_stream.next().await {
-                match msg {
-                    Ok(Message::Text(text)) => {
-                        let Ok(parsed) = serde_json::from_str::<JsonValue>(&text) else {
-                            println!("CDP: invalid JSON message: {text}");
-                            continue;
-                        };
-                        let Some(method) = parsed.get("method").and_then(|m| m.as_str()) else {
-                            println!("CDP: message without method: {text}");
-                            continue;
-                        };
-                        let command = CdpCommand {
-                            id: parsed.get("id").cloned().unwrap_or(JsonValue::Null),
-                            method: method.to_string(),
-                            params: parsed.get("params").cloned().unwrap_or(json!({})),
-                            session_id: parsed
-                                .get("sessionId")
-                                .and_then(|s| s.as_str())
-                                .map(|s| s.to_string()),
-                        };
-                        sender(CdpEvent {
-                            connection_id,
-                            data: CdpEventData::Command(command),
-                        });
-                    }
-                    Ok(Message::Ping(payload)) => {
-                        let _ = outgoing_sender.try_send(Message::Pong(payload));
-                    }
-                    Ok(Message::Close(_)) | Err(_) => break,
-                    Ok(_) => {}
-                }
-            }
-
-            // Stream ended: notify the main thread so the connection can
-            // be cleaned up
-            sender(CdpEvent {
-                connection_id,
-                data: CdpEventData::ConnectionClosed,
-            });
-        }
-    });
-
-    let connection = Connection {
-        reader_task,
-        writer_task,
-        writer: MessageWriter(outgoing_sender),
-        session: Session::new(doc_id_hint),
-    };
+    let (outgoing_sender, outgoing_receiver) = channel::<Message>();
 
     sender(CdpEvent {
         connection_id,
-        data: CdpEventData::ConnectionOpened(connection),
+        data: CdpEventData::ConnectionOpened(Connection {
+            writer: MessageWriter(outgoing_sender),
+            session: Session::new(doc_id_hint),
+        }),
     });
 
-    Ok(())
+    let result = connection_loop(&mut ws, connection_id, &sender, outgoing_receiver);
+
+    // Notify the main thread so the connection can be cleaned up
+    sender(CdpEvent {
+        connection_id,
+        data: CdpEventData::ConnectionClosed,
+    });
+
+    result
+}
+
+/// Service an established WebSocket connection: read incoming CDP commands
+/// (forwarding them to the main thread) and write outgoing messages queued
+/// by the main thread, until the connection closes.
+fn connection_loop(
+    ws: &mut WebSocket<TcpStream>,
+    connection_id: usize,
+    sender: &Arc<dyn Fn(CdpEvent) + Send + Sync>,
+    outgoing_receiver: Receiver<Message>,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    loop {
+        match ws.read() {
+            Ok(Message::Text(text)) => {
+                let Ok(parsed) = serde_json::from_str::<JsonValue>(&text) else {
+                    println!("CDP: invalid JSON message: {text}");
+                    continue;
+                };
+                let Some(method) = parsed.get("method").and_then(|m| m.as_str()) else {
+                    println!("CDP: message without method: {text}");
+                    continue;
+                };
+                let command = CdpCommand {
+                    id: parsed.get("id").cloned().unwrap_or(JsonValue::Null),
+                    method: method.to_string(),
+                    params: parsed.get("params").cloned().unwrap_or(json!({})),
+                    session_id: parsed
+                        .get("sessionId")
+                        .and_then(|s| s.as_str())
+                        .map(|s| s.to_string()),
+                };
+                sender(CdpEvent {
+                    connection_id,
+                    data: CdpEventData::Command(command),
+                });
+            }
+            // Pings are answered automatically by tungstenite
+            Ok(Message::Close(_)) => return Ok(()),
+            Ok(_) => {}
+            // The read timed out: fall through to write any queued messages
+            Err(tungstenite::Error::Io(err))
+                if matches!(
+                    err.kind(),
+                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                ) => {}
+            Err(tungstenite::Error::ConnectionClosed | tungstenite::Error::AlreadyClosed) => {
+                return Ok(());
+            }
+            Err(err) => return Err(err.into()),
+        }
+
+        while let Ok(msg) = outgoing_receiver.try_recv() {
+            match ws.send(msg) {
+                Ok(()) => {}
+                Err(tungstenite::Error::ConnectionClosed | tungstenite::Error::AlreadyClosed) => {
+                    return Ok(());
+                }
+                Err(err) => return Err(err.into()),
+            }
+        }
+    }
 }
