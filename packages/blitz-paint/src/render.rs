@@ -189,6 +189,18 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                 );
             }
         }
+        if let Some(node_id) = self.dom.devtools().highlight_node {
+            if self.dom.as_ref().get_node(node_id).is_some() {
+                render_debug_overlay(
+                    scene,
+                    self.dom,
+                    node_id,
+                    self.scale,
+                    self.initial_x,
+                    self.initial_y,
+                );
+            }
+        }
     }
 
     /// Renders a node, but is guaranteed that the node is an element

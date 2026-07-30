@@ -18,16 +18,65 @@ pub struct BlitzApplication<Rend: WindowRenderer> {
     pub pending_windows: Vec<WindowConfig<Rend>>,
     pub proxy: BlitzShellProxy,
     pub event_queue: Receiver<BlitzShellEvent>,
+    #[cfg(feature = "devtools")]
+    pub devtools: Option<blitz_devtools_server::DevtoolsServer>,
+}
+
+/// Adapter that gives devtools actors access to the application's documents
+#[cfg(feature = "devtools")]
+struct WindowsDocumentProvider<'a, Rend: WindowRenderer> {
+    windows: &'a mut HashMap<WindowId, View<Rend>>,
+}
+
+#[cfg(feature = "devtools")]
+impl<Rend: WindowRenderer> blitz_devtools_server::DocumentProvider
+    for WindowsDocumentProvider<'_, Rend>
+{
+    fn document_ids(&self) -> Vec<usize> {
+        self.windows.values().map(|view| view.doc.id()).collect()
+    }
+
+    fn with_document(&mut self, id: usize, cb: &mut dyn FnMut(&mut blitz_dom::BaseDocument)) {
+        if let Some(view) = self.windows.values_mut().find(|view| view.doc.id() == id) {
+            cb(&mut view.doc.inner_mut());
+        }
+    }
 }
 
 impl<Rend: WindowRenderer> BlitzApplication<Rend> {
     pub fn new(proxy: BlitzShellProxy, event_queue: Receiver<BlitzShellEvent>) -> Self {
-        BlitzApplication {
+        #[allow(unused_mut)]
+        let mut app = BlitzApplication {
             windows: HashMap::new(),
             pending_windows: Vec::new(),
             proxy,
             event_queue,
+            #[cfg(feature = "devtools")]
+            devtools: None,
+        };
+
+        // Opt-in devtools server: enabled by setting the BLITZ_DEVTOOLS_PORT
+        // environment variable to the port to listen on
+        #[cfg(feature = "devtools")]
+        if let Ok(port) = std::env::var("BLITZ_DEVTOOLS_PORT") {
+            if let Ok(port) = port.parse::<u16>() {
+                app.start_devtools_server(port);
+            } else {
+                eprintln!("Devtools: invalid BLITZ_DEVTOOLS_PORT: {port}");
+            }
         }
+
+        app
+    }
+
+    /// Start a Firefox devtools protocol server listening on localhost at
+    /// the given port. Connect to it from Firefox via about:debugging.
+    #[cfg(feature = "devtools")]
+    pub fn start_devtools_server(&mut self, port: u16) {
+        use std::sync::Arc;
+        let mut server = blitz_devtools_server::DevtoolsServer::new(Arc::new(self.proxy.clone()));
+        server.start_listening(&format!("127.0.0.1:{port}"));
+        self.devtools = Some(server);
     }
 
     pub fn add_window(&mut self, window_config: WindowConfig<Rend>) {
@@ -88,6 +137,16 @@ impl<Rend: WindowRenderer> BlitzApplication<Rend> {
                             // TODO
                         }
                     }
+                }
+            }
+            #[cfg(feature = "devtools")]
+            BlitzShellEvent::DevtoolsPoll => {
+                if let Some(mut devtools) = self.devtools.take() {
+                    let mut provider = WindowsDocumentProvider {
+                        windows: &mut self.windows,
+                    };
+                    devtools.process_messages(&mut provider);
+                    self.devtools = Some(devtools);
                 }
             }
             BlitzShellEvent::Embedder(_) => {
