@@ -89,15 +89,19 @@ pub(crate) fn node_json(
     if depth != 0 || single_text_child {
         let child_forms: Vec<JsonValue> = children
             .iter()
-            .filter_map(|child| {
-                node_json(doc, child.id, depth.saturating_sub(1).max(0), children_sent)
-            })
+            .filter_map(|child| node_json(doc, child.id, child_depth(depth), children_sent))
             .collect();
         form["children"] = json!(child_forms);
         children_sent.insert(node_id);
     }
 
     Some(form)
+}
+
+/// The depth remaining for a node's children: negative depths mean the
+/// entire subtree and are preserved; positive depths are decremented
+pub(crate) fn child_depth(depth: i64) -> i64 {
+    if depth > 0 { depth - 1 } else { depth.min(0) }
 }
 
 /// A CDP `Quad`: an array of 8 numbers `[x1, y1, x2, y2, x3, y3, x4, y4]`
