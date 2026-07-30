@@ -37,7 +37,7 @@ impl Widget for DemoWidget {
         self.state = DemoRendererState::Suspended;
     }
 
-    fn is_animating(&self) -> bool {
+    fn requires_redraw(&self) -> bool {
         true
     }
 

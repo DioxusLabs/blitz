@@ -66,7 +66,7 @@ impl FpsWidget {
 }
 
 impl Widget for FpsWidget {
-    fn is_animating(&self) -> bool {
+    fn requires_redraw(&self) -> bool {
         true
     }
 

@@ -96,11 +96,11 @@ pub trait Widget {
 
     // Other
 
-    /// Whether the widget is currently animating.
+    /// Whether the widget currently requires redraws (e.g. because it is animating).
     ///
     /// Returning `true` causes the document to continuously schedule redraws
     /// (and hence repaints of the widget). Static widgets should return `false`.
-    fn is_animating(&self) -> bool {
+    fn requires_redraw(&self) -> bool {
         false
     }
 

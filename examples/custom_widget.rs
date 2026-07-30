@@ -102,7 +102,7 @@ impl Widget for DemoWidget {
     fn can_create_surfaces(&mut self, _render_ctx: &mut dyn anyrender::RenderContext) {}
     fn destroy_surfaces(&mut self) {}
 
-    fn is_animating(&self) -> bool {
+    fn requires_redraw(&self) -> bool {
         true
     }
 

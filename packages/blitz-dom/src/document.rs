@@ -1822,7 +1822,7 @@ impl BaseDocument {
             self.nodes[node_id]
                 .element_data()
                 .and_then(|el| el.custom_widget_data())
-                .is_some_and(|data| data.widget.is_animating())
+                .is_some_and(|data| data.widget.requires_redraw())
         });
         #[cfg(not(feature = "custom-widget"))]
         let custom_widget_is_animating = false;
