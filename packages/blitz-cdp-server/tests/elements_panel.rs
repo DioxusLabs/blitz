@@ -434,6 +434,19 @@ fn client_session(addr: std::net::SocketAddr, doc_id: usize, picker_sender: Send
     assert!(events.iter().any(|e| e["method"] == "DOM.setChildNodes"));
     events.clear();
 
+    // Pushing the same node again must not resend children the frontend
+    // already knows (that would replace its node objects and break the
+    // tree's selection/expansion state)
+    let id = send(
+        &mut ws,
+        "DOM.pushNodesByBackendIdsToFrontend",
+        json!({ "backendNodeIds": [backend_id] }),
+    );
+    let result = read_reply(&mut ws, id, &mut events);
+    assert_eq!(result["nodeIds"][0].as_u64().unwrap(), backend_id);
+    assert!(!events.iter().any(|e| e["method"] == "DOM.setChildNodes"));
+    events.clear();
+
     // Turning inspect mode off after picking is a no-op
     let id = send(
         &mut ws,
