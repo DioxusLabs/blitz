@@ -1,0 +1,32 @@
+[package]
+name = "blitz-cdp-server"
+description = "Chrome DevTools Protocol server implementation"
+documentation = "https://docs.rs/blitz-cdp-server"
+version.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+categories.workspace = true
+edition.workspace = true
+
+[dependencies]
+# Blitz dependencies
+blitz-traits = { workspace = true }
+blitz-dom = { workspace = true }
+
+# Style / layout dependencies
+style = { workspace = true }
+cssparser = { workspace = true }
+
+# Networking dependencies
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["rt", "rt-multi-thread", "net", "sync", "io-util", "macros", "time"] }
+tokio-tungstenite = "0.28"
+futures-util = { version = "0.3", default-features = false, features = ["sink"] }
+
+[dev-dependencies]
+blitz-html = { workspace = true }
+# Text must be laid out with real fonts for inline fragment geometry to be non-zero
+blitz-dom = { workspace = true, features = ["system-fonts"] }
+tungstenite = "0.28"
