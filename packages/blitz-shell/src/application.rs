@@ -18,16 +18,82 @@ pub struct BlitzApplication<Rend: WindowRenderer> {
     pub pending_windows: Vec<WindowConfig<Rend>>,
     pub proxy: BlitzShellProxy,
     pub event_queue: Receiver<BlitzShellEvent>,
+    #[cfg(feature = "devtools")]
+    pub cdp: Option<blitz_cdp_server::CdpServer>,
+    /// Windows with a swallowed element-picker button press whose matching
+    /// release must also be swallowed (picking ends on the press, so by
+    /// release time the picker flag is already off; letting the release
+    /// through would corrupt the view's pressed-buttons state)
+    #[cfg(feature = "devtools")]
+    picker_pressed_windows: std::collections::HashSet<WindowId>,
+}
+
+/// Adapter that gives devtools actors access to the application's documents
+#[cfg(feature = "devtools")]
+struct WindowsDocumentProvider<'a, Rend: WindowRenderer> {
+    windows: &'a mut HashMap<WindowId, View<Rend>>,
+}
+
+#[cfg(feature = "devtools")]
+impl<Rend: WindowRenderer> blitz_cdp_server::DocumentProvider
+    for WindowsDocumentProvider<'_, Rend>
+{
+    fn document_ids(&self) -> Vec<usize> {
+        self.windows.values().map(|view| view.doc.id()).collect()
+    }
+
+    fn with_document(&mut self, id: usize, cb: &mut dyn FnMut(&mut blitz_dom::BaseDocument)) {
+        if let Some(view) = self.windows.values_mut().find(|view| view.doc.id() == id) {
+            cb(&mut view.doc.inner_mut());
+        }
+    }
 }
 
 impl<Rend: WindowRenderer> BlitzApplication<Rend> {
     pub fn new(proxy: BlitzShellProxy, event_queue: Receiver<BlitzShellEvent>) -> Self {
-        BlitzApplication {
+        #[allow(unused_mut)]
+        let mut app = BlitzApplication {
             windows: HashMap::new(),
             pending_windows: Vec::new(),
             proxy,
             event_queue,
+            #[cfg(feature = "devtools")]
+            cdp: None,
+            #[cfg(feature = "devtools")]
+            picker_pressed_windows: std::collections::HashSet::new(),
+        };
+
+        // Opt-in Chrome DevTools Protocol server: enabled by setting the
+        // BLITZ_CDP_PORT environment variable to the port to listen on
+        #[cfg(feature = "devtools")]
+        if let Ok(port) = std::env::var("BLITZ_CDP_PORT") {
+            if let Ok(port) = port.parse::<u16>() {
+                app.start_cdp_server(port);
+            } else {
+                eprintln!("CDP: invalid BLITZ_CDP_PORT: {port}");
+            }
         }
+
+        app
+    }
+
+    /// Start a Chrome DevTools Protocol server listening on localhost at
+    /// the given port. Connect to it by opening
+    /// `devtools://devtools/bundled/devtools_app.html?ws=127.0.0.1:PORT/devtools/page/DOC_ID`
+    /// in Chrome, or via chrome://inspect (note: chrome://inspect opens the
+    /// "screencast" devtools app, which routes element picking and node
+    /// highlighting to its screencast pane — toggle the screencast off to
+    /// use them on the Blitz window directly).
+    ///
+    /// Note: the address must be `127.0.0.1`, not `localhost` — the devtools
+    /// frontend's Content Security Policy only allows `ws://127.0.0.1:*`
+    /// connections and silently blocks `localhost`.
+    #[cfg(feature = "devtools")]
+    pub fn start_cdp_server(&mut self, port: u16) {
+        use std::sync::Arc;
+        let mut server = blitz_cdp_server::CdpServer::new(Arc::new(self.proxy.clone()));
+        server.start_listening(&format!("127.0.0.1:{port}"));
+        self.cdp = Some(server);
     }
 
     pub fn add_window(&mut self, window_config: WindowConfig<Rend>) {
@@ -36,6 +102,78 @@ impl<Rend: WindowRenderer> BlitzApplication<Rend> {
 
     fn window_mut_by_doc_id(&mut self, doc_id: usize) -> Option<&mut View<Rend>> {
         self.windows.values_mut().find(|w| w.doc.id() == doc_id)
+    }
+
+    /// Intercept window input events while the devtools element picker is
+    /// active: mouse movement and clicks are reported to the devtools client
+    /// (which highlights/selects the corresponding node) instead of being
+    /// delivered to the page, and Escape cancels picking. Returns `true` if
+    /// the event was consumed.
+    #[cfg(feature = "devtools")]
+    fn handle_picker_event(&mut self, window_id: WindowId, event: &WindowEvent) -> bool {
+        use blitz_cdp_server::PickerEvent;
+        use winit::event::ElementState;
+        use winit::keyboard::{Key, NamedKey};
+
+        if self.cdp.is_none() {
+            return false;
+        }
+        if let WindowEvent::PointerButton { state, .. } = event
+            && *state == ElementState::Released
+            && self.picker_pressed_windows.remove(&window_id)
+        {
+            return true;
+        }
+        let Some(window) = self.windows.get(&window_id) else {
+            return false;
+        };
+        if !window.doc.inner().devtools().element_picker {
+            return false;
+        }
+        let doc_id = window.doc.id();
+
+        let picker_event = match event {
+            WindowEvent::PointerMoved { position, .. } => {
+                let coords = window.pointer_coords(*position);
+                PickerEvent::Hovered {
+                    doc_id,
+                    x: coords.page_x,
+                    y: coords.page_y,
+                }
+            }
+            WindowEvent::PointerButton {
+                state, position, ..
+            } => {
+                if *state != ElementState::Pressed {
+                    return true;
+                }
+                self.picker_pressed_windows.insert(window_id);
+                let coords = window.pointer_coords(*position);
+                PickerEvent::Picked {
+                    doc_id,
+                    x: coords.page_x,
+                    y: coords.page_y,
+                }
+            }
+            WindowEvent::KeyboardInput { event, .. } => {
+                if event.state != ElementState::Pressed
+                    || event.logical_key != Key::Named(NamedKey::Escape)
+                {
+                    return false;
+                }
+                PickerEvent::Canceled { doc_id }
+            }
+            _ => return false,
+        };
+
+        if let Some(mut cdp) = self.cdp.take() {
+            let mut provider = WindowsDocumentProvider {
+                windows: &mut self.windows,
+            };
+            cdp.notify_picker_event(picker_event, &mut provider);
+            self.cdp = Some(cdp);
+        }
+        true
     }
 
     pub fn handle_blitz_shell_event(
@@ -88,6 +226,16 @@ impl<Rend: WindowRenderer> BlitzApplication<Rend> {
                             // TODO
                         }
                     }
+                }
+            }
+            #[cfg(feature = "devtools")]
+            BlitzShellEvent::DevtoolsPoll => {
+                if let Some(mut cdp) = self.cdp.take() {
+                    let mut provider = WindowsDocumentProvider {
+                        windows: &mut self.windows,
+                    };
+                    cdp.process_messages(&mut provider);
+                    self.cdp = Some(cdp);
                 }
             }
             BlitzShellEvent::Embedder(_) => {
@@ -156,6 +304,11 @@ impl<Rend: WindowRenderer> ApplicationHandler for BlitzApplication<Rend> {
             if self.windows.is_empty() {
                 event_loop.exit();
             }
+            return;
+        }
+
+        #[cfg(feature = "devtools")]
+        if self.handle_picker_event(window_id, &event) {
             return;
         }
 
