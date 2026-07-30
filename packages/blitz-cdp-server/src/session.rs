@@ -505,14 +505,20 @@ impl Session {
 
         match *event {
             PickerEvent::Hovered { x, y, .. } => {
+                let last_picker_node = &mut self.last_picker_node;
+                let children_sent = &mut self.children_sent;
                 let hovered = with_doc(docs, event_doc_id, |doc| {
                     let node_id = Self::picker_target(doc, x, y)?;
-                    if self.last_picker_node == Some(node_id) {
+                    if *last_picker_node == Some(node_id) {
                         return None;
                     }
-                    self.last_picker_node = Some(node_id);
+                    *last_picker_node = Some(node_id);
                     doc.devtools_mut().highlight_node = Some(node_id);
                     doc.shell_provider.request_redraw();
+                    // The frontend reveals the hovered node in the Elements
+                    // tree in realtime, which requires it to know the node:
+                    // send its ancestor path first
+                    Self::emit_node_path(writer, doc, node_id, children_sent);
                     Some(node_id)
                 })
                 .flatten();
