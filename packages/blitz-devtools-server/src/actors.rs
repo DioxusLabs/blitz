@@ -100,6 +100,15 @@ impl Connection {
         // handled with `&mut self` while other actors remain accessible
         // through the context.
         let Some(mut actor) = self.actors.remove(&msg.to) else {
+            // Firefox sends getUniqueSelector directly to node actors, which
+            // are virtual (owned by the walker) rather than registered actors.
+            // Reply with a placeholder selector rather than noSuchActor, which
+            // would break the Rules and Flexbox panels.
+            if msg.to.starts_with("node-") && msg.type_ == "getUniqueSelector" {
+                self.writer
+                    .write_msg(msg.to, serde_json::json!({ "value": "" }));
+                return;
+            }
             self.writer.write_err(msg.to, ActorMessageErr::NoSuchActor);
             return;
         };

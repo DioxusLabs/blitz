@@ -212,18 +212,30 @@ impl Actor for PageStyleActor {
                         })
                         .collect();
 
+                    // An empty selector string makes Firefox's rule-editor
+                    // throw in parsePseudoClassesAndAttributes, leaving the
+                    // Rules panel empty. Fall back to "*".
+                    let selector_text = if entry.selector_text.is_empty() {
+                        "*".to_string()
+                    } else {
+                        entry.selector_text.clone()
+                    };
                     json_entries.push(json!({
                         "rule": {
                             "actor": rule_actor_name,
                             "type": entry.rule_type,
                             "href": entry.href,
                             "cssText": css_text,
-                            "authoredText": format!("{} {{ {} }}", entry.selector_text, css_text),
-                            "selectors": [entry.selector_text],
+                            "authoredText": format!("{} {{ {} }}", selector_text, css_text),
+                            "selectors": [selector_text],
                             "selectorsSpecificity": [entry.specificity],
                             "line": entry.line,
                             "column": entry.column,
                             "declarations": declarations,
+                            // Firefox's rule-editor requires ancestorData;
+                            // without it the Rules panel throws and renders
+                            // empty
+                            "ancestorData": [],
                             "traits": { "canSetRuleText": false },
                         },
                         "pseudoElement": null,
@@ -237,6 +249,13 @@ impl Actor for PageStyleActor {
             }
             "isPositionEditable" => {
                 ctx.write_msg(self.name(), json!({ "value": false }));
+                Ok(())
+            }
+            // Firefox's Rules view calls getUsedFontFaces when populating;
+            // an unrecognizedPacketType error aborts the populate and leaves
+            // the Rules panel empty
+            "getUsedFontFaces" => {
+                ctx.write_msg(self.name(), json!({ "fontFaces": [] }));
                 Ok(())
             }
             _ => Err(ActorMessageErr::UnrecognizedPacketType),

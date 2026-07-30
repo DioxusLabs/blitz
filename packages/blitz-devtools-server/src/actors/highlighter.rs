@@ -43,15 +43,20 @@ impl Actor for HighlighterActor {
                     .and_then(|v| v.as_str())
                     .ok_or(ActorMessageErr::MissingParameter)?
                     .to_string();
+                // Tolerate non-node actors: Firefox passes the target/inspector
+                // actor when showing e.g. the ViewportSizeOnResizeHighlighter,
+                // and a noSuchNode error would abort its [root-node] listener
+                // and leave the markup view empty.
                 let node_id = InspectorActor::with_walker(ctx, &self.walker_name, |walker, _| {
                     walker.node_for_actor(&node_actor)
-                })
-                .ok_or(ActorMessageErr::NoSuchNode)?;
-
-                ctx.with_doc(doc_id, |doc| {
-                    doc.devtools_mut().highlight_node = Some(node_id);
-                    doc.shell_provider.request_redraw();
                 });
+
+                if let Some(node_id) = node_id {
+                    ctx.with_doc(doc_id, |doc| {
+                        doc.devtools_mut().highlight_node = Some(node_id);
+                        doc.shell_provider.request_redraw();
+                    });
+                }
                 ctx.write_msg(self.name(), json!({ "value": true }));
                 Ok(())
             }
