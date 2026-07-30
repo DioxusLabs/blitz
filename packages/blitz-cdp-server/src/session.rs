@@ -155,12 +155,13 @@ impl Session {
     }
 
     /// The id of the document this session is inspecting: the one requested
-    /// via the WebSocket path if it (still) exists, else the first document
+    /// via the WebSocket path (fixed for the session's lifetime — `None` if
+    /// it has closed), or the first document if none was requested
     fn doc_id(&self, docs: &dyn DocumentProvider) -> Option<usize> {
         let ids = docs.document_ids();
         match self.doc_id_hint {
-            Some(id) if ids.contains(&id) => Some(id),
-            _ => ids.first().copied(),
+            Some(id) => ids.contains(&id).then_some(id),
+            None => ids.first().copied(),
         }
     }
 
