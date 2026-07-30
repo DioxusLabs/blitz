@@ -1,5 +1,7 @@
 //! Types configure developer inspection and debug tools
 
+use crate::node_id::NodeId;
+
 /// Configuration for debug overlays and other debugging tools
 #[derive(Debug, Default, Clone, Copy)]
 pub struct DevtoolSettings {
@@ -9,6 +11,14 @@ pub struct DevtoolSettings {
     /// Render browser-style colored overlay showing the content-box,
     /// padding, border, and margin of the hovered element
     pub highlight_hover: bool,
+    /// Render browser-style colored overlay showing the content-box,
+    /// padding, border, and margin of a specific node (set by e.g. a
+    /// remote devtools inspector)
+    pub highlight_node: Option<NodeId>,
+    /// Element picker mode: mouse events are intercepted (not delivered to
+    /// the page) and reported to a remote devtools inspector so the user
+    /// can pick an element by hovering/clicking it
+    pub element_picker: bool,
 }
 
 impl DevtoolSettings {
