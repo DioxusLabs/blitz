@@ -39,12 +39,7 @@ jobs:
           packages: libfontconfig1-dev
           version: 1.0
       - name: Clone WPT tests
-        run: |
-          git init ./wpt/tests
-          cd ./wpt/tests
-          git remote add origin https://github.com/web-platform-tests/wpt
-          git fetch --depth 1 origin "$WPT_COMMIT"
-          git checkout FETCH_HEAD
+        run: git clone --depth 1 --revision "$WPT_COMMIT" https://github.com/web-platform-tests/wpt ./wpt/tests
       - name: Build WPT runner
         run: cargo build -rp wpt
       - name: Run WPT tests
