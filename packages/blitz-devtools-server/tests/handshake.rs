@@ -61,7 +61,8 @@ fn session_initialization() {
     let html = "<html><head><title>Test Page</title></head>\
          <body><div id=\"container\" style=\"display: flex\">\
          <span class=\"a\">Hello</span> <span class=\"b\">World</span>\
-         </div></body></html>";
+         </div><p id=\"para\" style=\"width: 100px\">aaaa aaaa \
+         <span id=\"wrapped\">bbbb bbbb bbbb bbbb</span> aaaa</p></body></html>";
     let mut doc: BaseDocument = HtmlDocument::from_html(
         html,
         DocumentConfig {
@@ -326,6 +327,44 @@ fn client_session(mut stream: TcpStream, picker_sender: Sender<PickerKind>) {
         write_packet(
             &mut stream,
             serde_json::json!({ "to": highlighter_actor, "type": "show", "node": text_actor }),
+        );
+        let msg = read_packet(&mut stream);
+        assert_eq!(msg["value"], true);
+        write_packet(
+            &mut stream,
+            serde_json::json!({ "to": highlighter_actor, "type": "hide" }),
+        );
+        let _ = read_packet(&mut stream);
+
+        // A non-atomic inline element that wraps across line boxes has no
+        // layout box of its own: getLayout must report the bounding rect of
+        // its line-box fragments, and highlighting it must work
+        write_packet(
+            &mut stream,
+            serde_json::json!({
+                "to": walker_actor,
+                "type": "querySelector",
+                "node": walker["root"]["actor"],
+                "selector": "#wrapped",
+            }),
+        );
+        let msg = read_packet(&mut stream);
+        let wrapped = &msg["node"];
+        assert_eq!(wrapped["nodeName"], "SPAN");
+        let wrapped_actor = wrapped["actor"].as_str().unwrap().to_string();
+
+        write_packet(
+            &mut stream,
+            serde_json::json!({ "to": page_style_actor, "type": "getLayout", "node": wrapped_actor }),
+        );
+        let msg = read_packet(&mut stream);
+        assert_eq!(msg["display"], "inline");
+        assert!(msg["width"].as_f64().unwrap() > 0.0);
+        assert!(msg["height"].as_f64().unwrap() > 0.0);
+
+        write_packet(
+            &mut stream,
+            serde_json::json!({ "to": highlighter_actor, "type": "show", "node": wrapped_actor }),
         );
         let msg = read_packet(&mut stream);
         assert_eq!(msg["value"], true);

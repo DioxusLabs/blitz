@@ -30,3 +30,5 @@ bytes = { workspace = true }
 
 [dev-dependencies]
 blitz-html = { workspace = true }
+# Text must be laid out with real fonts for inline fragment geometry to be non-zero
+blitz-dom = { workspace = true, features = ["system-fonts"] }

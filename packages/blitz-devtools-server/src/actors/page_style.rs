@@ -325,11 +325,31 @@ fn layout_form(doc: &BaseDocument, node_id: NodeId) -> Option<JsonValue> {
         }
     }
 
+    // Non-atomic inline elements have no layout box of their own (they are
+    // laid out as style spans that may fragment across line boxes): report
+    // the bounding rect of their fragments, as Firefox does.
+    let (width, height) = match doc.inline_fragment_rects(node_id) {
+        Some(_) => match doc.get_client_bounding_rect(node_id) {
+            Some(rect) => (rect.width as f32, rect.height as f32),
+            None => (0.0, 0.0),
+        },
+        None => (
+            layout.size.width
+                - layout.border.left
+                - layout.border.right
+                - layout.padding.left
+                - layout.padding.right,
+            layout.size.height
+                - layout.border.top
+                - layout.border.bottom
+                - layout.padding.top
+                - layout.padding.bottom,
+        ),
+    };
+
     Some(json!({
-        "width": layout.size.width - layout.border.left - layout.border.right
-            - layout.padding.left - layout.padding.right,
-        "height": layout.size.height - layout.border.top - layout.border.bottom
-            - layout.padding.top - layout.padding.bottom,
+        "width": width,
+        "height": height,
         "autoMargins": auto_margins,
         "margin-top": px(layout.margin.top),
         "margin-right": px(layout.margin.right),
