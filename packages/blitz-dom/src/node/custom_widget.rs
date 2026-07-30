@@ -96,6 +96,14 @@ pub trait Widget {
 
     // Other
 
+    /// Whether the widget is currently animating.
+    ///
+    /// Returning `true` causes the document to continuously schedule redraws
+    /// (and hence repaints of the widget). Static widgets should return `false`.
+    fn is_animating(&self) -> bool {
+        false
+    }
+
     /// Handle input events (mouse, keyboard, etc)
     fn handle_event(&mut self, event: &UiEvent) {
         let _ = event;
