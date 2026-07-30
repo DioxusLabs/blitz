@@ -251,13 +251,24 @@ impl Session {
                 let doc_id = self.doc_id(docs).ok_or_else(no_document)?;
                 let node_id = node_id_param(params, "nodeId")?;
                 let depth = params.get("depth").and_then(|d| d.as_i64()).unwrap_or(1);
+                if self.children_sent.contains(&node_id) {
+                    // The frontend already knows this node's children:
+                    // resending them would replace its node objects and
+                    // break tree state (see `children_sent`)
+                    return Ok(json!({}));
+                }
                 let children_sent = &mut self.children_sent;
                 let nodes = with_doc(docs, doc_id, |doc| {
                     let node = doc.get_node(node_id)?;
                     let children: Vec<JsonValue> = crate::dom::dom_children(doc, node)
                         .iter()
                         .filter_map(|child| {
-                            crate::dom::node_json(doc, child.id, depth - 1, children_sent)
+                            crate::dom::node_json(
+                                doc,
+                                child.id,
+                                crate::dom::child_depth(depth),
+                                children_sent,
+                            )
                         })
                         .collect();
                     Some(children)

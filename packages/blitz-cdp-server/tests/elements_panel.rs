@@ -143,6 +143,127 @@ fn elements_panel_session() {
     });
 }
 
+/// Negative depths mean the entire subtree (per the CDP spec); positive
+/// depths limit the number of levels returned
+#[test]
+fn subtree_depth() {
+    let html = "<html><body><div id=\"outer\"><p id=\"mid\">\
+         <span id=\"inner\"><b id=\"deep\">x</b></span></p></div></body></html>";
+    let mut doc: BaseDocument = HtmlDocument::from_html(
+        html,
+        DocumentConfig {
+            viewport: Some(Viewport::new(1200, 800, 1.0, ColorScheme::Light)),
+            ..Default::default()
+        },
+    )
+    .into();
+    doc.resolve(0.0);
+    let mut provider = SingleDocProvider(doc);
+    let doc_id = provider.0.id();
+
+    let (wake_sender, wake_receiver) = channel();
+    let mut server = CdpServer::new(Arc::new(TestWaker(Mutex::new(wake_sender))));
+    server.start_listening("127.0.0.1:0");
+    let addr = server
+        .wait_for_local_addr(Duration::from_secs(10))
+        .expect("server should start listening");
+
+    let done = Arc::new(Mutex::new(false));
+    std::thread::scope(|scope| {
+        let done2 = Arc::clone(&done);
+        scope.spawn(move || {
+            struct DoneGuard(Arc<Mutex<bool>>);
+            impl Drop for DoneGuard {
+                fn drop(&mut self) {
+                    *self.0.lock().unwrap() = true;
+                }
+            }
+            let _guard = DoneGuard(done2);
+            depth_client_session(addr, doc_id);
+        });
+
+        while !*done.lock().unwrap() {
+            if wake_receiver
+                .recv_timeout(Duration::from_millis(50))
+                .is_ok()
+            {
+                server.process_messages(&mut provider);
+            }
+        }
+    });
+}
+
+fn depth_client_session(addr: std::net::SocketAddr, doc_id: usize) {
+    /// Find a node with the given "id" attribute anywhere in a `children`
+    /// subtree
+    fn find_by_id<'a>(node: &'a serde_json::Value, id: &str) -> Option<&'a serde_json::Value> {
+        let attrs = node["attributes"].as_array();
+        if attrs.is_some_and(|attrs| attrs.windows(2).any(|w| w[0] == "id" && w[1] == id)) {
+            return Some(node);
+        }
+        node["children"]
+            .as_array()?
+            .iter()
+            .find_map(|child| find_by_id(child, id))
+    }
+
+    let (mut ws, _response) =
+        tungstenite::connect(format!("ws://{addr}/devtools/page/{doc_id}")).expect("ws connect");
+    let mut events = Vec::new();
+
+    // depth: -1 returns the entire subtree
+    send_command(&mut ws, 1, "DOM.getDocument", json!({ "depth": -1 }));
+    let result = read_reply(&mut ws, 1, &mut events);
+    let deep = find_by_id(&result["root"], "deep").expect("deep node in full subtree");
+    assert_eq!(deep["nodeName"], "B");
+
+    // Reconnect for a fresh session (children are only sent once per session)
+    let (mut ws, _response) =
+        tungstenite::connect(format!("ws://{addr}/devtools/page/{doc_id}")).expect("ws connect");
+
+    // depth: 1 returns a single level
+    send_command(&mut ws, 1, "DOM.getDocument", json!({ "depth": 1 }));
+    let result = read_reply(&mut ws, 1, &mut events);
+    let root = &result["root"];
+    let html_node = &root["children"][0];
+    assert_eq!(html_node["nodeName"], "HTML");
+    assert!(html_node["children"].as_array().is_none());
+    assert!(find_by_id(root, "outer").is_none());
+
+    // requestChildNodes with depth: -1 sends the node's entire subtree
+    let html_id = html_node["nodeId"].as_u64().unwrap();
+    send_command(
+        &mut ws,
+        2,
+        "DOM.requestChildNodes",
+        json!({ "nodeId": html_id, "depth": -1 }),
+    );
+    read_reply(&mut ws, 2, &mut events);
+    let set_children = events
+        .iter()
+        .find(|event| event["method"] == "DOM.setChildNodes")
+        .expect("DOM.setChildNodes event");
+    assert_eq!(set_children["params"]["parentId"], html_id);
+    let deep = set_children["params"]["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find_map(|node| find_by_id(node, "deep"))
+        .expect("deep node in full subtree");
+    assert_eq!(deep["nodeName"], "B");
+    events.clear();
+
+    // A repeated requestChildNodes does not resend already-sent children
+    send_command(
+        &mut ws,
+        3,
+        "DOM.requestChildNodes",
+        json!({ "nodeId": html_id, "depth": -1 }),
+    );
+    read_reply(&mut ws, 3, &mut events);
+    assert!(!events.iter().any(|e| e["method"] == "DOM.setChildNodes"));
+}
+
 /// Closing a connection must clear any inspect-mode/highlight state its
 /// session set on the document (e.g. DevTools window closed mid-picking)
 #[test]
