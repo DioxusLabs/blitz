@@ -301,11 +301,64 @@ pub(crate) fn matched_styles_json(doc: &BaseDocument, node_id: NodeId) -> Option
     }))
 }
 
+/// The used (post-layout) values for the box properties, in px, keyed by
+/// property name. Browsers report used values for these in computed style
+/// (e.g. `width: auto` computes to the laid-out pixel width), and the
+/// DevTools Box Model diagram is built from them.
+fn used_box_values(doc: &BaseDocument, node_id: NodeId) -> HashMap<&'static str, String> {
+    let mut map = HashMap::new();
+
+    let Some(node) = doc.get_node(node_id) else {
+        return map;
+    };
+    if node.element_data().is_none() {
+        return map;
+    }
+    let Some(rect) = doc.get_client_bounding_rect(node_id) else {
+        return map;
+    };
+
+    let px = |value: f64| format!("{}px", (value * 100.0).round() / 100.0);
+
+    // Non-atomic inline elements have no layout box of their own: report
+    // the bounding rect of their line-box fragments and zero box insets
+    let is_inline_fragment = doc.inline_fragment_rects(node_id).is_some();
+    let layout = node.final_layout();
+    let (border, padding, margin) = if is_inline_fragment {
+        Default::default()
+    } else {
+        (layout.border, layout.padding, layout.margin)
+    };
+
+    let content_width =
+        rect.width - (border.left + border.right + padding.left + padding.right) as f64;
+    let content_height =
+        rect.height - (border.top + border.bottom + padding.top + padding.bottom) as f64;
+
+    map.insert("width", px(content_width.max(0.0)));
+    map.insert("height", px(content_height.max(0.0)));
+    map.insert("margin-top", px(margin.top as f64));
+    map.insert("margin-right", px(margin.right as f64));
+    map.insert("margin-bottom", px(margin.bottom as f64));
+    map.insert("margin-left", px(margin.left as f64));
+    map.insert("padding-top", px(padding.top as f64));
+    map.insert("padding-right", px(padding.right as f64));
+    map.insert("padding-bottom", px(padding.bottom as f64));
+    map.insert("padding-left", px(padding.left as f64));
+    map.insert("border-top-width", px(border.top as f64));
+    map.insert("border-right-width", px(border.right as f64));
+    map.insert("border-bottom-width", px(border.bottom as f64));
+    map.insert("border-left-width", px(border.left as f64));
+    map
+}
+
 /// Build the `CSS.getComputedStyleForNode` property list for a node: every
-/// longhand property serialized from the node's computed style
+/// longhand property serialized from the node's computed style, with used
+/// (post-layout) values substituted for the box properties
 pub(crate) fn computed_style_json(doc: &BaseDocument, node_id: NodeId) -> Option<JsonValue> {
     let node = doc.get_node(node_id)?;
     let styles = node.primary_styles()?;
+    let used = used_box_values(doc, node_id);
 
     let mut computed = Vec::new();
     for id in NonCustomPropertyId::iter() {
@@ -318,8 +371,12 @@ pub(crate) fn computed_style_json(doc: &BaseDocument, node_id: NodeId) -> Option
         if !PropertyId::NonCustom(id).enabled_for_all_content() {
             continue;
         }
-        let value = styles.computed_value_to_string(PropertyDeclarationId::Longhand(longhand));
-        computed.push(json!({ "name": longhand.name(), "value": value }));
+        let name = longhand.name();
+        let value = match used.get(name) {
+            Some(used_value) => used_value.clone(),
+            None => styles.computed_value_to_string(PropertyDeclarationId::Longhand(longhand)),
+        };
+        computed.push(json!({ "name": name, "value": value }));
     }
     Some(JsonValue::Array(computed))
 }
