@@ -24,6 +24,7 @@ use tungstenite::handshake::derive_accept_key;
 use tungstenite::protocol::Role;
 
 mod css;
+pub mod documents;
 mod dom;
 mod session;
 
