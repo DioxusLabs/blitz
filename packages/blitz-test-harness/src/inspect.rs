@@ -92,6 +92,16 @@ impl<D: Document> Harness<D> {
             .map(|a| a.value.clone())
     }
 
+    /// The current value of the text input/textarea matching `selector`
+    /// (`None` if the element is not a text input)
+    pub fn input_value(&self, selector: &str) -> Option<String> {
+        let node_id = self.node(selector);
+        let doc = self.base();
+        let node = doc.get_node(node_id).unwrap();
+        let text_input = node.element_data()?.text_input_data()?;
+        Some(text_input.editor.text().to_string())
+    }
+
     /// Hit-test page coordinates `(x, y)`
     pub fn hit(&self, x: f32, y: f32) -> Option<HitResult> {
         self.base().hit(x, y)
