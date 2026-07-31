@@ -222,6 +222,22 @@ impl<D: Document> Harness<D> {
             KeyState::Pressed,
             modifiers,
         )));
+
+        // On macOS some text-editing keys are handled via the Apple standard
+        // keybindings (dispatched by AppKit in a windowed shell) rather than
+        // the keydown event, so synthesize the corresponding command here.
+        #[cfg(target_os = "macos")]
+        if key == Key::Backspace {
+            let command = if modifiers.contains(Modifiers::ALT) {
+                "deleteWordBackward:"
+            } else {
+                "deleteBackward:"
+            };
+            self.dispatch(UiEvent::AppleStandardKeybinding(
+                blitz_traits::SmolStr::new(command),
+            ));
+        }
+
         self.dispatch(UiEvent::KeyUp(key_event(
             key,
             KeyState::Released,
