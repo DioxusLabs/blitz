@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use blitz_dom::BaseDocument;
+use blitz_dom::{BaseDocument, LocalName, NodeData, QualName, ns};
 use blitz_traits::node_id::NodeId;
 use serde_json::json;
 
@@ -310,6 +310,121 @@ impl Session {
                 }
             }
 
+            "DOM.setAttributeValue" => {
+                let doc_id = self.doc_id(docs).ok_or_else(no_document)?;
+                let node_id = node_id_param(params, "nodeId")?;
+                let name = str_param(params, "name")?;
+                let value = str_param(params, "value")?;
+                with_doc(docs, doc_id, |doc| {
+                    doc.get_node(node_id)
+                        .filter(|node| node.element_data().is_some())
+                        .ok_or_else(no_node)?;
+                    doc.mutate()
+                        .set_attribute(node_id, attr_name(&name), &value);
+                    doc.shell_provider.request_redraw();
+                    Ok(())
+                })
+                .ok_or_else(no_document)??;
+                writer.event(
+                    "DOM.attributeModified",
+                    json!({ "nodeId": cdp_node_id(node_id), "name": name, "value": value }),
+                );
+                Ok(json!({}))
+            }
+
+            "DOM.removeAttribute" => {
+                let doc_id = self.doc_id(docs).ok_or_else(no_document)?;
+                let node_id = node_id_param(params, "nodeId")?;
+                let name = str_param(params, "name")?;
+                with_doc(docs, doc_id, |doc| {
+                    doc.get_node(node_id)
+                        .filter(|node| node.element_data().is_some())
+                        .ok_or_else(no_node)?;
+                    doc.mutate().clear_attribute(node_id, attr_name(&name));
+                    doc.shell_provider.request_redraw();
+                    Ok(())
+                })
+                .ok_or_else(no_document)??;
+                writer.event(
+                    "DOM.attributeRemoved",
+                    json!({ "nodeId": cdp_node_id(node_id), "name": name }),
+                );
+                Ok(json!({}))
+            }
+
+            // Sent by the Elements panel when an attribute is edited inline:
+            // `text` is raw attribute markup (e.g. `id="foo" class="bar"`)
+            // that replaces the attribute originally named `name`
+            "DOM.setAttributesAsText" => {
+                let doc_id = self.doc_id(docs).ok_or_else(no_document)?;
+                let node_id = node_id_param(params, "nodeId")?;
+                let text = str_param(params, "text")?;
+                let replaced_name = params.get("name").and_then(|n| n.as_str());
+                let new_attrs = parse_attributes_text(&text);
+                let removed = replaced_name
+                    .filter(|name| !new_attrs.iter().any(|(new_name, _)| new_name == name))
+                    .map(|name| name.to_string());
+                with_doc(docs, doc_id, |doc| {
+                    doc.get_node(node_id)
+                        .filter(|node| node.element_data().is_some())
+                        .ok_or_else(no_node)?;
+                    let mut mutr = doc.mutate();
+                    if let Some(name) = &removed {
+                        mutr.clear_attribute(node_id, attr_name(name));
+                    }
+                    for (name, value) in &new_attrs {
+                        mutr.set_attribute(node_id, attr_name(name), value);
+                    }
+                    drop(mutr);
+                    doc.shell_provider.request_redraw();
+                    Ok(())
+                })
+                .ok_or_else(no_document)??;
+                if let Some(name) = &removed {
+                    writer.event(
+                        "DOM.attributeRemoved",
+                        json!({ "nodeId": cdp_node_id(node_id), "name": name }),
+                    );
+                }
+                for (name, value) in &new_attrs {
+                    writer.event(
+                        "DOM.attributeModified",
+                        json!({ "nodeId": cdp_node_id(node_id), "name": name, "value": value }),
+                    );
+                }
+                Ok(json!({}))
+            }
+
+            "DOM.setNodeValue" => {
+                let doc_id = self.doc_id(docs).ok_or_else(no_document)?;
+                let node_id = node_id_param(params, "nodeId")?;
+                let value = str_param(params, "value")?;
+                with_doc(docs, doc_id, |doc| {
+                    let node = doc.get_node_mut(node_id).ok_or_else(no_node)?;
+                    match &mut node.data {
+                        NodeData::Text(_) => {}
+                        NodeData::Comment { contents } => {
+                            *contents = value.clone();
+                            return Ok(());
+                        }
+                        _ => {
+                            return Err(CdpError::server_error(
+                                "Node is not a character data node",
+                            ));
+                        }
+                    }
+                    doc.mutate().set_node_text(node_id, &value);
+                    doc.shell_provider.request_redraw();
+                    Ok(())
+                })
+                .ok_or_else(no_document)??;
+                writer.event(
+                    "DOM.characterDataModified",
+                    json!({ "nodeId": cdp_node_id(node_id), "characterData": value }),
+                );
+                Ok(json!({}))
+            }
+
             "DOM.pushNodesByBackendIdsToFrontend" => {
                 let doc_id = self.doc_id(docs).ok_or_else(no_document)?;
                 let backend_ids = params
@@ -616,6 +731,62 @@ fn no_document() -> CdpError {
 
 fn no_node() -> CdpError {
     CdpError::server_error("Could not find node with given id")
+}
+
+/// Extract a string parameter
+fn str_param(params: &JsonValue, key: &str) -> Result<String, CdpError> {
+    params
+        .get(key)
+        .and_then(|value| value.as_str())
+        .map(|value| value.to_string())
+        .ok_or_else(|| CdpError::invalid_params(&format!("Missing {key}")))
+}
+
+/// The qualified name of an (HTML, un-namespaced) attribute
+fn attr_name(name: &str) -> QualName {
+    QualName {
+        prefix: None,
+        ns: ns!(),
+        local: LocalName::from(name),
+    }
+}
+
+/// Parse raw attribute markup (e.g. `id="foo" data-x class='y'`) into
+/// name/value pairs, as sent by `DOM.setAttributesAsText`
+fn parse_attributes_text(text: &str) -> Vec<(String, String)> {
+    let mut out: Vec<(String, String)> = Vec::new();
+    let mut chars = text.chars().peekable();
+    loop {
+        while chars.next_if(|c| c.is_whitespace()).is_some() {}
+        let mut name = String::new();
+        while let Some(c) = chars.next_if(|&c| !c.is_whitespace() && c != '=') {
+            name.push(c);
+        }
+        if name.is_empty() {
+            break;
+        }
+        while chars.next_if(|c| c.is_whitespace()).is_some() {}
+        let mut value = String::new();
+        if chars.next_if_eq(&'=').is_some() {
+            while chars.next_if(|c| c.is_whitespace()).is_some() {}
+            match chars.peek() {
+                Some(&quote @ ('"' | '\'')) => {
+                    chars.next();
+                    while let Some(c) = chars.next_if(|&c| c != quote) {
+                        value.push(c);
+                    }
+                    chars.next();
+                }
+                _ => {
+                    while let Some(c) = chars.next_if(|&c| !c.is_whitespace()) {
+                        value.push(c);
+                    }
+                }
+            }
+        }
+        out.push((name, value));
+    }
+    out
 }
 
 /// Extract a Blitz `NodeId` from a CDP node id parameter
