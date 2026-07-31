@@ -1,0 +1,25 @@
+[package]
+name = "blitz-test-harness"
+description = "Headless test harness for Blitz documents"
+publish = false
+version.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+categories.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+# Blitz dependencies
+blitz-dom = { workspace = true, features = ["accessibility", "system-fonts"] }
+blitz-html = { workspace = true }
+blitz-traits = { workspace = true }
+dioxus-native-dom = { workspace = true }
+
+# DioxusLabs dependencies
+dioxus-core = { workspace = true }
+
+# Other dependencies
+keyboard-types = { workspace = true }
+smol_str = { workspace = true }

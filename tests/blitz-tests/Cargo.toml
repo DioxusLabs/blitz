@@ -1,0 +1,35 @@
+[package]
+name = "blitz-tests"
+description = "Integration tests for Blitz"
+publish = false
+version.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+categories.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dev-dependencies]
+# Blitz dependencies
+blitz-test-harness = { workspace = true }
+blitz-dom = { workspace = true, features = ["accessibility", "system-fonts"] }
+blitz-html = { workspace = true }
+blitz-traits = { workspace = true }
+blitz-paint = { workspace = true, features = ["scrollbars", "svg"] }
+dioxus-native-dom = { workspace = true }
+anyrender = { workspace = true }
+anyrender_vello_cpu = { workspace = true }
+
+# DioxusLabs dependencies
+dioxus = { workspace = true }
+dioxus-core = { workspace = true }
+
+# Other dependencies
+accesskit = { workspace = true }
+markup5ever = { workspace = true }
+keyboard-types = { workspace = true }
+usvg = { workspace = true }
+
+[lib]
+path = "lib.rs"

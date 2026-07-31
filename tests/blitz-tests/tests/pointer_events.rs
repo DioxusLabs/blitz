@@ -3,68 +3,24 @@
 //! inheritance, but a descendant that restores `pointer-events: auto` is
 //! targetable again (css-ui-4).
 
-use blitz_dom::{Document, DocumentConfig, NodeId};
-use blitz_html::{HtmlDocument, HtmlProvider};
-use blitz_traits::{
-    events::{
-        BlitzPointerEvent, BlitzPointerId, MouseEventButton, MouseEventButtons, Point,
-        PointerCoords, PointerDetails, UiEvent,
-    },
-    shell::{ColorScheme, Viewport},
-};
-use std::sync::Arc;
+use blitz_test_harness::{Harness, HarnessOptions};
 
-fn doc(html: &str) -> HtmlDocument {
-    let mut doc = HtmlDocument::from_html(
+fn harness(html: &str) -> Harness {
+    Harness::from_html_with(
         html,
-        DocumentConfig {
-            viewport: Some(Viewport::new(200, 200, 1.0, ColorScheme::Light)),
-            html_parser_provider: Some(Arc::new(HtmlProvider) as _),
+        HarnessOptions {
+            width: 200,
+            height: 200,
             ..Default::default()
         },
-    );
-    doc.resolve(0.0);
-    doc
+    )
 }
 
-fn hit_id(doc: &HtmlDocument, x: f32, y: f32) -> NodeId {
-    doc.hit(x, y).expect("hit should land somewhere").node_id
-}
-
-fn node_id(doc: &HtmlDocument, selector: &str) -> NodeId {
-    doc.query_selector(selector).unwrap().expect(selector)
-}
-
-fn pointer_event(x: f32, y: f32) -> BlitzPointerEvent {
-    BlitzPointerEvent {
-        id: BlitzPointerId::Mouse,
-        is_primary: true,
-        coords: PointerCoords {
-            page_x: x,
-            page_y: y,
-            screen_x: x,
-            screen_y: y,
-            client_x: x,
-            client_y: y,
-        },
-        button: MouseEventButton::Main,
-        buttons: MouseEventButtons::from(MouseEventButton::Main),
-        mods: Default::default(),
-        details: PointerDetails::default(),
-        element: Point::default(),
-        active_pointers: Default::default(),
-    }
-}
-
-fn click(doc: &mut HtmlDocument, x: f32, y: f32) {
-    let event = pointer_event(x, y);
-    doc.handle_ui_event(UiEvent::PointerDown(event.clone()));
-    doc.handle_ui_event(UiEvent::PointerUp(event));
-}
-
-fn is_checked(doc: &HtmlDocument, selector: &str) -> bool {
-    let id = node_id(doc, selector);
-    doc.get_node(id)
+fn is_checked(harness: &Harness, selector: &str) -> bool {
+    let id = harness.node(selector);
+    harness
+        .base()
+        .get_node(id)
         .and_then(|node| node.element_data())
         .and_then(|el| el.checkbox_input_checked())
         .unwrap()
@@ -75,18 +31,21 @@ fn overlay_with_pointer_events_none_passes_through_to_button() {
     // The titlebar shape: an in-flow button row with a full-size positioned
     // overlay (paints and hit-tests above in-flow content) that sets
     // pointer-events: none.
-    let doc = doc(r#"<html><body style="margin:0">
+    let harness = harness(
+        r#"<html><body style="margin:0">
         <div style="position:relative; width:200px; height:36px;">
             <button id="btn" style="position:static; width:44px; height:36px; margin-left:156px; display:block;">x</button>
             <div id="overlay" style="position:absolute; left:0; top:0; right:0; bottom:0; pointer-events:none;">
                 <span>Kopuz</span>
             </div>
         </div>
-    </body></html>"#);
+    </body></html>"#,
+    );
 
-    let btn = node_id(&doc, "#btn");
-    let hit = hit_id(&doc, 178.0, 18.0);
+    let btn = harness.node("#btn");
+    let hit = harness.hit_node(178.0, 18.0);
     // The hit may be the button itself or its text child; resolve via ancestors
+    let doc = harness.base();
     let hit_or_ancestor =
         std::iter::successors(Some(hit), |&id| doc.get_node(id).and_then(|n| n.parent))
             .any(|id| id == btn);
@@ -98,44 +57,50 @@ fn overlay_with_pointer_events_none_passes_through_to_button() {
 
 #[test]
 fn element_with_pointer_events_none_is_not_a_target() {
-    let doc = doc(r#"<html><body style="margin:0">
+    let harness = harness(
+        r#"<html><body style="margin:0">
         <div id="under" style="width:100px; height:100px;">
             <div id="blocker" style="width:100px; height:100px; pointer-events:none;"></div>
         </div>
-    </body></html>"#);
+    </body></html>"#,
+    );
 
-    let blocker = node_id(&doc, "#blocker");
-    let under = node_id(&doc, "#under");
-    let hit = hit_id(&doc, 50.0, 50.0);
+    let blocker = harness.node("#blocker");
+    let under = harness.node("#under");
+    let hit = harness.hit_node(50.0, 50.0);
     assert_ne!(hit, blocker, "pointer-events:none element must not be hit");
     assert_eq!(hit, under, "the event should fall through to the parent");
 }
 
 #[test]
 fn descendant_restoring_pointer_events_auto_is_targetable() {
-    let doc = doc(r#"<html><body style="margin:0">
+    let harness = harness(
+        r#"<html><body style="margin:0">
         <div style="pointer-events:none; width:200px; height:100px;">
             <div id="inner" style="pointer-events:auto; width:50px; height:50px;"></div>
         </div>
-    </body></html>"#);
+    </body></html>"#,
+    );
 
-    let inner = node_id(&doc, "#inner");
-    assert_eq!(hit_id(&doc, 25.0, 25.0), inner);
+    let inner = harness.node("#inner");
+    assert_eq!(harness.hit_node(25.0, 25.0), inner);
 }
 
 #[test]
 fn text_inside_pointer_events_none_overlay_is_not_a_target() {
-    let doc = doc(r#"<html><body style="margin:0">
+    let harness = harness(
+        r#"<html><body style="margin:0">
         <div id="under" style="position:relative; width:200px; height:36px;">
             <div id="overlay" style="position:absolute; left:0; top:0; right:0; bottom:0; pointer-events:none;">
                 <span id="label" style="font-size:20px;">KOPUZKOPUZKOPUZ</span>
             </div>
         </div>
-    </body></html>"#);
+    </body></html>"#,
+    );
 
-    let overlay = node_id(&doc, "#overlay");
-    let label = node_id(&doc, "#label");
-    let hit = hit_id(&doc, 30.0, 14.0);
+    let overlay = harness.node("#overlay");
+    let label = harness.node("#label");
+    let hit = harness.hit_node(30.0, 14.0);
     assert_ne!(hit, overlay);
     assert_ne!(
         hit, label,
@@ -145,11 +110,13 @@ fn text_inside_pointer_events_none_overlay_is_not_a_target() {
 
 #[test]
 fn clicking_radio_without_name_does_not_panic() {
-    let mut doc = doc(r#"<html><body style="margin:0">
+    let mut harness = harness(
+        r#"<html><body style="margin:0">
             <input id="radio" type="radio" style="width:20px; height:20px;">
-        </body></html>"#);
+        </body></html>"#,
+    );
 
-    click(&mut doc, 10.0, 10.0);
+    harness.click_at(10.0, 10.0);
 
-    assert!(is_checked(&doc, "#radio"));
+    assert!(is_checked(&harness, "#radio"));
 }

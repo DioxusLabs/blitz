@@ -24,14 +24,3 @@ html5ever = { workspace = true }
 xml5ever = { workspace = true }
 
 tracing = { workspace = true, optional = true }
-
-[dev-dependencies]
-# Enable blitz-dom features for tests
-blitz-dom = { workspace = true, features = ["accessibility", "system-fonts"] }
-
-accesskit = { workspace = true }
-markup5ever = { workspace = true }
-blitz-paint = { workspace = true, features = ["scrollbars", "svg"] }
-anyrender = { workspace = true }
-anyrender_vello_cpu = { workspace = true }
-usvg = { workspace = true }

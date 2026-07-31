@@ -946,16 +946,10 @@ dependencies = [
 name = "blitz-html"
 version = "0.3.0-beta.1"
 dependencies = [
- "accesskit",
- "anyrender",
- "anyrender_vello_cpu",
  "blitz-dom",
- "blitz-paint",
  "blitz-traits",
  "html5ever",
- "markup5ever",
  "tracing",
- "usvg",
  "xml5ever",
 ]
 
@@ -1017,6 +1011,39 @@ dependencies = [
  "web-sys",
  "web-time",
  "winit",
+]
+
+[[package]]
+name = "blitz-test-harness"
+version = "0.3.0-beta.1"
+dependencies = [
+ "blitz-dom",
+ "blitz-html",
+ "blitz-traits",
+ "dioxus-core",
+ "dioxus-native-dom",
+ "keyboard-types 0.7.0",
+ "smol_str",
+]
+
+[[package]]
+name = "blitz-tests"
+version = "0.3.0-beta.1"
+dependencies = [
+ "accesskit",
+ "anyrender",
+ "anyrender_vello_cpu",
+ "blitz-dom",
+ "blitz-html",
+ "blitz-paint",
+ "blitz-test-harness",
+ "blitz-traits",
+ "dioxus",
+ "dioxus-core",
+ "dioxus-native-dom",
+ "keyboard-types 0.7.0",
+ "markup5ever",
+ "usvg",
 ]
 
 [[package]]

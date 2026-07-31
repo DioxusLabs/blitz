@@ -3,100 +3,45 @@
 //! pointer events. Mouse input must NOT generate touch events (and vice-versa),
 //! and default actions remain driven by the pointer events.
 
-use blitz_dom::{Document, DocumentConfig, EventDriver, EventHandler, NodeId};
-use blitz_html::{HtmlDocument, HtmlProvider};
-use blitz_traits::{
-    events::{
-        BlitzPointerEvent, BlitzPointerId, DomEvent, EventState, MouseEventButton,
-        MouseEventButtons, Point, PointerCoords, PointerDetails, UiEvent,
-    },
-    shell::{ColorScheme, Viewport},
+use blitz_test_harness::{Harness, HarnessOptions, pointer_event};
+use blitz_traits::events::{
+    BlitzPointerEvent, BlitzPointerId, MouseEventButton, MouseEventButtons, UiEvent,
 };
-use std::cell::RefCell;
-use std::rc::Rc;
-use std::sync::Arc;
+use keyboard_types::Modifiers;
 
-fn doc(html: &str) -> HtmlDocument {
-    let mut doc = HtmlDocument::from_html(
-        html,
-        DocumentConfig {
-            viewport: Some(Viewport::new(200, 200, 1.0, ColorScheme::Light)),
-            html_parser_provider: Some(Arc::new(HtmlProvider) as _),
+fn event(id: BlitzPointerId, x: f32, y: f32) -> BlitzPointerEvent {
+    pointer_event(
+        id,
+        x,
+        y,
+        MouseEventButton::Main,
+        MouseEventButtons::from(MouseEventButton::Main),
+        Modifiers::default(),
+    )
+}
+
+fn target_harness() -> Harness {
+    Harness::from_html_with(
+        r#"<html><body style="margin:0">
+        <div id="target" style="width:200px; height:200px;"></div>
+    </body></html>"#,
+        HarnessOptions {
+            width: 200,
+            height: 200,
             ..Default::default()
         },
-    );
-    doc.resolve(0.0);
-    doc
-}
-
-fn pointer_event(id: BlitzPointerId, x: f32, y: f32) -> BlitzPointerEvent {
-    BlitzPointerEvent {
-        id,
-        is_primary: true,
-        coords: PointerCoords {
-            page_x: x,
-            page_y: y,
-            screen_x: x,
-            screen_y: y,
-            client_x: x,
-            client_y: y,
-        },
-        button: MouseEventButton::Main,
-        buttons: MouseEventButtons::from(MouseEventButton::Main),
-        mods: Default::default(),
-        details: PointerDetails::default(),
-        element: Point::default(),
-        active_pointers: Default::default(),
-    }
-}
-
-/// An [`EventHandler`] that records the name of every [`DomEvent`] it sees.
-#[derive(Clone, Default)]
-struct RecordingHandler {
-    events: Rc<RefCell<Vec<String>>>,
-}
-
-impl EventHandler for RecordingHandler {
-    fn handle_event(
-        &mut self,
-        _chain: &[NodeId],
-        event: &mut DomEvent,
-        _doc: &mut dyn Document,
-        _event_state: &mut EventState,
-    ) {
-        self.events.borrow_mut().push(event.name().to_string());
-    }
-}
-
-fn drive(doc: &mut HtmlDocument, events: impl IntoIterator<Item = UiEvent>) -> Vec<String> {
-    let handler = RecordingHandler::default();
-    let recorded = handler.events.clone();
-    let mut driver = EventDriver::new(doc, handler);
-    for event in events {
-        driver.handle_ui_event(event);
-    }
-    let recorded = recorded.borrow().clone();
-    recorded
-}
-
-fn target_doc() -> HtmlDocument {
-    doc(r#"<html><body style="margin:0">
-        <div id="target" style="width:200px; height:200px;"></div>
-    </body></html>"#)
+    )
 }
 
 #[test]
 fn finger_input_generates_touch_events() {
-    let mut doc = target_doc();
+    let mut harness = target_harness();
     let finger = BlitzPointerId::Finger(0);
-    let names = drive(
-        &mut doc,
-        [
-            UiEvent::PointerDown(pointer_event(finger, 50.0, 50.0)),
-            UiEvent::PointerMove(pointer_event(finger, 60.0, 60.0)),
-            UiEvent::PointerUp(pointer_event(finger, 60.0, 60.0)),
-        ],
-    );
+    let names = harness.dispatch_recorded([
+        UiEvent::PointerDown(event(finger, 50.0, 50.0)),
+        UiEvent::PointerMove(event(finger, 60.0, 60.0)),
+        UiEvent::PointerUp(event(finger, 60.0, 60.0)),
+    ]);
 
     assert!(
         names.contains(&"touchstart".to_string()),
@@ -125,16 +70,13 @@ fn finger_input_generates_touch_events() {
 
 #[test]
 fn pen_input_generates_touch_events() {
-    let mut doc = target_doc();
+    let mut harness = target_harness();
     let pen = BlitzPointerId::Pen;
-    let names = drive(
-        &mut doc,
-        [
-            UiEvent::PointerDown(pointer_event(pen, 50.0, 50.0)),
-            UiEvent::PointerMove(pointer_event(pen, 60.0, 60.0)),
-            UiEvent::PointerUp(pointer_event(pen, 60.0, 60.0)),
-        ],
-    );
+    let names = harness.dispatch_recorded([
+        UiEvent::PointerDown(event(pen, 50.0, 50.0)),
+        UiEvent::PointerMove(event(pen, 60.0, 60.0)),
+        UiEvent::PointerUp(event(pen, 60.0, 60.0)),
+    ]);
 
     assert!(
         names.contains(&"touchstart".to_string()),
@@ -161,15 +103,12 @@ fn pen_input_generates_touch_events() {
 
 #[test]
 fn finger_cancel_generates_pointercancel_and_touchcancel() {
-    let mut doc = target_doc();
+    let mut harness = target_harness();
     let finger = BlitzPointerId::Finger(0);
-    let names = drive(
-        &mut doc,
-        [
-            UiEvent::PointerDown(pointer_event(finger, 50.0, 50.0)),
-            UiEvent::PointerCancel(pointer_event(finger, 50.0, 50.0)),
-        ],
-    );
+    let names = harness.dispatch_recorded([
+        UiEvent::PointerDown(event(finger, 50.0, 50.0)),
+        UiEvent::PointerCancel(event(finger, 50.0, 50.0)),
+    ]);
 
     assert!(
         names.contains(&"pointercancel".to_string()),
@@ -199,15 +138,12 @@ fn finger_cancel_generates_pointercancel_and_touchcancel() {
 
 #[test]
 fn pen_cancel_generates_pointercancel_and_touchcancel() {
-    let mut doc = target_doc();
+    let mut harness = target_harness();
     let pen = BlitzPointerId::Pen;
-    let names = drive(
-        &mut doc,
-        [
-            UiEvent::PointerDown(pointer_event(pen, 50.0, 50.0)),
-            UiEvent::PointerCancel(pointer_event(pen, 50.0, 50.0)),
-        ],
-    );
+    let names = harness.dispatch_recorded([
+        UiEvent::PointerDown(event(pen, 50.0, 50.0)),
+        UiEvent::PointerCancel(event(pen, 50.0, 50.0)),
+    ]);
 
     assert!(
         names.contains(&"pointercancel".to_string()),
@@ -221,15 +157,12 @@ fn pen_cancel_generates_pointercancel_and_touchcancel() {
 
 #[test]
 fn mouse_cancel_generates_pointercancel_without_touch_or_mouse() {
-    let mut doc = target_doc();
+    let mut harness = target_harness();
     let mouse = BlitzPointerId::Mouse;
-    let names = drive(
-        &mut doc,
-        [
-            UiEvent::PointerDown(pointer_event(mouse, 50.0, 50.0)),
-            UiEvent::PointerCancel(pointer_event(mouse, 50.0, 50.0)),
-        ],
-    );
+    let names = harness.dispatch_recorded([
+        UiEvent::PointerDown(event(mouse, 50.0, 50.0)),
+        UiEvent::PointerCancel(event(mouse, 50.0, 50.0)),
+    ]);
 
     assert!(
         names.contains(&"pointercancel".to_string()),
@@ -248,16 +181,13 @@ fn mouse_cancel_generates_pointercancel_without_touch_or_mouse() {
 
 #[test]
 fn mouse_input_does_not_generate_touch_events() {
-    let mut doc = target_doc();
+    let mut harness = target_harness();
     let mouse = BlitzPointerId::Mouse;
-    let names = drive(
-        &mut doc,
-        [
-            UiEvent::PointerDown(pointer_event(mouse, 50.0, 50.0)),
-            UiEvent::PointerMove(pointer_event(mouse, 60.0, 60.0)),
-            UiEvent::PointerUp(pointer_event(mouse, 60.0, 60.0)),
-        ],
-    );
+    let names = harness.dispatch_recorded([
+        UiEvent::PointerDown(event(mouse, 50.0, 50.0)),
+        UiEvent::PointerMove(event(mouse, 60.0, 60.0)),
+        UiEvent::PointerUp(event(mouse, 60.0, 60.0)),
+    ]);
 
     assert!(
         !names.iter().any(|n| n.starts_with("touch")),

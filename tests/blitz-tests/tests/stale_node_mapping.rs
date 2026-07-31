@@ -15,8 +15,7 @@
 //! "invalid key" slab panic in blitz-dom's `DocumentMutator` later in the
 //! same render (matching the stack trace reported in the PR).
 
-use blitz_dom::DocumentConfig;
-use blitz_traits::shell::{ColorScheme, Viewport};
+use blitz_test_harness::HarnessOptions;
 use dioxus::prelude::*;
 use dioxus_core::ScopeId;
 use dioxus_native_dom::DioxusDocument;
@@ -40,7 +39,7 @@ fn app(props: AppProps) -> Element {
 }
 
 struct Harness {
-    doc: DioxusDocument,
+    inner: blitz_test_harness::Harness<DioxusDocument>,
     generation: Rc<Cell<usize>>,
 }
 
@@ -54,22 +53,18 @@ impl Harness {
                 view,
             },
         );
-        let mut doc = DioxusDocument::new(
-            vdom,
-            DocumentConfig {
-                viewport: Some(Viewport::new(800, 600, 1.0, ColorScheme::Light)),
-                ..Default::default()
-            },
-        );
-        doc.initial_build();
-        Self { doc, generation }
+        let inner = blitz_test_harness::Harness::from_vdom(vdom, HarnessOptions::default());
+        Self { inner, generation }
+    }
+
+    fn doc(&self) -> &DioxusDocument {
+        &self.inner.doc
     }
 
     fn step(&mut self) {
-        use blitz_dom::Document as _;
         self.generation.set(self.generation.get() + 1);
-        self.doc.vdom.mark_dirty(ScopeId::APP);
-        self.doc.poll(None);
+        self.inner.doc.vdom.mark_dirty(ScopeId::APP);
+        self.inner.pump();
     }
 }
 
@@ -174,7 +169,7 @@ fn template_swaps_do_not_leave_stale_mappings() {
     let mut harness = Harness::new(toggle_app);
     for i in 0..20 {
         harness.step();
-        assert_no_stale_mappings(&harness.doc, &format!("step {i}"));
+        assert_no_stale_mappings(harness.doc(), &format!("step {i}"));
     }
 }
 
@@ -245,6 +240,6 @@ fn keyed_list_grow_shrink() {
     let mut harness = Harness::new(list_app);
     for i in 0..300 {
         harness.step();
-        assert_no_stale_mappings(&harness.doc, &format!("step {i}"));
+        assert_no_stale_mappings(harness.doc(), &format!("step {i}"));
     }
 }
