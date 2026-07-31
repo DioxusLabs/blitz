@@ -12,7 +12,7 @@ members = [
     "packages/stylo_taffy",
     "packages/dioxus-native",
     "packages/dioxus-native-dom",
-    "packages/blitz-testing",
+    "packages/blitz-test-harness",
     "apps/browser",
     "apps/browser/persistence",
     "apps/readme",
@@ -53,7 +53,7 @@ dioxus-native-dom = { version = "0.7.0", path = "./packages/dioxus-native-dom", 
 debug_timer = { version = "0.1.2", path = "./packages/debug_timer" }
 accesskit_xplat = { version = "0.1", path = "./packages/accesskit_xplat", default-features = false }
 browser-persistence = { path = "./apps/browser/persistence" }
-blitz-testing = { path = "./packages/blitz-testing" }
+blitz-test-harness = { path = "./packages/blitz-test-harness" }
 
 # Servo dependencies
 style = { git = "https://github.com/servo/stylo", rev = "2d289c14fdf46952d52cabce63b1f0dc55b2ccde", package = "stylo" }

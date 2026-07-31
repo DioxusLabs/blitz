@@ -3,7 +3,7 @@
 //! pointer events. Mouse input must NOT generate touch events (and vice-versa),
 //! and default actions remain driven by the pointer events.
 
-use blitz_testing::{Harness, HarnessOptions, pointer_event};
+use blitz_test_harness::{Harness, HarnessOptions, pointer_event};
 use blitz_traits::events::{
     BlitzPointerEvent, BlitzPointerId, MouseEventButton, MouseEventButtons, UiEvent,
 };

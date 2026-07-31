@@ -1014,7 +1014,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "blitz-testing"
+name = "blitz-test-harness"
 version = "0.3.0-beta.1"
 dependencies = [
  "blitz-dom",
@@ -1036,7 +1036,7 @@ dependencies = [
  "blitz-dom",
  "blitz-html",
  "blitz-paint",
- "blitz-testing",
+ "blitz-test-harness",
  "blitz-traits",
  "dioxus",
  "dioxus-core",

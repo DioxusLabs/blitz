@@ -15,7 +15,7 @@
 //! "invalid key" slab panic in blitz-dom's `DocumentMutator` later in the
 //! same render (matching the stack trace reported in the PR).
 
-use blitz_testing::HarnessOptions;
+use blitz_test_harness::HarnessOptions;
 use dioxus::prelude::*;
 use dioxus_core::ScopeId;
 use dioxus_native_dom::DioxusDocument;
@@ -39,7 +39,7 @@ fn app(props: AppProps) -> Element {
 }
 
 struct Harness {
-    inner: blitz_testing::Harness<DioxusDocument>,
+    inner: blitz_test_harness::Harness<DioxusDocument>,
     generation: Rc<Cell<usize>>,
 }
 
@@ -53,7 +53,7 @@ impl Harness {
                 view,
             },
         );
-        let inner = blitz_testing::Harness::from_vdom(vdom, HarnessOptions::default());
+        let inner = blitz_test_harness::Harness::from_vdom(vdom, HarnessOptions::default());
         Self { inner, generation }
     }
 

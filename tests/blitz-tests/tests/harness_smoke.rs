@@ -2,7 +2,7 @@
 //! document construction, inspection, and input synthesis for both
 //! `HtmlDocument` and `DioxusDocument` backed harnesses.
 
-use blitz_testing::Harness;
+use blitz_test_harness::Harness;
 use dioxus::prelude::*;
 
 #[test]

@@ -3,7 +3,7 @@
 //! inheritance, but a descendant that restores `pointer-events: auto` is
 //! targetable again (css-ui-4).
 
-use blitz_testing::{Harness, HarnessOptions};
+use blitz_test_harness::{Harness, HarnessOptions};
 
 fn harness(html: &str) -> Harness {
     Harness::from_html_with(

@@ -12,7 +12,7 @@ rust-version.workspace = true
 
 [dev-dependencies]
 # Blitz dependencies
-blitz-testing = { workspace = true }
+blitz-test-harness = { workspace = true }
 blitz-dom = { workspace = true, features = ["accessibility", "system-fonts"] }
 blitz-html = { workspace = true }
 blitz-traits = { workspace = true }

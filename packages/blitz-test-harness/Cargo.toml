@@ -1,5 +1,5 @@
 [package]
-name = "blitz-testing"
+name = "blitz-test-harness"
 description = "Headless test harness for Blitz documents"
 publish = false
 version.workspace = true
