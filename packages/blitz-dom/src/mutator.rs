@@ -163,6 +163,7 @@ impl DocumentMutator<'_> {
     // Node mutation methods
 
     pub fn set_node_text(&mut self, node_id: NodeId, value: &str) {
+        let node_is_in_document = self.doc.nodes[node_id].flags.is_in_document();
         let node = &mut self.doc.nodes[node_id];
 
         let text = match node.data {
@@ -173,7 +174,7 @@ impl DocumentMutator<'_> {
 
         let changed = text.content != value;
         if changed {
-            self.mutations_occurred = true;
+            self.mutations_occurred |= node_is_in_document;
             text.content.clear();
             text.content.push_str(value);
             node.insert_damage(ALL_DAMAGE);
@@ -198,13 +199,14 @@ impl DocumentMutator<'_> {
         node_id: NodeId,
         text: &str,
     ) -> Result<(), AppendTextErr> {
+        let node_is_in_document = self.doc.nodes[node_id].flags.is_in_document();
         let node = &mut self.doc.nodes[node_id];
         node.insert_damage(ALL_DAMAGE);
         node.mark_ancestors_dirty();
         match node.text_data_mut() {
             Some(data) => {
                 data.content += text;
-                self.mutations_occurred = true;
+                self.mutations_occurred |= node_is_in_document;
                 Ok(())
             }
             None => Err(AppendTextErr::NotTextNode),
@@ -265,7 +267,7 @@ impl DocumentMutator<'_> {
             return;
         };
 
-        self.mutations_occurred = true;
+        self.mutations_occurred |= node_is_in_document;
         // If element is a CustomWidget, then Ccall attribute_changed on it
         #[cfg(feature = "custom-widget")]
         if let SpecialElementData::CustomWidget(widget_data) = &mut element.special_data {
@@ -352,7 +354,7 @@ impl DocumentMutator<'_> {
         if !had_attr {
             return;
         }
-        self.mutations_occurred = true;
+        self.mutations_occurred |= node_is_in_document;
 
         // If element is a CustomWidget, then call attribute_changed on it
         #[cfg(feature = "custom-widget")]
@@ -397,39 +399,46 @@ impl DocumentMutator<'_> {
     }
 
     pub fn set_style_property(&mut self, node_id: NodeId, name: &str, value: &str) {
+        let node_is_in_document = self.doc.nodes[node_id].flags.is_in_document();
         self.doc.set_style_property(node_id, name, value);
-        self.mutations_occurred = true;
+        self.mutations_occurred |= node_is_in_document;
     }
 
     pub fn remove_style_property(&mut self, node_id: NodeId, name: &str) {
+        let node_is_in_document = self.doc.nodes[node_id].flags.is_in_document();
         self.doc.remove_style_property(node_id, name);
-        self.mutations_occurred = true;
+        self.mutations_occurred |= node_is_in_document;
     }
 
     pub fn set_sub_document(&mut self, node_id: NodeId, sub_document: Box<dyn Document>) {
+        let node_is_in_document = self.doc.nodes[node_id].flags.is_in_document();
         self.doc.set_sub_document(node_id, sub_document);
-        self.mutations_occurred = true;
+        self.mutations_occurred |= node_is_in_document;
     }
 
     pub fn remove_sub_document(&mut self, node_id: NodeId) {
+        let node_is_in_document = self.doc.nodes[node_id].flags.is_in_document();
         self.doc.remove_sub_document(node_id);
-        self.mutations_occurred = true;
+        self.mutations_occurred |= node_is_in_document;
     }
 
     #[cfg(feature = "custom-widget")]
     pub fn set_custom_widget(&mut self, node_id: NodeId, widget: Box<dyn crate::Widget>) {
+        let node_is_in_document = self.doc.nodes[node_id].flags.is_in_document();
         self.doc.set_custom_widget(node_id, widget);
-        self.mutations_occurred = true;
+        self.mutations_occurred |= node_is_in_document;
     }
 
     #[cfg(feature = "custom-widget")]
     pub fn remove_custom_widget(&mut self, node_id: NodeId) {
+        let node_is_in_document = self.doc.nodes[node_id].flags.is_in_document();
         self.doc.remove_custom_widget(node_id);
-        self.mutations_occurred = true;
+        self.mutations_occurred |= node_is_in_document;
     }
 
     /// Remove the node from it's parent but don't drop it
     pub fn remove_node(&mut self, node_id: NodeId) {
+        let node_is_in_document = self.doc.nodes[node_id].flags.is_in_document();
         // Process the subtree *before* severing the parent link so that
         // interaction state referencing removed nodes can retarget to the
         // nearest surviving ancestor.
@@ -439,7 +448,7 @@ impl DocumentMutator<'_> {
 
         // Update child_idx values
         if let Some(parent_id) = node.parent.take() {
-            self.mutations_occurred = true;
+            self.mutations_occurred |= node_is_in_document;
             let parent = &mut self.doc.nodes[parent_id];
             parent.insert_damage(ALL_DAMAGE);
             // Mark ancestors dirty so the style traversal visits this subtree.
@@ -460,12 +469,11 @@ impl DocumentMutator<'_> {
         node_id: NodeId,
         on_drop: &mut dyn FnMut(NodeId),
     ) -> Option<Node> {
+        let node_is_in_document = self.doc.nodes[node_id].flags.is_in_document();
         self.process_removed_subtree(node_id);
 
         let node = self.doc.drop_node_ignoring_parent_with(node_id, on_drop);
-        if node.is_some() {
-            self.mutations_occurred = true;
-        }
+        self.mutations_occurred |= node_is_in_document;
 
         // Update child_idx values
         if let Some(parent_id) = node.as_ref().and_then(|node| node.parent) {
@@ -509,9 +517,7 @@ impl DocumentMutator<'_> {
         }
 
         let children = mem::take(&mut parent.children);
-        if !children.is_empty() {
-            self.mutations_occurred = true;
-        }
+        self.mutations_occurred |= parent_is_in_doc && !children.is_empty();
         for child_id in children {
             self.process_removed_subtree(child_id);
             let _ = self.doc.drop_node_ignoring_parent(child_id);
@@ -561,9 +567,8 @@ impl DocumentMutator<'_> {
         child_ids: &[NodeId],
         insert_children_fn: &dyn Fn(&mut Node, &[NodeId]),
     ) {
-        if !child_ids.is_empty() {
-            self.mutations_occurred = true;
-        }
+        let new_parent_is_in_document = self.doc.nodes[parent_id].flags.is_in_document();
+        self.mutations_occurred |= new_parent_is_in_document && !child_ids.is_empty();
         // Detach the children from their old parents *before* inserting them into
         // the new parent (matching DOM `insertBefore` semantics). If a child is
         // being moved within the same parent then detaching it after insertion
@@ -598,7 +603,7 @@ impl DocumentMutator<'_> {
 
         let new_parent = &mut self.doc.nodes[parent_id];
         new_parent.insert_damage(ALL_DAMAGE);
-        let new_parent_is_in_doc = new_parent.flags.is_in_document();
+        let new_parent_is_in_doc = new_parent_is_in_document;
 
         // TODO: make this fine grained / conditional based on ElementSelectorFlags
         if new_parent_is_in_doc {
@@ -1241,20 +1246,29 @@ mod test {
             shell_provider: Some(shell.clone()),
             ..Default::default()
         });
-        let node_id = document.create_node(NodeData::Element(Box::new(ElementData::new(
-            qual_name!("div"),
-            vec![],
-        ))));
+        let root_id = document.root_node().id;
 
         {
             let mut mutator = document.mutate();
-            mutator.set_attribute(node_id, qual_name!("id"), "value");
+            let parent_id = mutator.create_element(qual_name!("div"), vec![]);
+            let child_id = mutator.create_element(qual_name!("span"), vec![]);
+            mutator.append_children(parent_id, &[child_id]);
+            mutator.remove_and_drop_all_children(parent_id);
         }
-        assert_eq!(shell.redraw_requests.load(Ordering::Relaxed), 1);
+        assert_eq!(shell.redraw_requests.load(Ordering::Relaxed), 0);
 
         {
             let mutator = document.mutate();
-            assert!(!mutator.node_has_parent(node_id));
+            assert_eq!(mutator.child_ids(root_id).len(), 0);
+        }
+
+        {
+            let mut mutator = document.mutate();
+            let parent_id = mutator.create_element(qual_name!("div"), vec![]);
+            let child_id = mutator.create_element(qual_name!("span"), vec![]);
+            mutator.append_children(root_id, &[parent_id]);
+            mutator.append_children(parent_id, &[child_id]);
+            mutator.remove_and_drop_all_children(parent_id);
         }
         assert_eq!(shell.redraw_requests.load(Ordering::Relaxed), 1);
     }
