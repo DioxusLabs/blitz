@@ -814,19 +814,35 @@ fn client_session(addr: std::net::SocketAddr, doc_id: usize, picker_sender: Send
             .any(|p| p["name"] == "display" && p["value"] == "flex"),
         "sub-range edit must preserve other declarations"
     );
+    // The authored shorthand round-trips verbatim (DevTools re-commits the
+    // reported text while editing, so expanding it would corrupt the edit)
+    assert!(
+        new_props
+            .iter()
+            .any(|p| p["name"] == "outline" && p["value"] == "3px solid blue"),
+        "shorthand edit must be preserved as authored"
+    );
+    assert!(!new_props.iter().any(|p| p["name"] == "background-color"));
+    // ...while the parsed style applies the shorthand's longhands
+    let id = send(
+        &mut ws,
+        "CSS.getComputedStyleForNode",
+        json!({ "nodeId": container_id }),
+    );
+    let result = read_reply(&mut ws, id, &mut events);
+    let computed = result["computedStyle"].as_array().unwrap();
     for (name, value) in [
         ("outline-width", "3px"),
         ("outline-style", "solid"),
-        ("outline-color", "blue"),
+        ("outline-color", "rgb(0, 0, 255)"),
     ] {
         assert!(
-            new_props
+            computed
                 .iter()
                 .any(|p| p["name"] == name && p["value"] == value),
             "shorthand edit must apply {name}: {value}"
         );
     }
-    assert!(!new_props.iter().any(|p| p["name"] == "background-color"));
     events.clear();
 
     // Restore the original inline style (replacing the whole sheet text)
