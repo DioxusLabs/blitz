@@ -443,6 +443,7 @@ impl Node {
             }
         }
         self.set_dirty_descendants();
+        self.mark_ancestors_dirty();
     }
 
     /// Marks all ancestors of this node as having dirty descendants.

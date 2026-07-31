@@ -1094,7 +1094,7 @@ mod test {
         atomic::{AtomicUsize, Ordering},
     };
 
-    use blitz_traits::shell::ShellProvider;
+    use blitz_traits::shell::{ColorScheme, ShellProvider, Viewport};
 
     use crate::{Attribute, BaseDocument, DocumentConfig, ElementData, NodeData, qual_name};
 
@@ -1292,5 +1292,56 @@ mod test {
             mutator.append_children(detached_target_id, &[child_id]);
         }
         assert_eq!(shell.redraw_requests.load(Ordering::Relaxed), 3);
+    }
+
+    #[test]
+    fn style_property_updates_nested_layout() {
+        let mut document = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(800, 600, 1.0, ColorScheme::Light)),
+            ..Default::default()
+        });
+        let root_id = document.root_node().id;
+
+        let mover_id = {
+            let mut mutator = document.mutate();
+            let parent_id = mutator.create_element(qual_name!("div"), vec![]);
+            let mover_id = mutator.create_element(qual_name!("div"), vec![]);
+            mutator.set_style_property(parent_id, "position", "relative");
+            mutator.set_style_property(parent_id, "width", "800px");
+            mutator.set_style_property(parent_id, "height", "600px");
+            mutator.set_style_property(mover_id, "position", "absolute");
+            mutator.set_style_property(mover_id, "left", "0px");
+            mutator.set_style_property(mover_id, "top", "0px");
+            mutator.append_children(parent_id, &[mover_id]);
+            mutator.append_children(root_id, &[parent_id]);
+            mover_id
+        };
+
+        document.resolve(0.0);
+        assert_eq!(
+            document
+                .get_node(mover_id)
+                .unwrap()
+                .final_layout()
+                .location
+                .x,
+            0.0
+        );
+
+        {
+            let mut mutator = document.mutate();
+            mutator.set_style_property(mover_id, "left", "120px");
+        }
+
+        document.resolve(0.0);
+        assert_eq!(
+            document
+                .get_node(mover_id)
+                .unwrap()
+                .final_layout()
+                .location
+                .x,
+            120.0
+        );
     }
 }
