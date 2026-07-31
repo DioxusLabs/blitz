@@ -845,6 +845,56 @@ fn client_session(addr: std::net::SocketAddr, doc_id: usize, picker_sender: Send
     }
     events.clear();
 
+    // Disabling a declaration via its checkbox comments it out; the
+    // commented declaration is reported as a disabled property (with the
+    // comment as its text/range) so re-enabling round-trips
+    let id = send(
+        &mut ws,
+        "CSS.getInlineStylesForNode",
+        json!({ "nodeId": container_id }),
+    );
+    let result = read_reply(&mut ws, id, &mut events);
+    let props = result["inlineStyle"]["cssProperties"].as_array().unwrap();
+    let display_range = props.iter().find(|p| p["name"] == "display").unwrap()["range"].clone();
+    let id = send(
+        &mut ws,
+        "CSS.setStyleTexts",
+        json!({ "edits": [{
+            "styleSheetId": sheet_id,
+            "range": display_range,
+            "text": "/* display: flex; */",
+        }] }),
+    );
+    let result = read_reply(&mut ws, id, &mut events);
+    let props = result["styles"][0]["cssProperties"].as_array().unwrap();
+    let disabled_prop = props.iter().find(|p| p["name"] == "display").unwrap();
+    assert_eq!(disabled_prop["value"], "flex");
+    assert_eq!(disabled_prop["disabled"], true);
+    assert_eq!(disabled_prop["text"], "/* display: flex; */");
+    // Re-enable it: the frontend replaces the comment's range with the
+    // plain declaration
+    let range = disabled_prop["range"].clone();
+    let id = send(
+        &mut ws,
+        "CSS.setStyleTexts",
+        json!({ "edits": [{
+            "styleSheetId": sheet_id,
+            "range": range,
+            "text": "display: flex;",
+        }] }),
+    );
+    let result = read_reply(&mut ws, id, &mut events);
+    let props = result["styles"][0]["cssProperties"].as_array().unwrap();
+    let prop = props.iter().find(|p| p["name"] == "display").unwrap();
+    assert_eq!(prop["disabled"], false);
+    assert!(
+        !result["styles"][0]["cssText"]
+            .as_str()
+            .unwrap()
+            .contains("/*")
+    );
+    events.clear();
+
     // Restore the original inline style (replacing the whole sheet text)
     let id = send(
         &mut ws,
