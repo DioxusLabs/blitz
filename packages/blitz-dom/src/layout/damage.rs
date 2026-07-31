@@ -426,6 +426,18 @@ impl BaseDocument {
                 // block outwards.
                 let hoisted_position = self.nodes[hoisted.node_id].style().position;
 
+                // Sticky boxes are laid out at their flow position; their sticky offset
+                // is a paint-time shift computed from live scroll offsets.
+                let is_sticky = self.nodes[hoisted.node_id]
+                    .primary_styles()
+                    .is_some_and(|s| s.clone_position() == Position::Sticky);
+                let sticky_offset = if is_sticky {
+                    self.compute_sticky_offset(hoisted.node_id)
+                } else {
+                    taffy::Point::ZERO
+                };
+                *self.nodes[hoisted.node_id].sticky_offset_mut() = sticky_offset;
+
                 // Overflow clips from clipping ancestors, recorded as (offset of the box
                 // relative to the ancestor, clip rect relative to the ancestor's border box)
                 let mut clips: Vec<(taffy::Point<f32>, taffy::Rect<f32>)> = Vec::new();
@@ -472,8 +484,10 @@ impl BaseDocument {
                         }
                     }
                     let location = ancestor.final_layout().location;
-                    position.x += location.x;
-                    position.y += location.y;
+                    // In-flow ancestors carry their own sticky offset (nested sticky)
+                    let ancestor_sticky = *ancestor.sticky_offset();
+                    position.x += location.x + ancestor_sticky.x;
+                    position.y += location.y + ancestor_sticky.y;
                     if is_cb || past_cb {
                         let scroll_offset = *ancestor.scroll_offset();
                         position.x -= scroll_offset.x as f32;
@@ -489,7 +503,10 @@ impl BaseDocument {
                     past_cb |= is_cb;
                     current = ancestor.layout_parent.get();
                 }
-                hoisted.position = position;
+                hoisted.position = taffy::Point {
+                    x: position.x + sticky_offset.x,
+                    y: position.y + sticky_offset.y,
+                };
 
                 // Convert the recorded clips into the stacking context root's coordinate
                 // space and intersect them
@@ -515,6 +532,181 @@ impl BaseDocument {
 
             stacking_context.compute_content_size(self);
             self.nodes[root_id].stacking_context = Some(stacking_context);
+        }
+    }
+
+    /// Compute the paint-time offset for a `position: sticky` box.
+    ///
+    /// The box is shifted from its flow position so that it satisfies its inset
+    /// constraints against the nearest scrollport (the padding box of the nearest
+    /// scroll container, or the viewport), clamped so that its margin box never
+    /// escapes its containing block.
+    fn compute_sticky_offset(&self, node_id: NodeId) -> taffy::Point<f32> {
+        use style::values::computed::CSSPixelLength;
+        use style::values::generics::length::GenericMargin;
+        use style::values::generics::position::Inset as GenericInset;
+
+        let node = &self.nodes[node_id];
+        let Some(style) = node.primary_styles() else {
+            return taffy::Point::ZERO;
+        };
+
+        let layout = *node.final_layout();
+
+        // The sticky box's position box is its margin box, except that auto margins
+        // (used for alignment) do not restrict sticky movement.
+        let margin_style = style.get_margin();
+        let used_margin = |margin: &GenericMargin<style::values::computed::LengthPercentage>,
+                           resolved: f32| match margin {
+            GenericMargin::Auto => 0.0,
+            _ => resolved,
+        };
+        let margin = taffy::Rect {
+            left: used_margin(&margin_style.margin_left, layout.margin.left),
+            right: used_margin(&margin_style.margin_right, layout.margin.right),
+            top: used_margin(&margin_style.margin_top, layout.margin.top),
+            bottom: used_margin(&margin_style.margin_bottom, layout.margin.bottom),
+        };
+
+        // Border box position of the sticky box, translated up to the scrollport's
+        // border box coordinate space (unscrolled flow position).
+        let mut box_pos = taffy::Point {
+            x: layout.location.x,
+            y: layout.location.y,
+        };
+        // Containing block rect (the layout parent's content box), in the same
+        // coordinate space, shrunk by the sticky box's margins.
+        let mut cb_rect: Option<taffy::Rect<f32>> = None;
+
+        let mut scrollport: Option<NodeId> = None;
+        let mut current = node.layout_parent.get();
+        while let Some(ancestor_id) = current {
+            if !self.nodes.contains_key(ancestor_id) {
+                break;
+            }
+            let ancestor = &self.nodes[ancestor_id];
+            let a_layout = ancestor.final_layout();
+            if cb_rect.is_none() {
+                // When the containing block is itself a scroll container, its content
+                // extends over the whole scrollable area, not just the visible part.
+                let content_right = (a_layout.size.width
+                    - a_layout.border.right
+                    - a_layout.padding.right
+                    - a_layout.scrollbar_size.width)
+                    .max(a_layout.border.left + a_layout.content_size.width);
+                let content_bottom = (a_layout.size.height
+                    - a_layout.border.bottom
+                    - a_layout.padding.bottom
+                    - a_layout.scrollbar_size.height)
+                    .max(a_layout.border.top + a_layout.content_size.height);
+                cb_rect = Some(taffy::Rect {
+                    left: a_layout.border.left + a_layout.padding.left + margin.left,
+                    right: content_right - margin.right,
+                    top: a_layout.border.top + a_layout.padding.top + margin.top,
+                    bottom: content_bottom - margin.bottom,
+                });
+            }
+            let a_style = ancestor.style();
+            if a_style.overflow.x != taffy::Overflow::Visible
+                || a_style.overflow.y != taffy::Overflow::Visible
+            {
+                scrollport = Some(ancestor_id);
+                break;
+            }
+            let location = a_layout.location;
+            let ancestor_sticky = *ancestor.sticky_offset();
+            let dx = location.x + ancestor_sticky.x;
+            let dy = location.y + ancestor_sticky.y;
+            box_pos.x += dx;
+            box_pos.y += dy;
+            if let Some(rect) = cb_rect.as_mut() {
+                rect.left += dx;
+                rect.right += dx;
+                rect.top += dy;
+                rect.bottom += dy;
+            }
+            current = ancestor.layout_parent.get();
+        }
+
+        // The visible window of the scrollport, in the same (unscrolled) coordinate
+        // space as `box_pos`: the scrollport's padding box shifted by its scroll offset.
+        let view_rect = match scrollport {
+            Some(scrollport_id) => {
+                let scrollport = &self.nodes[scrollport_id];
+                let sp_layout = scrollport.final_layout();
+                let scroll = *scrollport.scroll_offset();
+                taffy::Rect {
+                    left: sp_layout.border.left + scroll.x as f32,
+                    right: sp_layout.size.width
+                        - sp_layout.border.right
+                        - sp_layout.scrollbar_size.width
+                        + scroll.x as f32,
+                    top: sp_layout.border.top + scroll.y as f32,
+                    bottom: sp_layout.size.height
+                        - sp_layout.border.bottom
+                        - sp_layout.scrollbar_size.height
+                        + scroll.y as f32,
+                }
+            }
+            // No scroll container ancestor: stick relative to the viewport.
+            None => {
+                let scale = self.viewport.scale();
+                let scroll = self.viewport_scroll();
+                taffy::Rect {
+                    left: scroll.x as f32,
+                    right: scroll.x as f32 + self.viewport.window_size.0 as f32 / scale,
+                    top: scroll.y as f32,
+                    bottom: scroll.y as f32 + self.viewport.window_size.1 as f32 / scale,
+                }
+            }
+        };
+
+        let cb_rect = cb_rect.unwrap_or(view_rect);
+
+        // Sticky inset percentages resolve against the containing block
+        fn resolve_inset(
+            inset: &GenericInset<
+                style::values::computed::Percentage,
+                style::values::computed::LengthPercentage,
+            >,
+            basis: f32,
+        ) -> Option<f32> {
+            match inset {
+                GenericInset::LengthPercentage(lp) => {
+                    Some(lp.resolve(CSSPixelLength::new(basis)).px())
+                }
+                _ => None,
+            }
+        }
+        let pos_style = style.get_position();
+        let cb_width = cb_rect.right - cb_rect.left;
+        let cb_height = cb_rect.bottom - cb_rect.top;
+        let left = resolve_inset(&pos_style.left, cb_width);
+        let right = resolve_inset(&pos_style.right, cb_width);
+        let top = resolve_inset(&pos_style.top, cb_height);
+        let bottom = resolve_inset(&pos_style.bottom, cb_height);
+
+        taffy::Point {
+            x: sticky_axis_offset(
+                box_pos.x,
+                box_pos.x + layout.size.width,
+                cb_rect.left,
+                cb_rect.right,
+                view_rect.left,
+                view_rect.right,
+                left,
+                right,
+            ),
+            y: sticky_axis_offset(
+                box_pos.y,
+                box_pos.y + layout.size.height,
+                cb_rect.top,
+                cb_rect.bottom,
+                view_rect.top,
+                view_rect.bottom,
+                top,
+                bottom,
+            ),
         }
     }
 
@@ -690,6 +882,11 @@ impl BaseDocument {
                 .downcast_element()
                 .is_some_and(|el| matches!(&*el.name.local, "img" | "canvas"));
 
+            // Sticky offsets are recomputed each resolve (in `refresh_hoisted_paint_positions`)
+            // for boxes that are still sticky; clear here so boxes that are no longer sticky
+            // don't retain a stale offset.
+            *node.sticky_offset_mut() = taffy::Point::ZERO;
+
             // if damage.intersects(RestyleDamage::RELAYOUT | CONSTRUCT_BOX) {
             *node.style_mut() = taffy_style;
             *node.display_constructed_as_mut() = display_constructed_as;
@@ -808,6 +1005,37 @@ impl BaseDocument {
             self.nodes[node_id].stacking_context = Some(Box::new(new_stacking_context));
         }
     }
+}
+
+/// Compute the sticky shift along one axis: shift the box (border box edges
+/// `box_start..box_end`) so that it satisfies the `inset_start`/`inset_end`
+/// constraints against the scrollport's visible window (`view_start..view_end`),
+/// clamped so it never escapes its containing block (`cb_start..cb_end`, already
+/// shrunk by the box's margins).
+#[allow(clippy::too_many_arguments)]
+fn sticky_axis_offset(
+    box_start: f32,
+    box_end: f32,
+    cb_start: f32,
+    cb_end: f32,
+    view_start: f32,
+    view_end: f32,
+    inset_start: Option<f32>,
+    inset_end: Option<f32>,
+) -> f32 {
+    let mut offset = 0.0f32;
+    if let Some(inset) = inset_start {
+        let max_offset = (cb_end - box_end).max(0.0);
+        offset = (view_start + inset - box_start).clamp(0.0, max_offset);
+    }
+    if let Some(inset) = inset_end {
+        let min_offset = (cb_start - box_start).min(0.0);
+        let desired = view_end - inset - box_end;
+        if desired < offset {
+            offset = desired.max(min_offset);
+        }
+    }
+    offset
 }
 
 #[inline(always)]

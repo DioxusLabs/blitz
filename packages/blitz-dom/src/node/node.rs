@@ -192,6 +192,7 @@ universal_accessors! {
     unrounded_layout / unrounded_layout_mut: Layout,
     final_layout / final_layout_mut: Layout,
     deferred_position / deferred_position_mut: Option<(u32, taffy::Point<f32>, taffy::Direction)>,
+    sticky_offset / sticky_offset_mut: taffy::Point<f32>,
     scroll_offset / scroll_offset_mut: crate::Point<f64>,
     scrollable_overflow / scrollable_overflow_mut: KurboRect,
     transform / transform_mut: Option<Affine>,
@@ -1393,8 +1394,10 @@ impl Node {
 
     /// Computes the Document-relative coordinates of the `Node`
     pub fn absolute_position(&self, x: f32, y: f32) -> crate::util::Point<f32> {
-        let x = x + self.final_layout().location.x - self.scroll_offset().x as f32;
-        let y = y + self.final_layout().location.y - self.scroll_offset().y as f32;
+        let x = x + self.final_layout().location.x + self.sticky_offset().x
+            - self.scroll_offset().x as f32;
+        let y = y + self.final_layout().location.y + self.sticky_offset().y
+            - self.scroll_offset().y as f32;
 
         // Recurse up the layout hierarchy
         self.layout_parent
