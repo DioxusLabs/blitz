@@ -530,40 +530,91 @@ impl Session {
                     .and_then(|edits| edits.as_array())
                     .ok_or_else(|| CdpError::invalid_params("Missing edits"))?
                     .clone();
-                let mut styles = Vec::new();
-                let mut modified = Vec::new();
+                // All the edits' ranges refer to the same original snapshot
+                // of each sheet's text, so resolve every range against that
+                // snapshot before applying any of them
+                struct SheetEdits {
+                    sheet_id: String,
+                    node_id: NodeId,
+                    text: String,
+                    // (start, end) byte offsets into `text`, with replacements
+                    splices: Vec<(usize, usize, String)>,
+                }
+                let mut sheets: Vec<SheetEdits> = Vec::new();
+                let mut edit_sheets = Vec::new();
                 for edit in &edits {
                     let sheet_id = str_param(edit, "styleSheetId")?;
                     let text = str_param(edit, "text")?;
                     let range = edit
                         .get("range")
-                        .ok_or_else(|| CdpError::invalid_params("Missing range"))?
-                        .clone();
+                        .ok_or_else(|| CdpError::invalid_params("Missing range"))?;
                     let node_id = crate::css::parse_inline_style_sheet_id(&sheet_id)
                         .ok_or_else(no_style_sheet)?;
+                    let sheet = match sheets.iter_mut().find(|s| s.node_id == node_id) {
+                        Some(sheet) => sheet,
+                        None => {
+                            let sheet_text = with_doc(docs, doc_id, |doc| {
+                                doc.get_node(node_id)
+                                    .filter(|node| node.element_data().is_some())
+                                    .ok_or_else(no_style_sheet)?;
+                                Ok(crate::css::inline_style_text(doc, node_id))
+                            })
+                            .ok_or_else(no_document)??;
+                            sheets.push(SheetEdits {
+                                sheet_id: sheet_id.clone(),
+                                node_id,
+                                text: sheet_text,
+                                splices: Vec::new(),
+                            });
+                            sheets.last_mut().unwrap()
+                        }
+                    };
+                    let (start, end) = range_offsets(&sheet.text, range)
+                        .ok_or_else(|| CdpError::invalid_params("Invalid range"))?;
+                    if sheet.splices.iter().any(|&(s, e, _)| start < e && s < end) {
+                        return Err(CdpError::invalid_params("Overlapping ranges"));
+                    }
+                    sheet.splices.push((start, end, text));
+                    edit_sheets.push(node_id);
+                }
+                let mut modified = Vec::new();
+                let mut sheet_styles = Vec::new();
+                for sheet in &mut sheets {
+                    // Apply back-to-front so earlier splices don't shift the
+                    // offsets of later ones
+                    sheet.splices.sort_by_key(|s| (s.0, s.1));
+                    let mut new_attr = sheet.text.clone();
+                    for (start, end, text) in sheet.splices.iter().rev() {
+                        new_attr.replace_range(start..end, text);
+                    }
+                    let node_id = sheet.node_id;
                     let (style, value) = with_doc(docs, doc_id, |doc| {
-                        doc.get_node(node_id)
-                            .filter(|node| node.element_data().is_some())
-                            .ok_or_else(no_style_sheet)?;
-                        // The edit's text replaces the given range within the
-                        // sheet's current text (the serialized inline style)
-                        let current = crate::css::inline_style_text(doc, node_id);
-                        let new_attr = splice_range(&current, &range, &text)
-                            .ok_or_else(|| CdpError::invalid_params("Invalid range"))?;
                         doc.mutate()
                             .set_attribute(node_id, attr_name("style"), &new_attr);
                         doc.shell_provider.request_redraw();
                         // Report the style re-serialized from the parsed
                         // attribute, so its ranges match the new sheet text
-                        Ok((
+                        (
                             crate::css::inline_style_json(doc, node_id),
                             crate::css::inline_style_text(doc, node_id),
-                        ))
+                        )
                     })
-                    .ok_or_else(no_document)??;
-                    styles.push(style);
-                    modified.push((sheet_id, node_id, value));
+                    .ok_or_else(no_document)?;
+                    sheet_styles.push((node_id, style));
+                    modified.push((sheet.sheet_id.clone(), node_id, value));
                 }
+                // One resulting style per edit, in the edits' order (edits to
+                // the same sheet all report that sheet's final style)
+                let styles: Vec<JsonValue> = edit_sheets
+                    .iter()
+                    .map(|node_id| {
+                        sheet_styles
+                            .iter()
+                            .find(|(id, _)| id == node_id)
+                            .map(|(_, style)| style.clone())
+                            .unwrap()
+                    })
+                    .collect();
                 for (sheet_id, node_id, value) in &modified {
                     writer.event("CSS.styleSheetChanged", json!({ "styleSheetId": sheet_id }));
                     writer.event(
@@ -821,16 +872,6 @@ fn range_offsets(text: &str, range: &JsonValue) -> Option<(usize, usize)> {
     let start = position(get("startLine")?, get("startColumn")?)?;
     let end = position(get("endLine")?, get("endColumn")?)?;
     (start <= end).then_some((start, end))
-}
-
-/// Replace the given source range within `text` with `replacement`
-fn splice_range(text: &str, range: &JsonValue, replacement: &str) -> Option<String> {
-    let (start, end) = range_offsets(text, range)?;
-    let mut out = String::with_capacity(text.len() - (end - start) + replacement.len());
-    out.push_str(&text[..start]);
-    out.push_str(replacement);
-    out.push_str(&text[end..]);
-    Some(out)
 }
 
 /// Extract a string parameter
