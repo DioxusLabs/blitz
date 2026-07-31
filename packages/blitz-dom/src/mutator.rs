@@ -57,6 +57,9 @@ pub struct DocumentMutator<'doc> {
     /// Whether an element/attribute that affect animation status has been seen
     recompute_is_animating: bool,
 
+    /// Whether any mutation that affects rendered output has been performed
+    mutations_occurred: bool,
+
     /// The (latest) node which has been mounted in and had autofocus=true, if any
     #[cfg(feature = "autofocus")]
     node_to_autofocus: Option<NodeId>,
@@ -65,6 +68,9 @@ pub struct DocumentMutator<'doc> {
 impl Drop for DocumentMutator<'_> {
     fn drop(&mut self) {
         self.flush(); // Defined at bottom of file
+        if self.mutations_occurred {
+            self.doc.shell_provider.request_redraw();
+        }
     }
 }
 
@@ -77,6 +83,7 @@ impl DocumentMutator<'_> {
             style_nodes: HashSet::new(),
             form_nodes: HashSet::new(),
             recompute_is_animating: false,
+            mutations_occurred: false,
             #[cfg(feature = "autofocus")]
             node_to_autofocus: None,
         }
@@ -166,6 +173,7 @@ impl DocumentMutator<'_> {
 
         let changed = text.content != value;
         if changed {
+            self.mutations_occurred = true;
             text.content.clear();
             text.content.push_str(value);
             node.insert_damage(ALL_DAMAGE);
@@ -196,6 +204,7 @@ impl DocumentMutator<'_> {
         match node.text_data_mut() {
             Some(data) => {
                 data.content += text;
+                self.mutations_occurred = true;
                 Ok(())
             }
             None => Err(AppendTextErr::NotTextNode),
@@ -256,6 +265,7 @@ impl DocumentMutator<'_> {
             return;
         };
 
+        self.mutations_occurred = true;
         // If element is a CustomWidget, then Ccall attribute_changed on it
         #[cfg(feature = "custom-widget")]
         if let SpecialElementData::CustomWidget(widget_data) = &mut element.special_data {
@@ -342,6 +352,7 @@ impl DocumentMutator<'_> {
         if !had_attr {
             return;
         }
+        self.mutations_occurred = true;
 
         // If element is a CustomWidget, then call attribute_changed on it
         #[cfg(feature = "custom-widget")]
@@ -386,29 +397,35 @@ impl DocumentMutator<'_> {
     }
 
     pub fn set_style_property(&mut self, node_id: NodeId, name: &str, value: &str) {
-        self.doc.set_style_property(node_id, name, value)
+        self.doc.set_style_property(node_id, name, value);
+        self.mutations_occurred = true;
     }
 
     pub fn remove_style_property(&mut self, node_id: NodeId, name: &str) {
-        self.doc.remove_style_property(node_id, name)
+        self.doc.remove_style_property(node_id, name);
+        self.mutations_occurred = true;
     }
 
     pub fn set_sub_document(&mut self, node_id: NodeId, sub_document: Box<dyn Document>) {
-        self.doc.set_sub_document(node_id, sub_document)
+        self.doc.set_sub_document(node_id, sub_document);
+        self.mutations_occurred = true;
     }
 
     pub fn remove_sub_document(&mut self, node_id: NodeId) {
-        self.doc.remove_sub_document(node_id)
+        self.doc.remove_sub_document(node_id);
+        self.mutations_occurred = true;
     }
 
     #[cfg(feature = "custom-widget")]
     pub fn set_custom_widget(&mut self, node_id: NodeId, widget: Box<dyn crate::Widget>) {
-        self.doc.set_custom_widget(node_id, widget)
+        self.doc.set_custom_widget(node_id, widget);
+        self.mutations_occurred = true;
     }
 
     #[cfg(feature = "custom-widget")]
     pub fn remove_custom_widget(&mut self, node_id: NodeId) {
-        self.doc.remove_custom_widget(node_id)
+        self.doc.remove_custom_widget(node_id);
+        self.mutations_occurred = true;
     }
 
     /// Remove the node from it's parent but don't drop it
@@ -422,6 +439,7 @@ impl DocumentMutator<'_> {
 
         // Update child_idx values
         if let Some(parent_id) = node.parent.take() {
+            self.mutations_occurred = true;
             let parent = &mut self.doc.nodes[parent_id];
             parent.insert_damage(ALL_DAMAGE);
             // Mark ancestors dirty so the style traversal visits this subtree.
@@ -445,6 +463,9 @@ impl DocumentMutator<'_> {
         self.process_removed_subtree(node_id);
 
         let node = self.doc.drop_node_ignoring_parent_with(node_id, on_drop);
+        if node.is_some() {
+            self.mutations_occurred = true;
+        }
 
         // Update child_idx values
         if let Some(parent_id) = node.as_ref().and_then(|node| node.parent) {
@@ -488,6 +509,9 @@ impl DocumentMutator<'_> {
         }
 
         let children = mem::take(&mut parent.children);
+        if !children.is_empty() {
+            self.mutations_occurred = true;
+        }
         for child_id in children {
             self.process_removed_subtree(child_id);
             let _ = self.doc.drop_node_ignoring_parent(child_id);
@@ -537,6 +561,9 @@ impl DocumentMutator<'_> {
         child_ids: &[NodeId],
         insert_children_fn: &dyn Fn(&mut Node, &[NodeId]),
     ) {
+        if !child_ids.is_empty() {
+            self.mutations_occurred = true;
+        }
         // Detach the children from their old parents *before* inserting them into
         // the new parent (matching DOM `insertBefore` semantics). If a child is
         // being moved within the same parent then detaching it after insertion
@@ -1057,6 +1084,13 @@ mod test {
     use style::media_queries::MediaType;
     use style_dom::ElementState;
 
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+
+    use blitz_traits::shell::ShellProvider;
+
     use crate::{Attribute, BaseDocument, DocumentConfig, ElementData, NodeData, qual_name};
 
     #[test]
@@ -1187,5 +1221,41 @@ mod test {
             !node.element_state().contains(ElementState::ENABLED),
             "form node is enabled"
         );
+    }
+
+    #[derive(Default)]
+    struct RedrawShell {
+        redraw_requests: AtomicUsize,
+    }
+
+    impl ShellProvider for RedrawShell {
+        fn request_redraw(&self) {
+            self.redraw_requests.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    #[test]
+    fn mutator_requests_redraw_only_after_mutation() {
+        let shell = Arc::new(RedrawShell::default());
+        let mut document = BaseDocument::new(DocumentConfig {
+            shell_provider: Some(shell.clone()),
+            ..Default::default()
+        });
+        let node_id = document.create_node(NodeData::Element(Box::new(ElementData::new(
+            qual_name!("div"),
+            vec![],
+        ))));
+
+        {
+            let mut mutator = document.mutate();
+            mutator.set_attribute(node_id, qual_name!("id"), "value");
+        }
+        assert_eq!(shell.redraw_requests.load(Ordering::Relaxed), 1);
+
+        {
+            let mutator = document.mutate();
+            assert!(!mutator.node_has_parent(node_id));
+        }
+        assert_eq!(shell.redraw_requests.load(Ordering::Relaxed), 1);
     }
 }
