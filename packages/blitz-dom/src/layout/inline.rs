@@ -699,6 +699,15 @@ impl BaseDocument {
                     if node.style().position.is_absolutely_positioned() {
                         let child_position = node.style().position;
                         let direction = node.style().direction;
+                        // The static position of an inline-level abspos box: the inline
+                        // offset is the box's resolved position in the line, and the block
+                        // offset is the top of the line box it would have been placed in
+                        // (parley anchors the zero-sized placeholder box to the baseline,
+                        // which is not what we want here).
+                        let static_position = taffy::Point {
+                            x: (ibox.x / scale) + container_pb.left,
+                            y: (line.metrics().block_min_coord / scale) + container_pb.top,
+                        };
                         // If a positioned inline box (e.g. a `position: relative` span) sits
                         // between this box and the inline root then that inline box is the
                         // containing block. We don't yet support inline containing blocks, so
@@ -725,6 +734,7 @@ impl BaseDocument {
                                 ibox,
                                 final_size,
                                 taffy::Point::ZERO,
+                                static_position,
                                 direction,
                             );
                         } else if child_position == Position::Fixed
@@ -732,12 +742,7 @@ impl BaseDocument {
                         {
                             // This inline container is not the child's containing block: hand
                             // the child back to be laid out against its actual containing block
-                            // after the main layout pass. The static position is the position
-                            // the box would have had in the inline flow.
-                            let static_position = taffy::Point {
-                                x: (ibox.x / scale) + container_pb.left,
-                                y: (ibox.y / scale) + container_pb.top,
-                            };
+                            // after the main layout pass.
                             // `ibox.x` is a resolved left edge, so LTR semantics apply.
                             self.defer_absolute_child(
                                 taffy::NodeId::from(ibox.id),
@@ -751,6 +756,7 @@ impl BaseDocument {
                                 ibox,
                                 final_size,
                                 taffy::Point::ZERO,
+                                static_position,
                                 direction,
                             );
                         }
@@ -828,6 +834,7 @@ fn layout_abspos_child(
     item: PositionedInlineBox,
     area_size: Size<f32>,
     area_offset: Point<f32>,
+    static_position: Point<f32>,
     direction: taffy::Direction,
 ) {
     let area_width = area_size.width;
@@ -1017,51 +1024,53 @@ fn layout_abspos_child(
                 - non_auto_margin.vertical_axis_sum(),
         };
 
-        let auto_margin_size = Size {
-            // If all three of 'left', 'width', and 'right' are 'auto': First set any 'auto' values for 'margin-left' and 'margin-right' to 0.
-            // Then, if the 'direction' property of the element establishing the static-position containing block is 'ltr' set 'left' to the
-            // static position and apply rule number three below; otherwise, set 'right' to the static position and apply rule number one below.
-            //
-            // If none of the three is 'auto': If both 'margin-left' and 'margin-right' are 'auto', solve the equation under the extra constraint
-            // that the two margins get equal values, unless this would make them negative, in which case when direction of the containing block is
-            // 'ltr' ('rtl'), set 'margin-left' ('margin-right') to zero and solve for 'margin-right' ('margin-left'). If one of 'margin-left' or
-            // 'margin-right' is 'auto', solve the equation for that value. If the values are over-constrained, ignore the value for 'left' (in case
-            // the 'direction' property of the containing block is 'rtl') or 'right' (in case 'direction' is 'ltr') and solve for that value.
-            width: {
-                let auto_margin_count = margin.left.is_none() as u8 + margin.right.is_none() as u8;
-                if auto_margin_count == 2
-                    && (style_size.width.is_none() || style_size.width.unwrap() >= free_space.width)
-                {
-                    0.0
-                } else if auto_margin_count > 0 {
-                    free_space.width / auto_margin_count as f32
+        // If both 'margin-left' and 'margin-right' are 'auto', solve the equation under the
+        // extra constraint that the two margins get equal values, unless this would make them
+        // negative, in which case when direction of the containing block is 'ltr' ('rtl'), set
+        // 'margin-left' ('margin-right') to zero and solve for 'margin-right' ('margin-left').
+        // Auto margins in an axis only resolve to non-zero values when both insets in that
+        // axis are set; otherwise they resolve to zero.
+        let (auto_margin_left, auto_margin_right) = {
+            let auto_margin_count = if left.is_some() && right.is_some() {
+                margin.left.is_none() as u8 + margin.right.is_none() as u8
+            } else {
+                0
+            };
+            if auto_margin_count == 2 && free_space.width < 0.0 {
+                if direction == Direction::Rtl {
+                    (free_space.width, 0.0)
                 } else {
-                    0.0
+                    (0.0, free_space.width)
                 }
-            },
-            height: {
-                let auto_margin_count = margin.top.is_none() as u8 + margin.bottom.is_none() as u8;
-                if auto_margin_count == 2
-                    && (style_size.height.is_none()
-                        || style_size.height.unwrap() >= free_space.height)
-                {
-                    0.0
-                } else if auto_margin_count > 0 {
-                    free_space.height / auto_margin_count as f32
-                } else {
-                    0.0
-                }
-            },
+            } else if auto_margin_count > 0 {
+                let share = free_space.width / auto_margin_count as f32;
+                (share, share)
+            } else {
+                (0.0, 0.0)
+            }
+        };
+
+        // If both 'margin-top' and 'margin-bottom' are 'auto', solve the equation under the
+        // extra constraint that the two margins get equal values (no non-negativity constraint
+        // applies in the vertical axis).
+        let auto_margin_height = {
+            let auto_margin_count = if top.is_some() && bottom.is_some() {
+                margin.top.is_none() as u8 + margin.bottom.is_none() as u8
+            } else {
+                0
+            };
+            if auto_margin_count > 0 {
+                free_space.height / auto_margin_count as f32
+            } else {
+                0.0
+            }
         };
 
         taffy::Rect {
-            left: margin.left.map(|_| 0.0).unwrap_or(auto_margin_size.width),
-            right: margin.right.map(|_| 0.0).unwrap_or(auto_margin_size.width),
-            top: margin.top.map(|_| 0.0).unwrap_or(auto_margin_size.height),
-            bottom: margin
-                .bottom
-                .map(|_| 0.0)
-                .unwrap_or(auto_margin_size.height),
+            left: margin.left.map(|_| 0.0).unwrap_or(auto_margin_left),
+            right: margin.right.map(|_| 0.0).unwrap_or(auto_margin_right),
+            top: margin.top.map(|_| 0.0).unwrap_or(auto_margin_height),
+            bottom: margin.bottom.map(|_| 0.0).unwrap_or(auto_margin_height),
         }
     };
 
@@ -1084,9 +1093,9 @@ fn layout_abspos_child(
         (None, Some(right)) => area_size.width - final_size.width - right - resolved_margin.right,
         (None, None) => {
             if direction == Direction::Rtl {
-                item.x - final_size.width - resolved_margin.right - area_offset.x
+                static_position.x - final_size.width - resolved_margin.right - area_offset.x
             } else {
-                item.x + resolved_margin.left - area_offset.x
+                static_position.x + resolved_margin.left - area_offset.x
             }
         }
     };
@@ -1098,7 +1107,7 @@ fn layout_abspos_child(
                 area_size.height - final_size.height - bottom - resolved_margin.bottom
             }))
             .maybe_add(area_offset.y)
-            .unwrap_or(item.y + resolved_margin.top),
+            .unwrap_or(static_position.y + resolved_margin.top),
     };
     // Note: axis intentionally switched here as scrollbars take up space in the opposite axis
     // to the axis in which scrolling is enabled.

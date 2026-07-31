@@ -313,6 +313,10 @@ pub struct HoistedPaintChild {
     pub node_id: NodeId,
     pub z_index: i32,
     pub position: taffy::Point<f32>,
+    /// The overflow clip applied by ancestors between this box and its stacking context
+    /// root, in the coordinate space of the stacking context root. `None` means unclipped.
+    /// Out-of-flow boxes are only clipped by ancestors from their containing block outwards.
+    pub clip: Option<taffy::Rect<f32>>,
 }
 
 #[derive(Debug)]
@@ -417,10 +421,16 @@ impl BaseDocument {
                 if !self.nodes.contains_key(hoisted.node_id) {
                     continue;
                 }
-                // Fixed position children do not scroll with their ancestors
-                let is_fixed =
-                    self.nodes[hoisted.node_id].style().position == taffy::Position::Fixed;
+                // Out-of-flow boxes do not scroll with the ancestors between them and
+                // their containing block: only apply scroll offsets from the containing
+                // block outwards.
+                let hoisted_position = self.nodes[hoisted.node_id].style().position;
 
+                // Overflow clips from clipping ancestors, recorded as (offset of the box
+                // relative to the ancestor, clip rect relative to the ancestor's border box)
+                let mut clips: Vec<(taffy::Point<f32>, taffy::Rect<f32>)> = Vec::new();
+
+                let mut past_cb = false;
                 let mut position = taffy::Point::ZERO;
                 let mut current = self.nodes[hoisted.node_id].layout_parent.get();
                 while let Some(ancestor_id) = current {
@@ -428,17 +438,79 @@ impl BaseDocument {
                         break;
                     }
                     let ancestor = &self.nodes[ancestor_id];
+                    let is_cb = match hoisted_position {
+                        taffy::Position::Fixed => ancestor.establishes_fixed_containing_block(),
+                        taffy::Position::Absolute => {
+                            ancestor.style().position != taffy::Position::Static
+                                || ancestor.establishes_fixed_containing_block()
+                        }
+                        // z-index hoisted in-flow boxes scroll with all their ancestors
+                        _ => true,
+                    };
+                    // Ancestors clip this box only from its containing block outwards
+                    let mut pushed_clip = false;
+                    if is_cb || past_cb {
+                        let style = ancestor.style();
+                        if style.overflow.x != taffy::Overflow::Visible
+                            || style.overflow.y != taffy::Overflow::Visible
+                        {
+                            let layout = ancestor.final_layout();
+                            clips.push((
+                                position,
+                                taffy::Rect {
+                                    left: layout.border.left,
+                                    right: layout.size.width
+                                        - layout.border.right
+                                        - layout.scrollbar_size.width,
+                                    top: layout.border.top,
+                                    bottom: layout.size.height
+                                        - layout.border.bottom
+                                        - layout.scrollbar_size.height,
+                                },
+                            ));
+                            pushed_clip = true;
+                        }
+                    }
                     let location = ancestor.final_layout().location;
                     position.x += location.x;
                     position.y += location.y;
-                    if !is_fixed {
+                    if is_cb || past_cb {
                         let scroll_offset = *ancestor.scroll_offset();
                         position.x -= scroll_offset.x as f32;
                         position.y -= scroll_offset.y as f32;
+                        // An ancestor's scroll offset moves its content (including this box)
+                        // but not its own clip box: cancel it out of the clip's offset.
+                        if pushed_clip {
+                            let (offset, _) = clips.last_mut().unwrap();
+                            offset.x -= scroll_offset.x as f32;
+                            offset.y -= scroll_offset.y as f32;
+                        }
                     }
+                    past_cb |= is_cb;
                     current = ancestor.layout_parent.get();
                 }
                 hoisted.position = position;
+
+                // Convert the recorded clips into the stacking context root's coordinate
+                // space and intersect them
+                hoisted.clip = None;
+                for (offset, rect) in clips {
+                    let clip = taffy::Rect {
+                        left: position.x - offset.x + rect.left,
+                        right: position.x - offset.x + rect.right,
+                        top: position.y - offset.y + rect.top,
+                        bottom: position.y - offset.y + rect.bottom,
+                    };
+                    hoisted.clip = Some(match hoisted.clip {
+                        Some(existing) => taffy::Rect {
+                            left: existing.left.max(clip.left),
+                            right: existing.right.min(clip.right),
+                            top: existing.top.max(clip.top),
+                            bottom: existing.bottom.min(clip.bottom),
+                        },
+                        None => clip,
+                    });
+                }
             }
 
             stacking_context.compute_content_size(self);
@@ -640,17 +712,6 @@ impl BaseDocument {
         if let Some(mut children) = children {
             let is_flex_or_grid = matches!(display, taffy::Display::Flex | taffy::Display::Grid);
 
-            // Recursively call flush_styles_to_layout on each child
-            for &child in children.iter() {
-                self.flush_styles_to_layout_impl(
-                    child,
-                    match self.nodes[child].is_stacking_context_root(is_flex_or_grid) {
-                        true => None,
-                        false => Some(stacking_context),
-                    },
-                );
-            }
-
             // Sort layout_children
             if is_flex_or_grid {
                 children.sort_by(|left, right| {
@@ -660,56 +721,68 @@ impl BaseDocument {
                 });
             }
 
-            // Reserve space for paint_children
-            let mut paint_children = self.nodes[node_id].paint_children.borrow_mut();
-            if paint_children.is_none() {
-                *paint_children = Some(ThinVec::new());
-            }
-            let paint_children = paint_children.as_mut().unwrap();
-            paint_children.clear();
-            paint_children.reserve(children.len());
+            let mut new_paint_children: ThinVec<NodeId> = ThinVec::with_capacity(children.len());
 
-            // Push children to either paint_children or layout_children depending on
+            // Push children to either paint_children or the stacking context, then recurse.
+            // Hoisted entries are pushed before recursing into the child so that the hoisted
+            // list is in tree (pre-)order: CSS 2.1 Appendix E step 8 paints positioned
+            // descendants with z-index: auto at the same level, in tree order.
             for &child_id in children.iter() {
-                let child = &self.nodes[child_id];
+                let hoisted = 'hoisted: {
+                    let child = &self.nodes[child_id];
 
-                let Some(style) = child.primary_styles() else {
-                    paint_children.push(child_id);
-                    continue;
+                    let Some(style) = child.primary_styles() else {
+                        break 'hoisted false;
+                    };
+
+                    let position = style.clone_position();
+                    let z_index = style.clone_z_index().integer_or(0);
+
+                    // Positioned descendants are painted at the level of their stacking
+                    // context root rather than at the level of their layout parent
+                    // (CSS 2.1 Appendix E steps 8-9): hoist them. This also ensures that
+                    // out-of-flow boxes whose containing block is not their layout parent
+                    // (fixed children, and absolute children of non-positioned parents)
+                    // escape the scrolling and clipping of the ancestors between them and
+                    // their containing block.
+                    //
+                    // z-index also applies to static flex/grid items
+                    // (css-flexbox-1 §painting, css-grid-1 §z-order).
+                    position != Position::Static || (z_index != 0 && is_flex_or_grid)
                 };
 
-                let position = style.clone_position();
-                let z_index = style.clone_z_index().integer_or(0);
-
-                // TODO: more complete hoisting detection
-                // z-index applies to static flex/grid items too
-                // (css-flexbox-1 §painting, css-grid-1 §z-order).
-                let z_index_hoisted =
-                    z_index != 0 && (position != Position::Static || is_flex_or_grid);
-                // Fixed position children are hoisted so that the scrolling and clipping of
-                // ancestors between them and their containing block do not apply to them.
-                // TODO: also hoist absolutely positioned children whose containing block is
-                // not their layout parent (needs paint-order interleaving with in-tree
-                // positioned siblings).
-                let out_of_flow_hoisted = position == Position::Fixed;
-                if z_index_hoisted || out_of_flow_hoisted {
+                if hoisted {
+                    let z_index = self.nodes[child_id]
+                        .primary_styles()
+                        .map(|style| style.clone_z_index().integer_or(0))
+                        .unwrap_or(0);
                     stacking_context.children.push(HoistedPaintChild {
                         node_id: child_id,
                         z_index,
                         position: taffy::Point::ZERO,
+                        clip: None,
                     })
                 } else {
-                    paint_children.push(child_id);
+                    new_paint_children.push(child_id);
                 }
+
+                self.flush_styles_to_layout_impl(
+                    child_id,
+                    match self.nodes[child_id].is_stacking_context_root(is_flex_or_grid) {
+                        true => None,
+                        false => Some(stacking_context),
+                    },
+                );
             }
 
             // Sort paint_children
-            paint_children.sort_by(|left, right| {
+            new_paint_children.sort_by(|left, right| {
                 let left_node = self.nodes.get(*left).unwrap();
                 let right_node = self.nodes.get(*right).unwrap();
                 node_to_paint_order(left_node, is_flex_or_grid)
                     .cmp(&node_to_paint_order(right_node, is_flex_or_grid))
             });
+            *self.nodes[node_id].paint_children.borrow_mut() = Some(new_paint_children);
 
             // Put children back
             *self.nodes[node_id].layout_children.borrow_mut() = Some(children);
