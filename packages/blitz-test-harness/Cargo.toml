@@ -28,5 +28,6 @@ peniko = { workspace = true }
 png = { workspace = true }
 
 # Other dependencies
+data-url = { workspace = true }
 keyboard-types = { workspace = true }
 smol_str = { workspace = true }
