@@ -94,7 +94,7 @@ dioxus-core-macro = { version = "0.7.3" }
 
 # Taffy + Parley + Fontations
 # TODO: switch back to a crates.io release once one containing DioxusLabs/taffy#1002 is published
-taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "9ce790061af089a9ad935636630301edcea48932", default-features = false, features = [
+taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "945de0dd0c620154565965ed851685f126712dc5", default-features = false, features = [
     "std",
     "flexbox",
     "grid",
