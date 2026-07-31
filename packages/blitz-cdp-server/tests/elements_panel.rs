@@ -895,6 +895,56 @@ fn client_session(addr: std::net::SocketAddr, doc_id: usize, picker_sender: Send
     );
     events.clear();
 
+    // A batch of edits all carries ranges computed against the same original
+    // snapshot of the sheet text: applying an earlier edit must not shift the
+    // offsets that later edits in the batch refer to
+    let id = send(
+        &mut ws,
+        "CSS.getInlineStylesForNode",
+        json!({ "nodeId": container_id }),
+    );
+    let result = read_reply(&mut ws, id, &mut events);
+    let props = result["inlineStyle"]["cssProperties"].as_array().unwrap();
+    let display_range = props.iter().find(|p| p["name"] == "display").unwrap()["range"].clone();
+    let outline_range = props.iter().find(|p| p["name"] == "outline").unwrap()["range"].clone();
+    let id = send(
+        &mut ws,
+        "CSS.setStyleTexts",
+        json!({ "edits": [
+            // The first edit changes the text's length; the second edit's
+            // range still refers to the original (pre-edit) offsets
+            {
+                "styleSheetId": sheet_id,
+                "range": display_range,
+                "text": "display: inline-block;",
+            },
+            {
+                "styleSheetId": sheet_id,
+                "range": outline_range,
+                "text": "outline: 1px dashed red;",
+            },
+        ] }),
+    );
+    let result = read_reply(&mut ws, id, &mut events);
+    let styles = result["styles"].as_array().unwrap();
+    assert_eq!(styles.len(), 2, "one resulting style per edit");
+    for style in styles {
+        let props = style["cssProperties"].as_array().unwrap();
+        assert!(
+            props
+                .iter()
+                .any(|p| p["name"] == "display" && p["value"] == "inline-block"),
+            "batched edit 1 must apply"
+        );
+        assert!(
+            props
+                .iter()
+                .any(|p| p["name"] == "outline" && p["value"] == "1px dashed red"),
+            "batched edit 2 must apply at its original offsets"
+        );
+    }
+    events.clear();
+
     // Restore the original inline style (replacing the whole sheet text)
     let id = send(
         &mut ws,
