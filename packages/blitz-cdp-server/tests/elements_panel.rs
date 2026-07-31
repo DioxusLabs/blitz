@@ -782,13 +782,67 @@ fn client_session(addr: std::net::SocketAddr, doc_id: usize, picker_sender: Send
             .contains("background-color")
     );
 
-    // Restore the original inline style
+    // Editing a single property's sub-range (as the frontend does when one
+    // declaration is edited inline) must preserve the other declarations,
+    // including multi-token shorthand values
+    let id = send(
+        &mut ws,
+        "CSS.getInlineStylesForNode",
+        json!({ "nodeId": container_id }),
+    );
+    let result = read_reply(&mut ws, id, &mut events);
+    let props = result["inlineStyle"]["cssProperties"].as_array().unwrap();
+    let bg_range = props
+        .iter()
+        .find(|p| p["name"] == "background-color")
+        .unwrap()["range"]
+        .clone();
     let id = send(
         &mut ws,
         "CSS.setStyleTexts",
         json!({ "edits": [{
             "styleSheetId": sheet_id,
-            "range": { "startLine": 0, "startColumn": 0, "endLine": 0, "endColumn": 0 },
+            "range": bg_range,
+            "text": "outline: 3px solid blue;",
+        }] }),
+    );
+    let result = read_reply(&mut ws, id, &mut events);
+    let new_props = result["styles"][0]["cssProperties"].as_array().unwrap();
+    assert!(
+        new_props
+            .iter()
+            .any(|p| p["name"] == "display" && p["value"] == "flex"),
+        "sub-range edit must preserve other declarations"
+    );
+    for (name, value) in [
+        ("outline-width", "3px"),
+        ("outline-style", "solid"),
+        ("outline-color", "blue"),
+    ] {
+        assert!(
+            new_props
+                .iter()
+                .any(|p| p["name"] == name && p["value"] == value),
+            "shorthand edit must apply {name}: {value}"
+        );
+    }
+    assert!(!new_props.iter().any(|p| p["name"] == "background-color"));
+    events.clear();
+
+    // Restore the original inline style (replacing the whole sheet text)
+    let id = send(
+        &mut ws,
+        "CSS.getStyleSheetText",
+        json!({ "styleSheetId": sheet_id }),
+    );
+    let result = read_reply(&mut ws, id, &mut events);
+    let current_len = result["text"].as_str().unwrap().len();
+    let id = send(
+        &mut ws,
+        "CSS.setStyleTexts",
+        json!({ "edits": [{
+            "styleSheetId": sheet_id,
+            "range": { "startLine": 0, "startColumn": 0, "endLine": 0, "endColumn": current_len },
             "text": css_text,
         }] }),
     );
