@@ -103,7 +103,8 @@ fn elements_panel_session() {
          <div id=\"abs\" style=\"position: absolute; top: 20px; left: 30px; \
          width: 50px; height: 40px\"></div><div id=\"bb\" style=\"box-sizing: \
          border-box; width: 60px; height: 50px; padding: 5px; \
-         border: 2px solid black\"></div><!-- marker comment --></body></html>";
+         border: 2px solid black\"></div><div id=\"voids\"><img alt=\"x\"><br>\
+         text<input type=\"text\"></div><!-- marker comment --></body></html>";
     let mut doc: BaseDocument = HtmlDocument::from_html(
         html,
         DocumentConfig {
@@ -520,9 +521,9 @@ fn client_session(addr: std::net::SocketAddr, doc_id: usize, picker_sender: Send
         .expect("DOM.setChildNodes event");
     assert_eq!(set_children["params"]["parentId"], body_id);
     let body_children = set_children["params"]["nodes"].as_array().unwrap();
-    assert_eq!(body_children.len(), 5);
+    assert_eq!(body_children.len(), 6);
     assert_eq!(body_children[0]["nodeName"], "DIV");
-    let comment = &body_children[4];
+    let comment = &body_children[5];
     assert_eq!(comment["nodeName"], "#comment");
     assert_eq!(comment["nodeValue"], " marker comment ");
     events.clear();
@@ -1208,6 +1209,23 @@ fn client_session(addr: std::net::SocketAddr, doc_id: usize, picker_sender: Send
     let id = send(&mut ws, "DOM.getOuterHTML", json!({ "nodeId": comment_id }));
     let result = read_reply(&mut ws, id, &mut events);
     assert_eq!(result["outerHTML"], "<!-- edited -->");
+
+    // Void elements are serialized without closing tags (a closing tag
+    // would re-parse into a different document); non-void empty elements
+    // keep their explicit closing tag
+    let id = send(
+        &mut ws,
+        "DOM.querySelector",
+        json!({ "nodeId": root_id, "selector": "#voids" }),
+    );
+    let result = read_reply(&mut ws, id, &mut events);
+    let voids_id = result["nodeId"].as_u64().unwrap();
+    let id = send(&mut ws, "DOM.getOuterHTML", json!({ "nodeId": voids_id }));
+    let result = read_reply(&mut ws, id, &mut events);
+    assert_eq!(
+        result["outerHTML"],
+        "<div id=\"voids\"><img alt=\"x\"><br>text<input type=\"text\"></div>"
+    );
     // Elements are not character data nodes
     let id = send(
         &mut ws,

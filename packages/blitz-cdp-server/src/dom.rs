@@ -1,7 +1,8 @@
 use std::collections::HashSet;
 
 use blitz_dom::BaseDocument;
-use blitz_dom::node::{Node, NodeData};
+use blitz_dom::node::{ElementData, Node, NodeData};
+use blitz_dom::ns;
 use blitz_traits::node_id::NodeId;
 use serde_json::json;
 
@@ -167,6 +168,29 @@ pub(crate) fn outer_html(doc: &BaseDocument, node_id: NodeId) -> Option<String> 
     Some(out)
 }
 
+/// Whether an element is an HTML void element, which must be serialized
+/// without a closing tag
+fn is_void_element(el: &ElementData) -> bool {
+    el.name.ns == ns!(html)
+        && matches!(
+            &*el.name.local,
+            "area"
+                | "base"
+                | "br"
+                | "col"
+                | "embed"
+                | "hr"
+                | "img"
+                | "input"
+                | "link"
+                | "meta"
+                | "param"
+                | "source"
+                | "track"
+                | "wbr"
+        )
+}
+
 fn serialize_node(doc: &BaseDocument, node: &Node, out: &mut String) {
     match &node.data {
         NodeData::Document(_) => {
@@ -186,6 +210,9 @@ fn serialize_node(doc: &BaseDocument, node: &Node, out: &mut String) {
                 out.push('"');
             }
             out.push('>');
+            if is_void_element(el) {
+                return;
+            }
             for child in dom_children(doc, node) {
                 serialize_node(doc, child, out);
             }
