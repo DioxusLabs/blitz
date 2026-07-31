@@ -484,6 +484,18 @@ impl BaseDocument {
         // Perform inline layout
         #[cfg(feature = "floats")]
         {
+            // Floats that are encountered mid-line but do not fit in the remaining space on
+            // the current line. Their placement is deferred until the line has been completed
+            // (and thus its height is known) as they must be placed *below* the current line.
+            struct PendingFloat {
+                node_id: NodeId,
+                size: taffy::Size<f32>,
+                margin: taffy::Rect<f32>,
+                direction: taffy::FloatDirection,
+                clear: Clear,
+            }
+            let mut pending_floats: Vec<PendingFloat> = Vec::new();
+
             let mut breaker = inline_layout.layout.break_lines();
             let initial_slot = block_ctx.find_content_slot(0.0, Clear::None, None);
             let mut has_active_floats = initial_slot.segment_id.is_some();
@@ -504,6 +516,27 @@ impl BaseDocument {
                 match yield_data {
                     YieldData::LineBreak(_line_break_data) => {
                         let state = breaker.state_mut();
+
+                        // Place any floats whose placement was deferred because they did not
+                        // fit next to the just-completed line. They are placed below that
+                        // line (`state.line_y()` is the top of the next line at this point).
+                        if !pending_floats.is_empty() {
+                            let min_y = (state.line_y() / scale as f64) as f32;
+                            for float in pending_floats.drain(..) {
+                                let margin_sum = float.margin.sum_axes();
+                                let pos = block_ctx.place_floated_box(
+                                    float.size + margin_sum,
+                                    min_y,
+                                    float.direction,
+                                    float.clear,
+                                );
+                                let layout = self.nodes[float.node_id].unrounded_layout_mut();
+                                layout.size = float.size;
+                                layout.location.x = pos.x + float.margin.left + container_pb.left;
+                                layout.location.y = pos.y + float.margin.top + container_pb.top;
+                            }
+                            has_active_floats = true;
+                        }
 
                         if has_active_floats {
                             // TODO: revert state and retry layout if a line doesn't fit
@@ -529,7 +562,6 @@ impl BaseDocument {
                         continue;
                     }
                     YieldData::InlineBoxBreak(box_break_data) => {
-                        let state = breaker.state_mut();
                         let node_id = NodeId::from_u64(box_break_data.inline_box_id);
                         let node = &mut self.nodes[node_id];
 
@@ -551,6 +583,32 @@ impl BaseDocument {
                             crate::taffy_node_id(node_id),
                             float_child_inputs,
                         );
+
+                        // A float encountered mid-line may only be placed alongside the current
+                        // line if it fits in the line's remaining space. Otherwise its placement
+                        // is deferred until the line is complete (and its height is known), and
+                        // it is placed below the line. Exception: if the line's existing content
+                        // already overflows the available space (e.g. `white-space: nowrap`) then
+                        // pushing the float down cannot help, so it is placed alongside anyway.
+                        let state = breaker.state_mut();
+                        let line_advance = box_break_data.advance;
+                        let max_advance = state.line_max_advance();
+                        let fits_on_line = line_advance == 0.0
+                            || line_advance > max_advance
+                            || line_advance + (output.size.width + margin_sum.width) * scale
+                                <= max_advance;
+                        if !fits_on_line {
+                            pending_floats.push(PendingFloat {
+                                node_id,
+                                size: output.size,
+                                margin,
+                                direction,
+                                clear,
+                            });
+                            state.append_inline_box_to_line(box_break_data.advance, 0.0);
+                            continue;
+                        }
+
                         let min_y = state.line_y() as f32 / scale;
 
                         // Note: `pos` is content-box relative
