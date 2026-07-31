@@ -50,6 +50,15 @@ impl HarnessOptions {
     }
 }
 
+/// A DOM event captured by [`Harness::dispatch_traced`]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TracedEvent {
+    /// The event name (e.g. "click", "keydown", "input")
+    pub name: String,
+    /// The event's target node
+    pub target: blitz_traits::node_id::NodeId,
+}
+
 /// A headless wrapper around a [`Document`] for driving it programmatically in tests.
 pub struct Harness<D: Document = HtmlDocument> {
     pub doc: D,
@@ -136,6 +145,22 @@ impl<D: Document> Harness<D> {
     /// so document-specific event handling (e.g. forwarding to a Dioxus VirtualDom) is
     /// bypassed. Does not [`pump`](Self::pump).
     pub fn dispatch_recorded(&mut self, events: impl IntoIterator<Item = UiEvent>) -> Vec<String> {
+        self.dispatch_traced(events)
+            .into_iter()
+            .map(|event| event.name)
+            .collect()
+    }
+
+    /// Dispatch raw [`UiEvent`]s, capturing every DOM event dispatched to application
+    /// code as a [`TracedEvent`] (name and target node).
+    ///
+    /// The events are driven directly against the underlying [`blitz_dom::BaseDocument`],
+    /// so document-specific event handling (e.g. forwarding to a Dioxus VirtualDom) is
+    /// bypassed. Does not [`pump`](Self::pump).
+    pub fn dispatch_traced(
+        &mut self,
+        events: impl IntoIterator<Item = UiEvent>,
+    ) -> Vec<TracedEvent> {
         use blitz_dom::{EventDriver, EventHandler};
         use blitz_traits::events::{DomEvent, EventState};
         use std::cell::RefCell;
@@ -143,7 +168,7 @@ impl<D: Document> Harness<D> {
 
         #[derive(Clone, Default)]
         struct RecordingHandler {
-            events: Rc<RefCell<Vec<String>>>,
+            events: Rc<RefCell<Vec<TracedEvent>>>,
         }
 
         impl EventHandler for RecordingHandler {
@@ -154,7 +179,10 @@ impl<D: Document> Harness<D> {
                 _doc: &mut dyn Document,
                 _event_state: &mut EventState,
             ) {
-                self.events.borrow_mut().push(event.name().to_string());
+                self.events.borrow_mut().push(TracedEvent {
+                    name: event.name().to_string(),
+                    target: event.target,
+                });
             }
         }
 

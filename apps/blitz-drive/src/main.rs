@@ -20,8 +20,7 @@ use std::io::{BufRead, Write};
 use std::path::Path;
 use std::sync::Arc;
 
-use blitz_test_harness::{FileNetProvider, Harness, HarnessOptions};
-use keyboard_types::Key;
+use blitz_test_harness::{FileNetProvider, Harness, HarnessOptions, parse_key};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -59,6 +58,8 @@ enum Command {
     },
     /// Dump the DOM tree (with layout geometry) as text
     DumpDom,
+    /// Dump the document's paint commands as text (one per line)
+    DumpPaint,
     /// Get the layout rect of the first element matching `selector`
     Layout { selector: String },
     /// Get the text content of the first element matching `selector`
@@ -77,16 +78,6 @@ enum Command {
     SetViewport { width: u32, height: u32 },
     /// Advance the animation clock by `seconds` and re-resolve
     Tick { seconds: f64 },
-}
-
-fn parse_key(key: &str) -> Key {
-    let mut chars = key.chars();
-    let first = chars.next();
-    if first.is_some() && chars.next().is_none() {
-        return Key::Character(key.to_string());
-    }
-    key.parse::<Key>()
-        .unwrap_or_else(|_| Key::Character(key.to_string()))
 }
 
 struct Driver {
@@ -183,6 +174,10 @@ impl Driver {
             Command::DumpDom => {
                 let dom = self.harness()?.dom_string();
                 Ok(json!({ "ok": true, "dom": dom }))
+            }
+            Command::DumpPaint => {
+                let paint = self.harness()?.paint_string();
+                Ok(json!({ "ok": true, "paint": paint }))
             }
             Command::Layout { selector } => {
                 let harness = self.harness()?;
