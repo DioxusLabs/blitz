@@ -374,7 +374,7 @@ pub(crate) fn collect_layout_children(
 
         #[cfg(feature = "svg")]
         if matches!(tag_name, "svg") {
-            let mut outer_html = doc.get_node(container_node_id).unwrap().outer_html();
+            let mut outer_html = doc.get_node(container_node_id).unwrap().svg_outer_html();
 
             // HACK: usvg fails to parse SVGs that don't have the SVG xmlns set. So inject it
             // if the generated source doesn't have it.

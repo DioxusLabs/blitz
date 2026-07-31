@@ -414,6 +414,8 @@ impl BaseDocument {
             .base_url
             .and_then(|url| DocumentUrl::from_str(&url).ok())
             .unwrap_or_default();
+        let mut nodes = nodes;
+        nodes.set_document_url(base_url.clone());
 
         let net_provider = config
             .net_provider
@@ -547,6 +549,7 @@ impl BaseDocument {
     /// Set base url for resolving linked resources (stylesheets, images, fonts, etc)
     pub fn set_base_url(&mut self, url: &str) {
         self.url = DocumentUrl::from(Url::parse(url).unwrap());
+        self.nodes.set_document_url(self.url.clone());
     }
 
     pub fn guard(&self) -> &SharedRwLock {
