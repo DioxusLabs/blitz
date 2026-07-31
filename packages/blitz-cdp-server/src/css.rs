@@ -120,63 +120,40 @@ fn block_declarations(block: &PropertyDeclarationBlock, inherited_only: bool) ->
         .collect()
 }
 
-/// Serialize declarations to a CDP `CSS.CSSStyle` object. When
-/// `with_ranges` is set, source ranges into the serialized `cssText` are
-/// included for the style and each property, which is what makes the
-/// frontend treat the style as editable (used for inline styles, whose
-/// backing "stylesheet" text is exactly this serialization).
-fn css_style_json_impl(declarations: &[Declaration], with_ranges: bool) -> JsonValue {
-    let mut css_text = String::new();
+/// Serialize declarations to a CDP `CSS.CSSStyle` object
+fn css_style_json(declarations: &[Declaration]) -> JsonValue {
     let properties: Vec<JsonValue> = declarations
         .iter()
         .map(|decl| {
-            let text = if decl.important {
-                format!("{}: {} !important;", decl.name, decl.value)
-            } else {
-                format!("{}: {};", decl.name, decl.value)
-            };
-            let start = css_text.len();
-            css_text.push_str(&text);
-            let end = css_text.len();
-            css_text.push(' ');
-            let mut property = json!({
+            json!({
                 "name": decl.name,
                 "value": decl.value,
                 "important": decl.important,
                 "implicit": false,
                 "disabled": false,
-                "text": text,
-            });
-            if with_ranges {
-                property["range"] = json!({
-                    "startLine": 0,
-                    "startColumn": start,
-                    "endLine": 0,
-                    "endColumn": end,
-                });
-            }
-            property
+                "text": if decl.important {
+                    format!("{}: {} !important;", decl.name, decl.value)
+                } else {
+                    format!("{}: {};", decl.name, decl.value)
+                },
+            })
         })
         .collect();
-    let mut style = json!({
+    let css_text: String = declarations
+        .iter()
+        .map(|decl| {
+            if decl.important {
+                format!("{}: {} !important; ", decl.name, decl.value)
+            } else {
+                format!("{}: {}; ", decl.name, decl.value)
+            }
+        })
+        .collect();
+    json!({
         "cssProperties": properties,
         "shorthandEntries": [],
         "cssText": css_text,
-    });
-    if with_ranges {
-        style["range"] = json!({
-            "startLine": 0,
-            "startColumn": 0,
-            "endLine": 0,
-            "endColumn": css_text.len(),
-        });
-    }
-    style
-}
-
-/// Serialize declarations to a CDP `CSS.CSSStyle` object (without ranges)
-fn css_style_json(declarations: &[Declaration]) -> JsonValue {
-    css_style_json_impl(declarations, false)
+    })
 }
 
 /// Serialize a matched rule to a CDP `CSS.RuleMatch` object
@@ -278,21 +255,125 @@ fn inline_declarations(
         .unwrap_or_default()
 }
 
-/// Build the `CSS.getInlineStylesForNode` inline style object for a node.
-/// The style carries a synthetic per-element style sheet id and source
-/// ranges, making it editable via `CSS.setStyleTexts`.
-pub(crate) fn inline_style_json(doc: &BaseDocument, node_id: NodeId) -> JsonValue {
-    let mut style = css_style_json_impl(&inline_declarations(doc, node_id, false), true);
-    style["styleSheetId"] = json!(inline_style_sheet_id(node_id));
-    style
+/// A declaration scanned from authored inline style text, with the byte
+/// range of its text within it
+struct AuthoredDeclaration {
+    name: String,
+    value: String,
+    important: bool,
+    start: usize,
+    end: usize,
 }
 
-/// The text backing an element's synthetic inline style sheet: the
-/// serialized declarations of its `style` attribute, matching the ranges
-/// reported by [`inline_style_json`]
+/// Scan authored CSS declaration text (a `style` attribute value) into
+/// declarations, preserving the authored text (shorthands are not expanded)
+fn parse_authored_declarations(text: &str) -> Vec<AuthoredDeclaration> {
+    let bytes = text.as_bytes();
+    let mut decls = Vec::new();
+    let mut seg_start = 0;
+    let mut paren_depth = 0i32;
+    let mut quote: Option<u8> = None;
+    for i in 0..=bytes.len() {
+        let byte = bytes.get(i).copied();
+        match (quote, byte) {
+            (Some(q), Some(b)) => {
+                if b == q {
+                    quote = None;
+                }
+            }
+            (None, Some(b @ (b'"' | b'\''))) => quote = Some(b),
+            (None, Some(b'(')) => paren_depth += 1,
+            (None, Some(b')')) => paren_depth -= 1,
+            (None, Some(b';')) | (None, None) if paren_depth <= 0 => {
+                let segment = &text[seg_start..i];
+                let trimmed = segment.trim();
+                if let Some((name, value)) = trimmed.split_once(':') {
+                    let start = seg_start + (segment.len() - segment.trim_start().len());
+                    // The declaration's text includes the terminating `;`
+                    let end = if byte.is_some() {
+                        i + 1
+                    } else {
+                        start + trimmed.len()
+                    };
+                    let value = value.trim();
+                    let (value, important) = match value
+                        .strip_suffix("!important")
+                        .or_else(|| value.strip_suffix("! important"))
+                    {
+                        Some(value) => (value.trim_end(), true),
+                        None => (value, false),
+                    };
+                    decls.push(AuthoredDeclaration {
+                        name: name.trim().to_string(),
+                        value: value.to_string(),
+                        important,
+                        start,
+                        end,
+                    });
+                }
+                seg_start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    decls
+}
+
+/// The line/column position of a byte offset within the given text
+fn line_col(text: &str, offset: usize) -> (usize, usize) {
+    let prefix = &text[..offset];
+    let line = prefix.matches('\n').count();
+    let column = offset - prefix.rfind('\n').map(|i| i + 1).unwrap_or(0);
+    (line, column)
+}
+
+/// A CDP `CSS.SourceRange` for the given byte range within the text
+fn source_range_json(text: &str, start: usize, end: usize) -> JsonValue {
+    let (start_line, start_column) = line_col(text, start);
+    let (end_line, end_column) = line_col(text, end);
+    json!({
+        "startLine": start_line,
+        "startColumn": start_column,
+        "endLine": end_line,
+        "endColumn": end_column,
+    })
+}
+
+/// Build the `CSS.getInlineStylesForNode` inline style object for a node.
+/// The style carries a synthetic per-element style sheet id, the authored
+/// `style` attribute text (shorthands are not expanded: DevTools re-commits
+/// the reported text while editing, so it must round-trip verbatim) and
+/// source ranges into it, making it editable via `CSS.setStyleTexts`.
+pub(crate) fn inline_style_json(doc: &BaseDocument, node_id: NodeId) -> JsonValue {
+    let text = inline_style_text(doc, node_id);
+    let properties: Vec<JsonValue> = parse_authored_declarations(&text)
+        .iter()
+        .map(|decl| {
+            json!({
+                "name": decl.name,
+                "value": decl.value,
+                "important": decl.important,
+                "implicit": false,
+                "disabled": false,
+                "text": &text[decl.start..decl.end],
+                "range": source_range_json(&text, decl.start, decl.end),
+            })
+        })
+        .collect();
+    json!({
+        "cssProperties": properties,
+        "shorthandEntries": [],
+        "cssText": text,
+        "range": source_range_json(&text, 0, text.len()),
+        "styleSheetId": inline_style_sheet_id(node_id),
+    })
+}
+
+/// The text backing an element's synthetic inline style sheet: the authored
+/// value of its `style` attribute
 pub(crate) fn inline_style_text(doc: &BaseDocument, node_id: NodeId) -> String {
-    css_style_json_impl(&inline_declarations(doc, node_id, false), false)["cssText"]
-        .as_str()
+    doc.get_node(node_id)
+        .and_then(|node| node.attr(blitz_dom::local_name!("style")))
         .unwrap_or_default()
         .to_string()
 }
