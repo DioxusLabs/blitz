@@ -624,8 +624,10 @@ impl DocumentMutator<'_> {
             let child_was_in_doc = child.flags.is_in_document();
             child.parent = Some(parent_id);
 
-            if new_parent_is_in_document != child_was_in_doc {
+            if new_parent_is_in_document && !child_was_in_doc {
                 self.process_added_subtree(child_id);
+            } else if !new_parent_is_in_document && child_was_in_doc {
+                self.process_removed_subtree(child_id);
             }
         }
 
@@ -1292,6 +1294,70 @@ mod test {
             mutator.append_children(detached_target_id, &[child_id]);
         }
         assert_eq!(shell.redraw_requests.load(Ordering::Relaxed), 3);
+    }
+
+    #[test]
+    fn moving_subtree_out_of_document_clears_in_document_flag() {
+        let shell = Arc::new(RedrawShell::default());
+        let mut document = BaseDocument::new(DocumentConfig {
+            shell_provider: Some(shell.clone()),
+            ..Default::default()
+        });
+        let root_id = document.root_node().id;
+        let (child_id, grandchild_id, detached_parent_id) = {
+            let mut mutator = document.mutate();
+            let in_document_parent_id = mutator.create_element(qual_name!("div"), vec![]);
+            let child_id = mutator.create_element(qual_name!("div"), vec![]);
+            let grandchild_id = mutator.create_element(qual_name!("span"), vec![]);
+            let detached_parent_id = mutator.create_element(qual_name!("section"), vec![]);
+            mutator.append_children(root_id, &[in_document_parent_id]);
+            mutator.append_children(in_document_parent_id, &[child_id]);
+            mutator.append_children(child_id, &[grandchild_id]);
+            (child_id, grandchild_id, detached_parent_id)
+        };
+        assert_eq!(shell.redraw_requests.load(Ordering::Relaxed), 1);
+        assert!(document.get_node(child_id).unwrap().flags.is_in_document());
+        assert!(
+            document
+                .get_node(grandchild_id)
+                .unwrap()
+                .flags
+                .is_in_document()
+        );
+
+        {
+            let mut mutator = document.mutate();
+            mutator.append_children(detached_parent_id, &[child_id]);
+        }
+        assert_eq!(shell.redraw_requests.load(Ordering::Relaxed), 2);
+        assert!(!document.get_node(child_id).unwrap().flags.is_in_document());
+        assert!(
+            !document
+                .get_node(grandchild_id)
+                .unwrap()
+                .flags
+                .is_in_document()
+        );
+
+        {
+            let mut mutator = document.mutate();
+            mutator.set_attribute(child_id, qual_name!("id"), "detached");
+        }
+        assert_eq!(shell.redraw_requests.load(Ordering::Relaxed), 2);
+
+        {
+            let mut mutator = document.mutate();
+            mutator.append_children(root_id, &[child_id]);
+        }
+        assert_eq!(shell.redraw_requests.load(Ordering::Relaxed), 3);
+        assert!(document.get_node(child_id).unwrap().flags.is_in_document());
+        assert!(
+            document
+                .get_node(grandchild_id)
+                .unwrap()
+                .flags
+                .is_in_document()
+        );
     }
 
     #[test]
