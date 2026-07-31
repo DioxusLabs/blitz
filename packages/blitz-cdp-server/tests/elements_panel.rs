@@ -798,6 +798,151 @@ fn client_session(addr: std::net::SocketAddr, doc_id: usize, picker_sender: Send
     assert!(!events.iter().any(|e| e["method"] == "DOM.setChildNodes"));
     events.clear();
 
+    // DOM.setAttributeValue sets the attribute and confirms it via an
+    // attributeModified event
+    let id = send(
+        &mut ws,
+        "DOM.setAttributeValue",
+        json!({ "nodeId": container_id, "name": "data-x", "value": "1" }),
+    );
+    read_reply(&mut ws, id, &mut events);
+    assert!(events.iter().any(|e| e["method"] == "DOM.attributeModified"
+        && e["params"]["nodeId"] == container_id
+        && e["params"]["name"] == "data-x"
+        && e["params"]["value"] == "1"));
+    events.clear();
+    let id = send(
+        &mut ws,
+        "DOM.getOuterHTML",
+        json!({ "nodeId": container_id }),
+    );
+    let result = read_reply(&mut ws, id, &mut events);
+    assert!(
+        result["outerHTML"]
+            .as_str()
+            .unwrap()
+            .contains("data-x=\"1\"")
+    );
+
+    // DOM.setAttributesAsText replaces the attribute being edited with the
+    // attributes parsed from the raw markup text
+    let id = send(
+        &mut ws,
+        "DOM.setAttributesAsText",
+        json!({ "nodeId": container_id, "name": "data-x", "text": "data-y='2' flag" }),
+    );
+    read_reply(&mut ws, id, &mut events);
+    assert!(
+        events
+            .iter()
+            .any(|e| e["method"] == "DOM.attributeRemoved" && e["params"]["name"] == "data-x")
+    );
+    assert!(events.iter().any(|e| e["method"] == "DOM.attributeModified"
+        && e["params"]["name"] == "data-y"
+        && e["params"]["value"] == "2"));
+    assert!(
+        events
+            .iter()
+            .any(|e| e["method"] == "DOM.attributeModified" && e["params"]["name"] == "flag")
+    );
+    events.clear();
+    let id = send(
+        &mut ws,
+        "DOM.getOuterHTML",
+        json!({ "nodeId": container_id }),
+    );
+    let result = read_reply(&mut ws, id, &mut events);
+    let outer = result["outerHTML"].as_str().unwrap();
+    assert!(outer.contains("data-y=\"2\""));
+    assert!(outer.contains("flag"));
+    assert!(!outer.contains("data-x"));
+
+    // DOM.removeAttribute
+    let id = send(
+        &mut ws,
+        "DOM.removeAttribute",
+        json!({ "nodeId": container_id, "name": "data-y" }),
+    );
+    read_reply(&mut ws, id, &mut events);
+    assert!(
+        events
+            .iter()
+            .any(|e| e["method"] == "DOM.attributeRemoved" && e["params"]["name"] == "data-y")
+    );
+    events.clear();
+    let id = send(
+        &mut ws,
+        "DOM.getOuterHTML",
+        json!({ "nodeId": container_id }),
+    );
+    let result = read_reply(&mut ws, id, &mut events);
+    assert!(!result["outerHTML"].as_str().unwrap().contains("data-y"));
+
+    // DOM.setNodeValue edits text nodes and comments
+    fn find_node<'a>(
+        node: &'a serde_json::Value,
+        pred: &dyn Fn(&serde_json::Value) -> bool,
+    ) -> Option<&'a serde_json::Value> {
+        if pred(node) {
+            return Some(node);
+        }
+        node["children"]
+            .as_array()?
+            .iter()
+            .find_map(|child| find_node(child, pred))
+    }
+    let id = send(&mut ws, "DOM.getDocument", json!({ "depth": -1 }));
+    let result = read_reply(&mut ws, id, &mut events);
+    events.clear();
+    let text_id = find_node(&result["root"], &|n| {
+        n["nodeType"] == 3 && n["nodeValue"] == "Hello"
+    })
+    .expect("text node")["nodeId"]
+        .as_u64()
+        .unwrap();
+    let comment_id =
+        find_node(&result["root"], &|n| n["nodeType"] == 8).expect("comment node")["nodeId"]
+            .as_u64()
+            .unwrap();
+    let id = send(
+        &mut ws,
+        "DOM.setNodeValue",
+        json!({ "nodeId": text_id, "value": "Howdy" }),
+    );
+    read_reply(&mut ws, id, &mut events);
+    assert!(
+        events
+            .iter()
+            .any(|e| e["method"] == "DOM.characterDataModified"
+                && e["params"]["nodeId"] == text_id
+                && e["params"]["characterData"] == "Howdy")
+    );
+    events.clear();
+    let id = send(
+        &mut ws,
+        "DOM.getOuterHTML",
+        json!({ "nodeId": container_id }),
+    );
+    let result = read_reply(&mut ws, id, &mut events);
+    assert!(result["outerHTML"].as_str().unwrap().contains("Howdy"));
+    let id = send(
+        &mut ws,
+        "DOM.setNodeValue",
+        json!({ "nodeId": comment_id, "value": " edited " }),
+    );
+    read_reply(&mut ws, id, &mut events);
+    events.clear();
+    let id = send(&mut ws, "DOM.getOuterHTML", json!({ "nodeId": comment_id }));
+    let result = read_reply(&mut ws, id, &mut events);
+    assert_eq!(result["outerHTML"], "<!-- edited -->");
+    // Elements are not character data nodes
+    let id = send(
+        &mut ws,
+        "DOM.setNodeValue",
+        json!({ "nodeId": container_id, "value": "nope" }),
+    );
+    expect_error(&mut ws, id);
+
     // Turning inspect mode off after picking is a no-op
     let id = send(
         &mut ws,
