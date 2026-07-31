@@ -505,6 +505,66 @@ impl Session {
 
             "CSS.getPlatformFontsForNode" => Ok(json!({ "fonts": [] })),
 
+            "CSS.getStyleSheetText" => {
+                let doc_id = self.doc_id(docs).ok_or_else(no_document)?;
+                let sheet_id = str_param(params, "styleSheetId")?;
+                let node_id = crate::css::parse_inline_style_sheet_id(&sheet_id)
+                    .ok_or_else(no_style_sheet)?;
+                let text = with_doc(docs, doc_id, |doc| {
+                    doc.get_node(node_id)
+                        .filter(|node| node.element_data().is_some())
+                        .ok_or_else(no_style_sheet)?;
+                    Ok(crate::css::inline_style_text(doc, node_id))
+                })
+                .ok_or_else(no_document)??;
+                Ok(json!({ "text": text }))
+            }
+
+            // Sent by the Styles pane when a style is edited. Only inline
+            // styles (per-element synthetic style sheets) are editable: each
+            // edit's text replaces the element's `style` attribute
+            "CSS.setStyleTexts" => {
+                let doc_id = self.doc_id(docs).ok_or_else(no_document)?;
+                let edits = params
+                    .get("edits")
+                    .and_then(|edits| edits.as_array())
+                    .ok_or_else(|| CdpError::invalid_params("Missing edits"))?
+                    .clone();
+                let mut styles = Vec::new();
+                let mut modified = Vec::new();
+                for edit in &edits {
+                    let sheet_id = str_param(edit, "styleSheetId")?;
+                    let text = str_param(edit, "text")?;
+                    let node_id = crate::css::parse_inline_style_sheet_id(&sheet_id)
+                        .ok_or_else(no_style_sheet)?;
+                    let (style, value) = with_doc(docs, doc_id, |doc| {
+                        doc.get_node(node_id)
+                            .filter(|node| node.element_data().is_some())
+                            .ok_or_else(no_style_sheet)?;
+                        doc.mutate()
+                            .set_attribute(node_id, attr_name("style"), &text);
+                        doc.shell_provider.request_redraw();
+                        // Report the style re-serialized from the parsed
+                        // attribute, so its ranges match the new sheet text
+                        Ok((
+                            crate::css::inline_style_json(doc, node_id),
+                            crate::css::inline_style_text(doc, node_id),
+                        ))
+                    })
+                    .ok_or_else(no_document)??;
+                    styles.push(style);
+                    modified.push((sheet_id, node_id, value));
+                }
+                for (sheet_id, node_id, value) in &modified {
+                    writer.event("CSS.styleSheetChanged", json!({ "styleSheetId": sheet_id }));
+                    writer.event(
+                        "DOM.attributeModified",
+                        json!({ "nodeId": cdp_node_id(*node_id), "name": "style", "value": value }),
+                    );
+                }
+                Ok(json!({ "styles": styles }))
+            }
+
             "Overlay.highlightNode" => {
                 let doc_id = self.doc_id(docs).ok_or_else(no_document)?;
                 let node_id = any_node_id_param(params)?;
@@ -731,6 +791,10 @@ fn no_document() -> CdpError {
 
 fn no_node() -> CdpError {
     CdpError::server_error("Could not find node with given id")
+}
+
+fn no_style_sheet() -> CdpError {
+    CdpError::server_error("No style sheet with given id found")
 }
 
 /// Extract a string parameter
