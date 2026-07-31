@@ -578,6 +578,7 @@ impl DocumentMutator<'_> {
         for child_id in child_ids.iter().copied() {
             let child = &mut self.doc.nodes[child_id];
             let child_was_in_doc = child.flags.is_in_document();
+            self.mutations_occurred |= child_was_in_doc;
             let Some(old_parent_id) = child.parent.take() else {
                 continue;
             };
@@ -603,10 +604,9 @@ impl DocumentMutator<'_> {
 
         let new_parent = &mut self.doc.nodes[parent_id];
         new_parent.insert_damage(ALL_DAMAGE);
-        let new_parent_is_in_doc = new_parent_is_in_document;
 
         // TODO: make this fine grained / conditional based on ElementSelectorFlags
-        if new_parent_is_in_doc {
+        if new_parent_is_in_document {
             if let Some(mut data) = new_parent
                 .stylo_element_data_opt_mut()
                 .and_then(|s| s.get_mut())
@@ -624,7 +624,7 @@ impl DocumentMutator<'_> {
             let child_was_in_doc = child.flags.is_in_document();
             child.parent = Some(parent_id);
 
-            if new_parent_is_in_doc != child_was_in_doc {
+            if new_parent_is_in_document != child_was_in_doc {
                 self.process_added_subtree(child_id);
             }
         }
@@ -1254,6 +1254,7 @@ mod test {
             let child_id = mutator.create_element(qual_name!("span"), vec![]);
             mutator.append_children(parent_id, &[child_id]);
             mutator.remove_and_drop_all_children(parent_id);
+            mutator.set_attribute(parent_id, qual_name!("id"), "detached");
         }
         assert_eq!(shell.redraw_requests.load(Ordering::Relaxed), 0);
 
@@ -1264,12 +1265,32 @@ mod test {
 
         {
             let mut mutator = document.mutate();
+            let node_id = mutator.create_element(qual_name!("div"), vec![]);
+            mutator.append_children(root_id, &[node_id]);
+            mutator.set_attribute(node_id, qual_name!("id"), "in-document");
+        }
+        assert_eq!(shell.redraw_requests.load(Ordering::Relaxed), 1);
+
+        {
+            let mut mutator = document.mutate();
             let parent_id = mutator.create_element(qual_name!("div"), vec![]);
             let child_id = mutator.create_element(qual_name!("span"), vec![]);
             mutator.append_children(root_id, &[parent_id]);
             mutator.append_children(parent_id, &[child_id]);
             mutator.remove_and_drop_all_children(parent_id);
         }
-        assert_eq!(shell.redraw_requests.load(Ordering::Relaxed), 1);
+        assert_eq!(shell.redraw_requests.load(Ordering::Relaxed), 2);
+
+        {
+            let mut mutator = document.mutate();
+            let parent_id = mutator.create_element(qual_name!("div"), vec![]);
+            let child_id = mutator.create_element(qual_name!("span"), vec![]);
+            let detached_target_id = mutator.create_element(qual_name!("div"), vec![]);
+            mutator.append_children(root_id, &[parent_id]);
+            mutator.append_children(parent_id, &[child_id]);
+            assert_eq!(shell.redraw_requests.load(Ordering::Relaxed), 2);
+            mutator.append_children(detached_target_id, &[child_id]);
+        }
+        assert_eq!(shell.redraw_requests.load(Ordering::Relaxed), 3);
     }
 }
