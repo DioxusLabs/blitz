@@ -934,6 +934,7 @@ dependencies = [
  "anyrender_vello_hybrid",
  "blitz",
  "blitz-dom",
+ "blitz-headless",
  "blitz-html",
  "blitz-net",
  "blitz-paint",
@@ -950,6 +951,20 @@ dependencies = [
  "reqwest",
  "tokio",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "blitz-headless"
+version = "0.3.0-beta.1"
+dependencies = [
+ "anyrender",
+ "anyrender_vello_cpu",
+ "blitz-dom",
+ "blitz-html",
+ "blitz-paint",
+ "blitz-traits",
+ "peniko",
+ "png 0.18.1",
 ]
 
 [[package]]
@@ -1028,8 +1043,8 @@ name = "blitz-test-harness"
 version = "0.3.0-beta.1"
 dependencies = [
  "anyrender",
- "anyrender_vello_cpu",
  "blitz-dom",
+ "blitz-headless",
  "blitz-html",
  "blitz-paint",
  "blitz-traits",
@@ -1038,7 +1053,6 @@ dependencies = [
  "dioxus-native-dom",
  "keyboard-types 0.7.0",
  "peniko",
- "png 0.18.1",
  "serde",
  "serde_json",
  "smol_str",

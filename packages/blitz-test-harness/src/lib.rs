@@ -33,5 +33,8 @@ pub use net::{
     load_fixture_bytes,
 };
 pub use paint::paint_command_string;
-pub use render::{Screenshot, ScreenshotDiff, artifacts_dir, compare_screenshots};
+pub use render::artifacts_dir;
+
+// Re-exported from `blitz-headless` for backwards compatibility
+pub use blitz_headless::{Screenshot, ScreenshotDiff, compare_screenshots};
 pub use scenario::{Scenario, Step, run_scenario, run_scenario_file};

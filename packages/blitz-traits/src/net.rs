@@ -18,6 +18,14 @@ pub use url::Url;
 /// This may be over the network via http(s), via the filesystem, or some other method.
 pub trait NetProvider: Send + Sync + 'static {
     fn fetch(&self, doc_id: usize, request: Request, handler: Box<dyn NetHandler>);
+
+    /// The number of in-flight requests. Consumers may poll this to wait for
+    /// "network idle" before rendering. Providers which complete all requests
+    /// synchronously during [`fetch`](Self::fetch) can rely on the default
+    /// implementation, which returns `0`.
+    fn pending_requests(&self) -> usize {
+        0
+    }
 }
 
 /// A type that parses raw bytes from a network request into a Data and then calls

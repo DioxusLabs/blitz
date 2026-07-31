@@ -1,0 +1,24 @@
+[package]
+name = "blitz-headless"
+description = "Headless document setup and rendering for Blitz"
+documentation = "https://docs.rs/blitz-headless"
+version.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+categories.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+# Blitz dependencies
+blitz-dom = { workspace = true, features = ["system-fonts"] }
+blitz-html = { workspace = true }
+blitz-paint = { workspace = true, features = ["default"] }
+blitz-traits = { workspace = true }
+
+# Rendering dependencies
+anyrender = { workspace = true }
+anyrender_vello_cpu = { workspace = true }
+peniko = { workspace = true }
+png = { workspace = true }

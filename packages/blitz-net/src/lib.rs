@@ -256,6 +256,10 @@ impl Provider {
 }
 
 impl NetProvider for Provider {
+    fn pending_requests(&self) -> usize {
+        self.count()
+    }
+
     fn fetch(&self, doc_id: usize, mut request: Request, handler: Box<dyn NetHandler>) {
         let client = self.client.clone();
         let per_host_limits = self.per_host_limits.clone();

@@ -246,6 +246,13 @@ impl NetHandler for RecordingHandler {
 }
 
 impl NetProvider for RecordReplayProvider {
+    fn pending_requests(&self) -> usize {
+        self.inner
+            .as_ref()
+            .map(|inner| inner.pending_requests())
+            .unwrap_or(0)
+    }
+
     fn fetch(&self, doc_id: usize, request: Request, handler: Box<dyn NetHandler>) {
         let url = request.url.to_string();
 
