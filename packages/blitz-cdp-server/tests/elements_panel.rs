@@ -28,6 +28,9 @@ impl DocumentProvider for SingleDocProvider {
     }
     fn with_document(&mut self, id: usize, cb: &mut dyn FnMut(&mut BaseDocument)) {
         if id == self.0.id() {
+            // Re-resolve styles/layout before each access, as the shell's
+            // event loop does between commands (after a mutation's redraw)
+            self.0.resolve(0.0);
             cb(&mut self.0);
         }
     }
@@ -689,8 +692,108 @@ fn client_session(addr: std::net::SocketAddr, doc_id: usize, picker_sender: Send
         json!({ "nodeId": container_id }),
     );
     let result = read_reply(&mut ws, id, &mut events);
-    let inline_props = result["inlineStyle"]["cssProperties"].as_array().unwrap();
+    let inline_style = &result["inlineStyle"];
+    let inline_props = inline_style["cssProperties"].as_array().unwrap();
     assert!(inline_props.iter().any(|p| p["name"] == "display"));
+
+    // The inline style is editable: it carries a synthetic style sheet id
+    // and source ranges into its serialized cssText
+    let sheet_id = inline_style["styleSheetId"].as_str().unwrap().to_string();
+    let css_text = inline_style["cssText"].as_str().unwrap().to_string();
+    assert_eq!(
+        inline_style["range"]["endColumn"].as_u64().unwrap(),
+        css_text.len() as u64
+    );
+    let first_prop = &inline_props[0];
+    let range = &first_prop["range"];
+    assert_eq!(range["startLine"], 0);
+    let start = range["startColumn"].as_u64().unwrap() as usize;
+    let end = range["endColumn"].as_u64().unwrap() as usize;
+    assert_eq!(&css_text[start..end], first_prop["text"].as_str().unwrap());
+
+    // CSS.getStyleSheetText returns the text the ranges refer to
+    let id = send(
+        &mut ws,
+        "CSS.getStyleSheetText",
+        json!({ "styleSheetId": sheet_id }),
+    );
+    let result = read_reply(&mut ws, id, &mut events);
+    assert_eq!(result["text"].as_str().unwrap(), css_text);
+
+    // Unknown style sheet ids are an error
+    let id = send(
+        &mut ws,
+        "CSS.getStyleSheetText",
+        json!({ "styleSheetId": "no-such-sheet" }),
+    );
+    expect_error(&mut ws, id);
+    events.clear();
+
+    // CSS.setStyleTexts replaces the element's style attribute and returns
+    // the new style (re-serialized, with fresh ranges)
+    let id = send(
+        &mut ws,
+        "CSS.setStyleTexts",
+        json!({ "edits": [{
+            "styleSheetId": sheet_id,
+            "range": { "startLine": 0, "startColumn": 0, "endLine": 0, "endColumn": css_text.len() },
+            "text": "display: flex; background-color: rgb(0, 128, 0);",
+        }] }),
+    );
+    let result = read_reply(&mut ws, id, &mut events);
+    let new_style = &result["styles"][0];
+    let new_props = new_style["cssProperties"].as_array().unwrap();
+    assert!(
+        new_props
+            .iter()
+            .any(|p| p["name"] == "background-color" && p["value"] == "rgb(0, 128, 0)")
+    );
+    assert_eq!(new_style["styleSheetId"].as_str().unwrap(), sheet_id);
+    assert!(events.iter().any(|e| e["method"] == "CSS.styleSheetChanged"
+        && e["params"]["styleSheetId"] == json!(sheet_id)));
+    assert!(events.iter().any(|e| e["method"] == "DOM.attributeModified"
+        && e["params"]["nodeId"] == json!(container_id)
+        && e["params"]["name"] == "style"));
+    events.clear();
+
+    // The edit is reflected in the document's styles and sheet text
+    let id = send(
+        &mut ws,
+        "CSS.getComputedStyleForNode",
+        json!({ "nodeId": container_id }),
+    );
+    let result = read_reply(&mut ws, id, &mut events);
+    let computed = result["computedStyle"].as_array().unwrap();
+    assert!(
+        computed
+            .iter()
+            .any(|p| p["name"] == "background-color" && p["value"] == "rgb(0, 128, 0)")
+    );
+    let id = send(
+        &mut ws,
+        "CSS.getStyleSheetText",
+        json!({ "styleSheetId": sheet_id }),
+    );
+    let result = read_reply(&mut ws, id, &mut events);
+    assert!(
+        result["text"]
+            .as_str()
+            .unwrap()
+            .contains("background-color")
+    );
+
+    // Restore the original inline style
+    let id = send(
+        &mut ws,
+        "CSS.setStyleTexts",
+        json!({ "edits": [{
+            "styleSheetId": sheet_id,
+            "range": { "startLine": 0, "startColumn": 0, "endLine": 0, "endColumn": 0 },
+            "text": css_text,
+        }] }),
+    );
+    read_reply(&mut ws, id, &mut events);
+    events.clear();
 
     // DOM.getBoxModel
     let id = send(
