@@ -39,14 +39,33 @@ impl<Rend: WindowRenderer> blitz_cdp_server::DocumentProvider
     for WindowsDocumentProvider<'_, Rend>
 {
     fn document_ids(&self) -> Vec<usize> {
-        self.windows.values().map(|view| view.doc.id()).collect()
+        let mut ids = Vec::new();
+        for view in self.windows.values() {
+            blitz_cdp_server::documents::collect_document_ids(&view.doc.inner(), &mut ids);
+        }
+        ids
     }
 
     fn with_document(&mut self, id: usize, cb: &mut dyn FnMut(&mut blitz_dom::BaseDocument)) {
-        if let Some(view) = self.windows.values_mut().find(|view| view.doc.id() == id) {
-            cb(&mut view.doc.inner_mut());
+        for view in self.windows.values_mut() {
+            if blitz_cdp_server::documents::with_document_in(&mut view.doc.inner_mut(), id, cb) {
+                return;
+            }
         }
     }
+}
+
+/// Whether a document or (recursively) any of its sub-documents has the
+/// given id
+fn document_contains_id(doc: &blitz_dom::BaseDocument, doc_id: usize) -> bool {
+    if doc.id() == doc_id {
+        return true;
+    }
+    doc.sub_document_node_ids().iter().any(|&node_id| {
+        doc.get_node(node_id)
+            .and_then(|node| node.subdoc())
+            .is_some_and(|sub_doc| document_contains_id(&sub_doc.inner(), doc_id))
+    })
 }
 
 impl<Rend: WindowRenderer> BlitzApplication<Rend> {
@@ -101,7 +120,9 @@ impl<Rend: WindowRenderer> BlitzApplication<Rend> {
     }
 
     fn window_mut_by_doc_id(&mut self, doc_id: usize) -> Option<&mut View<Rend>> {
-        self.windows.values_mut().find(|w| w.doc.id() == doc_id)
+        self.windows
+            .values_mut()
+            .find(|w| document_contains_id(&w.doc.inner(), doc_id))
     }
 
     /// Intercept window input events while the devtools element picker is
@@ -127,19 +148,23 @@ impl<Rend: WindowRenderer> BlitzApplication<Rend> {
         let Some(window) = self.windows.get(&window_id) else {
             return false;
         };
-        if !window.doc.inner().devtools().element_picker {
+        // The picker may be active on the window's document or on one of its
+        // sub-documents (each an inspectable target of its own): find it and
+        // translate window coordinates into its coordinate space
+        let find_picking = |x: f32, y: f32| {
+            blitz_cdp_server::documents::find_picking_document(&window.doc.inner(), x, y)
+        };
+        if find_picking(0.0, 0.0).is_none() {
             return false;
         }
-        let doc_id = window.doc.id();
 
         let picker_event = match event {
             WindowEvent::PointerMoved { position, .. } => {
                 let coords = window.pointer_coords(*position);
-                PickerEvent::Hovered {
-                    doc_id,
-                    x: coords.page_x,
-                    y: coords.page_y,
-                }
+                let Some((doc_id, x, y)) = find_picking(coords.page_x, coords.page_y) else {
+                    return false;
+                };
+                PickerEvent::Hovered { doc_id, x, y }
             }
             WindowEvent::PointerButton {
                 state, position, ..
@@ -149,11 +174,10 @@ impl<Rend: WindowRenderer> BlitzApplication<Rend> {
                 }
                 self.picker_pressed_windows.insert(window_id);
                 let coords = window.pointer_coords(*position);
-                PickerEvent::Picked {
-                    doc_id,
-                    x: coords.page_x,
-                    y: coords.page_y,
-                }
+                let Some((doc_id, x, y)) = find_picking(coords.page_x, coords.page_y) else {
+                    return false;
+                };
+                PickerEvent::Picked { doc_id, x, y }
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 if event.state != ElementState::Pressed
@@ -161,6 +185,9 @@ impl<Rend: WindowRenderer> BlitzApplication<Rend> {
                 {
                     return false;
                 }
+                let Some((doc_id, _, _)) = find_picking(0.0, 0.0) else {
+                    return false;
+                };
                 PickerEvent::Canceled { doc_id }
             }
             _ => return false,
