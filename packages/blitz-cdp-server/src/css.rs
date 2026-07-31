@@ -120,40 +120,63 @@ fn block_declarations(block: &PropertyDeclarationBlock, inherited_only: bool) ->
         .collect()
 }
 
-/// Serialize declarations to a CDP `CSS.CSSStyle` object
-fn css_style_json(declarations: &[Declaration]) -> JsonValue {
+/// Serialize declarations to a CDP `CSS.CSSStyle` object. When
+/// `with_ranges` is set, source ranges into the serialized `cssText` are
+/// included for the style and each property, which is what makes the
+/// frontend treat the style as editable (used for inline styles, whose
+/// backing "stylesheet" text is exactly this serialization).
+fn css_style_json_impl(declarations: &[Declaration], with_ranges: bool) -> JsonValue {
+    let mut css_text = String::new();
     let properties: Vec<JsonValue> = declarations
         .iter()
         .map(|decl| {
-            json!({
+            let text = if decl.important {
+                format!("{}: {} !important;", decl.name, decl.value)
+            } else {
+                format!("{}: {};", decl.name, decl.value)
+            };
+            let start = css_text.len();
+            css_text.push_str(&text);
+            let end = css_text.len();
+            css_text.push(' ');
+            let mut property = json!({
                 "name": decl.name,
                 "value": decl.value,
                 "important": decl.important,
                 "implicit": false,
                 "disabled": false,
-                "text": if decl.important {
-                    format!("{}: {} !important;", decl.name, decl.value)
-                } else {
-                    format!("{}: {};", decl.name, decl.value)
-                },
-            })
-        })
-        .collect();
-    let css_text: String = declarations
-        .iter()
-        .map(|decl| {
-            if decl.important {
-                format!("{}: {} !important; ", decl.name, decl.value)
-            } else {
-                format!("{}: {}; ", decl.name, decl.value)
+                "text": text,
+            });
+            if with_ranges {
+                property["range"] = json!({
+                    "startLine": 0,
+                    "startColumn": start,
+                    "endLine": 0,
+                    "endColumn": end,
+                });
             }
+            property
         })
         .collect();
-    json!({
+    let mut style = json!({
         "cssProperties": properties,
         "shorthandEntries": [],
         "cssText": css_text,
-    })
+    });
+    if with_ranges {
+        style["range"] = json!({
+            "startLine": 0,
+            "startColumn": 0,
+            "endLine": 0,
+            "endColumn": css_text.len(),
+        });
+    }
+    style
+}
+
+/// Serialize declarations to a CDP `CSS.CSSStyle` object (without ranges)
+fn css_style_json(declarations: &[Declaration]) -> JsonValue {
+    css_style_json_impl(declarations, false)
 }
 
 /// Serialize a matched rule to a CDP `CSS.RuleMatch` object
@@ -255,9 +278,35 @@ fn inline_declarations(
         .unwrap_or_default()
 }
 
-/// Build the `CSS.getInlineStylesForNode` inline style object for a node
+/// Build the `CSS.getInlineStylesForNode` inline style object for a node.
+/// The style carries a synthetic per-element style sheet id and source
+/// ranges, making it editable via `CSS.setStyleTexts`.
 pub(crate) fn inline_style_json(doc: &BaseDocument, node_id: NodeId) -> JsonValue {
-    css_style_json(&inline_declarations(doc, node_id, false))
+    let mut style = css_style_json_impl(&inline_declarations(doc, node_id, false), true);
+    style["styleSheetId"] = json!(inline_style_sheet_id(node_id));
+    style
+}
+
+/// The text backing an element's synthetic inline style sheet: the
+/// serialized declarations of its `style` attribute, matching the ranges
+/// reported by [`inline_style_json`]
+pub(crate) fn inline_style_text(doc: &BaseDocument, node_id: NodeId) -> String {
+    css_style_json_impl(&inline_declarations(doc, node_id, false), false)["cssText"]
+        .as_str()
+        .unwrap_or_default()
+        .to_string()
+}
+
+/// The synthetic style sheet id of an element's inline `style` attribute
+pub(crate) fn inline_style_sheet_id(node_id: NodeId) -> String {
+    format!("inline-{}", crate::session::cdp_node_id(node_id))
+}
+
+/// Parse a synthetic inline style sheet id back to its element's node id
+pub(crate) fn parse_inline_style_sheet_id(id: &str) -> Option<NodeId> {
+    id.strip_prefix("inline-")
+        .and_then(|id| id.parse::<u64>().ok())
+        .and_then(crate::session::blitz_node_id)
 }
 
 /// Build the `CSS.getMatchedStylesForNode` response for a node
