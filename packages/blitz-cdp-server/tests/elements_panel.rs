@@ -368,9 +368,9 @@ fn connection_close_clears_devtools_state() {
         .wait_for_local_addr(Duration::from_secs(10))
         .expect("server should start listening");
 
-    let mut pump = |server: &mut CdpServer,
-                    provider: &mut SingleDocProvider,
-                    until: &dyn Fn(&SingleDocProvider) -> bool| {
+    let pump = |server: &mut CdpServer,
+                provider: &mut SingleDocProvider,
+                until: &dyn Fn(&SingleDocProvider) -> bool| {
         let deadline = std::time::Instant::now() + Duration::from_secs(10);
         while !until(provider) {
             assert!(std::time::Instant::now() < deadline, "timed out waiting");
