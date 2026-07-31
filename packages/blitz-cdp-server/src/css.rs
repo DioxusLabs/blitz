@@ -261,19 +261,51 @@ struct AuthoredDeclaration {
     name: String,
     value: String,
     important: bool,
+    disabled: bool,
     start: usize,
     end: usize,
 }
 
+/// Parse `name: value` declaration text into an [`AuthoredDeclaration`]
+/// covering the given source range
+fn authored_declaration(
+    text: &str,
+    start: usize,
+    end: usize,
+    disabled: bool,
+) -> Option<AuthoredDeclaration> {
+    let (name, value) = text.split_once(':')?;
+    let value = value.trim();
+    let (value, important) = match value
+        .strip_suffix("!important")
+        .or_else(|| value.strip_suffix("! important"))
+    {
+        Some(value) => (value.trim_end(), true),
+        None => (value, false),
+    };
+    Some(AuthoredDeclaration {
+        name: name.trim().to_string(),
+        value: value.to_string(),
+        important,
+        disabled,
+        start,
+        end,
+    })
+}
+
 /// Scan authored CSS declaration text (a `style` attribute value) into
-/// declarations, preserving the authored text (shorthands are not expanded)
+/// declarations, preserving the authored text (shorthands are not
+/// expanded). Declarations commented out as `/* name: value; */` — which is
+/// how DevTools disables a declaration via its checkbox — are reported as
+/// disabled properties.
 fn parse_authored_declarations(text: &str) -> Vec<AuthoredDeclaration> {
     let bytes = text.as_bytes();
     let mut decls = Vec::new();
     let mut seg_start = 0;
     let mut paren_depth = 0i32;
     let mut quote: Option<u8> = None;
-    for i in 0..=bytes.len() {
+    let mut i = 0;
+    while i <= bytes.len() {
         let byte = bytes.get(i).copied();
         match (quote, byte) {
             (Some(q), Some(b)) => {
@@ -284,37 +316,33 @@ fn parse_authored_declarations(text: &str) -> Vec<AuthoredDeclaration> {
             (None, Some(b @ (b'"' | b'\''))) => quote = Some(b),
             (None, Some(b'(')) => paren_depth += 1,
             (None, Some(b')')) => paren_depth -= 1,
+            // A comment: if it wraps a declaration, report it as disabled
+            (None, Some(b'/')) if paren_depth <= 0 && text[i..].starts_with("/*") => {
+                let len = text[i + 2..].find("*/").map(|p| p + 4);
+                let end = i + len.unwrap_or(text.len() - i);
+                let inner = text[i + 2..end - if len.is_some() { 2 } else { 0 }].trim();
+                let inner = inner.strip_suffix(';').unwrap_or(inner).trim_end();
+                decls.extend(authored_declaration(inner, i, end, true));
+                i = end;
+                seg_start = i;
+                continue;
+            }
             (None, Some(b';')) | (None, None) if paren_depth <= 0 => {
                 let segment = &text[seg_start..i];
                 let trimmed = segment.trim();
-                if let Some((name, value)) = trimmed.split_once(':') {
-                    let start = seg_start + (segment.len() - segment.trim_start().len());
-                    // The declaration's text includes the terminating `;`
-                    let end = if byte.is_some() {
-                        i + 1
-                    } else {
-                        start + trimmed.len()
-                    };
-                    let value = value.trim();
-                    let (value, important) = match value
-                        .strip_suffix("!important")
-                        .or_else(|| value.strip_suffix("! important"))
-                    {
-                        Some(value) => (value.trim_end(), true),
-                        None => (value, false),
-                    };
-                    decls.push(AuthoredDeclaration {
-                        name: name.trim().to_string(),
-                        value: value.to_string(),
-                        important,
-                        start,
-                        end,
-                    });
-                }
+                let start = seg_start + (segment.len() - segment.trim_start().len());
+                // The declaration's text includes the terminating `;`
+                let end = if byte.is_some() {
+                    i + 1
+                } else {
+                    start + trimmed.len()
+                };
+                decls.extend(authored_declaration(trimmed, start, end, false));
                 seg_start = i + 1;
             }
             _ => {}
         }
+        i += 1;
     }
     decls
 }
@@ -354,7 +382,7 @@ pub(crate) fn inline_style_json(doc: &BaseDocument, node_id: NodeId) -> JsonValu
                 "value": decl.value,
                 "important": decl.important,
                 "implicit": false,
-                "disabled": false,
+                "disabled": decl.disabled,
                 "text": &text[decl.start..decl.end],
                 "range": source_range_json(&text, decl.start, decl.end),
             })
