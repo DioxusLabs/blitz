@@ -76,6 +76,20 @@ fn send_command(ws: &mut Ws, id: u64, method: &str, params: serde_json::Value) {
     ws.send(Message::text(msg.to_string())).expect("send ws");
 }
 
+/// Read WebSocket messages until a reply to the given command id arrives,
+/// asserting that it is an error reply
+fn expect_error(ws: &mut Ws, id: u64) {
+    loop {
+        let msg = ws.read().expect("read ws message");
+        let Message::Text(text) = msg else { continue };
+        let parsed: serde_json::Value = serde_json::from_str(&text).expect("valid json");
+        if parsed.get("id").and_then(|i| i.as_u64()) == Some(id) {
+            assert!(parsed.get("error").is_some(), "command {id} should fail");
+            return;
+        }
+    }
+}
+
 #[test]
 fn elements_panel_session() {
     let html = "<html><head><title>Test Page</title></head>\
@@ -521,6 +535,48 @@ fn client_session(addr: std::net::SocketAddr, doc_id: usize, picker_sender: Send
     let container_id = result["nodeId"].as_u64().unwrap();
     assert_ne!(container_id, 0);
     events.clear();
+
+    // DOM.querySelector is scoped to its context node: #abs exists in the
+    // document but not within #container
+    let id = send(
+        &mut ws,
+        "DOM.querySelector",
+        json!({ "nodeId": container_id, "selector": "#abs" }),
+    );
+    let result = read_reply(&mut ws, id, &mut events);
+    assert_eq!(result["nodeId"], 0);
+    let id = send(
+        &mut ws,
+        "DOM.querySelector",
+        json!({ "nodeId": root_id, "selector": "#para" }),
+    );
+    let result = read_reply(&mut ws, id, &mut events);
+    let para_id = result["nodeId"].as_u64().unwrap();
+    assert_ne!(para_id, 0);
+    let id = send(
+        &mut ws,
+        "DOM.querySelector",
+        json!({ "nodeId": para_id, "selector": "span" }),
+    );
+    let result = read_reply(&mut ws, id, &mut events);
+    assert_ne!(result["nodeId"].as_u64().unwrap(), 0);
+    events.clear();
+
+    // An invalid selector is a protocol error, not "no match"
+    let id = send(
+        &mut ws,
+        "DOM.querySelector",
+        json!({ "nodeId": root_id, "selector": "div[" }),
+    );
+    expect_error(&mut ws, id);
+
+    // A nonexistent context node is a protocol error
+    let id = send(
+        &mut ws,
+        "DOM.querySelector",
+        json!({ "nodeId": 999_999, "selector": "div" }),
+    );
+    expect_error(&mut ws, id);
 
     // CSS.getMatchedStylesForNode: the inline style attribute should be
     // reported as the inlineStyle

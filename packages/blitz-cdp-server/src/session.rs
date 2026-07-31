@@ -286,6 +286,7 @@ impl Session {
 
             "DOM.querySelector" => {
                 let doc_id = self.doc_id(docs).ok_or_else(no_document)?;
+                let context_id = node_id_param(params, "nodeId")?;
                 let selector = params
                     .get("selector")
                     .and_then(|s| s.as_str())
@@ -293,11 +294,16 @@ impl Session {
                     .to_string();
                 let children_sent = &mut self.children_sent;
                 let found = with_doc(docs, doc_id, |doc| {
-                    let node_id = doc.query_selector(&selector).ok().flatten()?;
-                    Self::emit_node_path(writer, doc, node_id, children_sent);
-                    Some(node_id)
+                    doc.get_node(context_id).ok_or_else(no_node)?;
+                    let node_id = doc
+                        .query_selector_in(context_id, &selector)
+                        .map_err(|_| CdpError::server_error("DOM Error while querying"))?;
+                    if let Some(node_id) = node_id {
+                        Self::emit_node_path(writer, doc, node_id, children_sent);
+                    }
+                    Ok(node_id)
                 })
-                .ok_or_else(no_document)?;
+                .ok_or_else(no_document)??;
                 match found {
                     Some(node_id) => Ok(json!({ "nodeId": cdp_node_id(node_id) })),
                     None => Ok(json!({ "nodeId": 0 })),
