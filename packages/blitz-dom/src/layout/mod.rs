@@ -342,6 +342,16 @@ impl LayoutPartialTree for BaseDocument {
             tree.compute_child_layout_internal(node_id, inputs, None)
         })
     }
+
+    #[inline(always)]
+    fn defer_absolute_child(
+        &mut self,
+        child_id: NodeId,
+        order: u32,
+        static_position: taffy::Point<f32>,
+    ) {
+        *self.node_from_id_mut(child_id).deferred_position_mut() = Some((order, static_position));
+    }
 }
 
 impl taffy::CacheTree for BaseDocument {

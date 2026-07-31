@@ -395,6 +395,57 @@ impl HoistedPaintChildren {
 }
 
 impl BaseDocument {
+    /// Recompute the offsets of hoisted paint children relative to their stacking context
+    /// root, using the final (post-layout) positions of the intervening nodes.
+    ///
+    /// The offsets initially recorded by `flush_styles_to_layout` are computed *before*
+    /// layout runs and may therefore be stale.
+    pub(crate) fn refresh_hoisted_paint_positions(&mut self) {
+        let root_ids: Vec<NodeId> = self
+            .nodes
+            .iter()
+            .filter(|(_, node)| node.stacking_context.is_some())
+            .map(|(id, _)| id)
+            .collect();
+
+        for root_id in root_ids {
+            let Some(mut stacking_context) = self.nodes[root_id].stacking_context.take() else {
+                continue;
+            };
+
+            for hoisted in stacking_context.children.iter_mut() {
+                if !self.nodes.contains_key(hoisted.node_id) {
+                    continue;
+                }
+                // Fixed position children do not scroll with their ancestors
+                let is_fixed =
+                    self.nodes[hoisted.node_id].style().position == taffy::Position::Fixed;
+
+                let mut position = taffy::Point::ZERO;
+                let mut current = self.nodes[hoisted.node_id].layout_parent.get();
+                while let Some(ancestor_id) = current {
+                    if ancestor_id == root_id || !self.nodes.contains_key(ancestor_id) {
+                        break;
+                    }
+                    let ancestor = &self.nodes[ancestor_id];
+                    let location = ancestor.final_layout().location;
+                    position.x += location.x;
+                    position.y += location.y;
+                    if !is_fixed {
+                        let scroll_offset = *ancestor.scroll_offset();
+                        position.x -= scroll_offset.x as f32;
+                        position.y -= scroll_offset.y as f32;
+                    }
+                    current = ancestor.layout_parent.get();
+                }
+                hoisted.position = position;
+            }
+
+            stacking_context.compute_content_size(self);
+            self.nodes[root_id].stacking_context = Some(stacking_context);
+        }
+    }
+
     pub(crate) fn invalidate_inline_contexts(&mut self) {
         let scale = self.viewport.scale();
 
@@ -618,6 +669,14 @@ impl BaseDocument {
             paint_children.clear();
             paint_children.reserve(children.len());
 
+            // Whether this node is the containing block for its absolutely positioned children
+            let is_absolute_containing_block = self
+                .nodes[node_id]
+                .primary_styles()
+                .map(|s| s.clone_position() != Position::Static)
+                .unwrap_or(false)
+                || self.nodes[node_id].establishes_fixed_containing_block();
+
             // Push children to either paint_children or layout_children depending on
             for &child_id in children.iter() {
                 let child = &self.nodes[child_id];
@@ -633,7 +692,13 @@ impl BaseDocument {
                 // TODO: more complete hoisting detection
                 // z-index applies to static flex/grid items too
                 // (css-flexbox-1 §painting, css-grid-1 §z-order).
-                if z_index != 0 && (position != Position::Static || is_flex_or_grid) {
+                let z_index_hoisted =
+                    z_index != 0 && (position != Position::Static || is_flex_or_grid);
+                // Out-of-flow children whose containing block is not their layout parent are
+                // hoisted so that the parent's scrolling and clipping do not apply to them.
+                let out_of_flow_hoisted = position == Position::Fixed
+                    || (position == Position::Absolute && !is_absolute_containing_block);
+                if z_index_hoisted || out_of_flow_hoisted {
                     stacking_context.children.push(HoistedPaintChild {
                         node_id: child_id,
                         z_index,

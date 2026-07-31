@@ -222,13 +222,12 @@ pub fn box_sizing(input: stylo::BoxSizing) -> taffy::BoxSizing {
 #[inline]
 pub fn position(input: stylo::Position) -> taffy::Position {
     match input {
-        // TODO: support position:static
         stylo::Position::Relative => taffy::Position::Relative,
-        stylo::Position::Static => taffy::Position::Relative,
+        stylo::Position::Static => taffy::Position::Static,
 
-        // TODO: support position:fixed and sticky
+        // TODO: support position:sticky
         stylo::Position::Absolute => taffy::Position::Absolute,
-        stylo::Position::Fixed => taffy::Position::Absolute,
+        stylo::Position::Fixed => taffy::Position::Fixed,
         stylo::Position::Sticky => taffy::Position::Relative,
     }
 }

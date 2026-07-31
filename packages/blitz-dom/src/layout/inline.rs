@@ -151,6 +151,7 @@ impl BaseDocument {
             .unwrap();
 
         let style = self.nodes[node_id].style();
+        let container_position = style.position;
 
         // Note: both horizontal and vertical percentage padding/borders are resolved against the container's inline size (i.e. width).
         // This is not a bug, but is how CSS is specified (see: https://developer.mozilla.org/en-US/docs/Web/CSS/padding#values)
@@ -186,7 +187,7 @@ impl BaseDocument {
         let has_styles_preventing_being_collapsed_through = !style.is_block()
             || style.overflow().x.is_scroll_container()
             || style.overflow().y.is_scroll_container()
-            || style.position() == Position::Absolute
+            || style.position().is_absolutely_positioned()
             || padding.top > 0.0
             || padding.bottom > 0.0
             || border.top > 0.0
@@ -296,7 +297,7 @@ impl BaseDocument {
             #[cfg(not(feature = "floats"))]
             let is_floated = false;
 
-            if style.position == Position::Absolute || is_floated {
+            if style.position.is_absolutely_positioned() || is_floated {
                 ibox.width = 0.0;
                 ibox.height = 0.0;
             } else {
@@ -695,9 +696,32 @@ impl BaseDocument {
                     #[cfg(not(feature = "floats"))]
                     let is_floated = false;
 
-                    if node.style().position == Position::Absolute {
+                    if node.style().position.is_absolutely_positioned() {
+                        let child_position = node.style().position;
                         let direction = node.style().direction;
-                        layout_abspos_child(self, ibox, final_size, taffy::Point::ZERO, direction);
+                        if child_position == Position::Fixed || container_position == Position::Static {
+                            // This inline container is not the child's containing block: hand
+                            // the child back to be laid out against its actual containing block
+                            // after the main layout pass. The static position is the position
+                            // the box would have had in the inline flow.
+                            let static_position = taffy::Point {
+                                x: (ibox.x / scale) + container_pb.left,
+                                y: (ibox.y / scale) + container_pb.top,
+                            };
+                            self.defer_absolute_child(
+                                taffy::NodeId::from(ibox.id),
+                                0,
+                                static_position,
+                            );
+                        } else {
+                            layout_abspos_child(
+                                self,
+                                ibox,
+                                final_size,
+                                taffy::Point::ZERO,
+                                direction,
+                            );
+                        }
                     } else if is_floated {
                         let layout = self.nodes[NodeId::from_u64(ibox.id)].unrounded_layout_mut();
                         layout.padding = padding; //.map(|p| p / scale);
@@ -782,7 +806,7 @@ fn layout_abspos_child(
 
     // Skip items that are display:none or are not position:absolute
     if child_style.box_generation_mode() == taffy::BoxGenerationMode::None
-        || child_style.position() != taffy::Position::Absolute
+        || !child_style.position().is_absolutely_positioned()
     {
         return;
     }

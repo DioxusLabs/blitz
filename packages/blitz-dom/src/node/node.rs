@@ -191,6 +191,7 @@ universal_accessors! {
     cache / cache_mut: Cache,
     unrounded_layout / unrounded_layout_mut: Layout,
     final_layout / final_layout_mut: Layout,
+    deferred_position / deferred_position_mut: Option<(u32, taffy::Point<f32>)>,
     scroll_offset / scroll_offset_mut: crate::Point<f64>,
     scrollable_overflow / scrollable_overflow_mut: KurboRect,
     transform / transform_mut: Option<Affine>,
@@ -331,6 +332,33 @@ impl Node {
 
         *self.transform_mut() = transform;
         transform
+    }
+
+    /// Whether this node establishes a containing block for `position: fixed` descendants
+    /// (and, along with positioned-ness, for `position: absolute` descendants).
+    ///
+    /// See: <https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_display/Containing_block>
+    pub fn establishes_fixed_containing_block(&self) -> bool {
+        use style::values::computed::Perspective;
+        self.primary_styles()
+            .map(|s| {
+                let box_style = s.get_box();
+                let effects = s.get_effects();
+                !box_style.transform.0.is_empty()
+                    || !matches!(box_style.scale, style::values::generics::transform::Scale::None)
+                    || !matches!(box_style.rotate, style::values::generics::transform::Rotate::None)
+                    || !matches!(
+                        box_style.translate,
+                        style::values::generics::transform::Translate::None
+                    )
+                    || !matches!(box_style.perspective, Perspective::None)
+                    || !effects.filter.0.is_empty()
+                    || box_style.will_change.bits.intersects(
+                        style::values::specified::box_::WillChangeBits::TRANSFORM
+                            | style::values::specified::box_::WillChangeBits::PERSPECTIVE,
+                    )
+            })
+            .unwrap_or(false)
     }
 
     pub fn pe_by_index(&self, index: usize) -> Option<NodeId> {
