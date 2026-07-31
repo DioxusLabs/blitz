@@ -349,8 +349,10 @@ impl LayoutPartialTree for BaseDocument {
         child_id: NodeId,
         order: u32,
         static_position: taffy::Point<f32>,
+        static_position_direction: taffy::Direction,
     ) {
-        *self.node_from_id_mut(child_id).deferred_position_mut() = Some((order, static_position));
+        *self.node_from_id_mut(child_id).deferred_position_mut() =
+            Some((order, static_position, static_position_direction));
     }
 }
 

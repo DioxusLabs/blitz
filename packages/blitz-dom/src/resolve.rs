@@ -465,6 +465,112 @@ impl BaseDocument {
             }
         }
 
+        /// Convert a 1-based (possibly negative) grid line index into a boundary offset,
+        /// relative to the start content edge of the track axis. Returns `None` for lines
+        /// which fall outside the laid-out tracks.
+        fn grid_line_offset(tracks: &taffy::DetailedGridTracksInfo, line: i16) -> Option<f32> {
+            let track_count = tracks.sizes.len() as i16;
+            let explicit_start = tracks.negative_implicit_tracks as i16;
+            // Convert to a 0-based boundary index into the full (implicit + explicit) track list
+            let boundary = if line > 0 {
+                explicit_start + (line - 1)
+            } else if line < 0 {
+                explicit_start + tracks.explicit_tracks as i16 + 1 + line
+            } else {
+                return None;
+            };
+            if boundary < 0 || boundary > track_count {
+                return None;
+            }
+            let boundary = boundary as usize;
+            // Track layout along an axis is: gutter, track, gutter, track, ..., gutter.
+            // The offset of boundary `b` is the sum of the first `b` tracks and `b + 1` gutters.
+            let mut offset = 0.0;
+            for i in 0..boundary {
+                offset += tracks.gutters.get(i).copied().unwrap_or(0.0);
+                offset += tracks.sizes[i];
+            }
+            offset += tracks.gutters.get(boundary).copied().unwrap_or(0.0);
+            Some(offset)
+        }
+
+        /// Resolve a grid placement (for one axis) to start/end boundary offsets relative to
+        /// the start content edge. Only handles numeric lines (+ spans); named lines and
+        /// auto-placement resolve to `None` (= the padding box edge, per css-grid §9.1).
+        fn resolve_grid_axis<S: taffy::CheapCloneStr>(
+            tracks: &taffy::DetailedGridTracksInfo,
+            placement: &taffy::Line<taffy::GridPlacement<S>>,
+        ) -> (Option<f32>, Option<f32>) {
+            use taffy::GridPlacement::*;
+            let (start_line, end_line): (Option<i16>, Option<i16>) =
+                match (&placement.start, &placement.end) {
+                    (Line(s), Line(e)) => (Some(s.as_i16()), Some(e.as_i16())),
+                    (Line(s), Span(n)) => (Some(s.as_i16()), Some(s.as_i16() + *n as i16)),
+                    (Span(n), Line(e)) => (Some(e.as_i16() - *n as i16), Some(e.as_i16())),
+                    (Line(s), _) => (Some(s.as_i16()), None),
+                    (_, Line(e)) => (None, Some(e.as_i16())),
+                    _ => (None, None),
+                };
+            (
+                start_line.and_then(|line| grid_line_offset(tracks, line)),
+                end_line.and_then(|line| grid_line_offset(tracks, line)),
+            )
+        }
+
+        /// If the containing block is a grid container and the child has explicit grid
+        /// placement then the child's containing block is the corresponding grid area
+        /// rather than the grid container's padding box (css-grid-1 §9.1).
+        fn grid_area_for_child(
+            doc: &BaseDocument,
+            cb: &Cb,
+            child_id: NodeId,
+        ) -> Option<(taffy::Size<f32>, taffy::Point<f32>)> {
+            let cb_node = &doc.nodes[cb.node_id];
+            if cb_node.style().display != taffy::Display::Grid {
+                return None;
+            }
+            let info = cb_node
+                .data
+                .downcast_element()?
+                .detailed_grid_info
+                .as_deref()?;
+
+            let child_style = doc.nodes[child_id].style();
+            let (col_start, col_end) = resolve_grid_axis(&info.columns, &child_style.grid_column);
+            let (row_start, row_end) = resolve_grid_axis(&info.rows, &child_style.grid_row);
+            if col_start.is_none() && col_end.is_none() && row_start.is_none() && row_end.is_none()
+            {
+                return None;
+            }
+
+            let layout = cb_node.unrounded_layout();
+            let content_offset = taffy::Point {
+                x: layout.border.left + layout.padding.left,
+                y: layout.border.top + layout.padding.top,
+            };
+            // Auto lines resolve to the padding box edges
+            let left = col_start
+                .map(|o| content_offset.x + o)
+                .unwrap_or(cb.area_offset.x);
+            let right = col_end
+                .map(|o| content_offset.x + o)
+                .unwrap_or(cb.area_offset.x + cb.area_size.width);
+            let top = row_start
+                .map(|o| content_offset.y + o)
+                .unwrap_or(cb.area_offset.y);
+            let bottom = row_end
+                .map(|o| content_offset.y + o)
+                .unwrap_or(cb.area_offset.y + cb.area_size.height);
+
+            Some((
+                taffy::Size {
+                    width: (right - left).max(0.0),
+                    height: (bottom - top).max(0.0),
+                },
+                taffy::Point { x: left, y: top },
+            ))
+        }
+
         #[allow(clippy::too_many_arguments)]
         fn recurse(
             doc: &mut BaseDocument,
@@ -477,7 +583,8 @@ impl BaseDocument {
             let node_position = doc.nodes[node_id].style().position;
 
             let layout_children = doc.nodes[node_id].layout_children.borrow().clone();
-            let mut child_ids: Vec<NodeId> = layout_children.map(|c| c.to_vec()).unwrap_or_default();
+            let mut child_ids: Vec<NodeId> =
+                layout_children.map(|c| c.to_vec()).unwrap_or_default();
             if let Some(before) = doc.nodes[node_id].before() {
                 child_ids.push(before);
             }
@@ -495,7 +602,8 @@ impl BaseDocument {
                     || (child_position == Position::Absolute && node_position == Position::Static);
 
                 if is_deferred {
-                    if let Some((order, static_position)) = *doc.nodes[child_id].deferred_position()
+                    if let Some((order, static_position, static_position_direction)) =
+                        *doc.nodes[child_id].deferred_position()
                     {
                         let (cb, parent_offset) = if child_position == Position::Fixed {
                             (fixed_cb, offset_from_fixed_cb)
@@ -507,13 +615,16 @@ impl BaseDocument {
                             x: static_position.x + parent_offset.x,
                             y: static_position.y + parent_offset.y,
                         };
+                        let (area_size, area_offset) = grid_area_for_child(doc, &cb, child_id)
+                            .unwrap_or((cb.area_size, cb.area_offset));
                         let result = taffy::compute_absolute_child_layout(
                             doc,
                             crate::taffy_node_id(child_id),
                             order,
-                            cb.area_size,
-                            cb.area_offset,
+                            area_size,
+                            area_offset,
                             static_position_in_cb,
+                            static_position_direction,
                             direction,
                         );
                         // `compute_absolute_child_layout` writes a location relative to the

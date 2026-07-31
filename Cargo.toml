@@ -291,8 +291,9 @@ tracing-subscriber = "0.3"
 # selectors = { path = "../stylo/selectors", package = "selectors" }
 
 # [patch.crates-io]
+# taffy = { path = "../taffy" }
 [patch.crates-io]
-taffy = { path = "../taffy" }
+taffy = { git = "https://github.com/DioxusLabs/taffy", branch = "devin/1785479063-position-static-fixed" }
 
 # [patch."https://github.com/linebender/parley"]
 # parley = { path = "../parley/parley" }

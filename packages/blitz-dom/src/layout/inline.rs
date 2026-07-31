@@ -699,7 +699,37 @@ impl BaseDocument {
                     if node.style().position.is_absolutely_positioned() {
                         let child_position = node.style().position;
                         let direction = node.style().direction;
-                        if child_position == Position::Fixed || container_position == Position::Static {
+                        // If a positioned inline box (e.g. a `position: relative` span) sits
+                        // between this box and the inline root then that inline box is the
+                        // containing block. We don't yet support inline containing blocks, so
+                        // approximate them with the inline root by laying out directly.
+                        let has_positioned_inline_ancestor = {
+                            let mut ancestor = self.nodes[NodeId::from_u64(ibox.id)].parent;
+                            let mut found = false;
+                            while let Some(ancestor_id) = ancestor {
+                                if ancestor_id == node_id {
+                                    break;
+                                }
+                                if self.nodes[ancestor_id].style().position != Position::Static {
+                                    found = true;
+                                    break;
+                                }
+                                ancestor = self.nodes[ancestor_id].parent;
+                            }
+                            found
+                        };
+                        if child_position == Position::Absolute && has_positioned_inline_ancestor {
+                            *self.nodes[NodeId::from_u64(ibox.id)].deferred_position_mut() = None;
+                            layout_abspos_child(
+                                self,
+                                ibox,
+                                final_size,
+                                taffy::Point::ZERO,
+                                direction,
+                            );
+                        } else if child_position == Position::Fixed
+                            || container_position == Position::Static
+                        {
                             // This inline container is not the child's containing block: hand
                             // the child back to be laid out against its actual containing block
                             // after the main layout pass. The static position is the position
@@ -708,10 +738,12 @@ impl BaseDocument {
                                 x: (ibox.x / scale) + container_pb.left,
                                 y: (ibox.y / scale) + container_pb.top,
                             };
+                            // `ibox.x` is a resolved left edge, so LTR semantics apply.
                             self.defer_absolute_child(
                                 taffy::NodeId::from(ibox.id),
                                 0,
                                 static_position,
+                                taffy::Direction::Ltr,
                             );
                         } else {
                             layout_abspos_child(

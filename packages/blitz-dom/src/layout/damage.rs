@@ -669,14 +669,6 @@ impl BaseDocument {
             paint_children.clear();
             paint_children.reserve(children.len());
 
-            // Whether this node is the containing block for its absolutely positioned children
-            let is_absolute_containing_block = self
-                .nodes[node_id]
-                .primary_styles()
-                .map(|s| s.clone_position() != Position::Static)
-                .unwrap_or(false)
-                || self.nodes[node_id].establishes_fixed_containing_block();
-
             // Push children to either paint_children or layout_children depending on
             for &child_id in children.iter() {
                 let child = &self.nodes[child_id];
@@ -694,10 +686,12 @@ impl BaseDocument {
                 // (css-flexbox-1 §painting, css-grid-1 §z-order).
                 let z_index_hoisted =
                     z_index != 0 && (position != Position::Static || is_flex_or_grid);
-                // Out-of-flow children whose containing block is not their layout parent are
-                // hoisted so that the parent's scrolling and clipping do not apply to them.
-                let out_of_flow_hoisted = position == Position::Fixed
-                    || (position == Position::Absolute && !is_absolute_containing_block);
+                // Fixed position children are hoisted so that the scrolling and clipping of
+                // ancestors between them and their containing block do not apply to them.
+                // TODO: also hoist absolutely positioned children whose containing block is
+                // not their layout parent (needs paint-order interleaving with in-tree
+                // positioned siblings).
+                let out_of_flow_hoisted = position == Position::Fixed;
                 if z_index_hoisted || out_of_flow_hoisted {
                     stacking_context.children.push(HoistedPaintChild {
                         node_id: child_id,

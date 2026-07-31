@@ -114,7 +114,7 @@ pub struct ElementData {
     pub final_layout: Layout,
     /// The static position recorded when this node was deferred by its layout parent during
     /// layout (because that parent was not its containing block). `(order, static_position)`.
-    pub deferred_position: Option<(u32, taffy::Point<f32>)>,
+    pub deferred_position: Option<(u32, taffy::Point<f32>, taffy::Direction)>,
     pub scroll_offset: crate::Point<f64>,
     pub scrollable_overflow: KurboRect,
     pub transform: Option<Affine>,
@@ -142,7 +142,7 @@ pub struct DocumentData {
     pub final_layout: Layout,
     /// The static position recorded when this node was deferred by its layout parent during
     /// layout (because that parent was not its containing block). `(order, static_position)`.
-    pub deferred_position: Option<(u32, taffy::Point<f32>)>,
+    pub deferred_position: Option<(u32, taffy::Point<f32>, taffy::Direction)>,
     pub scroll_offset: crate::Point<f64>,
     pub scrollable_overflow: KurboRect,
     pub transform: Option<Affine>,

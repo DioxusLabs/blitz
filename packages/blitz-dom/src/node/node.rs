@@ -191,7 +191,7 @@ universal_accessors! {
     cache / cache_mut: Cache,
     unrounded_layout / unrounded_layout_mut: Layout,
     final_layout / final_layout_mut: Layout,
-    deferred_position / deferred_position_mut: Option<(u32, taffy::Point<f32>)>,
+    deferred_position / deferred_position_mut: Option<(u32, taffy::Point<f32>, taffy::Direction)>,
     scroll_offset / scroll_offset_mut: crate::Point<f64>,
     scrollable_overflow / scrollable_overflow_mut: KurboRect,
     transform / transform_mut: Option<Affine>,
@@ -345,8 +345,14 @@ impl Node {
                 let box_style = s.get_box();
                 let effects = s.get_effects();
                 !box_style.transform.0.is_empty()
-                    || !matches!(box_style.scale, style::values::generics::transform::Scale::None)
-                    || !matches!(box_style.rotate, style::values::generics::transform::Rotate::None)
+                    || !matches!(
+                        box_style.scale,
+                        style::values::generics::transform::Scale::None
+                    )
+                    || !matches!(
+                        box_style.rotate,
+                        style::values::generics::transform::Rotate::None
+                    )
                     || !matches!(
                         box_style.translate,
                         style::values::generics::transform::Translate::None
