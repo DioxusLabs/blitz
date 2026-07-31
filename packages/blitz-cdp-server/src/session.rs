@@ -535,14 +535,23 @@ impl Session {
                 for edit in &edits {
                     let sheet_id = str_param(edit, "styleSheetId")?;
                     let text = str_param(edit, "text")?;
+                    let range = edit
+                        .get("range")
+                        .ok_or_else(|| CdpError::invalid_params("Missing range"))?
+                        .clone();
                     let node_id = crate::css::parse_inline_style_sheet_id(&sheet_id)
                         .ok_or_else(no_style_sheet)?;
                     let (style, value) = with_doc(docs, doc_id, |doc| {
                         doc.get_node(node_id)
                             .filter(|node| node.element_data().is_some())
                             .ok_or_else(no_style_sheet)?;
+                        // The edit's text replaces the given range within the
+                        // sheet's current text (the serialized inline style)
+                        let current = crate::css::inline_style_text(doc, node_id);
+                        let new_attr = splice_range(&current, &range, &text)
+                            .ok_or_else(|| CdpError::invalid_params("Invalid range"))?;
                         doc.mutate()
-                            .set_attribute(node_id, attr_name("style"), &text);
+                            .set_attribute(node_id, attr_name("style"), &new_attr);
                         doc.shell_provider.request_redraw();
                         // Report the style re-serialized from the parsed
                         // attribute, so its ranges match the new sheet text
@@ -795,6 +804,33 @@ fn no_node() -> CdpError {
 
 fn no_style_sheet() -> CdpError {
     CdpError::server_error("No style sheet with given id found")
+}
+
+/// Convert a CDP `{startLine, startColumn, endLine, endColumn}` source range
+/// into byte offsets within the given text
+fn range_offsets(text: &str, range: &JsonValue) -> Option<(usize, usize)> {
+    let position = |line: u64, column: u64| -> Option<usize> {
+        let mut offset = 0;
+        for _ in 0..line {
+            offset += text[offset..].find('\n')? + 1;
+        }
+        let offset = offset + column as usize;
+        (offset <= text.len() && text.is_char_boundary(offset)).then_some(offset)
+    };
+    let get = |key: &str| range.get(key).and_then(|v| v.as_u64());
+    let start = position(get("startLine")?, get("startColumn")?)?;
+    let end = position(get("endLine")?, get("endColumn")?)?;
+    (start <= end).then_some((start, end))
+}
+
+/// Replace the given source range within `text` with `replacement`
+fn splice_range(text: &str, range: &JsonValue, replacement: &str) -> Option<String> {
+    let (start, end) = range_offsets(text, range)?;
+    let mut out = String::with_capacity(text.len() - (end - start) + replacement.len());
+    out.push_str(&text[..start]);
+    out.push_str(replacement);
+    out.push_str(&text[end..]);
+    Some(out)
 }
 
 /// Extract a string parameter
