@@ -37,7 +37,7 @@ pub fn Toolbar(
     let mut is_focused = use_signal(|| false);
     let block_mouse_up = use_hook(|| Rc::new(RefCell::new(false)));
     let mut menu_open = use_signal(|| false);
-    let mut incremental_layout = use_signal(|| cfg!(feature = "incremental"));
+    let mut incremental_layout = use_signal(|| true);
     #[cfg(feature = "cache")]
     let net_provider = use_context::<Arc<StdNetProvider>>();
 

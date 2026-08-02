@@ -10,8 +10,8 @@ name = "blitz"
 path = "src/main.rs"
 
 [features]
-default = ["hybrid", "floats", "incremental", "cookies", "cache", "screenshot", "apple-font-embolden", "scrollbars"]
-android-defaults = ["skia", "floats", "incremental", "cookies"]
+default = ["hybrid", "floats", "cookies", "cache", "screenshot", "apple-font-embolden", "scrollbars"]
+android-defaults = ["skia", "floats", "cookies"]
 
 screenshot = ["dep:anyrender_vello_cpu", "dep:blitz-paint", "dep:png", "dep:peniko", "dep:rfd"]
 capture = ["dep:anyrender_serialize", "dep:blitz-paint", "dep:png", "dep:peniko", "dep:rfd"]
@@ -21,7 +21,6 @@ skia = ["dioxus-native/skia"]
 cpu = ["cpu-pixels"]
 cpu-pixels = ["dioxus-native/vello-cpu-pixels"]
 cpu-softbuffer = ["dioxus-native/vello-cpu-softbuffer"]
-incremental = ["dioxus-native/incremental"]
 logtime = ["log-frame-times", "log-phase-times"]
 log-frame-times = ["dioxus-native/log-frame-times"]
 log-phase-times = ["dioxus-native/log-phase-times"]

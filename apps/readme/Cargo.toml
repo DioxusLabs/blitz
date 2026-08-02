@@ -10,7 +10,7 @@ repository.workspace = true
 publish = true
 
 [features]
-default = ["hybrid", "comrak", "floats", "incremental", "scrollbars"]
+default = ["hybrid", "comrak", "floats", "scrollbars"]
 
 # Renderers
 gpu = ["dep:anyrender_vello"]
@@ -39,7 +39,6 @@ log-frame-times = [
   "anyrender_skia?/log_frame_times",
 ]
 log-phase-times = ["blitz-dom/log-phase-times"]
-incremental = ["blitz-dom/incremental"]
 tracing = ["dep:tracing-subscriber", "blitz-shell/tracing", "blitz-net/tracing", "blitz-html/tracing"]
 
 [dependencies]

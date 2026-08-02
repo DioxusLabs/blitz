@@ -51,19 +51,6 @@ jobs:
           version: 1.0
       - run: cargo build --workspace
 
-  build-features-incremental:
-    name: "Build [default+incremental]"
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - run: perl -pi.bak -e 's/opt-level = 2/opt-level = 0/g' Cargo.toml
-      - uses: awalsh128/cache-apt-pkgs-action@latest
-        with:
-          packages: libfontconfig-dev
-          version: 1.0
-      - run: cargo build -p rdme --features incremental
-
   test-features-default:
     name: "Test [default features]"
     runs-on: ubuntu-latest
