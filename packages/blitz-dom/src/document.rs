@@ -198,10 +198,7 @@ pub struct BaseDocument {
     pub(crate) media_type: MediaType,
     /// Strategy for Stylo's style traversal during `resolve`.
     pub(crate) style_threading: StyleThreading,
-    /// Whether incremental layout is enabled for this document. Defaults to
-    /// whether the `incremental` feature is compiled in. Incremental layout can
-    /// only function when the feature is enabled, so toggling this on has no
-    /// effect in builds compiled without it.
+    /// Whether incremental layout is enabled for this document.
     pub(crate) incremental_layout: bool,
 
     // Events
@@ -445,7 +442,7 @@ impl BaseDocument {
             viewport,
             media_type,
             style_threading: config.style_threading,
-            incremental_layout: cfg!(feature = "incremental"),
+            incremental_layout: config.incremental.unwrap_or(true),
             devtool_settings: DevtoolSettings::default(),
             viewport_scroll: crate::Point::ZERO,
             url: base_url,
@@ -1806,9 +1803,6 @@ impl BaseDocument {
     }
 
     /// Enables or disables incremental layout for this document.
-    ///
-    /// Note that incremental layout only works when the `incremental` feature is
-    /// compiled in; enabling it at runtime has no effect otherwise.
     pub fn set_incremental_layout(&mut self, enabled: bool) {
         self.incremental_layout = enabled;
     }

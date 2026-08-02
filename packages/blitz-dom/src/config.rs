@@ -53,6 +53,8 @@ pub struct DocumentConfig {
     /// Strategy for Stylo's style traversal.
     /// Defaults to [`StyleThreading::Parallel`].
     pub style_threading: StyleThreading,
+    /// Whether incremental layout is enabled. Defaults to `true`.
+    pub incremental: Option<bool>,
     /// If set, every sub-resource `Request` blitz-dom creates for this
     /// document will carry this signal. Aborting it cancels every in-flight
     /// fetch tied to this document.

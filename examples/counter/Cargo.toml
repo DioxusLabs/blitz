@@ -18,7 +18,6 @@ hybrid = ["dioxus-native/vello-hybrid"]
 cpu-pixels = ["dioxus-native/vello-cpu-pixels"]
 cpu-softbuffer = ["dioxus-native/vello-cpu-softbuffer"]
 skia = ["dioxus-native/skia"]
-incremental = ["dioxus-native/incremental"]
 log-frame-times = ["dioxus-native/log-frame-times"]
 log-phase-times = ["dioxus-native/log-phase-times"]
 

@@ -184,7 +184,6 @@ impl BaseDocument {
     }
 }
 
-// #[cfg(feature = "incremental")]
 // fn is_fc_root(style: &ComputedValues) -> bool {
 //     let display = style.clone_display();
 //     let display_inside = display.inside();
