@@ -44,9 +44,6 @@ opencpu *ARGS:
 dev *ARGS:
   cargo run --package rdme --features log-frame-times,log-phase-times {{ARGS}}
 
-incr *ARGS:
-  cargo run --release --package rdme --features comrak,floats,log-frame-times,log-phase-times {{ARGS}}
-
 cpu *ARGS:
   cargo run --release --package rdme --no-default-features --features cpu,comrak,floats,log-frame-times,log-phase-times {{ARGS}}
 
