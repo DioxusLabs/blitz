@@ -29,7 +29,11 @@ use crate::{
     traversal::{iter_children, iter_children_and_pseudos},
 };
 
-use super::{damage::ALL_DAMAGE, list::collect_list_item_children, table::build_table_context};
+use super::{
+    damage::ALL_DAMAGE,
+    list::{BULLET_FONT_FAMILY, collect_list_item_children},
+    table::build_table_context,
+};
 
 const DUMMY_NAME: QualName = qual_name!("div", html);
 
@@ -971,7 +975,17 @@ pub(crate) fn build_inline_layout_into(
         .and_then(|el| el.list_item_data.as_deref())
     {
         match marker {
-            Marker::Char(char) => builder.push_text(&format!("{char} ")),
+            // Bullet glyphs live in the bundled bullet font. The position-outside
+            // path already asks for it; without the same span here a marker like
+            // disclosure-closed (U+25B8) falls back to the element's own font and
+            // renders as a missing glyph.
+            Marker::Char(char) => {
+                let mut marker_style = parley_style.clone();
+                marker_style.font_family = BULLET_FONT_FAMILY.into();
+                builder.push_style_span(marker_style);
+                builder.push_text(&format!("{char} "));
+                builder.pop_style_span();
+            }
             Marker::String(str) => builder.push_text(str),
         }
     };
