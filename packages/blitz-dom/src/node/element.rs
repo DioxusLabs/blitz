@@ -696,40 +696,64 @@ impl RasterImageData {
     }
 }
 
-/// A parsed SVG image together with its CSS intrinsic dimensions.
+/// A parsed SVG image.
 ///
 /// usvg always resolves the root `<svg>` to a concrete [`usvg::Tree::size`],
 /// falling back to the `viewBox` size when `width`/`height` are absent or given
 /// as percentages. For CSS sizing purposes, however, such an SVG has *no*
-/// intrinsic width/height (only an intrinsic aspect ratio). We record which
-/// dimensions were actually declared as absolute lengths so the paint layer can
-/// apply the CSS default sizing algorithm correctly.
+/// intrinsic width/height (only an intrinsic aspect ratio). The accessors on
+/// this type resolve the CSS intrinsic dimensions lazily from
+/// [`usvg::Tree::intrinsic_dimensions`], which preserves what was actually
+/// declared on the root element.
 #[cfg(feature = "svg")]
 #[derive(Debug, Clone)]
 pub struct SvgImageData {
     /// The parsed SVG tree.
     pub tree: Arc<usvg::Tree>,
-    /// The intrinsic width in CSS px, present only when the root `<svg>`
-    /// declared an absolute (non-percentage) `width`.
-    pub intrinsic_width: Option<f32>,
-    /// The intrinsic height in CSS px, present only when the root `<svg>`
-    /// declared an absolute (non-percentage) `height`.
-    pub intrinsic_height: Option<f32>,
-    /// The aspect ratio of the root `<svg>`'s `viewBox`, if it declares one
-    /// with positive dimensions.
-    pub viewbox_aspect_ratio: Option<f32>,
 }
 
 #[cfg(feature = "svg")]
 impl SvgImageData {
+    /// The intrinsic width in CSS px, present only when the root `<svg>`
+    /// declared an absolute (non-percentage) `width`.
+    pub fn intrinsic_width(&self) -> Option<f32> {
+        use usvg::svgtypes::LengthUnit;
+        let declared = self
+            .tree
+            .intrinsic_dimensions()
+            .width
+            .is_some_and(|len| len.unit != LengthUnit::Percent);
+        declared.then(|| self.tree.size().width())
+    }
+
+    /// The intrinsic height in CSS px, present only when the root `<svg>`
+    /// declared an absolute (non-percentage) `height`.
+    pub fn intrinsic_height(&self) -> Option<f32> {
+        use usvg::svgtypes::LengthUnit;
+        let declared = self
+            .tree
+            .intrinsic_dimensions()
+            .height
+            .is_some_and(|len| len.unit != LengthUnit::Percent);
+        declared.then(|| self.tree.size().height())
+    }
+
+    /// The aspect ratio of the root `<svg>`'s `viewBox`, if it declares one.
+    pub fn viewbox_aspect_ratio(&self) -> Option<f32> {
+        self.tree
+            .intrinsic_dimensions()
+            .view_box
+            .map(|vb| vb.width() / vb.height())
+    }
+
     /// The intrinsic aspect ratio of the SVG: the ratio of its declared
     /// `width`/`height` when both are absolute lengths, otherwise the
     /// `viewBox` ratio, otherwise the ratio of the resolved
     /// [`usvg::Tree::size`] (which is always non-zero).
     pub fn aspect_ratio(&self) -> f32 {
-        match (self.intrinsic_width, self.intrinsic_height) {
+        match (self.intrinsic_width(), self.intrinsic_height()) {
             (Some(w), Some(h)) => w / h,
-            _ => self.viewbox_aspect_ratio.unwrap_or_else(|| {
+            _ => self.viewbox_aspect_ratio().unwrap_or_else(|| {
                 let size = self.tree.size();
                 size.width() / size.height()
             }),
@@ -742,7 +766,7 @@ impl SvgImageData {
     /// [`usvg::Tree::size`] is used as a fallback.
     pub fn intrinsic_size(&self) -> (f32, f32) {
         let aspect_ratio = self.aspect_ratio();
-        match (self.intrinsic_width, self.intrinsic_height) {
+        match (self.intrinsic_width(), self.intrinsic_height()) {
             (Some(w), Some(h)) => (w, h),
             (Some(w), None) => (w, w / aspect_ratio),
             (None, Some(h)) => (h * aspect_ratio, h),
@@ -750,7 +774,7 @@ impl SvgImageData {
                 // No intrinsic dimensions. If there is an intrinsic aspect ratio, apply
                 // the CSS default sizing algorithm: contain within the default object
                 // size of 300x150. Otherwise fall back to the resolved tree size.
-                if self.viewbox_aspect_ratio.is_some() {
+                if self.viewbox_aspect_ratio().is_some() {
                     let scale = (300.0 / aspect_ratio).min(150.0);
                     (scale * aspect_ratio, scale)
                 } else {

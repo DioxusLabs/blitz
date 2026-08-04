@@ -16,17 +16,9 @@ use blitz_traits::shell::{ColorScheme, Viewport};
 use std::sync::Arc;
 
 /// Renders a 100x100 div whose `background` is set to the given shorthand and
-/// whose loaded background image is the provided SVG source. `intrinsic_*`
-/// mirror what `parse_svg_image` would detect for the SVG. Returns the pixel
+/// whose loaded background image is the provided SVG source. Returns the pixel
 /// at (x, y). The div sits on a solid blue page background.
-fn pixel(
-    background: &str,
-    svg_src: &str,
-    intrinsic_width: Option<f32>,
-    intrinsic_height: Option<f32>,
-    x: usize,
-    y: usize,
-) -> [u8; 3] {
+fn pixel(background: &str, svg_src: &str, x: usize, y: usize) -> [u8; 3] {
     let html = format!(
         r#"<html><body style="margin:0; background:#0000ff;">
             <div id="box" style="width:100px; height:100px; background: {background};"></div>
@@ -45,12 +37,8 @@ fn pixel(
     {
         let tree =
             usvg::Tree::from_str(svg_src, &usvg::Options::default()).expect("valid test SVG");
-        let size = tree.size();
         let svg = SvgImageData {
             tree: Arc::new(tree),
-            intrinsic_width,
-            intrinsic_height,
-            viewbox_aspect_ratio: Some(size.width() / size.height()),
         };
         let node = doc.get_node_mut(box_id).unwrap();
         let el = node.element_data_mut().unwrap();
@@ -87,8 +75,6 @@ fn viewbox_only_svg_is_contained_not_intrinsic() {
     let top = pixel(
         "url('https://example.com/x.svg') no-repeat",
         VIEWBOX_ONLY,
-        None,
-        None,
         50,
         25,
     );
@@ -97,8 +83,6 @@ fn viewbox_only_svg_is_contained_not_intrinsic() {
     let bottom = pixel(
         "url('https://example.com/x.svg') no-repeat",
         VIEWBOX_ONLY,
-        None,
-        None,
         50,
         75,
     );
@@ -115,8 +99,6 @@ fn svg_with_intrinsic_size_uses_it() {
     let inside = pixel(
         "url('https://example.com/x.svg') no-repeat",
         WITH_SIZE,
-        Some(50.0),
-        Some(50.0),
         25,
         25,
     );
@@ -128,8 +110,6 @@ fn svg_with_intrinsic_size_uses_it() {
     let outside = pixel(
         "url('https://example.com/x.svg') no-repeat",
         WITH_SIZE,
-        Some(50.0),
-        Some(50.0),
         75,
         75,
     );
@@ -146,8 +126,6 @@ fn viewbox_only_svg_respects_explicit_contain() {
     let bottom = pixel(
         "url('https://example.com/x.svg') 0 0/contain no-repeat",
         VIEWBOX_ONLY,
-        None,
-        None,
         50,
         75,
     );
