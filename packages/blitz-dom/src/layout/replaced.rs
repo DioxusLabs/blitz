@@ -108,27 +108,23 @@ pub fn replaced_measure_function(
     }
     let attr_size = image_context.attr_size;
 
-    // Known dimensions are output directly: they have already been sized by the parent
-    // layout algorithm (including min/max clamping), so no further clamping should occur.
+    // Known dimensions are the parent's current sizing inputs. Clamp them before transferring
+    // an aspect ratio so provisional cross-axis sizes do not bypass replaced-element limits.
     if known_dimensions.width.is_some() | known_dimensions.height.is_some() {
         let content_box_known_dimensions = known_dimensions.maybe_sub(pb_sum);
-        let size = content_box_known_dimensions
+        let clamped_known_dimensions = Size {
+            width: content_box_known_dimensions
+                .width
+                .maybe_clamp(min_size.width, max_size.width),
+            height: content_box_known_dimensions
+                .height
+                .maybe_clamp(min_size.height, max_size.height),
+        };
+        let size = clamped_known_dimensions
             .maybe_apply_aspect_ratio(Some(aspect_ratio))
             .map(|s| s.unwrap());
 
-        let clamped_size = Size {
-            width: if known_dimensions.width.is_some() {
-                size.width
-            } else {
-                size.width.maybe_clamp(min_size.width, max_size.width)
-            },
-            height: if known_dimensions.height.is_some() {
-                size.height
-            } else {
-                size.height.maybe_clamp(min_size.height, max_size.height)
-            },
-        };
-        return clamped_size.map(|s| s.max(0.0)) + pb_sum;
+        return size.map(|s| s.max(0.0)) + pb_sum;
     }
 
     let unclamped_size = 'size: {
