@@ -1,3 +1,4 @@
+use markup5ever::{LocalName, local_name};
 use style::Atom;
 use taffy::{
     AvailableSpace, BoxSizing, CoreStyle as _, MaybeMath, MaybeResolve, RequestedAxis,
@@ -6,10 +7,26 @@ use taffy::{
 
 use crate::layout::resolve_calc_value;
 
+/// Whether an element is a replaced element laid out as a leaf box with an
+/// intrinsic size. Note: `<object>` is deliberately excluded as its fallback
+/// children should render when no resource is loaded.
+pub(crate) fn is_replaced_element(tag_name: &LocalName) -> bool {
+    *tag_name == local_name!("img")
+        || *tag_name == local_name!("svg")
+        || *tag_name == local_name!("canvas")
+        || *tag_name == local_name!("video")
+        || *tag_name == local_name!("embed")
+        || *tag_name == local_name!("iframe")
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct ReplacedContext {
     pub inherent_size: taffy::Size<f32>,
     pub attr_size: taffy::Size<Option<f32>>,
+    /// The element's intrinsic aspect ratio, if it has one. Some replaced elements
+    /// (iframe, embed, video without loaded media) have a default object size but
+    /// no intrinsic aspect ratio.
+    pub inherent_ratio: Option<f32>,
 }
 
 /// Whether a height/width value is violating it's min- and max- constraints
@@ -52,10 +69,8 @@ pub fn replaced_measure_function(
         Size::ZERO
     };
 
-    // Use aspect_ratio from style, fall back to inherent aspect ratio
-    let s_aspect_ratio = style.aspect_ratio;
-    let aspect_ratio = s_aspect_ratio.unwrap_or_else(|| inherent_size.width / inherent_size.height);
-    let inv_aspect_ratio = 1.0 / aspect_ratio;
+    // Use aspect_ratio from style, fall back to inherent aspect ratio (if any)
+    let aspect_ratio: Option<f32> = style.aspect_ratio.or(image_context.inherent_ratio);
 
     // See https://www.w3.org/TR/css-sizing-3/#replaced-percentage-min-contribution
     let basis_for_max_and_preferred = Size {
@@ -122,11 +137,12 @@ pub fn replaced_measure_function(
         let content_box_known_dimensions = known_dimensions.maybe_sub(pb_sum);
         let transferred = content_box_known_dimensions
             .maybe_clamp(min_size, style_max_size)
-            .maybe_apply_aspect_ratio(Some(aspect_ratio))
-            .map(|s| s.unwrap());
+            .maybe_apply_aspect_ratio(aspect_ratio)
+            .unwrap_or(inherent_size);
 
         // Known axes are authoritative (already resolved by the parent); only the axis
-        // derived via aspect-ratio transfer is clamped by this element's min/max sizes.
+        // derived via aspect-ratio transfer (or falling back to the intrinsic size) is
+        // clamped by this element's min/max sizes.
         let size = content_box_known_dimensions
             .unwrap_or(transferred.maybe_clamp(min_size, style_max_size));
 
@@ -136,14 +152,14 @@ pub fn replaced_measure_function(
     let unclamped_size = 'size: {
         if style_size.width.is_some() | style_size.height.is_some() {
             break 'size style_size
-                .maybe_apply_aspect_ratio(Some(aspect_ratio))
-                .map(|s| s.unwrap());
+                .maybe_apply_aspect_ratio(aspect_ratio)
+                .unwrap_or(inherent_size);
         }
 
         if attr_size.width.is_some() | attr_size.height.is_some() {
             break 'size attr_size
-                .maybe_apply_aspect_ratio(Some(aspect_ratio))
-                .map(|s| s.unwrap());
+                .maybe_apply_aspect_ratio(aspect_ratio)
+                .unwrap_or(inherent_size);
         }
 
         inherent_size
@@ -168,6 +184,13 @@ pub fn replaced_measure_function(
     } else {
         Violation::None
     };
+
+    // Without an intrinsic aspect ratio, each axis is clamped independently
+    let Some(aspect_ratio) = aspect_ratio else {
+        let size = size.maybe_clamp(min_size, max_size);
+        return size + pb_sum;
+    };
+    let inv_aspect_ratio = 1.0 / aspect_ratio;
 
     // Clamp following rules in table at
     // https://www.w3.org/TR/CSS22/visudet.html#min-max-widths
