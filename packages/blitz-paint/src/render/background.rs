@@ -291,7 +291,7 @@ impl ElementCx<'_, '_> {
         // both the concrete size (used verbatim for `auto`) and the aspect
         // ratio (used by `cover`/`contain` and single-`auto` sizes).
         let aspect_ratio = svg.aspect_ratio();
-        let (object_w, object_h) = match (svg.intrinsic_width, svg.intrinsic_height) {
+        let (object_w, object_h) = match (svg.intrinsic_width(), svg.intrinsic_height()) {
             (Some(w), Some(h)) => (w, h),
             (Some(w), None) => (w, w / aspect_ratio),
             (None, Some(h)) => (h * aspect_ratio, h),

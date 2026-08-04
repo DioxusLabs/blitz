@@ -180,7 +180,7 @@ impl BaseDocument {
                     //
                     // TODO: smarter sizing using these (depending on object-fit, they shouldn't
                     // necessarily just override the native size)
-                    let attr_size = taffy::Size {
+                    let mut attr_size = taffy::Size {
                         width: element_data
                             .attr(local_name!("width"))
                             .and_then(|val| val.parse::<f32>().ok()),
@@ -201,12 +201,36 @@ impl BaseDocument {
                             }
                             #[cfg(feature = "svg")]
                             ImageData::Svg(svg) => {
-                                let size = svg.tree.size();
-                                let size = taffy::Size {
-                                    width: size.width(),
-                                    height: size.height(),
-                                };
-                                (size, Some(size.width / size.height))
+                                // For an inline `<svg>` element the width/height attributes are
+                                // presentation attributes: percentages resolve against the
+                                // containing block. For SVG loaded as an image the intrinsic
+                                // dimensions are context-free.
+                                if *element_data.name.local == local_name!("svg") {
+                                    attr_size = taffy::Size {
+                                        width: svg.resolved_width(inputs.parent_size.width),
+                                        height: svg.resolved_height(inputs.parent_size.height),
+                                    };
+                                }
+                                let (mut width, mut height) = svg.intrinsic_size();
+                                // A replaced element with only an intrinsic aspect ratio uses the
+                                // stretch-fit width in normal flow (CSS2 §10.3.2): fill the
+                                // definite available width and derive the height from the ratio.
+                                // Shrink-to-fit contexts (floats, abspos) keep the default object
+                                // size that `intrinsic_size` already applied.
+                                if svg.intrinsic_width().is_none()
+                                    && svg.intrinsic_height().is_none()
+                                {
+                                    if let (
+                                        Some(ratio),
+                                        AvailableSpace::Definite(available_width),
+                                    ) =
+                                        (svg.viewbox_aspect_ratio(), inputs.available_space.width)
+                                    {
+                                        width = available_width;
+                                        height = available_width / ratio;
+                                    }
+                                }
+                                (taffy::Size { width, height }, Some(svg.aspect_ratio()))
                             }
                             ImageData::None => (taffy::Size::ZERO, None),
                         },
