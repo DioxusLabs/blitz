@@ -233,11 +233,8 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
         base_color: config.base_color,
         alpha_mode: config.alpha_mode,
     });
-    let config = WindowConfig::with_attributes(
-        Box::new(doc) as _,
-        renderer.clone(),
-        config.window_attributes,
-    );
+    let config =
+        WindowConfig::with_attributes(Box::new(doc) as _, renderer, config.window_attributes);
 
     // Create application
     let application = DioxusNativeApplication::new(proxy, event_queue, config);
