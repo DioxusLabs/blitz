@@ -45,10 +45,12 @@ fn pixel(
     {
         let tree =
             usvg::Tree::from_str(svg_src, &usvg::Options::default()).expect("valid test SVG");
+        let size = tree.size();
         let svg = SvgImageData {
             tree: Arc::new(tree),
             intrinsic_width,
             intrinsic_height,
+            viewbox_aspect_ratio: Some(size.width() / size.height()),
         };
         let node = doc.get_node_mut(box_id).unwrap();
         let el = node.element_data_mut().unwrap();

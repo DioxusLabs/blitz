@@ -201,12 +201,8 @@ impl BaseDocument {
                             }
                             #[cfg(feature = "svg")]
                             ImageData::Svg(svg) => {
-                                let size = svg.tree.size();
-                                let size = taffy::Size {
-                                    width: size.width(),
-                                    height: size.height(),
-                                };
-                                (size, Some(size.width / size.height))
+                                let (width, height) = svg.intrinsic_size();
+                                (taffy::Size { width, height }, Some(svg.aspect_ratio()))
                             }
                             ImageData::None => (taffy::Size::ZERO, None),
                         },
