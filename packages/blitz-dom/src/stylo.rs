@@ -965,6 +965,25 @@ impl<'a> TElement for BlitzNode<'a> {
                 }
             }
 
+            // https://html.spec.whatwg.org/multipage/rendering.html#attributes-for-embedded-content-and-images
+            // The width/height attributes on iframe, embed and video map to
+            // the corresponding dimension properties (percentages allowed).
+            if (*name == local_name!("width") || *name == local_name!("height"))
+                && (*tag == local_name!("iframe")
+                    || *tag == local_name!("embed")
+                    || *tag == local_name!("video"))
+            {
+                if let Some(size) = parse_size_attr(value, |_| true) {
+                    use style::values::generics::{NonNegative, length::Size};
+                    let size = Size::LengthPercentage(NonNegative(size));
+                    push_style(if *name == local_name!("width") {
+                        PropertyDeclaration::Width(size)
+                    } else {
+                        PropertyDeclaration::Height(size)
+                    });
+                }
+            }
+
             // https://svgwg.org/svg2-draft/geometry.html#Sizing
             // The `width` and `height` attributes on an `<svg>` element are
             // presentation attributes that map to the CSS `width`/`height`
