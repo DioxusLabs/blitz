@@ -300,6 +300,11 @@ anyrender_svg = { git = "https://github.com/DioxusLabs/anyrender", branch = "dev
 # style_dom = { path = "../stylo/stylo_dom", package = "stylo_dom" }
 # selectors = { path = "../stylo/selectors", package = "selectors" }
 
+# TODO: remove this patch (and use a crates.io release) once the `GridTemplateAreas` changes
+# (https://github.com/DioxusLabs/taffy/pull/1024) are released
+[patch.crates-io]
+taffy = { git = "https://github.com/DioxusLabs/taffy", branch = "devin/1785836233-grid-template-areas-struct" }
+
 # [patch.crates-io]
 # [patch."https://github.com/dioxuslabs/taffy"]
 # taffy = { path = "../taffy" }

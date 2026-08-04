@@ -7194,8 +7194,7 @@ dependencies = [
 [[package]]
 name = "taffy"
 version = "0.12.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "340a09581f29809fc0df82a3955501dc7f2a21f887e5d1c13dbe288fe1c0bef4"
+source = "git+https://github.com/DioxusLabs/taffy?branch=devin%2F1785836233-grid-template-areas-struct#72bc007662e464c598522de4997f480ddf4f7ff5"
 dependencies = [
  "arrayvec",
  "grid",
