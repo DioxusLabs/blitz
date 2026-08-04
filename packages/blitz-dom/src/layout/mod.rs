@@ -209,7 +209,18 @@ impl BaseDocument {
                             }
                             ImageData::None => taffy::Size::ZERO,
                         },
-                        SpecialElementData::Canvas(_) => taffy::Size::ZERO,
+                        // A canvas's intrinsic size is given by its width/height attributes,
+                        // defaulting to 300x150
+                        SpecialElementData::Canvas(_) => taffy::Size {
+                            width: attr_size.width.unwrap_or(300.0),
+                            height: attr_size.height.unwrap_or(150.0),
+                        },
+                        SpecialElementData::None if *element_data.name.local == *"canvas" => {
+                            taffy::Size {
+                                width: attr_size.width.unwrap_or(300.0),
+                                height: attr_size.height.unwrap_or(150.0),
+                            }
+                        }
                         SpecialElementData::None => taffy::Size::ZERO,
                         _ => unreachable!(),
                     };
