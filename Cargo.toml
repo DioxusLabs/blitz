@@ -56,12 +56,12 @@ browser-persistence = { path = "./apps/browser/persistence" }
 blitz-test-harness = { path = "./packages/blitz-test-harness" }
 
 # Servo dependencies
-style = { git = "https://github.com/servo/stylo", rev = "2d289c14fdf46952d52cabce63b1f0dc55b2ccde", package = "stylo" }
-style_traits = { git = "https://github.com/servo/stylo", rev = "2d289c14fdf46952d52cabce63b1f0dc55b2ccde", package = "stylo_traits" }
-style_atoms = { git = "https://github.com/servo/stylo", rev = "2d289c14fdf46952d52cabce63b1f0dc55b2ccde", package = "stylo_atoms" }
-style_config = { git = "https://github.com/servo/stylo", rev = "2d289c14fdf46952d52cabce63b1f0dc55b2ccde", package = "stylo_static_prefs" }
-style_dom = { git = "https://github.com/servo/stylo", rev = "2d289c14fdf46952d52cabce63b1f0dc55b2ccde", package = "stylo_dom" }
-selectors = { git = "https://github.com/servo/stylo", rev = "2d289c14fdf46952d52cabce63b1f0dc55b2ccde", package = "selectors" }
+style = { version = "0.20.0", package = "stylo" }
+style_traits = { version = "0.20.0", package = "stylo_traits" }
+style_atoms = { version = "0.20.0", package = "stylo_atoms" }
+style_config = { version = "0.20.0", package = "stylo_static_prefs" }
+style_dom = { version = "0.20.0", package = "stylo_dom" }
+selectors = { version = "0.40.0", package = "selectors" }
 cssparser = { version = "0.37.0" }
 
 # HTML5ever dependencies
