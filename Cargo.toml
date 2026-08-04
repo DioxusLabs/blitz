@@ -126,7 +126,7 @@ linebender_resource_handle = "0.1"
 peniko = "0.6.0"
 kurbo = "0.13.1"
 wgpu = "29"
-usvg = "0.46"
+usvg = "0.48.1"
 
 # Windowing & Input
 raw-window-handle = "0.6.0"
@@ -269,6 +269,13 @@ peniko = { workspace = true }
 color = { workspace = true }
 env_logger = "0.11"
 tracing-subscriber = "0.3"
+
+# TODO: remove these patches once `usvg` (with `Tree::intrinsic_dimensions`) and
+# `anyrender_svg` (with the usvg 0.48 bump) are released.
+[patch.crates-io]
+usvg = { git = "https://github.com/DioxusLabs/resvg", branch = "devin/1785858271-intrinsic-dimensions" }
+anyrender = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1785858394-usvg-048" }
+anyrender_svg = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1785858394-usvg-048" }
 
 # [patch.crates-io]
 # anyrender = { path = "../anyrender/crates/anyrender" }
