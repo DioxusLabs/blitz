@@ -69,6 +69,9 @@ pub fn process_attr_test(
 }
 
 pub fn check_node_layout(node: &Node) -> Vec<String> {
+    if node.element_data().is_none() {
+        return Vec::new();
+    }
     let layout = node.final_layout();
     let parent_border = if let Some(parent_id) = node.parent {
         node.with(parent_id).final_layout().border
