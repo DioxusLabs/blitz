@@ -932,36 +932,43 @@ impl<'a> TElement for BlitzNode<'a> {
                 }
             }
 
+            // The width/height attributes on these elements map to the
+            // corresponding dimension properties (percentages allowed):
             // https://html.spec.whatwg.org/multipage/rendering.html#dimRendering
-            if *name == local_name!("width")
-                && (*tag == local_name!("table")
+            // https://html.spec.whatwg.org/multipage/rendering.html#attributes-for-embedded-content-and-images
+            let is_width = *name == local_name!("width");
+            let is_height = *name == local_name!("height");
+            let is_embedded = *tag == local_name!("iframe")
+                || *tag == local_name!("embed")
+                || *tag == local_name!("video");
+            let maps_to_dimension = if is_width {
+                is_embedded
+                    || *tag == local_name!("table")
                     || *tag == local_name!("col")
                     || *tag == local_name!("tr")
                     || *tag == local_name!("td")
                     || *tag == local_name!("th")
-                    || *tag == local_name!("hr"))
-            {
-                let is_table = *tag == local_name!("table");
-                if let Some(width) = parse_size_attr(value, |v| !is_table || *v != 0.0) {
-                    use style::values::generics::{NonNegative, length::Size};
-
-                    push_style(PropertyDeclaration::Width(Size::LengthPercentage(
-                        NonNegative(width),
-                    )));
-                }
-            }
-
-            if *name == local_name!("height")
-                && (*tag == local_name!("table")
+                    || *tag == local_name!("hr")
+            } else if is_height {
+                is_embedded
+                    || *tag == local_name!("table")
                     || *tag == local_name!("thead")
                     || *tag == local_name!("tbody")
-                    || *tag == local_name!("tfoot"))
-            {
-                if let Some(height) = parse_size_attr(value, |_| true) {
+                    || *tag == local_name!("tfoot")
+            } else {
+                false
+            };
+            if maps_to_dimension {
+                let is_table = *tag == local_name!("table");
+                if let Some(size) = parse_size_attr(value, |v| !(is_table && is_width) || *v != 0.0)
+                {
                     use style::values::generics::{NonNegative, length::Size};
-                    push_style(PropertyDeclaration::Height(Size::LengthPercentage(
-                        NonNegative(height),
-                    )));
+                    let size = Size::LengthPercentage(NonNegative(size));
+                    push_style(if is_width {
+                        PropertyDeclaration::Width(size)
+                    } else {
+                        PropertyDeclaration::Height(size)
+                    });
                 }
             }
 
