@@ -112,6 +112,9 @@ pub struct ElementData {
     pub cache: Cache,
     pub unrounded_layout: Layout,
     pub final_layout: Layout,
+    /// The static position recorded when this node was deferred by its layout parent during
+    /// layout (because that parent was not its containing block). `(order, static_position)`.
+    pub deferred_position: Option<(u32, taffy::Point<f32>, taffy::Direction)>,
     pub scroll_offset: crate::Point<f64>,
     pub scrollable_overflow: KurboRect,
     pub transform: Option<Affine>,
@@ -137,6 +140,9 @@ pub struct DocumentData {
     pub cache: Cache,
     pub unrounded_layout: Layout,
     pub final_layout: Layout,
+    /// The static position recorded when this node was deferred by its layout parent during
+    /// layout (because that parent was not its containing block). `(order, static_position)`.
+    pub deferred_position: Option<(u32, taffy::Point<f32>, taffy::Direction)>,
     pub scroll_offset: crate::Point<f64>,
     pub scrollable_overflow: KurboRect,
     pub transform: Option<Affine>,
@@ -156,6 +162,7 @@ impl DocumentData {
             cache: Cache::new(),
             unrounded_layout: Layout::new(),
             final_layout: Layout::new(),
+            deferred_position: None,
             scroll_offset: crate::Point::ZERO,
             scrollable_overflow: KurboRect::ZERO,
             transform: None,
@@ -236,6 +243,7 @@ impl Clone for ElementData {
             cache: Cache::new(),
             unrounded_layout: Layout::new(),
             final_layout: Layout::new(),
+            deferred_position: None,
             scroll_offset: crate::Point::ZERO,
             scrollable_overflow: KurboRect::ZERO,
             transform: None,
@@ -347,6 +355,7 @@ impl ElementData {
             cache: Cache::new(),
             unrounded_layout: Layout::new(),
             final_layout: Layout::new(),
+            deferred_position: None,
             scroll_offset: crate::Point::ZERO,
             scrollable_overflow: KurboRect::ZERO,
             transform: None,

@@ -79,11 +79,19 @@ pub fn replaced_measure_function(
         .min_size
         .maybe_resolve(parent_size, resolve_calc_value)
         .maybe_sub(box_sizing_adjustment);
+    // Available space acts as a max-size constraint for in-flow replaced elements,
+    // but absolutely positioned ones size to their intrinsic size regardless of the
+    // size of their containing block.
+    let available_space_max = if style.position.is_absolutely_positioned() {
+        Size::NONE
+    } else {
+        available_space.into_options()
+    };
     let max_size = style
         .max_size
         .maybe_resolve(basis_for_max_and_preferred, resolve_calc_value)
-        .or(available_space.into_options())
-        .maybe_min(available_space.into_options())
+        .or(available_space_max)
+        .maybe_min(available_space_max)
         .maybe_max(min_size)
         .maybe_sub(box_sizing_adjustment);
     let attr_size = image_context.attr_size;

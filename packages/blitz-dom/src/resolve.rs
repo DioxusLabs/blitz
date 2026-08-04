@@ -91,6 +91,9 @@ impl BaseDocument {
         self.resolve_layout();
         timer.record_time("layout");
 
+        // Refresh hoisted paint child positions now that layout is final
+        self.refresh_hoisted_paint_positions();
+
         // Resolve transforms
         self.resolve_transforms(root_node_id);
         timer.record_time("transform");
@@ -169,7 +172,13 @@ impl BaseDocument {
         if let Some(ref children) = layout_children {
             for &child_id in children {
                 let child_rect_in_self = self.resolve_transforms(child_id);
-                overflow = overflow.union(child_rect_in_self);
+                // Fixed position children do not contribute to their ancestors'
+                // scrollable overflow
+                let child_is_fixed =
+                    self.nodes[child_id].style().position == taffy::Position::Fixed;
+                if !child_is_fixed {
+                    overflow = overflow.union(child_rect_in_self);
+                }
             }
         }
         if let Some(before) = self.nodes[node_id].before() {
@@ -398,9 +407,301 @@ impl BaseDocument {
         // println!("\n\nRESOLVE LAYOUT\n===========\n");
 
         taffy::compute_root_layout(self, root_element_id, available_space);
+        self.position_deferred_children();
         taffy::round_layout(self, root_element_id);
 
         // println!("\n\n");
         // taffy::print_tree(self, root_node_id)
+    }
+
+    /// Lay out out-of-flow children which were deferred during the main layout pass (via
+    /// [`taffy::LayoutPartialTree::defer_absolute_child`]) against their actual containing block:
+    ///
+    /// - `position: absolute` children of non-positioned containers are positioned against
+    ///   their nearest positioned (or transformed) ancestor, falling back to the initial
+    ///   containing block (the viewport).
+    /// - `position: fixed` children are positioned against their nearest transformed ancestor,
+    ///   falling back to the initial containing block (the viewport).
+    ///
+    /// This runs after `compute_root_layout` (so all in-flow layout and static positions are
+    /// resolved) and before `round_layout` (so the final positions get rounded normally).
+    fn position_deferred_children(&mut self) {
+        use taffy::{Point, Position};
+
+        /// A containing block for out-of-flow boxes, described relative to the border box of
+        /// the node establishing it.
+        #[derive(Copy, Clone)]
+        struct Cb {
+            node_id: NodeId,
+            area_size: taffy::Size<f32>,
+            area_offset: taffy::Point<f32>,
+        }
+
+        fn cb_from_node(doc: &BaseDocument, node_id: NodeId) -> Cb {
+            let layout = *doc.nodes[node_id].unrounded_layout();
+            let is_rtl = doc.nodes[node_id].style().direction.is_rtl();
+            let area_size = taffy::Size {
+                width: layout.size.width
+                    - layout.border.left
+                    - layout.border.right
+                    - layout.scrollbar_size.width,
+                height: layout.size.height
+                    - layout.border.top
+                    - layout.border.bottom
+                    - layout.scrollbar_size.height,
+            };
+            let area_offset = taffy::Point {
+                x: if is_rtl {
+                    layout.border.left + layout.scrollbar_size.width
+                } else {
+                    layout.border.left
+                },
+                y: layout.border.top,
+            };
+            Cb {
+                node_id,
+                area_size,
+                area_offset,
+            }
+        }
+
+        /// Convert a 1-based (possibly negative) grid line index into a boundary offset,
+        /// relative to the start content edge of the track axis. Returns `None` for lines
+        /// which fall outside the laid-out tracks.
+        fn grid_line_offset(tracks: &taffy::DetailedGridTracksInfo, line: i16) -> Option<f32> {
+            let track_count = tracks.sizes.len() as i16;
+            let explicit_start = tracks.negative_implicit_tracks as i16;
+            // Convert to a 0-based boundary index into the full (implicit + explicit) track list
+            let boundary = if line > 0 {
+                explicit_start + (line - 1)
+            } else if line < 0 {
+                explicit_start + tracks.explicit_tracks as i16 + 1 + line
+            } else {
+                return None;
+            };
+            if boundary < 0 || boundary > track_count {
+                return None;
+            }
+            let boundary = boundary as usize;
+            // Track layout along an axis is: gutter, track, gutter, track, ..., gutter.
+            // The offset of boundary `b` is the sum of the first `b` tracks and `b + 1` gutters.
+            let mut offset = 0.0;
+            for i in 0..boundary {
+                offset += tracks.gutters.get(i).copied().unwrap_or(0.0);
+                offset += tracks.sizes[i];
+            }
+            offset += tracks.gutters.get(boundary).copied().unwrap_or(0.0);
+            Some(offset)
+        }
+
+        /// Resolve a grid placement (for one axis) to start/end boundary offsets relative to
+        /// the start content edge. Only handles numeric lines (+ spans); named lines and
+        /// auto-placement resolve to `None` (= the padding box edge, per css-grid §9.1).
+        fn resolve_grid_axis<S: taffy::CheapCloneStr>(
+            tracks: &taffy::DetailedGridTracksInfo,
+            placement: &taffy::Line<taffy::GridPlacement<S>>,
+        ) -> (Option<f32>, Option<f32>) {
+            use taffy::GridPlacement::*;
+            let (start_line, end_line): (Option<i16>, Option<i16>) =
+                match (&placement.start, &placement.end) {
+                    (Line(s), Line(e)) => (Some(s.as_i16()), Some(e.as_i16())),
+                    (Line(s), Span(n)) => (Some(s.as_i16()), Some(s.as_i16() + *n as i16)),
+                    (Span(n), Line(e)) => (Some(e.as_i16() - *n as i16), Some(e.as_i16())),
+                    (Line(s), _) => (Some(s.as_i16()), None),
+                    (_, Line(e)) => (None, Some(e.as_i16())),
+                    _ => (None, None),
+                };
+            (
+                start_line.and_then(|line| grid_line_offset(tracks, line)),
+                end_line.and_then(|line| grid_line_offset(tracks, line)),
+            )
+        }
+
+        /// If the containing block is a grid container and the child has explicit grid
+        /// placement then the child's containing block is the corresponding grid area
+        /// rather than the grid container's padding box (css-grid-1 §9.1).
+        fn grid_area_for_child(
+            doc: &BaseDocument,
+            cb: &Cb,
+            child_id: NodeId,
+        ) -> Option<(taffy::Size<f32>, taffy::Point<f32>)> {
+            let cb_node = &doc.nodes[cb.node_id];
+            if cb_node.style().display != taffy::Display::Grid {
+                return None;
+            }
+            let info = cb_node
+                .data
+                .downcast_element()?
+                .detailed_grid_info
+                .as_deref()?;
+
+            let child_style = doc.nodes[child_id].style();
+            let (col_start, col_end) = resolve_grid_axis(&info.columns, &child_style.grid_column);
+            let (row_start, row_end) = resolve_grid_axis(&info.rows, &child_style.grid_row);
+            if col_start.is_none() && col_end.is_none() && row_start.is_none() && row_end.is_none()
+            {
+                return None;
+            }
+
+            let layout = cb_node.unrounded_layout();
+            let content_offset = taffy::Point {
+                x: layout.border.left + layout.padding.left,
+                y: layout.border.top + layout.padding.top,
+            };
+            // Auto lines resolve to the padding box edges
+            let left = col_start
+                .map(|o| content_offset.x + o)
+                .unwrap_or(cb.area_offset.x);
+            let right = col_end
+                .map(|o| content_offset.x + o)
+                .unwrap_or(cb.area_offset.x + cb.area_size.width);
+            let top = row_start
+                .map(|o| content_offset.y + o)
+                .unwrap_or(cb.area_offset.y);
+            let bottom = row_end
+                .map(|o| content_offset.y + o)
+                .unwrap_or(cb.area_offset.y + cb.area_size.height);
+
+            Some((
+                taffy::Size {
+                    width: (right - left).max(0.0),
+                    height: (bottom - top).max(0.0),
+                },
+                taffy::Point { x: left, y: top },
+            ))
+        }
+
+        #[allow(clippy::too_many_arguments)]
+        fn recurse(
+            doc: &mut BaseDocument,
+            node_id: NodeId,
+            fixed_cb: Cb,
+            abs_cb: Cb,
+            offset_from_fixed_cb: taffy::Point<f32>,
+            offset_from_abs_cb: taffy::Point<f32>,
+        ) {
+            let node_position = doc.nodes[node_id].style().position;
+
+            let layout_children = doc.nodes[node_id].layout_children.borrow().clone();
+            let mut child_ids: Vec<NodeId> =
+                layout_children.map(|c| c.to_vec()).unwrap_or_default();
+            if let Some(before) = doc.nodes[node_id].before() {
+                child_ids.push(before);
+            }
+            if let Some(after) = doc.nodes[node_id].after() {
+                child_ids.push(after);
+            }
+
+            for child_id in child_ids {
+                if !doc.nodes.contains_key(child_id) {
+                    continue;
+                }
+                let child_position = doc.nodes[child_id].style().position;
+
+                let is_deferred = child_position == Position::Fixed
+                    || (child_position == Position::Absolute && node_position == Position::Static);
+
+                if is_deferred {
+                    if let Some((order, static_position, static_position_direction)) =
+                        *doc.nodes[child_id].deferred_position()
+                    {
+                        let (cb, parent_offset) = if child_position == Position::Fixed {
+                            (fixed_cb, offset_from_fixed_cb)
+                        } else {
+                            (abs_cb, offset_from_abs_cb)
+                        };
+                        let direction = doc.nodes[cb.node_id].style().direction;
+                        let static_position_in_cb = Point {
+                            x: static_position.x + parent_offset.x,
+                            y: static_position.y + parent_offset.y,
+                        };
+                        let (area_size, area_offset) = grid_area_for_child(doc, &cb, child_id)
+                            .unwrap_or((cb.area_size, cb.area_offset));
+                        let result = taffy::compute_absolute_child_layout(
+                            doc,
+                            crate::taffy_node_id(child_id),
+                            order,
+                            area_size,
+                            area_offset,
+                            static_position_in_cb,
+                            static_position_direction,
+                            direction,
+                        );
+                        // `compute_absolute_child_layout` writes a location relative to the
+                        // containing block's border box. Convert it to be relative to the layout
+                        // parent's border box (the coordinate space layouts are stored in).
+                        let mut layout = result.layout;
+                        layout.location.x -= parent_offset.x;
+                        layout.location.y -= parent_offset.y;
+                        *doc.nodes[child_id].unrounded_layout_mut() = layout;
+                    }
+                }
+
+                // Compute the containing blocks and offsets that apply to the child's descendants
+                let child_layout = *doc.nodes[child_id].unrounded_layout();
+                let child_establishes_fixed_cb =
+                    doc.nodes[child_id].establishes_fixed_containing_block();
+                let child_is_positioned =
+                    child_position != Position::Static || child_establishes_fixed_cb;
+
+                let child_fixed_cb;
+                let child_offset_from_fixed_cb;
+                if child_establishes_fixed_cb {
+                    child_fixed_cb = cb_from_node(doc, child_id);
+                    child_offset_from_fixed_cb = Point::ZERO;
+                } else {
+                    child_fixed_cb = fixed_cb;
+                    child_offset_from_fixed_cb = Point {
+                        x: offset_from_fixed_cb.x + child_layout.location.x,
+                        y: offset_from_fixed_cb.y + child_layout.location.y,
+                    };
+                }
+
+                let child_abs_cb;
+                let child_offset_from_abs_cb;
+                if child_is_positioned {
+                    child_abs_cb = cb_from_node(doc, child_id);
+                    child_offset_from_abs_cb = Point::ZERO;
+                } else {
+                    child_abs_cb = abs_cb;
+                    child_offset_from_abs_cb = Point {
+                        x: offset_from_abs_cb.x + child_layout.location.x,
+                        y: offset_from_abs_cb.y + child_layout.location.y,
+                    };
+                }
+
+                recurse(
+                    doc,
+                    child_id,
+                    child_fixed_cb,
+                    child_abs_cb,
+                    child_offset_from_fixed_cb,
+                    child_offset_from_abs_cb,
+                );
+            }
+        }
+
+        let viewport_size = self.stylist.device().au_viewport_size();
+        let root_id = self.root_element().id;
+
+        // The initial containing block: the viewport. Offsets are tracked relative to the root
+        // element's border box, which is positioned at the viewport origin.
+        let viewport_cb = Cb {
+            node_id: root_id,
+            area_size: taffy::Size {
+                width: viewport_size.width.to_f32_px(),
+                height: viewport_size.height.to_f32_px(),
+            },
+            area_offset: taffy::Point::ZERO,
+        };
+
+        recurse(
+            self,
+            root_id,
+            viewport_cb,
+            viewport_cb,
+            Point::ZERO,
+            Point::ZERO,
+        );
     }
 }

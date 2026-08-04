@@ -183,13 +183,23 @@ impl BaseDocument {
                     //
                     // TODO: smarter sizing using these (depending on object-fit, they shouldn't
                     // necessarily just override the native size)
+                    // HTML dimension attribute values may be a number of pixels or a
+                    // percentage of the parent's corresponding dimension
+                    let parse_dimension_attr = |val: &str, parent: Option<f32>| -> Option<f32> {
+                        match val.strip_suffix('%') {
+                            Some(percent) => {
+                                Some(percent.trim().parse::<f32>().ok()? / 100.0 * parent?)
+                            }
+                            None => val.parse::<f32>().ok(),
+                        }
+                    };
                     let attr_size = taffy::Size {
                         width: element_data
                             .attr(local_name!("width"))
-                            .and_then(|val| val.parse::<f32>().ok()),
+                            .and_then(|val| parse_dimension_attr(val, inputs.parent_size.width)),
                         height: element_data
                             .attr(local_name!("height"))
-                            .and_then(|val| val.parse::<f32>().ok()),
+                            .and_then(|val| parse_dimension_attr(val, inputs.parent_size.height)),
                     };
 
                     // Get image's native sizespecial_data
@@ -341,6 +351,18 @@ impl LayoutPartialTree for BaseDocument {
         compute_cached_layout(self, node_id, inputs, |tree, node_id, inputs| {
             tree.compute_child_layout_internal(node_id, inputs, None)
         })
+    }
+
+    #[inline(always)]
+    fn defer_absolute_child(
+        &mut self,
+        child_id: NodeId,
+        order: u32,
+        static_position: taffy::Point<f32>,
+        static_position_direction: taffy::Direction,
+    ) {
+        *self.node_from_id_mut(child_id).deferred_position_mut() =
+            Some((order, static_position, static_position_direction));
     }
 }
 

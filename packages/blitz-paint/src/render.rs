@@ -883,19 +883,9 @@ impl ElementCx<'_, '_> {
         clip_rect: Rect,
     ) {
         // Negative z_index hoisted nodes
-
         if let Some(hoisted) = &self.node.stacking_context {
             for hoisted_child in hoisted.neg_z_hoisted_children() {
-                let pos = kurbo::Vec2 {
-                    x: hoisted_child.position.x as f64 * self.scale,
-                    y: hoisted_child.position.y as f64 * self.scale,
-                };
-                self.render_node(
-                    scene,
-                    hoisted_child.node_id,
-                    parent_style_transform.pre_translate(pos),
-                    clip_rect,
-                );
+                self.draw_hoisted_child(scene, hoisted_child, parent_style_transform, clip_rect);
             }
         }
 
@@ -909,17 +899,52 @@ impl ElementCx<'_, '_> {
         // Positive z_index hoisted nodes
         if let Some(hoisted) = &self.node.stacking_context {
             for hoisted_child in hoisted.pos_z_hoisted_children() {
-                let pos = kurbo::Vec2 {
-                    x: hoisted_child.position.x as f64 * self.scale,
-                    y: hoisted_child.position.y as f64 * self.scale,
-                };
-                self.render_node(
+                self.draw_hoisted_child(scene, hoisted_child, parent_style_transform, clip_rect);
+            }
+        }
+    }
+
+    fn draw_hoisted_child(
+        &self,
+        scene: &mut impl PaintScene,
+        hoisted_child: &blitz_dom::HoistedPaintChild,
+        parent_style_transform: Affine,
+        clip_rect: Rect,
+    ) {
+        let pos = kurbo::Vec2 {
+            x: hoisted_child.position.x as f64 * self.scale,
+            y: hoisted_child.position.y as f64 * self.scale,
+        };
+        let transform = parent_style_transform.pre_translate(pos);
+        match hoisted_child.clip {
+            Some(clip) => {
+                // Hoisted boxes are painted outside the tree position where ancestor
+                // overflow clips are applied, so apply the applicable clips here.
+                let clip_shape = Rect::new(
+                    clip.left as f64 * self.scale,
+                    clip.top as f64 * self.scale,
+                    clip.right as f64 * self.scale,
+                    clip.bottom as f64 * self.scale,
+                );
+                let clip_rect =
+                    clip_rect.intersect(parent_style_transform.transform_rect_bbox(clip_shape));
+                if clip_rect.width() <= 0.0 || clip_rect.height() <= 0.0 {
+                    return;
+                }
+                self.layer_manager.maybe_with_layer(
                     scene,
-                    hoisted_child.node_id,
-                    parent_style_transform.pre_translate(pos),
-                    clip_rect,
+                    true,
+                    1.0,
+                    parent_style_transform,
+                    &clip_shape,
+                    None,
+                    None,
+                    |scene| {
+                        self.render_node(scene, hoisted_child.node_id, transform, clip_rect);
+                    },
                 );
             }
+            None => self.render_node(scene, hoisted_child.node_id, transform, clip_rect),
         }
     }
 
