@@ -180,7 +180,7 @@ impl BaseDocument {
                     //
                     // TODO: smarter sizing using these (depending on object-fit, they shouldn't
                     // necessarily just override the native size)
-                    let attr_size = taffy::Size {
+                    let mut attr_size = taffy::Size {
                         width: element_data
                             .attr(local_name!("width"))
                             .and_then(|val| val.parse::<f32>().ok()),
@@ -201,6 +201,16 @@ impl BaseDocument {
                             }
                             #[cfg(feature = "svg")]
                             ImageData::Svg(svg) => {
+                                // For an inline `<svg>` element the width/height attributes are
+                                // presentation attributes: absent ones default to 100% and
+                                // percentages resolve against the containing block. For SVG
+                                // loaded as an image the intrinsic dimensions are context-free.
+                                if *element_data.name.local == local_name!("svg") {
+                                    attr_size = taffy::Size {
+                                        width: svg.resolved_width(inputs.parent_size.width),
+                                        height: svg.resolved_height(inputs.parent_size.height),
+                                    };
+                                }
                                 let (width, height) = svg.intrinsic_size();
                                 (taffy::Size { width, height }, Some(svg.aspect_ratio()))
                             }
