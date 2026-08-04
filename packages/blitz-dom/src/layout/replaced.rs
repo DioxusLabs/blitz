@@ -111,18 +111,41 @@ pub fn replaced_measure_function(
     // Known dimensions are the parent's current sizing inputs. Clamp them before transferring
     // an aspect ratio so provisional cross-axis sizes do not bypass replaced-element limits.
     if known_dimensions.width.is_some() | known_dimensions.height.is_some() {
+        // Style max sizes without the available-space fallback: available space must not
+        // constrain the aspect-ratio transfer of parent-resolved dimensions.
+        let style_max_size = style
+            .max_size
+            .maybe_resolve(basis_for_max_and_preferred, resolve_calc_value)
+            .maybe_sub(box_sizing_adjustment)
+            .maybe_max(min_size);
+
         let content_box_known_dimensions = known_dimensions.maybe_sub(pb_sum);
         let clamped_known_dimensions = Size {
             width: content_box_known_dimensions
                 .width
-                .maybe_clamp(min_size.width, max_size.width),
+                .maybe_clamp(min_size.width, style_max_size.width),
             height: content_box_known_dimensions
                 .height
-                .maybe_clamp(min_size.height, max_size.height),
+                .maybe_clamp(min_size.height, style_max_size.height),
         };
-        let size = clamped_known_dimensions
+        let transferred = clamped_known_dimensions
             .maybe_apply_aspect_ratio(Some(aspect_ratio))
             .map(|s| s.unwrap());
+
+        // Known axes are authoritative (already resolved by the parent); only the axis
+        // derived via aspect-ratio transfer is clamped by this element's min/max sizes.
+        let size = Size {
+            width: content_box_known_dimensions.width.unwrap_or_else(|| {
+                transferred
+                    .width
+                    .maybe_clamp(min_size.width, style_max_size.width)
+            }),
+            height: content_box_known_dimensions.height.unwrap_or_else(|| {
+                transferred
+                    .height
+                    .maybe_clamp(min_size.height, style_max_size.height)
+            }),
+        };
 
         return size.map(|s| s.max(0.0)) + pb_sum;
     }
