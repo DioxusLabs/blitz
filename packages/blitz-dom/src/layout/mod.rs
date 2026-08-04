@@ -26,7 +26,7 @@ pub(crate) mod list;
 pub(crate) mod replaced;
 pub(crate) mod table;
 
-use self::replaced::{ReplacedContext, replaced_measure_function};
+use self::replaced::{ReplacedContext, is_replaced_element, replaced_measure_function};
 use self::table::TableTreeWrapper;
 
 pub(crate) fn resolve_calc_value(calc_ptr: *const (), parent_size: f32) -> f32 {
@@ -175,10 +175,7 @@ impl BaseDocument {
                     }
                 }
 
-                if *element_data.name.local == *"img"
-                    || *element_data.name.local == *"canvas"
-                    || (cfg!(feature = "svg") && *element_data.name.local == *"svg")
-                {
+                if is_replaced_element(&element_data.name.local) {
                     // Get width and height attributes on image element
                     //
                     // TODO: smarter sizing using these (depending on object-fit, they shouldn't
@@ -192,31 +189,52 @@ impl BaseDocument {
                             .and_then(|val| val.parse::<f32>().ok()),
                     };
 
-                    // Get image's native sizespecial_data
-                    let inherent_size = match &element_data.special_data {
+                    // Get the element's intrinsic size and aspect ratio
+                    let (inherent_size, inherent_ratio) = match &element_data.special_data {
                         SpecialElementData::Image(image_data) => match &**image_data {
-                            ImageData::Raster(image) => taffy::Size {
-                                width: image.width as f32,
-                                height: image.height as f32,
-                            },
+                            ImageData::Raster(image) => {
+                                let size = taffy::Size {
+                                    width: image.width as f32,
+                                    height: image.height as f32,
+                                };
+                                (size, Some(size.width / size.height))
+                            }
                             #[cfg(feature = "svg")]
                             ImageData::Svg(svg) => {
                                 let size = svg.tree.size();
-                                taffy::Size {
+                                let size = taffy::Size {
                                     width: size.width(),
                                     height: size.height(),
-                                }
+                                };
+                                (size, Some(size.width / size.height))
                             }
-                            ImageData::None => taffy::Size::ZERO,
+                            ImageData::None => (taffy::Size::ZERO, None),
                         },
-                        SpecialElementData::Canvas(_) => taffy::Size::ZERO,
-                        SpecialElementData::None => taffy::Size::ZERO,
+                        // Canvas has an intrinsic size and aspect ratio given by its
+                        // width/height attributes, defaulting to 300x150. Other replaced
+                        // elements without intrinsic dimensions (video, iframe, embed) use
+                        // the 300x150 default object size but have no intrinsic ratio.
+                        SpecialElementData::Canvas(_) | SpecialElementData::None => {
+                            let tag_name = &element_data.name.local;
+                            if *tag_name == local_name!("img") || *tag_name == local_name!("svg") {
+                                (taffy::Size::ZERO, None)
+                            } else {
+                                let size = taffy::Size {
+                                    width: attr_size.width.unwrap_or(300.0),
+                                    height: attr_size.height.unwrap_or(150.0),
+                                };
+                                let ratio = (*tag_name == local_name!("canvas"))
+                                    .then(|| size.width / size.height);
+                                (size, ratio)
+                            }
+                        }
                         _ => unreachable!(),
                     };
 
                     let replaced_context = ReplacedContext {
                         inherent_size,
                         attr_size,
+                        inherent_ratio,
                     };
 
                     let computed = replaced_measure_function(

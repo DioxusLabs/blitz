@@ -32,6 +32,7 @@ use crate::{
 use super::{
     damage::ALL_DAMAGE,
     list::{BULLET_FONT_FAMILY, collect_list_item_children},
+    replaced::is_replaced_element,
     table::build_table_context,
 };
 
@@ -892,8 +893,7 @@ pub(crate) fn find_inline_layout_embedded_boxes(
                     (DisplayOutside::Inline, DisplayInside::Flow) => {
                         let tag_name = &element_data.name.local;
 
-                        if *tag_name == local_name!("img")
-                            || *tag_name == local_name!("svg")
+                        if is_replaced_element(tag_name)
                             || *tag_name == local_name!("input")
                             || *tag_name == local_name!("textarea")
                             || *tag_name == local_name!("button")
@@ -1098,8 +1098,7 @@ pub(crate) fn build_inline_layout_into(
                     (DisplayOutside::Inline, DisplayInside::Flow) => {
                         let tag_name = &element_data.name.local;
 
-                        if *tag_name == local_name!("img")
-                            || *tag_name == local_name!("svg")
+                        if is_replaced_element(tag_name)
                             || *tag_name == local_name!("input")
                             || *tag_name == local_name!("textarea")
                             || *tag_name == local_name!("button")
