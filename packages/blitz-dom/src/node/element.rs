@@ -746,9 +746,9 @@ impl SvgImageData {
             .map(|vb| vb.width() / vb.height())
     }
 
-    /// The root `width` attribute resolved against a containing block width,
-    /// per SVG rules: an absent attribute defaults to `100%`, and percentages
-    /// resolve against the containing block (`None` if it is indefinite).
+    /// The root `width` attribute resolved against a containing block width:
+    /// percentages resolve against the containing block (`None` if it is
+    /// indefinite) and an absent attribute is `None`.
     ///
     /// This is only appropriate for an inline `<svg>` element, where the
     /// attributes behave as presentation attributes. SVG used as an image
@@ -759,7 +759,7 @@ impl SvgImageData {
         match self.tree.intrinsic_dimensions().width {
             Some(len) if len.unit != LengthUnit::Percent => Some(self.tree.size().width()),
             Some(len) => container_width.map(|cw| cw * (len.number as f32) / 100.0),
-            None => container_width,
+            None => None,
         }
     }
 
@@ -770,7 +770,7 @@ impl SvgImageData {
         match self.tree.intrinsic_dimensions().height {
             Some(len) if len.unit != LengthUnit::Percent => Some(self.tree.size().height()),
             Some(len) => container_height.map(|ch| ch * (len.number as f32) / 100.0),
-            None => container_height,
+            None => None,
         }
     }
 
