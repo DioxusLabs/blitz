@@ -1,6 +1,7 @@
 use style::Atom;
 use taffy::{
-    AvailableSpace, BoxSizing, CoreStyle as _, MaybeMath, MaybeResolve, ResolveOrZero as _, Size,
+    AvailableSpace, BoxSizing, CoreStyle as _, MaybeMath, MaybeResolve, RequestedAxis,
+    ResolveOrZero as _, Size, SizingMode,
 };
 
 use crate::layout::resolve_calc_value;
@@ -29,7 +30,8 @@ pub fn replaced_measure_function(
     available_space: taffy::Size<AvailableSpace>,
     image_context: &ReplacedContext,
     style: &taffy::Style<Atom>,
-    _debug: bool,
+    sizing_mode: SizingMode,
+    requested_axis: RequestedAxis,
 ) -> taffy::Size<f32> {
     let inherent_size = image_context.inherent_size;
 
@@ -73,9 +75,8 @@ pub fn replaced_measure_function(
     let style_size = style
         .size
         .maybe_resolve(basis_for_max_and_preferred, resolve_calc_value)
-        .maybe_apply_aspect_ratio(Some(aspect_ratio))
         .maybe_sub(box_sizing_adjustment);
-    let min_size = style
+    let mut min_size = style
         .min_size
         .maybe_resolve(parent_size, resolve_calc_value)
         .maybe_sub(box_sizing_adjustment);
@@ -86,16 +87,53 @@ pub fn replaced_measure_function(
         .maybe_min(available_space.into_options())
         .maybe_max(min_size)
         .maybe_sub(box_sizing_adjustment);
+
+    // For ContentSize mode, ignore preferred/min size styles in the axis being measured: the
+    // parent layout algorithm applies them itself, and content-based measurement should return
+    // the content size (the intrinsic size for replaced elements). Constraints in the opposite
+    // axis are retained as they transfer through the aspect ratio (transferred size suggestion).
+    let mut style_size = style_size;
+    if sizing_mode == SizingMode::ContentSize {
+        match requested_axis {
+            RequestedAxis::Horizontal => {
+                style_size.width = None;
+                min_size.width = None;
+            }
+            RequestedAxis::Vertical => {
+                style_size.height = None;
+                min_size.height = None;
+            }
+            RequestedAxis::Both => {}
+        }
+    }
     let attr_size = image_context.attr_size;
 
-    let unclamped_size = 'size: {
-        if known_dimensions.width.is_some() | known_dimensions.height.is_some() {
-            let content_box_known_dimensions = known_dimensions.maybe_sub(pb_sum);
-            break 'size content_box_known_dimensions
-                .maybe_apply_aspect_ratio(Some(aspect_ratio))
-                .map(|s| s.unwrap());
-        }
+    // Known dimensions are the parent's current sizing inputs. Clamp them before transferring
+    // an aspect ratio so provisional cross-axis sizes do not bypass replaced-element limits.
+    if known_dimensions.width.is_some() | known_dimensions.height.is_some() {
+        // Style max sizes without the available-space fallback: available space must not
+        // constrain the aspect-ratio transfer of parent-resolved dimensions.
+        let style_max_size = style
+            .max_size
+            .maybe_resolve(basis_for_max_and_preferred, resolve_calc_value)
+            .maybe_sub(box_sizing_adjustment)
+            .maybe_max(min_size);
 
+        let content_box_known_dimensions = known_dimensions.maybe_sub(pb_sum);
+        let transferred = content_box_known_dimensions
+            .maybe_clamp(min_size, style_max_size)
+            .maybe_apply_aspect_ratio(Some(aspect_ratio))
+            .map(|s| s.unwrap());
+
+        // Known axes are authoritative (already resolved by the parent); only the axis
+        // derived via aspect-ratio transfer is clamped by this element's min/max sizes.
+        let size = content_box_known_dimensions
+            .unwrap_or(transferred.maybe_clamp(min_size, style_max_size));
+
+        return size.map(|s| s.max(0.0)) + pb_sum;
+    }
+
+    let unclamped_size = 'size: {
         if style_size.width.is_some() | style_size.height.is_some() {
             break 'size style_size
                 .maybe_apply_aspect_ratio(Some(aspect_ratio))

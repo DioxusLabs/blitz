@@ -225,7 +225,8 @@ impl BaseDocument {
                         inputs.available_space,
                         &replaced_context,
                         node.style(),
-                        false,
+                        inputs.sizing_mode,
+                        inputs.axis,
                     );
 
                     return taffy::LayoutOutput {
