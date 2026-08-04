@@ -181,6 +181,18 @@ impl BaseDocument {
             overflow = overflow.union(child_rect_in_self);
         }
 
+        if let Some(style) = self.nodes[node_id].primary_styles() {
+            use style::values::computed::Overflow;
+            if matches!(style.clone_overflow_x(), Overflow::Hidden | Overflow::Clip) {
+                overflow.x0 = overflow.x0.max(0.0);
+                overflow.x1 = overflow.x1.min(w);
+            }
+            if matches!(style.clone_overflow_y(), Overflow::Hidden | Overflow::Clip) {
+                overflow.y0 = overflow.y0.max(0.0);
+                overflow.y1 = overflow.y1.min(h);
+            }
+        }
+
         *self.nodes[node_id].scrollable_overflow_mut() = overflow;
         *self.nodes[node_id].layout_children.get_mut() = layout_children;
 
