@@ -115,6 +115,9 @@ pub struct ElementData {
     /// The static position recorded when this node was deferred by its layout parent during
     /// layout (because that parent was not its containing block). `(order, static_position)`.
     pub deferred_position: Option<(u32, taffy::Point<f32>, taffy::Direction)>,
+    /// The paint-time offset applied to a `position: sticky` box (relative to its
+    /// flow position), recomputed from live scroll offsets each resolve.
+    pub sticky_offset: taffy::Point<f32>,
     pub scroll_offset: crate::Point<f64>,
     pub scrollable_overflow: KurboRect,
     pub transform: Option<Affine>,
@@ -143,6 +146,9 @@ pub struct DocumentData {
     /// The static position recorded when this node was deferred by its layout parent during
     /// layout (because that parent was not its containing block). `(order, static_position)`.
     pub deferred_position: Option<(u32, taffy::Point<f32>, taffy::Direction)>,
+    /// The paint-time offset applied to a `position: sticky` box (relative to its
+    /// flow position), recomputed from live scroll offsets each resolve.
+    pub sticky_offset: taffy::Point<f32>,
     pub scroll_offset: crate::Point<f64>,
     pub scrollable_overflow: KurboRect,
     pub transform: Option<Affine>,
@@ -163,6 +169,7 @@ impl DocumentData {
             unrounded_layout: Layout::new(),
             final_layout: Layout::new(),
             deferred_position: None,
+            sticky_offset: taffy::Point::ZERO,
             scroll_offset: crate::Point::ZERO,
             scrollable_overflow: KurboRect::ZERO,
             transform: None,
@@ -244,6 +251,7 @@ impl Clone for ElementData {
             unrounded_layout: Layout::new(),
             final_layout: Layout::new(),
             deferred_position: None,
+            sticky_offset: taffy::Point::ZERO,
             scroll_offset: crate::Point::ZERO,
             scrollable_overflow: KurboRect::ZERO,
             transform: None,
@@ -356,6 +364,7 @@ impl ElementData {
             unrounded_layout: Layout::new(),
             final_layout: Layout::new(),
             deferred_position: None,
+            sticky_offset: taffy::Point::ZERO,
             scroll_offset: crate::Point::ZERO,
             scrollable_overflow: KurboRect::ZERO,
             transform: None,

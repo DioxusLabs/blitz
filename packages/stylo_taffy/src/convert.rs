@@ -225,9 +225,10 @@ pub fn position(input: stylo::Position) -> taffy::Position {
         stylo::Position::Relative => taffy::Position::Relative,
         stylo::Position::Static => taffy::Position::Static,
 
-        // TODO: support position:sticky
         stylo::Position::Absolute => taffy::Position::Absolute,
         stylo::Position::Fixed => taffy::Position::Fixed,
+        // Sticky boxes are laid out at their normal flow position (their sticky
+        // offset is applied at paint time), which matches Relative with no insets.
         stylo::Position::Sticky => taffy::Position::Relative,
     }
 }
@@ -634,11 +635,22 @@ pub fn to_taffy_style(style: &stylo::ComputedValues) -> taffy::Style<Atom> {
         },
         aspect_ratio: self::aspect_ratio(pos.aspect_ratio),
 
-        inset: taffy::Rect {
-            left: self::inset(&pos.left),
-            right: self::inset(&pos.right),
-            top: self::inset(&pos.top),
-            bottom: self::inset(&pos.bottom),
+        // Sticky insets are stick *constraints*, not offsets: the box must be laid
+        // out at its normal flow position, so they are not passed to layout.
+        inset: if style.clone_position() == stylo::Position::Sticky {
+            taffy::Rect {
+                left: taffy::LengthPercentageAuto::AUTO,
+                right: taffy::LengthPercentageAuto::AUTO,
+                top: taffy::LengthPercentageAuto::AUTO,
+                bottom: taffy::LengthPercentageAuto::AUTO,
+            }
+        } else {
+            taffy::Rect {
+                left: self::inset(&pos.left),
+                right: self::inset(&pos.right),
+                top: self::inset(&pos.top),
+                bottom: self::inset(&pos.bottom),
+            }
         },
         margin: taffy::Rect {
             left: self::margin(&margin.margin_left),
