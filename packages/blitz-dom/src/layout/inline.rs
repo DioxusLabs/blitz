@@ -1,5 +1,6 @@
 use blitz_traits::node_id::NodeId;
-use parley::{AlignmentOptions, IndentOptions, PositionedInlineBox};
+use parley::{AlignmentOptions, IndentOptions};
+use style::values::specified::box_::DisplayOutside;
 use style::values::{computed::CSSPixelLength, generics::text::GenericTextIndent};
 use taffy::{
     AvailableSpace, BlockContext, BlockFormattingContext, BoxSizing, CollapsibleMarginSet,
@@ -697,7 +698,36 @@ impl BaseDocument {
 
                     if node.style().position == Position::Absolute {
                         let direction = node.style().direction;
-                        layout_abspos_child(self, ibox, final_size, taffy::Point::ZERO, direction);
+
+                        // The static position of an absolutely positioned box depends on the
+                        // display its hypothetical box would have had (the display specified
+                        // before position:absolute blockified it): inline-level boxes sit at
+                        // their position within the line, while block-level boxes start at the
+                        // content-box left edge of their containing block.
+                        let is_inline_level = node
+                            .primary_styles()
+                            .map(|s| {
+                                s.get_box().original_display.outside() == DisplayOutside::Inline
+                            })
+                            .unwrap_or(true);
+                        let static_position = taffy::Point {
+                            x: if is_inline_level {
+                                ibox.x
+                            } else {
+                                container_pb.left
+                            },
+                            y: ibox.y,
+                        };
+
+                        layout_abspos_child(
+                            self,
+                            ibox.id,
+                            static_position,
+                            is_inline_level,
+                            final_size,
+                            taffy::Point::ZERO,
+                            direction,
+                        );
                     } else if is_floated {
                         let layout = self.nodes[NodeId::from_u64(ibox.id)].unrounded_layout_mut();
                         layout.padding = padding; //.map(|p| p / scale);
@@ -769,7 +799,9 @@ fn f32_max(a: f32, b: f32) -> f32 {
 #[inline]
 fn layout_abspos_child(
     tree: &mut impl taffy::LayoutBlockContainer,
-    item: PositionedInlineBox,
+    item_id: u64,
+    static_position: Point<f32>,
+    is_inline_level: bool,
     area_size: Size<f32>,
     area_offset: Point<f32>,
     direction: taffy::Direction,
@@ -777,7 +809,7 @@ fn layout_abspos_child(
     let area_width = area_size.width;
     let area_height = area_size.height;
 
-    let node_id = taffy::NodeId::from(item.id);
+    let node_id = taffy::NodeId::from(item_id);
     let child_style = tree.get_block_child_style(node_id);
 
     // Skip items that are display:none or are not position:absolute
@@ -1027,10 +1059,10 @@ fn layout_abspos_child(
         (Some(left), None) => left + resolved_margin.left,
         (None, Some(right)) => area_size.width - final_size.width - right - resolved_margin.right,
         (None, None) => {
-            if direction == Direction::Rtl {
-                item.x - final_size.width - resolved_margin.right - area_offset.x
+            if direction == Direction::Rtl && is_inline_level {
+                static_position.x - final_size.width - resolved_margin.right - area_offset.x
             } else {
-                item.x + resolved_margin.left - area_offset.x
+                static_position.x + resolved_margin.left - area_offset.x
             }
         }
     };
@@ -1042,7 +1074,7 @@ fn layout_abspos_child(
                 area_size.height - final_size.height - bottom - resolved_margin.bottom
             }))
             .maybe_add(area_offset.y)
-            .unwrap_or(item.y + resolved_margin.top),
+            .unwrap_or(static_position.y + resolved_margin.top),
     };
     // Note: axis intentionally switched here as scrollbars take up space in the opposite axis
     // to the axis in which scrolling is enabled.
