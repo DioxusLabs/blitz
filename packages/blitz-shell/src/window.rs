@@ -120,6 +120,17 @@ pub struct View<Rend: WindowRenderer> {
     pub ios_request_redraw: std::cell::Cell<bool>,
 }
 
+impl<Rend: WindowRenderer> Drop for View<Rend> {
+    fn drop(&mut self) {
+        // Release the renderer's window surface before the window is dropped.
+        // The renderer may be shared (e.g. provided as a context to user code),
+        // in which case it can outlive the `View`. A GPU surface must not
+        // outlive the window/display it is attached to: dropping it after the
+        // event loop has shut down segfaults on Wayland.
+        self.renderer.suspend();
+    }
+}
+
 impl<Rend: WindowRenderer> View<Rend> {
     pub fn init(
         config: WindowConfig<Rend>,
