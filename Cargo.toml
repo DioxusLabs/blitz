@@ -5,6 +5,7 @@ members = [
     "packages/blitz-traits",
     "packages/blitz-dom",
     "packages/blitz-html",
+    "packages/blitz-headless",
     "packages/blitz-net",
     "packages/blitz-paint",
     "packages/blitz-shell",
@@ -44,6 +45,7 @@ rust-version = "1.89.0"
 blitz = { version = "=0.3.0-beta.1", path = "./packages/blitz" }
 blitz-dom = { version = "=0.3.0-beta.1", path = "./packages/blitz-dom", default-features = false }
 blitz-html = { version = "=0.3.0-beta.1", path = "./packages/blitz-html", default-features = false }
+blitz-headless = { version = "=0.3.0-beta.1", path = "./packages/blitz-headless" }
 blitz-net = { version = "=0.3.0-beta.1", path = "./packages/blitz-net", default-features = false }
 blitz-paint = { version = "=0.3.0-beta.1", path = "./packages/blitz-paint", default-features = false }
 blitz-shell = { version = "=0.3.0-beta.1", path = "./packages/blitz-shell", default-features = false }
@@ -249,6 +251,7 @@ anyrender_vello_cpu = { workspace = true, features = ["multithreading"] }
 anyrender_vello_hybrid = { workspace = true }
 blitz-dom = { workspace = true, features = ["default"] }
 blitz-html = { workspace = true }
+blitz-headless = { workspace = true }
 blitz-traits = { workspace = true }
 blitz-paint = { workspace = true }
 blitz-shell = { workspace = true }

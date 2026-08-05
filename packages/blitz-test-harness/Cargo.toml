@@ -13,6 +13,7 @@ rust-version.workspace = true
 [dependencies]
 # Blitz dependencies
 blitz-dom = { workspace = true, features = ["accessibility", "system-fonts"] }
+blitz-headless = { workspace = true }
 blitz-html = { workspace = true }
 blitz-paint = { workspace = true, features = ["default"] }
 blitz-traits = { workspace = true }
@@ -23,9 +24,7 @@ dioxus-core = { workspace = true }
 
 # Rendering dependencies
 anyrender = { workspace = true }
-anyrender_vello_cpu = { workspace = true }
 peniko = { workspace = true }
-png = { workspace = true }
 
 # Other dependencies
 data-url = { workspace = true }

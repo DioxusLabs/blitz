@@ -1,54 +1,12 @@
-use std::sync::Arc;
-
-use blitz_dom::{DocGuard, DocGuardMut, Document, DocumentConfig};
-use blitz_html::{HtmlDocument, HtmlProvider};
+use blitz_dom::{DocGuard, DocGuardMut, Document};
+use blitz_html::HtmlDocument;
 use blitz_traits::events::UiEvent;
-use blitz_traits::net::NetProvider;
-use blitz_traits::shell::{ColorScheme, Viewport};
+use blitz_traits::shell::Viewport;
 use dioxus_core::{Element, VirtualDom};
 use dioxus_native_dom::DioxusDocument;
 
 /// Options controlling document construction for a [`Harness`].
-pub struct HarnessOptions {
-    pub width: u32,
-    pub height: u32,
-    pub scale: f32,
-    pub color_scheme: ColorScheme,
-    /// Base url which relative URLs are resolved against
-    pub base_url: Option<String>,
-    /// Net provider used to fetch sub-resources (stylesheets, images, fonts, etc)
-    pub net_provider: Option<Arc<dyn NetProvider>>,
-}
-
-impl Default for HarnessOptions {
-    fn default() -> Self {
-        Self {
-            width: 800,
-            height: 600,
-            scale: 1.0,
-            color_scheme: ColorScheme::Light,
-            base_url: None,
-            net_provider: None,
-        }
-    }
-}
-
-impl HarnessOptions {
-    fn into_config(self) -> DocumentConfig {
-        DocumentConfig {
-            viewport: Some(Viewport::new(
-                self.width,
-                self.height,
-                self.scale,
-                self.color_scheme,
-            )),
-            base_url: self.base_url,
-            net_provider: self.net_provider,
-            html_parser_provider: Some(Arc::new(HtmlProvider) as _),
-            ..Default::default()
-        }
-    }
-}
+pub use blitz_headless::HeadlessOptions as HarnessOptions;
 
 /// A DOM event captured by [`Harness::dispatch_traced`]
 #[derive(Debug, Clone, PartialEq, Eq)]

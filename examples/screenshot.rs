@@ -1,19 +1,10 @@
 //! Load first CLI argument as a url. Fallback to google.com if no CLI argument is provided.
 
-use anyrender::{PaintScene as _, render_to_buffer};
-use anyrender_vello_cpu::VelloCpuImageRenderer;
-use blitz_dom::{DocumentConfig, util::Color};
-use blitz_html::HtmlDocument;
+use blitz_headless::{HeadlessDocument, HeadlessOptions};
 use blitz_net::Provider;
-use blitz_paint::paint_scene;
-use blitz_traits::shell::{ColorScheme, Viewport};
-use peniko::Fill;
-use peniko::kurbo::Rect;
 use reqwest::Url;
 use std::sync::Arc;
 use std::{
-    fs::File,
-    io::Write,
     path::{Path, PathBuf},
     time::Instant,
 };
@@ -56,8 +47,8 @@ async fn main() {
     timer.time("Fetched HTML");
 
     // Setup viewport. TODO: make configurable.
-    let scale = 2.0;
-    let height = 800;
+    let scale: f64 = 2.0;
+    let height: u32 = 800;
     let width: u32 = std::env::args()
         .nth(2)
         .and_then(|arg| arg.parse().ok())
@@ -67,78 +58,41 @@ async fn main() {
 
     timer.time("Setup document prerequisites");
 
-    // Create HtmlDocument
-    let mut document = HtmlDocument::from_html(
+    // Create document
+    let mut document = HeadlessDocument::from_html_with(
         &html,
-        DocumentConfig {
+        HeadlessOptions {
+            width: width * (scale as u32),
+            height: height * (scale as u32),
+            scale: scale as f32,
             base_url: Some(url_string.clone()),
             net_provider: Some(Arc::clone(&net) as _),
-            viewport: Some(Viewport::new(
-                width * (scale as u32),
-                height * (scale as u32),
-                scale as f32,
-                ColorScheme::Light,
-            )),
             ..Default::default()
         },
     );
 
     timer.time("Parsed document");
 
-    loop {
-        document.resolve(0.0);
-        if net.is_empty() {
-            break;
-        }
-    }
+    // Resolve style/layout, waiting for sub-resources (stylesheets, images, fonts) to load
+    document.resolve_until_network_idle();
 
-    timer.time("Fetched assets");
+    timer.time("Fetched assets and resolved styles and layout");
 
-    // Compute style, layout, etc for HtmlDocument
-    document.as_mut().resolve(0.0);
-
-    timer.time("Resolved styles and layout");
-
-    // Determine height to render
-    let computed_height = document.as_ref().root_element().final_layout().size.height;
+    // Determine height to render: the content height, clamped between the viewport
+    // height and 4000px
     let render_width = (width as f64 * scale) as u32;
-    let render_height = ((computed_height as f64).max(height as f64).min(4000.0) * scale) as u32;
+    let render_height = (document.content_height() as f64)
+        .max(height as f64 * scale)
+        .min(4000.0 * scale) as u32;
 
-    // Render document to RGBA buffer
-    let buffer = render_to_buffer::<VelloCpuImageRenderer, _>(
-        |scene| {
-            // Render white background
-            scene.fill(
-                Fill::NonZero,
-                Default::default(),
-                Color::WHITE,
-                Default::default(),
-                &Rect::new(0.0, 0.0, render_width as f64, render_height as f64),
-            );
-
-            // Render document
-            paint_scene(
-                scene,
-                document.as_mut(),
-                scale,
-                render_width,
-                render_height,
-                0,
-                0,
-            );
-        },
-        render_width,
-        render_height,
-    );
+    // Render document to RGBA screenshot
+    let screenshot = document.screenshot_with_size(render_width, render_height);
 
     timer.time("Rendered to buffer");
 
-    // Determine output path, and open a file at that path. TODO: make configurable.
+    // Determine output path and write PNG to it. TODO: make configurable.
     let out_path = compute_filename(&url_string);
-    let mut file = File::create(&out_path).unwrap();
-
-    // Encode buffer as PNG and write it to a file
-    write_png(&mut file, &buffer, render_width, render_height);
+    screenshot.save_png(&out_path);
 
     timer.time("Wrote out png");
 
@@ -146,26 +100,6 @@ async fn main() {
     timer.total_time("\nDone");
     println!("Screenshot is ({width}x{render_height})");
     println!("Written to {}", out_path.display());
-}
-
-fn write_png<W: Write>(writer: W, buffer: &[u8], width: u32, height: u32) {
-    // Set pixels-per-meter. TODO: make configurable.
-    const PPM: u32 = (144.0 * 39.3701) as u32;
-
-    // Create PNG encoder
-    let mut encoder = png::Encoder::new(writer, width, height);
-    encoder.set_color(png::ColorType::Rgba);
-    encoder.set_depth(png::BitDepth::Eight);
-    encoder.set_pixel_dims(Some(png::PixelDimensions {
-        xppu: PPM,
-        yppu: PPM,
-        unit: png::Unit::Meter,
-    }));
-
-    // Write PNG data to writer
-    let mut writer = encoder.write_header().unwrap();
-    writer.write_image_data(buffer).unwrap();
-    writer.finish().unwrap();
 }
 
 fn compute_filename(url: &str) -> PathBuf {
