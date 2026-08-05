@@ -4,7 +4,7 @@ use blitz_traits::{
     SmolStr,
     events::{BlitzInputEvent, BlitzKeyEvent, DomEvent, DomEventData},
 };
-use keyboard_types::Key;
+use keyboard_types::{Key, Modifiers};
 use markup5ever::local_name;
 
 pub(super) enum KeyboardOrTextInputEvent {
@@ -20,7 +20,11 @@ pub(crate) fn handle_key_or_input_event<F: FnMut(DomEvent)>(
 ) {
     if let KeyboardOrTextInputEvent::KeyPress(event) = &event {
         if event.key == Key::Tab {
-            doc.focus_next_node();
+            if event.modifiers.contains(Modifiers::SHIFT) {
+                doc.focus_prev_node();
+            } else {
+                doc.focus_next_node();
+            }
             return;
         }
 

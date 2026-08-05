@@ -1459,6 +1459,14 @@ impl BaseDocument {
         Some(id)
     }
 
+    /// Move focus to the previous focussable node in the document
+    pub fn focus_prev_node(&mut self) -> Option<NodeId> {
+        let focussed_node_id = self.get_focussed_node_id()?;
+        let id = self.prev_node(&self.nodes[focussed_node_id], |node| node.is_focussable())?;
+        self.set_focus_to(id);
+        Some(id)
+    }
+
     /// Clear the focussed node
     pub fn clear_focus(&mut self) {
         if let Some(id) = self.focus_node_id {
