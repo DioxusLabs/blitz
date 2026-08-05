@@ -2459,6 +2459,22 @@ impl BaseDocument {
         Some((inline_root.id, byte_offset))
     }
 
+    /// Checks if a point has landed on selection
+    pub fn is_text_selected_at_position(&self, x: f32, y: f32) -> bool {
+        if let Some((node, offset)) = self.find_text_position(x, y) {
+            self.is_selected_text(node, offset)
+        } else {
+            false
+        }
+    }
+
+    /// Checks if found node and offset are in selection
+    pub fn is_selected_text(&self, node: NodeId, offset: usize) -> bool {
+        let (parent, idx) = self.anonymous_block_location(node);
+        let parent = parent.unwrap_or(node);
+        self.text_selection.is_selected(parent, idx, offset)
+    }
+
     /// Set the text selection range (creates a new selection from anchor to focus)
     pub fn set_text_selection(
         &mut self,
