@@ -7194,7 +7194,7 @@ dependencies = [
 [[package]]
 name = "taffy"
 version = "0.12.2"
-source = "git+https://github.com/DioxusLabs/taffy?branch=devin%2F1785836233-grid-template-areas-struct#a106ab7cbd4f48b3606e73395cc6f46178f495fe"
+source = "git+https://github.com/DioxusLabs/taffy?branch=devin%2F1785836233-grid-template-areas-struct#2113fac47d36dfe591ef66a3a873a476f7437931"
 dependencies = [
  "arrayvec",
  "grid",
