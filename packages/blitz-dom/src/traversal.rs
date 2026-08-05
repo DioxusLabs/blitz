@@ -262,6 +262,50 @@ impl BaseDocument {
         }
     }
 
+    /// The node that comes last within `node`'s subtree in document order,
+    /// which is what precedes `node`'s successor in reverse order.
+    fn deepest_last_descendant<'a>(&'a self, mut node: &'a Node) -> &'a Node {
+        while let Some(last_child_id) = node.children.last() {
+            node = &self.nodes[*last_child_id];
+        }
+        node
+    }
+
+    /// Mirror of [`Self::next_node`]: walks the tree in reverse document
+    /// order, wrapping around to the end of the document.
+    pub fn prev_node(&self, start: &Node, mut filter: impl FnMut(&Node) -> bool) -> Option<NodeId> {
+        let start_id = start.id;
+        let mut node = start;
+        loop {
+            let prev = if let Some(parent) = node.parent_node() {
+                let self_idx = parent
+                    .children
+                    .iter()
+                    .position(|id| *id == node.id)
+                    .unwrap();
+                // Previous is the deepest last descendant of the previous
+                // sibling, or the parent when there is no previous sibling
+                if self_idx > 0 {
+                    self.deepest_last_descendant(&self.nodes[parent.children[self_idx - 1]])
+                } else {
+                    parent
+                }
+            }
+            // Continue the search from the end of the document
+            else {
+                self.deepest_last_descendant(self.root_node())
+            };
+
+            if filter(prev) {
+                return Some(prev.id);
+            } else if prev.id == start_id {
+                return None;
+            }
+
+            node = prev;
+        }
+    }
+
     pub fn node_layout_ancestors(&self, node_id: NodeId) -> Vec<NodeId> {
         let mut ancestors = Vec::with_capacity(12);
         let mut maybe_id = Some(node_id);
