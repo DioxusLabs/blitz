@@ -1,0 +1,9 @@
+{
+    "viewport": [400, 300],
+    "html": "<html><body style='margin:0'><div id='box' style='width:50%;height:40px'></div></body></html>",
+    "steps": [
+        { "step": "assert_layout", "selector": "#box", "x": 0, "y": 0, "width": 200, "height": 40 },
+        { "step": "tick", "seconds": 0.1 },
+        { "step": "assert_layout", "selector": "#box", "width": 200 }
+    ]
+}

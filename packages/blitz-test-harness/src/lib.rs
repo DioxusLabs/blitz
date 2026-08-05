@@ -21,13 +21,17 @@ mod harness;
 mod input;
 mod inspect;
 mod net;
+mod paint;
 mod render;
+mod scenario;
 
-pub use harness::{Harness, HarnessOptions};
-pub use input::{key_event, mouse_pointer_event, pointer_event, touch_pointer_event};
+pub use harness::{Harness, HarnessOptions, TracedEvent};
+pub use input::{key_event, mouse_pointer_event, parse_key, pointer_event, touch_pointer_event};
 pub use inspect::Rect;
 pub use net::{
     FileNetProvider, RecordReplayMode, RecordReplayProvider, RequestCounts, load_data_url,
     load_fixture_bytes,
 };
+pub use paint::paint_command_string;
 pub use render::{Screenshot, ScreenshotDiff, artifacts_dir, compare_screenshots};
+pub use scenario::{Scenario, Step, run_scenario, run_scenario_file};

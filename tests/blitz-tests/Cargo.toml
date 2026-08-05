@@ -20,6 +20,7 @@ blitz-paint = { workspace = true, features = ["scrollbars", "svg"] }
 dioxus-native-dom = { workspace = true }
 anyrender = { workspace = true }
 anyrender_vello_cpu = { workspace = true }
+peniko = { workspace = true }
 
 # DioxusLabs dependencies
 dioxus = { workspace = true }

@@ -92,6 +92,19 @@ pub fn key_event(key: Key, state: KeyState, modifiers: Modifiers) -> BlitzKeyEve
     }
 }
 
+/// Parse a key name into a [`Key`]: single characters become [`Key::Character`],
+/// multi-character strings are parsed as named keys (e.g. "Enter", "ArrowDown"),
+/// falling back to [`Key::Character`] if unrecognized.
+pub fn parse_key(key: &str) -> Key {
+    let mut chars = key.chars();
+    let first = chars.next();
+    if first.is_some() && chars.next().is_none() {
+        return Key::Character(key.to_string());
+    }
+    key.parse::<Key>()
+        .unwrap_or_else(|_| Key::Character(key.to_string()))
+}
+
 impl<D: Document> Harness<D> {
     /// Click (pointer down + up) the center of the first element matching `selector`
     pub fn click(&mut self, selector: &str) {
@@ -209,6 +222,22 @@ impl<D: Document> Harness<D> {
             KeyState::Pressed,
             modifiers,
         )));
+
+        // On macOS some text-editing keys are handled via the Apple standard
+        // keybindings (dispatched by AppKit in a windowed shell) rather than
+        // the keydown event, so synthesize the corresponding command here.
+        #[cfg(target_os = "macos")]
+        if key == Key::Backspace {
+            let command = if modifiers.contains(Modifiers::ALT) {
+                "deleteWordBackward:"
+            } else {
+                "deleteBackward:"
+            };
+            self.dispatch(UiEvent::AppleStandardKeybinding(
+                blitz_traits::SmolStr::new(command),
+            ));
+        }
+
         self.dispatch(UiEvent::KeyUp(key_event(
             key,
             KeyState::Released,
