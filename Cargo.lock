@@ -3354,12 +3354,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "grid"
-version = "1.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b40ca9252762c466af32d0b1002e91e4e1bc5398f77455e55474deb466355ff5"
-
-[[package]]
 name = "guillotiere"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7194,12 +7188,12 @@ dependencies = [
 [[package]]
 name = "taffy"
 version = "0.12.2"
-source = "git+https://github.com/DioxusLabs/taffy?branch=devin%2F1785836233-grid-template-areas-struct#2113fac47d36dfe591ef66a3a873a476f7437931"
+source = "git+https://github.com/DioxusLabs/taffy?branch=devin%2F1785776293-sparse-occupancy#6f82c7e23f3dc313cadf1a72995bd8e23be49a64"
 dependencies = [
  "arrayvec",
- "grid",
  "serde",
  "slotmap",
+ "smallvec",
 ]
 
 [[package]]

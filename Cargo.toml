@@ -278,8 +278,9 @@ anyrender = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1
 anyrender_svg = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1785858394-usvg-048" }
 
 # TODO: remove this patch (and use a crates.io release) once the `GridTemplateAreas` changes
-# (https://github.com/DioxusLabs/taffy/pull/1024) are released
-taffy = { git = "https://github.com/DioxusLabs/taffy", branch = "devin/1785836233-grid-template-areas-struct" }
+# (https://github.com/DioxusLabs/taffy/pull/1024) and the sparse `CellOccupancyMatrix`
+# (https://github.com/DioxusLabs/taffy/pull/1015) are released
+taffy = { git = "https://github.com/DioxusLabs/taffy", branch = "devin/1785776293-sparse-occupancy" }
 
 # [patch.crates-io]
 # anyrender = { path = "../anyrender/crates/anyrender" }
