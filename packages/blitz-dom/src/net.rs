@@ -452,7 +452,14 @@ pub(crate) fn fetch_font_face(
                         return None;
                     }
 
-                    let url = url_source.url.url().unwrap().as_ref().clone();
+                    // A relative url with no base url to resolve against
+                    // yields None; skip the source instead of panicking
+                    let Some(url) = url_source.url.url() else {
+                        #[cfg(feature = "tracing")]
+                        tracing::warn!("Skipping @font-face source with unresolvable url");
+                        return None;
+                    };
+                    let url = url.as_ref().clone();
                     Some((url, format))
                 });
 
