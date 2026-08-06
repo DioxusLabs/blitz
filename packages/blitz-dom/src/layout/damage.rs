@@ -342,14 +342,41 @@ impl HoistedPaintChildren {
             let node = &doc.nodes[child.node_id];
             let left = child.position.x + node.final_layout().location.x;
             let top = child.position.y + node.final_layout().location.y;
-            let right = left + node.final_layout().size.width;
-            let bottom = top + node.final_layout().size.height;
+            let size = node.final_layout().size;
+
+            // A transform moves where the box paints and hit-tests (see
+            // Node::hit_inner), so the content area must cover the
+            // transformed corners, not the layout position. The transform
+            // operates in device pixels.
+            if let Some(t) = *node.transform() {
+                let scale = doc.viewport().scale_f64();
+                let (mut min_x, mut min_y) = (f32::MAX, f32::MAX);
+                let (mut max_x, mut max_y) = (f32::MIN, f32::MIN);
+                for (dx, dy) in [
+                    (0.0, 0.0),
+                    (size.width, 0.0),
+                    (0.0, size.height),
+                    (size.width, size.height),
+                ] {
+                    let p = t * kurbo::Point::new(dx as f64 * scale, dy as f64 * scale);
+                    min_x = min_x.min((p.x / scale) as f32);
+                    min_y = min_y.min((p.y / scale) as f32);
+                    max_x = max_x.max((p.x / scale) as f32);
+                    max_y = max_y.max((p.y / scale) as f32);
+                }
+                return taffy::Rect {
+                    left: left + min_x,
+                    top: top + min_y,
+                    right: left + max_x,
+                    bottom: top + max_y,
+                };
+            }
 
             taffy::Rect {
                 top,
                 left,
-                bottom,
-                right,
+                right: left + size.width,
+                bottom: top + size.height,
             }
         }
 
