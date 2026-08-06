@@ -763,8 +763,16 @@ impl BaseDocument {
             let position = self.nodes[node_id].final_layout().location;
             let scroll_offset = *self.nodes[node_id].scroll_offset();
             for hoisted in stacking_context.children.iter_mut() {
-                hoisted.position.x += position.x - scroll_offset.x as f32;
-                hoisted.position.y += position.y - scroll_offset.y as f32;
+                // Fixed-position elements are positioned relative to the
+                // viewport, not the parent's content box. Do not add the
+                // parent's layout offset to their hoisted position.
+                let is_fixed = self.nodes[hoisted.node_id]
+                    .primary_styles()
+                    .is_some_and(|s| s.clone_position() == Position::Fixed);
+                if !is_fixed {
+                    hoisted.position.x += position.x - scroll_offset.x as f32;
+                    hoisted.position.y += position.y - scroll_offset.y as f32;
+                }
             }
             parent_stacking_context
                 .children
