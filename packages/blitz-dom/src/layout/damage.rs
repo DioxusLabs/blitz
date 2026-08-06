@@ -7,6 +7,7 @@ use crate::node::NodeFlags;
 use crate::{
     BaseDocument, net::ImageHandler, node::ImageResourceData, node::Status, util::ImageLayerKind,
 };
+use kurbo::Affine;
 use style::properties::ComputedValues;
 use style::properties::generated::longhands::position::computed_value::T as Position;
 use style::selector_parser::RestyleDamage;
@@ -434,6 +435,109 @@ impl BaseDocument {
 
     pub fn flush_styles_to_layout(&mut self, node_id: NodeId) {
         self.flush_styles_to_layout_impl(node_id, None);
+    }
+
+    /// Recompute `content_area` for all stacking context roots after layout
+    /// has been resolved. During `flush_styles_to_layout`, `compute_content_size`
+    /// runs before `resolve_layout`, so the cached `content_area` is stale.
+    pub fn recompute_stacking_context_content_area(&mut self, node_id: NodeId) {
+        let scale = self.viewport.scale_f64();
+        let has_sc = self
+            .nodes
+            .get(node_id)
+            .map(|n| n.stacking_context.is_some())
+            .unwrap_or(false);
+        if has_sc {
+            // Gather hoisted child data without holding a borrow on self
+            let children_data: Vec<(NodeId, taffy::Point<f32>)> = {
+                let node = &self.nodes[node_id];
+                node.stacking_context
+                    .as_ref()
+                    .map(|sc| {
+                        sc.children
+                            .iter()
+                            .map(|hc| (hc.node_id, hc.position))
+                            .collect()
+                    })
+                    .unwrap_or_default()
+            };
+
+            if !children_data.is_empty() {
+                let mut content_area = taffy::Rect::ZERO;
+                for (i, (child_id, child_pos)) in children_data.iter().enumerate() {
+                    let node = &self.nodes[*child_id];
+                    let layout = node.final_layout();
+
+                    // Build the full transform: translate to layout position, then apply CSS transform.
+                    // This gives us the rendered position of the child's border box.
+                    let scaled_x = layout.location.x as f64 * scale;
+                    let scaled_y = layout.location.y as f64 * scale;
+                    let full = if let Some(t) = *node.transform() {
+                        Affine::translate((scaled_x, scaled_y)) * t
+                    } else {
+                        Affine::translate((scaled_x, scaled_y))
+                    };
+
+                    // Transform the four corners of the child's border box (in device pixels)
+                    let w = layout.size.width as f64 * scale;
+                    let h = layout.size.height as f64 * scale;
+                    let corners = [
+                        full * kurbo::Point::new(0.0, 0.0),
+                        full * kurbo::Point::new(w, 0.0),
+                        full * kurbo::Point::new(0.0, h),
+                        full * kurbo::Point::new(w, h),
+                    ];
+
+                    // Add hoisted position offset and convert back to CSS pixels
+                    let px = child_pos.x as f64;
+                    let py = child_pos.y as f64;
+                    let left = corners
+                        .iter()
+                        .map(|p| p.x / scale + px)
+                        .fold(f64::INFINITY, f64::min) as f32;
+                    let top = corners
+                        .iter()
+                        .map(|p| p.y / scale + py)
+                        .fold(f64::INFINITY, f64::min) as f32;
+                    let right = corners
+                        .iter()
+                        .map(|p| p.x / scale + px)
+                        .fold(f64::NEG_INFINITY, f64::max) as f32;
+                    let bottom = corners
+                        .iter()
+                        .map(|p| p.y / scale + py)
+                        .fold(f64::NEG_INFINITY, f64::max) as f32;
+
+                    if i == 0 {
+                        content_area = Rect {
+                            left,
+                            top,
+                            right,
+                            bottom,
+                        };
+                    } else {
+                        content_area.left = content_area.left.min(left);
+                        content_area.top = content_area.top.min(top);
+                        content_area.right = content_area.right.max(right);
+                        content_area.bottom = content_area.bottom.max(bottom);
+                    }
+                }
+                let node = &mut self.nodes[node_id];
+                if let Some(sc) = node.stacking_context.as_mut() {
+                    sc.content_area = content_area;
+                }
+            }
+        }
+
+        // Recurse into children
+        let children: Vec<NodeId> = self
+            .nodes
+            .get(node_id)
+            .and_then(|n| n.layout_children.borrow().as_ref().map(|c| c.to_vec()))
+            .unwrap_or_default();
+        for child_id in children {
+            self.recompute_stacking_context_content_area(child_id);
+        }
     }
 
     /// Flush a CSS image layer list (`background-image` or `mask-image`) from style
