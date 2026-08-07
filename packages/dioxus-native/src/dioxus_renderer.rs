@@ -16,7 +16,9 @@ cfg_if::cfg_if! {
         use anyrender_vello_cpu::VelloCpuWindowRenderer as InnerRenderer;
     } else if #[cfg(feature = "skia")] {
         use anyrender_skia::SkiaWindowRenderer as InnerRenderer;
-        } else if #[cfg(feature = "vello-hybrid")] {
+    } else if #[cfg(feature = "skia-raster-base")] {
+        use anyrender_skia::raster::SkiaRasterWindowRenderer as InnerRenderer;
+    } else if #[cfg(feature = "vello-hybrid")] {
         pub use anyrender_vello_hybrid::{
             VelloHybridRendererOptions as InnerRendererOptions, VelloHybridWindowRenderer as InnerRenderer,
             wgpu::{Features, Limits},
