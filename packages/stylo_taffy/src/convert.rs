@@ -324,39 +324,6 @@ pub fn justify_content(
 }
 
 #[inline]
-pub fn justify_content(
-    input: stylo::ContentDistribution,
-    flex_direction: stylo::FlexDirection,
-    direction: stylo::Direction,
-) -> Option<taffy::AlignContent> {
-    let is_row = matches!(
-        flex_direction,
-        stylo::FlexDirection::Row | stylo::FlexDirection::RowReverse
-    );
-    let is_rtl = matches!(direction, stylo::Direction::Rtl);
-    let primary = input.primary();
-    let is_right = match primary.value() {
-        stylo::AlignFlags::LEFT => Some(false),
-        stylo::AlignFlags::RIGHT => Some(true),
-        _ => return self::content_alignment(input),
-    };
-    let mut align = match is_right {
-        Some(is_right) if is_row => {
-            if is_right != is_rtl {
-                taffy::AlignContent::END
-            } else {
-                taffy::AlignContent::START
-            }
-        }
-        _ => taffy::AlignContent::START,
-    };
-    if primary.flags().contains(stylo::AlignFlags::SAFE) {
-        align.safety = taffy::AlignmentSafety::Safe;
-    }
-    Some(align)
-}
-
-#[inline]
 pub fn item_alignment(input: stylo::AlignFlags) -> Option<taffy::AlignItems> {
     let mut align = match input.value() {
         stylo::AlignFlags::AUTO => None,
