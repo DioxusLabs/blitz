@@ -31,7 +31,7 @@ pulldown_cmark = ["dep:pulldown-cmark"]
 floats = ["blitz-dom/floats"]
 scrollbars = ["blitz-dom/scrollbars", "blitz-paint/scrollbars"]
 cache = ["blitz-net/cache"]
-logtime = ["log-frame-times", "log-phase-times"]
+log-times = ["log-frame-times", "log-phase-times"]
 log-frame-times = [
   "anyrender_vello_cpu?/log_frame_times",
   "anyrender_vello_hybrid?/log_frame_times",

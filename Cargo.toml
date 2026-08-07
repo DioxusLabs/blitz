@@ -237,7 +237,7 @@ rust-version = "1.89.0"
 publish = false
 
 [features]
-logtime = ["log-frame-times", "log-phase-times"]
+log-times = ["log-frame-times", "log-phase-times"]
 log-frame-times = ["dioxus-native/log-frame-times"]
 log-phase-times = ["dioxus-native/log-phase-times"]
 
