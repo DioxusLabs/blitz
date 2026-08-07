@@ -7188,7 +7188,7 @@ dependencies = [
 [[package]]
 name = "taffy"
 version = "0.12.2"
-source = "git+https://github.com/DioxusLabs/taffy?branch=devin%2F1786140954-self-start-end-alignment#bc10b722ec64bfde5c42d10e8cbc37ff75c8f37b"
+source = "git+https://github.com/DioxusLabs/taffy?rev=79578085#79578085932c76998c87e3282c29223ff9721c61"
 dependencies = [
  "arrayvec",
  "serde",

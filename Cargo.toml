@@ -274,7 +274,7 @@ tracing-subscriber = "0.3"
 # `anyrender_svg` (with the usvg 0.48 bump) are released.
 [patch.crates-io]
 # TODO: remove once a taffy version with `self-start`/`self-end` alignment support is released
-taffy = { git = "https://github.com/DioxusLabs/taffy", branch = "devin/1786140954-self-start-end-alignment" }
+taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "79578085" }
 usvg = { git = "https://github.com/DioxusLabs/resvg", branch = "devin/1785858271-intrinsic-dimensions" }
 anyrender = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1785858394-usvg-048" }
 anyrender_svg = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1785858394-usvg-048" }
