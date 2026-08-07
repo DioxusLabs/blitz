@@ -352,7 +352,15 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
             }
         }
 
-        if !event_state.is_cancelled() {
+        // Cancelling a pointer event takes away the compatibility mouse event
+        // above, but not the click: the activation behavior is not a default
+        // action of the pointer event, and the pointer events spec keeps
+        // `click`, `auxclick` and `contextmenu` firing either way. They are
+        // dispatched from the pointer up default action, which therefore runs
+        // whatever a handler asked for. Cancelling a pointer *down* still
+        // takes away what that one does, the focus move above all.
+        let is_pointer_up = matches!(ptr_event.data, DomEventData::PointerUp(_));
+        if !event_state.is_cancelled() || is_pointer_up {
             self.run_default_action(&mut ptr_event);
         }
         self.process_queue();
