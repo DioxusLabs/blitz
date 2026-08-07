@@ -1708,6 +1708,7 @@ impl BaseDocument {
                 });
             }
             self.focus_node_id = None;
+            self.shell_provider.request_redraw();
         }
     }
 
@@ -1761,6 +1762,11 @@ impl BaseDocument {
         }
 
         self.focus_node_id = Some(focus_node_id);
+
+        // The focus is styled (:focus, :focus-visible, :focus-within), so
+        // moving it changes what is on screen. Nothing else asks for the
+        // frame: a keyboard focus change touches no layout and no content.
+        self.shell_provider.request_redraw();
 
         true
     }
