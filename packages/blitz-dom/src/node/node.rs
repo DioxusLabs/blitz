@@ -320,13 +320,21 @@ impl Node {
 
     pub fn set_transform(&mut self, scale: f32) -> Option<Affine> {
         let transform = self.primary_styles().and_then(|s| {
-            let w = self.final_layout().size.width * scale;
-            let h = self.final_layout().size.height * scale;
+            let size = self.final_layout().size;
             let reference_box = Rect::new(
                 Point2D::new(CSSPixelLength::new(0.0), CSSPixelLength::new(0.0)),
-                Size2D::new(CSSPixelLength::new(w), CSSPixelLength::new(h)),
+                Size2D::new(
+                    CSSPixelLength::new(size.width),
+                    CSSPixelLength::new(size.height),
+                ),
             );
-            crate::resolve_2d_transform(s.get_box(), reference_box)
+            // Resolve the transform in CSS pixels, then convert it to device-pixel space
+            // (S * T * S^-1): translation components are scaled, linear components are not.
+            crate::resolve_2d_transform(s.get_box(), reference_box).map(|t| {
+                let scale = scale as f64;
+                let [m11, m12, m21, m22, m41, m42] = t.as_coeffs();
+                Affine::new([m11, m12, m21, m22, m41 * scale, m42 * scale])
+            })
         });
 
         *self.transform_mut() = transform;
