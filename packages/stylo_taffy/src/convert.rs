@@ -287,6 +287,42 @@ pub fn content_alignment(input: stylo::ContentDistribution) -> Option<taffy::Ali
     Some(align)
 }
 
+/// Convert `justify-content`, resolving the physical `left`/`right` keywords against the
+/// container's flex main axis and text direction. `left`/`right` behave as `start` when the
+/// main axis is not the inline axis (<https://www.w3.org/TR/css-align-3/#positional-values>).
+#[inline]
+pub fn justify_content(
+    input: stylo::ContentDistribution,
+    flex_direction: stylo::FlexDirection,
+    direction: stylo::Direction,
+) -> Option<taffy::AlignContent> {
+    let is_row = matches!(
+        flex_direction,
+        stylo::FlexDirection::Row | stylo::FlexDirection::RowReverse
+    );
+    let is_rtl = matches!(direction, stylo::Direction::Rtl);
+    let primary = input.primary();
+    let physical = match primary.value() {
+        stylo::AlignFlags::LEFT => Some(false),
+        stylo::AlignFlags::RIGHT => Some(true),
+        _ => return self::content_alignment(input),
+    };
+    let mut align = match physical {
+        Some(is_right) if is_row => {
+            if is_right != is_rtl {
+                taffy::AlignContent::END
+            } else {
+                taffy::AlignContent::START
+            }
+        }
+        _ => taffy::AlignContent::START,
+    };
+    if primary.flags().contains(stylo::AlignFlags::SAFE) {
+        align.safety = taffy::AlignmentSafety::Safe;
+    }
+    Some(align)
+}
+
 #[inline]
 pub fn item_alignment(input: stylo::AlignFlags) -> Option<taffy::AlignItems> {
     let mut align = match input.value() {
@@ -303,6 +339,9 @@ pub fn item_alignment(input: stylo::AlignFlags) -> Option<taffy::AlignItems> {
         stylo::AlignFlags::RIGHT => Some(taffy::AlignItems::END),
         stylo::AlignFlags::CENTER => Some(taffy::AlignItems::CENTER),
         stylo::AlignFlags::BASELINE => Some(taffy::AlignItems::BASELINE),
+        // Taffy does not support last-baseline alignment, so map it to its
+        // fallback alignment of `self-end` (https://www.w3.org/TR/css-align-3/#baseline-values)
+        stylo::AlignFlags::LAST_BASELINE => Some(taffy::AlignItems::END),
         // Should never be hit. But no real reason to panic here.
         _ => None,
     }?;
@@ -671,7 +710,11 @@ pub fn to_taffy_style(style: &stylo::ComputedValues) -> taffy::Style<Atom> {
         #[cfg(any(feature = "flexbox", feature = "grid"))]
         align_content: self::content_alignment(pos.align_content),
         #[cfg(any(feature = "flexbox", feature = "grid"))]
-        justify_content: self::content_alignment(pos.justify_content),
+        justify_content: self::justify_content(
+            pos.justify_content,
+            pos.flex_direction,
+            style.clone_direction(),
+        ),
         #[cfg(any(feature = "flexbox", feature = "grid"))]
         align_items: self::item_alignment(pos.align_items.0),
         #[cfg(any(feature = "flexbox", feature = "grid"))]
