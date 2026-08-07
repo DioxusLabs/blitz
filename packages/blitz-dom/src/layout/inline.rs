@@ -305,6 +305,10 @@ impl BaseDocument {
                 ibox.height = 0.0;
             } else {
                 let output = self.compute_child_layout(taffy::NodeId::from(ibox.id), child_inputs);
+                ibox.baseline = output
+                    .first_baselines
+                    .y
+                    .map(|baseline| (margin.top + baseline) * scale);
                 ibox.width = (margin.left + margin.right + output.size.width) * scale;
                 // Vertical margins adjust the space the box reserves in the line, but the
                 // reserved space cannot be negative.
