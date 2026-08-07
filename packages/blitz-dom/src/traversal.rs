@@ -323,6 +323,28 @@ impl BaseDocument {
             .unwrap_or_default()
     }
 
+    /// A node and its ancestors in the DOM tree, root first.
+    ///
+    /// Unlike the layout chain, this includes `display: contents` elements (which have no box
+    /// and so no layout parent) and is valid before the first layout pass, since it does not
+    /// depend on box-tree construction.
+    pub fn node_ancestors(&self, node_id: NodeId) -> Vec<NodeId> {
+        let mut ancestors = Vec::with_capacity(16);
+        let mut maybe_id = Some(node_id);
+        while let Some(id) = maybe_id {
+            ancestors.push(id);
+            maybe_id = self.get_node(id).and_then(|node| node.parent);
+        }
+        ancestors.reverse();
+        ancestors
+    }
+
+    pub fn maybe_node_ancestors(&self, node_id: Option<NodeId>) -> Vec<NodeId> {
+        node_id
+            .map(|id| self.node_ancestors(id))
+            .unwrap_or_default()
+    }
+
     /// Compare the document order of two nodes.
     /// Returns Ordering::Less if node_a comes before node_b in document order.
     /// Returns Ordering::Greater if node_a comes after node_b.
@@ -333,8 +355,8 @@ impl BaseDocument {
         }
 
         // Build ancestor chains from root to node (inclusive)
-        let chain_a = self.ancestor_chain_from_root(node_a);
-        let chain_b = self.ancestor_chain_from_root(node_b);
+        let chain_a = self.node_ancestors(node_a);
+        let chain_b = self.node_ancestors(node_b);
 
         // Find where the chains diverge
         let mut common_depth = 0;
@@ -378,18 +400,6 @@ impl BaseDocument {
 
         // Should not reach here if tree is well-formed
         Ordering::Equal
-    }
-
-    /// Build ancestor chain from root to node (inclusive), ordered [root, ..., node].
-    fn ancestor_chain_from_root(&self, node_id: NodeId) -> Vec<NodeId> {
-        let mut ancestors = Vec::with_capacity(16);
-        let mut current = Some(node_id);
-        while let Some(id) = current {
-            ancestors.push(id);
-            current = self.nodes[id].parent;
-        }
-        ancestors.reverse();
-        ancestors
     }
 
     /// Collect all inline root nodes between start_node and end_node in document order.
