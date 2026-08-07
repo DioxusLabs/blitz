@@ -501,13 +501,18 @@ pub fn grid_template_area(input: &stylo::NamedArea) -> taffy::GridTemplateArea<A
 
 #[inline]
 #[cfg(feature = "grid")]
-fn grid_template_areas(input: &stylo::GridTemplateAreas) -> Vec<taffy::GridTemplateArea<Atom>> {
+fn grid_template_areas(input: &stylo::GridTemplateAreas) -> Option<taffy::GridTemplateAreas<Atom>> {
     match input {
-        stylo::GridTemplateAreas::None => Vec::new(),
+        stylo::GridTemplateAreas::None => None,
         stylo::GridTemplateAreas::Areas(template_areas_arc) => {
-            crate::wrapper::GridAreaWrapper(&template_areas_arc.0.areas)
-                .into_iter()
-                .collect()
+            let template = &template_areas_arc.0;
+            Some(taffy::GridTemplateAreas {
+                areas: crate::wrapper::GridAreaWrapper(&template.areas)
+                    .into_iter()
+                    .collect(),
+                row_count: template.strings.len() as u16,
+                column_count: template.width as u16,
+            })
         }
     }
 }
