@@ -174,7 +174,7 @@ pub fn display(input: stylo::Display) -> taffy::Display {
         #[cfg(feature = "block")]
         stylo::DisplayInside::Flow => taffy::Display::Block,
         #[cfg(feature = "block")]
-        stylo::DisplayInside::FlowRoot => taffy::Display::Block,
+        stylo::DisplayInside::FlowRoot => taffy::Display::FlowRoot,
         #[cfg(feature = "block")]
         stylo::DisplayInside::TableCell => taffy::Display::Block,
         // TODO: Support display:contents in Taffy
