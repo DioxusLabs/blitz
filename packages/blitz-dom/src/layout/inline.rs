@@ -484,49 +484,209 @@ impl BaseDocument {
 
         // Perform inline layout
         #[cfg(feature = "floats")]
+        let line_bottom_height;
+        #[cfg(feature = "floats")]
         {
+            const MAX_LINE_RETRIES: u32 = 8;
+
+            // Floats encountered mid-line that cannot be placed alongside the line's existing
+            // content: their placement is deferred until the line is committed, and they are
+            // placed below it.
+            struct PendingFloat {
+                node_id: NodeId,
+                size: taffy::Size<f32>,
+                margin: taffy::Rect<f32>,
+                direction: taffy::FloatDirection,
+                clear: Clear,
+                /// The line advance at the time the float was placed (used to detect floats
+                /// whose preceding content was subsequently rewound to the next line)
+                placed_advance: f32,
+            }
+            let mut pending_floats: Vec<PendingFloat> = Vec::new();
+
+            // Floats placed alongside the current (uncommitted) line's content. If the line
+            // later turns out not to fit beside them (and cannot fit anywhere), their
+            // placement is undone and deferred until the line is committed.
+            let mut line_placed_floats: Vec<PendingFloat> = Vec::new();
+            // Floats already handled for the current line: skipped if re-yielded after the
+            // line is reverted and re-laid out.
+            let mut line_deferred_ids: Vec<NodeId> = Vec::new();
+
             let mut breaker = inline_layout.layout.break_lines();
-            let initial_slot = block_ctx.find_content_slot(0.0, Clear::None, None);
+            let initial_slot = block_ctx.find_content_slot(0.0, 0.0, Clear::None, None);
             let mut has_active_floats = initial_slot.segment_id.is_some();
+            let mut current_slot = initial_slot;
             let state = breaker.state_mut();
             state.set_layout_max_advance(width);
-            state.set_line_max_advance(initial_slot.width * scale);
-            state.set_line_x(initial_slot.x * scale);
-            state.set_line_y((initial_slot.y * scale) as f64);
+            state.set_line_max_advance(current_slot.width * scale);
+            state.set_line_x(current_slot.x * scale);
+            state.set_line_y((current_slot.y * scale) as f64);
+            state.set_line_max_height(current_slot.height * scale);
 
-            // TODO: revert state and retry layout if a line doesn't fit
-            //
-            // Save initial state. Saved state is used to revert the layout to a previous state if needed
-            // (e.g. to revert a line that doesn't fit in the space it was laid out into)
-            //
-            // let mut saved_state = breaker.state().clone();
+            // Saved state is used to revert the layout to the start of the current line if the
+            // line doesn't fit in the space it was laid out into (e.g. because it turned out
+            // taller or wider than the float-free space at its position)
+            let mut saved_state = breaker.state().clone();
+            // State at the start of the current line, before any floats were encountered on it
+            let mut line_start_state = breaker.state().clone();
+            // Float placement state at the start of the current line
+            let mut line_start_floats = block_ctx.float_snapshot();
+            let mut line_retry_count = 0;
+
+            // Track the bottom edge of the lowest committed line: a line moved down below floats
+            // may end below the sum of the line heights (which is what parley reports as the
+            // layout height)
+            let mut max_line_bottom: f64 = 0.0;
 
             while let Some(yield_data) = breaker.break_next() {
                 match yield_data {
-                    YieldData::LineBreak(_line_break_data) => {
+                    YieldData::LineBreak(line_break_data) => {
+                        // If the line's content cannot fit anywhere (it overflows even the full
+                        // available width) then undo the placement of any floats placed alongside
+                        // it: the line stays where it is (overflowing), and the floats are
+                        // deferred and placed below it.
+                        if line_retry_count < MAX_LINE_RETRIES
+                            && !line_placed_floats.is_empty()
+                            && line_break_data.advance > width + 0.001
+                        {
+                            line_retry_count += 1;
+                            block_ctx.restore_float_snapshot(line_start_floats.clone());
+                            line_deferred_ids.extend(line_placed_floats.iter().map(|f| f.node_id));
+                            pending_floats.append(&mut line_placed_floats);
+
+                            breaker.revert_to(line_start_state.clone());
+                            let line_top = (breaker.state().line_y() / scale as f64) as f32;
+                            let next_slot =
+                                block_ctx.find_content_slot(line_top, 0.0, Clear::None, None);
+                            has_active_floats = next_slot.segment_id.is_some();
+                            current_slot = next_slot;
+
+                            let state = breaker.state_mut();
+                            state.set_line_max_advance(current_slot.width * scale);
+                            state.set_line_x(current_slot.x * scale);
+                            state.set_line_y((current_slot.y * scale) as f64);
+                            state.set_line_max_height(current_slot.height * scale);
+                            saved_state = breaker.state().clone();
+                            continue;
+                        }
+
+                        // If the line's content overflows a float-shortened line box then re-lay
+                        // the line out in the next available space down.
+                        if has_active_floats
+                            && line_retry_count < MAX_LINE_RETRIES
+                            && line_break_data.advance > current_slot.width * scale + 0.001
+                        {
+                            if let Some(segment_id) = current_slot.segment_id {
+                                line_retry_count += 1;
+                                let line_top = (line_break_data.line_y_start / scale as f64) as f32;
+                                let line_height = (line_break_data.line_height / scale).max(0.0);
+                                let next_slot = block_ctx.find_content_slot(
+                                    line_top,
+                                    line_height,
+                                    Clear::None,
+                                    Some(segment_id),
+                                );
+                                has_active_floats = next_slot.segment_id.is_some();
+                                current_slot = next_slot;
+
+                                breaker.revert_to(saved_state.clone());
+                                let state = breaker.state_mut();
+                                state.set_line_max_advance(current_slot.width * scale);
+                                state.set_line_x(current_slot.x * scale);
+                                state.set_line_y((current_slot.y * scale) as f64);
+                                state.set_line_max_height(current_slot.height * scale);
+                                continue;
+                            }
+                        }
+                        line_retry_count = 0;
+                        line_deferred_ids.clear();
+                        max_line_bottom = max_line_bottom.max(line_break_data.line_y_end);
+
+                        let line_bottom = (line_break_data.line_y_end / scale as f64) as f32;
+
+                        // A float placed alongside the line remains revocable while no inline
+                        // content *after* it has been committed: parley may yet rewind the
+                        // content preceding it to a later line (e.g. an unbreakable run), in
+                        // which case the float belongs with that content and its placement must
+                        // be undone. Floats with committed content after them are finalized.
+                        line_placed_floats.retain(|float| {
+                            float.placed_advance >= line_break_data.advance - 0.001
+                        });
+
+                        // Place floats which could not be placed alongside the line's content:
+                        // their tops may not be higher than the bottom of the line
+                        for pending in pending_floats.drain(..) {
+                            let pos = block_ctx.place_floated_box(
+                                pending.size + pending.margin.sum_axes(),
+                                line_bottom,
+                                pending.direction,
+                                pending.clear,
+                                false,
+                            );
+                            let layout = self.nodes[pending.node_id].unrounded_layout_mut();
+                            layout.size = pending.size;
+                            layout.location.x = pos.x + pending.margin.left + container_pb.left;
+                            layout.location.y = pos.y + pending.margin.top + container_pb.top;
+                        }
+
+                        // Only refresh the revocation snapshot once no revocable floats remain:
+                        // while any float is still revocable the snapshot must predate its
+                        // placement.
+                        if line_placed_floats.is_empty() {
+                            line_start_floats = block_ctx.float_snapshot();
+                        }
+
                         let state = breaker.state_mut();
 
                         if has_active_floats {
-                            // TODO: revert state and retry layout if a line doesn't fit
-                            // saved_state = state.clone();
-
                             let min_y = state.line_y() / scale as f64;
                             let next_slot =
-                                block_ctx.find_content_slot(min_y as f32, Clear::None, None);
+                                block_ctx.find_content_slot(min_y as f32, 0.0, Clear::None, None);
                             has_active_floats = next_slot.segment_id.is_some();
+                            current_slot = next_slot;
 
-                            state.set_line_max_advance(next_slot.width * scale);
-                            state.set_line_x(next_slot.x * scale);
-                            state.set_line_y((next_slot.y * scale) as f64);
+                            state.set_line_max_advance(current_slot.width * scale);
+                            state.set_line_x(current_slot.x * scale);
+                            state.set_line_y((current_slot.y * scale) as f64);
+                            state.set_line_max_height(current_slot.height * scale);
                         } else {
                             state.set_line_x(0.0);
                             state.set_line_max_advance(width);
+                            state.set_line_max_height(f32::INFINITY);
                         }
 
+                        saved_state = breaker.state().clone();
+                        line_start_state = breaker.state().clone();
                         continue;
                     }
-                    YieldData::MaxHeightExceeded(_data) => {
-                        // TODO
+                    YieldData::MaxHeightExceeded(data) => {
+                        // The line's content is taller than the vertical extent over which its
+                        // line box width is valid: re-place the line taking account of all
+                        // floats that the line's actual height makes it adjacent to.
+                        if has_active_floats && line_retry_count < MAX_LINE_RETRIES {
+                            line_retry_count += 1;
+                            let line_top = (breaker.state().line_y() / scale as f64) as f32;
+                            let line_height = (data.line_height / scale).max(0.0);
+                            let next_slot = block_ctx.find_content_slot(
+                                line_top,
+                                line_height,
+                                Clear::None,
+                                None,
+                            );
+                            has_active_floats = next_slot.segment_id.is_some();
+                            current_slot = next_slot;
+
+                            breaker.revert_to(saved_state.clone());
+                            let state = breaker.state_mut();
+                            state.set_line_max_advance(current_slot.width * scale);
+                            state.set_line_x(current_slot.x * scale);
+                            state.set_line_y((current_slot.y * scale) as f64);
+                            state.set_line_max_height(
+                                (current_slot.height * scale).max(data.line_height),
+                            );
+                        } else {
+                            breaker.state_mut().set_line_max_height(f32::INFINITY);
+                        }
                         continue;
                     }
                     YieldData::InlineBoxBreak(box_break_data) => {
@@ -552,34 +712,73 @@ impl BaseDocument {
                             crate::taffy_node_id(node_id),
                             float_child_inputs,
                         );
-                        let min_y = state.line_y() as f32 / scale;
+                        let margin_box = output.size + margin_sum;
 
-                        // Note: `pos` is content-box relative
-                        let pos = block_ctx.place_floated_box(
-                            output.size + margin_sum,
-                            min_y,
-                            direction,
-                            clear,
-                        );
+                        // Skip floats already handled for this line (re-yielded after the line
+                        // was reverted and re-laid out)
+                        if line_deferred_ids.contains(&node_id) {
+                            let state = breaker.state_mut();
+                            state.append_inline_box_to_line(box_break_data.advance, 0.0);
+                            saved_state = breaker.state().clone();
+                            continue;
+                        }
 
-                        let min_y = state.line_y() / scale as f64; //.max(pos.y as f64);
-                        let next_slot =
-                            block_ctx.find_content_slot(min_y as f32, Clear::None, None);
-                        has_active_floats = next_slot.segment_id.is_some();
+                        // A float encountered mid-line can only be placed alongside the line's
+                        // existing content if there is enough space for both (the content shifts
+                        // sideways if the float is on its side). Otherwise its placement is
+                        // deferred until the line is committed, and it is placed below the line.
+                        let fits_on_line = box_break_data.advance <= 0.0
+                            || box_break_data.advance + margin_box.width * scale
+                                <= current_slot.width * scale + 0.001;
 
-                        state.set_line_max_advance(next_slot.width * scale);
-                        state.set_line_x(next_slot.x * scale);
-                        state.set_line_y((next_slot.y * scale) as f64);
+                        if fits_on_line {
+                            let min_y = state.line_y() as f32 / scale;
 
-                        let layout = self.nodes[node_id].unrounded_layout_mut();
-                        layout.size = output.size;
-                        layout.location.x = pos.x + margin.left + container_pb.left;
-                        layout.location.y = pos.y + margin.top + container_pb.top;
+                            // Note: `pos` is content-box relative
+                            let pos = block_ctx
+                                .place_floated_box(margin_box, min_y, direction, clear, false);
 
-                        // dbg!(&layout.size);
-                        // dbg!(&layout.location);
+                            let min_y = state.line_y() / scale as f64; //.max(pos.y as f64);
+                            let next_slot =
+                                block_ctx.find_content_slot(min_y as f32, 0.0, Clear::None, None);
+                            has_active_floats = next_slot.segment_id.is_some();
+                            current_slot = next_slot;
 
+                            state.set_line_max_advance(current_slot.width * scale);
+                            state.set_line_x(current_slot.x * scale);
+                            state.set_line_y((current_slot.y * scale) as f64);
+                            state.set_line_max_height(current_slot.height * scale);
+
+                            let layout = self.nodes[node_id].unrounded_layout_mut();
+                            layout.size = output.size;
+                            layout.location.x = pos.x + margin.left + container_pb.left;
+                            layout.location.y = pos.y + margin.top + container_pb.top;
+
+                            line_placed_floats.push(PendingFloat {
+                                node_id,
+                                size: output.size,
+                                margin,
+                                direction,
+                                clear,
+                                placed_advance: box_break_data.advance,
+                            });
+                        } else {
+                            line_deferred_ids.push(node_id);
+                            pending_floats.push(PendingFloat {
+                                node_id,
+                                size: output.size,
+                                margin,
+                                direction,
+                                clear,
+                                placed_advance: 0.0,
+                            });
+                        }
+
+                        let state = breaker.state_mut();
                         state.append_inline_box_to_line(box_break_data.advance, 0.0);
+
+                        // Re-save state so that a line retry does not re-place this float
+                        saved_state = breaker.state().clone();
 
                         // if float.is_floated() {
                         //     println!("INLINE FLOATED BOX ({}) {:?}", ibox.id, float);
@@ -592,6 +791,23 @@ impl BaseDocument {
                 }
             }
             breaker.finish();
+
+            // Place any floats deferred from the final line
+            for pending in pending_floats.drain(..) {
+                let pos = block_ctx.place_floated_box(
+                    pending.size + pending.margin.sum_axes(),
+                    max_line_bottom as f32 / scale,
+                    pending.direction,
+                    pending.clear,
+                    false,
+                );
+                let layout = self.nodes[pending.node_id].unrounded_layout_mut();
+                layout.size = pending.size;
+                layout.location.x = pos.x + pending.margin.left + container_pb.left;
+                layout.location.y = pos.y + pending.margin.top + container_pb.top;
+            }
+
+            line_bottom_height = max_line_bottom as f32;
         }
 
         let alignment = self.nodes[node_id]
@@ -623,6 +839,10 @@ impl BaseDocument {
 
         #[allow(unused_mut)]
         let mut height = inline_layout.layout.height();
+        #[cfg(feature = "floats")]
+        {
+            height = height.max(line_bottom_height);
+        }
 
         // HACK. TODO: fix in Parley.
         //
