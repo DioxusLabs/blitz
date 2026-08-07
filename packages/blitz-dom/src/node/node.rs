@@ -379,6 +379,14 @@ impl Node {
         if !is_in_flow {
             return false;
         }
+        // Floated boxes do not break up the inline flow: they participate in the
+        // inline formatting context as out-of-flow inline boxes
+        let is_floating = style
+            .map(|s| s.clone_float().is_floating())
+            .unwrap_or(false);
+        if is_floating {
+            return false;
+        }
         let display = style
             .map(|s| s.clone_display())
             .unwrap_or(StyloDisplay::inline());
