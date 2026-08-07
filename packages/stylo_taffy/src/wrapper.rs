@@ -435,6 +435,20 @@ impl<T: Deref<Target = ComputedValues>> taffy::GridContainerStyle for TaffyStylo
         }
     }
 
+    fn grid_template_area_row_count(&self) -> u16 {
+        match &self.0.get_position().grid_template_areas {
+            GridTemplateAreas::Areas(areas) => areas.0.strings.len() as u16,
+            GridTemplateAreas::None => 0,
+        }
+    }
+
+    fn grid_template_area_column_count(&self) -> u16 {
+        match &self.0.get_position().grid_template_areas {
+            GridTemplateAreas::Areas(areas) => areas.0.width as u16,
+            GridTemplateAreas::None => 0,
+        }
+    }
+
     fn grid_template_column_names(&self) -> Option<Self::TemplateLineNames<'_>> {
         match &self.0.get_position().grid_template_columns {
             stylo::GenericGridTemplateComponent::None => None,

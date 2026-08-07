@@ -560,6 +560,7 @@ impl BaseDocument {
                             min_y,
                             direction,
                             clear,
+                            false,
                         );
 
                         let min_y = state.line_y() / scale as f64; //.max(pos.y as f64);
