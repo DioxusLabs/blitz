@@ -49,7 +49,7 @@ pub(crate) fn draw_inline_backgrounds<'a>(
                 continue;
             }
 
-            let metrics = glyph_run.run().metrics();
+            let metrics = glyph_run.run().font_metrics();
             let x = glyph_run.offset() as f64;
             let w = glyph_run.advance() as f64;
             let baseline = glyph_run.baseline() as f64;
@@ -75,7 +75,7 @@ pub(crate) fn stroke_text<'a>(
                 let run = glyph_run.run();
                 let font = run.font();
                 let font_size = run.font_size();
-                let metrics = run.metrics();
+                let metrics = run.font_metrics();
                 let style = glyph_run.style();
                 let synthesis = run.synthesis();
                 let glyph_xform = synthesis
@@ -109,11 +109,17 @@ pub(crate) fn stroke_text<'a>(
                     kurbo::Vec2::default()
                 };
 
+                let normalized_coords: Vec<i16> = run
+                    .normalized_coords()
+                    .iter()
+                    .map(|coord| coord.to_bits())
+                    .collect();
+
                 scene.draw_glyphs(
-                    font,
+                    &font.font,
                     font_size,
                     !FONT_EMBOLDEN_ENABLED, // hint
-                    run.normalized_coords(),
+                    &normalized_coords,
                     embolden,
                     Fill::NonZero,
                     &anyrender::Paint::from(text_color),
