@@ -10,8 +10,8 @@ name = "blitz"
 path = "src/main.rs"
 
 [features]
-default = ["hybrid", "floats", "cookies", "cache", "screenshot", "apple-font-embolden", "scrollbars"]
-android-defaults = ["skia", "floats", "cookies"]
+default = ["hybrid", "cookies", "cache", "screenshot", "apple-font-embolden", "scrollbars"]
+android-defaults = ["skia", "cookies"]
 
 screenshot = ["dep:anyrender_vello_cpu", "dep:blitz-paint", "dep:png", "dep:peniko", "dep:rfd"]
 capture = ["dep:anyrender_serialize", "dep:blitz-paint", "dep:png", "dep:peniko", "dep:rfd"]
@@ -27,7 +27,6 @@ cpu-softbuffer = ["dioxus-native/vello-cpu-softbuffer"]
 log-times = ["log-frame-times", "log-phase-times"]
 log-frame-times = ["dioxus-native/log-frame-times"]
 log-phase-times = ["dioxus-native/log-phase-times"]
-floats = ["dioxus-native/floats"]
 cache = ["blitz-net/cache"]
 cookies = ["blitz-net/cookies"]
 avif = ["image/avif"]
@@ -50,7 +49,7 @@ dioxus-native = { workspace = true, features = [
   "hot-reload"
 ] }
 blitz-traits = { workspace = true }
-blitz-dom = { workspace = true, features = ["woff", "parallel-construct"] }
+blitz-dom = { workspace = true, features = ["woff", "parallel-construct", "floats"] }
 blitz-net = { workspace = true, features = ["http2"] }
 blitz-html = { workspace = true }
 browser-persistence = { workspace = true }
