@@ -159,6 +159,11 @@ pub fn is_block(input: stylo::Display) -> bool {
 }
 
 #[inline]
+pub fn is_flow_root(input: stylo::Display) -> bool {
+    matches!(input.inside(), stylo::DisplayInside::FlowRoot)
+}
+
+#[inline]
 pub fn is_table(input: stylo::Display) -> bool {
     matches!(input.inside(), stylo::DisplayInside::Table)
 }
@@ -613,6 +618,7 @@ pub fn to_taffy_style(style: &stylo::ComputedValues) -> taffy::Style<Atom> {
         box_sizing: self::box_sizing(style.clone_box_sizing()),
         item_is_table: display.inside() == stylo::DisplayInside::Table,
         item_is_replaced: false,
+        item_is_flow_root: self::is_flow_root(display),
         position: self::position(style.clone_position()),
         overflow: taffy::Point {
             x: self::overflow(style.clone_overflow_x()),

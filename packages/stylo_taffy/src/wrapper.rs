@@ -45,6 +45,11 @@ impl<T: Deref<Target = ComputedValues>> taffy::CoreStyle for TaffyStyloStyle<T> 
     }
 
     #[inline]
+    fn is_flow_root(&self) -> bool {
+        convert::is_flow_root(self.0.get_box().display)
+    }
+
+    #[inline]
     fn box_sizing(&self) -> taffy::BoxSizing {
         convert::box_sizing(self.0.get_position().box_sizing)
     }

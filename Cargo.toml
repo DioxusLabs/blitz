@@ -96,7 +96,7 @@ dioxus-cli-config = { version = "0.7.3" }
 dioxus-core-macro = { version = "0.7.3" }
 
 # Taffy + Parley + Fontations
-taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "8391c0903648448cf0a78d7983cb9b49b5f200a3", default-features = false, features = [
+taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "6e811a8b72a8dc00d4765a927632606d9a2208af", default-features = false, features = [
     "std",
     "flexbox",
     "grid",
