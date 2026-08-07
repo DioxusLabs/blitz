@@ -279,6 +279,17 @@ impl DocumentMutator<'_> {
 
         element.attrs.set(name.clone(), value);
 
+        // Focusability is cached on the element and comes from these
+        // attributes, so it has to follow a change to one of them: a widget
+        // that hands the focus around its own children - a menu, a grid -
+        // sets their tabindex after creating them.
+        if name.local == local_name!("tabindex")
+            || name.local == local_name!("href")
+            || name.local == local_name!("disabled")
+        {
+            element.flush_is_focussable();
+        }
+
         let tag = &element.name.local;
         let attr = &name.local;
 
@@ -367,6 +378,15 @@ impl DocumentMutator<'_> {
 
         if name.local == local_name!("id") {
             element.id = None;
+        }
+
+        // As in `set_attribute`: taking one of these away can make the element
+        // unfocusable again.
+        if name.local == local_name!("tabindex")
+            || name.local == local_name!("href")
+            || name.local == local_name!("disabled")
+        {
+            element.flush_is_focussable();
         }
 
         // Update text input value
