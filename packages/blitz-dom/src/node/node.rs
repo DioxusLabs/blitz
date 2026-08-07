@@ -326,7 +326,7 @@ impl Node {
                 Point2D::new(CSSPixelLength::new(0.0), CSSPixelLength::new(0.0)),
                 Size2D::new(CSSPixelLength::new(w), CSSPixelLength::new(h)),
             );
-            crate::resolve_2d_transform(s.get_box(), reference_box)
+            crate::resolve_2d_transform(s.get_box(), reference_box, scale as f64)
         });
 
         *self.transform_mut() = transform;

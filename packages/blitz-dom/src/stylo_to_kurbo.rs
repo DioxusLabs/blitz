@@ -25,12 +25,13 @@ use style::{
 pub fn resolve_2d_transform(
     box_styles: &BoxStyleStruct,
     reference_box: Rect<CSSPixelLength>,
+    scale: f64,
 ) -> Option<Affine> {
     let translate = match &box_styles.translate {
         Translate::None => None,
         Translate::Translate(x, y, _z) => Some(Vec2 {
-            x: x.resolve(reference_box.width()).px() as f64,
-            y: y.resolve(reference_box.height()).px() as f64,
+            x: x.resolve(reference_box.width()).px() as f64 * scale,
+            y: y.resolve(reference_box.height()).px() as f64 * scale,
         }),
     };
 
@@ -60,7 +61,16 @@ pub fn resolve_2d_transform(
             .map(|(t, _has_3d)| {
                 // See: https://drafts.csswg.org/css-transforms-2/#two-dimensional-subset
                 // And https://docs.rs/kurbo/latest/kurbo/struct.Affine.html#method.new
-                Affine::new([t.m11, t.m12, t.m21, t.m22, t.m41, t.m42].map(|v| v as f64))
+                // Scale the translation components by the viewport scale factor;
+                // scale factors and rotation angles are unitless and need no scaling.
+                Affine::new([
+                    t.m11 as f64,
+                    t.m12 as f64,
+                    t.m21 as f64,
+                    t.m22 as f64,
+                    t.m41 as f64 * scale,
+                    t.m42 as f64 * scale,
+                ])
             })
     };
 
@@ -80,11 +90,13 @@ pub fn resolve_2d_transform(
         x: transform_origin
             .horizontal
             .resolve(reference_box.width())
-            .px() as f64,
+            .px() as f64
+            * scale,
         y: transform_origin
             .vertical
             .resolve(reference_box.height())
-            .px() as f64,
+            .px() as f64
+            * scale,
     });
 
     let mut resolved = Affine::IDENTITY;
