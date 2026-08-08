@@ -112,12 +112,24 @@ pub struct View<Rend: WindowRenderer> {
     /// Accessibility adapter for `accesskit`.
     pub accessibility: AccessibilityState,
 
-    // Calling request_redraw within a WindowEvent doesn't work on iOS. So on iOS we track the state
-    // with a boolean and call request_redraw in about_to_wait
-    //
-    // See https://github.com/rust-windowing/winit/issues/3406
+    /// Calling request_redraw within a WindowEvent doesn't work on iOS. So on iOS we track the state
+    /// with a boolean and call request_redraw in about_to_wait
+    ///
+    /// See https://github.com/rust-windowing/winit/issues/3406
     #[cfg(target_os = "ios")]
     pub ios_request_redraw: std::cell::Cell<bool>,
+
+    /// Calling request_redraw doesn't work correctly on Windows and doesn't redraw when too many events happen at once
+    /// this is a different issue from ios as it never waits for a new event.
+    ///
+    /// See https://github.com/rust-windowing/winit/issues/4656
+    #[cfg(target_os = "windows")]
+    pub windows_request_redraw: std::cell::Cell<bool>,
+    /// While a redraw has been requested (`windows_request_redraw` is set) but
+    /// `WindowEvent::RedrawRequested` hasn't fired yet, incoming `PointerMoved`
+    /// events are coalesced instead of being dispatched immediately
+    #[cfg(target_os = "windows")]
+    pub pending_pointer_move: std::cell::Cell<Option<BlitzPointerEvent>>,
 }
 
 impl<Rend: WindowRenderer> Drop for View<Rend> {
@@ -226,6 +238,10 @@ impl<Rend: WindowRenderer> View<Rend> {
 
             #[cfg(target_os = "ios")]
             ios_request_redraw: std::cell::Cell::new(false),
+            #[cfg(target_os = "windows")]
+            windows_request_redraw: std::cell::Cell::new(false),
+            #[cfg(target_os = "windows")]
+            pending_pointer_move: std::cell::Cell::new(None),
         }
     }
 
@@ -379,12 +395,17 @@ impl<Rend: WindowRenderer> View<Rend> {
             self.window.request_redraw();
             #[cfg(target_os = "ios")]
             self.ios_request_redraw.set(true);
+            #[cfg(target_os = "windows")]
+            self.windows_request_redraw.set(true);
         }
     }
 
     pub fn redraw(&mut self) {
         #[cfg(target_os = "ios")]
         self.ios_request_redraw.set(false);
+        #[cfg(target_os = "windows")]
+        self.windows_request_redraw.set(false);
+
         let animation_time = self.current_animation_time();
         let is_visible = self.is_visible;
 
@@ -567,11 +588,26 @@ impl<Rend: WindowRenderer> View<Rend> {
         self.doc.handle_ui_event(event);
     }
 
+    #[cfg(target_os = "windows")]
+    pub fn flush_pending_pointer_move(&mut self) {
+        if let Some(event) = self.pending_pointer_move.take() {
+            self.doc.handle_ui_event(UiEvent::PointerMove(event));
+        }
+    }
+
     pub fn handle_winit_event(&mut self, event: WindowEvent) {
         // Update accessibility focus and window size state in response to a Winit WindowEvent
         #[cfg(feature = "accessibility")]
         self.accessibility
             .process_window_event(&*self.window, &event);
+
+        #[cfg(target_os = "windows")]
+        if !matches!(
+            event,
+            WindowEvent::PointerMoved { .. } | WindowEvent::RedrawRequested
+        ) {
+            self.flush_pending_pointer_move();
+        }
 
         match event {
             WindowEvent::Destroyed => {}
@@ -581,6 +617,10 @@ impl<Rend: WindowRenderer> View<Rend> {
             }
             WindowEvent::RedrawRequested => {
                 self.redraw();
+                // flush after redraw so that custom widgets don't redraw beforehand
+                // which would cause a jerky redraw of transforms
+                #[cfg(target_os = "windows")]
+                self.flush_pending_pointer_move();
             }
             WindowEvent::Moved(_) => {}
             WindowEvent::Occluded(is_occluded) => {
@@ -735,6 +775,15 @@ impl<Rend: WindowRenderer> View<Rend> {
                 if id != BlitzPointerId::Mouse {
                     self.update_active_pointer(&event);
                 }
+
+                #[cfg(target_os = "windows")]
+                if self.windows_request_redraw.get() {
+                    // A redraw has been requested but hasn't run yet — coalesce this move rather than dispatching it.
+                    // This avoids redrawing every intermediate move Windows delivers.
+                    self.pending_pointer_move.set(Some(event));
+                    return;
+                }
+
                 self.doc.handle_ui_event(UiEvent::PointerMove(event));
             }
             WindowEvent::PointerButton { button, state, primary, position, .. } => {
