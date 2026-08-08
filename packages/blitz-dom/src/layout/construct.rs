@@ -313,6 +313,11 @@ fn classify_flow_children(
                 continue;
             }
 
+            // display:none children generate no boxes and cast no vote
+            if matches!(display.outside(), DisplayOutside::None) {
+                continue;
+            }
+
             let is_in_flow = matches!(
                 position,
                 PositionProperty::Static | PositionProperty::Relative | PositionProperty::Sticky
