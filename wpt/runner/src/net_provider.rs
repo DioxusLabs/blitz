@@ -1,5 +1,5 @@
+use blitz_test_harness::load_fixture_bytes;
 use blitz_traits::net::{Bytes, NetHandler, NetProvider, Request};
-use data_url::DataUrl;
 use log::{debug, warn};
 use std::{
     collections::HashMap,
@@ -54,45 +54,23 @@ impl<D: Send + Sync + 'static> WptNetProvider<D> {
             queue: self.queue.clone(),
         };
 
-        match request.url.scheme() {
-            "data" => {
-                let url = request.url.as_str().to_string();
-                let data_url = DataUrl::process(request.url.as_str()).inspect_err(|_| {
-                    callback.queue.record_failure(request_id);
-                })?;
-                let decoded = data_url.decode_to_vec().inspect_err(|_| {
-                    callback.queue.record_failure(request_id);
-                })?;
-                handler.bytes(url, Bytes::from(decoded.0));
+        let bytes = load_fixture_bytes(&self.base_path, &request).map_err(|err| {
+            warn!("Error loading {}: {}", request.url, err);
+            callback.queue.record_failure(request_id);
+            WptNetProviderError::Load(err)
+        })?;
+        catch_unwind(AssertUnwindSafe(|| {
+            handler.bytes(request.url.to_string(), Bytes::from(bytes))
+        }))
+        .map_err(|err| {
+            let str_msg = err.downcast_ref::<&str>().map(|s| s.to_string());
+            let string_msg = err.downcast_ref::<String>().map(|s| s.to_string());
+            let panic_msg = str_msg.or(string_msg);
+            callback.queue.record_failure(request_id);
+            WptNetProviderError::HandlerPanic(panic_msg)
+        })?;
 
-                callback.queue.record_success(None, request_id);
-            }
-            _ => {
-                // TODO: Should we resolve path differently if it does not begin with '/'
-                let relative_path = request
-                    .url
-                    .path()
-                    .strip_prefix('/')
-                    .unwrap_or(request.url.path());
-                let path = self.base_path.join(relative_path);
-                let file_content = std::fs::read(&path).inspect_err(|err| {
-                    warn!("Error loading {}: {}", path.display(), err);
-                    callback.queue.record_failure(request_id);
-                })?;
-                catch_unwind(AssertUnwindSafe(|| {
-                    handler.bytes(request.url.to_string(), Bytes::from(file_content))
-                }))
-                .map_err(|err| {
-                    let str_msg = err.downcast_ref::<&str>().map(|s| s.to_string());
-                    let string_msg = err.downcast_ref::<String>().map(|s| s.to_string());
-                    let panic_msg = str_msg.or(string_msg);
-                    callback.queue.record_failure(request_id);
-                    WptNetProviderError::HandlerPanic(panic_msg)
-                })?;
-
-                callback.queue.record_success(None, request_id);
-            }
-        }
+        callback.queue.record_success(None, request_id);
         Ok(())
     }
 }
@@ -116,28 +94,8 @@ impl<D: Send + Sync + 'static> NetProvider for WptNetProvider<D> {
 #[derive(Debug)]
 #[allow(dead_code)]
 enum WptNetProviderError {
-    Io(std::io::Error),
-    DataUrl(data_url::DataUrlError),
-    DataUrlBase64(data_url::forgiving_base64::InvalidBase64),
+    Load(String),
     HandlerPanic(Option<String>),
-}
-
-impl From<std::io::Error> for WptNetProviderError {
-    fn from(value: std::io::Error) -> Self {
-        Self::Io(value)
-    }
-}
-
-impl From<data_url::DataUrlError> for WptNetProviderError {
-    fn from(value: data_url::DataUrlError) -> Self {
-        Self::DataUrl(value)
-    }
-}
-
-impl From<data_url::forgiving_base64::InvalidBase64> for WptNetProviderError {
-    fn from(value: data_url::forgiving_base64::InvalidBase64) -> Self {
-        Self::DataUrlBase64(value)
-    }
 }
 
 #[derive(Debug)]
