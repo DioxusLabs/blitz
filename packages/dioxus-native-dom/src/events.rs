@@ -1,16 +1,16 @@
 use blitz_dom::{BaseDocument, Node};
 use blitz_traits::events::{
-    BlitzKeyEvent, BlitzPointerEvent, BlitzPointerId, BlitzScrollEvent, BlitzWheelDelta,
-    BlitzWheelEvent, MouseEventButton,
+    BlitzKeyEvent, BlitzPointerEvent, BlitzPointerId, BlitzScrollEvent, BlitzTransitionEvent,
+    BlitzWheelDelta, BlitzWheelEvent, MouseEventButton,
 };
 use dioxus_html::{
     AnimationData, CancelData, ClipboardData, CompositionData, DragData, FocusData, FormData,
     FormValue, HasFileData, HasFocusData, HasFormData, HasKeyboardData, HasMouseData,
-    HasPointerData, HasScrollData, HasTouchData, HasTouchPointData, HasWheelData,
-    HtmlEventConverter, ImageData, KeyboardData, MediaData, MountedData, MountedError,
-    MountedResult, MouseData, PlatformEventData, PointerData, RenderedElementBacking, ResizeData,
-    ScrollBehavior, ScrollData, ScrollToOptions, SelectionData, ToggleData, TouchData, TouchPoint,
-    TransitionData, VisibleData, WheelData,
+    HasPointerData, HasScrollData, HasTouchData, HasTouchPointData, HasTransitionData,
+    HasWheelData, HtmlEventConverter, ImageData, KeyboardData, MediaData, MountedData,
+    MountedError, MountedResult, MouseData, PlatformEventData, PointerData, RenderedElementBacking,
+    ResizeData, ScrollBehavior, ScrollData, ScrollToOptions, SelectionData, ToggleData, TouchData,
+    TouchPoint, TransitionData, VisibleData, WheelData,
     geometry::{
         ClientPoint, ElementPoint, PagePoint, PixelsRect, PixelsSize, PixelsVector2D, ScreenPoint,
         WheelDelta,
@@ -116,8 +116,12 @@ impl HtmlEventConverter for NativeConverter {
         event.downcast::<NativeTouchData>().unwrap().clone().into()
     }
 
-    fn convert_transition_data(&self, _event: &PlatformEventData) -> TransitionData {
-        unimplemented!("todo: convert_transition_data in dioxus-native. requires support in blitz")
+    fn convert_transition_data(&self, event: &PlatformEventData) -> TransitionData {
+        event
+            .downcast::<NativeTransitionData>()
+            .unwrap()
+            .clone()
+            .into()
     }
 
     fn convert_wheel_data(&self, event: &PlatformEventData) -> WheelData {
@@ -500,6 +504,26 @@ impl HasTouchPointData for NativeTouchPointData {
 #[derive(Clone)]
 pub struct NativeFocusData;
 impl HasFocusData for NativeFocusData {
+    fn as_any(&self) -> &dyn Any {
+        self as &dyn Any
+    }
+}
+
+#[derive(Clone)]
+pub struct NativeTransitionData(pub(crate) BlitzTransitionEvent);
+impl HasTransitionData for NativeTransitionData {
+    fn property_name(&self) -> String {
+        self.0.property_name.clone()
+    }
+
+    fn pseudo_element(&self) -> String {
+        self.0.pseudo_element.clone()
+    }
+
+    fn elapsed_time(&self) -> f32 {
+        self.0.elapsed_time
+    }
+
     fn as_any(&self) -> &dyn Any {
         self as &dyn Any
     }
