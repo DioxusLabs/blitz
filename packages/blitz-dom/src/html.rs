@@ -1,4 +1,4 @@
-use crate::DocumentMutator;
+use crate::{BaseDocument, Document, DocumentConfig, DocumentMutator, PlainDocument};
 use blitz_traits::node_id::NodeId;
 
 pub trait HtmlParserProvider {
@@ -8,6 +8,14 @@ pub trait HtmlParserProvider {
         element_id: NodeId,
         html: &str,
     );
+
+    /// Parse a full HTML document (e.g. the contents of an `<iframe>`).
+    ///
+    /// The default implementation ignores the HTML and returns an empty document.
+    fn parse_document(&self, html: &str, config: DocumentConfig) -> Box<dyn Document> {
+        let _ = html;
+        Box::new(PlainDocument(BaseDocument::new(config)))
+    }
 }
 
 pub struct DummyHtmlParserProvider;

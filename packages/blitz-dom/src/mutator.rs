@@ -33,6 +33,7 @@ pub enum AppendTextErr {
 /// function for borrow-checker reasons.
 enum SpecialOp {
     LoadImage(NodeId),
+    LoadIframe(NodeId),
     LoadStylesheet(NodeId),
     UnloadStylesheet(NodeId),
     LoadCustomPaintSource(NodeId),
@@ -334,6 +335,10 @@ impl DocumentMutator<'_> {
             self.load_custom_paint_src(node_id);
         } else if (tag, attr) == tag_and_attr!("link", "href") {
             self.load_linked_stylesheet(node_id);
+        } else if (tag, attr) == tag_and_attr!("iframe", "src")
+            || (tag, attr) == tag_and_attr!("iframe", "srcdoc")
+        {
+            self.load_iframe(node_id);
         }
     }
 
@@ -415,6 +420,9 @@ impl DocumentMutator<'_> {
             self.recompute_is_animating = true;
         } else if (tag, attr) == tag_and_attr!("link", "href") {
             self.unload_stylesheet(node_id);
+        } else if (tag, attr) == tag_and_attr!("iframe", "srcdoc") && node_is_in_document {
+            // Fall back to loading from the `src` attribute (if any)
+            self.load_iframe(node_id);
         }
     }
 
@@ -718,6 +726,7 @@ impl<'doc> DocumentMutator<'doc> {
         for op in ops.drain(0..) {
             match op {
                 SpecialOp::LoadImage(node_id) => self.load_image(node_id),
+                SpecialOp::LoadIframe(node_id) => self.load_iframe(node_id),
                 SpecialOp::LoadStylesheet(node_id) => self.load_linked_stylesheet(node_id),
                 SpecialOp::UnloadStylesheet(node_id) => self.unload_stylesheet(node_id),
                 SpecialOp::LoadCustomPaintSource(node_id) => self.load_custom_paint_src(node_id),
@@ -753,6 +762,7 @@ impl<'doc> DocumentMutator<'doc> {
                 "title" => self.title_node = Some(node_id),
                 "link" => self.eager_op_queue.push(SpecialOp::LoadStylesheet(node_id)),
                 "img" => self.eager_op_queue.push(SpecialOp::LoadImage(node_id)),
+                "iframe" => self.eager_op_queue.push(SpecialOp::LoadIframe(node_id)),
                 "canvas" => self
                     .eager_op_queue
                     .push(SpecialOp::LoadCustomPaintSource(node_id)),
@@ -978,6 +988,42 @@ impl<'doc> DocumentMutator<'doc> {
                 );
             }
         }
+    }
+
+    fn load_iframe(&mut self, target_id: NodeId) {
+        if self.doc.subdocument_depth >= crate::iframe::MAX_SUBDOCUMENT_DEPTH {
+            #[cfg(feature = "tracing")]
+            tracing::warn!(
+                "Not loading iframe: max sub-document nesting depth ({}) reached",
+                crate::iframe::MAX_SUBDOCUMENT_DEPTH
+            );
+            return;
+        }
+
+        let node = &self.doc.nodes[target_id];
+        let Some(element) = node.element_data() else {
+            return;
+        };
+
+        // `srcdoc` takes precedence over `src`
+        if let Some(srcdoc) = element.attr(local_name!("srcdoc")) {
+            let srcdoc = srcdoc.to_string();
+            self.doc.load_iframe_srcdoc(target_id, &srcdoc);
+            return;
+        }
+
+        let Some(raw_src) = element.attr(local_name!("src")) else {
+            return;
+        };
+        if raw_src.is_empty() {
+            return;
+        }
+        let Some(url) = self.doc.url.resolve_relative(raw_src) else {
+            #[cfg(feature = "tracing")]
+            tracing::warn!("Not loading iframe: could not resolve url {raw_src}");
+            return;
+        };
+        self.doc.start_iframe_load(target_id, url);
     }
 
     fn load_custom_paint_src(&mut self, target_id: NodeId) {
