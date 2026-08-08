@@ -38,6 +38,10 @@ pub enum BlitzShellEvent {
         data: Arc<AccessKitEvent>,
     },
 
+    /// Devtools protocol messages are waiting to be processed
+    #[cfg(feature = "devtools")]
+    DevtoolsPoll,
+
     /// An arbitary event from the Blitz embedder
     Embedder(Arc<dyn Any + Send + Sync>),
 
@@ -93,6 +97,13 @@ impl BlitzShellProxy {
     fn send_event_impl(&self, event: BlitzShellEvent) {
         let _ = self.0.sender.send(event);
         self.wake_up();
+    }
+}
+
+#[cfg(feature = "devtools")]
+impl blitz_cdp_server::DevtoolsWaker for BlitzShellProxy {
+    fn wake(&self) {
+        self.send_event_impl(BlitzShellEvent::DevtoolsPoll)
     }
 }
 

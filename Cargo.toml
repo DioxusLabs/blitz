@@ -8,6 +8,7 @@ members = [
     "packages/blitz-net",
     "packages/blitz-paint",
     "packages/blitz-shell",
+    "packages/blitz-cdp-server",
     "packages/blitz",
     "packages/stylo_taffy",
     "packages/dioxus-native",
@@ -46,6 +47,7 @@ blitz-html = { version = "=0.3.0-beta.1", path = "./packages/blitz-html", defaul
 blitz-net = { version = "=0.3.0-beta.1", path = "./packages/blitz-net", default-features = false }
 blitz-paint = { version = "=0.3.0-beta.1", path = "./packages/blitz-paint", default-features = false }
 blitz-shell = { version = "=0.3.0-beta.1", path = "./packages/blitz-shell", default-features = false }
+blitz-cdp-server = { version = "=0.3.0-beta.1", path = "./packages/blitz-cdp-server" }
 blitz-traits = { version = "=0.3.0-beta.1", path = "./packages/blitz-traits", default-features = false }
 stylo_taffy = { version = "=0.3.0-beta.1", path = "./packages/stylo_taffy", default-features = false }
 dioxus-native = { version = "0.7.0", path = "./packages/dioxus-native", default-features = false }
@@ -154,6 +156,7 @@ html-escape = "0.2.13"
 percent-encoding = "2.3.1"
 png = "0.18"
 serde = "1"
+serde_json = "1"
 
 # Dioxus Native
 webbrowser = "1.0"
