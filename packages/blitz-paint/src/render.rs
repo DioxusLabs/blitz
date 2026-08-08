@@ -40,7 +40,20 @@ use style::{
 use kurbo::{self, Affine, Insets, Point, Rect, Shape, Size, Stroke, Vec2};
 use peniko::{self, Fill, ImageData, ImageSampler};
 use style::values::generics::color::GenericColor;
+use style::values::generics::image::GenericImage;
 use taffy::Layout;
+
+/// Whether the element's background is entirely transparent/none such that a root
+/// element's background is taken from the `body` element (CSS Backgrounds §2.11.2)
+fn background_is_none(style: &ComputedValues) -> bool {
+    let bg = style.get_background();
+    bg.background_color == GenericColor::TRANSPARENT_BLACK
+        && bg
+            .background_image
+            .0
+            .iter()
+            .all(|image| matches!(image, GenericImage::None))
+}
 
 /// A short-lived struct which holds a bunch of parameters for rendering a scene so
 /// that we don't have to pass them down as parameters
@@ -54,6 +67,11 @@ pub struct BlitzDomPainter<'dom, 'a> {
     pub(crate) initial_y: f64,
     /// The id of the document's root element (cached to avoid re-resolving it for every element)
     pub(crate) root_element_id: Option<NodeId>,
+    /// The id of the `body` element whose background propagates to the canvas because the
+    /// root element's background is entirely transparent/none (CSS Backgrounds §2.11.2).
+    /// Such an element does not paint its own background: it is painted as the canvas
+    /// background, positioned as if it were painted for the root element.
+    pub(crate) canvas_bg_body_id: Option<NodeId>,
     /// Scrollbar hover/drag state, resolved once per scene like the root element
     #[cfg(feature = "scrollbars")]
     pub(crate) hovered_scrollbar: Option<blitz_dom::node::ScrollbarRef>,
@@ -87,6 +105,23 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         let layer_manager = LayerManager::default();
         let root_element_id = dom.try_root_element().map(|el| el.id);
 
+        let canvas_bg_body_id = dom.try_root_element().and_then(|root| {
+            let root_bg_is_none = root
+                .primary_styles()
+                .is_none_or(|styles| background_is_none(&styles));
+            if !root_bg_is_none {
+                return None;
+            }
+            root.children
+                .iter()
+                .find(|id| {
+                    dom.get_node(**id).is_some_and(|node| {
+                        node.data.is_element_with_tag_name(&local_name!("body"))
+                    })
+                })
+                .copied()
+        });
+
         Self {
             dom,
             scale,
@@ -95,6 +130,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             initial_x,
             initial_y,
             root_element_id,
+            canvas_bg_body_id,
             #[cfg(feature = "scrollbars")]
             hovered_scrollbar: dom.hovered_scrollbar(),
             #[cfg(feature = "scrollbars")]
@@ -125,20 +161,10 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         let bg_height = (self.height as f32).max(root_element.final_layout().size.height);
 
         let background_color = {
-            let html_color = root_element
-                .primary_styles()
-                .map(|s| s.clone_background_color())
-                .unwrap_or(GenericColor::TRANSPARENT_BLACK);
-            if html_color == GenericColor::TRANSPARENT_BLACK {
-                root_element
-                    .children
-                    .iter()
-                    .find_map(|id| {
-                        self.dom
-                            .as_ref()
-                            .get_node(*id)
-                            .filter(|node| node.data.is_element_with_tag_name(&local_name!("body")))
-                    })
+            if let Some(body_id) = self.canvas_bg_body_id {
+                self.dom
+                    .as_ref()
+                    .get_node(body_id)
                     .and_then(|body| body.primary_styles())
                     .map(|style| {
                         let current_color = style.clone_color();
@@ -147,8 +173,12 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                             .resolve_to_absolute(&current_color)
                     })
             } else {
-                let current_color = root_element.primary_styles().unwrap().clone_color();
-                Some(html_color.resolve_to_absolute(&current_color))
+                root_element.primary_styles().map(|style| {
+                    let current_color = style.clone_color();
+                    style
+                        .clone_background_color()
+                        .resolve_to_absolute(&current_color)
+                })
             }
         };
 
@@ -159,6 +189,24 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                 (bg_width as f64, bg_height as f64),
             );
             scene.fill(Fill::NonZero, Affine::IDENTITY, bg_color, None, &rect);
+        }
+
+        // Paint the body element's background propagated to the canvas. Its background
+        // positioning area is determined as if it were painted for the root element.
+        if let Some(body_id) = self.canvas_bg_body_id {
+            let body_node = &self.dom.as_ref().tree()[body_id];
+            if body_node.primary_styles().is_some() && body_node.element_data().is_some() {
+                let root_layout = *root_element.final_layout();
+                let box_position =
+                    Vec2::new(root_layout.location.x as f64, root_layout.location.y as f64)
+                        * self.scale;
+                let transform = Affine::translate(Vec2 {
+                    x: self.initial_x - (viewport_scroll.x * self.scale),
+                    y: self.initial_y - (viewport_scroll.y * self.scale),
+                }) * Affine::translate(box_position);
+                let cx = self.element_cx(body_node, root_layout, transform, None);
+                cx.draw_background(scene);
+            }
         }
 
         // The root clip rectangle is the viewport (in screen coordinates, with the
@@ -416,7 +464,11 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                     filter,
                     backdrop_filter,
                     |scene| {
-                        cx.draw_background(scene);
+                        // A body element whose background propagates to the canvas does
+                        // not paint its own background (it is painted in `paint_scene`).
+                        if self.canvas_bg_body_id != Some(node_id) {
+                            cx.draw_background(scene);
+                        }
                         cx.draw_inset_box_shadow(scene);
                         cx.draw_table_row_backgrounds(scene);
                         cx.draw_table_borders(scene);

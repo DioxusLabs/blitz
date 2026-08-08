@@ -398,6 +398,22 @@ impl BaseDocument {
         // println!("\n\nRESOLVE LAYOUT\n===========\n");
 
         taffy::compute_root_layout(self, root_element_id, available_space);
+
+        // `compute_root_layout` resolves the root element's margins but always positions
+        // its border box at the origin. The root element's margins offset it within the
+        // viewport (and never collapse with descendants per CSS2 §8.3.1).
+        {
+            let root_node_id = crate::dom_node_id(root_element_id);
+            let is_rtl = self.nodes[root_node_id].style().direction == taffy::Direction::Rtl;
+            let layout = self.nodes[root_node_id].unrounded_layout_mut();
+            if is_rtl {
+                layout.location.x -= layout.margin.right;
+            } else {
+                layout.location.x += layout.margin.left;
+            }
+            layout.location.y += layout.margin.top;
+        }
+
         taffy::round_layout(self, root_element_id);
 
         // println!("\n\n");
