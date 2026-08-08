@@ -37,9 +37,7 @@ fn pixel(background: &str, svg_src: &str, x: usize, y: usize) -> [u8; 3] {
     {
         let tree =
             usvg::Tree::from_str(svg_src, &usvg::Options::default()).expect("valid test SVG");
-        let svg = SvgImageData {
-            tree: Arc::new(tree),
-        };
+        let svg = SvgImageData::new(Arc::new(tree), svg_src.as_bytes().into());
         let node = doc.get_node_mut(box_id).unwrap();
         let el = node.element_data_mut().unwrap();
         for layer in el.background_images.iter_mut().flatten() {
