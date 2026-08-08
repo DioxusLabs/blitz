@@ -2,6 +2,7 @@ use blitz_traits::node_id::NodeId;
 use core::str;
 use std::sync::Arc;
 
+use color::{AlphaColor, Srgb};
 use markup5ever::{QualName, local_name, ns};
 use parley::{
     FontContext, InlineBox, InlineBoxKind, LayoutContext, StyleProperty, TreeBuilder,
@@ -22,11 +23,12 @@ use crate::{
     BaseDocument, ElementData, Node, NodeData,
     layout::damage::{CONSTRUCT_BOX, CONSTRUCT_DESCENDENT, CONSTRUCT_FC},
     node::{
-        ListItemLayout, ListItemLayoutPosition, Marker, NodeFlags, NodeKind, SpecialElementData,
-        TextBrush, TextInputData, TextLayout,
+        ListItemLayout, ListItemLayoutPosition, Marker, NodeFlags, NodeKind, Placeholder,
+        SpecialElementData, TextBrush, TextInputData, TextLayout,
     },
     qual_name, stylo_to_parley,
     traversal::{iter_children, iter_children_and_pseudos},
+    util::ToColorColor,
 };
 
 use super::{
@@ -774,14 +776,87 @@ fn collect_complex_layout_children(
     out.maybe_push_anon_block(doc);
 }
 
+/// Resolve `::placeholder`, so a stylesheet can restyle placeholder text the
+/// way it can in a browser. It is a lazy pseudo-element, so it is only
+/// computed for fields that actually have a placeholder.
+///
+/// The colour is returned separately because the paint path resolves a text
+/// brush back to its originating element's own `color`, which is precisely
+/// what the pseudo-element is here to override.
+fn placeholder_style(
+    doc: &BaseDocument,
+    input_element_id: NodeId,
+) -> Option<(
+    parley::TextStyle<'static, 'static, TextBrush>,
+    AlphaColor<Srgb>,
+)> {
+    use style::selector_parser::PseudoElement;
+    use style::stylist::RuleInclusion;
+
+    let node = &doc.nodes[input_element_id];
+    let primary_style = node.primary_styles()?;
+
+    let read_guard = doc.guard.read();
+    let guards = StylesheetGuards::same(&read_guard);
+    let styles = doc.stylist.lazily_compute_pseudo_element_style(
+        &guards,
+        node,
+        &PseudoElement::Placeholder,
+        RuleInclusion::All,
+        &primary_style,
+        true,
+        None,
+    )?;
+
+    let color = styles.get_inherited_text().color.as_color_color();
+    Some((stylo_to_parley::style(input_element_id, &styles), color))
+}
+
 fn create_text_editor(doc: &mut BaseDocument, input_element_id: NodeId, is_multiline: bool) {
-    let node = &mut doc.nodes[input_element_id];
+    let node = &doc.nodes[input_element_id];
     let parley_style = node
         .primary_styles()
         .as_ref()
         .map(|s| stylo_to_parley::style(node.id, s))
         .unwrap_or_default();
 
+    let placeholder_text = node
+        .data
+        .downcast_element()
+        .and_then(|element| element.attr(local_name!("placeholder")))
+        .filter(|text| !text.is_empty())
+        .map(str::to_string);
+
+    let inherited_color = node
+        .primary_styles()
+        .map(|s| s.get_inherited_text().color.as_color_color())
+        .unwrap_or(AlphaColor::BLACK);
+
+    let resolved_placeholder_style = placeholder_text
+        .as_ref()
+        .and_then(|_| placeholder_style(doc, input_element_id));
+
+    let placeholder = placeholder_text.map(|text| {
+        let (style, color) =
+            resolved_placeholder_style.unwrap_or_else(|| (parley_style.clone(), inherited_color));
+
+        let mut font_ctx = doc.font_ctx.lock().unwrap();
+        let mut builder =
+            doc.layout_ctx
+                .tree_builder(&mut font_ctx, doc.viewport.scale(), true, &style);
+        builder.push_text(&text);
+
+        let mut layout = builder.build().0;
+        let width = layout.calculate_content_widths().max;
+        layout.break_all_lines(Some(width));
+
+        Placeholder {
+            layout: Box::new(layout),
+            color,
+        }
+    });
+
+    let node = &mut doc.nodes[input_element_id];
     let element = &mut node.data.downcast_element_mut().unwrap();
     if !matches!(element.special_data, SpecialElementData::TextInput(_)) {
         let mut text_input_data = TextInputData::new(is_multiline);
@@ -793,6 +868,8 @@ fn create_text_editor(doc: &mut BaseDocument, input_element_id: NodeId, is_multi
     let SpecialElementData::TextInput(text_input_data) = &mut element.special_data else {
         unreachable!();
     };
+
+    text_input_data.placeholder = placeholder;
 
     let editor = &mut text_input_data.editor;
     editor.set_scale(doc.viewport.scale_f64() as f32);

@@ -764,6 +764,7 @@ impl ElementCx<'_, '_> {
                 self.context.dom,
                 transform,
                 self.scale,
+                None,
             );
         }
     }
@@ -820,14 +821,25 @@ impl ElementCx<'_, '_> {
                 };
             }
 
-            // Render text
-            crate::text::stroke_text(
-                scene,
-                input_data.editor.try_layout().unwrap().lines(),
-                self.context.dom,
-                transform,
-                self.scale,
-            );
+            // Render the value, or the placeholder while the value is empty.
+            match input_data.placeholder.as_ref() {
+                Some(placeholder) if input_data.shows_placeholder() => crate::text::stroke_text(
+                    scene,
+                    placeholder.layout.lines(),
+                    self.context.dom,
+                    transform,
+                    self.scale,
+                    Some(placeholder.color),
+                ),
+                _ => crate::text::stroke_text(
+                    scene,
+                    input_data.editor.try_layout().unwrap().lines(),
+                    self.context.dom,
+                    transform,
+                    self.scale,
+                    None,
+                ),
+            }
         }
     }
 
@@ -872,6 +884,7 @@ impl ElementCx<'_, '_> {
                 self.context.dom,
                 transform,
                 self.scale,
+                None,
             );
         }
     }

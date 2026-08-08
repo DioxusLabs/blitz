@@ -23,4 +23,4 @@ pub use element::{
 };
 pub use node::*;
 pub use scrollbar::{ScrollbarColor, ScrollbarRef, ScrollbarWidth};
-pub use text::{GeneratedTextInputEvent, TextBrush, TextInputData, TextLayout};
+pub use text::{GeneratedTextInputEvent, Placeholder, TextBrush, TextInputData, TextLayout};
