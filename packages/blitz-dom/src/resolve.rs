@@ -21,7 +21,11 @@ thread_local! {
     pub(crate) static LAYOUT_CTX: RefCell<Option<Box<LayoutContext<TextBrush>>>> = const { RefCell::new(None) };
 }
 
+use style::properties::ComputedValues;
+use style::properties::generated::longhands::position::computed_value::T as Position;
 use style::selector_parser::RestyleDamage;
+use style::values::computed::Rotate;
+use style::values::generics::transform::{Scale, Translate};
 use taffy::AvailableSpace;
 
 use crate::{
@@ -82,6 +86,9 @@ impl BaseDocument {
 
         self.resolve_deferred_tasks();
         timer.record_time("pconstruct");
+
+        self.hoist_fixed_position_nodes();
+        timer.record_time("hoist");
 
         // Merge stylo into taffy
         self.flush_styles_to_layout(root_node_id);
@@ -299,6 +306,99 @@ impl BaseDocument {
             }
 
             doc.nodes[node_id].set_damage(damage);
+        }
+    }
+
+    /// Reparent `position: fixed` nodes onto the root element for layout.
+    ///
+    /// Taffy has no `Fixed` position, so `stylo_taffy` maps it to `Absolute`. An
+    /// absolutely positioned node resolves its insets against its containing
+    /// block, which for a fixed node must be the viewport. Laid out in place it
+    /// would instead resolve against the nearest positioned ancestor, so both its
+    /// offset and — when opposite insets are set — its size come out wrong.
+    ///
+    /// Reparenting them onto the root element takes the positioned ancestor out
+    /// of the picture. This runs after `resolve_layout_children` and before
+    /// `flush_styles_to_layout`, which derives `paint_children` from
+    /// `layout_children`, so painting and hit testing follow the hoist without
+    /// further work.
+    ///
+    /// Note this is not yet the full containing block a browser would use. The
+    /// root element takes its height from its content, whereas the initial
+    /// containing block is always viewport-sized, so `inset: 0` still sizes
+    /// against the document rather than the viewport. Closing that gap needs an
+    /// ICB distinct from the root element.
+    ///
+    /// A transformed ancestor becomes the containing block for its fixed
+    /// descendants, so those are left where they are.
+    ///
+    /// <https://drafts.csswg.org/css-position/#fixed-pos>
+    /// <https://drafts.csswg.org/css-transforms-1/#propdef-transform>
+    pub fn hoist_fixed_position_nodes(&mut self) {
+        let root_id = self.root_element().id;
+
+        let mut hoisted: Vec<NodeId> = Vec::new();
+        collect_fixed(self, root_id, false, &mut hoisted);
+
+        for node_id in hoisted {
+            let Some(parent_id) = self.nodes[node_id].layout_parent.get() else {
+                continue;
+            };
+            if parent_id == root_id {
+                continue;
+            }
+
+            if let Some(children) = self.nodes[parent_id].layout_children.borrow_mut().as_mut() {
+                children.retain(|id| *id != node_id);
+            }
+            if let Some(children) = self.nodes[root_id].layout_children.borrow_mut().as_mut() {
+                children.push(node_id);
+            }
+            self.nodes[node_id].layout_parent.set(Some(root_id));
+        }
+
+        fn collect_fixed(
+            doc: &BaseDocument,
+            node_id: NodeId,
+            under_transform: bool,
+            out: &mut Vec<NodeId>,
+        ) {
+            let children = doc.nodes[node_id].layout_children.borrow().clone();
+            let Some(children) = children else {
+                return;
+            };
+
+            for child_id in children {
+                let Some(child) = doc.nodes.get(child_id) else {
+                    continue;
+                };
+                let Some(styles) = child.primary_styles() else {
+                    continue;
+                };
+
+                if !under_transform && styles.clone_position() == Position::Fixed {
+                    out.push(child_id);
+                }
+
+                collect_fixed(
+                    doc,
+                    child_id,
+                    under_transform || establishes_containing_block(&styles),
+                    out,
+                );
+            }
+        }
+
+        /// Whether a node becomes the containing block for fixed descendants.
+        ///
+        /// TODO: `filter`, `backdrop-filter`, `will-change`, `contain` and
+        /// `perspective` also do this.
+        fn establishes_containing_block(styles: &ComputedValues) -> bool {
+            let box_styles = styles.get_box();
+            !box_styles.transform.0.is_empty()
+                || !matches!(box_styles.translate, Translate::None)
+                || !matches!(box_styles.rotate, Rotate::None)
+                || !matches!(box_styles.scale, Scale::None)
         }
     }
 
