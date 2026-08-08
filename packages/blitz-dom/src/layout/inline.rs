@@ -277,6 +277,9 @@ impl BaseDocument {
             available_space,
             sizing_mode: SizingMode::InherentSize,
             parent_size: available_space.into_options(),
+            // Atomic inlines (e.g. inline-block) establish independent formatting
+            // contexts: their margins never collapse with their children's margins.
+            vertical_margins_are_collapsible: taffy::Line::FALSE,
             ..inputs
         };
         #[cfg(feature = "floats")]
