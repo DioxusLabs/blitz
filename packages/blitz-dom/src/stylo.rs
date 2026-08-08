@@ -940,6 +940,8 @@ impl<'a> TElement for BlitzNode<'a> {
             let is_height = *name == local_name!("height");
             let is_embedded = *tag == local_name!("iframe")
                 || *tag == local_name!("embed")
+                || *tag == local_name!("img")
+                || *tag == local_name!("object")
                 || *tag == local_name!("video");
             let maps_to_dimension = if is_width {
                 is_embedded
