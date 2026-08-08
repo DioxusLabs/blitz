@@ -249,24 +249,16 @@ impl BaseDocument {
                 };
                 let eased = ease_in_out_cubic(progress);
 
-                // Interpolate the target offset and move towards it. The scroll helpers work
-                // in deltas (subtracted from the current offset) and clamp to the valid scroll
-                // range, so pass `current - target` to land on the interpolated offset.
-                let target_x = scroll_to.start.x + (scroll_to.end.x - scroll_to.start.x) * eased;
-                let target_y = scroll_to.start.y + (scroll_to.end.y - scroll_to.start.y) * eased;
+                // Interpolate the target offset and move to it.
+                let target = crate::util::Point {
+                    x: scroll_to.start.x + (scroll_to.end.x - scroll_to.start.x) * eased,
+                    y: scroll_to.start.y + (scroll_to.end.y - scroll_to.start.y) * eased,
+                };
                 match scroll_to.target {
-                    Some(node_id) => {
-                        let current = self.node_scroll_state(node_id).0;
-                        self.scroll_node_by(
-                            node_id,
-                            current.x - target_x,
-                            current.y - target_y,
-                            &mut |_| {},
-                        );
-                    }
+                    Some(node_id) => self.set_node_scroll_offset(node_id, target),
                     None => {
                         let current = self.viewport_scroll;
-                        self.scroll_viewport_by(current.x - target_x, current.y - target_y);
+                        self.scroll_viewport_by(current.x - target.x, current.y - target.y);
                     }
                 }
 

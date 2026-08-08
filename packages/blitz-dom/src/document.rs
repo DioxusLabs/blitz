@@ -2239,10 +2239,10 @@ impl BaseDocument {
     /// state rather than its own.
     pub(crate) fn node_scroll_state(
         &self,
-        node_id: usize,
+        node_id: NodeId,
     ) -> (crate::Point<f64>, crate::Point<f64>) {
         if self.try_root_element().is_some_and(|el| el.id == node_id) {
-            let layout = &self.root_element().final_layout;
+            let layout = self.root_element().final_layout();
             let content_width = layout.size.width.max(layout.content_size.width) as f64;
             let content_height = layout.size.height.max(layout.content_size.height) as f64;
             let scale = self.viewport.scale() as f64;
@@ -2254,13 +2254,67 @@ impl BaseDocument {
             };
             (self.viewport_scroll, max)
         } else if let Some(node) = self.nodes.get(node_id) {
+            // An axis with a non-scrolling overflow value has no scrollable range, even when
+            // its content overflows.
+            let (can_x_scroll, can_y_scroll) = node
+                .primary_styles()
+                .map(|styles| {
+                    (
+                        matches!(styles.clone_overflow_x(), Overflow::Scroll | Overflow::Auto),
+                        matches!(styles.clone_overflow_y(), Overflow::Scroll | Overflow::Auto),
+                    )
+                })
+                .unwrap_or((false, false));
             let max = crate::Point {
-                x: node.final_layout.scroll_width() as f64,
-                y: node.final_layout.scroll_height() as f64,
+                x: match can_x_scroll {
+                    true => node.final_layout().scroll_width() as f64,
+                    false => 0.0,
+                },
+                y: match can_y_scroll {
+                    true => node.final_layout().scroll_height() as f64,
+                    false => 0.0,
+                },
             };
-            (node.scroll_offset, max)
+            (*node.scroll_offset(), max)
         } else {
             (crate::Point::ZERO, crate::Point::ZERO)
+        }
+    }
+
+    /// Set a node's scroll offset to the given absolute offset, clamped to its scrollable
+    /// range.
+    ///
+    /// Unlike [`BaseDocument::scroll_node_by`], scroll which the node cannot consume is
+    /// discarded rather than transferred to an ancestor scroller: a programmatic scroll
+    /// targets exactly one scroller.
+    pub(crate) fn set_node_scroll_offset(&mut self, node_id: NodeId, offset: crate::Point<f64>) {
+        let max = self.node_scroll_state(node_id).1;
+        let offset = crate::Point {
+            x: offset.x.clamp(0.0, max.x),
+            y: offset.y.clamp(0.0, max.y),
+        };
+
+        // Per the CSS overflow propagation rules, the root element's overflow is applied to
+        // the viewport, so scrolling it scrolls the viewport.
+        if self.try_root_element().is_some_and(|el| el.id == node_id) {
+            let initial = self.viewport_scroll;
+            self.viewport_scroll = offset;
+            if self.viewport_scroll != initial {
+                self.shell_provider.request_redraw();
+            }
+            return;
+        }
+
+        let Some(node) = self.nodes.get_mut(node_id) else {
+            return;
+        };
+
+        let initial = *node.scroll_offset();
+        *node.scroll_offset_mut() = offset;
+
+        if offset != initial {
+            self.show_scrollbars(node_id);
+            self.shell_provider.request_redraw();
         }
     }
 
@@ -2269,7 +2323,7 @@ impl BaseDocument {
     /// `target` selects what is scrolled: `None` animates the viewport scroll, while
     /// `Some(node_id)` animates that node's own scroll offset. The animation is advanced
     /// each frame in [`BaseDocument::resolve_scroll_animation`].
-    fn start_scroll_animation(&mut self, target: Option<usize>, end: crate::Point<f64>) {
+    fn start_scroll_animation(&mut self, target: Option<NodeId>, end: crate::Point<f64>) {
         let start = match target {
             Some(node_id) => self.node_scroll_state(node_id).0,
             None => self.viewport_scroll,
@@ -2292,7 +2346,7 @@ impl BaseDocument {
         self.shell_provider.request_redraw();
     }
 
-    fn should_scroll_smoothly(&self, node_id: usize, behavior: ScrollBehavior) -> bool {
+    fn should_scroll_smoothly(&self, node_id: NodeId, behavior: ScrollBehavior) -> bool {
         match behavior {
             ScrollBehavior::Auto => self.nodes.get(node_id).is_some_and(|node| {
                 node.primary_styles().is_some_and(|style| {
@@ -2306,12 +2360,12 @@ impl BaseDocument {
     }
 
     /// Scroll an element to the given absolute scroll offset in CSS pixels.
-    pub fn scroll_to(&mut self, node_id: usize, x: f64, y: f64, behavior: ScrollBehavior) {
+    pub fn scroll_to(&mut self, node_id: NodeId, x: f64, y: f64, behavior: ScrollBehavior) {
         if self.nodes.get(node_id).is_none() {
             return;
         }
 
-        let (current, max) = self.node_scroll_state(node_id);
+        let max = self.node_scroll_state(node_id).1;
         let target = crate::Point {
             x: x.clamp(0.0, max.x),
             y: y.clamp(0.0, max.y),
@@ -2321,18 +2375,12 @@ impl BaseDocument {
             self.start_scroll_animation(Some(node_id), target);
         } else {
             self.scroll_animation = ScrollAnimationState::None;
-            self.scroll_node_by(
-                node_id,
-                current.x - target.x,
-                current.y - target.y,
-                &mut |_| {},
-            );
-            self.shell_provider.request_redraw();
+            self.set_node_scroll_offset(node_id, target);
         }
     }
 
     /// Scroll an element by the given relative offset in CSS pixels.
-    pub fn scroll_by(&mut self, node_id: usize, x: f64, y: f64, behavior: ScrollBehavior) {
+    pub fn scroll_by(&mut self, node_id: NodeId, x: f64, y: f64, behavior: ScrollBehavior) {
         let current = self.node_scroll_state(node_id).0;
         self.scroll_to(node_id, current.x + x, current.y + y, behavior);
     }
@@ -2371,7 +2419,7 @@ impl BaseDocument {
     /// Scroll the viewport so that the given element has the requested alignment in each axis.
     pub fn scroll_into_view(
         &mut self,
-        node_id: usize,
+        node_id: NodeId,
         behavior: ScrollBehavior,
         vertical: ScrollLogicalPosition,
         horizontal: ScrollLogicalPosition,
@@ -2380,8 +2428,8 @@ impl BaseDocument {
             return;
         };
         let target =
-            node.absolute_position(node.scroll_offset.x as f32, node.scroll_offset.y as f32);
-        let target_size = node.final_layout.size;
+            node.absolute_position(node.scroll_offset().x as f32, node.scroll_offset().y as f32);
+        let target_size = node.final_layout().size;
         let Some(root_id) = self.try_root_element().map(|root| root.id) else {
             return;
         };
@@ -2411,7 +2459,7 @@ impl BaseDocument {
     /// fragment. Otherwise returns `Some(target)`, where `target` is `Some(node_id)` for
     /// the element to scroll to, or `None` to scroll to the top of the document (matching
     /// browser behaviour for empty and `top` fragments).
-    fn resolve_fragment_scroll_target(&self, fragment: &str) -> Option<Option<usize>> {
+    fn resolve_fragment_scroll_target(&self, fragment: &str) -> Option<Option<NodeId>> {
         // Fragments are percent-encoded in URLs (e.g. `%20`); decode before matching.
         let decoded = percent_encoding::percent_decode_str(fragment)
             .decode_utf8_lossy()
