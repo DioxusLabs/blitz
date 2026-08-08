@@ -157,34 +157,6 @@ macro_rules! universal_accessors {
     };
 }
 
-/// Generates forwarding accessors for fields that only live on [`ElementData`]
-/// (element / anonymous block nodes).
-macro_rules! element_accessors {
-    ($($(#[$meta:meta])* $field:ident / $field_mut:ident : $ty:ty),* $(,)?) => {
-        impl Node {
-            $(
-                $(#[$meta])*
-                #[inline]
-                pub fn $field(&self) -> &$ty {
-                    match &self.data {
-                        NodeData::Element(data) | NodeData::AnonymousBlock(data) => &data.$field,
-                        _ => panic!(concat!("`", stringify!($field), "` is not available on this node kind")),
-                    }
-                }
-
-                $(#[$meta])*
-                #[inline]
-                pub fn $field_mut(&mut self) -> &mut $ty {
-                    match &mut self.data {
-                        NodeData::Element(data) | NodeData::AnonymousBlock(data) => &mut data.$field,
-                        _ => panic!(concat!("`", stringify!($field), "` is not available on this node kind")),
-                    }
-                }
-            )*
-        }
-    };
-}
-
 universal_accessors! {
     stylo_element_data / stylo_element_data_mut: StyloData,
     style / style_mut: Style<Atom>,
@@ -199,9 +171,9 @@ universal_accessors! {
     // carries these:
     element_state / element_state_mut: ElementState,
     snapshot_handled / snapshot_handled_mut: AtomicBool,
-}
-
-element_accessors! {
+    // `apply_selector_flags` deposits `for_parent()` flags on the parent node,
+    // and the parent of the root <html> element is the document -- so the
+    // document has to be able to hold selector flags too.
     selector_flags / selector_flags_mut: Cell<ElementSelectorFlags>,
 }
 

@@ -122,9 +122,12 @@ pub struct ElementData {
 /// The document node participates in layout and styling like an element, so it
 /// carries the same style/layout fields that were previously stored directly on
 /// [`Node`](super::Node).
-#[derive(Debug)]
 pub struct DocumentData {
     pub stylo_element_data: StyloData,
+    /// Selector flags deposited here by `apply_selector_flags` when a
+    /// `for_parent()` flag is applied while matching the root `<html>` element,
+    /// whose parent node is the document.
+    pub selector_flags: Cell<ElementSelectorFlags>,
     /// A clone of the document's shared style lock. Set when the owning
     /// [`Node`](super::Node) is constructed.
     pub guard: Option<SharedRwLock>,
@@ -142,10 +145,34 @@ pub struct DocumentData {
     pub transform: Option<Affine>,
 }
 
+// Hand-written like `ElementData`'s, because `ElementSelectorFlags` does not
+// implement `Debug`. Every other field is still reported.
+impl std::fmt::Debug for DocumentData {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DocumentData")
+            .field("stylo_element_data", &self.stylo_element_data)
+            .field("guard", &self.guard)
+            .field("dirty_descendants", &self.dirty_descendants)
+            .field("element_state", &self.element_state)
+            .field("has_snapshot", &self.has_snapshot)
+            .field("snapshot_handled", &self.snapshot_handled)
+            .field("style", &self.style)
+            .field("display_constructed_as", &self.display_constructed_as)
+            .field("cache", &self.cache)
+            .field("unrounded_layout", &self.unrounded_layout)
+            .field("final_layout", &self.final_layout)
+            .field("scroll_offset", &self.scroll_offset)
+            .field("scrollable_overflow", &self.scrollable_overflow)
+            .field("transform", &self.transform)
+            .finish_non_exhaustive()
+    }
+}
+
 impl DocumentData {
     pub fn new() -> Self {
         Self {
             stylo_element_data: Default::default(),
+            selector_flags: Cell::new(ElementSelectorFlags::empty()),
             guard: None,
             dirty_descendants: AtomicBool::new(true),
             element_state: ElementState::empty(),
