@@ -174,7 +174,7 @@ pub fn display(input: stylo::Display) -> taffy::Display {
         #[cfg(feature = "block")]
         stylo::DisplayInside::Flow => taffy::Display::Block,
         #[cfg(feature = "block")]
-        stylo::DisplayInside::FlowRoot => taffy::Display::Block,
+        stylo::DisplayInside::FlowRoot => taffy::Display::FlowRoot,
         #[cfg(feature = "block")]
         stylo::DisplayInside::TableCell => taffy::Display::Block,
         // TODO: Support display:contents in Taffy
@@ -331,8 +331,8 @@ pub fn item_alignment(input: stylo::AlignFlags) -> Option<taffy::AlignItems> {
         stylo::AlignFlags::STRETCH => Some(taffy::AlignItems::STRETCH),
         stylo::AlignFlags::FLEX_START => Some(taffy::AlignItems::FLEX_START),
         stylo::AlignFlags::FLEX_END => Some(taffy::AlignItems::FLEX_END),
-        stylo::AlignFlags::SELF_START => Some(taffy::AlignItems::START),
-        stylo::AlignFlags::SELF_END => Some(taffy::AlignItems::END),
+        stylo::AlignFlags::SELF_START => Some(taffy::AlignItems::SELF_START),
+        stylo::AlignFlags::SELF_END => Some(taffy::AlignItems::SELF_END),
         stylo::AlignFlags::START => Some(taffy::AlignItems::START),
         stylo::AlignFlags::END => Some(taffy::AlignItems::END),
         stylo::AlignFlags::LEFT => Some(taffy::AlignItems::START),
@@ -540,13 +540,18 @@ pub fn grid_template_area(input: &stylo::NamedArea) -> taffy::GridTemplateArea<A
 
 #[inline]
 #[cfg(feature = "grid")]
-fn grid_template_areas(input: &stylo::GridTemplateAreas) -> Vec<taffy::GridTemplateArea<Atom>> {
+fn grid_template_areas(input: &stylo::GridTemplateAreas) -> Option<taffy::GridTemplateAreas<Atom>> {
     match input {
-        stylo::GridTemplateAreas::None => Vec::new(),
+        stylo::GridTemplateAreas::None => None,
         stylo::GridTemplateAreas::Areas(template_areas_arc) => {
-            crate::wrapper::GridAreaWrapper(&template_areas_arc.0.areas)
-                .into_iter()
-                .collect()
+            let template = &template_areas_arc.0;
+            Some(taffy::GridTemplateAreas {
+                areas: crate::wrapper::GridAreaWrapper(&template.areas)
+                    .into_iter()
+                    .collect(),
+                row_count: template.strings.len() as u16,
+                column_count: template.width as u16,
+            })
         }
     }
 }
