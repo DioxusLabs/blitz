@@ -305,7 +305,7 @@ checksum = "2a4385e2e34eb35d6b3efe798b9eb88096925d87726c0798709bf56d9ed84af3"
 [[package]]
 name = "anyrender"
 version = "0.12.0"
-source = "git+https://github.com/DioxusLabs/anyrender?branch=devin%2F1785858394-usvg-048#baed6ca2253c9b3005c295948ceba8690235cf86"
+source = "git+https://github.com/DioxusLabs/anyrender?branch=devin%2F1785858394-usvg-048#dcd219746ff13a5832beab552f3f7f494d1bd84d"
 dependencies = [
  "kurbo",
  "peniko",
@@ -364,7 +364,7 @@ dependencies = [
 [[package]]
 name = "anyrender_svg"
 version = "0.13.0"
-source = "git+https://github.com/DioxusLabs/anyrender?branch=devin%2F1785858394-usvg-048#baed6ca2253c9b3005c295948ceba8690235cf86"
+source = "git+https://github.com/DioxusLabs/anyrender?branch=devin%2F1785858394-usvg-048#dcd219746ff13a5832beab552f3f7f494d1bd84d"
 dependencies = [
  "anyrender",
  "image",
