@@ -1,5 +1,5 @@
 use crate::NodeTree;
-use crate::events::{DragMode, ScrollAnimationState, handle_dom_event};
+use crate::events::{DragMode, ScrollAnimationState, ScrollToState, handle_dom_event};
 use crate::font_metrics::BlitzFontMetricsProvider;
 use crate::layout::construct::ConstructionTask;
 use crate::layout::damage::ALL_DAMAGE;
@@ -66,7 +66,7 @@ use style::{
 };
 use thin_vec::ThinVec;
 use url::Url;
-use web_time::Instant;
+use web_time::{Instant, SystemTime, UNIX_EPOCH};
 
 #[cfg(feature = "parallel-construct")]
 use thread_local::ThreadLocal;
@@ -186,6 +186,22 @@ pub enum DocumentEvent {
         node_id: NodeId,
         url: Url,
     },
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ScrollBehavior {
+    #[default]
+    Auto,
+    Instant,
+    Smooth,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ScrollLogicalPosition {
+    Start,
+    Center,
+    End,
+    Nearest,
 }
 
 pub struct BaseDocument {
@@ -2280,7 +2296,7 @@ impl BaseDocument {
         self.viewport_scroll != initial
     }
 
-    pub fn scroll_by(
+    pub(crate) fn scroll_chain_by(
         &mut self,
         anchor_node_id: Option<NodeId>,
         scroll_x: f64,
@@ -2319,20 +2335,232 @@ impl BaseDocument {
         })
     }
 
-    /// Scroll the viewport so that the given node is aligned with the top of the viewport.
-    pub fn scroll_to_node(&mut self, node_id: NodeId) {
+    /// Duration (in milliseconds) of an animated scroll.
+    const SMOOTH_SCROLL_DURATION_MS: f64 = 300.0;
+
+    /// Returns the current scroll offset and the maximum scroll offset (the minimum is
+    /// always `0`) for the given node.
+    ///
+    /// Scrolls that reach the root element are applied to the viewport (per the CSS
+    /// overflow propagation rules), so the root element reports the viewport's scroll
+    /// state rather than its own.
+    pub(crate) fn node_scroll_state(
+        &self,
+        node_id: usize,
+    ) -> (crate::Point<f64>, crate::Point<f64>) {
+        if self.try_root_element().is_some_and(|el| el.id == node_id) {
+            let layout = &self.root_element().final_layout;
+            let content_width = layout.size.width.max(layout.content_size.width) as f64;
+            let content_height = layout.size.height.max(layout.content_size.height) as f64;
+            let scale = self.viewport.scale() as f64;
+            let window_width = self.viewport.window_size.0 as f64 / scale;
+            let window_height = self.viewport.window_size.1 as f64 / scale;
+            let max = crate::Point {
+                x: (content_width - window_width).max(0.0),
+                y: (content_height - window_height).max(0.0),
+            };
+            (self.viewport_scroll, max)
+        } else if let Some(node) = self.nodes.get(node_id) {
+            let max = crate::Point {
+                x: node.final_layout.scroll_width() as f64,
+                y: node.final_layout.scroll_height() as f64,
+            };
+            (node.scroll_offset, max)
+        } else {
+            (crate::Point::ZERO, crate::Point::ZERO)
+        }
+    }
+
+    /// Start a smooth (animated) scroll towards the given absolute scroll offset.
+    ///
+    /// `target` selects what is scrolled: `None` animates the viewport scroll, while
+    /// `Some(node_id)` animates that node's own scroll offset. The animation is advanced
+    /// each frame in [`BaseDocument::resolve_scroll_animation`].
+    fn start_scroll_animation(&mut self, target: Option<usize>, end: crate::Point<f64>) {
+        let start = match target {
+            Some(node_id) => self.node_scroll_state(node_id).0,
+            None => self.viewport_scroll,
+        };
+
+        let start_time = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64 as f64;
+
+        self.scroll_animation = ScrollAnimationState::ScrollTo(ScrollToState {
+            target,
+            start,
+            end,
+            start_time,
+            duration: Self::SMOOTH_SCROLL_DURATION_MS,
+        });
+
+        // Ensure the frame loop runs so the animation is driven to completion.
+        self.shell_provider.request_redraw();
+    }
+
+    fn should_scroll_smoothly(&self, node_id: usize, behavior: ScrollBehavior) -> bool {
+        match behavior {
+            ScrollBehavior::Auto => self.nodes.get(node_id).is_some_and(|node| {
+                node.primary_styles().is_some_and(|style| {
+                    style.clone_scroll_behavior()
+                        == style::computed_values::scroll_behavior::T::Smooth
+                })
+            }),
+            ScrollBehavior::Instant => false,
+            ScrollBehavior::Smooth => true,
+        }
+    }
+
+    /// Scroll an element to the given absolute scroll offset in CSS pixels.
+    pub fn scroll_to(&mut self, node_id: usize, x: f64, y: f64, behavior: ScrollBehavior) {
+        if self.nodes.get(node_id).is_none() {
+            return;
+        }
+
+        let (current, max) = self.node_scroll_state(node_id);
+        let target = crate::Point {
+            x: x.clamp(0.0, max.x),
+            y: y.clamp(0.0, max.y),
+        };
+
+        if self.should_scroll_smoothly(node_id, behavior) {
+            self.start_scroll_animation(Some(node_id), target);
+        } else {
+            self.scroll_animation = ScrollAnimationState::None;
+            self.scroll_node_by(
+                node_id,
+                current.x - target.x,
+                current.y - target.y,
+                &mut |_| {},
+            );
+            self.shell_provider.request_redraw();
+        }
+    }
+
+    /// Scroll an element by the given relative offset in CSS pixels.
+    pub fn scroll_by(&mut self, node_id: usize, x: f64, y: f64, behavior: ScrollBehavior) {
+        let current = self.node_scroll_state(node_id).0;
+        self.scroll_to(node_id, current.x + x, current.y + y, behavior);
+    }
+
+    fn aligned_scroll_offset(
+        current: f64,
+        viewport_size: f64,
+        target_start: f64,
+        target_size: f64,
+        position: ScrollLogicalPosition,
+    ) -> f64 {
+        let target_end = target_start + target_size;
+        match position {
+            ScrollLogicalPosition::Start => target_start,
+            ScrollLogicalPosition::Center => target_start - (viewport_size - target_size) / 2.0,
+            ScrollLogicalPosition::End => target_end - viewport_size,
+            ScrollLogicalPosition::Nearest => {
+                let viewport_end = current + viewport_size;
+                if (target_start >= current && target_end <= viewport_end)
+                    || (target_start <= current && target_end >= viewport_end)
+                {
+                    current
+                } else {
+                    let start_offset = target_start;
+                    let end_offset = target_end - viewport_size;
+                    if (start_offset - current).abs() < (end_offset - current).abs() {
+                        start_offset
+                    } else {
+                        end_offset
+                    }
+                }
+            }
+        }
+    }
+
+    /// Scroll the viewport so that the given element has the requested alignment in each axis.
+    pub fn scroll_into_view(
+        &mut self,
+        node_id: usize,
+        behavior: ScrollBehavior,
+        vertical: ScrollLogicalPosition,
+        horizontal: ScrollLogicalPosition,
+    ) {
         let Some(node) = self.nodes.get(node_id) else {
             return;
         };
+        let target =
+            node.absolute_position(node.scroll_offset.x as f32, node.scroll_offset.y as f32);
+        let target_size = node.final_layout.size;
+        let Some(root_id) = self.try_root_element().map(|root| root.id) else {
+            return;
+        };
+        let scale = self.viewport.scale() as f64;
+        let viewport_width = self.viewport.window_size.0 as f64 / scale;
+        let viewport_height = self.viewport.window_size.1 as f64 / scale;
+        let x = Self::aligned_scroll_offset(
+            self.viewport_scroll.x,
+            viewport_width,
+            target.x as f64,
+            target_size.width as f64,
+            horizontal,
+        );
+        let y = Self::aligned_scroll_offset(
+            self.viewport_scroll.y,
+            viewport_height,
+            target.y as f64,
+            target_size.height as f64,
+            vertical,
+        );
+        self.scroll_to(root_id, x, y, behavior);
+    }
 
-        // `absolute_position` gives the node's position in document space (it does not
-        // account for the viewport scroll), so it is the scroll offset we want to land on.
-        let target = node.absolute_position(0.0, 0.0);
-        let current = self.viewport_scroll;
+    /// Resolve a URL fragment (the `#...` part of a URL) to a scroll target.
+    ///
+    /// Returns `None` if the fragment matches no element and is not a top-of-document
+    /// fragment. Otherwise returns `Some(target)`, where `target` is `Some(node_id)` for
+    /// the element to scroll to, or `None` to scroll to the top of the document (matching
+    /// browser behaviour for empty and `top` fragments).
+    fn resolve_fragment_scroll_target(&self, fragment: &str) -> Option<Option<usize>> {
+        // Fragments are percent-encoded in URLs (e.g. `%20`); decode before matching.
+        let decoded = percent_encoding::percent_decode_str(fragment)
+            .decode_utf8_lossy()
+            .into_owned();
 
-        // `scroll_viewport_by` subtracts the delta from the current scroll offset, so pass
-        // `current - target` in order to land on `target`.
-        self.scroll_viewport_by(current.x - target.x as f64, current.y - target.y as f64);
+        if !decoded.is_empty() {
+            if let Some(node_id) = self.get_fragment_target(&decoded) {
+                return Some(Some(node_id));
+            }
+        }
+
+        // An empty fragment, or the special "top" fragment when no matching element exists,
+        // scrolls to the top of the document.
+        if decoded.is_empty() || decoded.eq_ignore_ascii_case("top") {
+            return Some(None);
+        }
+
+        None
+    }
+
+    fn scroll_to_fragment_with_behavior(
+        &mut self,
+        fragment: &str,
+        behavior: ScrollBehavior,
+    ) -> bool {
+        match self.resolve_fragment_scroll_target(fragment) {
+            Some(Some(node_id)) => {
+                self.scroll_into_view(
+                    node_id,
+                    behavior,
+                    ScrollLogicalPosition::Start,
+                    ScrollLogicalPosition::Nearest,
+                );
+                true
+            }
+            Some(None) => {
+                let root_id = self.root_element().id;
+                self.scroll_to(root_id, 0.0, 0.0, behavior);
+                true
+            }
+            None => false,
+        }
     }
 
     /// Scroll to the element targeted by the given URL fragment (the `#...` part of a URL).
@@ -2341,27 +2569,13 @@ impl BaseDocument {
     /// of the document, matching browser behaviour. Returns `true` if a scroll target was
     /// found.
     pub fn scroll_to_fragment(&mut self, fragment: &str) -> bool {
-        // Fragments are percent-encoded in URLs (e.g. `%20`); decode before matching.
-        let decoded = percent_encoding::percent_decode_str(fragment)
-            .decode_utf8_lossy()
-            .into_owned();
+        self.scroll_to_fragment_with_behavior(fragment, ScrollBehavior::Auto)
+    }
 
-        if !decoded.is_empty() {
-            if let Some(node_id) = self.get_fragment_target(&decoded) {
-                self.scroll_to_node(node_id);
-                return true;
-            }
-        }
-
-        // An empty fragment, or the special "top" fragment when no matching element exists,
-        // scrolls to the top of the document.
-        if decoded.is_empty() || decoded.eq_ignore_ascii_case("top") {
-            let current = self.viewport_scroll;
-            self.scroll_viewport_by(current.x, current.y);
-            return true;
-        }
-
-        false
+    /// Like [`BaseDocument::scroll_to_fragment`], but animates the viewport towards the
+    /// target instead of jumping instantly. Returns `true` if a scroll target was found.
+    pub fn scroll_to_fragment_smooth(&mut self, fragment: &str) -> bool {
+        self.scroll_to_fragment_with_behavior(fragment, ScrollBehavior::Smooth)
     }
 
     /// Computes the size and position of the `Node` relative to the viewport
