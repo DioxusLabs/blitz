@@ -4,25 +4,34 @@ use crate::convert_events::{
     pointer_source_to_blitz_details, theme_to_color_scheme, winit_ime_to_blitz,
     winit_key_event_to_blitz, winit_modifiers_to_kbt_modifiers,
 };
+use crate::dnd::{
+    WinitDataTransfer, WinitDataTransferItems, blitz_drag_operation_to_winit_dnd_action,
+    blitz_drag_operations_to_winit_dnd_action, winit_dnd_action_to_blitz_dnd_operation,
+};
 use crate::event::{BlitzShellEvent, BlitzShellProxy, create_waker};
 use anyrender::WindowRenderer;
-use blitz_dom::Document;
+use blitz_dom::{Document, NodeId};
 use blitz_paint::paint_scene;
 use blitz_traits::events::{
+    BlitzDataTransfer, BlitzDataTransferArc, BlitzDragEvent, BlitzDragId, BlitzDragOperation,
     BlitzPointerEvent, BlitzPointerId, BlitzWheelDelta, BlitzWheelEvent, MouseEventButton,
     MouseEventButtons, PointerCoords, PointerDetails, UiEvent,
 };
 use blitz_traits::shell::Viewport;
+use winit::data_transfer::DataTransferId;
 use winit::dpi::{LogicalPosition, PhysicalInsets, PhysicalPosition};
+use winit::error::RequestError;
 use winit::keyboard::PhysicalKey;
 
 use atomic_refcell::AtomicRefCell;
 use std::any::Any;
+use std::ops::ControlFlow;
 use std::sync::Arc;
 use std::task::Waker;
+use std::time::Duration;
 use web_time::Instant;
 use winit::event::{ButtonSource, ElementState, MouseButton};
-use winit::event_loop::ActiveEventLoop;
+use winit::event_loop::{ActiveEventLoop, AsyncRequestSerial, DndAction};
 use winit::window::{Theme, WindowAttributes, WindowId};
 use winit::{event::Modifiers, event::WindowEvent, keyboard::KeyCode, window::Window};
 
@@ -64,6 +73,7 @@ impl<Rend: WindowRenderer> WindowConfig<Rend> {
     }
 }
 
+const INTERNAL_DROP_THRESHOLD: Duration = Duration::from_millis(50);
 pub struct View<Rend: WindowRenderer> {
     pub doc: Box<dyn Document>,
 
@@ -97,6 +107,13 @@ pub struct View<Rend: WindowRenderer> {
     pub animation_timer: Option<Instant>,
     pub is_visible: bool,
     pub safe_area_insets: PhysicalInsets<u32>,
+
+    /// As far as I can tell, multiple drags are not possible
+    pub active_drag: Arc<AtomicRefCell<Option<BlitzDragEvent>>>,
+    /// used to retrive data from drag event, it might be better if it's changed to a vector?
+    pending_data_transfers: Option<(BlitzDragEvent, Vec<AsyncRequestSerial>)>,
+    /// used to track if internal drag was dropped inside our outside
+    internal_drag: Instant,
 
     #[cfg(target_arch = "wasm32")]
     pending_resize: Option<winit::dpi::PhysicalSize<u32>>,
@@ -145,8 +162,8 @@ impl<Rend: WindowRenderer> View<Rend> {
         // until a layout pass fires.
         let requested_surface_size = config.attributes.surface_size;
         let attrs = config.attributes.with_visible(false);
-
         let winit_window: Arc<dyn Window> = Arc::from(event_loop.create_window(attrs).unwrap());
+
         #[cfg(feature = "accessibility")]
         let accessibility = AccessibilityState::new(&*winit_window, proxy.clone());
 
@@ -212,6 +229,9 @@ impl<Rend: WindowRenderer> View<Rend> {
             theme_override: None,
             buttons: MouseEventButtons::None,
             active_events: Arc::new(AtomicRefCell::new(Vec::new())),
+            active_drag: Arc::new(AtomicRefCell::new(None)),
+            pending_data_transfers: None,
+            internal_drag: Instant::now(),
             safe_area_insets,
             #[cfg(target_arch = "wasm32")]
             pending_resize: None,
@@ -485,6 +505,29 @@ impl<Rend: WindowRenderer> View<Rend> {
         active.len() != len_before
     }
 
+    fn set_active_drag(&self, event: BlitzDragEvent) {
+        *self.active_drag.borrow_mut() = Some(event);
+    }
+
+    fn update_active_drag(
+        &self,
+        id: BlitzDragId,
+        f: impl FnOnce(&mut BlitzDragEvent),
+    ) -> Option<BlitzDragEvent> {
+        let mut d = self.active_drag.borrow_mut();
+        let drag = d.as_mut()?;
+        if drag.id != id {
+            return None;
+        }
+        f(drag);
+        Some(drag.clone())
+    }
+
+    fn remove_active_drag(&self, id: BlitzDragId) -> Option<BlitzDragEvent> {
+        let mut d = self.active_drag.borrow_mut();
+        if d.as_ref()?.id == id { d.take() } else { None }
+    }
+
     #[inline]
     pub fn with_viewport(&mut self, cb: impl FnOnce(&mut Viewport)) {
         let mut inner = self.doc.inner_mut();
@@ -567,7 +610,58 @@ impl<Rend: WindowRenderer> View<Rend> {
         self.doc.handle_ui_event(event);
     }
 
-    pub fn handle_winit_event(&mut self, event: WindowEvent) {
+    pub fn start_internal_drag(
+        &mut self,
+        data_transfer: BlitzDataTransferArc,
+        node: Option<NodeId>,
+        event_loop: &dyn ActiveEventLoop,
+    ) -> Result<(), RequestError> {
+        let mut event = BlitzDragEvent {
+            id: 0,
+            coords: self.pointer_coords(self.pointer_pos),
+            element: Default::default(),
+            mods: winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state()),
+            button: MouseEventButton::Main,
+            buttons: self.buttons,
+            data_transfer: data_transfer.clone(),
+            source: node.into(),
+        };
+
+        self.doc.handle_ui_event(UiEvent::DragStart(event.clone()));
+
+        let actions =
+            blitz_drag_operations_to_winit_dnd_action(&data_transfer.borrow().effect_allowed);
+        let id = event_loop.start_drag(
+            self.window_id(),
+            Box::from(WinitDataTransfer::new(data_transfer)),
+            &actions,
+            None,
+        )?;
+
+        event.id = id.into_raw() as u64;
+
+        self.set_active_drag(event);
+        Ok(())
+    }
+
+    pub fn set_dnd_action(
+        &self,
+        id: DataTransferId,
+        event_loop: &dyn ActiveEventLoop,
+        drop_effect: &BlitzDragOperation,
+    ) {
+        let action = blitz_drag_operation_to_winit_dnd_action(drop_effect);
+        let actions = action
+            .as_ref()
+            .map_or(&[] as &[DndAction], std::slice::from_ref);
+
+        if let Err(err) = event_loop.set_valid_dnd_actions(id, actions) {
+            #[cfg(feature = "tracing")]
+            tracing::error!("{}", err)
+        }
+    }
+
+    pub fn handle_winit_event(&mut self, event: WindowEvent, event_loop: &dyn ActiveEventLoop) {
         // Update accessibility focus and window size state in response to a Winit WindowEvent
         #[cfg(feature = "accessibility")]
         self.accessibility
@@ -816,6 +910,7 @@ impl<Rend: WindowRenderer> View<Rend> {
                 let blitz_delta = match delta {
                     winit::event::MouseScrollDelta::LineDelta(x, y) => BlitzWheelDelta::Lines(x as f64, y as f64),
                     winit::event::MouseScrollDelta::PixelDelta(pos) => BlitzWheelDelta::Pixels(pos.x, pos.y),
+                    _ => unreachable!("unsupported MouseScrollDelta variant: {delta:?}")
                 };
 
                 let event = BlitzWheelEvent {
@@ -834,10 +929,143 @@ impl<Rend: WindowRenderer> View<Rend> {
             WindowEvent::PanGesture { .. } => {},
             WindowEvent::DoubleTapGesture { .. } => {},
             WindowEvent::RotationGesture { .. } => {},
-            WindowEvent::DragEntered { .. } => {},
-            WindowEvent::DragMoved { .. } => {},
-            WindowEvent::DragDropped { .. } => {},
-            WindowEvent::DragLeft { .. } => {},
+            WindowEvent::HoldGesture { .. } => {},
+
+            WindowEvent::OutgoingDragDropped { id, .. } => {
+                if let Some(event) = self.remove_active_drag(id.into_raw() as u64) {
+                     if self.internal_drag.elapsed() < INTERNAL_DROP_THRESHOLD {
+                        self.doc.handle_ui_event(UiEvent::Drop(event));
+                     } else {
+                        self.doc.handle_ui_event(UiEvent::OutgoingDrop(event));
+                     }
+                }
+            },
+            WindowEvent::OutgoingDragCanceled { id } => {
+                if let Some( event) = self.remove_active_drag(id.into_raw() as u64) {
+                    self.doc.handle_ui_event(UiEvent::OutgoingCancel(event));
+                }
+            },
+            WindowEvent::DataTransferReceived {  serial, value, ..  } => {
+                if let Some((event, serials)) = &mut self.pending_data_transfers && let Some(pos) = serials.iter().position(|s| *s == serial) {
+                    serials.swap_remove(pos);
+                    let is_empty = serials.is_empty();
+
+                    let mut dt = event.data_transfer.borrow_mut();
+                    if let Some(items) = (&mut *dt.items as &mut dyn std::any::Any)
+                        .downcast_mut::<WinitDataTransferItems>()
+                    {
+                        items.push(value);
+                    }
+
+                    drop(dt);
+
+                    if is_empty && let Some((event, _)) = self.pending_data_transfers.take() {
+                        // since drop is async it might come later and the mouse could be moved in the meantime
+                        // if this becomes a problem save drop node id in the event or something simmilar
+                        self.doc.handle_ui_event(UiEvent::Drop(event));
+                    }
+                }
+            },
+            WindowEvent::DragEntered { id, position } => {
+                let drag_id = id.into_raw() as u64;
+
+                // Internal drags
+                if let Some(event) = self.update_active_drag(drag_id, |drag| {
+                    drag.mods = winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state());
+                    if let Some(pos) = position {
+                        drag.coords = self.pointer_coords(pos);
+                    }
+                    self.set_dnd_action(id, event_loop, &drag.data_transfer().drop_effect);
+                }) {
+                    if let Some(pos) = position {
+                        self.pointer_pos = pos;
+                    }
+                    self.doc.handle_ui_event(UiEvent::DragEnter(event));
+                    return;
+                }
+
+                let data_transfer = Arc::new(AtomicRefCell::new(BlitzDataTransfer {
+                    items: Box::new(WinitDataTransferItems::new(Vec::new())),
+                    effect_allowed: None,
+                    drop_effect: Default::default(),
+                    mode: Default::default(),
+                }));
+
+                if let Some(pos) = position {
+                    self.pointer_pos = pos;
+                }
+
+                let event = BlitzDragEvent {
+                    id: id.into_raw() as u64,
+                    coords: self.pointer_coords(self.pointer_pos),
+                    element: Default::default(),
+                    mods: winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state()),
+                    data_transfer,
+                    // currently not possible to detect
+                    button: Default::default(),
+                    buttons: Default::default(),
+                    source: blitz_traits::events::BlitzDataTransferSource::External
+                };
+
+                self.set_active_drag(event.clone());
+                self.doc.handle_ui_event(UiEvent::DragEnter(event));
+            },
+            WindowEvent::DragPosition { id, position, .. } => {
+                if let Some(event) = self.update_active_drag(id.into_raw() as u64, |drag| {
+                    drag.mods = winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state());
+                    drag.coords = self.pointer_coords(position);
+                    self.set_dnd_action(id, event_loop, &drag.data_transfer().drop_effect);
+                }) {
+                    self.doc.handle_ui_event(UiEvent::DragOver(event));
+                }
+            },
+            WindowEvent::DragDropped { id, proposed_action } => {
+
+                if let Some(mut event) = self.remove_active_drag(id.into_raw() as u64) {
+                    event.mods = winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state());
+                    let mut dt  = event.data_transfer_mut();
+                    dt.drop_effect =  winit_dnd_action_to_blitz_dnd_operation(proposed_action);
+                    drop(dt);
+                    let dt = match event_loop.data_transfer(id) {
+                        Ok(dt) => dt,
+                        Err(err) => {
+                            #[cfg(feature = "tracing")]
+                            tracing::error!("{}", err);
+                            return;
+                        },
+                    };
+                    let mut serial_ids= Vec::new();
+
+                    dt.for_each_available_type(&mut |ty| {
+                            // todo: an option to filter types based on defined hint?
+                            match event_loop.fetch_data_transfer(id, ty) {
+                                Ok(serial) => {
+                                    serial_ids.push(serial);
+                                },
+                                Err(err) => {
+                                    #[cfg(feature = "tracing")]
+                                    tracing::error!("{}", err);
+                                },
+                            }
+                        ControlFlow::Continue(())
+                    });
+
+                    self.pending_data_transfers = Some((event, serial_ids));
+                }
+            },
+            WindowEvent::DragLeft { id } => {
+                self.internal_drag = Instant::now() ;
+                let drag_id = id.into_raw() as u64;
+
+                let Some(event) = self.active_drag.borrow().as_ref()
+                    .filter(|e| e.id == drag_id)
+                    .cloned() else {
+                        return;
+                    };
+
+                self.doc.handle_ui_event(UiEvent::DragLeave(event));
+            },
+            _ => {}
         }
     }
 }
