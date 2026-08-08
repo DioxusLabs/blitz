@@ -299,6 +299,9 @@ fn classify_flow_children(
             // no vote itself — its children decide.
             classification.has_contents = true;
             classify_flow_children(doc, &child.children, classification);
+        } else if matches!(display.inside(), DisplayInside::None) {
+            // display:none children generate no boxes and cast no vote.
+            continue;
         } else {
             let position = style
                 .map(|s| s.clone_position())
