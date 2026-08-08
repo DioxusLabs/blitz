@@ -209,7 +209,11 @@ impl BaseDocument {
                 .unwrap()
                 .inline_layout_data = Some(inline_layout);
             return LayoutOutput::from_outer_size(
-                Size::ZERO.maybe_max(container_pb.sum_axes().map(Some)),
+                Size {
+                    width: known_dimensions.width.unwrap_or(0.0),
+                    height: known_dimensions.height.unwrap_or(0.0),
+                }
+                .maybe_max(container_pb.sum_axes().map(Some)),
             );
         }
 
