@@ -1,0 +1,11 @@
+{
+    "html": "<html><body style='margin:0'><input id='inp' style='width:200px;height:20px'><div id='label'>ready</div></body></html>",
+    "steps": [
+        { "step": "click", "selector": "#inp" },
+        { "step": "assert_focused", "selector": "#inp" },
+        { "step": "type", "text": "hello" },
+        { "step": "key", "key": "Backspace" },
+        { "step": "assert_value", "selector": "#inp", "equals": "hell" },
+        { "step": "assert_text", "selector": "#label", "equals": "ready" }
+    ]
+}

@@ -924,7 +924,6 @@ version = "0.0.0"
 dependencies = [
  "blitz-test-harness",
  "blitz-traits",
- "keyboard-types 0.7.0",
  "serde",
  "serde_json",
 ]
@@ -1044,6 +1043,8 @@ dependencies = [
  "keyboard-types 0.7.0",
  "peniko",
  "png 0.18.1",
+ "serde",
+ "serde_json",
  "smol_str",
 ]
 
@@ -1064,6 +1065,7 @@ dependencies = [
  "dioxus-native-dom",
  "keyboard-types 0.7.0",
  "markup5ever",
+ "peniko",
  "usvg",
 ]
 
