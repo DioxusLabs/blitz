@@ -7,6 +7,7 @@ use style::{
     computed_values::border_collapse::T as BorderCollapse,
     values::computed::{BorderStyle, OutlineStyle},
 };
+use taffy::ResolveOrZero;
 
 use crate::{
     color::{ToColorColor as _, contrast_ratio},
@@ -547,13 +548,20 @@ impl ElementCx<'_, '_> {
             return;
         }
 
-        let border_width = border_style.border_top_width.0.to_f64_px();
+        // Cells are positioned within the table's content box, so border rects
+        // must be offset by the table's border and padding.
+        let border = table.style.border.resolve_or_zero(None, |_, _| 0.0);
+        let padding = table.style.padding.resolve_or_zero(None, |_, _| 0.0);
+        let x0 = (border.left + padding.left) as f64;
+        let y0 = (border.top + padding.top) as f64;
+        let table_width = x0 + inner_width + (padding.right + border.right) as f64;
+        let table_height = y0 + inner_height + (padding.bottom + border.bottom) as f64;
 
         // Draw horizontal inner borders
-        let mut y = 0.0;
+        let mut y = y0;
         for (&height, &gutter) in rows.sizes.iter().zip(rows.gutters.iter()) {
             let shape =
-                Rect::new(0.0, y, inner_width, y + gutter as f64).scale_from_origin(self.scale);
+                Rect::new(x0, y, x0 + inner_width, y + gutter as f64).scale_from_origin(self.scale);
             scene.fill(Fill::NonZero, self.transform, border_color, None, &shape);
 
             y += (height + gutter) as f64;
@@ -563,21 +571,26 @@ impl ElementCx<'_, '_> {
         // Top border
         if outer_border_style.border_top_style != BorderStyle::Hidden {
             let shape =
-                Rect::new(0.0, 0.0, inner_width, border_width).scale_from_origin(self.scale);
+                Rect::new(0.0, 0.0, table_width, border.top as f64).scale_from_origin(self.scale);
             scene.fill(Fill::NonZero, self.transform, border_color, None, &shape);
         }
         // Bottom border
         if outer_border_style.border_bottom_style != BorderStyle::Hidden {
-            let shape = Rect::new(0.0, inner_height, inner_width, inner_height + border_width)
-                .scale_from_origin(self.scale);
+            let shape = Rect::new(
+                0.0,
+                table_height - border.bottom as f64,
+                table_width,
+                table_height,
+            )
+            .scale_from_origin(self.scale);
             scene.fill(Fill::NonZero, self.transform, border_color, None, &shape);
         }
 
         // Draw vertical inner borders
-        let mut x = 0.0;
+        let mut x = x0;
         for (&width, &gutter) in cols.sizes.iter().zip(cols.gutters.iter()) {
-            let shape =
-                Rect::new(x, 0.0, x + gutter as f64, inner_height).scale_from_origin(self.scale);
+            let shape = Rect::new(x, y0, x + gutter as f64, y0 + inner_height)
+                .scale_from_origin(self.scale);
             scene.fill(Fill::NonZero, self.transform, border_color, None, &shape);
 
             x += (width + gutter) as f64;
@@ -587,13 +600,18 @@ impl ElementCx<'_, '_> {
         // Left border
         if outer_border_style.border_left_style != BorderStyle::Hidden {
             let shape =
-                Rect::new(0.0, 0.0, border_width, inner_height).scale_from_origin(self.scale);
+                Rect::new(0.0, 0.0, border.left as f64, table_height).scale_from_origin(self.scale);
             scene.fill(Fill::NonZero, self.transform, border_color, None, &shape);
         }
         // Right border
         if outer_border_style.border_right_style != BorderStyle::Hidden {
-            let shape = Rect::new(inner_width, 0.0, inner_width + border_width, inner_height)
-                .scale_from_origin(self.scale);
+            let shape = Rect::new(
+                table_width - border.right as f64,
+                0.0,
+                table_width,
+                table_height,
+            )
+            .scale_from_origin(self.scale);
             scene.fill(Fill::NonZero, self.transform, border_color, None, &shape);
         }
     }

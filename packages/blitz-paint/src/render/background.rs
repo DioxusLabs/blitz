@@ -23,6 +23,7 @@ use style::{
         specified::background::BackgroundRepeatKeyword,
     },
 };
+use taffy::ResolveOrZero;
 
 #[cfg(feature = "tracing")]
 use tracing::warn;
@@ -223,8 +224,15 @@ impl ElementCx<'_, '_> {
         let inner_width =
             (cols.sizes.iter().sum::<f32>() + cols.gutters.iter().sum::<f32>()) as f64;
 
+        // Cells are positioned within the table's content box, so row background
+        // rects must be offset by the table's border and padding.
+        let border = table.style.border.resolve_or_zero(None, |_, _| 0.0);
+        let padding = table.style.padding.resolve_or_zero(None, |_, _| 0.0);
+        let x = (border.left + padding.left) as f64;
+
         let rows = &grid_info.rows;
-        let mut y = rows.gutters.first().copied().unwrap_or_default() as f64;
+        let mut y = (border.top + padding.top) as f64
+            + rows.gutters.first().copied().unwrap_or_default() as f64;
         for ((row, &height), &gutter) in table
             .rows
             .iter()
@@ -237,7 +245,7 @@ impl ElementCx<'_, '_> {
             };
 
             let shape =
-                Rect::new(0.0, y, inner_width, y + height as f64).scale_from_origin(self.scale);
+                Rect::new(x, y, x + inner_width, y + height as f64).scale_from_origin(self.scale);
 
             let current_color = style.clone_color();
             let background_color = &style.get_background().background_color;
