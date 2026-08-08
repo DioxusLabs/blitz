@@ -9,7 +9,7 @@ use blitz_traits::node_id::NodeId;
 use blitz_traits::shell::ShellProvider;
 
 use crate::document::DocumentEvent;
-use crate::net::{IframeHtmlHandler, ResourceHandler, stamped_request};
+use crate::net::{DocumentSrcHandler, ResourceHandler, stamped_request};
 use crate::{BaseDocument, DocumentConfig, local_name};
 
 /// Maximum nesting depth of documents-within-documents. Iframes nested deeper
@@ -129,7 +129,7 @@ impl BaseDocument {
             self.id(),
             Some(node_id),
             self.shell_provider.clone(),
-            IframeHtmlHandler,
+            DocumentSrcHandler,
         );
         let signal = self.new_iframe_generation(node_id, Some(handler.request_id()));
         self.net_provider.fetch(

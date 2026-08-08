@@ -1268,7 +1268,7 @@ impl BaseDocument {
 
                 self.apply_loaded_image(url, image);
             }
-            Resource::IframeHtml(html) => {
+            Resource::DocumentSrc(html) => {
                 let Some(node_id) = res.node_id else {
                     return;
                 };
