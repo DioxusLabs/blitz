@@ -9,7 +9,8 @@ use crate::StyleThreading;
 use crate::layout::damage::compute_layout_damage;
 use crate::node::Node;
 use crate::node::NodeData;
-use markup5ever::{LocalName, LocalNameStaticSet, Namespace, NamespaceStaticSet, local_name};
+use cssparser::{Parser, ParserInput};
+use markup5ever::{LocalName, LocalNameStaticSet, Namespace, NamespaceStaticSet, local_name, ns};
 use selectors::bloom::BLOOM_HASH_MASK;
 use selectors::{
     Element, OpaqueElement,
@@ -26,12 +27,14 @@ use style::color::AbsoluteColor;
 use style::data::{ElementDataMut, ElementDataRef};
 use style::global_style_data::STYLE_THREAD_POOL;
 use style::invalidation::element::restyle_hints::RestyleHint;
+use style::parser::ParserContext;
 use style::properties::ComputedValues;
-use style::properties::{Importance, PropertyDeclaration};
+use style::properties::{Importance, PropertyDeclaration, PropertyId, SourcePropertyDeclaration};
 use style::rule_tree::CascadeLevel;
 use style::rule_tree::CascadeOrigin;
 use style::selector_parser::PseudoElement;
 use style::selector_parser::RestyleDamage;
+use style::stylesheets::Origin;
 use style::stylesheets::layer_rule::LayerOrder;
 use style::stylesheets::scope_rule::ImplicitScopeRoot;
 use style::values::AtomString;
@@ -54,6 +57,7 @@ use style::{
     values::{AtomIdent, GenericAtomIdent},
 };
 use style_dom::ElementState;
+use style_traits::ParsingMode;
 
 use style::values::computed::text::TextAlign as StyloTextAlign;
 
@@ -914,6 +918,40 @@ impl<'a> TElement for BlitzNode<'a> {
             Some(LengthPercentage::Length(length))
         }
 
+        if elem.name.ns == ns!(svg) {
+            let url_extra_data = self.tree().url_extra_data();
+            let svg_parser_context = ParserContext::new(
+                Origin::Author,
+                &url_extra_data,
+                Some(style::stylesheets::CssRuleType::Style),
+                ParsingMode::ALLOW_UNITLESS_LENGTH | ParsingMode::ALLOW_ALL_NUMERIC_VALUES,
+                QuirksMode::NoQuirks,
+                Default::default(),
+                None,
+                None,
+                Default::default(),
+            );
+
+            for attr in elem.attrs() {
+                let name = &attr.name.local;
+                let value = attr.value.as_str();
+                match name.as_ref() {
+                    "fill" | "fill-opacity" | "fill-rule" | "stroke" | "stroke-opacity"
+                    | "stroke-width" | "stroke-linecap" | "stroke-linejoin"
+                    | "stroke-dasharray" | "stroke-dashoffset" => {
+                        for declaration in parse_svg_presentation_attribute(
+                            name.as_ref(),
+                            value,
+                            &svg_parser_context,
+                        ) {
+                            push_style(declaration);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
         for attr in elem.attrs() {
             let name = &attr.name.local;
             let value = attr.value.as_str();
@@ -1110,6 +1148,25 @@ impl RegisteredSpeculativePainters for RegisteredPaintersImpl {
     fn get(&self, _name: &Atom) -> Option<&dyn RegisteredSpeculativePainter> {
         None
     }
+}
+
+fn parse_svg_presentation_attribute(
+    name: &str,
+    value: &str,
+    context: &ParserContext,
+) -> Vec<PropertyDeclaration> {
+    let Ok(property_id) = PropertyId::parse(name, context) else {
+        return Vec::new();
+    };
+    let mut declarations = SourcePropertyDeclaration::default();
+    let mut input = ParserInput::new(value);
+    let mut parser = Parser::new(&mut input);
+    if PropertyDeclaration::parse_into(&mut declarations, property_id, context, &mut parser)
+        .is_err()
+    {
+        return Vec::new();
+    }
+    declarations.drain().declarations.collect()
 }
 
 use style::traversal::recalc_style_at;

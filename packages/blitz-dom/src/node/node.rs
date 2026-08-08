@@ -27,7 +27,11 @@ use style::servo_arc::Arc as ServoArc;
 use style::shared_lock::SharedRwLock;
 use style::stylesheets::UrlExtraData;
 use style::values::computed::CSSPixelLength;
+#[cfg(feature = "svg")]
+use style::values::computed::Color as ComputedColor;
 use style::values::computed::Display as StyloDisplay;
+#[cfg(feature = "svg")]
+use style::values::computed::svg::SVGPaintKind;
 use style::values::specified::box_::{DisplayInside, DisplayOutside};
 use style_dom::ElementState;
 use style_traits::values::ToCss;
@@ -960,6 +964,13 @@ impl Node {
         self.write_outer_html_in_style(writer, OutputStyle::Normal, 0);
     }
 
+    #[cfg(feature = "svg")]
+    pub(crate) fn svg_outer_html(&self) -> String {
+        let mut output = String::new();
+        self.write_svg_outer_html(&mut output);
+        output
+    }
+
     pub fn write_outer_html_pretty(&self, writer: &mut String) {
         self.write_outer_html_in_style(writer, OutputStyle::Pretty, 0);
     }
@@ -1036,6 +1047,111 @@ impl Node {
                     if matches!(style, OutputStyle::Pretty) {
                         writer.push('\n');
                     }
+                }
+            }
+        }
+    }
+
+    #[cfg(feature = "svg")]
+    fn write_svg_outer_html(&self, writer: &mut String) {
+        const SVG_PRESENTATION_ATTRIBUTES: &[&str] = &[
+            "fill",
+            "fill-opacity",
+            "fill-rule",
+            "stroke",
+            "stroke-opacity",
+            "stroke-width",
+            "stroke-linecap",
+            "stroke-linejoin",
+            "stroke-dasharray",
+            "stroke-dashoffset",
+        ];
+
+        match &self.data {
+            NodeData::Document(_) | NodeData::Comment { .. } | NodeData::AnonymousBlock(_) => {}
+            NodeData::Text(data) => writer.push_str(data.content.as_str()),
+            NodeData::Element(data) => {
+                writer.push('<');
+                writer.push_str(&data.name.local);
+
+                let current_color = self
+                    .primary_styles()
+                    .map(|style| style.clone_color())
+                    .map(|color| color.to_css_string());
+                let computed_values = self.primary_styles().map(|style| {
+                    [
+                        (
+                            "fill",
+                            svg_paint_to_css(&style.clone_fill(), &current_color),
+                        ),
+                        ("fill-opacity", style.clone_fill_opacity().to_css_string()),
+                        ("fill-rule", style.clone_fill_rule().to_css_string()),
+                        (
+                            "stroke",
+                            svg_paint_to_css(&style.clone_stroke(), &current_color),
+                        ),
+                        (
+                            "stroke-opacity",
+                            style.clone_stroke_opacity().to_css_string(),
+                        ),
+                        ("stroke-width", style.clone_stroke_width().to_css_string()),
+                        (
+                            "stroke-linecap",
+                            style.clone_stroke_linecap().to_css_string(),
+                        ),
+                        (
+                            "stroke-linejoin",
+                            style.clone_stroke_linejoin().to_css_string(),
+                        ),
+                        (
+                            "stroke-dasharray",
+                            style.clone_stroke_dasharray().to_css_string(),
+                        ),
+                        (
+                            "stroke-dashoffset",
+                            style.clone_stroke_dashoffset().to_css_string(),
+                        ),
+                    ]
+                });
+
+                for attr in data.attrs() {
+                    if computed_values.is_some()
+                        && SVG_PRESENTATION_ATTRIBUTES.contains(&attr.name.local.as_ref())
+                    {
+                        continue;
+                    }
+                    writer.push(' ');
+                    writer.push_str(&attr.name.local);
+                    writer.push_str("=\"");
+                    if let Some(current_color) = &current_color {
+                        let value = attr.value.replace("currentColor", current_color);
+                        encode_quoted_attribute_to_string(&value, writer);
+                    } else {
+                        encode_quoted_attribute_to_string(&attr.value, writer);
+                    }
+                    writer.push('"');
+                }
+
+                if let Some(values) = computed_values {
+                    for (name, value) in values {
+                        writer.push(' ');
+                        writer.push_str(name);
+                        writer.push_str("=\"");
+                        encode_quoted_attribute_to_string(&value, writer);
+                        writer.push('"');
+                    }
+                }
+
+                if self.children.is_empty() {
+                    writer.push_str(" />");
+                } else {
+                    writer.push('>');
+                    for &child_id in &self.children {
+                        self.tree()[child_id].write_svg_outer_html(writer);
+                    }
+                    writer.push_str("</");
+                    writer.push_str(&data.name.local);
+                    writer.push('>');
                 }
             }
         }
@@ -1417,6 +1533,29 @@ impl Node {
             active_pointers: Default::default(),
         }
     }
+}
+
+#[cfg(feature = "svg")]
+fn svg_paint_to_css(
+    paint: &style::values::computed::svg::SVGPaint,
+    current_color: &Option<String>,
+) -> String {
+    if let SVGPaintKind::Color(ComputedColor::CurrentColor) = &paint.kind {
+        return current_color
+            .as_deref()
+            .unwrap_or("currentcolor")
+            .to_string();
+    }
+
+    if let SVGPaintKind::PaintServer(url) = &paint.kind {
+        if let Some(url) = url.url() {
+            if let Some(fragment) = url.fragment() {
+                return format!("url(#{fragment})");
+            }
+        }
+    }
+
+    paint.to_css_string()
 }
 
 /// It might be wrong to expose this since what does *equality* mean outside the dom?
