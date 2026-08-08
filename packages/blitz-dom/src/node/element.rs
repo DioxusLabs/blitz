@@ -468,8 +468,13 @@ impl ElementData {
 
     #[cfg(feature = "svg")]
     pub fn svg_data(&self) -> Option<&usvg::Tree> {
+        self.svg_image_data().map(|data| &*data.tree)
+    }
+
+    #[cfg(feature = "svg")]
+    pub fn svg_image_data(&self) -> Option<&SvgImageData> {
         match self.image_data()? {
-            ImageData::Svg(data) => Some(&data.tree),
+            ImageData::Svg(data) => Some(data),
             _ => None,
         }
     }
