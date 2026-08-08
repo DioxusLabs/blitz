@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <style>
+      body {
+        font-family: sans-serif;
+        margin: 16px;
+      }
+      section {
+        margin-bottom: 24px;
+      }
+      h2 {
+        font-size: 16px;
+        margin: 0 0 4px;
+      }
+      p.hint {
+        font-size: 13px;
+        color: #555;
+        margin: 0 0 8px;
+      }
+      iframe {
+        width: 420px;
+        height: 200px;
+        border: 2px solid #333;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Iframe navigation</h1>
+
+    <section>
+      <h2>1. src navigation</h2>
+      <p class="hint">
+        Click the links inside the frame. Each click should replace the
+        sub-document with the linked page, without navigating this page.
+      </p>
+      <iframe src="./iframe_page_a.html"></iframe>
+    </section>
+
+    <section>
+      <h2>2. srcdoc navigation</h2>
+      <p class="hint">
+        The frame starts from a <code>srcdoc</code> document. Relative links
+        resolve against this (parent) document's URL.
+      </p>
+      <iframe
+        srcdoc="
+          <body style='font-family: sans-serif; background: #eef6ff'>
+            <h3>srcdoc frame</h3>
+            <a href='./iframe_page_a.html'>Navigate to page A</a>
+          </body>
+        "
+      ></iframe>
+    </section>
+
+    <section>
+      <h2>3. nested frames</h2>
+      <p class="hint">
+        Page A embeds another frame. Navigating the inner frame should not
+        affect the outer one.
+      </p>
+      <iframe src="./iframe_page_a.html" style="height: 320px"></iframe>
+    </section>
+
+    <section>
+      <h2>4. targeting the top document</h2>
+      <p class="hint">
+        This link navigates the outer document, for comparison with the
+        in-frame navigations above.
+      </p>
+      <a href="./iframe_page_b.html">Navigate this page to page B</a>
+    </section>
+  </body>
+</html>
