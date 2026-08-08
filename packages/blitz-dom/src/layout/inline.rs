@@ -748,29 +748,31 @@ impl BaseDocument {
                         // (the content box of the inline container).
                         let style = node.style();
                         let container_content_size = final_size - content_box_inset.sum_axes();
-                        let inset_left = style
-                            .inset
-                            .left
-                            .maybe_resolve(container_content_size.width, resolve_calc_value);
-                        let inset_right = style
-                            .inset
-                            .right
-                            .maybe_resolve(container_content_size.width, resolve_calc_value);
-                        let inset_top = style
-                            .inset
-                            .top
-                            .maybe_resolve(container_content_size.height, resolve_calc_value);
-                        let inset_bottom = style
-                            .inset
-                            .bottom
-                            .maybe_resolve(container_content_size.height, resolve_calc_value);
+                        let inset = taffy::Rect {
+                            left: style
+                                .inset
+                                .left
+                                .maybe_resolve(container_content_size.width, resolve_calc_value),
+                            right: style
+                                .inset
+                                .right
+                                .maybe_resolve(container_content_size.width, resolve_calc_value),
+                            top: style
+                                .inset
+                                .top
+                                .maybe_resolve(container_content_size.height, resolve_calc_value),
+                            bottom: style
+                                .inset
+                                .bottom
+                                .maybe_resolve(container_content_size.height, resolve_calc_value),
+                        };
                         let inset_offset = taffy::Point {
                             x: if container_direction == Direction::Rtl {
-                                inset_right.map(|x| -x).or(inset_left).unwrap_or(0.0)
+                                inset.right.map(|x| -x).or(inset.left).unwrap_or(0.0)
                             } else {
-                                inset_left.or(inset_right.map(|x| -x)).unwrap_or(0.0)
+                                inset.left.or(inset.right.map(|x| -x)).unwrap_or(0.0)
                             },
-                            y: inset_top.or(inset_bottom.map(|x| -x)).unwrap_or(0.0),
+                            y: inset.top.or(inset.bottom.map(|x| -x)).unwrap_or(0.0),
                         };
 
                         let layout = node.unrounded_layout_mut();
