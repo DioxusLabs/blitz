@@ -425,7 +425,9 @@ impl selectors::Element for BlitzNode<'_> {
             NonTSPseudoClass::Disabled => self.element_state().contains(ElementState::DISABLED),
             NonTSPseudoClass::Enabled => self.element_state().contains(ElementState::ENABLED),
             NonTSPseudoClass::Focus => self.element_state().contains(ElementState::FOCUS),
-            NonTSPseudoClass::FocusWithin => false,
+            NonTSPseudoClass::FocusWithin => {
+                self.element_state().contains(ElementState::FOCUS_WITHIN)
+            }
             NonTSPseudoClass::FocusVisible => false,
             NonTSPseudoClass::Fullscreen => false,
             NonTSPseudoClass::Hover => self.element_state().contains(ElementState::HOVER),
