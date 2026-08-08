@@ -234,8 +234,20 @@ fn resolve_shape_radius(
             .max(center_offset_secondary)
             .max(secondary_size - center_offset_secondary),
 
-        GenericShapeRadius::FarthestCorner => todo!(),
-        GenericShapeRadius::ClosestCorner => todo!(),
+        GenericShapeRadius::FarthestCorner => {
+            let dp = center_offset_primary.max(primary_size - center_offset_primary);
+            let ds = center_offset_secondary.max(secondary_size - center_offset_secondary);
+            dp.hypot(ds)
+        }
+        GenericShapeRadius::ClosestCorner => {
+            let dp = center_offset_primary
+                .min(primary_size - center_offset_primary)
+                .max(0.0);
+            let ds = center_offset_secondary
+                .min(secondary_size - center_offset_secondary)
+                .max(0.0);
+            dp.hypot(ds)
+        }
     }
 }
 
