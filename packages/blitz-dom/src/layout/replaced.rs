@@ -69,8 +69,18 @@ pub fn replaced_measure_function(
         Size::ZERO
     };
 
-    // Use aspect_ratio from style, fall back to inherent aspect ratio (if any)
-    let aspect_ratio: Option<f32> = style.aspect_ratio.or(image_context.inherent_ratio);
+    // Use aspect_ratio from style, fall back to inherent aspect ratio (if any).
+    //
+    // A degenerate ratio -- zero, infinite, or NaN -- is discarded. Transferring
+    // such a ratio between axes computes `width / ratio` or `height * ratio`,
+    // which yields an infinite (ratio == 0) or NaN (ratio is NaN) size in the
+    // other axis. CSS Sizing 4 4.1 says a degenerate ratio behaves as `auto`:
+    // the element simply has no preferred aspect ratio and each axis is sized
+    // independently.
+    let aspect_ratio: Option<f32> = style
+        .aspect_ratio
+        .or(image_context.inherent_ratio)
+        .filter(|ratio| ratio.is_finite() && *ratio > 0.0);
 
     // See https://www.w3.org/TR/css-sizing-3/#replaced-percentage-min-contribution
     let basis_for_max_and_preferred = Size {
