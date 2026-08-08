@@ -13,6 +13,7 @@ members = [
     "packages/dioxus-native",
     "packages/dioxus-native-dom",
     "packages/blitz-test-harness",
+    "apps/blitz-drive",
     "apps/browser",
     "apps/browser/persistence",
     "apps/readme",

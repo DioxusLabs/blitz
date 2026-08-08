@@ -1,0 +1,14 @@
+[package]
+name = "blitz-drive"
+description = "Interactive JSON-lines driver for headless Blitz documents"
+version = "0.0.0"
+edition = "2024"
+license.workspace = true
+publish = false
+
+[dependencies]
+blitz-test-harness = { workspace = true }
+blitz-traits = { workspace = true }
+keyboard-types = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = "1"
