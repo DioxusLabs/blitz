@@ -95,6 +95,13 @@ impl BlitzShellProvider {
 }
 
 impl ShellProvider for BlitzShellProvider {
+    #[cfg(target_os = "windows")]
+    fn request_redraw(&self) {
+        self.proxy.send_event(BlitzShellEvent::RequestWindowRedraw {
+            window_id: self.window.id(),
+        });
+    }
+    #[cfg(not(target_os = "windows"))]
     fn request_redraw(&self) {
         self.window.request_redraw();
     }
