@@ -5,8 +5,8 @@ use blitz_dom::{Document, DocumentConfig, FontContext, ScrollBehavior, ScrollLog
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::{
     events::{
-        BlitzPointerEvent, BlitzPointerId, MouseEventButton, MouseEventButtons, Point,
-        PointerCoords, PointerDetails, UiEvent,
+        BlitzPointerEvent, BlitzPointerId, BlitzWheelDelta, BlitzWheelEvent, MouseEventButton,
+        MouseEventButtons, Point, PointerCoords, PointerDetails, UiEvent,
     },
     shell::{ColorScheme, Viewport},
 };
@@ -42,8 +42,8 @@ fn drive_until_settled(doc: &mut HtmlDocument) {
     }
 }
 
-fn click(doc: &mut HtmlDocument, x: f32, y: f32) {
-    let event = BlitzPointerEvent {
+fn pointer_event(x: f32, y: f32) -> BlitzPointerEvent {
+    BlitzPointerEvent {
         id: BlitzPointerId::Mouse,
         is_primary: true,
         coords: PointerCoords {
@@ -60,9 +60,27 @@ fn click(doc: &mut HtmlDocument, x: f32, y: f32) {
         details: PointerDetails::default(),
         element: Point::default(),
         active_pointers: Default::default(),
-    };
+    }
+}
+
+fn click(doc: &mut HtmlDocument, x: f32, y: f32) {
+    let event = pointer_event(x, y);
     doc.handle_ui_event(UiEvent::PointerDown(event.clone()));
     doc.handle_ui_event(UiEvent::PointerUp(event));
+}
+
+/// Move the mouse to `(x, y)` (so the wheel targets the hovered element) and scroll by
+/// `(delta_x, delta_y)` pixels. Negative `delta_y` scrolls the content down.
+fn wheel_at(doc: &mut HtmlDocument, x: f32, y: f32, delta_x: f64, delta_y: f64) {
+    let event = pointer_event(x, y);
+    doc.handle_ui_event(UiEvent::PointerMove(event.clone()));
+    doc.handle_ui_event(UiEvent::Wheel(BlitzWheelEvent {
+        delta: BlitzWheelDelta::Pixels(delta_x, delta_y),
+        coords: event.coords,
+        buttons: MouseEventButtons::empty(),
+        mods: Default::default(),
+        element: Point::default(),
+    }));
 }
 
 const HTML: &str = r#"<html><body style="margin:0">
@@ -333,6 +351,24 @@ fn scroll_by_uses_relative_offsets_and_clamps() {
 
     doc.scroll_by(scroller, 0.0, -300.0, ScrollBehavior::Instant);
     assert_eq!(doc.get_node(scroller).unwrap().scroll_offset().y, 0.0);
+}
+
+#[test]
+fn wheel_scroll_cancels_smooth_scroll() {
+    let mut doc = layout_doc(SCROLLER_HTML);
+    let scroller = doc.query_selector("#scroller").unwrap().unwrap();
+
+    doc.scroll_to(scroller, 0.0, 200.0, ScrollBehavior::Smooth);
+    assert!(doc.is_animating());
+
+    // A wheel event over the scroller aborts the animation, leaving the offset where the
+    // user's own scroll put it (rather than the animation continuing to fight it).
+    wheel_at(&mut doc, 5.0, 5.0, 0.0, -20.0);
+    assert_eq!(doc.get_node(scroller).unwrap().scroll_offset().y, 20.0);
+
+    std::thread::sleep(Duration::from_millis(50));
+    doc.resolve(0.0);
+    assert_eq!(doc.get_node(scroller).unwrap().scroll_offset().y, 20.0);
 }
 
 #[test]
