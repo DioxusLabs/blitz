@@ -2196,6 +2196,12 @@ impl BaseDocument {
         scroll_y: f64,
         dispatch_event: &mut dyn FnMut(DomEvent),
     ) -> bool {
+        // A user-initiated scroll aborts any smooth scroll in progress, so that the two do
+        // not fight over the scroll offset for the rest of the animation.
+        if matches!(self.scroll_animation, ScrollAnimationState::ScrollTo(_)) {
+            self.scroll_animation = ScrollAnimationState::None;
+        }
+
         if let Some(anchor_node_id) = anchor_node_id {
             self.scroll_node_by_has_changed(anchor_node_id, scroll_x, scroll_y, dispatch_event)
         } else {
