@@ -338,11 +338,18 @@ fn classify_flow_children(
     }
 }
 
-pub(crate) fn collect_layout_children(
+/// Per-container preparation that must run whenever layout children are
+/// (re)collected, whichever collection strategy is used: resets construction
+/// flags, drops any stale inline layout, generates/updates pseudo-elements,
+/// sets up special elements (text inputs, checkboxes, svg) and numbers list
+/// items.
+///
+/// Returns `false` if the container was fully handled as a special element or
+/// has nothing to collect, in which case child collection must not proceed.
+fn prepare_layout_children_collection(
     doc: &mut BaseDocument,
     container_node_id: NodeId,
-    out: &mut LayoutChildren,
-) {
+) -> bool {
     // Reset construction flags
     // TODO: make incremental and only remove this if the element is no longer an inline root
     doc.nodes[container_node_id]
@@ -364,16 +371,16 @@ pub(crate) fn collect_layout_children(
                 .and_then(|el| el.attr(local_name!("type")));
             if tag_name == "textarea" {
                 create_text_editor(doc, container_node_id, true);
-                return;
+                return false;
             } else if matches!(
                 type_attr,
                 None | Some("text" | "password" | "email" | "number" | "search" | "tel" | "url")
             ) {
                 create_text_editor(doc, container_node_id, false);
-                return;
+                return false;
             } else if matches!(type_attr, Some("checkbox" | "radio")) {
                 create_checkbox_input(doc, container_node_id);
-                return;
+                return false;
             }
         }
 
@@ -414,7 +421,7 @@ pub(crate) fn collect_layout_children(
                     let _ = err;
                 }
             };
-            return;
+            return false;
         }
 
         //Only ol tags have start and reversed attributes
@@ -435,8 +442,20 @@ pub(crate) fn collect_layout_children(
     {
         let node = &doc.nodes[container_node_id];
         if node.children.is_empty() && node.before().is_none() && node.after().is_none() {
-            return;
+            return false;
         }
+    }
+
+    true
+}
+
+pub(crate) fn collect_layout_children(
+    doc: &mut BaseDocument,
+    container_node_id: NodeId,
+    out: &mut LayoutChildren,
+) {
+    if !prepare_layout_children_collection(doc, container_node_id) {
+        return;
     }
 
     let container_display = doc.nodes[container_node_id].display_style().unwrap_or(
@@ -728,7 +747,7 @@ fn collect_complex_layout_children(
     container_node_id: NodeId,
     out: &mut LayoutChildren,
     hide_whitespace: bool,
-    needs_wrap: impl Fn(NodeKind, DisplayOutside) -> bool,
+    needs_wrap: impl Fn(NodeKind, DisplayOutside) -> bool + Copy,
 ) {
     doc.iter_children_and_pseudos_mut(container_node_id, |child_id, doc| {
         // Get node kind (text, element, comment, etc)
@@ -755,9 +774,18 @@ fn collect_complex_layout_children(
         if child_node_kind == NodeKind::Comment || (hide_whitespace && is_whitespace_node) {
             // return;
         }
-        // Recurse into `Display::Contents` nodes
+        // Recurse into `Display::Contents` nodes: their children take part in
+        // the *enclosing* container's formatting context, so they are
+        // collected with the enclosing container's wrapping policy (sharing
+        // its open anonymous block). The contents element itself still gets
+        // the usual per-container preparation (construction flags,
+        // pseudo-elements, special elements, list numbering).
         else if display_inside == DisplayInside::Contents {
-            collect_layout_children(doc, child_id, out)
+            if prepare_layout_children_collection(doc, child_id) {
+                doc.nodes[child_id]
+                    .remove_damage(CONSTRUCT_BOX | CONSTRUCT_DESCENDENT | CONSTRUCT_FC);
+                collect_complex_layout_children(doc, child_id, out, hide_whitespace, needs_wrap)
+            }
         }
         // Push nodes that need wrapping into the current "anonymous block container".
         // If there is not an open one then we create one.
