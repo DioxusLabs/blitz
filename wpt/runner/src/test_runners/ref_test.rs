@@ -2,6 +2,7 @@ use anyrender::{ImageRenderer as _, PaintScene as _};
 use blitz_dom::util::Color;
 use blitz_paint::paint_scene;
 use image::{ImageBuffer, ImageFormat};
+use log::warn;
 use peniko::Fill;
 use peniko::kurbo::Rect;
 use std::fs;
@@ -21,15 +22,32 @@ pub fn process_ref_test(
     ref_file: &str,
     flags: &mut TestFlags,
 ) -> SubtestCounts {
-    let ref_url: Url = ctx
-        .dummy_base_url
-        .join(test_relative_path)
-        .unwrap()
-        .join(ref_file)
-        .unwrap();
-    let ref_relative_path = ref_url.path().strip_prefix('/').unwrap().to_string();
-    let ref_path = ctx.wpt_dir.join(&ref_relative_path);
-    let ref_html = fs::read_to_string(ref_path).expect("Ref file not found.");
+    let test_url = ctx.dummy_base_url.join(test_relative_path).unwrap();
+    let ref_url: Url = match test_url.join(ref_file) {
+        Ok(url) => url,
+        Err(err) => {
+            warn!("Skipping {test_relative_path}: unresolvable ref href {ref_file:?} ({err})");
+            return SubtestCounts::ZERO_OF_ZERO;
+        }
+    };
+
+    // An `about:blank` reference is a blank page: render the ref as an empty document.
+    let (ref_relative_path, ref_html) = if ref_url.as_str() == "about:blank" {
+        (test_relative_path.to_string(), String::new())
+    } else if ref_url.scheme() == ctx.dummy_base_url.scheme() {
+        let ref_relative_path = ref_url.path().strip_prefix('/').unwrap().to_string();
+        let ref_path = ctx.wpt_dir.join(&ref_relative_path);
+        match fs::read_to_string(&ref_path) {
+            Ok(html) => (ref_relative_path, html),
+            Err(err) => {
+                warn!("Skipping {test_relative_path}: cannot read ref file {ref_file:?} ({err})");
+                return SubtestCounts::ZERO_OF_ZERO;
+            }
+        }
+    } else {
+        warn!("Skipping {test_relative_path}: unsupported ref url {ref_url}");
+        return SubtestCounts::ZERO_OF_ZERO;
+    };
 
     if ctx.float_re.is_match(&ref_html) {
         *flags |= TestFlags::USES_FLOAT;
