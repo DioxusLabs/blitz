@@ -18,6 +18,15 @@ pub use url::Url;
 /// This may be over the network via http(s), via the filesystem, or some other method.
 pub trait NetProvider: Send + Sync + 'static {
     fn fetch(&self, doc_id: usize, request: Request, handler: Box<dyn NetHandler>);
+
+    /// Whether this provider is a no-op (e.g. `DummyNetProvider`) that will never
+    /// deliver resources. When true, callers must NOT register resources as
+    /// "pending critical" — doing so blocks painting forever, since the
+    /// completion callback never fires. Used by integrations that feed a
+    /// pre-rendered DOM and perform no sub-fetches (e.g. aginxbrowser).
+    fn is_noop(&self) -> bool {
+        false
+    }
 }
 
 /// A type that parses raw bytes from a network request into a Data and then calls
@@ -158,6 +167,9 @@ impl From<PathBuf> for EntryValue {
 pub struct DummyNetProvider;
 impl NetProvider for DummyNetProvider {
     fn fetch(&self, _doc_id: usize, _request: Request, _handler: Box<dyn NetHandler>) {}
+    fn is_noop(&self) -> bool {
+        true
+    }
 }
 
 /// The AbortController interface represents a controller object that

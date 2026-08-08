@@ -910,7 +910,7 @@ impl<'doc> DocumentMutator<'doc> {
             },
         );
 
-        if is_in_head {
+        if is_in_head && !self.doc.net_provider.is_noop() {
             self.doc
                 .pending_critical_resources
                 .insert(handler.request_id());
