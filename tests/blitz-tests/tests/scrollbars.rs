@@ -5,7 +5,7 @@
 
 use anyrender::render_to_buffer;
 use anyrender_vello_cpu::VelloCpuImageRenderer;
-use blitz_dom::DocumentConfig;
+use blitz_dom::{DocumentConfig, ScrollBehavior};
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_paint::paint_scene;
 use blitz_traits::shell::{ColorScheme, Viewport};
@@ -31,9 +31,9 @@ fn pixel_in(html: &str, scroll: (f64, f64), x: usize, y: usize, scheme: ColorSch
     );
     doc.resolve(0.0);
     let scroller = doc.query_selector("#scroller").unwrap().expect("#scroller");
-    // Scroll through the scroll API (wheel-delta semantics: negated), so the
-    // scroll registers as scrollbar activity like a real user scroll.
-    doc.scroll_by(Some(scroller), -scroll.0, -scroll.1, &mut |_| {});
+    // Scroll through the scroll API, so the scroll registers as scrollbar activity like a real
+    // user scroll.
+    doc.scroll_by(scroller, scroll.0, scroll.1, ScrollBehavior::Instant);
     let buffer = render_to_buffer::<VelloCpuImageRenderer, _>(
         |scene| paint_scene(scene, &mut doc, 1.0, 100, 100, 0, 0),
         100,

@@ -38,6 +38,18 @@ use crate::{
     node::TextBrush,
 };
 
+/// Cubic ease-in-out easing function, mapping a normalised time `t` in `[0, 1]`
+/// to an eased progress value in `[0, 1]`. Used to give smooth scrolls a natural
+/// acceleration/deceleration curve.
+fn ease_in_out_cubic(t: f64) -> f64 {
+    if t < 0.5 {
+        4.0 * t * t * t
+    } else {
+        let f = 2.0 * t - 2.0;
+        1.0 + (f * f * f) / 2.0
+    }
+}
+
 impl BaseDocument {
     /// Restyle the tree and then relayout it
     pub fn resolve(&mut self, current_time_for_animations: f64) {
@@ -217,8 +229,48 @@ impl BaseDocument {
                 let dx = fling_state.x_velocity * time_diff_ms;
                 let dy = fling_state.y_velocity * time_diff_ms;
 
-                self.scroll_by(Some(fling_state.target), dx, dy, &mut |_| {});
+                self.scroll_chain_by(Some(fling_state.target), dx, dy, &mut |_| {});
                 if fling_state.x_velocity.abs() < 0.1 && fling_state.y_velocity.abs() < 0.1 {
+                    self.scroll_animation = ScrollAnimationState::None;
+                }
+            }
+            ScrollAnimationState::ScrollTo(scroll_to) => {
+                let scroll_to = scroll_to.clone();
+                let time_ms = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis() as u64 as f64;
+
+                // Normalised progress through the animation, clamped to [0, 1].
+                let progress = if scroll_to.duration <= 0.0 {
+                    1.0
+                } else {
+                    ((time_ms - scroll_to.start_time) / scroll_to.duration).clamp(0.0, 1.0)
+                };
+                let eased = ease_in_out_cubic(progress);
+
+                // Interpolate the target offset and move towards it. The scroll helpers work
+                // in deltas (subtracted from the current offset) and clamp to the valid scroll
+                // range, so pass `current - target` to land on the interpolated offset.
+                let target_x = scroll_to.start.x + (scroll_to.end.x - scroll_to.start.x) * eased;
+                let target_y = scroll_to.start.y + (scroll_to.end.y - scroll_to.start.y) * eased;
+                match scroll_to.target {
+                    Some(node_id) => {
+                        let current = self.node_scroll_state(node_id).0;
+                        self.scroll_node_by(
+                            node_id,
+                            current.x - target_x,
+                            current.y - target_y,
+                            &mut |_| {},
+                        );
+                    }
+                    None => {
+                        let current = self.viewport_scroll;
+                        self.scroll_viewport_by(current.x - target_x, current.y - target_y);
+                    }
+                }
+
+                if progress >= 1.0 {
                     self.scroll_animation = ScrollAnimationState::None;
                 }
             }

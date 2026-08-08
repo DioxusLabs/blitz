@@ -10,7 +10,7 @@ pub use driver::{EventDriver, EventHandler, NoopEventHandler};
 use focus::generate_focus_events;
 pub(crate) use ime::handle_ime_event;
 use keyboard::{KeyboardOrTextInputEvent, handle_key_or_input_event};
-pub(crate) use pointer::{DragMode, ScrollAnimationState};
+pub(crate) use pointer::{DragMode, ScrollAnimationState, ScrollToState};
 use pointer::{handle_click, handle_pointerdown, handle_pointermove, handle_pointerup};
 
 use crate::{BaseDocument, events::pointer::handle_wheel};
