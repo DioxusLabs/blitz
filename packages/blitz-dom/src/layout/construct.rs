@@ -728,7 +728,7 @@ fn collect_complex_layout_children(
     container_node_id: NodeId,
     out: &mut LayoutChildren,
     hide_whitespace: bool,
-    needs_wrap: impl Fn(NodeKind, DisplayOutside) -> bool,
+    needs_wrap: impl Fn(NodeKind, DisplayOutside) -> bool + Copy,
 ) {
     doc.iter_children_and_pseudos_mut(container_node_id, |child_id, doc| {
         // Get node kind (text, element, comment, etc)
@@ -755,9 +755,16 @@ fn collect_complex_layout_children(
         if child_node_kind == NodeKind::Comment || (hide_whitespace && is_whitespace_node) {
             // return;
         }
-        // Recurse into `Display::Contents` nodes
+        // Recurse into `Display::Contents` nodes.
+        //
+        // The children of a `display: contents` element take part in the
+        // *enclosing* container's formatting context, so they need that
+        // container's wrapping policy. Restarting via collect_layout_children
+        // dropped it, which let a text child land in a block container with no
+        // anonymous block around it -- and taffy then asks that Text node for
+        // its `style`, which panics.
         else if display_inside == DisplayInside::Contents {
-            collect_layout_children(doc, child_id, out)
+            collect_complex_layout_children(doc, child_id, out, hide_whitespace, needs_wrap)
         }
         // Push nodes that need wrapping into the current "anonymous block container".
         // If there is not an open one then we create one.
