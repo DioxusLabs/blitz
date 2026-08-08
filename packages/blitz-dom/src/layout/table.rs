@@ -43,8 +43,8 @@ pub struct TableContext {
 #[derive(Debug, Clone)]
 pub struct TableCell {
     // kind: TableItemKind,
-    node_id: NodeId,
-    style: taffy::Style<Atom>,
+    pub node_id: NodeId,
+    pub style: taffy::Style<Atom>,
 }
 
 #[derive(Debug, Clone)]

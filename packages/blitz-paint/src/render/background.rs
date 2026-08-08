@@ -23,7 +23,6 @@ use style::{
         specified::background::BackgroundRepeatKeyword,
     },
 };
-use taffy::ResolveOrZero;
 
 #[cfg(feature = "tracing")]
 use tracing::warn;
@@ -220,32 +219,22 @@ impl ElementCx<'_, '_> {
             return;
         };
 
-        let cols = &grid_info.columns;
-        let inner_width =
-            (cols.sizes.iter().sum::<f32>() + cols.gutters.iter().sum::<f32>()) as f64;
+        let Some(coords) = self.table_grid_coords(table, grid_info) else {
+            return;
+        };
+        let (x_min, x_max) = (coords.col_starts[0], *coords.col_ends.last().unwrap());
 
-        // Cells are positioned within the table's content box, so row background
-        // rects must be offset by the table's border and padding.
-        let border = table.style.border.resolve_or_zero(None, |_, _| 0.0);
-        let padding = table.style.padding.resolve_or_zero(None, |_, _| 0.0);
-        let x = (border.left + padding.left) as f64;
-
-        let rows = &grid_info.rows;
-        let mut y = (border.top + padding.top) as f64
-            + rows.gutters.first().copied().unwrap_or_default() as f64;
-        for ((row, &height), &gutter) in table
+        for (row, (&top, &bottom)) in table
             .rows
             .iter()
-            .zip(rows.sizes.iter())
-            .zip(rows.gutters.iter().skip(1))
+            .zip(coords.row_starts.iter().zip(coords.row_ends.iter()))
         {
             let row_node = &self.context.dom.get_node(row.node_id).unwrap();
             let Some(style) = row_node.primary_styles() else {
                 continue;
             };
 
-            let shape =
-                Rect::new(x, y, x + inner_width, y + height as f64).scale_from_origin(self.scale);
+            let shape = Rect::new(x_min, top, x_max, bottom).scale_from_origin(self.scale);
 
             let current_color = style.clone_color();
             let background_color = &style.get_background().background_color;
@@ -257,8 +246,6 @@ impl ElementCx<'_, '_> {
                 // Fill the color
                 scene.fill(Fill::NonZero, self.transform, bg_color, None, &shape);
             }
-
-            y += (height + gutter) as f64;
         }
     }
 
