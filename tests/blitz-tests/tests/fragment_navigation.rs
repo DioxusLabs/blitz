@@ -131,7 +131,7 @@ fn scroll_to_fragment_smooth_animates_to_element() {
     let mut doc = layout_doc(HTML);
 
     let target = doc.query_selector("#target").unwrap().unwrap();
-    let target_y = doc.get_node(target).unwrap().final_layout.location.y as f64;
+    let target_y = doc.get_node(target).unwrap().final_layout().location.y as f64;
     assert!(target_y > 0.0);
 
     // Starting a smooth scroll should register an animation but not jump instantly.
@@ -180,7 +180,7 @@ fn scroll_into_view_smooth_animates() {
     let mut doc = layout_doc(HTML);
 
     let target = doc.query_selector("#target").unwrap().unwrap();
-    let target_y = doc.get_node(target).unwrap().final_layout.location.y as f64;
+    let target_y = doc.get_node(target).unwrap().final_layout().location.y as f64;
 
     doc.scroll_into_view(
         target,
@@ -288,17 +288,21 @@ fn scroll_to_sets_element_offset_and_clamps() {
 
     // Scroll the element's own content down by 200px.
     doc.scroll_to(scroller, 0.0, 200.0, ScrollBehavior::Instant);
-    assert_eq!(doc.get_node(scroller).unwrap().scroll_offset.y, 200.0);
+    assert_eq!(doc.get_node(scroller).unwrap().scroll_offset().y, 200.0);
 
     // Scrolling far past the end clamps to the element's maximum scroll offset.
-    let max = doc.get_node(scroller).unwrap().final_layout.scroll_height() as f64;
+    let max = doc
+        .get_node(scroller)
+        .unwrap()
+        .final_layout()
+        .scroll_height() as f64;
     assert!(max > 0.0);
     doc.scroll_to(scroller, 0.0, 100_000.0, ScrollBehavior::Instant);
-    assert_eq!(doc.get_node(scroller).unwrap().scroll_offset.y, max);
+    assert_eq!(doc.get_node(scroller).unwrap().scroll_offset().y, max);
 
     // Scrolling to a negative offset clamps to 0.
     doc.scroll_to(scroller, 0.0, -100.0, ScrollBehavior::Instant);
-    assert_eq!(doc.get_node(scroller).unwrap().scroll_offset.y, 0.0);
+    assert_eq!(doc.get_node(scroller).unwrap().scroll_offset().y, 0.0);
 }
 
 #[test]
@@ -309,13 +313,13 @@ fn scroll_to_smooth_animates_element_offset() {
     doc.scroll_to(scroller, 0.0, 200.0, ScrollBehavior::Smooth);
     assert!(doc.is_animating(), "node scroll should be animating");
     assert!(
-        doc.get_node(scroller).unwrap().scroll_offset.y < 200.0,
+        doc.get_node(scroller).unwrap().scroll_offset().y < 200.0,
         "smooth scroll should not jump instantly to the target"
     );
 
     drive_until_settled(&mut doc);
     assert!(!doc.is_animating());
-    assert_eq!(doc.get_node(scroller).unwrap().scroll_offset.y, 200.0);
+    assert_eq!(doc.get_node(scroller).unwrap().scroll_offset().y, 200.0);
 }
 
 #[test]
@@ -325,10 +329,10 @@ fn scroll_by_uses_relative_offsets_and_clamps() {
 
     doc.scroll_to(scroller, 0.0, 100.0, ScrollBehavior::Instant);
     doc.scroll_by(scroller, 0.0, 75.0, ScrollBehavior::Instant);
-    assert_eq!(doc.get_node(scroller).unwrap().scroll_offset.y, 175.0);
+    assert_eq!(doc.get_node(scroller).unwrap().scroll_offset().y, 175.0);
 
     doc.scroll_by(scroller, 0.0, -300.0, ScrollBehavior::Instant);
-    assert_eq!(doc.get_node(scroller).unwrap().scroll_offset.y, 0.0);
+    assert_eq!(doc.get_node(scroller).unwrap().scroll_offset().y, 0.0);
 }
 
 #[test]
@@ -339,5 +343,5 @@ fn auto_behavior_uses_scroll_behavior_style() {
     doc.scroll_to(scroller, 0.0, 200.0, ScrollBehavior::Auto);
     assert!(doc.is_animating());
     drive_until_settled(&mut doc);
-    assert_eq!(doc.get_node(scroller).unwrap().scroll_offset.y, 200.0);
+    assert_eq!(doc.get_node(scroller).unwrap().scroll_offset().y, 200.0);
 }

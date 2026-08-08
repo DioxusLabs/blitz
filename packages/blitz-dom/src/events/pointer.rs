@@ -36,7 +36,7 @@ pub(crate) struct FlingState {
 pub(crate) struct ScrollToState {
     /// Node whose scroll offset is being animated. `None` animates the viewport
     /// scroll offset instead.
-    pub(crate) target: Option<usize>,
+    pub(crate) target: Option<NodeId>,
     /// The scroll offset at the start of the animation.
     pub(crate) start: crate::util::Point<f64>,
     /// The scroll offset to animate towards.
