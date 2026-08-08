@@ -194,6 +194,58 @@ fn push_children_and_pseudos(layout_children: &mut ThinVec<NodeId>, node: &Node)
     }
 }
 
+/// Wrapping policy of the nearest non-contents ancestor container. Children
+/// hoisted out of display:contents nodes must be wrapped in anonymous blocks
+/// exactly as if they were direct children of that container: without this,
+/// a bare text node could end up as the layout child of a block/flex/grid
+/// container, which cannot be laid out (text nodes carry no style).
+#[derive(Copy, Clone)]
+struct WrapContext {
+    /// The container whose style anonymous blocks inherit from.
+    container_node_id: NodeId,
+    needs_wrap: fn(NodeKind, DisplayOutside) -> bool,
+}
+
+fn block_item_needs_wrap(child_node_kind: NodeKind, display_outside: DisplayOutside) -> bool {
+    child_node_kind == NodeKind::Text || display_outside == DisplayOutside::Inline
+}
+
+/// Used for flex/grid containers, and for flow containers whose in-flow
+/// children are all out-of-flow (where inline elements are pushed raw, but
+/// bare text still cannot be laid out directly).
+fn text_item_needs_wrap(child_node_kind: NodeKind, _display_outside: DisplayOutside) -> bool {
+    child_node_kind == NodeKind::Text
+}
+
+/// Push a single hoisted child, recursing through display:contents nodes and
+/// wrapping text/inline children per the ancestor container's `WrapContext`.
+fn push_hoisted_child(
+    doc: &mut BaseDocument,
+    child_id: NodeId,
+    out: &mut LayoutChildren,
+    wrap: Option<WrapContext>,
+) {
+    let child = &doc.nodes[child_id];
+    let child_display = child.display_style().unwrap_or(Display::inline());
+    if matches!(child_display.inside(), DisplayInside::Contents) {
+        collect_layout_children_with_wrap(doc, child_id, out, wrap);
+        return;
+    }
+    if let Some(wrap_ctx) = wrap {
+        let child_node_kind = child.data.kind();
+        let display_outside = if child.is_or_contains_block() {
+            DisplayOutside::Block
+        } else {
+            child_display.outside()
+        };
+        if (wrap_ctx.needs_wrap)(child_node_kind, display_outside) {
+            out.push_wrapped(wrap_ctx.container_node_id, child_id, doc);
+            return;
+        }
+    }
+    out.push(child_id, doc);
+}
+
 /// Push the container's children (and ::before/::after pseudos) as layout
 /// children, hoisting transparently through display:contents nodes and
 /// filtering out comments and whitespace.
@@ -201,9 +253,10 @@ fn push_hoisted_children_and_pseudos(
     doc: &mut BaseDocument,
     container_node_id: NodeId,
     out: &mut LayoutChildren,
+    wrap: Option<WrapContext>,
 ) {
     if let Some(before) = doc.nodes[container_node_id].before() {
-        out.push(before, doc);
+        push_hoisted_child(doc, before, out, wrap);
     }
     // Take children array from node to avoid borrow checker issues.
     let children = std::mem::take(&mut doc.nodes[container_node_id].children);
@@ -212,16 +265,11 @@ fn push_hoisted_children_and_pseudos(
         if child.data.kind() == NodeKind::Comment || child.is_whitespace_node() {
             continue;
         }
-        let child_display = child.display_style().unwrap_or(Display::inline());
-        if matches!(child_display.inside(), DisplayInside::Contents) {
-            collect_layout_children(doc, child_id, out);
-        } else {
-            out.push(child_id, doc);
-        }
+        push_hoisted_child(doc, child_id, out, wrap);
     }
     doc.nodes[container_node_id].children = children;
     if let Some(after) = doc.nodes[container_node_id].after() {
-        out.push(after, doc);
+        push_hoisted_child(doc, after, out, wrap);
     }
 }
 
@@ -351,6 +399,15 @@ pub(crate) fn collect_layout_children(
     container_node_id: NodeId,
     out: &mut LayoutChildren,
 ) {
+    collect_layout_children_with_wrap(doc, container_node_id, out, None)
+}
+
+fn collect_layout_children_with_wrap(
+    doc: &mut BaseDocument,
+    container_node_id: NodeId,
+    out: &mut LayoutChildren,
+    wrap: Option<WrapContext>,
+) {
     // Reset construction flags
     // TODO: make incremental and only remove this if the element is no longer an inline root
     doc.nodes[container_node_id]
@@ -462,9 +519,70 @@ pub(crate) fn collect_layout_children(
             // display:contents is transparent for box generation: hoist the
             // children THEMSELVES (not their layout children) into the
             // parent, recursing only through nested contents nodes.
-            push_hoisted_children_and_pseudos(doc, container_node_id, out);
+            push_hoisted_children_and_pseudos(doc, container_node_id, out, wrap);
         }
-        DisplayInside::Flow | DisplayInside::FlowRoot | DisplayInside::TableCell => {
+        DisplayInside::Flex | DisplayInside::Grid => {
+            // ::before/::after pseudos must be checked too: a pseudo with
+            // display:contents hoists its text content into the container.
+            let container = &doc.nodes[container_node_id];
+            let has_text_node_or_contents = container
+                .children
+                .iter()
+                .copied()
+                .chain(container.before())
+                .chain(container.after())
+                .map(|child_id| &doc.nodes[child_id])
+                .any(|child| {
+                    let display = child.display_style().unwrap_or(Display::inline());
+                    let node_kind = child.data.kind();
+                    display.inside() == DisplayInside::Contents || node_kind == NodeKind::Text
+                });
+
+            if !has_text_node_or_contents {
+                return push_non_whitespace_children_and_pseudos(
+                    &mut out.children,
+                    &doc.nodes[container_node_id],
+                );
+            }
+
+            collect_complex_layout_children(
+                doc,
+                container_node_id,
+                out,
+                true,
+                text_item_needs_wrap,
+            );
+        }
+
+        DisplayInside::Table => {
+            let (table_context, tlayout_children) = build_table_context(doc, container_node_id);
+            #[allow(clippy::arc_with_non_send_sync)]
+            let data = SpecialElementData::TableRoot(Arc::new(table_context));
+            doc.nodes[container_node_id]
+                .flags
+                .insert(NodeFlags::IS_TABLE_ROOT);
+            doc.nodes[container_node_id]
+                .data
+                .downcast_element_mut()
+                .unwrap()
+                .special_data = data;
+            if let Some(before) = doc.nodes[container_node_id].before() {
+                out.push(before, doc);
+            }
+            out.extend(&tlayout_children, doc);
+            if let Some(after) = doc.nodes[container_node_id].after() {
+                out.push(after, doc);
+            }
+        }
+
+        // Flow, FlowRoot and TableCell, plus internal table displays (row,
+        // row group, column, ...) occurring outside of a table. Blitz does
+        // not yet generate anonymous table wrapper boxes for the latter, so
+        // they are laid out as flow containers, which crucially ensures
+        // their text children get wrapped rather than being pushed as bare
+        // layout children (text nodes carry no style and cannot be laid out
+        // as block/flex/grid items).
+        _ => {
             // display:contents children are transparent for box generation:
             // their children participate in this container's formatting
             // context, so classification must recurse into them.
@@ -479,7 +597,11 @@ pub(crate) fn collect_layout_children(
                 // Contents-transparent: a display:contents child may be
                 // holding the out-of-flow elements (otherwise the contents
                 // node itself would be pushed as a layout box).
-                return push_hoisted_children_and_pseudos(doc, container_node_id, out);
+                let wrap = Some(WrapContext {
+                    container_node_id,
+                    needs_wrap: text_item_needs_wrap,
+                });
+                return push_hoisted_children_and_pseudos(doc, container_node_id, out, wrap);
             }
 
             // TODO: fix display:contents
@@ -514,79 +636,12 @@ pub(crate) fn collect_layout_children(
                 return push_children_and_pseudos(&mut out.children, &doc.nodes[container_node_id]);
             }
 
-            fn block_item_needs_wrap(
-                child_node_kind: NodeKind,
-                display_outside: DisplayOutside,
-            ) -> bool {
-                child_node_kind == NodeKind::Text || display_outside == DisplayOutside::Inline
-            }
             collect_complex_layout_children(
                 doc,
                 container_node_id,
                 out,
                 false,
                 block_item_needs_wrap,
-            );
-        }
-        DisplayInside::Flex | DisplayInside::Grid => {
-            let has_text_node_or_contents = doc.nodes[container_node_id]
-                .children
-                .iter()
-                .copied()
-                .map(|child_id| &doc.nodes[child_id])
-                .any(|child| {
-                    let display = child.display_style().unwrap_or(Display::inline());
-                    let node_kind = child.data.kind();
-                    display.inside() == DisplayInside::Contents || node_kind == NodeKind::Text
-                });
-
-            if !has_text_node_or_contents {
-                return push_non_whitespace_children_and_pseudos(
-                    &mut out.children,
-                    &doc.nodes[container_node_id],
-                );
-            }
-
-            fn flex_or_grid_item_needs_wrap(
-                child_node_kind: NodeKind,
-                _display_outside: DisplayOutside,
-            ) -> bool {
-                child_node_kind == NodeKind::Text
-            }
-            collect_complex_layout_children(
-                doc,
-                container_node_id,
-                out,
-                true,
-                flex_or_grid_item_needs_wrap,
-            );
-        }
-
-        DisplayInside::Table => {
-            let (table_context, tlayout_children) = build_table_context(doc, container_node_id);
-            #[allow(clippy::arc_with_non_send_sync)]
-            let data = SpecialElementData::TableRoot(Arc::new(table_context));
-            doc.nodes[container_node_id]
-                .flags
-                .insert(NodeFlags::IS_TABLE_ROOT);
-            doc.nodes[container_node_id]
-                .data
-                .downcast_element_mut()
-                .unwrap()
-                .special_data = data;
-            if let Some(before) = doc.nodes[container_node_id].before() {
-                out.push(before, doc);
-            }
-            out.extend(&tlayout_children, doc);
-            if let Some(after) = doc.nodes[container_node_id].after() {
-                out.push(after, doc);
-            }
-        }
-
-        _ => {
-            push_non_whitespace_children_and_pseudos(
-                &mut out.children,
-                &doc.nodes[container_node_id],
             );
         }
     }
@@ -736,7 +791,7 @@ fn collect_complex_layout_children(
     container_node_id: NodeId,
     out: &mut LayoutChildren,
     hide_whitespace: bool,
-    needs_wrap: impl Fn(NodeKind, DisplayOutside) -> bool,
+    needs_wrap: fn(NodeKind, DisplayOutside) -> bool,
 ) {
     doc.iter_children_and_pseudos_mut(container_node_id, |child_id, doc| {
         // Get node kind (text, element, comment, etc)
@@ -763,9 +818,14 @@ fn collect_complex_layout_children(
         if child_node_kind == NodeKind::Comment || (hide_whitespace && is_whitespace_node) {
             // return;
         }
-        // Recurse into `Display::Contents` nodes
+        // Recurse into `Display::Contents` nodes, wrapping hoisted text and
+        // inline children as if they were direct children of this container
         else if display_inside == DisplayInside::Contents {
-            collect_layout_children(doc, child_id, out)
+            let wrap = Some(WrapContext {
+                container_node_id,
+                needs_wrap,
+            });
+            collect_layout_children_with_wrap(doc, child_id, out, wrap)
         }
         // Push nodes that need wrapping into the current "anonymous block container".
         // If there is not an open one then we create one.
