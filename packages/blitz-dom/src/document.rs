@@ -179,6 +179,12 @@ impl Document for Rc<RefCell<BaseDocument>> {
 
 pub enum DocumentEvent {
     ResourceLoad(ResourceLoadResponse),
+    /// A navigation originating from within an iframe's sub-document
+    /// (e.g. a link click), to be applied to the iframe identified by `node_id`.
+    NavigateIframe {
+        node_id: NodeId,
+        url: Url,
+    },
 }
 
 pub struct BaseDocument {
@@ -200,6 +206,9 @@ pub struct BaseDocument {
     pub(crate) style_threading: StyleThreading,
     /// Whether incremental layout is enabled for this document.
     pub(crate) incremental_layout: bool,
+    /// How deeply this document is nested within other documents
+    /// (0 for a root document). Used to limit `<iframe>` nesting depth.
+    pub(crate) subdocument_depth: usize,
 
     // Events
     pub(crate) tx: Sender<DocumentEvent>,
@@ -289,6 +298,9 @@ pub struct BaseDocument {
     pub(crate) controls_to_form: HashMap<NodeId, NodeId>,
     /// Nodes that contain sub documents
     pub(crate) sub_document_nodes: HashSet<NodeId>,
+    /// Load state (abort controller and in-flight request id) for each
+    /// `<iframe>` element whose sub-document is loaded automatically
+    pub(crate) iframe_loads: HashMap<NodeId, crate::iframe::IframeLoad>,
     /// Set of changed nodes for updating the accessibility tree
     pub(crate) changed_nodes: HashSet<NodeId>,
     /// Set of changed nodes for updating the accessibility tree
@@ -443,6 +455,7 @@ impl BaseDocument {
             media_type,
             style_threading: config.style_threading,
             incremental_layout: config.incremental.unwrap_or(true),
+            subdocument_depth: config.subdocument_depth,
             devtool_settings: DevtoolSettings::default(),
             viewport_scroll: crate::Point::ZERO,
             url: base_url,
@@ -464,6 +477,7 @@ impl BaseDocument {
             subdoc_is_animating: false,
             has_canvas: false,
             sub_document_nodes: HashSet::new(),
+            iframe_loads: HashMap::new(),
 
             #[cfg(feature = "custom-widget")]
             custom_widget_nodes: HashSet::new(),
@@ -741,6 +755,9 @@ impl BaseDocument {
             .unwrap()
             .remove_sub_document();
         self.sub_document_nodes.remove(&node_id);
+        if let Some(load) = self.iframe_loads.remove(&node_id) {
+            load.abort_controller.abort();
+        }
     }
 
     #[cfg(feature = "custom-widget")]
@@ -1189,6 +1206,7 @@ impl BaseDocument {
     pub fn handle_message(&mut self, msg: DocumentEvent) {
         match msg {
             DocumentEvent::ResourceLoad(resource) => self.load_resource(resource),
+            DocumentEvent::NavigateIframe { node_id, url } => self.navigate_iframe(node_id, url),
         }
     }
 
@@ -1249,6 +1267,12 @@ impl BaseDocument {
                 };
 
                 self.apply_loaded_image(url, image);
+            }
+            Resource::DocumentSrc(html) => {
+                let Some(node_id) = res.node_id else {
+                    return;
+                };
+                self.apply_iframe_html(node_id, res.request_id, res.resolved_url, &html);
             }
             Resource::Font(bytes, overrides) => {
                 let font = Blob::new(Arc::new(bytes));

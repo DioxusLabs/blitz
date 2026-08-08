@@ -35,6 +35,14 @@ impl HtmlParserProvider for HtmlProvider {
     ) {
         DocumentHtmlParser::parse_inner_html_into_mutator(mutr, element_id, html);
     }
+
+    fn parse_document(
+        &self,
+        html: &str,
+        config: blitz_dom::DocumentConfig,
+    ) -> Box<dyn blitz_dom::Document> {
+        Box::new(crate::HtmlDocument::from_html(html, config))
+    }
 }
 
 pub struct DocumentHtmlParser<'m, 'doc> {

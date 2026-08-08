@@ -61,6 +61,8 @@ pub enum Resource {
     Svg(ImageType, crate::node::SvgImageData),
     Css(DocumentStyleSheet),
     Font(Bytes, FontFaceOverrides),
+    /// HTML fetched for an `<iframe>` element's `src`
+    DocumentSrc(String),
     None,
 }
 
@@ -499,6 +501,16 @@ fn stylo_to_fontique_style(style: &FontStyleRange) -> parley::fontique::FontStyl
                 Fq::Oblique(angle)
             }
         }
+    }
+}
+
+/// Handles HTML fetched for an `<iframe>` element's `src`
+pub(crate) struct DocumentSrcHandler;
+
+impl NetHandler for ResourceHandler<DocumentSrcHandler> {
+    fn bytes(self: Box<Self>, resolved_url: String, bytes: Bytes) {
+        let html = String::from_utf8_lossy(&bytes).into_owned();
+        self.respond(resolved_url, Ok(Resource::DocumentSrc(html)));
     }
 }
 

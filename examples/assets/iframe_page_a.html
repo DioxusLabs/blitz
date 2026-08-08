@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <style>
+      body {
+        font-family: sans-serif;
+        background: #e8f5e9;
+        margin: 8px;
+      }
+      h3 {
+        margin: 0 0 8px;
+      }
+      iframe {
+        width: 300px;
+        height: 120px;
+        border: 1px dashed #888;
+      }
+    </style>
+  </head>
+  <body>
+    <h3>Page A</h3>
+    <ul>
+      <li><a href="./iframe_page_b.html">Go to page B (relative)</a></li>
+      <li><a href="./iframe_page_a.html">Reload page A</a></li>
+      <li><a href="./does_not_exist.html">Broken link (should stay usable)</a></li>
+    </ul>
+    <p>A nested frame:</p>
+    <iframe src="./iframe_page_b.html"></iframe>
+  </body>
+</html>
