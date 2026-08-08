@@ -1,4 +1,5 @@
 use anyrender::PaintScene;
+use blitz_dom::TableContext;
 use blitz_dom::node::SpecialElementData;
 use kurbo::{BezPath, Cap, Circle, Insets, Join, PathEl, Point, Rect, Shape as _, Stroke, Vec2};
 use peniko::{Color, Fill};
@@ -7,12 +8,24 @@ use style::{
     computed_values::border_collapse::T as BorderCollapse,
     values::computed::{BorderStyle, OutlineStyle},
 };
+use taffy::{DetailedGridInfo, ResolveOrZero};
 
 use crate::{
     color::{ToColorColor as _, contrast_ratio},
     kurbo_css::Edge,
     render::ElementCx,
 };
+
+/// Positions of a table's grid lines (in CSS pixels, relative to the table's
+/// border box), used for painting row backgrounds and collapsed borders.
+pub(super) struct TableGridCoords {
+    pub row_starts: Vec<f64>,
+    pub row_ends: Vec<f64>,
+    pub col_starts: Vec<f64>,
+    pub col_ends: Vec<f64>,
+    pub table_width: f64,
+    pub table_height: f64,
+}
 
 /// A darker version of a colour (mirrors WebKit/Blink's `Color::Dark`): the
 /// brightest channel is reduced by a fixed amount and the others scaled to match,
@@ -509,6 +522,95 @@ impl ElementCx<'_, '_> {
         scene.pop_layer();
     }
 
+    /// Compute the positions of the table's grid lines (in CSS pixels, relative
+    /// to the table's border box) for painting row backgrounds and collapsed
+    /// borders.
+    ///
+    /// Track positions are accumulated from the sizes/gutters in `grid_info`
+    /// (offset by the table's border and padding, since cells are positioned
+    /// within the table's content box) and then snapped to the edges of the
+    /// cells' rounded layouts so that painted rects join the cell backgrounds
+    /// without gaps.
+    pub(super) fn table_grid_coords(
+        &self,
+        table: &TableContext,
+        grid_info: &DetailedGridInfo,
+    ) -> Option<TableGridCoords> {
+        let rows = &grid_info.rows;
+        let cols = &grid_info.columns;
+        if rows.sizes.is_empty() || cols.sizes.is_empty() {
+            return None;
+        }
+
+        let border = table.style.border.resolve_or_zero(None, |_, _| 0.0);
+        let padding = table.style.padding.resolve_or_zero(None, |_, _| 0.0);
+
+        fn track_positions(sizes: &[f32], gutters: &[f32], offset: f32) -> (Vec<f64>, Vec<f64>) {
+            let mut starts = Vec::with_capacity(sizes.len());
+            let mut ends = Vec::with_capacity(sizes.len());
+            let mut pos = (offset + gutters.first().copied().unwrap_or(0.0)) as f64;
+            for (i, &size) in sizes.iter().enumerate() {
+                starts.push(pos);
+                pos += size as f64;
+                ends.push(pos);
+                pos += gutters.get(i + 1).copied().unwrap_or(0.0) as f64;
+            }
+            (starts, ends)
+        }
+
+        let (col_starts_u, col_ends_u) =
+            track_positions(&cols.sizes, &cols.gutters, border.left + padding.left);
+        let (row_starts_u, row_ends_u) =
+            track_positions(&rows.sizes, &rows.gutters, border.top + padding.top);
+
+        let mut col_starts: Vec<f64> = col_starts_u.iter().map(|v| v.round()).collect();
+        let mut col_ends: Vec<f64> = col_ends_u.iter().map(|v| v.round()).collect();
+        let mut row_starts: Vec<f64> = row_starts_u.iter().map(|v| v.round()).collect();
+        let mut row_ends: Vec<f64> = row_ends_u.iter().map(|v| v.round()).collect();
+
+        /// Snap the grid line nearest to `value` to `value` itself. Cell edges
+        /// can deviate from the unrounded line position by up to 1px due to
+        /// layout rounding.
+        fn snap(unrounded: &[f64], rounded: &mut [f64], value: f64) {
+            let (idx, dist) = unrounded
+                .iter()
+                .enumerate()
+                .map(|(i, &u)| (i, (u - value).abs()))
+                .min_by(|a, b| a.1.total_cmp(&b.1))
+                .unwrap();
+            if dist <= 1.0 {
+                rounded[idx] = value;
+            }
+        }
+
+        for cell in &table.cells {
+            let Some(node) = self.context.dom.get_node(cell.node_id) else {
+                continue;
+            };
+            let layout = node.final_layout();
+            let x = layout.location.x as f64;
+            let y = layout.location.y as f64;
+            snap(&col_starts_u, &mut col_starts, x);
+            snap(&col_ends_u, &mut col_ends, x + layout.size.width as f64);
+            snap(&row_starts_u, &mut row_starts, y);
+            snap(&row_ends_u, &mut row_ends, y + layout.size.height as f64);
+        }
+
+        let table_width =
+            (col_ends_u.last().unwrap() + (padding.right + border.right) as f64).round();
+        let table_height =
+            (row_ends_u.last().unwrap() + (padding.bottom + border.bottom) as f64).round();
+
+        Some(TableGridCoords {
+            row_starts,
+            row_ends,
+            col_starts,
+            col_ends,
+            table_width,
+            table_height,
+        })
+    }
+
     pub(crate) fn draw_table_borders(&self, scene: &mut impl PaintScene) {
         let SpecialElementData::TableRoot(table) = &self.element.special_data else {
             return;
@@ -527,14 +629,6 @@ impl ElementCx<'_, '_> {
 
         let outer_border_style = self.style.get_border();
 
-        let cols = &grid_info.columns;
-        let rows = &grid_info.rows;
-
-        let inner_width =
-            (cols.sizes.iter().sum::<f32>() + cols.gutters.iter().sum::<f32>()) as f64;
-        let inner_height =
-            (rows.sizes.iter().sum::<f32>() + rows.gutters.iter().sum::<f32>()) as f64;
-
         // TODO: support different colors for different borders
         let current_color = self.style.clone_color();
         let border_color = border_style
@@ -547,54 +641,55 @@ impl ElementCx<'_, '_> {
             return;
         }
 
-        let border_width = border_style.border_top_width.0.to_f64_px();
+        let Some(coords) = self.table_grid_coords(table, grid_info) else {
+            return;
+        };
+        let (x_min, x_max) = (coords.col_starts[0], *coords.col_ends.last().unwrap());
+        let (y_min, y_max) = (coords.row_starts[0], *coords.row_ends.last().unwrap());
+
+        let mut fill = |rect: Rect| {
+            let shape = rect.scale_from_origin(self.scale);
+            scene.fill(Fill::NonZero, self.transform, border_color, None, &shape);
+        };
 
         // Draw horizontal inner borders
-        let mut y = 0.0;
-        for (&height, &gutter) in rows.sizes.iter().zip(rows.gutters.iter()) {
-            let shape =
-                Rect::new(0.0, y, inner_width, y + gutter as f64).scale_from_origin(self.scale);
-            scene.fill(Fill::NonZero, self.transform, border_color, None, &shape);
-
-            y += (height + gutter) as f64;
+        for (&end, &next_start) in coords.row_ends.iter().zip(coords.row_starts.iter().skip(1)) {
+            fill(Rect::new(x_min, end, x_max, next_start));
         }
 
         // Draw horizontal outer borders
         // Top border
         if outer_border_style.border_top_style != BorderStyle::Hidden {
-            let shape =
-                Rect::new(0.0, 0.0, inner_width, border_width).scale_from_origin(self.scale);
-            scene.fill(Fill::NonZero, self.transform, border_color, None, &shape);
+            fill(Rect::new(0.0, 0.0, coords.table_width, y_min));
         }
         // Bottom border
         if outer_border_style.border_bottom_style != BorderStyle::Hidden {
-            let shape = Rect::new(0.0, inner_height, inner_width, inner_height + border_width)
-                .scale_from_origin(self.scale);
-            scene.fill(Fill::NonZero, self.transform, border_color, None, &shape);
+            fill(Rect::new(
+                0.0,
+                y_max,
+                coords.table_width,
+                coords.table_height,
+            ));
         }
 
         // Draw vertical inner borders
-        let mut x = 0.0;
-        for (&width, &gutter) in cols.sizes.iter().zip(cols.gutters.iter()) {
-            let shape =
-                Rect::new(x, 0.0, x + gutter as f64, inner_height).scale_from_origin(self.scale);
-            scene.fill(Fill::NonZero, self.transform, border_color, None, &shape);
-
-            x += (width + gutter) as f64;
+        for (&end, &next_start) in coords.col_ends.iter().zip(coords.col_starts.iter().skip(1)) {
+            fill(Rect::new(end, y_min, next_start, y_max));
         }
 
         // Draw vertical outer borders
         // Left border
         if outer_border_style.border_left_style != BorderStyle::Hidden {
-            let shape =
-                Rect::new(0.0, 0.0, border_width, inner_height).scale_from_origin(self.scale);
-            scene.fill(Fill::NonZero, self.transform, border_color, None, &shape);
+            fill(Rect::new(0.0, 0.0, x_min, coords.table_height));
         }
         // Right border
         if outer_border_style.border_right_style != BorderStyle::Hidden {
-            let shape = Rect::new(inner_width, 0.0, inner_width + border_width, inner_height)
-                .scale_from_origin(self.scale);
-            scene.fill(Fill::NonZero, self.transform, border_color, None, &shape);
+            fill(Rect::new(
+                x_max,
+                0.0,
+                coords.table_width,
+                coords.table_height,
+            ));
         }
     }
 

@@ -219,25 +219,22 @@ impl ElementCx<'_, '_> {
             return;
         };
 
-        let cols = &grid_info.columns;
-        let inner_width =
-            (cols.sizes.iter().sum::<f32>() + cols.gutters.iter().sum::<f32>()) as f64;
+        let Some(coords) = self.table_grid_coords(table, grid_info) else {
+            return;
+        };
+        let (x_min, x_max) = (coords.col_starts[0], *coords.col_ends.last().unwrap());
 
-        let rows = &grid_info.rows;
-        let mut y = rows.gutters.first().copied().unwrap_or_default() as f64;
-        for ((row, &height), &gutter) in table
+        for (row, (&top, &bottom)) in table
             .rows
             .iter()
-            .zip(rows.sizes.iter())
-            .zip(rows.gutters.iter().skip(1))
+            .zip(coords.row_starts.iter().zip(coords.row_ends.iter()))
         {
             let row_node = &self.context.dom.get_node(row.node_id).unwrap();
             let Some(style) = row_node.primary_styles() else {
                 continue;
             };
 
-            let shape =
-                Rect::new(0.0, y, inner_width, y + height as f64).scale_from_origin(self.scale);
+            let shape = Rect::new(x_min, top, x_max, bottom).scale_from_origin(self.scale);
 
             let current_color = style.clone_color();
             let background_color = &style.get_background().background_color;
@@ -249,8 +246,6 @@ impl ElementCx<'_, '_> {
                 // Fill the color
                 scene.fill(Fill::NonZero, self.transform, bg_color, None, &shape);
             }
-
-            y += (height + gutter) as f64;
         }
     }
 
