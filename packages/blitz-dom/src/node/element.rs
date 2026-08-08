@@ -711,14 +711,64 @@ impl RasterImageData {
 /// [`usvg::Tree::intrinsic_dimensions`], which preserves what was actually
 /// declared on the root element.
 #[cfg(feature = "svg")]
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct SvgImageData {
     /// The parsed SVG tree.
     pub tree: Arc<usvg::Tree>,
+    /// The original SVG source, retained so viewport-dependent (percentage)
+    /// lengths can be re-resolved against the element's used size.
+    source: Arc<[u8]>,
+    /// Cache for [`Self::tree_for_viewport`]: the tree re-resolved for the
+    /// most recently requested viewport size.
+    viewport_tree: std::sync::Mutex<Option<(f32, f32, Arc<usvg::Tree>)>>,
+}
+
+#[cfg(feature = "svg")]
+impl Clone for SvgImageData {
+    fn clone(&self) -> Self {
+        Self {
+            tree: Arc::clone(&self.tree),
+            source: Arc::clone(&self.source),
+            viewport_tree: std::sync::Mutex::new(None),
+        }
+    }
 }
 
 #[cfg(feature = "svg")]
 impl SvgImageData {
+    pub fn new(tree: Arc<usvg::Tree>, source: Arc<[u8]>) -> Self {
+        Self {
+            tree,
+            source,
+            viewport_tree: std::sync::Mutex::new(None),
+        }
+    }
+
+    /// The SVG tree for rendering into the given viewport (the element's used
+    /// content-box size).
+    ///
+    /// An SVG with a `viewBox` establishes its own coordinate system that is
+    /// scaled to the viewport, so the already-parsed tree can be used as-is.
+    /// Without a `viewBox` the content cannot be scaled: its percentage
+    /// lengths must instead be re-resolved against the viewport size, which
+    /// requires re-parsing the source with the viewport as the root size.
+    pub fn tree_for_viewport(&self, width: f32, height: f32) -> Arc<usvg::Tree> {
+        if self.tree.intrinsic_dimensions().view_box.is_some() {
+            return Arc::clone(&self.tree);
+        }
+        let mut cache = self.viewport_tree.lock().unwrap();
+        if let Some((w, h, tree)) = &*cache {
+            if *w == width && *h == height {
+                return Arc::clone(tree);
+            }
+        }
+        let tree = crate::util::parse_svg_for_viewport(&self.source, width, height)
+            .map(Arc::new)
+            .unwrap_or_else(|_| Arc::clone(&self.tree));
+        *cache = Some((width, height, Arc::clone(&tree)));
+        tree
+    }
+
     /// The intrinsic width in CSS px, present only when the root `<svg>`
     /// declared an absolute (non-percentage) `width`.
     pub fn intrinsic_width(&self) -> Option<f32> {
