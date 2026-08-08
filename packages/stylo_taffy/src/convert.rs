@@ -151,11 +151,11 @@ pub fn inset(val: &stylo::InsetVal) -> taffy::LengthPercentageAuto {
 
 #[inline]
 pub fn is_block(input: stylo::Display) -> bool {
+    // `display: flow-root` is excluded as it establishes a new block formatting
+    // context and thus does not participate in its parent's BFC
+    // TODO: implement proper FlowRoot support in Taffy
     matches!(input.outside(), stylo::DisplayOutside::Block)
-        && matches!(
-            input.inside(),
-            stylo::DisplayInside::Flow | stylo::DisplayInside::FlowRoot
-        )
+        && matches!(input.inside(), stylo::DisplayInside::Flow)
 }
 
 #[inline]
