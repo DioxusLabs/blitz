@@ -202,15 +202,10 @@ fn push_hoisted_children_and_pseudos(
     container_node_id: NodeId,
     out: &mut LayoutChildren,
 ) {
-    if let Some(before) = doc.nodes[container_node_id].before() {
-        out.push(before, doc);
-    }
-    // Take children array from node to avoid borrow checker issues.
-    let children = std::mem::take(&mut doc.nodes[container_node_id].children);
-    for child_id in children.iter().copied() {
+    fn push_hoisted(doc: &mut BaseDocument, child_id: NodeId, out: &mut LayoutChildren) {
         let child = &doc.nodes[child_id];
         if child.data.kind() == NodeKind::Comment || child.is_whitespace_node() {
-            continue;
+            return;
         }
         let child_display = child.display_style().unwrap_or(Display::inline());
         if matches!(child_display.inside(), DisplayInside::Contents) {
@@ -219,9 +214,18 @@ fn push_hoisted_children_and_pseudos(
             out.push(child_id, doc);
         }
     }
+
+    if let Some(before) = doc.nodes[container_node_id].before() {
+        push_hoisted(doc, before, out);
+    }
+    // Take children array from node to avoid borrow checker issues.
+    let children = std::mem::take(&mut doc.nodes[container_node_id].children);
+    for child_id in children.iter().copied() {
+        push_hoisted(doc, child_id, out);
+    }
     doc.nodes[container_node_id].children = children;
     if let Some(after) = doc.nodes[container_node_id].after() {
-        out.push(after, doc);
+        push_hoisted(doc, after, out);
     }
 }
 
@@ -466,6 +470,20 @@ pub(crate) fn collect_layout_children(
                 &doc.nodes[container_node_id].children,
                 &mut classification,
             );
+            // display:contents ::before/::after pseudos are transparent for box
+            // generation, so their children (e.g. generated text) participate in
+            // this container's formatting context and must be classified too.
+            // (Pseudos with any other display value generate their own box and
+            // don't affect the classification.)
+            let node = &doc.nodes[container_node_id];
+            for pe_id in node.before().into_iter().chain(node.after()) {
+                let pe = &doc.nodes[pe_id];
+                let display = pe.display_style().unwrap_or(Display::inline());
+                if matches!(display.inside(), DisplayInside::Contents) {
+                    classification.has_contents = true;
+                    classify_flow_children(doc, &pe.children, &mut classification);
+                }
+            }
 
             if classification.all_out_of_flow {
                 // Contents-transparent: a display:contents child may be
@@ -521,10 +539,13 @@ pub(crate) fn collect_layout_children(
             );
         }
         DisplayInside::Flex | DisplayInside::Grid => {
-            let has_text_node_or_contents = doc.nodes[container_node_id]
+            let container = &doc.nodes[container_node_id];
+            let has_text_node_or_contents = container
                 .children
                 .iter()
                 .copied()
+                .chain(container.before())
+                .chain(container.after())
                 .map(|child_id| &doc.nodes[child_id])
                 .any(|child| {
                     let display = child.display_style().unwrap_or(Display::inline());
@@ -576,10 +597,14 @@ pub(crate) fn collect_layout_children(
         }
 
         _ => {
-            push_non_whitespace_children_and_pseudos(
-                &mut out.children,
-                &doc.nodes[container_node_id],
-            );
+            // Table-internal boxes (rows, row groups, columns, ...) laid out
+            // outside a table context: recurse transparently through
+            // display:contents children and wrap bare text nodes in anonymous
+            // blocks so that only element boxes become layout children.
+            fn text_needs_wrap(child_node_kind: NodeKind, _: DisplayOutside) -> bool {
+                child_node_kind == NodeKind::Text
+            }
+            collect_complex_layout_children(doc, container_node_id, out, true, text_needs_wrap);
         }
     }
 }
@@ -730,7 +755,14 @@ fn collect_complex_layout_children(
     hide_whitespace: bool,
     needs_wrap: impl Fn(NodeKind, DisplayOutside) -> bool,
 ) {
-    doc.iter_children_and_pseudos_mut(container_node_id, |child_id, doc| {
+    fn visit_child(
+        doc: &mut BaseDocument,
+        container_node_id: NodeId,
+        child_id: NodeId,
+        out: &mut LayoutChildren,
+        hide_whitespace: bool,
+        needs_wrap: &impl Fn(NodeKind, DisplayOutside) -> bool,
+    ) {
         // Get node kind (text, element, comment, etc)
         let child_node_kind = doc.nodes[child_id].data.kind();
 
@@ -755,9 +787,45 @@ fn collect_complex_layout_children(
         if child_node_kind == NodeKind::Comment || (hide_whitespace && is_whitespace_node) {
             // return;
         }
-        // Recurse into `Display::Contents` nodes
+        // Recurse into `Display::Contents` nodes: they are transparent for box
+        // generation, so their children participate in this container's
+        // formatting context and must go through the same wrapping logic
+        // (e.g. bare text under display:contents in a flex container still
+        // needs an anonymous block wrapper).
         else if display_inside == DisplayInside::Contents {
-            collect_layout_children(doc, child_id, out)
+            // display:contents does not apply to replaced elements and form
+            // controls (their contents are suppressed rather than hoisted), so
+            // defer to `collect_layout_children` for its special handling.
+            let is_unusual_element =
+                doc.nodes[child_id]
+                    .data
+                    .downcast_element()
+                    .is_some_and(|el| {
+                        let tag = &el.name.local;
+                        is_replaced_element(tag)
+                            || *tag == local_name!("input")
+                            || *tag == local_name!("textarea")
+                    });
+            if is_unusual_element {
+                return collect_layout_children(doc, child_id, out);
+            }
+
+            doc.nodes[child_id].flags.reset_construction_flags();
+            if let Some(element_data) = doc.nodes[child_id].element_data_mut() {
+                element_data.take_inline_layout();
+            }
+            doc.nodes[child_id].remove_damage(CONSTRUCT_BOX | CONSTRUCT_DESCENDENT | CONSTRUCT_FC);
+            flush_pseudo_elements(doc, child_id);
+            doc.iter_children_and_pseudos_mut(child_id, |grandchild_id, doc| {
+                visit_child(
+                    doc,
+                    container_node_id,
+                    grandchild_id,
+                    out,
+                    hide_whitespace,
+                    needs_wrap,
+                );
+            });
         }
         // Push nodes that need wrapping into the current "anonymous block container".
         // If there is not an open one then we create one.
@@ -768,6 +836,17 @@ fn collect_complex_layout_children(
         else {
             out.push(child_id, doc);
         }
+    }
+
+    doc.iter_children_and_pseudos_mut(container_node_id, |child_id, doc| {
+        visit_child(
+            doc,
+            container_node_id,
+            child_id,
+            out,
+            hide_whitespace,
+            &needs_wrap,
+        );
     });
 
     // If anonymous block node only contains whitespace then delete it, else push it
