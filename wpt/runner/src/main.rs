@@ -84,6 +84,7 @@ bitflags! {
 enum TestKind {
     Ref,
     Attr,
+    Crash,
     TestHarness,
     Unknown,
 }
@@ -93,6 +94,7 @@ impl Display for TestKind {
         match self {
             TestKind::Ref => f.write_str("REF"),
             TestKind::Attr => f.write_str("ATT"),
+            TestKind::Crash => f.write_str("CRA"),
             TestKind::TestHarness => f.write_str("HAR"),
             TestKind::Unknown => f.write_str("UNK"),
         }
