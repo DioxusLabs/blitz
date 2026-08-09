@@ -20,7 +20,9 @@ impl ElementCx<'_, '_> {
             .background_color
             .resolve_to_absolute(&current_color)
             .as_srgb_color();
-        let bg_is_opaque = bg_color.components[3] >= 1.0;
+        // The background is not painted on the element itself if it propagates to the canvas
+        let bg_is_painted = self.context.canvas_bg_source_id != Some(self.node.id);
+        let bg_is_opaque = bg_color.components[3] >= 1.0 && bg_is_painted;
         let needs_clip = opacity < 1.0 || !bg_is_opaque;
 
         let max_shadow_rect = box_shadow.iter().fold(Rect::ZERO, |prev, shadow| {

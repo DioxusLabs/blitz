@@ -790,10 +790,23 @@ fn raster_axis_tiling(
         }
         Space => {
             let (count, stride) = compute_space_count_and_stride(origin_len, tile_len);
+            // Tiling continues over the painting area at the same interval
+            let (pre, post) = if count > 1 {
+                space_extension_counts(
+                    origin_start,
+                    origin_len,
+                    painting_start,
+                    painting_len,
+                    stride,
+                )
+            } else {
+                (0, 0)
+            };
             AxisTiling {
-                translate: origin_start + if count == 1 { bg_pos } else { 0.0 },
+                translate: origin_start - pre as f64 * stride
+                    + if count == 1 { bg_pos } else { 0.0 },
                 rect_len: image_len,
-                count,
+                count: count + pre + post,
                 stride,
             }
         }
@@ -843,10 +856,23 @@ fn gradient_axis_tiling(
         }
         Space => {
             let (count, stride) = compute_space_count_and_stride(origin_len, tile_len);
+            // Tiling continues over the painting area at the same interval
+            let (pre, post) = if count > 1 {
+                space_extension_counts(
+                    origin_start,
+                    origin_len,
+                    painting_start,
+                    painting_len,
+                    stride,
+                )
+            } else {
+                (0, 0)
+            };
             AxisTiling {
-                translate: origin_start + if count == 1 { bg_pos } else { 0.0 },
+                translate: origin_start - pre as f64 * stride
+                    + if count == 1 { bg_pos } else { 0.0 },
                 rect_len: tile_len,
-                count,
+                count: count + pre + post,
                 stride,
             }
         }
@@ -857,6 +883,22 @@ fn gradient_axis_tiling(
             stride: 0.0,
         },
     }
+}
+
+/// The number of extra `Space` tiles needed before and after the positioning
+/// area so that tiling continues over the painting area at the same interval
+fn space_extension_counts(
+    origin_start: f64,
+    origin_len: f64,
+    painting_start: f64,
+    painting_len: f64,
+    stride: f64,
+) -> (u32, u32) {
+    let pre = ((origin_start - painting_start) / stride).ceil().max(0.0) as u32;
+    let post = ((painting_start + painting_len - (origin_start + origin_len)) / stride)
+        .ceil()
+        .max(0.0) as u32;
+    (pre, post)
 }
 
 fn compute_space_count_and_stride(bg_size: f64, size: f64) -> (u32, f64) {
