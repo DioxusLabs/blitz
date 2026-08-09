@@ -916,6 +916,45 @@ impl<'a> TElement for BlitzNode<'a> {
             Some((number as f32, is_percentage))
         }
 
+        /// The HTML "rules for parsing non-negative integers", which is what
+        /// the "maps to the pixel length property" attributes use.
+        ///
+        /// Unlike the dimension rules above this one *does* accept a sign, so
+        /// `"+200"` is 200 and `"-0"` is 0, while `"-200"` is an error. Like
+        /// them it stops at the first non-digit, so `"200.25"`, `"200%"` and
+        /// `"200in"` are all plainly 200 -- there is no fraction and no unit.
+        ///
+        /// https://html.spec.whatwg.org/multipage/common-microsyntaxes.html#rules-for-parsing-non-negative-integers
+        fn parse_pixel_length_attr(value: &str) -> Option<f32> {
+            let bytes = value.as_bytes();
+            let mut i = 0;
+            while i < bytes.len() && matches!(bytes[i], b' ' | b'\t' | b'\n' | b'\x0C' | b'\r') {
+                i += 1;
+            }
+
+            let mut negative = false;
+            if i < bytes.len() && (bytes[i] == b'+' || bytes[i] == b'-') {
+                negative = bytes[i] == b'-';
+                i += 1;
+            }
+
+            let start = i;
+            while i < bytes.len() && bytes[i].is_ascii_digit() {
+                i += 1;
+            }
+            if i == start {
+                return None;
+            }
+            let number: f64 = value[start..i].parse().ok()?;
+
+            // Negative is an error, but "-0" is zero and is accepted: the sign
+            // is rejected on the value, not on its presence.
+            if negative && number != 0.0 {
+                return None;
+            }
+            Some(number as f32)
+        }
+
         /// `parse_dimension_attr`, packaged as a specified `<length-percentage>`.
         /// `ignoring_zero` implements the spec's separate "maps to the
         /// dimension property (ignoring zero)" mapping, where a zero value is
@@ -1093,6 +1132,68 @@ impl<'a> TElement for BlitzNode<'a> {
                     } else {
                         PropertyDeclaration::Height(size)
                     });
+                }
+            }
+
+            // The `border` attribute maps to the four border widths as a
+            // pixel length, plus the four border styles as `solid` -- width
+            // alone would compute back to zero against the default
+            // border-style of `none`. It is only these three elements:
+            // `embed`, `iframe`, `marquee` and non-image `input` all have a
+            // `border` attribute that must stay unmapped.
+            if *name == local_name!("border")
+                && (*tag == local_name!("img") || *tag == local_name!("object") || is_image_input)
+            {
+                if let Some(px) = parse_pixel_length_attr(value) {
+                    use style::values::specified::{BorderSideWidth, BorderStyle};
+                    let width = BorderSideWidth::from_px(px);
+                    push_style(PropertyDeclaration::BorderTopWidth(width.clone()));
+                    push_style(PropertyDeclaration::BorderRightWidth(width.clone()));
+                    push_style(PropertyDeclaration::BorderBottomWidth(width.clone()));
+                    push_style(PropertyDeclaration::BorderLeftWidth(width));
+                    push_style(PropertyDeclaration::BorderTopStyle(BorderStyle::Solid));
+                    push_style(PropertyDeclaration::BorderRightStyle(BorderStyle::Solid));
+                    push_style(PropertyDeclaration::BorderBottomStyle(BorderStyle::Solid));
+                    push_style(PropertyDeclaration::BorderLeftStyle(BorderStyle::Solid));
+                }
+            }
+
+            // `body` carries four legacy margin attributes, as pixel lengths:
+            // marginwidth and marginheight set both sides of an axis, and
+            // leftmargin and topmargin set one side each.
+            //
+            // There is deliberately no `rightmargin` or `bottommargin`. They
+            // look like the obvious counterparts to the two that exist, but
+            // the spec does not define them and browsers ignore them in both
+            // standards and quirks mode -- body-margin-3a/3b assert exactly
+            // that.
+            if *tag == local_name!("body") {
+                // Matched as strings: these are not in the static atom set,
+                // so `local_name!` will not compile for them.
+                let sides: &[u8] = match &**name {
+                    "marginwidth" => b"lr",
+                    "marginheight" => b"tb",
+                    "leftmargin" => b"l",
+                    "topmargin" => b"t",
+                    _ => b"",
+                };
+                if !sides.is_empty() {
+                    if let Some(px) = parse_pixel_length_attr(value) {
+                        use style::values::generics::length::GenericMargin;
+                        use style::values::specified::{LengthPercentage, NoCalcLength};
+                        let margin = GenericMargin::LengthPercentage(LengthPercentage::Length(
+                            NoCalcLength::from_px(px),
+                        ));
+                        for side in sides {
+                            push_style(match side {
+                                b'l' => PropertyDeclaration::MarginLeft(margin.clone()),
+                                b'r' => PropertyDeclaration::MarginRight(margin.clone()),
+                                b't' => PropertyDeclaration::MarginTop(margin.clone()),
+                                b'b' => PropertyDeclaration::MarginBottom(margin.clone()),
+                                _ => unreachable!("side table above only yields lrtb"),
+                            });
+                        }
+                    }
                 }
             }
 
