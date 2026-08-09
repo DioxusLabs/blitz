@@ -13,10 +13,10 @@ use style::Atom;
 use style::values::computed::CSSPixelLength;
 use style::values::computed::length_percentage::CalcLengthPercentage;
 use taffy::{
-    BlockContext, CollapsibleMarginSet, FlexDirection, LayoutPartialTree, NodeId, ResolveOrZero,
-    RoundTree, Style, TraversePartialTree, TraverseTree, compute_block_layout,
-    compute_cached_layout, compute_flexbox_layout, compute_grid_layout, compute_leaf_layout,
-    prelude::*,
+    BlockContext, CollapsibleMarginSet, FlexDirection, LayoutPartialTree, NodeId, RequestedAxis,
+    ResolveOrZero, RoundTree, RunMode, Style, TraversePartialTree, TraverseTree,
+    compute_block_layout, compute_cached_layout, compute_flexbox_layout, compute_grid_layout,
+    compute_leaf_layout, prelude::*,
 };
 
 pub(crate) mod construct;
@@ -384,6 +384,21 @@ impl LayoutPartialTree for BaseDocument {
         node_id: NodeId,
         inputs: taffy::LayoutInput,
     ) -> taffy::LayoutOutput {
+        // A width-only measurement short-circuits with a height of zero once
+        // the width is determined, and the measurement cache does not key on
+        // the requested axis, so storing such an answer would poison the cache
+        // for a later height query: a table cell came out shorter than its
+        // contents. Keeping those answers out of the cache instead recomputed
+        // the subtree for every width probe a parent issues, and a deeply
+        // nested page paid for shaping its text dozens of times over. So ask
+        // for both axes: the height at the resolved width is computed once per
+        // cache key, every stored entry answers any axis, and repeated probes
+        // hit the cache.
+        let mut inputs = inputs;
+        if inputs.run_mode == RunMode::ComputeSize && inputs.axis == RequestedAxis::Horizontal {
+            inputs.axis = RequestedAxis::Both;
+        }
+
         compute_cached_layout(self, node_id, inputs, |tree, node_id, inputs| {
             tree.compute_child_layout_internal(node_id, inputs, None)
         })
