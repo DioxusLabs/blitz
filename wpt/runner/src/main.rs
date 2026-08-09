@@ -37,6 +37,7 @@ use std::{env, fs};
 
 mod test_runners;
 
+mod diff;
 mod net_provider;
 mod panic_backtrace;
 mod report;
@@ -201,9 +202,8 @@ fn filter_path(p: &Path) -> bool {
     !(is_ref | is_notref | is_manual | is_support_file | is_blocked | is_dir)
 }
 
-fn collect_tests(wpt_dir: &Path) -> Vec<PathBuf> {
-    let mut test_paths = Vec::new();
-
+/// The test suites (path prefixes relative to `WPT_DIR`) to run
+fn collect_suites() -> Vec<String> {
     let mut suites: Vec<_> = std::env::args()
         .skip(1)
         .filter(|arg| !arg.starts_with('-'))
@@ -212,6 +212,11 @@ fn collect_tests(wpt_dir: &Path) -> Vec<PathBuf> {
         suites.push("css/css-flexbox".to_string());
         suites.push("css/css-grid".to_string());
     }
+    suites
+}
+
+fn collect_tests(wpt_dir: &Path, suites: &[String]) -> Vec<PathBuf> {
+    let mut test_paths = Vec::new();
 
     for suite in suites {
         for pat in ["", "/**/*.htm", "/**/*.html", "/**/*.xht", "/**/*.xhtml"] {
@@ -395,6 +400,7 @@ fn main() {
     std::panic::set_hook(Box::new(panic_backtrace::stash_panic_handler));
 
     let verbose = env::args().any(|arg| arg == "--verbose" || arg == "-v");
+    let diff = env::args().any(|arg| arg == "--diff");
     let wpt_dir = path::absolute(env::var("WPT_DIR").expect("WPT_DIR is not set")).unwrap();
     info!("WPT_DIR: {}", wpt_dir.display());
     if !wpt_dir.exists() {
@@ -402,15 +408,21 @@ fn main() {
             "WPT_DIR does not exist. This should be set to a local copy of https://github.com/web-platform-tests/wpt."
         );
     }
-    let test_paths = collect_tests(&wpt_dir);
+    let suites = collect_suites();
+    let test_paths = collect_tests(&wpt_dir, &suites);
     let count = test_paths.len();
 
     let cargo_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let out_dir = cargo_dir.parent().unwrap().join("output");
+    let wpt_crate_dir = cargo_dir.parent().unwrap();
+    let out_dir = wpt_crate_dir.join("output");
     if fs::exists(&out_dir).unwrap() {
         fs::remove_dir_all(&out_dir).unwrap();
     }
     fs::create_dir(&out_dir).unwrap();
+
+    // Fetch (and cache) the main-branch results up-front so that network failures are reported
+    // before spending time running the tests.
+    let main_report = diff.then(|| diff::fetch_main_report(&wpt_crate_dir.join("cache"), &suites));
 
     let pass_count = AtomicU32::new(0);
     let fail_count = AtomicU32::new(0);
@@ -755,4 +767,11 @@ fn main() {
         report_path,
         write_report_start.elapsed().as_millis()
     );
+
+    // Diff against the main-branch results
+    match main_report {
+        None => {}
+        Some(None) => eprintln!("\nSkipping diff: no main-branch results available"),
+        Some(Some(main_report)) => diff::print_diff(main_report, report),
+    }
 }

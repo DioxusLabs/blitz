@@ -39,6 +39,7 @@ pub fn generate_run_info(wpt_dir: &Path) -> WptRunInfo {
         wasm: false,
         os: String::new(),
         os_version: String::new(),
+        linux_distro: None,
         version: String::new(),
         processor: String::new(),
         bits: match os_info.bitness() {
