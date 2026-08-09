@@ -94,16 +94,33 @@ pub fn process_test_file(
     }
 
     // Ref Test
-    let reference = ctx
-        .reftest_re
-        .captures(&file_contents)
-        .and_then(|captures| captures.get(1).map(|href| href.as_str().to_string()));
-    if let Some(reference) = reference {
+    let mut match_references: Vec<String> = Vec::new();
+    let mut mismatch_references: Vec<String> = Vec::new();
+    for link in ctx.link_re.find_iter(&file_contents) {
+        let tag = link.as_str();
+        let Some(rel) = ctx.rel_re.captures(tag).and_then(|c| c.get(1)) else {
+            continue;
+        };
+        let Some(href) = ctx
+            .href_re
+            .captures(tag)
+            .and_then(|c| c.get(1).or(c.get(2)))
+        else {
+            continue;
+        };
+        match rel.as_str() {
+            "match" => match_references.push(href.as_str().to_string()),
+            "mismatch" => mismatch_references.push(href.as_str().to_string()),
+            _ => {}
+        }
+    }
+    if !match_references.is_empty() || !mismatch_references.is_empty() {
         let counts = process_ref_test(
             ctx,
             relative_path,
             file_contents.as_str(),
-            reference.as_str(),
+            &match_references,
+            &mismatch_references,
             &mut flags,
         );
 

@@ -263,7 +263,9 @@ struct ThreadCtx {
     buffers: Buffers,
 
     // Things that aren't really thread-specifc, but are convenient to store here
-    reftest_re: Regex,
+    link_re: Regex,
+    rel_re: Regex,
+    href_re: Regex,
     attrtest_re: Regex,
     float_re: Regex,
     intrinsic_re: Regex,
@@ -467,9 +469,10 @@ fn main() {
                         ColorScheme::Light,
                     );
                     let net_provider = Arc::new(WptNetProvider::new(&wpt_dir));
-                    let reftest_re =
-                        Regex::new(r#"<link\s+rel=['"]?match['"]?\s+href=['"]([^'"]+)['"]"#)
-                            .unwrap();
+                    let link_re = Regex::new(r#"<link\s[^>]*>"#).unwrap();
+                    let rel_re = Regex::new(r#"rel\s*=\s*['"]?(match|mismatch)['"]?"#).unwrap();
+                    let href_re =
+                        Regex::new(r#"href\s*=\s*(?:['"]([^'"]+)['"]|([^\s'">]+))"#).unwrap();
 
                     let float_re = Regex::new(r#"float:"#).unwrap();
                     let intrinsic_re =
@@ -499,7 +502,9 @@ fn main() {
                             test_buffer,
                             ref_buffer,
                         },
-                        reftest_re,
+                        link_re,
+                        rel_re,
+                        href_re,
                         attrtest_re,
                         float_re,
                         intrinsic_re,
