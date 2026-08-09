@@ -96,6 +96,18 @@ pub fn process_test_file(
         return (TestKind::Attr, flags, status, counts, results);
     }
 
+    // Testharness (testharness.js) tests. Blitz doesn't run JavaScript, so these are
+    // classified but not run.
+    if ctx.testharness_re.is_match(&file_contents) {
+        return (
+            TestKind::TestHarness,
+            flags,
+            TestStatus::Skip,
+            SubtestCounts::ZERO_OF_ZERO,
+            Vec::new(),
+        );
+    }
+
     // TODO: Handle other test formats.
     (
         TestKind::Unknown,

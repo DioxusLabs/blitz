@@ -84,6 +84,7 @@ bitflags! {
 enum TestKind {
     Ref,
     Attr,
+    TestHarness,
     Unknown,
 }
 
@@ -92,6 +93,7 @@ impl Display for TestKind {
         match self {
             TestKind::Ref => f.write_str("REF"),
             TestKind::Attr => f.write_str("ATT"),
+            TestKind::TestHarness => f.write_str("HAR"),
             TestKind::Unknown => f.write_str("UNK"),
         }
     }
@@ -265,6 +267,7 @@ struct ThreadCtx {
     subgrid_re: Regex,
     grid_lanes_re: Regex,
     script_re: Regex,
+    testharness_re: Regex,
     out_dir: PathBuf,
     wpt_dir: PathBuf,
     dummy_base_url: Url,
@@ -471,6 +474,7 @@ fn main() {
                     let subgrid_re = Regex::new(r#"subgrid"#).unwrap();
                     let grid_lanes_re = Regex::new(r#"grid-lanes"#).unwrap();
                     let script_re = Regex::new(r#"<script|onload="#).unwrap();
+                    let testharness_re = Regex::new(r#"/resources/testharness\.js"#).unwrap();
 
                     let attrtest_re =
                         Regex::new(r#"checkLayout\(\s*['"]([^'"]*)['"]\s*(,\s*(true|false))?\)"#)
@@ -499,6 +503,7 @@ fn main() {
                         subgrid_re,
                         grid_lanes_re,
                         script_re,
+                        testharness_re,
                         out_dir: out_dir.clone(),
                         wpt_dir: wpt_dir.clone(),
                         dummy_base_url,
