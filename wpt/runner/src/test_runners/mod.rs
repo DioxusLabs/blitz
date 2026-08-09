@@ -7,6 +7,7 @@ use log::debug;
 use crate::{SubtestCounts, TestFlags, TestKind, TestStatus, ThreadCtx};
 
 mod attr_test;
+mod fuzzy;
 mod ref_test;
 
 pub use attr_test::process_attr_test;
