@@ -861,25 +861,79 @@ impl<'a> TElement for BlitzNode<'a> {
             None
         }
 
+        /// The HTML "rules for parsing dimension values".
+        ///
+        /// https://html.spec.whatwg.org/multipage/common-microsyntaxes.html#rules-for-parsing-dimension-values
+        ///
+        /// This is emphatically not `str::parse::<f32>()` with the unit peeled
+        /// off. The differences all show up in real attribute values:
+        ///
+        ///   * leading whitespace is skipped, so `"   00523   "` is 523px,
+        ///     but a sign is not a digit, so `"+200"` and `"-200"` are errors
+        ///     where `f32::from_str` happily accepts both;
+        ///   * anything after the number is ignored rather than fatal, so
+        ///     `"200in"`, `"200 %"` and `"200 abc"` are all 200px;
+        ///   * only a `%` *immediately* after the digits makes a percentage,
+        ///     which is why `"200%abc"` is 200% but `"200 %"` is 200px;
+        ///   * there is no exponent, so `"20.25e2"` is 20.25px and not 2025px
+        ///     -- `f32::from_str` gets this one wrong silently, which is worse
+        ///     than rejecting it;
+        ///   * a trailing `.` is allowed and consumes no digits, so `"200."`
+        ///     is 200px and `"200.%"` is 200%.
+        fn parse_dimension_attr(value: &str) -> Option<(f32, bool)> {
+            let bytes = value.as_bytes();
+            let mut i = 0;
+
+            // Skip ASCII whitespace.
+            while i < bytes.len() && matches!(bytes[i], b' ' | b'\t' | b'\n' | b'\x0C' | b'\r') {
+                i += 1;
+            }
+
+            // Must begin with a digit. A sign or a bare `.` is an error.
+            if i >= bytes.len() || !bytes[i].is_ascii_digit() {
+                return None;
+            }
+
+            let int_start = i;
+            while i < bytes.len() && bytes[i].is_ascii_digit() {
+                i += 1;
+            }
+            let mut number: f64 = value[int_start..i].parse().ok()?;
+
+            // A fractional part, but only for as many digits as actually
+            // follow the `.`; the `.` itself is consumed either way.
+            if i < bytes.len() && bytes[i] == b'.' {
+                i += 1;
+                let mut divisor = 1.0f64;
+                while i < bytes.len() && bytes[i].is_ascii_digit() {
+                    divisor *= 10.0;
+                    number += f64::from(bytes[i] - b'0') / divisor;
+                    i += 1;
+                }
+            }
+
+            let is_percentage = i < bytes.len() && bytes[i] == b'%';
+            Some((number as f32, is_percentage))
+        }
+
+        /// `parse_dimension_attr`, packaged as a specified `<length-percentage>`.
+        /// `ignoring_zero` implements the spec's separate "maps to the
+        /// dimension property (ignoring zero)" mapping, where a zero value is
+        /// dropped rather than honoured.
         fn parse_size_attr(
             value: &str,
-            filter_fn: impl FnOnce(&f32) -> bool,
+            ignoring_zero: bool,
         ) -> Option<style::values::specified::LengthPercentage> {
             use style::values::specified::{LengthPercentage, NoCalcLength};
-            if let Some(value) = value.strip_suffix("px") {
-                let val: f32 = value.parse().ok()?;
-                return Some(LengthPercentage::Length(NoCalcLength::from_px(val)));
+            let (number, is_percentage) = parse_dimension_attr(value)?;
+            if ignoring_zero && number == 0.0 {
+                return None;
             }
-
-            if let Some(value) = value.strip_suffix("%") {
-                let val: f32 = value.parse().ok()?;
-                return Some(LengthPercentage::Percentage(NoCalcPercentage::new(
-                    val / 100.0,
-                )));
-            }
-
-            let val: f32 = value.parse().ok().filter(filter_fn)?;
-            Some(LengthPercentage::Length(NoCalcLength::from_px(val)))
+            Some(if is_percentage {
+                LengthPercentage::Percentage(NoCalcPercentage::new(number / 100.0))
+            } else {
+                LengthPercentage::Length(NoCalcLength::from_px(number))
+            })
         }
 
         /// Parse the value of an SVG `width`/`height` presentation attribute.
@@ -914,6 +968,15 @@ impl<'a> TElement for BlitzNode<'a> {
             Some(LengthPercentage::Length(length))
         }
 
+        // `<input type=image>` is the only input type that is replaced
+        // content, and it is the only one that takes the embedded-content
+        // presentational attributes. The type attribute is matched ASCII
+        // case-insensitively, as attribute keywords always are.
+        let is_image_input = *tag == local_name!("input")
+            && elem.attrs().iter().any(|attr| {
+                attr.name.local == local_name!("type") && attr.value.eq_ignore_ascii_case("image")
+            });
+
         for attr in elem.attrs() {
             let name = &attr.name.local;
             let value = attr.value.as_str();
@@ -938,15 +1001,21 @@ impl<'a> TElement for BlitzNode<'a> {
             // https://html.spec.whatwg.org/multipage/rendering.html#attributes-for-embedded-content-and-images
             let is_width = *name == local_name!("width");
             let is_height = *name == local_name!("height");
+            // The elements whose width/height attributes map to the dimension
+            // properties. `input` only joins them as type=image, which is the
+            // one replaced input type.
             let is_embedded = *tag == local_name!("iframe")
                 || *tag == local_name!("embed")
-                || *tag == local_name!("img")
+                || *tag == local_name!("video")
                 || *tag == local_name!("object")
-                || *tag == local_name!("video");
+                || *tag == local_name!("img")
+                || *tag == local_name!("marquee")
+                || is_image_input;
             let maps_to_dimension = if is_width {
                 is_embedded
                     || *tag == local_name!("table")
                     || *tag == local_name!("col")
+                    || *tag == local_name!("colgroup")
                     || *tag == local_name!("tr")
                     || *tag == local_name!("td")
                     || *tag == local_name!("th")
@@ -957,13 +1026,19 @@ impl<'a> TElement for BlitzNode<'a> {
                     || *tag == local_name!("thead")
                     || *tag == local_name!("tbody")
                     || *tag == local_name!("tfoot")
+                    || *tag == local_name!("tr")
+                    || *tag == local_name!("td")
+                    || *tag == local_name!("th")
             } else {
                 false
             };
             if maps_to_dimension {
-                let is_table = *tag == local_name!("table");
-                if let Some(size) = parse_size_attr(value, |v| !(is_table && is_width) || *v != 0.0)
-                {
+                // Three of these use the "(ignoring zero)" variant of the
+                // mapping, where a zero is dropped instead of honoured:
+                // `table width`, and `td`/`th` in both axes.
+                let is_cell = *tag == local_name!("td") || *tag == local_name!("th");
+                let ignoring_zero = is_cell || (is_width && *tag == local_name!("table"));
+                if let Some(size) = parse_size_attr(value, ignoring_zero) {
                     use style::values::generics::{NonNegative, length::Size};
                     let size = Size::LengthPercentage(NonNegative(size));
                     push_style(if is_width {
@@ -971,6 +1046,34 @@ impl<'a> TElement for BlitzNode<'a> {
                     } else {
                         PropertyDeclaration::Height(size)
                     });
+                }
+            }
+
+            // hspace/vspace map to the horizontal and vertical margins as
+            // dimension properties. This is a *smaller* set than the one that
+            // takes width/height: `iframe` and `video` take width and height
+            // but not hspace/vspace, and html/rendering/unmapped-attributes
+            // checks exactly that -- browsers have got it wrong before.
+            let takes_spacing = *tag == local_name!("embed")
+                || *tag == local_name!("img")
+                || *tag == local_name!("object")
+                || *tag == local_name!("marquee")
+                || is_image_input;
+            if takes_spacing {
+                let is_hspace = *name == local_name!("hspace");
+                let is_vspace = *name == local_name!("vspace");
+                if is_hspace || is_vspace {
+                    if let Some(size) = parse_size_attr(value, false) {
+                        use style::values::generics::length::GenericMargin;
+                        let margin = GenericMargin::LengthPercentage(size);
+                        if is_hspace {
+                            push_style(PropertyDeclaration::MarginLeft(margin.clone()));
+                            push_style(PropertyDeclaration::MarginRight(margin));
+                        } else {
+                            push_style(PropertyDeclaration::MarginTop(margin.clone()));
+                            push_style(PropertyDeclaration::MarginBottom(margin));
+                        }
+                    }
                 }
             }
 
