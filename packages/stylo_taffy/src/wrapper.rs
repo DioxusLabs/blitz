@@ -164,6 +164,11 @@ impl<T: Deref<Target = ComputedValues>> taffy::BlockContainerStyle for TaffyStyl
     fn text_align(&self) -> taffy::TextAlign {
         convert::text_align(self.0.clone_text_align())
     }
+
+    #[inline]
+    fn align_content(&self) -> Option<taffy::AlignContent> {
+        convert::block_content_alignment(self.0.get_position().align_content)
+    }
 }
 
 // BlockItemStyle impl

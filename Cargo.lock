@@ -7188,8 +7188,7 @@ dependencies = [
 [[package]]
 name = "taffy"
 version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c034e05f6ee85a12daa63863c2245797715075c70649947aa0da54f3f2ab1d0f"
+source = "git+https://github.com/DioxusLabs/taffy?branch=devin%2F1786318209-block-align-content-bfc#f2a43eb6015c5421b96041d97ae7442dad9f9436"
 dependencies = [
  "arrayvec",
  "serde",
@@ -9273,6 +9272,7 @@ dependencies = [
  "glob",
  "image",
  "log",
+ "markup5ever",
  "os_info",
  "owo-colors",
  "parley",
@@ -9282,6 +9282,7 @@ dependencies = [
  "rayon",
  "regex",
  "serde_json",
+ "stylo",
  "stylo_traits",
  "supports-hyperlinks",
  "taffy",

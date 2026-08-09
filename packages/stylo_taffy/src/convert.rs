@@ -278,10 +278,26 @@ pub fn content_alignment(input: stylo::ContentDistribution) -> Option<taffy::Ali
         stylo::AlignFlags::SPACE_BETWEEN => Some(taffy::AlignContent::SPACE_BETWEEN),
         stylo::AlignFlags::SPACE_AROUND => Some(taffy::AlignContent::SPACE_AROUND),
         stylo::AlignFlags::SPACE_EVENLY => Some(taffy::AlignContent::SPACE_EVENLY),
+        // Baseline content-alignment is not supported: it falls back to start/end
+        // (<https://www.w3.org/TR/css-align-3/#baseline-align-self>)
+        stylo::AlignFlags::BASELINE => Some(taffy::AlignContent::START),
+        stylo::AlignFlags::LAST_BASELINE => Some(taffy::AlignContent::END),
         // Should never be hit. But no real reason to panic here.
         _ => None,
     }?;
     if primary.flags().contains(stylo::AlignFlags::SAFE) {
+        align.safety = taffy::AlignmentSafety::Safe;
+    }
+    Some(align)
+}
+
+/// Convert `align-content` for a block container. Unlike in flex and grid containers, the whole
+/// in-flow content of a block container is a single alignment subject, and positional keywords
+/// default to `safe` overflow alignment (<https://github.com/w3c/csswg-drafts/issues/10154>).
+#[inline]
+pub fn block_content_alignment(input: stylo::ContentDistribution) -> Option<taffy::AlignContent> {
+    let mut align = self::content_alignment(input)?;
+    if !input.primary().flags().contains(stylo::AlignFlags::UNSAFE) {
         align.safety = taffy::AlignmentSafety::Safe;
     }
     Some(align)
@@ -712,8 +728,15 @@ pub fn to_taffy_style(style: &stylo::ComputedValues) -> taffy::Style<Atom> {
         },
 
         // Alignment
-        #[cfg(any(feature = "flexbox", feature = "grid"))]
-        align_content: self::content_alignment(pos.align_content),
+        #[cfg(any(feature = "flexbox", feature = "block", feature = "grid"))]
+        align_content: if matches!(
+            display.inside(),
+            stylo::DisplayInside::Flow | stylo::DisplayInside::FlowRoot
+        ) {
+            self::block_content_alignment(pos.align_content)
+        } else {
+            self::content_alignment(pos.align_content)
+        },
         #[cfg(any(feature = "flexbox", feature = "grid"))]
         justify_content: self::justify_content(
             pos.justify_content,
