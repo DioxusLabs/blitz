@@ -186,7 +186,11 @@ fn filter_path(p: &Path) -> bool {
         || path_str.ends_with("-manual.htm")
         || path_str.ends_with("-manual.xhtml")
         || path_str.ends_with("-manual.xht");
-    let is_support_file = path_contains_directory(p, "support");
+    // `support`, `tools` and `resources` directories contain helper files, not tests
+    // (matching the upstream WPT manifest rules)
+    let is_support_file = path_contains_directory(p, "support")
+        || path_contains_directory(p, "tools")
+        || path_contains_directory(p, "resources");
 
     let is_blocked = BLOCKED_TESTS
         .iter()
