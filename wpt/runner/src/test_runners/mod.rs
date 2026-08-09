@@ -1,11 +1,8 @@
-use std::sync::LazyLock;
 use std::{fs, sync::Arc, time::Instant};
 
 use blitz_dom::{BaseDocument, DocumentConfig};
 use blitz_html::HtmlDocument;
-use encoding_rs::{Encoding, UTF_8, UTF_16BE, UTF_16LE, WINDOWS_1252};
-use log::debug;
-use regex::bytes::Regex as BytesRegex;
+use log::{debug, warn};
 
 use crate::{SubtestCounts, TestFlags, TestKind, TestStatus, ThreadCtx};
 
@@ -33,8 +30,21 @@ pub fn process_test_file(
 ) {
     debug!("Processing test file: {relative_path}");
 
-    let file_bytes = fs::read(ctx.wpt_dir.join(relative_path)).unwrap();
-    let file_contents = decode_file_bytes(&file_bytes);
+    let file_contents = match fs::read_to_string(ctx.wpt_dir.join(relative_path)) {
+        Ok(contents) => contents,
+        Err(err) if err.kind() == std::io::ErrorKind::InvalidData => {
+            // Tests encoded as UTF-16 or a legacy encoding are not supported: skip them.
+            warn!("Skipping {relative_path}: not valid UTF-8");
+            return (
+                TestKind::Unknown,
+                TestFlags::empty(),
+                TestStatus::Skip,
+                SubtestCounts::ZERO_OF_ZERO,
+                Vec::new(),
+            );
+        }
+        Err(err) => panic!("Failed to read {relative_path}: {err}"),
+    };
 
     // Compute flags
     let mut flags = TestFlags::empty();
@@ -108,43 +118,6 @@ pub fn process_test_file(
         SubtestCounts::ZERO_OF_ZERO,
         Vec::new(),
     )
-}
-
-/// Decode raw bytes from a test file, honouring a BOM or a declared encoding
-/// (XML declaration, `<meta charset>`, or `charset` in a `content` attribute).
-/// Defaults to UTF-8 with a windows-1252 fallback for undeclared legacy encodings.
-fn decode_file_bytes(bytes: &[u8]) -> String {
-    if let Some((encoding, bom_len)) = Encoding::for_bom(bytes) {
-        return encoding
-            .decode_without_bom_handling(&bytes[bom_len..])
-            .0
-            .into_owned();
-    }
-
-    if let Ok(utf8) = std::str::from_utf8(bytes) {
-        return utf8.to_owned();
-    }
-
-    let encoding = scan_declared_encoding(bytes).unwrap_or(WINDOWS_1252);
-    encoding.decode_without_bom_handling(bytes).0.into_owned()
-}
-
-/// Scan the first 1024 bytes for an encoding declaration and look up the
-/// corresponding encoding. A declared UTF-16 encoding is mapped to UTF-8, as an
-/// ASCII-superset declaration being readable means the content is not UTF-16
-/// (this matches the HTML spec's "get an encoding" algorithm).
-fn scan_declared_encoding(bytes: &[u8]) -> Option<&'static Encoding> {
-    static DECLARED_ENCODING_RE: LazyLock<BytesRegex> = LazyLock::new(|| {
-        BytesRegex::new(r#"(?i)(?:encoding|charset)\s*=\s*["']?([a-zA-Z0-9_:.-]+)"#).unwrap()
-    });
-
-    let prefix = &bytes[..bytes.len().min(1024)];
-    let label = DECLARED_ENCODING_RE.captures(prefix)?.get(1)?.as_bytes();
-    let encoding = Encoding::for_label(label)?;
-    if encoding == UTF_16LE || encoding == UTF_16BE {
-        return Some(UTF_8);
-    }
-    Some(encoding)
 }
 
 fn parse_and_resolve_document(

@@ -28,7 +28,6 @@ image = { workspace = true, features = ["png"] }
 url = { workspace = true }
 data-url = { workspace = true }
 png = { version = "0.17" }
-encoding_rs = "0.8"
 glob = { version = "0.3.1" }
 dify = { version = "0.7.4", default-features = false }
 env_logger = { version = "0.11.5" }

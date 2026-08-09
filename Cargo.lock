@@ -9269,7 +9269,6 @@ dependencies = [
  "blitz-traits",
  "data-url",
  "dify",
- "encoding_rs",
  "env_logger",
  "glob",
  "image",
