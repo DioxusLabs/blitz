@@ -40,6 +40,7 @@ use style::{
 use kurbo::{self, Affine, Insets, Point, Rect, Shape, Size, Stroke, Vec2};
 use peniko::{self, Fill, ImageData, ImageSampler};
 use style::values::generics::color::GenericColor;
+use style::values::generics::image::GenericImage;
 use taffy::Layout;
 
 /// A short-lived struct which holds a bunch of parameters for rendering a scene so
@@ -54,6 +55,10 @@ pub struct BlitzDomPainter<'dom, 'a> {
     pub(crate) initial_y: f64,
     /// The id of the document's root element (cached to avoid re-resolving it for every element)
     pub(crate) root_element_id: Option<NodeId>,
+    /// The id of the element whose background propagates to the canvas (the root element, or
+    /// the `<body>` element if the root element's background is entirely transparent). That
+    /// element's background is painted as the canvas background instead of on the element itself.
+    pub(crate) canvas_bg_source_id: Option<NodeId>,
     /// Scrollbar hover/drag state, resolved once per scene like the root element
     #[cfg(feature = "scrollbars")]
     pub(crate) hovered_scrollbar: Option<blitz_dom::node::ScrollbarRef>,
@@ -86,6 +91,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
 
         let layer_manager = LayerManager::default();
         let root_element_id = dom.try_root_element().map(|el| el.id);
+        let canvas_bg_source_id = resolve_canvas_background_source(dom);
 
         Self {
             dom,
@@ -95,6 +101,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             initial_x,
             initial_y,
             root_element_id,
+            canvas_bg_source_id,
             #[cfg(feature = "scrollbars")]
             hovered_scrollbar: dom.hovered_scrollbar(),
             #[cfg(feature = "scrollbars")]
@@ -128,41 +135,57 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         let bg_width = (self.width as f32).max(root_element.final_layout().size.width);
         let bg_height = (self.height as f32).max(root_element.final_layout().size.height);
 
-        let background_color = {
-            let html_color = root_element
-                .primary_styles()
-                .map(|s| s.clone_background_color())
-                .unwrap_or(GenericColor::TRANSPARENT_BLACK);
-            if html_color == GenericColor::TRANSPARENT_BLACK {
-                root_element
-                    .children
-                    .iter()
-                    .find_map(|id| {
-                        self.dom
-                            .as_ref()
-                            .get_node(*id)
-                            .filter(|node| node.data.is_element_with_tag_name(&local_name!("body")))
-                    })
-                    .and_then(|body| body.primary_styles())
-                    .map(|style| {
-                        let current_color = style.clone_color();
-                        style
-                            .clone_background_color()
-                            .resolve_to_absolute(&current_color)
-                    })
-            } else {
-                let current_color = root_element.primary_styles().unwrap().clone_color();
-                Some(html_color.resolve_to_absolute(&current_color))
+        // Paint the canvas background. The background of the root element (or of the <body>
+        // element if the root element's background is entirely transparent) propagates to the
+        // canvas: its painting area extends to cover the entire canvas, but its background
+        // images are positioned as if they were painted on the root element alone.
+        let canvas_bg_source = self
+            .canvas_bg_source_id
+            .and_then(|id| self.dom.as_ref().get_node(id));
+        if let Some(source) = canvas_bg_source {
+            if let Some(styles) = source.primary_styles() {
+                let current_color = styles.clone_color();
+                let bg_color = styles
+                    .clone_background_color()
+                    .resolve_to_absolute(&current_color)
+                    .as_srgb_color();
+                if bg_color != crate::color::Color::TRANSPARENT {
+                    let rect = Rect::from_origin_size(
+                        (self.initial_x * self.scale, self.initial_y * self.scale),
+                        (bg_width as f64, bg_height as f64),
+                    );
+                    scene.fill(Fill::NonZero, Affine::IDENTITY, bg_color, None, &rect);
+                }
             }
-        };
 
-        if let Some(bg_color) = background_color {
-            let bg_color = bg_color.as_srgb_color();
-            let rect = Rect::from_origin_size(
-                (self.initial_x * self.scale, self.initial_y * self.scale),
-                (bg_width as f64, bg_height as f64),
-            );
-            scene.fill(Fill::NonZero, Affine::IDENTITY, bg_color, None, &rect);
+            if let Some(source_element) = source.element_data() {
+                let root_node = &self.dom.as_ref().tree()[root_id];
+                let root_layout = *root_node.final_layout();
+                let box_position =
+                    Vec2::new(root_layout.location.x as f64, root_layout.location.y as f64)
+                        * self.scale;
+                let transform = Affine::translate(Vec2 {
+                    x: self.initial_x - (viewport_scroll.x * self.scale),
+                    y: self.initial_y - (viewport_scroll.y * self.scale),
+                }) * Affine::translate(box_position);
+
+                let mut cx = self.element_cx(root_node, root_layout, transform, None);
+                if source.id != root_id {
+                    if let Some(styles) = source.primary_styles() {
+                        cx.style = (*styles).clone();
+                    }
+                }
+
+                // The canvas rect in the root element's local coordinate space. The canvas
+                // covers at least the viewport (extended by the scroll offset so that it
+                // remains covered when the document is scrolled).
+                let canvas_width = bg_width as f64 + viewport_scroll.x * self.scale;
+                let canvas_height = bg_height as f64 + viewport_scroll.y * self.scale;
+                let canvas_rect = Rect::new(0.0, 0.0, canvas_width, canvas_height) - box_position;
+                cx.painting_rect_override = Some(canvas_rect);
+
+                cx.draw_canvas_background_layers(scene, canvas_rect, source_element);
+            }
         }
 
         // The root clip rectangle is the viewport (in screen coordinates, with the
@@ -548,8 +571,41 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             list_item: element.list_item_data.as_deref(),
             devtools: self.dom.devtools(),
             custom_widget_scene,
+            painting_rect_override: None,
         }
     }
+}
+
+/// Resolve the element whose background propagates to the canvas.
+///
+/// The root element's background always propagates to the canvas. If it is entirely
+/// transparent (its background-color is transparent and it has no background images)
+/// then the background of the root element's first `<body>` child element is
+/// propagated instead.
+fn resolve_canvas_background_source(dom: &BaseDocument) -> Option<NodeId> {
+    fn has_background(styles: &ComputedValues) -> bool {
+        styles.clone_background_color() != GenericColor::TRANSPARENT_BLACK
+            || styles
+                .get_background()
+                .background_image
+                .0
+                .iter()
+                .any(|image| !matches!(image, GenericImage::None))
+    }
+
+    let root_element = dom.try_root_element()?;
+    let root_styles = root_element.primary_styles()?;
+    if has_background(&root_styles) {
+        return Some(root_element.id);
+    }
+    root_element
+        .children
+        .iter()
+        .find_map(|id| {
+            dom.get_node(*id)
+                .filter(|node| node.data.is_element_with_tag_name(&local_name!("body")))
+        })
+        .map(|body| body.id)
 }
 
 fn to_image_quality(image_rendering: ImageRendering) -> peniko::ImageQuality {
@@ -595,6 +651,10 @@ struct ElementCx<'dom, 'a> {
     devtools: &'dom DevtoolSettings,
     #[cfg_attr(not(feature = "custom-widget"), expect(unused))]
     custom_widget_scene: Option<&'a Scene>,
+    /// When painting the canvas background, the background painting area extends to cover the
+    /// entire canvas rather than just the element's box. This is that area, in the element's
+    /// local coordinate space. `None` for regular (non-canvas) background painting.
+    painting_rect_override: Option<Rect>,
 }
 
 /// Converts parley BoundingBox into peniko Rect

@@ -413,6 +413,17 @@ impl BaseDocument {
         taffy::compute_root_layout(self, root_element_id, available_space);
         taffy::round_layout(self, root_element_id);
 
+        // The root element's containing block is the initial containing block (which is
+        // anchored at the canvas origin), so its margin offsets its border box.
+        let root_id = self.root_element().id;
+        let root = &mut self.nodes[root_id];
+        let margin = root.final_layout().margin;
+        root.final_layout_mut().location.x += margin.left;
+        root.final_layout_mut().location.y += margin.top;
+        let unrounded_margin = root.unrounded_layout().margin;
+        root.unrounded_layout_mut().location.x += unrounded_margin.left;
+        root.unrounded_layout_mut().location.y += unrounded_margin.top;
+
         // println!("\n\n");
         // taffy::print_tree(self, root_node_id)
     }
