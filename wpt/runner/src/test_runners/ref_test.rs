@@ -13,14 +13,68 @@ use url::Url;
 use super::parse_and_resolve_document;
 use crate::{BufferKind, HEIGHT, SCALE, SubtestCounts, TestFlags, ThreadCtx, WIDTH};
 
-#[allow(clippy::too_many_arguments)]
 pub fn process_ref_test(
     ctx: &mut ThreadCtx,
     test_relative_path: &str,
     test_html: &str,
-    ref_file: &str,
+    match_references: &[String],
+    mismatch_references: &[String],
     flags: &mut TestFlags,
 ) -> SubtestCounts {
+    let test_out_path = ctx
+        .out_dir
+        .join(format!("{}{}", test_relative_path, "-test.png"));
+    render_html_to_buffer(
+        ctx,
+        BufferKind::Test,
+        test_relative_path,
+        &test_out_path,
+        test_html,
+    );
+
+    let image_is_blank = ctx.buffers.test_buffer.iter().all(|x| *x == 0);
+    if image_is_blank {
+        return SubtestCounts::ZERO_OF_ONE;
+    }
+
+    // A test passes if its rendering matches ANY of its `rel=match` references
+    // and differs from ALL of its `rel=mismatch` references.
+    let mut ref_index = 0;
+
+    let mut matches_pass = match_references.is_empty();
+    for ref_file in match_references {
+        ref_index += 1;
+        if render_reference_and_compare(ctx, test_relative_path, ref_file, ref_index, flags) {
+            matches_pass = true;
+            break;
+        }
+    }
+
+    let mut mismatches_pass = true;
+    for ref_file in mismatch_references {
+        ref_index += 1;
+        if render_reference_and_compare(ctx, test_relative_path, ref_file, ref_index, flags) {
+            mismatches_pass = false;
+            break;
+        }
+    }
+
+    if matches_pass && mismatches_pass {
+        SubtestCounts::ONE_OF_ONE
+    } else {
+        SubtestCounts::ZERO_OF_ONE
+    }
+}
+
+/// Renders `ref_file` to the reference buffer and compares it against the already-rendered
+/// test buffer. Returns `true` if the two renderings are considered equal.
+fn render_reference_and_compare(
+    ctx: &mut ThreadCtx,
+    test_relative_path: &str,
+    ref_file: &str,
+    ref_index: usize,
+    flags: &mut TestFlags,
+) -> bool {
     let ref_url: Url = ctx
         .dummy_base_url
         .join(test_relative_path)
@@ -53,20 +107,14 @@ pub fn process_ref_test(
         *flags |= TestFlags::USES_GRID_LANES;
     }
 
-    let test_out_path = ctx
-        .out_dir
-        .join(format!("{}{}", test_relative_path, "-test.png"));
-    render_html_to_buffer(
-        ctx,
-        BufferKind::Test,
-        test_relative_path,
-        &test_out_path,
-        test_html,
-    );
-
+    let suffix = if ref_index == 1 {
+        String::new()
+    } else {
+        format!("-{ref_index}")
+    };
     let ref_out_path = ctx
         .out_dir
-        .join(format!("{}{}", test_relative_path, "-ref.png"));
+        .join(format!("{test_relative_path}-ref{suffix}.png"));
     render_html_to_buffer(
         ctx,
         BufferKind::Ref,
@@ -75,13 +123,8 @@ pub fn process_ref_test(
         &ref_html,
     );
 
-    let image_is_blank = ctx.buffers.test_buffer.iter().all(|x| *x == 0);
-    if image_is_blank {
-        return SubtestCounts::ZERO_OF_ONE;
-    }
-
     if ctx.buffers.test_buffer == ctx.buffers.ref_buffer {
-        return SubtestCounts::ONE_OF_ONE;
+        return true;
     }
 
     let test_image = ImageBuffer::from_raw(WIDTH, HEIGHT, ctx.buffers.test_buffer.clone()).unwrap();
@@ -92,13 +135,13 @@ pub fn process_ref_test(
     if let Some(diff) = diff {
         let path = ctx
             .out_dir
-            .join(format!("{}{}", test_relative_path, "-diff.png"));
+            .join(format!("{test_relative_path}-diff{suffix}.png"));
         let parent = path.parent().unwrap();
         fs::create_dir_all(parent).unwrap();
         diff.1.save_with_format(path, ImageFormat::Png).unwrap();
-        SubtestCounts::ZERO_OF_ONE
+        false
     } else {
-        SubtestCounts::ONE_OF_ONE
+        true
     }
 }
 
