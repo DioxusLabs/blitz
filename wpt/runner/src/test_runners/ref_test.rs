@@ -37,15 +37,17 @@ pub fn process_ref_test(
         return SubtestCounts::ZERO_OF_ONE;
     }
 
-    // A test passes if its rendering matches its `rel=match` reference
+    // A test passes if its rendering matches ANY of its `rel=match` references
     // and differs from ALL of its `rel=mismatch` references.
     let mut ref_index = 0;
 
     let mut matches_pass = match_references.is_empty();
-    if let Some(ref_file) = match_references.first() {
+    for ref_file in match_references {
         ref_index += 1;
-        matches_pass =
-            render_reference_and_compare(ctx, test_relative_path, ref_file, ref_index, flags);
+        if render_reference_and_compare(ctx, test_relative_path, ref_file, ref_index, flags) {
+            matches_pass = true;
+            break;
+        }
     }
 
     let mut mismatches_pass = true;
