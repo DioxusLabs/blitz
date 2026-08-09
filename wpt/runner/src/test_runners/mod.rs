@@ -2,7 +2,7 @@ use std::{fs, sync::Arc, time::Instant};
 
 use blitz_dom::{BaseDocument, DocumentConfig};
 use blitz_html::HtmlDocument;
-use log::debug;
+use log::{debug, warn};
 
 use crate::{SubtestCounts, TestFlags, TestKind, TestStatus, ThreadCtx};
 
@@ -32,7 +32,21 @@ pub fn process_test_file(
 ) {
     debug!("Processing test file: {relative_path}");
 
-    let file_contents = fs::read_to_string(ctx.wpt_dir.join(relative_path)).unwrap();
+    let file_contents = match fs::read_to_string(ctx.wpt_dir.join(relative_path)) {
+        Ok(contents) => contents,
+        Err(err) if err.kind() == std::io::ErrorKind::InvalidData => {
+            // Tests encoded as UTF-16 or a legacy encoding are not supported: skip them.
+            warn!("Skipping {relative_path}: not valid UTF-8");
+            return (
+                TestKind::Unknown,
+                TestFlags::empty(),
+                TestStatus::Skip,
+                SubtestCounts::ZERO_OF_ZERO,
+                Vec::new(),
+            );
+        }
+        Err(err) => panic!("Failed to read {relative_path}: {err}"),
+    };
 
     // Compute flags
     let mut flags = TestFlags::empty();
