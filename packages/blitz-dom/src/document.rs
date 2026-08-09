@@ -2424,6 +2424,45 @@ impl BaseDocument {
         Some(rects)
     }
 
+    /// Maps a point in document (page) coordinates into `node_id`'s local
+    /// coordinate space, taking ancestor scroll offsets and transforms into
+    /// account. For non-atomic inline elements (which have no layout box of
+    /// their own), the point is relative to the origin of the union of their
+    /// per-line-box fragment rects.
+    pub fn page_point_to_element_space(
+        &self,
+        node_id: NodeId,
+        x: f32,
+        y: f32,
+    ) -> Option<crate::util::Point<f32>> {
+        let node = self.get_node(node_id)?;
+        let scale = self.viewport().scale_f64();
+
+        if let Some(rects) = self.inline_fragment_rects(node_id) {
+            if rects.is_empty() {
+                return None;
+            }
+            let x0 = rects.iter().map(|r| r.x).fold(f64::INFINITY, f64::min);
+            let y0 = rects.iter().map(|r| r.y).fold(f64::INFINITY, f64::min);
+
+            // Fragment rects are viewport-relative and untransformed: convert
+            // their origin into the inline root's local space and take the
+            // offset from it there.
+            let inline_root = node.inline_root_ancestor()?;
+            let root_pos = inline_root.absolute_position(0.0, 0.0);
+            let origin_x = (x0 + self.viewport_scroll.x) as f32 - root_pos.x;
+            let origin_y = (y0 + self.viewport_scroll.y) as f32 - root_pos.y;
+
+            let local = inline_root.page_point_to_local(x, y, scale);
+            return Some(crate::util::Point {
+                x: local.x - origin_x,
+                y: local.y - origin_y,
+            });
+        }
+
+        Some(node.page_point_to_local(x, y, scale))
+    }
+
     pub fn find_title_node(&self) -> Option<&Node> {
         TreeTraverser::new(self)
             .find(|node_id| {

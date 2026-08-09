@@ -325,9 +325,13 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
         coords: &PointerCoords,
         element: &mut Point<f32>,
     ) {
-        if let Some(rect) = self.doc.inner().get_client_bounding_rect(target) {
-            element.x = coords.client_x - rect.x as f32;
-            element.y = coords.client_y - rect.y as f32;
+        if let Some(point) =
+            self.doc
+                .inner()
+                .page_point_to_element_space(target, coords.page_x, coords.page_y)
+        {
+            element.x = point.x;
+            element.y = point.y;
         }
     }
 
