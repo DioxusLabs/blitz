@@ -2,6 +2,7 @@ use anyrender::{ImageRenderer as _, PaintScene as _};
 use blitz_dom::util::Color;
 use blitz_paint::paint_scene;
 use image::{ImageBuffer, ImageFormat};
+use log::warn;
 use peniko::Fill;
 use peniko::kurbo::Rect;
 use std::fs;
@@ -47,7 +48,7 @@ pub fn process_ref_test(
     let mut matches_pass = match_references.is_empty();
     for ref_file in match_references {
         ref_index += 1;
-        if render_reference_and_compare(
+        match render_reference_and_compare(
             ctx,
             test_relative_path,
             ref_file,
@@ -55,15 +56,20 @@ pub fn process_ref_test(
             &fuzzy_specs,
             flags,
         ) {
-            matches_pass = true;
-            break;
+            Some(true) => {
+                matches_pass = true;
+                break;
+            }
+            Some(false) => {}
+            // Reference could not be resolved or read: skip the test
+            None => return SubtestCounts::ZERO_OF_ZERO,
         }
     }
 
     let mut mismatches_pass = true;
     for ref_file in mismatch_references {
         ref_index += 1;
-        if render_reference_and_compare(
+        match render_reference_and_compare(
             ctx,
             test_relative_path,
             ref_file,
@@ -71,8 +77,13 @@ pub fn process_ref_test(
             &fuzzy_specs,
             flags,
         ) {
-            mismatches_pass = false;
-            break;
+            Some(true) => {
+                mismatches_pass = false;
+                break;
+            }
+            Some(false) => {}
+            // Reference could not be resolved or read: skip the test
+            None => return SubtestCounts::ZERO_OF_ZERO,
         }
     }
 
@@ -92,16 +103,33 @@ fn render_reference_and_compare(
     ref_index: usize,
     fuzzy_specs: &[FuzzySpec],
     flags: &mut TestFlags,
-) -> bool {
-    let ref_url: Url = ctx
-        .dummy_base_url
-        .join(test_relative_path)
-        .unwrap()
-        .join(ref_file)
-        .unwrap();
-    let ref_relative_path = ref_url.path().strip_prefix('/').unwrap().to_string();
-    let ref_path = ctx.wpt_dir.join(&ref_relative_path);
-    let ref_html = fs::read_to_string(ref_path).expect("Ref file not found.");
+) -> Option<bool> {
+    let test_url = ctx.dummy_base_url.join(test_relative_path).unwrap();
+    let ref_url: Url = match test_url.join(ref_file) {
+        Ok(url) => url,
+        Err(err) => {
+            warn!("Skipping {test_relative_path}: unresolvable ref href {ref_file:?} ({err})");
+            return None;
+        }
+    };
+
+    // An `about:blank` reference is a blank page: render the ref as an empty document.
+    let (ref_relative_path, ref_html) = if ref_url.as_str() == "about:blank" {
+        (test_relative_path.to_string(), String::new())
+    } else if ref_url.scheme() == ctx.dummy_base_url.scheme() {
+        let ref_relative_path = ref_url.path().strip_prefix('/').unwrap().to_string();
+        let ref_path = ctx.wpt_dir.join(&ref_relative_path);
+        match fs::read_to_string(&ref_path) {
+            Ok(html) => (ref_relative_path, html),
+            Err(err) => {
+                warn!("Skipping {test_relative_path}: cannot read ref file {ref_file:?} ({err})");
+                return None;
+            }
+        }
+    } else {
+        warn!("Skipping {test_relative_path}: unsupported ref url {ref_url}");
+        return None;
+    };
 
     if ctx.float_re.is_match(&ref_html) {
         *flags |= TestFlags::USES_FLOAT;
@@ -142,7 +170,7 @@ fn render_reference_and_compare(
     );
 
     if ctx.buffers.test_buffer == ctx.buffers.ref_buffer {
-        return true;
+        return Some(true);
     }
 
     // If the test declares a `<meta name=fuzzy>` tolerance applicable to this reference,
@@ -170,9 +198,9 @@ fn render_reference_and_compare(
         let parent = path.parent().unwrap();
         fs::create_dir_all(parent).unwrap();
         diff.1.save_with_format(path, ImageFormat::Png).unwrap();
-        fuzzy_tolerance.is_some() && is_match
+        Some(fuzzy_tolerance.is_some() && is_match)
     } else {
-        is_match
+        Some(is_match)
     }
 }
 
