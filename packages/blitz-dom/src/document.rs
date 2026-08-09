@@ -2156,10 +2156,18 @@ impl BaseDocument {
     pub fn scroll_viewport_by_has_changed(&mut self, x: f64, y: f64) -> bool {
         // The viewport scrolls the root element's scrollable overflow, which includes both
         // the root element itself and any content which overflows it (e.g. when the root
-        // element has a fixed height but its content is taller).
-        let root_layout = self.root_element().final_layout();
-        let content_width = root_layout.size.width.max(root_layout.content_size.width) as f64;
-        let content_height = root_layout.size.height.max(root_layout.content_size.height) as f64;
+        // element has a fixed height but its content is taller). A document without a root
+        // element has no scrollable content, so its content size is zero.
+        let (content_width, content_height) = match self.try_root_element() {
+            Some(root) => {
+                let root_layout = root.final_layout();
+                (
+                    root_layout.size.width.max(root_layout.content_size.width) as f64,
+                    root_layout.size.height.max(root_layout.content_size.height) as f64,
+                )
+            }
+            None => (0.0, 0.0),
+        };
         let new_scroll = (self.viewport_scroll.x - x, self.viewport_scroll.y - y);
         let window_width = self.viewport.window_size.0 as f64 / self.viewport.scale() as f64;
         let window_height = self.viewport.window_size.1 as f64 / self.viewport.scale() as f64;

@@ -298,7 +298,10 @@ pub(crate) fn collect_table_cells(
                         }
                     }
                     taffy::CompactLength::AUTO_TAG => style_helpers::auto(),
-                    _ => unreachable!(),
+                    // Dimension values are always length, percentage, auto or calc(),
+                    // so any other tag is a calc() value. Pass it through so that
+                    // Taffy resolves it against the table's inner width.
+                    _ => style.size.width.into(),
                 };
                 columns.push(column);
             }

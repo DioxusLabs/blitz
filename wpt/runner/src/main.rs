@@ -84,6 +84,8 @@ bitflags! {
 enum TestKind {
     Ref,
     Attr,
+    Crash,
+    TestHarness,
     Unknown,
 }
 
@@ -92,6 +94,8 @@ impl Display for TestKind {
         match self {
             TestKind::Ref => f.write_str("REF"),
             TestKind::Attr => f.write_str("ATT"),
+            TestKind::Crash => f.write_str("CRA"),
+            TestKind::TestHarness => f.write_str("HAR"),
             TestKind::Unknown => f.write_str("UNK"),
         }
     }
@@ -172,6 +176,16 @@ fn filter_path(p: &Path) -> bool {
         || path_str.ends_with("-ref.xhtml")
         || path_str.ends_with("-ref.xht")
         || path_contains_directory(p, "reference");
+    // Negative references for mismatch reftests
+    let is_notref = path_str.ends_with("-notref.html")
+        || path_str.ends_with("-notref.htm")
+        || path_str.ends_with("-notref.xhtml")
+        || path_str.ends_with("-notref.xht");
+    // Manual tests require human interaction/verification and cannot be run automatically
+    let is_manual = path_str.ends_with("-manual.html")
+        || path_str.ends_with("-manual.htm")
+        || path_str.ends_with("-manual.xhtml")
+        || path_str.ends_with("-manual.xht");
     // `support`, `tools` and `resources` directories contain helper files, not tests
     // (matching the upstream WPT manifest rules)
     let is_support_file = path_contains_directory(p, "support")
@@ -184,7 +198,7 @@ fn filter_path(p: &Path) -> bool {
 
     let is_dir = p.is_dir();
 
-    !(is_ref | is_support_file | is_blocked | is_dir)
+    !(is_ref | is_notref | is_manual | is_support_file | is_blocked | is_dir)
 }
 
 fn collect_tests(wpt_dir: &Path) -> Vec<PathBuf> {
@@ -259,6 +273,7 @@ struct ThreadCtx {
     subgrid_re: Regex,
     grid_lanes_re: Regex,
     script_re: Regex,
+    testharness_re: Regex,
     out_dir: PathBuf,
     wpt_dir: PathBuf,
     dummy_base_url: Url,
@@ -465,6 +480,7 @@ fn main() {
                     let subgrid_re = Regex::new(r#"subgrid"#).unwrap();
                     let grid_lanes_re = Regex::new(r#"grid-lanes"#).unwrap();
                     let script_re = Regex::new(r#"<script|onload="#).unwrap();
+                    let testharness_re = Regex::new(r#"/resources/testharness\.js"#).unwrap();
 
                     let attrtest_re =
                         Regex::new(r#"checkLayout\(\s*['"]([^'"]*)['"]\s*(,\s*(true|false))?\)"#)
@@ -493,6 +509,7 @@ fn main() {
                         subgrid_re,
                         grid_lanes_re,
                         script_re,
+                        testharness_re,
                         out_dir: out_dir.clone(),
                         wpt_dir: wpt_dir.clone(),
                         dummy_base_url,
