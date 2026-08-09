@@ -152,7 +152,7 @@ fn render_reference_and_compare(
     );
 
     if ctx.buffers.test_buffer == ctx.buffers.ref_buffer {
-        return true;
+        return Some(true);
     }
 
     let test_image = ImageBuffer::from_raw(WIDTH, HEIGHT, ctx.buffers.test_buffer.clone()).unwrap();
@@ -167,9 +167,9 @@ fn render_reference_and_compare(
         let parent = path.parent().unwrap();
         fs::create_dir_all(parent).unwrap();
         diff.1.save_with_format(path, ImageFormat::Png).unwrap();
-        false
+        Some(false)
     } else {
-        true
+        Some(true)
     }
 }
 
