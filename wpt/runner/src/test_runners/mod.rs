@@ -100,7 +100,7 @@ pub fn process_test_file(
     // classified but not run.
     if ctx.testharness_re.is_match(&file_contents) {
         return (
-            TestKind::Testharness,
+            TestKind::TestHarness,
             flags,
             TestStatus::Skip,
             SubtestCounts::ZERO_OF_ZERO,
