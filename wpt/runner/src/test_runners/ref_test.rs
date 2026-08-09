@@ -141,6 +141,7 @@ fn render_reference_and_compare(
         &ref_html,
     );
 
+<<<<<<< HEAD
     if ctx.buffers.test_buffer == ctx.buffers.ref_buffer {
         return true;
     }
@@ -157,6 +158,20 @@ fn render_reference_and_compare(
     } else {
         true
     };
+||||||| 5081c658
+    let image_is_blank = ctx.buffers.test_buffer.iter().all(|x| *x == 0);
+    if image_is_blank {
+        return SubtestCounts::ZERO_OF_ONE;
+    }
+
+    if ctx.buffers.test_buffer == ctx.buffers.ref_buffer {
+        return SubtestCounts::ONE_OF_ONE;
+    }
+=======
+    if ctx.buffers.test_buffer == ctx.buffers.ref_buffer {
+        return true;
+    }
+>>>>>>> devin/1786299933-mismatch-reftests
 
     let test_image = ImageBuffer::from_raw(WIDTH, HEIGHT, ctx.buffers.test_buffer.clone()).unwrap();
     let ref_image = ImageBuffer::from_raw(WIDTH, HEIGHT, ctx.buffers.ref_buffer.clone()).unwrap();
@@ -170,9 +185,21 @@ fn render_reference_and_compare(
         let parent = path.parent().unwrap();
         fs::create_dir_all(parent).unwrap();
         diff.1.save_with_format(path, ImageFormat::Png).unwrap();
+<<<<<<< HEAD
         fuzzy_tolerance.is_some() && is_match
+||||||| 5081c658
+        SubtestCounts::ZERO_OF_ONE
+=======
+        false
+>>>>>>> devin/1786299933-mismatch-reftests
     } else {
+<<<<<<< HEAD
         is_match
+||||||| 5081c658
+        SubtestCounts::ONE_OF_ONE
+=======
+        true
+>>>>>>> devin/1786299933-mismatch-reftests
     }
 }
 
