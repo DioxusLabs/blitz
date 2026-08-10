@@ -300,7 +300,7 @@ anyrender_svg = { git = "https://github.com/DioxusLabs/anyrender", branch = "dev
 # style_dom = { path = "../stylo/stylo_dom", package = "stylo_dom" }
 # selectors = { path = "../stylo/selectors", package = "selectors" }
 
-# [patch.crates-io]
+# [patch."https://github.com/dioxuslabs/taffy"]
 # taffy = { path = "../taffy" }
 
 # [patch."https://github.com/linebender/parley"]
