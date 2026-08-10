@@ -1,7 +1,5 @@
 use blitz_dom::Node;
 use log::warn;
-use markup5ever::local_name;
-use style::computed_values::position::T as Position;
 use style_traits::ToCss;
 
 use super::{SubtestResult, parse_and_resolve_document};
@@ -167,47 +165,6 @@ fn total_offset(node: &Node) -> (f32, f32) {
             Some(parent_id) => current = current.with(parent_id),
             None => break,
         }
-    }
-    (x, y)
-}
-
-/// Whether `node` can act as an `offsetParent` (CSSOM View § offsetParent): an element that is
-/// positioned, or one of the elements that are always an offset parent (`body`, `td`, `th`).
-fn is_offset_parent(node: &Node) -> bool {
-    let Some(styles) = node.primary_styles() else {
-        return false;
-    };
-    if styles.get_box().position != Position::Static {
-        return true;
-    }
-    node.data.is_element_with_tag_name(&local_name!("body"))
-        || node.data.is_element_with_tag_name(&local_name!("td"))
-        || node.data.is_element_with_tag_name(&local_name!("th"))
-}
-
-/// Compute `offsetLeft`/`offsetTop` (CSSOM View): the offset of the node's border box from the
-/// padding edge of its `offsetParent`, which is the nearest ancestor that is positioned (or a
-/// `body`/`td`/`th` element), rather than from its immediate parent.
-fn offset_from_offset_parent(node: &Node) -> (f32, f32) {
-    let mut x = 0.0;
-    let mut y = 0.0;
-    let mut current = node;
-    loop {
-        let layout = current.final_layout();
-        x += layout.location.x;
-        y += layout.location.y;
-
-        let Some(parent_id) = current.layout_parent.get() else {
-            break;
-        };
-        let parent = current.with(parent_id);
-        if is_offset_parent(parent) {
-            let border = parent.final_layout().border;
-            x -= border.left;
-            y -= border.top;
-            break;
-        }
-        current = parent;
     }
     (x, y)
 }
