@@ -1358,6 +1358,58 @@ impl Node {
             .unwrap_or(crate::util::Point { x, y })
     }
 
+    /// Whether this node can act as an [`offset_parent`](Self::offset_parent): a positioned
+    /// element, or one of the elements that always qualify (`body`, `td`, `th`).
+    fn is_offset_parent(&self) -> bool {
+        let Some(styles) = self.primary_styles() else {
+            return false;
+        };
+        if styles.get_box().position != Position::Static {
+            return true;
+        }
+        self.data.is_element_with_tag_name(&local_name!("body"))
+            || self.data.is_element_with_tag_name(&local_name!("td"))
+            || self.data.is_element_with_tag_name(&local_name!("th"))
+    }
+
+    /// The nearest layout ancestor that [is an offset parent](Self::is_offset_parent), as in
+    /// CSSOM View's `offsetParent`.
+    pub fn offset_parent(&self) -> Option<&Node> {
+        let mut node = self;
+        loop {
+            node = self.with(node.layout_parent.get()?);
+            if node.is_offset_parent() {
+                return Some(node);
+            }
+        }
+    }
+
+    /// CSSOM View's `offsetLeft`/`offsetTop`: the offset of this node's border box from the
+    /// padding edge of its [`offset_parent`](Self::offset_parent).
+    pub fn offset_top_left(&self) -> crate::util::Point<f32> {
+        let mut x = 0.0;
+        let mut y = 0.0;
+        let mut current = self;
+        loop {
+            let layout = current.final_layout();
+            x += layout.location.x;
+            y += layout.location.y;
+
+            let Some(parent_id) = current.layout_parent.get() else {
+                break;
+            };
+            let parent = self.with(parent_id);
+            if parent.is_offset_parent() {
+                let border = parent.final_layout().border;
+                x -= border.left;
+                y -= border.top;
+                break;
+            }
+            current = parent;
+        }
+        crate::util::Point { x, y }
+    }
+
     /// Creates a synthetic click event
     pub fn synthetic_click_event(&self, mods: Modifiers) -> DomEventData {
         DomEventData::Click(self.synthetic_click_event_data(mods))
