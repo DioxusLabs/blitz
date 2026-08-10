@@ -1060,7 +1060,9 @@ impl ElementCx<'_, '_> {
             let stroke = Stroke::new(self.scale);
 
             let stroke_color = match self.node.style().display {
-                taffy::Display::Block => Color::new([1.0, 0.0, 0.0, 1.0]),
+                taffy::Display::Block | taffy::Display::FlowRoot => {
+                    Color::new([1.0, 0.0, 0.0, 1.0])
+                }
                 taffy::Display::Flex => Color::new([0.0, 1.0, 0.0, 1.0]),
                 taffy::Display::Grid => Color::new([0.0, 0.0, 1.0, 1.0]),
                 taffy::Display::None => Color::new([0.0, 0.0, 1.0, 1.0]),
