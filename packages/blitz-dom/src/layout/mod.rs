@@ -51,6 +51,35 @@ impl BaseDocument {
         inputs: taffy::tree::LayoutInput,
         block_ctx: Option<&mut BlockContext<'_>>,
     ) -> taffy::tree::LayoutOutput {
+        // CSS forbids some boxes from exporting their content's baseline, requiring
+        // their baseline to be synthesized instead (css-align "baseline export"):
+        //   - Inline-blocks that are scroll containers (CSS2 §10.8.1 `vertical-align`).
+        //     Flex and grid containers take their baseline from their contents even
+        //     when scrollable.
+        //   - Boxes with layout containment (css-contain).
+        let node = &self.nodes[dom_node_id(node_id)];
+        let is_scrollable_inline_block = node.style().display == Display::FlowRoot
+            && (node.style().overflow.x.is_scroll_container()
+                || node.style().overflow.y.is_scroll_container());
+        let has_layout_containment = node.primary_styles().is_some_and(|s| {
+            s.clone_contain()
+                .contains(style::values::computed::Contain::LAYOUT)
+        });
+        let suppress_baseline = is_scrollable_inline_block || has_layout_containment;
+
+        let mut output = self.compute_child_layout_dispatch(node_id, inputs, block_ctx);
+        if suppress_baseline {
+            output.first_baselines = taffy::Point::NONE;
+        }
+        output
+    }
+
+    fn compute_child_layout_dispatch(
+        &mut self,
+        node_id: NodeId,
+        inputs: taffy::tree::LayoutInput,
+        block_ctx: Option<&mut BlockContext<'_>>,
+    ) -> taffy::tree::LayoutOutput {
         let node = &mut self.nodes[dom_node_id(node_id)];
 
         let font_styles = node.primary_styles().map(|style| {

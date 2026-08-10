@@ -304,11 +304,35 @@ impl BaseDocument {
                 ibox.width = 0.0;
                 ibox.height = 0.0;
             } else {
+                // Parley has no per-box vertical-align support: it always aligns a
+                // box's baseline (or bottom edge, if the baseline is unset) to the
+                // line's baseline. For alignments that this cannot approximate (e.g.
+                // `middle`), leave the baseline unset so the box aligns by its
+                // bottom edge rather than by an unrelated content baseline.
+                use style::Zero;
+                use style::values::computed::{AlignmentBaseline, BaselineShift};
+                use style::values::generics::box_::BaselineShiftKeyword;
+                let is_baseline_aligned = self.nodes[NodeId::from_u64(ibox.id)]
+                    .primary_styles()
+                    .is_none_or(|s| {
+                        s.clone_alignment_baseline() == AlignmentBaseline::Baseline
+                            && match s.clone_baseline_shift() {
+                                BaselineShift::Length(length) => length.is_zero(),
+                                BaselineShift::Keyword(BaselineShiftKeyword::Top) => true,
+                                BaselineShift::Keyword(_) => false,
+                            }
+                    });
+
                 let output = self.compute_child_layout(taffy::NodeId::from(ibox.id), child_inputs);
+                // The baseline is measured from the top of the space the box reserves in
+                // the line, which is clamped to be non-negative (see `ibox.height`), so
+                // the baseline is clamped to that space too. This matters when a negative
+                // `margin-top` places the baseline above the reserved space.
                 ibox.baseline = output
                     .first_baselines
                     .y
-                    .map(|baseline| (margin.top + baseline) * scale);
+                    .filter(|_| is_baseline_aligned)
+                    .map(|baseline| ((margin.top + baseline) * scale).max(0.0));
                 ibox.width = (margin.left + margin.right + output.size.width) * scale;
                 // Vertical margins adjust the space the box reserves in the line, but the
                 // reserved space cannot be negative.
@@ -803,6 +827,10 @@ impl BaseDocument {
         // println!("known_dimensions: w: {:?} h: {:?}", inputs.known_dimensions.width, inputs.known_dimensions.height);
         // println!("\n");
 
+        // Only lines with in-flow text content export a baseline: a line consisting
+        // solely of atomic inlines (e.g. a lone image) has no meaningful text baseline
+        // (Parley reports 0.0), and CSS says such boxes synthesize their baseline from
+        // the bottom margin edge instead.
         let first_baseline = inline_layout
             .layout
             .lines()
