@@ -7188,8 +7188,7 @@ dependencies = [
 [[package]]
 name = "taffy"
 version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c034e05f6ee85a12daa63863c2245797715075c70649947aa0da54f3f2ab1d0f"
+source = "git+https://github.com/DioxusLabs/taffy?branch=devin%2F1786316501-block-justify-self#62ad258f0531f2135f8afb8cae9a5b4bcd790fdb"
 dependencies = [
  "arrayvec",
  "serde",

@@ -173,6 +173,11 @@ impl<T: Deref<Target = ComputedValues>> taffy::BlockItemStyle for TaffyStyloStyl
     fn is_table(&self) -> bool {
         convert::is_table(self.0.clone_display())
     }
+
+    #[inline]
+    fn justify_self(&self) -> Option<taffy::AlignSelf> {
+        convert::item_alignment(self.0.get_position().justify_self.0)
+    }
 }
 
 // FlexboxContainerStyle impl
