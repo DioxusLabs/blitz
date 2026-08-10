@@ -326,7 +326,7 @@ impl<Rend: WindowRenderer> View<Rend> {
         let insets = self.safe_area_insets.to_logical(scale);
 
         #[cfg(feature = "custom-widget")]
-        inner.can_create_surfaces(&self.renderer as _);
+        inner.can_create_surfaces(&mut self.renderer as _);
 
         self.renderer.set_size(width, height);
 
