@@ -1497,6 +1497,7 @@ impl BaseDocument {
             let shell_provider = self.shell_provider.clone();
             self.snapshot_node_and(id, |node| node.blur(shell_provider));
             self.focus_node_id = None;
+            self.shell_provider.request_redraw();
         }
     }
 
@@ -1525,6 +1526,10 @@ impl BaseDocument {
         self.snapshot_node_and(focus_node_id, |node| node.focus(shell_provider));
 
         self.focus_node_id = Some(focus_node_id);
+
+        // The focus is styled, so moving it changes what is on screen. Nothing else asks
+        // for the frame: a keyboard focus change touches no layout and no content.
+        self.shell_provider.request_redraw();
 
         true
     }
