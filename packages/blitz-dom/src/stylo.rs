@@ -861,118 +861,35 @@ impl<'a> TElement for BlitzNode<'a> {
             None
         }
 
-        /// The HTML "rules for parsing dimension values".
+        /// The HTML "rules for parsing dimension values" -- Stylo's
+        /// implementation of them -- packaged as a specified
+        /// `<length-percentage>`. `ignoring_zero` selects the spec's separate
+        /// "maps to the dimension property (ignoring zero)" mapping, where a
+        /// zero value is dropped rather than honoured.
         ///
         /// https://html.spec.whatwg.org/multipage/common-microsyntaxes.html#rules-for-parsing-dimension-values
-        ///
-        /// This is emphatically not `str::parse::<f32>()` with the unit peeled
-        /// off. The differences all show up in real attribute values:
-        ///
-        ///   * leading whitespace is skipped, so `"   00523   "` is 523px,
-        ///     but a sign is not a digit, so `"+200"` and `"-200"` are errors
-        ///     where `f32::from_str` happily accepts both;
-        ///   * anything after the number is ignored rather than fatal, so
-        ///     `"200in"`, `"200 %"` and `"200 abc"` are all 200px;
-        ///   * only a `%` *immediately* after the digits makes a percentage,
-        ///     which is why `"200%abc"` is 200% but `"200 %"` is 200px;
-        ///   * there is no exponent, so `"20.25e2"` is 20.25px and not 2025px
-        ///     -- `f32::from_str` gets this one wrong silently, which is worse
-        ///     than rejecting it;
-        ///   * a trailing `.` is allowed and consumes no digits, so `"200."`
-        ///     is 200px and `"200.%"` is 200%.
-        fn parse_dimension_attr(value: &str) -> Option<(f32, bool)> {
-            let bytes = value.as_bytes();
-            let mut i = 0;
-
-            // Skip ASCII whitespace.
-            while i < bytes.len() && matches!(bytes[i], b' ' | b'\t' | b'\n' | b'\x0C' | b'\r') {
-                i += 1;
-            }
-
-            // Must begin with a digit. A sign or a bare `.` is an error.
-            if i >= bytes.len() || !bytes[i].is_ascii_digit() {
-                return None;
-            }
-
-            let int_start = i;
-            while i < bytes.len() && bytes[i].is_ascii_digit() {
-                i += 1;
-            }
-            let mut number: f64 = value[int_start..i].parse().ok()?;
-
-            // A fractional part, but only for as many digits as actually
-            // follow the `.`; the `.` itself is consumed either way.
-            if i < bytes.len() && bytes[i] == b'.' {
-                i += 1;
-                let mut divisor = 1.0f64;
-                while i < bytes.len() && bytes[i].is_ascii_digit() {
-                    divisor *= 10.0;
-                    number += f64::from(bytes[i] - b'0') / divisor;
-                    i += 1;
-                }
-            }
-
-            let is_percentage = i < bytes.len() && bytes[i] == b'%';
-            Some((number as f32, is_percentage))
-        }
-
-        /// The HTML "rules for parsing non-negative integers", which is what
-        /// the "maps to the pixel length property" attributes use.
-        ///
-        /// Unlike the dimension rules above this one *does* accept a sign, so
-        /// `"+200"` is 200 and `"-0"` is 0, while `"-200"` is an error. Like
-        /// them it stops at the first non-digit, so `"200.25"`, `"200%"` and
-        /// `"200in"` are all plainly 200 -- there is no fraction and no unit.
-        ///
-        /// https://html.spec.whatwg.org/multipage/common-microsyntaxes.html#rules-for-parsing-non-negative-integers
-        fn parse_pixel_length_attr(value: &str) -> Option<f32> {
-            let bytes = value.as_bytes();
-            let mut i = 0;
-            while i < bytes.len() && matches!(bytes[i], b' ' | b'\t' | b'\n' | b'\x0C' | b'\r') {
-                i += 1;
-            }
-
-            let mut negative = false;
-            if i < bytes.len() && (bytes[i] == b'+' || bytes[i] == b'-') {
-                negative = bytes[i] == b'-';
-                i += 1;
-            }
-
-            let start = i;
-            while i < bytes.len() && bytes[i].is_ascii_digit() {
-                i += 1;
-            }
-            if i == start {
-                return None;
-            }
-            let number: f64 = value[start..i].parse().ok()?;
-
-            // Negative is an error, but "-0" is zero and is accepted: the sign
-            // is rejected on the value, not on its presence.
-            if negative && number != 0.0 {
-                return None;
-            }
-            Some(number as f32)
-        }
-
-        /// `parse_dimension_attr`, packaged as a specified `<length-percentage>`.
-        /// `ignoring_zero` implements the spec's separate "maps to the
-        /// dimension property (ignoring zero)" mapping, where a zero value is
-        /// dropped rather than honoured.
         fn parse_size_attr(
             value: &str,
             ignoring_zero: bool,
         ) -> Option<style::values::specified::LengthPercentage> {
+            use style::servo::attr::{
+                LengthOrPercentageOrAuto, parse_length, parse_nonzero_length,
+            };
             use style::values::specified::{LengthPercentage, NoCalcLength};
-            let (number, is_percentage) = parse_dimension_attr(value)?;
-            if ignoring_zero && number == 0.0 {
-                return None;
-            }
-            Some(if is_percentage {
-                LengthPercentage::Percentage(NoCalcPercentage::new(number / 100.0))
+            let parsed = if ignoring_zero {
+                parse_nonzero_length(value)
             } else {
-                LengthPercentage::Length(NoCalcLength::from_px(number))
-            })
+                parse_length(value)
+            };
+            match parsed {
+                LengthOrPercentageOrAuto::Length(length) => Some(LengthPercentage::Length(
+                    NoCalcLength::from_px(length.to_f32_px()),
+                )),
+                LengthOrPercentageOrAuto::Percentage(fraction) => Some(
+                    LengthPercentage::Percentage(NoCalcPercentage::new(fraction)),
+                ),
+                LengthOrPercentageOrAuto::Auto => None,
+            }
         }
 
         /// Parse the value of an SVG `width`/`height` presentation attribute.
@@ -1144,9 +1061,9 @@ impl<'a> TElement for BlitzNode<'a> {
             if *name == local_name!("border")
                 && (*tag == local_name!("img") || *tag == local_name!("object") || is_image_input)
             {
-                if let Some(px) = parse_pixel_length_attr(value) {
+                if let Ok(px) = style::servo::attr::parse_unsigned_integer(value.chars()) {
                     use style::values::specified::{BorderSideWidth, BorderStyle};
-                    let width = BorderSideWidth::from_px(px);
+                    let width = BorderSideWidth::from_px(px as f32);
                     push_style(PropertyDeclaration::BorderTopWidth(width.clone()));
                     push_style(PropertyDeclaration::BorderRightWidth(width.clone()));
                     push_style(PropertyDeclaration::BorderBottomWidth(width.clone()));
@@ -1178,11 +1095,11 @@ impl<'a> TElement for BlitzNode<'a> {
                     _ => b"",
                 };
                 if !sides.is_empty() {
-                    if let Some(px) = parse_pixel_length_attr(value) {
+                    if let Ok(px) = style::servo::attr::parse_unsigned_integer(value.chars()) {
                         use style::values::generics::length::GenericMargin;
                         use style::values::specified::{LengthPercentage, NoCalcLength};
                         let margin = GenericMargin::LengthPercentage(LengthPercentage::Length(
-                            NoCalcLength::from_px(px),
+                            NoCalcLength::from_px(px as f32),
                         ));
                         for side in sides {
                             push_style(match side {
