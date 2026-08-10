@@ -1,5 +1,7 @@
 use blitz_dom::Node;
 use log::warn;
+use markup5ever::local_name;
+use style::computed_values::position::T as Position;
 use style_traits::ToCss;
 
 use super::{SubtestResult, parse_and_resolve_document};
@@ -73,11 +75,6 @@ pub fn check_node_layout(node: &Node) -> Vec<String> {
         return Vec::new();
     }
     let layout = node.final_layout();
-    let parent_border = if let Some(parent_id) = node.parent {
-        node.with(parent_id).final_layout().border
-    } else {
-        taffy::Rect::ZERO
-    };
 
     let client_width =
         layout.size.width - layout.border.left - layout.border.right - layout.scrollbar_size.width;
@@ -115,13 +112,11 @@ pub fn check_node_layout(node: &Node) -> Vec<String> {
                             check_attr(name, value, layout.margin.right)
                         }
 
-                        // TODO: Implement proper offset-x/offset-y computation
-                        // (don't assume that offset is relative to immediate parent)
                         "data-offset-x" => {
-                            check_attr(name, value, layout.location.x - parent_border.left)
+                            check_attr(name, value, offset_from_offset_parent(node).0)
                         }
                         "data-offset-y" => {
-                            check_attr(name, value, layout.location.y - parent_border.top)
+                            check_attr(name, value, offset_from_offset_parent(node).1)
                         }
 
                         "data-expected-client-width" => check_attr(name, value, client_width),
@@ -170,17 +165,53 @@ fn total_offset(node: &Node) -> (f32, f32) {
     let mut current = node;
     loop {
         let layout = current.final_layout();
-        let parent_border = if let Some(parent_id) = current.parent {
-            current.with(parent_id).final_layout().border
-        } else {
-            taffy::Rect::ZERO
-        };
-        x += layout.location.x - parent_border.left;
-        y += layout.location.y - parent_border.top;
-        match current.parent {
+        x += layout.location.x;
+        y += layout.location.y;
+        match current.layout_parent.get() {
             Some(parent_id) => current = current.with(parent_id),
             None => break,
         }
+    }
+    (x, y)
+}
+
+/// Whether `node` can act as an `offsetParent` (CSSOM View § offsetParent): an element that is
+/// positioned, or one of the elements that are always an offset parent (`body`, `td`, `th`).
+fn is_offset_parent(node: &Node) -> bool {
+    let Some(styles) = node.primary_styles() else {
+        return false;
+    };
+    if styles.get_box().position != Position::Static {
+        return true;
+    }
+    node.data.is_element_with_tag_name(&local_name!("body"))
+        || node.data.is_element_with_tag_name(&local_name!("td"))
+        || node.data.is_element_with_tag_name(&local_name!("th"))
+}
+
+/// Compute `offsetLeft`/`offsetTop` (CSSOM View): the offset of the node's border box from the
+/// padding edge of its `offsetParent`, which is the nearest ancestor that is positioned (or a
+/// `body`/`td`/`th` element), rather than from its immediate parent.
+fn offset_from_offset_parent(node: &Node) -> (f32, f32) {
+    let mut x = 0.0;
+    let mut y = 0.0;
+    let mut current = node;
+    loop {
+        let layout = current.final_layout();
+        x += layout.location.x;
+        y += layout.location.y;
+
+        let Some(parent_id) = current.layout_parent.get() else {
+            break;
+        };
+        let parent = current.with(parent_id);
+        if is_offset_parent(parent) {
+            let border = parent.final_layout().border;
+            x -= border.left;
+            y -= border.top;
+            break;
+        }
+        current = parent;
     }
     (x, y)
 }
