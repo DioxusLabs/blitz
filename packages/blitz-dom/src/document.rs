@@ -29,6 +29,7 @@ use linebender_resource_handle::Blob;
 use markup5ever::local_name;
 use parley::{FontContext, PlainEditorDriver};
 use selectors::{Element, matching::QuirksMode};
+use smallvec::SmallVec;
 use std::any::Any;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, Bound, HashMap, HashSet};
@@ -287,8 +288,10 @@ pub struct BaseDocument {
     /// Whether there are subdocuments that are animating (so we should re-render every frame)
     pub(crate) subdoc_is_animating: bool,
 
-    /// Map of node ID's for fast lookups
-    pub(crate) nodes_to_id: HashMap<String, NodeId>,
+    /// Map of id attribute values to node IDs for fast lookups.
+    /// May contain multiple nodes for the same id: `get_element_by_id`
+    /// returns the first in tree order.
+    pub(crate) nodes_to_id: HashMap<String, SmallVec<[NodeId; 1]>>,
     /// Map of `<style>` and `<link>` node IDs to their associated stylesheet
     pub(crate) nodes_to_stylesheet: BTreeMap<NodeId, DocumentStyleSheet>,
     /// Stylesheets added by the useragent
