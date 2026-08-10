@@ -511,7 +511,8 @@ fn collect_layout_children_with_wrap(
                 el.attr_parsed(local_name!("start"))
                     .map(|start: usize| start - 1)
                     .unwrap_or(0),
-                el.attr_parsed(local_name!("reversed")).unwrap_or(false),
+                // reversed is a boolean attribute: its presence is what counts
+                el.has_attr(local_name!("reversed")),
             )
         } else {
             (1, false)
