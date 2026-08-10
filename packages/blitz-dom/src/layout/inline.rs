@@ -208,9 +208,11 @@ impl BaseDocument {
                 .downcast_element_mut()
                 .unwrap()
                 .inline_layout_data = Some(inline_layout);
-            return LayoutOutput::from_outer_size(
-                Size::ZERO.maybe_max(container_pb.sum_axes().map(Some)),
-            );
+            let pb_sum = container_pb.sum_axes();
+            return LayoutOutput::from_outer_size(Size {
+                width: known_dimensions.width.unwrap_or(pb_sum.width),
+                height: known_dimensions.height.unwrap_or(pb_sum.height),
+            });
         }
 
         // Resolve node's preferred/min/max sizes (width/heights) against the available space (percentages resolve to pixel values)

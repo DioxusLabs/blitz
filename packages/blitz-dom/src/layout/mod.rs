@@ -311,9 +311,8 @@ impl BaseDocument {
 
                 // The default CSS file will set
                 match node.style().display {
-                    Display::Block | Display::FlowRoot => {
-                        compute_block_layout(self, node_id, inputs, block_ctx)
-                    }
+                    Display::Block => compute_block_layout(self, node_id, inputs, block_ctx),
+                    Display::FlowRoot => compute_block_layout(self, node_id, inputs, None),
                     Display::Flex => compute_flexbox_layout(self, node_id, inputs),
                     Display::Grid => compute_grid_layout(self, node_id, inputs),
                     Display::None => taffy::LayoutOutput::HIDDEN,
@@ -529,7 +528,7 @@ impl PrintTree for BaseDocument {
                     },
                     Display::Grid => "GRID",
                     Display::Block => "BLOCK",
-                    Display::FlowRoot => "FLOW-ROOT",
+                    Display::FlowRoot => "FLOW ROOT",
                     Display::None => "NONE",
                 };
                 format!("{} ({})", node.node_debug_str(), display).leak()
