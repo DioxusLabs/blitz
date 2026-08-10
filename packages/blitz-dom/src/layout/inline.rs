@@ -644,11 +644,8 @@ impl BaseDocument {
 
         #[cfg(feature = "floats")]
         {
-            let contains_floats = is_bfc_root;
-            if contains_floats {
-                height = height.max(
-                    (block_ctx.floated_content_height_contribution() + container_pb.top) * scale,
-                )
+            if is_bfc_root {
+                height = height.max(block_ctx.floated_content_height_contribution() * scale)
             };
         }
 
