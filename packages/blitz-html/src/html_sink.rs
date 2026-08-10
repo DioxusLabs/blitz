@@ -148,12 +148,12 @@ impl<'m, 'doc> DocumentHtmlParser<'m, 'doc> {
             .unwrap();
 
         // html5ever creates a new fragment root node under the document node and parses the nodes into that fragment root.
-        // So here we move the children of the fragment root to element_id and then remove the fragment root
+        // So here we move the children of the fragment root to element_id and then drop the fragment root.
         let document_id = mutr.doc.root_node().id;
         let fragment_root_id = mutr.last_child_id(document_id).unwrap();
         let child_ids = mutr.child_ids(fragment_root_id);
         mutr.append_children(element_id, &child_ids);
-        mutr.remove_node(fragment_root_id);
+        mutr.remove_and_drop_node(fragment_root_id);
     }
 }
 
