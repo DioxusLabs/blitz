@@ -1360,7 +1360,7 @@ impl Node {
 
     /// Whether this node can act as an [`offset_parent`](Self::offset_parent): a positioned
     /// element, or one of the elements that always qualify (`body`, `td`, `th`).
-    pub fn is_offset_parent(&self) -> bool {
+    fn is_offset_parent(&self) -> bool {
         let Some(styles) = self.primary_styles() else {
             return false;
         };
@@ -1386,7 +1386,7 @@ impl Node {
 
     /// CSSOM View's `offsetLeft`/`offsetTop`: the offset of this node's border box from the
     /// padding edge of its [`offset_parent`](Self::offset_parent).
-    pub fn offset_from_offset_parent(&self) -> crate::util::Point<f32> {
+    pub fn offset_top_left(&self) -> crate::util::Point<f32> {
         let mut x = 0.0;
         let mut y = 0.0;
         let mut current = self;

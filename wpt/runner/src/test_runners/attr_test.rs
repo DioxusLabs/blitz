@@ -110,12 +110,8 @@ pub fn check_node_layout(node: &Node) -> Vec<String> {
                             check_attr(name, value, layout.margin.right)
                         }
 
-                        "data-offset-x" => {
-                            check_attr(name, value, node.offset_from_offset_parent().x)
-                        }
-                        "data-offset-y" => {
-                            check_attr(name, value, node.offset_from_offset_parent().y)
-                        }
+                        "data-offset-x" => check_attr(name, value, node.offset_top_left().x),
+                        "data-offset-y" => check_attr(name, value, node.offset_top_left().y),
 
                         "data-expected-client-width" => check_attr(name, value, client_width),
                         "data-expected-client-height" => check_attr(name, value, client_height),
