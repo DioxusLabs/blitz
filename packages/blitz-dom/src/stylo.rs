@@ -865,6 +865,30 @@ impl<'a> TElement for BlitzNode<'a> {
             None
         }
 
+        fn push_border_spacing<F>(push: &mut F, px: f32)
+        where
+            F: FnMut(PropertyDeclaration),
+        {
+            use style::values::generics::border::GenericBorderSpacing;
+            use style::values::specified::length::NonNegativeLength;
+            let side = NonNegativeLength::from_px(px);
+            let bs = GenericBorderSpacing::new(side.clone(), side);
+            push(PropertyDeclaration::BorderSpacing(bs));
+        }
+
+        fn push_cell_padding<F>(push: &mut F, px: f32)
+        where
+            F: FnMut(PropertyDeclaration),
+        {
+            use style::values::generics::NonNegative;
+            use style::values::specified::{LengthPercentage, NoCalcLength};
+            let side = NonNegative(LengthPercentage::Length(NoCalcLength::from_px(px)));
+            push(PropertyDeclaration::PaddingTop(side.clone()));
+            push(PropertyDeclaration::PaddingRight(side.clone()));
+            push(PropertyDeclaration::PaddingBottom(side.clone()));
+            push(PropertyDeclaration::PaddingLeft(side));
+        }
+
         fn parse_size_attr(
             value: &str,
             filter_fn: impl FnOnce(&f32) -> bool,
@@ -1009,6 +1033,39 @@ impl<'a> TElement for BlitzNode<'a> {
             if *name == local_name!("hidden") {
                 use style::values::specified::Display;
                 push_style(PropertyDeclaration::Display(Display::None));
+            }
+
+            // https://html.spec.whatwg.org/multipage/rendering.html#tables-2
+            // `<table cellspacing="N">` maps to `border-spacing: Npx`.
+            if *name == local_name!("cellspacing") && *tag == local_name!("table") {
+                if let Ok(px) = value.parse::<u32>() {
+                    push_border_spacing(&mut push_style, px as f32);
+                }
+            }
+        }
+
+        // https://html.spec.whatwg.org/multipage/rendering.html#tables-2
+        // `<table cellpadding="N">` inherits down to every descendant TD/TH
+        // as `padding: Npx`. The UA sheet writes this via a descendant
+        // selector; presentational-hints attach to a single element, so
+        // we walk up from the cell to find the nearest ancestor <table>'s
+        // cellpadding attribute value.
+        if *tag == local_name!("td") || *tag == local_name!("th") {
+            let mut cur = self.parent;
+            while let Some(pid) = cur {
+                let parent = &self.tree()[pid];
+                let Some(pe) = parent.data.downcast_element() else {
+                    cur = parent.parent;
+                    continue;
+                };
+                if pe.name.local != local_name!("table") {
+                    cur = parent.parent;
+                    continue;
+                }
+                if let Some(px) = pe.attr_parsed::<u32>(local_name!("cellpadding")) {
+                    push_cell_padding(&mut push_style, px as f32);
+                }
+                break;
             }
         }
     }
