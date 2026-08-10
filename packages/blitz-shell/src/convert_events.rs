@@ -41,6 +41,7 @@ pub(crate) fn winit_ime_to_blitz(event: Ime) -> BlitzImeEvent {
             before_bytes,
             after_bytes,
         },
+        _ => unreachable!("unsupported Ime variant: {event:?}"),
     }
 }
 
@@ -73,6 +74,7 @@ pub(crate) fn pointer_source_to_blitz(source: &PointerSource) -> BlitzPointerId 
         // TODO: TabletTool and Unknown events
         PointerSource::TabletTool { .. } => BlitzPointerId::Pen,
         PointerSource::Unknown => BlitzPointerId::Mouse,
+        _ => unreachable!("unsupported PointerSource variant: {source:?}"),
     }
 }
 
@@ -84,6 +86,7 @@ pub(crate) fn pointer_kind_to_blitz(kind: &PointerKind) -> BlitzPointerId {
         // TODO: TabletTool and Unknown events
         PointerKind::TabletTool(_) => BlitzPointerId::Pen,
         PointerKind::Unknown => BlitzPointerId::Mouse,
+        _ => unreachable!("unsupported PointerKind variant: {kind:?}"),
     }
 }
 
@@ -97,6 +100,7 @@ pub(crate) fn button_source_to_blitz(source: &ButtonSource) -> BlitzPointerId {
 
         // TODO: Unknown events
         ButtonSource::Unknown(_) => BlitzPointerId::Mouse,
+        _ => unreachable!("unsupported ButtonSource variant: {source:?}"),
     }
 }
 
@@ -120,6 +124,7 @@ pub(crate) fn pointer_source_to_blitz_details(source: &PointerSource) -> Pointer
             altitude: data.angle.map(|angle| angle.altitude).unwrap_or(0.0),
             azimuth: data.angle.map(|angle| angle.azimuth).unwrap_or(0.0),
         },
+        _ => unreachable!("unsupported PointerSource variant: {source:?}"),
     }
 }
 

@@ -3,12 +3,14 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
-use atomic_refcell::AtomicRefCell;
+use atomic_refcell::{AtomicRef, AtomicRefCell, AtomicRefMut};
 use bitflags::bitflags;
 use keyboard_types::{Code, Key, Location, Modifiers};
 use smol_str::SmolStr;
 
 use crate::NodeId;
+mod datatransfer;
+pub use datatransfer::*;
 
 #[derive(Default)]
 pub struct EventState {
@@ -69,6 +71,13 @@ pub enum UiEvent {
     KeyDown(BlitzKeyEvent),
     Ime(BlitzImeEvent),
     AppleStandardKeybinding(SmolStr),
+    DragStart(BlitzDragEvent),
+    DragEnter(BlitzDragEvent),
+    DragOver(BlitzDragEvent),
+    DragLeave(BlitzDragEvent),
+    Drop(BlitzDragEvent),
+    OutgoingDrop(BlitzDragEvent),
+    OutgoingCancel(BlitzDragEvent),
 }
 impl UiEvent {
     pub fn discriminant(&self) -> u8 {
@@ -152,6 +161,14 @@ pub enum DomEventKind {
     FocusIn,
     FocusOut,
 
+    DragStart,
+    Drag,
+    DragEnter,
+    DragOver,
+    DragLeave,
+    Drop,
+    DragEnd,
+
     AppleStandardKeybinding,
 }
 impl DomEventKind {
@@ -202,6 +219,14 @@ impl FromStr for DomEventKind {
             "blur" => Ok(Self::Blur),
             "focusin" => Ok(Self::FocusIn),
             "focusout" => Ok(Self::FocusOut),
+
+            "dragstart" => Ok(Self::DragStart),
+            "drag" => Ok(Self::Drag),
+            "dragenter" => Ok(Self::DragEnter),
+            "dragover" => Ok(Self::DragOver),
+            "dragleave" => Ok(Self::DragLeave),
+            "drop" => Ok(Self::Drop),
+            "dragend" => Ok(Self::DragEnd),
             _ => Err(()),
         }
     }
@@ -249,6 +274,14 @@ pub enum DomEventData {
     Blur(BlitzFocusEvent),
     FocusIn(BlitzFocusEvent),
     FocusOut(BlitzFocusEvent),
+
+    DragStart(BlitzDragEvent),
+    Drag(BlitzDragEvent),
+    DragEnd(BlitzDragEvent),
+    DragEnter(BlitzDragEvent),
+    DragOver(BlitzDragEvent),
+    DragLeave(BlitzDragEvent),
+    Drop(BlitzDragEvent),
 
     AppleStandardKeybinding(SmolStr),
 }
@@ -305,6 +338,14 @@ impl DomEventData {
             Self::FocusIn { .. } => "focusin",
             Self::FocusOut { .. } => "focusout",
 
+            Self::DragStart { .. } => "dragstart",
+            Self::Drag { .. } => "drag",
+            Self::DragEnd { .. } => "dragend",
+            Self::DragEnter { .. } => "dragenter",
+            Self::DragOver { .. } => "dragover",
+            Self::DragLeave { .. } => "dragleave",
+            Self::Drop { .. } => "drop",
+
             Self::AppleStandardKeybinding { .. } => "applekeybinding",
         }
     }
@@ -350,6 +391,14 @@ impl DomEventData {
             Self::Blur { .. } => DomEventKind::Blur,
             Self::FocusIn { .. } => DomEventKind::FocusIn,
             Self::FocusOut { .. } => DomEventKind::FocusOut,
+
+            Self::DragStart { .. } => DomEventKind::DragStart,
+            Self::Drag { .. } => DomEventKind::Drag,
+            Self::DragEnd { .. } => DomEventKind::DragEnd,
+            Self::DragEnter { .. } => DomEventKind::DragEnter,
+            Self::DragOver { .. } => DomEventKind::DragOver,
+            Self::DragLeave { .. } => DomEventKind::DragLeave,
+            Self::Drop { .. } => DomEventKind::Drop,
 
             Self::AppleStandardKeybinding { .. } => DomEventKind::AppleStandardKeybinding,
         }
@@ -397,6 +446,14 @@ impl DomEventData {
             Self::FocusIn { .. } => false,
             Self::FocusOut { .. } => false,
 
+            Self::DragStart { .. } => true,
+            Self::Drag { .. } => true,
+            Self::DragEnd { .. } => false,
+            Self::DragEnter { .. } => true,
+            Self::DragOver { .. } => true,
+            Self::DragLeave { .. } => false,
+            Self::Drop { .. } => true,
+
             Self::AppleStandardKeybinding { .. } => true,
         }
     }
@@ -443,8 +500,74 @@ impl DomEventData {
             Self::FocusIn { .. } => true,
             Self::FocusOut { .. } => true,
 
+            Self::DragStart { .. } => true,
+            Self::Drag { .. } => true,
+            Self::DragEnd { .. } => true,
+            Self::DragEnter { .. } => true,
+            Self::DragOver { .. } => true,
+            Self::DragLeave { .. } => true,
+            Self::Drop { .. } => true,
+
             Self::AppleStandardKeybinding { .. } => false,
         }
+    }
+}
+
+pub type BlitzDragId = u64;
+pub type BlitzDataTransferArc = Arc<AtomicRefCell<BlitzDataTransfer>>;
+
+#[derive(Clone, Debug)]
+pub struct BlitzDragEvent {
+    pub id: BlitzDragId,
+    pub coords: PointerCoords,
+    pub element: Point<f32>,
+    pub mods: Modifiers,
+    pub button: MouseEventButton,
+    pub buttons: MouseEventButtons,
+    pub data_transfer: BlitzDataTransferArc,
+    pub source: BlitzDataTransferSource,
+}
+
+impl BlitzDragEvent {
+    #[inline(always)]
+    pub fn page_x(&self) -> f32 {
+        self.coords.page_x
+    }
+    #[inline(always)]
+    pub fn page_y(&self) -> f32 {
+        self.coords.page_y
+    }
+    #[inline(always)]
+    pub fn client_x(&self) -> f32 {
+        self.coords.client_x
+    }
+    #[inline(always)]
+    pub fn client_y(&self) -> f32 {
+        self.coords.client_y
+    }
+    #[inline(always)]
+    pub fn screen_x(&self) -> f32 {
+        self.coords.screen_x
+    }
+    #[inline(always)]
+    pub fn screen_y(&self) -> f32 {
+        self.coords.screen_y
+    }
+    #[inline(always)]
+    pub fn element_x(&self) -> f32 {
+        self.element.x
+    }
+    #[inline(always)]
+    pub fn element_y(&self) -> f32 {
+        self.element.y
+    }
+    #[inline(always)]
+    pub fn data_transfer<'a>(&'a self) -> AtomicRef<'a, BlitzDataTransfer> {
+        self.data_transfer.borrow()
+    }
+    #[inline(always)]
+    pub fn data_transfer_mut<'a>(&'a self) -> AtomicRefMut<'a, BlitzDataTransfer> {
+        self.data_transfer.borrow_mut()
     }
 }
 

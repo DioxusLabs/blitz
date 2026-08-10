@@ -5,8 +5,9 @@ use web_time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use blitz_traits::{
     events::{
-        BlitzInputEvent, BlitzPointerEvent, BlitzPointerId, BlitzWheelDelta, BlitzWheelEvent,
-        DomEvent, DomEventData, MouseEventButton, MouseEventButtons,
+        BlitzDataTransferItemsTrait, BlitzInputEvent, BlitzPointerEvent, BlitzPointerId,
+        BlitzWheelDelta, BlitzWheelEvent, DomEvent, DomEventData, MouseEventButton,
+        MouseEventButtons,
     },
     navigation::NavigationOptions,
 };
@@ -17,6 +18,7 @@ use taffy::AbsoluteAxis;
 
 use crate::{
     BaseDocument,
+    events::dnd::BlitzInternalDataTransferItems,
     node::{ScrollbarRef, SpecialElementData},
 };
 
@@ -174,7 +176,31 @@ pub(crate) fn handle_pointermove<F: FnMut(DomEvent)>(
                 BlitzPointerId::Mouse | BlitzPointerId::Pen => {
                     if let Some(mousedown_node_id) = doc.mousedown_node_id {
                         let node = &doc.nodes[mousedown_node_id];
-                        if let Some(style) = node.primary_styles() {
+                        let draggable = node
+                            .data
+                            .attr(local_name!("draggable"))
+                            .map(|v| v != "false")
+                            .unwrap_or_default();
+
+                        let auto_text_drag = !draggable && doc.is_text_selected_at_position(x, y);
+
+                        if draggable | auto_text_drag {
+                            let mut items = BlitzInternalDataTransferItems::default();
+
+                            if auto_text_drag && let Some(text) = doc.get_selected_text() {
+                                let _ = items.set_data("text/plain", &text);
+                            }
+
+                            doc.drag_mode = DragMode::None;
+                            doc.shell_provider.set_datatransfer(
+                                Box::new(items),
+                                None,
+                                Default::default(),
+                                Some(mousedown_node_id),
+                            );
+
+                            return changed;
+                        } else if let Some(style) = node.primary_styles() {
                             let user_select = style.clone_user_select();
                             if user_select == UserSelect::None {
                                 // Do nothing. Continue with rest of function
@@ -442,8 +468,15 @@ pub(crate) fn handle_pointerdown(
         ClickTarget::SelectableText => {
             // Handle text selection for non-input elements
             if let Some((inline_root_id, byte_offset)) = doc.find_text_position(x, y) {
-                doc.set_text_selection(inline_root_id, byte_offset, inline_root_id, byte_offset);
-                doc.shell_provider.request_redraw();
+                if !doc.is_selected_text(inline_root_id, byte_offset) {
+                    doc.set_text_selection(
+                        inline_root_id,
+                        byte_offset,
+                        inline_root_id,
+                        byte_offset,
+                    );
+                    doc.shell_provider.request_redraw();
+                }
             } else {
                 doc.clear_text_selection();
             }
@@ -541,6 +574,7 @@ pub(crate) fn handle_pointerup<F: FnMut(DomEvent)>(
 
     // Dispatch a click event
     if do_click && event.button == MouseEventButton::Main {
+        doc.clear_text_selection();
         dispatch_event(DomEvent::new(target, DomEventData::Click(event.clone())));
     }
 

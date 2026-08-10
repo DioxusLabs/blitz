@@ -173,7 +173,8 @@ bytes = "1.7.1"
 slotmap = "1.0.7"
 tracing = "0.1.40"
 tracing-subscriber = "0.3"
-futures-util = "0.3.30"
+futures-core = "0.3.32"
+futures-util = "0.3.32"
 futures-intrusive = "0.5.0"
 pollster = "0.4"
 smol_str = "0.3"
@@ -276,7 +277,7 @@ tracing-subscriber = "0.3"
 usvg = { git = "https://github.com/DioxusLabs/resvg", branch = "devin/1785858271-intrinsic-dimensions" }
 anyrender = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1785858394-usvg-048" }
 anyrender_svg = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1785858394-usvg-048" }
-
+winit = { git = "https://github.com/rust-windowing/winit", rev = "6d72428d61ec633defe578738a7d430bd0812405" }
 # [patch.crates-io]
 # anyrender = { path = "../anyrender/crates/anyrender" }
 # anyrender_skia = { path = "../anyrender/crates/anyrender_skia" }
