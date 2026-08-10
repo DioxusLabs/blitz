@@ -261,8 +261,16 @@ pub fn aspect_ratio(input: stylo::AspectRatio) -> Option<f32> {
     }
 }
 
+/// Convert `align-content`/`justify-content` for a container with the given `display`.
+///
+/// In a block container the whole in-flow content is a single alignment subject, and positional
+/// keywords default to `safe` overflow alignment, only opted out of by an explicit `unsafe`
+/// (<https://github.com/w3c/csswg-drafts/issues/10154>).
 #[inline]
-pub fn content_alignment(input: stylo::ContentDistribution) -> Option<taffy::AlignContent> {
+pub fn content_alignment(
+    input: stylo::ContentDistribution,
+    display: stylo::Display,
+) -> Option<taffy::AlignContent> {
     let primary = input.primary();
     let mut align = match primary.value() {
         stylo::AlignFlags::NORMAL => None,
@@ -285,19 +293,13 @@ pub fn content_alignment(input: stylo::ContentDistribution) -> Option<taffy::Ali
         // Should never be hit. But no real reason to panic here.
         _ => None,
     }?;
-    if primary.flags().contains(stylo::AlignFlags::SAFE) {
-        align.safety = taffy::AlignmentSafety::Safe;
-    }
-    Some(align)
-}
-
-/// Convert `align-content` for a block container. Unlike in flex and grid containers, the whole
-/// in-flow content of a block container is a single alignment subject, and positional keywords
-/// default to `safe` overflow alignment (<https://github.com/w3c/csswg-drafts/issues/10154>).
-#[inline]
-pub fn block_content_alignment(input: stylo::ContentDistribution) -> Option<taffy::AlignContent> {
-    let mut align = self::content_alignment(input)?;
-    if !input.primary().flags().contains(stylo::AlignFlags::UNSAFE) {
+    let is_block_container = matches!(
+        display.inside(),
+        stylo::DisplayInside::Flow | stylo::DisplayInside::FlowRoot
+    );
+    let safe = primary.flags().contains(stylo::AlignFlags::SAFE)
+        || (is_block_container && !primary.flags().contains(stylo::AlignFlags::UNSAFE));
+    if safe {
         align.safety = taffy::AlignmentSafety::Safe;
     }
     Some(align)
@@ -311,6 +313,7 @@ pub fn justify_content(
     input: stylo::ContentDistribution,
     flex_direction: stylo::FlexDirection,
     direction: stylo::Direction,
+    display: stylo::Display,
 ) -> Option<taffy::AlignContent> {
     let is_row = matches!(
         flex_direction,
@@ -321,7 +324,7 @@ pub fn justify_content(
     let physical = match primary.value() {
         stylo::AlignFlags::LEFT => Some(false),
         stylo::AlignFlags::RIGHT => Some(true),
-        _ => return self::content_alignment(input),
+        _ => return self::content_alignment(input, display),
     };
     let mut align = match physical {
         Some(is_right) if is_row => {
@@ -729,19 +732,13 @@ pub fn to_taffy_style(style: &stylo::ComputedValues) -> taffy::Style<Atom> {
 
         // Alignment
         #[cfg(any(feature = "flexbox", feature = "block", feature = "grid"))]
-        align_content: if matches!(
-            display.inside(),
-            stylo::DisplayInside::Flow | stylo::DisplayInside::FlowRoot
-        ) {
-            self::block_content_alignment(pos.align_content)
-        } else {
-            self::content_alignment(pos.align_content)
-        },
+        align_content: self::content_alignment(pos.align_content, display),
         #[cfg(any(feature = "flexbox", feature = "grid"))]
         justify_content: self::justify_content(
             pos.justify_content,
             pos.flex_direction,
             style.clone_direction(),
+            display,
         ),
         #[cfg(any(feature = "flexbox", feature = "grid"))]
         align_items: self::item_alignment(pos.align_items.0),
