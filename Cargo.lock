@@ -7188,7 +7188,7 @@ dependencies = [
 [[package]]
 name = "taffy"
 version = "0.13.0"
-source = "git+https://github.com/DioxusLabs/taffy?branch=devin%2F1786318209-block-align-content-bfc#f2a43eb6015c5421b96041d97ae7442dad9f9436"
+source = "git+https://github.com/DioxusLabs/taffy?branch=main#096862794dcf85100051bc7317a7041c91d7247b"
 dependencies = [
  "arrayvec",
  "serde",

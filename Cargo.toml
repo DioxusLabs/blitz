@@ -276,7 +276,7 @@ tracing-subscriber = "0.3"
 usvg = { git = "https://github.com/DioxusLabs/resvg", branch = "devin/1785858271-intrinsic-dimensions" }
 anyrender = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1785858394-usvg-048" }
 anyrender_svg = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1785858394-usvg-048" }
-taffy = { git = "https://github.com/DioxusLabs/taffy", branch = "devin/1786318209-block-align-content-bfc" }
+taffy = { git = "https://github.com/DioxusLabs/taffy", branch = "main" }
 
 # [patch.crates-io]
 # anyrender = { path = "../anyrender/crates/anyrender" }
