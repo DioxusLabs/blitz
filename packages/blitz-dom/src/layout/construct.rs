@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use markup5ever::{QualName, local_name, ns};
 use parley::{
-    FontContext, InlineBox, InlineBoxKind, LayoutContext, StyleProperty, TreeBuilder,
-    WhiteSpaceCollapse,
+    FontContext, InlineBox, InlineBoxKind, InlineBoxVerticalAlign, LayoutContext, StyleProperty,
+    TreeBuilder, WhiteSpaceCollapse,
 };
 use style::{
     computed_values::position::T as PositionProperty,
@@ -13,6 +13,7 @@ use style::{
     shared_lock::StylesheetGuards,
     values::{
         computed::{Content, ContentItem, Display, Float, TextTransform},
+        generics::box_::{BaselineShiftKeyword, GenericBaselineShift},
         specified::box_::{DisplayInside, DisplayOutside},
     },
 };
@@ -1041,6 +1042,10 @@ pub(crate) fn build_inline_layout_into(
     // Create a parley tree builder
     let mut builder = layout_ctx.tree_builder(font_ctx, scale, true, &parley_style);
 
+    // Size every line box as if it started with a zero-width glyph in the root style
+    // (the CSS "strut", https://www.w3.org/TR/CSS22/visudet.html#strut)
+    builder.set_compute_strut(true);
+
     // Set whitespace collapsing mode
     let collapse_mode = root_node_style
         .as_ref()
@@ -1164,6 +1169,17 @@ pub(crate) fn build_inline_layout_into(
                 } else {
                     InlineBoxKind::InFlow
                 };
+                let vertical_align = style
+                    .map(|s| match s.clone_baseline_shift() {
+                        GenericBaselineShift::Keyword(BaselineShiftKeyword::Top) => {
+                            InlineBoxVerticalAlign::Top
+                        }
+                        GenericBaselineShift::Keyword(BaselineShiftKeyword::Bottom) => {
+                            InlineBoxVerticalAlign::Bottom
+                        }
+                        _ => InlineBoxVerticalAlign::Baseline,
+                    })
+                    .unwrap_or_default();
 
                 match (display.outside(), display.inside()) {
                     (DisplayOutside::None, DisplayInside::None) => {
@@ -1200,6 +1216,7 @@ pub(crate) fn build_inline_layout_into(
                                 width: 0.0,
                                 height: 0.0,
                                 baseline: None,
+                                vertical_align,
                             });
                         } else if *tag_name == local_name!("br") {
                             // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
@@ -1281,6 +1298,7 @@ pub(crate) fn build_inline_layout_into(
                             width: 0.0,
                             height: 0.0,
                             baseline: None,
+                            vertical_align,
                         });
                     }
                 };
