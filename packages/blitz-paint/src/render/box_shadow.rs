@@ -122,9 +122,12 @@ impl ElementCx<'_, '_> {
                 None,
                 None,
             );
+            // The unshadowed area is the padding box shrunk by the spread radius
+            let spread = shadow.spread.px() as f64 * self.scale;
+            let hole = self.frame.padding_box.inflate(-spread, -spread);
             scene.draw_box_shadow(
                 transform,
-                self.frame.border_box,
+                hole,
                 Color::WHITE,
                 radius,
                 shadow.base.blur.px() as f64 * self.scale,
