@@ -301,6 +301,11 @@ pub enum SpecialElementData {
     Canvas(CanvasData),
     /// Pre-computed table layout data
     TableRoot(Arc<TableContext>),
+    /// First-party inline `<svg>` fragment (`svg-native` feature only).
+    /// External SVG (`<img src=*.svg>`, background images) keeps using
+    /// `Image(Box<ImageData::Svg>)` via `usvg` regardless of this feature.
+    #[cfg(feature = "svg-native")]
+    SvgRoot(Arc<crate::svg::SvgContext>),
     /// Parley text editor (text inputs)
     TextInput(TextInputData),
     /// Checkbox checked state
@@ -323,6 +328,8 @@ impl Clone for SpecialElementData {
             Self::Image(data) => Self::Image(data.clone()),
             Self::Canvas(data) => Self::Canvas(data.clone()),
             Self::TableRoot(data) => Self::TableRoot(data.clone()),
+            #[cfg(feature = "svg-native")]
+            Self::SvgRoot(data) => Self::SvgRoot(data.clone()),
             Self::TextInput(data) => Self::TextInput(data.clone()),
             Self::CheckboxInput(data) => Self::CheckboxInput(*data),
             #[cfg(feature = "file-input")]
@@ -468,6 +475,14 @@ impl ElementData {
     pub fn svg_data(&self) -> Option<&usvg::Tree> {
         match self.image_data()? {
             ImageData::Svg(data) => Some(&data.tree),
+            _ => None,
+        }
+    }
+
+    #[cfg(feature = "svg-native")]
+    pub fn svg_root_data(&self) -> Option<&crate::svg::SvgContext> {
+        match &self.special_data {
+            SpecialElementData::SvgRoot(ctx) => Some(ctx),
             _ => None,
         }
     }
@@ -896,6 +911,8 @@ impl std::fmt::Debug for SpecialElementData {
             },
             SpecialElementData::Canvas(_) => f.write_str("NodeSpecificData::Canvas"),
             SpecialElementData::TableRoot(_) => f.write_str("NodeSpecificData::TableRoot"),
+            #[cfg(feature = "svg-native")]
+            SpecialElementData::SvgRoot(_) => f.write_str("NodeSpecificData::SvgRoot"),
             SpecialElementData::TextInput(_) => f.write_str("NodeSpecificData::TextInput"),
             SpecialElementData::CheckboxInput(_) => f.write_str("NodeSpecificData::CheckboxInput"),
             #[cfg(feature = "file-input")]

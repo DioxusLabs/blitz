@@ -380,7 +380,52 @@ pub(crate) fn collect_layout_children(
             }
         }
 
-        #[cfg(feature = "svg")]
+        // First-party inline SVG (`svg-native`): the root `<svg>` becomes a
+        // `SpecialElementData::SvgRoot` marker here; its actual geometry
+        // tree is built by `svg::construct::rebuild_svg_fragments` *after*
+        // Taffy layout (its content-box size, needed to resolve `viewBox`/
+        // percentages, isn't known until then, see that function's doc comment).
+        #[cfg(feature = "svg-native")]
+        if matches!(tag_name, "svg")
+            && el.name.ns == markup5ever::ns!(svg)
+            && doc.nodes[container_node_id]
+                .parent
+                .map(|p| {
+                    doc.nodes[p]
+                        .data
+                        .downcast_element()
+                        .map(|e| e.name.ns != markup5ever::ns!(svg))
+                        .unwrap_or(true)
+                })
+                .unwrap_or(true)
+        {
+            doc.iter_subtree_mut(container_node_id, |id: NodeId, doc: &mut BaseDocument| {
+                doc.nodes[id].remove_damage(CONSTRUCT_BOX | CONSTRUCT_DESCENDENT | CONSTRUCT_FC);
+            });
+            if let Some(element_data) = doc
+                .get_node_mut(container_node_id)
+                .unwrap()
+                .element_data_mut()
+            {
+                if !matches!(element_data.special_data, SpecialElementData::SvgRoot(_)) {
+                    element_data.special_data =
+                        SpecialElementData::SvgRoot(std::sync::Arc::new(crate::svg::SvgContext {
+                            root: container_node_id,
+                            viewport: kurbo::Size::ZERO,
+                            viewbox: None,
+                            preserve_aspect_ratio: Default::default(),
+                            root_ctm: kurbo::Affine::IDENTITY,
+                            nodes: Vec::new(),
+                            id_map: Default::default(),
+                        }));
+                }
+                element_data.take_inline_layout();
+            }
+            doc.nodes[container_node_id].insert_damage(crate::layout::damage::CONSTRUCT_SVG);
+            return;
+        }
+
+        #[cfg(all(feature = "svg", not(feature = "svg-native")))]
         if matches!(tag_name, "svg") {
             let mut outer_html = doc.get_node(container_node_id).unwrap().outer_html();
 

@@ -234,6 +234,34 @@ impl BaseDocument {
                             }
                             ImageData::None => (taffy::Size::ZERO, None),
                         },
+                        // `svg-native`: intrinsic size/ratio for a root `<svg>` comes from
+                        // its `viewBox`, read directly off the raw attribute since the `SvgContext`
+                        // itself is only built *after* this layout pass completes.
+                        #[cfg(feature = "svg-native")]
+                        SpecialElementData::SvgRoot(_) => {
+                            let viewbox =
+                                crate::svg::attrs::raw_attr(element_data.attrs(), "viewBox")
+                                    .and_then(crate::svg::viewport::parse_viewbox);
+                            match viewbox {
+                                Some(vb) if vb.width() > 0.0 && vb.height() > 0.0 => {
+                                    let ratio = (vb.width() / vb.height()) as f32;
+                                    (
+                                        taffy::Size {
+                                            width: 300.0,
+                                            height: 300.0 / ratio,
+                                        },
+                                        Some(ratio),
+                                    )
+                                }
+                                _ => (
+                                    taffy::Size {
+                                        width: 300.0,
+                                        height: 150.0,
+                                    },
+                                    None,
+                                ),
+                            }
+                        }
                         // Canvas has an intrinsic size and aspect ratio given by its
                         // width/height attributes, defaulting to 300x150. Other replaced
                         // elements without intrinsic dimensions (video, iframe, embed) use

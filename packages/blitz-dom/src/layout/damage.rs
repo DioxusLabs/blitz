@@ -29,8 +29,41 @@ pub(crate) const CONSTRUCT_DESCENDENT: RestyleDamage =
 pub(crate) const ONLY_RELAYOUT: RestyleDamage =
     RestyleDamage::from_bits_retain(0b_0000_0000_0000_1000);
 
-pub(crate) const ALL_DAMAGE: RestyleDamage =
-    RestyleDamage::from_bits_retain(0b_0000_0000_0111_1111);
+/// A mutation somewhere inside an SVG fragment (`svg-native`) requires that
+/// fragment's `SvgContext` to be rebuilt. Scoped separately from `CONSTRUCT_BOX`
+/// so that mutating one `<svg>` root doesn't force a `usvg`-style whole-subtree
+/// HTML box reconstruction, and so sibling `<svg>` roots are left untouched.
+pub(crate) const CONSTRUCT_SVG: RestyleDamage =
+    RestyleDamage::from_bits_retain(0b_0000_0000_1000_0000);
+
+pub(crate) const ALL_DAMAGE: RestyleDamage = RestyleDamage::from_bits_retain(
+    CONSTRUCT_BOX.bits()
+        | CONSTRUCT_FC.bits()
+        | CONSTRUCT_DESCENDENT.bits()
+        | ONLY_RELAYOUT.bits()
+        | CONSTRUCT_SVG.bits(),
+);
+
+#[cfg(feature = "svg-native")]
+impl BaseDocument {
+    /// Walk `node_id`'s DOM `parent` chain (SVG descendants have no Taffy
+    /// `layout_parent`) to find the owning `<svg>` root fragment and mark it for rebuild.
+    /// A no-op if `node_id` is not inside an SVG fragment at all.
+    pub fn propagate_svg_damage(&mut self, node_id: blitz_traits::node_id::NodeId) {
+        use crate::node::SpecialElementData;
+
+        let mut cur = Some(node_id);
+        while let Some(id) = cur {
+            if let Some(elem) = self.nodes[id].data.downcast_element() {
+                if matches!(elem.special_data, SpecialElementData::SvgRoot(_)) {
+                    self.nodes[id].insert_damage(CONSTRUCT_SVG);
+                    return;
+                }
+            }
+            cur = self.nodes[id].parent;
+        }
+    }
+}
 
 impl BaseDocument {
     pub(crate) fn propagate_damage_flags(
