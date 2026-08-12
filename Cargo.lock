@@ -1047,6 +1047,7 @@ dependencies = [
  "dioxus-native-dom",
  "keyboard-types 0.7.0",
  "markup5ever",
+ "stylo",
  "usvg",
 ]
 

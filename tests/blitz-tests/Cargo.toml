@@ -26,6 +26,7 @@ dioxus = { workspace = true }
 dioxus-core = { workspace = true }
 
 # Other dependencies
+style = { workspace = true }
 accesskit = { workspace = true }
 markup5ever = { workspace = true }
 keyboard-types = { workspace = true }
