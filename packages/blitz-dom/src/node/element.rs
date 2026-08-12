@@ -739,6 +739,45 @@ pub struct SvgIntrinsicDimensions {
     pub view_box_size: Option<(f32, f32)>,
 }
 
+#[cfg(feature = "svg")]
+impl SvgIntrinsicDimensions {
+    /// Extract the `width`/`height`/`viewBox` attributes declared on the root
+    /// `<svg>` element, with absent attributes as `None` and percentages
+    /// unresolved. [`usvg::Tree`] does not preserve these (it always resolves
+    /// to a concrete size), so they are re-parsed from the source here.
+    pub fn from_svg_source(source: &[u8]) -> Self {
+        // Non-UTF-8 sources (e.g. gzip-compressed SVGZ) are not handled here:
+        // the SVG then has no detectable declared dimensions and sizing falls
+        // back to the resolved `usvg::Tree::size`.
+        let Ok(text) = std::str::from_utf8(source) else {
+            return Self::default();
+        };
+        let xml_options = usvg::roxmltree::ParsingOptions {
+            allow_dtd: true,
+            ..Default::default()
+        };
+        let Ok(doc) = usvg::roxmltree::Document::parse_with_options(text, xml_options) else {
+            return Self::default();
+        };
+        let root = doc.root_element();
+
+        let parse_length = |name: &str| -> Option<svgtypes::Length> {
+            root.attribute(name)?.parse::<svgtypes::Length>().ok()
+        };
+        let view_box_size = root
+            .attribute("viewBox")
+            .and_then(|s| s.parse::<svgtypes::ViewBox>().ok())
+            .filter(|vb| vb.w.is_finite() && vb.w > 0.0 && vb.h.is_finite() && vb.h > 0.0)
+            .map(|vb| (vb.w as f32, vb.h as f32));
+
+        Self {
+            width: parse_length("width"),
+            height: parse_length("height"),
+            view_box_size,
+        }
+    }
+}
+
 /// A parsed SVG image.
 ///
 /// usvg always resolves the root `<svg>` to a concrete [`usvg::Tree::size`],
