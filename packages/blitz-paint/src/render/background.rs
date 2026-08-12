@@ -1,6 +1,7 @@
 use super::{ElementCx, to_image_quality, to_peniko_image};
 use crate::color::{Color, ToColorColor};
 use crate::gradient::to_peniko_gradient;
+use crate::hooks::{PaintHooks, PaintNode, with_node};
 use anyrender::PaintScene;
 use blitz_dom::node::{ImageData, ImageResourceData, SpecialElementData};
 use kurbo::{self, BezPath, Point, Rect, Shape, Size, Vec2};
@@ -211,7 +212,11 @@ impl ElementCx<'_, '_> {
         }
     }
 
-    pub(super) fn draw_table_row_backgrounds(&self, scene: &mut impl PaintScene) {
+    pub(super) fn draw_table_row_backgrounds<S, H>(&self, scene: &mut S, hooks: &mut H)
+    where
+        S: PaintScene,
+        H: PaintHooks<S>,
+    {
         let SpecialElementData::TableRoot(table) = &self.element.special_data else {
             return;
         };
@@ -246,8 +251,12 @@ impl ElementCx<'_, '_> {
                 .as_srgb_color();
 
             if bg_color != Color::TRANSPARENT {
-                // Fill the color
-                scene.fill(Fill::NonZero, self.transform, bg_color, None, &shape);
+                let paint_node = PaintNode::new(self.context.dom.id(), row.node_id);
+                if hooks.should_paint(paint_node) {
+                    with_node(scene, hooks, paint_node, |scene, _| {
+                        scene.fill(Fill::NonZero, self.transform, bg_color, None, &shape);
+                    });
+                }
             }
 
             y += (height + gutter) as f64;

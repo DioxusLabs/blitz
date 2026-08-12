@@ -7,6 +7,7 @@ mod color;
 mod debug_overlay;
 mod filters;
 mod gradient;
+mod hooks;
 mod kurbo_css;
 mod layers;
 mod render;
@@ -18,6 +19,8 @@ use std::collections::HashMap;
 use anyrender::{PaintScene, Scene};
 use blitz_dom::{BaseDocument, NodeId, util::Color};
 use render::BlitzDomPainter;
+
+pub use hooks::{NoopPaintHooks, PaintHooks, PaintNode};
 
 const FONT_EMBOLDEN_ENABLED: bool = cfg!(any(
     feature = "font-embolden",
@@ -49,6 +52,37 @@ pub fn paint_scene(
     x_offset: u32,
     y_offset: u32,
 ) {
+    paint_scene_with_hooks(
+        scene,
+        doc,
+        scale,
+        width,
+        height,
+        x_offset,
+        y_offset,
+        &mut NoopPaintHooks,
+    );
+}
+
+/// Paint a [`blitz_dom::BaseDocument`] with node selection and paint scopes.
+///
+/// This is equivalent to [`paint_scene`], except that `hooks` can skip DOM
+/// paint subtrees and observe which document and node own each contiguous
+/// group of commands.
+#[allow(clippy::too_many_arguments)]
+pub fn paint_scene_with_hooks<S, H>(
+    scene: &mut S,
+    doc: &mut BaseDocument,
+    scale: f64,
+    width: u32,
+    height: u32,
+    x_offset: u32,
+    y_offset: u32,
+    hooks: &mut H,
+) where
+    S: PaintScene,
+    H: PaintHooks<S>,
+{
     // Run `.paint()` on every custom widget in the document (and all subdocuments) ahead of time.
     // This helps us avoid borrow-checker issues as we recurse down the tree (`.paint()` require `&mut self`).
     //
@@ -56,7 +90,7 @@ pub fn paint_scene(
     #[allow(unused_mut)]
     let mut custom_widget_scenes: CustomWidgetSceneMap = HashMap::new();
     #[cfg(feature = "custom-widget")]
-    build_custom_widget_scenes(&mut custom_widget_scenes, doc, scene, scale);
+    build_custom_widget_scenes(&mut custom_widget_scenes, doc, scene, scale, hooks);
 
     let generator = BlitzDomPainter::new(
         doc,
@@ -67,7 +101,7 @@ pub fn paint_scene(
         y_offset as f64,
         &custom_widget_scenes,
     );
-    generator.paint_scene(scene);
+    generator.paint_scene(scene, hooks);
 
     // println!(
     //     "Rendered using {} clips (depth: {}) (wanted: {})",
@@ -78,17 +112,24 @@ pub fn paint_scene(
 }
 
 #[cfg(feature = "custom-widget")]
-fn build_custom_widget_scenes(
+fn build_custom_widget_scenes<S, H>(
     custom_widget_scenes: &mut CustomWidgetSceneMap,
     doc: &mut BaseDocument,
-    render_ctx: &mut impl anyrender::RenderContext,
+    render_ctx: &mut S,
     scale: f64,
-) {
+    hooks: &H,
+) where
+    S: PaintScene,
+    H: PaintHooks<S>,
+{
     let doc_id = doc.id();
 
     // Process scenes for every custom widget in the document
     let custom_widget_node_ids = doc.custom_widget_node_ids();
     for node_id in custom_widget_node_ids.into_iter() {
+        if !hooks.should_paint(PaintNode::new(doc_id, node_id)) {
+            continue;
+        }
         if let Some(scene) = process_custom_widget_node(doc, render_ctx, node_id, scale) {
             custom_widget_scenes.insert((doc_id, node_id), scene);
         }
@@ -97,9 +138,12 @@ fn build_custom_widget_scenes(
     // Recurse into sub documents
     let sub_document_node_ids = doc.sub_document_node_ids();
     for node_id in sub_document_node_ids.into_iter() {
+        if !hooks.should_paint(PaintNode::new(doc_id, node_id)) {
+            continue;
+        }
         if let Some(sub_doc) = doc.get_node_mut(node_id).and_then(|node| node.subdoc_mut()) {
             let mut inner = sub_doc.inner_mut();
-            build_custom_widget_scenes(custom_widget_scenes, &mut inner, render_ctx, scale);
+            build_custom_widget_scenes(custom_widget_scenes, &mut inner, render_ctx, scale, hooks);
         }
     }
 }
