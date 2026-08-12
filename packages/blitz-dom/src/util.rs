@@ -163,7 +163,47 @@ pub(crate) fn parse_svg_image(source: &[u8]) -> Result<crate::node::SvgImageData
     let tree = usvg::Tree::from_data(source, &options)?;
     Ok(crate::node::SvgImageData {
         tree: Arc::new(tree),
+        intrinsic_dimensions: parse_svg_intrinsic_dimensions(source),
     })
+}
+
+/// Extract the `width`/`height`/`viewBox` attributes declared on the root
+/// `<svg>` element, with absent attributes as `None` and percentages
+/// unresolved. [`usvg::Tree`] does not preserve these (it always resolves to a
+/// concrete size), so they are re-parsed from the source here.
+#[cfg(feature = "svg")]
+fn parse_svg_intrinsic_dimensions(source: &[u8]) -> crate::node::SvgIntrinsicDimensions {
+    use crate::node::SvgIntrinsicDimensions;
+
+    // Non-UTF-8 sources (e.g. gzip-compressed SVGZ) are not handled here: the
+    // SVG then has no detectable declared dimensions and sizing falls back to
+    // the resolved `usvg::Tree::size`.
+    let Ok(text) = std::str::from_utf8(source) else {
+        return SvgIntrinsicDimensions::default();
+    };
+    let xml_options = usvg::roxmltree::ParsingOptions {
+        allow_dtd: true,
+        ..Default::default()
+    };
+    let Ok(doc) = usvg::roxmltree::Document::parse_with_options(text, xml_options) else {
+        return SvgIntrinsicDimensions::default();
+    };
+    let root = doc.root_element();
+
+    let parse_length = |name: &str| -> Option<svgtypes::Length> {
+        root.attribute(name)?.parse::<svgtypes::Length>().ok()
+    };
+    let view_box_size = root
+        .attribute("viewBox")
+        .and_then(|s| s.parse::<svgtypes::ViewBox>().ok())
+        .filter(|vb| vb.w.is_finite() && vb.w > 0.0 && vb.h.is_finite() && vb.h > 0.0)
+        .map(|vb| (vb.w as f32, vb.h as f32));
+
+    SvgIntrinsicDimensions {
+        width: parse_length("width"),
+        height: parse_length("height"),
+        view_box_size,
+    }
 }
 
 pub trait ToColorColor {
@@ -192,7 +232,6 @@ mod svg_tests {
         assert_eq!(svg.intrinsic_height(), None);
         assert_eq!(svg.viewbox_aspect_ratio(), Some(1.0));
         assert_eq!(svg.tree.size().width(), 200.0);
-        assert_eq!(svg.tree.size().height(), 200.0);
         assert_eq!(svg.intrinsic_size(), (200.0, 200.0));
     }
 

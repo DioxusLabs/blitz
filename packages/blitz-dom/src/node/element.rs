@@ -723,20 +723,37 @@ impl RasterImageData {
     }
 }
 
+/// Dimensions declared on the root `<svg>` element, before any resolution.
+///
+/// Unlike [`usvg::Tree::size`], which always produces a concrete size, this
+/// preserves what the SVG actually declared: absent attributes are `None` and
+/// percentage lengths are kept unresolved.
+#[cfg(feature = "svg")]
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SvgIntrinsicDimensions {
+    /// The root `width` attribute, if declared. Percentages are unresolved.
+    pub width: Option<svgtypes::Length>,
+    /// The root `height` attribute, if declared. Percentages are unresolved.
+    pub height: Option<svgtypes::Length>,
+    /// The root `viewBox` width/height, if declared and valid.
+    pub view_box_size: Option<(f32, f32)>,
+}
+
 /// A parsed SVG image.
 ///
 /// usvg always resolves the root `<svg>` to a concrete [`usvg::Tree::size`],
 /// falling back to the `viewBox` size when `width`/`height` are absent or given
 /// as percentages. For CSS sizing purposes, however, such an SVG has *no*
 /// intrinsic width/height (only an intrinsic aspect ratio). The accessors on
-/// this type resolve the CSS intrinsic dimensions lazily from
-/// [`usvg::Tree::intrinsic_dimensions`], which preserves what was actually
-/// declared on the root element.
+/// this type resolve the CSS intrinsic dimensions from the declared root
+/// attributes, which are captured at parse time.
 #[cfg(feature = "svg")]
 #[derive(Debug, Clone)]
 pub struct SvgImageData {
     /// The parsed SVG tree.
     pub tree: Arc<usvg::Tree>,
+    /// The dimensions declared on the root `<svg>` element.
+    pub intrinsic_dimensions: SvgIntrinsicDimensions,
 }
 
 #[cfg(feature = "svg")]
@@ -744,10 +761,9 @@ impl SvgImageData {
     /// The intrinsic width in CSS px, present only when the root `<svg>`
     /// declared an absolute (non-percentage) `width`.
     pub fn intrinsic_width(&self) -> Option<f32> {
-        use usvg::svgtypes::LengthUnit;
+        use svgtypes::LengthUnit;
         let declared = self
-            .tree
-            .intrinsic_dimensions()
+            .intrinsic_dimensions
             .width
             .is_some_and(|len| len.unit != LengthUnit::Percent);
         declared.then(|| self.tree.size().width())
@@ -756,10 +772,9 @@ impl SvgImageData {
     /// The intrinsic height in CSS px, present only when the root `<svg>`
     /// declared an absolute (non-percentage) `height`.
     pub fn intrinsic_height(&self) -> Option<f32> {
-        use usvg::svgtypes::LengthUnit;
+        use svgtypes::LengthUnit;
         let declared = self
-            .tree
-            .intrinsic_dimensions()
+            .intrinsic_dimensions
             .height
             .is_some_and(|len| len.unit != LengthUnit::Percent);
         declared.then(|| self.tree.size().height())
@@ -767,10 +782,7 @@ impl SvgImageData {
 
     /// The aspect ratio of the root `<svg>`'s `viewBox`, if it declares one.
     pub fn viewbox_aspect_ratio(&self) -> Option<f32> {
-        self.tree
-            .intrinsic_dimensions()
-            .view_box
-            .map(|vb| vb.width() / vb.height())
+        self.intrinsic_dimensions.view_box_size.map(|(w, h)| w / h)
     }
 
     /// The root `width` attribute resolved against a containing block width:
@@ -782,8 +794,8 @@ impl SvgImageData {
     /// (e.g. `<img src>` or a background) must use [`Self::intrinsic_width`],
     /// as its intrinsic dimensions are context-free per CSS.
     pub fn resolved_width(&self, container_width: Option<f32>) -> Option<f32> {
-        use usvg::svgtypes::LengthUnit;
-        match self.tree.intrinsic_dimensions().width {
+        use svgtypes::LengthUnit;
+        match self.intrinsic_dimensions.width {
             Some(len) if len.unit != LengthUnit::Percent => Some(self.tree.size().width()),
             Some(len) => container_width.map(|cw| cw * (len.number as f32) / 100.0),
             None => None,
@@ -793,8 +805,8 @@ impl SvgImageData {
     /// The root `height` attribute resolved against a containing block height.
     /// See [`Self::resolved_width`].
     pub fn resolved_height(&self, container_height: Option<f32>) -> Option<f32> {
-        use usvg::svgtypes::LengthUnit;
-        match self.tree.intrinsic_dimensions().height {
+        use svgtypes::LengthUnit;
+        match self.intrinsic_dimensions.height {
             Some(len) if len.unit != LengthUnit::Percent => Some(self.tree.size().height()),
             Some(len) => container_height.map(|ch| ch * (len.number as f32) / 100.0),
             None => None,
