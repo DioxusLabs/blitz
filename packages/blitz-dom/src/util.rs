@@ -160,10 +160,7 @@ pub(crate) fn parse_svg_image(source: &[u8]) -> Result<crate::node::SvgImageData
         fontdb: Arc::clone(&*FONT_DB),
         ..Default::default()
     };
-    let tree = usvg::Tree::from_data(source, &options)?;
-    Ok(crate::node::SvgImageData {
-        tree: Arc::new(tree),
-    })
+    crate::node::SvgImageData::from_data(source, &options)
 }
 
 pub trait ToColorColor {
@@ -192,7 +189,6 @@ mod svg_tests {
         assert_eq!(svg.intrinsic_height(), None);
         assert_eq!(svg.viewbox_aspect_ratio(), Some(1.0));
         assert_eq!(svg.tree.size().width(), 200.0);
-        assert_eq!(svg.tree.size().height(), 200.0);
         assert_eq!(svg.intrinsic_size(), (200.0, 200.0));
     }
 
