@@ -53,6 +53,19 @@ impl BaseDocument {
         // Process messages that have been sent to our message channel (e.g. loaded resource)
         self.handle_messages();
 
+        // While render-blocking resources (e.g. stylesheets linked from the `<head>`) are
+        // still loading, don't resolve styles or layout (matching how browsers block
+        // rendering). Resolving styles before the document's stylesheets have loaded would
+        // give elements computed styles based on an incomplete cascade, and a later restyle
+        // (once the stylesheet loads) would treat those as genuine "before-change styles",
+        // spuriously starting CSS transitions from unstyled values. See issue #689.
+        //
+        // `handle_messages` above must still run so that loaded resources are ingested and
+        // this state can clear.
+        if self.has_pending_critical_resources() {
+            return;
+        }
+
         self.resolve_scroll_animation();
 
         // Drop scrollbar-activity entries whose fade-out has finished (also
