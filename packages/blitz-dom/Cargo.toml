@@ -21,9 +21,9 @@ default = [
 ]
 custom-widget = ["dep:anyrender", "accessibility"]
 tracing = ["dep:tracing"]
-svg = ["dep:usvg"]
 # First-party inline <svg> rendering. Default off; additive-only.
 svg-native = []
+svg = ["dep:usvg", "dep:svgtypes"]
 # WOFF decoding (using the "wuff" crate which is pure Rust)
 woff = ["dep:wuff"]
 accessibility = ["accesskit"]
@@ -80,6 +80,7 @@ rayon = { workspace = true }
 # Media & Decoding
 image = { workspace = true }
 usvg = { workspace = true, optional = true }
+svgtypes = { workspace = true, optional = true }
 wuff = { workspace = true, optional = true }
 html-escape = { workspace = true }
 percent-encoding = { workspace = true }
