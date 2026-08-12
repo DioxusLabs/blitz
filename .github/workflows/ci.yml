@@ -93,7 +93,7 @@ jobs:
       - name: Build feature flags
         id: features
         run: |
-          FEATURES=""
+          FEATURES="system-fonts,"
           if [ "${{ matrix.svg }}" = "true" ]; then
             FEATURES="${FEATURES}svg,"
           fi
