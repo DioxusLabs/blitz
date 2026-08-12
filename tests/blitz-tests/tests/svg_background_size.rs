@@ -9,7 +9,7 @@
 use anyrender::render_to_buffer;
 use anyrender_vello_cpu::VelloCpuImageRenderer;
 use blitz_dom::DocumentConfig;
-use blitz_dom::node::{ImageData, SvgImageData, SvgIntrinsicDimensions};
+use blitz_dom::node::{ImageData, SvgImageData};
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_paint::paint_scene;
 use blitz_traits::shell::{ColorScheme, Viewport};
@@ -35,12 +35,8 @@ fn pixel(background: &str, svg_src: &str, x: usize, y: usize) -> [u8; 3] {
     doc.resolve(0.0);
     let box_id = doc.query_selector("#box").unwrap().expect("#box");
     {
-        let tree =
-            usvg::Tree::from_str(svg_src, &usvg::Options::default()).expect("valid test SVG");
-        let svg = SvgImageData {
-            tree: Arc::new(tree),
-            intrinsic_dimensions: SvgIntrinsicDimensions::from_svg_source(svg_src.as_bytes()),
-        };
+        let svg = SvgImageData::from_data(svg_src.as_bytes(), &usvg::Options::default())
+            .expect("valid test SVG");
         let node = doc.get_node_mut(box_id).unwrap();
         let el = node.element_data_mut().unwrap();
         for layer in el.background_images.iter_mut().flatten() {

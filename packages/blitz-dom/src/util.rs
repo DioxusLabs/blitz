@@ -160,11 +160,7 @@ pub(crate) fn parse_svg_image(source: &[u8]) -> Result<crate::node::SvgImageData
         fontdb: Arc::clone(&*FONT_DB),
         ..Default::default()
     };
-    let tree = usvg::Tree::from_data(source, &options)?;
-    Ok(crate::node::SvgImageData {
-        tree: Arc::new(tree),
-        intrinsic_dimensions: crate::node::SvgIntrinsicDimensions::from_svg_source(source),
-    })
+    crate::node::SvgImageData::from_data(source, &options)
 }
 
 pub trait ToColorColor {
