@@ -342,8 +342,12 @@ pub fn justify_content(
     Some(align)
 }
 
+/// Convert item alignment values (`align-items`/`align-self`/`justify-items`/`justify-self`),
+/// resolving the physical `left`/`right` keywords against `is_horiz_rtl`: whether the axis being
+/// aligned is a horizontal axis with right-to-left text direction. Pass `false` for the vertical
+/// axis (<https://www.w3.org/TR/css-align-3/#positional-values>).
 #[inline]
-pub fn item_alignment(input: stylo::AlignFlags) -> Option<taffy::AlignItems> {
+pub fn item_alignment(input: stylo::AlignFlags, is_horiz_rtl: bool) -> Option<taffy::AlignItems> {
     let mut align = match input.value() {
         stylo::AlignFlags::AUTO => None,
         stylo::AlignFlags::NORMAL => Some(taffy::AlignItems::STRETCH),
@@ -354,7 +358,9 @@ pub fn item_alignment(input: stylo::AlignFlags) -> Option<taffy::AlignItems> {
         stylo::AlignFlags::SELF_END => Some(taffy::AlignItems::SELF_END),
         stylo::AlignFlags::START => Some(taffy::AlignItems::START),
         stylo::AlignFlags::END => Some(taffy::AlignItems::END),
+        stylo::AlignFlags::LEFT if is_horiz_rtl => Some(taffy::AlignItems::END),
         stylo::AlignFlags::LEFT => Some(taffy::AlignItems::START),
+        stylo::AlignFlags::RIGHT if is_horiz_rtl => Some(taffy::AlignItems::START),
         stylo::AlignFlags::RIGHT => Some(taffy::AlignItems::END),
         stylo::AlignFlags::CENTER => Some(taffy::AlignItems::CENTER),
         stylo::AlignFlags::BASELINE => Some(taffy::AlignItems::BASELINE),
@@ -741,13 +747,19 @@ pub fn to_taffy_style(style: &stylo::ComputedValues) -> taffy::Style<Atom> {
             display,
         ),
         #[cfg(any(feature = "flexbox", feature = "grid"))]
-        align_items: self::item_alignment(pos.align_items.0),
+        align_items: self::item_alignment(pos.align_items.0, false),
         #[cfg(any(feature = "flexbox", feature = "grid"))]
-        align_self: self::item_alignment(pos.align_self.0),
+        align_self: self::item_alignment(pos.align_self.0, false),
         #[cfg(feature = "grid")]
-        justify_items: self::item_alignment((pos.justify_items.computed.0).0),
+        justify_items: self::item_alignment(
+            (pos.justify_items.computed.0).0,
+            style.clone_direction() == stylo::Direction::Rtl,
+        ),
         #[cfg(feature = "grid")]
-        justify_self: self::item_alignment(pos.justify_self.0),
+        justify_self: self::item_alignment(
+            pos.justify_self.0,
+            style.clone_direction() == stylo::Direction::Rtl,
+        ),
         #[cfg(feature = "block")]
         text_align: self::text_align(style.clone_text_align()),
 
