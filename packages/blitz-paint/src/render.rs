@@ -262,10 +262,29 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         // TODO: account for overflow_x vs overflow_y
         let overflow_x = styles.get_box().overflow_x;
         let overflow_y = styles.get_box().overflow_y;
-        let is_image = node
+        // A blended SVG is not clipped: the isolated buffer a clip layer
+        // introduces would make its blend modes composite against a transparent
+        // backdrop instead of the actual one.
+        #[cfg(feature = "svg")]
+        fn blends_with_backdrop(group: &usvg::Group) -> bool {
+            group.blend_mode() != usvg::BlendMode::Normal
+                || (!group.isolate()
+                    && group.children().iter().any(
+                        |child| matches!(child, usvg::Node::Group(g) if blends_with_backdrop(g)),
+                    ))
+        }
+        #[cfg(feature = "svg")]
+        let is_svg = node
             .element_data()
-            .and_then(|e| e.raster_image_data())
-            .is_some();
+            .and_then(|e| e.svg_data())
+            .is_some_and(|tree| !blends_with_backdrop(tree.root()));
+        #[cfg(not(feature = "svg"))]
+        let is_svg = false;
+        let is_image = is_svg
+            || node
+                .element_data()
+                .and_then(|e| e.raster_image_data())
+                .is_some();
         let is_sub_doc = node
             .element_data()
             .and_then(|el| el.sub_doc_data())
@@ -937,6 +956,7 @@ impl ElementCx<'_, '_> {
 
         let width = self.frame.content_box.width() as u32;
         let height = self.frame.content_box.height() as u32;
+
         let svg_size = svg.size();
 
         let x = self.frame.content_box.origin().x;
