@@ -421,6 +421,7 @@ pub(crate) fn collect_layout_children(
                 }
                 element_data.take_inline_layout();
             }
+            doc.svg_root_nodes.insert(container_node_id);
             doc.nodes[container_node_id].insert_damage(crate::layout::damage::CONSTRUCT_SVG);
             return;
         }

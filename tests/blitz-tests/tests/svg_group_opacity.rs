@@ -91,3 +91,49 @@ fn nested_group_opacity_compounds_multiplicatively() {
         single
     );
 }
+
+#[test]
+fn overlapping_siblings_in_an_opacity_group_composite_as_one_unit() {
+    // A `<g opacity>` must open a single layer around its whole subtree, so overlapping
+    // siblings blend with the *background* as a unit, not with each other first.
+    let grouped = center_pixel(
+        r##"<html><body style="margin:0; background:#ffffff;">
+            <svg width="100" height="100" viewBox="0 0 100 100">
+                <g opacity="0.5">
+                    <rect x="0" y="0" width="100" height="100" fill="#ff0000"/>
+                    <rect x="0" y="0" width="100" height="100" fill="#0000ff"/>
+                </g>
+            </svg>
+        </body></html>"##,
+    );
+    let single_blue = center_pixel(
+        r##"<html><body style="margin:0; background:#ffffff;">
+            <svg width="100" height="100" viewBox="0 0 100 100">
+                <rect x="0" y="0" width="100" height="100" fill="#0000ff" opacity="0.5"/>
+            </svg>
+        </body></html>"##,
+    );
+    assert_eq!(
+        grouped, single_blue,
+        "opaque blue fully covering red inside one opacity group should read identically to a \
+         single 50%-opacity blue rect over the same background, got grouped={:?} single_blue={:?}",
+        grouped, single_blue
+    );
+}
+
+#[test]
+fn stroked_shape_at_partial_opacity_keeps_its_stroke() {
+    // The opacity layer's clip must include the stroke's outset, not just the fill bbox.
+    let px = center_pixel(
+        r##"<html><body style="margin:0; background:#ffffff;">
+            <svg width="100" height="100" viewBox="0 0 100 100">
+                <line x1="0" y1="50" x2="100" y2="50" stroke="#00ff00" stroke-width="20" opacity="0.5"/>
+            </svg>
+        </body></html>"##,
+    );
+    assert_ne!(
+        px, [255, 255, 255],
+        "the stroke should reach the canvas center even through a 0.5-opacity layer whose clip \
+         is derived from a zero-height fill bbox, but the pixel is untouched white"
+    );
+}

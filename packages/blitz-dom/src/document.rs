@@ -312,6 +312,12 @@ pub struct BaseDocument {
     /// Nodes that contain custom widgets
     #[cfg(feature = "custom-widget")]
     pub(crate) custom_widget_nodes: HashSet<NodeId>,
+    /// Root `<svg>` elements (`SpecialElementData::SvgRoot`), so per-layout fragment rebuild
+    /// doesn't have to scan the whole node slotmap looking for them. Entries are inserted once,
+    /// on first becoming an `SvgRoot`, and never explicitly removed; `rebuild_svg_fragments`
+    /// self-prunes ids that no longer resolve to a live `SvgRoot`.
+    #[cfg(feature = "svg-native")]
+    pub(crate) svg_root_nodes: HashSet<NodeId>,
     /// Rendering resources allocated by custom widgets that should be deallocated during the next render
     #[cfg(feature = "custom-widget")]
     pub(crate) pending_resource_deallocations: Vec<anyrender::ResourceId>,
@@ -486,6 +492,8 @@ impl BaseDocument {
             custom_widget_nodes: HashSet::new(),
             #[cfg(feature = "custom-widget")]
             pending_resource_deallocations: Vec::new(),
+            #[cfg(feature = "svg-native")]
+            svg_root_nodes: HashSet::new(),
 
             changed_nodes: HashSet::new(),
             deferred_construction_nodes: Vec::new(),
@@ -1552,7 +1560,7 @@ impl BaseDocument {
         );
         let active_node_id = Some(hover_node_id);
 
-        let node_path = self.maybe_node_layout_ancestors(active_node_id);
+        let node_path = self.maybe_node_interaction_ancestors(active_node_id);
         for &id in node_path.iter() {
             self.snapshot_node_and(id, |node| node.active());
         }
@@ -1567,7 +1575,7 @@ impl BaseDocument {
             return false;
         };
 
-        let node_path = self.maybe_node_layout_ancestors(Some(active_node_id));
+        let node_path = self.maybe_node_interaction_ancestors(Some(active_node_id));
         for &id in node_path.iter() {
             self.snapshot_node_and(id, |node| node.unactive());
         }
@@ -1701,8 +1709,8 @@ impl BaseDocument {
             return scrollbar_changed;
         }
 
-        let old_node_path = self.maybe_node_layout_ancestors(self.hover_node_id);
-        let new_node_path = self.maybe_node_layout_ancestors(hover_node_id);
+        let old_node_path = self.maybe_node_interaction_ancestors(self.hover_node_id);
+        let new_node_path = self.maybe_node_interaction_ancestors(hover_node_id);
         let same_count = old_node_path
             .iter()
             .zip(&new_node_path)
@@ -1736,7 +1744,7 @@ impl BaseDocument {
             return false;
         };
 
-        let old_node_path = self.maybe_node_layout_ancestors(Some(hover_node_id));
+        let old_node_path = self.maybe_node_interaction_ancestors(Some(hover_node_id));
         for &id in old_node_path.iter() {
             self.snapshot_node_and(id, |node| node.unhover());
         }

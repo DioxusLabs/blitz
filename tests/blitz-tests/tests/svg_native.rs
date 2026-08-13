@@ -178,3 +178,113 @@ fn use_targeting_own_ancestor_is_caught_immediately_by_the_ancestor_guard() {
          not expand it MAX_REF_DEPTH times before the depth-cap backstop kicks in"
     );
 }
+
+#[test]
+fn removed_svg_root_does_not_panic_the_next_layout_pass() {
+    let mut doc = layout_doc(
+        r##"<html><body style="margin:0;">
+            <svg id="icon" width="10" height="10"><rect width="10" height="10"/></svg>
+        </body></html>"##,
+    );
+    let svg_id = doc.query_selector("#icon").unwrap().unwrap();
+    doc.mutate().remove_and_drop_node(svg_id);
+    doc.resolve(0.0);
+}
+
+#[test]
+fn bare_shape_with_no_fill_declared_anywhere_paints_black() {
+    // The SVG initial value for `fill` is opaque black. `paint_shape` reads this from computed
+    // style (`get_inherited_svg().fill`), so a shape with no `fill` attribute and no CSS rule
+    // must still resolve to `SVGPaintKind::Color(black)`, not "no paint".
+    let doc = layout_doc(
+        r##"<html><body style="margin:0;">
+            <svg id="icon" width="10" height="10"><rect id="r" width="10" height="10"/></svg>
+        </body></html>"##,
+    );
+    let rect_id = doc.query_selector("#r").unwrap().unwrap();
+    let style = doc.get_node(rect_id).unwrap().primary_styles().unwrap();
+    use style::values::computed::svg::SVGPaintKind;
+    assert!(matches!(style.get_inherited_svg().fill.kind, SVGPaintKind::Color(_)));
+}
+
+#[test]
+fn fill_on_group_inherits_to_child_shape() {
+    // `<g fill="red"><rect/></g>`: `fill` is an inherited CSS property, so the presentation
+    // attribute on the group must cascade down to the `<rect>`'s computed style, not just apply
+    // to the group's own (nonexistent) geometry.
+    let doc = layout_doc(
+        r##"<html><body style="margin:0;">
+            <svg id="icon" width="10" height="10">
+                <g fill="red"><rect id="r" width="10" height="10"/></g>
+            </svg>
+        </body></html>"##,
+    );
+    let rect_id = doc.query_selector("#r").unwrap().unwrap();
+    let style = doc.get_node(rect_id).unwrap().primary_styles().unwrap();
+    use style::values::computed::color::Color as ComputedColor;
+    use style::values::computed::svg::SVGPaintKind;
+    let SVGPaintKind::Color(ComputedColor::Absolute(c)) = &style.get_inherited_svg().fill.kind
+    else {
+        panic!("expected an absolute color");
+    };
+    assert_eq!(c.components.0, 1.0, "red channel");
+    assert_eq!(c.components.1, 0.0, "green channel");
+    assert_eq!(c.components.2, 0.0, "blue channel");
+}
+
+#[test]
+fn use_targeting_symbol_resolves_child_percentages_against_the_use_size_not_the_outer_canvas() {
+    // A `<use>` targeting a `<symbol>` establishes an inner viewport of `use.width x use.height`;
+    // a percentage-sized child inside the `<symbol>` must resolve against *that*, not the outer
+    // `<svg>`'s canvas (a prior bug passed the outer `viewport` through to the recursive walk
+    // instead of `Size::new(use_w, use_h)`).
+    use blitz_dom::svg::SvgNodeKind;
+
+    let doc = layout_doc(
+        r##"<html><body style="margin:0;">
+            <svg id="icon" width="200" height="200" viewBox="0 0 200 200">
+                <symbol id="sym"><rect width="50%" height="50%"/></symbol>
+                <use href="#sym" width="40" height="40"/>
+            </svg>
+        </body></html>"##,
+    );
+    let svg_id = doc.query_selector("#icon").unwrap().unwrap();
+    let ctx = doc
+        .get_node(svg_id)
+        .unwrap()
+        .element_data()
+        .unwrap()
+        .svg_root_data()
+        .unwrap();
+    let shape = ctx
+        .nodes
+        .iter()
+        .find(|n| matches!(n.kind, SvgNodeKind::Shape(_)))
+        .expect("rect inside the <symbol> should be shadow-expanded into the flat node list");
+    assert_eq!(shape.bbox.width(), 20.0);
+    assert_eq!(shape.bbox.height(), 20.0);
+}
+
+#[test]
+fn hovering_svg_shape_reports_enclosing_html_ancestor_as_hovered() {
+    // SVG shapes never get a Taffy `layout_parent` (only the root `<svg>` participates in
+    // HTML layout), so the old `maybe_node_layout_ancestors` chain for a hovered shape was just
+    // `[shape_id]`.
+    let mut doc = HtmlDocument::from_html(
+        r##"<html><body style="margin:0;">
+            <div id="card"><svg id="icon" width="20" height="20"><rect width="20" height="20"/></svg></div>
+        </body></html>"##,
+        DocumentConfig {
+            viewport: Some(Viewport::new(800, 600, 1.0, ColorScheme::Light)),
+            html_parser_provider: Some(Arc::new(HtmlProvider) as _),
+            ..Default::default()
+        },
+    );
+    doc.resolve(0.0);
+    doc.set_hover_to(10.0, 10.0);
+    let card_id = doc.query_selector("#card").unwrap().unwrap();
+    assert!(
+        doc.get_node(card_id).unwrap().is_hovered(),
+        "hovering the icon inside #card should keep #card itself marked hovered"
+    );
+}

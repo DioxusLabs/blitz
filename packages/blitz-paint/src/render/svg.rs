@@ -2,12 +2,21 @@
 
 use anyrender::PaintScene;
 use blitz_dom::svg::SvgNodeKind;
-use kurbo::{Affine, Shape, Stroke};
+use kurbo::{Affine, Rect, Shape, Stroke};
 use peniko::{Color, Fill};
 
 use crate::color::ToColorColor;
 
 use super::ElementCx;
+
+/// One entry in the DFS-path stack `draw_svg_fragment` walks alongside the flat, pre-order
+/// `ctx.nodes` list. `ctx.nodes` is exactly a pre-order traversal with parent indices, so a
+/// node's subtree is a contiguous run: popping frames whose index isn't the next node's parent
+/// closes exactly the subtrees that have been fully visited, no ancestor-chain walk needed.
+struct Frame {
+    idx: u32,
+    layer_open: bool,
+}
 
 impl ElementCx<'_, '_> {
     pub(super) fn draw_svg_fragment(&self, scene: &mut impl PaintScene) {
@@ -17,57 +26,83 @@ impl ElementCx<'_, '_> {
 
         let base = self.transform * Affine::scale(self.scale);
         let doc = self.node;
+        let viewport = ctx.viewport;
+        // Clip source for a *group's* opacity layer: groups have no accumulated bounding box, so clip to
+        // the fragment's own viewport in base space instead. Always finite, never over-tight enough to clip real content.
+        let fragment_clip = base * Rect::new(0.0, 0.0, viewport.width, viewport.height).to_path(0.1);
 
-        for node in ctx.nodes.iter() {
-            // Group/Use/Image are geometry-less containers; nothing to paint for the container itself,
-            // so skip straight to the next node rather than opening a layer around an empty paint.
-            let (SvgNodeKind::Shape(_) | SvgNodeKind::Text(_) | SvgNodeKind::ForeignObject) =
-                &node.kind
-            else {
-                continue;
-            };
+        let mut stack: Vec<Frame> = Vec::new();
+
+        for (i, node) in ctx.nodes.iter().enumerate() {
+            let i = i as u32;
+
+            while let Some(top) = stack.last() {
+                if node.parent == Some(top.idx) {
+                    break;
+                }
+                let top = stack.pop().unwrap();
+                if top.layer_open {
+                    scene.pop_layer();
+                }
+            }
 
             let dom_node = doc.with(node.dom_id);
             let ctm = base * node.ctm;
 
-            let Some(style) = dom_node.primary_styles() else {
-                continue;
-            };
             use style::properties::generated::longhands::visibility::computed_value::T as StyloVisibility;
-            if style.get_inherited_box().visibility != StyloVisibility::Visible {
+            let style = dom_node.primary_styles();
+            let is_leaf = matches!(
+                node.kind,
+                SvgNodeKind::Shape(_) | SvgNodeKind::Text(_) | SvgNodeKind::ForeignObject
+            );
+            let visible = style.as_ref().is_none_or(|s| {
+                s.get_inherited_box().visibility == StyloVisibility::Visible
+            });
+
+            // A hidden leaf paints nothing, so skip it outright. A hidden *group* still pushes a frame -- `visibility`
+            // is inherited and a descendant may override it back to visible.
+            if is_leaf && !visible {
                 continue;
             }
 
-            // CSS `opacity` does not inherit, but a group's opacity must still visually apply to everything
-            // painted inside it. Since painting is a flat linear scan with no nested layer stack, approximate
-            // group compositing by multiplying this leaf's own opacity by every ancestor `SvgNode`'s opacity
-            // along the `parent` chain.
-            let opacity = style.get_effects().opacity * self.ancestor_opacity(ctx, node.parent);
-            if opacity <= 0.0 {
+            let opacity = style.as_ref().map(|s| s.get_effects().opacity).unwrap_or(1.0);
+            let finite = ctm.is_finite() && node.bbox.is_finite();
+            let mut layer_open = false;
+
+            if finite && opacity < 1.0 && opacity > 0.0 {
+                let clip = if is_leaf {
+                    let stroke_pad = style
+                        .as_ref()
+                        .map(|s| svg_length_px(&s.get_inherited_svg().stroke_width, viewport) / 2.0)
+                        .unwrap_or(0.0);
+                    ctm * node.bbox.inflate(stroke_pad, stroke_pad).to_path(0.1)
+                } else {
+                    fragment_clip.clone()
+                };
+                scene.push_layer(peniko::Mix::Normal, opacity, Affine::IDENTITY, &clip, None, None);
+                layer_open = true;
+            } else if finite && opacity <= 0.0 {
+                // Fully transparent.
+                stack.push(Frame { idx: i, layer_open: false });
                 continue;
             }
 
-            let attrs = dom_node.attrs().unwrap_or(&[]);
-            let current_color = resolve_current_color(&style);
-
-            let needs_layer = opacity < 1.0;
-            if needs_layer {
-                let bbox = ctm * node.bbox.to_path(0.1);
-                scene.push_layer(
-                    peniko::Mix::Normal,
-                    opacity,
-                    Affine::IDENTITY,
-                    &bbox,
-                    None,
-                    None,
-                );
+            if !finite {
+                stack.push(Frame { idx: i, layer_open: false });
+                continue;
             }
 
             match &node.kind {
                 SvgNodeKind::Shape(path) => {
-                    paint_shape(scene, ctm, path, attrs, current_color);
+                    if let Some(style) = &style {
+                        paint_shape(scene, ctm, path, style, viewport);
+                    }
                 }
                 SvgNodeKind::Text(run) => {
+                    let current_color = style
+                        .as_ref()
+                        .map(|s| resolve_current_color(s))
+                        .unwrap_or(Color::BLACK);
                     self.draw_svg_text(scene, ctm, run, current_color);
                 }
                 SvgNodeKind::ForeignObject => {
@@ -76,30 +111,17 @@ impl ElementCx<'_, '_> {
                         self.context.render_node(scene, child, ctm, unbounded);
                     }
                 }
-                SvgNodeKind::Group | SvgNodeKind::Use { .. } | SvgNodeKind::Image => {
-                    unreachable!("filtered out above")
-                }
+                SvgNodeKind::Group | SvgNodeKind::Use { .. } | SvgNodeKind::Image => {}
             }
 
-            if needs_layer {
+            stack.push(Frame { idx: i, layer_open });
+        }
+
+        while let Some(top) = stack.pop() {
+            if top.layer_open {
                 scene.pop_layer();
             }
         }
-    }
-
-    /// Product of `opacity` for every ancestor `SvgNode` above `parent` in the flat node list.
-    /// Elements with no computed style.
-    fn ancestor_opacity(&self, ctx: &blitz_dom::svg::SvgContext, parent: Option<u32>) -> f32 {
-        let mut opacity = 1.0f32;
-        let mut cur = parent;
-        while let Some(i) = cur {
-            let ancestor = &ctx.nodes[i as usize];
-            if let Some(style) = self.node.with(ancestor.dom_id).primary_styles() {
-                opacity *= style.get_effects().opacity;
-            }
-            cur = ancestor.parent;
-        }
-        opacity
     }
 
     fn draw_svg_text(
@@ -159,42 +181,36 @@ impl ElementCx<'_, '_> {
     }
 }
 
+/// Paint `path`'s fill/stroke from *computed* SVG style, not raw DOM attributes: presentation
+/// attributes on an ancestor cascade down and only the computed value sees the inherited result,
+/// and author CSS/`:hover` overrides only take effect here too.
 fn paint_shape(
     scene: &mut impl PaintScene,
     ctm: Affine,
     path: &kurbo::BezPath,
-    attrs: &[blitz_dom::node::Attribute],
-    current_color: Color,
+    style: &style::properties::ComputedValues,
+    viewport: kurbo::Size,
 ) {
-    use blitz_dom::svg::attrs::raw_attr;
+    use style::values::computed::FillRule as StyloFillRule;
 
-    let fill = raw_attr(attrs, "fill");
-    let fill_rule = match raw_attr(attrs, "fill-rule") {
-        Some("evenodd") => Fill::EvenOdd,
-        _ => Fill::NonZero,
+    let svg = style.get_inherited_svg();
+    let current_color = style.get_inherited_text().color;
+
+    let fill_rule = match svg.fill_rule {
+        StyloFillRule::Evenodd => Fill::EvenOdd,
+        StyloFillRule::Nonzero => Fill::NonZero,
     };
-    let fill_opacity = raw_attr(attrs, "fill-opacity")
-        .and_then(parse_opacity)
-        .unwrap_or(1.0);
-
-    // Unset `fill` defaults to black (SVG initial value); `fill: none` paints nothing.
-    if fill != Some("none") {
-        if let Some(mut color) = parse_paint(fill, current_color) {
-            color = color.multiply_alpha(fill_opacity);
-            scene.fill(fill_rule, ctm, color, None, path);
-        }
+    let fill_opacity = svg_opacity(&svg.fill_opacity);
+    if let Some(mut color) = resolve_svg_paint(&svg.fill, &current_color) {
+        color = color.multiply_alpha(fill_opacity);
+        scene.fill(fill_rule, ctm, color, None, path);
     }
 
-    let stroke = raw_attr(attrs, "stroke");
-    if let Some(mut color) = stroke.and_then(|s| parse_paint(Some(s), current_color)) {
-        let stroke_opacity = raw_attr(attrs, "stroke-opacity")
-            .and_then(parse_opacity)
-            .unwrap_or(1.0);
-        let width = raw_attr(attrs, "stroke-width")
-            .and_then(|v| v.trim().parse::<f64>().ok())
-            .unwrap_or(1.0);
-        // Stroke-width 0 skips the stroke phase entirely.
-        if width > 0.0 {
+    let width = svg_length_px(&svg.stroke_width, viewport);
+    // Stroke-width 0 skips the stroke phase entirely.
+    if width > 0.0 {
+        if let Some(mut color) = resolve_svg_paint(&svg.stroke, &current_color) {
+            let stroke_opacity = svg_opacity(&svg.stroke_opacity);
             color = color.multiply_alpha(stroke_opacity);
             let stroke_style = Stroke::new(width);
             scene.stroke(&stroke_style, ctm, color, None, path);
@@ -202,31 +218,45 @@ fn paint_shape(
     }
 }
 
-/// Resolve `fill`/`stroke` presentation-attribute *paint* values that this pass supports: `none` (caller-handled),
-/// a solid color keyword/hex/rgb(), or `currentColor`. `url(#id)` paint-server references are not resolved here yet,
-/// degrades to `None` (phase skipped), which is the "unresolvable -> fallback colour if given, else none" behaviour,
-/// minus the fallback-color-after-`url()` parsing (`fill="url(#g) red"`) which is also not implemented yet.
-fn parse_paint(value: Option<&str>, current_color: Color) -> Option<Color> {
-    let value = value?.trim();
-    if value.is_empty() || value == "none" {
-        return None;
-    }
-    if value.starts_with("url(") {
-        return None;
-    }
-    parse_css_color(value, current_color)
+fn resolve_svg_paint(
+    paint: &style::values::computed::svg::SVGPaint,
+    current_color: &style::color::AbsoluteColor,
+) -> Option<Color> {
+    use style::values::computed::svg::SVGPaintKind;
+    use style::values::generics::svg::SVGPaintFallback;
+    let color = match &paint.kind {
+        SVGPaintKind::Color(c) => Some(c),
+        SVGPaintKind::None => None,
+        SVGPaintKind::PaintServer(_) => match &paint.fallback {
+            SVGPaintFallback::Color(c) => Some(c),
+            SVGPaintFallback::None | SVGPaintFallback::Unset => None,
+        },
+        SVGPaintKind::ContextFill | SVGPaintKind::ContextStroke => None,
+    };
+    color.map(|c| c.resolve_to_absolute(current_color).as_srgb_color())
 }
 
-fn parse_opacity(value: &str) -> Option<f32> {
-    let value = value.trim();
-    if let Some(pct) = value.strip_suffix('%') {
-        return pct
-            .trim()
-            .parse::<f32>()
-            .ok()
-            .map(|p| (p / 100.0).clamp(0.0, 1.0));
+fn svg_opacity(opacity: &style::values::computed::svg::SVGOpacity) -> f32 {
+    use style::values::computed::svg::SVGOpacity as Opacity;
+    match opacity {
+        Opacity::Opacity(v) => *v,
+        Opacity::ContextFillOpacity | Opacity::ContextStrokeOpacity => 1.0,
     }
-    value.parse::<f32>().ok().map(|v| v.clamp(0.0, 1.0))
+}
+
+fn svg_length_px(length: &style::values::computed::svg::SVGWidth, viewport: kurbo::Size) -> f64 {
+    use style::values::computed::length::Length;
+    use style::values::computed::length_percentage::Unpacked;
+    use style::values::computed::svg::SVGWidth;
+    let diag = blitz_dom::svg::geometry::diagonal_basis(viewport.width, viewport.height);
+    match length {
+        SVGWidth::LengthPercentage(lp) => match lp.0.unpack() {
+            Unpacked::Length(l) => l.px() as f64,
+            Unpacked::Percentage(p) => p.0 as f64 * diag,
+            Unpacked::Calc(c) => c.resolve(Length::new(diag as f32)).px() as f64,
+        },
+        SVGWidth::ContextValue => 1.0,
+    }
 }
 
 /// Resolve the SVG paint value `currentColor` against the element's computed CSS `color`.
@@ -234,161 +264,80 @@ fn resolve_current_color(style: &style::properties::ComputedValues) -> Color {
     style.get_inherited_text().color.as_srgb_color()
 }
 
-/// Minimal CSS `<color>` parser covering the SVG-in-the-wild common cases:
-/// `#rgb`, `#rrggbb`, `#rrggbbaa`, `rgb()`/`rgba()`, `currentColor`, and a handful of named colors.
-/// Full CSS color syntax is handled by the presentation-attribute cascade path (`svg/attrs.rs`)
-/// for properties that go through it, this is the raw-attribute fallback used directly by shape painting.
-fn parse_css_color(value: &str, current_color: Color) -> Option<Color> {
-    let value = value.trim();
-    if value.eq_ignore_ascii_case("currentcolor") {
-        return Some(current_color);
-    }
-    if let Some(hex) = value.strip_prefix('#') {
-        return parse_hex_color(hex);
-    }
-    if let Some(inner) = value
-        .strip_prefix("rgba(")
-        .or_else(|| value.strip_prefix("rgb("))
-    {
-        let inner = inner.strip_suffix(')')?;
-        let parts: Vec<&str> = inner.split(',').map(str::trim).collect();
-        if parts.len() < 3 {
-            return None;
-        }
-        let component = |s: &str| -> Option<f32> {
-            if let Some(pct) = s.strip_suffix('%') {
-                Some((pct.trim().parse::<f32>().ok()? / 100.0).clamp(0.0, 1.0))
-            } else {
-                Some((s.parse::<f32>().ok()? / 255.0).clamp(0.0, 1.0))
-            }
-        };
-        let r = component(parts[0])?;
-        let g = component(parts[1])?;
-        let b = component(parts[2])?;
-        let a = parts
-            .get(3)
-            .and_then(|s| s.parse::<f32>().ok())
-            .unwrap_or(1.0)
-            .clamp(0.0, 1.0);
-        return Some(Color::new([r, g, b, a]));
-    }
-    named_color(value)
-}
-
-fn parse_hex_color(hex: &str) -> Option<Color> {
-    let to_f = |b: u8| b as f32 / 255.0;
-    match hex.len() {
-        3 => {
-            let r = u8::from_str_radix(&hex[0..1].repeat(2), 16).ok()?;
-            let g = u8::from_str_radix(&hex[1..2].repeat(2), 16).ok()?;
-            let b = u8::from_str_radix(&hex[2..3].repeat(2), 16).ok()?;
-            Some(Color::new([to_f(r), to_f(g), to_f(b), 1.0]))
-        }
-        6 => {
-            let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
-            let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
-            let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
-            Some(Color::new([to_f(r), to_f(g), to_f(b), 1.0]))
-        }
-        8 => {
-            let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
-            let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
-            let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
-            let a = u8::from_str_radix(&hex[6..8], 16).ok()?;
-            Some(Color::new([to_f(r), to_f(g), to_f(b), to_f(a)]))
-        }
-        _ => None,
-    }
-}
-
-fn named_color(name: &str) -> Option<Color> {
-    let rgb = match name.to_ascii_lowercase().as_str() {
-        "black" => (0, 0, 0),
-        "white" => (255, 255, 255),
-        "red" => (255, 0, 0),
-        "green" => (0, 128, 0),
-        "blue" => (0, 0, 255),
-        "yellow" => (255, 255, 0),
-        "orange" => (255, 165, 0),
-        "purple" => (128, 0, 128),
-        "gray" | "grey" => (128, 128, 128),
-        "silver" => (192, 192, 192),
-        "maroon" => (128, 0, 0),
-        "navy" => (0, 0, 128),
-        "teal" => (0, 128, 128),
-        "olive" => (128, 128, 0),
-        "lime" => (0, 255, 0),
-        "aqua" | "cyan" => (0, 255, 255),
-        "magenta" | "fuchsia" => (255, 0, 255),
-        "pink" => (255, 192, 203),
-        "brown" => (165, 42, 42),
-        "transparent" => return Some(Color::new([0.0, 0.0, 0.0, 0.0])),
-        _ => return None,
-    };
-    Some(Color::new([
-        rgb.0 as f32 / 255.0,
-        rgb.1 as f32 / 255.0,
-        rgb.2 as f32 / 255.0,
-        1.0,
-    ]))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    const BLACK: Color = Color::new([0.0, 0.0, 0.0, 1.0]);
+    use style::color::AbsoluteColor;
+    use style::values::computed::svg::{SVGOpacity, SVGPaint, SVGPaintKind};
+    use style::values::generics::svg::SVGPaintFallback;
 
     #[test]
-    fn parses_short_and_long_hex() {
+    fn none_paint_is_no_paint() {
+        let cc = AbsoluteColor::BLACK;
+        let paint = SVGPaint {
+            kind: SVGPaintKind::None,
+            fallback: SVGPaintFallback::Unset,
+        };
+        assert_eq!(resolve_svg_paint(&paint, &cc), None);
+    }
+
+    #[test]
+    fn color_paint_resolves_directly() {
+        use style::values::computed::color::Color as ComputedColor;
+        let cc = AbsoluteColor::BLACK;
+        let red = AbsoluteColor::new(style::color::ColorSpace::Srgb, 1.0, 0.0, 0.0, 1.0);
+        let paint = SVGPaint {
+            kind: SVGPaintKind::Color(ComputedColor::Absolute(red)),
+            fallback: SVGPaintFallback::Unset,
+        };
         assert_eq!(
-            parse_hex_color("f00"),
-            Some(Color::new([1.0, 0.0, 0.0, 1.0]))
-        );
-        assert_eq!(
-            parse_hex_color("ff0000"),
-            Some(Color::new([1.0, 0.0, 0.0, 1.0]))
-        );
-    }
-
-    #[test]
-    fn parses_named_colors() {
-        assert_eq!(
-            parse_css_color("red", BLACK),
-            Some(Color::new([1.0, 0.0, 0.0, 1.0]))
-        );
-        assert_eq!(parse_css_color("black", BLACK), Some(BLACK));
-    }
-
-    #[test]
-    fn resolves_current_color_keyword() {
-        let cc = Color::new([0.2, 0.4, 0.6, 1.0]);
-        assert_eq!(parse_css_color("currentColor", cc), Some(cc));
-    }
-
-    #[test]
-    fn rejects_url_references() {
-        assert_eq!(parse_paint(Some("url(#grad)"), BLACK), None);
-    }
-
-    #[test]
-    fn none_and_unset_paint_are_no_paint() {
-        assert_eq!(parse_paint(Some("none"), BLACK), None);
-        assert_eq!(parse_paint(None, BLACK), None);
-    }
-
-    #[test]
-    fn parses_rgb_function() {
-        assert_eq!(
-            parse_css_color("rgb(255, 0, 0)", BLACK),
+            resolve_svg_paint(&paint, &cc),
             Some(Color::new([1.0, 0.0, 0.0, 1.0]))
         );
     }
 
     #[test]
-    fn opacity_parses_percent_and_clamps() {
-        assert_eq!(parse_opacity("50%"), Some(0.5));
-        assert_eq!(parse_opacity("2"), Some(1.0));
-        assert_eq!(parse_opacity("-1"), Some(0.0));
+    fn context_opacity_falls_back_to_opaque() {
+        assert_eq!(svg_opacity(&SVGOpacity::Opacity(0.5)), 0.5);
+        assert_eq!(svg_opacity(&SVGOpacity::ContextFillOpacity), 1.0);
+        assert_eq!(svg_opacity(&SVGOpacity::ContextStrokeOpacity), 1.0);
+    }
+
+    #[test]
+    fn percentage_stroke_width_resolves_against_the_diagonal_basis_not_zero() {
+        use style::values::computed::Percentage;
+        use style::values::computed::length_percentage::LengthPercentage;
+        use style::values::computed::svg::SVGWidth;
+        use style::values::generics::NonNegative;
+
+        let ten_percent = SVGWidth::LengthPercentage(NonNegative(LengthPercentage::new_percent(
+            Percentage(0.1),
+        )));
+        let viewport = kurbo::Size::new(100.0, 100.0);
+        assert!((svg_length_px(&ten_percent, viewport) - 10.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn context_value_stroke_width_falls_back_to_the_svg_initial_one() {
+        use style::values::computed::svg::SVGWidth;
+        assert_eq!(
+            svg_length_px(&SVGWidth::ContextValue, kurbo::Size::new(100.0, 100.0)),
+            1.0
+        );
+    }
+
+    #[test]
+    fn non_finite_ctm_or_bbox_fails_the_paint_guard() {
+        let nan_ctm = Affine::new([1.0, 0.0, 0.0, 1.0, f64::NAN, 0.0]);
+        assert!(!nan_ctm.is_finite());
+
+        let inf_ctm = Affine::new([f64::INFINITY, 0.0, 0.0, 1.0, 0.0, 0.0]);
+        assert!(!inf_ctm.is_finite());
+
+        let ok_ctm = Affine::IDENTITY;
+        assert!(ok_ctm.is_finite());
+
+        let nan_bbox = kurbo::Rect::new(0.0, 0.0, f64::NAN, 10.0);
+        assert!(!nan_bbox.is_finite());
     }
 }

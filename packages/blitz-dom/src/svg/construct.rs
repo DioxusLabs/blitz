@@ -55,21 +55,39 @@ fn is_non_rendered_container(tag: &str) -> bool {
 /// `SvgContext` yet or carries `CONSTRUCT_SVG` damage (sibling `<svg>`
 /// roots are left untouched). Called once per layout pass, after Taffy
 /// layout completes.
+///
+/// Iterates the `svg_root_nodes` registry rather than the whole node
+/// slotmap, so a document with zero `<svg>` roots pays zero per-layout
+/// discovery cost. The registry can carry stale ids.
+/// Both cases are pruned here rather than at every mutation site.
 pub fn rebuild_svg_fragments(doc: &mut BaseDocument) {
     let mut roots: Vec<NodeId> = Vec::new();
-    for (id, node) in doc.nodes.iter() {
-        let Some(elem) = node.data.downcast_element() else {
+    let mut stale: Vec<NodeId> = Vec::new();
+
+    for &id in doc.svg_root_nodes.iter() {
+        let Some(node) = doc.nodes.get(id) else {
+            stale.push(id);
             continue;
         };
-        if matches!(elem.special_data, SpecialElementData::SvgRoot(_)) {
-            let needs_rebuild = node
-                .damage()
-                .unwrap_or(CONSTRUCT_SVG)
-                .contains(CONSTRUCT_SVG);
-            if needs_rebuild {
-                roots.push(id);
-            }
+        let Some(elem) = node.data.downcast_element() else {
+            stale.push(id);
+            continue;
+        };
+        if !matches!(elem.special_data, SpecialElementData::SvgRoot(_)) {
+            stale.push(id);
+            continue;
         }
+        let needs_rebuild = node
+            .damage()
+            .unwrap_or(CONSTRUCT_SVG)
+            .contains(CONSTRUCT_SVG);
+        if needs_rebuild {
+            roots.push(id);
+        }
+    }
+
+    for id in stale {
+        doc.svg_root_nodes.remove(&id);
     }
 
     for root in roots {
@@ -470,6 +488,7 @@ fn walk(
                     }
                     _ => use_ctm,
                 };
+                let inner_viewport = Size::new(use_w, use_h);
                 for &child in doc.nodes[target].children.iter() {
                     walk(
                         doc,
@@ -477,7 +496,7 @@ fn walk(
                         inner_ctm,
                         Some(idx),
                         id_map,
-                        viewport,
+                        inner_viewport,
                         nodes,
                         use_depth + 1,
                         budget,

@@ -37,7 +37,8 @@ pub(crate) const CONSTRUCT_SVG: RestyleDamage =
     RestyleDamage::from_bits_retain(0b_0000_0000_1000_0000);
 
 pub(crate) const ALL_DAMAGE: RestyleDamage = RestyleDamage::from_bits_retain(
-    CONSTRUCT_BOX.bits()
+    RestyleDamage::RELAYOUT.bits()
+        | CONSTRUCT_BOX.bits()
         | CONSTRUCT_FC.bits()
         | CONSTRUCT_DESCENDENT.bits()
         | ONLY_RELAYOUT.bits()

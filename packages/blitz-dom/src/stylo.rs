@@ -57,22 +57,20 @@ use style_dom::ElementState;
 
 use style::values::computed::text::TextAlign as StyloTextAlign;
 
-// `synthesize_presentational_hints_for_legacy_attributes` only gets `&self with no path back to the owning
-// `BaseDocument`, but SVG presentation-attribute parsing needs a `UrlExtraData` to hand to Stylo's declaration
-// parser. Stash it here for the duration of style resolution, mirroring the thread-local pattern already used for the
-// parley layout context elsewhere in this crate.
+// `synthesize_presentational_hints_for_legacy_attributes` only gets `&self` with no path back to
+// the owning `BaseDocument`, but SVG presentation-attribute parsing needs a `UrlExtraData` to
+// hand to Stylo's declaration parser.
 #[cfg(feature = "svg-native")]
-thread_local! {
-    static SVG_URL_EXTRA_DATA: std::cell::RefCell<Option<style::stylesheets::UrlExtraData>> =
-        const { std::cell::RefCell::new(None) };
-}
+static SVG_URL_EXTRA_DATA: std::sync::LazyLock<style::stylesheets::UrlExtraData> =
+    std::sync::LazyLock::new(|| {
+        style::stylesheets::UrlExtraData(style::servo_arc::Arc::new(
+            url::Url::parse("about:blank").unwrap(),
+        ))
+    });
 
 impl crate::document::BaseDocument {
     pub fn resolve_stylist(&mut self, now: f64) {
         style::thread_state::enter(ThreadState::LAYOUT);
-
-        #[cfg(feature = "svg-native")]
-        SVG_URL_EXTRA_DATA.with(|cell| *cell.borrow_mut() = Some(self.url.url_extra_data()));
 
         let guard = &self.guard;
         let guards = StylesheetGuards {
@@ -854,22 +852,19 @@ impl<'a> TElement for BlitzNode<'a> {
         // SVG presentation attributes. Gated on both the feature flag and the element's namespace.
         #[cfg(feature = "svg-native")]
         if elem.name.ns == markup5ever::ns!(svg) {
-            let url_data = SVG_URL_EXTRA_DATA.with(|cell| cell.borrow().clone());
-            if let Some(url_data) = url_data {
-                for attr in elem.attrs() {
-                    if let Some(mut source_decl) = crate::svg::attrs::svg_presentation_hint(
-                        &attr.name.local,
-                        &attr.value,
-                        &url_data,
-                    ) {
-                        let mut block = PropertyDeclarationBlock::new();
-                        block.extend(source_decl.drain(), Importance::Normal);
-                        hints.push(ApplicableDeclarationBlock::from_declarations(
-                            Arc::new(self.guard().wrap(block)),
-                            CascadeLevel::new(CascadeOrigin::PresHints),
-                            LayerOrder::root(),
-                        ));
-                    }
+            for attr in elem.attrs() {
+                if let Some(mut source_decl) = crate::svg::attrs::svg_presentation_hint(
+                    &attr.name.local,
+                    &attr.value,
+                    &SVG_URL_EXTRA_DATA,
+                ) {
+                    let mut block = PropertyDeclarationBlock::new();
+                    block.extend(source_decl.drain(), Importance::Normal);
+                    hints.push(ApplicableDeclarationBlock::from_declarations(
+                        Arc::new(self.guard().wrap(block)),
+                        CascadeLevel::new(CascadeOrigin::PresHints),
+                        LayerOrder::root(),
+                    ));
                 }
             }
         }

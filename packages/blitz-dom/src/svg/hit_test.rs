@@ -7,12 +7,33 @@ use kurbo::{Point, Shape, Stroke};
 use super::context::{SvgContext, SvgNodeKind};
 use style::properties::generated::longhands::visibility::computed_value::T as StyloVisibility;
 
-/// Whether an SVG paint value counts as "painted" for hit testing purposes.
-fn is_painted(raw_paint_attr: Option<&str>, default_none: bool) -> bool {
-    match raw_paint_attr.map(str::trim) {
-        Some("none") => false,
-        Some(_) => true,
-        None => !default_none,
+/// Whether a computed SVG paint counts as "painted" for hit testing purposes.
+/// Stylo already resolves the SVG initial values into a concrete `SVGPaintKind`, so there's no
+/// separate "unset" case to handle here the way there was for raw attribute strings.
+fn is_painted(paint: &style::values::computed::svg::SVGPaint) -> bool {
+    use style::values::computed::svg::SVGPaintKind;
+    use style::values::generics::svg::SVGPaintFallback;
+    match &paint.kind {
+        SVGPaintKind::None => false,
+        SVGPaintKind::Color(_) => true,
+        SVGPaintKind::PaintServer(_) => matches!(paint.fallback, SVGPaintFallback::Color(_)),
+        SVGPaintKind::ContextFill | SVGPaintKind::ContextStroke => false,
+    }
+}
+
+/// Computed `stroke-width` resolved to user units (px), mirroring `blitz_paint::render::svg::svg_length_px`.
+fn stroke_width_px(width: &style::values::computed::svg::SVGWidth, viewport: kurbo::Size) -> f64 {
+    use style::values::computed::length::Length;
+    use style::values::computed::length_percentage::Unpacked;
+    use style::values::computed::svg::SVGWidth;
+    let diag = super::geometry::diagonal_basis(viewport.width, viewport.height);
+    match width {
+        SVGWidth::LengthPercentage(lp) => match lp.0.unpack() {
+            Unpacked::Length(l) => l.px() as f64,
+            Unpacked::Percentage(p) => p.0 as f64 * diag,
+            Unpacked::Calc(c) => c.resolve(Length::new(diag as f32)).px() as f64,
+        },
+        SVGWidth::ContextValue => 1.0,
     }
 }
 
@@ -23,6 +44,8 @@ pub fn hit_test(
     ctx: &SvgContext,
     point: Point,
 ) -> Option<blitz_traits::node_id::NodeId> {
+    use style::computed_values::pointer_events::T as PointerEvents;
+
     for node in ctx.nodes.iter().rev() {
         let SvgNodeKind::Shape(path) = &node.kind else {
             continue;
@@ -34,29 +57,27 @@ pub fn hit_test(
         let local_point = inverse * point;
 
         let dom_node = tree_node.with(node.dom_id);
-        let attrs = dom_node.attrs().unwrap_or(&[]);
+        let Some(style) = dom_node.primary_styles() else {
+            continue;
+        };
 
-        if let Some(style) = dom_node.primary_styles() {
-            if style.get_inherited_box().visibility != StyloVisibility::Visible {
-                continue;
-            }
+        if style.get_inherited_box().visibility != StyloVisibility::Visible {
+            continue;
         }
-
-        if super::attrs::raw_attr(attrs, "pointer-events") == Some("none") {
+        if style.clone_pointer_events() == PointerEvents::None {
             continue;
         }
 
-        let fill_painted = is_painted(super::attrs::raw_attr(attrs, "fill"), false);
-        let stroke_painted = is_painted(super::attrs::raw_attr(attrs, "stroke"), true);
+        let svg = style.get_inherited_svg();
+        let fill_painted = is_painted(&svg.fill);
+        let stroke_painted = is_painted(&svg.stroke);
 
         if fill_painted && path.contains(local_point) {
             return Some(node.dom_id);
         }
 
         if stroke_painted {
-            let stroke_width = super::attrs::raw_attr(attrs, "stroke-width")
-                .and_then(|v| v.trim().parse::<f64>().ok())
-                .unwrap_or(1.0);
+            let stroke_width = stroke_width_px(&svg.stroke_width, ctx.viewport);
             if stroke_width > 0.0 {
                 let stroke = Stroke::new(stroke_width);
                 let outline = kurbo::stroke(
@@ -87,26 +108,35 @@ fn try_invert(affine: kurbo::Affine) -> Option<kurbo::Affine> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use style::color::AbsoluteColor;
+    use style::values::computed::color::Color as ComputedColor;
+    use style::values::computed::svg::{SVGPaint, SVGPaintKind};
+    use style::values::generics::svg::SVGPaintFallback;
 
-    #[test]
-    fn unset_fill_defaults_to_painted() {
-        assert!(is_painted(None, false));
+    fn color_paint() -> SVGPaint {
+        SVGPaint {
+            kind: SVGPaintKind::Color(ComputedColor::Absolute(AbsoluteColor::BLACK)),
+            fallback: SVGPaintFallback::Unset,
+        }
     }
 
     #[test]
-    fn unset_stroke_defaults_to_not_painted() {
-        assert!(!is_painted(None, true));
+    fn none_paint_is_never_painted() {
+        let none = SVGPaint {
+            kind: SVGPaintKind::None,
+            fallback: SVGPaintFallback::Unset,
+        };
+        assert!(!is_painted(&none));
     }
 
     #[test]
-    fn explicit_none_is_never_painted() {
-        assert!(!is_painted(Some("none"), false));
-        assert!(!is_painted(Some("none"), true));
+    fn color_paint_is_painted() {
+        assert!(is_painted(&color_paint()));
     }
 
     #[test]
-    fn explicit_color_is_painted() {
-        assert!(is_painted(Some("red"), true));
+    fn fill_initial_value_is_opaque_black_and_painted() {
+        assert!(is_painted(&SVGPaint::BLACK));
     }
 
     #[test]
