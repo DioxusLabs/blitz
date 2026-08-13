@@ -388,8 +388,8 @@ impl ElementCx<'_, '_> {
         for hc in 0..y.count {
             for wc in 0..x.count {
                 let transform = transform.then_translate(Vec2 {
-                    x: wc as f64 * x.gap,
-                    y: hc as f64 * y.gap,
+                    x: wc as f64 * x.stride,
+                    y: hc as f64 * y.stride,
                 });
 
                 scene.fill(
@@ -469,8 +469,8 @@ impl ElementCx<'_, '_> {
         for hc in 0..y.count {
             for wc in 0..x.count {
                 let transform = transform.then_translate(Vec2 {
-                    x: wc as f64 * x.gap,
-                    y: hc as f64 * y.gap,
+                    x: wc as f64 * x.stride,
+                    y: hc as f64 * y.stride,
                 });
 
                 scene.fill(
@@ -621,13 +621,13 @@ struct AxisTiling {
     /// Number of explicitly drawn tiles
     count: u32,
     /// Stride (in device pixels) between the starts of consecutive tiles
-    gap: f64,
+    stride: f64,
 }
 
 /// Per-axis placement and tiling for a raster image layer. `Repeat`/`Round`
 /// produce a single fill covering the whole positioning area (relying on the
 /// image brush repeating), while `Space` produces `count` explicit tiles
-/// spaced `gap` apart.
+/// spaced `stride` apart.
 ///
 /// The fill rect is in image pixel coordinates (the drawing transform is
 /// pre-scaled by `ratio`), while translations are in device pixels.
@@ -649,23 +649,23 @@ fn raster_axis_tiling(
                 translate: origin_start - extend_len,
                 rect_len: (origin_len + extend_len) / ratio,
                 count: 1,
-                gap: 0.0,
+                stride: 0.0,
             }
         }
         Space => {
-            let (count, gap) = compute_space_count_and_gap(origin_len, tile_len);
+            let (count, stride) = compute_space_count_and_stride(origin_len, tile_len);
             AxisTiling {
                 translate: origin_start + if count == 1 { bg_pos } else { 0.0 },
                 rect_len: image_len,
                 count,
-                gap,
+                stride,
             }
         }
         NoRepeat => AxisTiling {
             translate: origin_start + bg_pos,
             rect_len: image_len,
             count: 1,
-            gap: 0.0,
+            stride: 0.0,
         },
     }
 }
@@ -702,37 +702,37 @@ fn gradient_axis_tiling(
                 translate: area_start - extend_len,
                 rect_len: tile_len,
                 count,
-                gap: tile_len,
+                stride: tile_len,
             }
         }
         Space => {
-            let (count, gap) = compute_space_count_and_gap(origin_len, tile_len);
+            let (count, stride) = compute_space_count_and_stride(origin_len, tile_len);
             AxisTiling {
                 translate: origin_start + if count == 1 { bg_pos } else { 0.0 },
                 rect_len: tile_len,
                 count,
-                gap,
+                stride,
             }
         }
         NoRepeat => AxisTiling {
             translate: origin_start + bg_pos,
             rect_len: tile_len,
             count: 1,
-            gap: 0.0,
+            stride: 0.0,
         },
     }
 }
 
-fn compute_space_count_and_gap(bg_size: f64, size: f64) -> (u32, f64) {
+fn compute_space_count_and_stride(bg_size: f64, size: f64) -> (u32, f64) {
     let modulo = bg_size % size;
     let count = (((bg_size - modulo) / size) as u32).max(1);
-    let gap = if count > 1 {
+    let stride = if count > 1 {
         modulo / (count - 1) as f64
     } else {
         0.0
     } + size;
 
-    (count, gap)
+    (count, stride)
 }
 
 #[inline]
