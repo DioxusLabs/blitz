@@ -116,6 +116,21 @@ pub fn process_test_file(
         }
     }
     if !match_references.is_empty() || !mismatch_references.is_empty() {
+        // Blitz doesn't run JavaScript, so skip ref tests whose rendering depends on it.
+        // Tests whose scripts only wait for fonts/load and take a screenshot are still run,
+        // as the runner waits for those things anyway.
+        if flags.contains(TestFlags::USES_SCRIPT)
+            && crate::script_detection::uses_nontrivial_script(&file_contents)
+        {
+            return (
+                TestKind::Ref,
+                flags,
+                TestStatus::Skip,
+                SubtestCounts::ZERO_OF_ZERO,
+                Vec::new(),
+            );
+        }
+
         let counts = process_ref_test(
             ctx,
             relative_path,
