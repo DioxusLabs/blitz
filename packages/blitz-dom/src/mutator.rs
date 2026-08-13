@@ -821,23 +821,46 @@ impl<'doc> DocumentMutator<'doc> {
         self.flush_eager_ops();
     }
 
-    /// Eagerly remove `node_id` (and hoisted entries for nodes in its subtree)
-    /// from the derived paint lists: the layout parent's `paint_children` and
+    /// Eagerly remove the subtree rooted at `node_id` from the derived paint
+    /// lists: the `paint_children` of layout parents outside the subtree and
     /// the hoisted children of the nearest stacking-context root. These lists
     /// are rebuilt during `resolve()`, but hit tests may run between a DOM
     /// mutation and the next resolve, and must not see ids for removed nodes.
+    ///
+    /// Usually only the subtree root has a layout parent outside the subtree,
+    /// but `display: contents` (and the anonymous boxes it can flatten into)
+    /// gives descendants layout parents outside the subtree too, so every
+    /// subtree node's layout parent is considered.
     ///
     /// Must be called while the node's parent links are still intact.
     fn remove_from_derived_paint_lists(&mut self, node_id: NodeId) {
         let doc = &mut *self.doc;
 
-        // Remove the node from its layout parent's `paint_children`.
-        let layout_parent_id = doc.nodes[node_id].layout_parent.get();
-        if let Some(parent_id) = layout_parent_id {
-            if let Some(parent) = doc.nodes.get(parent_id) {
-                if let Some(paint_children) = parent.paint_children.borrow_mut().as_mut() {
-                    paint_children.retain(|id| *id != node_id);
-                }
+        // Collect the ids of all nodes in the removed subtree.
+        let mut subtree = HashSet::new();
+        let mut stack = vec![node_id];
+        while let Some(id) = stack.pop() {
+            subtree.insert(id);
+            if let Some(node) = doc.nodes.get(id) {
+                stack.extend(node.children.iter().copied());
+            }
+        }
+
+        // Remove subtree nodes from the `paint_children` of any layout parent
+        // outside the subtree.
+        let mut cleaned_parents: Vec<NodeId> = Vec::new();
+        for &id in &subtree {
+            let Some(parent_id) = doc.nodes.get(id).and_then(|node| node.layout_parent.get())
+            else {
+                continue;
+            };
+            if subtree.contains(&parent_id) || cleaned_parents.contains(&parent_id) {
+                continue;
+            }
+            cleaned_parents.push(parent_id);
+            if let Some(paint_children) = doc.nodes[parent_id].paint_children.borrow_mut().as_mut()
+            {
+                paint_children.retain(|child_id| !subtree.contains(child_id));
             }
         }
 
@@ -845,7 +868,7 @@ impl<'doc> DocumentMutator<'doc> {
         // the nearest stacking-context root outside the subtree. Walk up to it
         // and drop any entries for nodes within the subtree.
         let mut sc_root_id = None;
-        let mut current = layout_parent_id;
+        let mut current = doc.nodes[node_id].layout_parent.get();
         while let Some(id) = current {
             let Some(node) = doc.nodes.get(id) else { break };
             if node.stacking_context.is_some() {
@@ -856,31 +879,15 @@ impl<'doc> DocumentMutator<'doc> {
         }
         let Some(sc_root_id) = sc_root_id else { return };
 
-        fn in_subtree(doc: &BaseDocument, mut id: NodeId, root_id: NodeId) -> bool {
-            loop {
-                if id == root_id {
-                    return true;
-                }
-                match doc.nodes.get(id).and_then(|node| node.parent) {
-                    Some(parent_id) => id = parent_id,
-                    None => return false,
-                }
-            }
+        if let Some(sc) = doc.nodes[sc_root_id].stacking_context.as_mut() {
+            sc.children
+                .retain(|child| !subtree.contains(&child.node_id));
+            sc.negative_z_count = sc
+                .children
+                .iter()
+                .take_while(|child| child.z_index < 0)
+                .count() as u32;
         }
-
-        // Take the stacking context out so `in_subtree` can borrow the nodes
-        // while we filter its children.
-        let Some(mut sc) = doc.nodes[sc_root_id].stacking_context.take() else {
-            return;
-        };
-        sc.children
-            .retain(|child| !in_subtree(doc, child.node_id, node_id));
-        sc.negative_z_count = sc
-            .children
-            .iter()
-            .take_while(|child| child.z_index < 0)
-            .count() as u32;
-        doc.nodes[sc_root_id].stacking_context = Some(sc);
     }
 
     fn process_removed_subtree(&mut self, node_id: NodeId) {

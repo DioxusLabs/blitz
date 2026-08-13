@@ -198,6 +198,47 @@ fn hit_test_after_detaching_hoisted_node_does_not_hit_detached_node() {
 }
 
 #[test]
+fn hit_test_after_detaching_display_contents_node_does_not_hit_descendants() {
+    // A `display: contents` node is transparent for box generation, so its
+    // children's layout parent (and paint_children entries) live *outside*
+    // the removed subtree. Detaching the contents node must eagerly clean up
+    // entries for its descendants, not just the removed root itself.
+    let mut harness = Harness::from_html_with(
+        r#"<html><head><style>
+            html, body { margin: 0; height: 100%; }
+            .container { width: 200px; height: 200px; position: relative; }
+            #contents { display: contents; }
+            #child-a { width: 100px; height: 100px; background: #ccc; }
+        </style></head><body>
+            <div class="container" id="container">
+                <div id="contents">
+                    <div id="child-a">A</div>
+                </div>
+            </div>
+        </body></html>"#,
+        HarnessOptions {
+            width: 400,
+            height: 400,
+            ..Default::default()
+        },
+    );
+
+    harness.pump();
+
+    let contents = harness.node("#contents");
+    let child_a = harness.node("#child-a");
+    let container = harness.node("#container");
+    harness.base_mut().mutate().remove_node(contents);
+
+    let hit = harness.hit(50.0, 50.0).expect("hit test should succeed");
+    assert_ne!(
+        hit.node_id, child_a,
+        "hit test must not return a descendant of a detached display:contents node"
+    );
+    assert_eq!(hit.node_id, container);
+}
+
+#[test]
 fn hit_test_after_removing_text_node_does_not_panic() {
     // The inline layout (built during resolve) references text node ids. After
     // removing a text node's parent, hit-testing over the old text area must
