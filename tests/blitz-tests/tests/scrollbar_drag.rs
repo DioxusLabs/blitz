@@ -222,7 +222,6 @@ fn thumb_brightens_on_hover_and_drag() {
 }
 
 #[test]
-#[ignore = "scrollbar-color is hardcoded to auto until stylo exposes it to the servo engine (servo/stylo#413)"]
 fn white_author_thumb_still_signals_hover_and_drag() {
     // A near-white `scrollbar-color` thumb can't get lighter: hover/drag
     // feedback must blend towards the pole with contrast headroom (darken).
