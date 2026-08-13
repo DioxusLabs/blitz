@@ -1,5 +1,5 @@
 use blitz_traits::node_id::NodeId;
-use parley::{AlignmentOptions, IndentOptions};
+use parley::{AlignmentOptions, ContentWidths, IndentOptions};
 use style::values::specified::box_::DisplayOutside;
 use style::values::{computed::CSSPixelLength, generics::text::GenericTextIndent};
 use taffy::{
@@ -16,6 +16,37 @@ use taffy::{Clear, Float, prelude::TaffyMaxContent};
 
 use super::resolve_calc_value;
 use crate::BaseDocument;
+use crate::node::TextLayout;
+
+/// Characters which force a mandatory line break (UAX #14 classes BK, CR, LF, NL)
+fn is_mandatory_break_char(c: char) -> bool {
+    matches!(
+        c,
+        '\n' | '\r' | '\u{000B}' | '\u{000C}' | '\u{0085}' | '\u{2028}' | '\u{2029}'
+    )
+}
+
+/// Compute the min-content and max-content widths of an inline layout.
+///
+/// Parley's `calculate_content_widths` detects a mandatory line break via the boundary
+/// flag on the text cluster *after* the break. Inline boxes between the break and that
+/// cluster have already been accumulated by then, so their widths are attributed to the
+/// line *before* the break and the width of the line after the break is under-reported.
+/// When a layout contains both inline boxes and mandatory breaks, fall back to measuring
+/// trial line-breaking passes, which use the same breaking logic as the final layout.
+fn calculate_content_widths(text_layout: &mut TextLayout) -> ContentWidths {
+    let has_inline_boxes = !text_layout.layout.inline_boxes().is_empty();
+    if has_inline_boxes && text_layout.text.contains(is_mandatory_break_char) {
+        let layout = &mut text_layout.layout;
+        layout.break_all_lines(Some(0.0));
+        let min = layout.width();
+        layout.break_all_lines(None);
+        let max = layout.width();
+        ContentWidths { min, max }
+    } else {
+        text_layout.layout.calculate_content_widths()
+    }
+}
 
 impl BaseDocument {
     pub(crate) fn compute_inline_layout(
@@ -342,7 +373,7 @@ impl BaseDocument {
                 // This is a little tricky as the size of the inline boxes may depend on whether we are sizing under
                 // and a min-content or max-content constraint. So if we want to compute both widths in one pass then
                 // we need to store both a min-content and max-content size on each box.
-                let content_sizes = inline_layout.layout.calculate_content_widths();
+                let content_sizes = calculate_content_widths(&mut inline_layout);
                 let min_content_width = content_sizes.min;
                 let max_content_width = content_sizes.max;
 
