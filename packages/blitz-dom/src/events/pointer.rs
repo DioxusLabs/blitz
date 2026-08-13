@@ -17,6 +17,7 @@ use taffy::AbsoluteAxis;
 
 use crate::{
     BaseDocument,
+    document::ScrollTarget,
     node::{ScrollbarRef, SpecialElementData},
 };
 
@@ -34,9 +35,8 @@ pub(crate) struct FlingState {
 /// fragment navigation (`#anchor` links) and programmatic smooth scrolling.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ScrollToState {
-    /// Node whose scroll offset is being animated. `None` animates the viewport
-    /// scroll offset instead.
-    pub(crate) target: Option<NodeId>,
+    /// What is being scrolled.
+    pub(crate) target: ScrollTarget,
     /// The scroll offset at the start of the animation.
     pub(crate) start: crate::util::Point<f64>,
     /// The scroll offset to animate towards.

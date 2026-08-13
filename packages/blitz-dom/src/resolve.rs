@@ -267,13 +267,8 @@ impl BaseDocument {
                     x: scroll_to.start.x + (scroll_to.end.x - scroll_to.start.x) * eased,
                     y: scroll_to.start.y + (scroll_to.end.y - scroll_to.start.y) * eased,
                 };
-                match scroll_to.target {
-                    Some(node_id) => self.set_node_scroll_offset(node_id, target),
-                    None => {
-                        let current = self.viewport_scroll;
-                        self.scroll_viewport_by(current.x - target.x, current.y - target.y);
-                    }
-                }
+                // TODO: dispatch `scroll` events for programmatic scrolls.
+                self.write_scroll_offset(scroll_to.target, target, &mut |_| {});
 
                 if progress >= 1.0 {
                     self.scroll_animation = ScrollAnimationState::None;
