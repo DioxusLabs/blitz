@@ -713,13 +713,21 @@ impl BaseDocument {
                                 s.get_box().original_display.outside() == DisplayOutside::Inline
                             })
                             .unwrap_or(true);
+                        // Inline-level boxes are placed at the top of the line box they would
+                        // have occupied (`ibox.y` is the baseline as out-of-flow boxes are
+                        // zero-sized), and block-level boxes below it.
+                        let line_metrics = line.metrics();
                         let static_position = taffy::Point {
                             x: if is_inline_level {
-                                ibox.x
+                                (ibox.x / scale) + container_pb.left
                             } else {
                                 container_pb.left
                             },
-                            y: ibox.y,
+                            y: if is_inline_level {
+                                (line_metrics.block_min_coord / scale) + container_pb.top
+                            } else {
+                                (line_metrics.block_max_coord / scale) + container_pb.top
+                            },
                         };
 
                         layout_abspos_child(
