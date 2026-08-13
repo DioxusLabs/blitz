@@ -79,21 +79,11 @@ pub fn dimension(val: &stylo::Size) -> taffy::Dimension {
         stylo::Size::LengthPercentage(val) => length_percentage(&val.0).into(),
         stylo::Size::Auto => taffy::Dimension::AUTO,
 
-        stylo::Size::MaxContent => taffy::Dimension::max_content(),
-        stylo::Size::MinContent => taffy::Dimension::min_content(),
-        stylo::Size::FitContent => taffy::Dimension::fit_content(),
-        stylo::Size::FitContentFunction(val) => match val.0.unpack() {
-            stylo::UnpackedLengthPercentage::Length(len) => {
-                taffy::Dimension::fit_content_px(len.px())
-            }
-            stylo::UnpackedLengthPercentage::Percentage(percentage) => {
-                taffy::Dimension::fit_content_percent(percentage.0)
-            }
-            // TODO: support calc values as fit-content() limits in Taffy
-            stylo::UnpackedLengthPercentage::Calc(_) => taffy::Dimension::AUTO,
-        },
-
         // TODO: implement other values in Taffy
+        stylo::Size::MaxContent => taffy::Dimension::AUTO,
+        stylo::Size::MinContent => taffy::Dimension::AUTO,
+        stylo::Size::FitContent => taffy::Dimension::AUTO,
+        stylo::Size::FitContentFunction(_) => taffy::Dimension::AUTO,
         stylo::Size::Stretch => taffy::Dimension::AUTO,
         stylo::Size::WebkitFillAvailable => taffy::Dimension::AUTO,
 

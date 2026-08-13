@@ -964,10 +964,6 @@ fn layout_abspos_child(
                 },
                 sizing_mode: SizingMode::ContentSize,
                 run_mode: RunMode::ComputeSize,
-                known_dimensions_are_definite: taffy::Size {
-                    width: true,
-                    height: true,
-                },
                 axis: taffy::RequestedAxis::Both,
                 vertical_margins_are_collapsible: taffy::Line::FALSE,
             },
@@ -993,10 +989,6 @@ fn layout_abspos_child(
             },
             sizing_mode: SizingMode::ContentSize,
             run_mode: RunMode::PerformLayout,
-            known_dimensions_are_definite: taffy::Size {
-                width: true,
-                height: true,
-            },
             axis: taffy::RequestedAxis::Both,
             vertical_margins_are_collapsible: taffy::Line::FALSE,
         },
