@@ -292,6 +292,11 @@ impl ElementCx<'_, '_> {
     }
 
     /// Whether this element or any of its ancestors has a CSS transform
+    ///
+    /// TODO: this misses transformed elements whose resolved transform is the
+    /// identity (e.g. `transform: translate(0)`), and elements with
+    /// `will-change: transform`, both of which should also degrade `fixed`
+    /// to `scroll` (see WPT css/css-transforms/transform-fixed-bg-005/008)
     fn is_transformed(&self) -> bool {
         let mut current = Some(self.node.id);
         while let Some(node) = current.and_then(|id| self.context.dom.get_node(id)) {
