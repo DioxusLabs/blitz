@@ -614,9 +614,13 @@ enum BackgroundSizeComputeMode {
 /// translation applied to the layer as a whole, the length of each filled
 /// rect, and the number of explicit tiles with the stride between them.
 struct AxisTiling {
+    /// Translation (in device pixels) positioning the first tile
     translate: f64,
+    /// Length of each filled rect, in the coordinate space of the fill's transform
     rect_len: f64,
+    /// Number of explicitly drawn tiles
     count: u32,
+    /// Stride (in device pixels) between the starts of consecutive tiles
     gap: f64,
 }
 
