@@ -687,7 +687,11 @@ fn gradient_axis_tiling(
 
     match repeat {
         Repeat | Round => {
-            let (area_start, area_len) = if clip_start < origin_start {
+            // The clip and origin boxes are nested, so the clip box extends
+            // beyond the origin box iff it does so at either end
+            let clip_is_outer =
+                clip_start < origin_start || clip_start + clip_len > origin_start + origin_len;
+            let (area_start, area_len) = if clip_is_outer {
                 (clip_start, clip_len)
             } else {
                 (origin_start, origin_len)
