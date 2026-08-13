@@ -28,6 +28,7 @@ use style::shared_lock::SharedRwLock;
 use style::stylesheets::UrlExtraData;
 use style::values::computed::CSSPixelLength;
 use style::values::computed::Display as StyloDisplay;
+use style::values::computed::Float as StyloFloat;
 use style::values::specified::box_::{DisplayInside, DisplayOutside};
 use style_dom::ElementState;
 use style_traits::values::ToCss;
@@ -344,10 +345,11 @@ impl Node {
         let position = style
             .map(|s| s.clone_position())
             .unwrap_or(Position::Relative);
+        let float = style.map(|s| s.clone_float()).unwrap_or(StyloFloat::None);
         let is_in_flow = matches!(
             position,
             Position::Static | Position::Relative | Position::Sticky
-        );
+        ) && matches!(float, StyloFloat::None);
         if !is_in_flow {
             return false;
         }

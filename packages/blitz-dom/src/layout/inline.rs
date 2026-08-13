@@ -208,9 +208,11 @@ impl BaseDocument {
                 .downcast_element_mut()
                 .unwrap()
                 .inline_layout_data = Some(inline_layout);
-            return LayoutOutput::from_outer_size(
-                Size::ZERO.maybe_max(container_pb.sum_axes().map(Some)),
-            );
+            let pb_sum = container_pb.sum_axes();
+            return LayoutOutput::from_outer_size(Size {
+                width: known_dimensions.width.unwrap_or(pb_sum.width),
+                height: known_dimensions.height.unwrap_or(pb_sum.height),
+            });
         }
 
         // Resolve node's preferred/min/max sizes (width/heights) against the available space (percentages resolve to pixel values)
@@ -486,32 +488,117 @@ impl BaseDocument {
         }
 
         // Perform inline layout
+        //
+        // Floats encountered within the inline content are placed as they are reached
+        // during line breaking, using the current line's position as the minimum y
+        // position. If content preceding a float is subsequently rewound to a later
+        // line (e.g. an unbreakable span that overflows the line it started on), the
+        // float may have been placed too high. In that case, revert the float state
+        // and re-run line breaking with a corrected minimum y position for that float.
         #[cfg(feature = "floats")]
         {
-            let mut breaker = inline_layout.layout.break_lines();
-            let initial_slot = block_ctx.find_content_slot(0.0, Clear::None, None);
-            let mut has_active_floats = initial_slot.segment_id.is_some();
-            let state = breaker.state_mut();
-            state.set_layout_max_advance(width);
-            state.set_line_max_advance(initial_slot.width * scale);
-            state.set_line_x(initial_slot.x * scale);
-            state.set_line_y((initial_slot.y * scale) as f64);
+            let float_snapshot = block_ctx.snapshot_float_state();
+            let mut float_min_ys: Vec<(u64, f32)> = Vec::new();
 
-            // TODO: revert state and retry layout if a line doesn't fit
-            //
-            // Save initial state. Saved state is used to revert the layout to a previous state if needed
-            // (e.g. to revert a line that doesn't fit in the space it was laid out into)
-            //
-            // let mut saved_state = breaker.state().clone();
+            const MAX_ATTEMPTS: usize = 4;
+            for attempt in 0.. {
+                let mut placed_floats: Vec<(u64, f32)> = Vec::new();
+                let mut forced_retry = false;
 
-            while let Some(yield_data) = breaker.break_next() {
-                match yield_data {
-                    YieldData::LineBreak(_line_break_data) => {
-                        let state = breaker.state_mut();
+                let mut breaker = inline_layout.layout.break_lines();
+                let initial_slot = block_ctx.find_content_slot(0.0, Clear::None, None);
+                let mut has_active_floats = initial_slot.segment_id.is_some();
+                let state = breaker.state_mut();
+                state.set_layout_max_advance(width);
+                state.set_line_max_advance(initial_slot.width * scale);
+                state.set_line_x(initial_slot.x * scale);
+                state.set_line_y((initial_slot.y * scale) as f64);
 
-                        if has_active_floats {
-                            // TODO: revert state and retry layout if a line doesn't fit
-                            // saved_state = state.clone();
+                while let Some(yield_data) = breaker.break_next() {
+                    match yield_data {
+                        YieldData::LineBreak(_line_break_data) => {
+                            let state = breaker.state_mut();
+
+                            if has_active_floats {
+                                let min_y = state.line_y() / scale as f64;
+                                let next_slot =
+                                    block_ctx.find_content_slot(min_y as f32, Clear::None, None);
+                                has_active_floats = next_slot.segment_id.is_some();
+
+                                state.set_line_max_advance(next_slot.width * scale);
+                                state.set_line_x(next_slot.x * scale);
+                                state.set_line_y((next_slot.y * scale) as f64);
+                            } else {
+                                state.set_line_x(0.0);
+                                state.set_line_max_advance(width);
+                            }
+
+                            continue;
+                        }
+                        YieldData::MaxHeightExceeded(_data) => {
+                            // TODO
+                            continue;
+                        }
+                        YieldData::InlineBoxBreak(box_break_data) => {
+                            let state = breaker.state_mut();
+                            let box_id = box_break_data.inline_box_id;
+                            let node_id = NodeId::from_u64(box_id);
+
+                            // If content preceding the box is rewound to a later line, the
+                            // breaker re-encounters the box and yields for it again. The box
+                            // was already placed this pass, so don't place it a second time;
+                            // request a retry with the corrected minimum y position instead.
+                            if let Some(&(_, placed_min_y)) =
+                                placed_floats.iter().find(|(id, _)| *id == box_id)
+                            {
+                                let min_y = state.line_y() as f32 / scale;
+                                if min_y > placed_min_y + 0.05 {
+                                    match float_min_ys.iter_mut().find(|(id, _)| *id == box_id) {
+                                        Some(entry) => entry.1 = entry.1.max(min_y),
+                                        None => float_min_ys.push((box_id, min_y)),
+                                    }
+                                    forced_retry = true;
+                                }
+                                state.append_inline_box_to_line(box_break_data.advance, 0.0);
+                                continue;
+                            }
+
+                            let node = &mut self.nodes[node_id];
+
+                            // We can assume that the box is a float because we only set `break_on_box: true` for floats
+                            let direction = match node.style().float {
+                                Float::Left => taffy::FloatDirection::Left,
+                                Float::Right => taffy::FloatDirection::Right,
+                                Float::None => unreachable!(),
+                            };
+                            let clear = node.style().clear;
+                            let margin = node
+                                .style()
+                                .margin
+                                .resolve_or_zero(inputs.parent_size, resolve_calc_value);
+
+                            let margin_sum = margin.sum_axes();
+
+                            let output = self.compute_child_layout(
+                                crate::taffy_node_id(node_id),
+                                float_child_inputs,
+                            );
+                            let mut min_y = state.line_y() as f32 / scale;
+                            if let Some(&(_, override_y)) =
+                                float_min_ys.iter().find(|(id, _)| *id == box_id)
+                            {
+                                min_y = min_y.max(override_y);
+                            }
+                            placed_floats.push((box_id, min_y));
+
+                            // Note: `pos` is content-box relative
+                            let pos = block_ctx.place_floated_box(
+                                output.size + margin_sum,
+                                min_y,
+                                direction,
+                                clear,
+                                false,
+                            );
 
                             let min_y = state.line_y() / scale as f64;
                             let next_slot =
@@ -521,81 +608,69 @@ impl BaseDocument {
                             state.set_line_max_advance(next_slot.width * scale);
                             state.set_line_x(next_slot.x * scale);
                             state.set_line_y((next_slot.y * scale) as f64);
-                        } else {
-                            state.set_line_x(0.0);
-                            state.set_line_max_advance(width);
+
+                            let layout = self.nodes[node_id].unrounded_layout_mut();
+                            layout.size = output.size;
+                            layout.location.x = pos.x + margin.left + container_pb.left;
+                            layout.location.y = pos.y + margin.top + container_pb.top;
+
+                            state.append_inline_box_to_line(box_break_data.advance, 0.0);
                         }
-
-                        continue;
-                    }
-                    YieldData::MaxHeightExceeded(_data) => {
-                        // TODO
-                        continue;
-                    }
-                    YieldData::InlineBoxBreak(box_break_data) => {
-                        let state = breaker.state_mut();
-                        let node_id = NodeId::from_u64(box_break_data.inline_box_id);
-                        let node = &mut self.nodes[node_id];
-
-                        // We can assume that the box is a float because we only set `break_on_box: true` for floats
-                        let direction = match node.style().float {
-                            Float::Left => taffy::FloatDirection::Left,
-                            Float::Right => taffy::FloatDirection::Right,
-                            Float::None => unreachable!(),
-                        };
-                        let clear = node.style().clear;
-                        let margin = node
-                            .style()
-                            .margin
-                            .resolve_or_zero(inputs.parent_size, resolve_calc_value);
-
-                        let margin_sum = margin.sum_axes();
-
-                        let output = self.compute_child_layout(
-                            crate::taffy_node_id(node_id),
-                            float_child_inputs,
-                        );
-                        let min_y = state.line_y() as f32 / scale;
-
-                        // Note: `pos` is content-box relative
-                        let pos = block_ctx.place_floated_box(
-                            output.size + margin_sum,
-                            min_y,
-                            direction,
-                            clear,
-                            false,
-                        );
-
-                        let min_y = state.line_y() / scale as f64; //.max(pos.y as f64);
-                        let next_slot =
-                            block_ctx.find_content_slot(min_y as f32, Clear::None, None);
-                        has_active_floats = next_slot.segment_id.is_some();
-
-                        state.set_line_max_advance(next_slot.width * scale);
-                        state.set_line_x(next_slot.x * scale);
-                        state.set_line_y((next_slot.y * scale) as f64);
-
-                        let layout = self.nodes[node_id].unrounded_layout_mut();
-                        layout.size = output.size;
-                        layout.location.x = pos.x + margin.left + container_pb.left;
-                        layout.location.y = pos.y + margin.top + container_pb.top;
-
-                        // dbg!(&layout.size);
-                        // dbg!(&layout.location);
-
-                        state.append_inline_box_to_line(box_break_data.advance, 0.0);
-
-                        // if float.is_floated() {
-                        //     println!("INLINE FLOATED BOX ({}) {:?}", ibox.id, float);
-                        //     println!(
-                        //         "w:{} h:{} x:{}, y:{}",
-                        //         layout.size.width, layout.size.height, 0, 0
-                        //     );
-                        // }
                     }
                 }
+                breaker.finish();
+
+                let mut needs_retry = forced_retry;
+                // Detect floats that were placed higher than the top of the line box that
+                // ended up containing the content preceding them (CSS2 float rule 6). This
+                // can happen when content is rewound to a later line after the float was
+                // already placed (e.g. an unbreakable span that overflows its line).
+                if attempt < MAX_ATTEMPTS - 1 && !placed_floats.is_empty() {
+                    for &(box_id, used_min_y) in &placed_floats {
+                        let Some(box_index) = inline_layout
+                            .layout
+                            .inline_boxes()
+                            .iter()
+                            .find(|b| b.id == box_id)
+                            .map(|b| b.index)
+                        else {
+                            continue;
+                        };
+
+                        // The lowest line-box top among lines containing content that
+                        // precedes the float in the source text
+                        let mut required_min_y = f32::MIN;
+                        for line in inline_layout.layout.lines() {
+                            let has_earlier_content = line.runs().any(|run| {
+                                let range = run.text_range();
+                                !range.is_empty() && range.start < box_index
+                            });
+                            if has_earlier_content {
+                                required_min_y =
+                                    required_min_y.max(line.metrics().block_min_coord / scale);
+                            }
+                        }
+
+                        if required_min_y > used_min_y + 0.05 {
+                            match float_min_ys.iter_mut().find(|(id, _)| *id == box_id) {
+                                Some(entry) if required_min_y > entry.1 + 0.05 => {
+                                    entry.1 = required_min_y;
+                                    needs_retry = true;
+                                }
+                                Some(_) => {}
+                                None => {
+                                    float_min_ys.push((box_id, required_min_y));
+                                    needs_retry = true;
+                                }
+                            }
+                        }
+                    }
+                }
+                if attempt >= MAX_ATTEMPTS - 1 || !needs_retry {
+                    break;
+                }
+                block_ctx.restore_float_state(&float_snapshot);
             }
-            breaker.finish();
         }
 
         let alignment = self.nodes[node_id]
@@ -802,7 +877,6 @@ impl BaseDocument {
         }
 
         // println!("INLINE LAYOUT FOR {:?}. max_advance: {:?}", node_id, max_advance);
-        // dbg!(&inline_layout.text);
         // println!("Computed: w: {} h: {}", inline_layout.layout.width(), inline_layout.layout.height());
         // println!("known_dimensions: w: {:?} h: {:?}", inputs.known_dimensions.width, inputs.known_dimensions.height);
         // println!("\n");
@@ -953,6 +1027,10 @@ fn layout_abspos_child(
             node_id,
             taffy::LayoutInput {
                 known_dimensions,
+                known_dimensions_are_definite: taffy::Size {
+                    width: true,
+                    height: true,
+                },
                 parent_size: area_size.map(Some),
                 available_space: Size {
                     width: AvailableSpace::Definite(
@@ -978,6 +1056,10 @@ fn layout_abspos_child(
         node_id,
         taffy::LayoutInput {
             known_dimensions: final_size.map(Some),
+            known_dimensions_are_definite: taffy::Size {
+                width: true,
+                height: true,
+            },
             parent_size: area_size.map(Some),
             available_space: Size {
                 width: AvailableSpace::Definite(

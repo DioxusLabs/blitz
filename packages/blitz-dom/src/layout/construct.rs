@@ -1,5 +1,6 @@
 use blitz_traits::node_id::NodeId;
 use core::str;
+use std::borrow::Cow;
 use std::sync::Arc;
 
 use markup5ever::{QualName, local_name, ns};
@@ -814,7 +815,18 @@ fn collect_complex_layout_children(
             .display_style()
             .unwrap_or(Display::inline());
         let display_inside = child_display.inside();
-        let display_outside = if contains_block {
+
+        // Floats participate in the inline formatting context of the surrounding inline
+        // content (their blockified display does not interrupt it), so they are treated
+        // as inline-level for the purposes of anonymous box generation.
+        let is_floated = doc.nodes[child_id]
+            .primary_styles()
+            .map(|s| !matches!(s.clone_float(), Float::None))
+            .unwrap_or(false);
+
+        let display_outside = if is_floated {
+            DisplayOutside::Inline
+        } else if contains_block {
             DisplayOutside::Block
         } else {
             child_display.outside()
@@ -1069,6 +1081,13 @@ pub(crate) fn build_inline_layout_into(
         }
     };
 
+    let mut ws_state = InlineWhitespaceState {
+        last_char_is_whitespace: true,
+        restore_leading_space: false,
+        uncommitted_non_ws: false,
+        pending_space: false,
+    };
+
     if let Some(before_id) = root_node.before() {
         build_inline_layout_recursive(
             &mut builder,
@@ -1078,6 +1097,7 @@ pub(crate) fn build_inline_layout_into(
             collapse_mode,
             text_transform,
             root_line_height,
+            &mut ws_state,
         );
     }
     for child_id in root_node.children.iter().copied() {
@@ -1089,6 +1109,7 @@ pub(crate) fn build_inline_layout_into(
             collapse_mode,
             text_transform,
             root_line_height,
+            &mut ws_state,
         );
     }
     if let Some(after_id) = root_node.after() {
@@ -1100,12 +1121,88 @@ pub(crate) fn build_inline_layout_into(
             collapse_mode,
             text_transform,
             root_line_height,
+            &mut ws_state,
         );
     }
 
     text_layout.text = builder.build_into(&mut text_layout.layout);
     return;
 
+    /// Tracks whitespace context across the inline tree so that out-of-flow
+    /// inline boxes (floats, absolutely positioned elements) can flush pending
+    /// text (giving them a correct text index) without disturbing whitespace
+    /// collapsing of the surrounding text.
+    struct InlineWhitespaceState {
+        last_char_is_whitespace: bool,
+        restore_leading_space: bool,
+        uncommitted_non_ws: bool,
+        /// A collapsible space that has been held back from the builder so that
+        /// it can still collapse with (or be trimmed against) following content
+        /// even if intervening out-of-flow inline boxes force pending text to be
+        /// committed. It is flushed lazily before the next in-flow content.
+        pending_space: bool,
+    }
+
+    fn flush_pending_space(
+        builder: &mut TreeBuilder<TextBrush>,
+        ws_state: &mut InlineWhitespaceState,
+        collapse_mode: WhiteSpaceCollapse,
+    ) {
+        if !ws_state.pending_space {
+            return;
+        }
+        ws_state.pending_space = false;
+        if ws_state.restore_leading_space {
+            // A preceding commit set Parley's "span first" flag, which would
+            // swallow a plain collapsible space; push it as preserved instead.
+            builder.push_style_modification_span(&[]);
+            builder.set_white_space_mode(WhiteSpaceCollapse::Preserve);
+            builder.push_text(" ");
+            builder.pop_style_span();
+            builder.set_white_space_mode(collapse_mode);
+            ws_state.restore_leading_space = false;
+            ws_state.uncommitted_non_ws = false;
+        } else {
+            builder.push_text(" ");
+        }
+        ws_state.last_char_is_whitespace = true;
+    }
+
+    fn push_inline_box_with_index_fixup(
+        builder: &mut TreeBuilder<TextBrush>,
+        node_id: NodeId,
+        box_kind: InlineBoxKind,
+        ws_state: &mut InlineWhitespaceState,
+        collapse_mode: WhiteSpaceCollapse,
+    ) {
+        if box_kind == InlineBoxKind::InFlow {
+            flush_pending_space(builder, ws_state, collapse_mode);
+            ws_state.last_char_is_whitespace = false;
+            ws_state.restore_leading_space = false;
+        } else if ws_state.uncommitted_non_ws {
+            // Out-of-flow inline boxes don't commit pending text in Parley, so
+            // their text index would not account for it. Commit it via an empty
+            // style span. This sets Parley's "span first" flag, which swallows
+            // a following collapsible space; record that it must be restored.
+            // Any held-back collapsible space stays pending so that it can
+            // still collapse with / be trimmed against following content.
+            builder.push_style_modification_span(&[]);
+            builder.pop_style_span();
+            ws_state.uncommitted_non_ws = false;
+            ws_state.restore_leading_space = !ws_state.last_char_is_whitespace;
+        }
+        builder.push_inline_box(InlineBox {
+            id: node_id.as_u64(),
+            kind: box_kind,
+            // Overridden by push_inline_box method
+            index: 0,
+            // Width and height are set during layout
+            width: 0.0,
+            height: 0.0,
+        });
+    }
+
+    #[allow(clippy::too_many_arguments)]
     fn build_inline_layout_recursive(
         builder: &mut TreeBuilder<TextBrush>,
         nodes: &crate::NodeTree,
@@ -1114,6 +1211,7 @@ pub(crate) fn build_inline_layout_into(
         collapse_mode: WhiteSpaceCollapse,
         parent_text_transform: TextTransform,
         root_line_height: f32,
+        ws_state: &mut InlineWhitespaceState,
     ) {
         let node = &nodes[node_id];
 
@@ -1171,6 +1269,7 @@ pub(crate) fn build_inline_layout_into(
                                 collapse_mode,
                                 text_transform,
                                 root_line_height,
+                                ws_state,
                             );
                         }
                     }
@@ -1182,23 +1281,25 @@ pub(crate) fn build_inline_layout_into(
                             || *tag_name == local_name!("textarea")
                             || *tag_name == local_name!("button")
                         {
-                            builder.push_inline_box(InlineBox {
-                                id: node_id.as_u64(),
-                                kind: box_kind,
-                                // Overridden by push_inline_box method
-                                index: 0,
-                                // Width and height are set during layout
-                                width: 0.0,
-                                height: 0.0,
-                            });
+                            push_inline_box_with_index_fixup(
+                                builder,
+                                node_id,
+                                box_kind,
+                                ws_state,
+                                collapse_mode,
+                            );
                         } else if *tag_name == local_name!("br") {
                             // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
                             // TODO: update span id for br spans
+                            ws_state.pending_space = false;
                             builder.push_style_modification_span(&[]);
                             builder.set_white_space_mode(WhiteSpaceCollapse::Preserve);
                             builder.push_text("\n");
                             builder.pop_style_span();
                             builder.set_white_space_mode(collapse_mode);
+                            ws_state.last_char_is_whitespace = true;
+                            ws_state.restore_leading_space = false;
+                            ws_state.uncommitted_non_ws = false;
                         } else {
                             // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
                             let mut style = node
@@ -1220,7 +1321,10 @@ pub(crate) fn build_inline_layout_into(
                             // dbg!(node_id);
                             // dbg!(&style);
 
+                            flush_pending_space(builder, ws_state, collapse_mode);
                             builder.push_style_span(style);
+                            ws_state.restore_leading_space = false;
+                            ws_state.uncommitted_non_ws = false;
 
                             if let Some(before_id) = node.before() {
                                 build_inline_layout_recursive(
@@ -1231,6 +1335,7 @@ pub(crate) fn build_inline_layout_into(
                                     collapse_mode,
                                     text_transform,
                                     root_line_height,
+                                    ws_state,
                                 );
                             }
 
@@ -1243,6 +1348,7 @@ pub(crate) fn build_inline_layout_into(
                                     collapse_mode,
                                     text_transform,
                                     root_line_height,
+                                    ws_state,
                                 );
                             }
                             if let Some(after_id) = node.after() {
@@ -1254,23 +1360,23 @@ pub(crate) fn build_inline_layout_into(
                                     collapse_mode,
                                     text_transform,
                                     root_line_height,
+                                    ws_state,
                                 );
                             }
 
                             builder.pop_style_span();
+                            ws_state.uncommitted_non_ws = false;
                         }
                     }
                     // Inline box
                     (_, _) => {
-                        builder.push_inline_box(InlineBox {
-                            id: node_id.as_u64(),
-                            kind: box_kind,
-                            // Overridden by push_inline_box method
-                            index: 0,
-                            // Width and height are set during layout
-                            width: 0.0,
-                            height: 0.0,
-                        });
+                        push_inline_box_with_index_fixup(
+                            builder,
+                            node_id,
+                            box_kind,
+                            ws_state,
+                            collapse_mode,
+                        );
                     }
                 };
             }
@@ -1279,16 +1385,59 @@ pub(crate) fn build_inline_layout_into(
                 // dbg!(&data.content);
 
                 // TODO: optimize case transforms to be non-allocating
-                match parent_text_transform {
-                    TextTransform::UPPERCASE => {
-                        builder.push_text(&data.content.to_uppercase());
+                let content: Cow<'_, str> = match parent_text_transform {
+                    TextTransform::UPPERCASE => Cow::Owned(data.content.to_uppercase()),
+                    TextTransform::LOWERCASE => Cow::Owned(data.content.to_lowercase()),
+                    _ => Cow::Borrowed(&*data.content),
+                };
+
+                if content.is_empty() {
+                    return;
+                }
+
+                if matches!(collapse_mode, WhiteSpaceCollapse::Collapse) {
+                    let has_non_ws = content.chars().any(|c| !c.is_ascii_whitespace());
+                    if !has_non_ws {
+                        // Whitespace-only run: hold it back as a pending space so
+                        // that it can collapse with / be trimmed against whatever
+                        // in-flow content comes next.
+                        ws_state.pending_space = true;
+                        ws_state.last_char_is_whitespace = true;
+                        return;
                     }
-                    TextTransform::LOWERCASE => {
-                        builder.push_text(&data.content.to_lowercase());
+
+                    if ws_state.pending_space {
+                        flush_pending_space(builder, ws_state, collapse_mode);
+                    } else if ws_state.restore_leading_space
+                        && content.starts_with(|c: char| c.is_ascii_whitespace())
+                    {
+                        builder.push_style_modification_span(&[]);
+                        builder.set_white_space_mode(WhiteSpaceCollapse::Preserve);
+                        builder.push_text(" ");
+                        builder.pop_style_span();
+                        builder.set_white_space_mode(collapse_mode);
+                        ws_state.uncommitted_non_ws = false;
                     }
-                    _ => {
-                        builder.push_text(&data.content);
-                    }
+                    ws_state.restore_leading_space = false;
+
+                    // Hold back any trailing collapsible whitespace so that a
+                    // following out-of-flow inline box does not force it to be
+                    // committed (frozen) before it can collapse or be trimmed.
+                    let trimmed = content.trim_end_matches(|c: char| c.is_ascii_whitespace());
+                    ws_state.pending_space = trimmed.len() != content.len();
+                    ws_state.last_char_is_whitespace = false;
+                    ws_state.uncommitted_non_ws = true;
+                    builder.push_text(trimmed);
+                } else {
+                    flush_pending_space(builder, ws_state, collapse_mode);
+                    ws_state.restore_leading_space = false;
+                    ws_state.last_char_is_whitespace = content
+                        .chars()
+                        .next_back()
+                        .is_some_and(|c| c.is_ascii_whitespace());
+                    ws_state.uncommitted_non_ws |=
+                        content.chars().any(|c| !c.is_ascii_whitespace());
+                    builder.push_text(&content);
                 }
             }
             NodeData::Comment { .. } => {
