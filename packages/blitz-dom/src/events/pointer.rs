@@ -17,43 +17,11 @@ use taffy::AbsoluteAxis;
 
 use crate::{
     BaseDocument,
-    document::ScrollTarget,
     node::{ScrollbarRef, SpecialElementData},
+    scrolling::{FlingState, ScrollAnimationState},
 };
 
 use super::focus::generate_focus_events;
-
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) struct FlingState {
-    pub(crate) target: NodeId,
-    pub(crate) last_seen_time: f64,
-    pub(crate) x_velocity: f64,
-    pub(crate) y_velocity: f64,
-}
-
-/// State driving a smooth (animated) scroll towards a target offset. Used for
-/// fragment navigation (`#anchor` links) and programmatic smooth scrolling.
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) struct ScrollToState {
-    /// What is being scrolled.
-    pub(crate) target: ScrollTarget,
-    /// The scroll offset at the start of the animation.
-    pub(crate) start: crate::util::Point<f64>,
-    /// The scroll offset to animate towards.
-    pub(crate) end: crate::util::Point<f64>,
-    /// Time (in milliseconds since the Unix epoch) at which the animation started.
-    pub(crate) start_time: f64,
-    /// Total duration of the animation in milliseconds.
-    pub(crate) duration: f64,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) enum ScrollAnimationState {
-    None,
-    Fling(FlingState),
-    /// A smooth scroll of the viewport towards a target offset.
-    ScrollTo(ScrollToState),
-}
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct PanState {

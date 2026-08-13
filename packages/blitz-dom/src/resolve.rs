@@ -1,10 +1,7 @@
 //! Resolve style and layout
 
 use blitz_traits::node_id::NodeId;
-use std::{
-    cell::RefCell,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::cell::RefCell;
 
 use debug_timer::debug_timer;
 use kurbo::{Affine, Rect};
@@ -26,7 +23,6 @@ use taffy::AvailableSpace;
 
 use crate::{
     BaseDocument,
-    events::ScrollAnimationState,
     layout::{
         construct::{
             ConstructionTask, ConstructionTaskData, ConstructionTaskResult,
@@ -37,18 +33,6 @@ use crate::{
     },
     node::TextBrush,
 };
-
-/// Cubic ease-in-out easing function, mapping a normalised time `t` in `[0, 1]`
-/// to an eased progress value in `[0, 1]`. Used to give smooth scrolls a natural
-/// acceleration/deceleration curve.
-fn ease_in_out_cubic(t: f64) -> f64 {
-    if t < 0.5 {
-        4.0 * t * t * t
-    } else {
-        let f = 2.0 * t - 2.0;
-        1.0 + (f * f * f) / 2.0
-    }
-}
 
 impl BaseDocument {
     /// Restyle the tree and then relayout it
@@ -219,65 +203,6 @@ impl BaseDocument {
         };
 
         full.transform_rect_bbox(overflow)
-    }
-
-    pub fn resolve_scroll_animation(&mut self) {
-        match &mut self.scroll_animation {
-            ScrollAnimationState::Fling(fling_state) => {
-                let time_ms = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap()
-                    .as_millis() as u64 as f64;
-
-                let time_diff_ms = time_ms - fling_state.last_seen_time;
-
-                // 0.95 @ 60fps normalized to actual frame times
-                let deceleration = 1.0 - ((0.05 / 16.66666) * time_diff_ms);
-
-                fling_state.x_velocity *= deceleration;
-                fling_state.y_velocity *= deceleration;
-                fling_state.last_seen_time = time_ms;
-                let fling_state = fling_state.clone();
-
-                let dx = fling_state.x_velocity * time_diff_ms;
-                let dy = fling_state.y_velocity * time_diff_ms;
-
-                self.scroll_chain_by(Some(fling_state.target), dx, dy, &mut |_| {});
-                if fling_state.x_velocity.abs() < 0.1 && fling_state.y_velocity.abs() < 0.1 {
-                    self.scroll_animation = ScrollAnimationState::None;
-                }
-            }
-            ScrollAnimationState::ScrollTo(scroll_to) => {
-                let scroll_to = scroll_to.clone();
-                let time_ms = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap()
-                    .as_millis() as u64 as f64;
-
-                // Normalised progress through the animation, clamped to [0, 1].
-                let progress = if scroll_to.duration <= 0.0 {
-                    1.0
-                } else {
-                    ((time_ms - scroll_to.start_time) / scroll_to.duration).clamp(0.0, 1.0)
-                };
-                let eased = ease_in_out_cubic(progress);
-
-                // Interpolate the target offset and move to it.
-                let target = crate::util::Point {
-                    x: scroll_to.start.x + (scroll_to.end.x - scroll_to.start.x) * eased,
-                    y: scroll_to.start.y + (scroll_to.end.y - scroll_to.start.y) * eased,
-                };
-                // TODO: dispatch `scroll` events for programmatic scrolls.
-                self.write_scroll_offset(scroll_to.target, target, &mut |_| {});
-
-                if progress >= 1.0 {
-                    self.scroll_animation = ScrollAnimationState::None;
-                }
-            }
-            ScrollAnimationState::None => {
-                // Do nothing
-            }
-        }
     }
 
     /// Ensure that the layout_children field is populated for all nodes
