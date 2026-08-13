@@ -32,20 +32,11 @@ pub struct ScrollbarRef {
     pub axis: AbsoluteAxis,
 }
 
-/// The computed value of `scrollbar-width` (css-scrollbars-1). A local
-/// mirror of the stylo type, which isn't exposed to the servo engine yet
-/// (servo/stylo#413).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum ScrollbarWidth {
-    #[default]
-    Auto,
-    Thin,
-    None,
-}
+/// The computed value of `scrollbar-width` (css-scrollbars-1).
+pub use style::properties::generated::longhands::scrollbar_width::computed_value::T as ScrollbarWidth;
 
-/// The computed value of `scrollbar-color` (css-scrollbars-1). A local
-/// mirror of the stylo type, which isn't exposed to the servo engine yet
-/// (servo/stylo#413). Colors are fully resolved (no `currentColor`).
+/// The computed value of `scrollbar-color` (css-scrollbars-1), with colors
+/// fully resolved (no `currentColor`).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub enum ScrollbarColor {
     #[default]
@@ -57,21 +48,29 @@ pub enum ScrollbarColor {
 }
 
 impl Node {
-    /// The node's used `scrollbar-width`.
+    /// The node's computed `scrollbar-width`.
     pub fn scrollbar_width(&self) -> ScrollbarWidth {
-        // TODO: read the computed style once stylo exposes scrollbar-width
-        // to the servo engine (servo/stylo#413):
-        // match self.primary_styles().map(|s| s.clone_scrollbar_width()) { .. }
-        ScrollbarWidth::Auto
+        self.primary_styles()
+            .map(|style| style.clone_scrollbar_width())
+            .unwrap_or(ScrollbarWidth::Auto)
     }
 
-    /// The node's used `scrollbar-color`.
+    /// The node's computed `scrollbar-color`, with colors resolved against
+    /// the element's computed `color`.
     pub fn scrollbar_color(&self) -> ScrollbarColor {
-        // TODO: read the computed style once stylo exposes scrollbar-color
-        // to the servo engine (servo/stylo#413), resolving the colors
-        // against the element's `color`:
-        // self.primary_styles().map(|s| s.clone_scrollbar_color()) { .. }
-        ScrollbarColor::Auto
+        let Some(style) = self.primary_styles() else {
+            return ScrollbarColor::Auto;
+        };
+        let current_color = style.clone_color();
+        match style.clone_scrollbar_color() {
+            style::values::computed::ScrollbarColor::Auto => ScrollbarColor::Auto,
+            style::values::computed::ScrollbarColor::Colors { thumb, track } => {
+                ScrollbarColor::Colors {
+                    thumb: thumb.resolve_to_absolute(&current_color),
+                    track: track.resolve_to_absolute(&current_color),
+                }
+            }
+        }
     }
 
     /// Whether the node shows an overlay scrollbar in the given axis:
