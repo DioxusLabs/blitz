@@ -953,6 +953,10 @@ fn layout_abspos_child(
             node_id,
             taffy::LayoutInput {
                 known_dimensions,
+                known_dimensions_are_definite: taffy::Size {
+                    width: true,
+                    height: true,
+                },
                 parent_size: area_size.map(Some),
                 available_space: Size {
                     width: AvailableSpace::Definite(
@@ -978,6 +982,10 @@ fn layout_abspos_child(
         node_id,
         taffy::LayoutInput {
             known_dimensions: final_size.map(Some),
+            known_dimensions_are_definite: taffy::Size {
+                width: true,
+                height: true,
+            },
             parent_size: area_size.map(Some),
             available_space: Size {
                 width: AvailableSpace::Definite(
