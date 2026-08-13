@@ -126,6 +126,78 @@ fn hit_test_after_removing_neg_z_hoisted_child_does_not_panic() {
 }
 
 #[test]
+fn hit_test_after_detaching_node_does_not_hit_detached_node() {
+    // `remove_node` detaches a node without dropping it, so its id remains
+    // live in the tree. The derived paint lists must be eagerly cleaned so a
+    // hit test does not return the detached node at its stale position.
+    let mut harness = Harness::from_html_with(
+        r#"<html><head><style>
+            html, body { margin: 0; height: 100%; }
+            .container { width: 200px; height: 200px; position: relative; }
+            .child { width: 100px; height: 100px; background: #ccc; }
+        </style></head><body>
+            <div class="container" id="container">
+                <div class="child" id="child-a">A</div>
+            </div>
+        </body></html>"#,
+        HarnessOptions {
+            width: 400,
+            height: 400,
+            ..Default::default()
+        },
+    );
+
+    harness.pump();
+
+    let child_a = harness.node("#child-a");
+    let container = harness.node("#container");
+    harness.base_mut().mutate().remove_node(child_a);
+
+    let hit = harness.hit(50.0, 50.0).expect("hit test should succeed");
+    assert_ne!(
+        hit.node_id, child_a,
+        "hit test must not return a node that has been detached from the DOM"
+    );
+    assert_eq!(hit.node_id, container);
+}
+
+#[test]
+fn hit_test_after_detaching_hoisted_node_does_not_hit_detached_node() {
+    // Same as above, but for a z-indexed child hoisted into its parent
+    // stacking context's hoisted children list.
+    let mut harness = Harness::from_html_with(
+        r#"<html><head><style>
+            html, body { margin: 0; height: 100%; }
+            .container { width: 200px; height: 200px; position: relative; }
+            #child-a { width: 100px; height: 100px; position: absolute;
+                       top: 0; left: 0; background: #ccc; z-index: 10; }
+        </style></head><body>
+            <div class="container" id="container">
+                <div id="child-a">A</div>
+            </div>
+        </body></html>"#,
+        HarnessOptions {
+            width: 400,
+            height: 400,
+            ..Default::default()
+        },
+    );
+
+    harness.pump();
+
+    let child_a = harness.node("#child-a");
+    let container = harness.node("#container");
+    harness.base_mut().mutate().remove_node(child_a);
+
+    let hit = harness.hit(50.0, 50.0).expect("hit test should succeed");
+    assert_ne!(
+        hit.node_id, child_a,
+        "hit test must not return a node that has been detached from the DOM"
+    );
+    assert_eq!(hit.node_id, container);
+}
+
+#[test]
 fn hit_test_after_removing_text_node_does_not_panic() {
     // The inline layout (built during resolve) references text node ids. After
     // removing a text node's parent, hit-testing over the old text area must
