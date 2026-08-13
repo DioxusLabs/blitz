@@ -462,18 +462,18 @@ impl ElementCx<'_, '_> {
         gradient: &StyloGradient,
         layer: &ImageLayerStyles,
     ) {
-        let is_fixed = self.layer_is_fixed(layer);
-        let (origin_rect, base_transform) = if is_fixed {
-            self.fixed_positioning_area()
-        } else {
-            (self.box_rect(layer.origin), self.transform)
-        };
         // For a fixed layer the positioning area (the viewport) already covers
-        // everything visible, so no extension towards the clip box is needed.
-        let clip_rect = if is_fixed {
-            origin_rect
+        // everything visible, so it also serves as the clip rect (no extension
+        // towards the clip box is needed).
+        let (origin_rect, base_transform, clip_rect) = if self.layer_is_fixed(layer) {
+            let (viewport_rect, transform) = self.fixed_positioning_area();
+            (viewport_rect, transform, viewport_rect)
         } else {
-            self.box_rect(layer.clip)
+            (
+                self.box_rect(layer.origin),
+                self.transform,
+                self.box_rect(layer.clip),
+            )
         };
 
         let (bg_pos, bg_size) = compute_layer_position_and_size(
