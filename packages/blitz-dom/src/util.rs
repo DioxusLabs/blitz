@@ -163,6 +163,76 @@ pub(crate) fn parse_svg_image(source: &[u8]) -> Result<crate::node::SvgImageData
     crate::node::SvgImageData::from_data(source, &options)
 }
 
+/// Re-parse an SVG so that its viewport is exactly the given size: the root
+/// `width`/`height` attributes are replaced with the viewport size, so
+/// percentage lengths within the SVG resolve against it.
+#[cfg(feature = "svg")]
+pub(crate) fn parse_svg_for_viewport(
+    source: &[u8],
+    width: f32,
+    height: f32,
+) -> Result<usvg::Tree, usvg::Error> {
+    usvg::Size::from_wh(width, height).ok_or(usvg::Error::InvalidSize)?;
+    let options = usvg::Options {
+        fontdb: Arc::clone(&*FONT_DB),
+        ..Default::default()
+    };
+    let source = set_root_svg_size_attrs(source, width, height);
+    usvg::Tree::from_data(&source, &options)
+}
+
+/// Replace the `width` and `height` attributes on the root `<svg>` tag with
+/// the given values.
+#[cfg(feature = "svg")]
+fn set_root_svg_size_attrs(source: &[u8], width: f32, height: f32) -> Vec<u8> {
+    let Ok(text) = std::str::from_utf8(source) else {
+        return source.to_vec();
+    };
+    let Some(tag_start) = text.find("<svg") else {
+        return source.to_vec();
+    };
+    let Some(tag_len) = text[tag_start..].find('>') else {
+        return source.to_vec();
+    };
+    let tag_end = tag_start + tag_len;
+
+    // The byte range of the attribute (name through closing quote) within `tag`.
+    fn attr_range(tag: &str, name: &str) -> Option<(usize, usize)> {
+        let mut search = 0;
+        while let Some(rel) = tag[search..].find(name) {
+            let idx = search + rel;
+            search = idx + name.len();
+            // Must be a standalone attribute name preceded by whitespace
+            // (not e.g. `stroke-width`) and followed by `=`.
+            if !tag[..idx].ends_with(char::is_whitespace) {
+                continue;
+            }
+            let after = &tag[idx + name.len()..];
+            let after_eq = after.trim_start().strip_prefix('=')?;
+            let value = after_eq.trim_start();
+            let quote = value.chars().next().filter(|c| *c == '"' || *c == '\'')?;
+            let close = value[1..].find(quote)?;
+            let value_start = idx + name.len() + (after.len() - value.len());
+            return Some((idx, value_start + 1 + close + 1));
+        }
+        None
+    }
+
+    let mut tag = text[tag_start..tag_end].to_string();
+    for name in ["width", "height"] {
+        if let Some((start, end)) = attr_range(&tag, name) {
+            tag.replace_range(start..end, "");
+        }
+    }
+    tag.insert_str(4, &format!(" width=\"{width}\" height=\"{height}\""));
+
+    let mut out = String::with_capacity(text.len());
+    out.push_str(&text[..tag_start]);
+    out.push_str(&tag);
+    out.push_str(&text[tag_end..]);
+    out.into_bytes()
+}
+
 pub trait ToColorColor {
     /// Converts a color into the `AlphaColor<Srgb>` type from the `color` crate
     fn as_color_color(&self) -> Color;

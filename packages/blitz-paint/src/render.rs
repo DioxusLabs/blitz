@@ -276,8 +276,8 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         #[cfg(feature = "svg")]
         let is_svg = node
             .element_data()
-            .and_then(|e| e.svg_data())
-            .is_some_and(|tree| !blends_with_backdrop(tree.root()));
+            .and_then(|e| e.svg_image_data())
+            .is_some_and(|data| !blends_with_backdrop(data.tree.root()));
         #[cfg(not(feature = "svg"))]
         let is_svg = false;
         let is_image = is_svg
@@ -562,7 +562,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             element,
             transform,
             #[cfg(feature = "svg")]
-            svg: element.svg_data(),
+            svg: element.svg_image_data(),
             text_input: element.text_input_data(),
             list_item: element.list_item_data.as_deref(),
             devtools: self.dom.devtools(),
@@ -608,7 +608,7 @@ struct ElementCx<'dom, 'a> {
     element: &'dom ElementData,
     transform: Affine,
     #[cfg(feature = "svg")]
-    svg: Option<&'dom usvg::Tree>,
+    svg: Option<&'dom blitz_dom::node::SvgImageData>,
     text_input: Option<&'dom TextInputData>,
     list_item: Option<&'dom ListItemLayout>,
     devtools: &'dom DevtoolSettings,
@@ -957,6 +957,16 @@ impl ElementCx<'_, '_> {
         let width = self.frame.content_box.width() as u32;
         let height = self.frame.content_box.height() as u32;
 
+        // The tree re-resolved for the element's used size: an SVG without a
+        // viewBox cannot be scaled, so its percentage lengths are re-resolved
+        // against the viewport (in unzoomed CSS px; the object-fit transform
+        // below then scales 1:1 content by the zoom and HiDPI factors).
+        let zoom = self.style.effective_zoom;
+        let svg = svg.tree_for_viewport(
+            zoom.unzoom(width as f32 / self.scale as f32),
+            zoom.unzoom(height as f32 / self.scale as f32),
+        );
+        let svg = &*svg;
         let svg_size = svg.size();
 
         let x = self.frame.content_box.origin().x;
