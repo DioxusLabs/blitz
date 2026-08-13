@@ -315,15 +315,33 @@ impl Default for FlowClassification {
     }
 }
 
-/// Classify `children` for inline-vs-block layout, recursing transparently
+/// Classify a flow container's children (including its ::before/::after
+/// pseudo-elements) for inline-vs-block layout, recursing transparently
 /// through display:contents nodes (whose children participate in the
 /// container's formatting context).
 fn classify_flow_children(
     doc: &BaseDocument,
-    children: &[NodeId],
+    container_node_id: NodeId,
     classification: &mut FlowClassification,
 ) {
-    for child_id in children.iter().copied() {
+    let node = &doc.nodes[container_node_id];
+    // ::before/::after pseudos with display:contents are transparent for box
+    // generation, so their children (e.g. generated text) participate in the
+    // container's formatting context and vote in the classification. Pseudos
+    // with any other display value generate their own box, which every
+    // construction arm already pushes explicitly, so they cast no vote.
+    let pseudo_ids = node
+        .before()
+        .into_iter()
+        .chain(node.after())
+        .filter(|pe_id| {
+            let display = doc.nodes[*pe_id]
+                .display_style()
+                .unwrap_or(Display::inline());
+            matches!(display.inside(), DisplayInside::Contents)
+        });
+    let child_ids = node.children.iter().copied().chain(pseudo_ids);
+    for child_id in child_ids {
         let child = &doc.nodes[child_id];
 
         // Comment nodes generate no boxes and must not affect the
@@ -346,7 +364,7 @@ fn classify_flow_children(
             // Transparent for box generation: the contents node casts
             // no vote itself — its children decide.
             classification.has_contents = true;
-            classify_flow_children(doc, &child.children, classification);
+            classify_flow_children(doc, child_id, classification);
         } else if matches!(display.inside(), DisplayInside::None) {
             // display:none children generate no boxes and cast no vote.
             continue;
@@ -583,15 +601,8 @@ fn collect_layout_children_with_wrap(
         // layout children (text nodes carry no style and cannot be laid out
         // as block/flex/grid items).
         _ => {
-            // display:contents children are transparent for box generation:
-            // their children participate in this container's formatting
-            // context, so classification must recurse into them.
             let mut classification = FlowClassification::default();
-            classify_flow_children(
-                doc,
-                &doc.nodes[container_node_id].children,
-                &mut classification,
-            );
+            classify_flow_children(doc, container_node_id, &mut classification);
 
             if classification.all_out_of_flow {
                 // Contents-transparent: a display:contents child may be
