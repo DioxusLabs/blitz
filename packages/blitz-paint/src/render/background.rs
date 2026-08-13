@@ -327,8 +327,6 @@ impl ElementCx<'_, '_> {
     }
 
     fn draw_raster_image_layer(&self, scene: &mut impl PaintScene, layer: &ImageLayerStyles) {
-        use BackgroundRepeatKeyword::*;
-
         let Some(bg_image) = layer.image_data else {
             return;
         };
@@ -351,8 +349,7 @@ impl ElementCx<'_, '_> {
             BackgroundSizeComputeMode::Size(image_width as f32, image_height as f32),
         );
 
-        let bg_pos_x = bg_pos.x * self.scale;
-        let bg_pos_y = bg_pos.y * self.scale;
+        let bg_pos = (bg_pos.to_vec2() * self.scale).to_point();
         let bg_size = bg_size * self.scale;
 
         let x_ratio = bg_size.width / image_width;
@@ -360,143 +357,49 @@ impl ElementCx<'_, '_> {
 
         let BackgroundRepeat(repeat_x, repeat_y) = layer.repeat;
 
-        let transform = self.transform.pre_scale_non_uniform(x_ratio, y_ratio);
-        let (origin_rect, transform) = match repeat_x {
-            Repeat | Round => {
-                let extend_width = extend(bg_pos_x, bg_size.width);
+        let x = raster_axis_tiling(
+            *repeat_x,
+            origin_rect.x0,
+            origin_rect.width(),
+            bg_pos.x,
+            bg_size.width,
+            image_width,
+            x_ratio,
+        );
+        let y = raster_axis_tiling(
+            *repeat_y,
+            origin_rect.y0,
+            origin_rect.height(),
+            bg_pos.y,
+            bg_size.height,
+            image_height,
+            y_ratio,
+        );
 
+        let transform = self
+            .transform
+            .pre_scale_non_uniform(x_ratio, y_ratio)
+            .then_translate(Vec2 {
+                x: x.translate,
+                y: y.translate,
+            });
+        let tile_rect = Rect::new(0.0, 0.0, x.rect_len, y.rect_len);
+
+        for hc in 0..y.count {
+            for wc in 0..x.count {
                 let transform = transform.then_translate(Vec2 {
-                    x: origin_rect.x0 - extend_width,
-                    y: 0.0,
+                    x: wc as f64 * x.stride,
+                    y: hc as f64 * y.stride,
                 });
 
-                let origin_rect = origin_rect.with_size(Size::new(
-                    (origin_rect.width() + extend_width) / x_ratio,
-                    origin_rect.height(),
-                ));
-
-                (origin_rect, transform)
+                scene.fill(
+                    peniko::Fill::NonZero,
+                    transform,
+                    to_peniko_image(image_data, quality).as_ref(),
+                    None,
+                    &tile_rect,
+                );
             }
-            Space => (origin_rect, transform),
-            NoRepeat => {
-                let transform = transform.then_translate(Vec2 {
-                    x: origin_rect.x0 + bg_pos_x,
-                    y: 0.0,
-                });
-
-                let origin_rect =
-                    origin_rect.with_size(Size::new(image_width, origin_rect.height()));
-
-                (origin_rect, transform)
-            }
-        };
-        let (origin_rect, transform) = match repeat_y {
-            Repeat | Round => {
-                let extend_height = extend(bg_pos_y, bg_size.height);
-
-                let transform = transform.then_translate(Vec2 {
-                    x: 0.0,
-                    y: origin_rect.y0 - extend_height,
-                });
-
-                let origin_rect = origin_rect.with_size(Size::new(
-                    origin_rect.width(),
-                    (origin_rect.height() + extend_height) / y_ratio,
-                ));
-
-                (origin_rect, transform)
-            }
-            Space => (origin_rect, transform),
-            NoRepeat => {
-                let transform = transform.then_translate(Vec2 {
-                    x: 0.0,
-                    y: origin_rect.y0 + bg_pos_y,
-                });
-
-                let origin_rect =
-                    origin_rect.with_size(Size::new(origin_rect.width(), image_height));
-                (origin_rect, transform)
-            }
-        };
-
-        if matches!(repeat_x, Space) || matches!(repeat_y, Space) {
-            let (origin_rect, transform, width_count, width_gap) = if matches!(repeat_x, Space) {
-                let (count, gap) = compute_space_count_and_gap(origin_rect.width(), bg_size.width);
-
-                let transform = if count == 1 {
-                    transform.then_translate(Vec2 {
-                        x: bg_pos_x,
-                        y: 0.0,
-                    })
-                } else {
-                    transform
-                };
-
-                let origin_rect =
-                    origin_rect.with_size(Size::new(image_width, origin_rect.height()));
-
-                (origin_rect, transform, count, gap)
-            } else {
-                (origin_rect, transform, 1, 0.0)
-            };
-
-            let (origin_rect, transform, height_count, height_gap) = if matches!(repeat_y, Space) {
-                let (count, gap) =
-                    compute_space_count_and_gap(origin_rect.height(), bg_size.height);
-
-                let transform = if count == 1 {
-                    transform.then_translate(Vec2 {
-                        x: 0.0,
-                        y: bg_pos_y,
-                    })
-                } else {
-                    transform
-                };
-
-                let origin_rect =
-                    origin_rect.with_size(Size::new(origin_rect.width(), image_height));
-
-                (origin_rect, transform, count, gap)
-            } else {
-                (origin_rect, transform, 1, 0.0)
-            };
-
-            for hc in 0..height_count {
-                for wc in 0..width_count {
-                    let width_gap = if matches!(repeat_x, Space) {
-                        origin_rect.x0 + wc as f64 * width_gap
-                    } else {
-                        0.0
-                    };
-
-                    let height_gap = if matches!(repeat_y, Space) {
-                        origin_rect.y0 + hc as f64 * height_gap
-                    } else {
-                        0.0
-                    };
-
-                    let transform = transform.then_translate(Vec2 {
-                        x: width_gap,
-                        y: height_gap,
-                    });
-
-                    scene.fill(
-                        peniko::Fill::NonZero,
-                        transform,
-                        to_peniko_image(image_data, quality).as_ref(),
-                        None,
-                        &Rect::new(0.0, 0.0, origin_rect.width(), origin_rect.height()),
-                    );
-                }
-            }
-        } else {
-            scene.fill(
-                peniko::Fill::NonZero,
-                transform,
-                to_peniko_image(image_data, quality).as_ref(),
-                None,
-                &Rect::new(0.0, 0.0, origin_rect.width(), origin_rect.height()),
-            );
         }
     }
 
@@ -506,11 +409,8 @@ impl ElementCx<'_, '_> {
         gradient: &StyloGradient,
         layer: &ImageLayerStyles,
     ) {
-        use BackgroundRepeatKeyword::*;
-
-        let background_clip = layer.clip;
-        let background_origin = layer.origin;
-        let origin_rect = self.box_rect(background_origin);
+        let origin_rect = self.box_rect(layer.origin);
+        let clip_rect = self.box_rect(layer.clip);
 
         let (bg_pos, bg_size) = compute_layer_position_and_size(
             layer,
@@ -519,213 +419,58 @@ impl ElementCx<'_, '_> {
             BackgroundSizeComputeMode::Auto,
         );
 
-        let bg_pos_x = bg_pos.x * self.scale;
-        let bg_pos_y = bg_pos.y * self.scale;
+        let bg_pos = (bg_pos.to_vec2() * self.scale).to_point();
         let bg_size = bg_size * self.scale;
 
         let BackgroundRepeat(repeat_x, repeat_y) = layer.repeat;
 
-        let transform = self.transform;
-        let (origin_rect, transform, width_count, width_gap) = match repeat_x {
-            Repeat | Round => {
-                let (origin_rect, extend_width, count) = if (background_clip, background_origin)
-                    == (BoxModelBox::BorderBox, BoxModelBox::PaddingBox)
-                {
-                    let extend_width = extend(self.frame.border_width.x0 + bg_pos_x, bg_size.width);
-
-                    let width = self.frame.border_box.width() + extend_width;
-                    let count = (width / bg_size.width).ceil() as u32;
-
-                    let origin_rect = Rect::from_origin_size(
-                        Point::new(self.frame.border_box.x0, origin_rect.y0),
-                        Size::new(bg_size.width, origin_rect.height()),
-                    );
-
-                    (origin_rect, extend_width, count)
-                } else if (background_clip, background_origin)
-                    == (BoxModelBox::BorderBox, BoxModelBox::ContentBox)
-                {
-                    let extend_width = extend(
-                        self.frame.border_width.x0 + self.frame.padding_width.x0 + bg_pos_x,
-                        bg_size.width,
-                    );
-                    let width = self.frame.border_box.width() + extend_width;
-                    let count = (width / bg_size.width).ceil() as u32;
-
-                    let origin_rect = Rect::from_origin_size(
-                        Point::new(self.frame.border_box.x0, origin_rect.y0),
-                        Size::new(bg_size.width, origin_rect.height()),
-                    );
-
-                    (origin_rect, extend_width, count)
-                } else if (background_clip, background_origin)
-                    == (BoxModelBox::PaddingBox, BoxModelBox::ContentBox)
-                {
-                    let extend_width =
-                        extend(self.frame.padding_width.x0 + bg_pos_x, bg_size.width);
-                    let width = self.frame.padding_box.width() + extend_width;
-                    let count = (width / bg_size.width).ceil() as u32;
-
-                    let origin_rect = Rect::from_origin_size(
-                        Point::new(self.frame.padding_box.x0, origin_rect.y0),
-                        Size::new(bg_size.width, origin_rect.height()),
-                    );
-
-                    (origin_rect, extend_width, count)
-                } else {
-                    let extend_width = extend(bg_pos_x, bg_size.width);
-                    let width = origin_rect.width() + extend_width;
-                    let count = (width / bg_size.width).ceil() as u32;
-                    let origin_rect =
-                        origin_rect.with_size(Size::new(bg_size.width, origin_rect.height()));
-
-                    (origin_rect, extend_width, count)
-                };
-
-                let transform = transform.then_translate(Vec2 {
-                    x: origin_rect.x0 - extend_width,
-                    y: 0.0,
-                });
-
-                (origin_rect, transform, count, bg_size.width)
-            }
-            Space => {
-                let (count, gap) = compute_space_count_and_gap(origin_rect.width(), bg_size.width);
-
-                let transform = transform.then_translate(Vec2 {
-                    x: origin_rect.x0 + if count == 1 { bg_pos_x } else { 0.0 },
-                    y: 0.0,
-                });
-
-                let origin_rect =
-                    origin_rect.with_size(Size::new(bg_size.width, origin_rect.height()));
-
-                (origin_rect, transform, count, gap)
-            }
-            NoRepeat => {
-                let transform = transform.then_translate(Vec2 {
-                    x: origin_rect.x0 + bg_pos_x,
-                    y: 0.0,
-                });
-
-                let origin_rect =
-                    origin_rect.with_size(Size::new(bg_size.width, origin_rect.height()));
-
-                (origin_rect, transform, 1, 0.0)
-            }
-        };
-        let (origin_rect, transform, height_count, height_gap) = match repeat_y {
-            Repeat | Round => {
-                let (origin_rect, extend_height, count) = if (background_clip, background_origin)
-                    == (BoxModelBox::BorderBox, BoxModelBox::PaddingBox)
-                {
-                    let extend_height =
-                        extend(self.frame.border_width.y0 + bg_pos_y, bg_size.height);
-                    let height = self.frame.border_box.height() + extend_height;
-                    let count = (height / bg_size.height).ceil() as u32;
-
-                    let origin_rect = Rect::from_origin_size(
-                        Point::new(origin_rect.x0, self.frame.border_box.y0),
-                        Size::new(origin_rect.width(), bg_size.height),
-                    );
-
-                    (origin_rect, extend_height, count)
-                } else if (background_clip, background_origin)
-                    == (BoxModelBox::BorderBox, BoxModelBox::ContentBox)
-                {
-                    let extend_height = extend(
-                        self.frame.border_width.y0 + self.frame.padding_width.y0 + bg_pos_x,
-                        bg_size.height,
-                    );
-                    let height = self.frame.border_box.height() + extend_height;
-                    let count = (height / bg_size.height).ceil() as u32;
-
-                    let origin_rect = Rect::from_origin_size(
-                        Point::new(origin_rect.x0, self.frame.border_box.y0),
-                        Size::new(origin_rect.width(), bg_size.height),
-                    );
-
-                    (origin_rect, extend_height, count)
-                } else if (background_clip, background_origin)
-                    == (BoxModelBox::PaddingBox, BoxModelBox::ContentBox)
-                {
-                    let extend_height =
-                        extend(self.frame.padding_width.y0 + bg_pos_x, bg_size.height);
-                    let height = self.frame.padding_box.height() + extend_height;
-                    let count = (height / bg_size.height).ceil() as u32;
-
-                    let origin_rect = Rect::from_origin_size(
-                        Point::new(origin_rect.x0, self.frame.padding_box.y0),
-                        Size::new(origin_rect.width(), bg_size.height),
-                    );
-
-                    (origin_rect, extend_height, count)
-                } else {
-                    let extend_height = extend(bg_pos_x, bg_size.height);
-                    let height = origin_rect.height() + extend_height;
-                    let count = (height / bg_size.height).ceil() as u32;
-                    let origin_rect =
-                        origin_rect.with_size(Size::new(origin_rect.width(), bg_size.height));
-
-                    (origin_rect, extend_height, count)
-                };
-
-                let transform = transform.then_translate(Vec2 {
-                    x: 0.0,
-                    y: origin_rect.y0 - extend_height,
-                });
-
-                (origin_rect, transform, count, bg_size.height)
-            }
-            Space => {
-                let (count, gap) =
-                    compute_space_count_and_gap(origin_rect.height(), bg_size.height);
-
-                let transform = transform.then_translate(Vec2 {
-                    x: 0.0,
-                    y: origin_rect.y0 + if count == 1 { bg_pos_y } else { 0.0 },
-                });
-
-                let origin_rect =
-                    origin_rect.with_size(Size::new(origin_rect.width(), bg_size.height));
-
-                (origin_rect, transform, count, gap)
-            }
-            NoRepeat => {
-                let transform = transform.then_translate(Vec2 {
-                    x: 0.0,
-                    y: origin_rect.y0 + bg_pos_y,
-                });
-
-                let origin_rect =
-                    origin_rect.with_size(Size::new(origin_rect.width(), bg_size.height));
-                (origin_rect, transform, 1, 0.0)
-            }
-        };
+        let x = gradient_axis_tiling(
+            *repeat_x,
+            origin_rect.x0,
+            origin_rect.width(),
+            clip_rect.x0,
+            clip_rect.width(),
+            bg_pos.x,
+            bg_size.width,
+        );
+        let y = gradient_axis_tiling(
+            *repeat_y,
+            origin_rect.y0,
+            origin_rect.height(),
+            clip_rect.y0,
+            clip_rect.height(),
+            bg_pos.y,
+            bg_size.height,
+        );
 
         // FIXME: https://wpt.live/css/css-backgrounds/background-size/background-size-near-zero-gradient.html
-        if width_count * height_count > 500 {
+        if x.count as u64 * y.count as u64 > 500 {
             return;
         }
 
-        let origin_rect = Rect::new(0.0, 0.0, origin_rect.width(), origin_rect.height());
+        let tile_rect = Rect::new(0.0, 0.0, x.rect_len, y.rect_len);
         let bounding_box = self.frame.border_box.bounding_box();
         let current_color = self.style.clone_color();
 
         let (gradient, gradient_transform) = to_peniko_gradient(
             gradient,
-            origin_rect,
+            tile_rect,
             bounding_box,
             self.scale,
             &current_color,
         );
         let brush = anyrender::Paint::Gradient(&gradient);
 
-        for hc in 0..height_count {
-            for wc in 0..width_count {
+        let transform = self.transform.then_translate(Vec2 {
+            x: x.translate,
+            y: y.translate,
+        });
+
+        for hc in 0..y.count {
+            for wc in 0..x.count {
                 let transform = transform.then_translate(Vec2 {
-                    x: wc as f64 * width_gap,
-                    y: hc as f64 * height_gap,
+                    x: wc as f64 * x.stride,
+                    y: hc as f64 * y.stride,
                 });
 
                 scene.fill(
@@ -733,7 +478,7 @@ impl ElementCx<'_, '_> {
                     transform,
                     brush.clone(),
                     gradient_transform,
-                    &origin_rect,
+                    &tile_rect,
                 );
             }
         }
@@ -865,16 +610,129 @@ enum BackgroundSizeComputeMode {
     Size(f32, f32),
 }
 
-fn compute_space_count_and_gap(bg_size: f64, size: f64) -> (u32, f64) {
+/// The placement and tiling of a background layer along one axis: a
+/// translation applied to the layer as a whole, the length of each filled
+/// rect, and the number of explicit tiles with the stride between them.
+struct AxisTiling {
+    /// Translation (in device pixels) positioning the first tile
+    translate: f64,
+    /// Length of each filled rect, in the coordinate space of the fill's transform
+    rect_len: f64,
+    /// Number of explicitly drawn tiles
+    count: u32,
+    /// Stride (in device pixels) between the starts of consecutive tiles
+    stride: f64,
+}
+
+/// Per-axis placement and tiling for a raster image layer. `Repeat`/`Round`
+/// produce a single fill covering the whole positioning area (relying on the
+/// image brush repeating), while `Space` produces `count` explicit tiles
+/// spaced `stride` apart.
+///
+/// The fill rect is in image pixel coordinates (the drawing transform is
+/// pre-scaled by `ratio`), while translations are in device pixels.
+fn raster_axis_tiling(
+    repeat: BackgroundRepeatKeyword,
+    origin_start: f64,
+    origin_len: f64,
+    bg_pos: f64,
+    tile_len: f64,
+    image_len: f64,
+    ratio: f64,
+) -> AxisTiling {
+    use BackgroundRepeatKeyword::*;
+
+    match repeat {
+        Repeat | Round => {
+            let extend_len = extend(bg_pos, tile_len);
+            AxisTiling {
+                translate: origin_start - extend_len,
+                rect_len: (origin_len + extend_len) / ratio,
+                count: 1,
+                stride: 0.0,
+            }
+        }
+        Space => {
+            let (count, stride) = compute_space_count_and_stride(origin_len, tile_len);
+            AxisTiling {
+                translate: origin_start + if count == 1 { bg_pos } else { 0.0 },
+                rect_len: image_len,
+                count,
+                stride,
+            }
+        }
+        NoRepeat => AxisTiling {
+            translate: origin_start + bg_pos,
+            rect_len: image_len,
+            count: 1,
+            stride: 0.0,
+        },
+    }
+}
+
+/// Per-axis placement and tiling for a gradient layer. Unlike raster images,
+/// gradients cannot rely on brush repetition, so `Repeat`/`Round` also produce
+/// explicit tiles. When the clip box extends beyond the origin box, tiling
+/// starts from the clip box edge so the pattern covers the whole clipped area.
+fn gradient_axis_tiling(
+    repeat: BackgroundRepeatKeyword,
+    origin_start: f64,
+    origin_len: f64,
+    clip_start: f64,
+    clip_len: f64,
+    bg_pos: f64,
+    tile_len: f64,
+) -> AxisTiling {
+    use BackgroundRepeatKeyword::*;
+
+    match repeat {
+        Repeat | Round => {
+            // The clip and origin boxes are nested, so the clip box extends
+            // beyond the origin box iff it does so at either end
+            let clip_is_outer =
+                clip_start < origin_start || clip_start + clip_len > origin_start + origin_len;
+            let (area_start, area_len) = if clip_is_outer {
+                (clip_start, clip_len)
+            } else {
+                (origin_start, origin_len)
+            };
+            let extend_len = extend((origin_start - area_start) + bg_pos, tile_len);
+            let count = ((area_len + extend_len) / tile_len).ceil() as u32;
+            AxisTiling {
+                translate: area_start - extend_len,
+                rect_len: tile_len,
+                count,
+                stride: tile_len,
+            }
+        }
+        Space => {
+            let (count, stride) = compute_space_count_and_stride(origin_len, tile_len);
+            AxisTiling {
+                translate: origin_start + if count == 1 { bg_pos } else { 0.0 },
+                rect_len: tile_len,
+                count,
+                stride,
+            }
+        }
+        NoRepeat => AxisTiling {
+            translate: origin_start + bg_pos,
+            rect_len: tile_len,
+            count: 1,
+            stride: 0.0,
+        },
+    }
+}
+
+fn compute_space_count_and_stride(bg_size: f64, size: f64) -> (u32, f64) {
     let modulo = bg_size % size;
     let count = (((bg_size - modulo) / size) as u32).max(1);
-    let gap = if count > 1 {
+    let stride = if count > 1 {
         modulo / (count - 1) as f64
     } else {
         0.0
     } + size;
 
-    (count, gap)
+    (count, stride)
 }
 
 #[inline]
