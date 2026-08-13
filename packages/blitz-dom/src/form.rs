@@ -43,8 +43,7 @@ impl BaseDocument {
         // First try explicit form attribute
         let final_owner_id = element
             .attr(local_name!("form"))
-            .and_then(|owner| self.nodes_to_id.get(owner))
-            .copied()
+            .and_then(|owner| self.get_element_by_id(owner))
             .filter(|owner_id| {
                 self.get_node(*owner_id)
                     .is_some_and(|node| node.data.is_element_with_tag_name(&local_name!("form")))

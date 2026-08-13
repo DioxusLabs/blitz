@@ -5,7 +5,7 @@
 </picture>
 </p>
 
-**A [radically modular](https://github.com/DioxusLabs/blitz?tab=readme-ov-file#architecture) HTML/CSS rendering engine**
+**A modular HTML/CSS rendering engine**
 
 [![Build Status](https://github.com/dioxuslabs/blitz/actions/workflows/ci.yml/badge.svg)](https://github.com/dioxuslabs/blitz/actions)
 [![Crates.io](https://img.shields.io/crates/v/blitz.svg)](https://crates.io/crates/blitz)
@@ -17,36 +17,25 @@ Talk to us in: the [#native](https://discord.gg/AnNPqT95pu) channel in the [Diox
 
 ## Status
 
-Blitz is currently in a **pre-alpha** state. It already has a very capable renderer, but there are also still many bugs and missing features. We are actively working on bringing it into a usable state but we would not yet recommend building apps with it.
+Blitz is currently in a **beta** state. It can already render many popular no-JS websites (Wikipedia, (Old) Reddit, etc), and is usable for making apps if you are an early adopter and willing to live on the bleeding edge. But there are also still many bugs and missing features. We are actively working on bringing it up to production quality.
 
-Check out the [roadmap issue](https://github.com/DioxusLabs/blitz/issues/119) for more details. 
+Check out:
+- The [downloads page](https://blitz.is/downloads) for runnable builds of the Browser UI (Windows / macOS / Linux / Android)
+- The [status page](https://blitz.is/status/css) for current status
+- The [roadmap issue](https://github.com/DioxusLabs/blitz/issues/119) for planned work
 
-## Screenshot
 
 ![screenshot](https://raw.githubusercontent.com/DioxusLabs/screenshots/main/blitz/counter-example.png)
 
-> Note: This repo contains a new version of Blitz (v0.2+) which uses Stylo. The source code for the old version (v0.1) is still available on the [legacy](https://github.com/DioxusLabs/blitz/tree/legacy) branch but is not under active development.
 
 ## Trying it out
 
 1. Clone this repo
-2. Run our "browser" package:
-    ```sh
-    cargo run --release --package browser
-    ```
-3. Or run an example:
-    - small TODO app
-    ```sh
-    cargo run --release --package todomvc
-    ```
-    - markdown renderer
-    ```sh
-    cargo run --release --package readme ./README.md
-    ```
-    - integration with raw WGPU rendering
-    ```sh
-    cargo run --release --package wgpu_texture
-    ```
+2. Run one of our examples:
+    - The Browser UI: `cargo run -rp browser`
+    - The Markdown viewer: `cargo run -rp rdme ./README.md`
+    - TodoMVC app: `cargo run -rp todomvc`
+    - WGPU texture integration example: `cargo run -rp wgpu_texture`
 
 Other examples are available in the [examples/](./examples/) folder.
 

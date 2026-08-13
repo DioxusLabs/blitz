@@ -29,6 +29,7 @@ use linebender_resource_handle::Blob;
 use markup5ever::local_name;
 use parley::{FontContext, PlainEditorDriver};
 use selectors::{Element, matching::QuirksMode};
+use smallvec::SmallVec;
 use std::any::Any;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, Bound, HashMap, HashSet};
@@ -179,6 +180,12 @@ impl Document for Rc<RefCell<BaseDocument>> {
 
 pub enum DocumentEvent {
     ResourceLoad(ResourceLoadResponse),
+    /// A navigation originating from within an iframe's sub-document
+    /// (e.g. a link click), to be applied to the iframe identified by `node_id`.
+    NavigateIframe {
+        node_id: NodeId,
+        url: Url,
+    },
 }
 
 pub struct BaseDocument {
@@ -200,6 +207,9 @@ pub struct BaseDocument {
     pub(crate) style_threading: StyleThreading,
     /// Whether incremental layout is enabled for this document.
     pub(crate) incremental_layout: bool,
+    /// How deeply this document is nested within other documents
+    /// (0 for a root document). Used to limit `<iframe>` nesting depth.
+    pub(crate) subdocument_depth: usize,
 
     // Events
     pub(crate) tx: Sender<DocumentEvent>,
@@ -278,8 +288,10 @@ pub struct BaseDocument {
     /// Whether there are subdocuments that are animating (so we should re-render every frame)
     pub(crate) subdoc_is_animating: bool,
 
-    /// Map of node ID's for fast lookups
-    pub(crate) nodes_to_id: HashMap<String, NodeId>,
+    /// Map of id attribute values to node IDs for fast lookups.
+    /// May contain multiple nodes for the same id: `get_element_by_id`
+    /// returns the first in tree order.
+    pub(crate) nodes_to_id: HashMap<String, SmallVec<[NodeId; 1]>>,
     /// Map of `<style>` and `<link>` node IDs to their associated stylesheet
     pub(crate) nodes_to_stylesheet: BTreeMap<NodeId, DocumentStyleSheet>,
     /// Stylesheets added by the useragent
@@ -289,6 +301,9 @@ pub struct BaseDocument {
     pub(crate) controls_to_form: HashMap<NodeId, NodeId>,
     /// Nodes that contain sub documents
     pub(crate) sub_document_nodes: HashSet<NodeId>,
+    /// Load state (abort controller and in-flight request id) for each
+    /// `<iframe>` element whose sub-document is loaded automatically
+    pub(crate) iframe_loads: HashMap<NodeId, crate::iframe::IframeLoad>,
     /// Set of changed nodes for updating the accessibility tree
     pub(crate) changed_nodes: HashSet<NodeId>,
     /// Set of changed nodes for updating the accessibility tree
@@ -443,6 +458,7 @@ impl BaseDocument {
             media_type,
             style_threading: config.style_threading,
             incremental_layout: config.incremental.unwrap_or(true),
+            subdocument_depth: config.subdocument_depth,
             devtool_settings: DevtoolSettings::default(),
             viewport_scroll: crate::Point::ZERO,
             url: base_url,
@@ -464,6 +480,7 @@ impl BaseDocument {
             subdoc_is_animating: false,
             has_canvas: false,
             sub_document_nodes: HashSet::new(),
+            iframe_loads: HashMap::new(),
 
             #[cfg(feature = "custom-widget")]
             custom_widget_nodes: HashSet::new(),
@@ -741,6 +758,9 @@ impl BaseDocument {
             .unwrap()
             .remove_sub_document();
         self.sub_document_nodes.remove(&node_id);
+        if let Some(load) = self.iframe_loads.remove(&node_id) {
+            load.abort_controller.abort();
+        }
     }
 
     #[cfg(feature = "custom-widget")]
@@ -1189,6 +1209,7 @@ impl BaseDocument {
     pub fn handle_message(&mut self, msg: DocumentEvent) {
         match msg {
             DocumentEvent::ResourceLoad(resource) => self.load_resource(resource),
+            DocumentEvent::NavigateIframe { node_id, url } => self.navigate_iframe(node_id, url),
         }
     }
 
@@ -1249,6 +1270,12 @@ impl BaseDocument {
                 };
 
                 self.apply_loaded_image(url, image);
+            }
+            Resource::DocumentSrc(html) => {
+                let Some(node_id) = res.node_id else {
+                    return;
+                };
+                self.apply_iframe_html(node_id, res.request_id, res.resolved_url, &html);
             }
             Resource::Font(bytes, overrides) => {
                 let font = Blob::new(Arc::new(bytes));
@@ -2132,10 +2159,18 @@ impl BaseDocument {
     pub fn scroll_viewport_by_has_changed(&mut self, x: f64, y: f64) -> bool {
         // The viewport scrolls the root element's scrollable overflow, which includes both
         // the root element itself and any content which overflows it (e.g. when the root
-        // element has a fixed height but its content is taller).
-        let root_layout = self.root_element().final_layout();
-        let content_width = root_layout.size.width.max(root_layout.content_size.width) as f64;
-        let content_height = root_layout.size.height.max(root_layout.content_size.height) as f64;
+        // element has a fixed height but its content is taller). A document without a root
+        // element has no scrollable content, so its content size is zero.
+        let (content_width, content_height) = match self.try_root_element() {
+            Some(root) => {
+                let root_layout = root.final_layout();
+                (
+                    root_layout.size.width.max(root_layout.content_size.width) as f64,
+                    root_layout.size.height.max(root_layout.content_size.height) as f64,
+                )
+            }
+            None => (0.0, 0.0),
+        };
         let new_scroll = (self.viewport_scroll.x - x, self.viewport_scroll.y - y);
         let window_width = self.viewport.window_size.0 as f64 / self.viewport.scale() as f64;
         let window_height = self.viewport.window_size.1 as f64 / self.viewport.scale() as f64;

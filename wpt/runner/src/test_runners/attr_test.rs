@@ -73,11 +73,6 @@ pub fn check_node_layout(node: &Node) -> Vec<String> {
         return Vec::new();
     }
     let layout = node.final_layout();
-    let parent_border = if let Some(parent_id) = node.parent {
-        node.with(parent_id).final_layout().border
-    } else {
-        taffy::Rect::ZERO
-    };
 
     let client_width =
         layout.size.width - layout.border.left - layout.border.right - layout.scrollbar_size.width;
@@ -115,14 +110,8 @@ pub fn check_node_layout(node: &Node) -> Vec<String> {
                             check_attr(name, value, layout.margin.right)
                         }
 
-                        // TODO: Implement proper offset-x/offset-y computation
-                        // (don't assume that offset is relative to immediate parent)
-                        "data-offset-x" => {
-                            check_attr(name, value, layout.location.x - parent_border.left)
-                        }
-                        "data-offset-y" => {
-                            check_attr(name, value, layout.location.y - parent_border.top)
-                        }
+                        "data-offset-x" => check_attr(name, value, node.offset_top_left().x),
+                        "data-offset-y" => check_attr(name, value, node.offset_top_left().y),
 
                         "data-expected-client-width" => check_attr(name, value, client_width),
                         "data-expected-client-height" => check_attr(name, value, client_height),
@@ -170,14 +159,9 @@ fn total_offset(node: &Node) -> (f32, f32) {
     let mut current = node;
     loop {
         let layout = current.final_layout();
-        let parent_border = if let Some(parent_id) = current.parent {
-            current.with(parent_id).final_layout().border
-        } else {
-            taffy::Rect::ZERO
-        };
-        x += layout.location.x - parent_border.left;
-        y += layout.location.y - parent_border.top;
-        match current.parent {
+        x += layout.location.x;
+        y += layout.location.y;
+        match current.layout_parent.get() {
             Some(parent_id) => current = current.with(parent_id),
             None => break,
         }

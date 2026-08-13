@@ -279,6 +279,9 @@ impl BaseDocument {
             available_space,
             sizing_mode: SizingMode::InherentSize,
             parent_size: available_space.into_options(),
+            // Atomic inlines (e.g. inline-block) establish independent formatting
+            // contexts: their margins never collapse with their children's margins.
+            vertical_margins_are_collapsible: taffy::Line::FALSE,
             ..inputs
         };
         #[cfg(feature = "floats")]
@@ -716,11 +719,8 @@ impl BaseDocument {
 
         #[cfg(feature = "floats")]
         {
-            let contains_floats = is_bfc_root;
-            if contains_floats {
-                height = height.max(
-                    (block_ctx.floated_content_height_contribution() + container_pb.top) * scale,
-                )
+            if is_bfc_root {
+                height = height.max(block_ctx.floated_content_height_contribution() * scale)
             };
         }
 
@@ -748,6 +748,8 @@ impl BaseDocument {
             ),
         }
         .maybe_max(container_pb.sum_axes().map(Some));
+
+        let container_direction = self.nodes[node_id].style().direction;
 
         // Store sizes and positions of inline boxes
         for line in inline_layout.layout.lines() {
@@ -786,13 +788,21 @@ impl BaseDocument {
                                 s.get_box().original_display.outside() == DisplayOutside::Inline
                             })
                             .unwrap_or(true);
+                        // Inline-level boxes are placed at the top of the line box they would
+                        // have occupied (`ibox.y` is the baseline as out-of-flow boxes are
+                        // zero-sized), and block-level boxes below it.
+                        let line_metrics = line.metrics();
                         let static_position = taffy::Point {
                             x: if is_inline_level {
-                                ibox.x
+                                (ibox.x / scale) + container_pb.left
                             } else {
                                 container_pb.left
                             },
-                            y: ibox.y,
+                            y: if is_inline_level {
+                                (line_metrics.block_min_coord / scale) + container_pb.top
+                            } else {
+                                (line_metrics.block_max_coord / scale) + container_pb.top
+                            },
                         };
 
                         layout_abspos_child(
@@ -816,14 +826,49 @@ impl BaseDocument {
                             .compute_child_layout(taffy::NodeId::from(ibox.id), child_inputs)
                             .size;
                         let node = &mut self.nodes[NodeId::from_u64(ibox.id)];
+
+                        // Resolve relative inset offsets against the containing block
+                        // (the content box of the inline container).
+                        let style = node.style();
+                        let container_content_size = final_size - content_box_inset.sum_axes();
+                        let inset = taffy::Rect {
+                            left: style
+                                .inset
+                                .left
+                                .maybe_resolve(container_content_size.width, resolve_calc_value),
+                            right: style
+                                .inset
+                                .right
+                                .maybe_resolve(container_content_size.width, resolve_calc_value),
+                            top: style
+                                .inset
+                                .top
+                                .maybe_resolve(container_content_size.height, resolve_calc_value),
+                            bottom: style
+                                .inset
+                                .bottom
+                                .maybe_resolve(container_content_size.height, resolve_calc_value),
+                        };
+                        let inset_offset = taffy::Point {
+                            x: if container_direction == Direction::Rtl {
+                                inset.right.map(|x| -x).or(inset.left).unwrap_or(0.0)
+                            } else {
+                                inset.left.or(inset.right.map(|x| -x)).unwrap_or(0.0)
+                            },
+                            y: inset.top.or(inset.bottom.map(|x| -x)).unwrap_or(0.0),
+                        };
+
                         let layout = node.unrounded_layout_mut();
                         layout.size = size;
-                        layout.location.x = (ibox.x / scale) + margin.left + container_pb.left;
+                        layout.location.x =
+                            (ibox.x / scale) + margin.left + container_pb.left + inset_offset.x;
                         // A negative `margin-top` shrinks the space the box reserves in the
                         // line but does not move the box itself, which stays anchored to the
                         // bottom of the reserved space.
-                        layout.location.y =
-                            (ibox.y / scale) + margin.top.max(0.0) + container_pb.top;
+                        layout.location.y = (ibox.y / scale)
+                            + margin.top.max(0.0)
+                            + container_pb.top
+                            + inset_offset.y;
                         layout.padding = padding; //.map(|p| p / scale);
                         layout.border = border; //.map(|p| p / scale);
                     }
@@ -982,6 +1027,10 @@ fn layout_abspos_child(
             node_id,
             taffy::LayoutInput {
                 known_dimensions,
+                known_dimensions_are_definite: taffy::Size {
+                    width: true,
+                    height: true,
+                },
                 parent_size: area_size.map(Some),
                 available_space: Size {
                     width: AvailableSpace::Definite(
@@ -1007,6 +1056,10 @@ fn layout_abspos_child(
         node_id,
         taffy::LayoutInput {
             known_dimensions: final_size.map(Some),
+            known_dimensions_are_definite: taffy::Size {
+                width: true,
+                height: true,
+            },
             parent_size: area_size.map(Some),
             available_space: Size {
                 width: AvailableSpace::Definite(

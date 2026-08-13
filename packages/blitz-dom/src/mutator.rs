@@ -33,6 +33,7 @@ pub enum AppendTextErr {
 /// function for borrow-checker reasons.
 enum SpecialOp {
     LoadImage(NodeId),
+    LoadIframe(NodeId),
     LoadStylesheet(NodeId),
     UnloadStylesheet(NodeId),
     LoadCustomPaintSource(NodeId),
@@ -261,6 +262,18 @@ impl DocumentMutator<'_> {
             self.doc.nodes[node_id].mark_ancestors_dirty();
         }
 
+        if name.local == local_name!("id") && node_is_in_document {
+            if let Some(old_id) = self.doc.nodes[node_id]
+                .element_data()
+                .map(|element| element.id.clone())
+            {
+                if let Some(old_id) = old_id {
+                    self.doc.remove_from_id_map(&old_id, node_id);
+                }
+                self.doc.add_to_id_map(value, node_id);
+            }
+        }
+
         let node = &mut self.doc.nodes[node_id];
 
         let NodeData::Element(ref mut element) = node.data else {
@@ -334,6 +347,10 @@ impl DocumentMutator<'_> {
             self.load_custom_paint_src(node_id);
         } else if (tag, attr) == tag_and_attr!("link", "href") {
             self.load_linked_stylesheet(node_id);
+        } else if (tag, attr) == tag_and_attr!("iframe", "src")
+            || (tag, attr) == tag_and_attr!("iframe", "srcdoc")
+        {
+            self.load_iframe(node_id);
         }
     }
 
@@ -352,6 +369,15 @@ impl DocumentMutator<'_> {
             // Mark ancestors dirty so the style traversal visits this subtree.
             // Without this, the traversal may skip nodes with pending RestyleHint/damage.
             node.mark_ancestors_dirty();
+        }
+
+        if name.local == local_name!("id") && node_is_in_document {
+            if let Some(old_id) = self.doc.nodes[node_id]
+                .element_data()
+                .and_then(|element| element.id.clone())
+            {
+                self.doc.remove_from_id_map(&old_id, node_id);
+            }
         }
 
         let node = &mut self.doc.nodes[node_id];
@@ -415,6 +441,9 @@ impl DocumentMutator<'_> {
             self.recompute_is_animating = true;
         } else if (tag, attr) == tag_and_attr!("link", "href") {
             self.unload_stylesheet(node_id);
+        } else if (tag, attr) == tag_and_attr!("iframe", "srcdoc") && node_is_in_document {
+            // Fall back to loading from the `src` attribute (if any)
+            self.load_iframe(node_id);
         }
     }
 
@@ -718,6 +747,7 @@ impl<'doc> DocumentMutator<'doc> {
         for op in ops.drain(0..) {
             match op {
                 SpecialOp::LoadImage(node_id) => self.load_image(node_id),
+                SpecialOp::LoadIframe(node_id) => self.load_iframe(node_id),
                 SpecialOp::LoadStylesheet(node_id) => self.load_linked_stylesheet(node_id),
                 SpecialOp::UnloadStylesheet(node_id) => self.unload_stylesheet(node_id),
                 SpecialOp::LoadCustomPaintSource(node_id) => self.load_custom_paint_src(node_id),
@@ -739,10 +769,11 @@ impl<'doc> DocumentMutator<'doc> {
             node.insert_damage(ALL_DAMAGE);
 
             // If the node has an "id" attribute, store it in the ID map.
-            if let Some(id_attr) = node.attr(local_name!("id")) {
-                doc.nodes_to_id.insert(id_attr.to_string(), node_id);
+            if let Some(id_attr) = node.attr(local_name!("id")).map(ToString::to_string) {
+                doc.add_to_id_map(&id_attr, node_id);
             }
 
+            let node = &mut doc.nodes[node_id];
             let NodeData::Element(ref mut element) = node.data else {
                 return;
             };
@@ -753,6 +784,7 @@ impl<'doc> DocumentMutator<'doc> {
                 "title" => self.title_node = Some(node_id),
                 "link" => self.eager_op_queue.push(SpecialOp::LoadStylesheet(node_id)),
                 "img" => self.eager_op_queue.push(SpecialOp::LoadImage(node_id)),
+                "iframe" => self.eager_op_queue.push(SpecialOp::LoadIframe(node_id)),
                 "canvas" => self
                     .eager_op_queue
                     .push(SpecialOp::LoadCustomPaintSource(node_id)),
@@ -804,10 +836,11 @@ impl<'doc> DocumentMutator<'doc> {
             }
 
             // If the node has an "id" attribute remove it from the ID map.
-            if let Some(id_attr) = node.attr(local_name!("id")) {
-                doc.nodes_to_id.remove(id_attr);
+            if let Some(id_attr) = node.attr(local_name!("id")).map(ToString::to_string) {
+                doc.remove_from_id_map(&id_attr, node_id);
             }
 
+            let node = &mut doc.nodes[node_id];
             let NodeData::Element(ref mut element) = node.data else {
                 return;
             };
@@ -900,7 +933,7 @@ impl<'doc> DocumentMutator<'doc> {
             },
         );
 
-        if is_in_head {
+        if is_in_head && !self.doc.net_provider.is_noop() {
             self.doc
                 .pending_critical_resources
                 .insert(handler.request_id());
@@ -978,6 +1011,42 @@ impl<'doc> DocumentMutator<'doc> {
                 );
             }
         }
+    }
+
+    fn load_iframe(&mut self, target_id: NodeId) {
+        if self.doc.subdocument_depth >= crate::iframe::MAX_SUBDOCUMENT_DEPTH {
+            #[cfg(feature = "tracing")]
+            tracing::warn!(
+                "Not loading iframe: max sub-document nesting depth ({}) reached",
+                crate::iframe::MAX_SUBDOCUMENT_DEPTH
+            );
+            return;
+        }
+
+        let node = &self.doc.nodes[target_id];
+        let Some(element) = node.element_data() else {
+            return;
+        };
+
+        // `srcdoc` takes precedence over `src`
+        if let Some(srcdoc) = element.attr(local_name!("srcdoc")) {
+            let srcdoc = srcdoc.to_string();
+            self.doc.load_iframe_srcdoc(target_id, &srcdoc);
+            return;
+        }
+
+        let Some(raw_src) = element.attr(local_name!("src")) else {
+            return;
+        };
+        if raw_src.is_empty() {
+            return;
+        }
+        let Some(url) = self.doc.url.resolve_relative(raw_src) else {
+            #[cfg(feature = "tracing")]
+            tracing::warn!("Not loading iframe: could not resolve url {raw_src}");
+            return;
+        };
+        self.doc.start_iframe_load(target_id, url);
     }
 
     fn load_custom_paint_src(&mut self, target_id: NodeId) {
@@ -1248,6 +1317,64 @@ mod test {
             !node.element_state().contains(ElementState::ENABLED),
             "form node is enabled"
         );
+    }
+
+    #[test]
+    fn mutator_id_attribute_updates_id_map() {
+        let mut document = BaseDocument::new(DocumentConfig::default());
+        let root_id = document.root_node().id;
+
+        let node_id = {
+            let mut mutator = document.mutate();
+            let node_id = mutator.create_element(
+                qual_name!("div"),
+                vec![Attribute {
+                    name: qual_name!("id"),
+                    value: "old".into(),
+                }],
+            );
+            mutator.append_children(root_id, &[node_id]);
+            node_id
+        };
+        assert_eq!(document.get_element_by_id("old"), Some(node_id));
+
+        {
+            let mut mutator = document.mutate();
+            mutator.set_attribute(node_id, qual_name!("id"), "new");
+        }
+        assert_eq!(document.get_element_by_id("new"), Some(node_id));
+        assert_eq!(document.get_element_by_id("old"), None);
+
+        {
+            let mut mutator = document.mutate();
+            mutator.clear_attribute(node_id, qual_name!("id"));
+        }
+        assert_eq!(document.get_element_by_id("new"), None);
+    }
+
+    #[test]
+    fn get_element_by_id_duplicate_ids_first_in_tree_order_wins() {
+        let mut document = BaseDocument::new(DocumentConfig::default());
+        let root_id = document.root_node().id;
+
+        let (first_id, second_id) = {
+            let mut mutator = document.mutate();
+            let first_id = mutator.create_element(qual_name!("div"), vec![]);
+            let second_id = mutator.create_element(qual_name!("div"), vec![]);
+            mutator.append_children(root_id, &[first_id, second_id]);
+            // Assign the id to the later node first so that insertion order
+            // differs from tree order
+            mutator.set_attribute(second_id, qual_name!("id"), "dup");
+            mutator.set_attribute(first_id, qual_name!("id"), "dup");
+            (first_id, second_id)
+        };
+        assert_eq!(document.get_element_by_id("dup"), Some(first_id));
+
+        {
+            let mut mutator = document.mutate();
+            mutator.remove_node(first_id);
+        }
+        assert_eq!(document.get_element_by_id("dup"), Some(second_id));
     }
 
     #[derive(Default)]
