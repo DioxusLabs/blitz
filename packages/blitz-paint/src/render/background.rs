@@ -272,15 +272,18 @@ impl ElementCx<'_, '_> {
         }
     }
 
-    /// The background positioning area and the transform from its coordinate
-    /// space to the scene for a `background-attachment: fixed` layer: the
-    /// viewport, unaffected by any scrolling. Returns `None` if the element is
-    /// affected by a CSS transform, in which case `fixed` behaves as `scroll`
+    /// Whether the layer is positioned against the viewport
+    /// (`background-attachment: fixed`) rather than the element's origin box.
+    /// `fixed` behaves as `scroll` on elements affected by a CSS transform
     /// (the transformed element acts as the layer's containing block).
-    fn fixed_positioning_area(&self, layer: &ImageLayerStyles) -> Option<(Rect, Affine)> {
-        if layer.attachment != StyloBackgroundAttachment::Fixed || self.is_transformed() {
-            return None;
-        }
+    fn layer_is_fixed(&self, layer: &ImageLayerStyles) -> bool {
+        layer.attachment == StyloBackgroundAttachment::Fixed && !self.is_transformed()
+    }
+
+    /// The background positioning area and the transform from its coordinate
+    /// space to the scene for a fixed layer: the viewport, unaffected by any
+    /// scrolling.
+    fn fixed_positioning_area(&self) -> (Rect, Affine) {
         let viewport_rect = Rect::new(
             0.0,
             0.0,
@@ -288,7 +291,7 @@ impl ElementCx<'_, '_> {
             self.context.height as f64,
         );
         let transform = Affine::translate((self.context.initial_x, self.context.initial_y));
-        Some((viewport_rect, transform))
+        (viewport_rect, transform)
     }
 
     /// Whether this element or any of its ancestors has a CSS transform
@@ -319,9 +322,11 @@ impl ElementCx<'_, '_> {
             return;
         };
 
-        let (area_rect, base_transform) = self
-            .fixed_positioning_area(layer)
-            .unwrap_or((self.frame.padding_box, self.transform));
+        let (area_rect, base_transform) = if self.layer_is_fixed(layer) {
+            self.fixed_positioning_area()
+        } else {
+            (self.frame.padding_box, self.transform)
+        };
 
         let frame_w = (area_rect.width() / self.scale) as f32;
         let frame_h = (area_rect.height() / self.scale) as f32;
@@ -382,9 +387,11 @@ impl ElementCx<'_, '_> {
         let image_rendering = self.style.clone_image_rendering();
         let quality = to_image_quality(image_rendering);
 
-        let (origin_rect, base_transform) = self
-            .fixed_positioning_area(layer)
-            .unwrap_or((self.box_rect(layer.origin), self.transform));
+        let (origin_rect, base_transform) = if self.layer_is_fixed(layer) {
+            self.fixed_positioning_area()
+        } else {
+            (self.box_rect(layer.origin), self.transform)
+        };
 
         let image_width = image_data.width as f64;
         let image_height = image_data.height as f64;
@@ -455,12 +462,15 @@ impl ElementCx<'_, '_> {
         gradient: &StyloGradient,
         layer: &ImageLayerStyles,
     ) {
-        let fixed_area = self.fixed_positioning_area(layer);
-        let (origin_rect, base_transform) =
-            fixed_area.unwrap_or((self.box_rect(layer.origin), self.transform));
+        let is_fixed = self.layer_is_fixed(layer);
+        let (origin_rect, base_transform) = if is_fixed {
+            self.fixed_positioning_area()
+        } else {
+            (self.box_rect(layer.origin), self.transform)
+        };
         // For a fixed layer the positioning area (the viewport) already covers
         // everything visible, so no extension towards the clip box is needed.
-        let clip_rect = if fixed_area.is_some() {
+        let clip_rect = if is_fixed {
             origin_rect
         } else {
             self.box_rect(layer.clip)
