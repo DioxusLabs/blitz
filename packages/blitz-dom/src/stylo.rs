@@ -865,25 +865,35 @@ impl<'a> TElement for BlitzNode<'a> {
             None
         }
 
+        /// The HTML "rules for parsing dimension values" -- Stylo's
+        /// implementation of them -- packaged as a specified
+        /// `<length-percentage>`. `ignoring_zero` selects the spec's separate
+        /// "maps to the dimension property (ignoring zero)" mapping, where a
+        /// zero value is dropped rather than honoured.
+        ///
+        /// https://html.spec.whatwg.org/multipage/common-microsyntaxes.html#rules-for-parsing-dimension-values
         fn parse_size_attr(
             value: &str,
-            filter_fn: impl FnOnce(&f32) -> bool,
+            ignoring_zero: bool,
         ) -> Option<style::values::specified::LengthPercentage> {
+            use style::servo::attr::{
+                LengthOrPercentageOrAuto, parse_length, parse_nonzero_length,
+            };
             use style::values::specified::{LengthPercentage, NoCalcLength};
-            if let Some(value) = value.strip_suffix("px") {
-                let val: f32 = value.parse().ok()?;
-                return Some(LengthPercentage::Length(NoCalcLength::from_px(val)));
+            let parsed = if ignoring_zero {
+                parse_nonzero_length(value)
+            } else {
+                parse_length(value)
+            };
+            match parsed {
+                LengthOrPercentageOrAuto::Length(length) => Some(LengthPercentage::Length(
+                    NoCalcLength::from_px(length.to_f32_px()),
+                )),
+                LengthOrPercentageOrAuto::Percentage(fraction) => Some(
+                    LengthPercentage::Percentage(NoCalcPercentage::new(fraction)),
+                ),
+                LengthOrPercentageOrAuto::Auto => None,
             }
-
-            if let Some(value) = value.strip_suffix("%") {
-                let val: f32 = value.parse().ok()?;
-                return Some(LengthPercentage::Percentage(NoCalcPercentage::new(
-                    val / 100.0,
-                )));
-            }
-
-            let val: f32 = value.parse().ok().filter(filter_fn)?;
-            Some(LengthPercentage::Length(NoCalcLength::from_px(val)))
         }
 
         /// Parse the value of an SVG `width`/`height` presentation attribute.
@@ -918,6 +928,15 @@ impl<'a> TElement for BlitzNode<'a> {
             Some(LengthPercentage::Length(length))
         }
 
+        // `<input type=image>` is the only input type that is replaced
+        // content, and it is the only one that takes the embedded-content
+        // presentational attributes. The type attribute is matched ASCII
+        // case-insensitively, as attribute keywords always are.
+        let is_image_input = *tag == local_name!("input")
+            && elem.attrs().iter().any(|attr| {
+                attr.name.local == local_name!("type") && attr.value.eq_ignore_ascii_case("image")
+            });
+
         for attr in elem.attrs() {
             let name = &attr.name.local;
             let value = attr.value.as_str();
@@ -942,15 +961,21 @@ impl<'a> TElement for BlitzNode<'a> {
             // https://html.spec.whatwg.org/multipage/rendering.html#attributes-for-embedded-content-and-images
             let is_width = *name == local_name!("width");
             let is_height = *name == local_name!("height");
+            // The elements whose width/height attributes map to the dimension
+            // properties. `input` only joins them as type=image, which is the
+            // one replaced input type.
             let is_embedded = *tag == local_name!("iframe")
                 || *tag == local_name!("embed")
-                || *tag == local_name!("img")
+                || *tag == local_name!("video")
                 || *tag == local_name!("object")
-                || *tag == local_name!("video");
+                || *tag == local_name!("img")
+                || *tag == local_name!("marquee")
+                || is_image_input;
             let maps_to_dimension = if is_width {
                 is_embedded
                     || *tag == local_name!("table")
                     || *tag == local_name!("col")
+                    || *tag == local_name!("colgroup")
                     || *tag == local_name!("tr")
                     || *tag == local_name!("td")
                     || *tag == local_name!("th")
@@ -961,13 +986,19 @@ impl<'a> TElement for BlitzNode<'a> {
                     || *tag == local_name!("thead")
                     || *tag == local_name!("tbody")
                     || *tag == local_name!("tfoot")
+                    || *tag == local_name!("tr")
+                    || *tag == local_name!("td")
+                    || *tag == local_name!("th")
             } else {
                 false
             };
             if maps_to_dimension {
-                let is_table = *tag == local_name!("table");
-                if let Some(size) = parse_size_attr(value, |v| !(is_table && is_width) || *v != 0.0)
-                {
+                // Three of these use the "(ignoring zero)" variant of the
+                // mapping, where a zero is dropped instead of honoured:
+                // `table width`, and `td`/`th` in both axes.
+                let is_cell = *tag == local_name!("td") || *tag == local_name!("th");
+                let ignoring_zero = is_cell || (is_width && *tag == local_name!("table"));
+                if let Some(size) = parse_size_attr(value, ignoring_zero) {
                     use style::values::generics::{NonNegative, length::Size};
                     let size = Size::LengthPercentage(NonNegative(size));
                     push_style(if is_width {
@@ -975,6 +1006,34 @@ impl<'a> TElement for BlitzNode<'a> {
                     } else {
                         PropertyDeclaration::Height(size)
                     });
+                }
+            }
+
+            // hspace/vspace map to the horizontal and vertical margins as
+            // dimension properties. This is a *smaller* set than the one that
+            // takes width/height: `iframe` and `video` take width and height
+            // but not hspace/vspace, and html/rendering/unmapped-attributes
+            // checks exactly that -- browsers have got it wrong before.
+            let takes_spacing = *tag == local_name!("embed")
+                || *tag == local_name!("img")
+                || *tag == local_name!("object")
+                || *tag == local_name!("marquee")
+                || is_image_input;
+            if takes_spacing {
+                let is_hspace = *name == local_name!("hspace");
+                let is_vspace = *name == local_name!("vspace");
+                if is_hspace || is_vspace {
+                    if let Some(size) = parse_size_attr(value, false) {
+                        use style::values::generics::length::GenericMargin;
+                        let margin = GenericMargin::LengthPercentage(size);
+                        if is_hspace {
+                            push_style(PropertyDeclaration::MarginLeft(margin.clone()));
+                            push_style(PropertyDeclaration::MarginRight(margin));
+                        } else {
+                            push_style(PropertyDeclaration::MarginTop(margin.clone()));
+                            push_style(PropertyDeclaration::MarginBottom(margin));
+                        }
+                    }
                 }
             }
 
@@ -994,6 +1053,68 @@ impl<'a> TElement for BlitzNode<'a> {
                     } else {
                         PropertyDeclaration::Height(size)
                     });
+                }
+            }
+
+            // The `border` attribute maps to the four border widths as a
+            // pixel length, plus the four border styles as `solid` -- width
+            // alone would compute back to zero against the default
+            // border-style of `none`. It is only these three elements:
+            // `embed`, `iframe`, `marquee` and non-image `input` all have a
+            // `border` attribute that must stay unmapped.
+            if *name == local_name!("border")
+                && (*tag == local_name!("img") || *tag == local_name!("object") || is_image_input)
+            {
+                if let Ok(px) = style::servo::attr::parse_unsigned_integer(value.chars()) {
+                    use style::values::specified::{BorderSideWidth, BorderStyle};
+                    let width = BorderSideWidth::from_px(px as f32);
+                    push_style(PropertyDeclaration::BorderTopWidth(width.clone()));
+                    push_style(PropertyDeclaration::BorderRightWidth(width.clone()));
+                    push_style(PropertyDeclaration::BorderBottomWidth(width.clone()));
+                    push_style(PropertyDeclaration::BorderLeftWidth(width));
+                    push_style(PropertyDeclaration::BorderTopStyle(BorderStyle::Solid));
+                    push_style(PropertyDeclaration::BorderRightStyle(BorderStyle::Solid));
+                    push_style(PropertyDeclaration::BorderBottomStyle(BorderStyle::Solid));
+                    push_style(PropertyDeclaration::BorderLeftStyle(BorderStyle::Solid));
+                }
+            }
+
+            // `body` carries four legacy margin attributes, as pixel lengths:
+            // marginwidth and marginheight set both sides of an axis, and
+            // leftmargin and topmargin set one side each.
+            //
+            // There is deliberately no `rightmargin` or `bottommargin`. They
+            // look like the obvious counterparts to the two that exist, but
+            // the spec does not define them and browsers ignore them in both
+            // standards and quirks mode -- body-margin-3a/3b assert exactly
+            // that.
+            if *tag == local_name!("body") {
+                // Matched as strings: these are not in the static atom set,
+                // so `local_name!` will not compile for them.
+                let sides: &[u8] = match &**name {
+                    "marginwidth" => b"lr",
+                    "marginheight" => b"tb",
+                    "leftmargin" => b"l",
+                    "topmargin" => b"t",
+                    _ => b"",
+                };
+                if !sides.is_empty() {
+                    if let Ok(px) = style::servo::attr::parse_unsigned_integer(value.chars()) {
+                        use style::values::generics::length::GenericMargin;
+                        use style::values::specified::{LengthPercentage, NoCalcLength};
+                        let margin = GenericMargin::LengthPercentage(LengthPercentage::Length(
+                            NoCalcLength::from_px(px as f32),
+                        ));
+                        for side in sides {
+                            push_style(match side {
+                                b'l' => PropertyDeclaration::MarginLeft(margin.clone()),
+                                b'r' => PropertyDeclaration::MarginRight(margin.clone()),
+                                b't' => PropertyDeclaration::MarginTop(margin.clone()),
+                                b'b' => PropertyDeclaration::MarginBottom(margin.clone()),
+                                _ => unreachable!("side table above only yields lrtb"),
+                            });
+                        }
+                    }
                 }
             }
 

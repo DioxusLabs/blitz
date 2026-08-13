@@ -11,9 +11,47 @@ use style_traits::ParseError;
 use crate::{BaseDocument, Node};
 
 impl BaseDocument {
-    /// Find the node with the specified id attribute (if one exists)
+    /// Find the node with the specified id attribute (if one exists).
+    /// If multiple nodes have the same id, the first in tree order is returned.
     pub fn get_element_by_id(&self, id: &str) -> Option<NodeId> {
-        self.nodes_to_id.get(id).copied()
+        match self.nodes_to_id.get(id)?.as_slice() {
+            [] => None,
+            [node_id] => Some(*node_id),
+            candidates => self.first_in_tree_order(candidates),
+        }
+    }
+
+    /// Find the first of `candidates` in tree order
+    fn first_in_tree_order(&self, candidates: &[NodeId]) -> Option<NodeId> {
+        let mut stack = vec![self.root_node_id];
+        while let Some(node_id) = stack.pop() {
+            if candidates.contains(&node_id) {
+                return Some(node_id);
+            }
+            stack.extend(self.nodes[node_id].children.iter().rev().copied());
+        }
+        None
+    }
+
+    /// Add a node to the id-to-node map
+    pub(crate) fn add_to_id_map(&mut self, id: &str, node_id: NodeId) {
+        if id.is_empty() {
+            return;
+        }
+        let node_ids = self.nodes_to_id.entry(id.to_string()).or_default();
+        if !node_ids.contains(&node_id) {
+            node_ids.push(node_id);
+        }
+    }
+
+    /// Remove a node from the id-to-node map
+    pub(crate) fn remove_from_id_map(&mut self, id: &str, node_id: NodeId) {
+        if let Some(node_ids) = self.nodes_to_id.get_mut(id) {
+            node_ids.retain(|nid| *nid != node_id);
+            if node_ids.is_empty() {
+                self.nodes_to_id.remove(id);
+            }
+        }
     }
 
     /// Find the first node that matches the selector specified as a string

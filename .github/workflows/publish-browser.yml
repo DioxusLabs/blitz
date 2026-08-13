@@ -30,7 +30,7 @@ env:
   RELEASE_POST: ${{ github.event.inputs.post }}
   # Limit parallism to debug possible OOM
   CARGO_BUILD_JOBS: 2
-  CARGO_LOG: trace
+  CARGO_LOG: info
 
 jobs:
   release-cli:
