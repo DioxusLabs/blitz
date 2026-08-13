@@ -592,6 +592,20 @@ fn collect_layout_children_with_wrap(
                 &doc.nodes[container_node_id].children,
                 &mut classification,
             );
+            // display:contents ::before/::after pseudos are transparent for box
+            // generation, so their children (e.g. generated text) participate in
+            // this container's formatting context and must be classified too.
+            // (Pseudos with any other display value generate their own box and
+            // don't affect the classification.)
+            let node = &doc.nodes[container_node_id];
+            for pe_id in node.before().into_iter().chain(node.after()) {
+                let pe = &doc.nodes[pe_id];
+                let display = pe.display_style().unwrap_or(Display::inline());
+                if matches!(display.inside(), DisplayInside::Contents) {
+                    classification.has_contents = true;
+                    classify_flow_children(doc, &pe.children, &mut classification);
+                }
+            }
 
             if classification.all_out_of_flow {
                 // Contents-transparent: a display:contents child may be
