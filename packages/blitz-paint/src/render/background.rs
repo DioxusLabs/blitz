@@ -3,11 +3,12 @@ use crate::color::{Color, ToColorColor};
 use crate::gradient::to_peniko_gradient;
 use anyrender::PaintScene;
 use blitz_dom::node::{ImageData, ImageResourceData, SpecialElementData};
-use kurbo::{self, BezPath, Point, Rect, Shape, Size, Vec2};
+use kurbo::{self, Affine, BezPath, Point, Rect, Shape, Size, Vec2};
 use peniko::{self, Fill};
 use style::{
     properties::{
         generated::longhands::{
+            background_attachment::single_value::computed_value::T as StyloBackgroundAttachment,
             background_clip::single_value::computed_value::T as StyloBackgroundClip,
             background_origin::single_value::computed_value::T as StyloBackgroundOrigin,
             mask_origin::single_value::computed_value::T as StyloMaskOrigin,
@@ -87,6 +88,7 @@ pub(super) struct ImageLayerStyles<'a> {
     pub size: &'a BackgroundSize,
     pub clip: BoxModelBox,
     pub origin: BoxModelBox,
+    pub attachment: StyloBackgroundAttachment,
 }
 
 impl<'a> ImageLayerStyles<'a> {
@@ -104,6 +106,7 @@ impl<'a> ImageLayerStyles<'a> {
             size: get_cyclic(&bg_styles.background_size.0, idx),
             clip: (*get_cyclic(&bg_styles.background_clip.0, idx)).into(),
             origin: (*get_cyclic(&bg_styles.background_origin.0, idx)).into(),
+            attachment: *get_cyclic(&bg_styles.background_attachment.0, idx),
         }
     }
 
@@ -121,6 +124,8 @@ impl<'a> ImageLayerStyles<'a> {
             size: get_cyclic(&svg_styles.mask_size.0, idx),
             clip: (*get_cyclic(&svg_styles.mask_clip.0, idx)).into(),
             origin: (*get_cyclic(&svg_styles.mask_origin.0, idx)).into(),
+            // There is no `mask-attachment` property
+            attachment: StyloBackgroundAttachment::Scroll,
         }
     }
 }
@@ -267,6 +272,45 @@ impl ElementCx<'_, '_> {
         }
     }
 
+    /// Whether the layer is positioned against the viewport
+    /// (`background-attachment: fixed`) rather than the element's origin box.
+    /// `fixed` behaves as `scroll` on elements affected by a CSS transform
+    /// (the transformed element acts as the layer's containing block).
+    fn layer_is_fixed(&self, layer: &ImageLayerStyles) -> bool {
+        layer.attachment == StyloBackgroundAttachment::Fixed && !self.is_transformed()
+    }
+
+    /// The background positioning area and the transform from its coordinate
+    /// space to the scene for a fixed layer: the viewport, unaffected by any
+    /// scrolling.
+    fn fixed_positioning_area(&self) -> (Rect, Affine) {
+        let viewport_rect = Rect::new(
+            0.0,
+            0.0,
+            self.context.width as f64,
+            self.context.height as f64,
+        );
+        let transform = Affine::translate((self.context.initial_x, self.context.initial_y));
+        (viewport_rect, transform)
+    }
+
+    /// Whether this element or any of its ancestors has a CSS transform
+    ///
+    /// TODO: this misses transformed elements whose resolved transform is the
+    /// identity (e.g. `transform: translate(0)`), and elements with
+    /// `will-change: transform`, both of which should also degrade `fixed`
+    /// to `scroll` (see WPT css/css-transforms/transform-fixed-bg-005/008)
+    fn is_transformed(&self) -> bool {
+        let mut current = Some(self.node.id);
+        while let Some(node) = current.and_then(|id| self.context.dom.get_node(id)) {
+            if node.transform().is_some() {
+                return true;
+            }
+            current = node.parent;
+        }
+        false
+    }
+
     #[cfg(feature = "svg")]
     fn draw_svg_image_layer(&self, scene: &mut impl PaintScene, layer: &ImageLayerStyles) {
         use kurbo::Affine;
@@ -278,8 +322,14 @@ impl ElementCx<'_, '_> {
             return;
         };
 
-        let frame_w = (self.frame.padding_box.width() / self.scale) as f32;
-        let frame_h = (self.frame.padding_box.height() / self.scale) as f32;
+        let (area_rect, base_transform) = if self.layer_is_fixed(layer) {
+            self.fixed_positioning_area()
+        } else {
+            (self.frame.padding_box, self.transform)
+        };
+
+        let frame_w = (area_rect.width() / self.scale) as f32;
+        let frame_h = (area_rect.height() / self.scale) as f32;
 
         let svg_size = svg.tree.size();
 
@@ -319,7 +369,7 @@ impl ElementCx<'_, '_> {
             frame_h - bg_size.height as f32,
         );
 
-        let transform = self.transform
+        let transform = base_transform
             * kurbo::Affine::translate((bg_pos.x * self.scale, bg_pos.y * self.scale))
             * Affine::scale_non_uniform(x_ratio, y_ratio);
 
@@ -337,7 +387,11 @@ impl ElementCx<'_, '_> {
         let image_rendering = self.style.clone_image_rendering();
         let quality = to_image_quality(image_rendering);
 
-        let origin_rect = self.box_rect(layer.origin);
+        let (origin_rect, base_transform) = if self.layer_is_fixed(layer) {
+            self.fixed_positioning_area()
+        } else {
+            (self.box_rect(layer.origin), self.transform)
+        };
 
         let image_width = image_data.width as f64;
         let image_height = image_data.height as f64;
@@ -376,8 +430,7 @@ impl ElementCx<'_, '_> {
             y_ratio,
         );
 
-        let transform = self
-            .transform
+        let transform = base_transform
             .pre_scale_non_uniform(x_ratio, y_ratio)
             .then_translate(Vec2 {
                 x: x.translate,
@@ -409,8 +462,19 @@ impl ElementCx<'_, '_> {
         gradient: &StyloGradient,
         layer: &ImageLayerStyles,
     ) {
-        let origin_rect = self.box_rect(layer.origin);
-        let clip_rect = self.box_rect(layer.clip);
+        // For a fixed layer the positioning area (the viewport) already covers
+        // everything visible, so it also serves as the clip rect (no extension
+        // towards the clip box is needed).
+        let (origin_rect, base_transform, clip_rect) = if self.layer_is_fixed(layer) {
+            let (viewport_rect, transform) = self.fixed_positioning_area();
+            (viewport_rect, transform, viewport_rect)
+        } else {
+            (
+                self.box_rect(layer.origin),
+                self.transform,
+                self.box_rect(layer.clip),
+            )
+        };
 
         let (bg_pos, bg_size) = compute_layer_position_and_size(
             layer,
@@ -461,7 +525,7 @@ impl ElementCx<'_, '_> {
         );
         let brush = anyrender::Paint::Gradient(&gradient);
 
-        let transform = self.transform.then_translate(Vec2 {
+        let transform = base_transform.then_translate(Vec2 {
             x: x.translate,
             y: y.translate,
         });
