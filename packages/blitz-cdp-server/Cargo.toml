@@ -21,7 +21,7 @@ cssparser = { workspace = true }
 # Networking dependencies
 serde = { workspace = true }
 serde_json = { workspace = true }
-tungstenite = "0.28"
+tungstenite = { workspace = true }
 
 # Logging
 tracing = { workspace = true }
@@ -30,4 +30,4 @@ tracing = { workspace = true }
 blitz-html = { workspace = true }
 # Text must be laid out with real fonts for inline fragment geometry to be non-zero
 blitz-dom = { workspace = true, features = ["system-fonts"] }
-tungstenite = "0.28"
+tungstenite = { workspace = true }
