@@ -214,7 +214,7 @@ impl<T: Deref<Target = ComputedValues>> taffy::FlexboxContainerStyle for TaffySt
 
     #[inline]
     fn align_items(&self) -> Option<taffy::AlignItems> {
-        convert::item_alignment(self.0.get_position().align_items.0)
+        convert::item_alignment(self.0.get_position().align_items.0, false)
     }
 
     #[inline]
@@ -246,7 +246,7 @@ impl<T: Deref<Target = ComputedValues>> taffy::FlexboxItemStyle for TaffyStyloSt
 
     #[inline]
     fn align_self(&self) -> Option<taffy::AlignSelf> {
-        convert::item_alignment(self.0.get_position().align_self.0)
+        convert::item_alignment(self.0.get_position().align_self.0, false)
     }
 }
 
@@ -515,14 +515,14 @@ impl<T: Deref<Target = ComputedValues>> taffy::GridContainerStyle for TaffyStylo
 
     #[inline]
     fn align_items(&self) -> Option<taffy::AlignItems> {
-        convert::item_alignment(self.0.get_position().align_items.0)
+        convert::item_alignment(self.0.get_position().align_items.0, false)
     }
 
     #[inline]
     fn justify_items(&self) -> Option<taffy::AlignItems> {
-        convert::justify_item_alignment(
+        convert::item_alignment(
             (self.0.get_position().justify_items.computed.0).0,
-            self.0.clone_direction(),
+            self.0.clone_direction() == stylo::Direction::Rtl,
         )
     }
 }
@@ -550,14 +550,14 @@ impl<T: Deref<Target = ComputedValues>> taffy::GridItemStyle for TaffyStyloStyle
 
     #[inline]
     fn align_self(&self) -> Option<taffy::AlignSelf> {
-        convert::item_alignment(self.0.get_position().align_self.0)
+        convert::item_alignment(self.0.get_position().align_self.0, false)
     }
 
     #[inline]
     fn justify_self(&self) -> Option<taffy::AlignSelf> {
-        convert::justify_item_alignment(
+        convert::item_alignment(
             self.0.get_position().justify_self.0,
-            self.0.clone_direction(),
+            self.0.clone_direction() == stylo::Direction::Rtl,
         )
     }
 }
