@@ -79,11 +79,21 @@ pub fn dimension(val: &stylo::Size) -> taffy::Dimension {
         stylo::Size::LengthPercentage(val) => length_percentage(&val.0).into(),
         stylo::Size::Auto => taffy::Dimension::AUTO,
 
+        stylo::Size::MaxContent => taffy::Dimension::max_content(),
+        stylo::Size::MinContent => taffy::Dimension::min_content(),
+        stylo::Size::FitContent => taffy::Dimension::fit_content(),
+        stylo::Size::FitContentFunction(val) => match val.0.unpack() {
+            stylo::UnpackedLengthPercentage::Length(len) => {
+                taffy::Dimension::fit_content_px(len.px())
+            }
+            stylo::UnpackedLengthPercentage::Percentage(percentage) => {
+                taffy::Dimension::fit_content_percent(percentage.0)
+            }
+            // TODO: support calc values as fit-content() limits in Taffy
+            stylo::UnpackedLengthPercentage::Calc(_) => taffy::Dimension::AUTO,
+        },
+
         // TODO: implement other values in Taffy
-        stylo::Size::MaxContent => taffy::Dimension::AUTO,
-        stylo::Size::MinContent => taffy::Dimension::AUTO,
-        stylo::Size::FitContent => taffy::Dimension::AUTO,
-        stylo::Size::FitContentFunction(_) => taffy::Dimension::AUTO,
         stylo::Size::Stretch => taffy::Dimension::AUTO,
         stylo::Size::WebkitFillAvailable => taffy::Dimension::AUTO,
 
@@ -364,6 +374,30 @@ pub fn item_alignment(input: stylo::AlignFlags) -> Option<taffy::AlignItems> {
         // Should never be hit. But no real reason to panic here.
         _ => None,
     }?;
+    if input.flags().contains(stylo::AlignFlags::SAFE) {
+        align.safety = taffy::AlignmentSafety::Safe;
+    }
+    Some(align)
+}
+
+/// Convert `justify-items`/`justify-self` values, resolving the physical `left`/`right`
+/// keywords against the text direction (<https://www.w3.org/TR/css-align-3/#positional-values>).
+#[inline]
+pub fn justify_item_alignment(
+    input: stylo::AlignFlags,
+    direction: stylo::Direction,
+) -> Option<taffy::AlignItems> {
+    let is_rtl = matches!(direction, stylo::Direction::Rtl);
+    let is_right = match input.value() {
+        stylo::AlignFlags::LEFT => false,
+        stylo::AlignFlags::RIGHT => true,
+        _ => return self::item_alignment(input),
+    };
+    let mut align = if is_right != is_rtl {
+        taffy::AlignItems::END
+    } else {
+        taffy::AlignItems::START
+    };
     if input.flags().contains(stylo::AlignFlags::SAFE) {
         align.safety = taffy::AlignmentSafety::Safe;
     }
@@ -745,9 +779,12 @@ pub fn to_taffy_style(style: &stylo::ComputedValues) -> taffy::Style<Atom> {
         #[cfg(any(feature = "flexbox", feature = "grid"))]
         align_self: self::item_alignment(pos.align_self.0),
         #[cfg(feature = "grid")]
-        justify_items: self::item_alignment((pos.justify_items.computed.0).0),
+        justify_items: self::justify_item_alignment(
+            (pos.justify_items.computed.0).0,
+            style.clone_direction(),
+        ),
         #[cfg(feature = "grid")]
-        justify_self: self::item_alignment(pos.justify_self.0),
+        justify_self: self::justify_item_alignment(pos.justify_self.0, style.clone_direction()),
         #[cfg(feature = "block")]
         text_align: self::text_align(style.clone_text_align()),
 

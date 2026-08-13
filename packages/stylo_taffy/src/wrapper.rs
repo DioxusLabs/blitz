@@ -50,6 +50,11 @@ impl<T: Deref<Target = ComputedValues>> taffy::CoreStyle for TaffyStyloStyle<T> 
     }
 
     #[inline]
+    fn direction(&self) -> taffy::Direction {
+        convert::direction(self.0.get_inherited_box().direction)
+    }
+
+    #[inline]
     fn overflow(&self) -> taffy::Point<taffy::Overflow> {
         let box_styles = self.0.get_box();
         taffy::Point {
@@ -515,7 +520,10 @@ impl<T: Deref<Target = ComputedValues>> taffy::GridContainerStyle for TaffyStylo
 
     #[inline]
     fn justify_items(&self) -> Option<taffy::AlignItems> {
-        convert::item_alignment((self.0.get_position().justify_items.computed.0).0)
+        convert::justify_item_alignment(
+            (self.0.get_position().justify_items.computed.0).0,
+            self.0.clone_direction(),
+        )
     }
 }
 
@@ -547,6 +555,9 @@ impl<T: Deref<Target = ComputedValues>> taffy::GridItemStyle for TaffyStyloStyle
 
     #[inline]
     fn justify_self(&self) -> Option<taffy::AlignSelf> {
-        convert::item_alignment(self.0.get_position().justify_self.0)
+        convert::justify_item_alignment(
+            self.0.get_position().justify_self.0,
+            self.0.clone_direction(),
+        )
     }
 }
