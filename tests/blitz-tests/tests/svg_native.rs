@@ -4,8 +4,11 @@
 //! between the `usvg` and `svg-native` paths so they double as a parity check: the observable box size of a root
 //! `<svg>` must not change based on which rendering backend produced it.
 
+use anyrender::render_to_buffer;
+use anyrender_vello_cpu::VelloCpuImageRenderer;
 use blitz_dom::DocumentConfig;
 use blitz_html::{HtmlDocument, HtmlProvider};
+use blitz_paint::paint_scene;
 use blitz_traits::shell::{ColorScheme, Viewport};
 use std::sync::Arc;
 
@@ -92,6 +95,58 @@ fn deeply_nested_shapes_do_not_panic_construction_or_layout() {
             </svg>
         </body></html>"##,
     );
+}
+
+fn pixel_at(html: &str, x: u32, y: u32) -> [u8; 3] {
+    let mut doc = HtmlDocument::from_html(
+        html,
+        DocumentConfig {
+            viewport: Some(Viewport::new(100, 100, 1.0, ColorScheme::Light)),
+            html_parser_provider: Some(Arc::new(HtmlProvider) as _),
+            ..Default::default()
+        },
+    );
+    doc.resolve(0.0);
+    let buffer = render_to_buffer::<VelloCpuImageRenderer, _>(
+        |scene| paint_scene(scene, &mut doc, 1.0, 100, 100, 0, 0),
+        100,
+        100,
+    );
+    let idx = ((y * 100 + x) * 4) as usize;
+    [buffer[idx], buffer[idx + 1], buffer[idx + 2]]
+}
+
+#[test]
+fn css_transform_on_inner_element_moves_it() {
+    // Regression test: fragment construction used to build each node's CTM from the raw `transform`
+    // *attribute* only, so a `transform` set via `style=`/stylesheet had no effect on painting.
+    let html = r##"<html><body style="margin:0; background:#ffffff;">
+        <svg width="100" height="100" viewBox="0 0 100 100">
+            <rect x="10" y="10" width="20" height="20" fill="#ff0000"
+                  style="transform: translate(50px, 50px);"/>
+        </svg>
+    </body></html>"##;
+    assert_eq!(
+        pixel_at(html, 15, 15),
+        [255, 255, 255],
+        "original position should be vacated by the CSS transform"
+    );
+    assert_eq!(
+        pixel_at(html, 65, 65),
+        [255, 0, 0],
+        "CSS transform should move the rect to the new position"
+    );
+}
+
+#[test]
+fn svg_transform_attribute_still_applies_without_css() {
+    let html = r##"<html><body style="margin:0; background:#ffffff;">
+        <svg width="100" height="100" viewBox="0 0 100 100">
+            <rect x="10" y="10" width="20" height="20" fill="#ff0000" transform="translate(50,50)"/>
+        </svg>
+    </body></html>"##;
+    assert_eq!(pixel_at(html, 15, 15), [255, 255, 255]);
+    assert_eq!(pixel_at(html, 65, 65), [255, 0, 0]);
 }
 
 #[test]
@@ -204,7 +259,10 @@ fn bare_shape_with_no_fill_declared_anywhere_paints_black() {
     let rect_id = doc.query_selector("#r").unwrap().unwrap();
     let style = doc.get_node(rect_id).unwrap().primary_styles().unwrap();
     use style::values::computed::svg::SVGPaintKind;
-    assert!(matches!(style.get_inherited_svg().fill.kind, SVGPaintKind::Color(_)));
+    assert!(matches!(
+        style.get_inherited_svg().fill.kind,
+        SVGPaintKind::Color(_)
+    ));
 }
 
 #[test]

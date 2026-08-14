@@ -853,7 +853,7 @@ impl<'a> TElement for BlitzNode<'a> {
         #[cfg(feature = "svg-native")]
         if elem.name.ns == markup5ever::ns!(svg) {
             for attr in elem.attrs() {
-                if let Some(mut source_decl) = crate::svg::attrs::svg_presentation_hint(
+                for mut source_decl in crate::svg::attrs::svg_presentation_hint(
                     &attr.name.local,
                     &attr.value,
                     &SVG_URL_EXTRA_DATA,

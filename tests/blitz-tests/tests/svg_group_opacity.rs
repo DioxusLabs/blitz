@@ -122,6 +122,23 @@ fn overlapping_siblings_in_an_opacity_group_composite_as_one_unit() {
 }
 
 #[test]
+fn zero_opacity_group_hides_descendants() {
+    // Regression test: the flat per-node paint loop used to skip painting only the group's
+    // *own* frame on `opacity <= 0`, leaving descendants, separate entries later in the
+    // same flat list, to still paint at full opacity on their own iterations.
+    let px = center_pixel(
+        r##"<html><body style="margin:0; background:#ffffff;">
+            <svg width="100" height="100" viewBox="0 0 100 100">
+                <g opacity="0">
+                    <rect x="0" y="0" width="100" height="100" fill="#ff0000"/>
+                </g>
+            </svg>
+        </body></html>"##,
+    );
+    assert_eq!(px, [255, 255, 255]);
+}
+
+#[test]
 fn stroked_shape_at_partial_opacity_keeps_its_stroke() {
     // The opacity layer's clip must include the stroke's outset, not just the fill bbox.
     let px = center_pixel(
@@ -132,7 +149,8 @@ fn stroked_shape_at_partial_opacity_keeps_its_stroke() {
         </body></html>"##,
     );
     assert_ne!(
-        px, [255, 255, 255],
+        px,
+        [255, 255, 255],
         "the stroke should reach the canvas center even through a 0.5-opacity layer whose clip \
          is derived from a zero-height fill bbox, but the pixel is untouched white"
     );

@@ -29,7 +29,8 @@ impl ElementCx<'_, '_> {
         let viewport = ctx.viewport;
         // Clip source for a *group's* opacity layer: groups have no accumulated bounding box, so clip to
         // the fragment's own viewport in base space instead. Always finite, never over-tight enough to clip real content.
-        let fragment_clip = base * Rect::new(0.0, 0.0, viewport.width, viewport.height).to_path(0.1);
+        let fragment_clip =
+            base * Rect::new(0.0, 0.0, viewport.width, viewport.height).to_path(0.1);
 
         let mut stack: Vec<Frame> = Vec::new();
 
@@ -55,9 +56,9 @@ impl ElementCx<'_, '_> {
                 node.kind,
                 SvgNodeKind::Shape(_) | SvgNodeKind::Text(_) | SvgNodeKind::ForeignObject
             );
-            let visible = style.as_ref().is_none_or(|s| {
-                s.get_inherited_box().visibility == StyloVisibility::Visible
-            });
+            let visible = style
+                .as_ref()
+                .is_none_or(|s| s.get_inherited_box().visibility == StyloVisibility::Visible);
 
             // A hidden leaf paints nothing, so skip it outright. A hidden *group* still pushes a frame -- `visibility`
             // is inherited and a descendant may override it back to visible.
@@ -65,11 +66,18 @@ impl ElementCx<'_, '_> {
                 continue;
             }
 
-            let opacity = style.as_ref().map(|s| s.get_effects().opacity).unwrap_or(1.0);
+            let opacity = style
+                .as_ref()
+                .map(|s| s.get_effects().opacity)
+                .unwrap_or(1.0);
             let finite = ctm.is_finite() && node.bbox.is_finite();
             let mut layer_open = false;
 
-            if finite && opacity < 1.0 && opacity > 0.0 {
+            if finite && opacity < 1.0 {
+                // `opacity <= 0.0` still opens a (zero-alpha) layer rather than being
+                // special-cased into a skip: a group's descendants are separate entries
+                // later in this flat pre-order list, so skipping only the group's own
+                // frame would leave them to paint at full opacity on their own iterations.
                 let clip = if is_leaf {
                     let stroke_pad = style
                         .as_ref()
@@ -79,16 +87,22 @@ impl ElementCx<'_, '_> {
                 } else {
                     fragment_clip.clone()
                 };
-                scene.push_layer(peniko::Mix::Normal, opacity, Affine::IDENTITY, &clip, None, None);
+                scene.push_layer(
+                    peniko::Mix::Normal,
+                    opacity.max(0.0),
+                    Affine::IDENTITY,
+                    &clip,
+                    None,
+                    None,
+                );
                 layer_open = true;
-            } else if finite && opacity <= 0.0 {
-                // Fully transparent.
-                stack.push(Frame { idx: i, layer_open: false });
-                continue;
             }
 
             if !finite {
-                stack.push(Frame { idx: i, layer_open: false });
+                stack.push(Frame {
+                    idx: i,
+                    layer_open: false,
+                });
                 continue;
             }
 
@@ -310,9 +324,8 @@ mod tests {
         use style::values::computed::svg::SVGWidth;
         use style::values::generics::NonNegative;
 
-        let ten_percent = SVGWidth::LengthPercentage(NonNegative(LengthPercentage::new_percent(
-            Percentage(0.1),
-        )));
+        let ten_percent =
+            SVGWidth::LengthPercentage(NonNegative(LengthPercentage::new_percent(Percentage(0.1))));
         let viewport = kurbo::Size::new(100.0, 100.0);
         assert!((svg_length_px(&ten_percent, viewport) - 10.0).abs() < 1e-3);
     }

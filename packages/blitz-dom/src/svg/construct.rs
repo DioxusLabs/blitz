@@ -11,14 +11,17 @@
 use std::collections::HashMap;
 
 use blitz_traits::node_id::NodeId;
+use euclid::{Point2D, Rect as EuclidRect, Size2D};
 use kurbo::{Affine, Rect, Shape, Size};
 use parley::{FontContext, LayoutContext};
 use style::Atom;
+use style::values::computed::CSSPixelLength;
 use style::values::specified::box_::{DisplayInside, DisplayOutside};
 
 use crate::BaseDocument;
 use crate::layout::damage::CONSTRUCT_SVG;
 use crate::node::{Attribute, SpecialElementData, TextBrush};
+use crate::resolve_2d_transform;
 
 use super::attrs::raw_attr;
 use super::context::{SvgContext, SvgNode, SvgNodeKind};
@@ -225,8 +228,16 @@ fn walk(
 
     *budget -= 1;
 
-    let local_transform = raw_attr(elem.attrs(), "transform")
-        .map(geometry::parse_transform_list)
+    // Read the *computed* `transform`, not the raw attribute: presentation attributes are synthesized into the cascade
+    // at the lowest priority so this picks up `style="transform: ..."` / stylesheet overrides for free, and is what
+    // makes CSS-authored transforms on inner SVG elements take effect at all.
+    let zero_reference_box = EuclidRect::new(
+        Point2D::new(CSSPixelLength::new(0.0), CSSPixelLength::new(0.0)),
+        Size2D::new(CSSPixelLength::new(0.0), CSSPixelLength::new(0.0)),
+    );
+    let local_transform = node
+        .primary_styles()
+        .and_then(|s| resolve_2d_transform(s.get_box(), zero_reference_box))
         .unwrap_or(Affine::IDENTITY);
     let ctm = parent_ctm * local_transform;
 

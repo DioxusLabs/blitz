@@ -89,9 +89,9 @@ pub fn svg_presentation_hint(
     local: &LocalName,
     value: &str,
     url_extra_data: &UrlExtraData,
-) -> Option<SourcePropertyDeclaration> {
+) -> Vec<SourcePropertyDeclaration> {
     if !is_plausible_presentation_attr(local) {
-        return None;
+        return Vec::new();
     }
 
     // SVG presentation attributes accept unitless numbers (user units, which
@@ -109,20 +109,60 @@ pub fn svg_presentation_hint(
         Default::default(),
     );
 
-    let property_id = PropertyId::parse(local.as_ref(), &context).ok()?;
+    // The `transform` *attribute* uses SVG's transform-list grammar (space/comma-flexible,
+    // `rotate(angle, cx, cy)`/`skewX`/`skewY` with an implicit (0,0) origin), which isn't
+    // valid CSS `transform` syntax and would simply fail `PropertyDeclaration::parse_into`
+    // below. Flatten it with the SVG-aware list parser instead and re-express the result as
+    // an equivalent `matrix()` + `transform-origin: 0 0` -- both valid CSS syntax -- so it
+    // still lands in the cascade at presentation-hint priority and is correctly overridden
+    // by `style="transform: ..."` / stylesheet rules, same as every other presentation attr.
+    // Two separate declarations (not one shared buffer): `parse_into` asserts its output
+    // buffer starts empty, so `transform` and `transform-origin` each need their own.
+    if local.as_ref() == "transform" {
+        let affine = super::geometry::parse_transform_list(value);
+        if affine == kurbo::Affine::IDENTITY {
+            return Vec::new();
+        }
+        let [a, b, c, d, e, f] = affine.as_coeffs();
+        let mut transform_decl = SourcePropertyDeclaration::default();
+        let mut origin_decl = SourcePropertyDeclaration::default();
+        let (Some(()), Some(())) = (
+            parse_declaration(
+                &context,
+                "transform",
+                &format!("matrix({a}, {b}, {c}, {d}, {e}, {f})"),
+                &mut transform_decl,
+            ),
+            parse_declaration(&context, "transform-origin", "0 0", &mut origin_decl),
+        ) else {
+            return Vec::new();
+        };
+        return vec![transform_decl, origin_decl];
+    }
 
     let mut source_property_declaration = SourcePropertyDeclaration::default();
+    match parse_declaration(
+        &context,
+        local.as_ref(),
+        value,
+        &mut source_property_declaration,
+    ) {
+        Some(()) => vec![source_property_declaration],
+        None => Vec::new(),
+    }
+}
+
+fn parse_declaration(
+    context: &ParserContext,
+    local: &str,
+    value: &str,
+    out: &mut SourcePropertyDeclaration,
+) -> Option<()> {
+    let property_id = PropertyId::parse(local, context).ok()?;
     let mut input = ParserInput::new(value);
     let mut parser = style::values::Parser::new(&mut input);
-    PropertyDeclaration::parse_into(
-        &mut source_property_declaration,
-        property_id,
-        &context,
-        &mut parser,
-    )
-    .ok()?;
-
-    Some(source_property_declaration)
+    PropertyDeclaration::parse_into(out, property_id, context, &mut parser).ok()?;
+    Some(())
 }
 
 /// Read a "group C" attribute directly off the element, bypassing
