@@ -453,6 +453,14 @@ pub fn flex_wrap(input: stylo::FlexWrap) -> taffy::FlexWrap {
         stylo::FlexWrap::Wrap => taffy::FlexWrap::Wrap,
         stylo::FlexWrap::WrapReverse => taffy::FlexWrap::WrapReverse,
         stylo::FlexWrap::Nowrap => taffy::FlexWrap::NoWrap,
+        #[cfg(feature = "flexbox_balance")]
+        stylo::FlexWrap::Balance => taffy::FlexWrap::Balance,
+        #[cfg(feature = "flexbox_balance")]
+        stylo::FlexWrap::WrapReverseBalance => taffy::FlexWrap::BalanceReverse,
+        #[cfg(not(feature = "flexbox_balance"))]
+        stylo::FlexWrap::Balance => taffy::FlexWrap::Wrap,
+        #[cfg(not(feature = "flexbox_balance"))]
+        stylo::FlexWrap::WrapReverseBalance => taffy::FlexWrap::WrapReverse,
     }
 }
 
@@ -802,6 +810,8 @@ pub fn to_taffy_style(style: &stylo::ComputedValues) -> taffy::Style<Atom> {
         flex_shrink: pos.flex_shrink.0,
         #[cfg(feature = "flexbox")]
         flex_basis: self::flex_basis(&pos.flex_basis),
+        #[cfg(all(feature = "flexbox", feature = "flexbox_balance"))]
+        flex_line_count: pos.flex_line_count.max(1) as u16,
 
         // Grid
         #[cfg(feature = "grid")]

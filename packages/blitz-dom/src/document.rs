@@ -410,6 +410,7 @@ impl BaseDocument {
         style_config::set_pref!("layout.grid.enabled", true);
         style_config::set_pref!("layout.unimplemented", true);
         style_config::set_pref!("layout.columns.enabled", true);
+        style_config::set_pref!("layout.flexbox.balance", true);
         style_config::set_pref!("layout.css.basic-shape-shape.enabled", true);
         style_config::set_pref!("layout.threads", -1);
 
