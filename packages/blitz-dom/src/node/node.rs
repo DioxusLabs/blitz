@@ -1372,6 +1372,16 @@ impl Node {
             || self.data.is_element_with_tag_name(&local_name!("th"))
     }
 
+    /// Whether this node is a non-positioned `body` element. When such an element is the
+    /// `offsetParent`, `offsetLeft`/`offsetTop` are measured from the initial containing
+    /// block origin rather than from the `body`'s padding edge.
+    fn is_static_body(&self) -> bool {
+        self.data.is_element_with_tag_name(&local_name!("body"))
+            && self
+                .primary_styles()
+                .is_some_and(|styles| styles.get_box().position == Position::Static)
+    }
+
     /// The nearest layout ancestor that [is an offset parent](Self::is_offset_parent), as in
     /// CSSOM View's `offsetParent`.
     pub fn offset_parent(&self) -> Option<&Node> {
@@ -1399,7 +1409,7 @@ impl Node {
                 break;
             };
             let parent = self.with(parent_id);
-            if parent.is_offset_parent() {
+            if parent.is_offset_parent() && !parent.is_static_body() {
                 let border = parent.final_layout().border;
                 x -= border.left;
                 y -= border.top;
