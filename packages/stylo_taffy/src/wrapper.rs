@@ -69,6 +69,12 @@ impl<T: Deref<Target = ComputedValues>> taffy::CoreStyle for TaffyStyloStyle<T> 
     }
 
     #[inline]
+    fn contain(&self) -> taffy::Contain {
+        let box_styles = self.0.get_box();
+        convert::contain(box_styles.contain, box_styles.display)
+    }
+
+    #[inline]
     fn position(&self) -> taffy::Position {
         convert::position(self.0.get_box().position)
     }
