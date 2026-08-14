@@ -219,6 +219,8 @@ pub(crate) fn compute_layout_damage(old: &ComputedValues, new: &ComputedValues) 
         if old_box.display != new_box.display
             || old_box.float != new_box.float
             || old_box.position != new_box.position
+            || old_box.contain != new_box.contain
+            || old_box.container_type != new_box.container_type
             || old.clone_visibility() != new.clone_visibility()
         {
             return true;

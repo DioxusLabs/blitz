@@ -110,6 +110,25 @@ input[type="file"] {
     background-color: transparent;
 }
 
+/* https://html.spec.whatwg.org/#the-fieldset-and-legend-elements */
+fieldset {
+    display: block;
+    margin-inline-start: 2px;
+    margin-inline-end: 2px;
+    border: 2px groove #c0c0c0;
+    padding-block-start: 0.35em;
+    padding-block-end: 0.625em;
+    padding-inline-start: 0.75em;
+    padding-inline-end: 0.75em;
+    min-inline-size: min-content;
+}
+
+legend {
+    display: block;
+    padding-inline-start: 2px;
+    padding-inline-end: 2px;
+}
+
 option {
     display: none;
 }
