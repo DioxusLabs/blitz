@@ -6,7 +6,6 @@ import android.appwidget.AppWidgetProvider;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
-import android.content.SharedPreferences;
 import android.graphics.Bitmap;
 import android.net.Uri;
 import android.os.Build;
@@ -29,9 +28,6 @@ import java.nio.ByteBuffer;
 public class BlitzDemoWidgetProvider extends AppWidgetProvider {
     static final String ACTION_DEMO = "dev.dioxus.blitzwidget.DEMO_ACTION";
     static final String EXTRA_ACTION = "blitz_action";
-    static final String PREFS = "blitz_demo_widget";
-    static final String KEY_COUNT = "count";
-    static final String KEY_SLIDER = "slider";
 
     static final int[] HOTSPOT_IDS = {
         R.id.hotspot_0, R.id.hotspot_1, R.id.hotspot_2, R.id.hotspot_3,
@@ -59,7 +55,7 @@ public class BlitzDemoWidgetProvider extends AppWidgetProvider {
         if (ACTION_DEMO.equals(intent.getAction())) {
             String action = intent.getStringExtra(EXTRA_ACTION);
             if (action != null) {
-                applyAction(context, action);
+                BlitzRenderer.dispatch(BlitzRenderer.statePath(context), action);
             }
             AppWidgetManager manager = AppWidgetManager.getInstance(context);
             int[] ids = manager.getAppWidgetIds(
@@ -70,30 +66,7 @@ public class BlitzDemoWidgetProvider extends AppWidgetProvider {
         }
     }
 
-    static void applyAction(Context context, String action) {
-        SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-        SharedPreferences.Editor editor = prefs.edit();
-        if ("incr".equals(action)) {
-            editor.putInt(KEY_COUNT, prefs.getInt(KEY_COUNT, 0) + 1);
-        } else if ("decr".equals(action)) {
-            editor.putInt(KEY_COUNT, prefs.getInt(KEY_COUNT, 0) - 1);
-        } else if ("reset".equals(action)) {
-            editor.putInt(KEY_COUNT, 0).putInt(KEY_SLIDER, 5);
-        } else if (action.startsWith("slider:")) {
-            try {
-                int value = Integer.parseInt(action.substring(7));
-                editor.putInt(KEY_SLIDER, Math.max(0, Math.min(10, value)));
-            } catch (NumberFormatException ignored) {
-            }
-        }
-        editor.apply();
-    }
-
     static void updateWidget(Context context, AppWidgetManager manager, int appWidgetId) {
-        SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-        int count = prefs.getInt(KEY_COUNT, 0);
-        int slider = prefs.getInt(KEY_SLIDER, 5);
-
         Bundle options = manager.getAppWidgetOptions(appWidgetId);
         int widthDp = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 0);
         int heightDp = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 0);
@@ -101,7 +74,8 @@ public class BlitzDemoWidgetProvider extends AppWidgetProvider {
         if (heightDp <= 0) heightDp = 120;
         float density = context.getResources().getDisplayMetrics().density;
 
-        String html = BlitzRenderer.demoWidgetHtml(count, slider);
+        String html = BlitzRenderer.widgetHtml(
+                BlitzRenderer.statePath(context), "interactive", false, "");
 
         byte[] rgba = BlitzRenderer.renderHtml(html, widthDp, heightDp, density);
         int pw = (int) (widthDp * density);

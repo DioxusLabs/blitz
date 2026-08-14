@@ -13,6 +13,7 @@
 //! taps back to actions.
 
 pub mod demo;
+pub mod store;
 
 use anyrender::{PaintScene as _, render_to_buffer};
 use anyrender_vello_cpu::VelloCpuImageRenderer;
@@ -261,22 +262,98 @@ pub unsafe extern "C" fn blitz_render_html_with_regions(
     vec_into_raw(buffer, out_len)
 }
 
-/// C ABI: build the demo widget HTML (counter + slider) for the given state.
-/// Free the returned string with [`blitz_string_free`].
-#[unsafe(no_mangle)]
-pub extern "C" fn blitz_demo_widget_html(count: i32, slider: i32) -> *mut std::ffi::c_char {
-    string_into_raw(demo::widget_html(count, slider))
+unsafe fn cstr<'a>(ptr: *const std::ffi::c_char) -> Option<&'a str> {
+    if ptr.is_null() {
+        return None;
+    }
+    unsafe { std::ffi::CStr::from_ptr(ptr) }.to_str().ok()
 }
 
-/// C ABI: build the animated demo widget HTML (CSS keyframe animations plus a
-/// time scrubber). `scrub` is the highlighted scrubber segment (0..=10);
-/// sample the animations via the `time_secs` render parameter. With
-/// `hide_tracked != 0` the `data-track` elements keep their layout but don't
-/// paint, for native layer compositing. Free the returned string with
-/// [`blitz_string_free`].
+/// C ABI: dispatch a `data-action` from a tapped widget element into the
+/// Rust-owned widget state persisted at `state_path`.
+///
+/// # Safety
+/// `state_path` and `action` must be valid NUL-terminated strings.
 #[unsafe(no_mangle)]
-pub extern "C" fn blitz_demo_animated_html(scrub: i32, hide_tracked: i32) -> *mut std::ffi::c_char {
-    string_into_raw(demo::animated_html(scrub, hide_tracked != 0))
+pub unsafe extern "C" fn blitz_widget_dispatch(
+    state_path: *const std::ffi::c_char,
+    action: *const std::ffi::c_char,
+) {
+    if let (Some(path), Some(action)) = (unsafe { cstr(state_path) }, unsafe { cstr(action) }) {
+        store::dispatch(path, action);
+    }
+}
+
+/// C ABI: build the HTML for a widget `kind` (`counter`, `counter-lock`,
+/// `interactive`, `anim`) at the current Rust-owned state. `clock` is a
+/// display-only time string (used by `counter`; may be NULL). With
+/// `hide_tracked != 0` the `data-track` elements keep their layout but don't
+/// paint, for native layer compositing. Free with [`blitz_string_free`];
+/// returns NULL for an unknown kind.
+///
+/// # Safety
+/// `state_path` and `kind` must be valid NUL-terminated strings.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn blitz_widget_html(
+    state_path: *const std::ffi::c_char,
+    kind: *const std::ffi::c_char,
+    hide_tracked: i32,
+    clock: *const std::ffi::c_char,
+) -> *mut std::ffi::c_char {
+    let (Some(path), Some(kind)) = (unsafe { cstr(state_path) }, unsafe { cstr(kind) }) else {
+        return std::ptr::null_mut();
+    };
+    let clock = unsafe { cstr(clock) }.unwrap_or("");
+    match store::widget_html(path, kind, hide_tracked != 0, clock) {
+        Some(html) => string_into_raw(html),
+        None => std::ptr::null_mut(),
+    }
+}
+
+/// C ABI: the animation widget's current CSS animation clock, in seconds.
+///
+/// # Safety
+/// `state_path` must be a valid NUL-terminated string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn blitz_widget_anim_time(state_path: *const std::ffi::c_char) -> f64 {
+    unsafe { cstr(state_path) }.map_or(0.0, store::anim_time)
+}
+
+/// C ABI: the animation clock `elapsed` seconds into playback (wraps around
+/// the animation cycle).
+///
+/// # Safety
+/// `state_path` must be a valid NUL-terminated string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn blitz_widget_anim_time_at(
+    state_path: *const std::ffi::c_char,
+    elapsed: f64,
+) -> f64 {
+    unsafe { cstr(state_path) }.map_or(0.0, |path| store::anim_time_at(path, elapsed))
+}
+
+/// C ABI: seconds of flip-book playback triggered by the `play` action.
+#[unsafe(no_mangle)]
+pub extern "C" fn blitz_widget_play_secs() -> f64 {
+    store::PLAY_SECS
+}
+
+/// C ABI: plan the animation widget's timeline as JSON —
+/// `{"frames":[{"offset":..,"time":..},..]}` (`offset` seconds relative to
+/// now, `time` the animation clock to render at). One frame normally; a
+/// flip-book right after a `play` dispatch (consuming clears the pending
+/// playback). Free with [`blitz_string_free`].
+///
+/// # Safety
+/// `state_path` must be a valid NUL-terminated string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn blitz_widget_anim_timeline_json(
+    state_path: *const std::ffi::c_char,
+) -> *mut std::ffi::c_char {
+    match unsafe { cstr(state_path) } {
+        Some(path) => string_into_raw(store::anim_timeline_json(path)),
+        None => std::ptr::null_mut(),
+    }
 }
 
 /// C ABI: standalone ball sprite HTML for native layer compositing. Free with
@@ -365,16 +442,86 @@ mod android {
         env.new_string(json).unwrap_or_else(|_| JString::default())
     }
 
-    /// JNI: `BlitzRenderer.demoWidgetHtml(int, int): String`
+    /// JNI: `BlitzRenderer.dispatch(String, String)` — apply a `data-action`
+    /// to the Rust-owned widget state persisted at `statePath`.
     #[unsafe(no_mangle)]
-    pub extern "system" fn Java_dev_dioxus_blitzwidget_BlitzRenderer_demoWidgetHtml<'l>(
-        env: JNIEnv<'l>,
+    pub extern "system" fn Java_dev_dioxus_blitzwidget_BlitzRenderer_dispatch<'l>(
+        mut env: JNIEnv<'l>,
         _class: JClass<'l>,
-        count: jint,
-        slider: jint,
+        state_path: JString<'l>,
+        action: JString<'l>,
+    ) {
+        let (Ok(path), Ok(action)) = (env.get_string(&state_path), env.get_string(&action)) else {
+            return;
+        };
+        let (path, action): (String, String) = (path.into(), action.into());
+        crate::store::dispatch(&path, &action);
+    }
+
+    /// JNI: `BlitzRenderer.widgetHtml(String, String, boolean, String): String`
+    /// — HTML for a widget kind at the current Rust-owned state.
+    #[unsafe(no_mangle)]
+    pub extern "system" fn Java_dev_dioxus_blitzwidget_BlitzRenderer_widgetHtml<'l>(
+        mut env: JNIEnv<'l>,
+        _class: JClass<'l>,
+        state_path: JString<'l>,
+        kind: JString<'l>,
+        hide_tracked: jboolean,
+        clock: JString<'l>,
     ) -> JString<'l> {
-        let html = crate::demo::widget_html(count, slider);
-        env.new_string(html).unwrap_or_else(|_| JString::default())
+        let (Ok(path), Ok(kind)) = (env.get_string(&state_path), env.get_string(&kind)) else {
+            return JString::default();
+        };
+        let (path, kind): (String, String) = (path.into(), kind.into());
+        let clock: String = env.get_string(&clock).map(Into::into).unwrap_or_default();
+        match crate::store::widget_html(&path, &kind, hide_tracked != 0, &clock) {
+            Some(html) => env.new_string(html).unwrap_or_else(|_| JString::default()),
+            None => JString::default(),
+        }
+    }
+
+    /// JNI: `BlitzRenderer.animTime(String): double`
+    #[unsafe(no_mangle)]
+    pub extern "system" fn Java_dev_dioxus_blitzwidget_BlitzRenderer_animTime<'l>(
+        mut env: JNIEnv<'l>,
+        _class: JClass<'l>,
+        state_path: JString<'l>,
+    ) -> jdouble {
+        match env.get_string(&state_path) {
+            Ok(path) => {
+                let path: String = path.into();
+                crate::store::anim_time(&path)
+            }
+            Err(_) => 0.0,
+        }
+    }
+
+    /// JNI: `BlitzRenderer.animTimeAt(String, double): double` — the animation
+    /// clock `elapsed` seconds into playback (wraps around the cycle).
+    #[unsafe(no_mangle)]
+    pub extern "system" fn Java_dev_dioxus_blitzwidget_BlitzRenderer_animTimeAt<'l>(
+        mut env: JNIEnv<'l>,
+        _class: JClass<'l>,
+        state_path: JString<'l>,
+        elapsed: jdouble,
+    ) -> jdouble {
+        match env.get_string(&state_path) {
+            Ok(path) => {
+                let path: String = path.into();
+                crate::store::anim_time_at(&path, elapsed)
+            }
+            Err(_) => 0.0,
+        }
+    }
+
+    /// JNI: `BlitzRenderer.playSecs(): double` — seconds of flip-book playback
+    /// triggered by the `play` action.
+    #[unsafe(no_mangle)]
+    pub extern "system" fn Java_dev_dioxus_blitzwidget_BlitzRenderer_playSecs<'l>(
+        _env: JNIEnv<'l>,
+        _class: JClass<'l>,
+    ) -> jdouble {
+        crate::store::PLAY_SECS
     }
 
     /// JNI: `BlitzRenderer.renderHtmlAt(String, int, int, float, double): byte[]`
@@ -397,17 +544,5 @@ mod android {
             crate::render_html(&html, width as u32, height as u32, scale as f64, time_secs);
         env.byte_array_from_slice(&buffer)
             .unwrap_or_else(|_| JByteArray::default())
-    }
-
-    /// JNI: `BlitzRenderer.demoAnimatedHtml(int, boolean): String`
-    #[unsafe(no_mangle)]
-    pub extern "system" fn Java_dev_dioxus_blitzwidget_BlitzRenderer_demoAnimatedHtml<'l>(
-        env: JNIEnv<'l>,
-        _class: JClass<'l>,
-        scrub: jint,
-        hide_tracked: jboolean,
-    ) -> JString<'l> {
-        let html = crate::demo::animated_html(scrub, hide_tracked != 0);
-        env.new_string(html).unwrap_or_else(|_| JString::default())
     }
 }

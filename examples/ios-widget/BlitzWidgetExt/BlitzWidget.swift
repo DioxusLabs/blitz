@@ -2,107 +2,20 @@ import WidgetKit
 import SwiftUI
 import AppIntents
 
-// MARK: - Shared counter state (persisted in the widget extension's process)
+// All widget state (counters, slider, animation clock, playback) is owned
+// and persisted by Rust (blitz-widget-ffi's store). Swift is a dumb shell:
+// intents forward the tapped element's `data-action` to Rust, providers ask
+// Rust for the HTML/timeline of a widget kind and blit the rendered frames.
 
-enum CounterStore {
-    static let key = "blitz.counter"
-    static var count: Int {
-        get { UserDefaults.standard.integer(forKey: key) }
-        set { UserDefaults.standard.set(newValue, forKey: key) }
-    }
-}
-
-// MARK: - Interactive App Intent (runs inside the widget extension)
+// MARK: - App Intents (run inside the widget extension, forward to Rust)
 
 struct IncrementIntent: AppIntent {
     static var title: LocalizedStringResource = "Increment Blitz Counter"
     static var description = IntentDescription("Increments the Blitz widget counter.")
 
     func perform() async throws -> some IntentResult {
-        CounterStore.count += 1
+        BlitzRenderer.dispatch("count")
         return .result()
-    }
-}
-
-// MARK: - HTML templates rendered by Blitz
-
-func homeScreenHTML(count: Int, time: String) -> String {
-    """
-    <!DOCTYPE html>
-    <html><head><style>
-      body { margin: 0; font-family: sans-serif; }
-      .card {
-        box-sizing: border-box; width: 100%; height: 100vh; padding: 14px;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white; display: flex; flex-direction: column;
-        justify-content: space-between;
-      }
-      .row { display: flex; justify-content: space-between; align-items: center; }
-      .title { font-size: 13px; font-weight: 600; opacity: 0.9; }
-      .time { font-size: 11px; opacity: 0.7; }
-      .count { font-size: 48px; font-weight: bold; text-align: center; }
-      .hint {
-        font-size: 11px; text-align: center; opacity: 0.85;
-        background: rgba(255,255,255,0.18); border-radius: 10px; padding: 5px 8px;
-      }
-    </style></head>
-    <body><div class="card">
-      <div class="row">
-        <div class="title">⚡ Blitz Counter</div>
-        <div class="time">\(time)</div>
-      </div>
-      <div class="count">\(count)</div>
-      <div class="hint">Tap to increment · HTML by Blitz</div>
-    </div></body></html>
-    """
-}
-
-func lockScreenHTML(count: Int) -> String {
-    """
-    <!DOCTYPE html>
-    <html><head><style>
-      body { margin: 0; font-family: sans-serif; }
-      .card {
-        box-sizing: border-box; width: 100%; height: 100vh; padding: 8px 12px;
-        color: white; display: flex; align-items: center; gap: 10px;
-      }
-      .count { font-size: 32px; font-weight: bold; }
-      .label { font-size: 12px; line-height: 1.3; opacity: 0.9; }
-    </style></head>
-    <body><div class="card">
-      <div class="count">\(count)</div>
-      <div class="label">Blitz Counter<br>HTML/CSS render</div>
-    </div></body></html>
-    """
-}
-
-// MARK: - Interactive demo state (counter + slider) and per-element actions
-
-enum DemoStore {
-    static let countKey = "blitz.demo.count"
-    static let sliderKey = "blitz.demo.slider"
-    static var count: Int {
-        get { UserDefaults.standard.integer(forKey: countKey) }
-        set { UserDefaults.standard.set(newValue, forKey: countKey) }
-    }
-    static var slider: Int {
-        get {
-            UserDefaults.standard.object(forKey: sliderKey) == nil
-                ? 5 : UserDefaults.standard.integer(forKey: sliderKey)
-        }
-        set { UserDefaults.standard.set(newValue, forKey: sliderKey) }
-    }
-
-    static func apply(_ action: String) {
-        switch action {
-        case "incr": count += 1
-        case "decr": count -= 1
-        case "reset": count = 0; slider = 5
-        default:
-            if action.hasPrefix("slider:"), let value = Int(action.dropFirst(7)) {
-                slider = max(0, min(10, value))
-            }
-        }
     }
 }
 
@@ -117,7 +30,7 @@ struct WidgetActionIntent: AppIntent {
     init(action: String) { self.action = action }
 
     func perform() async throws -> some IntentResult {
-        DemoStore.apply(action)
+        BlitzRenderer.dispatch(action)
         return .result()
     }
 }
@@ -132,15 +45,14 @@ struct BlitzEntry: TimelineEntry {
 struct BlitzProvider: TimelineProvider {
     private func makeImage(context: Context, date: Date) -> UIImage? {
         let size = context.displaySize
-        let count = CounterStore.count
         let formatter = DateFormatter()
         formatter.dateFormat = "HH:mm"
         let html: String
         switch context.family {
         case .accessoryRectangular, .accessoryCircular, .accessoryInline:
-            html = lockScreenHTML(count: count)
+            html = BlitzRenderer.widgetHTML(kind: "counter-lock")
         default:
-            html = homeScreenHTML(count: count, time: formatter.string(from: date))
+            html = BlitzRenderer.widgetHTML(kind: "counter", clock: formatter.string(from: date))
         }
         return BlitzRenderer.render(html: html, width: size.width, height: size.height, scale: 2.0)
     }
@@ -194,7 +106,7 @@ struct BlitzDemoEntry: TimelineEntry {
 struct BlitzDemoProvider: TimelineProvider {
     private func makeEntry(context: Context, date: Date) -> BlitzDemoEntry {
         let size = context.displaySize
-        let html = BlitzRenderer.demoHTML(count: DemoStore.count, slider: DemoStore.slider)
+        let html = BlitzRenderer.widgetHTML(kind: "interactive")
         let rendered = BlitzRenderer.renderWithRegions(
             html: html, width: size.width, height: size.height, scale: 2.0)
         return BlitzDemoEntry(date: date, image: rendered?.0, regions: rendered?.1 ?? [])
@@ -262,39 +174,8 @@ struct BlitzDemoWidget: Widget {
 
 /// Blitz resolves styles with an explicit `current_time_for_animations`, so
 /// every render samples the document's CSS `@keyframes` animations at exactly
-/// the instant we choose. The scrubber and Step button pick that instant.
-enum AnimStore {
-    static let timeKey = "blitz.anim.time"
-    static let playKey = "blitz.anim.playStart"
-    static let duration: Double = 4.0
-    /// Seconds of flip-book playback triggered by the `play` action.
-    static let playLength: Double = 8.0
-
-    static var time: Double {
-        get { UserDefaults.standard.double(forKey: timeKey) }
-        set { UserDefaults.standard.set(newValue, forKey: timeKey) }
-    }
-
-    static var playStart: Double {
-        get { UserDefaults.standard.double(forKey: playKey) }
-        set { UserDefaults.standard.set(newValue, forKey: playKey) }
-    }
-
-    static var scrubSegment: Int {
-        Int((time / duration * 10).rounded())
-    }
-
-    static func apply(_ action: String) {
-        if action == "step" {
-            time = (time + 0.4).truncatingRemainder(dividingBy: duration + 0.0001)
-        } else if action == "play" {
-            playStart = Date().timeIntervalSince1970
-        } else if action.hasPrefix("time:"), let seg = Int(action.dropFirst(5)) {
-            time = Double(max(0, min(10, seg))) / 10.0 * duration
-        }
-    }
-}
-
+/// the instant Rust chooses. The scrubber, Step, and Play actions all mutate
+/// the Rust-owned animation clock via `dispatch`.
 struct AnimActionIntent: AppIntent {
     static var title: LocalizedStringResource = "Blitz Animation Scrub"
     static var description = IntentDescription("Moves the Blitz CSS animation clock.")
@@ -305,7 +186,7 @@ struct AnimActionIntent: AppIntent {
     init(action: String) { self.action = action }
 
     func perform() async throws -> some IntentResult {
-        AnimStore.apply(action)
+        BlitzRenderer.dispatch(action)
         return .result()
     }
 }
@@ -342,7 +223,7 @@ struct BlitzAnimProvider: TimelineProvider {
 
     private func makeEntry(context: Context, date: Date, animTime: Double) -> BlitzAnimEntry {
         let size = context.displaySize
-        let html = BlitzRenderer.animatedHTML(scrub: AnimStore.scrubSegment, hideTracked: true)
+        let html = BlitzRenderer.widgetHTML(kind: "anim", hideTracked: true)
         let rendered = BlitzRenderer.renderWithRegions(
             html: html, width: size.width, height: size.height, scale: 2.0,
             time: animTime)
@@ -375,41 +256,36 @@ struct BlitzAnimProvider: TimelineProvider {
     }
 
     func placeholder(in context: Context) -> BlitzAnimEntry {
-        makeEntry(context: context, date: Date(), animTime: AnimStore.time)
+        makeEntry(context: context, date: Date(), animTime: blitz_widget_anim_time(BlitzRenderer.statePath))
     }
 
     func getSnapshot(in context: Context, completion: @escaping (BlitzAnimEntry) -> Void) {
-        completion(makeEntry(context: context, date: Date(), animTime: AnimStore.time))
+        completion(makeEntry(
+            context: context, date: Date(),
+            animTime: blitz_widget_anim_time(BlitzRenderer.statePath)))
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<BlitzAnimEntry>) -> Void) {
-        let now = Date()
-        let sincePlay = now.timeIntervalSince1970 - AnimStore.playStart
-        if AnimStore.playStart > 0 && sincePlay < AnimStore.playLength {
-            // Flip-book playback: pre-render one entry per second, each
-            // sampling the CSS animations one second further along the clock.
-            // WidgetKit shows each at its date and tweens the sprite layers
-            // between consecutive frames. Render every frame BEFORE dating
-            // the entries: the renders take a while, and entries dated from
-            // the pre-render clock end up in the past, delaying playback.
-            let base = AnimStore.time
-            var entries: [BlitzAnimEntry] = []
-            for i in 0...Int(AnimStore.playLength) {
-                let t = (base + Double(i)).truncatingRemainder(dividingBy: AnimStore.duration)
-                entries.append(makeEntry(context: context, date: .distantPast, animTime: t))
-            }
-            // Entry 0 is the current rest pose the widget is already showing,
-            // so date it in the past: WidgetKit displays it immediately and
-            // the first moving frame (entry 1) lands just after "now".
-            let start = Date().addingTimeInterval(-0.8)
-            for i in entries.indices {
-                entries[i].date = start.addingTimeInterval(Double(i))
-            }
-            completion(Timeline(entries: entries, policy: .never))
-        } else {
-            let entry = makeEntry(context: context, date: now, animTime: AnimStore.time)
-            completion(Timeline(entries: [entry], policy: .never))
+        // Rust plans the timeline: one frame at the current clock normally, a
+        // flip-book (one frame per second of playback) right after "play".
+        // WidgetKit shows each frame at its date and tweens the sprite layers
+        // between consecutive frames. Render every frame BEFORE dating the
+        // entries: the renders take a while, and entries dated from the
+        // pre-render clock end up in the past, delaying playback. The first
+        // frame's negative offset backdates the rest pose so the first moving
+        // frame lands just after "now".
+        var frames = BlitzRenderer.animTimeline()
+        if frames.isEmpty {
+            frames = [.init(offset: 0, time: blitz_widget_anim_time(BlitzRenderer.statePath))]
         }
+        var entries = frames.map { frame in
+            makeEntry(context: context, date: .distantPast, animTime: frame.time)
+        }
+        let start = Date()
+        for i in entries.indices {
+            entries[i].date = start.addingTimeInterval(frames[i].offset)
+        }
+        completion(Timeline(entries: entries, policy: .never))
     }
 }
 

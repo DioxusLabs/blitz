@@ -3,6 +3,60 @@
 //! `data-action` attribute; the native widget shells overlay one tap target
 //! per extracted hit region.
 
+/// Simple counter widget (home screen). The whole card is one tap target
+/// (`data-action="count"`). `clock` is a display-only time string supplied by
+/// the shell.
+pub fn counter_html(count: i32, clock: &str) -> String {
+    format!(
+        r##"<!DOCTYPE html>
+<html><head><style>
+  body {{ margin: 0; font-family: sans-serif; }}
+  .card {{
+    box-sizing: border-box; width: 100%; height: 100vh; padding: 14px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white; display: flex; flex-direction: column;
+    justify-content: space-between;
+  }}
+  .row {{ display: flex; justify-content: space-between; align-items: center; }}
+  .title {{ font-size: 13px; font-weight: 600; opacity: 0.9; }}
+  .time {{ font-size: 11px; opacity: 0.7; }}
+  .count {{ font-size: 48px; font-weight: bold; text-align: center; }}
+  .hint {{
+    font-size: 11px; text-align: center; opacity: 0.85;
+    background: rgba(255,255,255,0.18); border-radius: 10px; padding: 5px 8px;
+  }}
+</style></head>
+<body><div class="card" data-action="count">
+  <div class="row">
+    <div class="title">⚡ Blitz Counter</div>
+    <div class="time">{clock}</div>
+  </div>
+  <div class="count">{count}</div>
+  <div class="hint">Tap to increment · HTML by Blitz</div>
+</div></body></html>"##
+    )
+}
+
+/// Simple counter widget (lock screen accessory).
+pub fn counter_lock_html(count: i32) -> String {
+    format!(
+        r##"<!DOCTYPE html>
+<html><head><style>
+  body {{ margin: 0; font-family: sans-serif; }}
+  .card {{
+    box-sizing: border-box; width: 100%; height: 100vh; padding: 8px 12px;
+    color: white; display: flex; align-items: center; gap: 10px;
+  }}
+  .count {{ font-size: 32px; font-weight: bold; }}
+  .label {{ font-size: 12px; line-height: 1.3; opacity: 0.9; }}
+</style></head>
+<body><div class="card" data-action="count">
+  <div class="count">{count}</div>
+  <div class="label">Blitz Counter<br>HTML/CSS render</div>
+</div></body></html>"##
+    )
+}
+
 /// Actions emitted by this template: `incr`, `decr`, `reset`, `slider:N`
 /// (N in 0..=10).
 pub fn widget_html(count: i32, slider: i32) -> String {

@@ -18,22 +18,52 @@ enum BlitzRenderer {
         renderWithRegions(html: html, width: width, height: height, scale: scale)?.0
     }
 
-    /// Build the shared demo widget HTML (counter + slider) from Rust.
-    static func demoHTML(count: Int, slider: Int) -> String {
-        guard let ptr = blitz_demo_widget_html(Int32(count), Int32(slider)) else { return "" }
-        defer { blitz_string_free(ptr) }
-        return String(cString: ptr)
+    /// Path of the key=value file where Rust persists all widget state.
+    /// Swift only supplies the platform location; it never reads or writes it.
+    static let statePath: String = {
+        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
+            .first ?? URL(fileURLWithPath: NSTemporaryDirectory())
+        return dir.appendingPathComponent("blitz-widget-state.txt").path
+    }()
+
+    /// Forward a tapped element's `data-action` to the Rust-owned state store.
+    static func dispatch(_ action: String) {
+        blitz_widget_dispatch(statePath, action)
     }
 
-    /// Build the animated demo widget HTML (CSS keyframes + scrubber) from Rust.
-    /// With `hideTracked` the `data-track` elements (ball, fill) keep their
-    /// layout but don't paint, so they can be composited as native layers.
-    static func animatedHTML(scrub: Int, hideTracked: Bool = false) -> String {
-        guard let ptr = blitz_demo_animated_html(Int32(scrub), hideTracked ? 1 : 0) else {
+    /// HTML for a widget kind at the current Rust-owned state.
+    /// Kinds: `counter`, `counter-lock`, `interactive`, `anim`.
+    static func widgetHTML(kind: String, hideTracked: Bool = false, clock: String = "") -> String {
+        guard let ptr = blitz_widget_html(statePath, kind, hideTracked ? 1 : 0, clock) else {
             return ""
         }
         defer { blitz_string_free(ptr) }
         return String(cString: ptr)
+    }
+
+    /// One frame of the animation widget's timeline, planned by Rust.
+    struct BlitzAnimFrame: Decodable {
+        /// Seconds relative to now at which to show the frame.
+        let offset: Double
+        /// The CSS animation clock to render the frame at.
+        let time: Double
+    }
+
+    private struct BlitzAnimTimeline: Decodable {
+        let frames: [BlitzAnimFrame]
+    }
+
+    /// The animation widget's timeline plan (one frame normally, a flip-book
+    /// right after a `play` action), decided entirely by Rust.
+    static func animTimeline() -> [BlitzAnimFrame] {
+        guard let ptr = blitz_widget_anim_timeline_json(statePath) else { return [] }
+        defer { blitz_string_free(ptr) }
+        let json = String(cString: ptr)
+        guard let data = json.data(using: .utf8),
+              let parsed = try? JSONDecoder().decode(BlitzAnimTimeline.self, from: data) else {
+            return []
+        }
+        return parsed.frames
     }
 
     /// Blitz-rendered ball sprite at `size` points.

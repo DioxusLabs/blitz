@@ -27,15 +27,36 @@ uint8_t *blitz_render_html_at(const char *html, uint32_t width,
                               uint32_t height, float scale, double time_secs,
                               size_t *out_len);
 
-// Build the demo widget HTML (counter + slider) for the given state.
-// Free with blitz_string_free.
-char *blitz_demo_widget_html(int32_t count, int32_t slider);
+// Rust-owned widget state. All state (counters, slider, animation clock,
+// playback) is persisted by Rust at state_path; the native shell only
+// forwards tapped data-actions and blits the returned frames.
 
-// Build the animated demo widget HTML (CSS keyframes + time scrubber).
-// scrub is the highlighted scrubber segment (0..=10). With hide_tracked != 0
-// the data-track elements keep their layout but don't paint, for native
-// layer compositing. Free with blitz_string_free.
-char *blitz_demo_animated_html(int32_t scrub, int32_t hide_tracked);
+// Apply a data-action from a tapped widget element to the persisted state.
+void blitz_widget_dispatch(const char *state_path, const char *action);
+
+// HTML for a widget kind ("counter", "counter-lock", "interactive", "anim")
+// at the current state. clock is a display-only time string (used by
+// "counter"; may be NULL). With hide_tracked != 0 the data-track elements
+// keep their layout but don't paint, for native layer compositing.
+// Free with blitz_string_free; NULL for an unknown kind.
+char *blitz_widget_html(const char *state_path, const char *kind,
+                        int32_t hide_tracked, const char *clock);
+
+// The animation widget's current CSS animation clock, in seconds.
+double blitz_widget_anim_time(const char *state_path);
+
+// The animation clock `elapsed` seconds into playback (wraps the cycle).
+double blitz_widget_anim_time_at(const char *state_path, double elapsed);
+
+// Seconds of flip-book playback triggered by the "play" action.
+double blitz_widget_play_secs(void);
+
+// Plan the animation widget's timeline as JSON:
+// {"frames":[{"offset":..,"time":..},..]} — offset in seconds relative to
+// now, time the animation clock to render at. One frame normally; a
+// flip-book right after a "play" dispatch (consuming clears the pending
+// playback). Free with blitz_string_free.
+char *blitz_widget_anim_timeline_json(const char *state_path);
 
 // Standalone sprites (ball / progress fill) for native layer compositing.
 // Free with blitz_string_free.

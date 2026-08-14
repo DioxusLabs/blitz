@@ -6,7 +6,6 @@ import android.appwidget.AppWidgetProvider;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
-import android.content.SharedPreferences;
 import android.graphics.Bitmap;
 import android.net.Uri;
 import android.os.Build;
@@ -23,15 +22,12 @@ import java.nio.ByteBuffer;
 /**
  * CSS animation widget: Blitz resolves styles with an explicit animation
  * clock, so every render samples the document's CSS keyframe animations at
- * exactly the instant we choose. The scrubber segments and Step button set
- * that instant; the HTML itself is identical for every frame.
+ * exactly the instant Rust chooses. The scrubber segments and Step button
+ * mutate the Rust-owned clock; the HTML itself is identical for every frame.
  */
 public class BlitzAnimWidgetProvider extends AppWidgetProvider {
     static final String ACTION_ANIM = "dev.dioxus.blitzwidget.ANIM_ACTION";
     static final String EXTRA_ACTION = "blitz_action";
-    static final String PREFS = "blitz_anim_widget";
-    static final String KEY_TIME_MS = "time_ms";
-    static final double DURATION_SECS = 4.0;
 
     @Override
     public void onUpdate(Context context, AppWidgetManager manager, int[] appWidgetIds) {
@@ -51,12 +47,12 @@ public class BlitzAnimWidgetProvider extends AppWidgetProvider {
         super.onReceive(context, intent);
         if (ACTION_ANIM.equals(intent.getAction())) {
             String action = intent.getStringExtra(EXTRA_ACTION);
+            if (action != null) {
+                BlitzRenderer.dispatch(BlitzRenderer.statePath(context), action);
+            }
             if ("play".equals(action)) {
                 play(context);
                 return;
-            }
-            if (action != null) {
-                applyAction(context, action);
             }
             AppWidgetManager manager = AppWidgetManager.getInstance(context);
             int[] ids = manager.getAppWidgetIds(
@@ -81,14 +77,13 @@ public class BlitzAnimWidgetProvider extends AppWidgetProvider {
                 AppWidgetManager manager = AppWidgetManager.getInstance(app);
                 int[] ids = manager.getAppWidgetIds(
                         new ComponentName(app, BlitzAnimWidgetProvider.class));
-                SharedPreferences prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-                int baseMs = prefs.getInt(KEY_TIME_MS, 0);
-                final long PLAY_MS = 8000;
+                String statePath = BlitzRenderer.statePath(app);
+                final long PLAY_MS = (long) (BlitzRenderer.playSecs() * 1000);
                 final long FRAME_MS = 125;
                 long start = System.currentTimeMillis();
                 for (long elapsed = 0; elapsed < PLAY_MS;
                         elapsed = System.currentTimeMillis() - start) {
-                    double t = ((baseMs + elapsed) % (long) (DURATION_SECS * 1000)) / 1000.0;
+                    double t = BlitzRenderer.animTimeAt(statePath, elapsed / 1000.0);
                     for (int id : ids) {
                         renderAt(app, manager, id, t);
                     }
@@ -104,31 +99,13 @@ public class BlitzAnimWidgetProvider extends AppWidgetProvider {
         }).start();
     }
 
-    static void applyAction(Context context, String action) {
-        SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-        int timeMs = prefs.getInt(KEY_TIME_MS, 0);
-        if ("step".equals(action)) {
-            timeMs = (timeMs + 400) % (int) (DURATION_SECS * 1000);
-        } else if (action.startsWith("time:")) {
-            try {
-                int seg = Integer.parseInt(action.substring(5));
-                seg = Math.max(0, Math.min(10, seg));
-                timeMs = (int) (seg / 10.0 * DURATION_SECS * 1000);
-            } catch (NumberFormatException ignored) {
-            }
-        }
-        prefs.edit().putInt(KEY_TIME_MS, timeMs).apply();
-    }
-
     static void updateWidget(Context context, AppWidgetManager manager, int appWidgetId) {
-        SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-        renderAt(context, manager, appWidgetId, prefs.getInt(KEY_TIME_MS, 0) / 1000.0);
+        renderAt(context, manager, appWidgetId,
+                BlitzRenderer.animTime(BlitzRenderer.statePath(context)));
     }
 
     static void renderAt(
             Context context, AppWidgetManager manager, int appWidgetId, double timeSecs) {
-        int scrub = (int) Math.round(timeSecs / DURATION_SECS * 10);
-
         Bundle options = manager.getAppWidgetOptions(appWidgetId);
         int widthDp = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 0);
         int heightDp = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 0);
@@ -136,7 +113,8 @@ public class BlitzAnimWidgetProvider extends AppWidgetProvider {
         if (heightDp <= 0) heightDp = 120;
         float density = context.getResources().getDisplayMetrics().density;
 
-        String html = BlitzRenderer.demoAnimatedHtml(scrub, false);
+        String html = BlitzRenderer.widgetHtml(
+                BlitzRenderer.statePath(context), "anim", false, "");
 
         byte[] rgba = BlitzRenderer.renderHtmlAt(html, widthDp, heightDp, density, timeSecs);
         int pw = (int) (widthDp * density);
