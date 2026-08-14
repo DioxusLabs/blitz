@@ -3,7 +3,7 @@
 
 #![allow(clippy::collapsible_if)]
 
-mod color;
+pub mod color;
 mod debug_overlay;
 mod filters;
 mod gradient;

@@ -188,45 +188,45 @@ struct BlitzDemoWidget: Widget {
     }
 }
 
-// MARK: - CSS animation widget (Rust controls the animation clock)
+// MARK: - CSS transition widget (Rust controls the transition clock)
 
 /// Blitz resolves styles with an explicit `current_time_for_animations`, so
-/// every frame samples the document's CSS `@keyframes` animations at exactly
-/// the instant Rust chooses. The scrubber, Step, and Play actions all mutate
-/// the Rust-owned animation clock via `dispatch`; the timeline below is
-/// planned entirely by Rust.
+/// every state change eases to its new pose via CSS transitions sampled at
+/// exactly the instant Rust chooses — and an interrupting action
+/// re-baselines and eases from wherever the widget currently is instead of
+/// snapping. The scrubber, Step, and Play actions all mutate the Rust-owned
+/// state via `dispatch`; the timeline below is planned entirely by Rust.
 struct BlitzAnimProvider: TimelineProvider {
-    private func makeEntry(context: Context, date: Date, animTime: Double) -> BlitzFrameEntry {
-        makeFrameEntry(kind: "anim", context: context, date: date, time: animTime, hideTracked: true)
+    private func makeEntry(context: Context, date: Date, offset: Double) -> BlitzFrameEntry {
+        makeFrameEntry(kind: "anim", context: context, date: date, time: offset, hideTracked: true)
     }
 
     func placeholder(in context: Context) -> BlitzFrameEntry {
-        makeEntry(
-            context: context, date: Date(),
-            animTime: blitz_widget_anim_time(BlitzRenderer.statePath))
+        makeEntry(context: context, date: Date(), offset: 0)
     }
 
     func getSnapshot(in context: Context, completion: @escaping (BlitzFrameEntry) -> Void) {
-        completion(makeEntry(
-            context: context, date: Date(),
-            animTime: blitz_widget_anim_time(BlitzRenderer.statePath)))
+        completion(makeEntry(context: context, date: Date(), offset: 0))
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<BlitzFrameEntry>) -> Void) {
-        // Rust plans the timeline: one frame at the current clock normally, a
-        // flip-book (one frame per second of playback) right after "play".
-        // WidgetKit shows each frame at its date and tweens the sprite layers
-        // between consecutive frames. Render every frame BEFORE dating the
-        // entries: the renders take a while, and entries dated from the
-        // pre-render clock end up in the past, delaying playback. The first
-        // frame's negative offset backdates the rest pose so the first moving
-        // frame lands just after "now".
+        // Rust plans the timeline: one settled frame when idle, a sequence
+        // covering the remaining transition/playback otherwise. Each frame's
+        // `time` is its display offset from now; Rust maps it onto its
+        // persisted transition clocks so the frame shows the pose at the
+        // instant it appears. WidgetKit shows each frame at its date and
+        // tweens the sprite layers between consecutive frames. Render every
+        // frame BEFORE dating the entries: the renders take a while, and
+        // entries dated from the pre-render clock end up in the past,
+        // delaying playback. The first frame's negative offset backdates the
+        // pose already on screen so the first moving frame lands just after
+        // "now".
         var frames = BlitzRenderer.animTimeline()
         if frames.isEmpty {
-            frames = [.init(offset: 0, time: blitz_widget_anim_time(BlitzRenderer.statePath))]
+            frames = [.init(offset: 0, time: 0)]
         }
         var entries = frames.map { frame in
-            makeEntry(context: context, date: .distantPast, animTime: frame.time)
+            makeEntry(context: context, date: .distantPast, offset: frame.time)
         }
         let start = Date()
         for i in entries.indices {
@@ -241,8 +241,8 @@ struct BlitzAnimWidget: Widget {
         StaticConfiguration(kind: "BlitzAnimWidget", provider: BlitzAnimProvider()) { entry in
             BlitzFrameView(entry: entry)
         }
-        .configurationDisplayName("Blitz CSS Animation")
-        .description("CSS keyframe animations sampled at any instant — Blitz controls the animation clock.")
+        .configurationDisplayName("Blitz CSS Transitions")
+        .description("CSS transitions sampled at any instant — interruptions ease from the current pose.")
         .supportedFamilies([.systemMedium])
         .contentMarginsDisabled()
     }

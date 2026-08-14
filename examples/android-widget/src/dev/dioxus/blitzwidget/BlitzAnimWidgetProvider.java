@@ -20,10 +20,11 @@ import org.json.JSONObject;
 import java.nio.ByteBuffer;
 
 /**
- * CSS animation widget: Blitz resolves styles with an explicit animation
- * clock, so every render samples the document's CSS keyframe animations at
- * exactly the instant Rust chooses. The scrubber segments and Step button
- * mutate the Rust-owned clock; the HTML itself is identical for every frame.
+ * CSS transition widget: every state change eases to its new pose via CSS
+ * transitions resolved under an explicit Rust-owned clock, so an
+ * interrupting action re-baselines and eases from wherever the widget
+ * currently is instead of snapping. This provider just re-renders (at
+ * "now") for as long as Rust says the widget is in motion.
  */
 public class BlitzAnimWidgetProvider extends AppWidgetProvider {
     static final String ACTION_ANIM = "dev.dioxus.blitzwidget.ANIM_ACTION";
@@ -50,26 +51,18 @@ public class BlitzAnimWidgetProvider extends AppWidgetProvider {
             if (action != null) {
                 BlitzRenderer.dispatch(BlitzRenderer.statePath(context), action);
             }
-            if ("play".equals(action)) {
-                play(context);
-                return;
-            }
-            AppWidgetManager manager = AppWidgetManager.getInstance(context);
-            int[] ids = manager.getAppWidgetIds(
-                    new ComponentName(context, BlitzAnimWidgetProvider.class));
-            for (int id : ids) {
-                updateWidget(context, manager, id);
-            }
+            animate(context);
         }
     }
 
     /**
-     * Flip-book playback: re-render and push successive animation-clock frames
-     * for {@code PLAY_MS}. RemoteViews bitmap updates apply immediately, so
-     * this animates the widget at the render loop's frame rate. goAsync()
-     * keeps the receiver alive for the duration (limit ~10s).
+     * Motion loop: while Rust reports the widget is in motion (an in-flight
+     * transition or playback), re-render the frame at "now" and push it.
+     * RemoteViews bitmap updates apply immediately, so this animates the
+     * widget at the render loop's frame rate. goAsync() keeps the receiver
+     * alive for the duration (limit ~10s, so the loop is capped just under).
      */
-    private void play(Context context) {
+    private void animate(Context context) {
         final PendingResult result = goAsync();
         final Context app = context.getApplicationContext();
         new Thread(() -> {
@@ -78,14 +71,13 @@ public class BlitzAnimWidgetProvider extends AppWidgetProvider {
                 int[] ids = manager.getAppWidgetIds(
                         new ComponentName(app, BlitzAnimWidgetProvider.class));
                 String statePath = BlitzRenderer.statePath(app);
-                final long PLAY_MS = (long) (BlitzRenderer.playSecs() * 1000);
                 final long FRAME_MS = 125;
+                final long CAP_MS = 9500;
                 long start = System.currentTimeMillis();
-                for (long elapsed = 0; elapsed < PLAY_MS;
-                        elapsed = System.currentTimeMillis() - start) {
-                    double t = BlitzRenderer.animTimeAt(statePath, elapsed / 1000.0);
+                while (System.currentTimeMillis() - start < CAP_MS
+                        && BlitzRenderer.refreshSecs(statePath) > 0) {
                     for (int id : ids) {
-                        renderAt(app, manager, id, t);
+                        renderAt(app, manager, id, 0);
                     }
                     Thread.sleep(FRAME_MS);
                 }
@@ -100,8 +92,7 @@ public class BlitzAnimWidgetProvider extends AppWidgetProvider {
     }
 
     static void updateWidget(Context context, AppWidgetManager manager, int appWidgetId) {
-        renderAt(context, manager, appWidgetId,
-                BlitzRenderer.animTime(BlitzRenderer.statePath(context)));
+        renderAt(context, manager, appWidgetId, 0);
     }
 
     static void renderAt(

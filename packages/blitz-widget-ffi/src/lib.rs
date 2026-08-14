@@ -19,6 +19,7 @@ use anyrender::{PaintScene as _, render_to_buffer};
 use anyrender_vello_cpu::VelloCpuImageRenderer;
 use blitz_dom::{BaseDocument, DocumentConfig, NodeId, util::Color};
 use blitz_html::HtmlDocument;
+use blitz_paint::color::ToColorColor as _;
 use blitz_paint::paint_scene;
 use blitz_traits::shell::{ColorScheme, Viewport};
 use peniko::Fill;
@@ -72,8 +73,17 @@ pub fn render_html(
     }
 
     let regions = extract_hit_regions(document.as_ref());
+    let buffer = paint_document(&mut document, render_width, render_height, scale);
+    (buffer, regions)
+}
 
-    let buffer = render_to_buffer::<VelloCpuImageRenderer, _>(
+fn paint_document(
+    document: &mut HtmlDocument,
+    render_width: u32,
+    render_height: u32,
+    scale: f64,
+) -> Vec<u8> {
+    render_to_buffer::<VelloCpuImageRenderer, _>(
         |scene| {
             scene.fill(
                 Fill::NonZero,
@@ -94,9 +104,157 @@ pub fn render_html(
         },
         render_width,
         render_height,
-    );
+    )
+}
 
-    (buffer, regions)
+/// Build the animated widget's document mid-transition: parse the template
+/// with the transitioned elements' inline styles at the `from` pose, resolve
+/// it, mutate their inline styles to the `to` pose (which starts CSS
+/// transitions in stylo), then resolve at `elapsed` seconds — sampling every
+/// transition exactly `elapsed` into its run.
+#[allow(clippy::too_many_arguments)]
+fn resolve_anim_document(
+    from: &demo::Pose,
+    to: &demo::Pose,
+    elapsed: f64,
+    scrub: i32,
+    hide_tracked: bool,
+    render_width: u32,
+    render_height: u32,
+    scale: f64,
+) -> HtmlDocument {
+    let html = demo::animated_html(from, scrub, hide_tracked);
+    let mut document = HtmlDocument::from_html(
+        &html,
+        DocumentConfig {
+            viewport: Some(Viewport::new(
+                render_width,
+                render_height,
+                scale as f32,
+                ColorScheme::Light,
+            )),
+            ..Default::default()
+        },
+    );
+    let doc = document.as_mut();
+    doc.resolve(0.0);
+    let targets = collect_anim_nodes(doc);
+    {
+        let mut mutator = doc.mutate();
+        for (name, style) in to.styles() {
+            if let Some(&node_id) = targets.iter().find(|(n, _)| *n == name).map(|(_, id)| id) {
+                mutator.set_attribute(node_id, blitz_dom::qual_name!("style"), &style);
+            }
+        }
+    }
+    doc.resolve(0.0);
+    if elapsed > 0.0 {
+        doc.resolve(elapsed);
+    }
+    document
+}
+
+/// The node of each `data-anim` (transitioned) element.
+fn collect_anim_nodes(doc: &BaseDocument) -> Vec<(String, NodeId)> {
+    fn walk(doc: &BaseDocument, node_id: NodeId, out: &mut Vec<(String, NodeId)>) {
+        let Some(node) = doc.get_node(node_id) else {
+            return;
+        };
+        if let Some(attrs) = node.attrs()
+            && let Some(name) = attrs
+                .iter()
+                .find(|a| a.name.local.as_ref() == "data-anim")
+                .map(|a| a.value.to_string())
+        {
+            out.push((name, node_id));
+        }
+        for child in node.children.iter() {
+            walk(doc, *child, out);
+        }
+    }
+    let mut out = Vec::new();
+    walk(doc, doc.root_element().id, &mut out);
+    out
+}
+
+/// Read the transitioned elements' current pose back out of a resolved
+/// document: the ball's rect (relative to its stage), the fill's width as a
+/// percentage of its rail, and the badge's computed background color. This is
+/// how an interrupted transition is re-baselined — the mid-flight values
+/// stylo interpolated become the `from` pose of the next transition, exactly
+/// like live CSS.
+fn read_pose(doc: &BaseDocument) -> Option<demo::Pose> {
+    let targets = collect_anim_nodes(doc);
+    let find = |name: &str| {
+        targets
+            .iter()
+            .find(|(n, _)| n == name)
+            .and_then(|(_, id)| doc.get_node(*id))
+    };
+
+    let ball = find("ball")?;
+    let stage = doc.get_node(ball.parent?)?;
+    let ball_pos = ball.absolute_position(0.0, 0.0);
+    let stage_pos = stage.absolute_position(0.0, 0.0);
+
+    let fill = find("fill")?;
+    let rail = doc.get_node(fill.parent?)?;
+    let rail_width = rail.final_layout().size.width as f64;
+    let fill_pct = if rail_width > 0.0 {
+        (fill.final_layout().size.width as f64 / rail_width * 100.0).clamp(0.0, 100.0)
+    } else {
+        0.0
+    };
+
+    let badge = find("badge")?;
+    let styles = badge.primary_styles()?;
+    let current_color = styles.clone_color();
+    let bg = styles
+        .get_background()
+        .background_color
+        .resolve_to_absolute(&current_color)
+        .as_srgb_color();
+
+    Some(demo::Pose {
+        ball_left: (ball_pos.x - stage_pos.x) as f64,
+        ball_top: (ball_pos.y - stage_pos.y) as f64,
+        ball_size: ball.final_layout().size.width as f64,
+        fill_pct,
+        badge: [
+            (bg.components[0] as f64 * 255.0).clamp(0.0, 255.0),
+            (bg.components[1] as f64 * 255.0).clamp(0.0, 255.0),
+            (bg.components[2] as f64 * 255.0).clamp(0.0, 255.0),
+        ],
+    })
+}
+
+/// Nominal layout size used when a document is resolved only to read a pose
+/// back (not to paint pixels). The pose's values are size-independent (the
+/// ball's inline px, the fill's percentage), so any reasonable size works.
+const POSE_PROBE_SIZE: (u32, u32) = (360, 170);
+
+/// The animated widget's pose at wall-clock `now`: the target pose if no
+/// transition is in flight, otherwise the mid-transition pose stylo
+/// interpolated — used to re-baseline the next transition when an action
+/// interrupts the current one.
+pub(crate) fn current_anim_pose(state: &store::WidgetState, now: f64) -> demo::Pose {
+    let to = store::target_pose(state, now);
+    let elapsed = now - state.trans_start;
+    if !store::playing(state, now) && elapsed >= demo::TRANSITION_SECS {
+        return to;
+    }
+    let from = store::from_pose(state);
+    let doc = resolve_anim_document(
+        &from,
+        &to,
+        elapsed.clamp(0.0, demo::TRANSITION_SECS + 1.0),
+        store::scrub_segment(state),
+        false,
+        POSE_PROBE_SIZE.0,
+        POSE_PROBE_SIZE.1,
+        1.0,
+    );
+    read_pose(doc.as_ref()).unwrap_or(to)
 }
 
 /// Render an HTML string to an RGBA8888 pixel buffer (no hit regions).
@@ -179,8 +337,35 @@ pub fn render_widget_frame(
     hide_tracked: bool,
     clock: &str,
 ) -> Option<(Vec<u8>, String)> {
-    let html = store::widget_html(path, kind, hide_tracked, clock)?;
-    let (buffer, regions) = render_html(&html, width, height, scale, time);
+    let (buffer, regions) = if kind == "anim" {
+        // `time` is the display offset: seconds from now at which this frame
+        // will be shown (0 = immediately). Rust maps it onto the persisted
+        // transition/playback clocks, so pre-rendered timeline frames sample
+        // the transitions at exactly the instant they will appear.
+        let state = store::load(path);
+        let display = store::now_epoch() + time.max(0.0);
+        let from = store::from_pose(&state);
+        let to = store::target_pose(&state, display);
+        let elapsed = (display - state.trans_start).clamp(0.0, demo::TRANSITION_SECS + 1.0);
+        let render_width = (width as f64 * scale) as u32;
+        let render_height = (height as f64 * scale) as u32;
+        let mut document = resolve_anim_document(
+            &from,
+            &to,
+            elapsed,
+            store::scrub_segment(&state),
+            hide_tracked,
+            render_width,
+            render_height,
+            scale,
+        );
+        let regions = extract_hit_regions(document.as_ref());
+        let buffer = paint_document(&mut document, render_width, render_height, scale);
+        (buffer, regions)
+    } else {
+        let html = store::widget_html(path, kind, hide_tracked, clock)?;
+        render_html(&html, width, height, scale, time)
+    };
     let buttons: Vec<HitRegion> = regions
         .iter()
         .filter(|r| !r.action.starts_with("track:"))
@@ -300,39 +485,23 @@ pub unsafe extern "C" fn blitz_widget_frame(
     }
 }
 
-/// C ABI: the animation widget's current CSS animation clock, in seconds.
+/// C ABI: how many more seconds the animation widget is in motion (an
+/// in-flight transition or playback) — how long the native shell should keep
+/// re-rendering. 0 when settled.
 ///
 /// # Safety
 /// `state_path` must be a valid NUL-terminated string.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn blitz_widget_anim_time(state_path: *const std::ffi::c_char) -> f64 {
-    unsafe { cstr(state_path) }.map_or(0.0, store::anim_time)
-}
-
-/// C ABI: the animation clock `elapsed` seconds into playback (wraps around
-/// the animation cycle).
-///
-/// # Safety
-/// `state_path` must be a valid NUL-terminated string.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn blitz_widget_anim_time_at(
-    state_path: *const std::ffi::c_char,
-    elapsed: f64,
-) -> f64 {
-    unsafe { cstr(state_path) }.map_or(0.0, |path| store::anim_time_at(path, elapsed))
-}
-
-/// C ABI: seconds of flip-book playback triggered by the `play` action.
-#[unsafe(no_mangle)]
-pub extern "C" fn blitz_widget_play_secs() -> f64 {
-    store::PLAY_SECS
+pub unsafe extern "C" fn blitz_widget_refresh_secs(state_path: *const std::ffi::c_char) -> f64 {
+    unsafe { cstr(state_path) }.map_or(0.0, store::refresh_secs)
 }
 
 /// C ABI: plan the animation widget's timeline as JSON —
-/// `{"frames":[{"offset":..,"time":..},..]}` (`offset` seconds relative to
-/// now, `time` the animation clock to render at). One frame normally; a
-/// flip-book right after a `play` dispatch (consuming clears the pending
-/// playback). Free with [`blitz_string_free`].
+/// `{"frames":[{"offset":..,"time":..},..]}` where both are the display
+/// offset in seconds from now to render and show each frame at (pass `time`
+/// as the frame's render time). One settled frame when idle; a sequence
+/// covering the remaining transition/playback otherwise. Free with
+/// [`blitz_string_free`].
 ///
 /// # Safety
 /// `state_path` must be a valid NUL-terminated string.
@@ -490,9 +659,12 @@ mod android {
         }
     }
 
-    /// JNI: `BlitzRenderer.animTime(String): double`
+    /// JNI: `BlitzRenderer.refreshSecs(String): double` — how many more
+    /// seconds the animation widget is in motion (an in-flight transition or
+    /// playback); how long the provider should keep re-rendering. 0 when
+    /// settled.
     #[unsafe(no_mangle)]
-    pub extern "system" fn Java_dev_dioxus_blitzwidget_BlitzRenderer_animTime<'l>(
+    pub extern "system" fn Java_dev_dioxus_blitzwidget_BlitzRenderer_refreshSecs<'l>(
         mut env: JNIEnv<'l>,
         _class: JClass<'l>,
         state_path: JString<'l>,
@@ -500,37 +672,9 @@ mod android {
         match env.get_string(&state_path) {
             Ok(path) => {
                 let path: String = path.into();
-                crate::store::anim_time(&path)
+                crate::store::refresh_secs(&path)
             }
             Err(_) => 0.0,
         }
-    }
-
-    /// JNI: `BlitzRenderer.animTimeAt(String, double): double` — the animation
-    /// clock `elapsed` seconds into playback (wraps around the cycle).
-    #[unsafe(no_mangle)]
-    pub extern "system" fn Java_dev_dioxus_blitzwidget_BlitzRenderer_animTimeAt<'l>(
-        mut env: JNIEnv<'l>,
-        _class: JClass<'l>,
-        state_path: JString<'l>,
-        elapsed: jdouble,
-    ) -> jdouble {
-        match env.get_string(&state_path) {
-            Ok(path) => {
-                let path: String = path.into();
-                crate::store::anim_time_at(&path, elapsed)
-            }
-            Err(_) => 0.0,
-        }
-    }
-
-    /// JNI: `BlitzRenderer.playSecs(): double` — seconds of flip-book playback
-    /// triggered by the `play` action.
-    #[unsafe(no_mangle)]
-    pub extern "system" fn Java_dev_dioxus_blitzwidget_BlitzRenderer_playSecs<'l>(
-        _env: JNIEnv<'l>,
-        _class: JClass<'l>,
-    ) -> jdouble {
-        crate::store::PLAY_SECS
     }
 }

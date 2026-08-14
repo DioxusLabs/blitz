@@ -124,29 +124,128 @@ pub fn widget_html(count: i32, slider: i32) -> String {
 /// Total length of the animation cycle sampled by the scrubber, in seconds.
 pub const ANIMATION_DURATION: f64 = 4.0;
 
-/// Animated demo template: CSS `@keyframes` animations (a bouncing ball, a
-/// progress sweep and a hue-shifting badge) plus a scrubber whose segments
-/// carry `time:N` actions (N in 0..=10, mapping to N/10 of
-/// [`ANIMATION_DURATION`]), a `step` action and a `play` action. The native
-/// shell picks the sampled instant via the `time` render parameter — the HTML
-/// itself is identical for every frame.
+/// Duration of the CSS transitions that ease every state change of the
+/// animated widget, in seconds.
+pub const TRANSITION_SECS: f64 = 1.5;
+
+/// The pose of the animated widget's transitioned elements at one instant:
+/// the ball's rect, the progress fill's width and the badge's color. Poses
+/// are pure functions of the animation clock ([`pose_at`]), and the pose an
+/// interrupted transition was re-baselined from is persisted in the state
+/// file (round-tripped via [`Pose::serialize`] / [`Pose::parse`]).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Pose {
+    pub ball_left: f64,
+    pub ball_top: f64,
+    pub ball_size: f64,
+    pub fill_pct: f64,
+    pub badge: [f64; 3],
+}
+
+impl Pose {
+    pub fn serialize(&self) -> String {
+        format!(
+            "{:.3},{:.3},{:.3},{:.3},{:.1},{:.1},{:.1}",
+            self.ball_left,
+            self.ball_top,
+            self.ball_size,
+            self.fill_pct,
+            self.badge[0],
+            self.badge[1],
+            self.badge[2]
+        )
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        let mut parts = s.split(',').map(|p| p.trim().parse::<f64>());
+        let mut next = || parts.next()?.ok();
+        Some(Self {
+            ball_left: next()?,
+            ball_top: next()?,
+            ball_size: next()?,
+            fill_pct: next()?,
+            badge: [next()?, next()?, next()?],
+        })
+    }
+
+    /// The inline style of each transitioned element (`data-anim` name to
+    /// style text). Only the transitioned properties live in the inline
+    /// style; everything static is in the stylesheet.
+    pub fn styles(&self) -> [(&'static str, String); 3] {
+        [
+            (
+                "ball",
+                format!(
+                    "left: {:.3}px; top: {:.3}px; width: {:.3}px; height: {:.3}px;",
+                    self.ball_left, self.ball_top, self.ball_size, self.ball_size
+                ),
+            ),
+            ("fill", format!("width: {:.3}%;", self.fill_pct)),
+            (
+                "badge",
+                format!(
+                    "background-color: rgb({:.1}, {:.1}, {:.1});",
+                    self.badge[0], self.badge[1], self.badge[2]
+                ),
+            ),
+        ]
+    }
+}
+
+const BADGE_STOPS: [[f64; 3]; 4] = [
+    [230.0, 106.0, 168.0], // #e66aa8
+    [95.0, 208.0, 165.0],  // #5fd0a5
+    [102.0, 126.0, 234.0], // #667eea
+    [230.0, 106.0, 168.0], // back to #e66aa8
+];
+
+/// The pose of the animation cycle at `clock` seconds: the ball bounces out
+/// and back (peak at half the cycle), the fill sweeps 0→100%, and the badge
+/// hue walks pink→green→blue→pink.
+pub fn pose_at(clock: f64) -> Pose {
+    let p = (clock.rem_euclid(ANIMATION_DURATION)) / ANIMATION_DURATION;
+    let q = 1.0 - (2.0 * p - 1.0).abs();
+    let seg = (p * 3.0).min(2.999);
+    let (i, f) = (seg as usize, seg.fract());
+    let lerp = |a: f64, b: f64| a + (b - a) * f;
+    Pose {
+        ball_left: 280.0 * q,
+        ball_top: 9.0 - 9.0 * q,
+        ball_size: 34.0 + 17.0 * q,
+        fill_pct: p * 100.0,
+        badge: [
+            lerp(BADGE_STOPS[i][0], BADGE_STOPS[i + 1][0]),
+            lerp(BADGE_STOPS[i][1], BADGE_STOPS[i + 1][1]),
+            lerp(BADGE_STOPS[i][2], BADGE_STOPS[i + 1][2]),
+        ],
+    }
+}
+
+/// Animated demo template, driven by CSS *transitions*: the ball rect, fill
+/// width and badge color are written as inline styles at the `from` pose and
+/// declared `transition: ... ease`, then the renderer mutates them to the
+/// target pose and resolves the document mid-transition — so every state
+/// change eases, and an interrupted transition eases again from wherever it
+/// was (matching live CSS semantics).
 ///
-/// The ball and progress fill animate *layout* properties (`left`, `width`,
-/// `height`, `top`), so their animated rects are extractable via
-/// `data-track` hit regions at any sampled instant. With
-/// `hide_tracked = true` they keep their layout but don't paint
-/// (`visibility: hidden`): the native shell composites them as separate
-/// layers positioned from the extracted rects, letting the platform tween
-/// position/size between samples at full frame rate.
-pub fn animated_html(scrub: i32, hide_tracked: bool) -> String {
+/// The scrubber segments carry `time:N` actions (N in 0..=10, mapping to N/10
+/// of [`ANIMATION_DURATION`]), plus `step` and `play` actions.
+///
+/// The ball and fill transition *layout* properties, so their mid-transition
+/// rects are extractable via `data-track` hit regions. With
+/// `hide_tracked = true` they keep their layout but don't paint: the native
+/// shell composites them as separate layers positioned from the extracted
+/// rects, letting the platform tween position/size between samples at full
+/// frame rate.
+pub fn animated_html(from: &Pose, scrub: i32, hide_tracked: bool) -> String {
     let scrub = scrub.clamp(0, 10);
     let percent = scrub * 10;
-    let ball_extra = if hide_tracked {
+    let hidden = if hide_tracked {
         " visibility: hidden;"
     } else {
         ""
     };
-    let fill_extra = ball_extra;
+    let [(_, ball_style), (_, fill_style), (_, badge_style)] = from.styles();
 
     let mut segments = String::new();
     for i in 0..=10 {
@@ -170,58 +269,42 @@ pub fn animated_html(scrub: i32, hide_tracked: bool) -> String {
   .title {{ font-size: 13px; font-weight: 600; opacity: 0.9; }}
   .badge {{
     font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 9px;
-    background-color: #e66aa8;
-    animation: hue 4s linear infinite;
+    transition: background-color {trans}s ease;
   }}
   .stage {{ position: relative; height: 52px; margin: 4px 0; }}
   .ball {{
-    position: absolute; top: 9px; left: 0;
-    width: 34px; height: 34px; border-radius: 50%;
-    background: #ffd76e;
-    animation: bounce 4s ease-in-out infinite;{ball_extra}
+    position: absolute; border-radius: 50%; background: #ffd76e;
+    transition: left {trans}s ease, top {trans}s ease,
+                width {trans}s ease, height {trans}s ease;{hidden}
   }}
   .rail {{ position: relative; height: 8px; border-radius: 4px;
     background: rgba(255,255,255,0.18); margin-bottom: 8px; }}
   .fill {{ position: absolute; top: 0; left: 0; height: 8px;
     border-radius: 4px; background: #5fd0a5;
-    animation: sweep 4s linear infinite;{fill_extra} }}
+    transition: width {trans}s ease;{hidden} }}
   .scrub-label {{ font-size: 11px; opacity: 0.85; margin-bottom: 4px;
     display: flex; justify-content: space-between; }}
   .track {{ display: flex; gap: 3px; height: 18px; }}
   .seg {{ flex: 1 1 0; border-radius: 4px; background: rgba(255,255,255,0.22); }}
   .seg.filled {{ background: #ffd76e; }}
-  .badge.play {{ animation: none; background-color: rgba(255,255,255,0.18); }}
-  @keyframes bounce {{
-    0%   {{ left: 0px;   top: 9px; width: 34px; height: 34px; }}
-    50%  {{ left: 280px; top: 0px; width: 51px; height: 51px; }}
-    100% {{ left: 0px;   top: 9px; width: 34px; height: 34px; }}
-  }}
-  @keyframes sweep {{
-    from {{ width: 0%; }}
-    to   {{ width: 100%; }}
-  }}
-  @keyframes hue {{
-    0%   {{ background-color: #e66aa8; }}
-    33%  {{ background-color: #5fd0a5; }}
-    66%  {{ background-color: #667eea; }}
-    100% {{ background-color: #e66aa8; }}
-  }}
+  .badge.play {{ transition: none; background-color: rgba(255,255,255,0.18); }}
 </style></head>
 <body><div class="card">
   <div class="row">
-    <div class="title">Blitz CSS Animation</div>
+    <div class="title">Blitz CSS Transitions</div>
     <div class="row" style="gap: 6px;">
       <div class="badge play" data-action="play">Play</div>
-      <div class="badge" data-action="step">Step +0.4s</div>
+      <div class="badge" data-anim="badge" data-action="step" style="{badge_style}">Step +0.4s</div>
     </div>
   </div>
-  <div class="stage"><div class="ball" data-track="ball"></div></div>
-  <div class="rail" data-track="rail"><div class="fill" data-track="fill"></div></div>
+  <div class="stage"><div class="ball" data-anim="ball" data-track="ball" style="{ball_style}"></div></div>
+  <div class="rail" data-track="rail"><div class="fill" data-anim="fill" data-track="fill" style="{fill_style}"></div></div>
   <div>
     <div class="scrub-label"><span>Timeline scrubber</span><span>t = {percent}%</span></div>
     <div class="track">{segments}</div>
   </div>
-</div></body></html>"##
+</div></body></html>"##,
+        trans = TRANSITION_SECS,
     )
 }
 

@@ -11,7 +11,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::demo;
 
-/// Seconds of flip-book playback triggered by the `play` action.
+/// Seconds of playback triggered by the `play` action (two full cycles, so
+/// the clock lands back where it started).
 pub const PLAY_SECS: f64 = 8.0;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -22,10 +23,16 @@ pub struct WidgetState {
     pub demo_count: i32,
     /// Interactive demo slider segment (0..=10).
     pub slider: i32,
-    /// CSS animation clock of the animation widget, in seconds.
+    /// Target of the animation widget's clock, in seconds of the cycle. The
+    /// widget transitions toward the pose at this clock.
     pub anim_time: f64,
     /// Epoch seconds when `play` was last dispatched (0 = not playing).
     pub play_started: f64,
+    /// Serialized [`demo::Pose`] the in-flight transition started from
+    /// (empty = start at the target pose).
+    pub trans_from: String,
+    /// Epoch seconds when the in-flight transition started (0 = none).
+    pub trans_start: f64,
 }
 
 impl Default for WidgetState {
@@ -36,6 +43,8 @@ impl Default for WidgetState {
             slider: 5,
             anim_time: 0.0,
             play_started: 0.0,
+            trans_from: String::new(),
+            trans_start: 0.0,
         }
     }
 }
@@ -55,6 +64,8 @@ pub fn load(path: &str) -> WidgetState {
             "slider" => state.slider = value.parse().unwrap_or(state.slider),
             "anim_time" => state.anim_time = value.parse().unwrap_or(state.anim_time),
             "play_started" => state.play_started = value.parse().unwrap_or(state.play_started),
+            "trans_from" => state.trans_from = value.to_string(),
+            "trans_start" => state.trans_start = value.parse().unwrap_or(state.trans_start),
             _ => {}
         }
     }
@@ -66,17 +77,61 @@ pub fn save(path: &str, state: &WidgetState) {
         let _ = std::fs::create_dir_all(parent);
     }
     let contents = format!(
-        "count={}\ndemo_count={}\nslider={}\nanim_time={}\nplay_started={}\n",
-        state.count, state.demo_count, state.slider, state.anim_time, state.play_started
+        "count={}\ndemo_count={}\nslider={}\nanim_time={}\nplay_started={}\ntrans_from={}\ntrans_start={}\n",
+        state.count,
+        state.demo_count,
+        state.slider,
+        state.anim_time,
+        state.play_started,
+        state.trans_from,
+        state.trans_start
     );
     let _ = std::fs::write(path, contents);
 }
 
-fn now_epoch() -> f64 {
+pub(crate) fn now_epoch() -> f64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs_f64())
         .unwrap_or(0.0)
+}
+
+/// Whether `play` playback is running at wall-clock `now`.
+pub(crate) fn playing(state: &WidgetState, now: f64) -> bool {
+    state.play_started > 0.0 && now - state.play_started < PLAY_SECS
+}
+
+/// The pose the animation widget is transitioning toward at wall-clock
+/// `now`: the pose at the target clock — which advances in real time during
+/// playback, so the transition chases a moving target and playback itself
+/// eases in from wherever the widget was.
+pub(crate) fn target_pose(state: &WidgetState, now: f64) -> demo::Pose {
+    let clock = if playing(state, now) {
+        state.anim_time + (now - state.play_started)
+    } else {
+        state.anim_time
+    };
+    demo::pose_at(clock)
+}
+
+/// The pose the in-flight transition started from.
+pub(crate) fn from_pose(state: &WidgetState) -> demo::Pose {
+    demo::Pose::parse(&state.trans_from).unwrap_or_else(|| demo::pose_at(state.anim_time))
+}
+
+/// Re-baseline the animation widget's transition before changing its target:
+/// the pose currently on screen (mid-transition or mid-playback) becomes the
+/// `from` pose of a fresh transition starting now — so an interrupting action
+/// eases from wherever the widget is, never snapping.
+fn rebase_transition(state: &mut WidgetState, now: f64) {
+    state.trans_from = crate::current_anim_pose(state, now).serialize();
+    state.trans_start = now;
+    if playing(state, now) {
+        // Fold the played time into the clock so the target stays continuous
+        // when playback is interrupted.
+        state.anim_time = (state.anim_time + (now - state.play_started)) % demo::ANIMATION_DURATION;
+    }
+    state.play_started = 0.0;
 }
 
 /// Apply a `data-action` from any of the demo widgets to the persisted state.
@@ -91,9 +146,15 @@ pub fn dispatch(path: &str, action: &str) {
             state.slider = 5;
         }
         "step" => {
+            let now = now_epoch();
+            rebase_transition(&mut state, now);
             state.anim_time = (state.anim_time + 0.4) % (demo::ANIMATION_DURATION + 0.0001);
         }
-        "play" => state.play_started = now_epoch(),
+        "play" => {
+            let now = now_epoch();
+            rebase_transition(&mut state, now);
+            state.play_started = now;
+        }
         _ => {
             if let Some(value) = action.strip_prefix("slider:")
                 && let Ok(value) = value.parse::<i32>()
@@ -102,6 +163,8 @@ pub fn dispatch(path: &str, action: &str) {
             } else if let Some(seg) = action.strip_prefix("time:")
                 && let Ok(seg) = seg.parse::<i32>()
             {
+                let now = now_epoch();
+                rebase_transition(&mut state, now);
                 state.anim_time = seg.clamp(0, 10) as f64 / 10.0 * demo::ANIMATION_DURATION;
             }
         }
@@ -116,61 +179,66 @@ pub fn scrub_segment(state: &WidgetState) -> i32 {
 
 /// Build the HTML for a widget kind at the current state. Kinds: `counter`
 /// (home screen; `clock` is a display-only time string), `counter-lock`
-/// (lock screen), `interactive` (counter + slider), `anim` (CSS animation
-/// demo; `hide_tracked` leaves the `data-track` elements as invisible layout
-/// placeholders for native layer compositing).
-pub fn widget_html(path: &str, kind: &str, hide_tracked: bool, clock: &str) -> Option<String> {
+/// (lock screen), `interactive` (counter + slider). The `anim` kind is
+/// rendered by [`crate::render_widget_frame`] directly (its document is
+/// mutated mid-render to drive CSS transitions).
+pub fn widget_html(path: &str, kind: &str, _hide_tracked: bool, clock: &str) -> Option<String> {
     let state = load(path);
     match kind {
         "counter" => Some(demo::counter_html(state.count, clock)),
         "counter-lock" => Some(demo::counter_lock_html(state.count)),
         "interactive" => Some(demo::widget_html(state.demo_count, state.slider)),
-        "anim" => Some(demo::animated_html(scrub_segment(&state), hide_tracked)),
         _ => None,
     }
 }
 
-/// The current animation clock, in seconds.
-pub fn anim_time(path: &str) -> f64 {
-    load(path).anim_time
-}
-
-/// The animation clock `elapsed` seconds into playback from the current
-/// state (wraps around the animation cycle).
-pub fn anim_time_at(path: &str, elapsed: f64) -> f64 {
-    (load(path).anim_time + elapsed) % demo::ANIMATION_DURATION
+/// How many more seconds the animation widget is in motion (an in-flight
+/// transition or playback) — how long the native shell should keep
+/// re-rendering. 0 when settled.
+pub fn refresh_secs(path: &str) -> f64 {
+    let state = load(path);
+    let now = now_epoch();
+    let trans_left = if state.trans_start > 0.0 {
+        state.trans_start + demo::TRANSITION_SECS - now
+    } else {
+        0.0
+    };
+    let play_left = if playing(&state, now) {
+        state.play_started + PLAY_SECS - now
+    } else {
+        0.0
+    };
+    trans_left.max(play_left).max(0.0)
 }
 
 /// Plan the animation widget's timeline as JSON:
-/// `{"frames":[{"offset":..,"time":..},..]}` where `offset` is seconds
-/// relative to now at which to show the frame and `time` is the animation
-/// clock to render it at.
+/// `{"frames":[{"offset":..,"time":..},..]}` where both fields are the
+/// display offset in seconds from now (`time` is what to pass as the frame's
+/// render time — the renderer maps display offsets onto the persisted
+/// transition/playback clocks itself).
 ///
-/// Normally this is a single frame at the current clock. Right after a
-/// `play` dispatch it is a flip-book covering [`PLAY_SECS`] of playback at
-/// 1s spacing; the first frame (the pose already on screen) is backdated so
-/// the first moving frame lands just after now. Consuming the plan clears
-/// the pending playback (one-shot).
+/// One settled frame when idle. While in motion, frames span the remaining
+/// transition (0.5s spacing) or playback (1s spacing), plus a final settled
+/// frame; the first frame (the pose already on screen) is backdated so the
+/// first moving frame lands just after now.
 pub fn anim_timeline_json(path: &str) -> String {
-    let mut state = load(path);
-    let playing = state.play_started > 0.0 && now_epoch() - state.play_started < PLAY_SECS;
+    let state = load(path);
+    let now = now_epoch();
+    let remaining = refresh_secs(path);
+    let spacing = if playing(&state, now) { 1.0 } else { 0.5 };
     let mut json = String::from("{\"frames\":[");
-    if playing {
-        state.play_started = 0.0;
-        save(path, &state);
-        for i in 0..=(PLAY_SECS as i32) {
+    if remaining <= 0.0 {
+        json.push_str("{\"offset\":0,\"time\":0}");
+    } else {
+        let count = (remaining / spacing).ceil() as i32 + 1;
+        for i in 0..=count {
             if i > 0 {
                 json.push(',');
             }
-            let time = (state.anim_time + i as f64) % demo::ANIMATION_DURATION;
-            json.push_str(&format!(
-                "{{\"offset\":{:.2},\"time\":{:.4}}}",
-                i as f64 - 0.8,
-                time
-            ));
+            let t = (i as f64 * spacing).min(remaining + spacing);
+            let offset = if i == 0 { -0.8 } else { t };
+            json.push_str(&format!("{{\"offset\":{:.2},\"time\":{:.4}}}", offset, t));
         }
-    } else {
-        json.push_str(&format!("{{\"offset\":0,\"time\":{:.4}}}", state.anim_time));
     }
     json.push_str("]}");
     json
