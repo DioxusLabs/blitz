@@ -271,8 +271,8 @@ pub fn position(input: stylo::Position) -> taffy::Position {
 /// `container-type` (Gecko-mode stylo folds this into `clone_effective_containment()`; Servo-mode
 /// does not compute it) is not applied for now.
 ///
-/// Stylo's `STYLE`/`PAINT` bits do not affect layout and its `BLOCK_SIZE` bit is not supported by
-/// Taffy, so these are all dropped.
+/// Stylo's `STYLE` bit does not affect layout and its `BLOCK_SIZE` bit is not supported by
+/// Taffy, so these are dropped.
 ///
 /// Containment does not apply to non-atomic inline-level boxes.
 /// <https://drafts.csswg.org/css-contain-2/#contain-property>
@@ -292,6 +292,9 @@ pub fn contain(contain: stylo::Contain, display: stylo::Display) -> taffy::Conta
     }
     if contain.contains(stylo::Contain::LAYOUT) {
         output |= taffy::Contain::LAYOUT;
+    }
+    if contain.contains(stylo::Contain::PAINT) {
+        output |= taffy::Contain::PAINT;
     }
     output
 }
