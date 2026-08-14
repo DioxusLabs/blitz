@@ -6,7 +6,7 @@ use peniko::Fill;
 use style::values::computed::TextDecorationLine;
 
 use crate::color::{Color, ToColorColor as _};
-use crate::hooks::{PaintHooks, PaintNode, with_node};
+use crate::scene::{BlitzPaintScene, PaintNode, with_node};
 use crate::{FONT_EMBOLDEN_ENABLED, SELECTION_COLOR};
 
 /// Draw the backgrounds of inline elements (e.g. `<span style="background: ...">`).
@@ -18,17 +18,13 @@ use crate::{FONT_EMBOLDEN_ENABLED, SELECTION_COLOR};
 ///
 /// The inline root's own background is painted separately (as a normal block box), so
 /// runs belonging to the root are skipped to avoid drawing it twice.
-pub(crate) fn draw_inline_backgrounds<'a, S, H>(
-    scene: &mut S,
+pub(crate) fn draw_inline_backgrounds<'a>(
+    scene: &mut impl BlitzPaintScene,
     lines: impl Iterator<Item = Line<'a, TextBrush>>,
     doc: &BaseDocument,
     transform: Affine,
     inline_root_id: NodeId,
-    hooks: &mut H,
-) where
-    S: PaintScene,
-    H: PaintHooks<S>,
-{
+) {
     for line in lines {
         for item in line.items() {
             let PositionedLayoutItem::GlyphRun(glyph_run) = item else {
@@ -55,7 +51,7 @@ pub(crate) fn draw_inline_backgrounds<'a, S, H>(
             }
 
             let paint_node = PaintNode::new(doc.id(), node_id);
-            if !hooks.should_paint(paint_node) {
+            if !scene.should_paint(paint_node) {
                 continue;
             }
 
@@ -67,24 +63,20 @@ pub(crate) fn draw_inline_backgrounds<'a, S, H>(
             let y1 = baseline + metrics.descent as f64;
             let rect = Rect::new(x, y0, x + w, y1);
 
-            with_node(scene, hooks, paint_node, |scene, _| {
+            with_node(scene, paint_node, |scene| {
                 scene.fill(Fill::NonZero, transform, bg_color, None, &rect);
             });
         }
     }
 }
 
-pub(crate) fn stroke_text<'a, S, H>(
-    scene: &mut S,
+pub(crate) fn stroke_text<'a>(
+    scene: &mut impl BlitzPaintScene,
     lines: impl Iterator<Item = Line<'a, TextBrush>>,
     doc: &BaseDocument,
     transform: Affine,
     scale: f64,
-    hooks: &mut H,
-) where
-    S: PaintScene,
-    H: PaintHooks<S>,
-{
+) {
     for line in lines {
         for item in line.items() {
             if let PositionedLayoutItem::GlyphRun(glyph_run) = item {
@@ -94,7 +86,7 @@ pub(crate) fn stroke_text<'a, S, H>(
                 let metrics = run.metrics();
                 let style = glyph_run.style();
                 let paint_node = PaintNode::new(doc.id(), style.brush.id);
-                if !hooks.should_paint(paint_node) {
+                if !scene.should_paint(paint_node) {
                     continue;
                 }
                 let synthesis = run.synthesis();
@@ -129,7 +121,7 @@ pub(crate) fn stroke_text<'a, S, H>(
                     kurbo::Vec2::default()
                 };
 
-                hooks.begin_node(scene, paint_node);
+                scene.begin_node(paint_node);
 
                 scene.draw_glyphs(
                     font,
@@ -172,7 +164,7 @@ pub(crate) fn stroke_text<'a, S, H>(
                     draw_decoration_line(offset, size, &text_decoration_brush);
                 }
 
-                hooks.end_node(scene, paint_node);
+                scene.end_node(paint_node);
             }
         }
     }
