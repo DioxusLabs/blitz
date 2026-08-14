@@ -1,8 +1,8 @@
 import UIKit
 import CoreGraphics
 
-/// A tappable region extracted from the Blitz DOM: the layout rect (in
-/// points) of an HTML element carrying a `data-action` attribute.
+/// A tappable region from the frame plan: the layout rect (in points) of an
+/// HTML element carrying a `data-action` attribute.
 struct BlitzHitRegion: Decodable, Identifiable {
     let action: String
     let x: CGFloat
@@ -12,13 +12,31 @@ struct BlitzHitRegion: Decodable, Identifiable {
     var id: String { "\(action)@\(x),\(y)" }
 }
 
-enum BlitzRenderer {
-    /// Render an HTML string to a UIImage of `width` x `height` points at `scale`.
-    static func render(html: String, width: CGFloat, height: CGFloat, scale: CGFloat) -> UIImage? {
-        renderWithRegions(html: html, width: width, height: height, scale: scale)?.0
-    }
+/// A native compositing layer from the frame plan: draw the `track`'s sprite
+/// (rendered at `spriteWidth` x `spriteHeight`) in the layer rect, clipped to
+/// `clipWidth` points from the left.
+struct BlitzLayer: Decodable {
+    let track: String
+    let x: CGFloat
+    let y: CGFloat
+    let width: CGFloat
+    let height: CGFloat
+    let spriteWidth: CGFloat
+    let spriteHeight: CGFloat
+    let clipWidth: CGFloat
+}
 
-    /// Path of the key=value file where Rust persists all widget state.
+/// Everything Rust tells the shell to composite for one widget frame.
+struct BlitzFramePlan: Decodable {
+    let buttons: [BlitzHitRegion]
+    let layers: [BlitzLayer]
+}
+
+/// Thin transport over the Rust-owned widget: Rust holds all state, handles
+/// every action, and decides what is rendered where; Swift only shuffles
+/// frames and events back and forth.
+enum BlitzRenderer {
+    /// Path of the file where Rust persists all widget state.
     /// Swift only supplies the platform location; it never reads or writes it.
     static let statePath: String = {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
@@ -29,16 +47,6 @@ enum BlitzRenderer {
     /// Forward a tapped element's `data-action` to the Rust-owned state store.
     static func dispatch(_ action: String) {
         blitz_widget_dispatch(statePath, action)
-    }
-
-    /// HTML for a widget kind at the current Rust-owned state.
-    /// Kinds: `counter`, `counter-lock`, `interactive`, `anim`.
-    static func widgetHTML(kind: String, hideTracked: Bool = false, clock: String = "") -> String {
-        guard let ptr = blitz_widget_html(statePath, kind, hideTracked ? 1 : 0, clock) else {
-            return ""
-        }
-        defer { blitz_string_free(ptr) }
-        return String(cString: ptr)
     }
 
     /// One frame of the animation widget's timeline, planned by Rust.
@@ -66,51 +74,69 @@ enum BlitzRenderer {
         return parsed.frames
     }
 
-    /// Blitz-rendered ball sprite at `size` points.
-    static func ballSprite(size: CGFloat, scale: CGFloat) -> UIImage? {
-        guard let ptr = blitz_demo_ball_sprite_html() else { return nil }
-        defer { blitz_string_free(ptr) }
-        return render(html: String(cString: ptr), width: size, height: size, scale: scale)
-    }
-
-    /// Blitz-rendered progress-fill sprite at `width` x `height` points.
-    static func fillSprite(width: CGFloat, height: CGFloat, scale: CGFloat) -> UIImage? {
-        guard let ptr = blitz_demo_fill_sprite_html() else { return nil }
-        defer { blitz_string_free(ptr) }
-        return render(html: String(cString: ptr), width: width, height: height, scale: scale)
-    }
-
-    /// Render an HTML string and extract the hit regions of all elements
-    /// with a `data-action` attribute (rects in points).
-    /// `time` is the CSS animation clock (seconds): the render samples every
-    /// CSS animation/transition at exactly that instant.
-    static func renderWithRegions(
-        html: String, width: CGFloat, height: CGFloat, scale: CGFloat, time: Double = 0
-    ) -> (UIImage, [BlitzHitRegion])? {
+    /// One complete widget frame at the current Rust-owned state: the
+    /// background image plus the plan of layers and buttons to composite.
+    /// Kinds: `counter`, `counter-lock`, `interactive`, `anim`.
+    /// `time` is the CSS animation clock (seconds) to sample the frame at.
+    static func widgetFrame(
+        kind: String, width: CGFloat, height: CGFloat, scale: CGFloat,
+        time: Double = 0, hideTracked: Bool = false, clock: String = ""
+    ) -> (UIImage, BlitzFramePlan)? {
         // WidgetKit displaySize can be fractional (e.g. systemMedium is
         // 349.67pt wide). Truncate to whole points BEFORE computing the
         // expected pixel size so it matches what the Rust side renders.
         let w = UInt32(width)
         let h = UInt32(height)
         var len: Int = 0
-        var regionsJSON: UnsafeMutablePointer<CChar>? = nil
-        guard let ptr = html.withCString({ cstr in
-            blitz_render_html_with_regions(cstr, w, h, Float(scale), time, &len, &regionsJSON)
-        }) else { return nil }
+        var planJSON: UnsafeMutablePointer<CChar>? = nil
+        guard let ptr = blitz_widget_frame(
+            statePath, kind, w, h, Float(scale), time, hideTracked ? 1 : 0, clock,
+            &len, &planJSON
+        ) else { return nil }
         defer { blitz_buffer_free(ptr, len) }
 
-        var regions: [BlitzHitRegion] = []
-        if let regionsJSON {
-            defer { blitz_string_free(regionsJSON) }
-            let json = String(cString: regionsJSON)
+        var plan = BlitzFramePlan(buttons: [], layers: [])
+        if let planJSON {
+            defer { blitz_string_free(planJSON) }
+            let json = String(cString: planJSON)
             if let data = json.data(using: .utf8),
-               let parsed = try? JSONDecoder().decode([BlitzHitRegion].self, from: data) {
-                regions = parsed
+               let parsed = try? JSONDecoder().decode(BlitzFramePlan.self, from: data) {
+                plan = parsed
             }
         }
 
-        let pw = Int(CGFloat(w) * scale)
-        let ph = Int(CGFloat(h) * scale)
+        guard let image = makeImage(ptr: ptr, len: len, width: w, height: h, scale: scale) else {
+            return nil
+        }
+        return (image, plan)
+    }
+
+    /// Sprites are identical for every frame, so render each track+size once
+    /// per process and reuse it across flip-book entries.
+    private static var spriteCache: [String: UIImage] = [:]
+
+    /// The Blitz-rendered sprite of a `data-track` layer from the frame plan.
+    static func sprite(track: String, width: CGFloat, height: CGFloat, scale: CGFloat) -> UIImage? {
+        let w = UInt32(max(width, 1))
+        let h = UInt32(max(height, 1))
+        let key = "\(track)@\(w)x\(h)"
+        if let cached = spriteCache[key] { return cached }
+        var len: Int = 0
+        guard let ptr = blitz_widget_sprite(track, w, h, Float(scale), &len) else { return nil }
+        defer { blitz_buffer_free(ptr, len) }
+        let image = makeImage(ptr: ptr, len: len, width: w, height: h, scale: scale)
+        if let image { spriteCache[key] = image }
+        return image
+    }
+
+    /// Wrap a Rust RGBA8888 buffer of `width` x `height` points at `scale`
+    /// into a UIImage.
+    private static func makeImage(
+        ptr: UnsafeMutablePointer<UInt8>, len: Int,
+        width: UInt32, height: UInt32, scale: CGFloat
+    ) -> UIImage? {
+        let pw = Int(CGFloat(width) * scale)
+        let ph = Int(CGFloat(height) * scale)
         guard len == pw * ph * 4 else { return nil }
 
         let data = Data(bytes: ptr, count: len)
@@ -131,6 +157,6 @@ enum BlitzRenderer {
             intent: .defaultIntent
         ) else { return nil }
 
-        return (UIImage(cgImage: cgImage, scale: scale, orientation: .up), regions)
+        return UIImage(cgImage: cgImage, scale: scale, orientation: .up)
     }
 }

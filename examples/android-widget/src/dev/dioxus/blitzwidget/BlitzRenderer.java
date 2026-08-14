@@ -3,9 +3,10 @@ package dev.dioxus.blitzwidget;
 import android.content.Context;
 
 /**
- * JNI bridge to the Blitz HTML/CSS renderer (blitz-widget-ffi). All widget
- * state (counters, slider, animation clock, playback) is owned and persisted
- * by Rust; Java only forwards tapped data-actions and blits rendered frames.
+ * JNI bridge to the Rust-owned widget (blitz-widget-ffi). Rust holds all
+ * state (counters, slider, animation clock, playback), handles every action,
+ * and decides what is rendered where; Java only shuffles frames and events
+ * back and forth.
  */
 public final class BlitzRenderer {
     static {
@@ -19,36 +20,28 @@ public final class BlitzRenderer {
         return context.getFilesDir().getAbsolutePath() + "/blitz-widget-state.txt";
     }
 
-    /**
-     * Renders HTML to RGBA8888 pixels of (width*scale) x (height*scale).
-     * Suitable for Bitmap.copyPixelsFromBuffer on an ARGB_8888 bitmap.
-     */
-    public static native byte[] renderHtml(String html, int width, int height, float scale);
-
-    /**
-     * Returns a JSON array of hit regions
-     * ([{"action":..,"x":..,"y":..,"width":..,"height":..}, ..], coordinates
-     * in CSS px / dp) for all elements with a data-action attribute.
-     */
-    public static native String extractRegions(String html, int width, int height, float scale);
-
-    /**
-     * Like renderHtml, but samples CSS animations/transitions at timeSecs on
-     * the document's animation clock (animations start at t=0).
-     */
-    public static native byte[] renderHtmlAt(
-            String html, int width, int height, float scale, double timeSecs);
-
     /** Applies a tapped element's data-action to the Rust-owned state. */
     public static native void dispatch(String statePath, String action);
 
     /**
-     * HTML for a widget kind ("counter", "counter-lock", "interactive",
-     * "anim") at the current Rust-owned state. clock is a display-only time
-     * string (used by "counter").
+     * RGBA8888 pixels of (width*scale) x (height*scale) for one frame of a
+     * widget kind ("counter", "counter-lock", "interactive", "anim") at the
+     * current Rust-owned state, with CSS animations sampled at timeSecs.
+     * Suitable for Bitmap.copyPixelsFromBuffer on an ARGB_8888 bitmap.
+     * clock is a display-only time string (used by "counter").
      */
-    public static native String widgetHtml(
-            String statePath, String kind, boolean hideTracked, String clock);
+    public static native byte[] renderWidget(
+            String statePath, String kind, int width, int height, float scale,
+            double timeSecs, String clock);
+
+    /**
+     * The JSON compositing plan of a widget kind's frame at the current
+     * Rust-owned state:
+     * {"buttons":[{"action":..,"x":..,"y":..,"width":..,"height":..},..],
+     *  "layers":[..]} (coordinates in CSS px / dp).
+     */
+    public static native String widgetPlan(
+            String statePath, String kind, int width, int height, float scale);
 
     /** The animation widget's current CSS animation clock, in seconds. */
     public static native double animTime(String statePath);

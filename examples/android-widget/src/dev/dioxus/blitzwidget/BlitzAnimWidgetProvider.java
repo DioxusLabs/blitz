@@ -113,10 +113,9 @@ public class BlitzAnimWidgetProvider extends AppWidgetProvider {
         if (heightDp <= 0) heightDp = 120;
         float density = context.getResources().getDisplayMetrics().density;
 
-        String html = BlitzRenderer.widgetHtml(
-                BlitzRenderer.statePath(context), "anim", false, "");
-
-        byte[] rgba = BlitzRenderer.renderHtmlAt(html, widthDp, heightDp, density, timeSecs);
+        byte[] rgba = BlitzRenderer.renderWidget(
+                BlitzRenderer.statePath(context), "anim", widthDp, heightDp, density,
+                timeSecs, "");
         int pw = (int) (widthDp * density);
         int ph = (int) (heightDp * density);
         if (rgba == null || rgba.length != pw * ph * 4) {
@@ -131,13 +130,15 @@ public class BlitzAnimWidgetProvider extends AppWidgetProvider {
         int used = 0;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             try {
-                JSONArray regions = new JSONArray(
-                        BlitzRenderer.extractRegions(html, widthDp, heightDp, density));
-                for (int i = 0; i < regions.length()
+                JSONArray buttons = new JSONObject(
+                        BlitzRenderer.widgetPlan(
+                                BlitzRenderer.statePath(context), "anim",
+                                widthDp, heightDp, density))
+                        .getJSONArray("buttons");
+                for (int i = 0; i < buttons.length()
                         && used < BlitzDemoWidgetProvider.HOTSPOT_IDS.length; i++) {
-                    JSONObject region = regions.getJSONObject(i);
+                    JSONObject region = buttons.getJSONObject(i);
                     String action = region.getString("action");
-                    if (action.startsWith("track:")) continue;
                     int viewId = BlitzDemoWidgetProvider.HOTSPOT_IDS[used++];
 
                     // Region rects are in CSS px, which equal dp because the

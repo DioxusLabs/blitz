@@ -55,10 +55,9 @@ public class BlitzWidgetProvider extends AppWidgetProvider {
         float density = context.getResources().getDisplayMetrics().density;
 
         String time = new SimpleDateFormat("HH:mm", Locale.US).format(new Date());
-        String html = BlitzRenderer.widgetHtml(
-                BlitzRenderer.statePath(context), "counter", false, time);
-
-        byte[] rgba = BlitzRenderer.renderHtml(html, widthDp, heightDp, density);
+        byte[] rgba = BlitzRenderer.renderWidget(
+                BlitzRenderer.statePath(context), "counter", widthDp, heightDp, density,
+                0.0, time);
         int pw = (int) (widthDp * density);
         int ph = (int) (heightDp * density);
         if (rgba == null || rgba.length != pw * ph * 4) {

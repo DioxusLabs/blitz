@@ -2,24 +2,14 @@ import WidgetKit
 import SwiftUI
 import AppIntents
 
-// All widget state (counters, slider, animation clock, playback) is owned
-// and persisted by Rust (blitz-widget-ffi's store). Swift is a dumb shell:
-// intents forward the tapped element's `data-action` to Rust, providers ask
-// Rust for the HTML/timeline of a widget kind and blit the rendered frames.
+// Rust owns the whole widget: all state, every action, and what is rendered
+// where. Each provider asks Rust for a complete frame — background pixels
+// plus a plan of sprite layers and button rects — and the generic view below
+// composites exactly what the plan says. Swift only shuffles frames and
+// events back and forth.
 
-// MARK: - App Intents (run inside the widget extension, forward to Rust)
+// MARK: - App Intent (forwards the tapped element's data-action to Rust)
 
-struct IncrementIntent: AppIntent {
-    static var title: LocalizedStringResource = "Increment Blitz Counter"
-    static var description = IntentDescription("Increments the Blitz widget counter.")
-
-    func perform() async throws -> some IntentResult {
-        BlitzRenderer.dispatch("count")
-        return .result()
-    }
-}
-
-/// One AppIntent carrying the `data-action` of the tapped HTML element.
 struct WidgetActionIntent: AppIntent {
     static var title: LocalizedStringResource = "Blitz Widget Action"
     static var description = IntentDescription("Dispatches an action to a Blitz HTML element.")
@@ -35,112 +25,79 @@ struct WidgetActionIntent: AppIntent {
     }
 }
 
-// MARK: - Timeline
+// MARK: - Generic frame entry and view
 
-struct BlitzEntry: TimelineEntry {
-    let date: Date
-    let image: UIImage?
+/// A sprite layer resolved from the frame plan, ready to composite.
+struct BlitzLayerImage: Identifiable {
+    let track: String
+    let image: UIImage
+    let rect: CGRect
+    let clipWidth: CGFloat
+    var id: String { track }
 }
 
-struct BlitzProvider: TimelineProvider {
-    private func makeImage(context: Context, date: Date) -> UIImage? {
-        let size = context.displaySize
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm"
-        let html: String
-        switch context.family {
-        case .accessoryRectangular, .accessoryCircular, .accessoryInline:
-            html = BlitzRenderer.widgetHTML(kind: "counter-lock")
-        default:
-            html = BlitzRenderer.widgetHTML(kind: "counter", clock: formatter.string(from: date))
-        }
-        return BlitzRenderer.render(html: html, width: size.width, height: size.height, scale: 2.0)
-    }
-
-    func placeholder(in context: Context) -> BlitzEntry {
-        BlitzEntry(date: Date(), image: makeImage(context: context, date: Date()))
-    }
-
-    func getSnapshot(in context: Context, completion: @escaping (BlitzEntry) -> Void) {
-        completion(BlitzEntry(date: Date(), image: makeImage(context: context, date: Date())))
-    }
-
-    func getTimeline(in context: Context, completion: @escaping (Timeline<BlitzEntry>) -> Void) {
-        let now = Date()
-        let entry = BlitzEntry(date: now, image: makeImage(context: context, date: now))
-        completion(Timeline(entries: [entry], policy: .after(now.addingTimeInterval(60))))
-    }
+/// One Rust-planned widget frame: the background bitmap, the sprite layers to
+/// draw over it, and the invisible tap targets.
+struct BlitzFrameEntry: TimelineEntry {
+    var date: Date
+    let background: UIImage?
+    let layers: [BlitzLayerImage]
+    let buttons: [BlitzHitRegion]
 }
 
-// MARK: - Widget views
+/// Build an entry by asking Rust for a complete frame and rendering the
+/// sprite of each planned layer.
+func makeFrameEntry(
+    kind: String, context: TimelineProviderContext, date: Date,
+    time: Double = 0, hideTracked: Bool = false, clock: String = ""
+) -> BlitzFrameEntry {
+    let size = context.displaySize
+    guard let (background, plan) = BlitzRenderer.widgetFrame(
+        kind: kind, width: size.width, height: size.height, scale: 2.0,
+        time: time, hideTracked: hideTracked, clock: clock
+    ) else {
+        return BlitzFrameEntry(date: date, background: nil, layers: [], buttons: [])
+    }
+    let layers = plan.layers.compactMap { layer -> BlitzLayerImage? in
+        guard let sprite = BlitzRenderer.sprite(
+            track: layer.track, width: layer.spriteWidth, height: layer.spriteHeight, scale: 2.0
+        ) else { return nil }
+        return BlitzLayerImage(
+            track: layer.track,
+            image: sprite,
+            rect: CGRect(x: layer.x, y: layer.y, width: layer.width, height: layer.height),
+            clipWidth: layer.clipWidth
+        )
+    }
+    return BlitzFrameEntry(date: date, background: background, layers: layers, buttons: plan.buttons)
+}
 
-struct BlitzWidgetView: View {
-    @Environment(\.widgetFamily) var family
-    let entry: BlitzEntry
+/// Composites exactly what the Rust frame plan says: the background bitmap,
+/// one image per sprite layer at its planned rect/clip, and one invisible
+/// `Button(intent:)` per planned tap target. Because the layers are distinct
+/// SwiftUI views whose frames change between timeline entries, WidgetKit
+/// tweens their position and size with its spring at full frame rate — CSS
+/// keyframe motion glides instead of cross-fading.
+struct BlitzFrameView: View {
+    let entry: BlitzFrameEntry
 
     var body: some View {
         Group {
-            if let image = entry.image {
-                Button(intent: IncrementIntent()) {
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFill()
-                }
-                .buttonStyle(.plain)
-            } else {
-                Text("Blitz render failed")
-            }
-        }
-        .containerBackground(for: .widget) { Color.clear }
-    }
-}
-
-// MARK: - Interactive multi-region widget (counter + slider)
-
-struct BlitzDemoEntry: TimelineEntry {
-    let date: Date
-    let image: UIImage?
-    let regions: [BlitzHitRegion]
-}
-
-struct BlitzDemoProvider: TimelineProvider {
-    private func makeEntry(context: Context, date: Date) -> BlitzDemoEntry {
-        let size = context.displaySize
-        let html = BlitzRenderer.widgetHTML(kind: "interactive")
-        let rendered = BlitzRenderer.renderWithRegions(
-            html: html, width: size.width, height: size.height, scale: 2.0)
-        return BlitzDemoEntry(date: date, image: rendered?.0, regions: rendered?.1 ?? [])
-    }
-
-    func placeholder(in context: Context) -> BlitzDemoEntry {
-        makeEntry(context: context, date: Date())
-    }
-
-    func getSnapshot(in context: Context, completion: @escaping (BlitzDemoEntry) -> Void) {
-        completion(makeEntry(context: context, date: Date()))
-    }
-
-    func getTimeline(in context: Context, completion: @escaping (Timeline<BlitzDemoEntry>) -> Void) {
-        let now = Date()
-        let entry = makeEntry(context: context, date: now)
-        completion(Timeline(entries: [entry], policy: .after(now.addingTimeInterval(3600))))
-    }
-}
-
-/// Displays the Blitz-rendered bitmap with one invisible `Button(intent:)`
-/// overlaid per `data-action` element rect extracted from the Blitz DOM, so
-/// individual HTML elements act as separate tap targets.
-struct BlitzDemoWidgetView: View {
-    let entry: BlitzDemoEntry
-
-    var body: some View {
-        Group {
-            if let image = entry.image {
+            if let background = entry.background {
                 ZStack(alignment: .topLeading) {
-                    Image(uiImage: image)
+                    Image(uiImage: background)
                         .resizable()
                         .scaledToFill()
-                    ForEach(entry.regions) { region in
+                    ForEach(entry.layers) { layer in
+                        Image(uiImage: layer.image)
+                            .resizable()
+                            .frame(width: layer.rect.width, height: layer.rect.height)
+                            .mask(alignment: .leading) {
+                                Rectangle().frame(width: max(layer.clipWidth, 0.01))
+                            }
+                            .offset(x: layer.rect.minX, y: layer.rect.minY)
+                    }
+                    ForEach(entry.buttons) { region in
                         Button(intent: WidgetActionIntent(action: region.action)) {
                             Color.clear
                                 .frame(width: region.width, height: region.height)
@@ -158,10 +115,71 @@ struct BlitzDemoWidgetView: View {
     }
 }
 
+// MARK: - Counter widget (home screen + lock screen)
+
+struct BlitzCounterProvider: TimelineProvider {
+    private func makeEntry(context: Context, date: Date) -> BlitzFrameEntry {
+        switch context.family {
+        case .accessoryRectangular, .accessoryCircular, .accessoryInline:
+            return makeFrameEntry(kind: "counter-lock", context: context, date: date)
+        default:
+            let formatter = DateFormatter()
+            formatter.dateFormat = "HH:mm"
+            return makeFrameEntry(
+                kind: "counter", context: context, date: date,
+                clock: formatter.string(from: date))
+        }
+    }
+
+    func placeholder(in context: Context) -> BlitzFrameEntry {
+        makeEntry(context: context, date: Date())
+    }
+
+    func getSnapshot(in context: Context, completion: @escaping (BlitzFrameEntry) -> Void) {
+        completion(makeEntry(context: context, date: Date()))
+    }
+
+    func getTimeline(in context: Context, completion: @escaping (Timeline<BlitzFrameEntry>) -> Void) {
+        let now = Date()
+        let entry = makeEntry(context: context, date: now)
+        completion(Timeline(entries: [entry], policy: .after(now.addingTimeInterval(60))))
+    }
+}
+
+struct BlitzCounterWidget: Widget {
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: "BlitzCounterWidget", provider: BlitzCounterProvider()) { entry in
+            BlitzFrameView(entry: entry)
+        }
+        .configurationDisplayName("Blitz Counter")
+        .description("An interactive counter rendered from HTML/CSS by the Blitz engine.")
+        .supportedFamilies([.systemSmall, .systemMedium, .accessoryRectangular])
+        .contentMarginsDisabled()
+    }
+}
+
+// MARK: - Interactive multi-region widget (counter + slider)
+
+struct BlitzDemoProvider: TimelineProvider {
+    func placeholder(in context: Context) -> BlitzFrameEntry {
+        makeFrameEntry(kind: "interactive", context: context, date: Date())
+    }
+
+    func getSnapshot(in context: Context, completion: @escaping (BlitzFrameEntry) -> Void) {
+        completion(makeFrameEntry(kind: "interactive", context: context, date: Date()))
+    }
+
+    func getTimeline(in context: Context, completion: @escaping (Timeline<BlitzFrameEntry>) -> Void) {
+        let now = Date()
+        let entry = makeFrameEntry(kind: "interactive", context: context, date: now)
+        completion(Timeline(entries: [entry], policy: .after(now.addingTimeInterval(3600))))
+    }
+}
+
 struct BlitzDemoWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "BlitzDemoWidget", provider: BlitzDemoProvider()) { entry in
-            BlitzDemoWidgetView(entry: entry)
+            BlitzFrameView(entry: entry)
         }
         .configurationDisplayName("Blitz Interactive")
         .description("Counter + slider: every HTML element is its own tap target, rendered by Blitz.")
@@ -170,102 +188,31 @@ struct BlitzDemoWidget: Widget {
     }
 }
 
-// MARK: - CSS animation widget (we control the animation clock)
+// MARK: - CSS animation widget (Rust controls the animation clock)
 
 /// Blitz resolves styles with an explicit `current_time_for_animations`, so
-/// every render samples the document's CSS `@keyframes` animations at exactly
+/// every frame samples the document's CSS `@keyframes` animations at exactly
 /// the instant Rust chooses. The scrubber, Step, and Play actions all mutate
-/// the Rust-owned animation clock via `dispatch`.
-struct AnimActionIntent: AppIntent {
-    static var title: LocalizedStringResource = "Blitz Animation Scrub"
-    static var description = IntentDescription("Moves the Blitz CSS animation clock.")
-
-    @Parameter(title: "Action") var action: String
-
-    init() {}
-    init(action: String) { self.action = action }
-
-    func perform() async throws -> some IntentResult {
-        BlitzRenderer.dispatch(action)
-        return .result()
-    }
-}
-
-/// Entry for the animation widget: the card background is one Blitz bitmap
-/// (tracked elements hidden), while the ball and progress fill are separate
-/// Blitz-rendered sprite layers positioned from `data-track` rects resolved
-/// at the sampled animation time. Because the layers are distinct SwiftUI
-/// views whose frames/offsets change between renders, WidgetKit tweens their
-/// position and size with its spring at full frame rate — CSS keyframe motion
-/// glides instead of cross-fading.
-struct BlitzAnimEntry: TimelineEntry {
-    var date: Date
-    let background: UIImage?
-    let ballSprite: UIImage?
-    let fillSprite: UIImage?
-    let ballRect: CGRect
-    let fillRect: CGRect
-    let railRect: CGRect
-    let buttons: [BlitzHitRegion]
-}
-
+/// the Rust-owned animation clock via `dispatch`; the timeline below is
+/// planned entirely by Rust.
 struct BlitzAnimProvider: TimelineProvider {
-    /// The sprites are identical for every frame, so render each once per
-    /// process and reuse it across flip-book entries.
-    private static var spriteCache: [String: UIImage] = [:]
-
-    private static func cachedSprite(key: String, render: () -> UIImage?) -> UIImage? {
-        if let cached = spriteCache[key] { return cached }
-        let sprite = render()
-        if let sprite { spriteCache[key] = sprite }
-        return sprite
+    private func makeEntry(context: Context, date: Date, animTime: Double) -> BlitzFrameEntry {
+        makeFrameEntry(kind: "anim", context: context, date: date, time: animTime, hideTracked: true)
     }
 
-    private func makeEntry(context: Context, date: Date, animTime: Double) -> BlitzAnimEntry {
-        let size = context.displaySize
-        let html = BlitzRenderer.widgetHTML(kind: "anim", hideTracked: true)
-        let rendered = BlitzRenderer.renderWithRegions(
-            html: html, width: size.width, height: size.height, scale: 2.0,
-            time: animTime)
-        let regions = rendered?.1 ?? []
-
-        func rect(_ track: String) -> CGRect {
-            guard let r = regions.first(where: { $0.action == "track:\(track)" }) else {
-                return .zero
-            }
-            return CGRect(x: r.x, y: r.y, width: r.width, height: r.height)
-        }
-
-        let ballRect = rect("ball")
-        let railRect = rect("rail")
-        return BlitzAnimEntry(
-            date: date,
-            background: rendered?.0,
-            ballSprite: Self.cachedSprite(key: "ball") {
-                BlitzRenderer.ballSprite(size: 51, scale: 2.0)
-            },
-            fillSprite: Self.cachedSprite(key: "fill:\(railRect.size)") {
-                BlitzRenderer.fillSprite(
-                    width: max(railRect.width, 1), height: max(railRect.height, 1), scale: 2.0)
-            },
-            ballRect: ballRect,
-            fillRect: rect("fill"),
-            railRect: railRect,
-            buttons: regions.filter { !$0.action.hasPrefix("track:") }
-        )
+    func placeholder(in context: Context) -> BlitzFrameEntry {
+        makeEntry(
+            context: context, date: Date(),
+            animTime: blitz_widget_anim_time(BlitzRenderer.statePath))
     }
 
-    func placeholder(in context: Context) -> BlitzAnimEntry {
-        makeEntry(context: context, date: Date(), animTime: blitz_widget_anim_time(BlitzRenderer.statePath))
-    }
-
-    func getSnapshot(in context: Context, completion: @escaping (BlitzAnimEntry) -> Void) {
+    func getSnapshot(in context: Context, completion: @escaping (BlitzFrameEntry) -> Void) {
         completion(makeEntry(
             context: context, date: Date(),
             animTime: blitz_widget_anim_time(BlitzRenderer.statePath)))
     }
 
-    func getTimeline(in context: Context, completion: @escaping (Timeline<BlitzAnimEntry>) -> Void) {
+    func getTimeline(in context: Context, completion: @escaping (Timeline<BlitzFrameEntry>) -> Void) {
         // Rust plans the timeline: one frame at the current clock normally, a
         // flip-book (one frame per second of playback) right after "play".
         // WidgetKit shows each frame at its date and tweens the sprite layers
@@ -289,71 +236,14 @@ struct BlitzAnimProvider: TimelineProvider {
     }
 }
 
-struct BlitzAnimWidgetView: View {
-    let entry: BlitzAnimEntry
-
-    var body: some View {
-        Group {
-            if let background = entry.background {
-                ZStack(alignment: .topLeading) {
-                    Image(uiImage: background)
-                        .resizable()
-                        .scaledToFill()
-                    if let fill = entry.fillSprite, entry.railRect.width > 0 {
-                        Image(uiImage: fill)
-                            .resizable()
-                            .frame(width: entry.railRect.width, height: entry.railRect.height)
-                            .mask(alignment: .leading) {
-                                Rectangle().frame(width: max(entry.fillRect.width, 0.01))
-                            }
-                            .offset(x: entry.railRect.minX, y: entry.railRect.minY)
-                    }
-                    if let ball = entry.ballSprite, entry.ballRect.width > 0 {
-                        Image(uiImage: ball)
-                            .resizable()
-                            .frame(width: entry.ballRect.width, height: entry.ballRect.height)
-                            .offset(x: entry.ballRect.minX, y: entry.ballRect.minY)
-                    }
-                    ForEach(entry.buttons) { region in
-                        Button(intent: AnimActionIntent(action: region.action)) {
-                            Color.clear
-                                .frame(width: region.width, height: region.height)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .offset(x: region.x, y: region.y)
-                    }
-                }
-            } else {
-                Text("Blitz render failed")
-            }
-        }
-        .containerBackground(for: .widget) { Color.clear }
-    }
-}
-
 struct BlitzAnimWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "BlitzAnimWidget", provider: BlitzAnimProvider()) { entry in
-            BlitzAnimWidgetView(entry: entry)
+            BlitzFrameView(entry: entry)
         }
         .configurationDisplayName("Blitz CSS Animation")
         .description("CSS keyframe animations sampled at any instant — Blitz controls the animation clock.")
         .supportedFamilies([.systemMedium])
-        .contentMarginsDisabled()
-    }
-}
-
-// MARK: - Widget definitions
-
-struct BlitzCounterWidget: Widget {
-    var body: some WidgetConfiguration {
-        StaticConfiguration(kind: "BlitzCounterWidget", provider: BlitzProvider()) { entry in
-            BlitzWidgetView(entry: entry)
-        }
-        .configurationDisplayName("Blitz Counter")
-        .description("An interactive counter rendered from HTML/CSS by the Blitz engine.")
-        .supportedFamilies([.systemSmall, .systemMedium, .accessoryRectangular])
         .contentMarginsDisabled()
     }
 }

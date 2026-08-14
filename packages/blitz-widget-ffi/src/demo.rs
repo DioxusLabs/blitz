@@ -225,28 +225,83 @@ pub fn animated_html(scrub: i32, hide_tracked: bool) -> String {
     )
 }
 
-/// Standalone sprite for the animated ball, rendered once at its maximum
-/// animated size; the native shell scales/positions it from the tracked rect.
-pub fn ball_sprite_html() -> String {
-    r##"<!DOCTYPE html>
-<html><head><style>
-  body { margin: 0; }
-  .ball { width: 100vw; height: 100vh; border-radius: 50%;
-    background: #ffd76e; }
-</style></head>
-<body><div class="ball"></div></body></html>"##
-        .to_string()
+/// Maximum animated size of the bounce ball (the 50% keyframe), used as the
+/// sprite render size so one sprite covers every animated size.
+pub const BALL_MAX_SIZE: f64 = 51.0;
+
+/// A native compositing layer planned by Rust from the resolved `data-track`
+/// rects: the shell renders the `track`'s sprite at
+/// `sprite_width` x `sprite_height`, draws it at the layer rect, and clips it
+/// to `clip_width` from the left.
+#[derive(Debug, Clone)]
+pub struct LayerPlan {
+    pub track: &'static str,
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+    pub sprite_width: f64,
+    pub sprite_height: f64,
+    pub clip_width: f64,
 }
 
-/// Standalone sprite for the progress fill, rendered once at the rail's full
-/// width; the native shell clips it to the tracked rect's animated width.
-pub fn fill_sprite_html() -> String {
-    r##"<!DOCTYPE html>
+/// Plan the native compositing layers of the animated widget from the
+/// resolved track rects: the ball is drawn at its animated rect; the fill
+/// sprite spans the rail's rect, clipped to the fill's animated width.
+pub fn plan_layers(regions: &[crate::HitRegion]) -> Vec<LayerPlan> {
+    let rect = |name: &str| regions.iter().find(|r| r.action == format!("track:{name}"));
+    let mut layers = Vec::new();
+    if let (Some(rail), Some(fill)) = (rect("rail"), rect("fill")) {
+        layers.push(LayerPlan {
+            track: "fill",
+            x: rail.x,
+            y: rail.y,
+            width: rail.width,
+            height: rail.height,
+            sprite_width: rail.width,
+            sprite_height: rail.height,
+            clip_width: fill.width,
+        });
+    }
+    if let Some(ball) = rect("ball") {
+        layers.push(LayerPlan {
+            track: "ball",
+            x: ball.x,
+            y: ball.y,
+            width: ball.width,
+            height: ball.height,
+            sprite_width: BALL_MAX_SIZE,
+            sprite_height: BALL_MAX_SIZE,
+            clip_width: ball.width,
+        });
+    }
+    layers
+}
+
+/// Standalone sprite HTML for a `data-track` element, so the native shell can
+/// composite tracked elements as separately positioned layers without knowing
+/// what they are: it renders the sprite for each track name Rust reports and
+/// scales/positions it from the tracked rect. `ball` is rendered at its
+/// maximum animated size; `fill` at the rail's full width (the shell clips it
+/// to the tracked rect's animated width).
+pub fn sprite_html(track: &str) -> Option<String> {
+    let body = match track {
+        "ball" => {
+            r##".sprite { width: 100vw; height: 100vh; border-radius: 50%;
+    background: #ffd76e; }"##
+        }
+        "fill" => {
+            r##".sprite { width: 100vw; height: 100vh; border-radius: 4px;
+    background: #5fd0a5; }"##
+        }
+        _ => return None,
+    };
+    Some(format!(
+        r##"<!DOCTYPE html>
 <html><head><style>
-  body { margin: 0; }
-  .fill { width: 100vw; height: 100vh; border-radius: 4px;
-    background: #5fd0a5; }
+  body {{ margin: 0; }}
+  {body}
 </style></head>
-<body><div class="fill"></div></body></html>"##
-        .to_string()
+<body><div class="sprite"></div></body></html>"##
+    ))
 }

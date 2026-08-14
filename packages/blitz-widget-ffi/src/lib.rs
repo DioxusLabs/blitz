@@ -157,6 +157,61 @@ fn regions_to_json(regions: &[HitRegion]) -> String {
     json
 }
 
+/// Render a complete widget frame from the Rust-owned state: the background
+/// pixels plus a JSON plan of everything the native shell must composite —
+/// hit-region buttons (`data-action` rects) and sprite layers (for `anim`
+/// with `hide_tracked`, planned from the resolved `data-track` rects). The
+/// shell just blits the frame, draws the layers where the plan says, and
+/// forwards button taps back as actions.
+///
+/// Plan shape:
+/// `{"buttons":[{"action":..,"x":..,"y":..,"width":..,"height":..},..],
+///   "layers":[{"track":..,"x":..,"y":..,"width":..,"height":..,
+///              "spriteWidth":..,"spriteHeight":..,"clipWidth":..},..]}`
+#[allow(clippy::too_many_arguments)]
+pub fn render_widget_frame(
+    path: &str,
+    kind: &str,
+    width: u32,
+    height: u32,
+    scale: f64,
+    time: f64,
+    hide_tracked: bool,
+    clock: &str,
+) -> Option<(Vec<u8>, String)> {
+    let html = store::widget_html(path, kind, hide_tracked, clock)?;
+    let (buffer, regions) = render_html(&html, width, height, scale, time);
+    let buttons: Vec<HitRegion> = regions
+        .iter()
+        .filter(|r| !r.action.starts_with("track:"))
+        .cloned()
+        .collect();
+    let mut plan = String::from("{\"buttons\":");
+    plan.push_str(&regions_to_json(&buttons));
+    plan.push_str(",\"layers\":[");
+    if hide_tracked {
+        for (i, layer) in demo::plan_layers(&regions).iter().enumerate() {
+            if i > 0 {
+                plan.push(',');
+            }
+            plan.push_str(&format!(
+                "{{\"track\":\"{}\",\"x\":{:.2},\"y\":{:.2},\"width\":{:.2},\"height\":{:.2},\
+                 \"spriteWidth\":{:.2},\"spriteHeight\":{:.2},\"clipWidth\":{:.2}}}",
+                layer.track,
+                layer.x,
+                layer.y,
+                layer.width,
+                layer.height,
+                layer.sprite_width,
+                layer.sprite_height,
+                layer.clip_width
+            ));
+        }
+    }
+    plan.push_str("]}");
+    Some((buffer, plan))
+}
+
 fn vec_into_raw(buffer: Vec<u8>, out_len: *mut usize) -> *mut u8 {
     let mut buffer = buffer.into_boxed_slice();
     let len = buffer.len();
@@ -171,95 +226,6 @@ fn string_into_raw(s: String) -> *mut std::ffi::c_char {
         Ok(cstring) => cstring.into_raw(),
         Err(_) => std::ptr::null_mut(),
     }
-}
-
-/// C ABI: render `html` (NUL-terminated UTF-8) to an RGBA8888 buffer.
-///
-/// Returns a pointer to a heap-allocated buffer of `*out_len` bytes
-/// (`(width * scale) * (height * scale) * 4`). Free it with
-/// [`blitz_buffer_free`]. Returns NULL on invalid input.
-///
-/// # Safety
-/// `html` must be a valid NUL-terminated string and `out_len` a valid pointer.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn blitz_render_html(
-    html: *const std::ffi::c_char,
-    width: u32,
-    height: u32,
-    scale: f32,
-    out_len: *mut usize,
-) -> *mut u8 {
-    if html.is_null() || out_len.is_null() || width == 0 || height == 0 || scale <= 0.0 {
-        return std::ptr::null_mut();
-    }
-    let html = match unsafe { std::ffi::CStr::from_ptr(html) }.to_str() {
-        Ok(s) => s,
-        Err(_) => return std::ptr::null_mut(),
-    };
-    vec_into_raw(
-        render_html_to_rgba(html, width, height, scale as f64),
-        out_len,
-    )
-}
-
-/// C ABI: like [`blitz_render_html`], but samples CSS animations/transitions
-/// at `time_secs` on the document's animation clock (animations start at t=0).
-///
-/// # Safety
-/// `html` must be a valid NUL-terminated string and `out_len` a valid pointer.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn blitz_render_html_at(
-    html: *const std::ffi::c_char,
-    width: u32,
-    height: u32,
-    scale: f32,
-    time_secs: f64,
-    out_len: *mut usize,
-) -> *mut u8 {
-    if html.is_null() || out_len.is_null() || width == 0 || height == 0 || scale <= 0.0 {
-        return std::ptr::null_mut();
-    }
-    let html = match unsafe { std::ffi::CStr::from_ptr(html) }.to_str() {
-        Ok(s) => s,
-        Err(_) => return std::ptr::null_mut(),
-    };
-    let (buffer, _) = render_html(html, width, height, scale as f64, time_secs);
-    vec_into_raw(buffer, out_len)
-}
-
-/// C ABI: like [`blitz_render_html`], but additionally writes a JSON array of
-/// hit regions (`[{"action":..,"x":..,"y":..,"width":..,"height":..}, ..]`,
-/// coordinates in CSS px / points) for all elements with a `data-action`
-/// attribute to `*out_regions_json`. Free the JSON with [`blitz_string_free`].
-///
-/// # Safety
-/// All pointers must be valid; `html` must be NUL-terminated.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn blitz_render_html_with_regions(
-    html: *const std::ffi::c_char,
-    width: u32,
-    height: u32,
-    scale: f32,
-    time_secs: f64,
-    out_len: *mut usize,
-    out_regions_json: *mut *mut std::ffi::c_char,
-) -> *mut u8 {
-    if html.is_null()
-        || out_len.is_null()
-        || out_regions_json.is_null()
-        || width == 0
-        || height == 0
-        || scale <= 0.0
-    {
-        return std::ptr::null_mut();
-    }
-    let html = match unsafe { std::ffi::CStr::from_ptr(html) }.to_str() {
-        Ok(s) => s,
-        Err(_) => return std::ptr::null_mut(),
-    };
-    let (buffer, regions) = render_html(html, width, height, scale as f64, time_secs);
-    unsafe { *out_regions_json = string_into_raw(regions_to_json(&regions)) };
-    vec_into_raw(buffer, out_len)
 }
 
 unsafe fn cstr<'a>(ptr: *const std::ffi::c_char) -> Option<&'a str> {
@@ -284,28 +250,52 @@ pub unsafe extern "C" fn blitz_widget_dispatch(
     }
 }
 
-/// C ABI: build the HTML for a widget `kind` (`counter`, `counter-lock`,
-/// `interactive`, `anim`) at the current Rust-owned state. `clock` is a
-/// display-only time string (used by `counter`; may be NULL). With
-/// `hide_tracked != 0` the `data-track` elements keep their layout but don't
-/// paint, for native layer compositing. Free with [`blitz_string_free`];
-/// returns NULL for an unknown kind.
+/// C ABI: render a complete widget frame (see [`render_widget_frame`]) for a
+/// widget `kind` (`counter`, `counter-lock`, `interactive`, `anim`) at the
+/// current Rust-owned state. Returns the background RGBA buffer (`*out_len`
+/// bytes; free with [`blitz_buffer_free`]) and writes the JSON compositing
+/// plan (buttons + layers) to `*out_plan_json` (free with
+/// [`blitz_string_free`]). `clock` is a display-only time string (used by
+/// `counter`; may be NULL). With `hide_tracked != 0` the `data-track`
+/// elements keep their layout but don't paint, and the plan includes their
+/// sprite layers for native compositing. Returns NULL for an unknown kind.
 ///
 /// # Safety
-/// `state_path` and `kind` must be valid NUL-terminated strings.
+/// All pointers must be valid; strings must be NUL-terminated.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn blitz_widget_html(
+pub unsafe extern "C" fn blitz_widget_frame(
     state_path: *const std::ffi::c_char,
     kind: *const std::ffi::c_char,
+    width: u32,
+    height: u32,
+    scale: f32,
+    time_secs: f64,
     hide_tracked: i32,
     clock: *const std::ffi::c_char,
-) -> *mut std::ffi::c_char {
+    out_len: *mut usize,
+    out_plan_json: *mut *mut std::ffi::c_char,
+) -> *mut u8 {
+    if out_len.is_null() || out_plan_json.is_null() || width == 0 || height == 0 || scale <= 0.0 {
+        return std::ptr::null_mut();
+    }
     let (Some(path), Some(kind)) = (unsafe { cstr(state_path) }, unsafe { cstr(kind) }) else {
         return std::ptr::null_mut();
     };
     let clock = unsafe { cstr(clock) }.unwrap_or("");
-    match store::widget_html(path, kind, hide_tracked != 0, clock) {
-        Some(html) => string_into_raw(html),
+    match render_widget_frame(
+        path,
+        kind,
+        width,
+        height,
+        scale as f64,
+        time_secs,
+        hide_tracked != 0,
+        clock,
+    ) {
+        Some((buffer, plan)) => {
+            unsafe { *out_plan_json = string_into_raw(plan) };
+            vec_into_raw(buffer, out_len)
+        }
         None => std::ptr::null_mut(),
     }
 }
@@ -356,18 +346,32 @@ pub unsafe extern "C" fn blitz_widget_anim_timeline_json(
     }
 }
 
-/// C ABI: standalone ball sprite HTML for native layer compositing. Free with
-/// [`blitz_string_free`].
+/// C ABI: render the standalone sprite of a `data-track` layer (from the
+/// frame plan) to an RGBA8888 buffer of `*out_len` bytes at
+/// `(width * scale) x (height * scale)` pixels. Free with
+/// [`blitz_buffer_free`]; returns NULL for an unknown track.
+///
+/// # Safety
+/// `track` must be a valid NUL-terminated string and `out_len` a valid
+/// pointer.
 #[unsafe(no_mangle)]
-pub extern "C" fn blitz_demo_ball_sprite_html() -> *mut std::ffi::c_char {
-    string_into_raw(demo::ball_sprite_html())
-}
-
-/// C ABI: standalone progress-fill sprite HTML for native layer compositing.
-/// Free with [`blitz_string_free`].
-#[unsafe(no_mangle)]
-pub extern "C" fn blitz_demo_fill_sprite_html() -> *mut std::ffi::c_char {
-    string_into_raw(demo::fill_sprite_html())
+pub unsafe extern "C" fn blitz_widget_sprite(
+    track: *const std::ffi::c_char,
+    width: u32,
+    height: u32,
+    scale: f32,
+    out_len: *mut usize,
+) -> *mut u8 {
+    if out_len.is_null() || width == 0 || height == 0 || scale <= 0.0 {
+        return std::ptr::null_mut();
+    }
+    match unsafe { cstr(track) }.and_then(demo::sprite_html) {
+        Some(html) => vec_into_raw(
+            render_html_to_rgba(&html, width, height, scale as f64),
+            out_len,
+        ),
+        None => std::ptr::null_mut(),
+    }
 }
 
 /// C ABI: free a buffer returned by [`blitz_render_html`] or
@@ -397,50 +401,7 @@ pub unsafe extern "C" fn blitz_string_free(ptr: *mut std::ffi::c_char) {
 mod android {
     use jni::JNIEnv;
     use jni::objects::{JByteArray, JClass, JString};
-    use jni::sys::{jboolean, jdouble, jfloat, jint};
-
-    /// JNI: `dev.dioxus.blitzwidget.BlitzRenderer.renderHtml(String, int, int, float): byte[]`
-    /// Returns RGBA8888 pixels suitable for `Bitmap.copyPixelsFromBuffer` on an
-    /// ARGB_8888 bitmap of `(width * scale) x (height * scale)` pixels.
-    #[unsafe(no_mangle)]
-    pub extern "system" fn Java_dev_dioxus_blitzwidget_BlitzRenderer_renderHtml<'l>(
-        mut env: JNIEnv<'l>,
-        _class: JClass<'l>,
-        html: JString<'l>,
-        width: jint,
-        height: jint,
-        scale: jfloat,
-    ) -> JByteArray<'l> {
-        let html: String = match env.get_string(&html) {
-            Ok(s) => s.into(),
-            Err(_) => return JByteArray::default(),
-        };
-        let buffer = crate::render_html_to_rgba(&html, width as u32, height as u32, scale as f64);
-        env.byte_array_from_slice(&buffer)
-            .unwrap_or_else(|_| JByteArray::default())
-    }
-
-    /// JNI: `BlitzRenderer.extractRegions(String, int, int, float): String`
-    /// Returns a JSON array of hit regions (coordinates in CSS px / dp) for
-    /// all elements with a `data-action` attribute.
-    #[unsafe(no_mangle)]
-    pub extern "system" fn Java_dev_dioxus_blitzwidget_BlitzRenderer_extractRegions<'l>(
-        mut env: JNIEnv<'l>,
-        _class: JClass<'l>,
-        html: JString<'l>,
-        width: jint,
-        height: jint,
-        scale: jfloat,
-    ) -> JString<'l> {
-        let html: String = match env.get_string(&html) {
-            Ok(s) => s.into(),
-            Err(_) => return JString::default(),
-        };
-        let (_, regions) =
-            crate::render_html(&html, width as u32, height as u32, scale as f64, 0.0);
-        let json = crate::regions_to_json(&regions);
-        env.new_string(json).unwrap_or_else(|_| JString::default())
-    }
+    use jni::sys::{jdouble, jfloat, jint};
 
     /// JNI: `BlitzRenderer.dispatch(String, String)` — apply a `data-action`
     /// to the Rust-owned widget state persisted at `statePath`.
@@ -458,24 +419,73 @@ mod android {
         crate::store::dispatch(&path, &action);
     }
 
-    /// JNI: `BlitzRenderer.widgetHtml(String, String, boolean, String): String`
-    /// — HTML for a widget kind at the current Rust-owned state.
+    /// JNI: `BlitzRenderer.renderWidget(String, String, int, int, float, double, String): byte[]`
+    /// — RGBA8888 pixels of a widget kind's frame at the current Rust-owned
+    /// state, sampled at `timeSecs` on the animation clock.
     #[unsafe(no_mangle)]
-    pub extern "system" fn Java_dev_dioxus_blitzwidget_BlitzRenderer_widgetHtml<'l>(
+    #[allow(clippy::too_many_arguments)]
+    pub extern "system" fn Java_dev_dioxus_blitzwidget_BlitzRenderer_renderWidget<'l>(
         mut env: JNIEnv<'l>,
         _class: JClass<'l>,
         state_path: JString<'l>,
         kind: JString<'l>,
-        hide_tracked: jboolean,
+        width: jint,
+        height: jint,
+        scale: jfloat,
+        time_secs: jdouble,
         clock: JString<'l>,
+    ) -> JByteArray<'l> {
+        let (Ok(path), Ok(kind)) = (env.get_string(&state_path), env.get_string(&kind)) else {
+            return JByteArray::default();
+        };
+        let (path, kind): (String, String) = (path.into(), kind.into());
+        let clock: String = env.get_string(&clock).map(Into::into).unwrap_or_default();
+        match crate::render_widget_frame(
+            &path,
+            &kind,
+            width as u32,
+            height as u32,
+            scale as f64,
+            time_secs,
+            false,
+            &clock,
+        ) {
+            Some((buffer, _)) => env
+                .byte_array_from_slice(&buffer)
+                .unwrap_or_else(|_| JByteArray::default()),
+            None => JByteArray::default(),
+        }
+    }
+
+    /// JNI: `BlitzRenderer.widgetPlan(String, String, int, int, float): String`
+    /// — the JSON compositing plan (`{"buttons":[..],"layers":[..]}`,
+    /// coordinates in CSS px / dp) of a widget kind's frame at the current
+    /// Rust-owned state.
+    #[unsafe(no_mangle)]
+    pub extern "system" fn Java_dev_dioxus_blitzwidget_BlitzRenderer_widgetPlan<'l>(
+        mut env: JNIEnv<'l>,
+        _class: JClass<'l>,
+        state_path: JString<'l>,
+        kind: JString<'l>,
+        width: jint,
+        height: jint,
+        scale: jfloat,
     ) -> JString<'l> {
         let (Ok(path), Ok(kind)) = (env.get_string(&state_path), env.get_string(&kind)) else {
             return JString::default();
         };
         let (path, kind): (String, String) = (path.into(), kind.into());
-        let clock: String = env.get_string(&clock).map(Into::into).unwrap_or_default();
-        match crate::store::widget_html(&path, &kind, hide_tracked != 0, &clock) {
-            Some(html) => env.new_string(html).unwrap_or_else(|_| JString::default()),
+        match crate::render_widget_frame(
+            &path,
+            &kind,
+            width as u32,
+            height as u32,
+            scale as f64,
+            0.0,
+            false,
+            "",
+        ) {
+            Some((_, plan)) => env.new_string(plan).unwrap_or_else(|_| JString::default()),
             None => JString::default(),
         }
     }
@@ -522,27 +532,5 @@ mod android {
         _class: JClass<'l>,
     ) -> jdouble {
         crate::store::PLAY_SECS
-    }
-
-    /// JNI: `BlitzRenderer.renderHtmlAt(String, int, int, float, double): byte[]`
-    /// Like `renderHtml`, but samples CSS animations at `timeSecs`.
-    #[unsafe(no_mangle)]
-    pub extern "system" fn Java_dev_dioxus_blitzwidget_BlitzRenderer_renderHtmlAt<'l>(
-        mut env: JNIEnv<'l>,
-        _class: JClass<'l>,
-        html: JString<'l>,
-        width: jint,
-        height: jint,
-        scale: jfloat,
-        time_secs: jdouble,
-    ) -> JByteArray<'l> {
-        let html: String = match env.get_string(&html) {
-            Ok(s) => s.into(),
-            Err(_) => return JByteArray::default(),
-        };
-        let (buffer, _) =
-            crate::render_html(&html, width as u32, height as u32, scale as f64, time_secs);
-        env.byte_array_from_slice(&buffer)
-            .unwrap_or_else(|_| JByteArray::default())
     }
 }
