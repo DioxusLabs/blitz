@@ -53,7 +53,7 @@ use style::servo::media_features::PointerCapabilities;
 use style::servo_arc::Arc as ServoArc;
 use style::values::GenericAtomIdent;
 use style::values::computed::ui::CursorKind;
-use style::values::computed::{Contain, Overflow, UserSelect};
+use style::values::computed::{Overflow, UserSelect};
 use style::values::specified::box_::{DisplayInside, DisplayOutside};
 use style::{
     device::Device,
@@ -821,6 +821,11 @@ impl BaseDocument {
     pub fn viewport_overflow_propagation_source(&self) -> Option<NodeId> {
         let root = self.try_root_element()?;
         let root_styles = root.primary_styles()?;
+        // Any containment on the root element suppresses propagation
+        // (https://drafts.csswg.org/css-contain-2/#containment-types)
+        if !root_styles.clone_contain().is_empty() {
+            return None;
+        }
         let root_is_visible = root_styles.clone_overflow_x() == Overflow::Visible
             && root_styles.clone_overflow_y() == Overflow::Visible;
         if !root_is_visible {
@@ -831,11 +836,9 @@ impl BaseDocument {
                 .data
                 .is_element_with_tag_name(&local_name!("body"))
         })?;
-        // Layout or paint containment on the <body> suppresses propagation
-        // (https://drafts.csswg.org/css-contain-2/#containment-types)
+        // Any containment on the <body> likewise suppresses propagation
         let body_styles = self.nodes[body_id].primary_styles()?;
-        let containment = body_styles.clone_contain();
-        if containment.intersects(Contain::LAYOUT | Contain::PAINT) {
+        if !body_styles.clone_contain().is_empty() {
             return None;
         }
         Some(body_id)
