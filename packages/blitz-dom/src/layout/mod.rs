@@ -29,11 +29,6 @@ pub(crate) mod table;
 use self::replaced::{ReplacedContext, is_replaced_element, replaced_measure_function};
 use self::table::TableTreeWrapper;
 
-/// The size a replaced element takes when it has no intrinsic dimensions of
-/// its own: the CSS2 §10.4 default object size, overridden per-axis by a
-/// `width`/`height` content attribute. `<canvas>` additionally takes an
-/// intrinsic aspect ratio from the same pair; `<img>` and `<svg>` have no
-/// default object size and resolve to zero instead.
 fn default_object_size(
     tag_name: &LocalName,
     attr_size: taffy::Size<Option<f32>>,
@@ -263,14 +258,14 @@ impl BaseDocument {
                         | SpecialElementData::None => {
                             default_object_size(&element_data.name.local, attr_size)
                         }
-                        // A custom widget paints the box; it does not change how the box
-                        // is sized. A `<canvas>` carrying one therefore keeps the
-                        // intrinsic size and ratio it has above, rather than reaching the
-                        // unreachable arm, because the widget occupies the same
-                        // `SpecialElementData` slot the canvas branch matches on.
                         #[cfg(feature = "custom-widget")]
-                        SpecialElementData::CustomWidget(_) => {
-                            default_object_size(&element_data.name.local, attr_size)
+                        SpecialElementData::CustomWidget(widget_data) => {
+                            let (size, ratio) =
+                                default_object_size(&element_data.name.local, attr_size);
+                            (
+                                widget_data.widget.intrinsic_size().unwrap_or(size),
+                                widget_data.widget.aspect_ratio().or(ratio),
+                            )
                         }
                         _ => unreachable!(),
                     };

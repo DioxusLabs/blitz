@@ -30,6 +30,7 @@ style = { workspace = true }
 accesskit = { workspace = true }
 markup5ever = { workspace = true }
 keyboard-types = { workspace = true }
+taffy = { workspace = true }
 usvg = { workspace = true }
 
 [lib]
