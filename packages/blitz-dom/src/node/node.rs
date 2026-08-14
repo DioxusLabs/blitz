@@ -22,7 +22,7 @@ use style::Atom;
 use style::invalidation::element::restyle_hints::RestyleHint;
 use style::properties::ComputedValues;
 use style::properties::generated::longhands::position::computed_value::T as Position;
-use style::selector_parser::{PseudoElement, RestyleDamage};
+use style::selector_parser::RestyleDamage;
 use style::servo_arc::Arc as ServoArc;
 use style::shared_lock::SharedRwLock;
 use style::stylesheets::UrlExtraData;
@@ -1056,13 +1056,10 @@ impl Node {
     }
 
     pub fn order(&self) -> i32 {
-        self.primary_styles()
-            .map(|s| match s.pseudo() {
-                Some(PseudoElement::Before) => i32::MIN,
-                Some(PseudoElement::After) => i32::MAX,
-                _ => s.clone_order(),
-            })
-            .unwrap_or(0)
+        // ::before/::after pseudos are flex/grid items and honor `order`.
+        // They sit first/last in layout_children, and the `order` sort is
+        // stable, so ties keep ::before first and ::after last.
+        self.primary_styles().map(|s| s.clone_order()).unwrap_or(0)
     }
 
     pub fn z_index(&self) -> i32 {
