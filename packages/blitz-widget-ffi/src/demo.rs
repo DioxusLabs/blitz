@@ -203,7 +203,14 @@ const BADGE_STOPS: [[f64; 3]; 4] = [
 /// and back (peak at half the cycle), the fill sweeps 0→100%, and the badge
 /// hue walks pink→green→blue→pink.
 pub fn pose_at(clock: f64) -> Pose {
-    let p = (clock.rem_euclid(ANIMATION_DURATION)) / ANIMATION_DURATION;
+    // End-inclusive: a clock landing exactly on a cycle boundary (e.g. the
+    // scrubber's t=100%) is the end of the cycle, not the start of the next.
+    let wrapped = clock.rem_euclid(ANIMATION_DURATION);
+    let p = if clock > 0.0 && wrapped == 0.0 {
+        1.0
+    } else {
+        wrapped / ANIMATION_DURATION
+    };
     let q = 1.0 - (2.0 * p - 1.0).abs();
     let seg = (p * 3.0).min(2.999);
     let (i, f) = (seg as usize, seg.fract());
