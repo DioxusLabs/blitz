@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Blitz Widget</string>
+    <string name="widget_description">An interactive counter rendered from HTML/CSS by the Blitz engine.</string>
+    <string name="demo_widget_description">Counter + slider: every HTML element is its own tap target, rendered by Blitz.</string>
+    <string name="anim_widget_description">CSS keyframe animations sampled at any instant — Blitz controls the animation clock.</string>
+</resources>

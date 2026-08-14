@@ -1064,6 +1064,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "blitz-widget-ffi"
+version = "0.1.0"
+dependencies = [
+ "anyrender",
+ "anyrender_vello_cpu",
+ "blitz-dom",
+ "blitz-html",
+ "blitz-paint",
+ "blitz-traits",
+ "jni 0.21.1",
+ "peniko",
+ "png 0.18.1",
+]
+
+[[package]]
 name = "block"
 version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
