@@ -3,10 +3,10 @@ use parley::{AlignmentOptions, IndentOptions};
 use style::values::specified::box_::DisplayOutside;
 use style::values::{computed::CSSPixelLength, generics::text::GenericTextIndent};
 use taffy::{
-    AvailableSpace, BlockContext, BlockFormattingContext, BoxSizing, CollapsibleMarginSet,
-    CoreStyle as _, Direction, LayoutInput, LayoutOutput, LayoutPartialTree as _, MaybeMath as _,
-    MaybeResolve as _, Overflow, Point, Position, RequestedAxis, ResolveOrZero as _, RunMode, Size,
-    SizingMode,
+    AvailableSpace, Baselines, BlockContext, BlockFormattingContext, BoxSizing,
+    CollapsibleMarginSet, CoreStyle as _, Direction, LayoutInput, LayoutOutput,
+    LayoutPartialTree as _, MaybeMath as _, MaybeResolve as _, Overflow, Point, Position,
+    RequestedAxis, ResolveOrZero as _, RunMode, Size, SizingMode,
 };
 
 #[cfg(feature = "floats")]
@@ -817,6 +817,11 @@ impl BaseDocument {
             .lines()
             .next()
             .map(|line| (line.metrics().baseline / scale) + container_pb.top);
+        let last_baseline = inline_layout
+            .layout
+            .lines()
+            .next_back()
+            .map(|line| (line.metrics().baseline / scale) + container_pb.top);
 
         // Put layout back
         self.nodes[node_id]
@@ -839,7 +844,10 @@ impl BaseDocument {
                     bottom: content_extent.height,
                 }
             },
-            baselines: taffy::Baselines::from_first(first_baseline),
+            baselines: taffy::Baselines {
+                first: first_baseline,
+                last: last_baseline,
+            },
             top_margin: CollapsibleMarginSet::ZERO,
             bottom_margin: CollapsibleMarginSet::ZERO,
             margins_can_collapse_through: !has_styles_preventing_being_collapsed_through

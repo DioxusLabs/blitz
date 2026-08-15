@@ -414,9 +414,7 @@ pub fn item_alignment(input: stylo::AlignFlags, is_horiz_rtl: bool) -> Option<ta
         stylo::AlignFlags::RIGHT => Some(taffy::AlignItems::END),
         stylo::AlignFlags::CENTER => Some(taffy::AlignItems::CENTER),
         stylo::AlignFlags::BASELINE => Some(taffy::AlignItems::BASELINE),
-        // Taffy does not support last-baseline alignment, so map it to its
-        // fallback alignment of `self-end` (https://www.w3.org/TR/css-align-3/#baseline-values)
-        stylo::AlignFlags::LAST_BASELINE => Some(taffy::AlignItems::END),
+        stylo::AlignFlags::LAST_BASELINE => Some(taffy::AlignItems::LAST_BASELINE),
         // Should never be hit. But no real reason to panic here.
         _ => None,
     }?;
