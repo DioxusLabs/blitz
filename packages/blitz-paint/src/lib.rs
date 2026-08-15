@@ -10,6 +10,7 @@ mod gradient;
 mod kurbo_css;
 mod layers;
 mod render;
+mod scene;
 mod sizing;
 mod text;
 
@@ -18,6 +19,8 @@ use std::collections::HashMap;
 use anyrender::{PaintScene, Scene};
 use blitz_dom::{BaseDocument, NodeId, util::Color};
 use render::BlitzDomPainter;
+
+pub use scene::{BlitzPaintScene, PaintNode, PaintSceneAdapter};
 
 const FONT_EMBOLDEN_ENABLED: bool = cfg!(any(
     feature = "font-embolden",
@@ -42,6 +45,24 @@ type CustomWidgetSceneMap = HashMap<(usize, NodeId), Scene>;
 /// transform them to a vector format (e.g. SVG/PDF) or serialize them in raw form for later use.
 pub fn paint_scene(
     scene: &mut impl PaintScene,
+    doc: &mut BaseDocument,
+    scale: f64,
+    width: u32,
+    height: u32,
+    x_offset: u32,
+    y_offset: u32,
+) {
+    let mut scene = PaintSceneAdapter::new(scene);
+    paint_scene_with_nodes(&mut scene, doc, scale, width, height, x_offset, y_offset);
+}
+
+/// Paint a [`blitz_dom::BaseDocument`] into a node-aware scene.
+///
+/// This is equivalent to [`paint_scene`], except that the scene can skip DOM
+/// paint subtrees and observe which document and node own each contiguous
+/// group of commands through [`BlitzPaintScene`].
+pub fn paint_scene_with_nodes(
+    scene: &mut impl BlitzPaintScene,
     doc: &mut BaseDocument,
     scale: f64,
     width: u32,
@@ -81,7 +102,7 @@ pub fn paint_scene(
 fn build_custom_widget_scenes(
     custom_widget_scenes: &mut CustomWidgetSceneMap,
     doc: &mut BaseDocument,
-    render_ctx: &mut impl anyrender::RenderContext,
+    render_ctx: &mut impl BlitzPaintScene,
     scale: f64,
 ) {
     let doc_id = doc.id();
@@ -89,6 +110,9 @@ fn build_custom_widget_scenes(
     // Process scenes for every custom widget in the document
     let custom_widget_node_ids = doc.custom_widget_node_ids();
     for node_id in custom_widget_node_ids.into_iter() {
+        if !render_ctx.should_paint(PaintNode::new(doc_id, node_id)) {
+            continue;
+        }
         if let Some(scene) = process_custom_widget_node(doc, render_ctx, node_id, scale) {
             custom_widget_scenes.insert((doc_id, node_id), scene);
         }
@@ -97,6 +121,9 @@ fn build_custom_widget_scenes(
     // Recurse into sub documents
     let sub_document_node_ids = doc.sub_document_node_ids();
     for node_id in sub_document_node_ids.into_iter() {
+        if !render_ctx.should_paint(PaintNode::new(doc_id, node_id)) {
+            continue;
+        }
         if let Some(sub_doc) = doc.get_node_mut(node_id).and_then(|node| node.subdoc_mut()) {
             let mut inner = sub_doc.inner_mut();
             build_custom_widget_scenes(custom_widget_scenes, &mut inner, render_ctx, scale);

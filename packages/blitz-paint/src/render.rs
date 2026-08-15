@@ -14,6 +14,7 @@ use crate::debug_overlay::render_debug_overlay;
 use crate::filters::convert_filters;
 use crate::kurbo_css::NonUniformRoundedRectRadii;
 use crate::layers::LayerManager;
+use crate::scene::{BlitzPaintScene, PaintNode, with_node};
 use crate::sizing::compute_object_fit;
 use crate::{CustomWidgetSceneMap, SELECTION_COLOR};
 use anyrender::{PaintScene, Scene};
@@ -110,7 +111,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
     ///
     /// This assumes styles are resolved and layout is complete.
     /// Make sure you do those before trying to render
-    pub fn paint_scene(&self, scene: &mut impl PaintScene) {
+    pub fn paint_scene(&self, scene: &mut impl BlitzPaintScene) {
         if self.dom.has_pending_critical_resources() {
             return;
         }
@@ -125,10 +126,14 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             return;
         };
         let root_id = root_element.id;
+        let root_node = PaintNode::new(self.dom.id(), root_id);
+        if !scene.should_paint(root_node) {
+            return;
+        }
         let bg_width = (self.width as f32).max(root_element.final_layout().size.width);
         let bg_height = (self.height as f32).max(root_element.final_layout().size.height);
 
-        let background_color = {
+        let canvas_background = {
             let html_color = root_element
                 .primary_styles()
                 .map(|s| s.clone_background_color())
@@ -143,26 +148,33 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                             .get_node(*id)
                             .filter(|node| node.data.is_element_with_tag_name(&local_name!("body")))
                     })
-                    .and_then(|body| body.primary_styles())
-                    .map(|style| {
+                    .and_then(|body| {
+                        let style = body.primary_styles()?;
                         let current_color = style.clone_color();
-                        style
-                            .clone_background_color()
-                            .resolve_to_absolute(&current_color)
+                        Some((
+                            PaintNode::new(self.dom.id(), body.id),
+                            style
+                                .clone_background_color()
+                                .resolve_to_absolute(&current_color),
+                        ))
                     })
             } else {
                 let current_color = root_element.primary_styles().unwrap().clone_color();
-                Some(html_color.resolve_to_absolute(&current_color))
+                Some((root_node, html_color.resolve_to_absolute(&current_color)))
             }
         };
 
-        if let Some(bg_color) = background_color {
+        if let Some((owner, bg_color)) = canvas_background
+            && scene.should_paint(owner)
+        {
             let bg_color = bg_color.as_srgb_color();
             let rect = Rect::from_origin_size(
                 (self.initial_x * self.scale, self.initial_y * self.scale),
                 (bg_width as f64, bg_height as f64),
             );
-            scene.fill(Fill::NonZero, Affine::IDENTITY, bg_color, None, &rect);
+            with_node(scene, owner, |scene| {
+                scene.fill(Fill::NonZero, Affine::IDENTITY, bg_color, None, &rect);
+            });
         }
 
         // The root clip rectangle is the viewport (in screen coordinates, with the
@@ -183,14 +195,19 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         // Render debug overlay
         if self.dom.devtools().highlight_hover {
             if let Some(node_id) = self.dom.as_ref().get_hover_node_id() {
-                render_debug_overlay(
-                    scene,
-                    self.dom,
-                    node_id,
-                    self.scale,
-                    self.initial_x,
-                    self.initial_y,
-                );
+                let paint_node = PaintNode::new(self.dom.id(), node_id);
+                if scene.should_paint(paint_node) {
+                    with_node(scene, paint_node, |scene| {
+                        render_debug_overlay(
+                            scene,
+                            self.dom,
+                            node_id,
+                            self.scale,
+                            self.initial_x,
+                            self.initial_y,
+                        );
+                    });
+                }
             }
         }
         if let Some(node_id) = self.dom.devtools().highlight_node {
@@ -201,14 +218,19 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                 .get_node(node_id)
                 .is_some_and(|node| node.element_data().is_some())
             {
-                render_debug_overlay(
-                    scene,
-                    self.dom,
-                    node_id,
-                    self.scale,
-                    self.initial_x,
-                    self.initial_y,
-                );
+                let paint_node = PaintNode::new(self.dom.id(), node_id);
+                if scene.should_paint(paint_node) {
+                    with_node(scene, paint_node, |scene| {
+                        render_debug_overlay(
+                            scene,
+                            self.dom,
+                            node_id,
+                            self.scale,
+                            self.initial_x,
+                            self.initial_y,
+                        );
+                    });
+                }
             }
         }
     }
@@ -222,14 +244,20 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
     ///
     /// Approaching rendering this way guarantees we have all the styles we need when rendering text with not having
     /// to traverse back to the parent for its styles, or needing to pass down styles
-    fn render_element(
+    fn render_element<S>(
         &self,
-        scene: &mut impl PaintScene,
+        scene: &mut S,
         node_id: NodeId,
         parent_style_transform: Affine,
         clip_rect: Rect,
-    ) {
+    ) where
+        S: BlitzPaintScene,
+    {
         let node = &self.dom.as_ref().tree()[node_id];
+        let paint_node = PaintNode::new(self.dom.id(), node_id);
+        if !scene.should_paint(paint_node) {
+            return;
+        }
 
         // Early return if the element is hidden
         if matches!(node.style().display, taffy::Display::None) {
@@ -367,6 +395,8 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         let mut clip_path_for_layer = clip_path_shape.unwrap_or(default_clip);
         clip_path_for_layer.apply_affine(Affine::scale(self.scale));
 
+        scene.begin_node(paint_node);
+
         cx.draw_outline(scene);
         cx.draw_outset_box_shadow(scene);
 
@@ -483,15 +513,19 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                 cx.maybe_pop_css_mask_layer(scene, mask_layer_pushed);
             },
         );
+
+        scene.end_node(paint_node);
     }
 
-    fn render_node(
+    fn render_node<S>(
         &self,
-        scene: &mut impl PaintScene,
+        scene: &mut S,
         node_id: NodeId,
         parent_style_transform: Affine,
         clip_rect: Rect,
-    ) {
+    ) where
+        S: BlitzPaintScene,
+    {
         let node = &self.dom.as_ref().tree()[node_id];
 
         match &node.data {
@@ -728,7 +762,7 @@ impl ElementCx<'_, '_> {
         }
     }
 
-    fn draw_inline_layout(&self, scene: &mut impl PaintScene, pos: Point) {
+    fn draw_inline_layout(&self, scene: &mut impl BlitzPaintScene, pos: Point) {
         if self.node.flags.is_inline_root() {
             let text_layout = self.element
                 .inline_layout_data
@@ -772,7 +806,7 @@ impl ElementCx<'_, '_> {
         }
     }
 
-    fn draw_text_input_text(&self, scene: &mut impl PaintScene, pos: Point) {
+    fn draw_text_input_text(&self, scene: &mut impl BlitzPaintScene, pos: Point) {
         // Render the text in text inputs
         if let Some(input_data) = self.text_input {
             // For single-line inputs, add an offset to vertically center the text input layout
@@ -835,7 +869,7 @@ impl ElementCx<'_, '_> {
         }
     }
 
-    fn draw_marker(&self, scene: &mut impl PaintScene, pos: Point) {
+    fn draw_marker(&self, scene: &mut impl BlitzPaintScene, pos: Point) {
         if let Some(ListItemLayout {
             marker,
             position: ListItemLayoutPosition::Outside(layout),
@@ -882,7 +916,7 @@ impl ElementCx<'_, '_> {
 
     fn draw_children(
         &self,
-        scene: &mut impl PaintScene,
+        scene: &mut impl BlitzPaintScene,
         parent_style_transform: Affine,
         clip_rect: Rect,
     ) {
@@ -1033,7 +1067,7 @@ impl ElementCx<'_, '_> {
         }
     }
 
-    fn draw_sub_document(&self, scene: &mut impl PaintScene) {
+    fn draw_sub_document(&self, scene: &mut impl BlitzPaintScene) {
         if let Some(sub_doc) = self.element.sub_doc_data().map(|doc| doc.inner()) {
             let scale = self.scale;
             let width = self.frame.content_box.width() as u32;
