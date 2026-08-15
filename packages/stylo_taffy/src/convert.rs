@@ -10,9 +10,7 @@ pub(crate) mod stylo {
     pub(crate) use style::properties::longhands::position::computed_value::T as Position;
     pub(crate) use style::values::computed::length_percentage::CalcLengthPercentage;
     pub(crate) use style::values::computed::length_percentage::Unpacked as UnpackedLengthPercentage;
-    pub(crate) use style::values::computed::{
-        BorderSideWidth, Contain, LengthPercentage, Percentage,
-    };
+    pub(crate) use style::values::computed::{BorderSideWidth, LengthPercentage, Percentage};
     pub(crate) use style::values::generics::NonNegative;
     pub(crate) use style::values::generics::length::{
         GenericLengthPercentageOrNormal, GenericMargin, GenericMaxSize, GenericSize,
@@ -262,41 +260,6 @@ pub fn position(input: stylo::Position) -> taffy::Position {
         stylo::Position::Fixed => taffy::Position::Absolute,
         stylo::Position::Sticky => taffy::Position::Relative,
     }
-}
-
-/// Convert stylo's containment to Taffy's `Contain`, which only represents the layout-affecting
-/// parts of the `contain` property.
-///
-/// Only the explicitly specified `contain` property is mapped. The containment implied by
-/// `container-type` (Gecko-mode stylo folds this into `clone_effective_containment()`; Servo-mode
-/// does not compute it) is not applied for now.
-///
-/// Stylo's `STYLE` bit does not affect layout and its `BLOCK_SIZE` bit is not supported by
-/// Taffy, so these are dropped.
-///
-/// Containment does not apply to non-atomic inline-level boxes.
-/// <https://drafts.csswg.org/css-contain-2/#contain-property>
-#[inline]
-pub fn contain(contain: stylo::Contain, display: stylo::Display) -> taffy::Contain {
-    let is_non_atomic_inline = display.outside() == stylo::DisplayOutside::Inline
-        && display.inside() == stylo::DisplayInside::Flow;
-    if is_non_atomic_inline {
-        return taffy::Contain::NONE;
-    }
-
-    let mut output = taffy::Contain::NONE;
-    if contain.contains(stylo::Contain::SIZE) {
-        output |= taffy::Contain::SIZE;
-    } else if contain.contains(stylo::Contain::INLINE_SIZE) {
-        output |= taffy::Contain::INLINE_SIZE;
-    }
-    if contain.contains(stylo::Contain::LAYOUT) {
-        output |= taffy::Contain::LAYOUT;
-    }
-    if contain.contains(stylo::Contain::PAINT) {
-        output |= taffy::Contain::PAINT;
-    }
-    output
 }
 
 #[inline]
@@ -749,7 +712,6 @@ pub fn to_taffy_style(style: &stylo::ComputedValues) -> taffy::Style<Atom> {
         },
         direction: self::direction(style.clone_direction()),
         scrollbar_width: 0.0,
-        contain: self::contain(style.clone_contain(), display),
 
         #[cfg(feature = "floats")]
         float: self::float(style.clone_float()),
