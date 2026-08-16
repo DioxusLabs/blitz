@@ -109,6 +109,19 @@ pub trait Widget {
         let _ = event;
     }
 
+    /// The widget's intrinsic size, if it has one.
+    ///
+    /// `None` sizes the element as it would be sized without the widget (for a
+    /// replaced element, its own intrinsic size or the default object size).
+    fn intrinsic_size(&self) -> Option<taffy::Size<f32>> {
+        None
+    }
+
+    /// The widget's intrinsic aspect ratio, if it has one.
+    fn aspect_ratio(&self) -> Option<f32> {
+        None
+    }
+
     /// Callback for the widget to paint it's content.
     ///
     /// Output is recorded to an AnyRender `Scene`.

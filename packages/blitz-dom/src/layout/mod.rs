@@ -6,7 +6,7 @@
 
 use crate::node::{ImageData, NodeData, SpecialElementData};
 use crate::{document::BaseDocument, dom_node_id, node::Node, taffy_node_id};
-use markup5ever::local_name;
+use markup5ever::{LocalName, local_name};
 use std::cell::Ref;
 use std::sync::Arc;
 use style::Atom;
@@ -28,6 +28,21 @@ pub(crate) mod table;
 
 use self::replaced::{ReplacedContext, is_replaced_element, replaced_measure_function};
 use self::table::TableTreeWrapper;
+
+fn default_object_size(
+    tag_name: &LocalName,
+    attr_size: taffy::Size<Option<f32>>,
+) -> (taffy::Size<f32>, Option<f32>) {
+    if *tag_name == local_name!("img") || *tag_name == local_name!("svg") {
+        return (taffy::Size::ZERO, None);
+    }
+    let size = taffy::Size {
+        width: attr_size.width.unwrap_or(300.0),
+        height: attr_size.height.unwrap_or(150.0),
+    };
+    let ratio = (*tag_name == local_name!("canvas")).then(|| size.width / size.height);
+    (size, ratio)
+}
 
 pub(crate) fn resolve_calc_value(calc_ptr: *const (), parent_size: f32) -> f32 {
     let calc = unsafe { &*(calc_ptr as *const CalcLengthPercentage) };
@@ -241,18 +256,16 @@ impl BaseDocument {
                         SpecialElementData::Canvas(_)
                         | SpecialElementData::SubDocument(_)
                         | SpecialElementData::None => {
-                            let tag_name = &element_data.name.local;
-                            if *tag_name == local_name!("img") || *tag_name == local_name!("svg") {
-                                (taffy::Size::ZERO, None)
-                            } else {
-                                let size = taffy::Size {
-                                    width: attr_size.width.unwrap_or(300.0),
-                                    height: attr_size.height.unwrap_or(150.0),
-                                };
-                                let ratio = (*tag_name == local_name!("canvas"))
-                                    .then(|| size.width / size.height);
-                                (size, ratio)
-                            }
+                            default_object_size(&element_data.name.local, attr_size)
+                        }
+                        #[cfg(feature = "custom-widget")]
+                        SpecialElementData::CustomWidget(widget_data) => {
+                            let (size, ratio) =
+                                default_object_size(&element_data.name.local, attr_size);
+                            (
+                                widget_data.widget.intrinsic_size().unwrap_or(size),
+                                widget_data.widget.aspect_ratio().or(ratio),
+                            )
                         }
                         _ => unreachable!(),
                     };

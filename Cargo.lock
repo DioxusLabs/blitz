@@ -1086,6 +1086,7 @@ dependencies = [
  "keyboard-types 0.7.0",
  "markup5ever",
  "stylo",
+ "taffy",
  "usvg",
 ]
 
