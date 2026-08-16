@@ -289,7 +289,7 @@ impl BaseDocument {
                     return taffy::LayoutOutput {
                         size: computed,
                         content_size: computed,
-                        first_baselines: taffy::Point::NONE,
+                        baselines: taffy::Baselines::NONE,
                         top_margin: CollapsibleMarginSet::ZERO,
                         bottom_margin: CollapsibleMarginSet::ZERO,
                         margins_can_collapse_through: false,

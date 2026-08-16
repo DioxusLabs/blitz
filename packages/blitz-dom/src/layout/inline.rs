@@ -823,10 +823,7 @@ impl BaseDocument {
         LayoutOutput {
             size: final_size,
             content_size: measured_size + padding.sum_axes(),
-            first_baselines: Point {
-                x: None,
-                y: first_baseline,
-            },
+            baselines: taffy::Baselines::from_first(first_baseline),
             top_margin: CollapsibleMarginSet::ZERO,
             bottom_margin: CollapsibleMarginSet::ZERO,
             margins_can_collapse_through: !has_styles_preventing_being_collapsed_through
