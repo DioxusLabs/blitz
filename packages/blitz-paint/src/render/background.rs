@@ -322,14 +322,14 @@ impl ElementCx<'_, '_> {
             return;
         };
 
-        let (area_rect, base_transform) = if self.layer_is_fixed(layer) {
+        let (origin_rect, base_transform) = if self.layer_is_fixed(layer) {
             self.fixed_positioning_area()
         } else {
-            (self.frame.padding_box, self.transform)
+            (self.box_rect(layer.origin), self.transform)
         };
 
-        let frame_w = (area_rect.width() / self.scale) as f32;
-        let frame_h = (area_rect.height() / self.scale) as f32;
+        let frame_w = (origin_rect.width() / self.scale) as f32;
+        let frame_h = (origin_rect.height() / self.scale) as f32;
 
         let svg_size = svg.tree.size();
 
@@ -370,7 +370,10 @@ impl ElementCx<'_, '_> {
         );
 
         let transform = base_transform
-            * kurbo::Affine::translate((bg_pos.x * self.scale, bg_pos.y * self.scale))
+            * kurbo::Affine::translate((
+                origin_rect.x0 + bg_pos.x * self.scale,
+                origin_rect.y0 + bg_pos.y * self.scale,
+            ))
             * Affine::scale_non_uniform(x_ratio, y_ratio);
 
         anyrender_svg::render_svg_tree(scene, &svg.tree, transform);
