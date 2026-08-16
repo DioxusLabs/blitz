@@ -132,6 +132,12 @@ impl<'a> ImageLayerStyles<'a> {
 
 impl ElementCx<'_, '_> {
     pub(super) fn draw_background(&self, scene: &mut impl PaintScene) {
+        // The background of the element that propagates to the canvas is painted as the
+        // canvas background, and must not be painted again on the element itself.
+        if self.context.canvas_bg_source_id == Some(self.node.id) {
+            return;
+        }
+
         let bg_styles = &self.style.get_background();
         let image_data = &self.element.background_images;
         let layer_count = bg_styles.background_image.0.len();
@@ -154,6 +160,42 @@ impl ElementCx<'_, '_> {
                 1.0,
                 self.transform,
                 &background_clip_path,
+                None,
+                None,
+                |scene| {
+                    self.draw_image_layer(scene, &layer);
+                },
+            );
+        }
+    }
+
+    /// Draw the canvas background image layers.
+    ///
+    /// The background is propagated from the root or `<body>` element (`source_element`),
+    /// whose styles are stored in `self.style`. `self` must be an `ElementCx` for the root
+    /// element: background images are positioned relative to the root element's boxes, but
+    /// painted across the entire canvas (`canvas_rect`, in the root element's local
+    /// coordinate space).
+    pub(super) fn draw_canvas_background_layers(
+        &self,
+        scene: &mut impl PaintScene,
+        canvas_rect: Rect,
+        source_element: &blitz_dom::ElementData,
+    ) {
+        let bg_styles = &self.style.get_background();
+        let image_data = &source_element.background_images;
+        let layer_count = bg_styles.background_image.0.len();
+
+        let canvas_path = canvas_rect.to_path(0.1);
+        for idx in (0..layer_count).rev() {
+            let layer = ImageLayerStyles::from_background(bg_styles, image_data, idx);
+
+            self.context.layer_manager.maybe_with_layer(
+                scene,
+                true,
+                1.0,
+                self.transform,
+                &canvas_path,
                 None,
                 None,
                 |scene| {
@@ -395,6 +437,16 @@ impl ElementCx<'_, '_> {
         } else {
             (self.box_rect(layer.origin), self.transform)
         };
+        // The area which repeated layers must cover: the clip box (or the whole canvas for
+        // the canvas background). Layers are positioned relative to `origin_rect` but tiled
+        // to cover `painting_rect`. For a fixed layer the positioning area (the viewport)
+        // already covers everything visible.
+        let painting_rect = if self.layer_is_fixed(layer) {
+            origin_rect
+        } else {
+            self.painting_rect_override
+                .unwrap_or_else(|| self.box_rect(layer.clip))
+        };
 
         let image_width = image_data.width as f64;
         let image_height = image_data.height as f64;
@@ -418,6 +470,8 @@ impl ElementCx<'_, '_> {
             *repeat_x,
             origin_rect.x0,
             origin_rect.width(),
+            painting_rect.x0,
+            painting_rect.width(),
             bg_pos.x,
             bg_size.width,
             image_width,
@@ -427,6 +481,8 @@ impl ElementCx<'_, '_> {
             *repeat_y,
             origin_rect.y0,
             origin_rect.height(),
+            painting_rect.y0,
+            painting_rect.height(),
             bg_pos.y,
             bg_size.height,
             image_height,
@@ -466,16 +522,17 @@ impl ElementCx<'_, '_> {
         layer: &ImageLayerStyles,
     ) {
         // For a fixed layer the positioning area (the viewport) already covers
-        // everything visible, so it also serves as the clip rect (no extension
-        // towards the clip box is needed).
-        let (origin_rect, base_transform, clip_rect) = if self.layer_is_fixed(layer) {
+        // everything visible, so it also serves as the painting rect (no
+        // extension towards the clip box is needed).
+        let (origin_rect, base_transform, painting_rect) = if self.layer_is_fixed(layer) {
             let (viewport_rect, transform) = self.fixed_positioning_area();
             (viewport_rect, transform, viewport_rect)
         } else {
             (
                 self.box_rect(layer.origin),
                 self.transform,
-                self.box_rect(layer.clip),
+                self.painting_rect_override
+                    .unwrap_or_else(|| self.box_rect(layer.clip)),
             )
         };
 
@@ -495,8 +552,8 @@ impl ElementCx<'_, '_> {
             *repeat_x,
             origin_rect.x0,
             origin_rect.width(),
-            clip_rect.x0,
-            clip_rect.width(),
+            painting_rect.x0,
+            painting_rect.width(),
             bg_pos.x,
             bg_size.width,
         );
@@ -504,12 +561,11 @@ impl ElementCx<'_, '_> {
             *repeat_y,
             origin_rect.y0,
             origin_rect.height(),
-            clip_rect.y0,
-            clip_rect.height(),
+            painting_rect.y0,
+            painting_rect.height(),
             bg_pos.y,
             bg_size.height,
         );
-
         // FIXME: https://wpt.live/css/css-backgrounds/background-size/background-size-near-zero-gradient.html
         if x.count as u64 * y.count as u64 > 500 {
             return;
@@ -692,16 +748,23 @@ struct AxisTiling {
 }
 
 /// Per-axis placement and tiling for a raster image layer. `Repeat`/`Round`
-/// produce a single fill covering the whole positioning area (relying on the
+/// produce a single fill covering the whole painting area (relying on the
 /// image brush repeating), while `Space` produces `count` explicit tiles
 /// spaced `stride` apart.
 ///
+/// Tiles are positioned relative to the positioning (origin) area but must
+/// cover the painting area, which may extend beyond it (e.g. the whole canvas
+/// for the propagated canvas background).
+///
 /// The fill rect is in image pixel coordinates (the drawing transform is
 /// pre-scaled by `ratio`), while translations are in device pixels.
+#[allow(clippy::too_many_arguments)]
 fn raster_axis_tiling(
     repeat: BackgroundRepeatKeyword,
     origin_start: f64,
     origin_len: f64,
+    painting_start: f64,
+    painting_len: f64,
     bg_pos: f64,
     tile_len: f64,
     image_len: f64,
@@ -711,20 +774,42 @@ fn raster_axis_tiling(
 
     match repeat {
         Repeat | Round => {
-            let extend_len = extend(bg_pos, tile_len);
+            // The painting area extends beyond the origin area iff it does so
+            // at either end
+            let painting_is_outer = painting_start < origin_start
+                || painting_start + painting_len > origin_start + origin_len;
+            let (area_start, area_len) = if painting_is_outer {
+                (painting_start, painting_len)
+            } else {
+                (origin_start, origin_len)
+            };
+            let extend_len = extend((origin_start - area_start) + bg_pos, tile_len);
             AxisTiling {
-                translate: origin_start - extend_len,
-                rect_len: (origin_len + extend_len) / ratio,
+                translate: area_start - extend_len,
+                rect_len: (area_len + extend_len) / ratio,
                 count: 1,
                 stride: 0.0,
             }
         }
         Space => {
             let (count, stride) = compute_space_count_and_stride(origin_len, tile_len);
+            // Tiling continues over the painting area at the same interval
+            let (pre, post) = if count > 1 {
+                space_extension_counts(
+                    origin_start,
+                    origin_len,
+                    painting_start,
+                    painting_len,
+                    stride,
+                )
+            } else {
+                (0, 0)
+            };
             AxisTiling {
-                translate: origin_start + if count == 1 { bg_pos } else { 0.0 },
+                translate: origin_start - pre as f64 * stride
+                    + if count == 1 { bg_pos } else { 0.0 },
                 rect_len: image_len,
-                count,
+                count: count + pre + post,
                 stride,
             }
         }
@@ -739,14 +824,14 @@ fn raster_axis_tiling(
 
 /// Per-axis placement and tiling for a gradient layer. Unlike raster images,
 /// gradients cannot rely on brush repetition, so `Repeat`/`Round` also produce
-/// explicit tiles. When the clip box extends beyond the origin box, tiling
-/// starts from the clip box edge so the pattern covers the whole clipped area.
+/// explicit tiles. When the painting area extends beyond the origin box,
+/// tiling starts from the painting area edge so the pattern covers it all.
 fn gradient_axis_tiling(
     repeat: BackgroundRepeatKeyword,
     origin_start: f64,
     origin_len: f64,
-    clip_start: f64,
-    clip_len: f64,
+    painting_start: f64,
+    painting_len: f64,
     bg_pos: f64,
     tile_len: f64,
 ) -> AxisTiling {
@@ -754,12 +839,12 @@ fn gradient_axis_tiling(
 
     match repeat {
         Repeat | Round => {
-            // The clip and origin boxes are nested, so the clip box extends
-            // beyond the origin box iff it does so at either end
-            let clip_is_outer =
-                clip_start < origin_start || clip_start + clip_len > origin_start + origin_len;
-            let (area_start, area_len) = if clip_is_outer {
-                (clip_start, clip_len)
+            // The painting area extends beyond the origin area iff it does so
+            // at either end
+            let painting_is_outer = painting_start < origin_start
+                || painting_start + painting_len > origin_start + origin_len;
+            let (area_start, area_len) = if painting_is_outer {
+                (painting_start, painting_len)
             } else {
                 (origin_start, origin_len)
             };
@@ -774,10 +859,23 @@ fn gradient_axis_tiling(
         }
         Space => {
             let (count, stride) = compute_space_count_and_stride(origin_len, tile_len);
+            // Tiling continues over the painting area at the same interval
+            let (pre, post) = if count > 1 {
+                space_extension_counts(
+                    origin_start,
+                    origin_len,
+                    painting_start,
+                    painting_len,
+                    stride,
+                )
+            } else {
+                (0, 0)
+            };
             AxisTiling {
-                translate: origin_start + if count == 1 { bg_pos } else { 0.0 },
+                translate: origin_start - pre as f64 * stride
+                    + if count == 1 { bg_pos } else { 0.0 },
                 rect_len: tile_len,
-                count,
+                count: count + pre + post,
                 stride,
             }
         }
@@ -788,6 +886,22 @@ fn gradient_axis_tiling(
             stride: 0.0,
         },
     }
+}
+
+/// The number of extra `Space` tiles needed before and after the positioning
+/// area so that tiling continues over the painting area at the same interval
+fn space_extension_counts(
+    origin_start: f64,
+    origin_len: f64,
+    painting_start: f64,
+    painting_len: f64,
+    stride: f64,
+) -> (u32, u32) {
+    let pre = ((origin_start - painting_start) / stride).ceil().max(0.0) as u32;
+    let post = ((painting_start + painting_len - (origin_start + origin_len)) / stride)
+        .ceil()
+        .max(0.0) as u32;
+    (pre, post)
 }
 
 fn compute_space_count_and_stride(bg_size: f64, size: f64) -> (u32, f64) {
