@@ -322,6 +322,11 @@ impl ElementCx<'_, '_> {
             return;
         };
 
+        // A zero-sized `viewBox` disables rendering of the SVG
+        if svg.intrinsic_dimensions.degenerate_view_box {
+            return;
+        }
+
         let (origin_rect, base_transform) = if self.layer_is_fixed(layer) {
             self.fixed_positioning_area()
         } else {
@@ -333,32 +338,33 @@ impl ElementCx<'_, '_> {
 
         let svg_size = svg.tree.size();
 
-        // Compute the SVG's concrete object size per the CSS default sizing
-        // algorithm. usvg resolves an SVG that lacks explicit `width`/`height`
-        // to its `viewBox` size, but such an image has only an intrinsic aspect
-        // ratio (no intrinsic dimensions). Passing this size to
-        // `compute_layer_size` for the `background-size: auto` case supplies
-        // both the concrete size (used verbatim for `auto`) and the aspect
-        // ratio (used by `cover`/`contain` and single-`auto` sizes).
-        let aspect_ratio = svg.aspect_ratio();
-        let (object_w, object_h) = match (svg.intrinsic_width(), svg.intrinsic_height()) {
-            (Some(w), Some(h)) => (w, h),
-            (Some(w), None) => (w, w / aspect_ratio),
-            (None, Some(h)) => (h * aspect_ratio, h),
-            (None, None) => {
-                // No intrinsic dimensions: scale the aspect ratio to fit
-                // ("contain") within the background positioning area.
-                let scale = (frame_w / svg_size.width()).min(frame_h / svg_size.height());
-                (svg_size.width() * scale, svg_size.height() * scale)
-            }
-        };
+        // Size the SVG per the CSS default sizing algorithm
+        // (https://drafts.csswg.org/css-images/#default-sizing). An SVG image
+        // may lack an intrinsic width, height, and/or aspect ratio, so each is
+        // passed separately (usvg's resolved `Tree::size` is only used as the
+        // source coordinate space of the rendered tree).
+        let intrinsic_width = svg.intrinsic_width().filter(|w| w.is_finite() && *w > 0.0);
+        let intrinsic_height = svg.intrinsic_height().filter(|h| h.is_finite() && *h > 0.0);
+        let aspect_ratio = match (intrinsic_width, intrinsic_height) {
+            (Some(w), Some(h)) => Some(w / h),
+            _ => svg.viewbox_aspect_ratio(),
+        }
+        .filter(|r| r.is_finite() && *r > 0.0);
 
         let bg_size = compute_layer_size(
             layer,
             frame_w,
             frame_h,
-            BackgroundSizeComputeMode::Size(object_w, object_h),
+            BackgroundSizeComputeMode::Intrinsic {
+                width: intrinsic_width,
+                height: intrinsic_height,
+                ratio: aspect_ratio,
+            },
         );
+
+        if bg_size.width <= 0.0 || bg_size.height <= 0.0 {
+            return;
+        }
 
         let x_ratio = (bg_size.width / svg_size.width() as f64) * self.scale;
         let y_ratio = (bg_size.height / svg_size.height() as f64) * self.scale;
@@ -624,6 +630,7 @@ fn compute_layer_size(
                     match mode {
                         BackgroundSizeComputeMode::Auto => (width, height),
                         BackgroundSizeComputeMode::Size(_, _) => (width, height),
+                        BackgroundSizeComputeMode::Intrinsic { .. } => (width, height),
                     }
                 }
                 (Lpa::LengthPercentage(width), Lpa::Auto) => {
@@ -631,6 +638,10 @@ fn compute_layer_size(
                     let height = match mode {
                         BackgroundSizeComputeMode::Auto => container_h,
                         BackgroundSizeComputeMode::Size(bg_w, bg_h) => bg_h / bg_w * width,
+                        BackgroundSizeComputeMode::Intrinsic { height, ratio, .. } => ratio
+                            .map(|ratio| width / ratio)
+                            .or(height)
+                            .unwrap_or(container_h),
                     };
                     (width, height)
                 }
@@ -639,12 +650,21 @@ fn compute_layer_size(
                     let width = match mode {
                         BackgroundSizeComputeMode::Auto => container_w,
                         BackgroundSizeComputeMode::Size(bg_w, bg_h) => bg_w / bg_h * height,
+                        BackgroundSizeComputeMode::Intrinsic { width, ratio, .. } => ratio
+                            .map(|ratio| height * ratio)
+                            .or(width)
+                            .unwrap_or(container_w),
                     };
                     (width, height)
                 }
                 (Lpa::Auto, Lpa::Auto) => match mode {
                     BackgroundSizeComputeMode::Auto => (container_w, container_h),
                     BackgroundSizeComputeMode::Size(bg_w, bg_h) => (bg_w, bg_h),
+                    BackgroundSizeComputeMode::Intrinsic {
+                        width,
+                        height,
+                        ratio,
+                    } => default_sizing(width, height, ratio, container_w, container_h),
                 },
             }
         }
@@ -655,6 +675,15 @@ fn compute_layer_size(
                 let ratio = (container_w / bg_w).max(container_h / bg_h);
                 (bg_w * ratio, bg_h * ratio)
             }
+            BackgroundSizeComputeMode::Intrinsic { ratio, .. } => match ratio {
+                // Scale the aspect ratio to the smallest size that covers both axes
+                Some(ratio) => {
+                    let scale = (container_w / ratio).max(container_h);
+                    (scale * ratio, scale)
+                }
+                // No intrinsic aspect ratio: fill the positioning area
+                None => (container_w, container_h),
+            },
         },
         BackgroundSize::Contain => match mode {
             BackgroundSizeComputeMode::Auto => (container_w, container_h),
@@ -663,6 +692,15 @@ fn compute_layer_size(
                 let ratio = (container_w / bg_w).min(container_h / bg_h);
                 (bg_w * ratio, bg_h * ratio)
             }
+            BackgroundSizeComputeMode::Intrinsic { ratio, .. } => match ratio {
+                // Scale the aspect ratio to the largest size contained by both axes
+                Some(ratio) => {
+                    let scale = (container_w / ratio).min(container_h);
+                    (scale * ratio, scale)
+                }
+                // No intrinsic aspect ratio: fill the positioning area
+                None => (container_w, container_h),
+            },
         },
     };
 
@@ -675,6 +713,39 @@ fn compute_layer_size(
 enum BackgroundSizeComputeMode {
     Auto,
     Size(f32, f32),
+    /// Intrinsic dimensions of an image which may lack an intrinsic width,
+    /// height, and/or aspect ratio (e.g. SVG), sized per the CSS default
+    /// sizing algorithm (https://drafts.csswg.org/css-images/#default-sizing)
+    Intrinsic {
+        width: Option<f32>,
+        height: Option<f32>,
+        ratio: Option<f32>,
+    },
+}
+
+/// The CSS default sizing algorithm for the unconstrained (`auto auto`) case:
+/// resolve the concrete object size from whichever intrinsic dimensions exist,
+/// falling back to the default object size (the background positioning area).
+fn default_sizing(
+    width: Option<f32>,
+    height: Option<f32>,
+    ratio: Option<f32>,
+    container_w: f32,
+    container_h: f32,
+) -> (f32, f32) {
+    match (width, height) {
+        (Some(w), Some(h)) => (w, h),
+        (Some(w), None) => (w, ratio.map(|r| w / r).unwrap_or(container_h)),
+        (None, Some(h)) => (ratio.map(|r| h * r).unwrap_or(container_w), h),
+        (None, None) => match ratio {
+            // Intrinsic aspect ratio only: size as if `contain` were specified
+            Some(ratio) => {
+                let scale = (container_w / ratio).min(container_h);
+                (scale * ratio, scale)
+            }
+            None => (container_w, container_h),
+        },
+    }
 }
 
 /// The placement and tiling of a background layer along one axis: a
