@@ -111,15 +111,14 @@ skrifa = { version = "0.42", default-features = false, features = [
 ] } # Should match parley and vello versions
 
 # AnyRender
-# TODO: switch back to crates.io versions once AnyRender 0.13 is released
-anyrender = { git = "https://github.com/DioxusLabs/anyrender", rev = "1f2a55d9b8c36edfa7197926152118ec399a6860" }
-anyrender_serialize = { git = "https://github.com/DioxusLabs/anyrender", rev = "1f2a55d9b8c36edfa7197926152118ec399a6860" }
-anyrender_skia = { git = "https://github.com/DioxusLabs/anyrender", rev = "1f2a55d9b8c36edfa7197926152118ec399a6860" }
-anyrender_vello = { git = "https://github.com/DioxusLabs/anyrender", rev = "1f2a55d9b8c36edfa7197926152118ec399a6860" }
-anyrender_vello_cpu = { git = "https://github.com/DioxusLabs/anyrender", rev = "1f2a55d9b8c36edfa7197926152118ec399a6860" }
-anyrender_vello_hybrid = { git = "https://github.com/DioxusLabs/anyrender", rev = "1f2a55d9b8c36edfa7197926152118ec399a6860" }
-anyrender_svg = { git = "https://github.com/DioxusLabs/anyrender", rev = "1f2a55d9b8c36edfa7197926152118ec399a6860" }
-wgpu_context = { git = "https://github.com/DioxusLabs/anyrender", rev = "1f2a55d9b8c36edfa7197926152118ec399a6860" }
+anyrender = { version = "0.13.0" }
+anyrender_serialize = { version = "0.7.0" }
+anyrender_skia = { version = "0.11.0" }
+anyrender_vello = { version = "0.14.0" }
+anyrender_vello_cpu = { version = "0.16.0" }
+anyrender_vello_hybrid = { version = "0.10.0" }
+anyrender_svg = { version = "0.14.0" }
+wgpu_context = { version = "0.9.0" }
 
 # Linebender + Fontations + WGPU + SVG
 color = "0.3"
