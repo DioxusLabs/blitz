@@ -112,14 +112,14 @@ skrifa = { version = "0.42", default-features = false, features = [
 
 # AnyRender
 # TODO: switch back to crates.io versions once AnyRender 0.13 is released
-anyrender = { git = "https://github.com/DioxusLabs/anyrender", rev = "6182f68fbfb7d8917210521fd6e618d952708930" }
-anyrender_serialize = { git = "https://github.com/DioxusLabs/anyrender", rev = "6182f68fbfb7d8917210521fd6e618d952708930" }
-anyrender_skia = { git = "https://github.com/DioxusLabs/anyrender", rev = "6182f68fbfb7d8917210521fd6e618d952708930" }
-anyrender_vello = { git = "https://github.com/DioxusLabs/anyrender", rev = "6182f68fbfb7d8917210521fd6e618d952708930" }
-anyrender_vello_cpu = { git = "https://github.com/DioxusLabs/anyrender", rev = "6182f68fbfb7d8917210521fd6e618d952708930" }
-anyrender_vello_hybrid = { git = "https://github.com/DioxusLabs/anyrender", rev = "6182f68fbfb7d8917210521fd6e618d952708930" }
-anyrender_svg = { git = "https://github.com/DioxusLabs/anyrender", rev = "6182f68fbfb7d8917210521fd6e618d952708930" }
-wgpu_context = { git = "https://github.com/DioxusLabs/anyrender", rev = "6182f68fbfb7d8917210521fd6e618d952708930" }
+anyrender = { git = "https://github.com/DioxusLabs/anyrender", rev = "1f2a55d9b8c36edfa7197926152118ec399a6860" }
+anyrender_serialize = { git = "https://github.com/DioxusLabs/anyrender", rev = "1f2a55d9b8c36edfa7197926152118ec399a6860" }
+anyrender_skia = { git = "https://github.com/DioxusLabs/anyrender", rev = "1f2a55d9b8c36edfa7197926152118ec399a6860" }
+anyrender_vello = { git = "https://github.com/DioxusLabs/anyrender", rev = "1f2a55d9b8c36edfa7197926152118ec399a6860" }
+anyrender_vello_cpu = { git = "https://github.com/DioxusLabs/anyrender", rev = "1f2a55d9b8c36edfa7197926152118ec399a6860" }
+anyrender_vello_hybrid = { git = "https://github.com/DioxusLabs/anyrender", rev = "1f2a55d9b8c36edfa7197926152118ec399a6860" }
+anyrender_svg = { git = "https://github.com/DioxusLabs/anyrender", rev = "1f2a55d9b8c36edfa7197926152118ec399a6860" }
+wgpu_context = { git = "https://github.com/DioxusLabs/anyrender", rev = "1f2a55d9b8c36edfa7197926152118ec399a6860" }
 
 # Linebender + Fontations + WGPU + SVG
 color = "0.3"
