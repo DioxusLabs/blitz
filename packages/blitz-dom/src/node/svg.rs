@@ -17,6 +17,9 @@ pub struct SvgIntrinsicDimensions {
     pub height: Option<svgtypes::Length>,
     /// The root `viewBox` width/height, if declared and valid.
     pub view_box_size: Option<(f32, f32)>,
+    /// Whether the root declared a `viewBox` with a zero width or height,
+    /// which disables rendering of the element per the SVG spec.
+    pub degenerate_view_box: bool,
 }
 
 impl SvgIntrinsicDimensions {
@@ -31,16 +34,26 @@ impl SvgIntrinsicDimensions {
         let parse_length = |name: &str| -> Option<svgtypes::Length> {
             root.attribute(name)?.parse::<svgtypes::Length>().ok()
         };
-        let view_box_size = root
-            .attribute("viewBox")
-            .and_then(|s| s.parse::<svgtypes::ViewBox>().ok())
-            .filter(|vb| vb.w.is_finite() && vb.w > 0.0 && vb.h.is_finite() && vb.h > 0.0)
-            .map(|vb| (vb.w as f32, vb.h as f32));
+        // Parsed manually rather than via `svgtypes::ViewBox`, which rejects
+        // zero sizes: a zero `viewBox` width/height is distinguished from an
+        // invalid `viewBox` as it disables rendering of the element.
+        let view_box_dims = root.attribute("viewBox").and_then(|s| {
+            let mut numbers = svgtypes::NumberListParser::from(s);
+            let _x = numbers.next()?.ok()?;
+            let _y = numbers.next()?.ok()?;
+            let w = numbers.next()?.ok()? as f32;
+            let h = numbers.next()?.ok()? as f32;
+            (numbers.next().is_none() && w.is_finite() && h.is_finite() && w >= 0.0 && h >= 0.0)
+                .then_some((w, h))
+        });
+        let view_box_size = view_box_dims.filter(|&(w, h)| w > 0.0 && h > 0.0);
+        let degenerate_view_box = view_box_dims.is_some_and(|(w, h)| w == 0.0 || h == 0.0);
 
         Self {
             width: parse_length("width"),
             height: parse_length("height"),
             view_box_size,
+            degenerate_view_box,
         }
     }
 }
