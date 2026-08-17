@@ -212,11 +212,13 @@ impl BaseDocument {
                 }
 
                 if is_replaced_element(&element_data.name.local) {
-                    // Get width and height attributes on image element
-                    //
-                    // TODO: smarter sizing using these (depending on object-fit, they shouldn't
-                    // necessarily just override the native size)
-                    let mut attr_size = taffy::Size {
+                    // Width/height attributes are presentational hints mapped to the CSS
+                    // width/height properties by
+                    // `synthesize_presentational_hints_for_legacy_attributes`, so they
+                    // are already part of the style. They are only read here for the
+                    // elements whose attributes determine their *intrinsic* size
+                    // (canvas, and custom widgets on canvas tags).
+                    let attr_size = taffy::Size {
                         width: element_data
                             .attr(local_name!("width"))
                             .and_then(|val| val.parse::<f32>().ok()),
@@ -241,16 +243,6 @@ impl BaseDocument {
                             }
                             #[cfg(feature = "svg")]
                             ImageData::Svg(svg) => {
-                                // For an inline `<svg>` element the width/height attributes are
-                                // presentation attributes: percentages resolve against the
-                                // containing block. For SVG loaded as an image the intrinsic
-                                // dimensions are context-free.
-                                if *element_data.name.local == local_name!("svg") {
-                                    attr_size = taffy::Size {
-                                        width: svg.resolved_width(inputs.parent_size.width),
-                                        height: svg.resolved_height(inputs.parent_size.height),
-                                    };
-                                }
                                 let mut width = svg.intrinsic_width();
                                 let mut height = svg.intrinsic_height();
                                 // An SVG with no declared dimensions and no viewBox has no
@@ -284,12 +276,33 @@ impl BaseDocument {
                         SpecialElementData::CustomWidget(widget_data) => {
                             let (fallback, default_object_size) =
                                 tag_intrinsic_sizes(&element_data.name.local, attr_size);
+                            // A canvas's content attributes determine its intrinsic size,
+                            // overriding the widget-reported one; the widget-reported size
+                            // in turn overrides the tag's fallback.
+                            let attr_intrinsic =
+                                if *element_data.name.local == local_name!("canvas") {
+                                    attr_size
+                                } else {
+                                    taffy::Size::NONE
+                                };
+                            let attr_ratio = match (attr_intrinsic.width, attr_intrinsic.height) {
+                                (Some(w), Some(h)) => Some(w / h),
+                                _ => None,
+                            };
                             let widget_size = widget_data.widget.intrinsic_size();
                             (
                                 IntrinsicSizes {
-                                    width: widget_size.map(|s| s.width).or(fallback.width),
-                                    height: widget_size.map(|s| s.height).or(fallback.height),
-                                    ratio: widget_data.widget.aspect_ratio().or(fallback.ratio),
+                                    width: attr_intrinsic
+                                        .width
+                                        .or(widget_size.map(|s| s.width))
+                                        .or(fallback.width),
+                                    height: attr_intrinsic
+                                        .height
+                                        .or(widget_size.map(|s| s.height))
+                                        .or(fallback.height),
+                                    ratio: attr_ratio
+                                        .or(widget_data.widget.aspect_ratio())
+                                        .or(fallback.ratio),
                                 },
                                 default_object_size,
                             )
@@ -302,32 +315,9 @@ impl BaseDocument {
                         default_object_size,
                     };
 
-                    // Width/height attributes are presentational hints rather than part of
-                    // the CSS replaced sizing algorithm: fold them into the specified size
-                    // when the style leaves the size entirely auto.
-                    let style = node.style();
-                    if (attr_size.width.is_some() || attr_size.height.is_some())
-                        && style.size.width.is_auto()
-                        && style.size.height.is_auto()
-                    {
-                        let mut style = style.clone();
-                        if let Some(width) = attr_size.width {
-                            style.size.width = taffy::Dimension::length(width);
-                        }
-                        if let Some(height) = attr_size.height {
-                            style.size.height = taffy::Dimension::length(height);
-                        }
-                        return compute_replaced_layout(
-                            inputs,
-                            &style,
-                            resolve_calc_value,
-                            &replaced_context,
-                        );
-                    }
-
                     return compute_replaced_layout(
                         inputs,
-                        style,
+                        node.style(),
                         resolve_calc_value,
                         &replaced_context,
                     );
