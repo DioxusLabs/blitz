@@ -17,36 +17,59 @@ use crate::{BaseDocument, events::pointer::handle_wheel};
 
 fn adjust_coords_for_subdocument(
     coords: &mut PointerCoords,
-    offset: Point<f32>,
+    element: &mut blitz_traits::events::Point<f32>,
+    local_point: Point<f32>,
     viewport_scroll: Point<f64>,
 ) {
-    coords.page_x -= offset.x - viewport_scroll.x as f32;
-    coords.page_y -= offset.y - viewport_scroll.y as f32;
-    coords.client_x -= offset.x;
-    coords.client_y -= offset.y;
+    coords.client_x = local_point.x;
+    coords.client_y = local_point.y;
+    coords.page_x = local_point.x + viewport_scroll.x as f32;
+    coords.page_y = local_point.y + viewport_scroll.y as f32;
+    element.x = local_point.x;
+    element.y = local_point.y;
 }
 
 fn map_dom_event_to_ui_event(
     event: &mut DomEvent,
-    node_offset: Point<f32>,
+    local_point: Point<f32>,
     viewport_scroll: Point<f64>,
 ) -> Option<UiEvent> {
     // TODO: eliminate clone
     match event.data.clone() {
         DomEventData::PointerMove(mut event) => {
-            adjust_coords_for_subdocument(&mut event.coords, node_offset, viewport_scroll);
+            adjust_coords_for_subdocument(
+                &mut event.coords,
+                &mut event.element,
+                local_point,
+                viewport_scroll,
+            );
             Some(UiEvent::PointerMove(event))
         }
         DomEventData::PointerDown(mut event) => {
-            adjust_coords_for_subdocument(&mut event.coords, node_offset, viewport_scroll);
+            adjust_coords_for_subdocument(
+                &mut event.coords,
+                &mut event.element,
+                local_point,
+                viewport_scroll,
+            );
             Some(UiEvent::PointerDown(event))
         }
         DomEventData::PointerUp(mut event) => {
-            adjust_coords_for_subdocument(&mut event.coords, node_offset, viewport_scroll);
+            adjust_coords_for_subdocument(
+                &mut event.coords,
+                &mut event.element,
+                local_point,
+                viewport_scroll,
+            );
             Some(UiEvent::PointerUp(event))
         }
         DomEventData::PointerCancel(mut event) => {
-            adjust_coords_for_subdocument(&mut event.coords, node_offset, viewport_scroll);
+            adjust_coords_for_subdocument(
+                &mut event.coords,
+                &mut event.element,
+                local_point,
+                viewport_scroll,
+            );
             Some(UiEvent::PointerCancel(event))
         }
 
@@ -84,7 +107,15 @@ fn map_dom_event_to_ui_event(
         DomEventData::ContextMenu(_) => None,
         DomEventData::DoubleClick(_) => None,
         DomEventData::Input(_) => None,
-        DomEventData::Wheel(data) => Some(UiEvent::Wheel(data)),
+        DomEventData::Wheel(mut data) => {
+            adjust_coords_for_subdocument(
+                &mut data.coords,
+                &mut data.element,
+                local_point,
+                viewport_scroll,
+            );
+            Some(UiEvent::Wheel(data))
+        }
         DomEventData::Scroll(_) => None,
         DomEventData::Focus(_) => None,
         DomEventData::Blur(_) => None,
@@ -99,8 +130,25 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
     mut dispatch_event: F,
 ) {
     let target_node_id = event.target;
+
+    // The point of the event mapped into the target node's local border-box
+    // space (used when forwarding events to sub-documents and custom widgets)
+    let scale = doc.viewport().scale_f64();
+    let event_coords = match &event.data {
+        DomEventData::PointerMove(e)
+        | DomEventData::PointerDown(e)
+        | DomEventData::PointerUp(e)
+        | DomEventData::PointerCancel(e) => Some(e.coords),
+        DomEventData::Wheel(e) => Some(e.coords),
+        _ => None,
+    };
+    let local_point = event_coords
+        .map(|coords| {
+            doc.nodes[target_node_id].page_point_to_local(coords.page_x, coords.page_y, scale)
+        })
+        .unwrap_or(Point { x: 0.0, y: 0.0 });
+
     let node = &mut doc.nodes[target_node_id];
-    let pos = node.absolute_position(0.0, 0.0);
 
     // Whether this event can move the caret/selection (or change the text) of a text input,
     // in which case we need to update the input's scroll offset afterwards.
@@ -123,7 +171,7 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
             &event.data,
             DomEventData::PointerDown(_) | DomEventData::PointerUp(_)
         );
-        let ui_event = map_dom_event_to_ui_event(event, pos, viewport_scroll);
+        let ui_event = map_dom_event_to_ui_event(event, local_point, viewport_scroll);
 
         if let Some(ui_event) = ui_event {
             sub_doc.handle_ui_event(ui_event);
@@ -153,7 +201,7 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
             DomEventData::PointerDown(_) | DomEventData::PointerUp(_)
         );
         let viewport_scroll = Point { x: 0.0, y: 0.0 };
-        let ui_event = map_dom_event_to_ui_event(event, pos, viewport_scroll);
+        let ui_event = map_dom_event_to_ui_event(event, local_point, viewport_scroll);
 
         if let Some(ui_event) = ui_event {
             widget_data.widget.handle_event(&ui_event);

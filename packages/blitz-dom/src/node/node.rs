@@ -1343,6 +1343,42 @@ impl Node {
         Some(offset)
     }
 
+    /// Maps a point in document (page) coordinates into this node's local
+    /// border-box space, applying the same ancestor scroll offsets and
+    /// (inverse) transforms as hit-testing does.
+    pub fn page_point_to_local(&self, x: f32, y: f32, scale: f64) -> crate::util::Point<f32> {
+        // Collect the layout chain from the root down to this node
+        let mut chain = vec![self.id];
+        let mut parent = self.layout_parent.get();
+        while let Some(id) = parent {
+            chain.push(id);
+            parent = self.with(id).layout_parent.get();
+        }
+
+        let mut x = x;
+        let mut y = y;
+        for id in chain.into_iter().rev() {
+            let node = self.with(id);
+            x = x - node.final_layout().location.x + node.scroll_offset().x as f32;
+            y = y - node.final_layout().location.y + node.scroll_offset().y as f32;
+
+            if let Some(t) = *node.transform() {
+                let p = t.inverse() * kurbo::Point::new(x as f64 * scale, y as f64 * scale);
+                x = (p.x / scale) as f32;
+                y = (p.y / scale) as f32;
+            }
+
+            // Children of an inline root are positioned relative to its content box
+            if node.flags.is_inline_root() && id != self.id {
+                let layout = node.final_layout();
+                x -= layout.padding.left + layout.border.left;
+                y -= layout.padding.top + layout.border.top;
+            }
+        }
+
+        crate::util::Point { x, y }
+    }
+
     /// Computes the Document-relative coordinates of the `Node`
     pub fn absolute_position(&self, x: f32, y: f32) -> crate::util::Point<f32> {
         let x = x + self.final_layout().location.x - self.scroll_offset().x as f32;
