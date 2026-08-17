@@ -155,7 +155,6 @@ impl<Rend: WindowRenderer> View<Rend> {
         }
 
         // Create viewport
-        // TODO: account for the "safe area"
         let scale = winit_window.scale_factor() as f32;
         let mut size = winit_window.surface_size();
         if (size.width == 0 || size.height == 0)
@@ -181,7 +180,14 @@ impl<Rend: WindowRenderer> View<Rend> {
         let safe_area_insets = get_safe_area_insets(&*winit_window);
         let theme = winit_window.theme().unwrap_or(Theme::Light);
         let color_scheme = theme_to_color_scheme(theme);
-        let viewport = Viewport::new(size.width, size.height, scale, color_scheme);
+        // The viewport is the window surface minus the safe area insets
+        let viewport_width = size
+            .width
+            .saturating_sub(safe_area_insets.left + safe_area_insets.right);
+        let viewport_height = size
+            .height
+            .saturating_sub(safe_area_insets.top + safe_area_insets.bottom);
+        let viewport = Viewport::new(viewport_width, viewport_height, scale, color_scheme);
 
         // Create shell provider
         let shell_provider = BlitzShellProvider::new(winit_window.clone(), proxy.clone());
@@ -297,6 +303,11 @@ impl<Rend: WindowRenderer> View<Rend> {
             inner.viewport().window_size
         };
 
+        // The render surface covers the entire window, including the safe area
+        let insets = self.safe_area_insets;
+        let width = width + insets.left + insets.right;
+        let height = height + insets.top + insets.bottom;
+
         let proxy = self.proxy.clone();
         self.renderer
             .resume(Arc::new(self.window.clone()), width, height, move || {
@@ -323,12 +334,16 @@ impl<Rend: WindowRenderer> View<Rend> {
         inner.resolve(animation_time);
         let (width, height) = inner.viewport().window_size;
         let scale = inner.viewport().scale_f64();
-        let insets = self.safe_area_insets.to_logical(scale);
+        let insets = self.safe_area_insets;
 
         #[cfg(feature = "custom-widget")]
         inner.can_create_surfaces(&mut self.renderer as _);
 
-        self.renderer.set_size(width, height);
+        // The render surface covers the entire window, including the safe area
+        self.renderer.set_size(
+            width + insets.left + insets.right,
+            height + insets.top + insets.bottom,
+        );
 
         self.renderer.render(|scene| {
             paint_scene(
@@ -401,7 +416,7 @@ impl<Rend: WindowRenderer> View<Rend> {
         let scale = inner.viewport().scale_f64();
         let is_animating = inner.is_animating();
         let is_blocked = inner.has_pending_critical_resources();
-        let insets = self.safe_area_insets.to_logical(scale);
+        let insets = self.safe_area_insets;
 
         if !is_blocked && is_visible {
             self.renderer.render(|scene| {
