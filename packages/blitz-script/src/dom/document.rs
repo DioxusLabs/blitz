@@ -52,6 +52,13 @@ pub(crate) fn init_document_proto(proto: &JsObject, context: &mut Context) {
     define_method(proto, "createElementNS", 2, create_element_ns, context);
     define_method(proto, "createTextNode", 1, create_text_node, context);
     define_method(proto, "createComment", 1, create_comment, context);
+    define_method(
+        proto,
+        "createDocumentFragment",
+        0,
+        create_document_fragment,
+        context,
+    );
     define_method(proto, "getElementById", 1, get_element_by_id, context);
     define_method(
         proto,
@@ -208,6 +215,21 @@ fn create_comment(this: &JsValue, args: &[JsValue], context: &mut Context) -> Js
     let node_id = {
         let mut doc = ctx.doc.borrow_mut();
         doc.mutate().create_comment_node(&text)
+    };
+    Ok(node_wrapper(&ctx, node_id, context).into())
+}
+
+fn create_document_fragment(
+    this: &JsValue,
+    _: &[JsValue],
+    context: &mut Context,
+) -> JsResult<JsValue> {
+    let ctx = dom_ctx(context)?;
+    let _ = this_node_id(this)?;
+    let node_id = {
+        let mut doc = ctx.doc.borrow_mut();
+        doc.mutate()
+            .create_element(qual_name("#document-fragment"), Vec::new())
     };
     Ok(node_wrapper(&ctx, node_id, context).into())
 }
