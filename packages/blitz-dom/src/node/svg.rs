@@ -1,6 +1,6 @@
 //! SVG image data and CSS intrinsic sizing for SVG.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use usvg::roxmltree;
 
@@ -58,6 +58,8 @@ impl SvgIntrinsicDimensions {
     }
 }
 
+type ViewportTreeCacheEntry = ((u32, u32), Arc<usvg::Tree>);
+
 /// A parsed SVG image.
 ///
 /// usvg always resolves the root `<svg>` to a concrete [`usvg::Tree::size`],
@@ -72,6 +74,11 @@ pub struct SvgImageData {
     pub tree: Arc<usvg::Tree>,
     /// The dimensions declared on the root `<svg>` element.
     pub intrinsic_dimensions: SvgIntrinsicDimensions,
+    /// The original (decompressed) SVG source.
+    source: Arc<str>,
+    /// A re-parse of [`Self::source`] with the root viewport overridden to a
+    /// specific size, cached by that size. See [`Self::tree_for_viewport`].
+    viewport_tree_cache: Arc<Mutex<Option<ViewportTreeCacheEntry>>>,
 }
 
 impl SvgImageData {
@@ -135,7 +142,72 @@ impl SvgImageData {
         Ok(Self {
             tree: Arc::new(tree),
             intrinsic_dimensions,
+            source: Arc::from(text),
+            viewport_tree_cache: Arc::new(Mutex::new(None)),
         })
+    }
+
+    /// The SVG re-parsed with the root viewport forced to the given size in
+    /// CSS px, for an inline `<svg>` element whose viewport is established by
+    /// its CSS box: the root `width`/`height` are overridden so that usvg
+    /// resolves percentage lengths and the `viewBox`/`preserveAspectRatio`
+    /// mapping against the CSS-established viewport. Falls back to the
+    /// original tree if re-parsing fails. The result is cached by size.
+    pub fn tree_for_viewport(&self, width: f32, height: f32) -> Arc<usvg::Tree> {
+        let key = (width.to_bits(), height.to_bits());
+        let mut cache = self.viewport_tree_cache.lock().unwrap();
+        if let Some((cached_key, tree)) = &*cache {
+            if *cached_key == key {
+                return Arc::clone(tree);
+            }
+        }
+
+        let tree = self
+            .reparse_with_viewport(width, height)
+            .map(Arc::new)
+            .unwrap_or_else(|| Arc::clone(&self.tree));
+        *cache = Some((key, Arc::clone(&tree)));
+        tree
+    }
+
+    fn reparse_with_viewport(&self, width: f32, height: f32) -> Option<usvg::Tree> {
+        let text = &*self.source;
+        let xml_options = || roxmltree::ParsingOptions {
+            allow_dtd: true,
+            ..Default::default()
+        };
+        let doc = roxmltree::Document::parse_with_options(text, xml_options()).ok()?;
+        let root = doc.root_element();
+
+        // Blank out any declared root width/height (their byte ranges are
+        // known from the parsed document), then insert the viewport size as
+        // new attributes right after the root tag name.
+        let mut patched = text.to_string();
+        for attr in root.attributes() {
+            if matches!(attr.name(), "width" | "height") {
+                patched.replace_range(attr.range(), &" ".repeat(attr.range().len()));
+            }
+        }
+        let tag = root.tag_name();
+        let tag_len = match tag
+            .namespace()
+            .and_then(|ns| doc.root_element().lookup_prefix(ns))
+        {
+            Some(prefix) if !prefix.is_empty() => prefix.len() + 1 + tag.name().len(),
+            _ => tag.name().len(),
+        };
+        let insert_at = root.range().start + 1 + tag_len;
+        patched.insert_str(
+            insert_at,
+            &format!(" width=\"{width}px\" height=\"{height}px\""),
+        );
+
+        let patched_doc = roxmltree::Document::parse_with_options(&patched, xml_options()).ok()?;
+        let options = usvg::Options {
+            fontdb: Arc::clone(&*crate::util::FONT_DB),
+            ..Default::default()
+        };
+        usvg::Tree::from_xmltree(&patched_doc, &options).ok()
     }
 
     /// The intrinsic width in CSS px, present only when the root `<svg>`
