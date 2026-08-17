@@ -322,8 +322,9 @@ impl ElementCx<'_, '_> {
             return;
         };
 
-        // A zero-sized `viewBox` disables rendering of the SVG
-        if svg.intrinsic_dimensions.degenerate_view_box {
+        // A zero/negative root width/height or a zero-sized `viewBox`
+        // disables rendering of the SVG
+        if svg.rendering_disabled() {
             return;
         }
 
@@ -343,13 +344,9 @@ impl ElementCx<'_, '_> {
         // may lack an intrinsic width, height, and/or aspect ratio, so each is
         // passed separately (usvg's resolved `Tree::size` is only used as the
         // source coordinate space of the rendered tree).
-        let intrinsic_width = svg.intrinsic_width().filter(|w| w.is_finite() && *w > 0.0);
-        let intrinsic_height = svg.intrinsic_height().filter(|h| h.is_finite() && *h > 0.0);
-        let aspect_ratio = match (intrinsic_width, intrinsic_height) {
-            (Some(w), Some(h)) => Some(w / h),
-            _ => svg.viewbox_aspect_ratio(),
-        }
-        .filter(|r| r.is_finite() && *r > 0.0);
+        let intrinsic_width = svg.intrinsic_width().filter(|w| w.is_finite());
+        let intrinsic_height = svg.intrinsic_height().filter(|h| h.is_finite());
+        let aspect_ratio = svg.aspect_ratio().filter(|r| r.is_finite() && *r > 0.0);
 
         let bg_size = compute_layer_size(
             layer,

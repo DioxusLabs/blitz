@@ -555,7 +555,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             element,
             transform,
             #[cfg(feature = "svg")]
-            svg: element.svg_data(),
+            svg: element.svg_image_data(),
             text_input: element.text_input_data(),
             list_item: element.list_item_data.as_deref(),
             devtools: self.dom.devtools(),
@@ -601,7 +601,7 @@ struct ElementCx<'dom, 'a> {
     element: &'dom ElementData,
     transform: Affine,
     #[cfg(feature = "svg")]
-    svg: Option<&'dom usvg::Tree>,
+    svg: Option<&'dom blitz_dom::node::SvgImageData>,
     text_input: Option<&'dom TextInputData>,
     list_item: Option<&'dom ListItemLayout>,
     devtools: &'dom DevtoolSettings,
@@ -941,32 +941,49 @@ impl ElementCx<'_, '_> {
 
     #[cfg(feature = "svg")]
     fn draw_svg(&self, scene: &mut impl PaintScene) {
-        use style::properties::generated::longhands::object_fit::computed_value::T as ObjectFit;
-
         let Some(svg) = self.svg else {
             return;
         };
 
+        // A zero/negative root width/height or a zero-sized `viewBox`
+        // disables rendering of the SVG
+        if svg.rendering_disabled() {
+            return;
+        }
         let width = self.frame.content_box.width() as u32;
         let height = self.frame.content_box.height() as u32;
-        let svg_size = svg.size();
 
         let x = self.frame.content_box.origin().x;
         let y = self.frame.content_box.origin().y;
 
-        // let object_fit = self.style.clone_object_fit();
+        let object_fit = self.style.clone_object_fit();
         let object_position = self.style.clone_object_position();
 
-        // Apply object-fit algorithm
+        // Apply object-fit algorithm. The natural object size is resolved per
+        // the CSS default sizing algorithm using the content box as the
+        // default object size, so an SVG with no intrinsic dimensions fills
+        // the box.
         let container_size = taffy::Size {
             width: width as f32,
             height: height as f32,
         };
+        let scale = self.scale as f32;
+        let (natural_width, natural_height) =
+            svg.concrete_object_size((container_size.width / scale, container_size.height / scale));
         let object_size = taffy::Size {
+            width: natural_width * scale,
+            height: natural_height * scale,
+        };
+        let paint_size = compute_object_fit(container_size, Some(object_size), object_fit);
+
+        // The SVG tree renders in its own coordinate system given by
+        // `usvg::Tree::size`; scale it to the painted size.
+        let svg = &svg.tree;
+        let svg_size = svg.size();
+        let render_size = taffy::Size {
             width: svg_size.width(),
             height: svg_size.height(),
         };
-        let paint_size = compute_object_fit(container_size, Some(object_size), ObjectFit::Contain);
 
         // Compute object-position
         let x_offset = object_position.horizontal.resolve(
@@ -978,8 +995,8 @@ impl ElementCx<'_, '_> {
         let x = x + x_offset.px() as f64;
         let y = y + y_offset.px() as f64;
 
-        let x_scale = paint_size.width as f64 / object_size.width as f64;
-        let y_scale = paint_size.height as f64 / object_size.height as f64;
+        let x_scale = paint_size.width as f64 / render_size.width as f64;
+        let y_scale = paint_size.height as f64 / render_size.height as f64;
 
         let transform = self
             .transform
