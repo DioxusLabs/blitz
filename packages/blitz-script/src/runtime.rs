@@ -30,6 +30,46 @@ use crate::state::{DomCtx, Listener, ReadyState};
 /// JS bootstrap for APIs that are easiest to define in JS
 const BOOTSTRAP_JS: &str = r#"
 (function () {
+    // `window.history`: an in-memory History implementation, sufficient for
+    // SPA routers (e.g. React Router): `state`, `pushState`/`replaceState`
+    // (which update `location`) and no-op `go`/`back`/`forward`. There is no
+    // real session history, so `popstate` events are never fired.
+    if (typeof globalThis.history === "undefined") {
+        const updateLocationFromUrl = (url) => {
+            try {
+                const resolved = new URL(String(url), location.href);
+                location.href = resolved.href;
+                location.protocol = resolved.protocol;
+                location.host = resolved.host;
+                location.hostname = resolved.hostname;
+                location.pathname = resolved.pathname;
+                location.search = resolved.search;
+                location.hash = resolved.hash;
+            } catch (e) {
+                // Unresolvable URL (e.g. no base): leave location unchanged
+            }
+        };
+        let historyState = null;
+        globalThis.history = {
+            length: 1,
+            scrollRestoration: "auto",
+            get state() {
+                return historyState;
+            },
+            pushState(state, _unused, url) {
+                historyState = state;
+                if (url !== undefined && url !== null) updateLocationFromUrl(url);
+            },
+            replaceState(state, _unused, url) {
+                historyState = state;
+                if (url !== undefined && url !== null) updateLocationFromUrl(url);
+            },
+            go() {},
+            back() {},
+            forward() {},
+        };
+    }
+
     if (typeof globalThis.queueMicrotask !== "function") {
         globalThis.queueMicrotask = function (callback) {
             Promise.resolve().then(callback);
@@ -1065,7 +1105,7 @@ fn register_global_fn(
 }
 
 fn build_location(base_url: Option<&Url>, context: &mut Context) -> JsValue {
-    let (href, protocol, host, pathname, search, hash) = match base_url {
+    let (href, protocol, host, pathname, search, hash, origin) = match base_url {
         Some(url) => (
             url.to_string(),
             format!("{}:", url.scheme()),
@@ -1073,6 +1113,7 @@ fn build_location(base_url: Option<&Url>, context: &mut Context) -> JsValue {
             url.path().to_string(),
             url.query().map(|q| format!("?{q}")).unwrap_or_default(),
             url.fragment().map(|f| format!("#{f}")).unwrap_or_default(),
+            url.origin().ascii_serialization(),
         ),
         None => (
             "about:blank".to_string(),
@@ -1081,6 +1122,7 @@ fn build_location(base_url: Option<&Url>, context: &mut Context) -> JsValue {
             "blank".to_string(),
             String::new(),
             String::new(),
+            "null".to_string(),
         ),
     };
     ObjectInitializer::new(context)
@@ -1111,6 +1153,11 @@ fn build_location(base_url: Option<&Url>, context: &mut Context) -> JsValue {
             Attribute::all(),
         )
         .property(js_string!("hash"), JsString::from(hash), Attribute::all())
+        .property(
+            js_string!("origin"),
+            JsString::from(origin),
+            Attribute::all(),
+        )
         .build()
         .into()
 }
