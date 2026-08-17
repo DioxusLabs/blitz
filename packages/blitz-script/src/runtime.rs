@@ -74,6 +74,14 @@ const BOOTSTRAP_JS: &str = r#"
                 }
                 return Reflect.set(target, prop, value, target);
             },
+            // `'propertyName' in style` reports whether the engine supports the
+            // property (used by WPT's computed-value test helpers)
+            has(target, prop) {
+                if (Reflect.has(target, prop)) return true;
+                return (
+                    isCssPropName(prop) && __blitz_css_property_supported(toKebab(prop))
+                );
+            },
         });
     };
 
@@ -404,6 +412,14 @@ impl ScriptRuntime {
 
         // Embedder message channel (see `ScriptDocument::take_messages`)
         register_global_fn(&mut context, "__blitz_send_message", 1, send_message);
+
+        // CSS property support check, used by the style Proxy's `has` trap
+        register_global_fn(
+            &mut context,
+            "__blitz_css_property_supported",
+            1,
+            css_property_supported,
+        );
 
         // `getComputedStyle`
         register_global_fn(&mut context, "getComputedStyle", 1, get_computed_style);
@@ -1037,6 +1053,15 @@ fn request_animation_frame(
         vec![timestamp],
     );
     Ok(JsValue::from(id as f64))
+}
+
+fn css_property_supported(
+    _: &JsValue,
+    args: &[JsValue],
+    context: &mut Context,
+) -> JsResult<JsValue> {
+    let name = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
+    Ok(JsValue::from(blitz_dom::css_property_is_supported(&name)))
 }
 
 /// `CSS.supports()`: the two-argument form checks a property/value declaration,

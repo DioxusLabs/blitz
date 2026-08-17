@@ -69,6 +69,7 @@ mod tree;
 
 mod url;
 
+pub use resolved_style::css_property_is_supported;
 pub use stylo_to_kurbo::resolve_2d_transform;
 
 pub mod net;

@@ -37,6 +37,16 @@ fn format_grid_tracks<S: taffy::CheapCloneStr>(tracks: &DetailedGridTracksInfo<S
         .join(" ")
 }
 
+/// Check whether `name` names a CSS property supported by the style engine.
+/// Custom properties (`--*`) are not considered "supported" here, matching the
+/// behaviour of the `in` operator on `CSSStyleDeclaration` objects in browsers.
+pub fn css_property_is_supported(name: &str) -> bool {
+    matches!(
+        PropertyId::parse_enabled_for_all_content(name),
+        Ok(property_id) if !matches!(property_id, PropertyId::Custom(_))
+    )
+}
+
 impl BaseDocument {
     /// Check whether `value` is a valid value for the CSS property `property`.
     /// Used by CSSOM APIs (`element.style.setProperty` and friends), which must
