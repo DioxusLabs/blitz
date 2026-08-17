@@ -611,24 +611,16 @@ fn offset_height(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResu
     })
 }
 
+// `offsetLeft`/`offsetTop`: the position of the element's border edge relative
+// to the padding edge of its `offsetParent` (blitz-dom's `offset_top_left`
+// implements the offsetParent resolution)
+
 fn offset_left(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    layout_value(this, context, |node| {
-        let parent_border = match node.parent {
-            Some(parent_id) => node.with(parent_id).final_layout().border.left,
-            None => 0.0,
-        };
-        (node.final_layout().location.x - parent_border).round()
-    })
+    layout_value(this, context, |node| node.offset_top_left().x.round())
 }
 
 fn offset_top(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    layout_value(this, context, |node| {
-        let parent_border = match node.parent {
-            Some(parent_id) => node.with(parent_id).final_layout().border.top,
-            None => 0.0,
-        };
-        (node.final_layout().location.y - parent_border).round()
-    })
+    layout_value(this, context, |node| node.offset_top_left().y.round())
 }
 
 fn client_width_of(node: &blitz_dom::Node) -> f32 {

@@ -1,8 +1,10 @@
+use std::sync::LazyLock;
 use std::{fs, sync::Arc, time::Instant};
 
 use blitz_dom::{BaseDocument, DocumentConfig};
 use blitz_html::{HtmlDocument, HtmlProvider};
 use log::{debug, warn};
+use regex::Regex;
 
 use crate::{SubtestCounts, TestFlags, TestKind, TestStatus, ThreadCtx};
 
@@ -23,6 +25,34 @@ pub fn has_inline_script(ctx: &ThreadCtx, html: &str) -> bool {
     ctx.inline_script_re
         .captures_iter(html)
         .any(|captures| !captures.get(1).unwrap().as_str().contains("src"))
+}
+
+/// Matches each `<script>` tag with its attributes and body
+static SCRIPT_BODY_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"(?s)<script([^>]*)>(.*?)</script>"#).unwrap());
+
+/// Matches inline-script statements which don't require script execution for a
+/// checkLayout (attr) test: the `checkLayout()` call itself (re-implemented
+/// natively by the attr test runner) and testharness `setup()` calls
+static TRIVIAL_ATTR_SCRIPT_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"checkLayout\(\s*['"][^'"]*['"]\s*(,\s*(true|false))?\s*\)\s*;?|setup\(\s*\{[^{}]*\}\s*\)\s*;?"#)
+        .unwrap()
+});
+
+/// Does a checkLayout (attr) test's inline script do anything beyond calling
+/// `checkLayout()` (e.g. generate the test DOM)? If so, scripts must be
+/// executed before the native layout checks can see the full test DOM.
+pub fn attr_test_needs_scripts(html: &str) -> bool {
+    SCRIPT_BODY_RE.captures_iter(html).any(|captures| {
+        if captures.get(1).unwrap().as_str().contains("src") {
+            return false;
+        }
+        let body = captures.get(2).unwrap().as_str();
+        !TRIVIAL_ATTR_SCRIPT_RE
+            .replace_all(body, "")
+            .trim()
+            .is_empty()
+    })
 }
 
 pub struct SubtestResult {

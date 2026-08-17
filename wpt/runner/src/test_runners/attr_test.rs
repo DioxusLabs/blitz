@@ -1,8 +1,14 @@
-use blitz_dom::Node;
+use std::time::{Duration, Instant};
+
+use blitz_dom::{BaseDocument, Document as _, Node};
+use blitz_script::ScriptDocument;
 use log::warn;
 use style_traits::ToCss;
 
-use super::{SubtestResult, parse_and_resolve_document};
+use super::harness_test::{self, WptScriptFetcher};
+use super::{
+    SubtestResult, attr_test_needs_scripts, parse_and_resolve_document, pump_net_provider,
+};
 use crate::{SubtestCounts, TestStatus, ThreadCtx};
 
 fn status_from_bool(input: bool) -> TestStatus {
@@ -21,6 +27,71 @@ pub fn process_attr_test(
 ) -> (TestStatus, SubtestCounts, Vec<SubtestResult>) {
     let mut document = parse_and_resolve_document(ctx, html, relative_path);
 
+    // Some checkLayout tests generate their test DOM with an inline script (or
+    // run extra `test()`s of their own): for those, execute the document's
+    // scripts — which runs the real check-layout-th.js/testharness.js — and use
+    // the harness-reported results. Tests whose inline script only *calls*
+    // `checkLayout()` keep the fast no-JS path (the checkLayout checks are
+    // re-implemented natively below).
+    if attr_test_needs_scripts(html) {
+        let mut script_document = ScriptDocument::from_base_document(document)
+            .with_fetcher(WptScriptFetcher::new(ctx.wpt_dir.clone()));
+        script_document.execute_scripts();
+        for error in script_document.take_js_errors() {
+            warn!("{relative_path}: {error}");
+        }
+
+        // checkLayout() calls done() on load, but testharness defers its
+        // completion callbacks through timers: run JS timers due within a
+        // short budget so the results message can arrive
+        let deadline = Instant::now() + Duration::from_millis(100);
+        let harness_results = loop {
+            let results = script_document
+                .take_messages()
+                .iter()
+                .find_map(|message| harness_test::parse_results(message));
+            if results.is_some() {
+                break results;
+            }
+            let now = Instant::now();
+            match script_document.next_timer_deadline() {
+                Some(timer_deadline) if timer_deadline <= deadline => {
+                    if timer_deadline > now {
+                        std::thread::sleep(timer_deadline - now);
+                    }
+                    script_document.poll(None);
+                }
+                _ => break None,
+            }
+        };
+
+        // Scripts may have mutated the DOM: re-resolve and load any
+        // newly-requested resources
+        let mut doc = script_document.inner_mut();
+        doc.resolve(0.0);
+        pump_net_provider(ctx, &mut doc);
+
+        return match harness_results {
+            Some((harness_status, results)) if !results.is_empty() => {
+                harness_test::harness_outcome(harness_status, results)
+            }
+            // Harness didn't complete or reported no subtests: fall back to
+            // the native checks against the (script-mutated) document
+            _ => check_layout(&mut doc, subtest_selector),
+        };
+    }
+
+    check_layout(&mut document, subtest_selector)
+}
+
+/// Run the native re-implementation of check-layout-th.js's `checkLayout()`:
+/// one subtest per element matching `subtest_selector`, checking the
+/// `data-expected-*`/`data-offset-*`/`data-total-*` attributes of each
+/// element's subtree against the computed layout.
+fn check_layout(
+    document: &mut BaseDocument,
+    subtest_selector: &str,
+) -> (TestStatus, SubtestCounts, Vec<SubtestResult>) {
     let Ok(subtest_roots) = document.query_selector_all(subtest_selector) else {
         panic!("Err parsing subtest selector \"{subtest_selector}\"");
     };

@@ -126,7 +126,15 @@ pub fn process_harness_test(
     };
 
     let (harness_status, subtest_results) = results;
+    harness_outcome(harness_status, subtest_results)
+}
 
+/// Compute the overall test outcome from a testharness.js harness status code
+/// and its subtest results
+pub(super) fn harness_outcome(
+    harness_status: i64,
+    subtest_results: Vec<SubtestResult>,
+) -> (TestStatus, SubtestCounts, Vec<SubtestResult>) {
     // A non-OK harness status (ERROR/TIMEOUT) fails the test even if subtests passed
     if harness_status != 0 && subtest_results.is_empty() {
         return (TestStatus::Fail, SubtestCounts::ZERO_OF_ONE, Vec::new());
@@ -151,7 +159,7 @@ pub fn process_harness_test(
 
 /// Parse the JSON results message sent by the custom `testharnessreport.js`.
 /// Returns the harness status code and the subtest results.
-fn parse_results(message: &str) -> Option<(i64, Vec<SubtestResult>)> {
+pub(super) fn parse_results(message: &str) -> Option<(i64, Vec<SubtestResult>)> {
     let value: serde_json::Value = serde_json::from_str(message).ok()?;
     if value.get("type")?.as_str()? != "wpt_results" {
         return None;

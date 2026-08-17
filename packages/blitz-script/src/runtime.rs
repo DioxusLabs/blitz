@@ -483,6 +483,13 @@ impl ScriptRuntime {
         // `getComputedStyle`
         register_global_fn(&mut context, "getComputedStyle", 1, get_computed_style);
 
+        // Viewport dimensions
+        register_global_accessor(&mut context, "innerWidth", inner_width);
+        register_global_accessor(&mut context, "innerHeight", inner_height);
+        register_global_accessor(&mut context, "outerWidth", inner_width);
+        register_global_accessor(&mut context, "outerHeight", inner_height);
+        register_global_accessor(&mut context, "devicePixelRatio", device_pixel_ratio);
+
         // The `CSS` namespace object. `CSS.escape` is defined in the JS bootstrap.
         let css_namespace = ObjectInitializer::new(&mut context)
             .function(
@@ -968,6 +975,33 @@ fn register_global(context: &mut Context, name: &str, value: JsValue) {
         .expect("failed to register global");
 }
 
+fn register_global_accessor(
+    context: &mut Context,
+    name: &str,
+    getter: fn(&JsValue, &[JsValue], &mut Context) -> JsResult<JsValue>,
+) {
+    use boa_engine::object::FunctionObjectBuilder;
+    use boa_engine::property::{PropertyDescriptor, PropertyKey};
+
+    let getter_fn =
+        FunctionObjectBuilder::new(context.realm(), NativeFunction::from_fn_ptr(getter))
+            .name(JsString::from(format!("get {name}")))
+            .length(0)
+            .build();
+    context
+        .global_object()
+        .define_property_or_throw(
+            PropertyKey::from(JsString::from(name)),
+            PropertyDescriptor::builder()
+                .get(getter_fn)
+                .enumerable(false)
+                .configurable(true)
+                .build(),
+            context,
+        )
+        .expect("failed to register global accessor");
+}
+
 fn register_global_fn(
     context: &mut Context,
     name: &str,
@@ -1112,6 +1146,32 @@ fn request_animation_frame(
         vec![timestamp],
     );
     Ok(JsValue::from(id as f64))
+}
+
+// === Viewport dimensions ===
+
+fn inner_width(_: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    let ctx = dom_ctx(context)?;
+    let doc = ctx.doc.borrow();
+    let viewport = doc.viewport();
+    Ok(JsValue::from(
+        viewport.window_size.0 as f64 / viewport.scale() as f64,
+    ))
+}
+
+fn inner_height(_: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    let ctx = dom_ctx(context)?;
+    let doc = ctx.doc.borrow();
+    let viewport = doc.viewport();
+    Ok(JsValue::from(
+        viewport.window_size.1 as f64 / viewport.scale() as f64,
+    ))
+}
+
+fn device_pixel_ratio(_: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    let ctx = dom_ctx(context)?;
+    let scale = ctx.doc.borrow().viewport().scale();
+    Ok(JsValue::from(scale as f64))
 }
 
 fn css_property_supported(
