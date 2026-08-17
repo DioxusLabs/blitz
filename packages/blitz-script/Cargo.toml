@@ -21,7 +21,10 @@ blitz-html = { workspace = true }
 blitz-traits = { workspace = true }
 
 # Boa (JavaScript engine)
-boa_engine = { workspace = true }
+# `annex-b` enables the Annex B (web-compatibility) ECMAScript features
+# (String.prototype.substr, escape/unescape, HTML comments in scripts, ...)
+# which all browsers implement and web content relies on
+boa_engine = { workspace = true, features = ["annex-b"] }
 boa_runtime = { workspace = true }
 boa_gc = { workspace = true }
 
