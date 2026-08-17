@@ -26,7 +26,7 @@ pub(crate) mod replaced;
 pub(crate) mod table;
 
 use self::replaced::{
-    IntrinsicSizes, ReplacedContext, is_replaced_element, replaced_measure_function,
+    IntrinsicSizes, ReplacedContext, compute_replaced_layout, is_replaced_element,
 };
 use self::table::TableTreeWrapper;
 
@@ -317,7 +317,7 @@ impl BaseDocument {
                         if let Some(height) = attr_size.height {
                             style.size.height = taffy::Dimension::length(height);
                         }
-                        return replaced_measure_function(
+                        return compute_replaced_layout(
                             inputs,
                             &style,
                             resolve_calc_value,
@@ -325,7 +325,7 @@ impl BaseDocument {
                         );
                     }
 
-                    return replaced_measure_function(
+                    return compute_replaced_layout(
                         inputs,
                         style,
                         resolve_calc_value,

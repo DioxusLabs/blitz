@@ -64,7 +64,7 @@ enum Violation {
     Max,
 }
 
-pub fn replaced_measure_function(
+pub fn compute_replaced_layout(
     inputs: LayoutInput,
     style: &impl CoreStyle,
     resolve_calc_value: impl Fn(*const (), f32) -> f32,
