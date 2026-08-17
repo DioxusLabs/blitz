@@ -13,10 +13,9 @@ use style::Atom;
 use style::values::computed::CSSPixelLength;
 use style::values::computed::length_percentage::CalcLengthPercentage;
 use taffy::{
-    BlockContext, CollapsibleMarginSet, FlexDirection, LayoutPartialTree, NodeId, ResolveOrZero,
-    RoundTree, Style, TraversePartialTree, TraverseTree, compute_block_layout,
-    compute_cached_layout, compute_flexbox_layout, compute_grid_layout, compute_leaf_layout,
-    prelude::*,
+    BlockContext, FlexDirection, LayoutPartialTree, NodeId, ResolveOrZero, RoundTree, Style,
+    TraversePartialTree, TraverseTree, compute_block_layout, compute_cached_layout,
+    compute_flexbox_layout, compute_grid_layout, compute_leaf_layout, prelude::*,
 };
 
 pub(crate) mod construct;
@@ -27,7 +26,7 @@ pub(crate) mod replaced;
 pub(crate) mod table;
 
 use self::replaced::{
-    IntrinsicSizes, ReplacedContext, is_replaced_element, replaced_measure_function,
+    IntrinsicSizes, ReplacedContext, compute_replaced_layout, is_replaced_element,
 };
 use self::table::TableTreeWrapper;
 
@@ -213,11 +212,13 @@ impl BaseDocument {
                 }
 
                 if is_replaced_element(&element_data.name.local) {
-                    // Get width and height attributes on image element
-                    //
-                    // TODO: smarter sizing using these (depending on object-fit, they shouldn't
-                    // necessarily just override the native size)
-                    let mut attr_size = taffy::Size {
+                    // Width/height attributes are presentational hints mapped to the CSS
+                    // width/height properties by
+                    // `synthesize_presentational_hints_for_legacy_attributes`, so they
+                    // are already part of the style. They are only read here for the
+                    // elements whose attributes determine their *intrinsic* size
+                    // (canvas, and custom widgets on canvas tags).
+                    let attr_size = taffy::Size {
                         width: element_data
                             .attr(local_name!("width"))
                             .and_then(|val| val.parse::<f32>().ok()),
@@ -242,16 +243,6 @@ impl BaseDocument {
                             }
                             #[cfg(feature = "svg")]
                             ImageData::Svg(svg) => {
-                                // For an inline `<svg>` element the width/height attributes are
-                                // presentation attributes: percentages resolve against the
-                                // containing block. For SVG loaded as an image the intrinsic
-                                // dimensions are context-free.
-                                if *element_data.name.local == local_name!("svg") {
-                                    attr_size = taffy::Size {
-                                        width: svg.resolved_width(inputs.parent_size.width),
-                                        height: svg.resolved_height(inputs.parent_size.height),
-                                    };
-                                }
                                 let mut width = svg.intrinsic_width();
                                 let mut height = svg.intrinsic_height();
                                 // An SVG with no declared dimensions and no viewBox has no
@@ -285,12 +276,31 @@ impl BaseDocument {
                         SpecialElementData::CustomWidget(widget_data) => {
                             let (fallback, default_object_size) =
                                 tag_intrinsic_sizes(&element_data.name.local, attr_size);
-                            let widget_size = widget_data.widget.intrinsic_size();
+                            // A canvas's content attributes determine its intrinsic size,
+                            // overriding the widget-reported one; the widget-reported size
+                            // in turn overrides the tag's fallback.
+                            let attr_intrinsic =
+                                if *element_data.name.local == local_name!("canvas") {
+                                    attr_size
+                                } else {
+                                    taffy::Size::NONE
+                                };
+                            let attr_ratio = match (attr_intrinsic.width, attr_intrinsic.height) {
+                                (Some(w), Some(h)) => Some(w / h),
+                                _ => None,
+                            };
+                            let widget_sizes = widget_data.widget.intrinsic_sizes();
                             (
                                 IntrinsicSizes {
-                                    width: widget_size.map(|s| s.width).or(fallback.width),
-                                    height: widget_size.map(|s| s.height).or(fallback.height),
-                                    ratio: widget_data.widget.aspect_ratio().or(fallback.ratio),
+                                    width: attr_intrinsic
+                                        .width
+                                        .or(widget_sizes.width)
+                                        .or(fallback.width),
+                                    height: attr_intrinsic
+                                        .height
+                                        .or(widget_sizes.height)
+                                        .or(fallback.height),
+                                    ratio: attr_ratio.or(widget_sizes.ratio).or(fallback.ratio),
                                 },
                                 default_object_size,
                             )
@@ -300,28 +310,15 @@ impl BaseDocument {
 
                     let replaced_context = ReplacedContext {
                         intrinsic_sizes,
-                        attr_size,
                         default_object_size,
                     };
 
-                    let computed = replaced_measure_function(
-                        inputs.known_dimensions,
-                        inputs.parent_size,
-                        inputs.available_space,
-                        &replaced_context,
+                    return compute_replaced_layout(
+                        inputs,
                         node.style(),
-                        inputs.sizing_mode,
-                        inputs.axis,
+                        resolve_calc_value,
+                        &replaced_context,
                     );
-
-                    return taffy::LayoutOutput {
-                        size: computed,
-                        content_size: computed,
-                        baselines: taffy::Baselines::NONE,
-                        top_margin: CollapsibleMarginSet::ZERO,
-                        bottom_margin: CollapsibleMarginSet::ZERO,
-                        margins_can_collapse_through: false,
-                    };
                 }
 
                 if node.flags.is_table_root() {
