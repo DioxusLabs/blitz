@@ -43,9 +43,23 @@ add_completion_callback(function (tests, harness_status) {
 });
 "#;
 
+/// Custom `testdriver-vendor.js` served in place of WPT's stock one (an empty
+/// file which automation environments are expected to replace).
+///
+/// Blitz has no testdriver automation backend. Without a vendor file,
+/// testdriver.js commands like `test_driver.click()` fall back to waiting for
+/// a *real user* to perform the action, so such tests hang until the harness
+/// timeout. Setting `in_automation` makes every command reject immediately
+/// ("...not implemented by testdriver-vendor.js" errors from testdriver.js's
+/// default `test_driver_internal` implementations), converting those timeouts
+/// into fast failures.
+const TESTDRIVER_VENDOR_JS: &str = r#"
+window.test_driver_internal.in_automation = true;
+"#;
+
 /// A [`ScriptFetcher`] which resolves script URLs against the local WPT checkout,
-/// and intercepts `/resources/testharnessreport.js` to serve the custom version
-/// above.
+/// and intercepts `/resources/testharnessreport.js` and
+/// `/resources/testdriver-vendor.js` to serve the custom versions above.
 pub struct WptScriptFetcher {
     wpt_dir: PathBuf,
 }
@@ -61,6 +75,9 @@ impl ScriptFetcher for WptScriptFetcher {
         let path = url.path();
         if path.ends_with("/resources/testharnessreport.js") {
             return Ok(TESTHARNESSREPORT_JS.to_string());
+        }
+        if path.ends_with("/resources/testdriver-vendor.js") {
+            return Ok(TESTDRIVER_VENDOR_JS.to_string());
         }
         let relative_path = path.strip_prefix('/').unwrap_or(path);
         std::fs::read_to_string(self.wpt_dir.join(relative_path)).map_err(FetchError::Io)
