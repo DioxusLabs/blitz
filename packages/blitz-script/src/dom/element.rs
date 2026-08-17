@@ -93,6 +93,9 @@ pub(crate) fn init_element_proto(proto: &JsObject, context: &mut Context) {
     );
     define_method(proto, "querySelector", 1, query_selector, context);
     define_method(proto, "querySelectorAll", 1, query_selector_all, context);
+    define_method(proto, "matches", 1, matches, context);
+    define_method(proto, "webkitMatchesSelector", 1, matches, context);
+    define_method(proto, "closest", 1, closest, context);
     define_method(
         proto,
         "getElementsByTagName",
@@ -564,15 +567,14 @@ fn get_bounding_client_rect(
 
 // === Scoped selector queries ===
 
-fn is_descendant_of(doc: &blitz_dom::BaseDocument, node_id: NodeId, ancestor_id: NodeId) -> bool {
-    let mut current = doc.get_node(node_id).and_then(|node| node.parent);
-    while let Some(id) = current {
-        if id == ancestor_id {
-            return true;
-        }
-        current = doc.get_node(id).and_then(|node| node.parent);
-    }
-    false
+/// A `DOMException` for an unparseable selector, per the spec for
+/// `querySelector`/`matches`/`closest` and friends
+fn invalid_selector_error(context: &mut Context, selector: &str) -> boa_engine::JsError {
+    super::dom_exception(
+        context,
+        "SyntaxError",
+        &format!("{selector:?} is not a valid selector"),
+    )
 }
 
 fn query_selector(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
@@ -580,13 +582,10 @@ fn query_selector(this: &JsValue, args: &[JsValue], context: &mut Context) -> Js
     let node_id = this_node_id(this)?;
     let selector = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
 
-    let result = {
-        let doc = ctx.doc.borrow();
-        doc.query_selector_all(&selector).ok().and_then(|matches| {
-            matches
-                .into_iter()
-                .find(|match_id| is_descendant_of(&doc, *match_id, node_id))
-        })
+    let result = ctx.doc.borrow().query_selector_in(node_id, &selector);
+    let result = match result {
+        Ok(result) => result,
+        Err(_) => return Err(invalid_selector_error(context, &selector)),
     };
     Ok(super::node_or_null(&ctx, result, context))
 }
@@ -600,22 +599,39 @@ fn query_selector_all(
     let node_id = this_node_id(this)?;
     let selector = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
 
-    let matches: Vec<NodeId> = {
-        let doc = ctx.doc.borrow();
-        doc.query_selector_all(&selector)
-            .map(|matches| {
-                matches
-                    .into_iter()
-                    .filter(|match_id| is_descendant_of(&doc, *match_id, node_id))
-                    .collect()
-            })
-            .unwrap_or_default()
+    let matches = ctx.doc.borrow().query_selector_all_in(node_id, &selector);
+    let matches = match matches {
+        Ok(matches) => matches,
+        Err(_) => return Err(invalid_selector_error(context, &selector)),
     };
     let wrappers: Vec<JsValue> = matches
         .into_iter()
         .map(|match_id| node_wrapper(&ctx, match_id, context).into())
         .collect();
     Ok(boa_engine::object::builtins::JsArray::from_iter(wrappers, context).into())
+}
+
+fn matches(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    let ctx = dom_ctx(context)?;
+    let node_id = this_node_id(this)?;
+    let selector = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
+
+    match ctx.doc.borrow().matches_selector(node_id, &selector) {
+        Ok(matches) => Ok(JsValue::from(matches)),
+        Err(_) => Err(invalid_selector_error(context, &selector)),
+    }
+}
+
+fn closest(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    let ctx = dom_ctx(context)?;
+    let node_id = this_node_id(this)?;
+    let selector = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
+
+    let result = ctx.doc.borrow().closest(node_id, &selector);
+    match result {
+        Ok(result) => Ok(super::node_or_null(&ctx, result, context)),
+        Err(_) => Err(invalid_selector_error(context, &selector)),
+    }
 }
 
 fn get_elements_by_tag_name(

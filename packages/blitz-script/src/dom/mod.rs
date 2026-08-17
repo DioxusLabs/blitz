@@ -326,6 +326,34 @@ pub(crate) fn matches_class_names(element: &blitz_dom::ElementData, class_names:
         .all(|name| class_attr.split_whitespace().any(|class| class == *name))
 }
 
+/// Construct a `DOMException` error (e.g. name = `"SyntaxError"`) as an instance
+/// of the global `DOMException` interface defined in the runtime bootstrap, so
+/// that `instanceof`/`constructor` checks (as performed by testharness.js'
+/// `assert_throws_dom`) pass. Falls back to a native `TypeError` if the global
+/// is missing.
+pub(crate) fn dom_exception(
+    context: &mut Context,
+    name: &str,
+    message: &str,
+) -> boa_engine::JsError {
+    let constructor = context
+        .global_object()
+        .get(boa_engine::js_string!("DOMException"), context)
+        .ok()
+        .and_then(|value| value.as_object())
+        .filter(|obj| obj.is_constructor());
+    if let Some(constructor) = constructor {
+        if let Ok(exception) =
+            constructor.construct(&[js_str(message), js_str(name)], None, context)
+        {
+            return boa_engine::JsError::from_opaque(exception.into());
+        }
+    }
+    JsNativeError::typ()
+        .with_message(format!("{name}: {message}"))
+        .into()
+}
+
 /// Wrap a native `CSSStyleDeclaration` object in the JS `Proxy` (defined by the
 /// runtime bootstrap script) which maps camelCase property access
 /// (e.g. `style.gridTemplateColumns`) to `getPropertyValue`/`setProperty` calls.
