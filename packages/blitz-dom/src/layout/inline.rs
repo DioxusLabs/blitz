@@ -658,6 +658,11 @@ impl BaseDocument {
             height: height / scale,
         };
 
+        // Unbreakable content (e.g. `white-space: pre` text) may overflow the max advance the
+        // lines were broken at. `width` is the advance the lines were broken at, so the actual
+        // extent of the line boxes must be taken from the laid-out lines for `content_size`.
+        let content_width = f32_max(width, inline_layout.layout.width()) / scale;
+
         let clamped_size = inputs
             .known_dimensions
             .or(node_size)
@@ -822,7 +827,10 @@ impl BaseDocument {
 
         LayoutOutput {
             size: final_size,
-            content_size: measured_size + padding.sum_axes(),
+            content_size: taffy::Size {
+                width: content_width,
+                height: measured_size.height,
+            } + padding.sum_axes(),
             baselines: taffy::Baselines::from_first(first_baseline),
             top_margin: CollapsibleMarginSet::ZERO,
             bottom_margin: CollapsibleMarginSet::ZERO,
