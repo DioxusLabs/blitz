@@ -126,6 +126,17 @@ pub(crate) fn init_element_proto(proto: &JsObject, context: &mut Context) {
         get_bounding_client_rect,
         context,
     );
+    // ParentNode mixin mutation helpers
+    define_method(proto, "append", 1, super::node::append, context);
+    define_method(proto, "prepend", 1, super::node::prepend, context);
+    define_method(
+        proto,
+        "replaceChildren",
+        1,
+        super::node::replace_children,
+        context,
+    );
+
     define_method(proto, "querySelector", 1, query_selector, context);
     define_method(proto, "querySelectorAll", 1, query_selector_all, context);
     define_method(proto, "matches", 1, matches, context);

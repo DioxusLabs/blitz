@@ -52,6 +52,10 @@ pub(crate) fn init_node_proto(proto: &JsObject, context: &mut Context) {
     define_method(proto, "removeChild", 1, remove_child, context);
     define_method(proto, "replaceChild", 2, replace_child, context);
     define_method(proto, "remove", 0, remove, context);
+    // ChildNode mixin
+    define_method(proto, "before", 1, before, context);
+    define_method(proto, "after", 1, after, context);
+    define_method(proto, "replaceWith", 1, replace_with, context);
     define_method(proto, "hasChildNodes", 0, has_child_nodes, context);
     define_method(proto, "contains", 1, contains, context);
     define_method(proto, "cloneNode", 1, clone_node, context);
@@ -362,6 +366,189 @@ fn remove(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsVa
     let mut mutr = doc.mutate();
     if mutr.node_has_parent(node_id) {
         mutr.remove_node(node_id);
+    }
+    Ok(JsValue::undefined())
+}
+
+// === ParentNode / ChildNode mixin mutation helpers ===
+//
+// These accept any number of arguments, each either a node or a string
+// (strings are converted to text nodes).
+
+/// Convert the arguments of a ParentNode/ChildNode mutation method into node
+/// ids, creating (detached) text nodes for string arguments
+fn arg_node_ids(
+    ctx: &crate::state::DomCtx,
+    args: &[JsValue],
+    context: &mut Context,
+) -> JsResult<Vec<NodeId>> {
+    let mut node_ids = Vec::with_capacity(args.len());
+    for arg in args {
+        let node_id = match node_id_of_value(arg) {
+            Some(node_id) => node_id,
+            None => {
+                let text = to_rust_string(arg, context)?;
+                ctx.doc.borrow_mut().mutate().create_text_node(&text)
+            }
+        };
+        node_ids.push(node_id);
+    }
+    Ok(node_ids)
+}
+
+/// Detach (rather than drop) any already-parented nodes so that JS wrappers
+/// referencing them remain valid
+fn detach_all(mutr: &mut blitz_dom::DocumentMutator<'_>, node_ids: &[NodeId]) {
+    for node_id in node_ids {
+        if mutr.node_has_parent(*node_id) {
+            mutr.remove_node(*node_id);
+        }
+    }
+}
+
+/// Convert the arguments of a ParentNode mutation method into detached node ids
+fn nodes_from_args(
+    ctx: &crate::state::DomCtx,
+    args: &[JsValue],
+    context: &mut Context,
+) -> JsResult<Vec<NodeId>> {
+    let node_ids = arg_node_ids(ctx, args, context)?;
+    detach_all(&mut ctx.doc.borrow_mut().mutate(), &node_ids);
+    Ok(node_ids)
+}
+
+/// The nearest sibling of `anchor_id` (in the direction given by `offset`:
+/// +1 = following, -1 = preceding) which is not in `excluded` — the spec's
+/// "viable next/previous sibling" for ChildNode mutation methods
+fn viable_sibling(
+    doc: &blitz_dom::BaseDocument,
+    anchor_id: NodeId,
+    offset: isize,
+    excluded: &[NodeId],
+) -> Option<NodeId> {
+    let node = doc.get_node(anchor_id)?;
+    let parent = doc.get_node(node.parent?)?;
+    let mut index = parent.index_of_child(anchor_id)?;
+    loop {
+        index = index.checked_add_signed(offset)?;
+        let sibling_id = *parent.children.get(index)?;
+        if !excluded.contains(&sibling_id) {
+            return Some(sibling_id);
+        }
+    }
+}
+
+pub(crate) fn append(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    let ctx = dom_ctx(context)?;
+    let parent_id = this_node_id(this)?;
+    let node_ids = nodes_from_args(&ctx, args, context)?;
+    let mut doc = ctx.doc.borrow_mut();
+    doc.mutate().append_children(parent_id, &node_ids);
+    Ok(JsValue::undefined())
+}
+
+pub(crate) fn prepend(
+    this: &JsValue,
+    args: &[JsValue],
+    context: &mut Context,
+) -> JsResult<JsValue> {
+    let ctx = dom_ctx(context)?;
+    let parent_id = this_node_id(this)?;
+    let node_ids = nodes_from_args(&ctx, args, context)?;
+    let mut doc = ctx.doc.borrow_mut();
+    let mut mutr = doc.mutate();
+    match mutr.child_ids(parent_id).first().copied() {
+        Some(first_child_id) => mutr.insert_nodes_before(first_child_id, &node_ids),
+        None => mutr.append_children(parent_id, &node_ids),
+    }
+    Ok(JsValue::undefined())
+}
+
+pub(crate) fn replace_children(
+    this: &JsValue,
+    args: &[JsValue],
+    context: &mut Context,
+) -> JsResult<JsValue> {
+    let ctx = dom_ctx(context)?;
+    let parent_id = this_node_id(this)?;
+    let node_ids = nodes_from_args(&ctx, args, context)?;
+    let mut doc = ctx.doc.borrow_mut();
+    let mut mutr = doc.mutate();
+    // Detach (rather than drop) the existing children so that JS wrappers
+    // referencing them remain valid
+    for child_id in mutr.child_ids(parent_id) {
+        mutr.remove_node(child_id);
+    }
+    mutr.append_children(parent_id, &node_ids);
+    Ok(JsValue::undefined())
+}
+
+fn before(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    let ctx = dom_ctx(context)?;
+    let anchor_id = this_node_id(this)?;
+    let node_ids = arg_node_ids(&ctx, args, context)?;
+
+    let mut doc = ctx.doc.borrow_mut();
+    let Some(parent_id) = doc.get_node(anchor_id).and_then(|node| node.parent) else {
+        return Ok(JsValue::undefined());
+    };
+    // The insertion point is after the nearest preceding sibling which isn't
+    // itself being inserted (or at the start of the parent if there is none)
+    let viable_prev = viable_sibling(&doc, anchor_id, -1, &node_ids);
+    let mut mutr = doc.mutate();
+    detach_all(&mut mutr, &node_ids);
+    match viable_prev {
+        Some(prev_id) => mutr.insert_nodes_after(prev_id, &node_ids),
+        None => match mutr.child_ids(parent_id).first().copied() {
+            Some(first_child_id) => mutr.insert_nodes_before(first_child_id, &node_ids),
+            None => mutr.append_children(parent_id, &node_ids),
+        },
+    }
+    Ok(JsValue::undefined())
+}
+
+fn after(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    let ctx = dom_ctx(context)?;
+    let anchor_id = this_node_id(this)?;
+    let node_ids = arg_node_ids(&ctx, args, context)?;
+
+    let mut doc = ctx.doc.borrow_mut();
+    let Some(parent_id) = doc.get_node(anchor_id).and_then(|node| node.parent) else {
+        return Ok(JsValue::undefined());
+    };
+    // The insertion point is before the nearest following sibling which isn't
+    // itself being inserted (or at the end of the parent if there is none)
+    let viable_next = viable_sibling(&doc, anchor_id, 1, &node_ids);
+    let mut mutr = doc.mutate();
+    detach_all(&mut mutr, &node_ids);
+    match viable_next {
+        Some(next_id) => mutr.insert_nodes_before(next_id, &node_ids),
+        None => mutr.append_children(parent_id, &node_ids),
+    }
+    Ok(JsValue::undefined())
+}
+
+fn replace_with(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    let ctx = dom_ctx(context)?;
+    let anchor_id = this_node_id(this)?;
+    let node_ids = arg_node_ids(&ctx, args, context)?;
+
+    let mut doc = ctx.doc.borrow_mut();
+    let Some(parent_id) = doc.get_node(anchor_id).and_then(|node| node.parent) else {
+        return Ok(JsValue::undefined());
+    };
+    let viable_next = viable_sibling(&doc, anchor_id, 1, &node_ids);
+    let mut mutr = doc.mutate();
+    detach_all(&mut mutr, &node_ids);
+    if mutr.node_has_parent(anchor_id) {
+        mutr.replace_node_with(anchor_id, &node_ids);
+    } else {
+        // The anchor was itself one of the inserted nodes: insert at its old
+        // position (per the spec's "viable next sibling" handling)
+        match viable_next {
+            Some(next_id) => mutr.insert_nodes_before(next_id, &node_ids),
+            None => mutr.append_children(parent_id, &node_ids),
+        }
     }
     Ok(JsValue::undefined())
 }
