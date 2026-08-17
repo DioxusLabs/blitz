@@ -108,8 +108,15 @@ const BOOTSTRAP_JS: &str = r#"
     // property access (e.g. `style.gridTemplateColumns`) onto
     // `getPropertyValue`/`setProperty` calls with kebab-case property names.
     const KEBAB_OVERRIDES = { cssFloat: "float" };
-    const toKebab = (prop) =>
-        KEBAB_OVERRIDES[prop] ?? prop.replace(/[A-Z]/g, (c) => "-" + c.toLowerCase());
+    const toKebab = (prop) => {
+        const override = KEBAB_OVERRIDES[prop];
+        if (override) return override;
+        const kebab = prop.replace(/[A-Z]/g, (c) => "-" + c.toLowerCase());
+        // Vendor-prefixed IDL attributes (webkitTransform, msFlex, mozUserSelect)
+        // map to dashed prefixes (-webkit-transform, ...) per CSSOM. Uppercase
+        // first letters (MozUserSelect) already gain the leading dash above.
+        return /^(webkit|moz|ms)-/.test(kebab) ? "-" + kebab : kebab;
+    };
     // camelCase (`gridTemplateColumns`) or kebab-case (`grid-template-columns`,
     // via indexed access) property names
     const isCssPropName = (prop) =>
