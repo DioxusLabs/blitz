@@ -413,6 +413,28 @@ impl ScriptRuntime {
         Console::register_with_logger(DefaultLogger, &mut context)
             .expect("failed to register console");
 
+        // Register boa_runtime's web-API extensions: atob/btoa, TextEncoder/
+        // TextDecoder, structuredClone, queueMicrotask and URL.
+        //
+        // Deliberately NOT registered:
+        // - TimeoutExtension: blitz-script has its own setTimeout/setInterval/
+        //   requestAnimationFrame implementation integrated with the document's
+        //   event loop and timer thread
+        // - FetchExtension/AbortControllerExtension: fetch should go through
+        //   the embedder's net provider, not an internal HTTP client
+        boa_runtime::register_extensions(
+            (
+                boa_runtime::extensions::Base64Extension,
+                boa_runtime::extensions::EncodingExtension,
+                boa_runtime::extensions::StructuredCloneExtension,
+                boa_runtime::extensions::MicrotaskExtension,
+                boa_runtime::extensions::UrlExtension,
+            ),
+            None,
+            &mut context,
+        )
+        .expect("failed to register boa_runtime extensions");
+
         crate::dom::init_protos(&ctx, &mut context);
 
         // `document`
