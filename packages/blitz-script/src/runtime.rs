@@ -21,7 +21,9 @@ use url::Url;
 use web_time::{Duration, Instant};
 
 use crate::dom::event::{EventRef, create_event, create_event_for_dom_event};
-use crate::dom::{NodeRef, dom_ctx, node_id_of_value, node_wrapper, wrap_style_object};
+use crate::dom::{
+    NodeRef, dom_ctx, node_id_of_value, node_wrapper, to_rust_string, wrap_style_object,
+};
 use crate::fetch::ScriptFetcher;
 use crate::state::{DomCtx, Listener, ReadyState};
 
@@ -180,6 +182,48 @@ const BOOTSTRAP_JS: &str = r#"
                 });
             },
         });
+    }
+
+    // `CSS.escape` (the `CSS` namespace object itself, including `CSS.supports`,
+    // is registered natively). Implements the CSSOM serialize-an-identifier
+    // algorithm: https://drafts.csswg.org/cssom/#serialize-an-identifier
+    if (typeof globalThis.CSS === "object" && typeof CSS.escape !== "function") {
+        CSS.escape = function (value) {
+            const string = String(value);
+            const firstCodeUnit = string.charCodeAt(0);
+            if (string.length === 1 && firstCodeUnit === 0x2d) {
+                return "\\" + string;
+            }
+            let result = "";
+            for (let index = 0; index < string.length; index++) {
+                const codeUnit = string.charCodeAt(index);
+                if (codeUnit === 0x0000) {
+                    result += "\ufffd";
+                } else if (
+                    (codeUnit >= 0x0001 && codeUnit <= 0x001f) ||
+                    codeUnit === 0x007f ||
+                    (index === 0 && codeUnit >= 0x30 && codeUnit <= 0x39) ||
+                    (index === 1 &&
+                        codeUnit >= 0x30 &&
+                        codeUnit <= 0x39 &&
+                        firstCodeUnit === 0x2d)
+                ) {
+                    result += "\\" + codeUnit.toString(16) + " ";
+                } else if (
+                    codeUnit >= 0x0080 ||
+                    codeUnit === 0x2d ||
+                    codeUnit === 0x5f ||
+                    (codeUnit >= 0x30 && codeUnit <= 0x39) ||
+                    (codeUnit >= 0x41 && codeUnit <= 0x5a) ||
+                    (codeUnit >= 0x61 && codeUnit <= 0x7a)
+                ) {
+                    result += string.charAt(index);
+                } else {
+                    result += "\\" + string.charAt(index);
+                }
+            }
+            return result;
+        };
     }
 
     // `document.fonts` (FontFaceSet) stub: all fonts report as loaded
@@ -363,6 +407,16 @@ impl ScriptRuntime {
 
         // `getComputedStyle`
         register_global_fn(&mut context, "getComputedStyle", 1, get_computed_style);
+
+        // The `CSS` namespace object. `CSS.escape` is defined in the JS bootstrap.
+        let css_namespace = ObjectInitializer::new(&mut context)
+            .function(
+                NativeFunction::from_fn_ptr(css_supports),
+                js_string!("supports"),
+                1,
+            )
+            .build();
+        register_global(&mut context, "CSS", css_namespace.into());
 
         let mut runtime = Self { context, ctx };
 
@@ -983,6 +1037,21 @@ fn request_animation_frame(
         vec![timestamp],
     );
     Ok(JsValue::from(id as f64))
+}
+
+/// `CSS.supports()`: the two-argument form checks a property/value declaration,
+/// the one-argument form evaluates a `@supports` condition
+fn css_supports(_: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    let ctx = dom_ctx(context)?;
+    let supported = if args.len() >= 2 {
+        let property = to_rust_string(&args[0], context)?;
+        let value = to_rust_string(&args[1], context)?;
+        ctx.doc.borrow().css_declaration_is_valid(&property, &value)
+    } else {
+        let condition = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
+        ctx.doc.borrow().css_supports_condition(&condition)
+    };
+    Ok(JsValue::from(supported))
 }
 
 fn get_computed_style(_: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
