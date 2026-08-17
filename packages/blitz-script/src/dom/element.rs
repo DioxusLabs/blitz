@@ -69,6 +69,41 @@ pub(crate) fn init_element_proto(proto: &JsObject, context: &mut Context) {
     );
     define_accessor(proto, "outerHTML", Some(get_outer_html), None, context);
     define_accessor(proto, "children", Some(children), None, context);
+    define_accessor(
+        proto,
+        "childElementCount",
+        Some(child_element_count),
+        None,
+        context,
+    );
+    define_accessor(
+        proto,
+        "firstElementChild",
+        Some(first_element_child),
+        None,
+        context,
+    );
+    define_accessor(
+        proto,
+        "lastElementChild",
+        Some(last_element_child),
+        None,
+        context,
+    );
+    define_accessor(
+        proto,
+        "nextElementSibling",
+        Some(next_element_sibling),
+        None,
+        context,
+    );
+    define_accessor(
+        proto,
+        "previousElementSibling",
+        Some(previous_element_sibling),
+        None,
+        context,
+    );
     define_accessor(proto, "offsetWidth", Some(offset_width), None, context);
     define_accessor(proto, "offsetHeight", Some(offset_height), None, context);
     define_accessor(proto, "offsetLeft", Some(offset_left), None, context);
@@ -192,29 +227,108 @@ fn namespace_uri(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResu
     Ok(js_str(&ns))
 }
 
+/// The ids of the node's element children (in tree order)
+pub(crate) fn element_child_ids(doc: &blitz_dom::BaseDocument, node_id: NodeId) -> Vec<NodeId> {
+    doc.get_node(node_id)
+        .map(|node| {
+            node.children
+                .iter()
+                .copied()
+                .filter(|child_id| {
+                    doc.get_node(*child_id)
+                        .is_some_and(|child| child.is_element())
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 fn children(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
     let node_id = this_node_id(this)?;
-    let child_ids: Vec<NodeId> = {
-        let doc = ctx.doc.borrow();
-        doc.get_node(node_id)
-            .map(|node| {
-                node.children
-                    .iter()
-                    .copied()
-                    .filter(|child_id| {
-                        doc.get_node(*child_id)
-                            .is_some_and(|child| child.is_element())
-                    })
-                    .collect()
-            })
-            .unwrap_or_default()
-    };
+    let child_ids = element_child_ids(&ctx.doc.borrow(), node_id);
     let wrappers: Vec<JsValue> = child_ids
         .into_iter()
         .map(|child_id| node_wrapper(&ctx, child_id, context).into())
         .collect();
     Ok(boa_engine::object::builtins::JsArray::from_iter(wrappers, context).into())
+}
+
+pub(crate) fn child_element_count(
+    this: &JsValue,
+    _: &[JsValue],
+    context: &mut Context,
+) -> JsResult<JsValue> {
+    let ctx = dom_ctx(context)?;
+    let node_id = this_node_id(this)?;
+    let count = element_child_ids(&ctx.doc.borrow(), node_id).len();
+    Ok(JsValue::from(count as f64))
+}
+
+pub(crate) fn first_element_child(
+    this: &JsValue,
+    _: &[JsValue],
+    context: &mut Context,
+) -> JsResult<JsValue> {
+    let ctx = dom_ctx(context)?;
+    let node_id = this_node_id(this)?;
+    let child_id = element_child_ids(&ctx.doc.borrow(), node_id)
+        .first()
+        .copied();
+    Ok(super::node_or_null(&ctx, child_id, context))
+}
+
+pub(crate) fn last_element_child(
+    this: &JsValue,
+    _: &[JsValue],
+    context: &mut Context,
+) -> JsResult<JsValue> {
+    let ctx = dom_ctx(context)?;
+    let node_id = this_node_id(this)?;
+    let child_id = element_child_ids(&ctx.doc.borrow(), node_id)
+        .last()
+        .copied();
+    Ok(super::node_or_null(&ctx, child_id, context))
+}
+
+/// Find the nearest element sibling in the direction given by `offset`
+/// (+1 = next, -1 = previous)
+fn element_sibling(
+    doc: &blitz_dom::BaseDocument,
+    node_id: NodeId,
+    offset: isize,
+) -> Option<NodeId> {
+    let node = doc.get_node(node_id)?;
+    let parent = doc.get_node(node.parent?)?;
+    let mut index = parent.index_of_child(node_id)?;
+    loop {
+        index = index.checked_add_signed(offset)?;
+        let sibling_id = *parent.children.get(index)?;
+        if doc
+            .get_node(sibling_id)
+            .is_some_and(|node| node.is_element())
+        {
+            return Some(sibling_id);
+        }
+    }
+}
+
+fn next_element_sibling(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    let ctx = dom_ctx(context)?;
+    let node_id = this_node_id(this)?;
+    let sibling_id = element_sibling(&ctx.doc.borrow(), node_id, 1);
+    Ok(super::node_or_null(&ctx, sibling_id, context))
+}
+
+fn previous_element_sibling(
+    this: &JsValue,
+    _: &[JsValue],
+    context: &mut Context,
+) -> JsResult<JsValue> {
+    let ctx = dom_ctx(context)?;
+    let node_id = this_node_id(this)?;
+    let sibling_id = element_sibling(&ctx.doc.borrow(), node_id, -1);
+    Ok(super::node_or_null(&ctx, sibling_id, context))
 }
 
 // === Attributes ===
