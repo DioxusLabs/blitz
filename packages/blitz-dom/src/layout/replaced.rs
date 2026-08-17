@@ -1,11 +1,9 @@
 use markup5ever::{LocalName, local_name};
-use style::Atom;
 use taffy::{
-    AvailableSpace, BoxSizing, CoreStyle as _, MaybeMath, MaybeResolve, RequestedAxis,
-    ResolveOrZero as _, Size, SizingMode,
+    AvailableSpace, Baselines, BoxSizing, CollapsibleMarginSet, CoreStyle, LayoutInput,
+    LayoutOutput, MaybeMath, MaybeResolve, RequestedAxis, ResolveOrZero as _, RunMode, Size,
+    SizingMode,
 };
-
-use crate::layout::resolve_calc_value;
 
 /// Whether an element is a replaced element laid out as a leaf box with an
 /// intrinsic size. Note: `<object>` is deliberately excluded as its fallback
@@ -34,11 +32,24 @@ pub struct IntrinsicSizes {
 pub struct ReplacedContext {
     /// The element's intrinsic dimensions, each possibly absent.
     pub intrinsic_sizes: IntrinsicSizes,
-    pub attr_size: taffy::Size<Option<f32>>,
     /// The default object size (https://drafts.csswg.org/css-images/#default-object-size)
     /// used to fill in dimensions the intrinsic sizes leave unresolved. 300x150
     /// for most replaced elements; zero for an image with no loaded resource.
     pub default_object_size: taffy::Size<f32>,
+}
+
+/// Builds a [`LayoutOutput`] for a replaced element of the given border-box size.
+/// Replaced elements have no content that overflows, no baselines, and never
+/// collapse margins through themselves.
+fn layout_output_from_size(size: Size<f32>) -> LayoutOutput {
+    LayoutOutput {
+        size,
+        content_size: size,
+        baselines: Baselines::NONE,
+        top_margin: CollapsibleMarginSet::ZERO,
+        bottom_margin: CollapsibleMarginSet::ZERO,
+        margins_can_collapse_through: false,
+    }
 }
 
 /// Whether a height/width value is violating it's min- and max- constraints
@@ -54,20 +65,27 @@ enum Violation {
 }
 
 pub fn replaced_measure_function(
-    known_dimensions: taffy::Size<Option<f32>>,
-    parent_size: taffy::Size<Option<f32>>,
-    available_space: taffy::Size<AvailableSpace>,
-    image_context: &ReplacedContext,
-    style: &taffy::Style<Atom>,
-    sizing_mode: SizingMode,
-    requested_axis: RequestedAxis,
-) -> taffy::Size<f32> {
+    inputs: LayoutInput,
+    style: &impl CoreStyle,
+    resolve_calc_value: impl Fn(*const (), f32) -> f32,
+    context: &ReplacedContext,
+) -> LayoutOutput {
+    let LayoutInput {
+        known_dimensions,
+        parent_size,
+        available_space,
+        sizing_mode,
+        run_mode,
+        axis: requested_axis,
+        ..
+    } = inputs;
+
     let padding = style
         .padding()
-        .resolve_or_zero(parent_size.width, resolve_calc_value);
+        .resolve_or_zero(parent_size.width, &resolve_calc_value);
     let border = style
         .border()
-        .resolve_or_zero(parent_size.width, resolve_calc_value);
+        .resolve_or_zero(parent_size.width, &resolve_calc_value);
     let padding_border = padding + border;
     let pb_sum = Size {
         width: padding_border.left + padding_border.right,
@@ -78,6 +96,20 @@ pub fn replaced_measure_function(
     } else {
         Size::ZERO
     };
+
+    // Return early if both width and height are known
+    if run_mode == RunMode::ComputeSize {
+        if let Size {
+            width: Some(width),
+            height: Some(height),
+        } = known_dimensions
+        {
+            return layout_output_from_size(Size {
+                width: width.max(pb_sum.width),
+                height: height.max(pb_sum.height),
+            });
+        }
+    }
 
     // Use aspect_ratio from style, fall back to inherent aspect ratio (if any).
     //
@@ -90,9 +122,9 @@ pub fn replaced_measure_function(
     // replaced element), and only if both are degenerate or absent does the
     // element get no preferred aspect ratio at all.
     let is_usable_ratio = |ratio: &f32| ratio.is_finite() && *ratio > 0.0;
-    let intrinsic = image_context.intrinsic_sizes;
+    let intrinsic = context.intrinsic_sizes;
     let aspect_ratio: Option<f32> = style
-        .aspect_ratio
+        .aspect_ratio()
         .filter(is_usable_ratio)
         .or(intrinsic.ratio.filter(is_usable_ratio));
 
@@ -107,7 +139,7 @@ pub fn replaced_measure_function(
     // Only the intrinsic ratio participates here: the `aspect-ratio` property
     // affects the sizing of the box, not the natural dimensions of its content.
     let intrinsic_ratio = intrinsic.ratio.filter(is_usable_ratio);
-    let default_size = image_context.default_object_size;
+    let default_size = context.default_object_size;
     let inherent_size = match (intrinsic.width, intrinsic.height) {
         (Some(w), Some(h)) => Size {
             width: w,
@@ -159,16 +191,16 @@ pub fn replaced_measure_function(
 
     // Resolve sizes
     let style_size = style
-        .size
-        .maybe_resolve(basis_for_max_and_preferred, resolve_calc_value)
+        .size()
+        .maybe_resolve(basis_for_max_and_preferred, &resolve_calc_value)
         .maybe_sub(box_sizing_adjustment);
     let mut min_size = style
-        .min_size
-        .maybe_resolve(parent_size, resolve_calc_value)
+        .min_size()
+        .maybe_resolve(parent_size, &resolve_calc_value)
         .maybe_sub(box_sizing_adjustment);
     let max_size = style
-        .max_size
-        .maybe_resolve(basis_for_max_and_preferred, resolve_calc_value)
+        .max_size()
+        .maybe_resolve(basis_for_max_and_preferred, &resolve_calc_value)
         .or(available_space.into_options())
         .maybe_min(available_space.into_options())
         .maybe_max(min_size)
@@ -192,7 +224,6 @@ pub fn replaced_measure_function(
             RequestedAxis::Both => {}
         }
     }
-    let attr_size = image_context.attr_size;
 
     // Known dimensions are the parent's current sizing inputs. Clamp them before transferring
     // an aspect ratio so provisional cross-axis sizes do not bypass replaced-element limits.
@@ -200,8 +231,8 @@ pub fn replaced_measure_function(
         // Style max sizes without the available-space fallback: available space must not
         // constrain the aspect-ratio transfer of parent-resolved dimensions.
         let style_max_size = style
-            .max_size
-            .maybe_resolve(basis_for_max_and_preferred, resolve_calc_value)
+            .max_size()
+            .maybe_resolve(basis_for_max_and_preferred, &resolve_calc_value)
             .maybe_sub(box_sizing_adjustment)
             .maybe_max(min_size);
 
@@ -217,22 +248,14 @@ pub fn replaced_measure_function(
         let size = content_box_known_dimensions
             .unwrap_or(transferred.maybe_clamp(min_size, style_max_size));
 
-        return size.map(|s| s.max(0.0)) + pb_sum;
+        return layout_output_from_size(size.map(|s| s.max(0.0)) + pb_sum);
     }
 
-    let unclamped_size = 'size: {
-        if style_size.width.is_some() | style_size.height.is_some() {
-            break 'size style_size
-                .maybe_apply_aspect_ratio(aspect_ratio)
-                .unwrap_or(inherent_size);
-        }
-
-        if attr_size.width.is_some() | attr_size.height.is_some() {
-            break 'size attr_size
-                .maybe_apply_aspect_ratio(aspect_ratio)
-                .unwrap_or(inherent_size);
-        }
-
+    let unclamped_size = if style_size.width.is_some() | style_size.height.is_some() {
+        style_size
+            .maybe_apply_aspect_ratio(aspect_ratio)
+            .unwrap_or(inherent_size)
+    } else {
         inherent_size
     };
 
@@ -259,7 +282,7 @@ pub fn replaced_measure_function(
     // Without an intrinsic aspect ratio, each axis is clamped independently
     let Some(aspect_ratio) = aspect_ratio else {
         let size = size.maybe_clamp(min_size, max_size);
-        return size + pb_sum;
+        return layout_output_from_size(size + pb_sum);
     };
     let inv_aspect_ratio = 1.0 / aspect_ratio;
 
@@ -352,5 +375,5 @@ pub fn replaced_measure_function(
         }
     };
 
-    size + pb_sum
+    layout_output_from_size(size + pb_sum)
 }

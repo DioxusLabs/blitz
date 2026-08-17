@@ -13,10 +13,9 @@ use style::Atom;
 use style::values::computed::CSSPixelLength;
 use style::values::computed::length_percentage::CalcLengthPercentage;
 use taffy::{
-    BlockContext, CollapsibleMarginSet, FlexDirection, LayoutPartialTree, NodeId, ResolveOrZero,
-    RoundTree, Style, TraversePartialTree, TraverseTree, compute_block_layout,
-    compute_cached_layout, compute_flexbox_layout, compute_grid_layout, compute_leaf_layout,
-    prelude::*,
+    BlockContext, FlexDirection, LayoutPartialTree, NodeId, ResolveOrZero, RoundTree, Style,
+    TraversePartialTree, TraverseTree, compute_block_layout, compute_cached_layout,
+    compute_flexbox_layout, compute_grid_layout, compute_leaf_layout, prelude::*,
 };
 
 pub(crate) mod construct;
@@ -300,28 +299,38 @@ impl BaseDocument {
 
                     let replaced_context = ReplacedContext {
                         intrinsic_sizes,
-                        attr_size,
                         default_object_size,
                     };
 
-                    let computed = replaced_measure_function(
-                        inputs.known_dimensions,
-                        inputs.parent_size,
-                        inputs.available_space,
-                        &replaced_context,
-                        node.style(),
-                        inputs.sizing_mode,
-                        inputs.axis,
-                    );
+                    // Width/height attributes are presentational hints rather than part of
+                    // the CSS replaced sizing algorithm: fold them into the specified size
+                    // when the style leaves the size entirely auto.
+                    let style = node.style();
+                    if (attr_size.width.is_some() || attr_size.height.is_some())
+                        && style.size.width.is_auto()
+                        && style.size.height.is_auto()
+                    {
+                        let mut style = style.clone();
+                        if let Some(width) = attr_size.width {
+                            style.size.width = taffy::Dimension::length(width);
+                        }
+                        if let Some(height) = attr_size.height {
+                            style.size.height = taffy::Dimension::length(height);
+                        }
+                        return replaced_measure_function(
+                            inputs,
+                            &style,
+                            resolve_calc_value,
+                            &replaced_context,
+                        );
+                    }
 
-                    return taffy::LayoutOutput {
-                        size: computed,
-                        content_size: computed,
-                        baselines: taffy::Baselines::NONE,
-                        top_margin: CollapsibleMarginSet::ZERO,
-                        bottom_margin: CollapsibleMarginSet::ZERO,
-                        margins_can_collapse_through: false,
-                    };
+                    return replaced_measure_function(
+                        inputs,
+                        style,
+                        resolve_calc_value,
+                        &replaced_context,
+                    );
                 }
 
                 if node.flags.is_table_root() {
