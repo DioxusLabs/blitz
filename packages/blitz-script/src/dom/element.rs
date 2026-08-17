@@ -126,6 +126,7 @@ pub(crate) fn init_element_proto(proto: &JsObject, context: &mut Context) {
         get_bounding_client_rect,
         context,
     );
+    define_method(proto, "getClientRects", 0, get_client_rects, context);
     // ParentNode mixin mutation helpers
     define_method(proto, "append", 1, super::node::append, context);
     define_method(proto, "prepend", 1, super::node::prepend, context);
@@ -664,6 +665,28 @@ fn scroll_height(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResu
     })
 }
 
+/// Build a `DOMRect`-shaped object
+fn make_rect_object(context: &mut Context, x: f64, y: f64, width: f64, height: f64) -> JsObject {
+    ObjectInitializer::new(context)
+        .property(js_string!("x"), x, PropAttribute::all())
+        .property(js_string!("y"), y, PropAttribute::all())
+        .property(js_string!("width"), width, PropAttribute::all())
+        .property(js_string!("height"), height, PropAttribute::all())
+        .property(js_string!("left"), x, PropAttribute::all())
+        .property(js_string!("top"), y, PropAttribute::all())
+        .property(js_string!("right"), x + width, PropAttribute::all())
+        .property(js_string!("bottom"), y + height, PropAttribute::all())
+        .build()
+}
+
+/// Does the node generate any boxes? (`getClientRects()` returns an empty list
+/// for boxless nodes, e.g. `display: none` or detached elements)
+fn node_has_boxes(doc: &blitz_dom::BaseDocument, node_id: NodeId) -> bool {
+    doc.get_node(node_id).is_some_and(|node| {
+        node.flags.is_in_document() && node.style().display != blitz_dom::taffy::Display::None
+    })
+}
+
 fn get_bounding_client_rect(
     this: &JsValue,
     _: &[JsValue],
@@ -677,17 +700,31 @@ fn get_bounding_client_rect(
         Some(rect) => (rect.x, rect.y, rect.width, rect.height),
         None => (0.0, 0.0, 0.0, 0.0),
     };
-    let object = ObjectInitializer::new(context)
-        .property(js_string!("x"), x, PropAttribute::all())
-        .property(js_string!("y"), y, PropAttribute::all())
-        .property(js_string!("width"), width, PropAttribute::all())
-        .property(js_string!("height"), height, PropAttribute::all())
-        .property(js_string!("left"), x, PropAttribute::all())
-        .property(js_string!("top"), y, PropAttribute::all())
-        .property(js_string!("right"), x + width, PropAttribute::all())
-        .property(js_string!("bottom"), y + height, PropAttribute::all())
-        .build();
-    Ok(object.into())
+    Ok(make_rect_object(context, x, y, width, height).into())
+}
+
+fn get_client_rects(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    let ctx = dom_ctx(context)?;
+    let node_id = this_node_id(this)?;
+    ctx.doc.borrow_mut().resolve(0.0);
+
+    // One rect per box fragment: a single border-box rect for nodes with their
+    // own layout box, one rect per line box for non-atomic inline elements,
+    // and an empty list for boxless (e.g. `display: none`) elements
+    let rects = {
+        let doc = ctx.doc.borrow();
+        if node_has_boxes(&doc, node_id) {
+            doc.node_client_rects(node_id)
+        } else {
+            Vec::new()
+        }
+    };
+
+    let rect_objects: Vec<JsValue> = rects
+        .into_iter()
+        .map(|rect| make_rect_object(context, rect.x, rect.y, rect.width, rect.height).into())
+        .collect();
+    Ok(boa_engine::object::builtins::JsArray::from_iter(rect_objects, context).into())
 }
 
 // === Scoped selector queries ===
