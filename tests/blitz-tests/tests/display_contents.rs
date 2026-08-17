@@ -81,7 +81,7 @@ fn scroller_wrapping_contents_gets_full_scroll_size() {
         "content inside the contents wrapper must size normally"
     );
     assert_eq!(
-        ls.content_size.height, 1000.0,
+        ls.scrollable_overflow_rect.bottom, 1000.0,
         "the scroller's scrollable content size must include the hoisted content"
     );
 }
