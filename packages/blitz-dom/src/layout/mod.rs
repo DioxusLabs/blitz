@@ -289,20 +289,18 @@ impl BaseDocument {
                                 (Some(w), Some(h)) => Some(w / h),
                                 _ => None,
                             };
-                            let widget_size = widget_data.widget.intrinsic_size();
+                            let widget_sizes = widget_data.widget.intrinsic_sizes();
                             (
                                 IntrinsicSizes {
                                     width: attr_intrinsic
                                         .width
-                                        .or(widget_size.map(|s| s.width))
+                                        .or(widget_sizes.width)
                                         .or(fallback.width),
                                     height: attr_intrinsic
                                         .height
-                                        .or(widget_size.map(|s| s.height))
+                                        .or(widget_sizes.height)
                                         .or(fallback.height),
-                                    ratio: attr_ratio
-                                        .or(widget_data.widget.aspect_ratio())
-                                        .or(fallback.ratio),
+                                    ratio: attr_ratio.or(widget_sizes.ratio).or(fallback.ratio),
                                 },
                                 default_object_size,
                             )

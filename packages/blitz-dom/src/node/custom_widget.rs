@@ -9,6 +9,7 @@ pub use style::properties::ComputedValues as ComputedStyles;
 pub use anyrender::{RenderContext, Scene};
 
 use crate::BaseDocument;
+use crate::layout::replaced::IntrinsicSizes;
 
 impl BaseDocument {
     pub fn can_create_surfaces(&mut self, render_context: &mut dyn RenderContext) {
@@ -109,17 +110,14 @@ pub trait Widget {
         let _ = event;
     }
 
-    /// The widget's intrinsic size, if it has one.
+    /// The widget's intrinsic dimensions: an intrinsic width, height and
+    /// aspect ratio, each of which may independently be absent.
     ///
-    /// `None` sizes the element as it would be sized without the widget (for a
-    /// replaced element, its own intrinsic size or the default object size).
-    fn intrinsic_size(&self) -> Option<taffy::Size<f32>> {
-        None
-    }
-
-    /// The widget's intrinsic aspect ratio, if it has one.
-    fn aspect_ratio(&self) -> Option<f32> {
-        None
+    /// An absent dimension is sized as it would be without the widget (for a
+    /// replaced element, the element's own intrinsic dimension or the default
+    /// object size).
+    fn intrinsic_sizes(&self) -> IntrinsicSizes {
+        IntrinsicSizes::default()
     }
 
     /// Callback for the widget to paint it's content.

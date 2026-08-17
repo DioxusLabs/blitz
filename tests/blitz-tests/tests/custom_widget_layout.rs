@@ -4,7 +4,7 @@
 //! `SpecialElementData` slot the replaced-layout match reads, so any replaced
 //! element carrying a widget used to reach `unreachable!()` on the next layout.
 
-use blitz_dom::{DocumentConfig, Widget};
+use blitz_dom::{DocumentConfig, IntrinsicSizes, Widget};
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::shell::{ColorScheme, Viewport};
 use std::sync::Arc;
@@ -14,15 +14,12 @@ impl Widget for Probe {}
 
 struct SizedProbe;
 impl Widget for SizedProbe {
-    fn intrinsic_size(&self) -> Option<taffy::Size<f32>> {
-        Some(taffy::Size {
-            width: 64.0,
-            height: 32.0,
-        })
-    }
-
-    fn aspect_ratio(&self) -> Option<f32> {
-        Some(2.0)
+    fn intrinsic_sizes(&self) -> IntrinsicSizes {
+        IntrinsicSizes {
+            width: Some(64.0),
+            height: Some(32.0),
+            ratio: Some(2.0),
+        }
     }
 }
 
