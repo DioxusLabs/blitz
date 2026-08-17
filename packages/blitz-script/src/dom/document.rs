@@ -26,6 +26,27 @@ pub(crate) fn init_document_proto(proto: &JsObject, context: &mut Context) {
     define_accessor(proto, "defaultView", Some(default_view), None, context);
     define_accessor(proto, "title", Some(title), None, context);
     define_accessor(proto, "readyState", Some(ready_state), None, context);
+    define_accessor(
+        proto,
+        "childElementCount",
+        Some(super::element::child_element_count),
+        None,
+        context,
+    );
+    define_accessor(
+        proto,
+        "firstElementChild",
+        Some(super::element::first_element_child),
+        None,
+        context,
+    );
+    define_accessor(
+        proto,
+        "lastElementChild",
+        Some(super::element::last_element_child),
+        None,
+        context,
+    );
 
     define_method(proto, "createElement", 1, create_element, context);
     define_method(proto, "createElementNS", 2, create_element_ns, context);
