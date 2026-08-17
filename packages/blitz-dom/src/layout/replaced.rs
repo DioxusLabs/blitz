@@ -19,14 +19,26 @@ pub(crate) fn is_replaced_element(tag_name: &LocalName) -> bool {
         || *tag_name == local_name!("iframe")
 }
 
+/// The intrinsic dimensions of a replaced element per CSS Images 3
+/// (https://drafts.csswg.org/css-images/#intrinsic-dimensions): an intrinsic
+/// width, an intrinsic height, and an intrinsic aspect ratio, each of which
+/// may independently be absent.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct IntrinsicSizes {
+    pub width: Option<f32>,
+    pub height: Option<f32>,
+    pub ratio: Option<f32>,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct ReplacedContext {
-    pub inherent_size: taffy::Size<f32>,
+    /// The element's intrinsic dimensions, each possibly absent.
+    pub intrinsic_sizes: IntrinsicSizes,
     pub attr_size: taffy::Size<Option<f32>>,
-    /// The element's intrinsic aspect ratio, if it has one. Some replaced elements
-    /// (iframe, embed, video without loaded media) have a default object size but
-    /// no intrinsic aspect ratio.
-    pub inherent_ratio: Option<f32>,
+    /// The default object size (https://drafts.csswg.org/css-images/#default-object-size)
+    /// used to fill in dimensions the intrinsic sizes leave unresolved. 300x150
+    /// for most replaced elements; zero for an image with no loaded resource.
+    pub default_object_size: taffy::Size<f32>,
 }
 
 /// Whether a height/width value is violating it's min- and max- constraints
@@ -50,8 +62,6 @@ pub fn replaced_measure_function(
     sizing_mode: SizingMode,
     requested_axis: RequestedAxis,
 ) -> taffy::Size<f32> {
-    let inherent_size = image_context.inherent_size;
-
     let padding = style
         .padding()
         .resolve_or_zero(parent_size.width, resolve_calc_value);
@@ -80,10 +90,58 @@ pub fn replaced_measure_function(
     // replaced element), and only if both are degenerate or absent does the
     // element get no preferred aspect ratio at all.
     let is_usable_ratio = |ratio: &f32| ratio.is_finite() && *ratio > 0.0;
+    let intrinsic = image_context.intrinsic_sizes;
     let aspect_ratio: Option<f32> = style
         .aspect_ratio
         .filter(is_usable_ratio)
-        .or(image_context.inherent_ratio.filter(is_usable_ratio));
+        .or(intrinsic.ratio.filter(is_usable_ratio));
+
+    // Concrete object size per the CSS default sizing algorithm with no
+    // specified size (https://drafts.csswg.org/css-images/#default-sizing):
+    // missing intrinsic dimensions are derived from the aspect ratio when
+    // possible, otherwise taken from the default object size. An element with
+    // only an intrinsic aspect ratio uses the stretch-fit width in normal flow
+    // (CSS2 §10.3.2) when the available width is definite; shrink-to-fit
+    // contexts (min/max-content) contain it within the default object size.
+    //
+    // Only the intrinsic ratio participates here: the `aspect-ratio` property
+    // affects the sizing of the box, not the natural dimensions of its content.
+    let intrinsic_ratio = intrinsic.ratio.filter(is_usable_ratio);
+    let default_size = image_context.default_object_size;
+    let inherent_size = match (intrinsic.width, intrinsic.height) {
+        (Some(w), Some(h)) => Size {
+            width: w,
+            height: h,
+        },
+        (Some(w), None) => Size {
+            width: w,
+            height: intrinsic_ratio
+                .map(|r| w / r)
+                .unwrap_or(default_size.height),
+        },
+        (None, Some(h)) => Size {
+            width: intrinsic_ratio.map(|r| h * r).unwrap_or(default_size.width),
+            height: h,
+        },
+        (None, None) => match intrinsic_ratio {
+            Some(ratio) => {
+                if let AvailableSpace::Definite(available_width) = available_space.width {
+                    Size {
+                        width: available_width,
+                        height: available_width / ratio,
+                    }
+                } else {
+                    // Contain within the default object size
+                    let scale = (default_size.width / ratio).min(default_size.height);
+                    Size {
+                        width: scale * ratio,
+                        height: scale,
+                    }
+                }
+            }
+            None => default_size,
+        },
+    };
 
     // See https://www.w3.org/TR/css-sizing-3/#replaced-percentage-min-contribution
     let basis_for_max_and_preferred = Size {
