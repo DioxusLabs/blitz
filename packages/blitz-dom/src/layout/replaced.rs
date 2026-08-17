@@ -1,8 +1,7 @@
 use markup5ever::{LocalName, local_name};
 use taffy::{
-    AvailableSpace, Baselines, BoxSizing, CollapsibleMarginSet, CoreStyle, LayoutInput,
-    LayoutOutput, MaybeMath, MaybeResolve, RequestedAxis, ResolveOrZero as _, RunMode, Size,
-    SizingMode,
+    AvailableSpace, BoxSizing, CoreStyle, LayoutInput, LayoutOutput, MaybeMath, MaybeResolve,
+    RequestedAxis, ResolveOrZero as _, RunMode, Size, SizingMode,
 };
 
 /// Whether an element is a replaced element laid out as a leaf box with an
@@ -36,20 +35,6 @@ pub struct ReplacedContext {
     /// used to fill in dimensions the intrinsic sizes leave unresolved. 300x150
     /// for most replaced elements; zero for an image with no loaded resource.
     pub default_object_size: taffy::Size<f32>,
-}
-
-/// Builds a [`LayoutOutput`] for a replaced element of the given border-box size.
-/// Replaced elements have no content that overflows, no baselines, and never
-/// collapse margins through themselves.
-fn layout_output_from_size(size: Size<f32>) -> LayoutOutput {
-    LayoutOutput {
-        size,
-        content_size: size,
-        baselines: Baselines::NONE,
-        top_margin: CollapsibleMarginSet::ZERO,
-        bottom_margin: CollapsibleMarginSet::ZERO,
-        margins_can_collapse_through: false,
-    }
 }
 
 /// Whether a height/width value is violating it's min- and max- constraints
@@ -104,7 +89,7 @@ pub fn compute_replaced_layout(
             height: Some(height),
         } = known_dimensions
         {
-            return layout_output_from_size(Size {
+            return LayoutOutput::from_outer_size(Size {
                 width: width.max(pb_sum.width),
                 height: height.max(pb_sum.height),
             });
@@ -248,7 +233,8 @@ pub fn compute_replaced_layout(
         let size = content_box_known_dimensions
             .unwrap_or(transferred.maybe_clamp(min_size, style_max_size));
 
-        return layout_output_from_size(size.map(|s| s.max(0.0)) + pb_sum);
+        let size = size.map(|s| s.max(0.0));
+        return LayoutOutput::from_sizes(size + pb_sum, size + padding.sum_axes());
     }
 
     let unclamped_size = if style_size.width.is_some() | style_size.height.is_some() {
@@ -282,7 +268,7 @@ pub fn compute_replaced_layout(
     // Without an intrinsic aspect ratio, each axis is clamped independently
     let Some(aspect_ratio) = aspect_ratio else {
         let size = size.maybe_clamp(min_size, max_size);
-        return layout_output_from_size(size + pb_sum);
+        return LayoutOutput::from_sizes(size + pb_sum, size + padding.sum_axes());
     };
     let inv_aspect_ratio = 1.0 / aspect_ratio;
 
@@ -375,5 +361,5 @@ pub fn compute_replaced_layout(
         }
     };
 
-    layout_output_from_size(size + pb_sum)
+    LayoutOutput::from_sizes(size + pb_sum, size + padding.sum_axes())
 }
