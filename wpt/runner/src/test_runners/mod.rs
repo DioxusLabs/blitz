@@ -88,18 +88,7 @@ pub fn process_test_file(
 
     // Crash Test
     if is_crash_test(relative_path) {
-        // Blitz doesn't run JavaScript, so skip crashtests which rely on it
-        if flags.contains(TestFlags::USES_SCRIPT) {
-            return (
-                TestKind::Crash,
-                flags,
-                TestStatus::Skip,
-                SubtestCounts::ZERO_OF_ZERO,
-                Vec::new(),
-            );
-        }
-
-        let counts = process_crash_test(ctx, relative_path, &file_contents);
+        let counts = process_crash_test(ctx, relative_path, &file_contents, flags);
         let status = counts.as_status();
         return (TestKind::Crash, flags, status, counts, Vec::new());
     }
