@@ -68,6 +68,7 @@ pub(crate) fn init_element_proto(proto: &JsObject, context: &mut Context) {
         context,
     );
     define_accessor(proto, "outerHTML", Some(get_outer_html), None, context);
+    define_accessor(proto, "content", Some(get_content), None, context);
     define_accessor(proto, "children", Some(children), None, context);
     define_accessor(
         proto,
@@ -554,6 +555,31 @@ fn set_inner_html(this: &JsValue, args: &[JsValue], context: &mut Context) -> Js
     }
     mutr.set_inner_html(node_id, &html);
     Ok(JsValue::undefined())
+}
+
+/// `HTMLTemplateElement.content`: the template's inert contents fragment.
+/// Returns `undefined` for non-template elements.
+fn get_content(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    let ctx = dom_ctx(context)?;
+    let node_id = this_node_id(this)?;
+
+    let is_template = ctx
+        .doc
+        .borrow()
+        .get_node(node_id)
+        .and_then(|node| node.element_data())
+        .is_some_and(|element| element.name.local == blitz_dom::local_name!("template"));
+    if !is_template {
+        return Ok(JsValue::undefined());
+    }
+
+    // Lazily create the contents fragment for templates created by script
+    let contents_id = ctx
+        .doc
+        .borrow_mut()
+        .mutate()
+        .ensure_template_contents(node_id);
+    Ok(node_wrapper(&ctx, contents_id, context).into())
 }
 
 fn get_outer_html(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {

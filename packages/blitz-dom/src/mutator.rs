@@ -161,6 +161,38 @@ impl DocumentMutator<'_> {
         self.doc.deep_clone_node(node_id)
     }
 
+    /// Create (or return the existing) "template contents" fragment node for a
+    /// `<template>` element. The contents node is detached from the tree (so it
+    /// is inert: never styled or rendered) and is exposed to JavaScript as the
+    /// template's `content` DocumentFragment.
+    pub fn ensure_template_contents(&mut self, template_id: NodeId) -> NodeId {
+        if let Some(contents_id) = self.template_contents(template_id) {
+            return contents_id;
+        }
+        let name = QualName::new(
+            None,
+            markup5ever::ns!(html),
+            markup5ever::LocalName::from("#document-fragment"),
+        );
+        let contents_id = self.create_element(name, Vec::new());
+        if let Some(element) = self
+            .doc
+            .get_node_mut(template_id)
+            .and_then(|node| node.element_data_mut())
+        {
+            element.template_contents = Some(contents_id);
+        }
+        contents_id
+    }
+
+    /// The "template contents" fragment node of a `<template>` element (if any)
+    pub fn template_contents(&self, template_id: NodeId) -> Option<NodeId> {
+        self.doc
+            .get_node(template_id)
+            .and_then(|node| node.element_data())
+            .and_then(|element| element.template_contents)
+    }
+
     // Node mutation methods
 
     pub fn set_node_text(&mut self, node_id: NodeId, value: &str) {

@@ -87,6 +87,7 @@ fn node_type(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<J
     let doc = ctx.doc.borrow();
     let node_type = match doc.get_node(node_id).map(|node| &node.data) {
         Some(NodeData::Document(_)) => 9,
+        Some(NodeData::Element(_)) if is_fragment(&doc, node_id) => 11,
         Some(NodeData::Element(_)) | Some(NodeData::AnonymousBlock(_)) => 1,
         Some(NodeData::Text(_)) => 3,
         Some(NodeData::Comment { .. }) => 8,
@@ -101,6 +102,8 @@ fn node_name(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<J
     let doc = ctx.doc.borrow();
     let name = match doc.get_node(node_id).map(|node| &node.data) {
         Some(NodeData::Document(_)) => "#document".to_string(),
+        // Fragments' special `#document-fragment` name is not uppercased
+        Some(NodeData::Element(data)) if is_fragment(&doc, node_id) => data.name.local.to_string(),
         Some(NodeData::Element(data)) | Some(NodeData::AnonymousBlock(data)) => {
             data.name.local.to_uppercase()
         }
@@ -282,15 +285,15 @@ fn append_child(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsRe
     let ctx = dom_ctx(context)?;
     let parent_id = this_node_id(this)?;
     let child_id = arg_node_id(args, 0)?;
+    // Inserting a DocumentFragment moves its children
+    let node_ids = insertable_node_ids(&ctx, child_id);
 
     let mut doc = ctx.doc.borrow_mut();
     let mut mutr = doc.mutate();
     // Detach from any current parent first. This also makes "move to end of
     // same parent" operations behave correctly.
-    if mutr.node_has_parent(child_id) {
-        mutr.remove_node(child_id);
-    }
-    mutr.append_children(parent_id, &[child_id]);
+    detach_all(&mut mutr, &node_ids);
+    mutr.append_children(parent_id, &node_ids);
     drop(mutr);
     drop(doc);
 
@@ -315,16 +318,17 @@ fn insert_before(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsR
         return Ok(args[0].clone());
     }
 
+    // Inserting a DocumentFragment moves its children
+    let node_ids = insertable_node_ids(&ctx, new_id);
+
     let mut doc = ctx.doc.borrow_mut();
     let mut mutr = doc.mutate();
-    if mutr.node_has_parent(new_id) {
-        mutr.remove_node(new_id);
-    }
+    detach_all(&mut mutr, &node_ids);
     match ref_id {
         Some(ref_id) if mutr.node_has_parent(ref_id) => {
-            mutr.insert_nodes_before(ref_id, &[new_id]);
+            mutr.insert_nodes_before(ref_id, &node_ids);
         }
-        _ => mutr.append_children(parent_id, &[new_id]),
+        _ => mutr.append_children(parent_id, &node_ids),
     }
     Ok(args[0].clone())
 }
@@ -370,13 +374,44 @@ fn remove(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsVa
     Ok(JsValue::undefined())
 }
 
+// === DocumentFragment support ===
+
+/// Is the node a DocumentFragment (e.g. a `<template>`'s contents, or created
+/// with `document.createDocumentFragment()`)? Fragments are represented as
+/// detached elements with the special name `#document-fragment`.
+pub(crate) fn is_fragment(doc: &blitz_dom::BaseDocument, node_id: NodeId) -> bool {
+    doc.get_node(node_id)
+        .and_then(|node| node.element_data())
+        .is_some_and(|element| &*element.name.local == "#document-fragment")
+}
+
+/// Resolve a node argument for insertion, per the DOM spec's "insert a node"
+/// steps: DocumentFragments are expanded into (and their children detached
+/// from) their children; other nodes insert as themselves.
+fn insertable_node_ids(ctx: &crate::state::DomCtx, node_id: NodeId) -> Vec<NodeId> {
+    let mut doc = ctx.doc.borrow_mut();
+    if !is_fragment(&doc, node_id) {
+        return vec![node_id];
+    }
+    let child_ids: Vec<NodeId> = doc
+        .get_node(node_id)
+        .map(|node| node.children.to_vec())
+        .unwrap_or_default();
+    let mut mutr = doc.mutate();
+    for child_id in &child_ids {
+        mutr.remove_node(*child_id);
+    }
+    child_ids
+}
+
 // === ParentNode / ChildNode mixin mutation helpers ===
 //
 // These accept any number of arguments, each either a node or a string
 // (strings are converted to text nodes).
 
 /// Convert the arguments of a ParentNode/ChildNode mutation method into node
-/// ids, creating (detached) text nodes for string arguments
+/// ids, creating (detached) text nodes for string arguments and expanding
+/// DocumentFragments into their children
 fn arg_node_ids(
     ctx: &crate::state::DomCtx,
     args: &[JsValue],
@@ -384,14 +419,13 @@ fn arg_node_ids(
 ) -> JsResult<Vec<NodeId>> {
     let mut node_ids = Vec::with_capacity(args.len());
     for arg in args {
-        let node_id = match node_id_of_value(arg) {
-            Some(node_id) => node_id,
+        match node_id_of_value(arg) {
+            Some(node_id) => node_ids.extend(insertable_node_ids(ctx, node_id)),
             None => {
                 let text = to_rust_string(arg, context)?;
-                ctx.doc.borrow_mut().mutate().create_text_node(&text)
+                node_ids.push(ctx.doc.borrow_mut().mutate().create_text_node(&text));
             }
         };
-        node_ids.push(node_id);
     }
     Ok(node_ids)
 }
