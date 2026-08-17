@@ -237,11 +237,24 @@ fn get_elements_by_class_name(
     Ok(JsArray::from_iter(wrappers, context).into())
 }
 
+/// A `DOMException` for an unparseable selector, per the spec for
+/// `querySelector` and friends
+fn invalid_selector_error(context: &mut Context, selector: &str) -> boa_engine::JsError {
+    super::dom_exception(
+        context,
+        "SyntaxError",
+        &format!("{selector:?} is not a valid selector"),
+    )
+}
+
 fn query_selector(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
     let _ = this_node_id(this)?;
     let selector = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
-    let node_id = ctx.doc.borrow().query_selector(&selector).ok().flatten();
+    let node_id = match ctx.doc.borrow().query_selector(&selector) {
+        Ok(node_id) => node_id,
+        Err(_) => return Err(invalid_selector_error(context, &selector)),
+    };
     Ok(node_or_null(&ctx, node_id, context))
 }
 
@@ -253,12 +266,10 @@ fn query_selector_all(
     let ctx = dom_ctx(context)?;
     let _ = this_node_id(this)?;
     let selector = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
-    let matches: Vec<NodeId> = ctx
-        .doc
-        .borrow()
-        .query_selector_all(&selector)
-        .map(|matches| matches.into_iter().collect())
-        .unwrap_or_default();
+    let matches = match ctx.doc.borrow().query_selector_all(&selector) {
+        Ok(matches) => matches,
+        Err(_) => return Err(invalid_selector_error(context, &selector)),
+    };
     let wrappers: Vec<JsValue> = matches
         .into_iter()
         .map(|match_id| node_wrapper(&ctx, match_id, context).into())
