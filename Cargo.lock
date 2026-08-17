@@ -3953,6 +3953,8 @@ checksum = "d466e9454f08e4a911e14806c24e16fba1b4c121d1ea474396f396069cf949d9"
 dependencies = [
  "equivalent",
  "hashbrown 0.17.1",
+ "serde",
+ "serde_core",
 ]
 
 [[package]]
@@ -6254,6 +6256,7 @@ dependencies = [
  "cookie",
  "cookie_store",
  "encoding_rs",
+ "futures-channel",
  "futures-core",
  "futures-util",
  "h2",
@@ -6597,16 +6600,6 @@ checksum = "9a8e94ea7f378bd32cbbd37198a4a91436180c5bb472411e48b5ec2e2124ae9e"
 dependencies = [
  "serde_core",
  "serde_derive",
-]
-
-[[package]]
-name = "serde-jsonlines"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "07bdd6db666f827c1843d4710520093675e6c0b6e39a02e1a8d9e9b2f71cbb58"
-dependencies = [
- "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -9560,6 +9553,7 @@ dependencies = [
  "pollster",
  "rayon",
  "regex",
+ "reqwest",
  "serde_json",
  "stylo",
  "stylo_traits",
@@ -9569,17 +9563,18 @@ dependencies = [
  "thread_local",
  "url",
  "wptreport",
+ "zstd",
 ]
 
 [[package]]
 name = "wptreport"
-version = "0.0.5"
+version = "0.0.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9b22e83bcee4a21b467d421fb50924b19176898babbc1aa30af9668fa6068f0b"
+checksum = "953056bb09aa6fcbc8503d338d9440b8545fb459acb0d93373d94ca32d615987"
 dependencies = [
+ "indexmap",
  "rayon",
  "serde",
- "serde-jsonlines",
  "serde_json",
 ]
 
@@ -9960,6 +9955,34 @@ dependencies = [
  "crc32fast",
  "log",
  "simd-adler32",
+]
+
+[[package]]
+name = "zstd"
+version = "0.13.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e91ee311a569c327171651566e07972200e76fcfe2242a4fa446149a3881c08a"
+dependencies = [
+ "zstd-safe",
+]
+
+[[package]]
+name = "zstd-safe"
+version = "7.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8f49c4d5f0abb602a93fb8736af2a4f4dd9512e36f7f570d66e65ff867ed3b9d"
+dependencies = [
+ "zstd-sys",
+]
+
+[[package]]
+name = "zstd-sys"
+version = "2.0.16+zstd.1.5.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "91e19ebc2adc8f83e43039e79776e3fda8ca919132d68a1fed6a5faca2683748"
+dependencies = [
+ "cc",
+ "pkg-config",
 ]
 
 [[package]]
