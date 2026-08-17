@@ -48,6 +48,8 @@ pub(crate) fn init_document_proto(proto: &JsObject, context: &mut Context) {
     );
     define_method(proto, "querySelector", 1, query_selector, context);
     define_method(proto, "querySelectorAll", 1, query_selector_all, context);
+    define_method(proto, "elementFromPoint", 2, element_from_point, context);
+    define_method(proto, "elementsFromPoint", 2, elements_from_point, context);
 }
 
 fn find_tag(ctx: &DomCtx, tag: blitz_dom::LocalName) -> Option<NodeId> {
@@ -233,6 +235,105 @@ fn get_elements_by_class_name(
     let wrappers: Vec<JsValue> = matches
         .into_iter()
         .map(|match_id| node_wrapper(&ctx, match_id, context).into())
+        .collect();
+    Ok(JsArray::from_iter(wrappers, context).into())
+}
+
+// === Hit testing ===
+
+/// The topmost element at viewport coordinates (x, y), or `None` if the point
+/// is outside the viewport. Anonymous boxes and text nodes are resolved to
+/// their nearest element; a point over the background hits the root element.
+fn hit_test_element(doc: &blitz_dom::BaseDocument, x: f32, y: f32) -> Option<NodeId> {
+    let viewport = doc.viewport();
+    let scale = viewport.scale();
+    let (viewport_width, viewport_height) = (
+        viewport.window_size.0 as f32 / scale,
+        viewport.window_size.1 as f32 / scale,
+    );
+    if x < 0.0 || y < 0.0 || x > viewport_width || y > viewport_height {
+        return None;
+    }
+
+    let Some(hit) = doc.hit(x, y) else {
+        // The point is within the viewport but over no box: the root element
+        // (which covers the viewport in an HTML document) is the hit target
+        return doc.try_root_element().map(|root| root.id);
+    };
+
+    // Resolve anonymous boxes / pseudo-elements, then text nodes, to elements
+    let mut node_id = doc.nearest_non_anonymous_ancestor(hit.node_id)?;
+    loop {
+        let node = doc.get_node(node_id)?;
+        if node.is_element() {
+            return Some(node_id);
+        }
+        node_id = node.parent?;
+    }
+}
+
+fn point_args(args: &[JsValue], context: &mut Context) -> JsResult<(f32, f32)> {
+    let x = args
+        .first()
+        .unwrap_or(&JsValue::undefined())
+        .to_number(context)? as f32;
+    let y = args
+        .get(1)
+        .unwrap_or(&JsValue::undefined())
+        .to_number(context)? as f32;
+    Ok((x, y))
+}
+
+fn element_from_point(
+    this: &JsValue,
+    args: &[JsValue],
+    context: &mut Context,
+) -> JsResult<JsValue> {
+    let ctx = dom_ctx(context)?;
+    let _ = this_node_id(this)?;
+    let (x, y) = point_args(args, context)?;
+
+    let element_id = {
+        let mut doc = ctx.doc.borrow_mut();
+        // Hit testing consults layout, so make sure it is up to date
+        doc.resolve(0.0);
+        hit_test_element(&doc, x, y)
+    };
+    Ok(node_or_null(&ctx, element_id, context))
+}
+
+fn elements_from_point(
+    this: &JsValue,
+    args: &[JsValue],
+    context: &mut Context,
+) -> JsResult<JsValue> {
+    let ctx = dom_ctx(context)?;
+    let _ = this_node_id(this)?;
+    let (x, y) = point_args(args, context)?;
+
+    // Approximate the spec's paint-order list with the hit element followed by
+    // its ancestor elements (which is correct for non-overlapping content)
+    let element_ids: Vec<NodeId> = {
+        let mut doc = ctx.doc.borrow_mut();
+        doc.resolve(0.0);
+        let mut element_ids = Vec::new();
+        let mut current = hit_test_element(&doc, x, y);
+        while let Some(node_id) = current {
+            element_ids.push(node_id);
+            current = doc
+                .get_node(node_id)
+                .and_then(|node| node.parent)
+                .filter(|parent_id| {
+                    doc.get_node(*parent_id)
+                        .is_some_and(|node| node.is_element())
+                });
+        }
+        element_ids
+    };
+
+    let wrappers: Vec<JsValue> = element_ids
+        .into_iter()
+        .map(|node_id| node_wrapper(&ctx, node_id, context).into())
         .collect();
     Ok(JsArray::from_iter(wrappers, context).into())
 }
