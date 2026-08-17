@@ -63,64 +63,39 @@ fn get_resolved_property_value(
     Ok(js_str(&value))
 }
 
+/// Read the node's `style` attribute (empty string if unset)
+fn read_style_attr(ctx: &crate::state::DomCtx, node_id: NodeId) -> String {
+    ctx.doc
+        .borrow()
+        .get_node(node_id)
+        .and_then(|node| node.attr(blitz_dom::local_name!("style")))
+        .unwrap_or_default()
+        .to_string()
+}
+
+fn write_style_attr(ctx: &crate::state::DomCtx, node_id: NodeId, style_attr: &str) {
+    let mut doc = ctx.doc.borrow_mut();
+    doc.mutate()
+        .set_attribute(node_id, attr_name("style"), style_attr);
+}
+
 fn get_css_text(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
     let node_id = this_node_id(this)?;
-    let doc = ctx.doc.borrow();
-    let css = doc
-        .get_node(node_id)
-        .and_then(|node| node.attr(blitz_dom::local_name!("style")))
-        .unwrap_or_default();
-    Ok(js_str(css))
+    let style_attr = read_style_attr(&ctx, node_id);
+    let css = ctx.doc.borrow().style_attr_serialize(&style_attr);
+    Ok(js_str(&css))
 }
 
 fn set_css_text(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
     let node_id = this_node_id(this)?;
     let css = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
-    let mut doc = ctx.doc.borrow_mut();
-    doc.mutate()
-        .set_attribute(node_id, attr_name("style"), &css);
+    // Parse and re-serialize so that the stored attribute is canonical and
+    // invalid declarations are dropped
+    let css = ctx.doc.borrow().style_attr_serialize(&css);
+    write_style_attr(&ctx, node_id, &css);
     Ok(JsValue::undefined())
-}
-
-/// Parse a style attribute string into (property, value) pairs.
-///
-/// This is a simplification: it does not handle `;` or `:` characters inside
-/// values (e.g. in `url(...)` or quoted strings).
-fn parse_declarations(style_attr: &str) -> Vec<(String, String)> {
-    style_attr
-        .split(';')
-        .filter_map(|decl| decl.split_once(':'))
-        .map(|(prop, value)| (prop.trim().to_string(), value.trim().to_string()))
-        .filter(|(prop, _)| !prop.is_empty())
-        .collect()
-}
-
-fn serialize_declarations(decls: &[(String, String)]) -> String {
-    decls
-        .iter()
-        .map(|(prop, value)| format!("{prop}: {value};"))
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
-fn update_style_attr(
-    ctx: &crate::state::DomCtx,
-    node_id: NodeId,
-    f: impl FnOnce(&mut Vec<(String, String)>),
-) {
-    let mut doc = ctx.doc.borrow_mut();
-    let style_attr = doc
-        .get_node(node_id)
-        .and_then(|node| node.attr(blitz_dom::local_name!("style")))
-        .unwrap_or_default()
-        .to_string();
-    let mut decls = parse_declarations(&style_attr);
-    f(&mut decls);
-    let new_style = serialize_declarations(&decls);
-    doc.mutate()
-        .set_attribute(node_id, attr_name("style"), &new_style);
 }
 
 fn set_property(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
@@ -128,20 +103,18 @@ fn set_property(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsRe
     let node_id = this_node_id(this)?;
     let name = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
     let value = to_rust_string(args.get(1).unwrap_or(&JsValue::undefined()), context)?;
+    let priority = to_rust_string(args.get(2).unwrap_or(&JsValue::undefined()), context)?;
+    let important = priority.eq_ignore_ascii_case("important");
 
-    // Setting a property to the empty string removes it; invalid declarations
-    // are ignored (per CSSOM)
-    let value = value.trim();
-    if !value.is_empty() && !ctx.doc.borrow().css_declaration_is_valid(&name, value) {
-        return Ok(JsValue::undefined());
+    let style_attr = read_style_attr(&ctx, node_id);
+    let new_style_attr =
+        ctx.doc
+            .borrow()
+            .style_attr_set_property(&style_attr, &name, &value, important);
+    // `None` means the declaration was invalid: ignore it (per CSSOM)
+    if let Some(new_style_attr) = new_style_attr {
+        write_style_attr(&ctx, node_id, &new_style_attr);
     }
-
-    update_style_attr(&ctx, node_id, |decls| {
-        decls.retain(|(prop, _)| !prop.eq_ignore_ascii_case(&name));
-        if !value.is_empty() {
-            decls.push((name.to_ascii_lowercase(), value.to_string()));
-        }
-    });
     Ok(JsValue::undefined())
 }
 
@@ -149,17 +122,17 @@ fn remove_property(this: &JsValue, args: &[JsValue], context: &mut Context) -> J
     let ctx = dom_ctx(context)?;
     let node_id = this_node_id(this)?;
     let name = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
-    let mut removed = String::new();
-    update_style_attr(&ctx, node_id, |decls| {
-        if let Some((_, value)) = decls
-            .iter()
-            .find(|(prop, _)| prop.eq_ignore_ascii_case(&name))
-        {
-            removed = value.clone();
-        }
-        decls.retain(|(prop, _)| !prop.eq_ignore_ascii_case(&name));
-    });
-    Ok(js_str(&removed))
+
+    let style_attr = read_style_attr(&ctx, node_id);
+    let removed = ctx
+        .doc
+        .borrow()
+        .style_attr_remove_property(&style_attr, &name);
+    let Some((new_style_attr, removed_value)) = removed else {
+        return Ok(js_str(""));
+    };
+    write_style_attr(&ctx, node_id, &new_style_attr);
+    Ok(js_str(&removed_value))
 }
 
 fn get_property_value(
@@ -171,18 +144,7 @@ fn get_property_value(
     let node_id = this_node_id(this)?;
     let name = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
 
-    // Parse the style attribute looking for the requested property.
-    // This is a simplification: it does not consult the computed style.
-    let doc = ctx.doc.borrow();
-    let style_attr = doc
-        .get_node(node_id)
-        .and_then(|node| node.attr(blitz_dom::local_name!("style")))
-        .unwrap_or_default();
-    let value = style_attr
-        .split(';')
-        .filter_map(|decl| decl.split_once(':'))
-        .find(|(prop, _)| prop.trim().eq_ignore_ascii_case(&name))
-        .map(|(_, value)| value.trim().to_string())
-        .unwrap_or_default();
+    let style_attr = read_style_attr(&ctx, node_id);
+    let value = ctx.doc.borrow().style_attr_get_property(&style_attr, &name);
     Ok(js_str(&value))
 }
