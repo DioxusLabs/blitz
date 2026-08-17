@@ -71,6 +71,17 @@ pub(crate) fn init_document_proto(proto: &JsObject, context: &mut Context) {
     define_method(proto, "querySelectorAll", 1, query_selector_all, context);
     define_method(proto, "elementFromPoint", 2, element_from_point, context);
     define_method(proto, "elementsFromPoint", 2, elements_from_point, context);
+
+    // ParentNode mixin mutation helpers
+    define_method(proto, "append", 1, super::node::append, context);
+    define_method(proto, "prepend", 1, super::node::prepend, context);
+    define_method(
+        proto,
+        "replaceChildren",
+        1,
+        super::node::replace_children,
+        context,
+    );
 }
 
 fn find_tag(ctx: &DomCtx, tag: blitz_dom::LocalName) -> Option<NodeId> {
