@@ -172,6 +172,24 @@ const BOOTSTRAP_JS: &str = r#"
     globalThis.Node = makeInterface("Node", nodeProto);
     globalThis.Document = makeInterface("Document", documentProto);
     globalThis.HTMLDocument = globalThis.Document;
+
+    // Stub constructors for interfaces referenced by `instanceof` probes
+    // (e.g. React probes `x instanceof HTMLInputElement`); without them such
+    // probes throw "right-hand side of 'instanceof' is not an object". All
+    // blitz-script elements share a single prototype, so tag-specific
+    // interfaces cannot be truthfully modelled: these always answer false.
+    for (const name of [
+        "EventTarget", "CharacterData", "Text", "Comment", "DocumentFragment",
+        "HTMLInputElement", "HTMLTextAreaElement", "HTMLSelectElement",
+        "HTMLButtonElement", "HTMLAnchorElement", "HTMLIFrameElement",
+        "HTMLImageElement", "SVGElement",
+        "Event", "CustomEvent", "UIEvent", "MouseEvent", "PointerEvent",
+        "KeyboardEvent", "InputEvent", "FocusEvent",
+    ]) {
+        if (typeof globalThis[name] === "undefined") {
+            globalThis[name] = makeInterface(name, {});
+        }
+    }
     if (document.documentElement) {
         const elementProto = Object.getPrototypeOf(document.documentElement);
         globalThis.Element = makeInterface("Element", elementProto);

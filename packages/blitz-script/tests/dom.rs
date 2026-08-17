@@ -451,3 +451,128 @@ fn style_bindings() {
     );
     assert_eq!(text_of_selector(&doc, "#out"), "color: red;|blue");
 }
+
+// Dispatched events expose `getModifierState`, callable from listeners
+// (React's synthetic events call it on the native event).
+#[test]
+fn event_get_modifier_state() {
+    let mut doc = doc_from_html(
+        r#"
+        <html><body>
+            <button id="btn">go</button>
+            <div id="out">unset</div>
+            <script>
+                document.getElementById("btn").addEventListener("click", (e) => {
+                    const t = typeof e.getModifierState;
+                    const shift = e.getModifierState("Shift");
+                    const caps = e.getModifierState("CapsLock");
+                    document.getElementById("out").textContent = `${t}:${shift}:${caps}`;
+                });
+            </script>
+        </body></html>
+        "#,
+    );
+    let click_event = {
+        let inner = doc.inner();
+        let btn_id = inner.query_selector("#btn").unwrap().unwrap();
+        DomEvent::new(
+            btn_id,
+            inner
+                .get_node(btn_id)
+                .unwrap()
+                .synthetic_click_event(Modifiers::SHIFT),
+        )
+    };
+    doc.dispatch_dom_event(click_event);
+    assert_eq!(text_of_selector(&doc, "#out"), "function:true:false");
+}
+
+// `hidden` reflects the boolean attribute (and the UA stylesheet hides it).
+#[test]
+fn element_hidden_reflection() {
+    let doc = doc_from_html(
+        r#"
+        <html><body>
+            <div id="box"></div>
+            <div id="out"></div>
+            <script>
+                const box = document.getElementById("box");
+                const before = box.hidden;
+                box.hidden = true;
+                const attr = box.hasAttribute("hidden");
+                box.hidden = false;
+                const after = box.hasAttribute("hidden");
+                document.getElementById("out").textContent = `${before}|${attr}|${after}`;
+            </script>
+        </body></html>
+        "#,
+    );
+    assert_eq!(text_of_selector(&doc, "#out"), "false|true|false");
+}
+
+// `selectionStart`/`selectionEnd` read and write the text input's real editor
+// selection (in UTF-16 code units); `setSelectionRange` sets both. Non-input
+// elements report null. React snapshots/restores the caret around controlled
+// input re-renders using these.
+//
+// Note: needs a real viewport, since cursor placement requires a non-degenerate
+// text layout.
+#[test]
+fn input_selection_offsets() {
+    let mut doc = ScriptDocument::from_html(
+        r#"
+        <html><body>
+            <input id="field" value="héllo">
+            <div id="out"></div>
+            <script>
+                const f = document.getElementById("field");
+                const inInput = ("selectionStart" in f);
+                f.setSelectionRange(1, 3);
+                const a = `${f.selectionStart}-${f.selectionEnd}`;
+                f.selectionEnd = 5;
+                f.selectionStart = 2;
+                const b = `${f.selectionStart}-${f.selectionEnd}`;
+                const divSel = document.getElementById("out").selectionStart;
+                document.getElementById("out").textContent = `${inInput}|${a}|${b}|${divSel}`;
+            </script>
+        </body></html>
+        "#,
+        DocumentConfig {
+            viewport: Some(blitz_traits::shell::Viewport::new(
+                800,
+                600,
+                1.0,
+                blitz_traits::shell::ColorScheme::Light,
+            )),
+            ..Default::default()
+        },
+    );
+    doc.execute_scripts();
+    assert_eq!(text_of_selector(&doc, "#out"), "true|1-3|2-5|null");
+}
+
+// Interface constructors referenced by `instanceof` probes exist as globals.
+#[test]
+fn interface_constructor_globals() {
+    let doc = doc_from_html(
+        r#"
+        <html><body>
+            <div id="box"></div>
+            <div id="out"></div>
+            <script>
+                const box = document.getElementById("box");
+                const kinds = [HTMLInputElement, EventTarget, KeyboardEvent, MouseEvent]
+                    .map((iface) => typeof iface)
+                    .join(",");
+                const probe = box instanceof HTMLInputElement;
+                const isElement = box instanceof Element;
+                document.getElementById("out").textContent = `${kinds}|${probe}|${isElement}`;
+            </script>
+        </body></html>
+        "#,
+    );
+    assert_eq!(
+        text_of_selector(&doc, "#out"),
+        "function,function,function,function|false|true"
+    );
+}

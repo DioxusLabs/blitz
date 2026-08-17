@@ -40,5 +40,8 @@ tracing = { workspace = true, optional = true }
 
 [dev-dependencies]
 blitz-traits = { workspace = true }
+# system-fonts is needed so that text inputs shape real text in tests
+# (the selection tests depend on cursor placement within a text layout)
+blitz-dom = { workspace = true, features = ["system-fonts"] }
 keyboard-types = { workspace = true }
 url = { workspace = true }

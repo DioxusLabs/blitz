@@ -8,7 +8,7 @@ use boa_engine::value::JsValue;
 use boa_engine::{Context, Finalize, JsData, JsResult, Trace};
 use keyboard_types::Modifiers;
 
-use super::{define_accessor, define_method, define_value, js_str};
+use super::{define_accessor, define_method, define_value, js_str, to_rust_string};
 use crate::state::DomCtx;
 
 /// Native data attached to JS `Event` objects. Tracks the flags set by
@@ -40,6 +40,32 @@ pub(crate) fn init_event_proto(proto: &JsObject, context: &mut Context) {
         None,
         context,
     );
+    // `Event.getModifierState(key)`. React's synthetic keyboard/mouse events
+    // call `nativeEvent.getModifierState(...)`; without it, dispatching a
+    // key/mouse event into React throws "not a callable function". Reads back
+    // the event's own `ctrlKey`/`shiftKey`/`altKey`/`metaKey` fields.
+    define_method(proto, "getModifierState", 1, get_modifier_state, context);
+}
+
+fn get_modifier_state(
+    this: &JsValue,
+    args: &[JsValue],
+    context: &mut Context,
+) -> JsResult<JsValue> {
+    let key = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
+    let prop = match key.as_str() {
+        "Control" => "ctrlKey",
+        "Shift" => "shiftKey",
+        "Alt" => "altKey",
+        "Meta" => "metaKey",
+        _ => return Ok(JsValue::from(false)),
+    };
+    let state = this
+        .as_object()
+        .and_then(|obj| obj.get(boa_engine::JsString::from(prop), context).ok())
+        .map(|value| value.to_boolean())
+        .unwrap_or(false);
+    Ok(JsValue::from(state))
 }
 
 fn event_ref<T>(this: &JsValue, f: impl FnOnce(&EventRef) -> T) -> Option<T> {
