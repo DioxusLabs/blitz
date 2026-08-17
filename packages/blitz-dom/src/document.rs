@@ -2064,8 +2064,13 @@ impl BaseDocument {
                 let event = BlitzScrollEvent {
                     scroll_top: self.viewport_scroll.y,
                     scroll_left: self.viewport_scroll.x,
-                    scroll_width: layout.size.width.max(layout.content_size.width) as i32,
-                    scroll_height: layout.size.height.max(layout.content_size.height) as i32,
+                    scroll_width: layout.size.width.max(layout.scrollable_overflow_rect.right)
+                        as i32,
+                    scroll_height: layout
+                        .size
+                        .height
+                        .max(layout.scrollable_overflow_rect.bottom)
+                        as i32,
                     client_width: (self.viewport.window_size.0 as f64 / scale) as i32,
                     client_height: (self.viewport.window_size.1 as f64 / scale) as i32,
                 };
@@ -2223,8 +2228,15 @@ impl BaseDocument {
             Some(root) => {
                 let root_layout = root.final_layout();
                 (
-                    root_layout.size.width.max(root_layout.content_size.width) as f64,
-                    root_layout.size.height.max(root_layout.content_size.height) as f64,
+                    root_layout
+                        .size
+                        .width
+                        .max(root_layout.scrollable_overflow_rect.right) as f64,
+                    root_layout
+                        .size
+                        .height
+                        .max(root_layout.scrollable_overflow_rect.bottom)
+                        as f64,
                 )
             }
             None => (0.0, 0.0),

@@ -651,8 +651,8 @@ impl BaseDocument {
 
         // Note: `width` and `height` are content-box measurements of the inline content.
         // `known_dimensions` must not be substituted in here: those are border-box sizes, and
-        // using them for `content_size` (which adds padding below) would double-count padding,
-        // incorrectly making the container's content overflow it.
+        // using them for the scrollable overflow rect (which adds padding below) would
+        // double-count padding, incorrectly making the container's content overflow it.
         let measured_size = taffy::Size {
             width: width / scale,
             height: height / scale,
@@ -827,10 +827,18 @@ impl BaseDocument {
 
         LayoutOutput {
             size: final_size,
-            content_size: taffy::Size {
-                width: content_width,
-                height: measured_size.height,
-            } + padding.sum_axes(),
+            scrollable_overflow_rect: {
+                let content_extent = taffy::Size {
+                    width: content_width,
+                    height: measured_size.height,
+                } + padding.sum_axes();
+                taffy::Rect {
+                    left: 0.0,
+                    right: content_extent.width,
+                    top: 0.0,
+                    bottom: content_extent.height,
+                }
+            },
             baselines: taffy::Baselines::from_first(first_baseline),
             top_margin: CollapsibleMarginSet::ZERO,
             bottom_margin: CollapsibleMarginSet::ZERO,
@@ -1155,7 +1163,7 @@ fn layout_abspos_child(
         &taffy::Layout {
             order: 0, // TODO: order
             size: final_size,
-            content_size: layout_output.content_size,
+            scrollable_overflow_rect: layout_output.scrollable_overflow_rect,
             scrollbar_size,
             location,
             padding,
