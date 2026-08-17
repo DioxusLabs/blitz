@@ -239,6 +239,9 @@ async fn build_page_document(
 
     let mut document = document.with_fetcher(PrefetchedScriptFetcher { scripts });
     document.execute_scripts();
+    for error in document.take_js_errors() {
+        tracing::error!("blitz-script: {error}");
+    }
 
     let inner = document.inner();
     let title = inner

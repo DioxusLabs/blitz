@@ -79,13 +79,32 @@ pub(crate) struct RuntimeState {
     pub outbound_messages: Vec<String>,
     /// The value exposed as `document.readyState`
     pub ready_state: ReadyState,
-    /// Uncaught JavaScript errors (from script evaluation, event listeners,
-    /// timer callbacks and promise jobs). Drained with
+    /// Uncaught JavaScript errors (from script loading/evaluation, event
+    /// listeners, timer callbacks and promise jobs). Drained with
     /// [`ScriptDocument::take_js_errors`](crate::ScriptDocument::take_js_errors).
     pub uncaught_errors: Vec<String>,
 }
 
+/// Maximum number of errors stored in [`RuntimeState::uncaught_errors`] between
+/// drains, so that memory use is bounded for embedders which never drain them
+const MAX_STORED_ERRORS: usize = 256;
+
 impl RuntimeState {
+    /// Record an error for the embedder to collect via
+    /// [`ScriptDocument::take_js_errors`](crate::ScriptDocument::take_js_errors).
+    /// Errors beyond [`MAX_STORED_ERRORS`] are dropped (with a marker) until the
+    /// stored errors are drained.
+    pub fn record_error(&mut self, message: String) {
+        use std::cmp::Ordering;
+        match self.uncaught_errors.len().cmp(&MAX_STORED_ERRORS) {
+            Ordering::Less => self.uncaught_errors.push(message),
+            Ordering::Equal => self
+                .uncaught_errors
+                .push("(further errors suppressed)".to_string()),
+            Ordering::Greater => {}
+        }
+    }
+
     pub fn protos(&self) -> &DomProtos {
         self.protos
             .as_ref()
