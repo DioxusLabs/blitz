@@ -223,6 +223,9 @@ fn render_html_to_buffer(
         let mut script_document = ScriptDocument::from_base_document(document)
             .with_fetcher(WptScriptFetcher::new(ctx.wpt_dir.clone()));
         script_document.execute_scripts();
+        for error in script_document.take_js_errors() {
+            warn!("{relative_path}: {error}");
+        }
 
         // Scripts may have mutated the DOM: re-resolve and load any
         // newly-requested resources

@@ -94,7 +94,9 @@ pub fn process_harness_test(
 
         let js_errors = document.take_js_errors();
         if !js_errors.is_empty() {
-            warn!("{relative_path}: uncaught JS error");
+            for error in &js_errors {
+                warn!("{relative_path}: {error}");
+            }
             let subtest_results = vec![SubtestResult {
                 name: "Uncaught JS error".to_string(),
                 status: TestStatus::Fail,

@@ -219,16 +219,14 @@ const BOOTSTRAP_JS: &str = r#"
 })();
 "#;
 
-/// Print an unhandled JavaScript error and record it in the runtime state
-/// (see [`ScriptDocument::take_js_errors`](crate::ScriptDocument::take_js_errors))
+/// Record an unhandled JavaScript error in the runtime state, for the embedder
+/// to collect via [`ScriptDocument::take_js_errors`](crate::ScriptDocument::take_js_errors)
 fn report_js_error(ctx: &DomCtx, what: &str, error: &boa_engine::JsError) {
     #[cfg(feature = "tracing")]
     tracing::error!("Uncaught JS error in {what}: {error}");
-    eprintln!("Uncaught JS error in {what}: {error}");
     ctx.state
         .borrow_mut()
-        .uncaught_errors
-        .push(format!("Uncaught JS error in {what}: {error}"));
+        .record_error(format!("Uncaught JS error in {what}: {error}"));
 }
 
 /// A [`ModuleLoader`] which fetches ES module imports synchronously via the

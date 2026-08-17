@@ -126,13 +126,14 @@ impl ScriptDocument {
             let (code, url) = match script.src {
                 Some(src) => {
                     let Some(url) = self.resolve_script_url(&src) else {
-                        eprintln!("blitz-script: could not resolve script URL {src:?}");
+                        self.record_error(format!("could not resolve script URL {src:?}"));
                         continue;
                     };
-                    let code = match self.fetcher.borrow().fetch(&url) {
+                    let fetch_result = self.fetcher.borrow().fetch(&url);
+                    let code = match fetch_result {
                         Ok(code) => code,
                         Err(error) => {
-                            eprintln!("blitz-script: failed to fetch script {url}: {error}");
+                            self.record_error(format!("failed to fetch script {url}: {error}"));
                             continue;
                         }
                     };
@@ -207,13 +208,23 @@ impl ScriptDocument {
         std::mem::take(&mut self.runtime.ctx.state.borrow_mut().outbound_messages)
     }
 
-    /// Drain uncaught JavaScript errors (from script evaluation, event
+    /// Drain uncaught JavaScript errors (from script loading/evaluation, event
     /// listeners, timer callbacks and promise jobs).
     ///
-    /// Errors are also printed to stderr as they occur; this method allows
-    /// embedders (e.g. test runners) to detect and react to them.
+    /// Errors are captured rather than printed: it is up to the embedder to
+    /// drain them and decide how to surface them (log, record as test
+    /// failures, ...). At most 256 errors are retained between drains. When the
+    /// `tracing` feature is enabled errors are additionally logged via
+    /// [`tracing::error!`].
     pub fn take_js_errors(&mut self) -> Vec<String> {
         std::mem::take(&mut self.runtime.ctx.state.borrow_mut().uncaught_errors)
+    }
+
+    /// Record an error for collection via [`take_js_errors`](Self::take_js_errors)
+    fn record_error(&mut self, message: String) {
+        #[cfg(feature = "tracing")]
+        tracing::error!("blitz-script: {message}");
+        self.runtime.ctx.state.borrow_mut().record_error(message);
     }
 
     /// The deadline of the soonest pending JS timer (if any).
