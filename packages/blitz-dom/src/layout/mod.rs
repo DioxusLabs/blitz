@@ -26,22 +26,44 @@ pub(crate) mod list;
 pub(crate) mod replaced;
 pub(crate) mod table;
 
-use self::replaced::{ReplacedContext, is_replaced_element, replaced_measure_function};
+use self::replaced::{
+    IntrinsicSizes, ReplacedContext, is_replaced_element, replaced_measure_function,
+};
 use self::table::TableTreeWrapper;
 
-fn default_object_size(
+/// The default object size for replaced elements
+/// (https://drafts.csswg.org/css-images/#default-object-size).
+const DEFAULT_OBJECT_SIZE: taffy::Size<f32> = taffy::Size {
+    width: 300.0,
+    height: 150.0,
+};
+
+/// The intrinsic dimensions and default object size for a replaced element
+/// whose intrinsic dimensions are determined by its tag: an image with no
+/// loaded resource has no intrinsic dimensions and a zero default object size;
+/// a canvas has an intrinsic size and aspect ratio given by its width/height
+/// attributes (defaulting to 300x150); other replaced elements (video, iframe,
+/// embed) have no intrinsic dimensions and the 300x150 default object size.
+fn tag_intrinsic_sizes(
     tag_name: &LocalName,
     attr_size: taffy::Size<Option<f32>>,
-) -> (taffy::Size<f32>, Option<f32>) {
+) -> (IntrinsicSizes, taffy::Size<f32>) {
     if *tag_name == local_name!("img") || *tag_name == local_name!("svg") {
-        return (taffy::Size::ZERO, None);
+        return (IntrinsicSizes::default(), taffy::Size::ZERO);
     }
-    let size = taffy::Size {
-        width: attr_size.width.unwrap_or(300.0),
-        height: attr_size.height.unwrap_or(150.0),
-    };
-    let ratio = (*tag_name == local_name!("canvas")).then(|| size.width / size.height);
-    (size, ratio)
+    if *tag_name == local_name!("canvas") {
+        let width = attr_size.width.unwrap_or(300.0);
+        let height = attr_size.height.unwrap_or(150.0);
+        return (
+            IntrinsicSizes {
+                width: Some(width),
+                height: Some(height),
+                ratio: Some(width / height),
+            },
+            DEFAULT_OBJECT_SIZE,
+        );
+    }
+    (IntrinsicSizes::default(), DEFAULT_OBJECT_SIZE)
 }
 
 pub(crate) fn resolve_calc_value(calc_ptr: *const (), parent_size: f32) -> f32 {
@@ -204,15 +226,19 @@ impl BaseDocument {
                             .and_then(|val| val.parse::<f32>().ok()),
                     };
 
-                    // Get the element's intrinsic size and aspect ratio
-                    let (inherent_size, inherent_ratio) = match &element_data.special_data {
+                    // Get the element's intrinsic dimensions and default object size
+                    let (intrinsic_sizes, default_object_size) = match &element_data.special_data {
                         SpecialElementData::Image(image_data) => match &**image_data {
                             ImageData::Raster(image) => {
-                                let size = taffy::Size {
-                                    width: image.width as f32,
-                                    height: image.height as f32,
-                                };
-                                (size, Some(size.width / size.height))
+                                let (width, height) = (image.width as f32, image.height as f32);
+                                (
+                                    IntrinsicSizes {
+                                        width: Some(width),
+                                        height: Some(height),
+                                        ratio: Some(width / height),
+                                    },
+                                    DEFAULT_OBJECT_SIZE,
+                                )
                             }
                             #[cfg(feature = "svg")]
                             ImageData::Svg(svg) => {
@@ -226,54 +252,56 @@ impl BaseDocument {
                                         height: svg.resolved_height(inputs.parent_size.height),
                                     };
                                 }
-                                let (mut width, mut height) = svg.intrinsic_size();
-                                // A replaced element with only an intrinsic aspect ratio uses the
-                                // stretch-fit width in normal flow (CSS2 §10.3.2): fill the
-                                // definite available width and derive the height from the ratio.
-                                // Shrink-to-fit contexts (floats, abspos) keep the default object
-                                // size that `intrinsic_size` already applied.
-                                if svg.intrinsic_width().is_none()
-                                    && svg.intrinsic_height().is_none()
+                                let mut width = svg.intrinsic_width();
+                                let mut height = svg.intrinsic_height();
+                                // An SVG with no declared dimensions and no viewBox has no
+                                // intrinsic dimensions per CSS, but usvg still resolves a
+                                // concrete size; use it in place of the default object size.
+                                if width.is_none()
+                                    && height.is_none()
+                                    && svg.viewbox_aspect_ratio().is_none()
                                 {
-                                    if let (
-                                        Some(ratio),
-                                        AvailableSpace::Definite(available_width),
-                                    ) =
-                                        (svg.viewbox_aspect_ratio(), inputs.available_space.width)
-                                    {
-                                        width = available_width;
-                                        height = available_width / ratio;
-                                    }
+                                    let size = svg.tree.size();
+                                    width = Some(size.width());
+                                    height = Some(size.height());
                                 }
-                                (taffy::Size { width, height }, Some(svg.aspect_ratio()))
+                                (
+                                    IntrinsicSizes {
+                                        width,
+                                        height,
+                                        ratio: Some(svg.aspect_ratio()),
+                                    },
+                                    DEFAULT_OBJECT_SIZE,
+                                )
                             }
-                            ImageData::None => (taffy::Size::ZERO, None),
+                            ImageData::None => (IntrinsicSizes::default(), taffy::Size::ZERO),
                         },
-                        // Canvas has an intrinsic size and aspect ratio given by its
-                        // width/height attributes, defaulting to 300x150. Other replaced
-                        // elements without intrinsic dimensions (video, iframe, embed) use
-                        // the 300x150 default object size but have no intrinsic ratio.
                         SpecialElementData::Canvas(_)
                         | SpecialElementData::SubDocument(_)
                         | SpecialElementData::None => {
-                            default_object_size(&element_data.name.local, attr_size)
+                            tag_intrinsic_sizes(&element_data.name.local, attr_size)
                         }
                         #[cfg(feature = "custom-widget")]
                         SpecialElementData::CustomWidget(widget_data) => {
-                            let (size, ratio) =
-                                default_object_size(&element_data.name.local, attr_size);
+                            let (fallback, default_object_size) =
+                                tag_intrinsic_sizes(&element_data.name.local, attr_size);
+                            let widget_size = widget_data.widget.intrinsic_size();
                             (
-                                widget_data.widget.intrinsic_size().unwrap_or(size),
-                                widget_data.widget.aspect_ratio().or(ratio),
+                                IntrinsicSizes {
+                                    width: widget_size.map(|s| s.width).or(fallback.width),
+                                    height: widget_size.map(|s| s.height).or(fallback.height),
+                                    ratio: widget_data.widget.aspect_ratio().or(fallback.ratio),
+                                },
+                                default_object_size,
                             )
                         }
                         _ => unreachable!(),
                     };
 
                     let replaced_context = ReplacedContext {
-                        inherent_size,
+                        intrinsic_sizes,
                         attr_size,
-                        inherent_ratio,
+                        default_object_size,
                     };
 
                     let computed = replaced_measure_function(
