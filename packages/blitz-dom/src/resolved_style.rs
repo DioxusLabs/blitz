@@ -10,11 +10,13 @@ use selectors::matching::QuirksMode;
 use style::parser::ParserContext;
 use style::properties::declaration_block::{Importance, parse_style_attribute};
 use style::properties::{
-    PropertyDeclarationBlock, PropertyId, SourcePropertyDeclaration, parse_one_declaration_into,
+    ComputedValues, PropertyDeclaration, PropertyDeclarationBlock, PropertyId, ShorthandId,
+    SourcePropertyDeclaration, parse_one_declaration_into,
 };
 use style::stylesheets::supports_rule::parse_condition_or_declaration;
 use style::stylesheets::{CssRuleType, Origin};
 use style::values::computed::length::CSSPixelLength;
+use style::values::resolved;
 use style_traits::{CssStringWriter, ParsingMode, ToCss};
 use taffy::DetailedGridTracksInfo;
 
@@ -266,9 +268,37 @@ impl BaseDocument {
             return String::new();
         };
         match property_id.as_shorthand() {
-            // Resolved values are not currently computed for shorthand properties
-            Ok(_shorthand) => String::new(),
+            // Serialize shorthands from the resolved values of their longhands
+            Ok(shorthand) => serialize_resolved_shorthand(&styles, shorthand),
             Err(declaration_id) => styles.computed_value_to_string(declaration_id),
         }
     }
+}
+
+/// Serialize the resolved value of a shorthand property by resolving each of
+/// its longhands and re-serializing them as the shorthand (as
+/// `getComputedStyle()` does for shorthands). Returns an empty string if the
+/// longhand values cannot be represented as the shorthand.
+fn serialize_resolved_shorthand(styles: &ComputedValues, shorthand: ShorthandId) -> String {
+    // `all` cannot be serialized from longhands
+    if shorthand == ShorthandId::All {
+        return String::new();
+    }
+
+    let declarations: Vec<PropertyDeclaration> = shorthand
+        .longhands()
+        .map(|longhand| {
+            let mut context = resolved::Context {
+                style: styles,
+                for_property: PropertyId::NonCustom(longhand.into()),
+                current_longhand: Some(longhand),
+            };
+            styles.computed_or_resolved_declaration(longhand, Some(&mut context))
+        })
+        .collect();
+    let declaration_refs: Vec<&PropertyDeclaration> = declarations.iter().collect();
+
+    let mut css = CssStringWriter::new();
+    let _ = shorthand.longhands_to_css(&declaration_refs, &mut css);
+    css
 }
