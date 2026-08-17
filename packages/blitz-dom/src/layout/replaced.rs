@@ -82,6 +82,32 @@ pub fn compute_replaced_layout(
         Size::ZERO
     };
 
+    // Content size is the scrollable-overflow extent measured from the padding-box
+    // origin: the content-box size offset by the start padding. A scroll container's
+    // own padding at the end of the content is part of its scrollable overflow
+    // region, so it is included in the content size. Boxes that are not scroll
+    // containers do not extend their overflow region by their own padding.
+    let is_scroll_container = {
+        let overflow = style.overflow();
+        overflow.x.is_scroll_container() || overflow.y.is_scroll_container()
+    };
+    let content_size_for = |content_box_size: Size<f32>| Size {
+        width: padding.left
+            + content_box_size.width
+            + if is_scroll_container {
+                padding.right
+            } else {
+                0.0
+            },
+        height: padding.top
+            + content_box_size.height
+            + if is_scroll_container {
+                padding.bottom
+            } else {
+                0.0
+            },
+    };
+
     // Return early if both width and height are known
     if run_mode == RunMode::ComputeSize {
         if let Size {
@@ -234,7 +260,7 @@ pub fn compute_replaced_layout(
             .unwrap_or(transferred.maybe_clamp(min_size, style_max_size));
 
         let size = size.map(|s| s.max(0.0));
-        return LayoutOutput::from_sizes(size + pb_sum, size + padding.sum_axes());
+        return LayoutOutput::from_sizes(size + pb_sum, content_size_for(size));
     }
 
     let unclamped_size = if style_size.width.is_some() | style_size.height.is_some() {
@@ -268,7 +294,7 @@ pub fn compute_replaced_layout(
     // Without an intrinsic aspect ratio, each axis is clamped independently
     let Some(aspect_ratio) = aspect_ratio else {
         let size = size.maybe_clamp(min_size, max_size);
-        return LayoutOutput::from_sizes(size + pb_sum, size + padding.sum_axes());
+        return LayoutOutput::from_sizes(size + pb_sum, content_size_for(size));
     };
     let inv_aspect_ratio = 1.0 / aspect_ratio;
 
@@ -361,5 +387,5 @@ pub fn compute_replaced_layout(
         }
     };
 
-    LayoutOutput::from_sizes(size + pb_sum, size + padding.sum_axes())
+    LayoutOutput::from_sizes(size + pb_sum, content_size_for(size))
 }
