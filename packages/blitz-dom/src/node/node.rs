@@ -1161,11 +1161,11 @@ impl Node {
             || y < 0.0
             || y > size.height + self.scroll_offset().y as f32);
 
-        let content_size = self.final_layout().content_size;
+        let overflow_rect = self.final_layout().scrollable_overflow_rect;
         let matches_content = !(x < 0.0
-            || x > content_size.width + self.scroll_offset().x as f32
+            || x > overflow_rect.right + self.scroll_offset().x as f32
             || y < 0.0
-            || y > content_size.height + self.scroll_offset().y as f32);
+            || y > overflow_rect.bottom + self.scroll_offset().y as f32);
 
         let matches_hoisted_content = match &self.stacking_context {
             Some(sc) => {
@@ -1435,14 +1435,14 @@ impl Node {
     /// content not visible due to overflow
     pub fn scroll_width(&self) -> f32 {
         self.client_width()
-            .max(self.final_layout().content_size.width)
+            .max(self.final_layout().scrollable_overflow_rect.right)
     }
 
     /// CSSOM View's `scrollHeight`: the height of the node's content, including
     /// content not visible due to overflow
     pub fn scroll_height(&self) -> f32 {
         self.client_height()
-            .max(self.final_layout().content_size.height)
+            .max(self.final_layout().scrollable_overflow_rect.bottom)
     }
 
     /// Does the node generate any boxes? (e.g. `getClientRects()` returns an empty

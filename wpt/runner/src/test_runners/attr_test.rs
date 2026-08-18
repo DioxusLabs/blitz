@@ -115,12 +115,16 @@ pub fn check_node_layout(node: &Node) -> Vec<String> {
 
                         "data-expected-client-width" => check_attr(name, value, client_width),
                         "data-expected-client-height" => check_attr(name, value, client_height),
-                        "data-expected-scroll-width" => {
-                            check_attr(name, value, client_width.max(layout.content_size.width))
-                        }
-                        "data-expected-scroll-height" => {
-                            check_attr(name, value, client_height.max(layout.content_size.height))
-                        }
+                        "data-expected-scroll-width" => check_attr(
+                            name,
+                            value,
+                            client_width.max(layout.scrollable_overflow_rect.right),
+                        ),
+                        "data-expected-scroll-height" => check_attr(
+                            name,
+                            value,
+                            client_height.max(layout.scrollable_overflow_rect.bottom),
+                        ),
                         "data-expected-bounding-client-rect-width" => {
                             check_attr(name, value, layout.size.width)
                         }

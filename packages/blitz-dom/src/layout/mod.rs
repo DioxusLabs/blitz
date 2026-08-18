@@ -338,9 +338,15 @@ impl BaseDocument {
                     };
                     let mut output = compute_grid_layout(&mut table_wrapper, node_id, inputs);
 
-                    // HACK: Cap content size at node size to prevent scrolling
-                    output.content_size.width = output.content_size.width.min(output.size.width);
-                    output.content_size.height = output.content_size.height.min(output.size.height);
+                    // HACK: Cap scrollable overflow at node size to prevent scrolling
+                    output.scrollable_overflow_rect.left = 0.0;
+                    output.scrollable_overflow_rect.top = 0.0;
+                    output.scrollable_overflow_rect.right =
+                        output.scrollable_overflow_rect.right.min(output.size.width);
+                    output.scrollable_overflow_rect.bottom = output
+                        .scrollable_overflow_rect
+                        .bottom
+                        .min(output.size.height);
 
                     return output;
                 }

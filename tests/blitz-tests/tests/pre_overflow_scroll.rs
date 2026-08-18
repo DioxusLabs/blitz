@@ -28,10 +28,10 @@ fn wide_pre_makes_scroller_scrollable() {
     let pre_id = doc.query_selector("#pre").unwrap().expect("#pre");
     let pre_layout = doc.get_node(pre_id).unwrap().final_layout();
     assert!(
-        pre_layout.content_size.width > pre_layout.size.width,
-        "expected the pre's content to overflow its border box, got size={:?} content_size={:?}",
+        pre_layout.scrollable_overflow_rect.right > pre_layout.size.width,
+        "expected the pre's content to overflow its border box, got size={:?} scrollable_overflow_rect={:?}",
         pre_layout.size,
-        pre_layout.content_size
+        pre_layout.scrollable_overflow_rect
     );
 
     let scroller_id = doc.query_selector("#scroller").unwrap().expect("#scroller");
