@@ -320,7 +320,11 @@ impl BaseDocument {
                 ibox.baseline = if is_scroll_container {
                     None
                 } else {
-                    baseline.map(|baseline| (margin.top + baseline) * scale)
+                    // Round to physical pixels so that content within the box (which is
+                    // positioned relative to the box's top edge and pixel-snapped there)
+                    // stays pixel-aligned after the box is shifted to sit on the
+                    // (pixel-snapped) line baseline.
+                    baseline.map(|baseline| ((margin.top + baseline) * scale).round())
                 };
                 ibox.width = (margin.left + margin.right + output.size.width) * scale;
                 // Vertical margins adjust the space the box reserves in the line. With an
