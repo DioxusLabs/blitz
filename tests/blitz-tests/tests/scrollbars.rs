@@ -123,7 +123,6 @@ fn horizontal_scroller_paints_a_thumb() {
 }
 
 #[test]
-#[ignore = "scrollbar-color is hardcoded to auto until stylo exposes it to the servo engine (servo/stylo#413)"]
 fn scrollbar_color_styles_the_thumb() {
     // Scrolled so the thumb is visible without hover.
     let px = pixel(
@@ -143,7 +142,6 @@ fn scrollbar_color_styles_the_thumb() {
 }
 
 #[test]
-#[ignore = "scrollbar-color is hardcoded to auto until stylo exposes it to the servo engine (servo/stylo#413)"]
 fn scrollbar_color_styles_the_track() {
     let px = pixel(
         r#"<html><body style="margin:0">
@@ -162,7 +160,6 @@ fn scrollbar_color_styles_the_track() {
 }
 
 #[test]
-#[ignore = "scrollbar-width is hardcoded to auto until stylo exposes it to the servo engine (servo/stylo#413)"]
 fn scrollbar_width_none_hides_the_scrollbar() {
     let px = pixel(
         r#"<html><body style="margin:0">
@@ -178,7 +175,6 @@ fn scrollbar_width_none_hides_the_scrollbar() {
 }
 
 #[test]
-#[ignore = "scrollbar-color is hardcoded to auto until stylo exposes it to the servo engine (servo/stylo#413)"]
 fn author_styled_scrollbar_still_hides_at_rest() {
     // scrollbar-color doesn't affect overlay visibility (matches how
     // Firefox/WebKit render the property).

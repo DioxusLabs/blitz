@@ -3,11 +3,12 @@ use crate::color::{Color, ToColorColor};
 use crate::gradient::to_peniko_gradient;
 use anyrender::PaintScene;
 use blitz_dom::node::{ImageData, ImageResourceData, SpecialElementData};
-use kurbo::{self, BezPath, Point, Rect, Shape, Size, Vec2};
+use kurbo::{self, Affine, BezPath, Point, Rect, Shape, Size, Vec2};
 use peniko::{self, Fill};
 use style::{
     properties::{
         generated::longhands::{
+            background_attachment::single_value::computed_value::T as StyloBackgroundAttachment,
             background_clip::single_value::computed_value::T as StyloBackgroundClip,
             background_origin::single_value::computed_value::T as StyloBackgroundOrigin,
             mask_origin::single_value::computed_value::T as StyloMaskOrigin,
@@ -87,6 +88,7 @@ pub(super) struct ImageLayerStyles<'a> {
     pub size: &'a BackgroundSize,
     pub clip: BoxModelBox,
     pub origin: BoxModelBox,
+    pub attachment: StyloBackgroundAttachment,
 }
 
 impl<'a> ImageLayerStyles<'a> {
@@ -104,6 +106,7 @@ impl<'a> ImageLayerStyles<'a> {
             size: get_cyclic(&bg_styles.background_size.0, idx),
             clip: (*get_cyclic(&bg_styles.background_clip.0, idx)).into(),
             origin: (*get_cyclic(&bg_styles.background_origin.0, idx)).into(),
+            attachment: *get_cyclic(&bg_styles.background_attachment.0, idx),
         }
     }
 
@@ -121,6 +124,8 @@ impl<'a> ImageLayerStyles<'a> {
             size: get_cyclic(&svg_styles.mask_size.0, idx),
             clip: (*get_cyclic(&svg_styles.mask_clip.0, idx)).into(),
             origin: (*get_cyclic(&svg_styles.mask_origin.0, idx)).into(),
+            // There is no `mask-attachment` property
+            attachment: StyloBackgroundAttachment::Scroll,
         }
     }
 }
@@ -267,6 +272,45 @@ impl ElementCx<'_, '_> {
         }
     }
 
+    /// Whether the layer is positioned against the viewport
+    /// (`background-attachment: fixed`) rather than the element's origin box.
+    /// `fixed` behaves as `scroll` on elements affected by a CSS transform
+    /// (the transformed element acts as the layer's containing block).
+    fn layer_is_fixed(&self, layer: &ImageLayerStyles) -> bool {
+        layer.attachment == StyloBackgroundAttachment::Fixed && !self.is_transformed()
+    }
+
+    /// The background positioning area and the transform from its coordinate
+    /// space to the scene for a fixed layer: the viewport, unaffected by any
+    /// scrolling.
+    fn fixed_positioning_area(&self) -> (Rect, Affine) {
+        let viewport_rect = Rect::new(
+            0.0,
+            0.0,
+            self.context.width as f64,
+            self.context.height as f64,
+        );
+        let transform = Affine::translate((self.context.initial_x, self.context.initial_y));
+        (viewport_rect, transform)
+    }
+
+    /// Whether this element or any of its ancestors has a CSS transform
+    ///
+    /// TODO: this misses transformed elements whose resolved transform is the
+    /// identity (e.g. `transform: translate(0)`), and elements with
+    /// `will-change: transform`, both of which should also degrade `fixed`
+    /// to `scroll` (see WPT css/css-transforms/transform-fixed-bg-005/008)
+    fn is_transformed(&self) -> bool {
+        let mut current = Some(self.node.id);
+        while let Some(node) = current.and_then(|id| self.context.dom.get_node(id)) {
+            if node.transform().is_some() {
+                return true;
+            }
+            current = node.parent;
+        }
+        false
+    }
+
     #[cfg(feature = "svg")]
     fn draw_svg_image_layer(&self, scene: &mut impl PaintScene, layer: &ImageLayerStyles) {
         use kurbo::Affine;
@@ -278,37 +322,49 @@ impl ElementCx<'_, '_> {
             return;
         };
 
-        let frame_w = (self.frame.padding_box.width() / self.scale) as f32;
-        let frame_h = (self.frame.padding_box.height() / self.scale) as f32;
+        // A zero-sized `viewBox` disables rendering of the SVG
+        if svg.intrinsic_dimensions.degenerate_view_box {
+            return;
+        }
+
+        let (origin_rect, base_transform) = if self.layer_is_fixed(layer) {
+            self.fixed_positioning_area()
+        } else {
+            (self.box_rect(layer.origin), self.transform)
+        };
+
+        let frame_w = (origin_rect.width() / self.scale) as f32;
+        let frame_h = (origin_rect.height() / self.scale) as f32;
 
         let svg_size = svg.tree.size();
 
-        // Compute the SVG's concrete object size per the CSS default sizing
-        // algorithm. usvg resolves an SVG that lacks explicit `width`/`height`
-        // to its `viewBox` size, but such an image has only an intrinsic aspect
-        // ratio (no intrinsic dimensions). Passing this size to
-        // `compute_layer_size` for the `background-size: auto` case supplies
-        // both the concrete size (used verbatim for `auto`) and the aspect
-        // ratio (used by `cover`/`contain` and single-`auto` sizes).
-        let aspect_ratio = svg.aspect_ratio();
-        let (object_w, object_h) = match (svg.intrinsic_width(), svg.intrinsic_height()) {
-            (Some(w), Some(h)) => (w, h),
-            (Some(w), None) => (w, w / aspect_ratio),
-            (None, Some(h)) => (h * aspect_ratio, h),
-            (None, None) => {
-                // No intrinsic dimensions: scale the aspect ratio to fit
-                // ("contain") within the background positioning area.
-                let scale = (frame_w / svg_size.width()).min(frame_h / svg_size.height());
-                (svg_size.width() * scale, svg_size.height() * scale)
-            }
-        };
+        // Size the SVG per the CSS default sizing algorithm
+        // (https://drafts.csswg.org/css-images/#default-sizing). An SVG image
+        // may lack an intrinsic width, height, and/or aspect ratio, so each is
+        // passed separately (usvg's resolved `Tree::size` is only used as the
+        // source coordinate space of the rendered tree).
+        let intrinsic_width = svg.intrinsic_width().filter(|w| w.is_finite() && *w > 0.0);
+        let intrinsic_height = svg.intrinsic_height().filter(|h| h.is_finite() && *h > 0.0);
+        let aspect_ratio = match (intrinsic_width, intrinsic_height) {
+            (Some(w), Some(h)) => Some(w / h),
+            _ => svg.viewbox_aspect_ratio(),
+        }
+        .filter(|r| r.is_finite() && *r > 0.0);
 
         let bg_size = compute_layer_size(
             layer,
             frame_w,
             frame_h,
-            BackgroundSizeComputeMode::Size(object_w, object_h),
+            BackgroundSizeComputeMode::Intrinsic {
+                width: intrinsic_width,
+                height: intrinsic_height,
+                ratio: aspect_ratio,
+            },
         );
+
+        if bg_size.width <= 0.0 || bg_size.height <= 0.0 {
+            return;
+        }
 
         let x_ratio = (bg_size.width / svg_size.width() as f64) * self.scale;
         let y_ratio = (bg_size.height / svg_size.height() as f64) * self.scale;
@@ -319,16 +375,17 @@ impl ElementCx<'_, '_> {
             frame_h - bg_size.height as f32,
         );
 
-        let transform = self.transform
-            * kurbo::Affine::translate((bg_pos.x * self.scale, bg_pos.y * self.scale))
+        let transform = base_transform
+            * kurbo::Affine::translate((
+                origin_rect.x0 + bg_pos.x * self.scale,
+                origin_rect.y0 + bg_pos.y * self.scale,
+            ))
             * Affine::scale_non_uniform(x_ratio, y_ratio);
 
         anyrender_svg::render_svg_tree(scene, &svg.tree, transform);
     }
 
     fn draw_raster_image_layer(&self, scene: &mut impl PaintScene, layer: &ImageLayerStyles) {
-        use BackgroundRepeatKeyword::*;
-
         let Some(bg_image) = layer.image_data else {
             return;
         };
@@ -339,7 +396,11 @@ impl ElementCx<'_, '_> {
         let image_rendering = self.style.clone_image_rendering();
         let quality = to_image_quality(image_rendering);
 
-        let origin_rect = self.box_rect(layer.origin);
+        let (origin_rect, base_transform) = if self.layer_is_fixed(layer) {
+            self.fixed_positioning_area()
+        } else {
+            (self.box_rect(layer.origin), self.transform)
+        };
 
         let image_width = image_data.width as f64;
         let image_height = image_data.height as f64;
@@ -351,8 +412,7 @@ impl ElementCx<'_, '_> {
             BackgroundSizeComputeMode::Size(image_width as f32, image_height as f32),
         );
 
-        let bg_pos_x = bg_pos.x * self.scale;
-        let bg_pos_y = bg_pos.y * self.scale;
+        let bg_pos = (bg_pos.to_vec2() * self.scale).to_point();
         let bg_size = bg_size * self.scale;
 
         let x_ratio = bg_size.width / image_width;
@@ -360,143 +420,48 @@ impl ElementCx<'_, '_> {
 
         let BackgroundRepeat(repeat_x, repeat_y) = layer.repeat;
 
-        let transform = self.transform.pre_scale_non_uniform(x_ratio, y_ratio);
-        let (origin_rect, transform) = match repeat_x {
-            Repeat | Round => {
-                let extend_width = extend(bg_pos_x, bg_size.width);
+        let x = raster_axis_tiling(
+            *repeat_x,
+            origin_rect.x0,
+            origin_rect.width(),
+            bg_pos.x,
+            bg_size.width,
+            image_width,
+            x_ratio,
+        );
+        let y = raster_axis_tiling(
+            *repeat_y,
+            origin_rect.y0,
+            origin_rect.height(),
+            bg_pos.y,
+            bg_size.height,
+            image_height,
+            y_ratio,
+        );
 
+        let transform = base_transform
+            .pre_scale_non_uniform(x_ratio, y_ratio)
+            .then_translate(Vec2 {
+                x: x.translate,
+                y: y.translate,
+            });
+        let tile_rect = Rect::new(0.0, 0.0, x.rect_len, y.rect_len);
+
+        for hc in 0..y.count {
+            for wc in 0..x.count {
                 let transform = transform.then_translate(Vec2 {
-                    x: origin_rect.x0 - extend_width,
-                    y: 0.0,
+                    x: wc as f64 * x.stride,
+                    y: hc as f64 * y.stride,
                 });
 
-                let origin_rect = origin_rect.with_size(Size::new(
-                    (origin_rect.width() + extend_width) / x_ratio,
-                    origin_rect.height(),
-                ));
-
-                (origin_rect, transform)
+                scene.fill(
+                    peniko::Fill::NonZero,
+                    transform,
+                    to_peniko_image(image_data, quality).as_ref(),
+                    None,
+                    &tile_rect,
+                );
             }
-            Space => (origin_rect, transform),
-            NoRepeat => {
-                let transform = transform.then_translate(Vec2 {
-                    x: origin_rect.x0 + bg_pos_x,
-                    y: 0.0,
-                });
-
-                let origin_rect =
-                    origin_rect.with_size(Size::new(image_width, origin_rect.height()));
-
-                (origin_rect, transform)
-            }
-        };
-        let (origin_rect, transform) = match repeat_y {
-            Repeat | Round => {
-                let extend_height = extend(bg_pos_y, bg_size.height);
-
-                let transform = transform.then_translate(Vec2 {
-                    x: 0.0,
-                    y: origin_rect.y0 - extend_height,
-                });
-
-                let origin_rect = origin_rect.with_size(Size::new(
-                    origin_rect.width(),
-                    (origin_rect.height() + extend_height) / y_ratio,
-                ));
-
-                (origin_rect, transform)
-            }
-            Space => (origin_rect, transform),
-            NoRepeat => {
-                let transform = transform.then_translate(Vec2 {
-                    x: 0.0,
-                    y: origin_rect.y0 + bg_pos_y,
-                });
-
-                let origin_rect =
-                    origin_rect.with_size(Size::new(origin_rect.width(), image_height));
-                (origin_rect, transform)
-            }
-        };
-
-        if matches!(repeat_x, Space) || matches!(repeat_y, Space) {
-            let (origin_rect, transform, width_count, width_gap) = if matches!(repeat_x, Space) {
-                let (count, gap) = compute_space_count_and_gap(origin_rect.width(), bg_size.width);
-
-                let transform = if count == 1 {
-                    transform.then_translate(Vec2 {
-                        x: bg_pos_x,
-                        y: 0.0,
-                    })
-                } else {
-                    transform
-                };
-
-                let origin_rect =
-                    origin_rect.with_size(Size::new(image_width, origin_rect.height()));
-
-                (origin_rect, transform, count, gap)
-            } else {
-                (origin_rect, transform, 1, 0.0)
-            };
-
-            let (origin_rect, transform, height_count, height_gap) = if matches!(repeat_y, Space) {
-                let (count, gap) =
-                    compute_space_count_and_gap(origin_rect.height(), bg_size.height);
-
-                let transform = if count == 1 {
-                    transform.then_translate(Vec2 {
-                        x: 0.0,
-                        y: bg_pos_y,
-                    })
-                } else {
-                    transform
-                };
-
-                let origin_rect =
-                    origin_rect.with_size(Size::new(origin_rect.width(), image_height));
-
-                (origin_rect, transform, count, gap)
-            } else {
-                (origin_rect, transform, 1, 0.0)
-            };
-
-            for hc in 0..height_count {
-                for wc in 0..width_count {
-                    let width_gap = if matches!(repeat_x, Space) {
-                        origin_rect.x0 + wc as f64 * width_gap
-                    } else {
-                        0.0
-                    };
-
-                    let height_gap = if matches!(repeat_y, Space) {
-                        origin_rect.y0 + hc as f64 * height_gap
-                    } else {
-                        0.0
-                    };
-
-                    let transform = transform.then_translate(Vec2 {
-                        x: width_gap,
-                        y: height_gap,
-                    });
-
-                    scene.fill(
-                        peniko::Fill::NonZero,
-                        transform,
-                        to_peniko_image(image_data, quality).as_ref(),
-                        None,
-                        &Rect::new(0.0, 0.0, origin_rect.width(), origin_rect.height()),
-                    );
-                }
-            }
-        } else {
-            scene.fill(
-                peniko::Fill::NonZero,
-                transform,
-                to_peniko_image(image_data, quality).as_ref(),
-                None,
-                &Rect::new(0.0, 0.0, origin_rect.width(), origin_rect.height()),
-            );
         }
     }
 
@@ -506,11 +471,19 @@ impl ElementCx<'_, '_> {
         gradient: &StyloGradient,
         layer: &ImageLayerStyles,
     ) {
-        use BackgroundRepeatKeyword::*;
-
-        let background_clip = layer.clip;
-        let background_origin = layer.origin;
-        let origin_rect = self.box_rect(background_origin);
+        // For a fixed layer the positioning area (the viewport) already covers
+        // everything visible, so it also serves as the clip rect (no extension
+        // towards the clip box is needed).
+        let (origin_rect, base_transform, clip_rect) = if self.layer_is_fixed(layer) {
+            let (viewport_rect, transform) = self.fixed_positioning_area();
+            (viewport_rect, transform, viewport_rect)
+        } else {
+            (
+                self.box_rect(layer.origin),
+                self.transform,
+                self.box_rect(layer.clip),
+            )
+        };
 
         let (bg_pos, bg_size) = compute_layer_position_and_size(
             layer,
@@ -519,213 +492,58 @@ impl ElementCx<'_, '_> {
             BackgroundSizeComputeMode::Auto,
         );
 
-        let bg_pos_x = bg_pos.x * self.scale;
-        let bg_pos_y = bg_pos.y * self.scale;
+        let bg_pos = (bg_pos.to_vec2() * self.scale).to_point();
         let bg_size = bg_size * self.scale;
 
         let BackgroundRepeat(repeat_x, repeat_y) = layer.repeat;
 
-        let transform = self.transform;
-        let (origin_rect, transform, width_count, width_gap) = match repeat_x {
-            Repeat | Round => {
-                let (origin_rect, extend_width, count) = if (background_clip, background_origin)
-                    == (BoxModelBox::BorderBox, BoxModelBox::PaddingBox)
-                {
-                    let extend_width = extend(self.frame.border_width.x0 + bg_pos_x, bg_size.width);
-
-                    let width = self.frame.border_box.width() + extend_width;
-                    let count = (width / bg_size.width).ceil() as u32;
-
-                    let origin_rect = Rect::from_origin_size(
-                        Point::new(self.frame.border_box.x0, origin_rect.y0),
-                        Size::new(bg_size.width, origin_rect.height()),
-                    );
-
-                    (origin_rect, extend_width, count)
-                } else if (background_clip, background_origin)
-                    == (BoxModelBox::BorderBox, BoxModelBox::ContentBox)
-                {
-                    let extend_width = extend(
-                        self.frame.border_width.x0 + self.frame.padding_width.x0 + bg_pos_x,
-                        bg_size.width,
-                    );
-                    let width = self.frame.border_box.width() + extend_width;
-                    let count = (width / bg_size.width).ceil() as u32;
-
-                    let origin_rect = Rect::from_origin_size(
-                        Point::new(self.frame.border_box.x0, origin_rect.y0),
-                        Size::new(bg_size.width, origin_rect.height()),
-                    );
-
-                    (origin_rect, extend_width, count)
-                } else if (background_clip, background_origin)
-                    == (BoxModelBox::PaddingBox, BoxModelBox::ContentBox)
-                {
-                    let extend_width =
-                        extend(self.frame.padding_width.x0 + bg_pos_x, bg_size.width);
-                    let width = self.frame.padding_box.width() + extend_width;
-                    let count = (width / bg_size.width).ceil() as u32;
-
-                    let origin_rect = Rect::from_origin_size(
-                        Point::new(self.frame.padding_box.x0, origin_rect.y0),
-                        Size::new(bg_size.width, origin_rect.height()),
-                    );
-
-                    (origin_rect, extend_width, count)
-                } else {
-                    let extend_width = extend(bg_pos_x, bg_size.width);
-                    let width = origin_rect.width() + extend_width;
-                    let count = (width / bg_size.width).ceil() as u32;
-                    let origin_rect =
-                        origin_rect.with_size(Size::new(bg_size.width, origin_rect.height()));
-
-                    (origin_rect, extend_width, count)
-                };
-
-                let transform = transform.then_translate(Vec2 {
-                    x: origin_rect.x0 - extend_width,
-                    y: 0.0,
-                });
-
-                (origin_rect, transform, count, bg_size.width)
-            }
-            Space => {
-                let (count, gap) = compute_space_count_and_gap(origin_rect.width(), bg_size.width);
-
-                let transform = transform.then_translate(Vec2 {
-                    x: origin_rect.x0 + if count == 1 { bg_pos_x } else { 0.0 },
-                    y: 0.0,
-                });
-
-                let origin_rect =
-                    origin_rect.with_size(Size::new(bg_size.width, origin_rect.height()));
-
-                (origin_rect, transform, count, gap)
-            }
-            NoRepeat => {
-                let transform = transform.then_translate(Vec2 {
-                    x: origin_rect.x0 + bg_pos_x,
-                    y: 0.0,
-                });
-
-                let origin_rect =
-                    origin_rect.with_size(Size::new(bg_size.width, origin_rect.height()));
-
-                (origin_rect, transform, 1, 0.0)
-            }
-        };
-        let (origin_rect, transform, height_count, height_gap) = match repeat_y {
-            Repeat | Round => {
-                let (origin_rect, extend_height, count) = if (background_clip, background_origin)
-                    == (BoxModelBox::BorderBox, BoxModelBox::PaddingBox)
-                {
-                    let extend_height =
-                        extend(self.frame.border_width.y0 + bg_pos_y, bg_size.height);
-                    let height = self.frame.border_box.height() + extend_height;
-                    let count = (height / bg_size.height).ceil() as u32;
-
-                    let origin_rect = Rect::from_origin_size(
-                        Point::new(origin_rect.x0, self.frame.border_box.y0),
-                        Size::new(origin_rect.width(), bg_size.height),
-                    );
-
-                    (origin_rect, extend_height, count)
-                } else if (background_clip, background_origin)
-                    == (BoxModelBox::BorderBox, BoxModelBox::ContentBox)
-                {
-                    let extend_height = extend(
-                        self.frame.border_width.y0 + self.frame.padding_width.y0 + bg_pos_x,
-                        bg_size.height,
-                    );
-                    let height = self.frame.border_box.height() + extend_height;
-                    let count = (height / bg_size.height).ceil() as u32;
-
-                    let origin_rect = Rect::from_origin_size(
-                        Point::new(origin_rect.x0, self.frame.border_box.y0),
-                        Size::new(origin_rect.width(), bg_size.height),
-                    );
-
-                    (origin_rect, extend_height, count)
-                } else if (background_clip, background_origin)
-                    == (BoxModelBox::PaddingBox, BoxModelBox::ContentBox)
-                {
-                    let extend_height =
-                        extend(self.frame.padding_width.y0 + bg_pos_x, bg_size.height);
-                    let height = self.frame.padding_box.height() + extend_height;
-                    let count = (height / bg_size.height).ceil() as u32;
-
-                    let origin_rect = Rect::from_origin_size(
-                        Point::new(origin_rect.x0, self.frame.padding_box.y0),
-                        Size::new(origin_rect.width(), bg_size.height),
-                    );
-
-                    (origin_rect, extend_height, count)
-                } else {
-                    let extend_height = extend(bg_pos_x, bg_size.height);
-                    let height = origin_rect.height() + extend_height;
-                    let count = (height / bg_size.height).ceil() as u32;
-                    let origin_rect =
-                        origin_rect.with_size(Size::new(origin_rect.width(), bg_size.height));
-
-                    (origin_rect, extend_height, count)
-                };
-
-                let transform = transform.then_translate(Vec2 {
-                    x: 0.0,
-                    y: origin_rect.y0 - extend_height,
-                });
-
-                (origin_rect, transform, count, bg_size.height)
-            }
-            Space => {
-                let (count, gap) =
-                    compute_space_count_and_gap(origin_rect.height(), bg_size.height);
-
-                let transform = transform.then_translate(Vec2 {
-                    x: 0.0,
-                    y: origin_rect.y0 + if count == 1 { bg_pos_y } else { 0.0 },
-                });
-
-                let origin_rect =
-                    origin_rect.with_size(Size::new(origin_rect.width(), bg_size.height));
-
-                (origin_rect, transform, count, gap)
-            }
-            NoRepeat => {
-                let transform = transform.then_translate(Vec2 {
-                    x: 0.0,
-                    y: origin_rect.y0 + bg_pos_y,
-                });
-
-                let origin_rect =
-                    origin_rect.with_size(Size::new(origin_rect.width(), bg_size.height));
-                (origin_rect, transform, 1, 0.0)
-            }
-        };
+        let x = gradient_axis_tiling(
+            *repeat_x,
+            origin_rect.x0,
+            origin_rect.width(),
+            clip_rect.x0,
+            clip_rect.width(),
+            bg_pos.x,
+            bg_size.width,
+        );
+        let y = gradient_axis_tiling(
+            *repeat_y,
+            origin_rect.y0,
+            origin_rect.height(),
+            clip_rect.y0,
+            clip_rect.height(),
+            bg_pos.y,
+            bg_size.height,
+        );
 
         // FIXME: https://wpt.live/css/css-backgrounds/background-size/background-size-near-zero-gradient.html
-        if width_count * height_count > 500 {
+        if x.count as u64 * y.count as u64 > 500 {
             return;
         }
 
-        let origin_rect = Rect::new(0.0, 0.0, origin_rect.width(), origin_rect.height());
+        let tile_rect = Rect::new(0.0, 0.0, x.rect_len, y.rect_len);
         let bounding_box = self.frame.border_box.bounding_box();
         let current_color = self.style.clone_color();
 
         let (gradient, gradient_transform) = to_peniko_gradient(
             gradient,
-            origin_rect,
+            tile_rect,
             bounding_box,
             self.scale,
             &current_color,
         );
         let brush = anyrender::Paint::Gradient(&gradient);
 
-        for hc in 0..height_count {
-            for wc in 0..width_count {
+        let transform = base_transform.then_translate(Vec2 {
+            x: x.translate,
+            y: y.translate,
+        });
+
+        for hc in 0..y.count {
+            for wc in 0..x.count {
                 let transform = transform.then_translate(Vec2 {
-                    x: wc as f64 * width_gap,
-                    y: hc as f64 * height_gap,
+                    x: wc as f64 * x.stride,
+                    y: hc as f64 * y.stride,
                 });
 
                 scene.fill(
@@ -733,7 +551,7 @@ impl ElementCx<'_, '_> {
                     transform,
                     brush.clone(),
                     gradient_transform,
-                    &origin_rect,
+                    &tile_rect,
                 );
             }
         }
@@ -812,6 +630,7 @@ fn compute_layer_size(
                     match mode {
                         BackgroundSizeComputeMode::Auto => (width, height),
                         BackgroundSizeComputeMode::Size(_, _) => (width, height),
+                        BackgroundSizeComputeMode::Intrinsic { .. } => (width, height),
                     }
                 }
                 (Lpa::LengthPercentage(width), Lpa::Auto) => {
@@ -819,6 +638,10 @@ fn compute_layer_size(
                     let height = match mode {
                         BackgroundSizeComputeMode::Auto => container_h,
                         BackgroundSizeComputeMode::Size(bg_w, bg_h) => bg_h / bg_w * width,
+                        BackgroundSizeComputeMode::Intrinsic { height, ratio, .. } => ratio
+                            .map(|ratio| width / ratio)
+                            .or(height)
+                            .unwrap_or(container_h),
                     };
                     (width, height)
                 }
@@ -827,12 +650,21 @@ fn compute_layer_size(
                     let width = match mode {
                         BackgroundSizeComputeMode::Auto => container_w,
                         BackgroundSizeComputeMode::Size(bg_w, bg_h) => bg_w / bg_h * height,
+                        BackgroundSizeComputeMode::Intrinsic { width, ratio, .. } => ratio
+                            .map(|ratio| height * ratio)
+                            .or(width)
+                            .unwrap_or(container_w),
                     };
                     (width, height)
                 }
                 (Lpa::Auto, Lpa::Auto) => match mode {
                     BackgroundSizeComputeMode::Auto => (container_w, container_h),
                     BackgroundSizeComputeMode::Size(bg_w, bg_h) => (bg_w, bg_h),
+                    BackgroundSizeComputeMode::Intrinsic {
+                        width,
+                        height,
+                        ratio,
+                    } => default_sizing(width, height, ratio, container_w, container_h),
                 },
             }
         }
@@ -843,6 +675,15 @@ fn compute_layer_size(
                 let ratio = (container_w / bg_w).max(container_h / bg_h);
                 (bg_w * ratio, bg_h * ratio)
             }
+            BackgroundSizeComputeMode::Intrinsic { ratio, .. } => match ratio {
+                // Scale the aspect ratio to the smallest size that covers both axes
+                Some(ratio) => {
+                    let scale = (container_w / ratio).max(container_h);
+                    (scale * ratio, scale)
+                }
+                // No intrinsic aspect ratio: fill the positioning area
+                None => (container_w, container_h),
+            },
         },
         BackgroundSize::Contain => match mode {
             BackgroundSizeComputeMode::Auto => (container_w, container_h),
@@ -851,6 +692,15 @@ fn compute_layer_size(
                 let ratio = (container_w / bg_w).min(container_h / bg_h);
                 (bg_w * ratio, bg_h * ratio)
             }
+            BackgroundSizeComputeMode::Intrinsic { ratio, .. } => match ratio {
+                // Scale the aspect ratio to the largest size contained by both axes
+                Some(ratio) => {
+                    let scale = (container_w / ratio).min(container_h);
+                    (scale * ratio, scale)
+                }
+                // No intrinsic aspect ratio: fill the positioning area
+                None => (container_w, container_h),
+            },
         },
     };
 
@@ -863,18 +713,164 @@ fn compute_layer_size(
 enum BackgroundSizeComputeMode {
     Auto,
     Size(f32, f32),
+    /// Intrinsic dimensions of an image which may lack an intrinsic width,
+    /// height, and/or aspect ratio (e.g. SVG), sized per the CSS default
+    /// sizing algorithm (https://drafts.csswg.org/css-images/#default-sizing)
+    Intrinsic {
+        width: Option<f32>,
+        height: Option<f32>,
+        ratio: Option<f32>,
+    },
 }
 
-fn compute_space_count_and_gap(bg_size: f64, size: f64) -> (u32, f64) {
+/// The CSS default sizing algorithm for the unconstrained (`auto auto`) case:
+/// resolve the concrete object size from whichever intrinsic dimensions exist,
+/// falling back to the default object size (the background positioning area).
+fn default_sizing(
+    width: Option<f32>,
+    height: Option<f32>,
+    ratio: Option<f32>,
+    container_w: f32,
+    container_h: f32,
+) -> (f32, f32) {
+    match (width, height) {
+        (Some(w), Some(h)) => (w, h),
+        (Some(w), None) => (w, ratio.map(|r| w / r).unwrap_or(container_h)),
+        (None, Some(h)) => (ratio.map(|r| h * r).unwrap_or(container_w), h),
+        (None, None) => match ratio {
+            // Intrinsic aspect ratio only: size as if `contain` were specified
+            Some(ratio) => {
+                let scale = (container_w / ratio).min(container_h);
+                (scale * ratio, scale)
+            }
+            None => (container_w, container_h),
+        },
+    }
+}
+
+/// The placement and tiling of a background layer along one axis: a
+/// translation applied to the layer as a whole, the length of each filled
+/// rect, and the number of explicit tiles with the stride between them.
+struct AxisTiling {
+    /// Translation (in device pixels) positioning the first tile
+    translate: f64,
+    /// Length of each filled rect, in the coordinate space of the fill's transform
+    rect_len: f64,
+    /// Number of explicitly drawn tiles
+    count: u32,
+    /// Stride (in device pixels) between the starts of consecutive tiles
+    stride: f64,
+}
+
+/// Per-axis placement and tiling for a raster image layer. `Repeat`/`Round`
+/// produce a single fill covering the whole positioning area (relying on the
+/// image brush repeating), while `Space` produces `count` explicit tiles
+/// spaced `stride` apart.
+///
+/// The fill rect is in image pixel coordinates (the drawing transform is
+/// pre-scaled by `ratio`), while translations are in device pixels.
+fn raster_axis_tiling(
+    repeat: BackgroundRepeatKeyword,
+    origin_start: f64,
+    origin_len: f64,
+    bg_pos: f64,
+    tile_len: f64,
+    image_len: f64,
+    ratio: f64,
+) -> AxisTiling {
+    use BackgroundRepeatKeyword::*;
+
+    match repeat {
+        Repeat | Round => {
+            let extend_len = extend(bg_pos, tile_len);
+            AxisTiling {
+                translate: origin_start - extend_len,
+                rect_len: (origin_len + extend_len) / ratio,
+                count: 1,
+                stride: 0.0,
+            }
+        }
+        Space => {
+            let (count, stride) = compute_space_count_and_stride(origin_len, tile_len);
+            AxisTiling {
+                translate: origin_start + if count == 1 { bg_pos } else { 0.0 },
+                rect_len: image_len,
+                count,
+                stride,
+            }
+        }
+        NoRepeat => AxisTiling {
+            translate: origin_start + bg_pos,
+            rect_len: image_len,
+            count: 1,
+            stride: 0.0,
+        },
+    }
+}
+
+/// Per-axis placement and tiling for a gradient layer. Unlike raster images,
+/// gradients cannot rely on brush repetition, so `Repeat`/`Round` also produce
+/// explicit tiles. When the clip box extends beyond the origin box, tiling
+/// starts from the clip box edge so the pattern covers the whole clipped area.
+fn gradient_axis_tiling(
+    repeat: BackgroundRepeatKeyword,
+    origin_start: f64,
+    origin_len: f64,
+    clip_start: f64,
+    clip_len: f64,
+    bg_pos: f64,
+    tile_len: f64,
+) -> AxisTiling {
+    use BackgroundRepeatKeyword::*;
+
+    match repeat {
+        Repeat | Round => {
+            // The clip and origin boxes are nested, so the clip box extends
+            // beyond the origin box iff it does so at either end
+            let clip_is_outer =
+                clip_start < origin_start || clip_start + clip_len > origin_start + origin_len;
+            let (area_start, area_len) = if clip_is_outer {
+                (clip_start, clip_len)
+            } else {
+                (origin_start, origin_len)
+            };
+            let extend_len = extend((origin_start - area_start) + bg_pos, tile_len);
+            let count = ((area_len + extend_len) / tile_len).ceil() as u32;
+            AxisTiling {
+                translate: area_start - extend_len,
+                rect_len: tile_len,
+                count,
+                stride: tile_len,
+            }
+        }
+        Space => {
+            let (count, stride) = compute_space_count_and_stride(origin_len, tile_len);
+            AxisTiling {
+                translate: origin_start + if count == 1 { bg_pos } else { 0.0 },
+                rect_len: tile_len,
+                count,
+                stride,
+            }
+        }
+        NoRepeat => AxisTiling {
+            translate: origin_start + bg_pos,
+            rect_len: tile_len,
+            count: 1,
+            stride: 0.0,
+        },
+    }
+}
+
+fn compute_space_count_and_stride(bg_size: f64, size: f64) -> (u32, f64) {
     let modulo = bg_size % size;
     let count = (((bg_size - modulo) / size) as u32).max(1);
-    let gap = if count > 1 {
+    let stride = if count > 1 {
         modulo / (count - 1) as f64
     } else {
         0.0
     } + size;
 
-    (count, gap)
+    (count, stride)
 }
 
 #[inline]

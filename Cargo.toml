@@ -96,7 +96,7 @@ dioxus-cli-config = { version = "0.7.3" }
 dioxus-core-macro = { version = "0.7.3" }
 
 # Taffy + Parley + Fontations
-taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "d4a2b3bf17ed268e4ea5fc1f5a7c76430ad9c499", default-features = false, features = [
+taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "7eddc45ac29edf40e9301aeaf522e6b4546aa268", default-features = false, features = [
     "std",
     "flexbox",
     "grid",
@@ -105,20 +105,20 @@ taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "d4a2b3bf17ed268e4e
     "calc",
     "detailed_layout_info",
 ] }
-parley = { version = "0.10", default-features = false, features = ["std"] }
-skrifa = { version = "0.42", default-features = false, features = [
+parley = { version = "0.11.1", default-features = false, features = ["std"] }
+skrifa = { version = "0.44", default-features = false, features = [
     "std",
 ] } # Should match parley and vello versions
 
 # AnyRender
-anyrender = { version = "0.12.0" }
-anyrender_serialize = { version = "0.6.0" }
-anyrender_skia = { version = "0.10.0" }
-anyrender_vello = { version = "0.13.0" }
-anyrender_vello_cpu = { version = "0.15.0" }
-anyrender_vello_hybrid = { version = "0.9.0" }
-anyrender_svg = { version = "0.13.0" }
-wgpu_context = { version = "0.8.0" }
+anyrender = { version = "0.13.0" }
+anyrender_serialize = { version = "0.7.0" }
+anyrender_skia = { version = "0.11.0" }
+anyrender_vello = { version = "0.14.0" }
+anyrender_vello_cpu = { version = "0.16.0" }
+anyrender_vello_hybrid = { version = "0.10.0" }
+anyrender_svg = { version = "0.14.0" }
+wgpu_context = { version = "0.9.0" }
 
 # Linebender + Fontations + WGPU + SVG
 color = "0.3"
@@ -126,7 +126,7 @@ linebender_resource_handle = "0.1"
 peniko = "0.6.0"
 kurbo = "0.13.1"
 wgpu = "29"
-usvg = "0.46.0"
+usvg = "0.48.1"
 svgtypes = "0.16.1" # Should match usvg's version
 
 # Windowing & Input
@@ -302,3 +302,5 @@ tracing-subscriber = "0.3"
 # [patch."https://github.com/linebender/parley"]
 # parley = { path = "../parley/parley" }
 # fontique = { path = "../parley/fontique" }
+
+

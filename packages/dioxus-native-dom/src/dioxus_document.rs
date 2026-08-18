@@ -218,15 +218,25 @@ impl Document for DioxusDocument {
     }
 
     fn poll(&mut self, cx: Option<TaskContext>) -> bool {
+        static NOOP_WAKER: LazyLock<Waker> = LazyLock::new(noop_waker);
+        let waker = cx
+            .as_ref()
+            .map(|cx| cx.waker().clone())
+            .unwrap_or_else(|| NOOP_WAKER.clone());
+
+        // Poll any sub-documents, which may have pending async operations of
+        // their own (e.g. JavaScript timers when the sub-document is a
+        // `ScriptDocument` from blitz-script)
+        let subdoc_changes = self.inner.borrow_mut().poll_subdocuments(Some(&waker));
+
         {
             let fut = self.vdom.wait_for_work();
             let mut pinned_fut = pin!(fut);
 
-            static NOOP_WAKER: LazyLock<Waker> = LazyLock::new(noop_waker);
-            let mut cx = cx.unwrap_or_else(|| TaskContext::from_waker(&NOOP_WAKER));
+            let mut cx = TaskContext::from_waker(&waker);
             match pinned_fut.as_mut().poll(&mut cx) {
                 std::task::Poll::Ready(_) => {}
-                std::task::Poll::Pending => return false,
+                std::task::Poll::Pending => return subdoc_changes,
             }
         }
 

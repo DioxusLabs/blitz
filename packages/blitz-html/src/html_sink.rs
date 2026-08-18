@@ -89,8 +89,6 @@ impl<'m, 'doc> DocumentHtmlParser<'m, 'doc> {
     }
 
     pub fn parse_into_mutator<'a, 'd>(mutr: &'a mut DocumentMutator<'d>, html: &str) {
-        let mut sink = DocumentHtmlParser::new(mutr);
-
         let is_xhtml_doc = html.starts_with("<?xml")
             || html.starts_with("<!DOCTYPE") && {
                 let first_line = html.lines().next().unwrap();
@@ -99,14 +97,10 @@ impl<'m, 'doc> DocumentHtmlParser<'m, 'doc> {
             || Self::root_element_has_xhtml_namespace(html);
 
         if is_xhtml_doc {
-            // Parse as XHTML
-            sink.is_xml = true;
-            xml5ever::driver::parse_document(sink, Default::default())
-                .from_utf8()
-                .read_from(&mut html.as_bytes())
-                .unwrap();
+            Self::parse_xml_into_mutator(mutr, html);
         } else {
             // Parse as HTML
+            let mut sink = DocumentHtmlParser::new(mutr);
             sink.is_xml = false;
             let opts = ParseOpts {
                 tokenizer: TokenizerOpts::default(),
@@ -123,6 +117,22 @@ impl<'m, 'doc> DocumentHtmlParser<'m, 'doc> {
                 .read_from(&mut html.as_bytes())
                 .unwrap();
         }
+    }
+
+    /// Parse the input as XML (XHTML), regardless of its content.
+    ///
+    /// [`parse_into_mutator`](Self::parse_into_mutator) sniffs the content to decide between HTML
+    /// and XML parsing, but the sniffing cannot detect all XHTML documents (e.g. ones with an
+    /// `<!DOCTYPE html>` doctype). Callers which know the document is XHTML from out-of-band
+    /// information (a `Content-Type` header or an `.xht`/`.xhtml` file extension) should use
+    /// this method instead.
+    pub fn parse_xml_into_mutator<'a, 'd>(mutr: &'a mut DocumentMutator<'d>, xml: &str) {
+        let mut sink = DocumentHtmlParser::new(mutr);
+        sink.is_xml = true;
+        xml5ever::driver::parse_document(sink, Default::default())
+            .from_utf8()
+            .read_from(&mut xml.as_bytes())
+            .unwrap();
     }
 
     pub fn parse_inner_html_into_mutator<'a, 'd>(

@@ -34,7 +34,8 @@ use style::{
         style_structs::Font,
     },
     values::{
-        computed::{CSSPixelLength, Overflow},
+        computed::{CSSPixelLength, Contain, Overflow},
+        specified::box_::{DisplayInside, DisplayOutside},
         specified::image::ImageRendering,
     },
 };
@@ -161,7 +162,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         if let Some(bg_color) = background_color {
             let bg_color = bg_color.as_srgb_color();
             let rect = Rect::from_origin_size(
-                (self.initial_x * self.scale, self.initial_y * self.scale),
+                (self.initial_x, self.initial_y),
                 (bg_width as f64, bg_height as f64),
             );
             scene.fill(Fill::NonZero, Affine::IDENTITY, bg_color, None, &rect);
@@ -264,6 +265,16 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         // TODO: account for overflow_x vs overflow_y
         let overflow_x = styles.get_box().overflow_x;
         let overflow_y = styles.get_box().overflow_y;
+        // `contain: paint` (and stronger values like `strict`/`content`) clips the element's
+        // contents to its padding box. Paint containment does not apply to non-atomic inlines
+        // or internal table boxes other than table-cell.
+        let contain_paint = styles.get_box().clone_contain().contains(Contain::PAINT) && {
+            let display = styles.clone_display();
+            let is_internal_table_box_other_than_cell = display.outside()
+                == DisplayOutside::InternalTable
+                && display.inside() != DisplayInside::TableCell;
+            !display.is_inline_flow() && !is_internal_table_box_other_than_cell
+        };
         let is_image = node
             .element_data()
             .and_then(|e| e.raster_image_data())
@@ -283,6 +294,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             && (is_image
                 || is_sub_doc
                 || is_text_input
+                || contain_paint
                 || !matches!(overflow_x, Overflow::Visible)
                 || !matches!(overflow_y, Overflow::Visible));
 

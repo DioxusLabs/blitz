@@ -6,17 +6,16 @@
 
 use crate::node::{ImageData, NodeData, SpecialElementData};
 use crate::{document::BaseDocument, dom_node_id, node::Node, taffy_node_id};
-use markup5ever::local_name;
+use markup5ever::{LocalName, local_name};
 use std::cell::Ref;
 use std::sync::Arc;
 use style::Atom;
 use style::values::computed::CSSPixelLength;
 use style::values::computed::length_percentage::CalcLengthPercentage;
 use taffy::{
-    BlockContext, CollapsibleMarginSet, FlexDirection, LayoutPartialTree, NodeId, ResolveOrZero,
-    RoundTree, Style, TraversePartialTree, TraverseTree, compute_block_layout,
-    compute_cached_layout, compute_flexbox_layout, compute_grid_layout, compute_leaf_layout,
-    prelude::*,
+    BlockContext, FlexDirection, LayoutPartialTree, NodeId, ResolveOrZero, RoundTree, Style,
+    TraversePartialTree, TraverseTree, compute_block_layout, compute_cached_layout,
+    compute_flexbox_layout, compute_grid_layout, compute_leaf_layout, prelude::*,
 };
 
 pub(crate) mod construct;
@@ -26,8 +25,45 @@ pub(crate) mod list;
 pub(crate) mod replaced;
 pub(crate) mod table;
 
-use self::replaced::{ReplacedContext, is_replaced_element, replaced_measure_function};
+use self::replaced::{
+    IntrinsicSizes, ReplacedContext, compute_replaced_layout, is_replaced_element,
+};
 use self::table::TableTreeWrapper;
+
+/// The default object size for replaced elements
+/// (https://drafts.csswg.org/css-images/#default-object-size).
+const DEFAULT_OBJECT_SIZE: taffy::Size<f32> = taffy::Size {
+    width: 300.0,
+    height: 150.0,
+};
+
+/// The intrinsic dimensions and default object size for a replaced element
+/// whose intrinsic dimensions are determined by its tag: an image with no
+/// loaded resource has no intrinsic dimensions and a zero default object size;
+/// a canvas has an intrinsic size and aspect ratio given by its width/height
+/// attributes (defaulting to 300x150); other replaced elements (video, iframe,
+/// embed) have no intrinsic dimensions and the 300x150 default object size.
+fn tag_intrinsic_sizes(
+    tag_name: &LocalName,
+    attr_size: taffy::Size<Option<f32>>,
+) -> (IntrinsicSizes, taffy::Size<f32>) {
+    if *tag_name == local_name!("img") || *tag_name == local_name!("svg") {
+        return (IntrinsicSizes::default(), taffy::Size::ZERO);
+    }
+    if *tag_name == local_name!("canvas") {
+        let width = attr_size.width.unwrap_or(300.0);
+        let height = attr_size.height.unwrap_or(150.0);
+        return (
+            IntrinsicSizes {
+                width: Some(width),
+                height: Some(height),
+                ratio: Some(width / height),
+            },
+            DEFAULT_OBJECT_SIZE,
+        );
+    }
+    (IntrinsicSizes::default(), DEFAULT_OBJECT_SIZE)
+}
 
 pub(crate) fn resolve_calc_value(calc_ptr: *const (), parent_size: f32) -> f32 {
     let calc = unsafe { &*(calc_ptr as *const CalcLengthPercentage) };
@@ -176,11 +212,13 @@ impl BaseDocument {
                 }
 
                 if is_replaced_element(&element_data.name.local) {
-                    // Get width and height attributes on image element
-                    //
-                    // TODO: smarter sizing using these (depending on object-fit, they shouldn't
-                    // necessarily just override the native size)
-                    let mut attr_size = taffy::Size {
+                    // Width/height attributes are presentational hints mapped to the CSS
+                    // width/height properties by
+                    // `synthesize_presentational_hints_for_legacy_attributes`, so they
+                    // are already part of the style. They are only read here for the
+                    // elements whose attributes determine their *intrinsic* size
+                    // (canvas, and custom widgets on canvas tags).
+                    let attr_size = taffy::Size {
                         width: element_data
                             .attr(local_name!("width"))
                             .and_then(|val| val.parse::<f32>().ok()),
@@ -189,50 +227,45 @@ impl BaseDocument {
                             .and_then(|val| val.parse::<f32>().ok()),
                     };
 
-                    // Get the element's intrinsic size and aspect ratio
-                    let (inherent_size, inherent_ratio) = match &element_data.special_data {
+                    // Get the element's intrinsic dimensions and default object size
+                    let (intrinsic_sizes, default_object_size) = match &element_data.special_data {
                         SpecialElementData::Image(image_data) => match &**image_data {
                             ImageData::Raster(image) => {
-                                let size = taffy::Size {
-                                    width: image.width as f32,
-                                    height: image.height as f32,
-                                };
-                                (size, Some(size.width / size.height))
+                                let (width, height) = (image.width as f32, image.height as f32);
+                                (
+                                    IntrinsicSizes {
+                                        width: Some(width),
+                                        height: Some(height),
+                                        ratio: Some(width / height),
+                                    },
+                                    DEFAULT_OBJECT_SIZE,
+                                )
                             }
                             #[cfg(feature = "svg")]
                             ImageData::Svg(svg) => {
-                                // For an inline `<svg>` element the width/height attributes are
-                                // presentation attributes: percentages resolve against the
-                                // containing block. For SVG loaded as an image the intrinsic
-                                // dimensions are context-free.
-                                if *element_data.name.local == local_name!("svg") {
-                                    attr_size = taffy::Size {
-                                        width: svg.resolved_width(inputs.parent_size.width),
-                                        height: svg.resolved_height(inputs.parent_size.height),
-                                    };
-                                }
-                                let (mut width, mut height) = svg.intrinsic_size();
-                                // A replaced element with only an intrinsic aspect ratio uses the
-                                // stretch-fit width in normal flow (CSS2 §10.3.2): fill the
-                                // definite available width and derive the height from the ratio.
-                                // Shrink-to-fit contexts (floats, abspos) keep the default object
-                                // size that `intrinsic_size` already applied.
-                                if svg.intrinsic_width().is_none()
-                                    && svg.intrinsic_height().is_none()
+                                let mut width = svg.intrinsic_width();
+                                let mut height = svg.intrinsic_height();
+                                // An SVG with no declared dimensions and no viewBox has no
+                                // intrinsic dimensions per CSS, but usvg still resolves a
+                                // concrete size; use it in place of the default object size.
+                                if width.is_none()
+                                    && height.is_none()
+                                    && svg.viewbox_aspect_ratio().is_none()
                                 {
-                                    if let (
-                                        Some(ratio),
-                                        AvailableSpace::Definite(available_width),
-                                    ) =
-                                        (svg.viewbox_aspect_ratio(), inputs.available_space.width)
-                                    {
-                                        width = available_width;
-                                        height = available_width / ratio;
-                                    }
+                                    let size = svg.tree.size();
+                                    width = Some(size.width());
+                                    height = Some(size.height());
                                 }
-                                (taffy::Size { width, height }, Some(svg.aspect_ratio()))
+                                (
+                                    IntrinsicSizes {
+                                        width,
+                                        height,
+                                        ratio: Some(svg.aspect_ratio()),
+                                    },
+                                    DEFAULT_OBJECT_SIZE,
+                                )
                             }
-                            ImageData::None => (taffy::Size::ZERO, None),
+                            ImageData::None => (IntrinsicSizes::default(), taffy::Size::ZERO),
                         },
                         // `svg-native`: intrinsic size/ratio for a root `<svg>` comes from
                         // its `viewBox`, read directly off the raw attribute since the `SvgContext`
@@ -269,46 +302,55 @@ impl BaseDocument {
                         SpecialElementData::Canvas(_)
                         | SpecialElementData::SubDocument(_)
                         | SpecialElementData::None => {
-                            let tag_name = &element_data.name.local;
-                            if *tag_name == local_name!("img") || *tag_name == local_name!("svg") {
-                                (taffy::Size::ZERO, None)
-                            } else {
-                                let size = taffy::Size {
-                                    width: attr_size.width.unwrap_or(300.0),
-                                    height: attr_size.height.unwrap_or(150.0),
+                            tag_intrinsic_sizes(&element_data.name.local, attr_size)
+                        }
+                        #[cfg(feature = "custom-widget")]
+                        SpecialElementData::CustomWidget(widget_data) => {
+                            let (fallback, default_object_size) =
+                                tag_intrinsic_sizes(&element_data.name.local, attr_size);
+                            // A canvas's content attributes determine its intrinsic size,
+                            // overriding the widget-reported one; the widget-reported size
+                            // in turn overrides the tag's fallback.
+                            let attr_intrinsic =
+                                if *element_data.name.local == local_name!("canvas") {
+                                    attr_size
+                                } else {
+                                    taffy::Size::NONE
                                 };
-                                let ratio = (*tag_name == local_name!("canvas"))
-                                    .then(|| size.width / size.height);
-                                (size, ratio)
-                            }
+                            let attr_ratio = match (attr_intrinsic.width, attr_intrinsic.height) {
+                                (Some(w), Some(h)) => Some(w / h),
+                                _ => None,
+                            };
+                            let widget_sizes = widget_data.widget.intrinsic_sizes();
+                            (
+                                IntrinsicSizes {
+                                    width: attr_intrinsic
+                                        .width
+                                        .or(widget_sizes.width)
+                                        .or(fallback.width),
+                                    height: attr_intrinsic
+                                        .height
+                                        .or(widget_sizes.height)
+                                        .or(fallback.height),
+                                    ratio: attr_ratio.or(widget_sizes.ratio).or(fallback.ratio),
+                                },
+                                default_object_size,
+                            )
                         }
                         _ => unreachable!(),
                     };
 
                     let replaced_context = ReplacedContext {
-                        inherent_size,
-                        attr_size,
-                        inherent_ratio,
+                        intrinsic_sizes,
+                        default_object_size,
                     };
 
-                    let computed = replaced_measure_function(
-                        inputs.known_dimensions,
-                        inputs.parent_size,
-                        inputs.available_space,
-                        &replaced_context,
+                    return compute_replaced_layout(
+                        inputs,
                         node.style(),
-                        inputs.sizing_mode,
-                        inputs.axis,
+                        resolve_calc_value,
+                        &replaced_context,
                     );
-
-                    return taffy::LayoutOutput {
-                        size: computed,
-                        content_size: computed,
-                        first_baselines: taffy::Point::NONE,
-                        top_margin: CollapsibleMarginSet::ZERO,
-                        bottom_margin: CollapsibleMarginSet::ZERO,
-                        margins_can_collapse_through: false,
-                    };
                 }
 
                 if node.flags.is_table_root() {
@@ -328,9 +370,15 @@ impl BaseDocument {
                     };
                     let mut output = compute_grid_layout(&mut table_wrapper, node_id, inputs);
 
-                    // HACK: Cap content size at node size to prevent scrolling
-                    output.content_size.width = output.content_size.width.min(output.size.width);
-                    output.content_size.height = output.content_size.height.min(output.size.height);
+                    // HACK: Cap scrollable overflow at node size to prevent scrolling
+                    output.scrollable_overflow_rect.left = 0.0;
+                    output.scrollable_overflow_rect.top = 0.0;
+                    output.scrollable_overflow_rect.right =
+                        output.scrollable_overflow_rect.right.min(output.size.width);
+                    output.scrollable_overflow_rect.bottom = output
+                        .scrollable_overflow_rect
+                        .bottom
+                        .min(output.size.height);
 
                     return output;
                 }

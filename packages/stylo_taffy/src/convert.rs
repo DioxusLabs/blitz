@@ -79,13 +79,22 @@ pub fn dimension(val: &stylo::Size) -> taffy::Dimension {
         stylo::Size::LengthPercentage(val) => length_percentage(&val.0).into(),
         stylo::Size::Auto => taffy::Dimension::AUTO,
 
-        // TODO: implement other values in Taffy
-        stylo::Size::MaxContent => taffy::Dimension::AUTO,
-        stylo::Size::MinContent => taffy::Dimension::AUTO,
-        stylo::Size::FitContent => taffy::Dimension::AUTO,
-        stylo::Size::FitContentFunction(_) => taffy::Dimension::AUTO,
-        stylo::Size::Stretch => taffy::Dimension::AUTO,
-        stylo::Size::WebkitFillAvailable => taffy::Dimension::AUTO,
+        stylo::Size::MaxContent => taffy::Dimension::max_content(),
+        stylo::Size::MinContent => taffy::Dimension::min_content(),
+        stylo::Size::FitContent => taffy::Dimension::fit_content(),
+        stylo::Size::FitContentFunction(val) => match val.0.unpack() {
+            stylo::UnpackedLengthPercentage::Length(len) => {
+                taffy::Dimension::fit_content_px(len.px())
+            }
+            stylo::UnpackedLengthPercentage::Percentage(percentage) => {
+                taffy::Dimension::fit_content_percent(percentage.0)
+            }
+            // TODO: support calc values as fit-content() limits in Taffy
+            stylo::UnpackedLengthPercentage::Calc(_) => taffy::Dimension::AUTO,
+        },
+
+        stylo::Size::Stretch => taffy::Dimension::stretch(),
+        stylo::Size::WebkitFillAvailable => taffy::Dimension::stretch(),
 
         // Anchor positioning will be flagged off for time being
         stylo::Size::AnchorSizeFunction(_) => unreachable!(),
@@ -94,18 +103,38 @@ pub fn dimension(val: &stylo::Size) -> taffy::Dimension {
 }
 
 #[inline]
-pub fn max_size_dimension(val: &stylo::MaxSize) -> taffy::Dimension {
+pub fn min_size(val: &stylo::Size) -> taffy::LengthPercentageAuto {
+    match val {
+        stylo::Size::LengthPercentage(val) => length_percentage(&val.0).into(),
+        stylo::Size::Auto => taffy::LengthPercentageAuto::AUTO,
+
+        // Sizing keywords are not supported for min/max size properties in Taffy
+        stylo::Size::MaxContent => taffy::LengthPercentageAuto::AUTO,
+        stylo::Size::MinContent => taffy::LengthPercentageAuto::AUTO,
+        stylo::Size::FitContent => taffy::LengthPercentageAuto::AUTO,
+        stylo::Size::FitContentFunction(_) => taffy::LengthPercentageAuto::AUTO,
+        stylo::Size::Stretch => taffy::LengthPercentageAuto::AUTO,
+        stylo::Size::WebkitFillAvailable => taffy::LengthPercentageAuto::AUTO,
+
+        // Anchor positioning will be flagged off for time being
+        stylo::Size::AnchorSizeFunction(_) => unreachable!(),
+        stylo::Size::AnchorContainingCalcFunction(_) => unreachable!(),
+    }
+}
+
+#[inline]
+pub fn max_size(val: &stylo::MaxSize) -> taffy::LengthPercentageAuto {
     match val {
         stylo::MaxSize::LengthPercentage(val) => length_percentage(&val.0).into(),
-        stylo::MaxSize::None => taffy::Dimension::AUTO,
+        stylo::MaxSize::None => taffy::LengthPercentageAuto::AUTO,
 
-        // TODO: implement other values in Taffy
-        stylo::MaxSize::MaxContent => taffy::Dimension::AUTO,
-        stylo::MaxSize::MinContent => taffy::Dimension::AUTO,
-        stylo::MaxSize::FitContent => taffy::Dimension::AUTO,
-        stylo::MaxSize::FitContentFunction(_) => taffy::Dimension::AUTO,
-        stylo::MaxSize::Stretch => taffy::Dimension::AUTO,
-        stylo::MaxSize::WebkitFillAvailable => taffy::Dimension::AUTO,
+        // Sizing keywords are not supported for min/max size properties in Taffy
+        stylo::MaxSize::MaxContent => taffy::LengthPercentageAuto::AUTO,
+        stylo::MaxSize::MinContent => taffy::LengthPercentageAuto::AUTO,
+        stylo::MaxSize::FitContent => taffy::LengthPercentageAuto::AUTO,
+        stylo::MaxSize::FitContentFunction(_) => taffy::LengthPercentageAuto::AUTO,
+        stylo::MaxSize::Stretch => taffy::LengthPercentageAuto::AUTO,
+        stylo::MaxSize::WebkitFillAvailable => taffy::LengthPercentageAuto::AUTO,
 
         // Anchor positioning will be flagged off for time being
         stylo::MaxSize::AnchorSizeFunction(_) => unreachable!(),
@@ -342,8 +371,12 @@ pub fn justify_content(
     Some(align)
 }
 
+/// Convert item alignment values (`align-items`/`align-self`/`justify-items`/`justify-self`),
+/// resolving the physical `left`/`right` keywords against `is_horiz_rtl`: whether the axis being
+/// aligned is a horizontal axis with right-to-left text direction. Pass `false` for the vertical
+/// axis (<https://www.w3.org/TR/css-align-3/#positional-values>).
 #[inline]
-pub fn item_alignment(input: stylo::AlignFlags) -> Option<taffy::AlignItems> {
+pub fn item_alignment(input: stylo::AlignFlags, is_horiz_rtl: bool) -> Option<taffy::AlignItems> {
     let mut align = match input.value() {
         stylo::AlignFlags::AUTO => None,
         stylo::AlignFlags::NORMAL => Some(taffy::AlignItems::STRETCH),
@@ -354,7 +387,9 @@ pub fn item_alignment(input: stylo::AlignFlags) -> Option<taffy::AlignItems> {
         stylo::AlignFlags::SELF_END => Some(taffy::AlignItems::SELF_END),
         stylo::AlignFlags::START => Some(taffy::AlignItems::START),
         stylo::AlignFlags::END => Some(taffy::AlignItems::END),
+        stylo::AlignFlags::LEFT if is_horiz_rtl => Some(taffy::AlignItems::END),
         stylo::AlignFlags::LEFT => Some(taffy::AlignItems::START),
+        stylo::AlignFlags::RIGHT if is_horiz_rtl => Some(taffy::AlignItems::START),
         stylo::AlignFlags::RIGHT => Some(taffy::AlignItems::END),
         stylo::AlignFlags::CENTER => Some(taffy::AlignItems::CENTER),
         stylo::AlignFlags::BASELINE => Some(taffy::AlignItems::BASELINE),
@@ -394,9 +429,8 @@ pub(crate) fn text_align(input: stylo::TextAlign) -> taffy::TextAlign {
 #[inline]
 #[cfg(feature = "flexbox")]
 pub fn flex_basis(input: &stylo::FlexBasis) -> taffy::Dimension {
-    // TODO: Support flex-basis: content in Taffy
     match input {
-        stylo::FlexBasis::Content => taffy::Dimension::AUTO,
+        stylo::FlexBasis::Content => taffy::Dimension::content(),
         stylo::FlexBasis::Size(size) => dimension(size),
     }
 }
@@ -689,12 +723,12 @@ pub fn to_taffy_style(style: &stylo::ComputedValues) -> taffy::Style<Atom> {
             height: self::dimension(&pos.height),
         },
         min_size: taffy::Size {
-            width: self::dimension(&pos.min_width),
-            height: self::dimension(&pos.min_height),
+            width: self::min_size(&pos.min_width),
+            height: self::min_size(&pos.min_height),
         },
         max_size: taffy::Size {
-            width: self::max_size_dimension(&pos.max_width),
-            height: self::max_size_dimension(&pos.max_height),
+            width: self::max_size(&pos.max_width),
+            height: self::max_size(&pos.max_height),
         },
         aspect_ratio: self::aspect_ratio(pos.aspect_ratio),
 
@@ -741,13 +775,19 @@ pub fn to_taffy_style(style: &stylo::ComputedValues) -> taffy::Style<Atom> {
             display,
         ),
         #[cfg(any(feature = "flexbox", feature = "grid"))]
-        align_items: self::item_alignment(pos.align_items.0),
+        align_items: self::item_alignment(pos.align_items.0, false),
         #[cfg(any(feature = "flexbox", feature = "grid"))]
-        align_self: self::item_alignment(pos.align_self.0),
+        align_self: self::item_alignment(pos.align_self.0, false),
         #[cfg(feature = "grid")]
-        justify_items: self::item_alignment((pos.justify_items.computed.0).0),
+        justify_items: self::item_alignment(
+            (pos.justify_items.computed.0).0,
+            style.clone_direction() == stylo::Direction::Rtl,
+        ),
         #[cfg(feature = "grid")]
-        justify_self: self::item_alignment(pos.justify_self.0),
+        justify_self: self::item_alignment(
+            pos.justify_self.0,
+            style.clone_direction() == stylo::Direction::Rtl,
+        ),
         #[cfg(feature = "block")]
         text_align: self::text_align(style.clone_text_align()),
 

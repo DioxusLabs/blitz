@@ -81,13 +81,15 @@ impl BaseDocument {
         let layout = node.final_layout();
         println!("Layout:");
         println!(
-            "  x: {x} y: {y} w: {width} h: {height} content_w: {content_width} content_h: {content_height}",
+            "  x: {x} y: {y} w: {width} h: {height} overflow: l:{ol} r:{or} t:{ot} b:{ob}",
             x = layout.location.x,
             y = layout.location.y,
             width = layout.size.width,
             height = layout.size.height,
-            content_width = layout.content_size.width,
-            content_height = layout.content_size.height,
+            ol = layout.scrollable_overflow_rect.left,
+            or = layout.scrollable_overflow_rect.right,
+            ot = layout.scrollable_overflow_rect.top,
+            ob = layout.scrollable_overflow_rect.bottom,
         );
         println!(
             "  border: l:{l} r:{r} t:{t} b:{b}",

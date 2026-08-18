@@ -651,12 +651,17 @@ impl BaseDocument {
 
         // Note: `width` and `height` are content-box measurements of the inline content.
         // `known_dimensions` must not be substituted in here: those are border-box sizes, and
-        // using them for `content_size` (which adds padding below) would double-count padding,
-        // incorrectly making the container's content overflow it.
+        // using them for the scrollable overflow rect (which adds padding below) would
+        // double-count padding, incorrectly making the container's content overflow it.
         let measured_size = taffy::Size {
             width: width / scale,
             height: height / scale,
         };
+
+        // Unbreakable content (e.g. `white-space: pre` text) may overflow the max advance the
+        // lines were broken at. `width` is the advance the lines were broken at, so the actual
+        // extent of the line boxes must be taken from the laid-out lines for `content_size`.
+        let content_width = f32_max(width, inline_layout.layout.width()) / scale;
 
         let clamped_size = inputs
             .known_dimensions
@@ -713,13 +718,21 @@ impl BaseDocument {
                                 s.get_box().original_display.outside() == DisplayOutside::Inline
                             })
                             .unwrap_or(true);
+                        // Inline-level boxes are placed at the top of the line box they would
+                        // have occupied (`ibox.y` is the baseline as out-of-flow boxes are
+                        // zero-sized), and block-level boxes below it.
+                        let line_metrics = line.metrics();
                         let static_position = taffy::Point {
                             x: if is_inline_level {
-                                ibox.x
+                                (ibox.x / scale) + container_pb.left
                             } else {
                                 container_pb.left
                             },
-                            y: ibox.y,
+                            y: if is_inline_level {
+                                (line_metrics.block_min_coord / scale) + container_pb.top
+                            } else {
+                                (line_metrics.block_max_coord / scale) + container_pb.top
+                            },
                         };
 
                         layout_abspos_child(
@@ -814,11 +827,19 @@ impl BaseDocument {
 
         LayoutOutput {
             size: final_size,
-            content_size: measured_size + padding.sum_axes(),
-            first_baselines: Point {
-                x: None,
-                y: first_baseline,
+            scrollable_overflow_rect: {
+                let content_extent = taffy::Size {
+                    width: content_width,
+                    height: measured_size.height,
+                } + padding.sum_axes();
+                taffy::Rect {
+                    left: 0.0,
+                    right: content_extent.width,
+                    top: 0.0,
+                    bottom: content_extent.height,
+                }
             },
+            baselines: taffy::Baselines::from_first(first_baseline),
             top_margin: CollapsibleMarginSet::ZERO,
             bottom_margin: CollapsibleMarginSet::ZERO,
             margins_can_collapse_through: !has_styles_preventing_being_collapsed_through
@@ -945,6 +966,10 @@ fn layout_abspos_child(
             node_id,
             taffy::LayoutInput {
                 known_dimensions,
+                known_dimensions_are_definite: taffy::Size {
+                    width: true,
+                    height: true,
+                },
                 parent_size: area_size.map(Some),
                 available_space: Size {
                     width: AvailableSpace::Definite(
@@ -970,6 +995,10 @@ fn layout_abspos_child(
         node_id,
         taffy::LayoutInput {
             known_dimensions: final_size.map(Some),
+            known_dimensions_are_definite: taffy::Size {
+                width: true,
+                height: true,
+            },
             parent_size: area_size.map(Some),
             available_space: Size {
                 width: AvailableSpace::Definite(
@@ -1134,7 +1163,7 @@ fn layout_abspos_child(
         &taffy::Layout {
             order: 0, // TODO: order
             size: final_size,
-            content_size: layout_output.content_size,
+            scrollable_overflow_rect: layout_output.scrollable_overflow_rect,
             scrollbar_size,
             location,
             padding,
