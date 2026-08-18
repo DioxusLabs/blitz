@@ -1446,9 +1446,17 @@ impl Node {
     }
 
     /// Does the node generate any boxes? (e.g. `getClientRects()` returns an empty
-    /// list for boxless nodes, such as `display: none` or detached elements)
+    /// list for boxless nodes, such as `display: none`, `display: contents`, or
+    /// detached elements)
     pub fn has_boxes(&self) -> bool {
-        self.flags.is_in_document() && self.style().display != taffy::Display::None
+        self.flags.is_in_document()
+            && !self.display_style().is_some_and(|display| {
+                matches!(
+                    display.inside(),
+                    style::values::specified::box_::DisplayInside::None
+                        | style::values::specified::box_::DisplayInside::Contents
+                )
+            })
     }
 
     /// Creates a synthetic click event
