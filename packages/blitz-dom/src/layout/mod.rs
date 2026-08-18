@@ -279,19 +279,21 @@ impl BaseDocument {
                                 Some(vb) if vb.width() > 0.0 && vb.height() > 0.0 => {
                                     let ratio = (vb.width() / vb.height()) as f32;
                                     (
-                                        taffy::Size {
-                                            width: 300.0,
-                                            height: 300.0 / ratio,
+                                        IntrinsicSizes {
+                                            width: Some(300.0),
+                                            height: Some(300.0 / ratio),
+                                            ratio: Some(ratio),
                                         },
-                                        Some(ratio),
+                                        taffy::Size::ZERO,
                                     )
                                 }
                                 _ => (
-                                    taffy::Size {
-                                        width: 300.0,
-                                        height: 150.0,
+                                    IntrinsicSizes {
+                                        width: Some(300.0),
+                                        height: Some(150.0),
+                                        ratio: None,
                                     },
-                                    None,
+                                    taffy::Size::ZERO,
                                 ),
                             }
                         }
