@@ -775,8 +775,7 @@ impl BaseDocument {
     /// Returns `true` if any sub-document reported changes.
     pub fn poll_subdocuments(&mut self, waker: Option<&Waker>) -> bool {
         let mut has_changes = false;
-        let node_ids: Vec<NodeId> = self.sub_document_nodes.iter().copied().collect();
-        for node_id in node_ids {
+        for node_id in self.sub_document_nodes.iter().copied() {
             let Some(sub_doc) = self
                 .nodes
                 .get_mut(node_id)
