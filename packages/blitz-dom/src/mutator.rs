@@ -827,6 +827,14 @@ impl<'doc> DocumentMutator<'doc> {
 
             let node = &mut doc.nodes[node_id];
 
+            // Clear the text selection if one of its endpoints references this node.
+            // This prevents stale selection endpoint references.
+            if doc.text_selection.anchor.node_or_parent == Some(node_id)
+                || doc.text_selection.focus.node_or_parent == Some(node_id)
+            {
+                doc.text_selection.clear();
+            }
+
             // Remove any snapshot for this node to prevent stale snapshot references
             // during style invalidation.
             if node.has_snapshot() {

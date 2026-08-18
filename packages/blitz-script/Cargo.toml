@@ -1,0 +1,41 @@
+[package]
+name = "blitz-script"
+description = "JavaScript execution for Blitz using the Boa engine"
+documentation = "https://docs.rs/blitz-script"
+version.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+categories.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[features]
+default = []
+tracing = ["dep:tracing", "blitz-dom/tracing"]
+
+[dependencies]
+# Blitz dependencies
+blitz-dom = { workspace = true, features = ["autofocus"] }
+blitz-html = { workspace = true }
+blitz-traits = { workspace = true }
+
+# Boa (JavaScript engine)
+boa_engine = { workspace = true }
+boa_runtime = { workspace = true }
+boa_gc = { workspace = true }
+
+# Servo dependencies
+markup5ever = { workspace = true }
+
+# Other dependencies
+keyboard-types = { workspace = true }
+url = { workspace = true }
+data-url = { workspace = true }
+web-time = { workspace = true }
+tracing = { workspace = true, optional = true }
+
+[dev-dependencies]
+blitz-traits = { workspace = true }
+keyboard-types = { workspace = true }
+url = { workspace = true }
