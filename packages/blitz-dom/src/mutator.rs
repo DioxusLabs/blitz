@@ -711,31 +711,8 @@ impl DocumentMutator<'_> {
     // ChildNode mixins (`append`/`prepend`/`replaceChildren` and
     // `before`/`after`/`replaceWith`). Callers pass lists of node ids with
     // string arguments already converted to (detached) text nodes and
-    // DocumentFragment arguments already expanded via
-    // [`insertable_node_ids`](Self::insertable_node_ids).
-
-    /// Resolve a node argument for insertion, per the DOM spec's "insert a node"
-    /// steps: a DocumentFragment is expanded into (and its children detached
-    /// from) its children; any other node inserts as itself.
-    pub fn insertable_node_ids(&mut self, node_id: NodeId) -> Vec<NodeId> {
-        let is_fragment = self
-            .doc
-            .get_node(node_id)
-            .and_then(|node| node.element_data())
-            .is_some_and(|element| &*element.name.local == "#document-fragment");
-        if !is_fragment {
-            return vec![node_id];
-        }
-        let child_ids: Vec<NodeId> = self
-            .doc
-            .get_node(node_id)
-            .map(|node| node.children.to_vec())
-            .unwrap_or_default();
-        for child_id in &child_ids {
-            self.remove_node(*child_id);
-        }
-        child_ids
-    }
+    // DocumentFragment arguments already expanded into their children (per the
+    // DOM spec's "insert a node" steps).
 
     /// Detach (rather than drop) any already-parented nodes, so that references
     /// to them (and their descendants) remain valid
