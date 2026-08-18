@@ -84,6 +84,17 @@ pub fn current_android_app() -> android_activity::AndroidApp {
     ANDROID_APP.get().unwrap().clone()
 }
 
+#[cfg(target_os = "android")]
+#[cfg_attr(docsrs, doc(cfg(target_os = "android")))]
+/// Get a directory suitable for storing the HTTP cache, derived from the
+/// app's internal data path (`<internal_data_path>/../cache` is the app's
+/// `Context.getCacheDir()`). Returns `None` if the android activity has not
+/// been set up with [`set_android_app`].
+pub fn android_http_cache_dir() -> Option<std::path::PathBuf> {
+    let data_path = ANDROID_APP.get()?.internal_data_path()?;
+    Some(data_path.parent()?.join("cache").join("http-cache"))
+}
+
 pub struct BlitzShellProvider {
     window: Arc<dyn Window>,
     proxy: BlitzShellProxy,

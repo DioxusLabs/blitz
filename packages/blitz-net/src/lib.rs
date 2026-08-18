@@ -36,27 +36,28 @@ type RequestBuilder = reqwest_middleware::RequestBuilder;
 type RequestBuilder = reqwest::RequestBuilder;
 
 #[cfg(feature = "cache")]
-fn get_cache_path() -> std::path::PathBuf {
+fn default_cache_dir() -> Option<std::path::PathBuf> {
     // iOS apps are sandboxed with a per-app Caches directory, and the sandbox
     // only permits paths that case-match its canonical layout, so the
     // ProjectDirs convention (a mixed-case bundle-id directory) cannot be
     // created. Use a subdirectory of the app's own Caches directory instead.
     #[cfg(target_os = "ios")]
-    let path = {
-        let home = std::env::var_os("HOME").expect("Failed to find cache directory");
-        std::path::PathBuf::from(home).join("Library/Caches/http-cache")
-    };
-    #[cfg(not(target_os = "ios"))]
-    let path = {
+    {
+        let home = std::env::var_os("HOME")?;
+        Some(std::path::PathBuf::from(home).join("Library/Caches/http-cache"))
+    }
+    // On Android the cache directory can only be determined from the app's
+    // Context, so embedders must supply it via `Provider::with_cache_dir`.
+    #[cfg(target_os = "android")]
+    {
+        None
+    }
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    {
         use directories::ProjectDirs;
-        ProjectDirs::from("com", "DioxusLabs", "Blitz")
-            .expect("Failed to find cache directory")
-            .cache_dir()
-            .to_owned()
-    };
-    #[cfg(feature = "tracing")]
-    tracing::info!(path = ?path.display(), "Using cache dir");
-    path
+        let dirs = ProjectDirs::from("com", "DioxusLabs", "Blitz")?;
+        Some(dirs.cache_dir().to_owned())
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -80,40 +81,66 @@ pub struct Provider {
     waker: Arc<dyn NetWaker>,
     per_host_limits: HostLimits,
     #[cfg(feature = "cache")]
-    cache_manager: CACacheManager,
+    cache_manager: Option<CACacheManager>,
 }
 impl Provider {
     pub fn new(waker: Option<Arc<dyn NetWaker>>) -> Self {
+        #[cfg(feature = "cache")]
+        let cache_dir = default_cache_dir();
+        #[cfg(not(feature = "cache"))]
+        let cache_dir = None;
+        Self::with_cache_dir(waker, cache_dir)
+    }
+
+    /// Create a Provider that stores its HTTP cache in `cache_dir`. Use this on
+    /// platforms where the cache location must be obtained from the app (e.g.
+    /// Android's `Context.getCacheDir()`). Ignored unless the `cache` feature
+    /// is enabled. `None` disables HTTP caching.
+    pub fn with_cache_dir(
+        waker: Option<Arc<dyn NetWaker>>,
+        cache_dir: Option<std::path::PathBuf>,
+    ) -> Self {
+        #[cfg(not(feature = "cache"))]
+        let _ = cache_dir;
+
         let builder = reqwest::Client::builder();
         #[cfg(feature = "cookies")]
         let builder = builder.cookie_store(true);
         let client = builder.build().unwrap();
 
         #[cfg(feature = "cache")]
-        let cache_manager = CACacheManager::new(get_cache_path(), true);
+        let cache_manager = cache_dir.map(|dir| {
+            #[cfg(feature = "tracing")]
+            tracing::info!(path = ?dir.display(), "Using cache dir");
+            CACacheManager::new(dir, true)
+        });
 
         #[cfg(feature = "cache")]
-        let client = reqwest_middleware::ClientBuilder::new(client)
-            .with(Cache(HttpCache {
-                mode: CacheMode::Default,
-                manager: cache_manager.clone(),
-                options: HttpCacheOptions {
-                    // Evaluate cache policy as a single-user (private) cache, like a
-                    // real browser, rather than a shared/proxy cache. The default
-                    // (`shared: true`) treats any response carrying `Set-Cookie` without
-                    // an explicit `Cache-Control: public`/`immutable` as immediately
-                    // stale, forcing a revalidation request to the server on every load.
-                    // Many CDNs (e.g. Wikimedia image hosts) serve images this way, so
-                    // the shared-cache default defeats disk caching and gets us rate
-                    // limited. A private cache honours heuristic freshness instead.
-                    cache_options: Some(CacheOptions {
-                        shared: false,
+        let client = {
+            let mut builder = reqwest_middleware::ClientBuilder::new(client);
+            if let Some(cache_manager) = &cache_manager {
+                builder = builder.with(Cache(HttpCache {
+                    mode: CacheMode::Default,
+                    manager: cache_manager.clone(),
+                    options: HttpCacheOptions {
+                        // Evaluate cache policy as a single-user (private) cache, like a
+                        // real browser, rather than a shared/proxy cache. The default
+                        // (`shared: true`) treats any response carrying `Set-Cookie` without
+                        // an explicit `Cache-Control: public`/`immutable` as immediately
+                        // stale, forcing a revalidation request to the server on every load.
+                        // Many CDNs (e.g. Wikimedia image hosts) serve images this way, so
+                        // the shared-cache default defeats disk caching and gets us rate
+                        // limited. A private cache honours heuristic freshness instead.
+                        cache_options: Some(CacheOptions {
+                            shared: false,
+                            ..Default::default()
+                        }),
                         ..Default::default()
-                    }),
-                    ..Default::default()
-                },
-            }))
-            .build();
+                    },
+                }));
+            }
+            builder.build()
+        };
 
         let waker = waker.unwrap_or(Arc::new(DummyNetWaker));
         Self {
@@ -136,7 +163,10 @@ impl Provider {
 
     #[cfg(feature = "cache")]
     pub async fn clear_cache(&self) {
-        if let Err(e) = self.cache_manager.clear().await {
+        let Some(cache_manager) = &self.cache_manager else {
+            return;
+        };
+        if let Err(e) = cache_manager.clear().await {
             #[cfg(feature = "tracing")]
             tracing::error!("Failed to clear HTTP cache: {:?}", e);
             #[cfg(not(feature = "tracing"))]

@@ -185,6 +185,12 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
     #[cfg(all(feature = "net", not(target_arch = "wasm32")))]
     let net_provider = {
         let net_waker = Some(Arc::new(proxy.clone()) as _);
+        #[cfg(target_os = "android")]
+        let inner_net_provider = Arc::new(blitz_net::Provider::with_cache_dir(
+            net_waker,
+            blitz_shell::android_http_cache_dir(),
+        ));
+        #[cfg(not(target_os = "android"))]
         let inner_net_provider = Arc::new(blitz_net::Provider::new(net_waker));
         vdom.provide_root_context(Arc::clone(&inner_net_provider));
 

@@ -11,7 +11,7 @@ path = "src/main.rs"
 
 [features]
 default = ["hybrid", "cookies", "cache", "screenshot", "apple-font-embolden", "scrollbars"]
-android-defaults = ["skia", "cookies"]
+android-defaults = ["skia", "cookies", "cache"]
 
 screenshot = ["dep:anyrender_vello_cpu", "dep:blitz-paint", "dep:png", "dep:peniko", "dep:rfd"]
 capture = ["dep:anyrender_serialize", "dep:blitz-paint", "dep:png", "dep:peniko", "dep:rfd"]

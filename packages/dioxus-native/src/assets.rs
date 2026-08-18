@@ -17,7 +17,12 @@ impl DioxusNativeNetProvider {
         #[cfg(any(feature = "data-uri", feature = "net"))]
         let net_waker = Some(Arc::new(proxy) as _);
 
-        #[cfg(feature = "net")]
+        #[cfg(all(feature = "net", target_os = "android"))]
+        let inner_net_provider = Some(Arc::new(blitz_net::Provider::with_cache_dir(
+            net_waker.clone(),
+            blitz_shell::android_http_cache_dir(),
+        )) as Arc<dyn NetProvider>);
+        #[cfg(all(feature = "net", not(target_os = "android")))]
         let inner_net_provider = Some(blitz_net::Provider::shared(net_waker.clone()));
         #[cfg(all(feature = "data-uri", not(feature = "net")))]
         let inner_net_provider = Some(blitz_shell::DataUriNetProvider::shared(net_waker.clone()));
