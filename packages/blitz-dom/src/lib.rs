@@ -52,6 +52,8 @@ mod layout;
 mod mutator;
 mod query_selector;
 mod resolve;
+/// Computation of resolved CSS property values (`getComputedStyle()`)
+mod resolved_style;
 mod selection;
 /// Implementations that interact with servo's style engine
 mod stylo;
@@ -64,6 +66,7 @@ mod tree;
 
 mod url;
 
+pub use resolved_style::css_property_is_supported;
 pub use stylo_to_kurbo::resolve_2d_transform;
 
 pub mod net;
