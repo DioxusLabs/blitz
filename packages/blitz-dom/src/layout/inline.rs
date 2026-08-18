@@ -304,7 +304,22 @@ impl BaseDocument {
                 ibox.width = 0.0;
                 ibox.height = 0.0;
             } else {
+                let is_scroll_container = style.overflow.x.is_scroll_container()
+                    || style.overflow.y.is_scroll_container();
                 let output = self.compute_child_layout(taffy::NodeId::from(ibox.id), child_inputs);
+                // Per CSS, an in-flow inline-block is baseline-aligned to the baseline of its
+                // last in-flow line box, unless it is a scroll container or has no in-flow line
+                // boxes, in which case its baseline is its bottom margin edge (Parley's fallback
+                // when `baseline` is `None`, since `ibox.height` includes margins).
+                ibox.baseline = if is_scroll_container {
+                    None
+                } else {
+                    output
+                        .baselines
+                        .last
+                        .or(output.baselines.first)
+                        .map(|baseline| (margin.top + baseline) * scale)
+                };
                 ibox.width = (margin.left + margin.right + output.size.width) * scale;
                 // Vertical margins adjust the space the box reserves in the line, but the
                 // reserved space cannot be negative.
