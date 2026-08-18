@@ -26,7 +26,7 @@ use blitz_traits::node_id::NodeId;
 use blitz_traits::shell::{ColorScheme, DummyShellProvider, ShellProvider, Viewport};
 use cursor_icon::CursorIcon;
 use linebender_resource_handle::Blob;
-use markup5ever::local_name;
+use markup5ever::{LocalName, local_name};
 use parley::{FontContext, PlainEditorDriver};
 use selectors::{Element, matching::QuirksMode};
 use smallvec::SmallVec;
@@ -2427,14 +2427,41 @@ impl BaseDocument {
         Some(rects)
     }
 
-    pub fn find_title_node(&self) -> Option<&Node> {
-        TreeTraverser::new(self)
-            .find(|node_id| {
-                self.nodes[*node_id]
-                    .data
-                    .is_element_with_tag_name(&local_name!("title"))
+    /// The first element in tree order with the given tag name. The root element and
+    /// its children are checked first as a fast path before a full tree search, making
+    /// this suitable for the `documentElement`/`head`/`body` document accessors.
+    pub fn find_element_by_tag_name(&self, tag: &LocalName) -> Option<&Node> {
+        let root = self.try_root_element()?;
+        if root.data.is_element_with_tag_name(tag) {
+            return Some(root);
+        }
+        root.children
+            .iter()
+            .copied()
+            .find(|child_id| {
+                self.get_node(*child_id)
+                    .is_some_and(|child| child.data.is_element_with_tag_name(tag))
+            })
+            .or_else(|| {
+                TreeTraverser::new(self)
+                    .find(|node_id| self.nodes[*node_id].data.is_element_with_tag_name(tag))
             })
             .map(|node_id| &self.nodes[node_id])
+    }
+
+    /// The document's `body` element, as for `document.body`
+    pub fn find_body_node(&self) -> Option<&Node> {
+        self.find_element_by_tag_name(&local_name!("body"))
+    }
+
+    /// The document's `head` element, as for `document.head`
+    pub fn find_head_node(&self) -> Option<&Node> {
+        self.find_element_by_tag_name(&local_name!("head"))
+    }
+
+    /// The document's `title` element
+    pub fn find_title_node(&self) -> Option<&Node> {
+        self.find_element_by_tag_name(&local_name!("title"))
     }
 
     pub fn with_text_input(
