@@ -1450,6 +1450,64 @@ impl BaseDocument {
         self.hit_with_scrollbar(x, y).0
     }
 
+    /// The topmost element at viewport coordinates (x, y), or `None` if the point
+    /// is outside the viewport. Anonymous boxes and text nodes are resolved to
+    /// their nearest element; a point over the background hits the root element.
+    ///
+    /// This implements the hit-testing semantics of `document.elementFromPoint()`.
+    /// Hit testing consults layout, so [`resolve`](Self::resolve) should be called
+    /// before this method to ensure layout is up to date.
+    pub fn element_from_point(&self, x: f32, y: f32) -> Option<NodeId> {
+        let viewport = self.viewport();
+        let scale = viewport.scale();
+        let (viewport_width, viewport_height) = (
+            viewport.window_size.0 as f32 / scale,
+            viewport.window_size.1 as f32 / scale,
+        );
+        if x < 0.0 || y < 0.0 || x > viewport_width || y > viewport_height {
+            return None;
+        }
+
+        let Some(hit) = self.hit(x, y) else {
+            // The point is within the viewport but over no box: the root element
+            // (which covers the viewport in an HTML document) is the hit target
+            return self.try_root_element().map(|root| root.id);
+        };
+
+        // Resolve anonymous boxes / pseudo-elements, then text nodes, to elements
+        let mut node_id = self.nearest_non_anonymous_ancestor(hit.node_id)?;
+        loop {
+            let node = self.get_node(node_id)?;
+            if node.is_element() {
+                return Some(node_id);
+            }
+            node_id = node.parent?;
+        }
+    }
+
+    /// All elements at viewport coordinates (x, y), from topmost to bottommost,
+    /// as for `document.elementsFromPoint()`.
+    ///
+    /// The spec's paint-order list is approximated with the hit element followed
+    /// by its ancestor elements (which is correct for non-overlapping content).
+    /// As with [`element_from_point`](Self::element_from_point), layout should be
+    /// resolved before calling this method.
+    pub fn elements_from_point(&self, x: f32, y: f32) -> Vec<NodeId> {
+        let mut element_ids = Vec::new();
+        let mut current = self.element_from_point(x, y);
+        while let Some(node_id) = current {
+            element_ids.push(node_id);
+            current = self
+                .get_node(node_id)
+                .and_then(|node| node.parent)
+                .filter(|parent_id| {
+                    self.get_node(*parent_id)
+                        .is_some_and(|node| node.is_element())
+                });
+        }
+        element_ids
+    }
+
     /// Walk up the tree to the nearest DOM node whose id is stable across
     /// box-tree reconstruction, so canonicalized interaction state never goes
     /// stale.
