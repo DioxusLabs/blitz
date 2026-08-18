@@ -745,15 +745,8 @@ impl DocumentMutator<'_> {
         }
     }
 
-    /// ParentNode's `append()`: detach the nodes from their current parents and
-    /// append them to the end of `parent_id`'s children
-    pub fn append_nodes(&mut self, parent_id: NodeId, node_ids: &[NodeId]) {
-        self.detach_all(node_ids);
-        self.append_children(parent_id, node_ids);
-    }
-
-    /// ParentNode's `prepend()`: detach the nodes from their current parents and
-    /// insert them at the start of `parent_id`'s children
+    /// ParentNode's `prepend()`: insert the nodes at the start of `parent_id`'s
+    /// children (ParentNode's `append()` is [`append_children`](Self::append_children))
     pub fn prepend_nodes(&mut self, parent_id: NodeId, node_ids: &[NodeId]) {
         self.detach_all(node_ids);
         match self.child_ids(parent_id).first().copied() {
