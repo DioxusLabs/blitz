@@ -1030,8 +1030,11 @@ pub(crate) fn build_inline_layout_into(
     let root_line_height = resolve_line_height(parley_style.line_height, parley_style.font_size);
 
     // Create a parley tree builder
+    // Note: parley's opt-in line-box strut (`set_compute_strut`) is deliberately left
+    // disabled: without `vertical-align` support, baseline-aligned images gain a spurious
+    // descender gap that many WPT references (which use `vertical-align: top`) rely on
+    // suppressing.
     let mut builder = layout_ctx.tree_builder(font_ctx, scale, true, &parley_style);
-    builder.set_compute_strut(true);
 
     // Set whitespace collapsing mode
     let collapse_mode = root_node_style
