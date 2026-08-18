@@ -555,7 +555,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             element,
             transform,
             #[cfg(feature = "svg")]
-            svg: element.svg_data(),
+            svg: element.svg_image_data(),
             text_input: element.text_input_data(),
             list_item: element.list_item_data.as_deref(),
             devtools: self.dom.devtools(),
@@ -601,7 +601,7 @@ struct ElementCx<'dom, 'a> {
     element: &'dom ElementData,
     transform: Affine,
     #[cfg(feature = "svg")]
-    svg: Option<&'dom usvg::Tree>,
+    svg: Option<&'dom blitz_dom::node::SvgImageData>,
     text_input: Option<&'dom TextInputData>,
     list_item: Option<&'dom ListItemLayout>,
     devtools: &'dom DevtoolSettings,
@@ -941,32 +941,79 @@ impl ElementCx<'_, '_> {
 
     #[cfg(feature = "svg")]
     fn draw_svg(&self, scene: &mut impl PaintScene) {
-        use style::properties::generated::longhands::object_fit::computed_value::T as ObjectFit;
-
         let Some(svg) = self.svg else {
             return;
         };
 
+        // A zero/negative root width/height or a zero-sized `viewBox`
+        // disables rendering of the SVG
+        if svg.rendering_disabled() {
+            return;
+        }
         let width = self.frame.content_box.width() as u32;
         let height = self.frame.content_box.height() as u32;
-        let svg_size = svg.size();
 
         let x = self.frame.content_box.origin().x;
         let y = self.frame.content_box.origin().y;
 
-        // let object_fit = self.style.clone_object_fit();
-        let object_position = self.style.clone_object_position();
-
-        // Apply object-fit algorithm
         let container_size = taffy::Size {
             width: width as f32,
             height: height as f32,
         };
+
+        // Inline `<svg>` elements are not sized with object-fit: the CSS box
+        // *is* the SVG viewport. Re-parse with the viewport forced to the
+        // CSS box size so that percentage lengths and the
+        // `viewBox`/`preserveAspectRatio` mapping resolve against it, then
+        // render at 1:1 in CSS pixels.
+        let is_inline_svg = *self.element.name.local == *"svg";
+        if is_inline_svg {
+            // `zoom` scales the CSS box but not the SVG user units, so it
+            // contributes to the user-unit scale like the device scale does.
+            let scale = self.scale * self.style.effective_zoom.value() as f64;
+            let tree = svg.tree_for_viewport(
+                container_size.width / scale as f32,
+                container_size.height / scale as f32,
+            );
+            let transform = self
+                .transform
+                .pre_scale(scale)
+                .then_translate(Vec2 { x, y });
+            anyrender_svg::render_svg_tree(scene, &tree, transform);
+            return;
+        }
+
+        let object_fit = self.style.clone_object_fit();
+        let object_position = self.style.clone_object_position();
+
+        // Apply object-fit algorithm. The natural object size is resolved per
+        // the CSS default sizing algorithm using the content box as the
+        // default object size, so an SVG with no intrinsic dimensions fills
+        // the box.
+        let scale = self.scale as f32;
+        let (natural_width, natural_height) =
+            svg.concrete_object_size((container_size.width / scale, container_size.height / scale));
         let object_size = taffy::Size {
+            width: natural_width * scale,
+            height: natural_height * scale,
+        };
+        let paint_size = compute_object_fit(container_size, Some(object_size), object_fit);
+
+        // The concrete object size is the SVG's viewport. Without a viewBox,
+        // percentage lengths inside the SVG resolve against the viewport, so
+        // re-parse with the viewport forced to the concrete size rather than
+        // scaling from usvg's fallback size. With a viewBox the mapping to
+        // the viewport is a plain scale, handled below via `tree.size`.
+        let svg = if svg.intrinsic_dimensions.view_box_size.is_none() {
+            svg.tree_for_viewport(natural_width, natural_height)
+        } else {
+            Arc::clone(&svg.tree)
+        };
+        let svg_size = svg.size();
+        let render_size = taffy::Size {
             width: svg_size.width(),
             height: svg_size.height(),
         };
-        let paint_size = compute_object_fit(container_size, Some(object_size), ObjectFit::Contain);
 
         // Compute object-position
         let x_offset = object_position.horizontal.resolve(
@@ -978,15 +1025,15 @@ impl ElementCx<'_, '_> {
         let x = x + x_offset.px() as f64;
         let y = y + y_offset.px() as f64;
 
-        let x_scale = paint_size.width as f64 / object_size.width as f64;
-        let y_scale = paint_size.height as f64 / object_size.height as f64;
+        let x_scale = paint_size.width as f64 / render_size.width as f64;
+        let y_scale = paint_size.height as f64 / render_size.height as f64;
 
         let transform = self
             .transform
             .pre_scale_non_uniform(x_scale, y_scale)
             .then_translate(Vec2 { x, y });
 
-        anyrender_svg::render_svg_tree(scene, svg, transform);
+        anyrender_svg::render_svg_tree(scene, &svg, transform);
     }
 
     fn draw_image(&self, scene: &mut impl PaintScene) {
