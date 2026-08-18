@@ -704,6 +704,123 @@ impl DocumentMutator<'_> {
         self.insert_nodes_before(anchor_node_id, new_node_ids);
         self.remove_node(anchor_node_id);
     }
+
+    // === ParentNode / ChildNode mixin mutation methods ===
+    //
+    // These implement the DOM spec's mutation semantics for the ParentNode and
+    // ChildNode mixins (`append`/`prepend`/`replaceChildren` and
+    // `before`/`after`/`replaceWith`). Callers pass lists of node ids with
+    // string arguments already converted to (detached) text nodes and
+    // DocumentFragment arguments already expanded into their children (per the
+    // DOM spec's "insert a node" steps).
+
+    /// Detach (rather than drop) any already-parented nodes, so that references
+    /// to them (and their descendants) remain valid
+    fn detach_all(&mut self, node_ids: &[NodeId]) {
+        for node_id in node_ids {
+            if self.node_has_parent(*node_id) {
+                self.remove_node(*node_id);
+            }
+        }
+    }
+
+    /// The nearest sibling of `anchor_id` (in the direction given by `offset`:
+    /// +1 = following, -1 = preceding) which is not in `excluded` — the spec's
+    /// "viable next/previous sibling" for ChildNode mutation methods
+    fn viable_sibling(
+        &self,
+        anchor_id: NodeId,
+        offset: isize,
+        excluded: &[NodeId],
+    ) -> Option<NodeId> {
+        let node = self.doc.get_node(anchor_id)?;
+        let parent = self.doc.get_node(node.parent?)?;
+        let mut index = parent.index_of_child(anchor_id)?;
+        loop {
+            index = index.checked_add_signed(offset)?;
+            let sibling_id = *parent.children.get(index)?;
+            if !excluded.contains(&sibling_id) {
+                return Some(sibling_id);
+            }
+        }
+    }
+
+    /// ParentNode's `prepend()`: insert the nodes at the start of `parent_id`'s
+    /// children (ParentNode's `append()` is [`append_children`](Self::append_children))
+    pub fn prepend_nodes(&mut self, parent_id: NodeId, node_ids: &[NodeId]) {
+        self.detach_all(node_ids);
+        match self.child_ids(parent_id).first().copied() {
+            Some(first_child_id) => self.insert_nodes_before(first_child_id, node_ids),
+            None => self.append_children(parent_id, node_ids),
+        }
+    }
+
+    /// ParentNode's `replaceChildren()`: replace all of `parent_id`'s children
+    /// with the given nodes. The existing children are detached rather than
+    /// dropped, so that references to them remain valid.
+    pub fn replace_children(&mut self, parent_id: NodeId, node_ids: &[NodeId]) {
+        self.detach_all(node_ids);
+        for child_id in self.child_ids(parent_id) {
+            self.remove_node(child_id);
+        }
+        self.append_children(parent_id, node_ids);
+    }
+
+    /// ChildNode's `before()`: insert the nodes before `anchor_id`. The
+    /// insertion point is after the nearest preceding sibling which isn't
+    /// itself being inserted (or at the start of the parent if there is none).
+    /// Does nothing if the anchor has no parent.
+    pub fn before_node(&mut self, anchor_id: NodeId, node_ids: &[NodeId]) {
+        let Some(parent_id) = self.parent_id(anchor_id) else {
+            return;
+        };
+        let viable_prev = self.viable_sibling(anchor_id, -1, node_ids);
+        self.detach_all(node_ids);
+        match viable_prev {
+            Some(prev_id) => self.insert_nodes_after(prev_id, node_ids),
+            None => match self.child_ids(parent_id).first().copied() {
+                Some(first_child_id) => self.insert_nodes_before(first_child_id, node_ids),
+                None => self.append_children(parent_id, node_ids),
+            },
+        }
+    }
+
+    /// ChildNode's `after()`: insert the nodes after `anchor_id`. The insertion
+    /// point is before the nearest following sibling which isn't itself being
+    /// inserted (or at the end of the parent if there is none). Does nothing if
+    /// the anchor has no parent.
+    pub fn after_node(&mut self, anchor_id: NodeId, node_ids: &[NodeId]) {
+        let Some(parent_id) = self.parent_id(anchor_id) else {
+            return;
+        };
+        let viable_next = self.viable_sibling(anchor_id, 1, node_ids);
+        self.detach_all(node_ids);
+        match viable_next {
+            Some(next_id) => self.insert_nodes_before(next_id, node_ids),
+            None => self.append_children(parent_id, node_ids),
+        }
+    }
+
+    /// ChildNode's `replaceWith()`: replace `anchor_id` with the nodes in its
+    /// parent's child list. If the anchor is itself one of the inserted nodes,
+    /// they are inserted at its old position (the spec's "viable next sibling"
+    /// handling). The anchor is detached rather than dropped, so references to
+    /// it remain valid. Does nothing if the anchor has no parent.
+    pub fn replace_with_nodes(&mut self, anchor_id: NodeId, node_ids: &[NodeId]) {
+        let Some(parent_id) = self.parent_id(anchor_id) else {
+            return;
+        };
+        let viable_next = self.viable_sibling(anchor_id, 1, node_ids);
+        self.detach_all(node_ids);
+        if self.node_has_parent(anchor_id) {
+            self.replace_node_with(anchor_id, node_ids);
+        } else {
+            match viable_next {
+                Some(next_id) => self.insert_nodes_before(next_id, node_ids),
+                None => self.append_children(parent_id, node_ids),
+            }
+        }
+    }
 }
 
 impl<'doc> DocumentMutator<'doc> {
