@@ -1417,6 +1417,40 @@ impl Node {
         crate::util::Point { x, y }
     }
 
+    /// CSSOM View's `clientWidth`: the width of the padding box (border box minus
+    /// borders and scrollbar)
+    pub fn client_width(&self) -> f32 {
+        let layout = self.final_layout();
+        layout.size.width - layout.border.left - layout.border.right - layout.scrollbar_size.width
+    }
+
+    /// CSSOM View's `clientHeight`: the height of the padding box (border box minus
+    /// borders and scrollbar)
+    pub fn client_height(&self) -> f32 {
+        let layout = self.final_layout();
+        layout.size.height - layout.border.top - layout.border.bottom - layout.scrollbar_size.height
+    }
+
+    /// CSSOM View's `scrollWidth`: the width of the node's content, including
+    /// content not visible due to overflow
+    pub fn scroll_width(&self) -> f32 {
+        self.client_width()
+            .max(self.final_layout().content_size.width)
+    }
+
+    /// CSSOM View's `scrollHeight`: the height of the node's content, including
+    /// content not visible due to overflow
+    pub fn scroll_height(&self) -> f32 {
+        self.client_height()
+            .max(self.final_layout().content_size.height)
+    }
+
+    /// Does the node generate any boxes? (e.g. `getClientRects()` returns an empty
+    /// list for boxless nodes, such as `display: none` or detached elements)
+    pub fn has_boxes(&self) -> bool {
+        self.flags.is_in_document() && self.style().display != taffy::Display::None
+    }
+
     /// Creates a synthetic click event
     pub fn synthetic_click_event(&self, mods: Modifiers) -> DomEventData {
         DomEventData::Click(self.synthetic_click_event_data(mods))
