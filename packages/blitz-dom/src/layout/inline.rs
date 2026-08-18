@@ -1,7 +1,10 @@
 use blitz_traits::node_id::NodeId;
 use parley::{AlignmentOptions, IndentOptions};
 use style::values::specified::box_::DisplayOutside;
-use style::values::{computed::CSSPixelLength, generics::text::GenericTextIndent};
+use style::values::{
+    computed::{CSSPixelLength, Contain},
+    generics::text::GenericTextIndent,
+};
 use taffy::{
     AvailableSpace, BlockContext, BlockFormattingContext, BoxSizing, CollapsibleMarginSet,
     CoreStyle as _, Direction, Display, LayoutInput, LayoutOutput, LayoutPartialTree as _,
@@ -307,25 +310,40 @@ impl BaseDocument {
                 let is_scroll_container = style.overflow.x.is_scroll_container()
                     || style.overflow.y.is_scroll_container();
                 let display = style.display;
+                // Layout containment suppresses the box's baseline (css-contain §3)
+                let has_layout_containment = self.nodes[NodeId::from_u64(ibox.id)]
+                    .primary_styles()
+                    .is_some_and(|s| s.clone_contain().contains(Contain::LAYOUT));
                 let output = self.compute_child_layout(taffy::NodeId::from(ibox.id), child_inputs);
                 // Per CSS, an in-flow inline-block is baseline-aligned to the baseline of its
                 // last in-flow line box, while inline flex/grid containers use their first
-                // baseline. A scroll container or a box with no natural baseline uses its
-                // bottom margin edge (Parley's fallback when `baseline` is `None`, since
-                // `ibox.height` includes margins).
+                // baseline. A box with no natural baseline uses its bottom margin edge
+                // (Parley's fallback when `baseline` is `None`, since `ibox.height`
+                // includes margins). A scroll container also uses its bottom margin edge
+                // if it is an inline-block, but flex/grid scroll containers still take
+                // their baseline from their content, clamped to the border box
+                // (css-align §9.1).
                 let baseline = match display {
                     Display::Flex | Display::Grid => output.baselines.first,
                     _ => output.baselines.last,
                 };
-                ibox.baseline = if is_scroll_container {
+                let baseline = if has_layout_containment {
                     None
+                } else if is_scroll_container {
+                    match display {
+                        Display::Flex | Display::Grid => {
+                            baseline.map(|b| b.min(output.size.height).max(0.0))
+                        }
+                        _ => None,
+                    }
                 } else {
-                    // Round to physical pixels so that content within the box (which is
-                    // positioned relative to the box's top edge and pixel-snapped there)
-                    // stays pixel-aligned after the box is shifted to sit on the
-                    // (pixel-snapped) line baseline.
-                    baseline.map(|baseline| ((margin.top + baseline) * scale).round())
+                    baseline
                 };
+                // Round to physical pixels so that content within the box (which is
+                // positioned relative to the box's top edge and pixel-snapped there)
+                // stays pixel-aligned after the box is shifted to sit on the
+                // (pixel-snapped) line baseline.
+                ibox.baseline = baseline.map(|baseline| ((margin.top + baseline) * scale).round());
                 ibox.width = (margin.left + margin.right + output.size.width) * scale;
                 // Vertical margins adjust the space the box reserves in the line. With an
                 // explicit baseline the ascent/descent contributions may legitimately be
