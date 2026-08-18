@@ -1031,6 +1031,7 @@ pub(crate) fn build_inline_layout_into(
 
     // Create a parley tree builder
     let mut builder = layout_ctx.tree_builder(font_ctx, scale, true, &parley_style);
+    builder.set_compute_strut(true);
 
     // Set whitespace collapsing mode
     let collapse_mode = root_node_style
