@@ -819,38 +819,20 @@ fn offset_top(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<
     layout_value(this, context, |node| node.offset_top_left().y.round())
 }
 
-fn client_width_of(node: &blitz_dom::Node) -> f32 {
-    let layout = node.final_layout();
-    layout.size.width - layout.border.left - layout.border.right - layout.scrollbar_size.width
-}
-
-fn client_height_of(node: &blitz_dom::Node) -> f32 {
-    let layout = node.final_layout();
-    layout.size.height - layout.border.top - layout.border.bottom - layout.scrollbar_size.height
-}
-
 fn client_width(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    layout_value(this, context, |node| client_width_of(node).round())
+    layout_value(this, context, |node| node.client_width().round())
 }
 
 fn client_height(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    layout_value(this, context, |node| client_height_of(node).round())
+    layout_value(this, context, |node| node.client_height().round())
 }
 
 fn scroll_width(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    layout_value(this, context, |node| {
-        client_width_of(node)
-            .max(node.final_layout().content_size.width)
-            .round()
-    })
+    layout_value(this, context, |node| node.scroll_width().round())
 }
 
 fn scroll_height(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    layout_value(this, context, |node| {
-        client_height_of(node)
-            .max(node.final_layout().content_size.height)
-            .round()
-    })
+    layout_value(this, context, |node| node.scroll_height().round())
 }
 
 /// Build a `DOMRect`-shaped object
@@ -870,9 +852,7 @@ fn make_rect_object(context: &mut Context, x: f64, y: f64, width: f64, height: f
 /// Does the node generate any boxes? (`getClientRects()` returns an empty list
 /// for boxless nodes, e.g. `display: none` or detached elements)
 fn node_has_boxes(doc: &blitz_dom::BaseDocument, node_id: NodeId) -> bool {
-    doc.get_node(node_id).is_some_and(|node| {
-        node.flags.is_in_document() && node.style().display != blitz_dom::taffy::Display::None
-    })
+    doc.get_node(node_id).is_some_and(|node| node.has_boxes())
 }
 
 fn get_bounding_client_rect(

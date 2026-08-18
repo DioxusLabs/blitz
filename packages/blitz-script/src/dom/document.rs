@@ -1,6 +1,6 @@
 //! The `Document` prototype: node creation and lookup.
 
-use blitz_dom::{NodeId, local_name};
+use blitz_dom::NodeId;
 use boa_engine::object::JsObject;
 use boa_engine::object::builtins::JsArray;
 use boa_engine::value::JsValue;
@@ -10,7 +10,6 @@ use super::{
     define_accessor, define_method, dom_ctx, node_or_null, node_wrapper, qual_name, qual_name_ns,
     this_node_id, to_rust_string,
 };
-use crate::state::DomCtx;
 
 pub(crate) fn init_document_proto(proto: &JsObject, context: &mut Context) {
     define_accessor(
@@ -91,33 +90,6 @@ pub(crate) fn init_document_proto(proto: &JsObject, context: &mut Context) {
     );
 }
 
-fn find_tag(ctx: &DomCtx, tag: blitz_dom::LocalName) -> Option<NodeId> {
-    let doc = ctx.doc.borrow();
-    let root = doc.try_root_element()?;
-    if root.data.is_element_with_tag_name(&tag) {
-        return Some(root.id);
-    }
-    root.children
-        .iter()
-        .copied()
-        .find(|child_id| {
-            doc.get_node(*child_id)
-                .is_some_and(|child| child.data.is_element_with_tag_name(&tag))
-        })
-        .or_else(|| {
-            // Fall back to a full tree search
-            let mut stack = vec![doc.root_node().id];
-            while let Some(node_id) = stack.pop() {
-                let node = doc.get_node(node_id)?;
-                if node.data.is_element_with_tag_name(&tag) {
-                    return Some(node_id);
-                }
-                stack.extend(node.children.iter().rev().copied());
-            }
-            None
-        })
-}
-
 fn document_element(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
     let _ = this_node_id(this)?;
@@ -128,14 +100,14 @@ fn document_element(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsR
 fn body(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
     let _ = this_node_id(this)?;
-    let body_id = find_tag(&ctx, local_name!("body"));
+    let body_id = ctx.doc.borrow().find_body_node().map(|node| node.id);
     Ok(node_or_null(&ctx, body_id, context))
 }
 
 fn head(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
     let _ = this_node_id(this)?;
-    let head_id = find_tag(&ctx, local_name!("head"));
+    let head_id = ctx.doc.borrow().find_head_node().map(|node| node.id);
     Ok(node_or_null(&ctx, head_id, context))
 }
 
@@ -295,37 +267,6 @@ fn get_elements_by_class_name(
 
 // === Hit testing ===
 
-/// The topmost element at viewport coordinates (x, y), or `None` if the point
-/// is outside the viewport. Anonymous boxes and text nodes are resolved to
-/// their nearest element; a point over the background hits the root element.
-fn hit_test_element(doc: &blitz_dom::BaseDocument, x: f32, y: f32) -> Option<NodeId> {
-    let viewport = doc.viewport();
-    let scale = viewport.scale();
-    let (viewport_width, viewport_height) = (
-        viewport.window_size.0 as f32 / scale,
-        viewport.window_size.1 as f32 / scale,
-    );
-    if x < 0.0 || y < 0.0 || x > viewport_width || y > viewport_height {
-        return None;
-    }
-
-    let Some(hit) = doc.hit(x, y) else {
-        // The point is within the viewport but over no box: the root element
-        // (which covers the viewport in an HTML document) is the hit target
-        return doc.try_root_element().map(|root| root.id);
-    };
-
-    // Resolve anonymous boxes / pseudo-elements, then text nodes, to elements
-    let mut node_id = doc.nearest_non_anonymous_ancestor(hit.node_id)?;
-    loop {
-        let node = doc.get_node(node_id)?;
-        if node.is_element() {
-            return Some(node_id);
-        }
-        node_id = node.parent?;
-    }
-}
-
 fn point_args(args: &[JsValue], context: &mut Context) -> JsResult<(f32, f32)> {
     let x = args
         .first()
@@ -351,7 +292,7 @@ fn element_from_point(
         let mut doc = ctx.doc.borrow_mut();
         // Hit testing consults layout, so make sure it is up to date
         doc.resolve(0.0);
-        hit_test_element(&doc, x, y)
+        doc.element_from_point(x, y)
     };
     Ok(node_or_null(&ctx, element_id, context))
 }
@@ -365,24 +306,10 @@ fn elements_from_point(
     let _ = this_node_id(this)?;
     let (x, y) = point_args(args, context)?;
 
-    // Approximate the spec's paint-order list with the hit element followed by
-    // its ancestor elements (which is correct for non-overlapping content)
     let element_ids: Vec<NodeId> = {
         let mut doc = ctx.doc.borrow_mut();
         doc.resolve(0.0);
-        let mut element_ids = Vec::new();
-        let mut current = hit_test_element(&doc, x, y);
-        while let Some(node_id) = current {
-            element_ids.push(node_id);
-            current = doc
-                .get_node(node_id)
-                .and_then(|node| node.parent)
-                .filter(|parent_id| {
-                    doc.get_node(*parent_id)
-                        .is_some_and(|node| node.is_element())
-                });
-        }
-        element_ids
+        doc.elements_from_point(x, y)
     };
 
     let wrappers: Vec<JsValue> = element_ids
