@@ -18,23 +18,10 @@ use taffy::AbsoluteAxis;
 use crate::{
     BaseDocument,
     node::{ScrollbarRef, SpecialElementData},
+    scrolling::{FlingState, ScrollAnimationState},
 };
 
 use super::focus::generate_focus_events;
-
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) struct FlingState {
-    pub(crate) target: NodeId,
-    pub(crate) last_seen_time: f64,
-    pub(crate) x_velocity: f64,
-    pub(crate) y_velocity: f64,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) enum ScrollAnimationState {
-    None,
-    Fling(FlingState),
-}
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct PanState {
@@ -215,7 +202,7 @@ pub(crate) fn handle_pointermove<F: FnMut(DomEvent)>(
         let target = state.target;
         let (dx, dy) = state.update(time_ms, event.screen_x(), event.screen_y());
 
-        let has_changed = doc.scroll_by(Some(target), dx, dy, &mut dispatch_event);
+        let has_changed = doc.scroll_chain_by(Some(target), dx, dy, &mut dispatch_event);
         return has_changed;
     }
 
@@ -235,7 +222,7 @@ pub(crate) fn handle_pointermove<F: FnMut(DomEvent)>(
             AbsoluteAxis::Horizontal => (-delta_px * ratio, 0.0),
             AbsoluteAxis::Vertical => (0.0, -delta_px * ratio),
         };
-        let has_changed = doc.scroll_by(Some(node_id), dx, dy, &mut dispatch_event);
+        let has_changed = doc.scroll_chain_by(Some(node_id), dx, dy, &mut dispatch_event);
         return has_changed;
     }
 
@@ -768,7 +755,7 @@ pub(crate) fn handle_wheel<F: FnMut(DomEvent)>(
         BlitzWheelDelta::Pixels(x, y) => (x, y),
     };
 
-    let has_changed = doc.scroll_by(
+    let has_changed = doc.scroll_chain_by(
         doc.get_hover_node_id(),
         scroll_x,
         scroll_y,

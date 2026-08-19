@@ -1,5 +1,5 @@
 use crate::NodeTree;
-use crate::events::{DragMode, ScrollAnimationState, handle_dom_event};
+use crate::events::{DragMode, handle_dom_event};
 use crate::font_metrics::BlitzFontMetricsProvider;
 use crate::layout::construct::ConstructionTask;
 use crate::layout::damage::ALL_DAMAGE;
@@ -8,6 +8,7 @@ use crate::net::{
     Resource, ResourceHandler, ResourceLoadResponse, StylesheetHandler, StylesheetLoader,
 };
 use crate::node::{ImageData, NodeFlags, RasterImageData, SpecialElementData, Status, TextBrush};
+use crate::scrolling::ScrollAnimationState;
 use crate::selection::TextSelection;
 use crate::stylo_to_cursor_icon::stylo_to_cursor_icon;
 use crate::traversal::TreeTraverser;
@@ -19,7 +20,7 @@ use crate::{
     TextNodeData,
 };
 use blitz_traits::devtools::DevtoolSettings;
-use blitz_traits::events::{BlitzScrollEvent, DomEvent, DomEventData, HitResult, UiEvent};
+use blitz_traits::events::{DomEvent, HitResult, UiEvent};
 use blitz_traits::navigation::{DummyNavigationProvider, NavigationProvider};
 use blitz_traits::net::{AbortSignal, DummyNetProvider, NetProvider, Request};
 use blitz_traits::node_id::NodeId;
@@ -52,8 +53,8 @@ use style::selector_parser::ServoElementSnapshot;
 use style::servo::media_features::PointerCapabilities;
 use style::servo_arc::Arc as ServoArc;
 use style::values::GenericAtomIdent;
+use style::values::computed::UserSelect;
 use style::values::computed::ui::CursorKind;
-use style::values::computed::{Overflow, UserSelect};
 use style::values::specified::box_::{DisplayInside, DisplayOutside};
 use style::{
     device::Device,
@@ -2058,242 +2059,6 @@ impl BaseDocument {
         Some(CursorIcon::Default)
     }
 
-    pub fn scroll_node_by<F: FnMut(DomEvent)>(
-        &mut self,
-        node_id: NodeId,
-        x: f64,
-        y: f64,
-        dispatch_event: F,
-    ) {
-        self.scroll_node_by_has_changed(node_id, x, y, dispatch_event);
-    }
-
-    /// Scroll a node by given x and y
-    /// Will bubble scrolling up to parent node once it can no longer scroll further
-    /// If we're already at the root node, bubbles scrolling up to the viewport
-    pub fn scroll_node_by_has_changed<F: FnMut(DomEvent)>(
-        &mut self,
-        node_id: NodeId,
-        x: f64,
-        y: f64,
-        mut dispatch_event: F,
-    ) -> bool {
-        // Per the CSS overflow propagation rules, the root element's overflow (and usually
-        // the <body>'s) is applied to the viewport, and the element itself must not have
-        // a scrolling mechanism of its own. So scrolls that reach the root element are
-        // forwarded to the viewport rather than scrolling the root element itself.
-        if self.try_root_element().is_some_and(|el| el.id == node_id) {
-            let has_changed = self.scroll_viewport_by_has_changed(x, y);
-            if has_changed {
-                let layout = *self.root_element().final_layout();
-                let scale = self.viewport.scale() as f64;
-                let event = BlitzScrollEvent {
-                    scroll_top: self.viewport_scroll.y,
-                    scroll_left: self.viewport_scroll.x,
-                    scroll_width: layout.size.width.max(layout.scrollable_overflow_rect.right)
-                        as i32,
-                    scroll_height: layout
-                        .size
-                        .height
-                        .max(layout.scrollable_overflow_rect.bottom)
-                        as i32,
-                    client_width: (self.viewport.window_size.0 as f64 / scale) as i32,
-                    client_height: (self.viewport.window_size.1 as f64 / scale) as i32,
-                };
-                dispatch_event(DomEvent::new(node_id, DomEventData::Scroll(event)));
-            }
-            return has_changed;
-        }
-
-        let Some(node) = self.nodes.get_mut(node_id) else {
-            return false;
-        };
-
-        // Text inputs scroll their own internal text content rather than using the generic
-        // overflow mechanism: single-line inputs scroll horizontally, multi-line inputs scroll
-        // vertically. Any delta the input cannot consume is bubbled up to an ancestor scroller.
-        if node
-            .element_data()
-            .is_some_and(|el| el.text_input_data().is_some())
-        {
-            let parent = node.parent;
-            let content_box_width = node.final_layout().content_box_width();
-            let content_box_height = node.final_layout().content_box_height();
-            let input = node
-                .element_data_mut()
-                .and_then(|el| el.text_input_data_mut())
-                .unwrap();
-
-            let (bubble_x, bubble_y) = if input.is_multiline {
-                (
-                    x,
-                    input.scroll_by(y as f32, content_box_width, content_box_height) as f64,
-                )
-            } else {
-                (
-                    input.scroll_by(x as f32, content_box_width, content_box_height) as f64,
-                    y,
-                )
-            };
-
-            let has_changed = bubble_x != x || bubble_y != y;
-
-            if bubble_x != 0.0 || bubble_y != 0.0 {
-                let bubbled = if let Some(parent) = parent {
-                    self.scroll_node_by_has_changed(parent, bubble_x, bubble_y, dispatch_event)
-                } else {
-                    self.scroll_viewport_by_has_changed(bubble_x, bubble_y)
-                };
-                return bubbled | has_changed;
-            }
-
-            return has_changed;
-        }
-
-        let (can_x_scroll, can_y_scroll) = node
-            .primary_styles()
-            .map(|styles| {
-                (
-                    matches!(styles.clone_overflow_x(), Overflow::Scroll | Overflow::Auto),
-                    matches!(styles.clone_overflow_y(), Overflow::Scroll | Overflow::Auto),
-                )
-            })
-            .unwrap_or((false, false));
-
-        let initial = *node.scroll_offset();
-        let new_x = node.scroll_offset().x - x;
-        let new_y = node.scroll_offset().y - y;
-
-        let mut bubble_x = 0.0;
-        let mut bubble_y = 0.0;
-
-        let scroll_width = node.final_layout().scroll_width() as f64;
-        let scroll_height = node.final_layout().scroll_height() as f64;
-
-        // Handle sub document case
-        if let Some(mut sub_doc) = node.subdoc_mut().map(|doc| doc.inner_mut()) {
-            let has_changed = if let Some(hover_node_id) = sub_doc.get_hover_node_id() {
-                sub_doc.scroll_node_by_has_changed(hover_node_id, x, y, dispatch_event)
-            } else {
-                sub_doc.scroll_viewport_by_has_changed(x, y)
-            };
-
-            // TODO: propagate remaining scroll to parent
-            return has_changed;
-        }
-
-        // If we're past our scroll bounds, transfer remainder of scrolling to parent/viewport
-        if !can_x_scroll {
-            bubble_x = x
-        } else if new_x < 0.0 {
-            bubble_x = -new_x;
-            node.scroll_offset_mut().x = 0.0;
-        } else if new_x > scroll_width {
-            bubble_x = scroll_width - new_x;
-            node.scroll_offset_mut().x = scroll_width;
-        } else {
-            node.scroll_offset_mut().x = new_x;
-        }
-
-        if !can_y_scroll {
-            bubble_y = y
-        } else if new_y < 0.0 {
-            bubble_y = -new_y;
-            node.scroll_offset_mut().y = 0.0;
-        } else if new_y > scroll_height {
-            bubble_y = scroll_height - new_y;
-            node.scroll_offset_mut().y = scroll_height;
-        } else {
-            node.scroll_offset_mut().y = new_y;
-        }
-
-        let has_changed = *node.scroll_offset() != initial;
-
-        if has_changed {
-            let layout = *node.final_layout();
-            let event = BlitzScrollEvent {
-                scroll_top: node.scroll_offset().y,
-                scroll_left: node.scroll_offset().x,
-                scroll_width: layout.scroll_width() as i32,
-                scroll_height: layout.scroll_height() as i32,
-                client_width: layout.size.width as i32,
-                client_height: layout.size.height as i32,
-            };
-
-            dispatch_event(DomEvent::new(node_id, DomEventData::Scroll(event)));
-        }
-
-        let parent = node.parent;
-        if has_changed {
-            self.show_scrollbars(node_id);
-        }
-
-        if bubble_x != 0.0 || bubble_y != 0.0 {
-            if let Some(parent) = parent {
-                return self.scroll_node_by_has_changed(parent, bubble_x, bubble_y, dispatch_event)
-                    | has_changed;
-            } else {
-                return self.scroll_viewport_by_has_changed(bubble_x, bubble_y) | has_changed;
-            }
-        }
-
-        has_changed
-    }
-
-    pub fn scroll_viewport_by(&mut self, x: f64, y: f64) {
-        self.scroll_viewport_by_has_changed(x, y);
-    }
-
-    /// Scroll the viewport by the given values
-    pub fn scroll_viewport_by_has_changed(&mut self, x: f64, y: f64) -> bool {
-        // The viewport scrolls the root element's scrollable overflow, which includes both
-        // the root element itself and any content which overflows it (e.g. when the root
-        // element has a fixed height but its content is taller). A document without a root
-        // element has no scrollable content, so its content size is zero.
-        let (content_width, content_height) = match self.try_root_element() {
-            Some(root) => {
-                let root_layout = root.final_layout();
-                (
-                    root_layout
-                        .size
-                        .width
-                        .max(root_layout.scrollable_overflow_rect.right) as f64,
-                    root_layout
-                        .size
-                        .height
-                        .max(root_layout.scrollable_overflow_rect.bottom)
-                        as f64,
-                )
-            }
-            None => (0.0, 0.0),
-        };
-        let new_scroll = (self.viewport_scroll.x - x, self.viewport_scroll.y - y);
-        let window_width = self.viewport.window_size.0 as f64 / self.viewport.scale() as f64;
-        let window_height = self.viewport.window_size.1 as f64 / self.viewport.scale() as f64;
-
-        let initial = self.viewport_scroll;
-        self.viewport_scroll.x =
-            f64::max(0.0, f64::min(new_scroll.0, content_width - window_width));
-        self.viewport_scroll.y =
-            f64::max(0.0, f64::min(new_scroll.1, content_height - window_height));
-
-        self.viewport_scroll != initial
-    }
-
-    pub fn scroll_by(
-        &mut self,
-        anchor_node_id: Option<NodeId>,
-        scroll_x: f64,
-        scroll_y: f64,
-        dispatch_event: &mut dyn FnMut(DomEvent),
-    ) -> bool {
-        if let Some(anchor_node_id) = anchor_node_id {
-            self.scroll_node_by_has_changed(anchor_node_id, scroll_x, scroll_y, dispatch_event)
-        } else {
-            self.scroll_viewport_by_has_changed(scroll_x, scroll_y)
-        }
-    }
-
     pub fn viewport_scroll(&self) -> crate::Point<f64> {
         self.viewport_scroll
     }
@@ -2317,51 +2082,6 @@ impl BaseDocument {
             (el.name.local == local_name!("a") && el.attr(local_name!("name")) == Some(fragment))
                 .then_some(id)
         })
-    }
-
-    /// Scroll the viewport so that the given node is aligned with the top of the viewport.
-    pub fn scroll_to_node(&mut self, node_id: NodeId) {
-        let Some(node) = self.nodes.get(node_id) else {
-            return;
-        };
-
-        // `absolute_position` gives the node's position in document space (it does not
-        // account for the viewport scroll), so it is the scroll offset we want to land on.
-        let target = node.absolute_position(0.0, 0.0);
-        let current = self.viewport_scroll;
-
-        // `scroll_viewport_by` subtracts the delta from the current scroll offset, so pass
-        // `current - target` in order to land on `target`.
-        self.scroll_viewport_by(current.x - target.x as f64, current.y - target.y as f64);
-    }
-
-    /// Scroll to the element targeted by the given URL fragment (the `#...` part of a URL).
-    ///
-    /// An empty fragment (or a `top` fragment that matches no element) scrolls to the top
-    /// of the document, matching browser behaviour. Returns `true` if a scroll target was
-    /// found.
-    pub fn scroll_to_fragment(&mut self, fragment: &str) -> bool {
-        // Fragments are percent-encoded in URLs (e.g. `%20`); decode before matching.
-        let decoded = percent_encoding::percent_decode_str(fragment)
-            .decode_utf8_lossy()
-            .into_owned();
-
-        if !decoded.is_empty() {
-            if let Some(node_id) = self.get_fragment_target(&decoded) {
-                self.scroll_to_node(node_id);
-                return true;
-            }
-        }
-
-        // An empty fragment, or the special "top" fragment when no matching element exists,
-        // scrolls to the top of the document.
-        if decoded.is_empty() || decoded.eq_ignore_ascii_case("top") {
-            let current = self.viewport_scroll;
-            self.scroll_viewport_by(current.x, current.y);
-            return true;
-        }
-
-        false
     }
 
     /// Computes the size and position of the `Node` relative to the viewport
