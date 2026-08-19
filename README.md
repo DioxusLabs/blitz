@@ -25,7 +25,7 @@ Check out:
 - The [roadmap issue](https://github.com/DioxusLabs/blitz/issues/119) for planned work
 
 
-![screenshot](https://raw.githubusercontent.com/DioxusLabs/screenshots/main/blitz/counter-example.png)
+![screenshot](https://raw.githubusercontent.com/DioxusLabs/screenshots/main/blitz/wikipedia.png)
 
 
 ## Trying it out
