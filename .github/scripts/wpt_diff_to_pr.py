@@ -14,6 +14,8 @@ import sys
 
 START_MARKER = "<!-- wpt-results-start -->"
 END_MARKER = "<!-- wpt-results-end -->"
+PENDING_START_MARKER = "<!-- wpt-pending-start -->"
+PENDING_END_MARKER = "<!-- wpt-pending-end -->"
 
 PASSING_STATUSES = {"PASS", "OK"}
 MAX_DIFF_LINES = 400
@@ -124,6 +126,56 @@ def render(diff, run_url):
     return "\n".join(out)
 
 
+def render_pending_notice(run_url, stale_results):
+    link = f"[workflow run]({run_url})" if run_url else "workflow run"
+    if stale_results:
+        text = (
+            f"> New WPT results are being computed ({link}). "
+            "The results below are from a previous run and may be out of date."
+        )
+    else:
+        text = f"> WPT results are being computed ({link}) and will be posted here when the run completes."
+    return "\n".join([PENDING_START_MARKER, "> [!NOTE]", text, PENDING_END_MARKER])
+
+
+def splice_pending(body, run_url):
+    """Insert (or replace) a pending notice without touching existing results."""
+    body = body or ""
+    start = body.find(PENDING_START_MARKER)
+    end = body.find(PENDING_END_MARKER)
+    if start != -1 and end != -1 and end > start:
+        notice = render_pending_notice(run_url, stale_results=body.find(START_MARKER) != -1)
+        return body[:start] + notice + body[end + len(PENDING_END_MARKER):]
+    start = body.find(START_MARKER)
+    if start != -1:
+        notice = render_pending_notice(run_url, stale_results=True)
+        insert_at = start + len(START_MARKER)
+        heading = "\n## WPT results\n"
+        if body.startswith(heading, insert_at):
+            insert_at += len(heading)
+        return body[:insert_at] + "\n" + notice + "\n" + body[insert_at:].lstrip("\n")
+    notice = render_pending_notice(run_url, stale_results=False)
+    section = "\n".join([START_MARKER, "## WPT results", "", notice, END_MARKER])
+    return splice(body, section)
+
+
+def splice_failed(body, run_url):
+    """Replace a pending notice with a failure notice. No-op without one."""
+    body = body or ""
+    start = body.find(PENDING_START_MARKER)
+    end = body.find(PENDING_END_MARKER)
+    if start == -1 or end == -1 or end <= start:
+        return body
+    link = f"[workflow run]({run_url})" if run_url else "workflow run"
+    notice = "\n".join([
+        PENDING_START_MARKER,
+        "> [!WARNING]",
+        f"> The latest WPT run failed ({link}), so the results below may be out of date.",
+        PENDING_END_MARKER,
+    ])
+    return body[:start] + notice + body[end + len(PENDING_END_MARKER):]
+
+
 def splice(body, section):
     body = body or ""
     start = body.find(START_MARKER)
@@ -147,12 +199,43 @@ def gh_api(*args, method=None, fields=None):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("diff_file")
+    parser.add_argument("diff_file", nargs="?")
+    parser.add_argument(
+        "--pending",
+        action="store_true",
+        help="Mark the PR's WPT results as pending instead of posting a diff",
+    )
+    parser.add_argument(
+        "--failed",
+        action="store_true",
+        help="Replace a pending notice with a failure notice",
+    )
     parser.add_argument("--repo", default=os.environ.get("GITHUB_REPOSITORY"))
     parser.add_argument("--pr", default=os.environ.get("PR_NUMBER"))
     parser.add_argument("--run-url", default=os.environ.get("RUN_URL"))
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
+
+    if args.pending or args.failed:
+        update = splice_pending if args.pending else splice_failed
+        if args.dry_run or not args.pr:
+            print(update("", args.run_url))
+            return 0
+        body = json.loads(gh_api(f"repos/{args.repo}/pulls/{args.pr}")).get("body") or ""
+        new_body = update(body, args.run_url)
+        if new_body == body:
+            print(f"No changes needed to the description of PR #{args.pr}")
+            return 0
+        gh_api(
+            f"repos/{args.repo}/pulls/{args.pr}",
+            method="PATCH",
+            fields={"body": new_body},
+        )
+        print(f"Updated the description of PR #{args.pr}")
+        return 0
+
+    if not args.diff_file:
+        parser.error("diff_file is required unless --pending/--failed is given")
 
     with open(args.diff_file, encoding="utf-8") as file:
         diff = parse_diff(file.read())
