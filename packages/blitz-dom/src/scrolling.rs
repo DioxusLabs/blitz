@@ -55,11 +55,23 @@ pub(crate) enum ScrollOverflow {
     Chain,
 }
 
+/// Who initiated a scroll. Determines which overflow values count as scrollable:
+/// `overflow: hidden` boxes have a scrolling box which programmatic scrolls apply to,
+/// but no user scrolling mechanism.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ScrollSource {
+    /// A user-initiated scroll (wheel, touch, scrollbar drag, keyboard).
+    User,
+    /// A script-initiated scroll (`scrollTo` and friends, fragment navigation).
+    Programmatic,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct ScrollRequest {
     pub(crate) target: ScrollTarget,
     pub(crate) amount: ScrollAmount,
     pub(crate) overflow: ScrollOverflow,
+    pub(crate) source: ScrollSource,
     pub(crate) behavior: ScrollBehavior,
     /// Whether to abort a smooth scroll in progress. Set for user-initiated scrolls, so that
     /// an animation does not fight the user's input for the rest of its duration.
@@ -141,7 +153,8 @@ impl BaseDocument {
             }
         }
 
-        let (current, max) = self.scroll_state(target);
+        let include_hidden = request.source == ScrollSource::Programmatic;
+        let (current, max) = self.scroll_state(target, include_hidden);
         let unclamped = match request.amount {
             ScrollAmount::To(to) => to,
             ScrollAmount::By(by) => Point {
@@ -364,6 +377,7 @@ impl BaseDocument {
                 // to the scroll offset.
                 amount: ScrollAmount::By(Point { x: -x, y: -y }),
                 overflow: ScrollOverflow::Chain,
+                source: ScrollSource::User,
                 behavior: ScrollBehavior::Instant,
                 interrupt_animation: false,
             },
@@ -382,6 +396,7 @@ impl BaseDocument {
                 target: ScrollTarget::Viewport,
                 amount: ScrollAmount::By(Point { x: -x, y: -y }),
                 overflow: ScrollOverflow::Clamp,
+                source: ScrollSource::User,
                 behavior: ScrollBehavior::Instant,
                 interrupt_animation: false,
             },
@@ -404,6 +419,7 @@ impl BaseDocument {
                     y: -scroll_y,
                 }),
                 overflow: ScrollOverflow::Chain,
+                source: ScrollSource::User,
                 behavior: ScrollBehavior::Instant,
                 // A user-initiated scroll aborts any smooth scroll in progress, so that the
                 // two do not fight over the scroll offset for the rest of the animation.
@@ -417,8 +433,14 @@ impl BaseDocument {
     const SMOOTH_SCROLL_DURATION_MS: f64 = 300.0;
 
     /// Returns the current scroll offset and the maximum scroll offset (the minimum is
-    /// always `0`) for the given scroll target.
-    pub(crate) fn scroll_state(&self, target: ScrollTarget) -> (Point<f64>, Point<f64>) {
+    /// always `0`) for the given scroll target. `include_hidden` controls whether
+    /// `overflow: hidden` axes count as scrollable (they do for programmatic scrolls,
+    /// which apply to any scrolling box, but not for user scrolls).
+    pub(crate) fn scroll_state(
+        &self,
+        target: ScrollTarget,
+        include_hidden: bool,
+    ) -> (Point<f64>, Point<f64>) {
         match self.canonical_scroll_target(target) {
             ScrollTarget::Viewport => {
                 // The viewport scrolls the root element's scrollable overflow, which includes
@@ -455,12 +477,17 @@ impl BaseDocument {
 
                 // An axis with a non-scrolling overflow value has no scrollable range, even
                 // when its content overflows.
+                let scrollable = |overflow| match overflow {
+                    Overflow::Scroll | Overflow::Auto => true,
+                    Overflow::Hidden => include_hidden,
+                    _ => false,
+                };
                 let (can_x_scroll, can_y_scroll) = node
                     .primary_styles()
                     .map(|styles| {
                         (
-                            matches!(styles.clone_overflow_x(), Overflow::Scroll | Overflow::Auto),
-                            matches!(styles.clone_overflow_y(), Overflow::Scroll | Overflow::Auto),
+                            scrollable(styles.clone_overflow_x()),
+                            scrollable(styles.clone_overflow_y()),
                         )
                     })
                     .unwrap_or((false, false));
@@ -482,7 +509,7 @@ impl BaseDocument {
     /// Start a smooth (animated) scroll towards the given absolute scroll offset. The
     /// animation is advanced each frame in [`BaseDocument::resolve_scroll_animation`].
     fn start_scroll_animation(&mut self, target: ScrollTarget, end: Point<f64>) {
-        let start = self.scroll_state(target).0;
+        let start = self.scroll_state(target, true).0;
 
         let start_time = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -549,6 +576,7 @@ impl BaseDocument {
                 target: ScrollTarget::Node(node_id),
                 amount,
                 overflow: ScrollOverflow::Clamp,
+                source: ScrollSource::Programmatic,
                 behavior,
                 interrupt_animation: true,
             },
