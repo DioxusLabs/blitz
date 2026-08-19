@@ -20,6 +20,13 @@ pub(crate) fn init_document_proto(proto: &JsObject, context: &mut Context) {
         context,
     );
     define_accessor(proto, "body", Some(body), None, context);
+    define_accessor(
+        proto,
+        "scrollingElement",
+        Some(scrolling_element),
+        None,
+        context,
+    );
     define_accessor(proto, "head", Some(head), None, context);
     define_accessor(proto, "activeElement", Some(active_element), None, context);
     define_accessor(proto, "defaultView", Some(default_view), None, context);
@@ -95,6 +102,12 @@ fn document_element(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsR
     let _ = this_node_id(this)?;
     let root_id = ctx.doc.borrow().try_root_element().map(|root| root.id);
     Ok(node_or_null(&ctx, root_id, context))
+}
+
+/// `document.scrollingElement`: blitz documents are always in no-quirks mode,
+/// where the scrolling element is the document element.
+fn scrolling_element(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    document_element(this, args, context)
 }
 
 fn body(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
