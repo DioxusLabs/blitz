@@ -358,6 +358,119 @@ const BOOTSTRAP_JS: &str = r#"
         };
     }
 
+    // `localStorage`/`sessionStorage`: in-memory Storage implementations
+    // (not persisted across page loads). Named property access (e.g.
+    // `localStorage.level`) is forwarded to the backing store via a Proxy,
+    // per the WebIDL named getter/setter semantics of Storage.
+    const makeStorage = () => {
+        const store = new Map();
+        const api = {
+            getItem(key) {
+                key = String(key);
+                return store.has(key) ? store.get(key) : null;
+            },
+            setItem(key, value) {
+                store.set(String(key), String(value));
+            },
+            removeItem(key) {
+                store.delete(String(key));
+            },
+            clear() {
+                store.clear();
+            },
+            key(index) {
+                return [...store.keys()][index] ?? null;
+            },
+            get length() {
+                return store.size;
+            },
+        };
+        return new Proxy(api, {
+            get(target, prop) {
+                if (prop in target) {
+                    const value = Reflect.get(target, prop);
+                    return typeof value === "function" ? value.bind(target) : value;
+                }
+                return typeof prop === "string" && store.has(prop)
+                    ? store.get(prop)
+                    : undefined;
+            },
+            set(target, prop, value) {
+                if (typeof prop === "string") store.set(prop, String(value));
+                return true;
+            },
+            has(target, prop) {
+                return prop in target || (typeof prop === "string" && store.has(prop));
+            },
+            deleteProperty(target, prop) {
+                if (typeof prop === "string") store.delete(prop);
+                return true;
+            },
+            ownKeys() {
+                return [...store.keys()];
+            },
+            getOwnPropertyDescriptor(target, prop) {
+                if (typeof prop === "string" && store.has(prop)) {
+                    return {
+                        value: store.get(prop),
+                        writable: true,
+                        enumerable: true,
+                        configurable: true,
+                    };
+                }
+                return Reflect.getOwnPropertyDescriptor(target, prop);
+            },
+        });
+    };
+    if (typeof globalThis.localStorage === "undefined") {
+        globalThis.localStorage = makeStorage();
+    }
+    if (typeof globalThis.sessionStorage === "undefined") {
+        globalThis.sessionStorage = makeStorage();
+    }
+
+    // `document.implementation` (DOMImplementation). `createHTMLDocument`
+    // builds a detached html/head/body tree in the *current* document's node
+    // arena and returns a document-like object over it, with node-creation
+    // methods delegating to the main document. This covers the common
+    // template-parsing use (e.g. jQuery's `parseHTML`); the returned object
+    // is not a real, separate `Document`.
+    if (typeof document.implementation === "undefined") {
+        document.implementation = {
+            hasFeature() {
+                return true;
+            },
+            createHTMLDocument(title = "") {
+                const documentElement = document.createElement("html");
+                const head = document.createElement("head");
+                const body = document.createElement("body");
+                documentElement.appendChild(head);
+                documentElement.appendChild(body);
+                title = String(title);
+                if (title !== "") {
+                    const titleElement = document.createElement("title");
+                    titleElement.textContent = title;
+                    head.appendChild(titleElement);
+                }
+                return {
+                    documentElement,
+                    head,
+                    body,
+                    createElement: (tag) => document.createElement(tag),
+                    createElementNS: (ns, tag) => document.createElementNS(ns, tag),
+                    createTextNode: (text) => document.createTextNode(text),
+                    createComment: (text) => document.createComment(text),
+                    createDocumentFragment: () => document.createDocumentFragment(),
+                    querySelector: (selector) => documentElement.querySelector(selector),
+                    querySelectorAll: (selector) =>
+                        documentElement.querySelectorAll(selector),
+                    getElementById: (id) =>
+                        documentElement.querySelector('[id="' + CSS.escape(String(id)) + '"]'),
+                };
+            },
+        };
+    }
+
     // `document.fonts` (FontFaceSet) stub: all fonts report as loaded
     const fontFaceSet = {
         status: "loaded",
@@ -528,6 +641,12 @@ impl ScriptRuntime {
                 js_string!("Mozilla/5.0 (compatible; Blitz)"),
                 Attribute::all(),
             )
+            .property(
+                js_string!("language"),
+                js_string!("en-US"),
+                Attribute::all(),
+            )
+            .property(js_string!("platform"), js_string!(""), Attribute::all())
             .build();
         register_global(&mut context, "navigator", navigator.into());
 

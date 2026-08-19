@@ -44,6 +44,21 @@ pub(crate) fn init_element_proto(proto: &JsObject, context: &mut Context) {
         Some(set_disabled),
         context,
     );
+    define_accessor(proto, "options", Some(get_options), None, context);
+    define_accessor(
+        proto,
+        "selectedIndex",
+        Some(get_selected_index),
+        Some(set_selected_index),
+        context,
+    );
+    define_accessor(
+        proto,
+        "selected",
+        Some(get_selected),
+        Some(set_selected),
+        context,
+    );
     define_accessor(proto, "hidden", Some(get_hidden), Some(set_hidden), context);
     define_accessor(
         proto,
@@ -475,6 +490,19 @@ fn set_autofocus(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsR
 fn get_value(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
     let node_id = this_node_id(this)?;
+    if is_tag(&ctx, node_id, "select") {
+        let value = match selected_index(&ctx, node_id) {
+            Some(index) => {
+                let option_id = select_option_ids(&ctx, node_id)[index];
+                option_value(&ctx, option_id)
+            }
+            None => String::new(),
+        };
+        return Ok(js_str(&value));
+    }
+    if is_tag(&ctx, node_id, "option") {
+        return Ok(js_str(&option_value(&ctx, node_id)));
+    }
     let value = {
         let doc = ctx.doc.borrow();
         doc.get_node(node_id)
@@ -544,6 +572,150 @@ fn set_disabled(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsRe
         write_attr(&ctx, node_id, "disabled", "");
     } else {
         clear_attr(&ctx, node_id, "disabled");
+    }
+    Ok(JsValue::undefined())
+}
+
+// === <select> support (`options`, `selectedIndex`, option `selected`) ===
+
+fn is_tag(ctx: &DomCtx, node_id: NodeId, tag: &str) -> bool {
+    let doc = ctx.doc.borrow();
+    doc.get_node(node_id)
+        .and_then(|node| node.element_data())
+        .is_some_and(|element| &*element.name.local == tag)
+}
+
+/// The `<option>` descendants of a `<select>`, in document order
+fn select_option_ids(ctx: &DomCtx, select_id: NodeId) -> Vec<NodeId> {
+    super::collect_matching_descendants(&ctx.doc.borrow(), select_id, |element| {
+        &*element.name.local == "option"
+    })
+}
+
+/// An option's submission value: its `value` attribute, falling back to its
+/// text content
+fn option_value(ctx: &DomCtx, option_id: NodeId) -> String {
+    match read_attr(ctx, option_id, "value") {
+        Some(value) => value,
+        None => {
+            let doc = ctx.doc.borrow();
+            doc.get_node(option_id)
+                .map(|node| node.text_content().trim().to_string())
+                .unwrap_or_default()
+        }
+    }
+}
+
+/// The index of a select's selected option: the first option with the
+/// `selected` attribute, defaulting to the first option (or `None` when the
+/// select has no options or is `multiple`)
+fn selected_index(ctx: &DomCtx, select_id: NodeId) -> Option<usize> {
+    let option_ids = select_option_ids(ctx, select_id);
+    if let Some(index) = option_ids
+        .iter()
+        .position(|&id| read_attr(ctx, id, "selected").is_some())
+    {
+        return Some(index);
+    }
+    if option_ids.is_empty() || read_attr(ctx, select_id, "multiple").is_some() {
+        None
+    } else {
+        Some(0)
+    }
+}
+
+fn get_options(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    let ctx = dom_ctx(context)?;
+    let node_id = this_node_id(this)?;
+    if !is_tag(&ctx, node_id, "select") {
+        return Ok(JsValue::undefined());
+    }
+    let wrappers: Vec<JsValue> = select_option_ids(&ctx, node_id)
+        .into_iter()
+        .map(|option_id| node_wrapper(&ctx, option_id, context).into())
+        .collect();
+    Ok(boa_engine::object::builtins::JsArray::from_iter(wrappers, context).into())
+}
+
+fn get_selected_index(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    let ctx = dom_ctx(context)?;
+    let node_id = this_node_id(this)?;
+    if !is_tag(&ctx, node_id, "select") {
+        return Ok(JsValue::undefined());
+    }
+    Ok(match selected_index(&ctx, node_id) {
+        Some(index) => JsValue::from(index as i32),
+        None => JsValue::from(-1),
+    })
+}
+
+fn set_selected_index(
+    this: &JsValue,
+    args: &[JsValue],
+    context: &mut Context,
+) -> JsResult<JsValue> {
+    let ctx = dom_ctx(context)?;
+    let node_id = this_node_id(this)?;
+    if !is_tag(&ctx, node_id, "select") {
+        return Ok(JsValue::undefined());
+    }
+    let index = args
+        .first()
+        .map(|value| value.to_i32(context))
+        .transpose()?
+        .unwrap_or(-1);
+    for (i, option_id) in select_option_ids(&ctx, node_id).into_iter().enumerate() {
+        if i as i32 == index {
+            write_attr(&ctx, option_id, "selected", "");
+        } else {
+            clear_attr(&ctx, option_id, "selected");
+        }
+    }
+    Ok(JsValue::undefined())
+}
+
+fn get_selected(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    let ctx = dom_ctx(context)?;
+    let node_id = this_node_id(this)?;
+    if !is_tag(&ctx, node_id, "option") {
+        return Ok(JsValue::undefined());
+    }
+    let selected = read_attr(&ctx, node_id, "selected").is_some() || {
+        // A lone default-selected option: options fall back to the select's
+        // computed selected index
+        let doc = ctx.doc.borrow();
+        let parent_select =
+            std::iter::successors(doc.get_node(node_id).and_then(|node| node.parent), |&id| {
+                doc.get_node(id).and_then(|node| node.parent)
+            })
+            .find(|&id| {
+                doc.get_node(id)
+                    .and_then(|node| node.element_data())
+                    .is_some_and(|element| &*element.name.local == "select")
+            });
+        drop(doc);
+        parent_select.is_some_and(|select_id| {
+            selected_index(&ctx, select_id).is_some_and(|index| {
+                select_option_ids(&ctx, select_id)
+                    .get(index)
+                    .is_some_and(|&id| id == node_id)
+            })
+        })
+    };
+    Ok(JsValue::from(selected))
+}
+
+fn set_selected(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    let ctx = dom_ctx(context)?;
+    let node_id = this_node_id(this)?;
+    if !is_tag(&ctx, node_id, "option") {
+        return Ok(JsValue::undefined());
+    }
+    let selected = args.first().map(JsValue::to_boolean).unwrap_or(false);
+    if selected {
+        write_attr(&ctx, node_id, "selected", "");
+    } else {
+        clear_attr(&ctx, node_id, "selected");
     }
     Ok(JsValue::undefined())
 }
@@ -859,7 +1031,10 @@ fn scroll_height(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResu
 /// viewport (per the CSS overflow propagation rules), so its offset is the
 /// viewport scroll offset.
 fn current_scroll_offset(doc: &blitz_dom::BaseDocument, node_id: NodeId) -> blitz_dom::Point<f64> {
-    if doc.try_root_element().is_some_and(|root| root.id == node_id) {
+    if doc
+        .try_root_element()
+        .is_some_and(|root| root.id == node_id)
+    {
         doc.viewport_scroll()
     } else {
         doc.get_node(node_id)
