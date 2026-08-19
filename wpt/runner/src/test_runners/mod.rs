@@ -1,19 +1,59 @@
+use std::sync::LazyLock;
 use std::{fs, sync::Arc, time::Instant};
 
 use blitz_dom::{BaseDocument, DocumentConfig};
-use blitz_html::HtmlDocument;
+use blitz_html::{HtmlDocument, HtmlProvider};
 use log::{debug, warn};
+use regex::Regex;
 
 use crate::{SubtestCounts, TestFlags, TestKind, TestStatus, ThreadCtx};
 
 mod attr_test;
 mod crash_test;
 mod fuzzy;
+mod harness_test;
 mod ref_test;
 
 pub use attr_test::process_attr_test;
 pub use crash_test::process_crash_test;
+pub use harness_test::process_harness_test;
 pub use ref_test::process_ref_test;
+
+/// Does the HTML contain an inline `<script>` (one without a `src` attribute)?
+/// Used as a heuristic for "requires JavaScript to be executed".
+pub fn has_inline_script(ctx: &ThreadCtx, html: &str) -> bool {
+    ctx.inline_script_re
+        .captures_iter(html)
+        .any(|captures| !captures.get(1).unwrap().as_str().contains("src"))
+}
+
+/// Matches each `<script>` tag with its attributes and body
+static SCRIPT_BODY_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"(?s)<script([^>]*)>(.*?)</script>"#).unwrap());
+
+/// Matches inline-script statements which don't require script execution for a
+/// checkLayout (attr) test: the `checkLayout()` call itself (re-implemented
+/// natively by the attr test runner) and testharness `setup()` calls
+static TRIVIAL_ATTR_SCRIPT_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"checkLayout\(\s*['"][^'"]*['"]\s*(,\s*(true|false))?\s*\)\s*;?|setup\(\s*\{[^{}]*\}\s*\)\s*;?"#)
+        .unwrap()
+});
+
+/// Does a checkLayout (attr) test's inline script do anything beyond calling
+/// `checkLayout()` (e.g. generate the test DOM)? If so, scripts must be
+/// executed before the native layout checks can see the full test DOM.
+pub fn attr_test_needs_scripts(html: &str) -> bool {
+    SCRIPT_BODY_RE.captures_iter(html).any(|captures| {
+        if captures.get(1).unwrap().as_str().contains("src") {
+            return false;
+        }
+        let body = captures.get(2).unwrap().as_str();
+        !TRIVIAL_ATTR_SCRIPT_RE
+            .replace_all(body, "")
+            .trim()
+            .is_empty()
+    })
+}
 
 pub struct SubtestResult {
     pub name: String,
@@ -78,18 +118,7 @@ pub fn process_test_file(
 
     // Crash Test
     if is_crash_test(relative_path) {
-        // Blitz doesn't run JavaScript, so skip crashtests which rely on it
-        if flags.contains(TestFlags::USES_SCRIPT) {
-            return (
-                TestKind::Crash,
-                flags,
-                TestStatus::Skip,
-                SubtestCounts::ZERO_OF_ZERO,
-                Vec::new(),
-            );
-        }
-
-        let counts = process_crash_test(ctx, relative_path, &file_contents);
+        let counts = process_crash_test(ctx, relative_path, &file_contents, flags);
         let status = counts.as_status();
         return (TestKind::Crash, flags, status, counts, Vec::new());
     }
@@ -147,17 +176,12 @@ pub fn process_test_file(
 
         return (TestKind::Attr, flags, status, counts, results);
     }
+    drop(matches);
 
-    // Testharness (testharness.js) tests. Blitz doesn't run JavaScript, so these are
-    // classified but not run.
+    // Testharness (testharness.js) test
     if ctx.testharness_re.is_match(&file_contents) {
-        return (
-            TestKind::TestHarness,
-            flags,
-            TestStatus::Skip,
-            SubtestCounts::ZERO_OF_ZERO,
-            Vec::new(),
-        );
+        let (status, counts, results) = process_harness_test(ctx, &file_contents, relative_path);
+        return (TestKind::TestHarness, flags, status, counts, results);
     }
 
     // TODO: Handle other test formats.
@@ -183,26 +207,41 @@ fn parse_and_resolve_document(
     relative_path: &str,
 ) -> BaseDocument {
     ctx.net_provider.reset();
-    let mut document = HtmlDocument::from_html(
-        html,
-        DocumentConfig {
-            base_url: Some(ctx.dummy_base_url.join(relative_path).unwrap().to_string()),
-            font_ctx: Some(ctx.font_ctx.clone()),
-            net_provider: Some(Arc::clone(&ctx.net_provider) as _),
-            navigation_provider: Some(Arc::clone(&ctx.navigation_provider)),
-            ..Default::default()
-        },
-    );
+    let config = DocumentConfig {
+        base_url: Some(ctx.dummy_base_url.join(relative_path).unwrap().to_string()),
+        font_ctx: Some(ctx.font_ctx.clone()),
+        net_provider: Some(Arc::clone(&ctx.net_provider) as _),
+        navigation_provider: Some(Arc::clone(&ctx.navigation_provider)),
+        // Required for `innerHTML` support when the document is upgraded to
+        // a `ScriptDocument` (harness tests and ref tests with scripts)
+        html_parser_provider: Some(Arc::new(HtmlProvider)),
+        ..Default::default()
+    };
+
+    // `.xht`/`.xhtml` files must be parsed as XML: content sniffing cannot
+    // detect all XHTML documents (e.g. ones with a plain `<!DOCTYPE html>`)
+    let is_xml = relative_path.ends_with(".xht") || relative_path.ends_with(".xhtml");
+    let mut document = if is_xml {
+        HtmlDocument::from_xml(html, config)
+    } else {
+        HtmlDocument::from_html(html, config)
+    };
 
     document.as_mut().set_viewport(ctx.viewport.clone());
     document.as_mut().resolve(0.0);
+    pump_net_provider(ctx, document.as_mut());
 
-    // Load resources.
-    // Loop because loading a resource may result in further resources being requested
+    document.into()
+}
+
+/// Load pending resources (stylesheets, images, fonts), re-resolving the document
+/// as they arrive. Loops because loading a resource may result in further
+/// resources being requested.
+pub fn pump_net_provider(ctx: &ThreadCtx, document: &mut BaseDocument) {
     let start = Instant::now();
     while ctx.net_provider.pending_item_count() > 0 {
         ctx.net_provider.for_each(|_| {});
-        document.as_mut().resolve(0.0);
+        document.resolve(0.0);
         if Instant::now().duration_since(start).as_millis() > 500 {
             ctx.net_provider.log_pending_items();
             panic!(
@@ -212,7 +251,5 @@ fn parse_and_resolve_document(
         }
     }
 
-    document.as_mut().resolve(0.0);
-
-    document.into()
+    document.resolve(0.0);
 }

@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Core DOM APIs</title>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    max-width: 60rem;
+    margin: 2rem auto;
+    padding: 0 1.25rem;
+  }
+  h1 { font-size: 1.9rem; margin-bottom: 0.25rem; }
+  h2 {
+    margin-top: 2.25rem;
+    padding-bottom: 0.3rem;
+    border-bottom: 2px solid currentColor;
+  }
+  h3 { margin-top: 1.5rem; }
+  code {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.9em;
+    background: rgba(127, 127, 127, 0.15);
+    padding: 0.1em 0.35em;
+    border-radius: 4px;
+  }
+  .lead { color: #666; }
+  ul { padding-left: 1.35rem; }
+  li { margin: 0.2rem 0; }
+  .tags { margin-left: 0.35rem; }
+  .tag {
+    display: inline-block;
+    font-size: 0.68rem;
+    font-weight: 600;
+    line-height: 1.4;
+    padding: 0 0.4em;
+    border-radius: 999px;
+    vertical-align: middle;
+    border: 1px solid transparent;
+    margin-right: 6px;
+  }
+  .tag.preact { background: #673ab8; color: #fff; }
+  .tag.react  { background: #087ea4; color: #fff; }
+  .tag.wpt    { background: #9a6700; color: #fff; }
+  .tag.extra  { background: transparent; color: #888; border-color: #888; }
+  .legend { margin: 1rem 0 0; font-size: 0.85rem; }
+  .legend .tag { margin-right: 0.35rem; }
+  .note {
+    background: rgba(127, 127, 127, 0.1);
+    border-left: 3px solid #888;
+    padding: 0.6rem 0.9rem;
+    border-radius: 0 6px 6px 0;
+    margin: 1rem 0;
+  }
+</style>
+</head>
+<body>
+
+<h1>Core DOM APIs</h1>
+<p class="lead">
+  A consolidated list of the browser DOM APIs used by core
+  <strong>Preact</strong>, <strong>React</strong> (react-dom), and the
+  <strong>Web Platform Test</strong> harness, merged and de-duplicated. A handful of
+  closely related APIs that aren't strictly required by any of the three but make
+  sense to implement alongside their neighbours have been added and marked as
+  <span class="tag extra">extra</span>.
+</p>
+
+<p class="legend">
+  <strong>Source legend:</strong>
+  <span class="tag preact">preact</span> core Preact &nbsp;
+  <span class="tag react">react</span> react-dom &nbsp;
+  <span class="tag wpt">wpt</span> WPT harness &nbsp;
+  <span class="tag extra">extra</span> related, not directly observed
+</p>
+
+<h2>1. Global objects &amp; entry points</h2>
+<ul>
+  <li><code>window</code> (<code>self</code>, <code>window.parent</code>, <code>window.opener</code>, <code>window.defaultView</code>)
+    <span class="tags"><span class="tag react">react</span><span class="tag wpt">wpt</span></span></li>
+  <li><code>window.event</code>
+    <span class="tags"><span class="tag react">react</span></span></li>
+  <li><code>window.innerWidth</code> / <code>window.innerHeight</code>
+    <span class="tags"><span class="tag react">react</span></span></li>
+  <li><code>window.getComputedStyle()</code>
+    <span class="tags"><span class="tag react">react</span><span class="tag wpt">wpt</span></span></li>
+  <li><code>window.matchMedia()</code>
+    <span class="tags"><span class="tag react">react</span></span></li>
+  <li><code>window.getSelection()</code>
+    <span class="tags"><span class="tag react">react</span></span></li>
+  <li><code>window.postMessage()</code>
+    <span class="tags"><span class="tag wpt">wpt</span></span></li>
+  <li><code>window.scrollTo()</code>, <code>window.scrollX</code> / <code>window.scrollY</code>
+    <span class="tags"><span class="tag react">react</span></span></li>
+  <li><code>document</code> — global render root / default view
+    <span class="tags"><span class="tag preact">preact</span><span class="tag react">react</span><span class="tag wpt">wpt</span></span></li>
+  <li><code>document.documentElement</code>
+    <span class="tags"><span class="tag preact">preact</span><span class="tag react">react</span><span class="tag wpt">wpt</span></span></li>
+  <li><code>document.head</code>, <code>document.body</code>
+    <span class="tags"><span class="tag react">react</span><span class="tag wpt">wpt</span></span></li>
+  <li><code>document.activeElement</code>
+    <span class="tags"><span class="tag react">react</span></span></li>
+  <li><code>document.readyState</code>, <code>document.defaultView</code>
+    <span class="tags"><span class="tag react">react</span><span class="tag wpt">wpt</span></span></li>
+  <li><code>document.documentMode</code> (legacy IE)
+    <span class="tags"><span class="tag react">react</span></span></li>
+  <li><code>document.fonts.ready</code>
+    <span class="tags"><span class="tag react">react</span></span></li>
+  <li><code>navigator</code> (<code>navigator.serviceWorker</code>)
+    <span class="tags"><span class="tag react">react</span><span class="tag wpt">wpt</span></span></li>
+  <li><code>performance.now()</code>
+    <span class="tags"><span class="tag react">react</span></span></li>
+  <li><code>location</code> (<code>href</code>, <code>pathname</code>, <code>reload()</code>)
+    <span class="tags"><span class="tag wpt">wpt</span></span></li>
+  <li><code>CSS.escape()</code>
+    <span class="tags"><span class="tag react">react</span></span></li>
+  <li><code>URL</code> (<code>createObjectURL()</code> / <code>revokeObjectURL()</code>)
+    <span class="tags"><span class="tag react">react</span></span></li>
+  <li><code>console.log()</code>, <code>console.debug()</code> (<code>console.warn</code>/<code>error</code> <span class="tag extra">extra</span>)
+    <span class="tags"><span class="tag wpt">wpt</span></span></li>
+</ul>
+
+<h2>2. Node / element creation</h2>
+<ul>
+  <li><code>document.createElement()</code>
+    <span class="tags"><span class="tag react">react</span></span></li>
+  <li><code>document.createElementNS(namespace, type, options)</code>
+    <span class="tags"><span class="tag preact">preact</span><span class="tag react">react</span><span class="tag wpt">wpt</span></span></li>
+  <li><code>document.createTextNode(text)</code>
+    <span class="tags"><span class="tag preact">preact</span><span class="tag react">react</span><span class="tag wpt">wpt</span></span></li>
+  <li><code>document.createComment()</code>
+    <span class="tags"><span class="tag react">react</span></span></li>
+  <li><code>document.createDocumentFragment()</code>
+    <span class="tags"><span class="tag react">react</span></span></li>
+  <li><code>node.cloneNode()</code>
+    <span class="tags"><span class="tag react">react</span></span></li>
+  <li><code>HTMLTemplateElement.content</code>
+    <span class="tags"><span class="tag preact">preact</span></span></li>
+</ul>
+<p><strong>Namespaces</strong> passed to <code>createElementNS</code> (and inherited via <code>node.namespaceURI</code>):</p>
+<ul>
+  <li><code>http://www.w3.org/1999/xhtml</code> (HTML, default)
+    <span class="tags"><span class="tag preact">preact</span><span class="tag react">react</span></span></li>
+  <li><code>http://www.w3.org/2000/svg</code> (SVG)
+    <span class="tags"><span class="tag preact">preact</span><span class="tag react">react</span></span></li>
+  <li><code>http://www.w3.org/1998/Math/MathML</code> (MathML)
+    <span class="tags"><span class="tag preact">preact</span><span class="tag react">react</span></span></li>
+</ul>
+
+<h2>3. Tree traversal &amp; mutation (<code>Node</code>)</h2>
+<h3>Mutation</h3>
+<ul>
+  <li><code>parent.appendChild(child)</code>
+    <span class="tags"><span class="tag react">react</span><span class="tag wpt">wpt</span></span></li>
+  <li><code>parent.insertBefore(node, referenceNode)</code>
+    <span class="tags"><span class="tag preact">preact</span><span class="tag react">react</span></span></li>
+  <li><code>parent.removeChild(child)</code>
+    <span class="tags"><span class="tag preact">preact</span><span class="tag react">react</span><span class="tag wpt">wpt</span></span></li>
+  <li><code>parent.replaceChild(newChild, oldChild)</code>
+    <span class="tags"><span class="tag react">react</span></span></li>
+  <li><code>element.prepend()</code>
+    <span class="tags"><span class="tag react">react</span></span></li>
+  <li><code>element.remove()</code>
+    <span class="tags"><span class="tag react">react</span></span></li>
+  <li><code>element.append()</code> <span class="tag extra">extra</span> (natural companion to <code>prepend</code>)</li>
+  <li><code>element.replaceWith()</code>, <code>before()</code>, <code>after()</code> <span class="tag extra">extra</span></li>
+  <li><code>element.moveBefore()</code> — state-preserving move (feature-detected)
+    <span class="tags"><span class="tag react">react</span></span></li>
+  <li><code>element.insertAdjacentText()</code> (<code>insertAdjacentElement</code>/<code>insertAdjacentHTML</code> <span class="tag extra">extra</span>)
+    <span class="tags"><span class="tag wpt">wpt</span></span></li>
+</ul>
+<h3>Queries about the tree</h3>
+<ul>
+  <li><code>node.contains()</code>
+    <span class="tags"><span class="tag react">react</span></span></li>
+  <li><code>node.compareDocumentPosition()</code> (+ <code>Node.DOCUMENT_POSITION_CONTAINED_BY</code>)
+    <span class="tags"><span class="tag react">react</span></span></li>
+  <li><code>node.getRootNode()</code>
+    <span class="tags"><span class="tag react">react</span></span></li>
+  <li><code>node.hasChildNodes()</code>
+    <span class="tags"><span class="tag react">react</span></span></li>
+</ul>
+<h3>Read-only traversal / identity</h3>
+<ul>
+  <li><code>node.parentNode</code> (<code>parentElement</code> <span class="tag extra">extra</span>)
+    <span class="tags"><span class="tag preact">preact</span><span class="tag react">react</span></span></li>
+  <li><code>node.childNodes</code> (+ <code>.length</code>) / <code>node.children</code>
+    <span class="tags"><span class="tag preact">preact</span><span class="tag react">react</span><span class="tag wpt">wpt</span></span></li>
+  <li><code>node.firstChild</code> / <code>node.lastChild</code>
+    <span class="tags"><span class="tag preact">preact</span><span class="tag react">react</span><span class="tag wpt">wpt</span></span></li>
+  <li><code>node.nextSibling</code> / <code>node.previousSibling</code>
+    <span class="tags"><span class="tag preact">preact</span><span class="tag react">react</span></span></li>
+  <li><code>node.firstElementChild</code> / <code>node.nextElementSibling</code>
+    <span class="tags"><span class="tag react">react</span></span></li>
+  <li><code>node.ownerDocument</code>
+    <span class="tags"><span class="tag react">react</span></span></li>
+  <li><code>node.nodeType</code>
+    <span class="tags"><span class="tag preact">preact</span><span class="tag react">react</span><span class="tag wpt">wpt</span></span></li>
+  <li><code>node.nodeName</code>, <code>node.tagName</code>, <code>element.localName</code>
+    <span class="tags"><span class="tag preact">preact</span><span class="tag react">react</span><span class="tag wpt">wpt</span></span></li>
+  <li><code>node.nodeValue</code>
+    <span class="tags"><span class="tag react">react</span></span></li>
+  <li><code>node.namespaceURI</code>
+    <span class="tags"><span class="tag preact">preact</span><span class="tag react">react</span></span></li>
+</ul>
+<p><strong><code>nodeType</code> constants</strong> compared against:
+  <code>ELEMENT_NODE</code> (1), <code>TEXT_NODE</code> (3),
+  <code>PROCESSING_INSTRUCTION_NODE</code> (7), <code>COMMENT_NODE</code> (8),
+  <code>DOCUMENT_NODE</code> (9), <code>DOCUMENT_TYPE_NODE</code> (10),
+  <code>DOCUMENT_FRAGMENT_NODE</code> (11)
+  <span class="tags"><span class="tag preact">preact</span><span class="tag react">react</span><span class="tag wpt">wpt</span></span>
+</p>
+
+<h2>4. Selecting / querying</h2>
+<ul>
+  <li><code>document.getElementById()</code>
+    <span class="tags"><span class="tag react">react</span><span class="tag wpt">wpt</span></span></li>
+  <li><code>document.getElementsByTagName()</code>
+    <span class="tags"><span class="tag react">react</span><span class="tag wpt">wpt</span></span></li>
+  <li><code>element.querySelector()</code>
+    <span class="tags"><span class="tag react">react</span><span class="tag wpt">wpt</span></span></li>
+  <li><code>element.querySelectorAll()</code>
+    <span class="tags"><span class="tag react">react</span><span class="tag wpt">wpt</span></span></li>
+  <li><code>document.getElementsByClassName()</code> <span class="tag extra">extra</span></li>
+</ul>
+
+<h2>5. Attributes &amp; reflected properties (<code>Element</code>)</h2>
+<h3>Attribute methods</h3>
+<ul>
+  <li><code>element.setAttribute(name, value)</code>
+    <span class="tags"><span class="tag preact">preact</span><span class="tag react">react</span><span class="tag wpt">wpt</span></span></li>
+  <li><code>element.getAttribute(name)</code>
+    <span class="tags"><span class="tag react">react</span><span class="tag wpt">wpt</span></span></li>
+  <li><code>element.removeAttribute(name)</code>
+    <span class="tags"><span class="tag preact">preact</span><span class="tag react">react</span></span></li>
+  <li><code>element.hasAttribute(name)</code>
+    <span class="tags"><span class="tag react">react</span></span></li>
+  <li><code>element.setAttributeNS()</code> / <code>getAttributeNS()</code> / <code>removeAttributeNS()</code>
+    <span class="tags"><span class="tag react">react</span></span></li>
+  <li><code>element.removeAttributeNode()</code>
+    <span class="tags"><span class="tag react">react</span></span></li>
+  <li><code>element.attributes</code> (collection: <code>.length</code>, <code>attr.name</code>, <code>attr.value</code>)
+    <span class="tags"><span class="tag preact">preact</span><span class="tag wpt">wpt</span></span></li>
+  <li><code>element.dataset</code>
+    <span class="tags"><span class="tag react">react</span></span></li>
+  <li><code>element[prop] = value</code> — direct IDL property assignment when <code>prop in element</code>
+    <span class="tags"><span class="tag preact">preact</span><span class="tag react">react</span></span></li>
+</ul>
+<h3>Commonly reflected IDL properties</h3>
+<ul>
+  <li>Identity / class: <code>id</code>, <code>className</code>, <code>classList</code> <span class="tag extra">extra</span>, <code>is</code>, <code>nonce</code>
+    <span class="tags"><span class="tag react">react</span></span></li>
+  <li>Form values: <code>value</code>, <code>defaultValue</code>, <code>checked</code>, <code>defaultChecked</code>, <code>selected</code>, <code>defaultSelected</code> <span class="tag extra">extra</span>, <code>selectedIndex</code>, <code>multiple</code>, <code>disabled</code>
+    <span class="tags"><span class="tag preact">preact</span><span class="tag react">react</span></span></li>
+  <li>Links / media: <code>href</code>, <code>src</code>, <code>srcSet</code>, <code>srcObject</code>, <code>type</code>, <code>name</code>, <code>title</code>, <code>media</code>, <code>loading</code>, <code>fetchPriority</code>, <code>crossOrigin</code>, <code>integrity</code>, <code>referrerPolicy</code>
+    <span class="tags"><span class="tag react">react</span></span></li>
+  <li>Editing / focus: <code>contentEditable</code> / <code>isContentEditable</code>, <code>autofocus</code>
+    <span class="tags"><span class="tag react">react</span></span></li>
+</ul>
+
+<h2>6. Text &amp; HTML content</h2>
+<ul>
+  <li><code>characterData.data</code> (read/write — text &amp; comment nodes)
+    <span class="tags"><span class="tag preact">preact</span><span class="tag react">react</span><span class="tag wpt">wpt</span></span></li>
+  <li><code>node.textContent</code> (read/write)
+    <span class="tags"><span class="tag react">react</span><span class="tag wpt">wpt</span></span></li>
+  <li><code>element.innerHTML</code> (read/write; Trusted Types–aware)
+    <span class="tags"><span class="tag preact">preact</span><span class="tag react">react</span><span class="tag wpt">wpt</span></span></li>
+  <li><code>element.outerHTML</code>
+    <span class="tags"><span class="tag react">react</span></span></li>
+</ul>
+
+<h2>7. Styles (<code>CSSStyleDeclaration</code>)</h2>
+<ul>
+  <li><code>element.style</code> (read)
+    <span class="tags"><span class="tag preact">preact</span><span class="tag react">react</span><span class="tag wpt">wpt</span></span></li>
+  <li><code>style.cssText</code> (write — bulk set / clear)
+    <span class="tags"><span class="tag preact">preact</span></span></li>
+  <li><code>style.setProperty(name, value)</code> — custom properties (<code>--*</code>) &amp; general props
+    <span class="tags"><span class="tag preact">preact</span><span class="tag react">react</span></span></li>
+  <li><code>style.removeProperty()</code> / <code>getPropertyValue()</code> <span class="tag extra">extra</span></li>
+  <li><code>style[prop] = value</code> — individual camelCase properties (e.g. <code>gridColumn</code>, <code>minWidth</code>)
+    <span class="tags"><span class="tag preact">preact</span><span class="tag react">react</span><span class="tag wpt">wpt</span></span></li>
+  <li><code>style.cssFloat</code>
+    <span class="tags"><span class="tag react">react</span></span></li>
+  <li><code>window.getComputedStyle()</code> (read computed values)
+    <span class="tags"><span class="tag react">react</span><span class="tag wpt">wpt</span></span></li>
+</ul>
+
+<h2>8. Focus, selection &amp; forms</h2>
+<ul>
+  <li><code>element.focus({ preventScroll })</code> / <code>element.blur()</code>
+    <span class="tags"><span class="tag react">react</span></span></li>
+  <li><code>document.activeElement</code>
+    <span class="tags"><span class="tag react">react</span></span></li>
+  <li>Input selection: <code>input.selectionStart</code>, <code>input.selectionEnd</code>, <code>input.setSelectionRange()</code>, <code>input.select()</code>
+    <span class="tags"><span class="tag react">react</span></span></li>
+  <li>Selection API: <code>window.getSelection()</code>, <code>selection.rangeCount</code>, <code>anchorNode</code>/<code>anchorOffset</code>, <code>focusNode</code>/<code>focusOffset</code>, <code>removeAllRanges()</code>, <code>addRange()</code>, <code>extend()</code>
+    <span class="tags"><span class="tag react">react</span></span></li>
+  <li><code>Range</code>: <code>document.createRange()</code>, <code>selectNodeContents()</code>, <code>setStart()</code>, <code>setEnd()</code>
+    <span class="tags"><span class="tag react">react</span></span></li>
+  <li>Forms: <code>form.requestSubmit()</code>, <code>form.submit()</code>, <code>form.reset()</code>
+    <span class="tags"><span class="tag react">react</span></span></li>
+</ul>
+
+<h2>9. Scrolling &amp; geometry</h2>
+<ul>
+  <li><code>element.getBoundingClientRect()</code>, <code>element.getClientRects()</code>
+    <span class="tags"><span class="tag react">react</span></span></li>
+  <li><code>element.scrollIntoView()</code>
+    <span class="tags"><span class="tag react">react</span></span></li>
+  <li><code>element.scrollTop</code> / <code>element.scrollLeft</code> (<code>scrollWidth</code>/<code>scrollHeight</code> <span class="tag extra">extra</span>)
+    <span class="tags"><span class="tag react">react</span></span></li>
+  <li><code>window.scrollTo()</code>, <code>window.scrollX</code> / <code>window.scrollY</code>
+    <span class="tags"><span class="tag react">react</span></span></li>
+  <li><code>DOMRect</code>
+    <span class="tags"><span class="tag react">react</span></span></li>
+</ul>
+
+<h2>10. Events (<code>EventTarget</code> / <code>Event</code>)</h2>
+<h3>Registration &amp; dispatch</h3>
+<ul>
+  <li><code>target.addEventListener(type, listener, options)</code> — <code>{ capture, passive, once }</code>
+    <span class="tags"><span class="tag preact">preact</span><span class="tag react">react</span><span class="tag wpt">wpt</span></span></li>
+  <li><code>target.removeEventListener(type, listener, options)</code>
+    <span class="tags"><span class="tag preact">preact</span><span class="tag react">react</span><span class="tag wpt">wpt</span></span></li>
+  <li><code>target.dispatchEvent(event)</code>
+    <span class="tags"><span class="tag react">react</span><span class="tag wpt">wpt</span></span></li>
+  <li>Legacy IE: <code>attachEvent()</code> / <code>detachEvent()</code>
+    <span class="tags"><span class="tag react">react</span></span></li>
+  <li>Legacy dispatch: <code>document.createEvent()</code> + <code>initEvent()</code> / <code>initMouseEvent()</code>
+    <span class="tags"><span class="tag react">react</span></span></li>
+</ul>
+<h3>Event object members</h3>
+<ul>
+  <li>Methods: <code>preventDefault()</code>, <code>stopPropagation()</code>, <code>stopImmediatePropagation()</code> <span class="tag extra">extra</span>, <code>getModifierState()</code>, <code>composedPath()</code>
+    <span class="tags"><span class="tag preact">preact</span><span class="tag react">react</span><span class="tag wpt">wpt</span></span></li>
+  <li>Reads: <code>type</code>, <code>target</code>, <code>currentTarget</code>, <code>relatedTarget</code>, <code>defaultPrevented</code>, <code>timeStamp</code>
+    <span class="tags"><span class="tag preact">preact</span><span class="tag react">react</span><span class="tag wpt">wpt</span></span></li>
+  <li>Keyboard/pointer: <code>keyCode</code>, <code>charCode</code>, <code>which</code>, <code>pointerId</code>
+    <span class="tags"><span class="tag react">react</span></span></li>
+  <li>Data transfer: <code>clipboardData</code>, <code>dataTransfer</code>
+    <span class="tags"><span class="tag react">react</span></span></li>
+  <li>Messaging/error events: <code>data</code>, <code>source</code>, <code>message</code>, <code>filename</code>, <code>lineno</code>, <code>colno</code>, <code>error</code>, <code>reason</code>
+    <span class="tags"><span class="tag wpt">wpt</span></span></li>
+</ul>
+<h3>Event constructors</h3>
+<ul>
+  <li><code>Event</code>, <code>CustomEvent</code>
+    <span class="tags"><span class="tag react">react</span><span class="tag wpt">wpt</span></span></li>
+  <li><code>InputEvent</code>, <code>MouseEvent</code>, <code>KeyboardEvent</code>, <code>UIEvent</code> (<code>PointerEvent</code> <span class="tag extra">extra</span>)
+    <span class="tags"><span class="tag react">react</span></span></li>
+  <li><code>ErrorEvent</code>, <code>PromiseRejectionEvent</code>
+    <span class="tags"><span class="tag wpt">wpt</span></span></li>
+</ul>
+<h3>Native event names</h3>
+<p>
+  React registers the full standard set. Representative groups:
+  <code>click</code>, <code>dblclick</code>, <code>input</code>, <code>change</code>, <code>submit</code>, <code>reset</code>,
+  <code>focusin</code>/<code>focusout</code>, <code>keydown</code>/<code>keyup</code>/<code>keypress</code>,
+  <code>mouse*</code>, <code>pointer*</code>, <code>touch*</code>, <code>drag*</code>/<code>drop</code>,
+  <code>wheel</code>/<code>scroll</code>, <code>copy</code>/<code>cut</code>/<code>paste</code>,
+  <code>compositionstart</code>/<code>update</code>/<code>end</code>, <code>animation*</code>, <code>transition*</code>,
+  media events (<code>play</code>, <code>pause</code>, <code>ended</code>, <code>seeking</code>, <code>loadeddata</code>, …),
+  <code>load</code>/<code>error</code>/<code>abort</code>, <code>toggle</code>/<code>beforetoggle</code>,
+  <code>resize</code>, <code>select</code>, <code>selectionchange</code>.
+  <span class="tags"><span class="tag react">react</span></span>
+</p>
+
+<h2>11. Observers, animations &amp; scheduling</h2>
+<ul>
+  <li><code>MutationObserver</code> (<code>observe</code>, <code>disconnect</code>, <code>takeRecords</code>)
+    <span class="tags"><span class="tag react">react</span></span></li>
+  <li><code>IntersectionObserver</code>, <code>ResizeObserver</code> (<code>observe</code>, <code>unobserve</code>, <code>disconnect</code>)
+    <span class="tags"><span class="tag react">react</span></span></li>
+  <li><code>element.animate()</code>, <code>element.getAnimations()</code>, <code>Animation</code> control (<code>cancel</code>, <code>pause</code>, <code>finished</code>, <code>getTiming</code>, <code>getKeyframes</code>)
+    <span class="tags"><span class="tag react">react</span></span></li>
+  <li><code>document.startViewTransition()</code> — View Transitions API
+    <span class="tags"><span class="tag react">react</span></span></li>
+  <li><code>requestAnimationFrame()</code> (+ <code>cancelAnimationFrame</code> <span class="tag extra">extra</span>)
+    <span class="tags"><span class="tag preact">preact</span><span class="tag react">react</span></span></li>
+  <li><code>setTimeout()</code> / <code>clearTimeout()</code>
+    <span class="tags"><span class="tag preact">preact</span><span class="tag react">react</span><span class="tag wpt">wpt</span></span></li>
+  <li><code>setInterval()</code> / <code>clearInterval()</code> <span class="tag extra">extra</span></li>
+  <li><code>queueMicrotask()</code> <span class="tag extra">extra</span></li>
+  <li><code>MessageChannel</code> + <code>MessagePort</code> (<code>postMessage</code>, <code>onmessage</code>, <code>start</code>) — scheduler task loop
+    <span class="tags"><span class="tag react">react</span><span class="tag wpt">wpt</span></span></li>
+</ul>
+
+<h2>12. Networking &amp; other Web APIs</h2>
+<ul>
+  <li><code>fetch()</code> + <code>response.json()</code>
+    <span class="tags"><span class="tag wpt">wpt</span></span></li>
+  <li><code>AbortController</code> (<code>abort()</code>, <code>signal</code>) / <code>AbortSignal</code>
+    <span class="tags"><span class="tag wpt">wpt</span></span></li>
+  <li><code>DOMException</code> (incl. <code>QuotaExceededError</code>)
+    <span class="tags"><span class="tag wpt">wpt</span></span></li>
+  <li><code>FormData</code>
+    <span class="tags"><span class="tag react">react</span></span></li>
+  <li><code>Blob</code>
+    <span class="tags"><span class="tag react">react</span></span></li>
+  <li>Workers: <code>Worker</code>, <code>SharedWorker</code>, <code>ServiceWorker</code> (+ global scopes)
+    <span class="tags"><span class="tag wpt">wpt</span></span></li>
+</ul>
+
+<h2>13. Interfaces referenced (<code>instanceof</code> / feature detection)</h2>
+<p>
+  <code>Node</code>, <code>Element</code>, <code>HTMLElement</code>, <code>SVGElement</code>,
+  <code>SVGSVGElement</code>, <code>HTMLIFrameElement</code> (<code>contentWindow</code>/<code>contentDocument</code>),
+  <code>HTMLAllCollection</code>, <code>Document</code>, <code>DocumentFragment</code>,
+  <code>Text</code>, <code>Comment</code>, <code>ShadowRoot</code>, <code>Selection</code>,
+  <code>Range</code>, <code>Blob</code>, <code>AnimationTimeline</code>, <code>FormData</code>,
+  <code>EventTarget</code>.
+</p>
+
+<h2>14. Security integration</h2>
+<div class="note">
+  <strong>Trusted Types</strong> — when enabled, React passes
+  <code>TrustedHTML</code> / <code>TrustedScriptURL</code> values straight through to
+  <code>innerHTML</code> and URL-bearing attributes rather than stringifying them.
+  <span class="tags"><span class="tag react">react</span></span>
+</div>
+
+<h2>Implementation notes</h2>
+<ul>
+  <li><strong>Preact</strong> uses <em>only</em> <code>createElementNS</code> (never <code>createElement</code>)
+      and relies heavily on the <code>element[prop] = value</code> fallback guarded by
+      <code>prop in element</code>. It does not use <code>classList</code>, <code>cloneNode</code>,
+      <code>textContent</code>, <code>getAttribute</code>, or the NS attribute variants.
+      <code>preact/hooks</code> touches no element APIs — only <code>requestAnimationFrame</code>,
+      <code>setTimeout</code>, and <code>clearTimeout</code>.</li>
+  <li><strong>React</strong> has by far the largest surface: both element-creation calls,
+      a full synthetic event system with the entire native event-name table, the
+      Selection/Range APIs, the three observer APIs, Web Animations + View Transitions,
+      and Trusted Types.</li>
+  <li><strong>WPT harness</strong> mostly overlaps with the above but additionally pulls in
+      workers/messaging, <code>fetch</code>, <code>AbortController</code>, and the
+      <code>Node.*_NODE</code> constants. The <em>authored</em> grid test code alone needs only
+      <code>getElementById</code>, <code>element.style</code>, <code>getComputedStyle</code>, and
+      <code>window.opener</code>.</li>
+  <li>The two easiest things to overlook when bootstrapping an engine are Preact's
+      <code>createElementNS</code>-only creation path and the direct
+      <code>element[prop] = value</code> reflected-property fallback.</li>
+</ul>
+
+</body>
+</html>
