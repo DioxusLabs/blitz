@@ -576,3 +576,86 @@ fn interface_constructor_globals() {
         "function,function,function,function|false|true"
     );
 }
+
+#[test]
+fn local_storage() {
+    let doc = doc_from_html(
+        r#"
+        <html><body>
+            <div id="out"></div>
+            <script>
+                localStorage.setItem("a", "1");
+                localStorage.b = 2;
+                const results = [
+                    localStorage.getItem("a"),
+                    localStorage.a,
+                    localStorage.getItem("b"),
+                    localStorage.length,
+                    localStorage.getItem("missing"),
+                ];
+                localStorage.removeItem("a");
+                results.push(localStorage.getItem("a"), localStorage.length);
+                document.getElementById("out").textContent = results.map(String).join("|");
+            </script>
+        </body></html>
+        "#,
+    );
+    assert_eq!(text_of_selector(&doc, "#out"), "1|1|2|2|null|null|1");
+}
+
+// jQuery's support probes parse markup inside a detached document created via
+// `document.implementation.createHTMLDocument()`
+#[test]
+fn create_html_document() {
+    let doc = doc_from_html(
+        r#"
+        <html><body>
+            <div id="out"></div>
+            <script>
+                const detached = document.implementation.createHTMLDocument("t");
+                detached.body.innerHTML = "<p>hi</p><span>there</span>";
+                document.getElementById("out").textContent = [
+                    detached.body.childNodes.length,
+                    detached.body.querySelector("p").textContent,
+                    detached.head.querySelector("title").textContent,
+                ].join("|");
+            </script>
+        </body></html>
+        "#,
+    );
+    assert_eq!(text_of_selector(&doc, "#out"), "2|hi|t");
+}
+
+// `<select>`: `options`, `selectedIndex` and option `selected`/`value`,
+// as used by jQuery's `.val()`
+#[test]
+fn select_options_and_selected_index() {
+    let doc = doc_from_html(
+        r#"
+        <html><body>
+            <select id="sel">
+                <option value="a">A</option>
+                <option value="b" selected>B</option>
+                <option>C</option>
+            </select>
+            <div id="out"></div>
+            <script>
+                const sel = document.getElementById("sel");
+                const results = [
+                    sel.options.length,
+                    sel.selectedIndex,
+                    sel.value,
+                    sel.options[1].selected,
+                    sel.options[2].value,
+                ];
+                sel.selectedIndex = 2;
+                results.push(sel.selectedIndex, sel.value, sel.options[1].selected);
+                sel.options[0].selected = true;
+                results.push(sel.selectedIndex, sel.value);
+                document.getElementById("out").textContent = results.join("|");
+            </script>
+        </body></html>
+        "#,
+    );
+    assert_eq!(text_of_selector(&doc, "#out"), "3|1|b|true|C|2|C|false|0|a");
+}
