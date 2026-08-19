@@ -133,6 +133,35 @@ fn pan_y_allows_only_vertical() {
     assert_eq!(x, 0.0, "touch-action:pan-y should block horizontal panning");
 }
 
+/// `touch-action` restrictions on ancestors *above* the scroll container which handles the pan
+/// must not apply: the ancestor walk stops at the nearest scroller for the axis.
+#[test]
+fn ancestor_restriction_stops_at_scroll_container() {
+    // An outer `pan-y` restriction must not block horizontal panning of a nested scroller.
+    let mut outer_restricted = doc(r#"<html><body style="margin:0; touch-action:pan-y;">
+            <div id="scroller" style="overflow:scroll; width:200px; height:200px;">
+                <div style="width:400px; height:400px;"></div>
+            </div>
+        </body></html>"#);
+    let (x, _) = pan(&mut outer_restricted, 60.0, 0.0);
+    assert!(
+        x > 0.0,
+        "outer touch-action:pan-y should not block horizontal panning of a nested scroller"
+    );
+
+    // But a restriction on the scroll container itself (or its descendants) still applies.
+    let mut scroller_restricted = doc(r#"<html><body style="margin:0;">
+            <div id="scroller" style="overflow:scroll; width:200px; height:200px; touch-action:pan-y;">
+                <div style="width:400px; height:400px;"></div>
+            </div>
+        </body></html>"#);
+    let (x, _) = pan(&mut scroller_restricted, 60.0, 0.0);
+    assert_eq!(
+        x, 0.0,
+        "touch-action:pan-y on the scroller itself should block horizontal panning"
+    );
+}
+
 #[test]
 fn manipulation_allows_panning_on_both_axes() {
     let mut doc = scroller_doc("manipulation");

@@ -12,7 +12,7 @@ use blitz_traits::{
 };
 use keyboard_types::Modifiers;
 use markup5ever::local_name;
-use style::values::computed::{TouchAction, UserSelect};
+use style::values::computed::{Overflow, TouchAction, UserSelect};
 use taffy::AbsoluteAxis;
 
 use crate::{
@@ -157,24 +157,42 @@ impl PanState {
 /// Compute which axes a touch pan gesture starting on `node_id` is allowed to scroll, according to
 /// the `touch-action` property.
 ///
-/// Per spec the effective behaviour is the intersection of the `touch-action` values of the target
-/// and all of its ancestors, so we walk up the tree combining the permitted axes. `touch-action:
-/// none` blocks panning entirely, `pan-x`/`pan-y` restrict it to a single axis, and `auto` /
-/// `manipulation` permit both.
+/// Per the Pointer Events spec the effective behaviour is the intersection of the `touch-action`
+/// values of the target and its ancestors up to and including the nearest ancestor that implements
+/// the pan (the nearest scroll container which can actually scroll on that axis), so the walk stops
+/// per-axis at that scroller: `touch-action` values on elements *above* it do not restrict pans it
+/// handles. `touch-action: none` blocks panning entirely, `pan-x`/`pan-y` restrict it to a single
+/// axis, and `auto` / `manipulation` permit both.
 fn touch_action_pan_axes(doc: &BaseDocument, node_id: NodeId) -> (bool, bool) {
     let pan_x_flags = TouchAction::AUTO | TouchAction::MANIPULATION | TouchAction::PAN_X;
     let pan_y_flags = TouchAction::AUTO | TouchAction::MANIPULATION | TouchAction::PAN_Y;
 
     let mut allow_x = true;
     let mut allow_y = true;
+    // Whether the nearest scroller for the axis has been reached (its own `touch-action` counts,
+    // but its ancestors' do not).
+    let mut done_x = false;
+    let mut done_y = false;
     let mut current = Some(node_id);
     while let Some(id) = current {
         let node = &doc.nodes[id];
         if let Some(style) = node.primary_styles() {
             let touch_action = style.clone_touch_action();
-            allow_x &= touch_action.intersects(pan_x_flags);
-            allow_y &= touch_action.intersects(pan_y_flags);
-            if !allow_x && !allow_y {
+            if !done_x {
+                allow_x &= touch_action.intersects(pan_x_flags);
+            }
+            if !done_y {
+                allow_y &= touch_action.intersects(pan_y_flags);
+            }
+
+            let scrolls_x = matches!(style.clone_overflow_x(), Overflow::Scroll | Overflow::Auto)
+                && node.final_layout().scroll_width() > 0.0;
+            let scrolls_y = matches!(style.clone_overflow_y(), Overflow::Scroll | Overflow::Auto)
+                && node.final_layout().scroll_height() > 0.0;
+            done_x |= scrolls_x;
+            done_y |= scrolls_y;
+
+            if (done_x || !allow_x) && (done_y || !allow_y) {
                 break;
             }
         }
