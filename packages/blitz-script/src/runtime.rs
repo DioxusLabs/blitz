@@ -577,6 +577,15 @@ impl ScriptRuntime {
         register_global_accessor(&mut context, "outerHeight", inner_height);
         register_global_accessor(&mut context, "devicePixelRatio", device_pixel_ratio);
 
+        // Viewport scrolling
+        register_global_accessor(&mut context, "scrollX", scroll_x);
+        register_global_accessor(&mut context, "scrollY", scroll_y);
+        register_global_accessor(&mut context, "pageXOffset", scroll_x);
+        register_global_accessor(&mut context, "pageYOffset", scroll_y);
+        register_global_fn(&mut context, "scroll", 2, window_scroll_to);
+        register_global_fn(&mut context, "scrollTo", 2, window_scroll_to);
+        register_global_fn(&mut context, "scrollBy", 2, window_scroll_by);
+
         // The `CSS` namespace object. `CSS.escape` is defined in the JS bootstrap.
         let css_namespace = ObjectInitializer::new(&mut context)
             .function(
@@ -1266,6 +1275,55 @@ fn device_pixel_ratio(_: &JsValue, _: &[JsValue], context: &mut Context) -> JsRe
     let ctx = dom_ctx(context)?;
     let scale = ctx.doc.borrow().viewport().scale();
     Ok(JsValue::from(scale as f64))
+}
+
+// === Viewport scrolling ===
+
+fn scroll_x(_: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    let ctx = dom_ctx(context)?;
+    Ok(JsValue::from(ctx.doc.borrow().viewport_scroll().x))
+}
+
+fn scroll_y(_: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    let ctx = dom_ctx(context)?;
+    Ok(JsValue::from(ctx.doc.borrow().viewport_scroll().y))
+}
+
+/// `window.scrollTo`/`window.scroll`: scroll the viewport, which blitz-dom
+/// models as a programmatic scroll of the root element.
+fn window_scroll_to(_: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    let parsed = crate::dom::element::parse_scroll_to_args(args, context)?;
+    let ctx = dom_ctx(context)?;
+    let mut doc = ctx.doc.borrow_mut();
+    doc.resolve(0.0);
+    let Some(root_id) = doc.try_root_element().map(|root| root.id) else {
+        return Ok(JsValue::undefined());
+    };
+    let current = doc.viewport_scroll();
+    doc.scroll_to(
+        root_id,
+        parsed.left.unwrap_or(current.x),
+        parsed.top.unwrap_or(current.y),
+        parsed.behavior,
+    );
+    Ok(JsValue::undefined())
+}
+
+fn window_scroll_by(_: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    let parsed = crate::dom::element::parse_scroll_to_args(args, context)?;
+    let ctx = dom_ctx(context)?;
+    let mut doc = ctx.doc.borrow_mut();
+    doc.resolve(0.0);
+    let Some(root_id) = doc.try_root_element().map(|root| root.id) else {
+        return Ok(JsValue::undefined());
+    };
+    doc.scroll_by(
+        root_id,
+        parsed.left.unwrap_or(0.0),
+        parsed.top.unwrap_or(0.0),
+        parsed.behavior,
+    );
+    Ok(JsValue::undefined())
 }
 
 fn css_property_supported(

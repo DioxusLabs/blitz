@@ -1,11 +1,11 @@
 //! The `Element` prototype: attributes, DOM properties (`value`, `checked`, ...),
 //! `style`, `innerHTML` and friends.
 
-use blitz_dom::{LocalName, NodeId, QualName};
+use blitz_dom::{LocalName, NodeId, QualName, ScrollBehavior, ScrollLogicalPosition};
 use boa_engine::object::{JsObject, ObjectInitializer};
 use boa_engine::property::Attribute as PropAttribute;
 use boa_engine::value::JsValue;
-use boa_engine::{Context, JsResult, js_string};
+use boa_engine::{Context, JsNativeError, JsResult, js_string};
 
 use super::{
     define_accessor, define_method, dom_ctx, js_str, node_wrapper, this_node_id, to_rust_string,
@@ -129,6 +129,24 @@ pub(crate) fn init_element_proto(proto: &JsObject, context: &mut Context) {
     define_accessor(proto, "clientHeight", Some(client_height), None, context);
     define_accessor(proto, "scrollWidth", Some(scroll_width), None, context);
     define_accessor(proto, "scrollHeight", Some(scroll_height), None, context);
+    define_accessor(
+        proto,
+        "scrollTop",
+        Some(get_scroll_top),
+        Some(set_scroll_top),
+        context,
+    );
+    define_accessor(
+        proto,
+        "scrollLeft",
+        Some(get_scroll_left),
+        Some(set_scroll_left),
+        context,
+    );
+    define_method(proto, "scroll", 2, scroll_to_method, context);
+    define_method(proto, "scrollTo", 2, scroll_to_method, context);
+    define_method(proto, "scrollBy", 2, scroll_by_method, context);
+    define_method(proto, "scrollIntoView", 0, scroll_into_view, context);
 
     define_method(proto, "getAttribute", 1, get_attribute, context);
     define_method(proto, "setAttribute", 2, set_attribute, context);
@@ -833,6 +851,236 @@ fn scroll_width(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResul
 
 fn scroll_height(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     layout_value(this, context, |node| node.scroll_height().round())
+}
+
+// === Scrolling ===
+
+/// The current scroll offset of an element. The root element scrolls the
+/// viewport (per the CSS overflow propagation rules), so its offset is the
+/// viewport scroll offset.
+fn current_scroll_offset(doc: &blitz_dom::BaseDocument, node_id: NodeId) -> blitz_dom::Point<f64> {
+    if doc.try_root_element().is_some_and(|root| root.id == node_id) {
+        doc.viewport_scroll()
+    } else {
+        doc.get_node(node_id)
+            .filter(|node| node.element_data().is_some())
+            .map(|node| *node.scroll_offset())
+            .unwrap_or(blitz_dom::Point { x: 0.0, y: 0.0 })
+    }
+}
+
+/// Convert a JS value to a scroll coordinate: WebIDL `unrestricted double`,
+/// with non-finite values normalized to 0 per the cssom-view spec.
+fn scroll_coord(value: &JsValue, context: &mut Context) -> JsResult<f64> {
+    let number = value.to_number(context)?;
+    Ok(if number.is_finite() { number } else { 0.0 })
+}
+
+/// Parse a WebIDL `ScrollBehavior` enumeration value (`undefined` maps to the
+/// default, "auto"; other invalid values throw a `TypeError`)
+fn parse_scroll_behavior(value: &JsValue, context: &mut Context) -> JsResult<ScrollBehavior> {
+    if value.is_undefined() {
+        return Ok(ScrollBehavior::Auto);
+    }
+    let string = to_rust_string(value, context)?;
+    match string.as_str() {
+        "auto" => Ok(ScrollBehavior::Auto),
+        "instant" => Ok(ScrollBehavior::Instant),
+        "smooth" => Ok(ScrollBehavior::Smooth),
+        _ => Err(JsNativeError::typ()
+            .with_message(format!(
+                "{string:?} is not a valid value for enumeration ScrollBehavior"
+            ))
+            .into()),
+    }
+}
+
+/// Parsed arguments of the `scrollTo(x, y)` / `scrollTo(options)` overloads
+/// shared by the `Element` and `Window` scroll methods. `None` coordinates
+/// were not specified (and default to the current position for `scrollTo`,
+/// or a zero delta for `scrollBy`).
+pub(crate) struct ScrollToArgs {
+    pub(crate) left: Option<f64>,
+    pub(crate) top: Option<f64>,
+    pub(crate) behavior: ScrollBehavior,
+}
+
+/// Parse the WebIDL `scrollTo(x, y)` / `scrollTo(options)` overloads: two or
+/// more arguments are coordinates; a single argument must be a `ScrollToOptions`
+/// dictionary (a single non-object argument throws a `TypeError`, per WebIDL
+/// dictionary conversion).
+pub(crate) fn parse_scroll_to_args(
+    args: &[JsValue],
+    context: &mut Context,
+) -> JsResult<ScrollToArgs> {
+    if args.len() >= 2 {
+        return Ok(ScrollToArgs {
+            left: Some(scroll_coord(&args[0], context)?),
+            top: Some(scroll_coord(&args[1], context)?),
+            behavior: ScrollBehavior::Auto,
+        });
+    }
+    match args.first() {
+        None => Ok(ScrollToArgs {
+            left: None,
+            top: None,
+            behavior: ScrollBehavior::Auto,
+        }),
+        Some(value) if value.is_null_or_undefined() => Ok(ScrollToArgs {
+            left: None,
+            top: None,
+            behavior: ScrollBehavior::Auto,
+        }),
+        Some(value) => {
+            let Some(options) = value.as_object() else {
+                return Err(JsNativeError::typ()
+                    .with_message("value cannot be converted to a ScrollToOptions dictionary")
+                    .into());
+            };
+            let left = options.get(js_string!("left"), context)?;
+            let left = (!left.is_undefined())
+                .then(|| scroll_coord(&left, context))
+                .transpose()?;
+            let top = options.get(js_string!("top"), context)?;
+            let top = (!top.is_undefined())
+                .then(|| scroll_coord(&top, context))
+                .transpose()?;
+            let behavior = options.get(js_string!("behavior"), context)?;
+            let behavior = parse_scroll_behavior(&behavior, context)?;
+            Ok(ScrollToArgs {
+                left,
+                top,
+                behavior,
+            })
+        }
+    }
+}
+
+fn get_scroll_top(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    let ctx = dom_ctx(context)?;
+    let node_id = this_node_id(this)?;
+    let doc = ctx.doc.borrow();
+    Ok(JsValue::from(current_scroll_offset(&doc, node_id).y))
+}
+
+fn get_scroll_left(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    let ctx = dom_ctx(context)?;
+    let node_id = this_node_id(this)?;
+    let doc = ctx.doc.borrow();
+    Ok(JsValue::from(current_scroll_offset(&doc, node_id).x))
+}
+
+fn set_scroll_top(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    let value = scroll_coord(args.first().unwrap_or(&JsValue::undefined()), context)?;
+    let ctx = dom_ctx(context)?;
+    let node_id = this_node_id(this)?;
+    let mut doc = ctx.doc.borrow_mut();
+    doc.resolve(0.0);
+    let current = current_scroll_offset(&doc, node_id);
+    doc.scroll_to(node_id, current.x, value, ScrollBehavior::Auto);
+    Ok(JsValue::undefined())
+}
+
+fn set_scroll_left(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    let value = scroll_coord(args.first().unwrap_or(&JsValue::undefined()), context)?;
+    let ctx = dom_ctx(context)?;
+    let node_id = this_node_id(this)?;
+    let mut doc = ctx.doc.borrow_mut();
+    doc.resolve(0.0);
+    let current = current_scroll_offset(&doc, node_id);
+    doc.scroll_to(node_id, value, current.y, ScrollBehavior::Auto);
+    Ok(JsValue::undefined())
+}
+
+fn scroll_to_method(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    let parsed = parse_scroll_to_args(args, context)?;
+    let ctx = dom_ctx(context)?;
+    let node_id = this_node_id(this)?;
+    let mut doc = ctx.doc.borrow_mut();
+    doc.resolve(0.0);
+    let current = current_scroll_offset(&doc, node_id);
+    doc.scroll_to(
+        node_id,
+        parsed.left.unwrap_or(current.x),
+        parsed.top.unwrap_or(current.y),
+        parsed.behavior,
+    );
+    Ok(JsValue::undefined())
+}
+
+fn scroll_by_method(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    let parsed = parse_scroll_to_args(args, context)?;
+    let ctx = dom_ctx(context)?;
+    let node_id = this_node_id(this)?;
+    let mut doc = ctx.doc.borrow_mut();
+    doc.resolve(0.0);
+    doc.scroll_by(
+        node_id,
+        parsed.left.unwrap_or(0.0),
+        parsed.top.unwrap_or(0.0),
+        parsed.behavior,
+    );
+    Ok(JsValue::undefined())
+}
+
+/// Parse a WebIDL `ScrollLogicalPosition` enumeration value (`undefined` maps
+/// to the given default; other invalid values throw a `TypeError`)
+fn parse_scroll_logical_position(
+    value: &JsValue,
+    default: ScrollLogicalPosition,
+    context: &mut Context,
+) -> JsResult<ScrollLogicalPosition> {
+    if value.is_undefined() {
+        return Ok(default);
+    }
+    let string = to_rust_string(value, context)?;
+    match string.as_str() {
+        "start" => Ok(ScrollLogicalPosition::Start),
+        "center" => Ok(ScrollLogicalPosition::Center),
+        "end" => Ok(ScrollLogicalPosition::End),
+        "nearest" => Ok(ScrollLogicalPosition::Nearest),
+        _ => Err(JsNativeError::typ()
+            .with_message(format!(
+                "{string:?} is not a valid value for enumeration ScrollLogicalPosition"
+            ))
+            .into()),
+    }
+}
+
+fn scroll_into_view(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    let arg = args.first().cloned().unwrap_or_default();
+    // WebIDL `(boolean or ScrollIntoViewOptions)`: objects (and null/undefined)
+    // convert to the options dictionary, everything else converts to a boolean
+    // (`true` aligns to the start, `false` to the end).
+    let (behavior, block, inline) = if let Some(options) = arg.as_object() {
+        let behavior = options.get(js_string!("behavior"), context)?;
+        let behavior = parse_scroll_behavior(&behavior, context)?;
+        let block = options.get(js_string!("block"), context)?;
+        let block = parse_scroll_logical_position(&block, ScrollLogicalPosition::Start, context)?;
+        let inline = options.get(js_string!("inline"), context)?;
+        let inline =
+            parse_scroll_logical_position(&inline, ScrollLogicalPosition::Nearest, context)?;
+        (behavior, block, inline)
+    } else if arg.is_null_or_undefined() || arg.to_boolean() {
+        (
+            ScrollBehavior::Auto,
+            ScrollLogicalPosition::Start,
+            ScrollLogicalPosition::Nearest,
+        )
+    } else {
+        (
+            ScrollBehavior::Auto,
+            ScrollLogicalPosition::End,
+            ScrollLogicalPosition::Nearest,
+        )
+    };
+
+    let ctx = dom_ctx(context)?;
+    let node_id = this_node_id(this)?;
+    let mut doc = ctx.doc.borrow_mut();
+    doc.resolve(0.0);
+    doc.scroll_into_view(node_id, behavior, block, inline);
+    Ok(JsValue::undefined())
 }
 
 /// Build a `DOMRect`-shaped object
