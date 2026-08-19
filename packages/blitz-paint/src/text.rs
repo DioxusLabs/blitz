@@ -127,7 +127,7 @@ struct ResolvedDecoration {
 /// values resolved from its computed style so descending into the same node across
 /// consecutive runs doesn't re-resolve them.
 struct DecorationStackEntry {
-    node_id: usize,
+    node_id: NodeId,
     /// This node's (inherited) text colour, used for the glyphs of runs whose
     /// innermost node is this one.
     text_color: Color,
@@ -136,7 +136,7 @@ struct DecorationStackEntry {
 }
 
 /// Resolve the cached style values for a single node into a [`DecorationStackEntry`].
-fn resolve_decoration_entry(doc: &BaseDocument, node_id: usize) -> DecorationStackEntry {
+fn resolve_decoration_entry(doc: &BaseDocument, node_id: NodeId) -> DecorationStackEntry {
     let Some(styles) = doc.get_node(node_id).and_then(|node| node.primary_styles()) else {
         return DecorationStackEntry {
             node_id,
@@ -206,7 +206,7 @@ struct DecorationRunGeometry {
 /// extent it covers on the line (`min_x`/`max_x`) and the font geometry to draw with, then
 /// paint a single line spanning the box rather than one segment per run.
 struct LineDecoration {
-    node_id: usize,
+    node_id: NodeId,
     deco: ResolvedDecoration,
     min_x: f64,
     max_x: f64,
@@ -222,7 +222,7 @@ struct LineDecoration {
 #[derive(Default)]
 pub(crate) struct DrawTextContext {
     stack: Vec<DecorationStackEntry>,
-    path_scratch: Vec<usize>,
+    path_scratch: Vec<NodeId>,
     deco_boxes: Vec<LineDecoration>,
 }
 
@@ -517,7 +517,7 @@ pub(crate) fn stroke_text<'a>(
     doc: &BaseDocument,
     transform: Affine,
     scale: f64,
-    inline_root_id: usize,
+    inline_root_id: NodeId,
     context: &mut DrawTextContext,
 ) {
     let DrawTextContext {
