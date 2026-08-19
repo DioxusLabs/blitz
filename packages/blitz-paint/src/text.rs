@@ -3,6 +3,7 @@ use blitz_dom::{BaseDocument, NodeId, node::TextBrush, util::ToColorColor};
 use kurbo::{Affine, BezPath, Cap, Circle, Rect, Stroke};
 use parley::{Affinity, Cursor, Layout, Line, PositionedLayoutItem, Selection};
 use peniko::Fill;
+use std::collections::HashMap;
 use style::properties::generated::longhands::text_decoration_style::computed_value::T as TextDecorationStyle;
 use style::values::computed::{
     Length, LengthPercentage, TextDecorationLength, TextDecorationLine, TextUnderlinePosition,
@@ -66,17 +67,31 @@ pub(crate) fn draw_inline_backgrounds<'a>(
     }
 }
 
+/// Per-font-face cache of the OS/2 `usWinAscent / unitsPerEm` ratio, keyed by the font
+/// blob's unique id and face index. `None` is cached for fonts without a usable OS/2 or
+/// head table so they aren't re-parsed either.
+type WinAscentCache = HashMap<(u64, u32), Option<f32>>;
+
 /// The font's OS/2 `usWinAscent`, in the same (device) pixels as `font_size`.
 ///
 /// This is the ascent browsers use as the top of the "em box" when positioning overlines. It
 /// is typically taller than the hhea ascent Parley exposes via [`parley::layout::run::RunMetrics`].
 /// Returns `None` when the font has no OS/2 table.
-fn win_ascent(font: &parley::FontData, font_size: f32) -> Option<f32> {
+fn win_ascent(cache: &mut WinAscentCache, font: &parley::FontData, font_size: f32) -> Option<f32> {
+    let ratio = *cache
+        .entry((font.data.id(), font.index))
+        .or_insert_with(|| win_ascent_ratio(font));
+    Some(ratio? * font_size)
+}
+
+/// The unitless `usWinAscent / unitsPerEm` ratio for a font face, or `None` when the font
+/// has no usable head/OS/2 table.
+fn win_ascent_ratio(font: &parley::FontData) -> Option<f32> {
     use skrifa::raw::{FontRef, TableProvider as _};
     let font_ref = FontRef::from_index(font.data.as_ref(), font.index).ok()?;
     let units_per_em = font_ref.head().ok()?.units_per_em();
     let win_ascent = font_ref.os2().ok()?.us_win_ascent();
-    Some(win_ascent as f32 * font_size / units_per_em as f32)
+    Some(win_ascent as f32 / units_per_em as f32)
 }
 
 /// Mirrors Blink's `SelectBestDashGap`: choose the gap length (as close as possible to
@@ -224,6 +239,7 @@ pub(crate) struct DrawTextContext {
     stack: Vec<DecorationStackEntry>,
     path_scratch: Vec<NodeId>,
     deco_boxes: Vec<LineDecoration>,
+    win_ascent_ratios: WinAscentCache,
 }
 
 /// Resolve the CSS `text-decoration-thickness` to a device-pixel size.
@@ -366,6 +382,7 @@ fn flush_line_decorations(
     transform: Affine,
     scale: f64,
     deco_boxes: &[LineDecoration],
+    win_ascent_ratios: &mut WinAscentCache,
 ) {
     // Draw innermost boxes first so ancestors' decorations paint on top, matching the
     // per-run drawing order this replaced (`stack.iter().rev()`).
@@ -457,7 +474,8 @@ fn flush_line_decorations(
                 geom.css_font_size,
                 scale,
             );
-            let ascent = win_ascent(&geom.font, geom.font_size).unwrap_or(geom.ascent);
+            let ascent =
+                win_ascent(win_ascent_ratios, &geom.font, geom.font_size).unwrap_or(geom.ascent);
             let offset = ascent + size;
 
             // A `double` overline extends upward, away from the text.
@@ -489,7 +507,8 @@ fn flush_line_decorations(
             // Chrome (which places it `2/3 * ascent` below the text-top). Parley's
             // `strikethrough_offset` (the font's `yStrikeoutPosition`) sits lower and would
             // draw the line too close to the baseline.
-            let ascent = win_ascent(&geom.font, geom.font_size).unwrap_or(geom.ascent);
+            let ascent =
+                win_ascent(win_ascent_ratios, &geom.font, geom.font_size).unwrap_or(geom.ascent);
             let offset = ascent / 3.0 + size / 2.0;
 
             draw_decoration_line(
@@ -524,6 +543,7 @@ pub(crate) fn stroke_text<'a>(
         stack,
         path_scratch,
         deco_boxes,
+        win_ascent_ratios,
     } = context;
     stack.clear();
     path_scratch.clear();
@@ -662,7 +682,7 @@ pub(crate) fn stroke_text<'a>(
             }
         }
 
-        flush_line_decorations(scene, transform, scale, deco_boxes);
+        flush_line_decorations(scene, transform, scale, deco_boxes, win_ascent_ratios);
     }
 }
 
