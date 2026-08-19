@@ -72,7 +72,7 @@ pub(crate) fn draw_inline_backgrounds<'a>(
 /// is typically taller than the hhea ascent Parley exposes via [`parley::layout::run::RunMetrics`].
 /// Returns `None` when the font has no OS/2 table.
 fn win_ascent(font: &parley::FontData, font_size: f32) -> Option<f32> {
-    use read_fonts::{FontRef, TableProvider as _};
+    use skrifa::raw::{FontRef, TableProvider as _};
     let font_ref = FontRef::from_index(font.data.as_ref(), font.index).ok()?;
     let units_per_em = font_ref.head().ok()?.units_per_em();
     let win_ascent = font_ref.os2().ok()?.us_win_ascent();
