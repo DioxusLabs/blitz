@@ -40,6 +40,7 @@ mod test_runners;
 mod net_provider;
 mod panic_backtrace;
 mod report;
+mod script_detection;
 
 use net_provider::WptNetProvider;
 
