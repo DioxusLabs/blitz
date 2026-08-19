@@ -10,7 +10,9 @@ pub(crate) mod stylo {
     pub(crate) use style::properties::longhands::position::computed_value::T as Position;
     pub(crate) use style::values::computed::length_percentage::CalcLengthPercentage;
     pub(crate) use style::values::computed::length_percentage::Unpacked as UnpackedLengthPercentage;
-    pub(crate) use style::values::computed::{BorderSideWidth, LengthPercentage, Percentage};
+    pub(crate) use style::values::computed::{
+        BorderSideWidth, Contain, LengthPercentage, Percentage,
+    };
     pub(crate) use style::values::generics::NonNegative;
     pub(crate) use style::values::generics::length::{
         GenericLengthPercentageOrNormal, GenericMargin, GenericMaxSize, GenericSize,
@@ -272,6 +274,25 @@ pub fn overflow(input: stylo::Overflow) -> taffy::Overflow {
         // TODO: Support Overflow::Auto in Taffy
         stylo::Overflow::Auto => taffy::Overflow::Scroll,
     }
+}
+
+#[inline]
+pub fn contain(input: stylo::Contain, display: stylo::Display) -> taffy::Contain {
+    // Layout and paint containment do not apply to non-atomic inline-level boxes
+    // (https://drafts.csswg.org/css-contain-1/#containment-layout)
+    if display.outside() == stylo::DisplayOutside::Inline
+        && display.inside() == stylo::DisplayInside::Flow
+    {
+        return taffy::Contain::NONE;
+    }
+    let mut result = taffy::Contain::NONE;
+    if input.contains(stylo::Contain::LAYOUT) {
+        result |= taffy::Contain::LAYOUT;
+    }
+    if input.contains(stylo::Contain::PAINT) {
+        result |= taffy::Contain::PAINT;
+    }
+    result
 }
 
 #[inline]
@@ -712,6 +733,7 @@ pub fn to_taffy_style(style: &stylo::ComputedValues) -> taffy::Style<Atom> {
         },
         direction: self::direction(style.clone_direction()),
         scrollbar_width: 0.0,
+        contain: self::contain(style.clone_contain(), style.clone_display()),
 
         #[cfg(feature = "floats")]
         float: self::float(style.clone_float()),
