@@ -62,7 +62,7 @@ fn pan(doc: &mut HtmlDocument, dx: f32, dy: f32) -> (f64, f64) {
     doc.handle_ui_event(UiEvent::PointerUp(finger_event(x0, y0)));
 
     let scroller = doc.query_selector("#scroller").unwrap().expect("#scroller");
-    let offset = doc.get_node(scroller).unwrap().scroll_offset;
+    let offset = doc.get_node(scroller).unwrap().scroll_offset();
     (offset.x, offset.y)
 }
 

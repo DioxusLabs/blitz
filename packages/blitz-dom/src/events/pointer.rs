@@ -161,7 +161,7 @@ impl PanState {
 /// and all of its ancestors, so we walk up the tree combining the permitted axes. `touch-action:
 /// none` blocks panning entirely, `pan-x`/`pan-y` restrict it to a single axis, and `auto` /
 /// `manipulation` permit both.
-fn touch_action_pan_axes(doc: &BaseDocument, node_id: usize) -> (bool, bool) {
+fn touch_action_pan_axes(doc: &BaseDocument, node_id: NodeId) -> (bool, bool) {
     let pan_x_flags = TouchAction::AUTO | TouchAction::MANIPULATION | TouchAction::PAN_X;
     let pan_y_flags = TouchAction::AUTO | TouchAction::MANIPULATION | TouchAction::PAN_Y;
 
