@@ -105,7 +105,10 @@ impl Node {
         let prefer_layout_children = match self.display_constructed_as().inside() {
             DisplayInside::None => return false,
             DisplayInside::Contents => false,
-            DisplayInside::Flow | DisplayInside::FlowRoot | DisplayInside::TableCell => {
+            DisplayInside::Flow
+            | DisplayInside::FlowRoot
+            | DisplayInside::TableCell
+            | DisplayInside::WebkitBox => {
                 // Prefer layout children for "block" but not "inline" contexts
                 self.element_data()
                     .is_none_or(|el| el.inline_layout_data.is_none())
