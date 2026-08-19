@@ -486,18 +486,22 @@ pub fn flex_direction(input: stylo::FlexDirection) -> taffy::FlexDirection {
 #[inline]
 #[cfg(feature = "flexbox")]
 pub fn flex_wrap(input: stylo::FlexWrap) -> taffy::FlexWrap {
-    match input {
-        stylo::FlexWrap::Wrap => taffy::FlexWrap::Wrap,
-        stylo::FlexWrap::WrapReverse => taffy::FlexWrap::WrapReverse,
-        stylo::FlexWrap::Nowrap => taffy::FlexWrap::NoWrap,
+    let balance = input.contains(stylo::FlexWrap::BALANCE);
+    if input.contains(stylo::FlexWrap::WRAP_REVERSE) {
         #[cfg(feature = "flexbox_balance")]
-        stylo::FlexWrap::Balance => taffy::FlexWrap::Balance,
+        if balance {
+            return taffy::FlexWrap::BalanceReverse;
+        }
+        taffy::FlexWrap::WrapReverse
+    } else if balance {
         #[cfg(feature = "flexbox_balance")]
-        stylo::FlexWrap::WrapReverseBalance => taffy::FlexWrap::BalanceReverse,
+        return taffy::FlexWrap::Balance;
         #[cfg(not(feature = "flexbox_balance"))]
-        stylo::FlexWrap::Balance => taffy::FlexWrap::Wrap,
-        #[cfg(not(feature = "flexbox_balance"))]
-        stylo::FlexWrap::WrapReverseBalance => taffy::FlexWrap::WrapReverse,
+        taffy::FlexWrap::Wrap
+    } else if input.contains(stylo::FlexWrap::WRAP) {
+        taffy::FlexWrap::Wrap
+    } else {
+        taffy::FlexWrap::NoWrap
     }
 }
 

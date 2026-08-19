@@ -56,12 +56,12 @@ browser-persistence = { path = "./apps/browser/persistence" }
 blitz-test-harness = { path = "./packages/blitz-test-harness" }
 
 # Servo dependencies
-style = { git = "https://github.com/DioxusLabs/stylo", rev = "404505d540a5c9a6d33c6dd175615299d75343d7", package = "stylo" }
-style_traits = { git = "https://github.com/DioxusLabs/stylo", rev = "404505d540a5c9a6d33c6dd175615299d75343d7", package = "stylo_traits" }
-style_atoms = { git = "https://github.com/DioxusLabs/stylo", rev = "404505d540a5c9a6d33c6dd175615299d75343d7", package = "stylo_atoms" }
-style_config = { git = "https://github.com/DioxusLabs/stylo", rev = "404505d540a5c9a6d33c6dd175615299d75343d7", package = "stylo_static_prefs" }
-style_dom = { git = "https://github.com/DioxusLabs/stylo", rev = "404505d540a5c9a6d33c6dd175615299d75343d7", package = "stylo_dom" }
-selectors = { git = "https://github.com/DioxusLabs/stylo", rev = "404505d540a5c9a6d33c6dd175615299d75343d7", package = "selectors" }
+style = { git = "https://github.com/DioxusLabs/stylo", rev = "b98be013150eec9eadb30ee8cf8a0d6c0b22dca6", package = "stylo" }
+style_traits = { git = "https://github.com/DioxusLabs/stylo", rev = "b98be013150eec9eadb30ee8cf8a0d6c0b22dca6", package = "stylo_traits" }
+style_atoms = { git = "https://github.com/DioxusLabs/stylo", rev = "b98be013150eec9eadb30ee8cf8a0d6c0b22dca6", package = "stylo_atoms" }
+style_config = { git = "https://github.com/DioxusLabs/stylo", rev = "b98be013150eec9eadb30ee8cf8a0d6c0b22dca6", package = "stylo_static_prefs" }
+style_dom = { git = "https://github.com/DioxusLabs/stylo", rev = "b98be013150eec9eadb30ee8cf8a0d6c0b22dca6", package = "stylo_dom" }
+selectors = { git = "https://github.com/DioxusLabs/stylo", rev = "b98be013150eec9eadb30ee8cf8a0d6c0b22dca6", package = "selectors" }
 cssparser = { version = "0.37.0" }
 
 # HTML5ever dependencies
