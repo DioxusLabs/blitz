@@ -168,7 +168,10 @@ fn resolve_decoration_entry(doc: &BaseDocument, node_id: NodeId) -> DecorationSt
         | TextDecorationLine::OVERLINE
         | TextDecorationLine::LINE_THROUGH;
     let line = text.text_decoration_line;
-    let decoration = line.intersects(drawn_lines).then(|| {
+    // Decorations propagate through the box tree, and a `display: contents` element
+    // generates no box, so its decorations have no effect on descendants.
+    let is_contents = styles.clone_display().is_contents();
+    let decoration = (!is_contents && line.intersects(drawn_lines)).then(|| {
         // `text-decoration-color: currentColor` (the initial value) resolves against
         // the decorating box's own colour, not the descendant run's.
         let color = text
@@ -247,6 +250,9 @@ pub(crate) struct DrawTextContext {
 /// - Percentages are resolved against the font size,
 /// - `from-font` uses the metrics from Parley,
 /// - `auto` uses a thickness of `font-size / 10` (minimum: 1px).
+///
+/// The result is floored to a whole number of device pixels (minimum 1), matching
+/// browsers, which snap decoration thickness to whole pixels.
 fn decoration_size(
     thickness: &TextDecorationLength,
     metric_size: f32,
@@ -259,7 +265,9 @@ fn decoration_size(
         }
         GenericTextDecorationLength::FromFont => metric_size as f64,
         GenericTextDecorationLength::Auto => (css_font_size / 10.0).max(1.0) * scale,
-    }) as f32
+    })
+    .floor()
+    .max(1.0) as f32
 }
 
 /// Draws a single decoration line of the given `text-decoration-style` spanning
