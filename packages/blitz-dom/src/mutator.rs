@@ -492,6 +492,7 @@ impl DocumentMutator<'_> {
         // interaction state referencing removed nodes can retarget to the
         // nearest surviving ancestor.
         self.process_removed_subtree(node_id);
+        self.remove_from_derived_paint_lists(node_id);
 
         let node = &mut self.doc.nodes[node_id];
 
@@ -520,6 +521,7 @@ impl DocumentMutator<'_> {
     ) -> Option<Node> {
         let node_is_in_document = self.doc.nodes[node_id].flags.is_in_document();
         self.process_removed_subtree(node_id);
+        self.remove_from_derived_paint_lists(node_id);
 
         let node = self.doc.drop_node_ignoring_parent_with(node_id, on_drop);
         self.mutations_occurred |= node_is_in_document;
@@ -569,6 +571,7 @@ impl DocumentMutator<'_> {
         self.mutations_occurred |= parent_is_in_doc && !children.is_empty();
         for child_id in children {
             self.process_removed_subtree(child_id);
+            self.remove_from_derived_paint_lists(child_id);
             let _ = self.doc.drop_node_ignoring_parent(child_id);
         }
         self.maybe_record_node(node_id);
@@ -628,6 +631,10 @@ impl DocumentMutator<'_> {
             let child = &mut self.doc.nodes[child_id];
             let child_was_in_doc = child.flags.is_in_document();
             self.mutations_occurred |= child_was_in_doc;
+            if child.parent.is_some() {
+                self.remove_from_derived_paint_lists(child_id);
+            }
+            let child = &mut self.doc.nodes[child_id];
             let Some(old_parent_id) = child.parent.take() else {
                 continue;
             };
@@ -929,6 +936,75 @@ impl<'doc> DocumentMutator<'doc> {
         });
 
         self.flush_eager_ops();
+    }
+
+    /// Eagerly remove the subtree rooted at `node_id` from the derived paint
+    /// lists: the `paint_children` of layout parents outside the subtree and
+    /// the hoisted children of the nearest stacking-context root. These lists
+    /// are rebuilt during `resolve()`, but hit tests may run between a DOM
+    /// mutation and the next resolve, and must not see ids for removed nodes.
+    ///
+    /// Usually only the subtree root has a layout parent outside the subtree,
+    /// but `display: contents` (and the anonymous boxes it can flatten into)
+    /// gives descendants layout parents outside the subtree too, so every
+    /// subtree node's layout parent is considered.
+    ///
+    /// Must be called while the node's parent links are still intact.
+    fn remove_from_derived_paint_lists(&mut self, node_id: NodeId) {
+        let doc = &mut *self.doc;
+
+        // Collect the ids of all nodes in the removed subtree.
+        let mut subtree = HashSet::new();
+        let mut stack = vec![node_id];
+        while let Some(id) = stack.pop() {
+            subtree.insert(id);
+            if let Some(node) = doc.nodes.get(id) {
+                stack.extend(node.children.iter().copied());
+            }
+        }
+
+        // Remove subtree nodes from the `paint_children` of any layout parent
+        // outside the subtree.
+        let mut cleaned_parents: Vec<NodeId> = Vec::new();
+        for &id in &subtree {
+            let Some(parent_id) = doc.nodes.get(id).and_then(|node| node.layout_parent.get())
+            else {
+                continue;
+            };
+            if subtree.contains(&parent_id) || cleaned_parents.contains(&parent_id) {
+                continue;
+            }
+            cleaned_parents.push(parent_id);
+            if let Some(paint_children) = doc.nodes[parent_id].paint_children.borrow_mut().as_mut()
+            {
+                paint_children.retain(|child_id| !subtree.contains(child_id));
+            }
+        }
+
+        // Hoisted (z-indexed) entries for nodes in the removed subtree live in
+        // the nearest stacking-context root outside the subtree. Walk up to it
+        // and drop any entries for nodes within the subtree.
+        let mut sc_root_id = None;
+        let mut current = doc.nodes[node_id].layout_parent.get();
+        while let Some(id) = current {
+            let Some(node) = doc.nodes.get(id) else { break };
+            if node.stacking_context.is_some() {
+                sc_root_id = Some(id);
+                break;
+            }
+            current = node.layout_parent.get();
+        }
+        let Some(sc_root_id) = sc_root_id else { return };
+
+        if let Some(sc) = doc.nodes[sc_root_id].stacking_context.as_mut() {
+            sc.children
+                .retain(|child| !subtree.contains(&child.node_id));
+            sc.negative_z_count = sc
+                .children
+                .iter()
+                .take_while(|child| child.z_index < 0)
+                .count() as u32;
+        }
     }
 
     fn process_removed_subtree(&mut self, node_id: NodeId) {
