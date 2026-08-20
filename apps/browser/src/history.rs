@@ -19,7 +19,7 @@ impl History {
     }
 }
 
-#[store]
+#[store(pub(self))]
 impl<Lens> Store<History, Lens> {
     fn current_idx(&self) -> usize {
         *self.current().read()
