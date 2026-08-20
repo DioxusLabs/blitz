@@ -76,7 +76,7 @@ fn assert_no_stale_mappings(doc: &DioxusDocument, context: &str) {
     let inner = doc.inner.borrow();
     let mut stale = Vec::new();
     for raw_id in 0..4096 {
-        let element_id = dioxus_core::ElementId(raw_id);
+        let element_id = dioxus_core::ElementId::from_raw(raw_id);
         if let Some(node_id) = doc.vdom_state.try_element_to_node_id(element_id)
             && inner.get_node(node_id).is_none()
         {
