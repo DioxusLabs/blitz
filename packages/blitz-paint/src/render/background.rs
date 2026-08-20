@@ -1,4 +1,4 @@
-use super::{ElementCx, to_image_quality, to_peniko_image, track_sizes_and_gutters};
+use super::{ElementCx, PhysicalTracks, to_image_quality, to_peniko_image};
 use crate::color::{Color, ToColorColor};
 use crate::gradient::to_peniko_gradient;
 use anyrender::PaintScene;
@@ -224,24 +224,20 @@ impl ElementCx<'_, '_> {
             return;
         };
 
-        let (col_sizes, col_gutters) = track_sizes_and_gutters(&grid_info.columns);
-        let inner_width = (col_sizes.iter().sum::<f32>() + col_gutters.iter().sum::<f32>()) as f64;
+        let cols = PhysicalTracks::from_tracks(&grid_info.columns);
+        let inner_width = cols.span() as f64;
 
-        let (row_sizes, row_gutters) = track_sizes_and_gutters(&grid_info.rows);
-        let mut y = row_gutters.first().copied().unwrap_or_default() as f64;
-        for ((row, &height), &gutter) in table
-            .rows
-            .iter()
-            .zip(row_sizes.iter())
-            .zip(row_gutters.iter().skip(1))
-        {
+        let rows = PhysicalTracks::from_tracks(&grid_info.rows);
+        let row_origin = rows.origin();
+        for (row, row_position) in table.rows.iter().zip(rows.iter()) {
             let row_node = &self.context.dom.get_node(row.node_id).unwrap();
             let Some(style) = row_node.primary_styles() else {
                 continue;
             };
 
-            let shape =
-                Rect::new(0.0, y, inner_width, y + height as f64).scale_from_origin(self.scale);
+            let y = (row_position.start - row_origin) as f64;
+            let height = (row_position.end - row_position.start) as f64;
+            let shape = Rect::new(0.0, y, inner_width, y + height).scale_from_origin(self.scale);
 
             let current_color = style.clone_color();
             let background_color = &style.get_background().background_color;
@@ -253,8 +249,6 @@ impl ElementCx<'_, '_> {
                 // Fill the color
                 scene.fill(Fill::NonZero, self.transform, bg_color, None, &shape);
             }
-
-            y += (height + gutter) as f64;
         }
     }
 

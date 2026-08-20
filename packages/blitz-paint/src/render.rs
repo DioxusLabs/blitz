@@ -45,25 +45,58 @@ use peniko::{self, Fill, ImageData, ImageSampler};
 use style::values::generics::color::GenericColor;
 use taffy::Layout;
 
-/// Derive per-track sizes and gutter sizes (in physical left-to-right / top-to-bottom order)
-/// from the track positions reported by taffy. Taffy reports tracks in logical order, so for
-/// RTL grids the positions are sorted into physical order first. The returned gutters vector
-/// has one more entry than the sizes vector (a leading and trailing gutter of zero size).
-pub(crate) fn track_sizes_and_gutters(
-    tracks: &taffy::DetailedGridTracksInfo,
-) -> (Vec<f32>, Vec<f32>) {
-    let mut positions = tracks.positions.clone();
-    positions.sort_by(|a, b| a.start.total_cmp(&b.start));
-    let sizes: Vec<f32> = positions.iter().map(|line| line.end - line.start).collect();
-    let mut gutters = Vec::with_capacity(positions.len() + 1);
-    gutters.push(0.0);
-    for pair in positions.windows(2) {
-        gutters.push(pair[1].start - pair[0].end);
+/// A view of the track positions reported by taffy in physical (left-to-right /
+/// top-to-bottom) order. Taffy reports tracks in logical order, which for RTL grid
+/// containers is physically reversed.
+#[derive(Clone, Copy)]
+pub(crate) struct PhysicalTracks<'a> {
+    positions: &'a [taffy::Line<f32>],
+    reversed: bool,
+}
+
+impl<'a> PhysicalTracks<'a> {
+    pub(crate) fn from_tracks(tracks: &'a taffy::DetailedGridTracksInfo) -> Self {
+        let positions = tracks.positions.as_slice();
+        let reversed = positions
+            .first()
+            .zip(positions.last())
+            .is_some_and(|(first, last)| first.start > last.start);
+        Self {
+            positions,
+            reversed,
+        }
     }
-    if !positions.is_empty() {
-        gutters.push(0.0);
+
+    fn get(self, index: usize) -> taffy::Line<f32> {
+        if self.reversed {
+            self.positions[self.positions.len() - 1 - index]
+        } else {
+            self.positions[index]
+        }
     }
-    (sizes, gutters)
+
+    /// Iterate track positions in physical order
+    pub(crate) fn iter(self) -> impl ExactSizeIterator<Item = taffy::Line<f32>> + 'a {
+        (0..self.positions.len()).map(move |index| self.get(index))
+    }
+
+    /// The physical start position of the first track
+    pub(crate) fn origin(self) -> f32 {
+        if self.positions.is_empty() {
+            0.0
+        } else {
+            self.get(0).start
+        }
+    }
+
+    /// Total distance from the start of the first track to the end of the last track
+    pub(crate) fn span(self) -> f32 {
+        if self.positions.is_empty() {
+            0.0
+        } else {
+            self.get(self.positions.len() - 1).end - self.get(0).start
+        }
+    }
 }
 
 /// A short-lived struct which holds a bunch of parameters for rendering a scene so
