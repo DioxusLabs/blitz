@@ -64,6 +64,47 @@ jobs:
           version: 1.0
       - run: cargo test --workspace
 
+  # The 4 feature states of blitz-dom/blitz-paint's `svg` (usvg) x
+  # `svg-native` (first-party) flags must all compile and pass. Scoped to
+  # `-p blitz-dom -p blitz-paint` (not `--workspace`) so the features
+  # actually reach those crates instead of resolving against the root
+  # workspace default-members, which don't re-export them.
+  test-svg-feature-matrix:
+    name: "Test [svg=${{ matrix.svg }}, svg-native=${{ matrix.svg-native }}]"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        svg: [true, false]
+        svg-native: [true, false]
+        exclude:
+          # Both off doesn't build (there would be no SVG support at all
+          # and blitz-paint's default feature set assumes at least one).
+          - svg: false
+            svg-native: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: perl -pi.bak -e 's/opt-level = 2/opt-level = 0/g' Cargo.toml
+      - uses: awalsh128/cache-apt-pkgs-action@latest
+        with:
+          packages: libfontconfig-dev
+          version: 1.0
+      - name: Build feature flags
+        id: features
+        run: |
+          FEATURES="system-fonts,"
+          if [ "${{ matrix.svg }}" = "true" ]; then
+            FEATURES="${FEATURES}svg,"
+          fi
+          if [ "${{ matrix.svg-native }}" = "true" ]; then
+            FEATURES="${FEATURES}svg-native,"
+          fi
+          FEATURES="${FEATURES%,}"
+          echo "flag=--no-default-features --features ${FEATURES}" >> "$GITHUB_OUTPUT"
+      - run: cargo test -p blitz-dom -p blitz-paint ${{ steps.features.outputs.flag }}
+      - run: cargo build -p blitz-dom -p blitz-paint ${{ steps.features.outputs.flag }}
+
   build-counter:
     name: "Build counter example"
     runs-on: ubuntu-latest

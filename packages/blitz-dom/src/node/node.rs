@@ -1278,6 +1278,33 @@ impl Node {
             }
         }
 
+        // svg-native: delegate into the fragment's own SVG-space hit test rather than iterating `paint_children`.
+        #[cfg(feature = "svg-native")]
+        if matches_self && !pointer_events_none {
+            if let Some(element_data) = self.element_data() {
+                if let crate::node::SpecialElementData::SvgRoot(ctx) = &element_data.special_data {
+                    let content_box_offset = taffy::Point {
+                        x: self.final_layout().padding.left + self.final_layout().border.left,
+                        y: self.final_layout().padding.top + self.final_layout().border.top,
+                    };
+                    let local_x = x - content_box_offset.x;
+                    let local_y = y - content_box_offset.y;
+                    if let Some(hit_id) = crate::svg::hit_test::hit_test(
+                        self,
+                        ctx,
+                        kurbo::Point::new(local_x as f64, local_y as f64),
+                    ) {
+                        return Some(HitResult {
+                            node_id: hit_id,
+                            x: local_x,
+                            y: local_y,
+                            is_text: false,
+                        });
+                    }
+                }
+            }
+        }
+
         // Self (this node)
         if matches_self && !pointer_events_none {
             return Some(HitResult {

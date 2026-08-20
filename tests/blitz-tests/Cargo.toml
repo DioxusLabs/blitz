@@ -13,10 +13,10 @@ rust-version.workspace = true
 [dev-dependencies]
 # Blitz dependencies
 blitz-test-harness = { workspace = true }
-blitz-dom = { workspace = true, features = ["accessibility", "floats", "system-fonts"] }
+blitz-dom = { workspace = true, features = ["accessibility", "floats", "system-fonts", "svg-native"] }
 blitz-html = { workspace = true }
 blitz-traits = { workspace = true }
-blitz-paint = { workspace = true, features = ["scrollbars", "svg"] }
+blitz-paint = { workspace = true, features = ["scrollbars", "svg", "svg-native"] }
 dioxus-native-dom = { workspace = true }
 anyrender = { workspace = true }
 anyrender_vello_cpu = { workspace = true }
@@ -32,6 +32,7 @@ markup5ever = { workspace = true }
 keyboard-types = { workspace = true }
 taffy = { workspace = true }
 usvg = { workspace = true }
+kurbo = { workspace = true }
 
 [lib]
 path = "lib.rs"

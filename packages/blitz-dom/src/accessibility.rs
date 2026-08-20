@@ -45,6 +45,32 @@ impl BaseDocument {
         } else if let Some(element_data) = node.element_data() {
             let name = element_data.name.local.to_string();
 
+            // SVG-ns elements get their own role mapping so an HTML element that happens to
+            // share a local name with an SVG one is never affected by it, and vice versa.
+            // Falls through to the same `push_child`/return tail as the HTML path below.
+            #[cfg(feature = "svg-native")]
+            if element_data.name.ns == markup5ever::ns!(svg) {
+                let role = match &*name {
+                    "svg" => {
+                        let has_title = node.children.iter().any(|&c| {
+                            self.get_node(c).is_some_and(|n| {
+                                n.data.is_element_with_tag_name(&local_name!("title"))
+                            })
+                        });
+                        if has_title {
+                            Role::GraphicsDocument
+                        } else {
+                            Role::Image
+                        }
+                    }
+                    "a" => Role::Link,
+                    _ => Role::GenericContainer,
+                };
+                builder.set_role(role);
+                parent.push_child(id);
+                return (id, builder);
+            }
+
             // <https://www.w3.org/TR/html-aam-1.0/>
             let role = match &*name {
                 // Document structure
