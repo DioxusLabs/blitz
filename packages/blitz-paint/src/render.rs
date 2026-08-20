@@ -45,6 +45,27 @@ use peniko::{self, Fill, ImageData, ImageSampler};
 use style::values::generics::color::GenericColor;
 use taffy::Layout;
 
+/// Derive per-track sizes and gutter sizes (in physical left-to-right / top-to-bottom order)
+/// from the track positions reported by taffy. Taffy reports tracks in logical order, so for
+/// RTL grids the positions are sorted into physical order first. The returned gutters vector
+/// has one more entry than the sizes vector (a leading and trailing gutter of zero size).
+pub(crate) fn track_sizes_and_gutters(
+    tracks: &taffy::DetailedGridTracksInfo,
+) -> (Vec<f32>, Vec<f32>) {
+    let mut positions = tracks.positions.clone();
+    positions.sort_by(|a, b| a.start.total_cmp(&b.start));
+    let sizes: Vec<f32> = positions.iter().map(|line| line.end - line.start).collect();
+    let mut gutters = Vec::with_capacity(positions.len() + 1);
+    gutters.push(0.0);
+    for pair in positions.windows(2) {
+        gutters.push(pair[1].start - pair[0].end);
+    }
+    if !positions.is_empty() {
+        gutters.push(0.0);
+    }
+    (sizes, gutters)
+}
+
 /// A short-lived struct which holds a bunch of parameters for rendering a scene so
 /// that we don't have to pass them down as parameters
 pub struct BlitzDomPainter<'dom, 'a> {

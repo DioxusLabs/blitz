@@ -11,7 +11,7 @@ use style::{
 use crate::{
     color::{ToColorColor as _, contrast_ratio},
     kurbo_css::Edge,
-    render::ElementCx,
+    render::{ElementCx, track_sizes_and_gutters},
 };
 
 /// A darker version of a colour (mirrors WebKit/Blink's `Color::Dark`): the
@@ -527,13 +527,11 @@ impl ElementCx<'_, '_> {
 
         let outer_border_style = self.style.get_border();
 
-        let cols = &grid_info.columns;
-        let rows = &grid_info.rows;
+        let (col_sizes, col_gutters) = track_sizes_and_gutters(&grid_info.columns);
+        let (row_sizes, row_gutters) = track_sizes_and_gutters(&grid_info.rows);
 
-        let inner_width =
-            (cols.sizes.iter().sum::<f32>() + cols.gutters.iter().sum::<f32>()) as f64;
-        let inner_height =
-            (rows.sizes.iter().sum::<f32>() + rows.gutters.iter().sum::<f32>()) as f64;
+        let inner_width = (col_sizes.iter().sum::<f32>() + col_gutters.iter().sum::<f32>()) as f64;
+        let inner_height = (row_sizes.iter().sum::<f32>() + row_gutters.iter().sum::<f32>()) as f64;
 
         // TODO: support different colors for different borders
         let current_color = self.style.clone_color();
@@ -551,7 +549,7 @@ impl ElementCx<'_, '_> {
 
         // Draw horizontal inner borders
         let mut y = 0.0;
-        for (&height, &gutter) in rows.sizes.iter().zip(rows.gutters.iter()) {
+        for (&height, &gutter) in row_sizes.iter().zip(row_gutters.iter()) {
             let shape =
                 Rect::new(0.0, y, inner_width, y + gutter as f64).scale_from_origin(self.scale);
             scene.fill(Fill::NonZero, self.transform, border_color, None, &shape);
@@ -575,7 +573,7 @@ impl ElementCx<'_, '_> {
 
         // Draw vertical inner borders
         let mut x = 0.0;
-        for (&width, &gutter) in cols.sizes.iter().zip(cols.gutters.iter()) {
+        for (&width, &gutter) in col_sizes.iter().zip(col_gutters.iter()) {
             let shape =
                 Rect::new(x, 0.0, x + gutter as f64, inner_height).scale_from_origin(self.scale);
             scene.fill(Fill::NonZero, self.transform, border_color, None, &shape);

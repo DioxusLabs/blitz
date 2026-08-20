@@ -1,4 +1,4 @@
-use super::{ElementCx, to_image_quality, to_peniko_image};
+use super::{ElementCx, to_image_quality, to_peniko_image, track_sizes_and_gutters};
 use crate::color::{Color, ToColorColor};
 use crate::gradient::to_peniko_gradient;
 use anyrender::PaintScene;
@@ -224,17 +224,16 @@ impl ElementCx<'_, '_> {
             return;
         };
 
-        let cols = &grid_info.columns;
-        let inner_width =
-            (cols.sizes.iter().sum::<f32>() + cols.gutters.iter().sum::<f32>()) as f64;
+        let (col_sizes, col_gutters) = track_sizes_and_gutters(&grid_info.columns);
+        let inner_width = (col_sizes.iter().sum::<f32>() + col_gutters.iter().sum::<f32>()) as f64;
 
-        let rows = &grid_info.rows;
-        let mut y = rows.gutters.first().copied().unwrap_or_default() as f64;
+        let (row_sizes, row_gutters) = track_sizes_and_gutters(&grid_info.rows);
+        let mut y = row_gutters.first().copied().unwrap_or_default() as f64;
         for ((row, &height), &gutter) in table
             .rows
             .iter()
-            .zip(rows.sizes.iter())
-            .zip(rows.gutters.iter().skip(1))
+            .zip(row_sizes.iter())
+            .zip(row_gutters.iter().skip(1))
         {
             let row_node = &self.context.dom.get_node(row.node_id).unwrap();
             let Some(style) = row_node.primary_styles() else {
