@@ -536,7 +536,7 @@ impl taffy::LayoutGridContainer for BaseDocument {
     fn set_detailed_grid_info(
         &mut self,
         node_id: NodeId,
-        detailed_grid_info: taffy::DetailedGridInfo,
+        detailed_grid_info: taffy::DetailedGridInfo<Atom>,
     ) {
         let node = self.node_from_id_mut(node_id);
         if let Some(element) = node.element_data_mut() {

@@ -55,7 +55,9 @@ pub(crate) struct PhysicalTracks<'a> {
 }
 
 impl<'a> PhysicalTracks<'a> {
-    pub(crate) fn from_tracks(tracks: &'a taffy::DetailedGridTracksInfo) -> Self {
+    pub(crate) fn from_tracks<S: taffy::CheapCloneStr>(
+        tracks: &'a taffy::DetailedGridTracksInfo<S>,
+    ) -> Self {
         let positions = tracks.positions.as_slice();
         let reversed = positions
             .first()

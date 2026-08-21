@@ -106,7 +106,7 @@ pub struct ElementData {
 
     /// Detailed grid track sizing information from the most recent layout
     /// (grid containers only). Used by devtools grid inspection.
-    pub detailed_grid_info: Option<Box<taffy::DetailedGridInfo>>,
+    pub detailed_grid_info: Option<Box<taffy::DetailedGridInfo<Atom>>>,
 
     // Taffy layout data:
     pub style: Style<Atom>,
