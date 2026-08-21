@@ -817,6 +817,11 @@ impl BaseDocument {
             .lines()
             .next()
             .map(|line| (line.metrics().baseline / scale) + container_pb.top);
+        let last_baseline = inline_layout
+            .layout
+            .lines()
+            .next_back()
+            .map(|line| (line.metrics().baseline / scale) + container_pb.top);
 
         // Put layout back
         self.nodes[node_id]
@@ -839,7 +844,10 @@ impl BaseDocument {
                     bottom: content_extent.height,
                 }
             },
-            baselines: taffy::Baselines::from_first(first_baseline),
+            baselines: taffy::Baselines {
+                first: first_baseline,
+                last: last_baseline,
+            },
             top_margin: CollapsibleMarginSet::ZERO,
             bottom_margin: CollapsibleMarginSet::ZERO,
             margins_can_collapse_through: !has_styles_preventing_being_collapsed_through
