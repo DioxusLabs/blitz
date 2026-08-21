@@ -115,7 +115,12 @@ pub fn fuzzy_buffer_diff(test_buffer: &[u8], ref_buffer: &[u8]) -> (u64, u64) {
     let mut max_difference: u64 = 0;
     let mut differing_pixels: u64 = 0;
 
-    for (test_px, ref_px) in test_buffer.chunks_exact(4).zip(ref_buffer.chunks_exact(4)) {
+    for (test_px, ref_px) in test_buffer
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .zip(ref_buffer.as_chunks::<4>().0.iter())
+    {
         let mut pixel_differs = false;
         for (t, r) in test_px.iter().zip(ref_px.iter()) {
             let diff = t.abs_diff(*r) as u64;
