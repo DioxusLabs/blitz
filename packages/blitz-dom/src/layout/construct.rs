@@ -4,15 +4,16 @@ use std::sync::Arc;
 
 use markup5ever::{QualName, local_name, ns};
 use parley::{
-    FontContext, InlineBox, InlineBoxKind, LayoutContext, StyleProperty, TreeBuilder,
-    WhiteSpaceCollapse,
+    FontContext, InlineBox, InlineBoxKind, InlineBoxVerticalAlign, LayoutContext, StyleProperty,
+    TreeBuilder, WhiteSpaceCollapse,
 };
 use style::{
     computed_values::position::T as PositionProperty,
     data::ElementData as StyloElementData,
     shared_lock::StylesheetGuards,
     values::{
-        computed::{Content, ContentItem, Display, Float, TextTransform},
+        computed::{BaselineShift, Content, ContentItem, Display, Float, TextTransform},
+        generics::box_::BaselineShiftKeyword,
         specified::box_::{DisplayInside, DisplayOutside},
     },
 };
@@ -1031,6 +1032,7 @@ pub(crate) fn build_inline_layout_into(
 
     // Create a parley tree builder
     let mut builder = layout_ctx.tree_builder(font_ctx, scale, true, &parley_style);
+    builder.set_compute_strut(true);
 
     // Set whitespace collapsing mode
     let collapse_mode = root_node_style
@@ -1190,6 +1192,10 @@ pub(crate) fn build_inline_layout_into(
                                 // Width and height are set during layout
                                 width: 0.0,
                                 height: 0.0,
+                                baseline: None,
+                                vertical_align: inline_box_vertical_align(
+                                    style.map(|s| s.clone_baseline_shift()),
+                                ),
                             });
                         } else if *tag_name == local_name!("br") {
                             // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
@@ -1270,6 +1276,10 @@ pub(crate) fn build_inline_layout_into(
                             // Width and height are set during layout
                             width: 0.0,
                             height: 0.0,
+                            baseline: None,
+                            vertical_align: inline_box_vertical_align(
+                                style.map(|s| s.clone_baseline_shift()),
+                            ),
                         });
                     }
                 };
@@ -1296,5 +1306,17 @@ pub(crate) fn build_inline_layout_into(
             }
             NodeData::Document(_) => unreachable!(),
         }
+    }
+}
+
+/// Map the computed `baseline-shift` (the longhand behind `vertical-align: top`/`bottom`)
+/// to parley's inline-box vertical alignment.
+fn inline_box_vertical_align(baseline_shift: Option<BaselineShift>) -> InlineBoxVerticalAlign {
+    match baseline_shift {
+        Some(BaselineShift::Keyword(BaselineShiftKeyword::Top)) => InlineBoxVerticalAlign::Top,
+        Some(BaselineShift::Keyword(BaselineShiftKeyword::Bottom)) => {
+            InlineBoxVerticalAlign::Bottom
+        }
+        _ => InlineBoxVerticalAlign::Baseline,
     }
 }

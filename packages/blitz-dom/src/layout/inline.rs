@@ -1,12 +1,15 @@
 use blitz_traits::node_id::NodeId;
 use parley::{AlignmentOptions, IndentOptions};
 use style::values::specified::box_::DisplayOutside;
-use style::values::{computed::CSSPixelLength, generics::text::GenericTextIndent};
+use style::values::{
+    computed::{CSSPixelLength, Contain},
+    generics::text::GenericTextIndent,
+};
 use taffy::{
     AvailableSpace, BlockContext, BlockFormattingContext, BoxSizing, CollapsibleMarginSet,
-    CoreStyle as _, Direction, LayoutInput, LayoutOutput, LayoutPartialTree as _, MaybeMath as _,
-    MaybeResolve as _, Overflow, Point, Position, RequestedAxis, ResolveOrZero as _, RunMode, Size,
-    SizingMode,
+    CoreStyle as _, Direction, Display, LayoutInput, LayoutOutput, LayoutPartialTree as _,
+    MaybeMath as _, MaybeResolve as _, Overflow, Point, Position, RequestedAxis,
+    ResolveOrZero as _, RunMode, Size, SizingMode,
 };
 
 #[cfg(feature = "floats")]
@@ -304,11 +307,54 @@ impl BaseDocument {
                 ibox.width = 0.0;
                 ibox.height = 0.0;
             } else {
+                let is_scroll_container = style.overflow.x.is_scroll_container()
+                    || style.overflow.y.is_scroll_container();
+                let display = style.display;
+                // Layout containment suppresses the box's baseline (css-contain §3)
+                let has_layout_containment = self.nodes[NodeId::from_u64(ibox.id)]
+                    .primary_styles()
+                    .is_some_and(|s| s.clone_contain().contains(Contain::LAYOUT));
                 let output = self.compute_child_layout(taffy::NodeId::from(ibox.id), child_inputs);
+                // Per CSS, an in-flow inline-block is baseline-aligned to the baseline of its
+                // last in-flow line box, while inline flex/grid containers use their first
+                // baseline. A box with no natural baseline uses its bottom margin edge
+                // (Parley's fallback when `baseline` is `None`, since `ibox.height`
+                // includes margins). A scroll container also uses its bottom margin edge
+                // if it is an inline-block, but flex/grid scroll containers still take
+                // their baseline from their content, clamped to the border box
+                // (css-align §9.1).
+                let baseline = match display {
+                    Display::Flex | Display::Grid => output.baselines.first,
+                    _ => output.baselines.last,
+                };
+                let baseline = if has_layout_containment {
+                    None
+                } else if is_scroll_container {
+                    match display {
+                        Display::Flex | Display::Grid => {
+                            baseline.map(|b| b.min(output.size.height).max(0.0))
+                        }
+                        _ => None,
+                    }
+                } else {
+                    baseline
+                };
+                // Round to physical pixels so that content within the box (which is
+                // positioned relative to the box's top edge and pixel-snapped there)
+                // stays pixel-aligned after the box is shifted to sit on the
+                // (pixel-snapped) line baseline.
+                ibox.baseline = baseline.map(|baseline| ((margin.top + baseline) * scale).round());
                 ibox.width = (margin.left + margin.right + output.size.width) * scale;
-                // Vertical margins adjust the space the box reserves in the line, but the
-                // reserved space cannot be negative.
-                ibox.height = (margin.top + margin.bottom + output.size.height).max(0.0) * scale;
+                // Vertical margins adjust the space the box reserves in the line. With an
+                // explicit baseline the ascent/descent contributions may legitimately be
+                // negative, but a bottom-aligned box (no baseline) contributes its height
+                // as ascent, and the space it reserves cannot be negative.
+                let height = margin.top + margin.bottom + output.size.height;
+                ibox.height = if ibox.baseline.is_some() {
+                    height * scale
+                } else {
+                    height.max(0.0) * scale
+                };
             }
         }
 
@@ -583,7 +629,7 @@ impl BaseDocument {
                         // dbg!(&layout.size);
                         // dbg!(&layout.location);
 
-                        state.append_inline_box_to_line(box_break_data.advance, 0.0);
+                        state.append_inline_box_to_line(box_break_data.advance, None, false);
 
                         // if float.is_floated() {
                         //     println!("INLINE FLOATED BOX ({}) {:?}", ibox.id, float);
@@ -792,11 +838,18 @@ impl BaseDocument {
                         layout.size = size;
                         layout.location.x =
                             (ibox.x / scale) + margin.left + container_pb.left + inset_offset.x;
-                        // A negative `margin-top` shrinks the space the box reserves in the
-                        // line but does not move the box itself, which stays anchored to the
-                        // bottom of the reserved space.
+                        // For a baseline-aligned box, `ibox.y` is the top of the margin box,
+                        // so the border box sits `margin.top` below it. For a bottom-aligned
+                        // box (no baseline), a negative `margin-top` shrinks the space the box
+                        // reserves in the line but does not move the box itself, which stays
+                        // anchored to the bottom of the reserved space.
+                        let margin_top_offset = if ibox.baseline.is_some() {
+                            margin.top
+                        } else {
+                            margin.top.max(0.0)
+                        };
                         layout.location.y = (ibox.y / scale)
-                            + margin.top.max(0.0)
+                            + margin_top_offset
                             + container_pb.top
                             + inset_offset.y;
                         layout.padding = padding; //.map(|p| p / scale);
@@ -816,6 +869,11 @@ impl BaseDocument {
             .layout
             .lines()
             .next()
+            .map(|line| (line.metrics().baseline / scale) + container_pb.top);
+        let last_baseline = inline_layout
+            .layout
+            .lines()
+            .next_back()
             .map(|line| (line.metrics().baseline / scale) + container_pb.top);
 
         // Put layout back
@@ -839,7 +897,10 @@ impl BaseDocument {
                     bottom: content_extent.height,
                 }
             },
-            baselines: taffy::Baselines::from_first(first_baseline),
+            baselines: taffy::Baselines {
+                first: first_baseline,
+                last: last_baseline,
+            },
             top_margin: CollapsibleMarginSet::ZERO,
             bottom_margin: CollapsibleMarginSet::ZERO,
             margins_can_collapse_through: !has_styles_preventing_being_collapsed_through
