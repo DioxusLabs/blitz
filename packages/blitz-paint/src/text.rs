@@ -655,7 +655,7 @@ pub(crate) fn stroke_text<'a>(
                     underline_offset: metrics.underline_offset,
                     underline_size: metrics.underline_size,
                     strikethrough_size: metrics.strikethrough_size,
-                    font: font.clone(),
+                    font: font.font.clone(),
                     font_size,
                     css_font_size,
                 };
