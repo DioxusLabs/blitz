@@ -949,6 +949,7 @@ dependencies = [
  "stylo_traits",
  "svgtypes",
  "taffy",
+ "test-that",
  "thin-vec",
  "thread_local",
  "tracing",
@@ -8016,6 +8017,27 @@ name = "terminal-link"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "253bcead4f3aa96243b0f8fa46f9010e87ca23bd5d0c723d474ff1d2417bbdf8"
+
+[[package]]
+name = "test-that"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "291f228058142bae421e0b4b014a7b18edd6137629550cc15da37feed66a7db6"
+dependencies = [
+ "num-traits",
+ "regex",
+ "test-that-macro",
+]
+
+[[package]]
+name = "test-that-macro"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b6453b0f4c66f6ed93ac9ababa97e347a22f5556180d19808bb6d796522eef5d"
+dependencies = [
+ "quote",
+ "syn 2.0.119",
+]
 
 [[package]]
 name = "thin-vec"
