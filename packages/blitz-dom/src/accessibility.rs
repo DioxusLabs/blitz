@@ -1,5 +1,6 @@
 use crate::{BaseDocument, ElementData, Node as BlitzDomNode, local_name};
 use accesskit::{Node as AccessKitNode, NodeId, Role, Tree, TreeId, TreeUpdate};
+use style::properties::longhands::visibility;
 
 impl BaseDocument {
     pub fn build_accessibility_tree(&self) -> TreeUpdate {
@@ -7,6 +8,9 @@ impl BaseDocument {
         let mut window = AccessKitNode::new(Role::Window);
 
         self.visit(|node_id, node| {
+            if Self::is_hidden_from_accessibility_tree(node) {
+                return;
+            }
             let parent = node
                 .parent
                 .and_then(|parent_id| nodes.get_mut(&parent_id))
@@ -32,6 +36,24 @@ impl BaseDocument {
         }
     }
 
+    // https://www.w3.org/TR/wai-aria-1.2/#tree_exclusion
+    fn is_hidden_from_accessibility_tree(node: &BlitzDomNode) -> bool {
+        if let Some(element_data) = node.element_data()
+            && element_data.has_attr(local_name!("hidden"))
+        {
+            return true;
+        }
+        node.stylo_element_data()
+            .as_ref()
+            .map(|s| {
+                let s = s.borrow();
+                s.styles.is_display_none()
+                    || s.styles.primary().clone_visibility()
+                        == visibility::computed_value::T::Hidden
+            })
+            .unwrap_or(false)
+    }
+
     fn build_accessibility_node(
         &self,
         node: &BlitzDomNode,
@@ -55,6 +77,11 @@ impl BaseDocument {
 
             builder.set_role(role);
             builder.set_html_tag(name);
+
+            // https://www.w3.org/TR/wai-aria-1.2/#tree_exclusion
+            if element_data.attr(local_name!("aria-hidden")) == Some("true") {
+                builder.set_hidden();
+            }
         } else if node.is_text_node() {
             builder.set_role(Role::TextRun);
             builder.set_value(node.text_content());
