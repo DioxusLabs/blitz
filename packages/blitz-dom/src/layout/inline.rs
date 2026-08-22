@@ -277,6 +277,12 @@ impl BaseDocument {
 
         let perform_layout = inputs.run_mode == taffy::RunMode::PerformLayout;
 
+        // Measure passes must not leave measure-time state (inline box sizes, line breaks)
+        // in the persistent inline layout: painting uses that state, and a cache hit on a
+        // later full layout pass would not recompute it. Snapshot it here and restore it
+        // before returning.
+        let saved_layout = (!perform_layout).then(|| inline_layout.layout.clone());
+
         // Compute size of inline boxes
         let child_inputs = taffy::tree::LayoutInput {
             known_dimensions: Size::NONE,
@@ -476,7 +482,10 @@ impl BaseDocument {
         if inputs.run_mode == taffy::RunMode::ComputeSize
             && inputs.axis == RequestedAxis::Horizontal
         {
-            // Put layout back
+            // Restore the pre-measure inline layout state and put the layout back
+            if let Some(saved) = saved_layout {
+                inline_layout.layout = saved;
+            }
             self.nodes[node_id]
                 .data
                 .downcast_element_mut()
@@ -881,7 +890,10 @@ impl BaseDocument {
             .next()
             .map(|line| (line.metrics().baseline / scale) + container_pb.top);
 
-        // Put layout back
+        // Restore the pre-measure inline layout state and put the layout back
+        if let Some(saved) = saved_layout {
+            inline_layout.layout = saved;
+        }
         self.nodes[node_id]
             .data
             .downcast_element_mut()
