@@ -462,7 +462,9 @@ impl LayoutPartialTree for BaseDocument {
     ) -> taffy::LayoutOutput {
         compute_cached_layout(self, node_id, inputs, |tree, node_id, inputs| {
             let mut output = tree.compute_child_layout_internal(node_id, inputs, None);
-            compute_oof_layout(tree, node_id, &mut output);
+            if inputs.run_mode == taffy::RunMode::PerformLayout {
+                compute_oof_layout(tree, node_id, &mut output);
+            }
             output
         })
     }
@@ -554,7 +556,9 @@ impl taffy::LayoutBlockContainer for BaseDocument {
     ) -> taffy::LayoutOutput {
         compute_cached_layout(self, node_id, inputs, |tree, node_id, inputs| {
             let mut output = tree.compute_child_layout_internal(node_id, inputs, block_ctx);
-            compute_oof_layout(tree, node_id, &mut output);
+            if inputs.run_mode == taffy::RunMode::PerformLayout {
+                compute_oof_layout(tree, node_id, &mut output);
+            }
             output
         })
     }
