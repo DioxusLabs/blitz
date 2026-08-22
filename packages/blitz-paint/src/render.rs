@@ -993,9 +993,16 @@ impl ElementCx<'_, '_> {
                 // so cancel out the scroll offset applied to the transform above.
                 let child = &self.context.dom.as_ref().tree()[*child_id];
                 let child_transform = if child.style().position == taffy::Position::Fixed {
+                    // The root element's scroll is the viewport scroll (applied in
+                    // `paint_scene`), not the node's own scroll offset.
+                    let scroll = if Some(self.node.id) == self.context.root_element_id {
+                        self.context.dom.as_ref().viewport_scroll()
+                    } else {
+                        *self.node.scroll_offset()
+                    };
                     parent_style_transform.pre_translate(kurbo::Vec2 {
-                        x: self.node.scroll_offset().x * self.scale,
-                        y: self.node.scroll_offset().y * self.scale,
+                        x: scroll.x * self.scale,
+                        y: scroll.y * self.scale,
                     })
                 } else {
                     parent_style_transform

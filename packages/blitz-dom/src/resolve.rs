@@ -236,6 +236,7 @@ impl BaseDocument {
     ///   that paint and hit-testing visit it with the correct coordinates
     ///   (out-of-flow boxes are skipped in their DOM parent's paint list).
     fn attach_hoisted_children(&mut self) {
+        let mut modified_stacking_roots: Vec<NodeId> = Vec::new();
         let mut pairs: Vec<(NodeId, Vec<NodeId>)> = Vec::new();
         for (cb_id, node) in self.nodes.iter() {
             let hoisted = node.hoisted_children.borrow();
@@ -257,13 +258,77 @@ impl BaseDocument {
                 self.nodes[child_id].layout_parent.set(Some(cb_id));
             }
 
-            let mut paint_children = self.nodes[cb_id].paint_children.borrow_mut();
-            let paint_children = paint_children.get_or_insert_with(thin_vec::ThinVec::new);
-            for &child_id in &valid {
-                if !paint_children.contains(&child_id) {
-                    paint_children.push(child_id);
+            // Boxes whose containing block is their direct layout parent were kept
+            // in its paint tree by `flush_styles_to_layout` (paint_children or the
+            // stacking context, depending on z-index) in tree order, so only append
+            // the ones hoisted past their DOM parent.
+            let direct_layout_children: Vec<NodeId> = self.nodes[cb_id]
+                .layout_children
+                .borrow()
+                .as_ref()
+                .map(|c| c.to_vec())
+                .unwrap_or_default();
+
+            let mut z_indexed: Vec<NodeId> = Vec::new();
+            {
+                let mut paint_children = self.nodes[cb_id].paint_children.borrow_mut();
+                let paint_children = paint_children.get_or_insert_with(thin_vec::ThinVec::new);
+                for &child_id in &valid {
+                    if direct_layout_children.contains(&child_id) {
+                        continue;
+                    }
+                    if self.nodes[child_id].z_index() != 0 {
+                        z_indexed.push(child_id);
+                        continue;
+                    }
+                    if !paint_children.contains(&child_id) {
+                        paint_children.push(child_id);
+                    }
                 }
             }
+
+            // Children with a z-index belong to the nearest stacking context at
+            // or above the containing block: hoist them there (matching
+            // `flush_styles_to_layout`'s z-index hoisting), with their position
+            // recorded relative to the stacking context root.
+            for child_id in z_indexed {
+                let mut position = taffy::Point::<f32>::ZERO;
+                let mut sc_root = cb_id;
+                while self.nodes[sc_root].stacking_context.is_none() {
+                    let node = &self.nodes[sc_root];
+                    let location = node.final_layout().location;
+                    let scroll = *node.scroll_offset();
+                    position.x += location.x - scroll.x as f32;
+                    position.y += location.y - scroll.y as f32;
+                    let Some(parent) = node.layout_parent.get() else {
+                        break;
+                    };
+                    sc_root = parent;
+                }
+
+                let z_index = self.nodes[child_id].z_index();
+                if let Some(sc) = self.nodes[sc_root].stacking_context.as_mut() {
+                    if !sc.children.iter().any(|c| c.node_id == child_id) {
+                        sc.children.push(crate::layout::damage::HoistedPaintChild {
+                            node_id: child_id,
+                            z_index,
+                            position,
+                        });
+                        modified_stacking_roots.push(sc_root);
+                    }
+                }
+            }
+        }
+
+        modified_stacking_roots.sort_unstable();
+        modified_stacking_roots.dedup();
+        for sc_root in modified_stacking_roots {
+            let mut sc = self.nodes[sc_root].stacking_context.take();
+            if let Some(sc) = sc.as_mut() {
+                sc.sort();
+                sc.compute_content_size(self);
+            }
+            self.nodes[sc_root].stacking_context = sc;
         }
     }
 
