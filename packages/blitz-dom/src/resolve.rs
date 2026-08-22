@@ -191,7 +191,8 @@ impl BaseDocument {
                 }
             }
         }
-        let hoisted_children = std::mem::take(&mut *self.nodes[node_id].hoisted_children.borrow_mut());
+        let hoisted_children =
+            std::mem::take(&mut *self.nodes[node_id].hoisted_children.borrow_mut());
         for &child_id in &hoisted_children {
             if !self.nodes.contains_key(child_id) {
                 continue;
@@ -257,8 +258,7 @@ impl BaseDocument {
             }
 
             let mut paint_children = self.nodes[cb_id].paint_children.borrow_mut();
-            let paint_children =
-                paint_children.get_or_insert_with(thin_vec::ThinVec::new);
+            let paint_children = paint_children.get_or_insert_with(thin_vec::ThinVec::new);
             for &child_id in &valid {
                 if !paint_children.contains(&child_id) {
                     paint_children.push(child_id);
