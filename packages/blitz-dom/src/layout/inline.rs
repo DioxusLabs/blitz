@@ -271,6 +271,8 @@ impl BaseDocument {
                 }),
         };
 
+        let perform_layout = inputs.run_mode == taffy::RunMode::PerformLayout;
+
         // Compute size of inline boxes
         let child_inputs = taffy::tree::LayoutInput {
             known_dimensions: Size::NONE,
@@ -579,15 +581,20 @@ impl BaseDocument {
                         state.set_line_x(next_slot.x * scale);
                         state.set_line_y((next_slot.y * scale) as f64);
 
-                        let layout = self.nodes[node_id].unrounded_layout_mut();
-                        layout.size = output.size;
-                        layout.location.x = pos.x + margin.left + container_pb.left;
-                        layout.location.y = pos.y + margin.top + container_pb.top;
+                        let location = taffy::Point {
+                            x: pos.x + margin.left + container_pb.left,
+                            y: pos.y + margin.top + container_pb.top,
+                        };
+                        if perform_layout {
+                            let layout = self.nodes[node_id].unrounded_layout_mut();
+                            layout.size = output.size;
+                            layout.location = location;
+                        }
 
                         // Translate anchors from item-relative to container-relative
                         // coordinates and collect candidates bubbled from the float's subtree
                         if !output.oof_candidates.is_empty() {
-                            output.oof_candidates.translate(layout.location);
+                            output.oof_candidates.translate(location);
                             oof_candidates.append(&mut output.oof_candidates);
                         }
 
@@ -694,146 +701,153 @@ impl BaseDocument {
 
         // Store sizes and positions of inline boxes
         let mut ibox_order: u32 = 0;
-        for line in inline_layout.layout.lines() {
-            for item in line.items() {
-                if let parley::layout::PositionedLayoutItem::InlineBox(ibox) = item {
-                    let order = ibox_order;
-                    ibox_order += 1;
-                    let node = &mut self.nodes[NodeId::from_u64(ibox.id)];
-                    let padding = node
-                        .style()
-                        .padding
-                        .resolve_or_zero(child_inputs.parent_size, resolve_calc_value);
-                    let border = node
-                        .style()
-                        .border
-                        .resolve_or_zero(child_inputs.parent_size, resolve_calc_value);
-                    let margin = node
-                        .style()
-                        .margin
-                        .resolve_or_zero(child_inputs.parent_size, resolve_calc_value);
-
-                    #[cfg(feature = "floats")]
-                    let is_floated = node.style().float != Float::None;
-                    #[cfg(not(feature = "floats"))]
-                    let is_floated = false;
-
-                    if node.style().position.is_out_of_flow() {
-                        let position = node.style().position;
-
-                        // The static position of an absolutely positioned box depends on the
-                        // display its hypothetical box would have had (the display specified
-                        // before position:absolute blockified it): inline-level boxes sit at
-                        // their position within the line, while block-level boxes start at the
-                        // content-box left edge of their containing block.
-                        let is_inline_level = node
-                            .primary_styles()
-                            .map(|s| {
-                                s.get_box().original_display.outside() == DisplayOutside::Inline
-                            })
-                            .unwrap_or(true);
-                        // Inline-level boxes are placed at the top of the line box they would
-                        // have occupied (`ibox.y` is the baseline as out-of-flow boxes are
-                        // zero-sized), and block-level boxes below it.
-                        let line_metrics = line.metrics();
-                        let static_position = taffy::Point {
-                            x: if is_inline_level {
-                                (ibox.x / scale) + container_pb.left
-                            } else {
-                                container_pb.left
-                            },
-                            y: if is_inline_level {
-                                (line_metrics.block_min_coord / scale) + container_pb.top
-                            } else {
-                                (line_metrics.block_max_coord / scale) + container_pb.top
-                            },
-                        };
-
-                        oof_candidates.push(OofCandidate {
-                            node: taffy::NodeId::from(ibox.id),
-                            order,
-                            position,
-                            static_position: taffy::Point {
-                                x: StaticPosition::from_edge(
-                                    static_position.x,
-                                    if container_direction == Direction::Rtl && is_inline_level {
-                                        StaticEdge::End
-                                    } else {
-                                        StaticEdge::Start
-                                    },
-                                ),
-                                y: StaticPosition::from_edge(static_position.y, StaticEdge::Start),
-                            },
-                        });
-                    } else if is_floated {
-                        let layout = self.nodes[NodeId::from_u64(ibox.id)].unrounded_layout_mut();
-                        layout.padding = padding; //.map(|p| p / scale);
-                        layout.border = border; //.map(|p| p / scale);
-                    } else {
-                        // Re-measure the box to get its border-box size (this hits the layout
-                        // cache). The size cannot be recovered from `ibox` dimensions as the
-                        // space reserved in the line is clamped to be non-negative.
-                        let mut output =
-                            self.compute_child_layout(taffy::NodeId::from(ibox.id), child_inputs);
-                        let size = output.size;
+        if perform_layout {
+            for line in inline_layout.layout.lines() {
+                for item in line.items() {
+                    if let parley::layout::PositionedLayoutItem::InlineBox(ibox) = item {
+                        let order = ibox_order;
+                        ibox_order += 1;
                         let node = &mut self.nodes[NodeId::from_u64(ibox.id)];
+                        let padding = node
+                            .style()
+                            .padding
+                            .resolve_or_zero(child_inputs.parent_size, resolve_calc_value);
+                        let border = node
+                            .style()
+                            .border
+                            .resolve_or_zero(child_inputs.parent_size, resolve_calc_value);
+                        let margin = node
+                            .style()
+                            .margin
+                            .resolve_or_zero(child_inputs.parent_size, resolve_calc_value);
 
-                        // Resolve relative inset offsets against the containing block
-                        // (the content box of the inline container).
-                        let style = node.style();
-                        let is_relative = style.position == taffy::Position::Relative;
-                        let container_content_size = final_size - content_box_inset.sum_axes();
-                        let inset = taffy::Rect {
-                            left: style
-                                .inset
-                                .left
-                                .maybe_resolve(container_content_size.width, resolve_calc_value),
-                            right: style
-                                .inset
-                                .right
-                                .maybe_resolve(container_content_size.width, resolve_calc_value),
-                            top: style
-                                .inset
-                                .top
-                                .maybe_resolve(container_content_size.height, resolve_calc_value),
-                            bottom: style
-                                .inset
-                                .bottom
-                                .maybe_resolve(container_content_size.height, resolve_calc_value),
-                        };
-                        let inset_offset = if is_relative {
-                            taffy::Point {
-                                x: if container_direction == Direction::Rtl {
-                                    inset.right.map(|x| -x).or(inset.left).unwrap_or(0.0)
+                        #[cfg(feature = "floats")]
+                        let is_floated = node.style().float != Float::None;
+                        #[cfg(not(feature = "floats"))]
+                        let is_floated = false;
+
+                        if node.style().position.is_out_of_flow() {
+                            let position = node.style().position;
+
+                            // The static position of an absolutely positioned box depends on the
+                            // display its hypothetical box would have had (the display specified
+                            // before position:absolute blockified it): inline-level boxes sit at
+                            // their position within the line, while block-level boxes start at the
+                            // content-box left edge of their containing block.
+                            let is_inline_level = node
+                                .primary_styles()
+                                .map(|s| {
+                                    s.get_box().original_display.outside() == DisplayOutside::Inline
+                                })
+                                .unwrap_or(true);
+                            // Inline-level boxes are placed at the top of the line box they would
+                            // have occupied (`ibox.y` is the baseline as out-of-flow boxes are
+                            // zero-sized), and block-level boxes below it.
+                            let line_metrics = line.metrics();
+                            let static_position = taffy::Point {
+                                x: if is_inline_level {
+                                    (ibox.x / scale) + container_pb.left
                                 } else {
-                                    inset.left.or(inset.right.map(|x| -x)).unwrap_or(0.0)
+                                    container_pb.left
                                 },
-                                y: inset.top.or(inset.bottom.map(|x| -x)).unwrap_or(0.0),
-                            }
+                                y: if is_inline_level {
+                                    (line_metrics.block_min_coord / scale) + container_pb.top
+                                } else {
+                                    (line_metrics.block_max_coord / scale) + container_pb.top
+                                },
+                            };
+
+                            oof_candidates.push(OofCandidate {
+                                node: taffy::NodeId::from(ibox.id),
+                                order,
+                                position,
+                                static_position: taffy::Point {
+                                    x: StaticPosition::from_edge(
+                                        static_position.x,
+                                        if container_direction == Direction::Rtl && is_inline_level
+                                        {
+                                            StaticEdge::End
+                                        } else {
+                                            StaticEdge::Start
+                                        },
+                                    ),
+                                    y: StaticPosition::from_edge(
+                                        static_position.y,
+                                        StaticEdge::Start,
+                                    ),
+                                },
+                            });
+                        } else if is_floated {
+                            let layout =
+                                self.nodes[NodeId::from_u64(ibox.id)].unrounded_layout_mut();
+                            layout.padding = padding; //.map(|p| p / scale);
+                            layout.border = border; //.map(|p| p / scale);
                         } else {
-                            taffy::Point::ZERO
-                        };
+                            // Re-measure the box to get its border-box size (this hits the layout
+                            // cache). The size cannot be recovered from `ibox` dimensions as the
+                            // space reserved in the line is clamped to be non-negative.
+                            let mut output = self
+                                .compute_child_layout(taffy::NodeId::from(ibox.id), child_inputs);
+                            let size = output.size;
+                            let node = &mut self.nodes[NodeId::from_u64(ibox.id)];
 
-                        let layout = node.unrounded_layout_mut();
-                        layout.size = size;
-                        layout.location.x =
-                            (ibox.x / scale) + margin.left + container_pb.left + inset_offset.x;
-                        // A negative `margin-top` shrinks the space the box reserves in the
-                        // line but does not move the box itself, which stays anchored to the
-                        // bottom of the reserved space.
-                        layout.location.y = (ibox.y / scale)
-                            + margin.top.max(0.0)
-                            + container_pb.top
-                            + inset_offset.y;
-                        layout.padding = padding; //.map(|p| p / scale);
-                        layout.border = border; //.map(|p| p / scale);
+                            // Resolve relative inset offsets against the containing block
+                            // (the content box of the inline container).
+                            let style = node.style();
+                            let is_relative = style.position == taffy::Position::Relative;
+                            let container_content_size = final_size - content_box_inset.sum_axes();
+                            let inset = taffy::Rect {
+                                left: style.inset.left.maybe_resolve(
+                                    container_content_size.width,
+                                    resolve_calc_value,
+                                ),
+                                right: style.inset.right.maybe_resolve(
+                                    container_content_size.width,
+                                    resolve_calc_value,
+                                ),
+                                top: style.inset.top.maybe_resolve(
+                                    container_content_size.height,
+                                    resolve_calc_value,
+                                ),
+                                bottom: style.inset.bottom.maybe_resolve(
+                                    container_content_size.height,
+                                    resolve_calc_value,
+                                ),
+                            };
+                            let inset_offset = if is_relative {
+                                taffy::Point {
+                                    x: if container_direction == Direction::Rtl {
+                                        inset.right.map(|x| -x).or(inset.left).unwrap_or(0.0)
+                                    } else {
+                                        inset.left.or(inset.right.map(|x| -x)).unwrap_or(0.0)
+                                    },
+                                    y: inset.top.or(inset.bottom.map(|x| -x)).unwrap_or(0.0),
+                                }
+                            } else {
+                                taffy::Point::ZERO
+                            };
 
-                        // Translate anchors from item-relative to container-relative
-                        // coordinates and collect candidates bubbled from the box's subtree
-                        if !output.oof_candidates.is_empty() {
-                            let location = layout.location;
-                            output.oof_candidates.translate(location);
-                            oof_candidates.append(&mut output.oof_candidates);
+                            let layout = node.unrounded_layout_mut();
+                            layout.size = size;
+                            layout.location.x =
+                                (ibox.x / scale) + margin.left + container_pb.left + inset_offset.x;
+                            // A negative `margin-top` shrinks the space the box reserves in the
+                            // line but does not move the box itself, which stays anchored to the
+                            // bottom of the reserved space.
+                            layout.location.y = (ibox.y / scale)
+                                + margin.top.max(0.0)
+                                + container_pb.top
+                                + inset_offset.y;
+                            layout.padding = padding; //.map(|p| p / scale);
+                            layout.border = border; //.map(|p| p / scale);
+
+                            // Translate anchors from item-relative to container-relative
+                            // coordinates and collect candidates bubbled from the box's subtree
+                            if !output.oof_candidates.is_empty() {
+                                let location = layout.location;
+                                output.oof_candidates.translate(location);
+                                oof_candidates.append(&mut output.oof_candidates);
+                            }
                         }
                     }
                 }
