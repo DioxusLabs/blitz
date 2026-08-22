@@ -781,6 +781,7 @@ impl BaseDocument {
                         // Resolve relative inset offsets against the containing block
                         // (the content box of the inline container).
                         let style = node.style();
+                        let is_relative = style.position == taffy::Position::Relative;
                         let container_content_size = final_size - content_box_inset.sum_axes();
                         let inset = taffy::Rect {
                             left: style
@@ -800,13 +801,17 @@ impl BaseDocument {
                                 .bottom
                                 .maybe_resolve(container_content_size.height, resolve_calc_value),
                         };
-                        let inset_offset = taffy::Point {
-                            x: if container_direction == Direction::Rtl {
-                                inset.right.map(|x| -x).or(inset.left).unwrap_or(0.0)
-                            } else {
-                                inset.left.or(inset.right.map(|x| -x)).unwrap_or(0.0)
-                            },
-                            y: inset.top.or(inset.bottom.map(|x| -x)).unwrap_or(0.0),
+                        let inset_offset = if is_relative {
+                            taffy::Point {
+                                x: if container_direction == Direction::Rtl {
+                                    inset.right.map(|x| -x).or(inset.left).unwrap_or(0.0)
+                                } else {
+                                    inset.left.or(inset.right.map(|x| -x)).unwrap_or(0.0)
+                                },
+                                y: inset.top.or(inset.bottom.map(|x| -x)).unwrap_or(0.0),
+                            }
+                        } else {
+                            taffy::Point::ZERO
                         };
 
                         let layout = node.unrounded_layout_mut();

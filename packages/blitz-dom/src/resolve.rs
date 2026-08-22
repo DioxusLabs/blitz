@@ -274,11 +274,11 @@ impl BaseDocument {
                 let mut paint_children = self.nodes[cb_id].paint_children.borrow_mut();
                 let paint_children = paint_children.get_or_insert_with(thin_vec::ThinVec::new);
                 for &child_id in &valid {
-                    if direct_layout_children.contains(&child_id) {
-                        continue;
-                    }
                     if self.nodes[child_id].z_index() != 0 {
                         z_indexed.push(child_id);
+                        continue;
+                    }
+                    if direct_layout_children.contains(&child_id) {
                         continue;
                     }
                     if !paint_children.contains(&child_id) {
