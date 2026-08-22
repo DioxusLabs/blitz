@@ -25,4 +25,4 @@ pub use node::*;
 pub use scrollbar::{ScrollbarColor, ScrollbarRef, ScrollbarWidth};
 #[cfg(feature = "svg")]
 pub use svg::{SvgImageData, SvgIntrinsicDimensions};
-pub use text::{GeneratedTextInputEvent, TextBrush, TextInputData, TextLayout};
+pub use text::{GeneratedTextInputEvent, Placeholder, TextBrush, TextInputData, TextLayout};
