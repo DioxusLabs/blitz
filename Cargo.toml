@@ -77,23 +77,23 @@ smallvec = "1"
 thin-vec = "0.2"
 
 # DioxusLabs dependencies
-dioxus = { version = "0.7.3" }
-dioxus-core = { version = "0.7.3" }
-dioxus-html = { version = "0.7.3" }
-dioxus-hooks = { version = "0.7.3" }
-dioxus-signals = { version = "0.7.3" }
-dioxus-stores = { version = "0.7.3" }
-dioxus-asset-resolver = { version = "0.7.3" }
-manganis = { version = "0.7.3" }
-dioxus-document = { version = "0.7.3" }
-dioxus-history = { version = "0.7.3" }
+dioxus = { git = "https://github.com/DioxusLabs/dioxus", rev = "24f6a829df0dfa203961a98ea4cae21c2ff27e28" }
+dioxus-core = { git = "https://github.com/DioxusLabs/dioxus", rev = "24f6a829df0dfa203961a98ea4cae21c2ff27e28" }
+dioxus-html = { git = "https://github.com/DioxusLabs/dioxus", rev = "24f6a829df0dfa203961a98ea4cae21c2ff27e28" }
+dioxus-hooks = { git = "https://github.com/DioxusLabs/dioxus", rev = "24f6a829df0dfa203961a98ea4cae21c2ff27e28" }
+dioxus-signals = { git = "https://github.com/DioxusLabs/dioxus", rev = "24f6a829df0dfa203961a98ea4cae21c2ff27e28" }
+dioxus-stores = { git = "https://github.com/DioxusLabs/dioxus", rev = "24f6a829df0dfa203961a98ea4cae21c2ff27e28" }
+dioxus-asset-resolver = { git = "https://github.com/DioxusLabs/dioxus", rev = "24f6a829df0dfa203961a98ea4cae21c2ff27e28" }
+manganis = { git = "https://github.com/DioxusLabs/dioxus", rev = "24f6a829df0dfa203961a98ea4cae21c2ff27e28" }
+dioxus-document = { git = "https://github.com/DioxusLabs/dioxus", rev = "24f6a829df0dfa203961a98ea4cae21c2ff27e28" }
+dioxus-history = { git = "https://github.com/DioxusLabs/dioxus", rev = "24f6a829df0dfa203961a98ea4cae21c2ff27e28" }
 
 # Dioxus hot reload
-dioxus-devtools = { version = "0.7.3" }
-dioxus-cli-config = { version = "0.7.3" }
+dioxus-devtools = { git = "https://github.com/DioxusLabs/dioxus", rev = "24f6a829df0dfa203961a98ea4cae21c2ff27e28" }
+dioxus-cli-config = { git = "https://github.com/DioxusLabs/dioxus", rev = "24f6a829df0dfa203961a98ea4cae21c2ff27e28" }
 
 # Dioxus Prelude
-dioxus-core-macro = { version = "0.7.3" }
+dioxus-core-macro = { git = "https://github.com/DioxusLabs/dioxus", rev = "24f6a829df0dfa203961a98ea4cae21c2ff27e28" }
 
 # Taffy + Parley + Fontations
 taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "8d13fdc88468c83f01b13b36fadc0349950c6f51", default-features = false, features = [
