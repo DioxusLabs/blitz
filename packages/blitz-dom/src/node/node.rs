@@ -98,6 +98,10 @@ pub struct Node {
     pub layout_parent: Cell<Option<NodeId>>,
     /// A separate child list that includes anonymous collections of inline elements
     pub layout_children: RefCell<Option<ThinVec<NodeId>>>,
+    /// Out-of-flow (absolutely/fixed positioned) boxes for which this node is the
+    /// containing block. Recorded by Taffy's out-of-flow positioning pass. The
+    /// `Layout.location` of these boxes is relative to this node's border box.
+    pub hoisted_children: RefCell<ThinVec<NodeId>>,
     /// Anonymous block boxes created for this node during layout construction.
     ///
     /// Anonymous blocks live only in the slab (they are not part of the DOM
@@ -385,6 +389,7 @@ impl Node {
             children: ThinVec::new(),
             layout_parent: Cell::new(None),
             layout_children: RefCell::new(None),
+            hoisted_children: RefCell::new(ThinVec::new()),
             anonymous_blocks: ThinVec::new(),
             paint_children: RefCell::new(None),
             stacking_context: None,
@@ -1201,6 +1206,14 @@ impl Node {
             .unwrap_or(taffy::Display::Block)
     }
 
+    /// The node's `position` as a [`taffy::Position`]. Returns [`taffy::Position::Static`]
+    /// for nodes without computed styles (e.g. text nodes).
+    pub fn taffy_position(&self) -> taffy::Position {
+        self.primary_styles()
+            .map(|s| stylo_taffy::convert::position(s.get_box().position))
+            .unwrap_or(taffy::Position::Static)
+    }
+
     pub fn text_content(&self) -> String {
         let mut out = String::new();
         self.write_text_content(&mut out);
@@ -1276,6 +1289,51 @@ impl Node {
         // TODO: contain
 
         false
+    }
+
+    /// Whether this node's styles establish a containing block for
+    /// `position: fixed` (and therefore also `position: absolute`) descendants.
+    ///
+    /// <https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_positioned_layout/Containing_block#identifying_the_containing_block>
+    pub(crate) fn establishes_fixed_containing_block(&self) -> bool {
+        use style::values::computed::{Perspective, Rotate, Scale, Translate};
+        use style::values::specified::box_::{Contain, ContainerType, WillChangeBits};
+
+        let Some(style) = self.primary_styles() else {
+            return false;
+        };
+
+        let box_style = style.get_box();
+        if !box_style.transform.0.is_empty()
+            || !matches!(box_style.translate, Translate::None)
+            || !matches!(box_style.rotate, Rotate::None)
+            || !matches!(box_style.scale, Scale::None)
+            || !matches!(box_style.perspective, Perspective::None)
+        {
+            return true;
+        }
+        if box_style.will_change.bits.intersects(
+            WillChangeBits::TRANSFORM
+                | WillChangeBits::PERSPECTIVE
+                | WillChangeBits::FIXPOS_CB_NON_SVG,
+        ) {
+            return true;
+        }
+        if box_style
+            .contain
+            .intersects(Contain::LAYOUT | Contain::PAINT)
+        {
+            return true;
+        }
+        if box_style
+            .container_type
+            .intersects(ContainerType::SIZE | ContainerType::INLINE_SIZE)
+        {
+            return true;
+        }
+
+        let effects = style.get_effects();
+        !effects.filter.0.is_empty() || !effects.backdrop_filter.0.is_empty()
     }
 
     /// Takes an (x, y) position (relative to the *parent's* top-left corner) and returns:
@@ -1376,11 +1434,11 @@ impl Node {
             *scrollbar = Some(sb);
         }
 
+        let content_box_offset = taffy::Point {
+            x: self.final_layout().padding.left + self.final_layout().border.left,
+            y: self.final_layout().padding.top + self.final_layout().border.top,
+        };
         if self.flags.is_inline_root() {
-            let content_box_offset = taffy::Point {
-                x: self.final_layout().padding.left + self.final_layout().border.left,
-                y: self.final_layout().padding.top + self.final_layout().border.top,
-            };
             x -= content_box_offset.x;
             y -= content_box_offset.y;
         }
@@ -1403,7 +1461,24 @@ impl Node {
 
         // Call `.hit()` on each child in turn. If any return `Some` then return that value. Else return `Some(self.id).
         for child_id in self.paint_children.borrow().iter().flatten().rev() {
-            if let Some(hit) = self.with(*child_id).hit_inner(x, y, scale, scrollbar) {
+            let child = self.with(*child_id);
+            let child_position = child.taffy_position();
+            let mut child_x = x;
+            let mut child_y = y;
+            if child_position.is_out_of_flow() {
+                // Out-of-flow children's layout location is relative to this node's
+                // border box, so undo the inline-root content-box offset applied above
+                if self.flags.is_inline_root() {
+                    child_x += content_box_offset.x;
+                    child_y += content_box_offset.y;
+                }
+                // Fixed-position children do not scroll with their containing block
+                if child_position == taffy::Position::Fixed {
+                    child_x -= self.scroll_offset().x as f32;
+                    child_y -= self.scroll_offset().y as f32;
+                }
+            }
+            if let Some(hit) = child.hit_inner(child_x, child_y, scale, scrollbar) {
                 return Some(hit);
             }
         }
