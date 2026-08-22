@@ -1099,14 +1099,47 @@ impl Node {
             return true;
         }
 
+        if self.applies_atomic_paint_effect() {
+            return true;
+        }
+
         // TODO: mix-blend-mode
-        // TODO: filter
-        // TODO: clip-path
-        // TODO: mask
         // TODO: isolation
         // TODO: contain
 
         false
+    }
+
+    /// Whether this node's styles apply an atomic paint effect (opacity, filter,
+    /// clip-path, mask) to its subtree. Such effects apply to out-of-flow descendants
+    /// even when this node is not their containing block.
+    pub(crate) fn applies_atomic_paint_effect(&self) -> bool {
+        use style::values::computed::basic_shape::ClipPath;
+        use style::values::generics::image::GenericImage;
+
+        let Some(style) = self.primary_styles() else {
+            return false;
+        };
+
+        if style.clone_opacity() != 1.0 {
+            return true;
+        }
+
+        let effects = style.get_effects();
+        if !effects.filter.0.is_empty() {
+            return true;
+        }
+
+        if !matches!(style.clone_clip_path(), ClipPath::None) {
+            return true;
+        }
+
+        style
+            .get_svg()
+            .mask_image
+            .0
+            .iter()
+            .any(|image| !matches!(image, GenericImage::None))
     }
 
     /// Whether this node's styles establish a containing block for
