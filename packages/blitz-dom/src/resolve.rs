@@ -241,6 +241,23 @@ impl BaseDocument {
         full.transform_rect_bbox(overflow)
     }
 
+    /// The innermost DOM ancestor of `node_id`, strictly below `cb_id`, that applies
+    /// an atomic paint effect (opacity, clip-path, mask) to its subtree.
+    fn innermost_paint_effect_ancestor(&self, node_id: NodeId, cb_id: NodeId) -> Option<NodeId> {
+        let mut ancestor = self.nodes[node_id].parent;
+        while let Some(ancestor_id) = ancestor {
+            if ancestor_id == cb_id {
+                return None;
+            }
+            let node = &self.nodes[ancestor_id];
+            if node.applies_atomic_paint_effect() {
+                return Some(ancestor_id);
+            }
+            ancestor = node.parent;
+        }
+        None
+    }
+
     /// Attach out-of-flow (absolutely/fixed positioned) boxes to their containing
     /// block, as recorded by Taffy's out-of-flow positioning pass in each node's
     /// `hoisted_children` list:
@@ -286,6 +303,7 @@ impl BaseDocument {
                 .unwrap_or_default();
 
             let mut z_indexed: Vec<NodeId> = Vec::new();
+            let mut effect_attached: Vec<(NodeId, NodeId)> = Vec::new();
             {
                 let mut paint_children = self.nodes[cb_id].paint_children.borrow_mut();
                 let paint_children = paint_children.get_or_insert_with(thin_vec::ThinVec::new);
@@ -297,8 +315,48 @@ impl BaseDocument {
                     if direct_layout_children.contains(&child_id) {
                         continue;
                     }
+                    // Atomic paint effects (opacity, clip-path, mask) on a DOM ancestor
+                    // apply to out-of-flow descendants even when the ancestor is not
+                    // their containing block, so paint the box inside the innermost such
+                    // ancestor's effect layers rather than directly under the containing
+                    // block.
+                    if let Some(effect_ancestor) =
+                        self.innermost_paint_effect_ancestor(child_id, cb_id)
+                    {
+                        effect_attached.push((child_id, effect_ancestor));
+                        continue;
+                    }
                     if !paint_children.contains(&child_id) {
                         paint_children.push(child_id);
+                    }
+                }
+            }
+
+            // Boxes painted inside an intermediate effect ancestor keep their
+            // containing-block-relative layout location, so record the offset of the
+            // effect ancestor relative to the containing block to compensate.
+            for (child_id, effect_ancestor) in effect_attached {
+                let mut position = taffy::Point::<f32>::ZERO;
+                let mut ancestor = effect_ancestor;
+                while ancestor != cb_id {
+                    let node = &self.nodes[ancestor];
+                    let location = node.final_layout().location;
+                    let scroll = *node.scroll_offset();
+                    position.x -= location.x - scroll.x as f32;
+                    position.y -= location.y - scroll.y as f32;
+                    let Some(parent) = node.layout_parent.get() else {
+                        break;
+                    };
+                    ancestor = parent;
+                }
+                if let Some(sc) = self.nodes[effect_ancestor].stacking_context.as_mut() {
+                    if !sc.children.iter().any(|c| c.node_id == child_id) {
+                        sc.children.push(crate::layout::damage::HoistedPaintChild {
+                            node_id: child_id,
+                            z_index: 0,
+                            position,
+                        });
+                        modified_stacking_roots.push(effect_ancestor);
                     }
                 }
             }
