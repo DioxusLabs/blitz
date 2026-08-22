@@ -634,6 +634,15 @@ impl BaseDocument {
                 let position = style.clone_position();
                 let z_index = style.clone_z_index().integer_or(0);
 
+                // Out-of-flow boxes are hoisted to their containing block by Taffy's
+                // out-of-flow positioning pass and their layout location is relative to
+                // the containing block's border box. They are painted (and hit-tested)
+                // via the containing block's `hoisted_children` list (see
+                // `attach_hoisted_children`), not via their DOM parent.
+                if matches!(position, Position::Absolute | Position::Fixed) {
+                    continue;
+                }
+
                 // TODO: more complete hoisting detection
                 // z-index applies to static flex/grid items too
                 // (css-flexbox-1 §painting, css-grid-1 §z-order).
