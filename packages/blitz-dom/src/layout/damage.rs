@@ -632,9 +632,16 @@ impl BaseDocument {
                                     .primary_styles()
                                     .is_some_and(|s| s.clone_position() != Position::Static)
                                     || parent.establishes_fixed_containing_block()
+                                    || parent.establishes_absolute_containing_block()
                             }
                         };
                     if !parent_claims {
+                        continue;
+                    }
+                    // Z-indexed out-of-flow boxes are routed to their stacking
+                    // context by `attach_hoisted_children` after layout, when
+                    // their containing-block-relative location is known.
+                    if z_index != 0 {
                         continue;
                     }
                 }

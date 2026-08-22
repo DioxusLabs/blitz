@@ -1313,7 +1313,8 @@ impl Node {
         if box_style.will_change.bits.intersects(
             WillChangeBits::TRANSFORM
                 | WillChangeBits::PERSPECTIVE
-                | WillChangeBits::FIXPOS_CB_NON_SVG,
+                | WillChangeBits::FIXPOS_CB_NON_SVG
+                | WillChangeBits::CONTAIN,
         ) {
             return true;
         }
@@ -1332,6 +1333,25 @@ impl Node {
 
         let effects = style.get_effects();
         !effects.filter.0.is_empty() || !effects.backdrop_filter.0.is_empty()
+    }
+
+    /// Whether this node's styles establish a containing block for
+    /// `position: absolute` descendants even when the node is not positioned
+    /// (e.g. `will-change: position`).
+    ///
+    /// <https://drafts.csswg.org/css-will-change/#will-change>
+    pub(crate) fn establishes_absolute_containing_block(&self) -> bool {
+        use style::values::specified::box_::WillChangeBits;
+
+        let Some(style) = self.primary_styles() else {
+            return false;
+        };
+
+        style
+            .get_box()
+            .will_change
+            .bits
+            .intersects(WillChangeBits::POSITION)
     }
 
     /// Takes an (x, y) position (relative to the *parent's* top-left corner) and returns:

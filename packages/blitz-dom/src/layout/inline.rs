@@ -815,13 +815,18 @@ impl BaseDocument {
                         let size = output.size;
                         let node = &mut self.nodes[NodeId::from_u64(ibox.id)];
 
-                        let inset_offset = taffy::Point {
-                            x: if container_direction == Direction::Rtl {
-                                inset.right.map(|x| -x).or(inset.left).unwrap_or(0.0)
-                            } else {
-                                inset.left.or(inset.right.map(|x| -x)).unwrap_or(0.0)
-                            },
-                            y: inset.top.or(inset.bottom.map(|x| -x)).unwrap_or(0.0),
+                        let is_relative = position == taffy::Position::Relative;
+                        let inset_offset = if is_relative {
+                            taffy::Point {
+                                x: if container_direction == Direction::Rtl {
+                                    inset.right.map(|x| -x).or(inset.left).unwrap_or(0.0)
+                                } else {
+                                    inset.left.or(inset.right.map(|x| -x)).unwrap_or(0.0)
+                                },
+                                y: inset.top.or(inset.bottom.map(|x| -x)).unwrap_or(0.0),
+                            }
+                        } else {
+                            taffy::Point::ZERO
                         };
 
                         let layout = node.unrounded_layout_mut();
