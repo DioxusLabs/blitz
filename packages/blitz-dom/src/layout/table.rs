@@ -416,6 +416,16 @@ impl taffy::LayoutPartialTree for TableTreeWrapper<'_> {
         self.doc.set_unrounded_layout(node_id, layout)
     }
 
+    fn set_hoisted_children(&mut self, node_id: taffy::NodeId, hoisted: &[taffy::NodeId]) {
+        let node_id = crate::taffy_node_id(self.ctx.cells[usize::from(node_id)].node_id);
+        self.doc.set_hoisted_children(node_id, hoisted)
+    }
+
+    fn add_hoisted_children(&mut self, node_id: taffy::NodeId, hoisted: &[taffy::NodeId]) {
+        let node_id = crate::taffy_node_id(self.ctx.cells[usize::from(node_id)].node_id);
+        self.doc.add_hoisted_children(node_id, hoisted)
+    }
+
     fn compute_child_layout(
         &mut self,
         node_id: taffy::NodeId,

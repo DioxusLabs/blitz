@@ -14,9 +14,10 @@ use style::values::computed::CSSPixelLength;
 use style::values::computed::length_percentage::CalcLengthPercentage;
 use stylo_taffy::TaffyStyloStyle;
 use taffy::{
-    BlockContext, CoreStyle as _, FlexDirection, LayoutPartialTree, NodeId, ResolveOrZero,
-    RoundTree, TraversePartialTree, TraverseTree, compute_block_layout, compute_cached_layout,
-    compute_flexbox_layout, compute_grid_layout, compute_leaf_layout, prelude::*,
+    BlockContext, CoreStyle as _, DetailedLayoutInfo, FlexDirection, LayoutContainingBlock,
+    LayoutPartialTree, NodeId, OofClaims, ResolveOrZero, RoundTree, TraversePartialTree,
+    TraverseTree, compute_block_layout, compute_cached_layout, compute_flexbox_layout,
+    compute_grid_layout, compute_leaf_layout, compute_oof_layout, prelude::*,
 };
 
 pub(crate) mod construct;
@@ -423,6 +424,37 @@ impl LayoutPartialTree for BaseDocument {
         resolve_calc_value(calc_ptr, parent_size)
     }
 
+    fn set_hoisted_children(&mut self, node_id: NodeId, hoisted: &[NodeId]) {
+        let containing_block = dom_node_id(node_id);
+        let node = self.node_from_id(node_id);
+        let mut vec = node.hoisted_children.borrow_mut();
+        vec.clear();
+        vec.extend(hoisted.iter().copied().map(dom_node_id));
+        drop(vec);
+        for &hoisted_id in hoisted {
+            self.node_from_id(hoisted_id)
+                .layout_parent
+                .set(Some(containing_block));
+        }
+    }
+
+    fn add_hoisted_children(&mut self, node_id: NodeId, hoisted: &[NodeId]) {
+        let containing_block = dom_node_id(node_id);
+        let node = self.node_from_id(node_id);
+        let mut vec = node.hoisted_children.borrow_mut();
+        for id in hoisted.iter().copied().map(dom_node_id) {
+            if !vec.contains(&id) {
+                vec.push(id);
+            }
+        }
+        drop(vec);
+        for &hoisted_id in hoisted {
+            self.node_from_id(hoisted_id)
+                .layout_parent
+                .set(Some(containing_block));
+        }
+    }
+
     #[inline(always)]
     fn compute_child_layout(
         &mut self,
@@ -430,8 +462,38 @@ impl LayoutPartialTree for BaseDocument {
         inputs: taffy::LayoutInput,
     ) -> taffy::LayoutOutput {
         compute_cached_layout(self, node_id, inputs, |tree, node_id, inputs| {
-            tree.compute_child_layout_internal(node_id, inputs, None)
+            let mut output = tree.compute_child_layout_internal(node_id, inputs, None);
+            compute_oof_layout(tree, node_id, &mut output);
+            output
         })
+    }
+}
+
+impl LayoutContainingBlock for BaseDocument {
+    type OofItemStyle<'a>
+        = &'a taffy::Style<Atom>
+    where
+        Self: 'a;
+
+    fn get_oof_item_style(&self, node_id: NodeId) -> Self::OofItemStyle<'_> {
+        self.node_from_id(node_id).style()
+    }
+
+    fn oof_claims(&self, node_id: NodeId) -> OofClaims {
+        let node = self.node_from_id(node_id);
+        let is_positioned = node.style().position.is_positioned();
+        let establishes_fixed_cb = node.establishes_fixed_containing_block();
+        OofClaims {
+            absolute: is_positioned || establishes_fixed_cb,
+            fixed: establishes_fixed_cb,
+        }
+    }
+
+    fn get_detailed_layout_info(&self, node_id: NodeId) -> &DetailedLayoutInfo<Atom> {
+        self.node_from_id(node_id)
+            .element_data()
+            .map(|element| &element.detailed_layout_info)
+            .unwrap_or(&DetailedLayoutInfo::None)
     }
 }
 
@@ -493,7 +555,9 @@ impl taffy::LayoutBlockContainer for BaseDocument {
         block_ctx: Option<&mut BlockContext<'_>>,
     ) -> taffy::LayoutOutput {
         compute_cached_layout(self, node_id, inputs, |tree, node_id, inputs| {
-            tree.compute_child_layout_internal(node_id, inputs, block_ctx)
+            let mut output = tree.compute_child_layout_internal(node_id, inputs, block_ctx);
+            compute_oof_layout(tree, node_id, &mut output);
+            output
         })
     }
 }
@@ -544,7 +608,7 @@ impl taffy::LayoutGridContainer for BaseDocument {
     ) {
         let node = self.node_from_id_mut(node_id);
         if let Some(element) = node.element_data_mut() {
-            element.detailed_grid_info = Some(Box::new(detailed_grid_info));
+            element.detailed_layout_info = DetailedLayoutInfo::Grid(Box::new(detailed_grid_info));
         }
     }
 }
@@ -556,6 +620,20 @@ impl RoundTree for BaseDocument {
 
     fn set_final_layout(&mut self, node_id: NodeId, layout: &Layout) {
         *self.node_from_id_mut(node_id).final_layout_mut() = *layout;
+    }
+
+    fn is_hoisted(&self, node_id: NodeId) -> bool {
+        let node = self.node_from_id(node_id);
+        let style = node.style();
+        style.position.is_out_of_flow() && style.display != Display::None
+    }
+
+    fn hoisted_child_count(&self, node_id: NodeId) -> usize {
+        self.node_from_id(node_id).hoisted_children.borrow().len()
+    }
+
+    fn get_hoisted_child_id(&self, node_id: NodeId, index: usize) -> NodeId {
+        taffy_node_id(self.node_from_id(node_id).hoisted_children.borrow()[index])
     }
 }
 
