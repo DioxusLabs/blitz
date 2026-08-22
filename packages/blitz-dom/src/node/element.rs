@@ -105,9 +105,10 @@ pub struct ElementData {
     pub before: Option<NodeId>,
     pub after: Option<NodeId>,
 
-    /// Detailed grid track sizing information from the most recent layout
-    /// (grid containers only). Used by devtools grid inspection.
-    pub detailed_grid_info: Option<Box<taffy::DetailedGridInfo<Atom>>>,
+    /// Detailed layout information from the most recent layout (currently
+    /// grid track sizing information for grid containers only). Used by
+    /// devtools grid inspection and out-of-flow grid-area positioning.
+    pub detailed_layout_info: taffy::DetailedLayoutInfo<Atom>,
 
     // Taffy layout data:
     pub display_constructed_as: StyloDisplay,
@@ -314,7 +315,7 @@ impl Clone for ElementData {
             damaged_descendants: AtomicBool::new(true),
             before: None,
             after: None,
-            detailed_grid_info: None,
+            detailed_layout_info: taffy::DetailedLayoutInfo::None,
             display_constructed_as: StyloDisplay::Block,
             layout_data: None,
             transform: None,
@@ -421,7 +422,7 @@ impl ElementData {
             damaged_descendants: AtomicBool::new(true),
             before: None,
             after: None,
-            detailed_grid_info: None,
+            detailed_layout_info: taffy::DetailedLayoutInfo::None,
             display_constructed_as: StyloDisplay::Block,
             layout_data: None,
             transform: None,
