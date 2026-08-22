@@ -258,6 +258,38 @@ impl BaseDocument {
         None
     }
 
+    /// Whether `a` precedes `b` in DOM pre-order (each node's ancestor path is
+    /// compared by child index at the first point of divergence; an ancestor
+    /// precedes its descendants).
+    fn is_before_in_tree_order(&self, a: NodeId, b: NodeId) -> bool {
+        if a == b {
+            return false;
+        }
+        let path = |mut id: NodeId| {
+            let mut path = vec![id];
+            while let Some(parent) = self.nodes[id].parent {
+                path.push(parent);
+                id = parent;
+            }
+            path.reverse();
+            path
+        };
+        let path_a = path(a);
+        let path_b = path(b);
+        for (i, (&na, &nb)) in path_a.iter().zip(path_b.iter()).enumerate() {
+            if na != nb {
+                if i == 0 {
+                    // Disjoint trees; fall back to a stable arbitrary order
+                    return na < nb;
+                }
+                let parent = &self.nodes[path_a[i - 1]];
+                return parent.index_of_child(na) < parent.index_of_child(nb);
+            }
+        }
+        // One is an ancestor of the other: the shorter path comes first
+        path_a.len() < path_b.len()
+    }
+
     /// Attach out-of-flow (absolutely/fixed positioned) boxes to their containing
     /// block, as recorded by Taffy's out-of-flow positioning pass in each node's
     /// `hoisted_children` list:
@@ -302,6 +334,10 @@ impl BaseDocument {
                 .map(|c| c.to_vec())
                 .unwrap_or_default();
 
+            let cb_is_flex_or_grid = matches!(
+                self.nodes[cb_id].style().display,
+                taffy::Display::Flex | taffy::Display::Grid
+            );
             let mut z_indexed: Vec<NodeId> = Vec::new();
             let mut effect_attached: Vec<(NodeId, NodeId)> = Vec::new();
             {
@@ -327,7 +363,27 @@ impl BaseDocument {
                         continue;
                     }
                     if !paint_children.contains(&child_id) {
-                        paint_children.push(child_id);
+                        // Splice into the containing block's paint list at the
+                        // hoisted box's (paint level, tree order) position: z-index:
+                        // auto positioned boxes paint in tree order among positioned
+                        // siblings (CSS 2.1 Appendix E step 8), not last.
+                        let key = crate::layout::damage::node_to_paint_order(
+                            &self.nodes[child_id],
+                            cb_is_flex_or_grid,
+                        );
+                        let insert_at = paint_children
+                            .iter()
+                            .position(|&existing| {
+                                let existing_key = crate::layout::damage::node_to_paint_order(
+                                    &self.nodes[existing],
+                                    cb_is_flex_or_grid,
+                                );
+                                existing_key > key
+                                    || (existing_key == key
+                                        && self.is_before_in_tree_order(child_id, existing))
+                            })
+                            .unwrap_or(paint_children.len());
+                        paint_children.insert(insert_at, child_id);
                     }
                 }
             }
