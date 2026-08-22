@@ -5,7 +5,13 @@ use crate::BaseDocument;
 
 impl BaseDocument {
     pub fn print_taffy_tree(&self) {
-        taffy::print_tree(self, taffy::NodeId::from(0usize));
+        taffy::print_tree(self, crate::taffy_node_id(self.root_element().id));
+        for &node_id in &self.sub_document_nodes {
+            if let Some(sub_doc) = self.nodes[node_id].subdoc() {
+                println!("\n=== Subdocument (node {node_id:?}) ===");
+                sub_doc.inner().print_taffy_tree();
+            }
+        }
     }
 
     pub fn debug_log_node(&self, node_id: NodeId) {

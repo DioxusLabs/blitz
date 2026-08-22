@@ -102,6 +102,10 @@ pub struct Node {
     pub layout_parent: Cell<Option<NodeId>>,
     /// A separate child list that includes anonymous collections of inline elements
     pub layout_children: RefCell<Option<ThinVec<NodeId>>>,
+    /// Out-of-flow (absolutely/fixed positioned) boxes for which this node is the
+    /// containing block. Recorded by Taffy's out-of-flow positioning pass. The
+    /// `Layout.location` of these boxes is relative to this node's border box.
+    pub hoisted_children: RefCell<ThinVec<NodeId>>,
     /// Anonymous block boxes created for this node during layout construction.
     ///
     /// Anonymous blocks live only in the slab (they are not part of the DOM
@@ -281,6 +285,7 @@ impl Node {
             children: ThinVec::new(),
             layout_parent: Cell::new(None),
             layout_children: RefCell::new(None),
+            hoisted_children: RefCell::new(ThinVec::new()),
             anonymous_blocks: ThinVec::new(),
             paint_children: RefCell::new(None),
             stacking_context: None,
@@ -1094,14 +1099,112 @@ impl Node {
             return true;
         }
 
+        if self.applies_atomic_paint_effect() {
+            return true;
+        }
+
         // TODO: mix-blend-mode
-        // TODO: filter
-        // TODO: clip-path
-        // TODO: mask
         // TODO: isolation
         // TODO: contain
 
         false
+    }
+
+    /// Whether this node's styles apply an atomic paint effect (opacity, filter,
+    /// clip-path, mask) to its subtree. Such effects apply to out-of-flow descendants
+    /// even when this node is not their containing block.
+    pub(crate) fn applies_atomic_paint_effect(&self) -> bool {
+        use style::values::computed::basic_shape::ClipPath;
+        use style::values::generics::image::GenericImage;
+
+        let Some(style) = self.primary_styles() else {
+            return false;
+        };
+
+        if style.clone_opacity() != 1.0 {
+            return true;
+        }
+
+        let effects = style.get_effects();
+        if !effects.filter.0.is_empty() {
+            return true;
+        }
+
+        if !matches!(style.clone_clip_path(), ClipPath::None) {
+            return true;
+        }
+
+        style
+            .get_svg()
+            .mask_image
+            .0
+            .iter()
+            .any(|image| !matches!(image, GenericImage::None))
+    }
+
+    /// Whether this node's styles establish a containing block for
+    /// `position: fixed` (and therefore also `position: absolute`) descendants.
+    ///
+    /// <https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_positioned_layout/Containing_block#identifying_the_containing_block>
+    pub(crate) fn establishes_fixed_containing_block(&self) -> bool {
+        use style::values::computed::{Perspective, Rotate, Scale, Translate};
+        use style::values::specified::box_::{Contain, ContainerType, WillChangeBits};
+
+        let Some(style) = self.primary_styles() else {
+            return false;
+        };
+
+        let box_style = style.get_box();
+        if !box_style.transform.0.is_empty()
+            || !matches!(box_style.translate, Translate::None)
+            || !matches!(box_style.rotate, Rotate::None)
+            || !matches!(box_style.scale, Scale::None)
+            || !matches!(box_style.perspective, Perspective::None)
+        {
+            return true;
+        }
+        if box_style.will_change.bits.intersects(
+            WillChangeBits::TRANSFORM
+                | WillChangeBits::PERSPECTIVE
+                | WillChangeBits::FIXPOS_CB_NON_SVG
+                | WillChangeBits::CONTAIN,
+        ) {
+            return true;
+        }
+        if box_style
+            .contain
+            .intersects(Contain::LAYOUT | Contain::PAINT)
+        {
+            return true;
+        }
+        if box_style
+            .container_type
+            .intersects(ContainerType::SIZE | ContainerType::INLINE_SIZE)
+        {
+            return true;
+        }
+
+        let effects = style.get_effects();
+        !effects.filter.0.is_empty() || !effects.backdrop_filter.0.is_empty()
+    }
+
+    /// Whether this node's styles establish a containing block for
+    /// `position: absolute` descendants even when the node is not positioned
+    /// (e.g. `will-change: position`).
+    ///
+    /// <https://drafts.csswg.org/css-will-change/#will-change>
+    pub(crate) fn establishes_absolute_containing_block(&self) -> bool {
+        use style::values::specified::box_::WillChangeBits;
+
+        let Some(style) = self.primary_styles() else {
+            return false;
+        };
+
+        style
+            .get_box()
+            .will_change
+            .bits
+            .intersects(WillChangeBits::POSITION)
     }
 
     /// Takes an (x, y) position (relative to the *parent's* top-left corner) and returns:
@@ -1113,7 +1216,7 @@ impl Node {
     /// TODO: z-index
     /// (If multiple children are positioned at the position then a random one will be recursed into)
     pub fn hit(&self, x: f32, y: f32, scale: f64) -> Option<HitResult> {
-        self.hit_inner(x, y, scale, &mut None)
+        self.hit_inner(x, y, scale, &mut None, taffy::Point::ZERO)
     }
 
     /// [`hit`](Self::hit), also resolving the innermost overlay scrollbar
@@ -1126,6 +1229,11 @@ impl Node {
         y: f32,
         scale: f64,
         scrollbar: &mut Option<crate::node::ScrollbarRef>,
+        // The viewport scroll offset, passed in by the document for the root
+        // element only (the root element scrolls the viewport, so its scroll
+        // offset is stored on the document): fixed-position children of the
+        // root must not move with it. Zero for all other nodes.
+        viewport_scroll: taffy::Point<f32>,
     ) -> Option<HitResult> {
         use style::computed_values::pointer_events::T as PointerEvents;
         use style::computed_values::visibility::T as Visibility;
@@ -1202,11 +1310,11 @@ impl Node {
             *scrollbar = Some(sb);
         }
 
+        let content_box_offset = taffy::Point {
+            x: self.final_layout().padding.left + self.final_layout().border.left,
+            y: self.final_layout().padding.top + self.final_layout().border.top,
+        };
         if self.flags.is_inline_root() {
-            let content_box_offset = taffy::Point {
-                x: self.final_layout().padding.left + self.final_layout().border.left,
-                y: self.final_layout().padding.top + self.final_layout().border.top,
-            };
             x -= content_box_offset.x;
             y -= content_box_offset.y;
         }
@@ -1217,10 +1325,13 @@ impl Node {
                 for hoisted_child in hoisted.pos_z_hoisted_children().rev() {
                     let x = x - hoisted_child.position.x;
                     let y = y - hoisted_child.position.y;
-                    if let Some(hit) = self
-                        .with(hoisted_child.node_id)
-                        .hit_inner(x, y, scale, scrollbar)
-                    {
+                    if let Some(hit) = self.with(hoisted_child.node_id).hit_inner(
+                        x,
+                        y,
+                        scale,
+                        scrollbar,
+                        taffy::Point::ZERO,
+                    ) {
                         return Some(hit);
                     }
                 }
@@ -1229,7 +1340,26 @@ impl Node {
 
         // Call `.hit()` on each child in turn. If any return `Some` then return that value. Else return `Some(self.id).
         for child_id in self.paint_children.borrow().iter().flatten().rev() {
-            if let Some(hit) = self.with(*child_id).hit_inner(x, y, scale, scrollbar) {
+            let child = self.with(*child_id);
+            let child_position = child.style().position;
+            let mut child_x = x;
+            let mut child_y = y;
+            if child_position.is_out_of_flow() {
+                // Out-of-flow children's layout location is relative to this node's
+                // border box, so undo the inline-root content-box offset applied above
+                if self.flags.is_inline_root() {
+                    child_x += content_box_offset.x;
+                    child_y += content_box_offset.y;
+                }
+                // Fixed-position children do not scroll with their containing block
+                if child_position == taffy::Position::Fixed {
+                    child_x -= self.scroll_offset().x as f32 + viewport_scroll.x;
+                    child_y -= self.scroll_offset().y as f32 + viewport_scroll.y;
+                }
+            }
+            if let Some(hit) =
+                child.hit_inner(child_x, child_y, scale, scrollbar, taffy::Point::ZERO)
+            {
                 return Some(hit);
             }
         }
@@ -1240,10 +1370,13 @@ impl Node {
                 for hoisted_child in hoisted.neg_z_hoisted_children().rev() {
                     let x = x - hoisted_child.position.x;
                     let y = y - hoisted_child.position.y;
-                    if let Some(hit) = self
-                        .with(hoisted_child.node_id)
-                        .hit_inner(x, y, scale, scrollbar)
-                    {
+                    if let Some(hit) = self.with(hoisted_child.node_id).hit_inner(
+                        x,
+                        y,
+                        scale,
+                        scrollbar,
+                        taffy::Point::ZERO,
+                    ) {
                         return Some(hit);
                     }
                 }
