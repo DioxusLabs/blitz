@@ -470,10 +470,22 @@ pub fn flex_direction(input: stylo::FlexDirection) -> taffy::FlexDirection {
 #[inline]
 #[cfg(feature = "flexbox")]
 pub fn flex_wrap(input: stylo::FlexWrap) -> taffy::FlexWrap {
-    match input {
-        stylo::FlexWrap::Wrap => taffy::FlexWrap::Wrap,
-        stylo::FlexWrap::WrapReverse => taffy::FlexWrap::WrapReverse,
-        stylo::FlexWrap::Nowrap => taffy::FlexWrap::NoWrap,
+    let balance = input.contains(stylo::FlexWrap::BALANCE);
+    if input.contains(stylo::FlexWrap::WRAP_REVERSE) {
+        #[cfg(feature = "flexbox_balance")]
+        if balance {
+            return taffy::FlexWrap::BalanceReverse;
+        }
+        taffy::FlexWrap::WrapReverse
+    } else if balance {
+        #[cfg(feature = "flexbox_balance")]
+        return taffy::FlexWrap::Balance;
+        #[cfg(not(feature = "flexbox_balance"))]
+        taffy::FlexWrap::Wrap
+    } else if input.contains(stylo::FlexWrap::WRAP) {
+        taffy::FlexWrap::Wrap
+    } else {
+        taffy::FlexWrap::NoWrap
     }
 }
 
@@ -824,6 +836,8 @@ pub fn to_taffy_style(style: &stylo::ComputedValues) -> taffy::Style<Atom> {
         flex_shrink: pos.flex_shrink.0,
         #[cfg(feature = "flexbox")]
         flex_basis: self::flex_basis(&pos.flex_basis),
+        #[cfg(all(feature = "flexbox", feature = "flexbox_balance"))]
+        flex_line_count: pos.flex_line_count.max(1) as u16,
 
         // Grid
         #[cfg(feature = "grid")]
