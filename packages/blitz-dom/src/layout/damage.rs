@@ -713,7 +713,7 @@ fn float_to_order(pos: Float) -> i32 {
 /// Appendix E step 8); within a level the stable sort preserves
 /// (order-modified) document order.
 #[inline(always)]
-fn node_to_paint_order(node: &Node, is_flex_or_grid: bool) -> (i32, i32) {
+pub(crate) fn node_to_paint_order(node: &Node, is_flex_or_grid: bool) -> (i32, i32) {
     let Some(style) = node.primary_styles() else {
         return (0, 0);
     };
