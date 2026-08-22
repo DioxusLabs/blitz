@@ -618,6 +618,13 @@ impl DocumentMutator<'_> {
     ) {
         let new_parent_is_in_document = self.doc.nodes[parent_id].flags.is_in_document();
         self.mutations_occurred |= new_parent_is_in_document && !child_ids.is_empty();
+
+        // If one of the moved subtrees contains the focused node, the ancestors it is
+        // detached from stop matching :focus-within. Record them while the parent links
+        // are still intact; the state is transferred after the children are reattached.
+        let focus_chain = self.doc.maybe_node_ancestors(self.doc.focus_node_id);
+        let mut focus_within_old_chain: Option<Vec<NodeId>> = None;
+
         // Detach the children from their old parents *before* inserting them into
         // the new parent (matching DOM `insertBefore` semantics). If a child is
         // being moved within the same parent then detaching it after insertion
@@ -625,6 +632,12 @@ impl DocumentMutator<'_> {
         // parent's child list, and anchor indices would be computed against a
         // child list that still contains the moved nodes.
         for child_id in child_ids.iter().copied() {
+            if focus_within_old_chain.is_none() {
+                if let Some(pos) = focus_chain.iter().position(|&id| id == child_id) {
+                    focus_within_old_chain = Some(focus_chain[..pos].to_vec());
+                }
+            }
+
             let child = &mut self.doc.nodes[child_id];
             let child_was_in_doc = child.flags.is_in_document();
             self.mutations_occurred |= child_was_in_doc;
@@ -677,6 +690,29 @@ impl DocumentMutator<'_> {
                 self.process_added_subtree(child_id);
             } else if !new_parent_is_in_document && child_was_in_doc {
                 self.process_removed_subtree(child_id);
+            }
+        }
+
+        // Transfer :focus-within from the old ancestor chain to the new one (the
+        // shared prefix stays). If the subtree left the document, the focus was
+        // cleared with it and only the old chain needs the state removed.
+        if let Some(old_chain) = focus_within_old_chain {
+            let new_chain = match self.doc.focus_node_id {
+                Some(_) => self.doc.node_ancestors(parent_id),
+                None => Vec::new(),
+            };
+            let same_count = old_chain
+                .iter()
+                .zip(&new_chain)
+                .take_while(|(o, n)| o == n)
+                .count();
+            for &id in old_chain.iter().skip(same_count) {
+                self.doc
+                    .snapshot_node_and(id, |node| node.remove_focus_within());
+            }
+            for &id in new_chain.iter().skip(same_count) {
+                self.doc
+                    .snapshot_node_and(id, |node| node.add_focus_within());
             }
         }
 
