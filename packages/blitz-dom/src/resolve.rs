@@ -104,6 +104,14 @@ impl BaseDocument {
         self.resolve_transforms(root_node_id);
         timer.record_time("transform");
 
+        // Recompute stacking context content_area now that layout and transforms
+        // are resolved. During flush_styles_to_layout, compute_content_size runs
+        // before layout, so content_area is stale (all zeros). We recompute it
+        // here using transform-adjusted positions so hit-testing can correctly
+        // gate hoisted-child traversal.
+        self.recompute_stacking_context_content_area(root_node_id);
+        timer.record_time("recompute_sc");
+
         // Clear all damage and dirty flags
         if self.incremental_layout {
             for (_, node) in self.nodes.iter_mut() {
