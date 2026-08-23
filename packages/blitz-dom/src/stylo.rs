@@ -1381,23 +1381,37 @@ fn sync_pseudo_element_styles(
 }
 
 /// Whether a node's `background-image`/`mask-image` layers need flushing to
-/// dedicated storage on the node: its new style references image URLs, or the
-/// node has previously-flushed image data (which may need clearing).
+/// dedicated storage on the node: the URLs referenced by the new style differ
+/// from the image data currently stored on the node.
 fn needs_style_image_flush(node: &Node, style: &ComputedValues) -> bool {
+    use crate::node::ImageResourceData;
+    use style::url::ComputedUrl;
     use style::values::computed::image::Image;
-    fn has_url_image(images: &[Image]) -> bool {
-        images.iter().any(|image| matches!(image, Image::Url(_)))
-    }
 
-    if has_url_image(&style.get_background().background_image.0)
-        || has_url_image(&style.get_svg().mask_image.0)
-    {
-        return true;
+    fn out_of_sync(style_images: &[Image], stored: &[Option<ImageResourceData>]) -> bool {
+        if style_images.len() != stored.len() {
+            // Differing lengths only matter if either side references an image
+            // (a style list of `none` layers and empty storage are in sync).
+            return style_images
+                .iter()
+                .any(|image| matches!(image, Image::Url(_)))
+                || stored.iter().any(Option::is_some);
+        }
+        std::iter::zip(style_images, stored).any(|(style_image, stored)| {
+            match (style_image, stored) {
+                (Image::Url(ComputedUrl::Valid(url)), Some(data)) => **url != *data.url,
+                (Image::Url(ComputedUrl::Valid(_)), None) => true,
+                (_, Some(_)) => true,
+                (_, None) => false,
+            }
+        })
     }
 
     node.data.downcast_element().is_some_and(|el| {
-        el.background_images.iter().any(Option::is_some)
-            || el.mask_images.iter().any(Option::is_some)
+        out_of_sync(
+            &style.get_background().background_image.0,
+            &el.background_images,
+        ) || out_of_sync(&style.get_svg().mask_image.0, &el.mask_images)
     })
 }
 

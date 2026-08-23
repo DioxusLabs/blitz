@@ -479,7 +479,7 @@ impl BaseDocument {
                     let old_image = elem_images[idx].as_ref();
                     let old_image_url = old_image.map(|data| &data.url);
                     if old_image_url.is_some_and(|old_url| **new_url == **old_url) {
-                        break;
+                        continue;
                     }
 
                     // Check cache first
