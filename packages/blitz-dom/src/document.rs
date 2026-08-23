@@ -65,6 +65,7 @@ use style::{
     stylesheets::{AllowImportRules, DocumentStyleSheet, Origin, Stylesheet},
     stylist::Stylist,
 };
+use style_dom::ElementState;
 use thin_vec::ThinVec;
 use url::Url;
 use web_time::Instant;
@@ -1397,7 +1398,21 @@ impl BaseDocument {
         }
     }
 
+    /// Snapshot the node's pre-mutation state (element state and attributes) ahead of
+    /// an attribute mutation, so that the next style traversal can diff selector matches
+    /// then-vs-now and invalidate the affected elements.
     pub fn snapshot_node(&mut self, node_id: NodeId) {
+        self.snapshot_node_impl(node_id, true)
+    }
+
+    /// Snapshot only the node's pre-change [`ElementState`] ahead of a state change
+    /// (hover/focus/active/etc). Cheaper than [`Self::snapshot_node`] as it does not
+    /// copy attributes or trigger attribute/class/id invalidation work.
+    pub fn snapshot_node_state_only(&mut self, node_id: NodeId) {
+        self.snapshot_node_impl(node_id, false)
+    }
+
+    fn snapshot_node_impl(&mut self, node_id: NodeId, capture_attrs: bool) {
         let node = &mut self.nodes[node_id];
 
         // Do not snapshot nodes that have never been styled. A snapshot records an element's
@@ -1414,11 +1429,19 @@ impl BaseDocument {
         node.snapshot_handled()
             .store(false, std::sync::atomic::Ordering::SeqCst);
 
-        // TODO: handle invalidations other than hover
-        if let Some(_existing_snapshot) = self.snapshots.get_mut(&opaque_node_id) {
-            // Do nothing
-            // TODO: update snapshot
-        } else {
+        // A snapshot records the element's state/attributes as they were *before the first
+        // mutation* since the last style flush (matching Gecko's ServoElementSnapshot
+        // semantics): state is captured at most once, and attributes are captured at most
+        // once, but a state-only snapshot is upgraded to also capture attributes if an
+        // attribute mutation follows.
+        let needs_attrs = capture_attrs
+            && self
+                .snapshots
+                .get_mut(&opaque_node_id)
+                .is_none_or(|snapshot| snapshot.attrs.is_none());
+
+        let (attrs, changed_attrs) = if needs_attrs {
+            let node = &self.nodes[node_id];
             let attrs: Option<Vec<_>> = node.attrs().map(|attrs| {
                 attrs
                     .iter()
@@ -1448,27 +1471,61 @@ impl BaseDocument {
                     .collect()
             });
 
-            let changed_attrs = attrs
+            let changed_attrs: Vec<_> = attrs
                 .as_ref()
                 .map(|attrs| attrs.iter().map(|attr| attr.0.name.clone()).collect())
                 .unwrap_or_default();
 
+            (attrs, changed_attrs)
+        } else {
+            (None, Vec::new())
+        };
+
+        if let Some(snapshot) = self.snapshots.get_mut(&opaque_node_id) {
+            // The existing snapshot's state is preserved: it records the state before
+            // the *first* change since the last style flush.
+            if needs_attrs {
+                snapshot.attrs = attrs;
+                snapshot.changed_attrs = changed_attrs;
+                snapshot.class_changed = true;
+                snapshot.id_changed = true;
+                snapshot.other_attributes_changed = true;
+            }
+        } else {
             self.snapshots.insert(
                 opaque_node_id,
                 ServoElementSnapshot {
-                    state: Some(*node.element_state()),
+                    state: Some(*self.nodes[node_id].element_state()),
                     attrs,
                     changed_attrs,
-                    class_changed: true,
-                    id_changed: true,
-                    other_attributes_changed: true,
+                    class_changed: needs_attrs,
+                    id_changed: needs_attrs,
+                    other_attributes_changed: needs_attrs,
                 },
             );
         }
     }
 
-    pub fn snapshot_node_and(&mut self, node_id: NodeId, cb: impl FnOnce(&mut Node)) {
-        self.snapshot_node(node_id);
+    /// Returns whether any style rule depends on any of the given [`ElementState`] bits.
+    /// If not, changing those bits cannot affect styling and snapshotting can be skipped.
+    pub fn style_depends_on_state(&self, state: ElementState) -> bool {
+        self.stylist.iter_origins().any(|(data, _)| {
+            data.has_state_dependency(state) || data.has_nth_of_state_dependency(state)
+        })
+    }
+
+    /// Apply a state change (hover/focus/active/etc affecting the given [`ElementState`]
+    /// bits) to a node, taking a state-only snapshot beforehand if any style rule
+    /// depends on those bits.
+    pub fn snapshot_node_and(
+        &mut self,
+        node_id: NodeId,
+        state: ElementState,
+        cb: impl FnOnce(&mut Node),
+    ) {
+        if self.style_depends_on_state(state) {
+            self.snapshot_node_state_only(node_id);
+        }
         cb(&mut self.nodes[node_id]);
     }
 
@@ -1583,7 +1640,9 @@ impl BaseDocument {
     pub fn clear_focus(&mut self) {
         if let Some(id) = self.focus_node_id {
             let shell_provider = self.shell_provider.clone();
-            self.snapshot_node_and(id, |node| node.blur(shell_provider));
+            self.snapshot_node_and(id, ElementState::FOCUS | ElementState::FOCUSRING, |node| {
+                node.blur(shell_provider)
+            });
             self.focus_node_id = None;
         }
     }
@@ -1606,11 +1665,17 @@ impl BaseDocument {
 
         // Remove focus from the old node
         if let Some(id) = self.focus_node_id {
-            self.snapshot_node_and(id, |node| node.blur(shell_provider.clone()));
+            self.snapshot_node_and(id, ElementState::FOCUS | ElementState::FOCUSRING, |node| {
+                node.blur(shell_provider.clone())
+            });
         }
 
         // Focus the new node
-        self.snapshot_node_and(focus_node_id, |node| node.focus(shell_provider));
+        self.snapshot_node_and(
+            focus_node_id,
+            ElementState::FOCUS | ElementState::FOCUSRING,
+            |node| node.focus(shell_provider),
+        );
 
         self.focus_node_id = Some(focus_node_id);
 
@@ -1639,7 +1704,7 @@ impl BaseDocument {
 
         let node_path = self.maybe_node_layout_ancestors(active_node_id);
         for &id in node_path.iter() {
-            self.snapshot_node_and(id, |node| node.active());
+            self.snapshot_node_and(id, ElementState::ACTIVE, |node| node.active());
         }
 
         self.active_node_id = active_node_id;
@@ -1654,7 +1719,7 @@ impl BaseDocument {
 
         let node_path = self.maybe_node_layout_ancestors(Some(active_node_id));
         for &id in node_path.iter() {
-            self.snapshot_node_and(id, |node| node.unactive());
+            self.snapshot_node_and(id, ElementState::ACTIVE, |node| node.unactive());
         }
 
         true
@@ -1794,10 +1859,10 @@ impl BaseDocument {
             .take_while(|(o, n)| o == n)
             .count();
         for &id in old_node_path.iter().skip(same_count) {
-            self.snapshot_node_and(id, |node| node.unhover());
+            self.snapshot_node_and(id, ElementState::HOVER, |node| node.unhover());
         }
         for &id in new_node_path.iter().skip(same_count) {
-            self.snapshot_node_and(id, |node| node.hover());
+            self.snapshot_node_and(id, ElementState::HOVER, |node| node.hover());
         }
 
         self.hover_node_id = hover_node_id;
@@ -1823,7 +1888,7 @@ impl BaseDocument {
 
         let old_node_path = self.maybe_node_layout_ancestors(Some(hover_node_id));
         for &id in old_node_path.iter() {
-            self.snapshot_node_and(id, |node| node.unhover());
+            self.snapshot_node_and(id, ElementState::HOVER, |node| node.unhover());
         }
 
         self.hover_node_id = None;

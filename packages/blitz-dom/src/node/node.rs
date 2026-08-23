@@ -495,18 +495,23 @@ impl Node {
         }
     }
 
+    // State changes (hover/focus/active/disabled) do not set a restyle hint.
+    // Invalidation is driven by element snapshots: the style traversal diffs the
+    // snapshotted (pre-change) state against the current state and invalidates
+    // only the elements matched by selectors that depend on the changed state
+    // bits. Ancestors are marked dirty so the traversal reaches this node.
     pub fn hover(&mut self) {
         if let Some(data) = self.element_data_mut() {
             data.element_state.insert(ElementState::HOVER);
         }
-        self.set_restyle_hint(RestyleHint::restyle_subtree());
+        self.mark_ancestors_dirty();
     }
 
     pub fn unhover(&mut self) {
         if let Some(data) = self.element_data_mut() {
             data.element_state.remove(ElementState::HOVER);
         }
-        self.set_restyle_hint(RestyleHint::restyle_subtree());
+        self.mark_ancestors_dirty();
     }
 
     pub fn is_hovered(&self) -> bool {
@@ -519,7 +524,7 @@ impl Node {
             data.element_state
                 .insert(ElementState::FOCUS | ElementState::FOCUSRING);
         }
-        self.set_restyle_hint(RestyleHint::restyle_subtree());
+        self.mark_ancestors_dirty();
 
         // If focussing a text input, enable IME and set IME area
         if self
@@ -542,7 +547,7 @@ impl Node {
             data.element_state
                 .remove(ElementState::FOCUS | ElementState::FOCUSRING);
         }
-        self.set_restyle_hint(RestyleHint::restyle_subtree());
+        self.mark_ancestors_dirty();
 
         // If blurring a text input, disable IME
         if self
@@ -563,14 +568,14 @@ impl Node {
         if let Some(data) = self.element_data_mut() {
             data.element_state.insert(ElementState::ACTIVE);
         }
-        self.set_restyle_hint(RestyleHint::restyle_subtree());
+        self.mark_ancestors_dirty();
     }
 
     pub fn unactive(&mut self) {
         if let Some(data) = self.element_data_mut() {
             data.element_state.remove(ElementState::ACTIVE);
         }
-        self.set_restyle_hint(RestyleHint::restyle_subtree());
+        self.mark_ancestors_dirty();
     }
 
     pub fn is_active(&self) -> bool {
@@ -587,7 +592,7 @@ impl Node {
                 data.element_state.remove(ElementState::ENABLED);
             }
         }
-        self.set_restyle_hint(RestyleHint::restyle_subtree());
+        self.mark_ancestors_dirty();
     }
 
     // Marks the node as enabled if it can be.
@@ -599,7 +604,7 @@ impl Node {
                 data.element_state.remove(ElementState::DISABLED);
             }
         }
-        self.set_restyle_hint(RestyleHint::restyle_subtree());
+        self.mark_ancestors_dirty();
     }
 
     pub fn subdoc(&self) -> Option<&dyn Document> {
