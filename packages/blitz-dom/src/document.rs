@@ -674,25 +674,35 @@ impl BaseDocument {
     }
 
     pub fn toggle_checkbox(el: &mut ElementData) -> bool {
-        let Some(is_checked) = el.checkbox_input_checked_mut() else {
+        let Some(is_checked) = el.checkbox_input_checked() else {
             return false;
         };
-        *is_checked = !*is_checked;
+        let checked = !is_checked;
+        el.set_checkbox_input_checked(checked);
 
-        *is_checked
+        checked
     }
 
     pub fn toggle_radio(&mut self, radio_set_name: String, target_radio_id: NodeId) {
-        for (i, node) in self.nodes.iter_mut() {
-            if let Some(node_data) = node.data.downcast_element_mut() {
-                if node_data.attr(local_name!("name")) == Some(&radio_set_name) {
-                    let was_clicked = i == target_radio_id;
-                    let Some(is_checked) = node_data.checkbox_input_checked_mut() else {
-                        continue;
-                    };
-                    *is_checked = was_clicked;
+        let radio_ids: Vec<NodeId> = self
+            .nodes
+            .iter()
+            .filter_map(|(i, node)| {
+                let el = node.data.downcast_element()?;
+                (el.attr(local_name!("name")) == Some(&radio_set_name)
+                    && el.checkbox_input_checked().is_some())
+                .then_some(i)
+            })
+            .collect();
+
+        for i in radio_ids {
+            let checked = i == target_radio_id;
+            self.snapshot_node_and(i, ElementState::CHECKED, |node| {
+                if let Some(el) = node.element_data_mut() {
+                    el.set_checkbox_input_checked(checked);
                 }
-            }
+                node.mark_ancestors_dirty();
+            });
         }
     }
 
@@ -2938,6 +2948,83 @@ mod hover_invalidation_tests {
             text_color(&doc, span),
             initial_color,
             "unhovering the anchor should restore the headline color"
+        );
+    }
+
+    /// Toggling a checkbox must invalidate `:checked`-dependent styles.
+    #[test]
+    fn checkbox_toggle_updates_checked_styles() {
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
+            ..Default::default()
+        });
+        doc.add_user_agent_stylesheet(
+            "input:checked { color: rgb(184, 0, 0); } input:checked + label { color: rgb(0, 184, 0); }",
+        );
+        let root_id = doc.root_node().id;
+        let attr = |name: QualName, value: &str| Attribute {
+            name,
+            value: value.to_string(),
+        };
+
+        let mut mutator = doc.mutate();
+        let html = mutator.create_element(qual_name!("html"), vec![]);
+        let body = mutator.create_element(
+            qual_name!("body"),
+            vec![attr(qual_name!("style"), "margin:0")],
+        );
+        let input = mutator.create_element(
+            qual_name!("input"),
+            vec![attr(qual_name!("type"), "checkbox")],
+        );
+        let label = mutator.create_element(qual_name!("label"), vec![]);
+        let text = mutator.create_text_node("label text");
+        mutator.append_children(label, &[text]);
+        mutator.append_children(body, &[input, label]);
+        mutator.append_children(html, &[body]);
+        mutator.append_children(root_id, &[html]);
+        drop(mutator);
+
+        doc.resolve(0.0);
+        let initial_input_color = text_color(&doc, input);
+        let initial_label_color = text_color(&doc, label);
+
+        // Toggle the checkbox on (as the click handler does)
+        doc.snapshot_node_and(input, ElementState::CHECKED, |node| {
+            if let Some(el) = node.element_data_mut() {
+                BaseDocument::toggle_checkbox(el);
+            }
+            node.mark_ancestors_dirty();
+        });
+        doc.resolve(0.0);
+        assert_ne!(
+            text_color(&doc, input),
+            initial_input_color,
+            "checking should change the input color"
+        );
+        assert_ne!(
+            text_color(&doc, label),
+            initial_label_color,
+            "checking should change the sibling label color"
+        );
+
+        // Toggle the checkbox back off
+        doc.snapshot_node_and(input, ElementState::CHECKED, |node| {
+            if let Some(el) = node.element_data_mut() {
+                BaseDocument::toggle_checkbox(el);
+            }
+            node.mark_ancestors_dirty();
+        });
+        doc.resolve(0.0);
+        assert_eq!(
+            text_color(&doc, input),
+            initial_input_color,
+            "unchecking should restore the input color"
+        );
+        assert_eq!(
+            text_color(&doc, label),
+            initial_label_color,
+            "unchecking should restore the sibling label color"
         );
     }
 }

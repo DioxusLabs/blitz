@@ -1246,7 +1246,7 @@ fn set_input_checked_state(element: &mut ElementData, value: String) {
         return;
     };
     match element.special_data {
-        SpecialElementData::CheckboxInput(ref mut checked_mut) => *checked_mut = checked,
+        SpecialElementData::CheckboxInput(_) => element.set_checkbox_input_checked(checked),
         // If we have just constructed the element, set the node attribute,
         // and NodeSpecificData will be created from that later
         // this simulates the checked attribute being set in html,

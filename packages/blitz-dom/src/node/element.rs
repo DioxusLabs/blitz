@@ -383,6 +383,18 @@ impl ElementData {
         data.flush_is_focussable();
         data.flush_link_state();
 
+        // Mirror the `checked` attribute into the element state so that `:checked`
+        // selectors can be matched (and invalidated) from `ElementState`.
+        if data.name.local == local_name!("input")
+            && matches!(
+                data.attr(local_name!("type")),
+                Some("checkbox") | Some("radio")
+            )
+            && data.has_attr(local_name!("checked"))
+        {
+            data.element_state.insert(ElementState::CHECKED);
+        }
+
         // The element state needs to be modified if the element can be disabled.
         if data.can_be_disabled() {
             data.element_state
@@ -538,6 +550,16 @@ impl ElementData {
             SpecialElementData::CheckboxInput(ref mut checked) => Some(checked),
             _ => None,
         }
+    }
+
+    /// Set the checked state of a checkbox/radio input, keeping the
+    /// `ElementState::CHECKED` bit (used for `:checked` selector matching and
+    /// invalidation) in sync with the special data.
+    pub fn set_checkbox_input_checked(&mut self, checked: bool) {
+        if let Some(is_checked) = self.checkbox_input_checked_mut() {
+            *is_checked = checked;
+        }
+        self.element_state.set(ElementState::CHECKED, checked);
     }
 
     #[cfg(feature = "file-input")]
