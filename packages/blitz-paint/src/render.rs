@@ -418,6 +418,11 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
 
         let mut cx = self.element_cx(node, *node.final_layout(), transform, custom_widget_scene);
 
+        // Skip the clip layer when it provably cannot affect the output: a raster image
+        // element with sharp corners whose painted image is fully contained within the
+        // clip box.
+        let should_clip = should_clip && !cx.image_clip_is_noop();
+
         // If this element clips its overflow it establishes a scrollport: narrow the clip
         // rectangle passed to descendants to the visible (clipped) region so that content
         // scrolled out of view is culled rather than drawn and clipped away. The box used
@@ -1059,41 +1064,109 @@ impl ElementCx<'_, '_> {
         anyrender_svg::render_svg_tree(scene, svg, transform);
     }
 
+    /// Whether this element's overflow clip provably has no effect: the element is a
+    /// raster image with no other painted content inside the clip layer, the clip shape
+    /// has sharp corners, and the image's draw rect is fully contained within the clip
+    /// box (the padding box).
+    fn image_clip_is_noop(&self) -> bool {
+        let Some(image) = self.element.raster_image_data() else {
+            return false;
+        };
+        if self.frame.has_border_radius() {
+            return false;
+        }
+        #[cfg(feature = "svg")]
+        if self.svg.is_some() {
+            return false;
+        }
+        #[cfg(feature = "custom-widget")]
+        if self.custom_widget_scene.is_some() {
+            return false;
+        }
+        if self.text_input.is_some()
+            || self.list_item.is_some()
+            || self.element.sub_doc_data().is_some()
+            || self.element.checkbox_input_checked().is_some()
+            || self.node.flags.is_inline_root()
+            || self.node.stacking_context.is_some()
+        {
+            return false;
+        }
+        let scroll_offset = self.node.scroll_offset();
+        if scroll_offset.x != 0.0 || scroll_offset.y != 0.0 {
+            return false;
+        }
+        if self
+            .node
+            .paint_children
+            .borrow()
+            .as_ref()
+            .is_some_and(|children| !children.is_empty())
+        {
+            return false;
+        }
+
+        let (x, y, paint_size) = self.image_draw_position(image);
+        let draw_rect = Rect::new(
+            x,
+            y,
+            x + paint_size.width as f64,
+            y + paint_size.height as f64,
+        );
+        let padding_box = self.frame.padding_box;
+        draw_rect.x0 >= padding_box.x0
+            && draw_rect.y0 >= padding_box.y0
+            && draw_rect.x1 <= padding_box.x1
+            && draw_rect.y1 <= padding_box.y1
+    }
+
+    /// Compute the position (top-left corner, in the element's local scaled coordinate
+    /// space) and size at which the element's raster image will be drawn, taking
+    /// `object-fit` and `object-position` into account.
+    fn image_draw_position(&self, image: &RasterImageData) -> (f64, f64, taffy::Size<f32>) {
+        let width = self.frame.content_box.width() as u32;
+        let height = self.frame.content_box.height() as u32;
+        let x = self.frame.content_box.origin().x;
+        let y = self.frame.content_box.origin().y;
+
+        let object_fit = self.style.clone_object_fit();
+        let object_position = self.style.clone_object_position();
+
+        // Apply object-fit algorithm
+        let container_size = taffy::Size {
+            width: width as f32,
+            height: height as f32,
+        };
+        let object_size = taffy::Size {
+            width: image.width as f32,
+            height: image.height as f32,
+        };
+        let paint_size = compute_object_fit(container_size, Some(object_size), object_fit);
+
+        // Compute object-position
+        let x_offset = object_position.horizontal.resolve(
+            CSSPixelLength::new(container_size.width - paint_size.width) / self.scale as f32,
+        ) * self.scale as f32;
+        let y_offset = object_position.vertical.resolve(
+            CSSPixelLength::new(container_size.height - paint_size.height) / self.scale as f32,
+        ) * self.scale as f32;
+
+        (
+            x + x_offset.px() as f64,
+            y + y_offset.px() as f64,
+            paint_size,
+        )
+    }
+
     fn draw_image(&self, scene: &mut impl PaintScene) {
         if let Some(image) = self.element.raster_image_data() {
-            let width = self.frame.content_box.width() as u32;
-            let height = self.frame.content_box.height() as u32;
-            let x = self.frame.content_box.origin().x;
-            let y = self.frame.content_box.origin().y;
-
-            let object_fit = self.style.clone_object_fit();
-            let object_position = self.style.clone_object_position();
             let image_rendering = self.style.clone_image_rendering();
             let quality = to_image_quality(image_rendering);
 
-            // Apply object-fit algorithm
-            let container_size = taffy::Size {
-                width: width as f32,
-                height: height as f32,
-            };
-            let object_size = taffy::Size {
-                width: image.width as f32,
-                height: image.height as f32,
-            };
-            let paint_size = compute_object_fit(container_size, Some(object_size), object_fit);
+            let (x, y, paint_size) = self.image_draw_position(image);
 
-            // Compute object-position
-            let x_offset = object_position.horizontal.resolve(
-                CSSPixelLength::new(container_size.width - paint_size.width) / self.scale as f32,
-            ) * self.scale as f32;
-            let y_offset = object_position.vertical.resolve(
-                CSSPixelLength::new(container_size.height - paint_size.height) / self.scale as f32,
-            ) * self.scale as f32;
-            let x = x + x_offset.px() as f64;
-            let y = y + y_offset.px() as f64;
-
-            let x_scale = paint_size.width as f64 / object_size.width as f64;
-            let y_scale = paint_size.height as f64 / object_size.height as f64;
+            let x_scale = paint_size.width as f64 / image.width as f64;
+            let y_scale = paint_size.height as f64 / image.height as f64;
             let transform = self
                 .transform
                 .pre_translate(Vec2 { x, y })
