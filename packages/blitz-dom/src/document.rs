@@ -327,6 +327,11 @@ pub struct BaseDocument {
     /// Value is a list of (node_id, image_type) pairs waiting for the image.
     pub(crate) pending_images: HashMap<String, Vec<(NodeId, ImageType)>>,
 
+    /// Nodes whose `background-image`/`mask-image` layers need flushing to
+    /// dedicated storage on the node because their style changed (populated by
+    /// the style traversal and by pseudo-element box construction).
+    pub(crate) pending_style_image_nodes: Vec<NodeId>,
+
     // Tracks in-flight "critical" resources (e.g. stylesheets linked from the `<head>`),
     // keyed by request id
     pub(crate) pending_critical_resources: HashSet<usize>,
@@ -493,6 +498,7 @@ impl BaseDocument {
             deferred_construction_nodes: Vec::new(),
             image_cache: HashMap::new(),
             pending_images: HashMap::new(),
+            pending_style_image_nodes: Vec::new(),
             pending_critical_resources: HashSet::new(),
             controls_to_form: HashMap::new(),
             net_provider,
@@ -3081,6 +3087,71 @@ mod hover_invalidation_tests {
             text_color(&doc, before),
             initial_color,
             "unhover should restore the ::before color"
+        );
+    }
+
+    /// Background-image layers must be flushed to the node's dedicated image
+    /// storage when its style changes (queued during the style traversal),
+    /// now that image flushing no longer runs on every node in the flush pass.
+    #[test]
+    fn hover_updates_background_image_layers() {
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
+            ..Default::default()
+        });
+        doc.add_user_agent_stylesheet(
+            "div { background-image: url(\"https://example.com/a.png\"); } \
+             div:hover { background-image: url(\"https://example.com/b.png\"); }",
+        );
+        let root_id = doc.root_node().id;
+        let style = |value: &str| Attribute {
+            name: qual_name!("style"),
+            value: value.to_string(),
+        };
+
+        let mut mutator = doc.mutate();
+        let html = mutator.create_element(qual_name!("html"), vec![]);
+        let body = mutator.create_element(qual_name!("body"), vec![style("margin:0")]);
+        let div = mutator.create_element(
+            qual_name!("div"),
+            vec![style("display:block;width:300px;height:100px")],
+        );
+        mutator.append_children(body, &[div]);
+        mutator.append_children(html, &[body]);
+        mutator.append_children(root_id, &[html]);
+        drop(mutator);
+
+        let background_image_url = |doc: &BaseDocument, id: NodeId| -> Option<String> {
+            let elem = doc.nodes[id].data.downcast_element().unwrap();
+            elem.background_images
+                .first()
+                .and_then(|img| img.as_ref())
+                .map(|img| img.url.as_str().to_string())
+        };
+
+        doc.resolve(0.0);
+        assert_eq!(
+            background_image_url(&doc, div).as_deref(),
+            Some("https://example.com/a.png"),
+            "initial resolve should flush the background image"
+        );
+
+        doc.set_hover_to(10.0, 10.0);
+        assert!(doc.nodes[div].is_hovered());
+        doc.resolve(0.0);
+        assert_eq!(
+            background_image_url(&doc, div).as_deref(),
+            Some("https://example.com/b.png"),
+            "hover should flush the changed background image"
+        );
+
+        doc.set_hover_to(10.0, 200.0);
+        assert!(!doc.nodes[div].is_hovered());
+        doc.resolve(0.0);
+        assert_eq!(
+            background_image_url(&doc, div).as_deref(),
+            Some("https://example.com/a.png"),
+            "unhover should flush the restored background image"
         );
     }
 }

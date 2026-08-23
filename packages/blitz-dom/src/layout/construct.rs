@@ -740,6 +740,8 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: NodeId) {
             let node = &mut doc.nodes[node_id];
             node.set_pe_by_index(idx, Some(new_node_id));
             node.insert_damage(ALL_DAMAGE);
+
+            doc.pending_style_image_nodes.push(new_node_id);
         }
 
         // Else: Update psuedo element
@@ -749,8 +751,8 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: NodeId) {
             //
             // Note: this deliberately compares the text itself rather than relying on
             // the style-pointer comparison below, as the pseudo-element's style may
-            // already have been updated by `sync_pseudo_element_styles` during damage
-            // propagation without the text having been updated.
+            // already have been updated by `sync_pseudo_element_styles` during the
+            // style traversal without the text having been updated.
             let new_text = pe_content_text(&pe_style).map(str::to_string);
             let existing_text_node_id = doc.nodes[pe_node_id]
                 .children
@@ -791,6 +793,7 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: NodeId) {
             if !std::ptr::eq(&**primary_styles.as_ref().unwrap(), &*pe_style) {
                 *primary_styles = Some(pe_style);
                 node_styles.set_restyled();
+                doc.pending_style_image_nodes.push(pe_node_id);
             }
         }
     }
