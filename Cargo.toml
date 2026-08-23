@@ -270,7 +270,6 @@ peniko = { workspace = true }
 color = { workspace = true }
 env_logger = "0.11"
 tracing-subscriber = "0.3"
-vello = "0.10"
 
 # [patch.crates-io]
 # anyrender = { path = "../anyrender/crates/anyrender" }

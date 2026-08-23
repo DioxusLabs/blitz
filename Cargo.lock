@@ -982,7 +982,6 @@ dependencies = [
  "reqwest",
  "tokio",
  "tracing-subscriber",
- "vello",
 ]
 
 [[package]]
