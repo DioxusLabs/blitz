@@ -422,6 +422,23 @@ impl BaseDocument {
         self.flush_styles_to_layout_impl(node_id, None);
     }
 
+    /// Flush the image layers of nodes whose style changed during the last
+    /// style traversal (or whose pseudo-element boxes were (re)constructed).
+    pub(crate) fn flush_pending_images(&mut self) {
+        let mut pending = std::mem::take(&mut self.pending_image_flush_nodes);
+        pending.sort_unstable();
+        pending.dedup();
+        for node_id in pending {
+            // Anonymous boxes (including pseudo-elements) can be removed from
+            // the slab between queueing and flushing; skip stale IDs.
+            if !self.nodes.contains_key(node_id) {
+                continue;
+            }
+            self.flush_image_layers_from_style(node_id, ImageLayerKind::Background);
+            self.flush_image_layers_from_style(node_id, ImageLayerKind::Mask);
+        }
+    }
+
     /// Flush a CSS image layer list (`background-image` or `mask-image`) from style
     /// to dedicated storage on the node, fetching any images which are not yet loaded.
     fn flush_image_layers_from_style(&mut self, node_id: NodeId, kind: ImageLayerKind) {
@@ -522,10 +539,6 @@ impl BaseDocument {
     ) {
         let mut new_stacking_context: HoistedPaintChildren = HoistedPaintChildren::new();
         let stacking_context = &mut new_stacking_context;
-
-        // Flush background/mask images from style to dedicated storage on the node
-        self.flush_image_layers_from_style(node_id, ImageLayerKind::Background);
-        self.flush_image_layers_from_style(node_id, ImageLayerKind::Mask);
 
         let incremental = self.incremental_layout;
         let display = {

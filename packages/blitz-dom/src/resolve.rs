@@ -92,6 +92,12 @@ impl BaseDocument {
         self.resolve_deferred_tasks();
         timer.record_time("pconstruct");
 
+        // Flush background/mask images from style to dedicated storage on the
+        // nodes whose style changed (queued by the style traversal and by
+        // pseudo-element box construction), fetching any not-yet-loaded images.
+        self.flush_pending_images();
+        timer.record_time("images");
+
         // Merge stylo into taffy
         self.flush_styles_to_layout(root_node_id);
         timer.record_time("flush");

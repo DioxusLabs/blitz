@@ -3,6 +3,7 @@
 
 use blitz_traits::node_id::NodeId;
 use std::ptr::NonNull;
+use std::sync::Mutex;
 use std::sync::atomic::Ordering;
 
 use crate::StyleThreading;
@@ -140,15 +141,20 @@ impl crate::document::BaseDocument {
         // dbg!(root);
         let token = RecalcStyle::pre_traverse(root, &context);
 
+        let mut nodes_needing_image_flush = Vec::new();
         if token.should_traverse() {
             // Style the elements, resolving their data
-            let traverser = RecalcStyle::new(context);
+            let mut traverser = RecalcStyle::new(context);
             // `Sequential` bypasses Stylo's global pool. See `StyleThreading`.
             let pool_guard = matches!(self.style_threading, StyleThreading::Parallel)
                 .then(|| STYLE_THREAD_POOL.pool());
             let rayon_pool = pool_guard.as_ref().and_then(|g| g.as_ref());
             style::driver::traverse_dom(&traverser, token, rayon_pool);
+            nodes_needing_image_flush =
+                std::mem::take(traverser.nodes_needing_image_flush.get_mut().unwrap());
         }
+        self.pending_image_flush_nodes
+            .extend(nodes_needing_image_flush);
 
         for opaque in self.snapshots.keys() {
             let id = NodeId::from_u64(opaque.id() as u64);
@@ -1225,11 +1231,18 @@ use style::traversal::recalc_style_at;
 
 pub struct RecalcStyle<'a> {
     context: SharedStyleContext<'a>,
+    /// Nodes whose `background-image`/`mask-image` layers need flushing to
+    /// dedicated storage on the node (see `flush_image_layers_from_style`)
+    /// because their style changed during this traversal.
+    nodes_needing_image_flush: Mutex<Vec<NodeId>>,
 }
 
 impl<'a> RecalcStyle<'a> {
     pub fn new(context: SharedStyleContext<'a>) -> Self {
-        RecalcStyle { context }
+        RecalcStyle {
+            context,
+            nodes_needing_image_flush: Mutex::new(Vec::new()),
+        }
     }
 }
 
@@ -1247,12 +1260,20 @@ impl<'dom> DomTraversal<BlitzNode<'dom>> for RecalcStyle<'_> {
             let mut data = unsafe { el.ensure_data() };
             recalc_style_at(self, traversal_data, context, el, &mut data, note_child);
 
-            sync_pseudo_element_styles(el, &data);
+            sync_pseudo_element_styles(el, &data, &self.nodes_needing_image_flush);
 
-            // Mark the ancestor chain so that the damage propagation pass
-            // visits this element.
             if !data.damage.is_empty() {
+                // Mark the ancestor chain so that the damage propagation pass
+                // visits this element.
                 el.mark_damaged();
+
+                if data
+                    .styles
+                    .get_primary()
+                    .is_some_and(|style| needs_image_flush(el, style))
+                {
+                    self.nodes_needing_image_flush.lock().unwrap().push(el.id);
+                }
             }
 
             // Gets set later on
@@ -1301,7 +1322,11 @@ impl<'dom> DomTraversal<BlitzNode<'dom>> for RecalcStyle<'_> {
 /// not themselves visited by the traversal), so mutating the pseudo node's
 /// stylo data here cannot race with any other traversal thread.
 #[allow(unsafe_code)]
-fn sync_pseudo_element_styles(el: &Node, data: &style::data::ElementData) {
+fn sync_pseudo_element_styles(
+    el: &Node,
+    data: &style::data::ElementData,
+    nodes_needing_image_flush: &Mutex<Vec<NodeId>>,
+) {
     let before_node_id = el.before();
     let after_node_id = el.after();
     if before_node_id.is_none() && after_node_id.is_none() {
@@ -1339,10 +1364,35 @@ fn sync_pseudo_element_styles(el: &Node, data: &style::data::ElementData) {
         if !diff.damage.is_empty() {
             pe_data.damage.insert(diff.damage);
             pe_node.mark_damaged();
+
+            if needs_image_flush(pe_node, &pe_style) {
+                nodes_needing_image_flush.lock().unwrap().push(pe_node_id);
+            }
         }
         pe_data.styles.primary = Some(pe_style);
         pe_data.set_restyled();
     }
+}
+
+/// Whether a node's `background-image`/`mask-image` layers need flushing to
+/// dedicated storage on the node: its new style references image URLs, or the
+/// node has previously-flushed image data (which may need clearing).
+fn needs_image_flush(node: &Node, style: &ComputedValues) -> bool {
+    use style::values::computed::image::Image;
+    fn has_url_image(images: &[Image]) -> bool {
+        images.iter().any(|image| matches!(image, Image::Url(_)))
+    }
+
+    if has_url_image(&style.get_background().background_image.0)
+        || has_url_image(&style.get_svg().mask_image.0)
+    {
+        return true;
+    }
+
+    node.data.downcast_element().is_some_and(|el| {
+        el.background_images.iter().any(Option::is_some)
+            || el.mask_images.iter().any(Option::is_some)
+    })
 }
 
 #[test]
