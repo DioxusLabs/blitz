@@ -594,9 +594,9 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             .primary_styles()
             .as_ref()
             .map(|styles| (*styles).clone())
-            .unwrap_or(
-                ComputedValues::initial_values_with_font_override(Font::initial_values()).to_arc(),
-            );
+            .unwrap_or_else(|| {
+                ComputedValues::initial_values_with_font_override(Font::initial_values()).to_arc()
+            });
 
         let scale = self.scale;
 
