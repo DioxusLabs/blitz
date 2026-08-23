@@ -104,12 +104,11 @@ impl BaseDocument {
         self.resolve_transforms(root_node_id);
         timer.record_time("transform");
 
-        // Clear all damage and dirty flags
+        // Clear all damage and dirty flags, walking only subtrees which are
+        // marked as (potentially) containing damage.
         if self.incremental_layout {
-            for (_, node) in self.nodes.iter_mut() {
-                node.clear_damage_mut();
-                node.unset_dirty_descendants();
-            }
+            let doc_node_id = self.root_node().id;
+            self.clear_damage_and_dirty_flags(doc_node_id);
             timer.record_time("c_damage");
         }
 

@@ -1234,15 +1234,12 @@ impl<'a> RecalcStyle<'a> {
 }
 
 #[allow(unsafe_code)]
-impl<E> DomTraversal<E> for RecalcStyle<'_>
-where
-    E: TElement,
-{
-    fn process_preorder<F: FnMut(E::ConcreteNode)>(
+impl<'dom> DomTraversal<BlitzNode<'dom>> for RecalcStyle<'_> {
+    fn process_preorder<F: FnMut(BlitzNode<'dom>)>(
         &self,
         traversal_data: &PerLevelTraversalData,
-        context: &mut StyleContext<E>,
-        node: E::ConcreteNode,
+        context: &mut StyleContext<BlitzNode<'dom>>,
+        node: BlitzNode<'dom>,
         note_child: F,
     ) {
         if let Some(el) = node.as_element() {
@@ -1250,8 +1247,15 @@ where
             let mut data = unsafe { el.ensure_data() };
             recalc_style_at(self, traversal_data, context, el, &mut data, note_child);
 
+            // Mark the ancestor chain so that the damage propagation pass
+            // visits this element (both for the damage itself and to sync
+            // any updated pseudo-element styles to their anonymous nodes).
+            if !data.damage.is_empty() || el.before().is_some() || el.after().is_some() {
+                el.mark_damaged();
+            }
+
             // Gets set later on
-            unsafe { el.unset_dirty_descendants() }
+            el.unset_dirty_descendants();
         }
     }
 
@@ -1260,7 +1264,11 @@ where
         false
     }
 
-    fn process_postorder(&self, _style_context: &mut StyleContext<E>, _node: E::ConcreteNode) {
+    fn process_postorder(
+        &self,
+        _style_context: &mut StyleContext<BlitzNode<'dom>>,
+        _node: BlitzNode<'dom>,
+    ) {
         panic!("this should never be called")
     }
 

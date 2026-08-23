@@ -243,6 +243,7 @@ impl DocumentMutator<'_> {
                 data.hint |= RestyleHint::restyle_subtree();
                 data.damage.insert(ALL_DAMAGE);
             }
+            node.mark_damaged();
 
             // TODO: make this fine grained / conditional based on ElementSelectorFlags
             let parent = node.parent;
@@ -369,6 +370,7 @@ impl DocumentMutator<'_> {
                 data.hint |= RestyleHint::restyle_subtree();
                 data.damage.insert(ALL_DAMAGE);
             }
+            node.mark_damaged();
 
             // Mark ancestors dirty so the style traversal visits this subtree.
             // Without this, the traversal may skip nodes with pending RestyleHint/damage.

@@ -99,6 +99,9 @@ pub struct ElementData {
     /// Whether any descendant of this node needs restyling.
     /// Used by Stylo's incremental style traversal to skip unchanged subtrees.
     pub dirty_descendants: AtomicBool,
+    /// Whether this node or any of its descendants may carry `RestyleDamage`.
+    /// Used by the damage propagation pass to skip unchanged subtrees.
+    pub damaged_descendants: AtomicBool,
 
     // Pseudo element nodes
     pub before: Option<NodeId>,
@@ -134,6 +137,7 @@ pub struct DocumentData {
     /// [`Node`](super::Node) is constructed.
     pub guard: Option<SharedRwLock>,
     pub dirty_descendants: AtomicBool,
+    pub damaged_descendants: AtomicBool,
     pub element_state: ElementState,
     pub has_snapshot: bool,
     pub snapshot_handled: AtomicBool,
@@ -155,6 +159,7 @@ impl std::fmt::Debug for DocumentData {
             .field("stylo_element_data", &self.stylo_element_data)
             .field("guard", &self.guard)
             .field("dirty_descendants", &self.dirty_descendants)
+            .field("damaged_descendants", &self.damaged_descendants)
             .field("element_state", &self.element_state)
             .field("has_snapshot", &self.has_snapshot)
             .field("snapshot_handled", &self.snapshot_handled)
@@ -177,6 +182,7 @@ impl DocumentData {
             selector_flags: Cell::new(ElementSelectorFlags::empty()),
             guard: None,
             dirty_descendants: AtomicBool::new(true),
+            damaged_descendants: AtomicBool::new(true),
             element_state: ElementState::empty(),
             has_snapshot: false,
             snapshot_handled: AtomicBool::new(false),
@@ -257,6 +263,7 @@ impl Clone for ElementData {
             has_snapshot: false,
             snapshot_handled: AtomicBool::new(false),
             dirty_descendants: AtomicBool::new(true),
+            damaged_descendants: AtomicBool::new(true),
             before: None,
             after: None,
             detailed_grid_info: None,
@@ -368,6 +375,7 @@ impl ElementData {
             has_snapshot: false,
             snapshot_handled: AtomicBool::new(false),
             dirty_descendants: AtomicBool::new(true),
+            damaged_descendants: AtomicBool::new(true),
             before: None,
             after: None,
             detailed_grid_info: None,
