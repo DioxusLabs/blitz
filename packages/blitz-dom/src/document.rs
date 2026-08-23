@@ -3027,6 +3027,62 @@ mod hover_invalidation_tests {
             "unchecking should restore the sibling label color"
         );
     }
+
+    /// A repaint-only style change to an existing `::before` pseudo-element
+    /// (no box construction damage) must be flushed to the pseudo-element's
+    /// anonymous node during the style traversal.
+    #[test]
+    fn hover_updates_existing_pseudo_element_style() {
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
+            ..Default::default()
+        });
+        doc.add_user_agent_stylesheet(
+            "div::before { content: \"x\"; color: rgb(1, 2, 3); } \
+             div:hover::before { color: rgb(0, 0, 255); }",
+        );
+        let root_id = doc.root_node().id;
+        let style = |value: &str| Attribute {
+            name: qual_name!("style"),
+            value: value.to_string(),
+        };
+
+        let mut mutator = doc.mutate();
+        let html = mutator.create_element(qual_name!("html"), vec![]);
+        let body = mutator.create_element(qual_name!("body"), vec![style("margin:0")]);
+        let div = mutator.create_element(
+            qual_name!("div"),
+            vec![style("display:block;width:300px;height:100px")],
+        );
+        let text = mutator.create_text_node("some text");
+        mutator.append_children(div, &[text]);
+        mutator.append_children(body, &[div]);
+        mutator.append_children(html, &[body]);
+        mutator.append_children(root_id, &[html]);
+        drop(mutator);
+
+        doc.resolve(0.0);
+        let before = doc.nodes[div].before().expect("::before node should exist");
+        let initial_color = text_color(&doc, before);
+
+        doc.set_hover_to(10.0, 10.0);
+        assert!(doc.nodes[div].is_hovered());
+        doc.resolve(0.0);
+        assert_ne!(
+            text_color(&doc, before),
+            initial_color,
+            "hover should change the ::before color"
+        );
+
+        doc.set_hover_to(10.0, 200.0);
+        assert!(!doc.nodes[div].is_hovered());
+        doc.resolve(0.0);
+        assert_eq!(
+            text_color(&doc, before),
+            initial_color,
+            "unhover should restore the ::before color"
+        );
+    }
 }
 
 #[cfg(test)]
