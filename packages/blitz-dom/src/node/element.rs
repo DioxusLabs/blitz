@@ -381,6 +381,7 @@ impl ElementData {
             transform: None,
         };
         data.flush_is_focussable();
+        data.flush_link_state();
 
         // The element state needs to be modified if the element can be disabled.
         if data.can_be_disabled() {
@@ -415,6 +416,27 @@ impl ElementData {
 
     pub fn can_be_disabled(&self) -> bool {
         local_names!("button", "input", "select", "textarea").contains(&self.name.local)
+    }
+
+    /// Whether this element is a link (an `<a>` or `<area>` element with an `href` attribute)
+    pub fn is_link(&self) -> bool {
+        (self.name.local == local_name!("a") || self.name.local == local_name!("area"))
+            && self.has_attr(local_name!("href"))
+    }
+
+    /// Sync the visitedness bits of `element_state` with the element's link-ness.
+    /// Blitz does not track browsing history, so all links are unvisited.
+    ///
+    /// Stylo's snapshot invalidation (`ElementWrapper::is_link`) determines link-ness
+    /// from these state bits, so they must be kept accurate for `:link`/`:any-link`
+    /// selectors to be correctly invalidated. Must be called whenever the `href`
+    /// attribute is added or removed.
+    pub fn flush_link_state(&mut self) {
+        self.element_state
+            .remove(ElementState::VISITED_OR_UNVISITED);
+        if self.is_link() {
+            self.element_state.insert(ElementState::UNVISITED);
+        }
     }
 
     pub fn image_data(&self) -> Option<&ImageData> {

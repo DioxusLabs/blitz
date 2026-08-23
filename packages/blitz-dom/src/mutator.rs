@@ -303,6 +303,10 @@ impl DocumentMutator<'_> {
             element.flush_is_focussable();
         }
 
+        if name.local == local_name!("href") {
+            element.flush_link_state();
+        }
+
         let tag = &element.name.local;
         let attr = &name.local;
 
@@ -413,6 +417,10 @@ impl DocumentMutator<'_> {
             || name.local == local_name!("disabled")
         {
             element.flush_is_focussable();
+        }
+
+        if name.local == local_name!("href") {
+            element.flush_link_state();
         }
 
         // Update text input value
