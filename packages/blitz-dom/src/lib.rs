@@ -52,6 +52,8 @@ mod layout;
 mod mutator;
 mod query_selector;
 mod resolve;
+/// Scrolling of nodes and the viewport, and scroll animations.
+mod scrolling;
 mod selection;
 /// Implementations that interact with servo's style engine
 mod stylo;
@@ -88,6 +90,7 @@ pub use markup5ever::{
 pub use mutator::DocumentMutator;
 pub use node::{Attribute, DocumentData, ElementData, Node, NodeData, TextNodeData};
 pub use parley::FontContext;
+pub use scrolling::{ScrollBehavior, ScrollLogicalPosition};
 pub use tree::NodeTree;
 
 /// Convert a Blitz [`NodeId`] into a [`taffy::NodeId`] (which wraps a `u64`).

@@ -1024,6 +1024,7 @@ dependencies = [
  "kurbo",
  "parley",
  "peniko",
+ "skrifa",
  "smallvec",
  "stylo",
  "taffy",
@@ -7398,7 +7399,7 @@ dependencies = [
 [[package]]
 name = "taffy"
 version = "0.13.0"
-source = "git+https://github.com/DioxusLabs/taffy?rev=7eddc45ac29edf40e9301aeaf522e6b4546aa268#7eddc45ac29edf40e9301aeaf522e6b4546aa268"
+source = "git+https://github.com/DioxusLabs/taffy?rev=8d13fdc88468c83f01b13b36fadc0349950c6f51#8d13fdc88468c83f01b13b36fadc0349950c6f51"
 dependencies = [
  "arrayvec",
  "serde",
