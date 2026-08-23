@@ -984,6 +984,7 @@ dependencies = [
  "tokio",
  "tracing-subscriber",
  "vello",
+ "vello_common",
  "vello_cpu",
  "vello_hybrid",
  "wgpu",

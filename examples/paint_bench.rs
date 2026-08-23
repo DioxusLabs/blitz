@@ -1,8 +1,7 @@
-//! Benchmark the paint phase (blitz-paint `paint_scene` -> renderer command encoding).
+//! Benchmark the paint phase (blitz-paint `paint_scene` -> renderer command encoding)
+//! and the rasterization phase (renderer-side work: GPU dispatch / CPU rendering).
 //!
-//! Supports the vello, vello_cpu and vello_hybrid anyrender backends. Only scene/command
-//! encoding is measured — no rasterization or GPU work (except vello_hybrid image uploads,
-//! which are cached after the first frame).
+//! Supports the vello, vello_cpu and vello_hybrid anyrender backends.
 //!
 //! Usage: paint_bench <url> [width] [height] [scale] [iters] [backend]
 //!   backend: vello (default) | cpu | hybrid
@@ -25,24 +24,32 @@ const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/2010010
 
 const WARMUP_ITERS: usize = 5;
 
-fn bench(iters: usize, mut paint: impl FnMut()) {
-    for _ in 0..WARMUP_ITERS {
-        paint();
-    }
-
-    let mut times_us: Vec<u128> = Vec::with_capacity(iters);
-    for _ in 0..iters {
-        let start = Instant::now();
-        paint();
-        times_us.push(start.elapsed().as_micros());
-    }
-
+fn print_stats(label: &str, times_us: &mut [u128]) {
     times_us.sort_unstable();
     let min = times_us[0];
     let max = times_us[times_us.len() - 1];
     let median = times_us[times_us.len() / 2];
     let mean: u128 = times_us.iter().sum::<u128>() / times_us.len() as u128;
-    println!("paint_scene: min {min}us / median {median}us / mean {mean}us / max {max}us");
+    println!("{label}: min {min}us / median {median}us / mean {mean}us / max {max}us");
+}
+
+/// Run `iters` iterations of a two-phase (encode, rasterize) frame and report
+/// per-phase timing statistics.
+fn bench(iters: usize, mut frame: impl FnMut() -> (u128, u128)) {
+    for _ in 0..WARMUP_ITERS {
+        frame();
+    }
+
+    let mut encode_us: Vec<u128> = Vec::with_capacity(iters);
+    let mut raster_us: Vec<u128> = Vec::with_capacity(iters);
+    for _ in 0..iters {
+        let (encode, raster) = frame();
+        encode_us.push(encode);
+        raster_us.push(raster);
+    }
+
+    print_stats("paint_scene", &mut encode_us);
+    print_stats("rasterize  ", &mut raster_us);
 }
 
 #[tokio::main]
@@ -111,19 +118,64 @@ async fn main() {
 
     match backend.as_str() {
         "vello" => {
+            let mut context = wgpu_context::WGPUContext::new();
+            let buffer_renderer = context
+                .create_buffer_renderer(wgpu_context::BufferRendererConfig {
+                    width: render_width,
+                    height: render_height,
+                    usage: wgpu::TextureUsages::STORAGE_BINDING,
+                })
+                .await
+                .expect("No compatible device found");
+            let mut renderer = vello::Renderer::new(
+                buffer_renderer.device(),
+                vello::RendererOptions {
+                    use_cpu: false,
+                    num_init_threads: std::num::NonZeroUsize::new(1),
+                    antialiasing_support: vello::AaSupport::area_only(),
+                    pipeline_cache: None,
+                },
+            )
+            .expect("Failed to create vello renderer");
+
             let mut scene = vello::Scene::new();
             bench(iters, || {
-                let mut painter = VelloScenePainter::new(&mut scene);
-                painter.reset();
-                paint_scene(
-                    &mut painter,
-                    document.as_mut(),
-                    scale,
-                    render_width,
-                    render_height,
-                    0,
-                    0,
-                );
+                let encode_start = Instant::now();
+                {
+                    let mut painter = VelloScenePainter::new(&mut scene);
+                    painter.reset();
+                    paint_scene(
+                        &mut painter,
+                        document.as_mut(),
+                        scale,
+                        render_width,
+                        render_height,
+                        0,
+                        0,
+                    );
+                }
+                let encode = encode_start.elapsed().as_micros();
+
+                let raster_start = Instant::now();
+                renderer
+                    .render_to_texture(
+                        buffer_renderer.device(),
+                        buffer_renderer.queue(),
+                        &scene,
+                        &buffer_renderer.target_texture_view(),
+                        &vello::RenderParams {
+                            base_color: vello::peniko::Color::TRANSPARENT,
+                            width: render_width,
+                            height: render_height,
+                            antialiasing_method: vello::AaConfig::Area,
+                        },
+                    )
+                    .expect("Failed to render to texture");
+                buffer_renderer
+                    .device()
+                    .poll(wgpu::PollType::wait_indefinitely())
+                    .unwrap();
+                (encode, raster_start.elapsed().as_micros())
             });
         }
         "cpu" | "vello_cpu" => {
@@ -134,7 +186,9 @@ async fn main() {
                 ),
                 resources: vello_cpu::Resources::new(),
             };
+            let mut buffer = vec![0u8; render_width as usize * render_height as usize * 4];
             bench(iters, || {
+                let encode_start = Instant::now();
                 painter.reset();
                 paint_scene(
                     &mut painter,
@@ -145,6 +199,20 @@ async fn main() {
                     0,
                     0,
                 );
+                let encode = encode_start.elapsed().as_micros();
+
+                let raster_start = Instant::now();
+                painter.render_ctx.flush();
+                painter.render_ctx.render(
+                    vello_cpu::PixmapMut::new(
+                        render_width as u16,
+                        render_height as u16,
+                        &mut buffer,
+                    )
+                    .unwrap(),
+                    &mut painter.resources,
+                );
+                (encode, raster_start.elapsed().as_micros())
             });
         }
         "hybrid" | "vello_hybrid" => {
@@ -171,7 +239,27 @@ async fn main() {
             let mut image_cache = FxHashMap::default();
             let mut texture_bindings = FxHashMap::default();
 
+            let target_texture = device_handle
+                .device
+                .create_texture(&wgpu::TextureDescriptor {
+                    label: Some("paint_bench target"),
+                    size: wgpu::Extent3d {
+                        width: render_width,
+                        height: render_height,
+                        depth_or_array_layers: 1,
+                    },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format: wgpu::TextureFormat::Bgra8Unorm,
+                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                    view_formats: &[],
+                });
+            let target_texture_view =
+                target_texture.create_view(&wgpu::TextureViewDescriptor::default());
+
             bench(iters, || {
+                let encode_start = Instant::now();
                 let mut encoder = device_handle
                     .device
                     .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
@@ -200,7 +288,38 @@ async fn main() {
                     0,
                 );
                 drop(painter);
+                let encode = encode_start.elapsed().as_micros();
+
+                let raster_start = Instant::now();
+                let mut hybrid_texture_bindings = vello_hybrid::TextureBindings::new();
+                for (resource_id, texture_view) in texture_bindings.iter() {
+                    hybrid_texture_bindings.insert(
+                        vello_common::TextureId(resource_id.into_ffi()),
+                        texture_view.clone(),
+                    );
+                }
+                renderer
+                    .render(
+                        &scene,
+                        &mut resources,
+                        &device_handle.device,
+                        &device_handle.queue,
+                        &mut encoder,
+                        &vello_hybrid::RenderSize {
+                            width: render_width,
+                            height: render_height,
+                        },
+                        &target_texture_view,
+                        &hybrid_texture_bindings,
+                    )
+                    .expect("Failed to render to texture");
                 device_handle.queue.submit([encoder.finish()]);
+                device_handle
+                    .device
+                    .poll(wgpu::PollType::wait_indefinitely())
+                    .unwrap();
+                scene.reset();
+                (encode, raster_start.elapsed().as_micros())
             });
         }
         other => {
