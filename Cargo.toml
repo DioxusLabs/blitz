@@ -270,6 +270,13 @@ peniko = { workspace = true }
 color = { workspace = true }
 env_logger = "0.11"
 tracing-subscriber = "0.3"
+vello = "0.10"
+vello_cpu = "0.1"
+vello_hybrid = "0.1"
+vello_common = "0.1"
+wgpu = { workspace = true }
+wgpu_context = { workspace = true }
+rustc-hash = { workspace = true }
 
 # [patch.crates-io]
 # anyrender = { path = "../anyrender/crates/anyrender" }
