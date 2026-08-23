@@ -13,6 +13,7 @@ use blitz_traits::{
 use keyboard_types::Modifiers;
 use markup5ever::local_name;
 use style::values::computed::{Overflow, TouchAction, UserSelect};
+use style_dom::ElementState;
 use taffy::AbsoluteAxis;
 
 use crate::{
@@ -641,7 +642,13 @@ pub(crate) fn handle_click(
 
             match el.name.local {
                 local_name!("input") if el.attr(local_name!("type")) == Some("checkbox") => {
-                    let is_checked = BaseDocument::toggle_checkbox(el);
+                    let mut is_checked = false;
+                    doc.snapshot_node_and(node_id, ElementState::CHECKED, |node| {
+                        if let Some(el) = node.element_data_mut() {
+                            is_checked = BaseDocument::toggle_checkbox(el);
+                        }
+                        node.mark_ancestors_dirty();
+                    });
                     let value = is_checked.to_string();
                     dispatch_event(DomEvent::new(
                         node_id,
@@ -659,8 +666,13 @@ pub(crate) fn handle_click(
                 local_name!("input") if el.attr(local_name!("type")) == Some("radio") => {
                     if let Some(radio_set) = el.attr(local_name!("name")).map(str::to_string) {
                         BaseDocument::toggle_radio(doc, radio_set, node_id);
-                    } else if let Some(is_checked) = el.checkbox_input_checked_mut() {
-                        *is_checked = true;
+                    } else if el.checkbox_input_checked().is_some() {
+                        doc.snapshot_node_and(node_id, ElementState::CHECKED, |node| {
+                            if let Some(el) = node.element_data_mut() {
+                                el.set_checkbox_input_checked(true);
+                            }
+                            node.mark_ancestors_dirty();
+                        });
                     }
 
                     // TODO: make input event conditional on value actually changing

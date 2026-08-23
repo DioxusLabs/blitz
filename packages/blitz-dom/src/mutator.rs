@@ -303,6 +303,10 @@ impl DocumentMutator<'_> {
             element.flush_is_focussable();
         }
 
+        if name.local == local_name!("href") {
+            element.flush_link_state();
+        }
+
         let tag = &element.name.local;
         let attr = &name.local;
 
@@ -413,6 +417,10 @@ impl DocumentMutator<'_> {
             || name.local == local_name!("disabled")
         {
             element.flush_is_focussable();
+        }
+
+        if name.local == local_name!("href") {
+            element.flush_link_state();
         }
 
         // Update text input value
@@ -1238,7 +1246,7 @@ fn set_input_checked_state(element: &mut ElementData, value: String) {
         return;
     };
     match element.special_data {
-        SpecialElementData::CheckboxInput(ref mut checked_mut) => *checked_mut = checked,
+        SpecialElementData::CheckboxInput(_) => element.set_checkbox_input_checked(checked),
         // If we have just constructed the element, set the node attribute,
         // and NodeSpecificData will be created from that later
         // this simulates the checked attribute being set in html,

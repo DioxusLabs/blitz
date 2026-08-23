@@ -893,6 +893,7 @@ fn create_checkbox_input(doc: &mut BaseDocument, input_element_id: NodeId) {
     if !matches!(element.special_data, SpecialElementData::CheckboxInput(_)) {
         let checked = element.has_attr(local_name!("checked"));
         element.special_data = SpecialElementData::CheckboxInput(checked);
+        element.set_checkbox_input_checked(checked);
     }
 }
 

@@ -407,18 +407,9 @@ impl selectors::Element for BlitzNode<'_> {
         match *pseudo_class {
             NonTSPseudoClass::Active => self.element_state().contains(ElementState::ACTIVE),
             NonTSPseudoClass::AnyLink => self
-                .data
-                .downcast_element()
-                .map(|elem| {
-                    (elem.name.local == local_name!("a") || elem.name.local == local_name!("area"))
-                        && elem.attr(local_name!("href")).is_some()
-                })
-                .unwrap_or(false),
-            NonTSPseudoClass::Checked => self
-                .data
-                .downcast_element()
-                .and_then(|elem| elem.checkbox_input_checked())
-                .unwrap_or(false),
+                .element_state()
+                .intersects(ElementState::VISITED_OR_UNVISITED),
+            NonTSPseudoClass::Checked => self.element_state().contains(ElementState::CHECKED),
             NonTSPseudoClass::Valid => false,
             NonTSPseudoClass::Invalid => false,
             NonTSPseudoClass::Defined => false,
@@ -432,14 +423,7 @@ impl selectors::Element for BlitzNode<'_> {
             NonTSPseudoClass::Indeterminate => false,
             NonTSPseudoClass::Lang(_) => false,
             NonTSPseudoClass::CustomState(_) => false,
-            NonTSPseudoClass::Link => self
-                .data
-                .downcast_element()
-                .map(|elem| {
-                    (elem.name.local == local_name!("a") || elem.name.local == local_name!("area"))
-                        && elem.attr(local_name!("href")).is_some()
-                })
-                .unwrap_or(false),
+            NonTSPseudoClass::Link => self.element_state().contains(ElementState::UNVISITED),
             NonTSPseudoClass::PlaceholderShown => false,
             NonTSPseudoClass::ReadWrite => false,
             NonTSPseudoClass::ReadOnly => false,

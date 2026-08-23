@@ -65,6 +65,7 @@ use style::{
     stylesheets::{AllowImportRules, DocumentStyleSheet, Origin, Stylesheet},
     stylist::Stylist,
 };
+use style_dom::ElementState;
 use thin_vec::ThinVec;
 use url::Url;
 use web_time::Instant;
@@ -673,25 +674,35 @@ impl BaseDocument {
     }
 
     pub fn toggle_checkbox(el: &mut ElementData) -> bool {
-        let Some(is_checked) = el.checkbox_input_checked_mut() else {
+        let Some(is_checked) = el.checkbox_input_checked() else {
             return false;
         };
-        *is_checked = !*is_checked;
+        let checked = !is_checked;
+        el.set_checkbox_input_checked(checked);
 
-        *is_checked
+        checked
     }
 
     pub fn toggle_radio(&mut self, radio_set_name: String, target_radio_id: NodeId) {
-        for (i, node) in self.nodes.iter_mut() {
-            if let Some(node_data) = node.data.downcast_element_mut() {
-                if node_data.attr(local_name!("name")) == Some(&radio_set_name) {
-                    let was_clicked = i == target_radio_id;
-                    let Some(is_checked) = node_data.checkbox_input_checked_mut() else {
-                        continue;
-                    };
-                    *is_checked = was_clicked;
+        let radio_ids: Vec<NodeId> = self
+            .nodes
+            .iter()
+            .filter_map(|(i, node)| {
+                let el = node.data.downcast_element()?;
+                (el.attr(local_name!("name")) == Some(&radio_set_name)
+                    && el.checkbox_input_checked().is_some())
+                .then_some(i)
+            })
+            .collect();
+
+        for i in radio_ids {
+            let checked = i == target_radio_id;
+            self.snapshot_node_and(i, ElementState::CHECKED, |node| {
+                if let Some(el) = node.element_data_mut() {
+                    el.set_checkbox_input_checked(checked);
                 }
-            }
+                node.mark_ancestors_dirty();
+            });
         }
     }
 
@@ -1397,7 +1408,21 @@ impl BaseDocument {
         }
     }
 
+    /// Snapshot the node's pre-mutation state (element state and attributes) ahead of
+    /// an attribute mutation, so that the next style traversal can diff selector matches
+    /// then-vs-now and invalidate the affected elements.
     pub fn snapshot_node(&mut self, node_id: NodeId) {
+        self.snapshot_node_impl(node_id, true)
+    }
+
+    /// Snapshot only the node's pre-change [`ElementState`] ahead of a state change
+    /// (hover/focus/active/etc). Cheaper than [`Self::snapshot_node`] as it does not
+    /// copy attributes or trigger attribute/class/id invalidation work.
+    pub fn snapshot_node_state_only(&mut self, node_id: NodeId) {
+        self.snapshot_node_impl(node_id, false)
+    }
+
+    fn snapshot_node_impl(&mut self, node_id: NodeId, capture_attrs: bool) {
         let node = &mut self.nodes[node_id];
 
         // Do not snapshot nodes that have never been styled. A snapshot records an element's
@@ -1414,11 +1439,19 @@ impl BaseDocument {
         node.snapshot_handled()
             .store(false, std::sync::atomic::Ordering::SeqCst);
 
-        // TODO: handle invalidations other than hover
-        if let Some(_existing_snapshot) = self.snapshots.get_mut(&opaque_node_id) {
-            // Do nothing
-            // TODO: update snapshot
-        } else {
+        // A snapshot records the element's state/attributes as they were *before the first
+        // mutation* since the last style flush (matching Gecko's ServoElementSnapshot
+        // semantics): state is captured at most once, and attributes are captured at most
+        // once, but a state-only snapshot is upgraded to also capture attributes if an
+        // attribute mutation follows.
+        let needs_attrs = capture_attrs
+            && self
+                .snapshots
+                .get_mut(&opaque_node_id)
+                .is_none_or(|snapshot| snapshot.attrs.is_none());
+
+        let (attrs, changed_attrs) = if needs_attrs {
+            let node = &self.nodes[node_id];
             let attrs: Option<Vec<_>> = node.attrs().map(|attrs| {
                 attrs
                     .iter()
@@ -1448,27 +1481,61 @@ impl BaseDocument {
                     .collect()
             });
 
-            let changed_attrs = attrs
+            let changed_attrs: Vec<_> = attrs
                 .as_ref()
                 .map(|attrs| attrs.iter().map(|attr| attr.0.name.clone()).collect())
                 .unwrap_or_default();
 
+            (attrs, changed_attrs)
+        } else {
+            (None, Vec::new())
+        };
+
+        if let Some(snapshot) = self.snapshots.get_mut(&opaque_node_id) {
+            // The existing snapshot's state is preserved: it records the state before
+            // the *first* change since the last style flush.
+            if needs_attrs {
+                snapshot.attrs = attrs;
+                snapshot.changed_attrs = changed_attrs;
+                snapshot.class_changed = true;
+                snapshot.id_changed = true;
+                snapshot.other_attributes_changed = true;
+            }
+        } else {
             self.snapshots.insert(
                 opaque_node_id,
                 ServoElementSnapshot {
-                    state: Some(*node.element_state()),
+                    state: Some(*self.nodes[node_id].element_state()),
                     attrs,
                     changed_attrs,
-                    class_changed: true,
-                    id_changed: true,
-                    other_attributes_changed: true,
+                    class_changed: needs_attrs,
+                    id_changed: needs_attrs,
+                    other_attributes_changed: needs_attrs,
                 },
             );
         }
     }
 
-    pub fn snapshot_node_and(&mut self, node_id: NodeId, cb: impl FnOnce(&mut Node)) {
-        self.snapshot_node(node_id);
+    /// Returns whether any style rule depends on any of the given [`ElementState`] bits.
+    /// If not, changing those bits cannot affect styling and snapshotting can be skipped.
+    pub fn style_depends_on_state(&self, state: ElementState) -> bool {
+        self.stylist.iter_origins().any(|(data, _)| {
+            data.has_state_dependency(state) || data.has_nth_of_state_dependency(state)
+        })
+    }
+
+    /// Apply a state change (hover/focus/active/etc affecting the given [`ElementState`]
+    /// bits) to a node, taking a state-only snapshot beforehand if any style rule
+    /// depends on those bits.
+    pub fn snapshot_node_and(
+        &mut self,
+        node_id: NodeId,
+        state: ElementState,
+        cb: impl FnOnce(&mut Node),
+    ) {
+        if self.style_depends_on_state(state) {
+            self.snapshot_node_state_only(node_id);
+        }
         cb(&mut self.nodes[node_id]);
     }
 
@@ -1583,7 +1650,9 @@ impl BaseDocument {
     pub fn clear_focus(&mut self) {
         if let Some(id) = self.focus_node_id {
             let shell_provider = self.shell_provider.clone();
-            self.snapshot_node_and(id, |node| node.blur(shell_provider));
+            self.snapshot_node_and(id, ElementState::FOCUS | ElementState::FOCUSRING, |node| {
+                node.blur(shell_provider)
+            });
             self.focus_node_id = None;
         }
     }
@@ -1606,11 +1675,17 @@ impl BaseDocument {
 
         // Remove focus from the old node
         if let Some(id) = self.focus_node_id {
-            self.snapshot_node_and(id, |node| node.blur(shell_provider.clone()));
+            self.snapshot_node_and(id, ElementState::FOCUS | ElementState::FOCUSRING, |node| {
+                node.blur(shell_provider.clone())
+            });
         }
 
         // Focus the new node
-        self.snapshot_node_and(focus_node_id, |node| node.focus(shell_provider));
+        self.snapshot_node_and(
+            focus_node_id,
+            ElementState::FOCUS | ElementState::FOCUSRING,
+            |node| node.focus(shell_provider),
+        );
 
         self.focus_node_id = Some(focus_node_id);
 
@@ -1639,7 +1714,7 @@ impl BaseDocument {
 
         let node_path = self.maybe_node_layout_ancestors(active_node_id);
         for &id in node_path.iter() {
-            self.snapshot_node_and(id, |node| node.active());
+            self.snapshot_node_and(id, ElementState::ACTIVE, |node| node.active());
         }
 
         self.active_node_id = active_node_id;
@@ -1654,7 +1729,7 @@ impl BaseDocument {
 
         let node_path = self.maybe_node_layout_ancestors(Some(active_node_id));
         for &id in node_path.iter() {
-            self.snapshot_node_and(id, |node| node.unactive());
+            self.snapshot_node_and(id, ElementState::ACTIVE, |node| node.unactive());
         }
 
         true
@@ -1794,10 +1869,10 @@ impl BaseDocument {
             .take_while(|(o, n)| o == n)
             .count();
         for &id in old_node_path.iter().skip(same_count) {
-            self.snapshot_node_and(id, |node| node.unhover());
+            self.snapshot_node_and(id, ElementState::HOVER, |node| node.unhover());
         }
         for &id in new_node_path.iter().skip(same_count) {
-            self.snapshot_node_and(id, |node| node.hover());
+            self.snapshot_node_and(id, ElementState::HOVER, |node| node.hover());
         }
 
         self.hover_node_id = hover_node_id;
@@ -1823,7 +1898,7 @@ impl BaseDocument {
 
         let old_node_path = self.maybe_node_layout_ancestors(Some(hover_node_id));
         for &id in old_node_path.iter() {
-            self.snapshot_node_and(id, |node| node.unhover());
+            self.snapshot_node_and(id, ElementState::HOVER, |node| node.unhover());
         }
 
         self.hover_node_id = None;
@@ -2711,6 +2786,246 @@ mod hover_state_tests {
         assert!(!doc.hover_node_is_text);
         assert_eq!(doc.get_hover_node_id(), Some(container));
         assert_eq!(doc.get_cursor(), Some(CursorIcon::Default));
+    }
+}
+
+#[cfg(test)]
+mod hover_invalidation_tests {
+    use super::*;
+    use crate::{Attribute, QualName, qual_name};
+    use blitz_traits::shell::ColorScheme;
+
+    /// Build `<html><body style="margin:0"><div style="width:300px;height:100px">
+    /// <span>text</span></div></body></html>` with a `div:hover` rule.
+    fn make_doc() -> (BaseDocument, NodeId, NodeId) {
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
+            ..Default::default()
+        });
+        doc.add_user_agent_stylesheet(
+            "div:hover { background-color: rgb(255, 0, 0); } div:hover span { color: rgb(0, 255, 0); }",
+        );
+        let root_id = doc.root_node().id;
+        let style = |value: &str| Attribute {
+            name: qual_name!("style"),
+            value: value.to_string(),
+        };
+
+        let mut mutator = doc.mutate();
+        let html = mutator.create_element(qual_name!("html"), vec![]);
+        let body = mutator.create_element(qual_name!("body"), vec![style("margin:0")]);
+        let div =
+            mutator.create_element(qual_name!("div"), vec![style("width:300px;height:100px")]);
+        let span = mutator.create_element(qual_name!("span"), vec![]);
+        let text = mutator.create_text_node("some text");
+        mutator.append_children(span, &[text]);
+        mutator.append_children(div, &[span]);
+        mutator.append_children(body, &[div]);
+        mutator.append_children(html, &[body]);
+        mutator.append_children(root_id, &[html]);
+        drop(mutator);
+
+        doc.resolve(0.0);
+        (doc, div, span)
+    }
+
+    fn bg_color(doc: &BaseDocument, id: NodeId) -> String {
+        format!(
+            "{:?}",
+            doc.nodes[id]
+                .primary_styles()
+                .unwrap()
+                .get_background()
+                .background_color
+        )
+    }
+
+    fn text_color(doc: &BaseDocument, id: NodeId) -> String {
+        format!(
+            "{:?}",
+            doc.nodes[id].primary_styles().unwrap().clone_color()
+        )
+    }
+
+    #[test]
+    fn hover_styles_apply_and_clear() {
+        let (mut doc, div, span) = make_doc();
+        let initial_bg = bg_color(&doc, div);
+        let initial_color = text_color(&doc, span);
+
+        // Hover the div
+        doc.set_hover_to(10.0, 10.0);
+        assert!(doc.nodes[div].is_hovered());
+        doc.resolve(0.0);
+        let hovered_bg = bg_color(&doc, div);
+        let hovered_color = text_color(&doc, span);
+        assert_ne!(initial_bg, hovered_bg, "hover should change div background");
+        assert_ne!(
+            initial_color, hovered_color,
+            "hover should change span color"
+        );
+
+        // Move the pointer off the div (below it, over the body)
+        doc.set_hover_to(10.0, 200.0);
+        assert!(!doc.nodes[div].is_hovered());
+        doc.resolve(0.0);
+        assert_eq!(
+            bg_color(&doc, div),
+            initial_bg,
+            "unhover should restore div background"
+        );
+        assert_eq!(
+            text_color(&doc, span),
+            initial_color,
+            "unhover should restore span color"
+        );
+    }
+
+    /// Mimics BBC's headline hover pattern: `a:link:hover .headline` with the
+    /// headline several levels below the anchor.
+    #[test]
+    fn ancestor_hover_with_link_state_updates_descendant() {
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
+            ..Default::default()
+        });
+        doc.add_user_agent_stylesheet(
+            ".promo:link:hover .headline, .promo:visited:hover .headline { color: rgb(184, 0, 0); text-decoration-line: underline; }",
+        );
+        let root_id = doc.root_node().id;
+        let attr = |name: QualName, value: &str| Attribute {
+            name,
+            value: value.to_string(),
+        };
+
+        let mut mutator = doc.mutate();
+        let html = mutator.create_element(qual_name!("html"), vec![]);
+        let body = mutator.create_element(
+            qual_name!("body"),
+            vec![attr(qual_name!("style"), "margin:0")],
+        );
+        let a = mutator.create_element(
+            qual_name!("a"),
+            vec![
+                attr(qual_name!("href"), "https://example.com"),
+                attr(qual_name!("class"), "promo"),
+                attr(
+                    qual_name!("style"),
+                    "display:block;width:300px;height:100px",
+                ),
+            ],
+        );
+        let p = mutator.create_element(qual_name!("p"), vec![]);
+        let span = mutator.create_element(
+            qual_name!("span"),
+            vec![attr(qual_name!("class"), "headline")],
+        );
+        let text = mutator.create_text_node("Headline text");
+        mutator.append_children(span, &[text]);
+        mutator.append_children(p, &[span]);
+        mutator.append_children(a, &[p]);
+        mutator.append_children(body, &[a]);
+        mutator.append_children(html, &[body]);
+        mutator.append_children(root_id, &[html]);
+        drop(mutator);
+
+        doc.resolve(0.0);
+        let initial_color = text_color(&doc, span);
+
+        doc.set_hover_to(10.0, 10.0);
+        assert!(doc.nodes[a].is_hovered());
+        doc.resolve(0.0);
+        let hovered_color = text_color(&doc, span);
+        assert_ne!(
+            initial_color, hovered_color,
+            "hovering the anchor should change the headline color"
+        );
+
+        doc.set_hover_to(10.0, 200.0);
+        assert!(!doc.nodes[a].is_hovered());
+        doc.resolve(0.0);
+        assert_eq!(
+            text_color(&doc, span),
+            initial_color,
+            "unhovering the anchor should restore the headline color"
+        );
+    }
+
+    /// Toggling a checkbox must invalidate `:checked`-dependent styles.
+    #[test]
+    fn checkbox_toggle_updates_checked_styles() {
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
+            ..Default::default()
+        });
+        doc.add_user_agent_stylesheet(
+            "input:checked { color: rgb(184, 0, 0); } input:checked + label { color: rgb(0, 184, 0); }",
+        );
+        let root_id = doc.root_node().id;
+        let attr = |name: QualName, value: &str| Attribute {
+            name,
+            value: value.to_string(),
+        };
+
+        let mut mutator = doc.mutate();
+        let html = mutator.create_element(qual_name!("html"), vec![]);
+        let body = mutator.create_element(
+            qual_name!("body"),
+            vec![attr(qual_name!("style"), "margin:0")],
+        );
+        let input = mutator.create_element(
+            qual_name!("input"),
+            vec![attr(qual_name!("type"), "checkbox")],
+        );
+        let label = mutator.create_element(qual_name!("label"), vec![]);
+        let text = mutator.create_text_node("label text");
+        mutator.append_children(label, &[text]);
+        mutator.append_children(body, &[input, label]);
+        mutator.append_children(html, &[body]);
+        mutator.append_children(root_id, &[html]);
+        drop(mutator);
+
+        doc.resolve(0.0);
+        let initial_input_color = text_color(&doc, input);
+        let initial_label_color = text_color(&doc, label);
+
+        // Toggle the checkbox on (as the click handler does)
+        doc.snapshot_node_and(input, ElementState::CHECKED, |node| {
+            if let Some(el) = node.element_data_mut() {
+                BaseDocument::toggle_checkbox(el);
+            }
+            node.mark_ancestors_dirty();
+        });
+        doc.resolve(0.0);
+        assert_ne!(
+            text_color(&doc, input),
+            initial_input_color,
+            "checking should change the input color"
+        );
+        assert_ne!(
+            text_color(&doc, label),
+            initial_label_color,
+            "checking should change the sibling label color"
+        );
+
+        // Toggle the checkbox back off
+        doc.snapshot_node_and(input, ElementState::CHECKED, |node| {
+            if let Some(el) = node.element_data_mut() {
+                BaseDocument::toggle_checkbox(el);
+            }
+            node.mark_ancestors_dirty();
+        });
+        doc.resolve(0.0);
+        assert_eq!(
+            text_color(&doc, input),
+            initial_input_color,
+            "unchecking should restore the input color"
+        );
+        assert_eq!(
+            text_color(&doc, label),
+            initial_label_color,
+            "unchecking should restore the sibling label color"
+        );
     }
 }
 

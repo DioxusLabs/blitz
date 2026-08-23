@@ -381,6 +381,19 @@ impl ElementData {
             transform: None,
         };
         data.flush_is_focussable();
+        data.flush_link_state();
+
+        // Mirror the `checked` attribute into the element state so that `:checked`
+        // selectors can be matched (and invalidated) from `ElementState`.
+        if data.name.local == local_name!("input")
+            && matches!(
+                data.attr(local_name!("type")),
+                Some("checkbox") | Some("radio")
+            )
+            && data.has_attr(local_name!("checked"))
+        {
+            data.element_state.insert(ElementState::CHECKED);
+        }
 
         // The element state needs to be modified if the element can be disabled.
         if data.can_be_disabled() {
@@ -415,6 +428,27 @@ impl ElementData {
 
     pub fn can_be_disabled(&self) -> bool {
         local_names!("button", "input", "select", "textarea").contains(&self.name.local)
+    }
+
+    /// Whether this element is a link (an `<a>` or `<area>` element with an `href` attribute)
+    pub fn is_link(&self) -> bool {
+        (self.name.local == local_name!("a") || self.name.local == local_name!("area"))
+            && self.has_attr(local_name!("href"))
+    }
+
+    /// Sync the visitedness bits of `element_state` with the element's link-ness.
+    /// Blitz does not track browsing history, so all links are unvisited.
+    ///
+    /// Stylo's snapshot invalidation (`ElementWrapper::is_link`) determines link-ness
+    /// from these state bits, so they must be kept accurate for `:link`/`:any-link`
+    /// selectors to be correctly invalidated. Must be called whenever the `href`
+    /// attribute is added or removed.
+    pub fn flush_link_state(&mut self) {
+        self.element_state
+            .remove(ElementState::VISITED_OR_UNVISITED);
+        if self.is_link() {
+            self.element_state.insert(ElementState::UNVISITED);
+        }
     }
 
     pub fn image_data(&self) -> Option<&ImageData> {
@@ -516,6 +550,16 @@ impl ElementData {
             SpecialElementData::CheckboxInput(ref mut checked) => Some(checked),
             _ => None,
         }
+    }
+
+    /// Set the checked state of a checkbox/radio input, keeping the
+    /// `ElementState::CHECKED` bit (used for `:checked` selector matching and
+    /// invalidation) in sync with the special data.
+    pub fn set_checkbox_input_checked(&mut self, checked: bool) {
+        if let Some(is_checked) = self.checkbox_input_checked_mut() {
+            *is_checked = checked;
+        }
+        self.element_state.set(ElementState::CHECKED, checked);
     }
 
     #[cfg(feature = "file-input")]
