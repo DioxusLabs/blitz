@@ -48,6 +48,17 @@ impl BaseDocument {
         };
         damage |= damage_from_parent;
 
+        // Skip subtrees which contain no damage. Anonymous nodes are never
+        // skipped themselves because damage marking walks the DOM parent
+        // chain, which bypasses anonymous boxes: a damaged node's flagged
+        // ancestors may reach it only through an unflagged anonymous wrapper.
+        {
+            let node = &self.nodes[node_id];
+            if damage.is_empty() && !node.has_damaged_descendants() && !node.is_anonymous() {
+                return RestyleDamage::empty();
+            }
+        }
+
         // Flush updated pseudo-element styles to their anonymous nodes so that
         // style changes which don't trigger box construction still take effect.
         //
@@ -124,6 +135,43 @@ impl BaseDocument {
 
         // Propagate damage to parent
         damage_for_parent
+    }
+
+    /// Clear damage and the `damaged_descendants`/`dirty_descendants` flags
+    /// on all nodes which may carry them, using the `damaged_descendants`
+    /// flags to skip clean subtrees (mirroring `propagate_damage_flags`).
+    pub(crate) fn clear_damage_and_dirty_flags(&mut self, node_id: NodeId) {
+        {
+            let node = &self.nodes[node_id];
+            let has_damage = node.damage().is_some_and(|d| !d.is_empty());
+            if !has_damage && !node.has_damaged_descendants() && !node.is_anonymous() {
+                return;
+            }
+        }
+
+        let children = std::mem::take(&mut self.nodes[node_id].children);
+        let layout_children = std::mem::take(self.nodes[node_id].layout_children.get_mut());
+        for child in children.iter() {
+            self.clear_damage_and_dirty_flags(*child);
+        }
+        if let Some(layout_children) = layout_children.as_ref() {
+            for child in layout_children.iter() {
+                self.clear_damage_and_dirty_flags(*child);
+            }
+        }
+        if let Some(before_id) = self.nodes[node_id].before() {
+            self.clear_damage_and_dirty_flags(before_id);
+        }
+        if let Some(after_id) = self.nodes[node_id].after() {
+            self.clear_damage_and_dirty_flags(after_id);
+        }
+
+        let node = &mut self.nodes[node_id];
+        node.children = children;
+        *node.layout_children.get_mut() = layout_children;
+        node.clear_damage_mut();
+        node.unset_damaged_descendants();
+        node.unset_dirty_descendants();
     }
 
     /// Flush updated pseudo-element (`::before`/`::after`) styles from the owning

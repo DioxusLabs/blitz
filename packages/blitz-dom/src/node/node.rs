@@ -215,6 +215,19 @@ impl Node {
         }
     }
 
+    /// The `damaged_descendants` flag, if this node kind carries it (element or
+    /// document nodes). Returns `None` for text/comment nodes.
+    #[inline]
+    fn damaged_descendants_flag(&self) -> Option<&AtomicBool> {
+        match &self.data {
+            NodeData::Element(data) | NodeData::AnonymousBlock(data) => {
+                Some(&data.damaged_descendants)
+            }
+            NodeData::Document(data) => Some(&data.damaged_descendants),
+            _ => None,
+        }
+    }
+
     /// The document's shared style lock. Only available on element and
     /// document nodes.
     #[inline]
@@ -452,6 +465,45 @@ impl Node {
         }
     }
 
+    /// Returns whether this node or any of its descendants may carry damage.
+    pub fn has_damaged_descendants(&self) -> bool {
+        self.damaged_descendants_flag()
+            .is_some_and(|flag| flag.load(Ordering::Relaxed))
+    }
+
+    /// Clears the damaged_descendants flag on this node.
+    pub fn unset_damaged_descendants(&self) {
+        if let Some(flag) = self.damaged_descendants_flag() {
+            flag.store(false, Ordering::Relaxed);
+        }
+    }
+
+    /// Marks this node and all of its ancestors as (potentially) carrying
+    /// damage, so that the damage propagation pass visits this node's subtree.
+    ///
+    /// The invariant is: if a node carries damage (or needs damage-phase
+    /// processing such as pseudo-element style syncing), then it and all of
+    /// its ancestors have `damaged_descendants` set.
+    pub fn mark_damaged(&self) {
+        if let Some(flag) = self.damaged_descendants_flag() {
+            if flag.swap(true, Ordering::Relaxed) {
+                return;
+            }
+        }
+        let mut current_id = self.parent;
+        while let Some(parent_id) = current_id {
+            let parent = &self.tree()[parent_id];
+            // If this ancestor already has damaged_descendants set, we can stop
+            // because all further ancestors must also have it set
+            if let Some(flag) = parent.damaged_descendants_flag() {
+                if flag.swap(true, Ordering::Relaxed) {
+                    break;
+                }
+            }
+            current_id = parent.parent;
+        }
+    }
+
     // pub fn damage_mut(&mut self) -> Option<&mut RestyleDamage> {
     //     self.stylo_element_data
     //         .get_mut()
@@ -476,6 +528,9 @@ impl Node {
             if let Some(mut data) = stylo.get_mut() {
                 data.damage |= damage;
             }
+        }
+        if !damage.is_empty() {
+            self.mark_damaged();
         }
     }
 
