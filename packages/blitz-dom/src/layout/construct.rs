@@ -741,7 +741,7 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: NodeId) {
             node.set_pe_by_index(idx, Some(new_node_id));
             node.insert_damage(ALL_DAMAGE);
 
-            doc.pending_image_flush_nodes.push(new_node_id);
+            doc.pending_style_image_nodes.push(new_node_id);
         }
 
         // Else: Update psuedo element
@@ -793,7 +793,7 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: NodeId) {
             if !std::ptr::eq(&**primary_styles.as_ref().unwrap(), &*pe_style) {
                 *primary_styles = Some(pe_style);
                 node_styles.set_restyled();
-                doc.pending_image_flush_nodes.push(pe_node_id);
+                doc.pending_style_image_nodes.push(pe_node_id);
             }
         }
     }

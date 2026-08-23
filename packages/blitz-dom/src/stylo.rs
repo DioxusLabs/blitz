@@ -141,7 +141,7 @@ impl crate::document::BaseDocument {
         // dbg!(root);
         let token = RecalcStyle::pre_traverse(root, &context);
 
-        let mut nodes_needing_image_flush = Vec::new();
+        let mut nodes_needing_style_image_flush = Vec::new();
         if token.should_traverse() {
             // Style the elements, resolving their data
             let mut traverser = RecalcStyle::new(context);
@@ -150,11 +150,11 @@ impl crate::document::BaseDocument {
                 .then(|| STYLE_THREAD_POOL.pool());
             let rayon_pool = pool_guard.as_ref().and_then(|g| g.as_ref());
             style::driver::traverse_dom(&traverser, token, rayon_pool);
-            nodes_needing_image_flush =
-                std::mem::take(traverser.nodes_needing_image_flush.get_mut().unwrap());
+            nodes_needing_style_image_flush =
+                std::mem::take(traverser.nodes_needing_style_image_flush.get_mut().unwrap());
         }
-        self.pending_image_flush_nodes
-            .extend(nodes_needing_image_flush);
+        self.pending_style_image_nodes
+            .extend(nodes_needing_style_image_flush);
 
         for opaque in self.snapshots.keys() {
             let id = NodeId::from_u64(opaque.id() as u64);
@@ -1234,14 +1234,14 @@ pub struct RecalcStyle<'a> {
     /// Nodes whose `background-image`/`mask-image` layers need flushing to
     /// dedicated storage on the node (see `flush_image_layers_from_style`)
     /// because their style changed during this traversal.
-    nodes_needing_image_flush: Mutex<Vec<NodeId>>,
+    nodes_needing_style_image_flush: Mutex<Vec<NodeId>>,
 }
 
 impl<'a> RecalcStyle<'a> {
     pub fn new(context: SharedStyleContext<'a>) -> Self {
         RecalcStyle {
             context,
-            nodes_needing_image_flush: Mutex::new(Vec::new()),
+            nodes_needing_style_image_flush: Mutex::new(Vec::new()),
         }
     }
 }
@@ -1260,7 +1260,7 @@ impl<'dom> DomTraversal<BlitzNode<'dom>> for RecalcStyle<'_> {
             let mut data = unsafe { el.ensure_data() };
             recalc_style_at(self, traversal_data, context, el, &mut data, note_child);
 
-            sync_pseudo_element_styles(el, &data, &self.nodes_needing_image_flush);
+            sync_pseudo_element_styles(el, &data, &self.nodes_needing_style_image_flush);
 
             if !data.damage.is_empty() {
                 // Mark the ancestor chain so that the damage propagation pass
@@ -1270,9 +1270,12 @@ impl<'dom> DomTraversal<BlitzNode<'dom>> for RecalcStyle<'_> {
                 if data
                     .styles
                     .get_primary()
-                    .is_some_and(|style| needs_image_flush(el, style))
+                    .is_some_and(|style| needs_style_image_flush(el, style))
                 {
-                    self.nodes_needing_image_flush.lock().unwrap().push(el.id);
+                    self.nodes_needing_style_image_flush
+                        .lock()
+                        .unwrap()
+                        .push(el.id);
                 }
             }
 
@@ -1325,7 +1328,7 @@ impl<'dom> DomTraversal<BlitzNode<'dom>> for RecalcStyle<'_> {
 fn sync_pseudo_element_styles(
     el: &Node,
     data: &style::data::ElementData,
-    nodes_needing_image_flush: &Mutex<Vec<NodeId>>,
+    nodes_needing_style_image_flush: &Mutex<Vec<NodeId>>,
 ) {
     let before_node_id = el.before();
     let after_node_id = el.after();
@@ -1365,8 +1368,11 @@ fn sync_pseudo_element_styles(
             pe_data.damage.insert(diff.damage);
             pe_node.mark_damaged();
 
-            if needs_image_flush(pe_node, &pe_style) {
-                nodes_needing_image_flush.lock().unwrap().push(pe_node_id);
+            if needs_style_image_flush(pe_node, &pe_style) {
+                nodes_needing_style_image_flush
+                    .lock()
+                    .unwrap()
+                    .push(pe_node_id);
             }
         }
         pe_data.styles.primary = Some(pe_style);
@@ -1377,7 +1383,7 @@ fn sync_pseudo_element_styles(
 /// Whether a node's `background-image`/`mask-image` layers need flushing to
 /// dedicated storage on the node: its new style references image URLs, or the
 /// node has previously-flushed image data (which may need clearing).
-fn needs_image_flush(node: &Node, style: &ComputedValues) -> bool {
+fn needs_style_image_flush(node: &Node, style: &ComputedValues) -> bool {
     use style::values::computed::image::Image;
     fn has_url_image(images: &[Image]) -> bool {
         images.iter().any(|image| matches!(image, Image::Url(_)))

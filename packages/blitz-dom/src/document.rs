@@ -330,7 +330,7 @@ pub struct BaseDocument {
     /// Nodes whose `background-image`/`mask-image` layers need flushing to
     /// dedicated storage on the node because their style changed (populated by
     /// the style traversal and by pseudo-element box construction).
-    pub(crate) pending_image_flush_nodes: Vec<NodeId>,
+    pub(crate) pending_style_image_nodes: Vec<NodeId>,
 
     // Tracks in-flight "critical" resources (e.g. stylesheets linked from the `<head>`),
     // keyed by request id
@@ -498,7 +498,7 @@ impl BaseDocument {
             deferred_construction_nodes: Vec::new(),
             image_cache: HashMap::new(),
             pending_images: HashMap::new(),
-            pending_image_flush_nodes: Vec::new(),
+            pending_style_image_nodes: Vec::new(),
             pending_critical_resources: HashSet::new(),
             controls_to_form: HashMap::new(),
             net_provider,

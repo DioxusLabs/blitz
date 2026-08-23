@@ -424,8 +424,8 @@ impl BaseDocument {
 
     /// Flush the image layers of nodes whose style changed during the last
     /// style traversal (or whose pseudo-element boxes were (re)constructed).
-    pub(crate) fn flush_pending_images(&mut self) {
-        let mut pending = std::mem::take(&mut self.pending_image_flush_nodes);
+    pub(crate) fn flush_pending_style_images(&mut self) {
+        let mut pending = std::mem::take(&mut self.pending_style_image_nodes);
         pending.sort_unstable();
         pending.dedup();
         for node_id in pending {
