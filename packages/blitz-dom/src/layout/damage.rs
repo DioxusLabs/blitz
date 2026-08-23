@@ -59,12 +59,6 @@ impl BaseDocument {
             }
         }
 
-        // Flush updated pseudo-element styles to their anonymous nodes so that
-        // style changes which don't trigger box construction still take effect.
-        //
-        // TODO: see if this can be made more efficient (/run less often)
-        self.sync_pseudo_element_styles(node_id);
-
         let damage_for_children = RestyleDamage::empty();
         let children = std::mem::take(&mut self.nodes[node_id].children);
         let layout_children = std::mem::take(self.nodes[node_id].layout_children.get_mut());
@@ -172,63 +166,6 @@ impl BaseDocument {
         node.clear_damage_mut();
         node.unset_damaged_descendants();
         node.unset_dirty_descendants();
-    }
-
-    /// Flush updated pseudo-element (`::before`/`::after`) styles from the owning
-    /// element's stylo data to the pseudo-element's anonymous node.
-    ///
-    /// Pseudo-element styles are normally flushed to the pseudo-element's node
-    /// during box construction (see `flush_pseudo_elements`), but in incremental
-    /// mode box construction only runs for nodes with construction damage.
-    /// Pseudo-element style changes which don't require reconstruction (e.g.
-    /// animations/transitions of repaint- or relayout-only properties) must still
-    /// be flushed to the pseudo-element's node - along with the damage they imply -
-    /// so that layout and paint see the new style.
-    fn sync_pseudo_element_styles(&mut self, node_id: NodeId) {
-        let node = &self.nodes[node_id];
-
-        let before_node_id = node.before();
-        let after_node_id = node.after();
-        if before_node_id.is_none() && after_node_id.is_none() {
-            return;
-        }
-
-        let (before_style, after_style) = {
-            let style_data = node.stylo_element_data_opt().and_then(|s| s.get());
-            let Some(style_data) = style_data.as_ref() else {
-                return;
-            };
-            // Note: yes these are kinda backwards (see `flush_pseudo_elements`)
-            let pseudos = style_data.styles.pseudos.as_array();
-            (pseudos[1].clone(), pseudos[0].clone())
-        };
-
-        // Creation and removal of pseudo-elements is handled during box construction
-        // (Stylo generates construction damage for those cases), so only the case
-        // where the pseudo-element both was and remains present is handled here.
-        for (pe_node_id, pe_style) in [(before_node_id, before_style), (after_node_id, after_style)]
-        {
-            let (Some(pe_node_id), Some(pe_style)) = (pe_node_id, pe_style) else {
-                continue;
-            };
-            let mut pe_data = self.nodes[pe_node_id]
-                .stylo_element_data_opt_mut()
-                .and_then(|s| s.get_mut());
-            let Some(pe_data) = pe_data.as_mut() else {
-                continue;
-            };
-            let Some(old_style) = pe_data.styles.primary.clone() else {
-                continue;
-            };
-            if std::ptr::eq(&*old_style, &*pe_style) {
-                continue;
-            }
-
-            let diff = RestyleDamage::compute_style_difference::<&Node>(&old_style, &pe_style);
-            pe_data.damage.insert(diff.damage);
-            pe_data.styles.primary = Some(pe_style);
-            pe_data.set_restyled();
-        }
     }
 }
 

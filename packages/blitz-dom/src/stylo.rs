@@ -1247,10 +1247,11 @@ impl<'dom> DomTraversal<BlitzNode<'dom>> for RecalcStyle<'_> {
             let mut data = unsafe { el.ensure_data() };
             recalc_style_at(self, traversal_data, context, el, &mut data, note_child);
 
+            sync_pseudo_element_styles(el, &data);
+
             // Mark the ancestor chain so that the damage propagation pass
-            // visits this element (both for the damage itself and to sync
-            // any updated pseudo-element styles to their anonymous nodes).
-            if !data.damage.is_empty() || el.before().is_some() || el.after().is_some() {
+            // visits this element.
+            if !data.damage.is_empty() {
                 el.mark_damaged();
             }
 
@@ -1275,6 +1276,72 @@ impl<'dom> DomTraversal<BlitzNode<'dom>> for RecalcStyle<'_> {
     #[inline]
     fn shared_context(&self) -> &SharedStyleContext<'_> {
         &self.context
+    }
+}
+
+/// Flush updated pseudo-element (`::before`/`::after`) styles from the owning
+/// element's freshly-computed stylo data to the pseudo-element's anonymous node.
+///
+/// Pseudo-element styles are normally flushed to the pseudo-element's node
+/// during box construction (see `flush_pseudo_elements`), but in incremental
+/// mode box construction only runs for nodes with construction damage.
+/// Pseudo-element style changes which don't require reconstruction (e.g.
+/// animations/transitions of repaint- or relayout-only properties) must still
+/// be flushed to the pseudo-element's node - along with the damage they imply -
+/// so that layout and paint see the new style.
+///
+/// This runs during the style traversal, immediately after the owning element
+/// has been restyled, because that is where the old and new pseudo styles can
+/// be diffed precisely (the pseudo node's stored primary style is the "old"
+/// style; the owner's just-computed pseudo styles are the "new" ones).
+///
+/// SAFETY: the style traversal has exclusive access to the tree, and each
+/// pseudo-element node is only ever accessed from its owning element's
+/// `process_preorder` (pseudo nodes are not part of the DOM child list and are
+/// not themselves visited by the traversal), so mutating the pseudo node's
+/// stylo data here cannot race with any other traversal thread.
+#[allow(unsafe_code)]
+fn sync_pseudo_element_styles(el: &Node, data: &style::data::ElementData) {
+    let before_node_id = el.before();
+    let after_node_id = el.after();
+    if before_node_id.is_none() && after_node_id.is_none() {
+        return;
+    }
+
+    // Note: yes these are kinda backwards (see `flush_pseudo_elements`)
+    let pseudos = data.styles.pseudos.as_array();
+    let before_style = pseudos[1].clone();
+    let after_style = pseudos[0].clone();
+
+    // Creation and removal of pseudo-elements is handled during box construction
+    // (Stylo generates construction damage for those cases), so only the case
+    // where the pseudo-element both was and remains present is handled here.
+    for (pe_node_id, pe_style) in [(before_node_id, before_style), (after_node_id, after_style)] {
+        let (Some(pe_node_id), Some(pe_style)) = (pe_node_id, pe_style) else {
+            continue;
+        };
+        let pe_node = el.with(pe_node_id);
+        let Some(stylo_data) = pe_node.stylo_element_data_opt() else {
+            continue;
+        };
+        let mut pe_data = match unsafe { stylo_data.unsafe_stylo_only_mut() } {
+            Some(data) => data,
+            None => continue,
+        };
+        let Some(old_style) = pe_data.styles.primary.clone() else {
+            continue;
+        };
+        if std::ptr::eq(&*old_style, &*pe_style) {
+            continue;
+        }
+
+        let diff = RestyleDamage::compute_style_difference::<&Node>(&old_style, &pe_style);
+        if !diff.damage.is_empty() {
+            pe_data.damage.insert(diff.damage);
+            pe_node.mark_damaged();
+        }
+        pe_data.styles.primary = Some(pe_style);
+        pe_data.set_restyled();
     }
 }
 
