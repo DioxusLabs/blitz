@@ -628,6 +628,33 @@ impl BaseDocument {
         #[allow(unused_mut)]
         let mut height = inline_layout.layout.height();
 
+        // Legacy `-webkit-line-clamp`: clamp the content height to the bottom of the
+        // Nth line box. Lines after the Nth do not contribute to the content height
+        // (they are clipped by `overflow: hidden` in the classic recipe).
+        //
+        // The clamp only applies when the full legacy recipe is present:
+        // `display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: N`.
+        // Stylo's style adjuster detects that combination and adjusts the computed
+        // display to `flow-root` (or `inline-block`), leaving `original_display` as
+        // `-webkit-box`. So the clamp applies iff the original display was
+        // `-webkit-box` and the adjustment fired (computed display differs).
+        let line_clamp = self.nodes[node_id].primary_styles().and_then(|styles| {
+            use style::values::specified::box_::DisplayInside;
+            let box_style = styles.get_box();
+            let clamp = box_style.clone__webkit_line_clamp();
+            let is_legacy_webkit_box = box_style.original_display.inside()
+                == DisplayInside::WebkitBox
+                && box_style.display.inside() != DisplayInside::WebkitBox;
+            (!clamp.is_none() && is_legacy_webkit_box).then(|| clamp.0.max(0) as usize)
+        });
+        if let Some(max_lines) = line_clamp {
+            if inline_layout.layout.len() > max_lines {
+                if let Some(line) = inline_layout.layout.get(max_lines.saturating_sub(1)) {
+                    height = height.min(line.metrics().block_max_coord);
+                }
+            }
+        }
+
         // HACK. TODO: fix in Parley.
         //
         // A forced line break (e.g. `<br>` or a preserved newline) at the end of the
