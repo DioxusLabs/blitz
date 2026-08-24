@@ -18,6 +18,7 @@ use crate::BaseDocument;
 
 use super::construct::{AnonKind, create_anonymous_node};
 use super::damage::{CONSTRUCT_BOX, CONSTRUCT_DESCENDENT, CONSTRUCT_FC};
+use super::replaced::is_replaced_element;
 use super::resolve_calc_value;
 
 pub struct TableTreeWrapper<'doc> {
@@ -238,6 +239,26 @@ impl TableBuilder {
 
         if display.outside() == DisplayOutside::None {
             node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
+            return;
+        }
+
+        // Captions are not part of the table grid. Blitz does not yet
+        // generate the table wrapper box that would hold them, so they are
+        // dropped rather than being wrapped in an anonymous cell. They do
+        // not close an open anonymous run.
+        if display.outside() == DisplayOutside::TableCaption {
+            node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
+            return;
+        }
+
+        // Table display values on replaced elements are treated as ordinary
+        // content: per CSS 2.2 §17.2.1 the table box generation rules apply
+        // to non-replaced elements only.
+        let is_replaced = node
+            .element_data()
+            .is_some_and(|el| is_replaced_element(&el.name.local));
+        if is_replaced {
+            self.push_into_anon_cell(doc, node_id, in_row);
             return;
         }
 

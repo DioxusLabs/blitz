@@ -276,6 +276,14 @@ fn text_item_needs_wrap(child_node_kind: NodeKind, _display_outside: DisplayOuts
     child_node_kind == NodeKind::Text
 }
 
+/// Whether a node is a replaced element. Table display values on replaced
+/// elements are treated as ordinary content (CSS 2.2 §17.2.1 applies to
+/// non-replaced elements only).
+fn node_is_replaced(node: &Node) -> bool {
+    node.element_data()
+        .is_some_and(|el| is_replaced_element(&el.name.local))
+}
+
 /// Push a single hoisted child, recursing through display:contents nodes and
 /// wrapping text/inline children per the ancestor container's `WrapContext`.
 fn push_hoisted_child(
@@ -290,7 +298,7 @@ fn push_hoisted_child(
         collect_layout_children_with_wrap(doc, child_id, out, wrap);
         return;
     }
-    if child_display.outside() == DisplayOutside::InternalTable {
+    if child_display.outside() == DisplayOutside::InternalTable && !node_is_replaced(child) {
         if let Some(wrap_ctx) = wrap {
             out.push_wrapped_in_table(wrap_ctx.container_node_id, child_id, doc);
             return;
@@ -468,7 +476,11 @@ fn classify_flow_children(
                 DisplayOutside::None => {}
                 DisplayOutside::InternalTable => {
                     classification.all_inline = false;
-                    classification.has_stray_table_internal = true;
+                    // Table display values on replaced elements are treated
+                    // as ordinary content, not table-internal boxes.
+                    if !node_is_replaced(child) {
+                        classification.has_stray_table_internal = true;
+                    }
                 }
                 DisplayOutside::Block | DisplayOutside::TableCaption => {
                     classification.all_inline = false
@@ -920,7 +932,9 @@ fn collect_complex_layout_children(
         }
         // Table-internal children occurring outside a table get wrapped in
         // an anonymous table box (missing-parent fixup)
-        else if child_display.outside() == DisplayOutside::InternalTable {
+        else if child_display.outside() == DisplayOutside::InternalTable
+            && !node_is_replaced(&doc.nodes[child_id])
+        {
             out.push_wrapped_in_table(container_node_id, child_id, doc);
         }
         // Push nodes that need wrapping into the current "anonymous block container".
