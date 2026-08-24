@@ -44,6 +44,7 @@ use std::task::{Context as TaskContext, Waker};
 use style::Atom;
 use style::animation::DocumentAnimationSet;
 use style::attr::{AttrIdentifier, AttrValue};
+use style::computed_value_flags::ComputedValueFlags;
 use style::data::{ElementData as StyloElementData, ElementStyles};
 use style::media_queries::MediaType;
 use style::properties::ComputedValues;
@@ -2071,6 +2072,10 @@ impl BaseDocument {
         }
         drop(root_styles);
 
+        let old_device = self.stylist.device();
+        let viewport_size_changed = old_device.au_viewport_size() != device.au_viewport_size();
+        let styles_use_viewport_units = old_device.used_viewport_size();
+
         let origins = {
             let guard = &self.guard;
             let guards = StylesheetGuards {
@@ -2079,7 +2084,31 @@ impl BaseDocument {
             };
             self.stylist.set_device(device, &guards)
         };
-        self.stylist.force_stylesheet_origins_dirty(origins);
+
+        // Only fully invalidate element styles when the media query results of
+        // some origin actually changed. `force_stylesheet_origins_dirty` fully
+        // invalidates styles even when `origins` is empty, which would force a
+        // full restyle on every viewport resize.
+        if !origins.is_empty() {
+            self.stylist.force_stylesheet_origins_dirty(origins);
+        }
+
+        // Styles that resolve viewport units (vw/vh/etc) still need recomputing
+        // when the viewport size changes, even if no media query results
+        // changed. Invalidate just the elements whose styles use viewport
+        // units (tracked via per-element computed value flags).
+        if viewport_size_changed && styles_use_viewport_units {
+            if self
+                .stylist
+                .get_custom_property_initial_values_flags()
+                .intersects(ComputedValueFlags::USES_VIEWPORT_UNITS)
+            {
+                self.stylist.rebuild_initial_values_for_custom_properties();
+            }
+            if let Some(root) = self.try_root_element() {
+                style::invalidation::viewport_units::invalidate(root);
+            }
+        }
     }
 
     pub fn stylist_device(&mut self) -> &Device {
