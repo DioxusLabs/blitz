@@ -6,9 +6,10 @@
 //! Usage: paint_bench <url> [width] [height] [scale] [iters] [backend]
 //!   backend: vello (default) | cpu | hybrid
 
+use anyrender::ImageRenderer as _;
 use anyrender::PaintScene as _;
 use anyrender_vello::VelloScenePainter;
-use anyrender_vello_cpu::VelloCpuScenePainter;
+use anyrender_vello_cpu::VelloCpuImageRenderer;
 use anyrender_vello_hybrid::{ImageManager, VelloHybridScenePainter};
 use blitz_dom::DocumentConfig;
 use blitz_html::HtmlDocument;
@@ -179,40 +180,30 @@ async fn main() {
             });
         }
         "cpu" | "vello_cpu" => {
-            let mut painter = VelloCpuScenePainter {
-                render_ctx: vello_cpu::RenderContext::new(
-                    render_width as u16,
-                    render_height as u16,
-                ),
-                resources: vello_cpu::Resources::new(),
-            };
+            let mut renderer = VelloCpuImageRenderer::new(render_width, render_height);
             let mut buffer = vec![0u8; render_width as usize * render_height as usize * 4];
             bench(iters, || {
-                let encode_start = Instant::now();
-                painter.reset();
-                paint_scene(
-                    &mut painter,
-                    document.as_mut(),
-                    scale,
-                    render_width,
-                    render_height,
-                    0,
-                    0,
+                let total_start = Instant::now();
+                let mut encode = 0u128;
+                renderer.render(
+                    |painter| {
+                        let encode_start = Instant::now();
+                        painter.reset();
+                        paint_scene(
+                            painter,
+                            document.as_mut(),
+                            scale,
+                            render_width,
+                            render_height,
+                            0,
+                            0,
+                        );
+                        encode = encode_start.elapsed().as_micros();
+                    },
+                    &mut buffer,
                 );
-                let encode = encode_start.elapsed().as_micros();
-
-                let raster_start = Instant::now();
-                painter.render_ctx.flush();
-                painter.render_ctx.render(
-                    vello_cpu::PixmapMut::new(
-                        render_width as u16,
-                        render_height as u16,
-                        &mut buffer,
-                    )
-                    .unwrap(),
-                    &mut painter.resources,
-                );
-                (encode, raster_start.elapsed().as_micros())
+                let total = total_start.elapsed().as_micros();
+                (encode, total - encode)
             });
         }
         "hybrid" | "vello_hybrid" => {
