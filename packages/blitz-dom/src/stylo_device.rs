@@ -46,7 +46,7 @@ impl DeviceChanges {
     /// viewport `new`.
     pub(crate) fn from_viewports(old: &Viewport, new: &Viewport) -> Self {
         let mut changes = Self::empty();
-        if css_viewport_size(old) != css_viewport_size(new) {
+        if old.logical_size() != new.logical_size() {
             changes |= Self::VIEWPORT_SIZE;
         }
         if old.scale_f64() != new.scale_f64() {
@@ -59,22 +59,12 @@ impl DeviceChanges {
     }
 }
 
-/// The viewport size in CSS pixels (physical window size divided by the
-/// total scale factor).
-fn css_viewport_size(viewport: &Viewport) -> (f32, f32) {
-    let scale = viewport.scale();
-    (
-        viewport.window_size.0 as f32 / scale,
-        viewport.window_size.1 as f32 / scale,
-    )
-}
-
 pub(crate) fn make_device(
     viewport: &Viewport,
     media_type: MediaType,
     font_ctx: Arc<Mutex<FontContext>>,
 ) -> Device {
-    let (width, height) = css_viewport_size(viewport);
+    let (width, height) = viewport.logical_size();
     let viewport_size = euclid::Size2D::new(width, height);
     let device_size = euclid::Size2D::new(width, height) * viewport.scale();
     let device_pixel_ratio = euclid::Scale::new(viewport.scale());

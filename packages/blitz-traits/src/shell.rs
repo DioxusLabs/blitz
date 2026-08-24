@@ -116,6 +116,16 @@ impl Viewport {
         self.scale() as f64
     }
 
+    /// The viewport size in CSS pixels (physical window size divided by the
+    /// total scale factor)
+    pub fn logical_size(&self) -> (f32, f32) {
+        let scale = self.scale();
+        (
+            self.window_size.0 as f32 / scale,
+            self.window_size.1 as f32 / scale,
+        )
+    }
+
     /// Set hidpi scale factor
     pub fn set_hidpi_scale(&mut self, scale: f32) {
         self.hidpi_scale = scale;
