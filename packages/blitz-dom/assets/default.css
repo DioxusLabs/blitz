@@ -5,6 +5,7 @@
 @namespace url(http://www.w3.org/1999/xhtml);
 /* set default namespace to HTML */
 @namespace xul url(http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul);
+@namespace svg url(http://www.w3.org/2000/svg);
 
 @font-face {
     font-family: -moz-bullet-font;
@@ -783,6 +784,12 @@ img::before {
 img[usemap],
 object[usemap] {
     color: blue;
+}
+
+/* Per the SVG2 UA stylesheet, an svg element that is not the document root
+ * (e.g. inline <svg> in HTML) has overflow: hidden. */
+svg|svg {
+    overflow: hidden;
 }
 
 frameset {

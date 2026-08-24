@@ -242,29 +242,14 @@ impl BaseDocument {
                                 )
                             }
                             #[cfg(feature = "svg")]
-                            ImageData::Svg(svg) => {
-                                let mut width = svg.intrinsic_width();
-                                let mut height = svg.intrinsic_height();
-                                // An SVG with no declared dimensions and no viewBox has no
-                                // intrinsic dimensions per CSS, but usvg still resolves a
-                                // concrete size; use it in place of the default object size.
-                                if width.is_none()
-                                    && height.is_none()
-                                    && svg.viewbox_aspect_ratio().is_none()
-                                {
-                                    let size = svg.tree.size();
-                                    width = Some(size.width());
-                                    height = Some(size.height());
-                                }
-                                (
-                                    IntrinsicSizes {
-                                        width,
-                                        height,
-                                        ratio: Some(svg.aspect_ratio()),
-                                    },
-                                    DEFAULT_OBJECT_SIZE,
-                                )
-                            }
+                            ImageData::Svg(svg) => (
+                                IntrinsicSizes {
+                                    width: svg.intrinsic_width(),
+                                    height: svg.intrinsic_height(),
+                                    ratio: svg.aspect_ratio(),
+                                },
+                                DEFAULT_OBJECT_SIZE,
+                            ),
                             ImageData::None => (IntrinsicSizes::default(), taffy::Size::ZERO),
                         },
                         SpecialElementData::Canvas(_)
