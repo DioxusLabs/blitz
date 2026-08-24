@@ -28,7 +28,7 @@
           };
           lib = pkgs.lib;
           # Keep in sync with `rust-version` in Cargo.toml.
-          rustToolchain = pkgs.rust-bin.stable."1.89.0".default.override {
+          rustToolchain = pkgs.rust-bin.stable."1.90.0".default.override {
             extensions = [
               "rust-src"
               "rust-analyzer"
