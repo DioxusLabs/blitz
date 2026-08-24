@@ -259,22 +259,40 @@ pub(crate) fn collect_table_cells(
             }
             doc.nodes[node_id].children = children;
         }
-        DisplayInside::TableCell => {
+        // Table-cell children, plus non-table-internal children which, per the
+        // CSS tables spec, generate an anonymous table cell around them.
+        DisplayInside::TableCell
+        | DisplayInside::Flow
+        | DisplayInside::FlowRoot
+        | DisplayInside::Flex
+        | DisplayInside::Grid => {
             // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
+            let is_cell = display.inside() == DisplayInside::TableCell;
             let stylo_style = &node.primary_styles().unwrap();
-            let colspan: u16 = node
-                .attr(local_name!("colspan"))
-                .and_then(|val| val.parse().ok())
-                .unwrap_or(1);
-            let rowspan: u16 = node
-                .attr(local_name!("rowspan"))
-                .and_then(|val| val.parse::<u16>().ok())
-                .map(|v| v.clamp(1, 65534))
-                .unwrap_or(1);
+            let colspan: u16 = if is_cell {
+                node.attr(local_name!("colspan"))
+                    .and_then(|val| val.parse().ok())
+                    .unwrap_or(1)
+            } else {
+                1
+            };
+            let rowspan: u16 = if is_cell {
+                node.attr(local_name!("rowspan"))
+                    .and_then(|val| val.parse::<u16>().ok())
+                    .map(|v| v.clamp(1, 65534))
+                    .unwrap_or(1)
+            } else {
+                1
+            };
             let mut style = stylo_taffy::to_taffy_style(stylo_style);
 
-            if first_cell_border.is_none() {
+            if is_cell && first_cell_border.is_none() {
                 *first_cell_border = Some(stylo_style.clone_border());
+            }
+
+            // Cells occurring before any row are placed in an anonymous row
+            if *row == 0 {
+                *row = 1;
             }
 
             if *row == 1 {
@@ -308,12 +326,14 @@ pub(crate) fn collect_table_cells(
 
             // Zero-out cell borders is BorderCollapse is Collapse
             // Borders are handled at the table level in this mode
-            if border_collapse == BorderCollapse::Collapse {
+            if is_cell && border_collapse == BorderCollapse::Collapse {
                 style.border = taffy::Rect::ZERO.map(style_helpers::length);
             }
 
             // The margin properties do not apply to table-internal elements
-            style.margin = taffy::Rect::ZERO.map(style_helpers::length);
+            if is_cell {
+                style.margin = taffy::Rect::ZERO.map(style_helpers::length);
+            }
 
             // Let Taffy auto-place the column. Combined with
             // `grid_auto_flow: RowDense` set on the table root, each cell
@@ -332,17 +352,6 @@ pub(crate) fn collect_table_cells(
             cells.push(TableCell { node_id, style });
 
             *col += colspan;
-        }
-        DisplayInside::Flow
-        | DisplayInside::FlowRoot
-        | DisplayInside::Flex
-        | DisplayInside::Grid => {
-            node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
-            // Probably a table caption: ignore
-            // println!(
-            //     "Warning: ignoring non-table typed descendent of table ({:?})",
-            //     display.inside()
-            // );
         }
         DisplayInside::TableColumnGroup | DisplayInside::TableColumn | DisplayInside::Table => {
             node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
