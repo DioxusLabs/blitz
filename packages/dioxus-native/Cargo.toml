@@ -54,6 +54,7 @@ html = ["dep:blitz-html"]
 
 # Dev
 hot-reload = ["dep:dioxus-devtools"]
+devtools = ["blitz-shell/devtools"]
 
 # Debug/Logging
 log-times = ["log-phase-times", "log-frame-times"]
