@@ -1,6 +1,5 @@
 use crate::NodeTree;
 use crate::events::{DragMode, handle_dom_event};
-use crate::font_metrics::BlitzFontMetricsProvider;
 use crate::layout::construct::ConstructionTask;
 use crate::layout::damage::ALL_DAMAGE;
 use crate::mutator::ViewportMut;
@@ -10,6 +9,7 @@ use crate::net::{
 use crate::node::{ImageData, NodeFlags, RasterImageData, SpecialElementData, Status, TextBrush};
 use crate::scrolling::ScrollAnimationState;
 use crate::selection::TextSelection;
+use crate::stylo_device::{DeviceChanges, make_device};
 use crate::stylo_to_cursor_icon::stylo_to_cursor_icon;
 use crate::traversal::TreeTraverser;
 use crate::url::DocumentUrl;
@@ -24,7 +24,7 @@ use blitz_traits::events::{DomEvent, HitResult, UiEvent};
 use blitz_traits::navigation::{DummyNavigationProvider, NavigationProvider};
 use blitz_traits::net::{AbortSignal, DummyNetProvider, NetProvider, Request};
 use blitz_traits::node_id::NodeId;
-use blitz_traits::shell::{ColorScheme, DummyShellProvider, ShellProvider, Viewport};
+use blitz_traits::shell::{DummyShellProvider, ShellProvider, Viewport};
 use cursor_icon::CursorIcon;
 use linebender_resource_handle::Blob;
 use markup5ever::{LocalName, local_name};
@@ -46,12 +46,11 @@ use style::animation::DocumentAnimationSet;
 use style::attr::{AttrIdentifier, AttrValue};
 use style::computed_value_flags::ComputedValueFlags;
 use style::data::{ElementData as StyloElementData, ElementStyles};
+use style::invalidation::element::restyle_hints::RestyleHint;
 use style::media_queries::MediaType;
 use style::properties::ComputedValues;
 use style::properties::style_structs::Font;
-use style::queries::values::PrefersColorScheme;
 use style::selector_parser::ServoElementSnapshot;
-use style::servo::media_features::PointerCapabilities;
 use style::servo_arc::Arc as ServoArc;
 use style::values::GenericAtomIdent;
 use style::values::computed::UserSelect;
@@ -206,6 +205,10 @@ pub struct BaseDocument {
     pub(crate) viewport_scroll: crate::Point<f64>,
     /// CSS media type used to evaluate `@media` rules.
     pub(crate) media_type: MediaType,
+    /// Changes to the stylist [`Device`] that have been requested since the
+    /// last [`resolve`](Self::resolve), to be applied (coalesced into a single
+    /// device rebuild) at the start of the next resolve.
+    pub(crate) pending_device_changes: DeviceChanges,
     /// Strategy for Stylo's style traversal during `resolve`.
     pub(crate) style_threading: StyleThreading,
     /// Whether incremental layout is enabled for this document.
@@ -353,34 +356,6 @@ pub struct BaseDocument {
     pub(crate) abort_signal: Option<AbortSignal>,
 }
 
-pub(crate) fn make_device(
-    viewport: &Viewport,
-    media_type: MediaType,
-    font_ctx: Arc<Mutex<FontContext>>,
-) -> Device {
-    let width = viewport.window_size.0 as f32 / viewport.scale();
-    let height = viewport.window_size.1 as f32 / viewport.scale();
-    let viewport_size = euclid::Size2D::new(width, height);
-    let device_size = euclid::Size2D::new(width, height) * viewport.scale();
-    let device_pixel_ratio = euclid::Scale::new(viewport.scale());
-
-    Device::new(
-        media_type,
-        selectors::matching::QuirksMode::NoQuirks,
-        viewport_size,
-        device_size,
-        device_pixel_ratio,
-        Box::new(BlitzFontMetricsProvider { font_ctx }),
-        ComputedValues::initial_values_with_font_override(Font::initial_values()),
-        match viewport.color_scheme {
-            ColorScheme::Light => PrefersColorScheme::Light,
-            ColorScheme::Dark => PrefersColorScheme::Dark,
-        },
-        PointerCapabilities::default(),
-        PointerCapabilities::default(),
-    )
-}
-
 impl BaseDocument {
     /// Create a new (empty) [`BaseDocument`] with the specified configuration
     pub fn new(config: DocumentConfig) -> Self {
@@ -464,6 +439,7 @@ impl BaseDocument {
             nodes_to_id,
             viewport,
             media_type,
+            pending_device_changes: DeviceChanges::empty(),
             style_threading: config.style_threading,
             incremental_layout: config.incremental.unwrap_or(true),
             subdocument_depth: config.subdocument_depth,
@@ -1943,19 +1919,9 @@ impl BaseDocument {
     }
 
     pub fn set_viewport(&mut self, viewport: Viewport) {
-        let scale_has_changed = viewport.scale_f64() != self.viewport.scale_f64();
+        let changes = DeviceChanges::from_viewports(&self.viewport, &viewport);
         self.viewport = viewport;
-        self.set_stylist_device(make_device(
-            &self.viewport,
-            self.media_type.clone(),
-            self.font_ctx.clone(),
-        ));
-        self.scroll_viewport_by(0.0, 0.0); // Clamp scroll offset
-
-        if scale_has_changed {
-            self.invalidate_inline_contexts();
-            self.shell_provider.request_redraw();
-        }
+        self.queue_device_changes(changes);
     }
 
     /// Returns the current CSS media type used to evaluate `@media` rules.
@@ -1964,17 +1930,13 @@ impl BaseDocument {
     }
 
     /// Sets the CSS media type used to evaluate `@media` rules (e.g. `screen` or `print`)
-    /// and rebuilds the stylist device so updated rules apply on the next restyle.
+    /// and queues a stylist device rebuild so updated rules apply on the next restyle.
     pub fn set_media_type(&mut self, media_type: MediaType) {
         if self.media_type == media_type {
             return;
         }
         self.media_type = media_type;
-        self.set_stylist_device(make_device(
-            &self.viewport,
-            self.media_type.clone(),
-            self.font_ctx.clone(),
-        ));
+        self.queue_device_changes(DeviceChanges::MEDIA_TYPE);
     }
 
     pub fn viewport(&self) -> &Viewport {
@@ -2046,6 +2008,47 @@ impl BaseDocument {
             | self.scrollbars_animating()
     }
 
+    /// Record pending [`DeviceChanges`] and request a redraw so that they are
+    /// flushed (via [`Self::flush_pending_device_changes`]) on the next resolve.
+    pub(crate) fn queue_device_changes(&mut self, changes: DeviceChanges) {
+        if changes.is_empty() {
+            return;
+        }
+        self.pending_device_changes |= changes;
+        self.shell_provider.request_redraw();
+    }
+
+    /// Apply any pending device changes to the stylist, coalescing all changes
+    /// since the last flush into a single device rebuild.
+    pub(crate) fn flush_pending_device_changes(&mut self) {
+        let changes = std::mem::take(&mut self.pending_device_changes);
+        if changes.is_empty() {
+            return;
+        }
+
+        self.set_stylist_device(make_device(
+            &self.viewport,
+            self.media_type.clone(),
+            self.font_ctx.clone(),
+        ));
+        self.scroll_viewport_by(0.0, 0.0); // Clamp scroll offset
+
+        // Text is shaped at a specific scale factor, so cached inline layouts
+        // must be invalidated when the scale changes.
+        if changes.contains(DeviceChanges::SCALE) {
+            self.invalidate_inline_contexts();
+        }
+
+        // Color-scheme changes affect values that are resolved at cascade time
+        // (`light-dark()`, system colors) without necessarily flipping any
+        // media query result, so conservatively recascade the whole tree.
+        if changes.contains(DeviceChanges::COLOR_SCHEME) {
+            if let Some(root_id) = self.try_root_element().map(|el| el.id) {
+                self.nodes[root_id].set_restyle_hint(RestyleHint::recascade_subtree());
+            }
+        }
+    }
+
     /// Update the device and reset the stylist to process the new size
     pub fn set_stylist_device(&mut self, device: Device) {
         // Seed the new device with the root element's current style and font-relative
@@ -2110,6 +2113,7 @@ impl BaseDocument {
     }
 
     pub fn stylist_device(&mut self) -> &Device {
+        self.flush_pending_device_changes();
         self.stylist.device()
     }
 
