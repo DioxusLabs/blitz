@@ -2,7 +2,7 @@ use blitz_traits::node_id::NodeId;
 use core::str;
 use std::sync::Arc;
 
-use markup5ever::{QualName, local_name, ns};
+use markup5ever::{QualName, local_name};
 use parley::{
     FontContext, InlineBox, InlineBoxKind, LayoutContext, StyleProperty, TreeBuilder,
     WhiteSpaceCollapse,
@@ -37,6 +37,75 @@ use super::{
 };
 
 const DUMMY_NAME: QualName = qual_name!("div", html);
+
+/// The kind of anonymous box to generate, determining which precomputed
+/// pseudo-element supplies its style (and hence its `display`).
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[allow(dead_code, reason = "table variants are used by upcoming table fixups")]
+pub(crate) enum AnonKind {
+    Block,
+    Table,
+    TableRow,
+    TableCell,
+}
+
+/// Create an anonymous box node of the given kind, styled via the
+/// corresponding precomputed pseudo-element (inheriting from the container's
+/// style). The node is parented to the container but NOT pushed into any
+/// child list: callers are responsible for registering it both as a layout
+/// child and for deallocation (e.g. via `LayoutChildren::anonymous_blocks`).
+pub(crate) fn create_anonymous_node(
+    doc: &mut BaseDocument,
+    container_node_id: NodeId,
+    kind: AnonKind,
+) -> NodeId {
+    use style::selector_parser::PseudoElement;
+
+    let pseudo = match kind {
+        AnonKind::Block => PseudoElement::ServoAnonymousBox,
+        AnonKind::Table => PseudoElement::ServoAnonymousTable,
+        AnonKind::TableRow => PseudoElement::ServoAnonymousTableRow,
+        AnonKind::TableCell => PseudoElement::ServoAnonymousTableCell,
+    };
+
+    let node_id = doc.create_node(NodeData::AnonymousBlock(Box::new(ElementData::new(
+        DUMMY_NAME,
+        Vec::new(),
+    ))));
+
+    // Set style data
+    let parent_style = doc.nodes[container_node_id].primary_styles().unwrap();
+    let read_guard = doc.guard.read();
+    let guards = StylesheetGuards::same(&read_guard);
+    let style = doc
+        .stylist
+        .style_for_anonymous::<&Node>(&guards, &pseudo, &parent_style);
+    let mut stylo_element_data = StyloElementData {
+        damage: ALL_DAMAGE,
+        ..Default::default()
+    };
+    drop(parent_style);
+
+    stylo_element_data.styles.primary = Some(style);
+    stylo_element_data.set_restyled();
+
+    *doc.nodes[node_id]
+        .stylo_element_data_mut()
+        .ensure_init_mut() = stylo_element_data;
+
+    if doc.nodes[container_node_id]
+        .flags
+        .contains(NodeFlags::IS_IN_DOCUMENT)
+    {
+        doc.nodes[node_id].flags.insert(NodeFlags::IS_IN_DOCUMENT);
+    }
+    doc.nodes[node_id].parent = Some(container_node_id);
+    doc.nodes[node_id]
+        .layout_parent
+        .set(Some(container_node_id));
+
+    node_id
+}
 
 #[derive(Clone)]
 pub(crate) struct ConstructionTask {
@@ -130,51 +199,7 @@ impl LayoutChildren {
     }
 
     fn create_anonymous_block(&mut self, container_node_id: NodeId, doc: &mut BaseDocument) {
-        use style::selector_parser::PseudoElement;
-
-        const NAME: QualName = QualName {
-            prefix: None,
-            ns: ns!(html),
-            local: local_name!("div"),
-        };
-        let node_id = doc.create_node(NodeData::AnonymousBlock(Box::new(ElementData::new(
-            NAME,
-            Vec::new(),
-        ))));
-
-        // Set style data
-        let parent_style = doc.nodes[container_node_id].primary_styles().unwrap();
-        let read_guard = doc.guard.read();
-        let guards = StylesheetGuards::same(&read_guard);
-        let style = doc.stylist.style_for_anonymous::<&Node>(
-            &guards,
-            &PseudoElement::ServoAnonymousBox,
-            &parent_style,
-        );
-        let mut stylo_element_data = StyloElementData {
-            damage: ALL_DAMAGE,
-            ..Default::default()
-        };
-        drop(parent_style);
-
-        stylo_element_data.styles.primary = Some(style);
-        stylo_element_data.set_restyled();
-
-        *doc.nodes[node_id]
-            .stylo_element_data_mut()
-            .ensure_init_mut() = stylo_element_data;
-
-        if doc.nodes[container_node_id]
-            .flags
-            .contains(NodeFlags::IS_IN_DOCUMENT)
-        {
-            doc.nodes[node_id].flags.insert(NodeFlags::IS_IN_DOCUMENT);
-        }
-        doc.nodes[node_id].parent = Some(container_node_id);
-        doc.nodes[node_id]
-            .layout_parent
-            .set(Some(container_node_id));
-
+        let node_id = create_anonymous_node(doc, container_node_id, AnonKind::Block);
         self.children.push(node_id);
         self.anonymous_block_id = Some(node_id);
         self.anonymous_blocks.push(node_id);
