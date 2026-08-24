@@ -3,10 +3,10 @@ use std::collections::HashSet;
 use std::mem;
 use std::ops::{Deref, DerefMut};
 
-use crate::document::make_device;
 use crate::layout::damage::ALL_DAMAGE;
 use crate::net::{ImageHandler, ResourceHandler, StylesheetHandler};
 use crate::node::{CanvasData, NodeFlags, SpecialElementData};
+use crate::stylo_device::DeviceChanges;
 use crate::util::ImageType;
 use crate::{
     Attribute, BaseDocument, Document, ElementData, Node, NodeData, QualName, local_name, qual_name,
@@ -1294,19 +1294,8 @@ impl Drop for ViewportMut<'_> {
             return;
         }
 
-        self.doc.set_stylist_device(make_device(
-            &self.doc.viewport,
-            self.doc.media_type.clone(),
-            self.doc.font_ctx.clone(),
-        ));
-        self.doc.scroll_viewport_by(0.0, 0.0); // Clamp scroll offset
-
-        let scale_has_changed =
-            self.doc.viewport().scale_f64() != self.initial_viewport.scale_f64();
-        if scale_has_changed {
-            self.doc.invalidate_inline_contexts();
-            self.doc.shell_provider.request_redraw();
-        }
+        let changes = DeviceChanges::from_viewports(&self.initial_viewport, &self.doc.viewport);
+        self.doc.queue_device_changes(changes);
     }
 }
 

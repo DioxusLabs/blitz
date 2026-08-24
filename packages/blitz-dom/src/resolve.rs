@@ -75,6 +75,10 @@ impl BaseDocument {
         let root_node_id = self.root_element().id;
         debug_timer!(timer, feature = "log-phase-times");
 
+        // Apply any device changes (viewport resize, zoom, color-scheme, etc)
+        // accumulated since the last resolve as a single device rebuild.
+        self.flush_pending_device_changes();
+
         // we need to resolve stylist first since it will need to drive our layout bits
         self.resolve_stylist(current_time_for_animations);
         timer.record_time("style");
