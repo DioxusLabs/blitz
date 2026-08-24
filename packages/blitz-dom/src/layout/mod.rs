@@ -437,11 +437,11 @@ impl LayoutPartialTree for BaseDocument {
 impl taffy::CacheTree for BaseDocument {
     #[inline]
     fn cache_get(
-        &self,
+        &mut self,
         node_id: NodeId,
         inputs: &taffy::LayoutInput,
     ) -> Option<taffy::LayoutOutput> {
-        self.node_from_id(node_id).cache().get(inputs)
+        self.node_from_id_mut(node_id).cache_mut().get(inputs)
     }
 
     #[inline]

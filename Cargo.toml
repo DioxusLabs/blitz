@@ -96,7 +96,7 @@ dioxus-cli-config = { version = "0.7.3" }
 dioxus-core-macro = { version = "0.7.3" }
 
 # Taffy + Parley + Fontations
-taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "d680af586250a1472695489630e133a245cb7d01", default-features = false, features = [
+taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "b27f2f78afae108cea537cb890207d193a27c9b8", default-features = false, features = [
     "std",
     "flexbox",
     "grid",
@@ -308,4 +308,3 @@ rustc-hash = { workspace = true }
 # [patch."https://github.com/linebender/parley"]
 # parley = { path = "../parley/parley" }
 # fontique = { path = "../parley/fontique" }
-
