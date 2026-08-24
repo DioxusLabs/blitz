@@ -7,9 +7,9 @@ use blitz_traits::events::{
     BlitzWheelEvent, MouseEventButton,
 };
 use dioxus_html::{
-    AnimationData, CancelData, ClipboardData, CompositionData, DragData, FocusData, FormData,
-    FormValue, HasFileData, HasFocusData, HasFormData, HasKeyboardData, HasMouseData,
-    HasPointerData, HasScrollData, HasTouchData, HasTouchPointData, HasWheelData,
+    AnimationData, BeforeInputData, CancelData, ClipboardData, CompositionData, DragData,
+    FocusData, FormData, FormValue, HasFileData, HasFocusData, HasFormData, HasKeyboardData,
+    HasMouseData, HasPointerData, HasScrollData, HasTouchData, HasTouchPointData, HasWheelData,
     HtmlEventConverter, ImageData, KeyboardData, MediaData, MountedData, MountedError,
     MountedResult, MouseData, PlatformEventData, PointerData, RenderedElementBacking, ResizeData,
     ScrollBehavior, ScrollData, ScrollLogicalPosition, ScrollToOptions, SelectionData, ToggleData,
@@ -69,6 +69,12 @@ impl HtmlEventConverter for NativeConverter {
 
     fn convert_animation_data(&self, _event: &PlatformEventData) -> AnimationData {
         unimplemented!("todo: convert_animation_data in dioxus-native. requires support in blitz")
+    }
+
+    fn convert_before_input_data(&self, _event: &PlatformEventData) -> BeforeInputData {
+        unimplemented!(
+            "todo: convert_before_input_data in dioxus-native. requires support in blitz"
+        )
     }
 
     fn convert_clipboard_data(&self, _event: &PlatformEventData) -> ClipboardData {

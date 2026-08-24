@@ -38,34 +38,34 @@ pub struct Tab {
 
 #[store(pub)]
 impl<Lens> Store<Tab, Lens> {
-    fn nav_history(&self) -> SyncStore<History> {
+    pub fn nav_history(&self) -> SyncStore<History> {
         *self.history().read()
     }
 
-    fn loader_rc(&self) -> Rc<DocumentLoader> {
+    pub fn loader_rc(&self) -> Rc<DocumentLoader> {
         // `open_tab` always assigns Some(loader) immediately after pushing the
         // tab, so by the time any view code can call this the loader is set.
         #[allow(clippy::expect_used)]
         self.loader().cloned().expect("loader uninitialized")
     }
 
-    fn tab_id(&self) -> TabId {
+    pub fn tab_id(&self) -> TabId {
         *self.id().read()
     }
 
-    fn navigate(&self, req: Request) {
+    pub fn navigate(&self, req: Request) {
         self.nav_history().navigate(req);
     }
 
-    fn reload(&self) {
+    pub fn reload(&self) {
         self.loader_rc().reload();
     }
 
-    fn go_back(&self) {
+    pub fn go_back(&self) {
         self.nav_history().go_back();
     }
 
-    fn go_forward(&self) {
+    pub fn go_forward(&self) {
         self.nav_history().go_forward();
     }
 
@@ -73,7 +73,7 @@ impl<Lens> Store<Tab, Lens> {
     // through the document loader, so this is the only place their title is
     // set and the only place a stale favicon from a previous real page gets
     // cleared.
-    fn commit_about_chrome(&self, page: AboutPage)
+    pub fn commit_about_chrome(&self, page: AboutPage)
     where
         Lens: Writable,
     {

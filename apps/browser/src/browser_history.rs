@@ -26,21 +26,21 @@ impl BrowsingHistory {
 
 #[store(pub)]
 impl<Lens> Store<BrowsingHistory, Lens> {
-    fn record_visit(&self, entry: HistoryEntry) -> HistoryEntryId
+    pub fn record_visit(&self, entry: HistoryEntry) -> HistoryEntryId
     where
         Lens: Writable,
     {
         record_visit_inner(&mut self.entries().write(), entry)
     }
 
-    fn set_favicon_by_id(&self, id: HistoryEntryId, favicon_url: Url)
+    pub fn set_favicon_by_id(&self, id: HistoryEntryId, favicon_url: Url)
     where
         Lens: Writable,
     {
         set_favicon_by_id_inner(&mut self.entries().write(), id, favicon_url);
     }
 
-    fn clear(&self)
+    pub fn clear(&self)
     where
         Lens: Writable,
     {
