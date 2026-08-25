@@ -672,9 +672,14 @@ impl<'a> TElement for BlitzNode<'a> {
         self.snapshot_handled().store(true, Ordering::SeqCst);
     }
 
+    // Stylo calls this on elements it is already traversing (or has already
+    // reached via invalidation), so the ancestor chain must not be re-marked:
+    // ancestors visited earlier in the preorder traversal have had their bits
+    // cleared, and re-flagging them leaves stale `dirty_descendants` bits that
+    // break the early-out invariant of `Node::mark_ancestors_dirty` (a set bit
+    // implies all ancestors are set).
     unsafe fn set_dirty_descendants(&self) {
         Node::set_dirty_descendants(self);
-        Node::mark_ancestors_dirty(self);
     }
 
     unsafe fn unset_dirty_descendants(&self) {
