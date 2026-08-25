@@ -442,7 +442,10 @@ impl taffy::CacheTree for BaseDocument {
         node_id: NodeId,
         inputs: &taffy::LayoutInput,
     ) -> Option<taffy::LayoutOutput> {
-        self.node_from_id_mut(node_id).cache_mut().get(inputs)
+        self.node_from_id_mut(node_id)
+            .layout_data_opt_mut()?
+            .cache
+            .get(inputs)
     }
 
     #[inline]
@@ -459,7 +462,7 @@ impl taffy::CacheTree for BaseDocument {
 
     #[inline]
     fn cache_clear(&mut self, node_id: NodeId) {
-        self.node_from_id_mut(node_id).cache_mut().clear();
+        self.node_from_id_mut(node_id).clear_layout_cache();
     }
 }
 

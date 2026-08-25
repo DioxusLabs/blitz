@@ -96,7 +96,7 @@ impl BaseDocument {
         // If the node or any of it's children have been mutated or their layout styles
         // have changed, then we should clear it's layout cache.
         if damage.intersects(ONLY_RELAYOUT | CONSTRUCT_BOX) {
-            node.cache_mut().clear();
+            node.clear_layout_cache();
             if let Some(inline_layout) = node
                 .data
                 .downcast_element_mut()
@@ -551,7 +551,7 @@ impl BaseDocument {
             // In non-incremental mode we unconditionally clear the Taffy cache.
             // In incremental mode this is handled as part of damage propagation.
             if !incremental {
-                node.cache_mut().clear();
+                node.clear_layout_cache();
                 if let Some(inline_layout) = node
                     .data
                     .downcast_element_mut()

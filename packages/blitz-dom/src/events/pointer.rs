@@ -332,18 +332,19 @@ pub(crate) fn handle_pointermove<F: FnMut(DomEvent)>(
         return changed;
     }
 
+    let final_layout = el.layout_data().final_layout;
     if let SpecialElementData::TextInput(ref mut text_input_data) = el.special_data {
         if buttons == MouseEventButtons::None {
             return changed;
         }
 
         let mut content_box_offset = taffy::Point {
-            x: el.final_layout.padding.left + el.final_layout.border.left,
-            y: el.final_layout.padding.top + el.final_layout.border.top,
+            x: final_layout.padding.left + final_layout.border.left,
+            y: final_layout.padding.top + final_layout.border.top,
         };
         if !text_input_data.is_multiline {
             let layout = text_input_data.editor.try_layout().unwrap();
-            let content_box_height = el.final_layout.content_box_height();
+            let content_box_height = final_layout.content_box_height();
             let input_height = layout.height() / layout.scale();
             let y_offset = ((content_box_height - input_height) / 2.0).max(0.0);
 

@@ -34,7 +34,7 @@ use taffy::{Cache, prelude::Layout};
 use thin_vec::ThinVec;
 
 use super::stylo_data::{ComputedStyleRef, StyloData};
-use super::{Attribute, DocumentData, ElementData};
+use super::{Attribute, DocumentData, ElementData, LayoutData};
 
 #[derive(Clone, Copy)]
 enum OutputStyle {
@@ -155,11 +155,6 @@ macro_rules! universal_accessors {
 
 universal_accessors! {
     stylo_element_data / stylo_element_data_mut: StyloData,
-    cache / cache_mut: Cache,
-    unrounded_layout / unrounded_layout_mut: Layout,
-    final_layout / final_layout_mut: Layout,
-    scroll_offset / scroll_offset_mut: crate::Point<f64>,
-    scrollable_overflow / scrollable_overflow_mut: KurboRect,
     transform / transform_mut: Option<Affine>,
     display_constructed_as / display_constructed_as_mut: StyloDisplay,
     // The document node is styled/snapshotted like an element, so it also
@@ -173,6 +168,107 @@ universal_accessors! {
 }
 
 impl Node {
+    /// This node's layout output state, or a shared default if layout has
+    /// never written to this node.
+    ///
+    /// Panics for node kinds which do not participate in layout (text and
+    /// comment nodes).
+    #[inline]
+    pub fn layout_data(&self) -> &LayoutData {
+        match &self.data {
+            NodeData::Element(data) | NodeData::AnonymousBlock(data) => data.layout_data(),
+            NodeData::Document(data) => data.layout_data(),
+            _ => panic!("`layout_data` is not available on this node kind"),
+        }
+    }
+
+    /// Mutable access to this node's layout output state, allocating it if it
+    /// does not yet exist.
+    ///
+    /// Panics for node kinds which do not participate in layout (text and
+    /// comment nodes).
+    #[inline]
+    pub fn layout_data_mut(&mut self) -> &mut LayoutData {
+        match &mut self.data {
+            NodeData::Element(data) | NodeData::AnonymousBlock(data) => data.layout_data_mut(),
+            NodeData::Document(data) => data.layout_data_mut(),
+            _ => panic!("`layout_data` is not available on this node kind"),
+        }
+    }
+
+    /// Mutable access to this node's layout output state, if it has been
+    /// allocated. Never allocates. Returns `None` for node kinds which do not
+    /// participate in layout.
+    #[inline]
+    pub fn layout_data_opt_mut(&mut self) -> Option<&mut LayoutData> {
+        match &mut self.data {
+            NodeData::Element(data) | NodeData::AnonymousBlock(data) => {
+                data.layout_data.as_deref_mut()
+            }
+            NodeData::Document(data) => data.layout_data.as_deref_mut(),
+            _ => None,
+        }
+    }
+
+    /// Clear this node's taffy layout cache without allocating `LayoutData`
+    /// for nodes that have never been laid out.
+    #[inline]
+    pub fn clear_layout_cache(&mut self) {
+        if let Some(layout_data) = self.layout_data_opt_mut() {
+            layout_data.cache.clear();
+        }
+    }
+
+    #[inline]
+    pub fn cache(&self) -> &Cache {
+        &self.layout_data().cache
+    }
+
+    #[inline]
+    pub fn cache_mut(&mut self) -> &mut Cache {
+        &mut self.layout_data_mut().cache
+    }
+
+    #[inline]
+    pub fn unrounded_layout(&self) -> &Layout {
+        &self.layout_data().unrounded_layout
+    }
+
+    #[inline]
+    pub fn unrounded_layout_mut(&mut self) -> &mut Layout {
+        &mut self.layout_data_mut().unrounded_layout
+    }
+
+    #[inline]
+    pub fn final_layout(&self) -> &Layout {
+        &self.layout_data().final_layout
+    }
+
+    #[inline]
+    pub fn final_layout_mut(&mut self) -> &mut Layout {
+        &mut self.layout_data_mut().final_layout
+    }
+
+    #[inline]
+    pub fn scroll_offset(&self) -> &crate::Point<f64> {
+        &self.layout_data().scroll_offset
+    }
+
+    #[inline]
+    pub fn scroll_offset_mut(&mut self) -> &mut crate::Point<f64> {
+        &mut self.layout_data_mut().scroll_offset
+    }
+
+    #[inline]
+    pub fn scrollable_overflow(&self) -> &KurboRect {
+        &self.layout_data().scrollable_overflow
+    }
+
+    #[inline]
+    pub fn scrollable_overflow_mut(&mut self) -> &mut KurboRect {
+        &mut self.layout_data_mut().scrollable_overflow
+    }
+
     /// Style data from stylo, if this node kind carries it (element or document
     /// nodes). Returns `None` for text/comment nodes.
     #[inline]

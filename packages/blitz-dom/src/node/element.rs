@@ -111,12 +111,77 @@ pub struct ElementData {
 
     // Taffy layout data:
     pub display_constructed_as: StyloDisplay,
+    /// Layout output state (`None` until layout first writes to this node).
+    pub layout_data: Option<Box<LayoutData>>,
+    pub transform: Option<Affine>,
+}
+
+/// Taffy layout output state (cache, layouts, scroll offset and overflow).
+///
+/// Lazily boxed on [`ElementData`] / [`DocumentData`]: inline-level elements
+/// are positioned by the inline (parley) layout rather than by taffy, so most
+/// nodes on text-heavy pages never allocate one.
+#[derive(Debug, Clone)]
+pub struct LayoutData {
     pub cache: Cache,
     pub unrounded_layout: Layout,
     pub final_layout: Layout,
     pub scroll_offset: crate::Point<f64>,
     pub scrollable_overflow: KurboRect,
-    pub transform: Option<Affine>,
+}
+
+impl LayoutData {
+    pub const fn new() -> Self {
+        Self {
+            cache: Cache::new(),
+            unrounded_layout: Layout::new(),
+            final_layout: Layout::new(),
+            scroll_offset: crate::Point::ZERO,
+            scrollable_overflow: KurboRect::ZERO,
+        }
+    }
+}
+
+impl Default for LayoutData {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Shared read-only default returned by accessors for nodes whose
+/// [`LayoutData`] has never been allocated.
+pub(crate) static DEFAULT_LAYOUT_DATA: LayoutData = LayoutData::new();
+
+impl ElementData {
+    /// This element's layout output state, or a shared default if layout has
+    /// never written to this element.
+    #[inline]
+    pub fn layout_data(&self) -> &LayoutData {
+        self.layout_data.as_deref().unwrap_or(&DEFAULT_LAYOUT_DATA)
+    }
+
+    /// Mutable access to this element's layout output state, allocating it if
+    /// it does not yet exist.
+    #[inline]
+    pub fn layout_data_mut(&mut self) -> &mut LayoutData {
+        self.layout_data.get_or_insert_default()
+    }
+}
+
+impl DocumentData {
+    /// The document node's layout output state, or a shared default if layout
+    /// has never written to it.
+    #[inline]
+    pub fn layout_data(&self) -> &LayoutData {
+        self.layout_data.as_deref().unwrap_or(&DEFAULT_LAYOUT_DATA)
+    }
+
+    /// Mutable access to the document node's layout output state, allocating
+    /// it if it does not yet exist.
+    #[inline]
+    pub fn layout_data_mut(&mut self) -> &mut LayoutData {
+        self.layout_data.get_or_insert_default()
+    }
 }
 
 /// Data specific to the [`Document`](super::super::Document) root node.
@@ -139,11 +204,8 @@ pub struct DocumentData {
     pub has_snapshot: bool,
     pub snapshot_handled: AtomicBool,
     pub display_constructed_as: StyloDisplay,
-    pub cache: Cache,
-    pub unrounded_layout: Layout,
-    pub final_layout: Layout,
-    pub scroll_offset: crate::Point<f64>,
-    pub scrollable_overflow: KurboRect,
+    /// Layout output state (`None` until layout first writes to this node).
+    pub layout_data: Option<Box<LayoutData>>,
     pub transform: Option<Affine>,
 }
 
@@ -160,11 +222,7 @@ impl std::fmt::Debug for DocumentData {
             .field("has_snapshot", &self.has_snapshot)
             .field("snapshot_handled", &self.snapshot_handled)
             .field("display_constructed_as", &self.display_constructed_as)
-            .field("cache", &self.cache)
-            .field("unrounded_layout", &self.unrounded_layout)
-            .field("final_layout", &self.final_layout)
-            .field("scroll_offset", &self.scroll_offset)
-            .field("scrollable_overflow", &self.scrollable_overflow)
+            .field("layout_data", &self.layout_data)
             .field("transform", &self.transform)
             .finish_non_exhaustive()
     }
@@ -182,11 +240,7 @@ impl DocumentData {
             has_snapshot: false,
             snapshot_handled: AtomicBool::new(false),
             display_constructed_as: StyloDisplay::Block,
-            cache: Cache::new(),
-            unrounded_layout: Layout::new(),
-            final_layout: Layout::new(),
-            scroll_offset: crate::Point::ZERO,
-            scrollable_overflow: KurboRect::ZERO,
+            layout_data: None,
             transform: None,
         }
     }
@@ -262,11 +316,7 @@ impl Clone for ElementData {
             after: None,
             detailed_grid_info: None,
             display_constructed_as: StyloDisplay::Block,
-            cache: Cache::new(),
-            unrounded_layout: Layout::new(),
-            final_layout: Layout::new(),
-            scroll_offset: crate::Point::ZERO,
-            scrollable_overflow: KurboRect::ZERO,
+            layout_data: None,
             transform: None,
         }
     }
@@ -373,11 +423,7 @@ impl ElementData {
             after: None,
             detailed_grid_info: None,
             display_constructed_as: StyloDisplay::Block,
-            cache: Cache::new(),
-            unrounded_layout: Layout::new(),
-            final_layout: Layout::new(),
-            scroll_offset: crate::Point::ZERO,
-            scrollable_overflow: KurboRect::ZERO,
+            layout_data: None,
             transform: None,
         };
         data.flush_is_focussable();

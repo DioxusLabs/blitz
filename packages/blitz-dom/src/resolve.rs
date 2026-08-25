@@ -362,7 +362,7 @@ impl BaseDocument {
         for result in results {
             match result.data {
                 ConstructionTaskResultData::InlineLayout(layout) => {
-                    self.nodes[result.node_id].cache_mut().clear();
+                    self.nodes[result.node_id].clear_layout_cache();
                     self.nodes[result.node_id]
                         .element_data_mut()
                         .unwrap()
