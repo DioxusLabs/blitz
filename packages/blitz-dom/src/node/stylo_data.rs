@@ -81,6 +81,11 @@ impl StyloData {
         }
     }
 
+    /// Borrow the primary computed style directly (rather than the `Arc` containing it).
+    pub fn computed_styles(&self) -> Option<ComputedStyleRef<'_>> {
+        self.primary_styles().map(ComputedStyleRef)
+    }
+
     /// Get a mutable reference to the data
     pub unsafe fn unsafe_stylo_only_mut(&self) -> Option<ElementDataMut<'_>> {
         let opt = unsafe { &mut *self.inner.get() };
@@ -120,5 +125,18 @@ impl Deref for StyleDataRef<'_> {
 
     fn deref(&self) -> &Self::Target {
         self.0.styles.get_primary().unwrap()
+    }
+}
+
+/// Borrow of a node's stylo element data that `Deref`s directly to the primary
+/// [`ComputedValues`](style::properties::ComputedValues), suitable for wrapping
+/// in [`stylo_taffy::TaffyStyloStyle`].
+pub struct ComputedStyleRef<'a>(StyleDataRef<'a>);
+
+impl Deref for ComputedStyleRef<'_> {
+    type Target = style::properties::ComputedValues;
+
+    fn deref(&self) -> &Self::Target {
+        self.0.0.styles.get_primary().unwrap()
     }
 }

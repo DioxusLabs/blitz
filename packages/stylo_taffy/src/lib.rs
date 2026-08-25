@@ -4,7 +4,7 @@
 //! used standalone, and serves as useful reference for anyone wanting to integrate [`stylo`](::style) with [`taffy`]
 
 mod wrapper;
-pub use wrapper::TaffyStyloStyle;
+pub use wrapper::{StyleFlags, TaffyStyloStyle};
 
 pub mod convert;
 #[doc(inline)]

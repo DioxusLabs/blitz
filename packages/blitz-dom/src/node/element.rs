@@ -21,10 +21,7 @@ use style::{
 };
 use style_dom::ElementState;
 use style_traits::ParsingMode;
-use taffy::{
-    Cache,
-    prelude::{Layout, Style},
-};
+use taffy::{Cache, prelude::Layout};
 use thin_vec::ThinVec;
 use url::Url;
 
@@ -113,7 +110,6 @@ pub struct ElementData {
     pub detailed_grid_info: Option<Box<taffy::DetailedGridInfo<Atom>>>,
 
     // Taffy layout data:
-    pub style: Style<Atom>,
     pub display_constructed_as: StyloDisplay,
     pub cache: Cache,
     pub unrounded_layout: Layout,
@@ -142,7 +138,6 @@ pub struct DocumentData {
     pub element_state: ElementState,
     pub has_snapshot: bool,
     pub snapshot_handled: AtomicBool,
-    pub style: Style<Atom>,
     pub display_constructed_as: StyloDisplay,
     pub cache: Cache,
     pub unrounded_layout: Layout,
@@ -164,7 +159,6 @@ impl std::fmt::Debug for DocumentData {
             .field("element_state", &self.element_state)
             .field("has_snapshot", &self.has_snapshot)
             .field("snapshot_handled", &self.snapshot_handled)
-            .field("style", &self.style)
             .field("display_constructed_as", &self.display_constructed_as)
             .field("cache", &self.cache)
             .field("unrounded_layout", &self.unrounded_layout)
@@ -187,7 +181,6 @@ impl DocumentData {
             element_state: ElementState::empty(),
             has_snapshot: false,
             snapshot_handled: AtomicBool::new(false),
-            style: Default::default(),
             display_constructed_as: StyloDisplay::Block,
             cache: Cache::new(),
             unrounded_layout: Layout::new(),
@@ -268,7 +261,6 @@ impl Clone for ElementData {
             before: None,
             after: None,
             detailed_grid_info: None,
-            style: Default::default(),
             display_constructed_as: StyloDisplay::Block,
             cache: Cache::new(),
             unrounded_layout: Layout::new(),
@@ -380,7 +372,6 @@ impl ElementData {
             before: None,
             after: None,
             detailed_grid_info: None,
-            style: Default::default(),
             display_constructed_as: StyloDisplay::Block,
             cache: Cache::new(),
             unrounded_layout: Layout::new(),

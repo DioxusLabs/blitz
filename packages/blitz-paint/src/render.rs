@@ -294,7 +294,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         let node = &self.dom.as_ref().tree()[node_id];
 
         // Early return if the element is hidden
-        if matches!(node.style().display, taffy::Display::None) {
+        if matches!(node.taffy_display(), taffy::Display::None) {
             return;
         }
 
@@ -1145,7 +1145,7 @@ impl ElementCx<'_, '_> {
             let shape = &self.frame.border_box;
             let stroke = Stroke::new(self.scale);
 
-            let stroke_color = match self.node.style().display {
+            let stroke_color = match self.node.taffy_display() {
                 taffy::Display::Block | taffy::Display::FlowRoot => {
                     Color::new([1.0, 0.0, 0.0, 1.0])
                 }

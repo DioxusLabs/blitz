@@ -18,7 +18,6 @@ use std::fmt::Write;
 use std::ops::Deref;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use style::Atom;
 use style::invalidation::element::restyle_hints::RestyleHint;
 use style::properties::ComputedValues;
 use style::properties::generated::longhands::position::computed_value::T as Position;
@@ -31,13 +30,10 @@ use style::values::computed::Display as StyloDisplay;
 use style::values::specified::box_::{DisplayInside, DisplayOutside};
 use style_dom::ElementState;
 use style_traits::values::ToCss;
-use taffy::{
-    Cache,
-    prelude::{Layout, Style},
-};
+use taffy::{Cache, prelude::Layout};
 use thin_vec::ThinVec;
 
-use super::stylo_data::StyloData;
+use super::stylo_data::{ComputedStyleRef, StyloData};
 use super::{Attribute, DocumentData, ElementData};
 
 #[derive(Clone, Copy)]
@@ -159,7 +155,6 @@ macro_rules! universal_accessors {
 
 universal_accessors! {
     stylo_element_data / stylo_element_data_mut: StyloData,
-    style / style_mut: Style<Atom>,
     cache / cache_mut: Cache,
     unrounded_layout / unrounded_layout_mut: Layout,
     final_layout / final_layout_mut: Layout,
@@ -1085,6 +1080,35 @@ impl Node {
     pub fn primary_styles(&self) -> Option<impl Deref<Target = ServoArc<ComputedValues>>> {
         self.stylo_element_data_opt()
             .and_then(|stylo| stylo.primary_styles())
+    }
+
+    /// A lazy Taffy style backed by this node's primary stylo style.
+    ///
+    /// Panics if the node has no computed styles: layout always runs after
+    /// styling, and the only unstyled nodes (text, comments, descendants of
+    /// `display: none`) are never queried by Taffy.
+    pub fn layout_style(&self) -> stylo_taffy::TaffyStyloStyle<ComputedStyleRef<'_>> {
+        let styles = self
+            .stylo_element_data_opt()
+            .and_then(|stylo| stylo.computed_styles())
+            .expect("layout_style() called on a node without computed styles");
+
+        let mut flags = stylo_taffy::StyleFlags::empty();
+        if let Some(el) = self.data.downcast_element() {
+            if crate::layout::replaced::is_replaced_element(&el.name.local) {
+                flags |= stylo_taffy::StyleFlags::IS_REPLACED;
+            }
+        }
+
+        stylo_taffy::TaffyStyloStyle::new(styles, flags)
+    }
+
+    /// The node's `display` as a [`taffy::Display`]. Returns [`taffy::Display::Block`]
+    /// for nodes without computed styles (e.g. text nodes).
+    pub fn taffy_display(&self) -> taffy::Display {
+        self.primary_styles()
+            .map(|s| stylo_taffy::convert::display(s.clone_display()))
+            .unwrap_or(taffy::Display::Block)
     }
 
     pub fn text_content(&self) -> String {
