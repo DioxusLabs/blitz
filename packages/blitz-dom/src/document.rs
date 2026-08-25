@@ -1370,7 +1370,7 @@ impl BaseDocument {
                         SpecialElementData::Image(Box::new(image.clone()));
 
                     // Clear layout cache
-                    node.cache_mut().clear();
+                    node.clear_layout_cache();
                     node.insert_damage(ALL_DAMAGE);
                 }
                 ImageType::Background(idx) | ImageType::Mask(idx) => {

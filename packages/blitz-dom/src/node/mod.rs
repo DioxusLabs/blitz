@@ -17,9 +17,9 @@ pub use custom_widget::{
     ComputedStyles, CustomWidgetData, CustomWidgetStatus, ProxyRenderContext, Widget,
 };
 pub use element::{
-    CanvasData, DocumentData, ElementData, ImageData, ImageResourceData, ListItemLayout,
-    ListItemLayoutPosition, Marker, RasterImageData, SpecialElementData, SpecialElementType,
-    Status,
+    CanvasData, DocumentData, ElementData, ImageData, ImageResourceData, LayoutData,
+    ListItemLayout, ListItemLayoutPosition, Marker, RasterImageData, SpecialElementData,
+    SpecialElementType, Status,
 };
 pub use node::*;
 pub use scrollbar::{ScrollbarColor, ScrollbarRef, ScrollbarWidth};

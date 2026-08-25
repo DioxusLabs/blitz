@@ -1113,7 +1113,7 @@ impl<'doc> DocumentMutator<'doc> {
                     let node = &mut self.doc.nodes[target_id];
                     node.element_data_mut().unwrap().special_data =
                         SpecialElementData::Image(Box::new(cached_image.clone()));
-                    node.cache_mut().clear();
+                    node.clear_layout_cache();
                     node.insert_damage(ALL_DAMAGE);
                     return;
                 }
