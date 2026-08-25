@@ -262,10 +262,10 @@ body,
 
 .fps-overlay {
   position: fixed;
-  top: 80px;
+  top: calc(80px + var(--safe-area-top));
   right: 8px;
   background: rgba(0, 0, 0, 0.7);
-  color: #0f0;
+  color: rgb(0, 255, 0);
   font-family: monospace;
   font-size: 12px;
   padding: 4px 8px;
