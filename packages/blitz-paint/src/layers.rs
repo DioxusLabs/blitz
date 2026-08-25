@@ -1,19 +1,9 @@
 use anyrender::{Filter, PaintScene};
 use kurbo::{Affine, Shape};
 use peniko::Mix;
-use std::{cell::Cell, sync::Arc};
+use std::sync::Arc;
 
-const LAYER_LIMIT: u32 = 1024;
-
-#[derive(Default)]
-pub(crate) struct LayerManager {
-    layers_used: Cell<u32>,
-    layer_depth: Cell<u32>,
-    layers_wanted: Cell<u32>,
-
-    #[allow(unused)] // Only used for debugging. Enabled as required.
-    layer_depth_used: Cell<u32>,
-}
+pub(crate) struct LayerManager;
 
 impl LayerManager {
     #[allow(clippy::too_many_arguments)]
@@ -55,15 +45,7 @@ impl LayerManager {
         if !condition {
             return false;
         }
-        self.layers_wanted.update(|x| x + 1);
 
-        // Check if clips are above limit
-        let layers_available = self.layers_used.get() <= LAYER_LIMIT;
-        if !layers_available {
-            return false;
-        }
-
-        // Actually push the layer
         if opacity == 1.0 && filter.is_none() && backdrop_filter.is_none() {
             scene.push_clip_layer(transform, shape);
         } else {
@@ -77,18 +59,63 @@ impl LayerManager {
             );
         };
 
-        // Update accounting
-        self.layers_used.update(|x| x + 1);
-        self.layer_depth.update(|x| x + 1);
-        self.layer_depth.update(|x| x.max(self.layer_depth.get()));
-
         true
     }
 
     pub(crate) fn maybe_pop_layer(&self, scene: &mut impl PaintScene, condition: bool) {
         if condition {
             scene.pop_layer();
-            self.layer_depth.update(|x| x - 1);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use anyrender::{Scene, recording::RenderCommand};
+    use kurbo::Rect;
+
+    use super::*;
+
+    #[test]
+    fn does_not_drop_layers_after_1024() {
+        const LAYER_COUNT: usize = 1200;
+
+        let manager = LayerManager;
+        let mut scene = Scene::new();
+        let clip = Rect::new(0.0, 0.0, 100.0, 100.0);
+
+        for index in 0..LAYER_COUNT {
+            let opacity = if index % 2 == 0 { 1.0 } else { 0.5 };
+            manager.maybe_with_layer(
+                &mut scene,
+                true,
+                opacity,
+                Affine::IDENTITY,
+                &clip,
+                None,
+                None,
+                |_| {},
+            );
+        }
+
+        let clip_layers = scene
+            .commands
+            .iter()
+            .filter(|command| matches!(command, RenderCommand::PushClipLayer(_)))
+            .count();
+        let effect_layers = scene
+            .commands
+            .iter()
+            .filter(|command| matches!(command, RenderCommand::PushLayer(_)))
+            .count();
+        let popped_layers = scene
+            .commands
+            .iter()
+            .filter(|command| matches!(command, RenderCommand::PopLayer))
+            .count();
+
+        assert_eq!(clip_layers, LAYER_COUNT / 2);
+        assert_eq!(effect_layers, LAYER_COUNT / 2);
+        assert_eq!(popped_layers, LAYER_COUNT);
     }
 }
