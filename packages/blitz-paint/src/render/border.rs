@@ -553,17 +553,33 @@ impl ElementCx<'_, '_> {
 
         let border_width = border_style.border_top_width.0.to_f64_px();
 
-        // Draw horizontal inner borders (the gutters between adjacent row tracks)
+        // Draw horizontal inner borders (the gutters between adjacent row tracks),
+        // skipping the columns where a cell spans the gutter
         let row_origin = rows.origin();
-        for (prev, next) in rows.iter().zip(rows.iter().skip(1)) {
-            let shape = Rect::new(
-                0.0,
-                (prev.end - row_origin) as f64,
-                inner_width,
-                (next.start - row_origin) as f64,
-            )
-            .scale_from_origin(self.scale);
-            scene.fill(Fill::NonZero, self.transform, border_color, None, &shape);
+        let col_origin = cols.origin();
+        let items = &grid_info.items;
+        for (index, (prev, next)) in rows.iter().zip(rows.iter().skip(1)).enumerate() {
+            let line = rows.logical(index).min(rows.logical(index + 1)) as u16 + 2;
+            for (col_index, col) in cols.iter().enumerate() {
+                let col_line = cols.logical(col_index) as u16 + 1;
+                let spanned = items.iter().any(|item| {
+                    item.row_start < line
+                        && item.row_end > line
+                        && item.column_start <= col_line
+                        && item.column_end > col_line
+                });
+                if spanned {
+                    continue;
+                }
+                let shape = Rect::new(
+                    (col.start - col_origin) as f64,
+                    (prev.end - row_origin) as f64,
+                    (col.end - col_origin) as f64,
+                    (next.start - row_origin) as f64,
+                )
+                .scale_from_origin(self.scale);
+                scene.fill(Fill::NonZero, self.transform, border_color, None, &shape);
+            }
         }
 
         // Draw horizontal outer borders
@@ -580,17 +596,30 @@ impl ElementCx<'_, '_> {
             scene.fill(Fill::NonZero, self.transform, border_color, None, &shape);
         }
 
-        // Draw vertical inner borders (the gutters between adjacent column tracks)
-        let col_origin = cols.origin();
-        for (prev, next) in cols.iter().zip(cols.iter().skip(1)) {
-            let shape = Rect::new(
-                (prev.end - col_origin) as f64,
-                0.0,
-                (next.start - col_origin) as f64,
-                inner_height,
-            )
-            .scale_from_origin(self.scale);
-            scene.fill(Fill::NonZero, self.transform, border_color, None, &shape);
+        // Draw vertical inner borders (the gutters between adjacent column tracks),
+        // skipping the rows where a cell spans the gutter
+        for (index, (prev, next)) in cols.iter().zip(cols.iter().skip(1)).enumerate() {
+            let line = cols.logical(index).min(cols.logical(index + 1)) as u16 + 2;
+            for (row_index, row) in rows.iter().enumerate() {
+                let row_line = rows.logical(row_index) as u16 + 1;
+                let spanned = items.iter().any(|item| {
+                    item.column_start < line
+                        && item.column_end > line
+                        && item.row_start <= row_line
+                        && item.row_end > row_line
+                });
+                if spanned {
+                    continue;
+                }
+                let shape = Rect::new(
+                    (prev.end - col_origin) as f64,
+                    (row.start - row_origin) as f64,
+                    (next.start - col_origin) as f64,
+                    (row.end - row_origin) as f64,
+                )
+                .scale_from_origin(self.scale);
+                scene.fill(Fill::NonZero, self.transform, border_color, None, &shape);
+            }
         }
 
         // Draw vertical outer borders
