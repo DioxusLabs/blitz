@@ -276,8 +276,11 @@ impl<T: Deref<Target = ComputedValues>> taffy::FlexboxContainerStyle for TaffySt
 
     #[inline]
     fn justify_content(&self) -> Option<taffy::JustifyContent> {
-        convert::content_alignment(
-            self.style.get_position().justify_content,
+        let position_styles = self.style.get_position();
+        convert::justify_content(
+            position_styles.justify_content,
+            position_styles.flex_direction,
+            self.style.clone_direction(),
             self.style.clone_display(),
         )
     }
@@ -567,8 +570,11 @@ impl<T: Deref<Target = ComputedValues>> taffy::GridContainerStyle for TaffyStylo
 
     #[inline]
     fn justify_content(&self) -> Option<taffy::JustifyContent> {
-        convert::content_alignment(
-            self.style.get_position().justify_content,
+        let position_styles = self.style.get_position();
+        convert::justify_content(
+            position_styles.justify_content,
+            position_styles.flex_direction,
+            self.style.clone_direction(),
             self.style.clone_display(),
         )
     }
