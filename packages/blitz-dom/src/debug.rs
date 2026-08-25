@@ -14,7 +14,7 @@ impl BaseDocument {
         #[cfg(feature = "tracing")]
         {
             tracing::info!("Layout: {:?}", node.final_layout());
-            tracing::info!("Style: {:?}", node.style());
+            tracing::info!("Display: {:?}", node.taffy_display());
         }
 
         println!("\nNode {} {}", node.id, node.node_debug_str());

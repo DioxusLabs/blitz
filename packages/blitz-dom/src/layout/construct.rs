@@ -426,6 +426,11 @@ fn collect_layout_children_with_wrap(
     out: &mut LayoutChildren,
     wrap: Option<WrapContext>,
 ) {
+    // Record the `display` the box is being constructed with
+    if let Some(display) = doc.nodes[container_node_id].display_style() {
+        *doc.nodes[container_node_id].display_constructed_as_mut() = display;
+    }
+
     // Reset construction flags
     // TODO: make incremental and only remove this if the element is no longer an inline root
     doc.nodes[container_node_id]
