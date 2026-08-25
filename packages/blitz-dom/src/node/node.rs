@@ -665,10 +665,11 @@ impl Node {
             .is_some_and(|data| data.element_state.contains(ElementState::HOVER))
     }
 
-    pub fn focus(&mut self, shell_provider: Arc<dyn ShellProvider>) {
+    pub fn focus(&mut self, shell_provider: Arc<dyn ShellProvider>, focus_visible: bool) {
         if let Some(data) = self.element_data_mut() {
+            data.element_state.insert(ElementState::FOCUS);
             data.element_state
-                .insert(ElementState::FOCUS | ElementState::FOCUSRING);
+                .set(ElementState::FOCUSRING, focus_visible);
         }
         self.mark_ancestors_dirty();
 
