@@ -155,7 +155,7 @@ macro_rules! universal_accessors {
 
 universal_accessors! {
     stylo_element_data / stylo_element_data_mut: StyloData,
-    transform / transform_mut: Option<Affine>,
+    transform / transform_mut: Option<Box<Affine>>,
     display_constructed_as / display_constructed_as_mut: StyloDisplay,
     // The document node is styled/snapshotted like an element, so it also
     // carries these:
@@ -413,7 +413,7 @@ impl Node {
             })
         });
 
-        *self.transform_mut() = transform;
+        *self.transform_mut() = transform.map(Box::new);
         transform
     }
 
@@ -1329,7 +1329,7 @@ impl Node {
         let mut x = x - self.final_layout().location.x + self.scroll_offset().x as f32;
         let mut y = y - self.final_layout().location.y + self.scroll_offset().y as f32;
 
-        if let Some(t) = *self.transform() {
+        if let Some(t) = self.transform().as_deref() {
             let p = t.inverse() * kurbo::Point::new(x as f64 * scale, y as f64 * scale);
             x = (p.x / scale) as f32;
             y = (p.y / scale) as f32;

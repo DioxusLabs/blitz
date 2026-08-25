@@ -113,7 +113,7 @@ pub struct ElementData {
     pub display_constructed_as: StyloDisplay,
     /// Layout output state (`None` until layout first writes to this node).
     pub layout_data: Option<Box<LayoutData>>,
-    pub transform: Option<Affine>,
+    pub transform: Option<Box<Affine>>,
 }
 
 /// Taffy layout output state (cache, layouts, scroll offset and overflow).
@@ -206,7 +206,7 @@ pub struct DocumentData {
     pub display_constructed_as: StyloDisplay,
     /// Layout output state (`None` until layout first writes to this node).
     pub layout_data: Option<Box<LayoutData>>,
-    pub transform: Option<Affine>,
+    pub transform: Option<Box<Affine>>,
 }
 
 // Hand-written like `ElementData`'s, because `ElementSelectorFlags` does not
