@@ -25,6 +25,7 @@ use taffy::{
     Cache,
     prelude::{Layout, Style},
 };
+use thin_vec::ThinVec;
 use url::Url;
 
 use super::stylo_data::StyloData;
@@ -67,9 +68,9 @@ pub struct ElementData {
     ///   - The text editor for input/textarea elements
     pub special_data: SpecialElementData,
 
-    pub background_images: Vec<Option<ImageResourceData>>,
+    pub background_images: ThinVec<Option<ImageResourceData>>,
 
-    pub mask_images: Vec<Option<ImageResourceData>>,
+    pub mask_images: ThinVec<Option<ImageResourceData>>,
 
     /// Parley text layout (elements with inline inner display mode only)
     pub inline_layout_data: Option<Box<TextLayout>>,
@@ -365,8 +366,8 @@ impl ElementData {
             list_item_data: None,
             special_data: SpecialElementData::None,
             template_contents: None,
-            background_images: Vec::new(),
-            mask_images: Vec::new(),
+            background_images: ThinVec::new(),
+            mask_images: ThinVec::new(),
 
             stylo_element_data: Default::default(),
             selector_flags: Cell::new(ElementSelectorFlags::empty()),

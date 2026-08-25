@@ -470,7 +470,7 @@ impl BaseDocument {
         };
 
         let len = style_images.len();
-        elem_images.resize_with(len, || None);
+        elem_images.resize(len, None);
 
         for idx in 0..len {
             let style_image = &style_images[idx];
