@@ -538,11 +538,13 @@ impl ImageHandler {
             .decode()
         {
             Ok(image) => {
-                let raw_rgba8_data = image.clone().into_rgba8().into_raw();
+                let width = image.width();
+                let height = image.height();
+                let raw_rgba8_data = image.into_rgba8().into_raw();
                 return Ok(Resource::Image(
                     self.kind,
-                    image.width(),
-                    image.height(),
+                    width,
+                    height,
                     Arc::new(raw_rgba8_data),
                 ));
             }
