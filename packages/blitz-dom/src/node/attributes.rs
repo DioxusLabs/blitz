@@ -1,6 +1,7 @@
 use std::ops::{Deref, DerefMut};
 
 use markup5ever::QualName;
+use thin_vec::ThinVec;
 
 /// A tag attribute, e.g. `class="test"` in `<div class="test" ...>`.
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
@@ -13,12 +14,14 @@ pub struct Attribute {
 
 #[derive(Clone, Debug)]
 pub struct Attributes {
-    inner: Vec<Attribute>,
+    inner: ThinVec<Attribute>,
 }
 
 impl Attributes {
     pub fn new(inner: Vec<Attribute>) -> Self {
-        Self { inner }
+        Self {
+            inner: inner.into_iter().collect(),
+        }
     }
 
     pub fn get(&mut self, name: &QualName) -> Option<&Attribute> {
@@ -45,7 +48,7 @@ impl Attributes {
 }
 
 impl Deref for Attributes {
-    type Target = Vec<Attribute>;
+    type Target = ThinVec<Attribute>;
     fn deref(&self) -> &Self::Target {
         &self.inner
     }
