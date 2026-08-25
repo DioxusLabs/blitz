@@ -54,6 +54,17 @@ pub struct TableRow {
     pub height: f32,
 }
 
+/// The used width of one border side: border widths are not adjusted for
+/// border-style in computed styles, so a border with `none`/`hidden` style
+/// must be treated as zero-width.
+fn side_width(width: app_units::Au, style: BorderStyle) -> f32 {
+    if style.none_or_hidden() {
+        0.0
+    } else {
+        width.to_f32_px()
+    }
+}
+
 pub(crate) fn build_table_context(
     doc: &mut BaseDocument,
     table_root_node_id: NodeId,
@@ -134,15 +145,6 @@ pub(crate) fn build_table_context(
         BorderCollapse::Collapse => first_cell_border
             .as_ref()
             .map(|border| {
-                // Border widths are not adjusted for border-style in computed styles,
-                // so a border with `none`/`hidden` style must be treated as zero-width.
-                let side_width = |width: app_units::Au, style: BorderStyle| -> f32 {
-                    if style.none_or_hidden() {
-                        0.0
-                    } else {
-                        width.to_f32_px()
-                    }
-                };
                 let x = side_width(border.border_left_width.0, border.border_left_style).max(
                     side_width(border.border_right_width.0, border.border_right_style),
                 );
