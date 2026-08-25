@@ -424,6 +424,32 @@ impl LayoutPartialTree for BaseDocument {
         resolve_calc_value(calc_ptr, parent_size)
     }
 
+    #[inline(always)]
+    fn compute_child_layout(
+        &mut self,
+        node_id: NodeId,
+        inputs: taffy::LayoutInput,
+    ) -> taffy::LayoutOutput {
+        compute_cached_layout(self, node_id, inputs, |tree, node_id, inputs| {
+            let mut output = tree.compute_child_layout_internal(node_id, inputs, None);
+            if inputs.run_mode == taffy::RunMode::PerformLayout {
+                compute_oof_layout(tree, node_id, &mut output);
+            }
+            output
+        })
+    }
+}
+
+impl LayoutContainingBlock for BaseDocument {
+    type OofItemStyle<'a>
+        = &'a taffy::Style<Atom>
+    where
+        Self: 'a;
+
+    fn get_oof_item_style(&self, node_id: NodeId) -> Self::OofItemStyle<'_> {
+        self.node_from_id(node_id).style()
+    }
+
     fn set_hoisted_children(&mut self, node_id: NodeId, hoisted: &[NodeId]) {
         let containing_block = dom_node_id(node_id);
         let node = self.node_from_id(node_id);
@@ -453,32 +479,6 @@ impl LayoutPartialTree for BaseDocument {
                 .layout_parent
                 .set(Some(containing_block));
         }
-    }
-
-    #[inline(always)]
-    fn compute_child_layout(
-        &mut self,
-        node_id: NodeId,
-        inputs: taffy::LayoutInput,
-    ) -> taffy::LayoutOutput {
-        compute_cached_layout(self, node_id, inputs, |tree, node_id, inputs| {
-            let mut output = tree.compute_child_layout_internal(node_id, inputs, None);
-            if inputs.run_mode == taffy::RunMode::PerformLayout {
-                compute_oof_layout(tree, node_id, &mut output);
-            }
-            output
-        })
-    }
-}
-
-impl LayoutContainingBlock for BaseDocument {
-    type OofItemStyle<'a>
-        = &'a taffy::Style<Atom>
-    where
-        Self: 'a;
-
-    fn get_oof_item_style(&self, node_id: NodeId) -> Self::OofItemStyle<'_> {
-        self.node_from_id(node_id).style()
     }
 
     fn oof_claims(&self, node_id: NodeId) -> OofClaims {
