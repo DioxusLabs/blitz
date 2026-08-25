@@ -176,7 +176,7 @@ impl BaseDocument {
 
             let mut transform = Affine::translate((location.x, location.y));
             if let Some(t) = node.transform() {
-                transform = transform * *t
+                transform *= *t
             }
 
             let overflow = *node.scrollable_overflow();
