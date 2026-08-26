@@ -646,7 +646,12 @@ impl RoundTree for BaseDocument {
     }
 
     fn set_final_layout(&mut self, node_id: NodeId, layout: &Layout) {
-        *self.node_from_id_mut(node_id).final_layout_mut() = *layout;
+        let node_id = dom_node_id(node_id);
+        if self.nodes[node_id].final_layout() != layout {
+            *self.nodes[node_id].final_layout_mut() = *layout;
+            self.nodes[node_id].spatial_dirty_self.set(true);
+            self.dirty_stacking_context_bounds_for(node_id);
+        }
     }
 
     fn is_hoisted(&self, node_id: NodeId) -> bool {

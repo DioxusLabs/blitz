@@ -5,6 +5,7 @@ use crate::{
     BaseDocument, net::ImageHandler, node::ImageResourceData, node::Status, util::ImageLayerKind,
 };
 use blitz_traits::node_id::NodeId;
+use kurbo::Rect;
 use style::properties::ComputedValues;
 use style::selector_parser::RestyleDamage;
 use style::url::ComputedUrl;
@@ -316,9 +317,18 @@ pub struct StackingContext {
     pub negative: Vec<StackingEntry>,
     pub auto_and_zero: Vec<StackingEntry>,
     pub positive: Vec<StackingEntry>,
+    /// Bounds of all retained entries in the context root's local coordinate
+    /// space. `None` represents either an empty context or conservatively
+    /// disables pruning when scrolling can move entries independently.
+    pub content_bounds: Option<Rect>,
+    pub(crate) bounds_dirty: bool,
 }
 
 impl StackingContext {
+    pub fn has_entries(&self) -> bool {
+        !self.negative.is_empty() || !self.auto_and_zero.is_empty() || !self.positive.is_empty()
+    }
+
     pub fn push(&mut self, entry: StackingEntry) {
         match entry.level {
             StackingLevel::Negative(_) => self.negative.push(entry),
@@ -340,6 +350,17 @@ impl StackingContext {
 }
 
 impl BaseDocument {
+    pub(crate) fn dirty_stacking_context_bounds_for(&mut self, node_id: NodeId) {
+        let mut owner = self.nodes[node_id].stacking_context_owner.get();
+        while let Some(context_root) = owner {
+            let node = &mut self.nodes[context_root];
+            if let Some(context) = &mut node.stacking_context {
+                context.bounds_dirty = true;
+            }
+            owner = node.stacking_context_owner.get();
+        }
+    }
+
     pub(crate) fn invalidate_inline_contexts(&mut self) {
         let scale = self.viewport.scale();
 
@@ -613,6 +634,7 @@ impl BaseDocument {
         let mut context = StackingContext::default();
         self.collect_stacking_children(context_root, context_root, &mut context);
         context.sort();
+        context.bounds_dirty = true;
         self.nodes[context_root].stacking_context = Some(Box::new(context));
     }
 

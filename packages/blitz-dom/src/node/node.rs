@@ -1617,10 +1617,18 @@ impl Node {
             || y < 0.0
             || y > overflow_rect.bottom + self.scroll_offset().y as f32);
 
-        let has_stacked_content = self.stacking_context.as_ref().is_some_and(|context| {
-            !context.negative.is_empty()
-                || !context.auto_and_zero.is_empty()
-                || !context.positive.is_empty()
+        let matches_stacked_content = self.stacking_context.as_ref().is_some_and(|context| {
+            if !context.has_entries() {
+                return false;
+            }
+            match context.content_bounds {
+                Some(bounds) => {
+                    let x = x as f64 * scale;
+                    let y = y as f64 * scale;
+                    x >= bounds.x0 && x <= bounds.x1 && y >= bounds.y0 && y <= bounds.y1
+                }
+                None => true,
+            }
         });
 
         // `scrollable_overflow` is stored in device (scaled) pixels, whereas the
@@ -1632,7 +1640,7 @@ impl Node {
             && y >= (overflow.y0 / scale) as f32
             && y <= (overflow.y1 / scale) as f32;
 
-        if !matches_self && !matches_content && !has_stacked_content && !matches_overflow {
+        if !matches_self && !matches_content && !matches_stacked_content && !matches_overflow {
             return None;
         }
 
@@ -1656,7 +1664,7 @@ impl Node {
             y -= content_box_offset.y;
         }
 
-        if let Some(context) = &self.stacking_context {
+        if matches_stacked_content && let Some(context) = &self.stacking_context {
             for entry in context
                 .positive
                 .iter()
@@ -1687,7 +1695,7 @@ impl Node {
             }
         }
 
-        if let Some(context) = &self.stacking_context {
+        if matches_stacked_content && let Some(context) = &self.stacking_context {
             for entry in context.negative.iter().rev() {
                 if !self.stacking_entry_clips_point(entry.node_id, x, y) {
                     continue;

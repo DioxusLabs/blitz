@@ -380,6 +380,12 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
 
         // Don't render things that are out of view
         let overflow = *node.scrollable_overflow();
+        let paint_bounds = match &node.stacking_context {
+            Some(context) if context.has_entries() => {
+                context.content_bounds.map(|bounds| overflow.union(bounds))
+            }
+            _ => Some(overflow),
+        };
         let transform = parent_style_transform
             * Affine::translate(box_position)
             * node.transform().unwrap_or_default();
@@ -388,17 +394,19 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             x: -self.initial_x,
             y: -self.initial_y,
         }) * transform;
-        let screen_bbox = screen_transform.transform_rect_bbox(overflow.union(border_box));
+        if let Some(paint_bounds) = paint_bounds {
+            let screen_bbox = screen_transform.transform_rect_bbox(paint_bounds.union(border_box));
 
-        // Cull elements that fall entirely outside the current clip rectangle. In addition to
-        // the viewport, `clip_rect` is narrowed by any ancestor scrollport (see below), so this
-        // also culls elements scrolled out of view inside a clipping/scrolling container.
-        if screen_bbox.x1 < clip_rect.x0
-            || screen_bbox.x0 > clip_rect.x1
-            || screen_bbox.y1 < clip_rect.y0
-            || screen_bbox.y0 > clip_rect.y1
-        {
-            return;
+            // Cull elements that fall entirely outside the current clip rectangle. In addition to
+            // the viewport, `clip_rect` is narrowed by any ancestor scrollport (see below), so this
+            // also culls elements scrolled out of view inside a clipping/scrolling container.
+            if screen_bbox.x1 < clip_rect.x0
+                || screen_bbox.x0 > clip_rect.x1
+                || screen_bbox.y1 < clip_rect.y0
+                || screen_bbox.y0 > clip_rect.y1
+            {
+                return;
+            }
         }
 
         // Optimise zero-area (/very small area) clips by not rendering at all
@@ -527,15 +535,19 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                                     x: -node.scroll_offset().x * self.scale,
                                     y: -node.scroll_offset().y * self.scale,
                                 });
-                                cx.draw_stacking_entries(
-                                    scene,
-                                    node.stacking_context
-                                        .as_ref()
-                                        .map(|context| context.negative.as_slice())
-                                        .unwrap_or_default(),
-                                    cx.transform,
-                                    child_clip_rect,
-                                );
+                                if cx
+                                    .stacking_context_intersects_clip(cx.transform, child_clip_rect)
+                                {
+                                    cx.draw_stacking_entries(
+                                        scene,
+                                        node.stacking_context
+                                            .as_ref()
+                                            .map(|context| context.negative.as_slice())
+                                            .unwrap_or_default(),
+                                        cx.transform,
+                                        child_clip_rect,
+                                    );
+                                }
                                 cx.draw_image(scene);
                                 #[cfg(feature = "svg")]
                                 cx.draw_svg(scene);
@@ -1003,7 +1015,9 @@ impl ElementCx<'_, '_> {
             }
         }
 
-        if let Some(context) = &self.node.stacking_context {
+        if self.stacking_context_intersects_clip(parent_style_transform, clip_rect)
+            && let Some(context) = &self.node.stacking_context
+        {
             self.draw_stacking_entries(
                 scene,
                 &context.auto_and_zero,
@@ -1093,6 +1107,32 @@ impl ElementCx<'_, '_> {
                 self.context.layer_manager.maybe_pop_layer(scene, true);
             }
         }
+    }
+
+    fn stacking_context_intersects_clip(
+        &self,
+        parent_style_transform: Affine,
+        clip_rect: Rect,
+    ) -> bool {
+        let Some(context) = &self.node.stacking_context else {
+            return false;
+        };
+        if !context.has_entries() {
+            return false;
+        }
+        let Some(bounds) = context.content_bounds else {
+            return true;
+        };
+
+        let screen_transform = Affine::translate(Vec2 {
+            x: -self.initial_x,
+            y: -self.initial_y,
+        }) * parent_style_transform;
+        let screen_bounds = screen_transform.transform_rect_bbox(bounds);
+        screen_bounds.x1 >= clip_rect.x0
+            && screen_bounds.x0 <= clip_rect.x1
+            && screen_bounds.y1 >= clip_rect.y0
+            && screen_bounds.y0 <= clip_rect.y1
     }
 
     #[cfg(feature = "svg")]
