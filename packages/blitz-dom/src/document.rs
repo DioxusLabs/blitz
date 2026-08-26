@@ -1602,7 +1602,7 @@ impl BaseDocument {
                     continue;
                 }
                 if let Some(mut data) = self.nodes[child_id]
-                    .stylo_element_data_opt_mut()
+                    .try_stylo_element_data_mut()
                     .and_then(|s| s.get_mut())
                 {
                     data.hint |= RestyleHint::restyle_subtree();
@@ -1621,7 +1621,7 @@ impl BaseDocument {
     /// `HAS_SLOW_SELECTOR_LATER_SIBLINGS`) also restyle its later siblings.
     pub(crate) fn restyle_for_empty_change(&mut self, container_id: NodeId) {
         if let Some(mut data) = self.nodes[container_id]
-            .stylo_element_data_opt_mut()
+            .try_stylo_element_data_mut()
             .and_then(|s| s.get_mut())
         {
             data.hint |= RestyleHint::restyle_subtree();
@@ -1638,7 +1638,7 @@ impl BaseDocument {
                             continue;
                         }
                         if let Some(mut data) = self.nodes[sibling_id]
-                            .stylo_element_data_opt_mut()
+                            .try_stylo_element_data_mut()
                             .and_then(|s| s.get_mut())
                         {
                             data.hint |= RestyleHint::restyle_subtree();

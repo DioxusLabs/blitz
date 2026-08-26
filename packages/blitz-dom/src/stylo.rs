@@ -459,7 +459,7 @@ impl selectors::Element for BlitzNode<'_> {
         pe: &PseudoElement,
         _context: &mut MatchingContext<Self::Impl>,
     ) -> bool {
-        let pseudo = match self.stylo_element_data_opt().and_then(|s| s.get()) {
+        let pseudo = match self.try_stylo_element_data().and_then(|s| s.get()) {
             Some(el) => el
                 .styles
                 .get_primary()
@@ -709,11 +709,11 @@ impl<'a> TElement for BlitzNode<'a> {
     }
 
     fn has_data(&self) -> bool {
-        self.stylo_element_data_opt().is_some_and(|s| s.has_data())
+        self.try_stylo_element_data().is_some_and(|s| s.has_data())
     }
 
     fn borrow_data(&self) -> Option<ElementDataRef<'_>> {
-        self.stylo_element_data_opt().and_then(|s| s.get())
+        self.try_stylo_element_data().and_then(|s| s.get())
     }
 
     fn mutate_data(&self) -> Option<ElementDataMut<'_>> {
@@ -1358,7 +1358,7 @@ fn sync_pseudo_element_styles(
             continue;
         };
         let pe_node = el.with(pe_node_id);
-        let Some(stylo_data) = pe_node.stylo_element_data_opt() else {
+        let Some(stylo_data) = pe_node.try_stylo_element_data() else {
             continue;
         };
         let mut pe_data = match unsafe { stylo_data.unsafe_stylo_only_mut() } {
