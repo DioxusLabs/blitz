@@ -516,13 +516,42 @@ impl BaseDocument {
 
         let mut dirty_contexts = Vec::new();
         self.collect_dirty_stacking_contexts(root_id, root_id, false, &mut dirty_contexts);
-        dirty_contexts.sort_unstable();
+        dirty_contexts.retain(|context_id| self.nodes.contains_key(*context_id));
+        dirty_contexts
+            .sort_unstable_by_key(|context_id| (self.layout_depth(*context_id), *context_id));
         dirty_contexts.dedup();
         for context_id in dirty_contexts {
-            if self.nodes.contains_key(context_id) {
-                self.rebuild_stacking_context(context_id);
+            if !self.is_current_stacking_context_root(context_id, root_id) {
+                self.nodes[context_id].stacking_context = None;
+                continue;
             }
+            self.rebuild_stacking_context(context_id);
         }
+    }
+
+    fn is_current_stacking_context_root(&self, node_id: NodeId, root_id: NodeId) -> bool {
+        if node_id == root_id {
+            return true;
+        }
+
+        let is_flex_or_grid_item = self.nodes[node_id]
+            .layout_parent
+            .get()
+            .and_then(|parent_id| self.nodes.get(parent_id))
+            .and_then(Node::display_style)
+            .is_some_and(|display| {
+                matches!(display.inside(), DisplayInside::Flex | DisplayInside::Grid)
+            });
+        self.nodes[node_id].is_stacking_context_root(is_flex_or_grid_item)
+    }
+
+    fn layout_depth(&self, mut node_id: NodeId) -> usize {
+        let mut depth = 0;
+        while let Some(parent_id) = self.nodes[node_id].layout_parent.get() {
+            depth += 1;
+            node_id = parent_id;
+        }
+        depth
     }
 
     fn collect_dirty_stacking_contexts(
