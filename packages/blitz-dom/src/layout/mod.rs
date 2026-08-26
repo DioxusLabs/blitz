@@ -463,6 +463,7 @@ impl LayoutContainingBlock for BaseDocument {
             }
         }
         hoisted.clear();
+        self.oof_containing_blocks.remove(&containing_block);
     }
 
     fn add_hoisted_children(&mut self, node_id: NodeId, hoisted: &[NodeId]) {
@@ -471,6 +472,9 @@ impl LayoutContainingBlock for BaseDocument {
         node.hoisted_children
             .borrow_mut()
             .extend(hoisted.iter().copied().map(dom_node_id));
+        if !hoisted.is_empty() {
+            self.oof_containing_blocks.insert(containing_block);
+        }
         for &hoisted_id in hoisted {
             self.node_from_id(hoisted_id)
                 .oof_containing_block
