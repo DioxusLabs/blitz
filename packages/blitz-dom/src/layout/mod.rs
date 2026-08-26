@@ -443,7 +443,7 @@ impl taffy::CacheTree for BaseDocument {
         inputs: &taffy::LayoutInput,
     ) -> Option<taffy::LayoutOutput> {
         self.node_from_id_mut(node_id)
-            .layout_data_opt_mut()?
+            .try_layout_data_mut()?
             .cache
             .get(inputs)
     }

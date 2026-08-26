@@ -689,7 +689,7 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: NodeId) {
         let after_node_id = node.after();
 
         // Note: yes these are kinda backwards
-        let style_data = node.stylo_element_data_opt().and_then(|s| s.get());
+        let style_data = node.try_stylo_element_data().and_then(|s| s.get());
         let before_style = style_data
             .as_ref()
             .and_then(|d| d.styles.pseudos.as_array()[1].clone());
@@ -789,7 +789,7 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: NodeId) {
             }
 
             let mut node_styles = doc.nodes[pe_node_id]
-                .stylo_element_data_opt_mut()
+                .try_stylo_element_data_mut()
                 .and_then(|s| s.get_mut());
             let node_styles = &mut node_styles.as_mut().unwrap();
             node_styles.damage.insert(ALL_DAMAGE);

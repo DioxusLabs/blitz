@@ -257,7 +257,7 @@ impl BaseDocument {
                     resolve_layout_children_recursive(doc, child_id);
                     doc.nodes[child_id].layout_parent.set(Some(node_id));
                     if let Some(mut data) = doc.nodes[child_id]
-                        .stylo_element_data_opt_mut()
+                        .try_stylo_element_data_mut()
                         .and_then(|s| s.get_mut())
                     {
                         data.damage

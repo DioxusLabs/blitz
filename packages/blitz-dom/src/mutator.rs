@@ -239,7 +239,7 @@ impl DocumentMutator<'_> {
             self.doc.snapshot_node(node_id);
 
             let node = &mut self.doc.nodes[node_id];
-            if let Some(mut data) = node.stylo_element_data_opt_mut().and_then(|s| s.get_mut()) {
+            if let Some(mut data) = node.try_stylo_element_data_mut().and_then(|s| s.get_mut()) {
                 data.hint |= RestyleHint::restyle_subtree();
                 data.damage.insert(ALL_DAMAGE);
             }
@@ -250,7 +250,7 @@ impl DocumentMutator<'_> {
             if let Some(parent_id) = parent {
                 let parent = &mut self.doc.nodes[parent_id];
                 if let Some(mut data) = parent
-                    .stylo_element_data_opt_mut()
+                    .try_stylo_element_data_mut()
                     .and_then(|s| s.get_mut())
                 {
                     data.hint |= RestyleHint::restyle_subtree();
@@ -366,7 +366,7 @@ impl DocumentMutator<'_> {
 
             let node = &mut self.doc.nodes[node_id];
 
-            if let Some(mut data) = node.stylo_element_data_opt_mut().and_then(|s| s.get_mut()) {
+            if let Some(mut data) = node.try_stylo_element_data_mut().and_then(|s| s.get_mut()) {
                 data.hint |= RestyleHint::restyle_subtree();
                 data.damage.insert(ALL_DAMAGE);
             }
@@ -543,7 +543,7 @@ impl DocumentMutator<'_> {
             // TODO: make this fine grained / conditional based on ElementSelectorFlags
             if parent_is_in_doc {
                 if let Some(mut data) = parent
-                    .stylo_element_data_opt_mut()
+                    .try_stylo_element_data_mut()
                     .and_then(|s| s.get_mut())
                 {
                     data.hint |= RestyleHint::restyle_subtree();
@@ -566,7 +566,7 @@ impl DocumentMutator<'_> {
         // TODO: make this fine grained / conditional based on ElementSelectorFlags
         if parent_is_in_doc {
             if let Some(mut data) = parent
-                .stylo_element_data_opt_mut()
+                .try_stylo_element_data_mut()
                 .and_then(|s| s.get_mut())
             {
                 data.hint |= RestyleHint::restyle_subtree();
@@ -648,7 +648,7 @@ impl DocumentMutator<'_> {
             // TODO: make this fine grained / conditional based on ElementSelectorFlags
             if child_was_in_doc {
                 if let Some(mut data) = old_parent
-                    .stylo_element_data_opt_mut()
+                    .try_stylo_element_data_mut()
                     .and_then(|s| s.get_mut())
                 {
                     data.hint |= RestyleHint::restyle_subtree();
@@ -667,7 +667,7 @@ impl DocumentMutator<'_> {
         // TODO: make this fine grained / conditional based on ElementSelectorFlags
         if new_parent_is_in_document {
             if let Some(mut data) = new_parent
-                .stylo_element_data_opt_mut()
+                .try_stylo_element_data_mut()
                 .and_then(|s| s.get_mut())
             {
                 data.hint |= RestyleHint::restyle_subtree();
