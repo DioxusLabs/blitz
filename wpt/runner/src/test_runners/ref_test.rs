@@ -131,6 +131,12 @@ fn render_reference_and_compare(
         return None;
     };
 
+    // Blitz doesn't run JavaScript, so skip tests whose reference depends on it
+    if crate::script_detection::uses_nontrivial_script(&ref_html) {
+        warn!("Skipping {test_relative_path}: reference {ref_file:?} depends on script");
+        return None;
+    }
+
     if ctx.float_re.is_match(&ref_html) {
         *flags |= TestFlags::USES_FLOAT;
     }
