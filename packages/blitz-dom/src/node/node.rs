@@ -200,7 +200,7 @@ impl Node {
     /// allocated. Never allocates. Returns `None` for node kinds which do not
     /// participate in layout.
     #[inline]
-    pub fn layout_data_opt_mut(&mut self) -> Option<&mut LayoutData> {
+    pub fn try_layout_data_mut(&mut self) -> Option<&mut LayoutData> {
         match &mut self.data {
             NodeData::Element(data) | NodeData::AnonymousBlock(data) => {
                 data.layout_data.as_deref_mut()
@@ -214,7 +214,7 @@ impl Node {
     /// for nodes that have never been laid out.
     #[inline]
     pub fn clear_layout_cache(&mut self) {
-        if let Some(layout_data) = self.layout_data_opt_mut() {
+        if let Some(layout_data) = self.try_layout_data_mut() {
             layout_data.cache.clear();
         }
     }
@@ -272,7 +272,7 @@ impl Node {
     /// Style data from stylo, if this node kind carries it (element or document
     /// nodes). Returns `None` for text/comment nodes.
     #[inline]
-    pub fn stylo_element_data_opt(&self) -> Option<&StyloData> {
+    pub fn try_stylo_element_data(&self) -> Option<&StyloData> {
         match &self.data {
             NodeData::Element(data) | NodeData::AnonymousBlock(data) => {
                 Some(&data.stylo_element_data)
@@ -283,7 +283,7 @@ impl Node {
     }
 
     #[inline]
-    pub fn stylo_element_data_opt_mut(&mut self) -> Option<&mut StyloData> {
+    pub fn try_stylo_element_data_mut(&mut self) -> Option<&mut StyloData> {
         match &mut self.data {
             NodeData::Element(data) | NodeData::AnonymousBlock(data) => {
                 Some(&mut data.stylo_element_data)
@@ -497,7 +497,7 @@ impl Node {
     }
 
     pub fn set_restyle_hint(&mut self, hint: RestyleHint) {
-        if let Some(stylo_element_data) = self.stylo_element_data_opt_mut() {
+        if let Some(stylo_element_data) = self.try_stylo_element_data_mut() {
             if let Some(mut element_data) = stylo_element_data.get_mut() {
                 element_data.hint.insert(hint);
             }
@@ -529,7 +529,7 @@ impl Node {
 
     /// Set appropriate damage for Stylo when an element's style attribute is updated
     pub(crate) fn mark_style_attr_updated(&mut self) {
-        if let Some(stylo_element_data) = self.stylo_element_data_opt_mut() {
+        if let Some(stylo_element_data) = self.try_stylo_element_data_mut() {
             if let Some(mut data) = stylo_element_data.get_mut() {
                 data.hint |= RestyleHint::RESTYLE_STYLE_ATTRIBUTE;
             }
@@ -602,12 +602,12 @@ impl Node {
     // }
 
     pub fn damage(&self) -> Option<RestyleDamage> {
-        self.stylo_element_data_opt()
+        self.try_stylo_element_data()
             .and_then(|stylo| stylo.get().map(|data| data.damage))
     }
 
     pub fn set_damage(&mut self, damage: RestyleDamage) {
-        if let Some(stylo) = self.stylo_element_data_opt_mut() {
+        if let Some(stylo) = self.try_stylo_element_data_mut() {
             if let Some(mut data) = stylo.get_mut() {
                 data.damage = damage;
             }
@@ -615,7 +615,7 @@ impl Node {
     }
 
     pub fn insert_damage(&mut self, damage: RestyleDamage) {
-        if let Some(stylo) = self.stylo_element_data_opt_mut() {
+        if let Some(stylo) = self.try_stylo_element_data_mut() {
             if let Some(mut data) = stylo.get_mut() {
                 data.damage |= damage;
             }
@@ -626,7 +626,7 @@ impl Node {
     }
 
     pub fn remove_damage(&mut self, damage: RestyleDamage) {
-        if let Some(stylo) = self.stylo_element_data_opt_mut() {
+        if let Some(stylo) = self.try_stylo_element_data_mut() {
             if let Some(mut data) = stylo.get_mut() {
                 data.damage.remove(damage);
             }
@@ -634,7 +634,7 @@ impl Node {
     }
 
     pub fn clear_damage_mut(&mut self) {
-        if let Some(stylo) = self.stylo_element_data_opt_mut() {
+        if let Some(stylo) = self.try_stylo_element_data_mut() {
             if let Some(mut data) = stylo.get_mut() {
                 data.damage = RestyleDamage::empty();
             }
@@ -1174,7 +1174,7 @@ impl Node {
     }
 
     pub fn primary_styles(&self) -> Option<impl Deref<Target = ServoArc<ComputedValues>>> {
-        self.stylo_element_data_opt()
+        self.try_stylo_element_data()
             .and_then(|stylo| stylo.primary_styles())
     }
 
@@ -1185,7 +1185,7 @@ impl Node {
     /// `display: none`) are never queried by Taffy.
     pub fn layout_style(&self) -> stylo_taffy::TaffyStyloStyle<ComputedStyleRef<'_>> {
         let styles = self
-            .stylo_element_data_opt()
+            .try_stylo_element_data()
             .and_then(|stylo| stylo.computed_styles())
             .expect("layout_style() called on a node without computed styles");
 
@@ -1692,7 +1692,7 @@ impl std::fmt::Debug for Node {
             .field("layout_children", &self.layout_children.borrow())
             // .field("style", &self.style)
             .field("node", &self.data)
-            .field("stylo_element_data", &self.stylo_element_data_opt())
+            .field("stylo_element_data", &self.try_stylo_element_data())
             // .field("unrounded_layout", &self.unrounded_layout)
             // .field("final_layout", &self.final_layout)
             .finish()

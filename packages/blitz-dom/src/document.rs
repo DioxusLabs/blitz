@@ -1603,7 +1603,7 @@ impl BaseDocument {
                 continue;
             }
             if let Some(mut data) = sibling
-                .stylo_element_data_opt_mut()
+                .try_stylo_element_data_mut()
                 .and_then(|s| s.get_mut())
             {
                 data.hint |= RestyleHint::restyle_subtree();
@@ -1650,7 +1650,7 @@ impl BaseDocument {
 
         if restyle_self {
             if let Some(mut data) = self.nodes[parent_id]
-                .stylo_element_data_opt_mut()
+                .try_stylo_element_data_mut()
                 .and_then(|s| s.get_mut())
             {
                 data.hint |= RestyleHint::RESTYLE_SELF;
@@ -1674,7 +1674,7 @@ impl BaseDocument {
                     continue;
                 }
                 if let Some(mut data) = self.nodes[child_id]
-                    .stylo_element_data_opt_mut()
+                    .try_stylo_element_data_mut()
                     .and_then(|s| s.get_mut())
                 {
                     data.hint |= RestyleHint::restyle_subtree();

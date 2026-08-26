@@ -239,7 +239,7 @@ impl DocumentMutator<'_> {
             self.doc.snapshot_node(node_id);
 
             let node = &mut self.doc.nodes[node_id];
-            if let Some(mut data) = node.stylo_element_data_opt_mut().and_then(|s| s.get_mut()) {
+            if let Some(mut data) = node.try_stylo_element_data_mut().and_then(|s| s.get_mut()) {
                 data.hint |= RestyleHint::restyle_subtree();
                 data.damage.insert(ALL_DAMAGE);
             }
@@ -365,7 +365,7 @@ impl DocumentMutator<'_> {
 
             let node = &mut self.doc.nodes[node_id];
 
-            if let Some(mut data) = node.stylo_element_data_opt_mut().and_then(|s| s.get_mut()) {
+            if let Some(mut data) = node.try_stylo_element_data_mut().and_then(|s| s.get_mut()) {
                 data.hint |= RestyleHint::restyle_subtree();
                 data.damage.insert(ALL_DAMAGE);
             }
