@@ -292,12 +292,16 @@ pub(crate) fn compute_layout_damage(old: &ComputedValues, new: &ComputedValues) 
     }
 }
 
-/// A child with a z_index that is hoisted up to it's containing Stacking Context for paint purposes
+/// A child with a z_index that is hoisted up to it's containing Stacking Context for paint purposes.
+///
+/// The child's position relative to the stacking context root is not stored:
+/// it is derived at use-time from the `layout_parent` chain (see
+/// `Node::hoisted_child_position`), so it never goes stale when layout or
+/// scroll offsets change elsewhere in the tree.
 #[derive(Debug, Clone)]
 pub struct HoistedPaintChild {
     pub node_id: NodeId,
     pub z_index: i32,
-    pub position: taffy::Point<f32>,
 }
 
 #[derive(Debug)]
@@ -323,11 +327,12 @@ impl HoistedPaintChildren {
         self.negative_z_count = 0;
     }
 
-    pub fn compute_content_size(&mut self, doc: &BaseDocument) {
-        fn child_pos(child: &HoistedPaintChild, doc: &BaseDocument) -> Rect<f32> {
+    pub fn compute_content_size(&mut self, doc: &BaseDocument, owner_id: NodeId) {
+        fn child_pos(child: &HoistedPaintChild, doc: &BaseDocument, owner_id: NodeId) -> Rect<f32> {
             let node = &doc.nodes[child.node_id];
-            let left = child.position.x + node.final_layout().location.x;
-            let top = child.position.y + node.final_layout().location.y;
+            let position = doc.nodes[owner_id].hoisted_child_position(child.node_id);
+            let left = position.x + node.final_layout().location.x;
+            let top = position.y + node.final_layout().location.y;
             let right = left + node.final_layout().size.width;
             let bottom = top + node.final_layout().size.height;
 
@@ -342,9 +347,9 @@ impl HoistedPaintChildren {
         if self.children.is_empty() {
             self.content_area = taffy::Rect::ZERO;
         } else {
-            self.content_area = child_pos(&self.children[0], doc);
+            self.content_area = child_pos(&self.children[0], doc, owner_id);
             for child in self.children[1..].iter() {
-                let pos = child_pos(child, doc);
+                let pos = child_pos(child, doc, owner_id);
                 self.content_area.left = self.content_area.left.min(pos.left);
                 self.content_area.top = self.content_area.top.min(pos.top);
                 self.content_area.right = self.content_area.right.max(pos.right);
@@ -646,7 +651,6 @@ impl BaseDocument {
                     stacking_context.children.push(HoistedPaintChild {
                         node_id: child_id,
                         z_index,
-                        position: taffy::Point::ZERO,
                     })
                 } else {
                     paint_children.push(child_id);
@@ -666,18 +670,12 @@ impl BaseDocument {
         }
 
         if let Some(parent_stacking_context) = parent_stacking_context {
-            let position = self.nodes[node_id].final_layout().location;
-            let scroll_offset = *self.nodes[node_id].scroll_offset();
-            for hoisted in stacking_context.children.iter_mut() {
-                hoisted.position.x += position.x - scroll_offset.x as f32;
-                hoisted.position.y += position.y - scroll_offset.y as f32;
-            }
             parent_stacking_context
                 .children
                 .extend(stacking_context.children.iter().cloned());
         } else {
             stacking_context.sort();
-            stacking_context.compute_content_size(self);
+            stacking_context.compute_content_size(self, node_id);
             self.nodes[node_id].stacking_context = Some(Box::new(new_stacking_context));
         }
     }

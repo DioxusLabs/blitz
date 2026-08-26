@@ -389,28 +389,15 @@ impl BaseDocument {
             }
 
             // Boxes painted inside an intermediate effect ancestor keep their
-            // containing-block-relative layout location, so record the offset of the
-            // effect ancestor relative to the containing block to compensate.
+            // containing-block-relative layout location; the compensating offset
+            // of the effect ancestor relative to the containing block is derived
+            // at paint/hit-test time (see `Node::hoisted_child_position`).
             for (child_id, effect_ancestor) in effect_attached {
-                let mut position = taffy::Point::<f32>::ZERO;
-                let mut ancestor = effect_ancestor;
-                while ancestor != cb_id {
-                    let node = &self.nodes[ancestor];
-                    let location = node.final_layout().location;
-                    let scroll = *node.scroll_offset();
-                    position.x -= location.x - scroll.x as f32;
-                    position.y -= location.y - scroll.y as f32;
-                    let Some(parent) = node.layout_parent.get() else {
-                        break;
-                    };
-                    ancestor = parent;
-                }
                 if let Some(sc) = self.nodes[effect_ancestor].stacking_context.as_mut() {
                     if !sc.children.iter().any(|c| c.node_id == child_id) {
                         sc.children.push(crate::layout::damage::HoistedPaintChild {
                             node_id: child_id,
                             z_index: 0,
-                            position,
                         });
                         modified_stacking_roots.push(effect_ancestor);
                     }
@@ -419,18 +406,13 @@ impl BaseDocument {
 
             // Children with a z-index belong to the nearest stacking context at
             // or above the containing block: hoist them there (matching
-            // `flush_styles_to_layout`'s z-index hoisting), with their position
-            // recorded relative to the stacking context root.
+            // `flush_styles_to_layout`'s z-index hoisting). Their position
+            // relative to the stacking context root is derived at paint/hit-test
+            // time (see `Node::hoisted_child_position`).
             for child_id in z_indexed {
-                let mut position = taffy::Point::<f32>::ZERO;
                 let mut sc_root = cb_id;
                 while self.nodes[sc_root].stacking_context.is_none() {
-                    let node = &self.nodes[sc_root];
-                    let location = node.final_layout().location;
-                    let scroll = *node.scroll_offset();
-                    position.x += location.x - scroll.x as f32;
-                    position.y += location.y - scroll.y as f32;
-                    let Some(parent) = node.layout_parent.get() else {
+                    let Some(parent) = self.nodes[sc_root].layout_parent.get() else {
                         break;
                     };
                     sc_root = parent;
@@ -442,7 +424,6 @@ impl BaseDocument {
                         sc.children.push(crate::layout::damage::HoistedPaintChild {
                             node_id: child_id,
                             z_index,
-                            position,
                         });
                         modified_stacking_roots.push(sc_root);
                     }
@@ -456,7 +437,7 @@ impl BaseDocument {
             let mut sc = self.nodes[sc_root].stacking_context.take();
             if let Some(sc) = sc.as_mut() {
                 sc.sort();
-                sc.compute_content_size(self);
+                sc.compute_content_size(self, sc_root);
             }
             self.nodes[sc_root].stacking_context = sc;
         }
