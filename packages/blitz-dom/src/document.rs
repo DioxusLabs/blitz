@@ -1555,7 +1555,14 @@ impl BaseDocument {
         }
         let flags = parent.selector_flags().get();
 
-        let restyle_all = flags.contains(ElementSelectorFlags::HAS_SLOW_SELECTOR);
+        // It is somewhat common to remove all nodes in a container from the
+        // beginning. Going through the later-siblings code-path for that would
+        // be quadratic, so escalate changes at the start of the container to a
+        // whole-container restyle instead (which the pending-subtree-restyle
+        // check below then dedupes), matching Gecko's `ContentWillBeRemoved`.
+        let restyle_all = flags.contains(ElementSelectorFlags::HAS_SLOW_SELECTOR)
+            || (flags.contains(ElementSelectorFlags::HAS_SLOW_SELECTOR_LATER_SIBLINGS)
+                && change_idx == 0);
         let restyle_later = flags.contains(ElementSelectorFlags::HAS_SLOW_SELECTOR_LATER_SIBLINGS);
         let restyle_edges = flags.contains(ElementSelectorFlags::HAS_EDGE_CHILD_SELECTOR);
         let restyle_self = flags.contains(ElementSelectorFlags::HAS_EMPTY_SELECTOR);
