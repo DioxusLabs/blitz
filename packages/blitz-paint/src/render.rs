@@ -1001,8 +1001,8 @@ impl ElementCx<'_, '_> {
                         *self.node.scroll_offset()
                     };
                     parent_style_transform.pre_translate(kurbo::Vec2 {
-                        x: self.node.scroll_offset().x * self.scale,
-                        y: self.node.scroll_offset().y * self.scale,
+                        x: scroll.x * self.scale,
+                        y: scroll.y * self.scale,
                     })
                 } else {
                     parent_style_transform

@@ -1351,7 +1351,7 @@ impl Node {
     /// TODO: z-index
     /// (If multiple children are positioned at the position then a random one will be recursed into)
     pub fn hit(&self, x: f32, y: f32, scale: f64) -> Option<HitResult> {
-        self.hit_inner(x, y, scale, &mut None)
+        self.hit_inner(x, y, scale, &mut None, taffy::Point::ZERO)
     }
 
     /// [`hit`](Self::hit), also resolving the innermost overlay scrollbar
@@ -1364,6 +1364,11 @@ impl Node {
         y: f32,
         scale: f64,
         scrollbar: &mut Option<crate::node::ScrollbarRef>,
+        // The viewport scroll offset, passed in by the document for the root
+        // element only (the root element scrolls the viewport, so its scroll
+        // offset is stored on the document): fixed-position children of the
+        // root must not move with it. Zero for all other nodes.
+        viewport_scroll: taffy::Point<f32>,
     ) -> Option<HitResult> {
         use style::computed_values::pointer_events::T as PointerEvents;
         use style::computed_values::visibility::T as Visibility;
@@ -1455,10 +1460,13 @@ impl Node {
                 for hoisted_child in hoisted.pos_z_hoisted_children().rev() {
                     let x = x - hoisted_child.position.x;
                     let y = y - hoisted_child.position.y;
-                    if let Some(hit) = self
-                        .with(hoisted_child.node_id)
-                        .hit_inner(x, y, scale, scrollbar)
-                    {
+                    if let Some(hit) = self.with(hoisted_child.node_id).hit_inner(
+                        x,
+                        y,
+                        scale,
+                        scrollbar,
+                        taffy::Point::ZERO,
+                    ) {
                         return Some(hit);
                     }
                 }
@@ -1480,11 +1488,13 @@ impl Node {
                 }
                 // Fixed-position children do not scroll with their containing block
                 if child_position == taffy::Position::Fixed {
-                    child_x -= self.scroll_offset().x as f32;
-                    child_y -= self.scroll_offset().y as f32;
+                    child_x -= self.scroll_offset().x as f32 + viewport_scroll.x;
+                    child_y -= self.scroll_offset().y as f32 + viewport_scroll.y;
                 }
             }
-            if let Some(hit) = child.hit_inner(child_x, child_y, scale, scrollbar) {
+            if let Some(hit) =
+                child.hit_inner(child_x, child_y, scale, scrollbar, taffy::Point::ZERO)
+            {
                 return Some(hit);
             }
         }
@@ -1495,10 +1505,13 @@ impl Node {
                 for hoisted_child in hoisted.neg_z_hoisted_children().rev() {
                     let x = x - hoisted_child.position.x;
                     let y = y - hoisted_child.position.y;
-                    if let Some(hit) = self
-                        .with(hoisted_child.node_id)
-                        .hit_inner(x, y, scale, scrollbar)
-                    {
+                    if let Some(hit) = self.with(hoisted_child.node_id).hit_inner(
+                        x,
+                        y,
+                        scale,
+                        scrollbar,
+                        taffy::Point::ZERO,
+                    ) {
                         return Some(hit);
                     }
                 }
