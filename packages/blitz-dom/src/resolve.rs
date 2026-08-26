@@ -303,12 +303,28 @@ impl BaseDocument {
     fn attach_hoisted_children(&mut self) {
         let mut modified_stacking_roots: Vec<NodeId> = Vec::new();
         let mut pairs: Vec<(NodeId, Vec<NodeId>)> = Vec::new();
-        for (cb_id, node) in self.nodes.iter() {
-            let hoisted = node.hoisted_children.borrow();
-            if !hoisted.is_empty() {
-                pairs.push((cb_id, hoisted.iter().copied().collect()));
+        let mut stale_cbs: Vec<NodeId> = Vec::new();
+        for &cb_id in self.oof_containing_blocks.iter() {
+            let hoisted = self
+                .nodes
+                .get(cb_id)
+                .map(|node| node.hoisted_children.borrow());
+            match hoisted {
+                Some(hoisted) if !hoisted.is_empty() => {
+                    pairs.push((cb_id, hoisted.iter().copied().collect()));
+                }
+                // The containing block was removed from the document (or no
+                // longer has hoisted children): drop it from the registry.
+                _ => stale_cbs.push(cb_id),
             }
         }
+        for cb_id in stale_cbs {
+            self.oof_containing_blocks.remove(&cb_id);
+        }
+        // Iterate containing blocks in a deterministic order: entries pushed to
+        // a shared stacking context below keep a stable relative order (its
+        // z-index sort is stable).
+        pairs.sort_unstable_by_key(|(cb_id, _)| *cb_id);
 
         for (cb_id, hoisted) in pairs {
             // Nodes can be removed from the slab between layout passes; drop stale ids
