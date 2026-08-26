@@ -214,6 +214,30 @@ fn moved_node_is_restyled_for_new_ancestors() {
 }
 
 #[test]
+fn reordered_node_is_restyled_for_sibling_selectors() {
+    let mut harness = Harness::from_html(
+        r#"
+        <style>
+            div { color: rgb(0, 0, 0); }
+            .marker ~ div { color: rgb(255, 0, 0); }
+        </style>
+        <main>
+            <div id="a"></div>
+            <div id="b" class="marker"></div>
+        </main>
+        "#,
+    );
+    assert_eq!(colors(&harness, "#a"), [BLACK]);
+
+    // Moving #a after #b (same parent) makes `.marker ~ div` match it.
+    let a = harness.node("#a");
+    let main = harness.node("main");
+    harness.base_mut().mutate().append_children(main, &[a]);
+    harness.pump();
+    assert_eq!(colors(&harness, "#a"), [RED]);
+}
+
+#[test]
 fn empty_invalidates_on_child_insertion_and_removal() {
     let mut harness = Harness::from_html(
         r#"
