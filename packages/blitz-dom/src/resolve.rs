@@ -194,20 +194,11 @@ impl BaseDocument {
         let h = self.nodes[node_id].final_layout().size.height as f64 * scale;
         let mut overflow = Rect::new(0.0, 0.0, w, h);
 
-        let layout_children = std::mem::take(self.nodes[node_id].layout_children.get_mut());
-
-        if let Some(ref children) = layout_children {
-            for &child_id in children {
-                // Out-of-flow children are laid out relative to their containing
-                // block, not their DOM parent: their overflow contribution is
-                // accounted for at the containing block (below) instead.
-                if self.nodes[child_id].taffy_position().is_out_of_flow() {
-                    continue;
-                }
-                let child_rect_in_self = self.resolve_transforms(child_id);
-                overflow = overflow.union(child_rect_in_self);
-            }
-        }
+        // Out-of-flow boxes are laid out relative to their containing block, so
+        // they are resolved here (at the containing block) rather than at their
+        // DOM parent. Doing so before the in-flow children means that by the
+        // time a descendant encounters one of these boxes among its own
+        // children, the box's overflow has already been resolved.
         let hoisted_children =
             std::mem::take(&mut *self.nodes[node_id].hoisted_children.borrow_mut());
         for &child_id in &hoisted_children {
@@ -218,6 +209,35 @@ impl BaseDocument {
             overflow = overflow.union(child_rect_in_self);
         }
         *self.nodes[node_id].hoisted_children.borrow_mut() = hoisted_children;
+
+        let layout_children = std::mem::take(self.nodes[node_id].layout_children.get_mut());
+
+        if let Some(ref children) = layout_children {
+            for &child_id in children {
+                if !self.nodes.contains_key(child_id) {
+                    continue;
+                }
+                let child = &self.nodes[child_id];
+                if child.taffy_position().is_out_of_flow() {
+                    match child.oof_containing_block.get() {
+                        // Resolved above.
+                        Some(cb) if cb == node_id => continue,
+                        // Positioned against an ancestor, so the box lies outside
+                        // this node's own overflow, yet it is still painted and
+                        // hit-tested as part of this node's subtree.
+                        Some(cb) => {
+                            if let Some(rect) = self.escaping_oof_rect(node_id, child_id, cb) {
+                                overflow = overflow.union(rect);
+                            }
+                            continue;
+                        }
+                        None => {}
+                    }
+                }
+                let child_rect_in_self = self.resolve_transforms(child_id);
+                overflow = overflow.union(child_rect_in_self);
+            }
+        }
         if let Some(before) = self.nodes[node_id].before() {
             let child_rect_in_self = self.resolve_transforms(before);
             overflow = overflow.union(child_rect_in_self);
@@ -240,6 +260,42 @@ impl BaseDocument {
         };
 
         full.transform_rect_bbox(overflow)
+    }
+
+    /// The (already resolved) overflow of an out-of-flow box `child_id`, positioned
+    /// against the ancestor `containing_block`, in the coordinate space of its
+    /// in-between ancestor `node_id`.
+    fn escaping_oof_rect(
+        &self,
+        node_id: NodeId,
+        child_id: NodeId,
+        containing_block: NodeId,
+    ) -> Option<Rect> {
+        let scale = self.viewport.scale_f64();
+
+        // Offset of `node_id` from the containing block. Intermediate nodes
+        // cannot be transformed (a transform would make them the containing
+        // block), so this is a pure translation.
+        let mut origin = taffy::Point::<f32>::ZERO;
+        let mut current = node_id;
+        while current != containing_block {
+            let node = self.nodes.get(current)?;
+            let location = node.final_layout().location;
+            origin.x += location.x;
+            origin.y += location.y;
+            current = node.paint_geometry_parent()?;
+        }
+
+        let child = &self.nodes[child_id];
+        let location = child.final_layout().location;
+        let mut transform = Affine::translate((
+            (location.x - origin.x) as f64 * scale,
+            (location.y - origin.y) as f64 * scale,
+        ));
+        if let Some(t) = child.transform() {
+            transform *= *t;
+        }
+        Some(transform.transform_rect_bbox(*child.scrollable_overflow()))
     }
 
     /// Ensure that the layout_children field is populated for all nodes

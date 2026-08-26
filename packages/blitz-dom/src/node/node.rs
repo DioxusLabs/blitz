@@ -1371,21 +1371,35 @@ impl Node {
     /// The coordinate origin of a stacked entry's geometry parent relative to
     /// this stacking-context root.
     pub fn stacking_entry_position(&self, child_id: NodeId) -> taffy::Point<f32> {
-        fn geometry_origin(node: &Node, mut current: Option<NodeId>) -> taffy::Point<f32> {
-            let mut origin = taffy::Point::<f32>::ZERO;
-            while let Some(id) = current {
-                let current_node = node.with(id);
-                let location = current_node.final_layout().location;
-                origin.x += location.x;
-                origin.y += location.y;
-                current = current_node.paint_geometry_parent();
-            }
-            origin
-        }
+        self.stacking_entry_position_from(child_id, self.geometry_origin())
+    }
 
-        let child_parent_origin =
-            geometry_origin(self, self.with(child_id).paint_geometry_parent());
-        let context_origin = geometry_origin(self, Some(self.id));
+    /// This node's origin in the coordinate space of the root of the geometry
+    /// (containing-block) tree.
+    fn geometry_origin(&self) -> taffy::Point<f32> {
+        let mut origin = taffy::Point::<f32>::ZERO;
+        let mut current = Some(self.id);
+        while let Some(id) = current {
+            let current_node = self.with(id);
+            let location = current_node.final_layout().location;
+            origin.x += location.x;
+            origin.y += location.y;
+            current = current_node.paint_geometry_parent();
+        }
+        origin
+    }
+
+    /// [`Self::stacking_entry_position`] given this node's precomputed
+    /// [`Self::geometry_origin`], for iterating many entries.
+    fn stacking_entry_position_from(
+        &self,
+        child_id: NodeId,
+        context_origin: taffy::Point<f32>,
+    ) -> taffy::Point<f32> {
+        let child_parent_origin = self
+            .with(child_id)
+            .paint_geometry_parent()
+            .map_or(taffy::Point::ZERO, |id| self.with(id).geometry_origin());
         let mut position = taffy::Point {
             x: child_parent_origin.x - context_origin.x,
             y: child_parent_origin.y - context_origin.y,
@@ -1640,14 +1654,10 @@ impl Node {
             || y < 0.0
             || y > overflow_rect.bottom + self.scroll_offset().y as f32);
 
-        let has_stacked_content = self.stacking_context.as_ref().is_some_and(|context| {
-            !context.negative.is_empty()
-                || !context.auto_and_zero.is_empty()
-                || !context.positive.is_empty()
-        });
-
         // `scrollable_overflow` is stored in device (scaled) pixels, whereas the
-        // coordinates here are in CSS pixels, so unscale it before comparing.
+        // coordinates here are in CSS pixels, so unscale it before comparing. It
+        // bounds everything painted as part of this node's subtree, including
+        // out-of-flow descendants positioned against an ancestor.
         let overflow = *self.scrollable_overflow();
 
         let matches_overflow = x >= (overflow.x0 / scale) as f32
@@ -1655,7 +1665,7 @@ impl Node {
             && y >= (overflow.y0 / scale) as f32
             && y <= (overflow.y1 / scale) as f32;
 
-        if !matches_self && !matches_content && !has_stacked_content && !matches_overflow {
+        if !matches_self && !matches_content && !matches_overflow {
             return None;
         }
 
@@ -1679,6 +1689,30 @@ impl Node {
             y -= content_box_offset.y;
         }
 
+        let context_origin = self
+            .stacking_context
+            .as_ref()
+            .map(|_| self.geometry_origin());
+        let hit_entry = |entry_id: NodeId, scrollbar: &mut Option<crate::node::ScrollbarRef>| {
+            let position = self.stacking_entry_position_from(entry_id, context_origin?);
+            let scroll = self.fixed_stacking_entry_scroll(entry_id, viewport_scroll);
+            // Clipping ancestors between the entry and this root are only
+            // consulted once the entry itself reports a hit.
+            let saved_scrollbar = *scrollbar;
+            let hit = self.with(entry_id).hit_inner(
+                x - position.x - scroll.x,
+                y - position.y - scroll.y,
+                scale,
+                scrollbar,
+                taffy::Point::ZERO,
+            )?;
+            if !self.stacking_entry_clips_point(entry_id, x, y) {
+                *scrollbar = saved_scrollbar;
+                return None;
+            }
+            Some(hit)
+        };
+
         if let Some(context) = &self.stacking_context {
             for entry in context
                 .positive
@@ -1686,17 +1720,7 @@ impl Node {
                 .rev()
                 .chain(context.auto_and_zero.iter().rev())
             {
-                if !self.stacking_entry_clips_point(entry.node_id, x, y) {
-                    continue;
-                }
-                let position = self.stacking_entry_position(entry.node_id);
-                let child = self.with(entry.node_id);
-                let scroll = self.fixed_stacking_entry_scroll(entry.node_id, viewport_scroll);
-                let child_x = x - position.x - scroll.x;
-                let child_y = y - position.y - scroll.y;
-                if let Some(hit) =
-                    child.hit_inner(child_x, child_y, scale, scrollbar, taffy::Point::ZERO)
-                {
+                if let Some(hit) = hit_entry(entry.node_id, scrollbar) {
                     return Some(hit);
                 }
             }
@@ -1712,18 +1736,7 @@ impl Node {
 
         if let Some(context) = &self.stacking_context {
             for entry in context.negative.iter().rev() {
-                if !self.stacking_entry_clips_point(entry.node_id, x, y) {
-                    continue;
-                }
-                let position = self.stacking_entry_position(entry.node_id);
-                let scroll = self.fixed_stacking_entry_scroll(entry.node_id, viewport_scroll);
-                if let Some(hit) = self.with(entry.node_id).hit_inner(
-                    x - position.x - scroll.x,
-                    y - position.y - scroll.y,
-                    scale,
-                    scrollbar,
-                    taffy::Point::ZERO,
-                ) {
+                if let Some(hit) = hit_entry(entry.node_id, scrollbar) {
                     return Some(hit);
                 }
             }
