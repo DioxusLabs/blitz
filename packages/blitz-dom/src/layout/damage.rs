@@ -478,13 +478,19 @@ impl BaseDocument {
                 self.flush_styles_to_layout_impl(child);
             }
 
-            // Sort layout_children
+            // Sort layout_children. `order` only applies to flex/grid items;
+            // out-of-flow children are not items, so they sort as 0 (the sort
+            // is stable, so they keep document order among themselves).
             if is_flex_or_grid {
-                children.sort_by(|left, right| {
-                    let left_node = self.nodes.get(*left).unwrap();
-                    let right_node = self.nodes.get(*right).unwrap();
-                    left_node.order().cmp(&right_node.order())
-                });
+                let effective_order = |node_id: NodeId| {
+                    let node = self.nodes.get(node_id).unwrap();
+                    if node.taffy_position().is_out_of_flow() {
+                        0
+                    } else {
+                        node.order()
+                    }
+                };
+                children.sort_by_key(|&child_id| effective_order(child_id));
             }
 
             // Put children back

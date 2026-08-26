@@ -1338,6 +1338,12 @@ impl Node {
             return true;
         }
 
+        // CSS animations create a stacking context (approximation: for any
+        // animated property, not only stacking-context-inducing ones).
+        if style.get_ui().specifies_animations() {
+            return true;
+        }
+
         false
     }
 
@@ -1599,8 +1605,8 @@ impl Node {
     ///    - The result of recursively calling child.hit() on the the child element that is
     ///      positioned at that position if there is one.
     ///
-    /// TODO: z-index
-    /// (If multiple children are positioned at the position then a random one will be recursed into)
+    /// Stacked boxes are tested in reverse paint order (highest z-index first),
+    /// so the topmost box at the position wins.
     pub fn hit(&self, x: f32, y: f32, scale: f64) -> Option<HitResult> {
         self.hit_inner(x, y, scale, &mut None, taffy::Point::ZERO)
     }
