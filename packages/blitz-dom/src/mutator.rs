@@ -657,6 +657,16 @@ impl DocumentMutator<'_> {
                 self.process_added_subtree(child_id);
             } else if !new_parent_is_in_document && child_was_in_doc {
                 self.process_removed_subtree(child_id);
+            } else if new_parent_is_in_document && child_was_in_doc {
+                // The node was *moved* within the document: its ancestors (and
+                // therefore any styles inherited from or matched via them) may
+                // have changed, so its whole subtree must be restyled.
+                let child = &mut self.doc.nodes[child_id];
+                if let Some(mut data) = child.stylo_element_data_opt_mut().and_then(|s| s.get_mut())
+                {
+                    data.hint |= RestyleHint::restyle_subtree();
+                }
+                self.doc.nodes[child_id].mark_ancestors_dirty();
             }
         }
 

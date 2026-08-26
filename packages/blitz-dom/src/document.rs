@@ -29,7 +29,10 @@ use cursor_icon::CursorIcon;
 use linebender_resource_handle::Blob;
 use markup5ever::{LocalName, local_name};
 use parley::{FontContext, PlainEditorDriver};
-use selectors::{Element, matching::QuirksMode};
+use selectors::{
+    Element,
+    matching::{ElementSelectorFlags, QuirksMode},
+};
 use smallvec::SmallVec;
 use std::any::Any;
 use std::cell::RefCell;
@@ -1571,11 +1574,26 @@ impl BaseDocument {
             let is_element = |id: &NodeId| self.nodes[*id].is_element();
             let first_element = children.iter().copied().find(is_element);
             let last_element = children.iter().rev().copied().find(is_element);
+            // The nearest element children on either side of the change may have
+            // gained or lost edge-child status (e.g. the previous last child
+            // after an append, or the previous first child after a prepend).
+            let before_change = children[..change_idx.min(children.len())]
+                .iter()
+                .rev()
+                .copied()
+                .find(is_element);
+            let after_change = children[change_idx.min(children.len())..]
+                .iter()
+                .copied()
+                .find(is_element);
             for (idx, child_id) in children.iter().copied().enumerate() {
                 if !self.nodes[child_id].is_element() {
                     continue;
                 }
-                let is_edge = Some(child_id) == first_element || Some(child_id) == last_element;
+                let is_edge = Some(child_id) == first_element
+                    || Some(child_id) == last_element
+                    || Some(child_id) == before_change
+                    || Some(child_id) == after_change;
                 let affected = restyle_all
                     || (restyle_later && idx >= change_idx)
                     || (restyle_edges && is_edge);
