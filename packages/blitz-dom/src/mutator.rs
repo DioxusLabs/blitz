@@ -394,6 +394,18 @@ impl DocumentMutator<'_> {
 
         let removed_attr = element.attrs.remove(&name);
         let had_attr = removed_attr.is_some();
+
+        // Clearing the checked attribute unchecks the checkbox, even if the
+        // attribute was not present (checkedness may have been set by a click).
+        if (&element.name.local, &name.local) == tag_and_attr!("input", "checked") {
+            if let Some(checked) = element.checkbox_input_checked_mut() {
+                if *checked {
+                    *checked = false;
+                    self.mutations_occurred |= node_is_in_document;
+                }
+            }
+        }
+
         if !had_attr {
             return;
         }
