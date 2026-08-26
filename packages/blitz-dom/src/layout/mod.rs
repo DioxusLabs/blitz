@@ -484,7 +484,9 @@ impl LayoutContainingBlock for BaseDocument {
         let is_positioned = node.layout_style().position().is_positioned();
         let establishes_fixed_cb = node.establishes_fixed_containing_block();
         OofClaims {
-            absolute: is_positioned || establishes_fixed_cb,
+            absolute: is_positioned
+                || establishes_fixed_cb
+                || node.establishes_absolute_containing_block(),
             fixed: establishes_fixed_cb,
         }
     }
