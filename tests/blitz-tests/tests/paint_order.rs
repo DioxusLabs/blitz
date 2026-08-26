@@ -55,6 +55,21 @@ fn center_pixel(html: &str) -> [u8; 3] {
     pixel_at(html, 50, 50)
 }
 
+fn harness_center_pixel(harness: &mut Harness) -> [u8; 4] {
+    let buffer = render_to_buffer::<VelloCpuImageRenderer, _>(
+        |scene| paint_scene(scene, harness.doc.as_mut(), 1.0, 100, 100, 0, 0),
+        100,
+        100,
+    );
+    let idx = (50 * 100 + 50) * 4;
+    [
+        buffer[idx],
+        buffer[idx + 1],
+        buffer[idx + 2],
+        buffer[idx + 3],
+    ]
+}
+
 #[test]
 fn later_relative_sibling_paints_above_earlier_abspos() {
     let px = center_pixel(
@@ -319,4 +334,39 @@ fn stacking_context_boundary_restyle_updates_old_and_new_owners() {
     );
     harness.pump();
     assert_eq!(harness.hit_node(50.0, 50.0), child);
+}
+
+#[test]
+fn removed_stacking_context_is_not_rebuilt_from_stale_owner() {
+    let initial = r#"<html><body style="margin:0">
+        <div id="a" style="width:100px; height:100px; opacity:0.5;">
+            <div id="b" style="position:relative; width:100px; height:100px; background:rgba(255,0,0,0.5);"></div>
+        </div>
+    </body></html>"#;
+    let final_html = r#"<html><body style="margin:0">
+        <div id="a" style="width:100px; height:100px;">
+            <div id="b" style="position:relative; width:100px; height:100px; background:rgba(255,0,0,0.5); color:blue;"></div>
+        </div>
+    </body></html>"#;
+
+    let mut harness = Harness::from_html(initial);
+    let a = harness.node("#a");
+    let b = harness.node("#b");
+    harness
+        .base_mut()
+        .mutate()
+        .set_attribute(a, style_attr(), "width:100px; height:100px;");
+    harness.base_mut().mutate().set_attribute(
+        b,
+        style_attr(),
+        "position:relative; width:100px; height:100px; background:rgba(255,0,0,0.5); color:blue;",
+    );
+    harness.pump();
+
+    let mut fresh = Harness::from_html(final_html);
+    assert_eq!(
+        harness_center_pixel(&mut harness),
+        harness_center_pixel(&mut fresh),
+        "incremental paint must match a fresh document after removing a stacking context"
+    );
 }
