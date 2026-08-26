@@ -39,7 +39,7 @@ impl BaseDocument {
         damage_from_parent: RestyleDamage,
     ) -> RestyleDamage {
         let mut damage = if let Some(data) = self.nodes[node_id]
-            .stylo_element_data_opt_mut()
+            .try_stylo_element_data_mut()
             .and_then(|s| s.get_mut())
         {
             data.damage
@@ -448,7 +448,7 @@ impl BaseDocument {
         // borrow of `node` (held by the stylo element data guard) is released
         // before we take a mutable borrow of `node.data` below.
         let style = {
-            let stylo_element_data = node.stylo_element_data_opt().and_then(|s| s.get());
+            let stylo_element_data = node.try_stylo_element_data().and_then(|s| s.get());
             let primary_styles = stylo_element_data
                 .as_ref()
                 .and_then(|data| data.styles.get_primary());
