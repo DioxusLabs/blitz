@@ -638,7 +638,7 @@ impl DocumentMutator<'_> {
         // would remove both the old and the newly-inserted entries from the
         // parent's child list, and anchor indices would be computed against a
         // child list that still contains the moved nodes.
-        let mut reparented: Vec<NodeId> = Vec::new();
+        let mut any_reparented_in_doc = false;
         for child_id in child_ids.iter().copied() {
             let child = &mut self.doc.nodes[child_id];
             let child_was_in_doc = child.flags.is_in_document();
@@ -646,8 +646,23 @@ impl DocumentMutator<'_> {
             let Some(old_parent_id) = child.parent.take() else {
                 continue;
             };
-            if old_parent_id != parent_id {
-                reparented.push(child_id);
+
+            if new_parent_is_in_document && child_was_in_doc && old_parent_id != parent_id {
+                // The node is being moved to a *different* parent within the
+                // document: its ancestors (and therefore any styles inherited
+                // from or matched via them) may have changed, so its whole
+                // subtree must be restyled. Moves within the same parent don't
+                // need this: sibling-dependent selectors set
+                // HAS_SLOW_SELECTOR(_LATER_SIBLINGS)/HAS_EDGE_CHILD_SELECTOR on
+                // the parent, so `restyle_for_child_insert_or_remove` already
+                // restyles the moved node when anything could depend on
+                // sibling position.
+                let child = &mut self.doc.nodes[child_id];
+                if let Some(mut data) = child.try_stylo_element_data_mut().and_then(|s| s.get_mut())
+                {
+                    data.hint |= RestyleHint::restyle_subtree();
+                }
+                any_reparented_in_doc = true;
             }
 
             let old_parent = &mut self.doc.nodes[old_parent_id];
@@ -665,6 +680,11 @@ impl DocumentMutator<'_> {
 
         let new_parent = &mut self.doc.nodes[parent_id];
         new_parent.insert_damage(ALL_DAMAGE);
+        if any_reparented_in_doc {
+            // Ensure the style traversal descends to the moved children's
+            // pending restyle hints.
+            new_parent.set_dirty_descendants();
+        }
         // Mark ancestors dirty so the style traversal visits this subtree.
         new_parent.mark_ancestors_dirty();
 
@@ -687,25 +707,6 @@ impl DocumentMutator<'_> {
                 self.process_added_subtree(child_id);
             } else if !new_parent_is_in_document && child_was_in_doc {
                 self.process_removed_subtree(child_id);
-            } else if new_parent_is_in_document
-                && child_was_in_doc
-                && reparented.contains(&child_id)
-            {
-                // The node was moved to a *different* parent within the
-                // document: its ancestors (and therefore any styles inherited
-                // from or matched via them) may have changed, so its whole
-                // subtree must be restyled. Moves within the same parent don't
-                // need this: sibling-dependent selectors set
-                // HAS_SLOW_SELECTOR(_LATER_SIBLINGS)/HAS_EDGE_CHILD_SELECTOR on
-                // the parent, so `restyle_for_child_insert_or_remove` above
-                // already restyles the moved node when anything could depend on
-                // sibling position.
-                let child = &mut self.doc.nodes[child_id];
-                if let Some(mut data) = child.try_stylo_element_data_mut().and_then(|s| s.get_mut())
-                {
-                    data.hint |= RestyleHint::restyle_subtree();
-                }
-                self.doc.nodes[child_id].mark_ancestors_dirty();
             }
         }
 
