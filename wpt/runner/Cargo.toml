@@ -16,6 +16,7 @@ blitz-dom = { workspace = true, features = ["svg", "floats", "system-fonts", "wo
 blitz-html = {workspace = true }
 blitz-traits = { workspace = true }
 blitz-paint = { workspace = true, features = ["default"] }
+blitz-test-harness = { workspace = true }
 anyrender = { workspace = true }
 anyrender_vello = { workspace = true, optional = true }
 anyrender_vello_cpu = { workspace = true, optional = true }
@@ -28,7 +29,6 @@ parley = { workspace = true }
 peniko = { workspace = true }
 image = { workspace = true, features = ["png"] }
 url = { workspace = true }
-data-url = { workspace = true }
 png = { version = "0.17" }
 glob = { version = "0.3.1" }
 dify = { version = "0.7.4", default-features = false }
