@@ -119,6 +119,73 @@ fn last_child_invalidates_on_sibling_append_and_removal() {
 }
 
 #[test]
+fn empty_descendant_rule_invalidates_on_child_insertion() {
+    let mut harness = Harness::from_html(
+        r#"
+        <style>
+            #a { color: rgb(0, 0, 0); }
+            #a:empty { color: rgb(255, 0, 0); }
+            #b { color: rgb(0, 0, 0); }
+            #a:empty + #b { color: rgb(255, 0, 0); }
+        </style>
+        <div id="a"></div>
+        <div id="b"></div>
+        "#,
+    );
+    assert_eq!(colors(&harness, "#a"), [RED]);
+    assert_eq!(colors(&harness, "#b"), [RED]);
+
+    // Inserting a child into #a should invalidate both #a's own `:empty`
+    // style and the sibling `#a:empty + #b` rule.
+    let a = harness.node("#a");
+    {
+        let mut doc = harness.base_mut();
+        let mut mutator = doc.mutate();
+        let child = mutator.create_element(qual_name!("span", html), Vec::new());
+        mutator.append_children(a, &[child]);
+    }
+    harness.pump();
+    assert_eq!(colors(&harness, "#a"), [BLACK]);
+    assert_eq!(colors(&harness, "#b"), [BLACK]);
+}
+
+#[test]
+fn empty_invalidates_on_text_content_change() {
+    let mut harness = Harness::from_html(
+        r#"
+        <style>
+            #a { color: rgb(0, 0, 0); }
+            #a:empty { color: rgb(255, 0, 0); }
+        </style>
+        <div id="a"></div>
+        "#,
+    );
+    let a = harness.node("#a");
+    assert_eq!(colors(&harness, "#a"), [RED]);
+
+    // Insert an empty text node: #a should still match `:empty`.
+    let text = {
+        let mut doc = harness.base_mut();
+        let mut mutator = doc.mutate();
+        let text = mutator.create_text_node("");
+        mutator.append_children(a, &[text]);
+        text
+    };
+    harness.pump();
+    assert_eq!(colors(&harness, "#a"), [RED]);
+
+    // Giving the text node content makes #a non-empty.
+    harness.base_mut().mutate().set_node_text(text, "hello");
+    harness.pump();
+    assert_eq!(colors(&harness, "#a"), [BLACK]);
+
+    // And clearing it makes #a `:empty` again.
+    harness.base_mut().mutate().set_node_text(text, "");
+    harness.pump();
+    assert_eq!(colors(&harness, "#a"), [RED]);
+}
+
+#[test]
 fn moved_node_is_restyled_for_new_ancestors() {
     let mut harness = Harness::from_html(
         r#"

@@ -1529,7 +1529,9 @@ impl BaseDocument {
     /// based on the container's [`ElementSelectorFlags`] (mirroring Gecko's
     /// `RestyleManager::RestyleForInsertOrChange` / `RestyleForRemove`):
     ///
-    /// - `HAS_EMPTY_SELECTOR`: the container itself may match `:empty`, so restyle it.
+    /// - `HAS_EMPTY_SELECTOR`: the container itself may match `:empty`, so restyle
+    ///   its subtree (and its later siblings if the grandparent has
+    ///   `HAS_SLOW_SELECTOR_LATER_SIBLINGS`, for `:empty ~ E`).
     /// - `HAS_SLOW_SELECTOR` (`:nth-last-child` etc): restyle all children.
     /// - `HAS_SLOW_SELECTOR_LATER_SIBLINGS` (`:nth-child` etc): restyle children
     ///   at or after the change position.
@@ -1561,12 +1563,11 @@ impl BaseDocument {
         }
 
         if restyle_self {
-            if let Some(mut data) = self.nodes[parent_id]
-                .stylo_element_data_opt_mut()
-                .and_then(|s| s.get_mut())
-            {
-                data.hint |= RestyleHint::RESTYLE_SELF;
-            }
+            // Restyling the container's whole subtree covers everything the
+            // other flags would, so we're done (matching Gecko's
+            // `RestyleForEmptyChange`).
+            self.restyle_for_empty_change(parent_id);
+            return;
         }
 
         if restyle_all || restyle_later || restyle_edges {
@@ -1612,6 +1613,44 @@ impl BaseDocument {
         // Mark ancestors dirty so the style traversal visits the restyled nodes.
         self.nodes[parent_id].set_dirty_descendants();
         self.nodes[parent_id].mark_ancestors_dirty();
+    }
+
+    /// Restyle a container whose `:empty` status may have changed (mirroring
+    /// Gecko's `RestyleManager::RestyleForEmptyChange`): restyle the container's
+    /// subtree, and in the `:empty + E` / `:empty ~ E` cases (grandparent has
+    /// `HAS_SLOW_SELECTOR_LATER_SIBLINGS`) also restyle its later siblings.
+    pub(crate) fn restyle_for_empty_change(&mut self, container_id: NodeId) {
+        if let Some(mut data) = self.nodes[container_id]
+            .stylo_element_data_opt_mut()
+            .and_then(|s| s.get_mut())
+        {
+            data.hint |= RestyleHint::restyle_subtree();
+        }
+
+        if let Some(grandparent_id) = self.nodes[container_id].parent {
+            let grandparent_flags = self.nodes[grandparent_id].selector_flags().get();
+            if grandparent_flags.contains(ElementSelectorFlags::HAS_SLOW_SELECTOR_LATER_SIBLINGS) {
+                let siblings = self.nodes[grandparent_id].children.clone();
+                let container_idx = siblings.iter().position(|id| *id == container_id);
+                if let Some(container_idx) = container_idx {
+                    for sibling_id in siblings[container_idx + 1..].iter().copied() {
+                        if !self.nodes[sibling_id].is_element() {
+                            continue;
+                        }
+                        if let Some(mut data) = self.nodes[sibling_id]
+                            .stylo_element_data_opt_mut()
+                            .and_then(|s| s.get_mut())
+                        {
+                            data.hint |= RestyleHint::restyle_subtree();
+                        }
+                    }
+                }
+                self.nodes[grandparent_id].set_dirty_descendants();
+            }
+        }
+
+        self.nodes[container_id].set_dirty_descendants();
+        self.nodes[container_id].mark_ancestors_dirty();
     }
 
     // Takes (x, y) co-ordinates (relative to the )

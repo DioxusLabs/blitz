@@ -12,6 +12,7 @@ use crate::{
     Attribute, BaseDocument, Document, ElementData, Node, NodeData, QualName, local_name, qual_name,
 };
 use blitz_traits::shell::Viewport;
+use selectors::matching::ElementSelectorFlags;
 use style::Atom;
 use style::invalidation::element::restyle_hints::RestyleHint;
 use style::stylesheets::OriginSet;
@@ -175,6 +176,7 @@ impl DocumentMutator<'_> {
 
         let changed = text.content != value;
         if changed {
+            let empty_changed = text.content.is_empty() != value.is_empty();
             self.mutations_occurred |= node_is_in_document;
             text.content.clear();
             text.content.push_str(value);
@@ -189,6 +191,17 @@ impl DocumentMutator<'_> {
             if let Some(parent_id) = parent_id {
                 let parent = &mut self.doc.nodes[parent_id];
                 parent.insert_damage(ALL_DAMAGE);
+
+                // A text node becoming empty/non-empty can change whether the
+                // parent matches `:empty`.
+                if empty_changed
+                    && parent
+                        .selector_flags()
+                        .get()
+                        .contains(ElementSelectorFlags::HAS_EMPTY_SELECTOR)
+                {
+                    self.doc.restyle_for_empty_change(parent_id);
+                }
             }
 
             self.maybe_record_node(parent_id);
@@ -204,10 +217,23 @@ impl DocumentMutator<'_> {
         let node = &mut self.doc.nodes[node_id];
         node.insert_damage(ALL_DAMAGE);
         node.mark_ancestors_dirty();
+        let parent_id = node.parent;
         match node.text_data_mut() {
             Some(data) => {
+                let empty_changed = data.content.is_empty() && !text.is_empty();
                 data.content += text;
                 self.mutations_occurred |= node_is_in_document;
+                if empty_changed {
+                    if let Some(parent_id) = parent_id {
+                        if self.doc.nodes[parent_id]
+                            .selector_flags()
+                            .get()
+                            .contains(ElementSelectorFlags::HAS_EMPTY_SELECTOR)
+                        {
+                            self.doc.restyle_for_empty_change(parent_id);
+                        }
+                    }
+                }
                 Ok(())
             }
             None => Err(AppendTextErr::NotTextNode),
