@@ -1564,6 +1564,19 @@ impl BaseDocument {
             return;
         }
 
+        // If the container is already pending a whole-subtree restyle then every
+        // child is already covered; skip the sibling walk. The hint is cleared
+        // when the traversal restyles the container, so this dedupes repeated
+        // mutations within a single style flush (avoiding quadratic behavior
+        // when e.g. removing all children one by one).
+        if self.nodes[parent_id]
+            .try_stylo_element_data()
+            .and_then(|s| s.get())
+            .is_some_and(|data| data.hint.contains(RestyleHint::restyle_subtree()))
+        {
+            return;
+        }
+
         if restyle_self {
             // Restyling the container's whole subtree covers everything the
             // other flags would, so we're done (matching Gecko's
