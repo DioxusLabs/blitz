@@ -29,7 +29,10 @@ use cursor_icon::CursorIcon;
 use linebender_resource_handle::Blob;
 use markup5ever::{LocalName, local_name};
 use parley::{FontContext, PlainEditorDriver};
-use selectors::{Element, matching::QuirksMode};
+use selectors::{
+    Element,
+    matching::{ElementSelectorFlags, QuirksMode},
+};
 use smallvec::SmallVec;
 use std::any::Any;
 use std::cell::RefCell;
@@ -394,6 +397,7 @@ impl BaseDocument {
         style_config::set_pref!("layout.unimplemented", true);
         style_config::set_pref!("layout.columns.enabled", true);
         style_config::set_pref!("layout.css.basic-shape-shape.enabled", true);
+        style_config::set_pref!("layout.css.nth-child-of.enabled", true);
         style_config::set_pref!("layout.threads", -1);
 
         let viewport = config.viewport.unwrap_or_default();
@@ -1520,6 +1524,93 @@ impl BaseDocument {
             self.snapshot_node_state_only(node_id);
         }
         cb(&mut self.nodes[node_id]);
+        if self
+            .stylist
+            .iter_origins()
+            .any(|(data, _)| data.has_nth_of_state_dependency(state))
+        {
+            self.restyle_siblings_for_nth_of(node_id);
+        }
+    }
+
+    /// Returns whether changing the attribute `local_name` (with the given old/new
+    /// values) on an element might affect which siblings are matched by the
+    /// selector list of some `:nth-child(An+B of <selector list>)`-family selector.
+    pub(crate) fn attribute_might_affect_nth_of(
+        &self,
+        local_name: &LocalName,
+        old_value: Option<&str>,
+        new_value: Option<&str>,
+    ) -> bool {
+        let name = GenericAtomIdent(local_name.clone());
+        self.stylist.iter_origins().any(|(data, _)| {
+            if data.might_have_nth_of_attribute_dependency(&name) {
+                return true;
+            }
+            if *local_name == local_name!("id") {
+                [old_value, new_value]
+                    .iter()
+                    .flatten()
+                    .any(|id| data.might_have_nth_of_id_dependency(&Atom::from(*id)))
+            } else if *local_name == local_name!("class") {
+                [old_value, new_value]
+                    .iter()
+                    .flatten()
+                    .flat_map(|classes| classes.split_ascii_whitespace())
+                    .any(|class| data.might_have_nth_of_class_dependency(&Atom::from(class)))
+            } else {
+                false
+            }
+        })
+    }
+
+    /// Restyle the siblings of a mutated element that may be matched by an
+    /// `:nth-child(An+B of S)`-family selector (mirroring Gecko's
+    /// `RestyleManager::RestyleSiblingsForNthOf`). The generic snapshot-based
+    /// invalidation only walks downwards from the mutated element, so changes
+    /// affecting `of S` matching of *siblings* must be handled here.
+    ///
+    /// Whether the mutation is relevant to some nth-of selector list must be
+    /// checked by the caller; this method only checks the parent's selector
+    /// flags, then conservatively restyles siblings in the flagged directions.
+    pub(crate) fn restyle_siblings_for_nth_of(&mut self, node_id: NodeId) {
+        let Some(parent_id) = self.nodes[node_id].parent else {
+            return;
+        };
+        let parent_flags = self.nodes[parent_id].selector_flags().get();
+        if !parent_flags.contains(ElementSelectorFlags::HAS_SLOW_SELECTOR_NTH_OF) {
+            return;
+        }
+        // :nth-last-child(.. of S) sets HAS_SLOW_SELECTOR (earlier siblings affected);
+        // :nth-child(.. of S) sets HAS_SLOW_SELECTOR_LATER_SIBLINGS (later siblings affected).
+        let restyle_previous = parent_flags.contains(ElementSelectorFlags::HAS_SLOW_SELECTOR);
+        let restyle_later =
+            parent_flags.contains(ElementSelectorFlags::HAS_SLOW_SELECTOR_LATER_SIBLINGS);
+
+        let children = self.nodes[parent_id].children.clone();
+        let Some(node_idx) = children.iter().position(|id| *id == node_id) else {
+            return;
+        };
+        for (idx, sibling_id) in children.iter().copied().enumerate() {
+            if idx == node_idx
+                || (idx < node_idx && !restyle_previous)
+                || (idx > node_idx && !restyle_later)
+            {
+                continue;
+            }
+            let sibling = &mut self.nodes[sibling_id];
+            if !sibling.is_element() {
+                continue;
+            }
+            if let Some(mut data) = sibling
+                .stylo_element_data_opt_mut()
+                .and_then(|s| s.get_mut())
+            {
+                data.hint |= RestyleHint::restyle_subtree();
+            }
+        }
+        // Mark ancestors dirty so the style traversal visits the restyled siblings.
+        self.nodes[node_id].mark_ancestors_dirty();
     }
 
     // Takes (x, y) co-ordinates (relative to the )

@@ -261,6 +261,17 @@ impl DocumentMutator<'_> {
             // Without this, the traversal may skip nodes with pending RestyleHint/damage
             // because it uses dirty_descendants flags to determine which subtrees to visit.
             self.doc.nodes[node_id].mark_ancestors_dirty();
+
+            let affects_nth_of = {
+                let old_value = self.doc.nodes[node_id]
+                    .element_data()
+                    .and_then(|el| el.attr(name.local.clone()));
+                self.doc
+                    .attribute_might_affect_nth_of(&name.local, old_value, Some(value))
+            };
+            if affects_nth_of {
+                self.doc.restyle_siblings_for_nth_of(node_id);
+            }
         }
 
         if name.local == local_name!("id") && node_is_in_document {
@@ -375,6 +386,17 @@ impl DocumentMutator<'_> {
             // Mark ancestors dirty so the style traversal visits this subtree.
             // Without this, the traversal may skip nodes with pending RestyleHint/damage.
             node.mark_ancestors_dirty();
+
+            let affects_nth_of = {
+                let old_value = self.doc.nodes[node_id]
+                    .element_data()
+                    .and_then(|el| el.attr(name.local.clone()));
+                self.doc
+                    .attribute_might_affect_nth_of(&name.local, old_value, None)
+            };
+            if affects_nth_of {
+                self.doc.restyle_siblings_for_nth_of(node_id);
+            }
         }
 
         if name.local == local_name!("id") && node_is_in_document {
@@ -510,6 +532,17 @@ impl DocumentMutator<'_> {
             self.mutations_occurred |= node_is_in_document;
             let parent = &mut self.doc.nodes[parent_id];
             parent.insert_damage(ALL_DAMAGE);
+
+            // TODO: make this fine grained / conditional based on ElementSelectorFlags
+            if node_is_in_document {
+                if let Some(mut data) = parent
+                    .stylo_element_data_opt_mut()
+                    .and_then(|s| s.get_mut())
+                {
+                    data.hint |= RestyleHint::restyle_subtree();
+                }
+            }
+
             // Mark ancestors dirty so the style traversal visits this subtree.
             parent.mark_ancestors_dirty();
             parent.children.retain(|id| *id != node_id);
