@@ -959,6 +959,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "blitz-drive"
+version = "0.0.0"
+dependencies = [
+ "blitz-test-harness",
+ "blitz-traits",
+ "keyboard-types 0.7.0",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "blitz-examples"
 version = "0.0.1"
 dependencies = [
