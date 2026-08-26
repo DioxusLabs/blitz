@@ -991,9 +991,10 @@ impl ElementCx<'_, '_> {
 
         if let Some(hoisted) = &self.node.stacking_context {
             for hoisted_child in hoisted.neg_z_hoisted_children() {
+                let position = self.node.hoisted_child_position(hoisted_child.node_id);
                 let pos = kurbo::Vec2 {
-                    x: hoisted_child.position.x as f64 * self.scale,
-                    y: hoisted_child.position.y as f64 * self.scale,
+                    x: position.x as f64 * self.scale,
+                    y: position.y as f64 * self.scale,
                 };
                 self.render_node(
                     scene,
@@ -1033,9 +1034,10 @@ impl ElementCx<'_, '_> {
         // Positive z_index hoisted nodes
         if let Some(hoisted) = &self.node.stacking_context {
             for hoisted_child in hoisted.pos_z_hoisted_children() {
+                let position = self.node.hoisted_child_position(hoisted_child.node_id);
                 let pos = kurbo::Vec2 {
-                    x: hoisted_child.position.x as f64 * self.scale,
-                    y: hoisted_child.position.y as f64 * self.scale,
+                    x: position.x as f64 * self.scale,
+                    y: position.y as f64 * self.scale,
                 };
                 self.render_node(
                     scene,
