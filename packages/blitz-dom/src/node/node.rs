@@ -413,7 +413,12 @@ impl Node {
             })
         });
 
-        *self.transform_mut() = transform.map(Box::new);
+        let slot = self.transform_mut();
+        match (slot.as_deref_mut(), transform) {
+            (Some(existing), Some(new)) => *existing = new,
+            (None, Some(new)) => *slot = Some(Box::new(new)),
+            (_, None) => *slot = None,
+        }
         transform
     }
 
