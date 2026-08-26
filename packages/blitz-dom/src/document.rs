@@ -1613,6 +1613,80 @@ impl BaseDocument {
         self.nodes[node_id].mark_ancestors_dirty();
     }
 
+    /// Restyle the children of a container after a child insertion or removal,
+    /// based on the container's [`ElementSelectorFlags`] (mirroring Gecko's
+    /// `RestyleManager::RestyleForInsertOrChange` / `RestyleForRemove`):
+    ///
+    /// - `HAS_EMPTY_SELECTOR`: the container itself may match `:empty`, so restyle it.
+    /// - `HAS_SLOW_SELECTOR` (`:nth-last-child` etc): restyle all children.
+    /// - `HAS_SLOW_SELECTOR_LATER_SIBLINGS` (`:nth-child` etc): restyle children
+    ///   at or after the change position.
+    /// - `HAS_EDGE_CHILD_SELECTOR` (`:first-child`/`:last-child`/`:only-child`):
+    ///   restyle the first and last element children.
+    ///
+    /// `change_idx` is the index at which a child was inserted, or the index the
+    /// removed child used to occupy (i.e. the index of the first child whose
+    /// sibling indices may have changed). Must be called *after* the child list
+    /// has been updated.
+    pub(crate) fn restyle_for_child_insert_or_remove(
+        &mut self,
+        parent_id: NodeId,
+        change_idx: usize,
+    ) {
+        let parent = &self.nodes[parent_id];
+        if !parent.flags.is_in_document() {
+            return;
+        }
+        let flags = parent.selector_flags().get();
+
+        let restyle_all = flags.contains(ElementSelectorFlags::HAS_SLOW_SELECTOR);
+        let restyle_later = flags.contains(ElementSelectorFlags::HAS_SLOW_SELECTOR_LATER_SIBLINGS);
+        let restyle_edges = flags.contains(ElementSelectorFlags::HAS_EDGE_CHILD_SELECTOR);
+        let restyle_self = flags.contains(ElementSelectorFlags::HAS_EMPTY_SELECTOR);
+
+        if !(restyle_all || restyle_later || restyle_edges || restyle_self) {
+            return;
+        }
+
+        if restyle_self {
+            if let Some(mut data) = self.nodes[parent_id]
+                .stylo_element_data_opt_mut()
+                .and_then(|s| s.get_mut())
+            {
+                data.hint |= RestyleHint::RESTYLE_SELF;
+            }
+        }
+
+        if restyle_all || restyle_later || restyle_edges {
+            let children = self.nodes[parent_id].children.clone();
+            let is_element = |id: &NodeId| self.nodes[*id].is_element();
+            let first_element = children.iter().copied().find(is_element);
+            let last_element = children.iter().rev().copied().find(is_element);
+            for (idx, child_id) in children.iter().copied().enumerate() {
+                if !self.nodes[child_id].is_element() {
+                    continue;
+                }
+                let is_edge = Some(child_id) == first_element || Some(child_id) == last_element;
+                let affected = restyle_all
+                    || (restyle_later && idx >= change_idx)
+                    || (restyle_edges && is_edge);
+                if !affected {
+                    continue;
+                }
+                if let Some(mut data) = self.nodes[child_id]
+                    .stylo_element_data_opt_mut()
+                    .and_then(|s| s.get_mut())
+                {
+                    data.hint |= RestyleHint::restyle_subtree();
+                }
+            }
+        }
+
+        // Mark ancestors dirty so the style traversal visits the restyled nodes.
+        self.nodes[parent_id].set_dirty_descendants();
+        self.nodes[parent_id].mark_ancestors_dirty();
+    }
+
     // Takes (x, y) co-ordinates (relative to the )
     pub fn hit(&self, x: f32, y: f32) -> Option<HitResult> {
         self.hit_with_scrollbar(x, y).0
