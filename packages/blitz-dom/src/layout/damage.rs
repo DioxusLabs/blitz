@@ -542,10 +542,33 @@ impl BaseDocument {
         node_id: NodeId,
         parent_stacking_context: Option<&mut HoistedPaintChildren>,
     ) {
+        let incremental = self.incremental_layout;
+
+        // Skip clean subtrees: their taffy styles, layout/paint child lists and
+        // stacking contexts are unchanged, and the entries the subtree
+        // contributed to an ancestor stacking context are replayed from the
+        // cache captured on the last flush that visited it. Damage propagation
+        // bubbles descendant damage into each ancestor's stored damage, so an
+        // empty damage value covers the whole subtree. Anonymous boxes are
+        // never skipped (damage marking walks the DOM parent chain, which
+        // bypasses them).
+        if incremental {
+            let node = &self.nodes[node_id];
+            let clean = node.damage().is_some_and(|d| d.is_empty())
+                && !node.has_damaged_descendants()
+                && !node.is_anonymous();
+            if clean {
+                if let Some(parent_stacking_context) = parent_stacking_context {
+                    parent_stacking_context
+                        .children
+                        .extend(node.sc_contribution_cache.borrow().iter().cloned());
+                }
+                return;
+            }
+        }
+
         let mut new_stacking_context: HoistedPaintChildren = HoistedPaintChildren::new();
         let stacking_context = &mut new_stacking_context;
-
-        let incremental = self.incremental_layout;
         let display = {
             let node = self.nodes.get_mut(node_id).unwrap();
 
@@ -670,6 +693,12 @@ impl BaseDocument {
         }
 
         if let Some(parent_stacking_context) = parent_stacking_context {
+            if incremental {
+                let node = &self.nodes[node_id];
+                let mut cache = node.sc_contribution_cache.borrow_mut();
+                cache.clear();
+                cache.extend(stacking_context.children.iter().cloned());
+            }
             parent_stacking_context
                 .children
                 .extend(stacking_context.children.iter().cloned());
