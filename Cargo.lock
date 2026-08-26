@@ -7278,7 +7278,7 @@ dependencies = [
 name = "stylo_taffy"
 version = "0.3.0-beta.2"
 dependencies = [
- "bitflags 2.13.1",
+ "bitflags 2.13.0",
  "stylo",
  "stylo_atoms",
  "taffy",

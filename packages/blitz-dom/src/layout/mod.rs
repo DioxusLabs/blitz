@@ -442,12 +442,12 @@ impl LayoutPartialTree for BaseDocument {
 
 impl LayoutContainingBlock for BaseDocument {
     type OofItemStyle<'a>
-        = &'a taffy::Style<Atom>
+        = TaffyStyloStyle<ComputedStyleRef<'a>>
     where
         Self: 'a;
 
     fn get_oof_item_style(&self, node_id: NodeId) -> Self::OofItemStyle<'_> {
-        self.node_from_id(node_id).style()
+        self.node_from_id(node_id).layout_style()
     }
 
     fn set_hoisted_children(&mut self, node_id: NodeId, hoisted: &[NodeId]) {
@@ -483,7 +483,7 @@ impl LayoutContainingBlock for BaseDocument {
 
     fn oof_claims(&self, node_id: NodeId) -> OofClaims {
         let node = self.node_from_id(node_id);
-        let is_positioned = node.style().position.is_positioned();
+        let is_positioned = node.layout_style().position().is_positioned();
         let establishes_fixed_cb = node.establishes_fixed_containing_block();
         OofClaims {
             absolute: is_positioned
@@ -630,8 +630,7 @@ impl RoundTree for BaseDocument {
 
     fn is_hoisted(&self, node_id: NodeId) -> bool {
         let node = self.node_from_id(node_id);
-        let style = node.style();
-        style.position.is_out_of_flow() && style.display != Display::None
+        node.taffy_position().is_out_of_flow() && node.taffy_display() != Display::None
     }
 
     fn hoisted_child_count(&self, node_id: NodeId) -> usize {

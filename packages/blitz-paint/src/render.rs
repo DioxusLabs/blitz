@@ -992,7 +992,7 @@ impl ElementCx<'_, '_> {
                 // (their layout location is relative to its unscrolled border box),
                 // so cancel out the scroll offset applied to the transform above.
                 let child = &self.context.dom.as_ref().tree()[*child_id];
-                let child_transform = if child.style().position == taffy::Position::Fixed {
+                let child_transform = if child.taffy_position() == taffy::Position::Fixed {
                     // The root element's scroll is the viewport scroll (applied in
                     // `paint_scene`), not the node's own scroll offset.
                     let scroll = if Some(self.node.id) == self.context.root_element_id {

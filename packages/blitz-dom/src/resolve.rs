@@ -200,7 +200,7 @@ impl BaseDocument {
                 // Out-of-flow children are laid out relative to their containing
                 // block, not their DOM parent: their overflow contribution is
                 // accounted for at the containing block (below) instead.
-                let is_out_of_flow = self.nodes[child_id].style().position.is_out_of_flow();
+                let is_out_of_flow = self.nodes[child_id].taffy_position().is_out_of_flow();
                 let child_rect_in_self = self.resolve_transforms(child_id);
                 if !is_out_of_flow {
                     overflow = overflow.union(child_rect_in_self);
@@ -335,7 +335,7 @@ impl BaseDocument {
                 .unwrap_or_default();
 
             let cb_is_flex_or_grid = matches!(
-                self.nodes[cb_id].style().display,
+                self.nodes[cb_id].taffy_display(),
                 taffy::Display::Flex | taffy::Display::Grid
             );
             let mut z_indexed: Vec<NodeId> = Vec::new();

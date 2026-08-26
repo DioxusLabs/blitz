@@ -1212,6 +1212,14 @@ impl Node {
             .unwrap_or(taffy::Display::Block)
     }
 
+    /// The node's `position` as a [`taffy::Position`]. Returns [`taffy::Position::Static`]
+    /// for nodes without computed styles (e.g. text nodes).
+    pub fn taffy_position(&self) -> taffy::Position {
+        self.primary_styles()
+            .map(|s| stylo_taffy::convert::position(s.get_box().position))
+            .unwrap_or(taffy::Position::Static)
+    }
+
     pub fn text_content(&self) -> String {
         let mut out = String::new();
         self.write_text_content(&mut out);
@@ -1521,7 +1529,7 @@ impl Node {
         // Call `.hit()` on each child in turn. If any return `Some` then return that value. Else return `Some(self.id).
         for child_id in self.paint_children.borrow().iter().flatten().rev() {
             let child = self.with(*child_id);
-            let child_position = child.style().position;
+            let child_position = child.taffy_position();
             let mut child_x = x;
             let mut child_y = y;
             if child_position.is_out_of_flow() {
