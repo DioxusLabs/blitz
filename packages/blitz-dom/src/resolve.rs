@@ -100,15 +100,19 @@ impl BaseDocument {
         self.flush_pending_style_images();
         timer.record_time("pconstruct");
 
-        // Merge stylo into taffy
-        self.flush_styles_to_layout(root_node_id);
-        timer.record_time("flush");
+        if !self.incremental_layout {
+            self.clear_layout_caches(root_node_id);
+        }
 
         // Next we resolve layout with the data resolved by stlist
         self.resolve_layout();
         timer.record_time("layout");
 
-        // Resolve transforms
+        self.rebuild_stacking_contexts(root_node_id);
+        timer.record_time("stacking");
+
+        // Resolve transforms and overflow through layout/containing-block
+        // geometry after stacking membership has been finalized.
         self.resolve_transforms(root_node_id);
         timer.record_time("transform");
 
@@ -170,6 +174,7 @@ impl BaseDocument {
             .damage()
             .map(|d| d.contains(style::selector_parser::RestyleDamage::RECALCULATE_OVERFLOW))
             .unwrap_or(false)
+            && !self.nodes[node_id].spatial_dirty_self.get()
         {
             let node = &self.nodes[node_id];
             let location = node.final_layout().location.map(|v| v as f64 * scale);
@@ -193,10 +198,26 @@ impl BaseDocument {
 
         if let Some(ref children) = layout_children {
             for &child_id in children {
+                // Out-of-flow children are laid out relative to their containing
+                // block, not their DOM parent: their overflow contribution is
+                // accounted for at the containing block (below) instead.
+                if self.nodes[child_id].taffy_position().is_out_of_flow() {
+                    continue;
+                }
                 let child_rect_in_self = self.resolve_transforms(child_id);
                 overflow = overflow.union(child_rect_in_self);
             }
         }
+        let hoisted_children =
+            std::mem::take(&mut *self.nodes[node_id].hoisted_children.borrow_mut());
+        for &child_id in &hoisted_children {
+            if !self.nodes.contains_key(child_id) {
+                continue;
+            }
+            let child_rect_in_self = self.resolve_transforms(child_id);
+            overflow = overflow.union(child_rect_in_self);
+        }
+        *self.nodes[node_id].hoisted_children.borrow_mut() = hoisted_children;
         if let Some(before) = self.nodes[node_id].before() {
             let child_rect_in_self = self.resolve_transforms(before);
             overflow = overflow.union(child_rect_in_self);
@@ -291,6 +312,7 @@ impl BaseDocument {
                 // damage.insert(RestyleDamage::RELAYOUT | RestyleDamage::REPAINT);
             }
 
+            doc.sort_layout_children(node_id);
             doc.nodes[node_id].set_damage(damage);
         }
     }

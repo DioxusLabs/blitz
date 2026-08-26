@@ -40,7 +40,7 @@ use style::{
     },
 };
 
-use kurbo::{self, Affine, Insets, Point, Rect, Shape, Size, Stroke, Vec2};
+use kurbo::{self, Affine, BezPath, Insets, Point, Rect, Shape, Size, Stroke, Vec2};
 use peniko::{self, Fill, ImageData, ImageSampler};
 use style::values::generics::color::GenericColor;
 use taffy::Layout;
@@ -527,6 +527,15 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                                     x: -node.scroll_offset().x * self.scale,
                                     y: -node.scroll_offset().y * self.scale,
                                 });
+                                cx.draw_stacking_entries(
+                                    scene,
+                                    node.stacking_context
+                                        .as_ref()
+                                        .map(|context| context.negative.as_slice())
+                                        .unwrap_or_default(),
+                                    cx.transform,
+                                    child_clip_rect,
+                                );
                                 cx.draw_image(scene);
                                 #[cfg(feature = "svg")]
                                 cx.draw_svg(scene);
@@ -968,43 +977,120 @@ impl ElementCx<'_, '_> {
         parent_style_transform: Affine,
         clip_rect: Rect,
     ) {
-        // Negative z_index hoisted nodes
-
-        if let Some(hoisted) = &self.node.stacking_context {
-            for hoisted_child in hoisted.neg_z_hoisted_children() {
-                let pos = kurbo::Vec2 {
-                    x: hoisted_child.position.x as f64 * self.scale,
-                    y: hoisted_child.position.y as f64 * self.scale,
-                };
-                self.render_node(
-                    scene,
-                    hoisted_child.node_id,
-                    parent_style_transform.pre_translate(pos),
-                    clip_rect,
-                );
-            }
-        }
-
         // Regular children
         if let Some(children) = &*self.node.paint_children.borrow() {
             for child_id in children {
-                self.render_node(scene, *child_id, parent_style_transform, clip_rect);
+                // Fixed-position children do not scroll with their containing block
+                // (their layout location is relative to its unscrolled border box),
+                // so cancel out the scroll offset applied to the transform above.
+                let child = &self.context.dom.as_ref().tree()[*child_id];
+                let child_transform = if child.taffy_position() == taffy::Position::Fixed {
+                    // The root element's scroll is the viewport scroll (applied in
+                    // `paint_scene`), not the node's own scroll offset.
+                    let scroll = if Some(self.node.id) == self.context.root_element_id {
+                        self.context.dom.as_ref().viewport_scroll()
+                    } else {
+                        *self.node.scroll_offset()
+                    };
+                    parent_style_transform.pre_translate(kurbo::Vec2 {
+                        x: scroll.x * self.scale,
+                        y: scroll.y * self.scale,
+                    })
+                } else {
+                    parent_style_transform
+                };
+                self.render_node(scene, *child_id, child_transform, clip_rect);
             }
         }
 
-        // Positive z_index hoisted nodes
-        if let Some(hoisted) = &self.node.stacking_context {
-            for hoisted_child in hoisted.pos_z_hoisted_children() {
-                let pos = kurbo::Vec2 {
-                    x: hoisted_child.position.x as f64 * self.scale,
-                    y: hoisted_child.position.y as f64 * self.scale,
+        if let Some(context) = &self.node.stacking_context {
+            self.draw_stacking_entries(
+                scene,
+                &context.auto_and_zero,
+                parent_style_transform,
+                clip_rect,
+            );
+            self.draw_stacking_entries(scene, &context.positive, parent_style_transform, clip_rect);
+        }
+    }
+
+    fn draw_stacking_entries(
+        &self,
+        scene: &mut impl PaintScene,
+        entries: &[blitz_dom::StackingEntry],
+        parent_style_transform: Affine,
+        clip_rect: Rect,
+    ) {
+        for entry in entries {
+            let child = &self.context.dom.as_ref().tree()[entry.node_id];
+            let position = self.node.stacking_entry_position(entry.node_id);
+            let mut transform = parent_style_transform.pre_translate(kurbo::Vec2 {
+                x: position.x as f64 * self.scale,
+                y: position.y as f64 * self.scale,
+            });
+            if child.taffy_position() == taffy::Position::Fixed {
+                let containing_block = child
+                    .oof_containing_block
+                    .get()
+                    .unwrap_or(self.context.root_element_id.unwrap_or(self.node.id));
+                let scroll = if Some(containing_block) == self.context.root_element_id {
+                    self.context.dom.as_ref().viewport_scroll()
+                } else {
+                    *self.context.dom.as_ref().tree()[containing_block].scroll_offset()
                 };
-                self.render_node(
+                transform = transform.pre_translate(kurbo::Vec2 {
+                    x: scroll.x * self.scale,
+                    y: scroll.y * self.scale,
+                });
+            }
+
+            let mut clip_layers: Vec<(Affine, BezPath)> = Vec::new();
+            let containing_block = child.oof_containing_block.get();
+            let mut applies_spatial_effects = containing_block.is_none();
+            let mut current = child.layout_parent.get();
+            while let Some(id) = current {
+                if id == self.node.id {
+                    break;
+                }
+                let ancestor = &self.context.dom.as_ref().tree()[id];
+                applies_spatial_effects |= containing_block == Some(id);
+                if applies_spatial_effects
+                    && ancestor.clips_overflow()
+                    && let Some(style) = ancestor.primary_styles()
+                {
+                    let layout = ancestor.final_layout();
+                    let position = self.node.stacking_entry_position(id);
+                    let origin = Vec2::new(
+                        (position.x + layout.location.x) as f64,
+                        (position.y + layout.location.y) as f64,
+                    ) * self.scale;
+                    let frame = create_css_rect(&style, layout, self.scale);
+                    clip_layers.push((
+                        parent_style_transform.pre_translate(origin),
+                        frame.padding_box_path(),
+                    ));
+                }
+                current = ancestor.layout_parent.get();
+            }
+            clip_layers.reverse();
+
+            let mut pushed_layers = 0;
+            for (clip_transform, clip_path) in &clip_layers {
+                if self.context.layer_manager.maybe_push_layer(
                     scene,
-                    hoisted_child.node_id,
-                    parent_style_transform.pre_translate(pos),
-                    clip_rect,
-                );
+                    true,
+                    1.0,
+                    *clip_transform,
+                    clip_path,
+                    None,
+                    None,
+                ) {
+                    pushed_layers += 1;
+                }
+            }
+            self.render_node(scene, entry.node_id, transform, clip_rect);
+            for _ in 0..pushed_layers {
+                self.context.layer_manager.maybe_pop_layer(scene, true);
             }
         }
     }
