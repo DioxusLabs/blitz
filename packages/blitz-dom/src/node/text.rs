@@ -5,6 +5,7 @@ use blitz_traits::{
 };
 use keyboard_types::{Key, Modifiers};
 use parley::{ContentWidths, FontContext, LayoutContext};
+use taffy::{OofCandidate, Rect};
 
 use crate::util::ACTION_MOD;
 
@@ -26,6 +27,22 @@ pub struct TextLayout {
     pub text: String,
     pub content_widths: Option<ContentWidths>,
     pub layout: parley::layout::Layout<TextBrush>,
+    pub(crate) pending_inline_oof_candidates: Option<Box<[PendingInlineOofCandidate]>>,
+    pub(crate) inline_oof_assignments: Option<Box<[InlineOofAssignment]>>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct PendingInlineOofCandidate {
+    pub containing_block: NodeId,
+    pub candidate: OofCandidate,
+    pub padding: Rect<f32>,
+    pub root_content_box_offset: taffy::Point<f32>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct InlineOofAssignment {
+    pub child: NodeId,
+    pub containing_block: NodeId,
 }
 
 impl TextLayout {
