@@ -1606,7 +1606,8 @@ impl BaseDocument {
         }
 
         if restyle_later || restyle_edges {
-            let children = self.nodes[parent_id].children.clone();
+            // Take the child list to avoid allocating; put it back once done.
+            let children = std::mem::take(&mut self.nodes[parent_id].children);
             let is_element = |id: &NodeId| self.nodes[*id].is_element();
             let first_element = children.iter().copied().find(is_element);
             let last_element = children.iter().rev().copied().find(is_element);
@@ -1641,6 +1642,7 @@ impl BaseDocument {
                     data.hint |= RestyleHint::restyle_subtree();
                 }
             }
+            self.nodes[parent_id].children = children;
         }
 
         // Mark ancestors dirty so the style traversal visits the restyled nodes.
@@ -1663,7 +1665,8 @@ impl BaseDocument {
         if let Some(grandparent_id) = self.nodes[container_id].parent {
             let grandparent_flags = self.nodes[grandparent_id].selector_flags().get();
             if grandparent_flags.contains(ElementSelectorFlags::HAS_SLOW_SELECTOR_LATER_SIBLINGS) {
-                let siblings = self.nodes[grandparent_id].children.clone();
+                // Take the child list to avoid allocating; put it back once done.
+                let siblings = std::mem::take(&mut self.nodes[grandparent_id].children);
                 let container_idx = siblings.iter().position(|id| *id == container_id);
                 if let Some(container_idx) = container_idx {
                     for sibling_id in siblings[container_idx + 1..].iter().copied() {
@@ -1678,6 +1681,7 @@ impl BaseDocument {
                         }
                     }
                 }
+                self.nodes[grandparent_id].children = siblings;
                 self.nodes[grandparent_id].set_dirty_descendants();
             }
         }
