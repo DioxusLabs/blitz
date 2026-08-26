@@ -2,7 +2,10 @@
 //!
 //! Provides an implementation of the [`blitz_traits::net::NetProvider`] trait.
 
-use blitz_traits::net::{AbortSignal, Body, Bytes, NetHandler, NetProvider, NetWaker, Request};
+use blitz_traits::net::{
+    AbortSignal, Body, ByteFetcher, Bytes, FetchError, FetcherProvider, NetHandler, NetProvider,
+    NetWaker, Request, RequestObserver,
+};
 use data_url::DataUrl;
 use std::{
     collections::HashMap,
@@ -75,15 +78,14 @@ where
     tokio::spawn(fut);
 }
 
-pub struct Provider {
+pub struct HttpFetcher {
     client: Client,
-    waker: Arc<dyn NetWaker>,
     per_host_limits: HostLimits,
     #[cfg(feature = "cache")]
     cache_manager: CACacheManager,
 }
-impl Provider {
-    pub fn new(waker: Option<Arc<dyn NetWaker>>) -> Self {
+impl HttpFetcher {
+    pub fn new() -> Self {
         let builder = reqwest::Client::builder();
         #[cfg(feature = "cookies")]
         let builder = builder.cookie_store(true);
@@ -115,25 +117,13 @@ impl Provider {
             }))
             .build();
 
-        let waker = waker.unwrap_or(Arc::new(DummyNetWaker));
         Self {
             client,
-            waker,
             per_host_limits: Arc::new(Mutex::new(HashMap::new())),
             #[cfg(feature = "cache")]
             cache_manager,
         }
     }
-    pub fn shared(waker: Option<Arc<dyn NetWaker>>) -> Arc<dyn NetProvider> {
-        Arc::new(Self::new(waker))
-    }
-    pub fn is_empty(&self) -> bool {
-        Arc::strong_count(&self.waker) == 1
-    }
-    pub fn count(&self) -> usize {
-        Arc::strong_count(&self.waker) - 1
-    }
-
     #[cfg(feature = "cache")]
     pub async fn clear_cache(&self) {
         if let Err(e) = self.cache_manager.clear().await {
@@ -144,7 +134,43 @@ impl Provider {
         }
     }
 }
+
+impl Default for HttpFetcher {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+pub struct Provider {
+    fetcher: Arc<HttpFetcher>,
+    inner: FetcherProvider<Arc<HttpFetcher>>,
+}
 impl Provider {
+    pub fn new(waker: Option<Arc<dyn NetWaker>>) -> Self {
+        let fetcher = Arc::new(HttpFetcher::new());
+        let inner = FetcherProvider::new(fetcher.clone(), waker);
+        Self { fetcher, inner }
+    }
+    pub fn shared(waker: Option<Arc<dyn NetWaker>>) -> Arc<dyn NetProvider> {
+        Arc::new(Self::new(waker))
+    }
+    pub fn is_empty(&self) -> bool {
+        Arc::strong_count(self.inner.waker()) == 1
+    }
+    pub fn count(&self) -> usize {
+        Arc::strong_count(self.inner.waker()) - 1
+    }
+
+    #[cfg(feature = "cache")]
+    pub async fn clear_cache(&self) {
+        self.fetcher.clear_cache().await;
+    }
+
+    pub fn set_observer(&self, observer: Arc<dyn RequestObserver>) {
+        self.inner.set_observer(observer);
+    }
+}
+impl HttpFetcher {
     async fn fetch_inner(
         client: Client,
         request: Request,
@@ -267,48 +293,66 @@ impl Provider {
     }
 }
 
-impl NetProvider for Provider {
-    fn fetch(&self, doc_id: usize, mut request: Request, handler: Box<dyn NetHandler>) {
+impl ByteFetcher for HttpFetcher {
+    fn fetch_bytes(
+        &self,
+        request: Request,
+        on_done: Box<dyn FnOnce(Result<(String, Bytes), FetchError>) + Send>,
+    ) {
+        #[cfg(feature = "tracing")]
+        let url = request.url.to_string();
+
         let client = self.client.clone();
         let per_host_limits = self.per_host_limits.clone();
-
-        #[cfg(feature = "tracing")]
-        tracing::info!(url = request.url.as_str(), "Fetching");
-
-        let waker = self.waker.clone();
+        let signal = request.signal.clone();
         spawn(async move {
-            #[cfg(feature = "tracing")]
-            let url = request.url.to_string();
-
-            let signal = request.signal.take();
             let result = if let Some(signal) = signal {
                 AbortFetch::new(
                     signal,
-                    Box::pin(
-                        async move { Self::fetch_inner(client, request, per_host_limits).await },
-                    ),
+                    Box::pin(async move {
+                        HttpFetcher::fetch_inner(client, request, per_host_limits).await
+                    }),
                 )
                 .await
             } else {
-                Self::fetch_inner(client, request, per_host_limits).await
+                HttpFetcher::fetch_inner(client, request, per_host_limits).await
             };
 
-            waker.wake(doc_id);
+            #[cfg(feature = "tracing")]
+            if let Err(e) = &result {
+                tracing::error!(url = url.as_str(), error = ?e, "Fetching");
+            } else {
+                tracing::info!(url = url.as_str(), "Success fetching");
+            }
 
-            match result {
-                Ok((response_url, bytes)) => {
-                    handler.bytes(response_url, bytes);
-                    #[cfg(feature = "tracing")]
-                    tracing::info!(url = url.as_str(), "Success fetching");
-                }
-                Err(e) => {
-                    #[cfg(feature = "tracing")]
-                    tracing::error!(url = url.as_str(), error = ?e, "Error fetching");
-                    #[cfg(not(feature = "tracing"))]
-                    let _ = e;
-                }
-            };
+            on_done(result.map_err(|error| match error {
+                ProviderError::Abort => FetchError::Aborted,
+                error => FetchError::new(error),
+            }));
         });
+    }
+}
+
+impl Provider {
+    #[allow(clippy::type_complexity)]
+    pub fn fetch_with_callback(
+        &self,
+        request: Request,
+        callback: Box<dyn FnOnce(Result<(String, Bytes), ProviderError>) + Send + Sync + 'static>,
+    ) {
+        self.fetcher.fetch_with_callback(request, callback);
+    }
+
+    pub async fn fetch_async(&self, request: Request) -> Result<(String, Bytes), ProviderError> {
+        self.fetcher.fetch_async(request).await
+    }
+}
+
+impl NetProvider for Provider {
+    fn fetch(&self, doc_id: usize, request: Request, handler: Box<dyn NetHandler>) {
+        #[cfg(feature = "tracing")]
+        tracing::info!(url = request.url.as_str(), "Fetching");
+        self.inner.fetch(doc_id, request, handler);
     }
 }
 
@@ -449,9 +493,4 @@ impl ReqwestExt for RequestBuilder {
             Body::Empty => self,
         }
     }
-}
-
-struct DummyNetWaker;
-impl NetWaker for DummyNetWaker {
-    fn wake(&self, _client_id: usize) {}
 }
