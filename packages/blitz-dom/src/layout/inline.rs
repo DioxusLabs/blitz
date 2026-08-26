@@ -1,12 +1,16 @@
+use std::collections::HashMap;
+
 use blitz_traits::node_id::NodeId;
-use parley::{AlignmentOptions, IndentOptions};
-use style::values::specified::box_::DisplayOutside;
+use parley::{AlignmentOptions, IndentOptions, PositionedLayoutItem};
+use style::values::specified::box_::{DisplayInside, DisplayOutside};
 use style::values::{computed::CSSPixelLength, generics::text::GenericTextIndent};
 use taffy::{
     AvailableSpace, BlockContext, BlockFormattingContext, BoxSizing, CollapsibleMarginSet,
-    CoreStyle as _, Direction, LayoutInput, LayoutOutput, LayoutPartialTree as _, MaybeMath as _,
-    MaybeResolve as _, OofCandidate, OofCandidates, OofPositioningArea, Overflow, Point,
-    RequestedAxis, ResolveOrZero as _, RunMode, Size, SizingMode, StaticEdge, StaticPosition,
+    CoreStyle as _, Direction, LayoutContainingBlock as _, LayoutInput, LayoutOutput,
+    LayoutPartialTree as _, MaybeMath as _, MaybeResolve as _, OofCandidate, OofCandidates,
+    OofClaims, OofPositioningArea, Overflow, Point, Position, Rect, RequestedAxis,
+    ResolveOrZero as _, RunMode, Size, SizingMode, StaticEdge, StaticPosition,
+    compute_oof_layout_for_area,
 };
 
 #[cfg(feature = "floats")]
@@ -15,9 +19,311 @@ use parley::YieldData;
 use taffy::{BlockItemStyle as _, Clear, Float, prelude::TaffyMaxContent};
 
 use super::resolve_calc_value;
-use crate::BaseDocument;
+use crate::node::{InlineOofAssignment, PendingInlineOofCandidate};
+use crate::{BaseDocument, dom_node_id};
+
+#[derive(Default)]
+struct InlineFragmentBounds {
+    first: Option<Rect<f32>>,
+    last: Option<Rect<f32>>,
+    current: Option<(usize, Rect<f32>)>,
+}
+
+impl InlineFragmentBounds {
+    fn add(&mut self, line_index: usize, rect: Rect<f32>) {
+        match self.current {
+            Some((current_line, current_rect)) if current_line == line_index => {
+                self.current = Some((line_index, union_rect(current_rect, rect)));
+            }
+            Some(_) => {
+                self.finish_fragment();
+                self.current = Some((line_index, rect));
+            }
+            None => self.current = Some((line_index, rect)),
+        }
+    }
+
+    fn finish(mut self) -> Option<(Rect<f32>, Rect<f32>)> {
+        self.finish_fragment();
+        Some((self.first?, self.last?))
+    }
+
+    fn finish_fragment(&mut self) {
+        let Some((_, rect)) = self.current.take() else {
+            return;
+        };
+        self.first.get_or_insert(rect);
+        self.last = Some(rect);
+    }
+}
+
+fn union_rect(a: Rect<f32>, b: Rect<f32>) -> Rect<f32> {
+    Rect {
+        left: a.left.min(b.left),
+        right: a.right.max(b.right),
+        top: a.top.min(b.top),
+        bottom: a.bottom.max(b.bottom),
+    }
+}
+
+struct InlineOofGroup {
+    containing_block: NodeId,
+    padding: Rect<f32>,
+    root_content_box_offset: Point<f32>,
+    candidates: OofCandidates,
+    bounds: InlineFragmentBounds,
+    matches_current_item: bool,
+}
 
 impl BaseDocument {
+    fn inline_oof_claims(&self, node_id: NodeId) -> OofClaims {
+        let node = &self.nodes[node_id];
+        let fixed = node.inline_establishes_fixed_containing_block();
+        OofClaims {
+            absolute: fixed
+                || node.layout_style().position().is_positioned()
+                || node.establishes_absolute_containing_block(),
+            fixed,
+        }
+    }
+
+    fn inline_containing_block(
+        &self,
+        inline_root: NodeId,
+        child: NodeId,
+        position: Position,
+    ) -> Option<NodeId> {
+        let mut current = self.nodes[child].parent?;
+        while current != inline_root {
+            let node = &self.nodes[current];
+            let display = node.display_style()?;
+            match (display.outside(), display.inside()) {
+                (DisplayOutside::None, DisplayInside::Contents) => {}
+                (DisplayOutside::Inline, DisplayInside::Flow) => {
+                    let claims = self.inline_oof_claims(current);
+                    let claimed = match position {
+                        Position::Absolute => claims.absolute,
+                        Position::Fixed => claims.fixed,
+                        _ => false,
+                    };
+                    if claimed {
+                        return Some(current);
+                    }
+                }
+                _ => return None,
+            }
+            current = node.parent?;
+        }
+        None
+    }
+
+    fn collect_inline_oof_groups(
+        &self,
+        inline_root: NodeId,
+        pending: Box<[PendingInlineOofCandidate]>,
+    ) -> Vec<InlineOofGroup> {
+        let mut groups: Vec<InlineOofGroup> = Vec::new();
+        for pending in pending {
+            if let Some(group) = groups
+                .iter_mut()
+                .find(|group| group.containing_block == pending.containing_block)
+            {
+                group.candidates.push(pending.candidate);
+            } else {
+                let mut candidates = OofCandidates::new();
+                candidates.push(pending.candidate);
+                groups.push(InlineOofGroup {
+                    containing_block: pending.containing_block,
+                    padding: pending.padding,
+                    root_content_box_offset: pending.root_content_box_offset,
+                    candidates,
+                    bounds: InlineFragmentBounds::default(),
+                    matches_current_item: false,
+                });
+            }
+        }
+
+        let Some(layout) = self.nodes[inline_root]
+            .element_data()
+            .and_then(|element| element.inline_layout_data.as_ref())
+            .map(|inline_layout| &inline_layout.layout)
+        else {
+            return groups;
+        };
+        let group_indices: HashMap<NodeId, usize> = groups
+            .iter()
+            .enumerate()
+            .map(|(index, group)| (group.containing_block, index))
+            .collect();
+
+        for (line_index, line) in layout.lines().enumerate() {
+            for item in line.items() {
+                for group in &mut groups {
+                    group.matches_current_item = false;
+                }
+                let (item_id, rect) = match item {
+                    PositionedLayoutItem::GlyphRun(glyph_run) => {
+                        let metrics = glyph_run.run().metrics();
+                        let left = glyph_run.offset();
+                        let right = left + glyph_run.advance();
+                        (
+                            glyph_run.style().brush.id,
+                            Rect {
+                                left: left.min(right),
+                                right: left.max(right),
+                                top: glyph_run.baseline() - metrics.ascent,
+                                bottom: glyph_run.baseline() + metrics.descent,
+                            },
+                        )
+                    }
+                    PositionedLayoutItem::InlineBox(inline_box)
+                        if inline_box.kind == parley::InlineBoxKind::InFlow =>
+                    {
+                        (
+                            NodeId::from_u64(inline_box.id),
+                            Rect {
+                                left: inline_box.x,
+                                right: inline_box.x + inline_box.width,
+                                top: inline_box.y,
+                                bottom: inline_box.y + inline_box.height,
+                            },
+                        )
+                    }
+                    PositionedLayoutItem::InlineBox(_) => continue,
+                };
+
+                let mut current = item_id;
+                while current != inline_root {
+                    if let Some(&group_index) = group_indices.get(&current) {
+                        groups[group_index].matches_current_item = true;
+                    }
+                    let Some(parent) = self.nodes.get(current).and_then(|node| node.parent) else {
+                        break;
+                    };
+                    current = parent;
+                }
+                for group in &mut groups {
+                    if group.matches_current_item {
+                        group.bounds.add(line_index, rect);
+                    } else {
+                        group.bounds.finish_fragment();
+                    }
+                }
+            }
+            for group in &mut groups {
+                group.bounds.finish_fragment();
+            }
+        }
+
+        groups
+    }
+
+    pub(crate) fn layout_inline_containing_block_oof(
+        &mut self,
+        node_id: taffy::NodeId,
+        output: &mut LayoutOutput,
+    ) {
+        let inline_root = dom_node_id(node_id);
+        let (pending, old_assignments) = {
+            let Some(inline_layout) = self.nodes[inline_root]
+                .data
+                .downcast_element_mut()
+                .and_then(|element| element.inline_layout_data.as_mut())
+            else {
+                return;
+            };
+            (
+                inline_layout.pending_inline_oof_candidates.take(),
+                inline_layout.inline_oof_assignments.take(),
+            )
+        };
+
+        let mut groups = pending
+            .map(|pending| self.collect_inline_oof_groups(inline_root, pending))
+            .unwrap_or_default();
+        let scale = self.nodes[inline_root]
+            .element_data()
+            .and_then(|element| element.inline_layout_data.as_ref())
+            .map(|inline_layout| inline_layout.layout.scale())
+            .unwrap_or(1.0);
+        let root_area_offset = output
+            .oof_positioning_area
+            .map(|area| area.offset)
+            .unwrap_or(Point::ZERO);
+
+        let mut hoisted = Vec::new();
+        let mut assignments = Vec::new();
+        for group in &mut groups {
+            let Some((first, last)) = std::mem::take(&mut group.bounds).finish() else {
+                output.oof_candidates.append(&mut group.candidates);
+                continue;
+            };
+
+            let direction = self.nodes[group.containing_block]
+                .layout_style()
+                .direction();
+            let claims = self.inline_oof_claims(group.containing_block);
+            let (content_left, content_right) = if direction == Direction::Rtl {
+                (last.left / scale, first.right / scale)
+            } else {
+                (first.left / scale, last.right / scale)
+            };
+            let left = content_left + group.root_content_box_offset.x - group.padding.left;
+            let right = content_right + group.root_content_box_offset.x + group.padding.right;
+            let top = first.top / scale + group.root_content_box_offset.y - group.padding.top;
+            let bottom =
+                last.bottom / scale + group.root_content_box_offset.y + group.padding.bottom;
+            let area = OofPositioningArea {
+                size: Size {
+                    width: (right - left).max(0.0),
+                    height: (bottom - top).max(0.0),
+                },
+                offset: Point { x: left, y: top },
+            };
+
+            let mut result = compute_oof_layout_for_area(
+                self,
+                node_id,
+                std::mem::take(&mut group.candidates),
+                area,
+                direction,
+                claims,
+            );
+            assignments.extend(result.hoisted.iter().map(|&child| InlineOofAssignment {
+                child: dom_node_id(child),
+                containing_block: group.containing_block,
+            }));
+            hoisted.append(&mut result.hoisted);
+            output.oof_candidates.append(&mut result.unclaimed);
+
+            let delta = Point {
+                x: area.offset.x - root_area_offset.x,
+                y: area.offset.y - root_area_offset.y,
+            };
+            let overflow = result.scrollable_overflow_rect;
+            output.scrollable_overflow_rect = output.scrollable_overflow_rect.union(Rect {
+                left: overflow.left + delta.x,
+                right: overflow.right + delta.x,
+                top: overflow.top + delta.y,
+                bottom: overflow.bottom + delta.y,
+            });
+        }
+        self.add_hoisted_children(node_id, &hoisted);
+
+        let new_assignments = (!assignments.is_empty()).then(|| assignments.into_boxed_slice());
+        if old_assignments.as_deref() != new_assignments.as_deref() {
+            self.nodes[inline_root].spatial_dirty_self.set(true);
+        }
+        self.nodes[inline_root]
+            .data
+            .downcast_element_mut()
+            .unwrap()
+            .inline_layout_data
+            .as_mut()
+            .unwrap()
+            .inline_oof_assignments = new_assignments;
+    }
+
     pub(crate) fn compute_inline_layout(
         &mut self,
         node_id: NodeId,
@@ -142,6 +448,7 @@ impl BaseDocument {
             parent_size,
             available_space,
             sizing_mode,
+            run_mode,
             ..
         } = inputs;
 
@@ -152,6 +459,10 @@ impl BaseDocument {
             .unwrap()
             .take_inline_layout()
             .unwrap();
+        let perform_layout = run_mode == RunMode::PerformLayout;
+        if perform_layout {
+            inline_layout.pending_inline_oof_candidates = None;
+        }
 
         let style = self.nodes[node_id].layout_style();
 
@@ -274,8 +585,6 @@ impl BaseDocument {
                         - content_box_inset.vertical_axis_sum()
                 }),
         };
-
-        let perform_layout = inputs.run_mode == taffy::RunMode::PerformLayout;
 
         // Measure passes must not leave measure-time state (inline box sizes, line breaks)
         // in the persistent inline layout: painting uses that state, and a cache hit on a
@@ -876,6 +1185,34 @@ impl BaseDocument {
                     }
                 }
             }
+
+            let mut unassigned = OofCandidates::new();
+            let mut pending = Vec::new();
+            for candidate in oof_candidates.iter().copied() {
+                let child = dom_node_id(candidate.node);
+                let Some(containing_block) =
+                    self.inline_containing_block(node_id, child, candidate.position)
+                else {
+                    unassigned.push(candidate);
+                    continue;
+                };
+                let padding = self.nodes[containing_block]
+                    .layout_style()
+                    .padding()
+                    .resolve_or_zero(inputs.parent_size.width, resolve_calc_value);
+                pending.push(PendingInlineOofCandidate {
+                    containing_block,
+                    candidate,
+                    padding,
+                    root_content_box_offset: Point {
+                        x: container_pb.left,
+                        y: container_pb.top,
+                    },
+                });
+            }
+            oof_candidates = unassigned;
+            inline_layout.pending_inline_oof_candidates =
+                (!pending.is_empty()).then(|| pending.into_boxed_slice());
         }
 
         // println!("INLINE LAYOUT FOR {:?}. max_advance: {:?}", node_id, max_advance);

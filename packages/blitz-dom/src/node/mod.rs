@@ -27,3 +27,4 @@ pub use stylo_data::ComputedStyleRef;
 #[cfg(feature = "svg")]
 pub use svg::{SvgImageData, SvgIntrinsicDimensions};
 pub use text::{GeneratedTextInputEvent, TextBrush, TextInputData, TextLayout};
+pub(crate) use text::{InlineOofAssignment, PendingInlineOofCandidate};
