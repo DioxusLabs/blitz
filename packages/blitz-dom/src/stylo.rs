@@ -1002,6 +1002,14 @@ impl<'a> TElement for BlitzNode<'a> {
                         PropertyDeclaration::Height(size)
                     });
                 }
+            } else if *name == local_name!("width") {
+                if let Some(width) = parse_size_attr(value, |_| true) {
+                    use style::values::generics::{NonNegative, length::Size};
+
+                    push_style(PropertyDeclaration::Width(Size::LengthPercentage(
+                        NonNegative(width),
+                    )));
+                }
             }
 
             // hspace/vspace map to the horizontal and vertical margins as
@@ -1110,6 +1118,14 @@ impl<'a> TElement for BlitzNode<'a> {
                             });
                         }
                     }
+                }
+            } else if *name == local_name!("height") {
+                if let Some(height) = parse_size_attr(value, |_| true) {
+                    use style::values::generics::{NonNegative, length::Size};
+
+                    push_style(PropertyDeclaration::Height(Size::LengthPercentage(
+                        NonNegative(height),
+                    )));
                 }
             }
 
