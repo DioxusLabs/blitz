@@ -60,6 +60,8 @@ const STRETCHED_LINK_PAGE: &str = r#"<!DOCTYPE html>
 </body></html>
 "#;
 
+const BBC_PAGE: &str = include_str!("../../../examples/assets/bbc.html");
+
 #[test]
 fn stretched_link_pseudo_is_bounded_to_the_inline() {
     let harness = Harness::from_html(STRETCHED_LINK_PAGE);
@@ -115,6 +117,38 @@ fn hover_moves_between_links_with_stretched_pseudo() {
             is_within(&harness, hovered, expected),
             "hovered {hovered:?}"
         );
+    }
+}
+
+#[test]
+fn bbc_header_hover_transfers_between_links() {
+    let mut harness = Harness::from_html(BBC_PAGE);
+    let selectors = [
+        ".ssrcss-en6he4-NavItemHoverState",
+        ".ssrcss-yg7y3n-NavItemHoverState",
+        ".ssrcss-ibt0yi-NavItemHoverState",
+        ".ssrcss-vgg72x-NavItemHoverState",
+    ];
+
+    for _ in 0..20 {
+        for selector in selectors {
+            let expected = harness.node(selector);
+            let rect = harness.layout_rect(selector);
+            harness.move_mouse_to(rect.x + rect.width / 2.0, rect.y + rect.height / 2.0);
+            let hovered = harness.hovered().expect("hovered BBC header link");
+            assert!(
+                is_within(&harness, hovered, expected),
+                "{selector}: hovered {hovered:?}"
+            );
+
+            let pseudo = after_pseudo(&harness, selector);
+            let pseudo_rect = harness.layout_rect_of(pseudo);
+            assert!(pseudo_rect.x >= rect.x - 1.0, "{selector}: {pseudo_rect:?}");
+            assert!(
+                pseudo_rect.x + pseudo_rect.width <= rect.x + rect.width + 1.0,
+                "{selector}: {pseudo_rect:?} {rect:?}"
+            );
+        }
     }
 }
 
