@@ -1467,6 +1467,22 @@ impl Node {
         Some((offset, clip))
     }
 
+    /// Whether a stacked entry of this node's stacking context escapes this
+    /// node's own overflow clip: true when the entry's geometry
+    /// (containing-block) chain does not pass through this node (e.g. a
+    /// fixed-position descendant of a scroll container whose containing block
+    /// is an ancestor of the scroll container).
+    pub fn stacked_entry_escapes_clip(&self, entry_id: NodeId) -> bool {
+        let mut cur = entry_id;
+        loop {
+            match self.with(cur).paint_geometry_parent() {
+                Some(p) if p == self.id => return false,
+                Some(p) => cur = p,
+                None => return true,
+            }
+        }
+    }
+
     /// Whether this box clips its overflowing content (scroll containers,
     /// `overflow: hidden/clip`, `contain: paint`).
     pub(crate) fn clips_overflow(&self) -> bool {

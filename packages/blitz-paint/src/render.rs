@@ -508,6 +508,20 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                         cx.draw_border(scene);
                         cx.stroke_devtools(scene);
 
+                        // Stacked entries whose geometry chain bypasses this
+                        // element's overflow clip (e.g. fixed-position boxes
+                        // whose containing block is an ancestor of a scroll
+                        // container) must not be clipped by it, so they are
+                        // drawn outside the clip layer.
+                        if should_clip {
+                            cx.draw_negative_stacked_entries(
+                                scene,
+                                unscrolled_transform,
+                                clip_rect,
+                                Some(true),
+                            );
+                        }
+
                         // TODO: allow layers with opacity to be unclipped (overflow: visible)
                         let clip = if is_text_input {
                             &cx.frame.content_box_path()
@@ -542,6 +556,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                                     scene,
                                     unscrolled_transform,
                                     child_clip_rect,
+                                    should_clip.then_some(false),
                                 );
                                 cx.draw_image(scene);
                                 #[cfg(feature = "svg")]
@@ -561,9 +576,19 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                                     scene,
                                     unscrolled_transform,
                                     child_clip_rect,
+                                    should_clip.then_some(false),
                                 );
                             },
                         );
+
+                        if should_clip {
+                            cx.draw_non_negative_stacked_entries(
+                                scene,
+                                unscrolled_transform,
+                                clip_rect,
+                                Some(true),
+                            );
+                        }
 
                         // Overlay scrollbars, drawn unscrolled above the
                         // clipped content.
@@ -1002,28 +1027,45 @@ impl ElementCx<'_, '_> {
         }
     }
 
+    /// Draw this context's negative-z stacked entries. When this node clips
+    /// its overflow, `escaping` filters the entries: `Some(true)` draws only
+    /// entries whose geometry chain bypasses this node's clip (called outside
+    /// the clip layer), `Some(false)` only entries clipped by it (called
+    /// inside the clip layer). `None` draws all entries.
     fn draw_negative_stacked_entries(
         &self,
         scene: &mut impl PaintScene,
         unscrolled_transform: Affine,
         clip_rect: Rect,
+        escaping: Option<bool>,
     ) {
         if let Some(sc) = &self.node.stacking_context {
             for entry in sc.negative_entries() {
-                self.draw_stacked_entry(scene, entry.node_id, unscrolled_transform, clip_rect);
+                if escaping
+                    .is_none_or(|esc| self.node.stacked_entry_escapes_clip(entry.node_id) == esc)
+                {
+                    self.draw_stacked_entry(scene, entry.node_id, unscrolled_transform, clip_rect);
+                }
             }
         }
     }
 
+    /// Draw this context's zero/auto/positive-z stacked entries; `escaping`
+    /// as for [`Self::draw_negative_stacked_entries`].
     fn draw_non_negative_stacked_entries(
         &self,
         scene: &mut impl PaintScene,
         unscrolled_transform: Affine,
         clip_rect: Rect,
+        escaping: Option<bool>,
     ) {
         if let Some(sc) = &self.node.stacking_context {
             for entry in sc.non_negative_entries() {
-                self.draw_stacked_entry(scene, entry.node_id, unscrolled_transform, clip_rect);
+                if escaping
+                    .is_none_or(|esc| self.node.stacked_entry_escapes_clip(entry.node_id) == esc)
+                {
+                    self.draw_stacked_entry(scene, entry.node_id, unscrolled_transform, clip_rect);
+                }
             }
         }
     }
