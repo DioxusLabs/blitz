@@ -393,10 +393,18 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         // Cull elements that fall entirely outside the current clip rectangle. In addition to
         // the viewport, `clip_rect` is narrowed by any ancestor scrollport (see below), so this
         // also culls elements scrolled out of view inside a clipping/scrolling container.
-        if screen_bbox.x1 < clip_rect.x0
-            || screen_bbox.x0 > clip_rect.x1
-            || screen_bbox.y1 < clip_rect.y0
-            || screen_bbox.y0 > clip_rect.y1
+        // Stacking contexts with stacked entries are never culled: their entries may lie
+        // outside the element's own bounds and overflow (e.g. an out-of-flow box whose
+        // containing block is an ancestor).
+        let has_stacked_entries = node
+            .stacking_context
+            .as_ref()
+            .is_some_and(|sc| !sc.entries.is_empty());
+        if !has_stacked_entries
+            && (screen_bbox.x1 < clip_rect.x0
+                || screen_bbox.x0 > clip_rect.x1
+                || screen_bbox.y1 < clip_rect.y0
+                || screen_bbox.y0 > clip_rect.y1)
         {
             return;
         }
@@ -527,6 +535,14 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                                     x: -node.scroll_offset().x * self.scale,
                                     y: -node.scroll_offset().y * self.scale,
                                 });
+                                // Stacked entries with a negative z-index paint below
+                                // this context's in-flow content (CSS 2.1 Appendix E
+                                // step 3), just above its background and borders.
+                                cx.draw_negative_stacked_entries(
+                                    scene,
+                                    unscrolled_transform,
+                                    child_clip_rect,
+                                );
                                 cx.draw_image(scene);
                                 #[cfg(feature = "svg")]
                                 cx.draw_svg(scene);
@@ -538,6 +554,14 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                                 cx.draw_inline_layout(scene, content_position);
                                 cx.draw_marker(scene, content_position);
                                 cx.draw_children(scene, cx.transform, child_clip_rect);
+                                // Stacked entries with a zero/auto or positive z-index
+                                // paint above this context's in-flow content (CSS 2.1
+                                // Appendix E steps 8-9), in z order then tree order.
+                                cx.draw_non_negative_stacked_entries(
+                                    scene,
+                                    unscrolled_transform,
+                                    child_clip_rect,
+                                );
                             },
                         );
 
@@ -962,67 +986,102 @@ impl ElementCx<'_, '_> {
         }
     }
 
+    /// Draw this node's in-flow (non-stacked) children. Stacked children are
+    /// drawn as stacking-context entries by `draw_negative_stacked_entries` /
+    /// `draw_non_negative_stacked_entries` on their stacking context root.
     fn draw_children(
         &self,
         scene: &mut impl PaintScene,
         parent_style_transform: Affine,
         clip_rect: Rect,
     ) {
-        // Negative z_index hoisted nodes
-
-        if let Some(hoisted) = &self.node.stacking_context {
-            for hoisted_child in hoisted.neg_z_hoisted_children() {
-                let pos = kurbo::Vec2 {
-                    x: hoisted_child.position.x as f64 * self.scale,
-                    y: hoisted_child.position.y as f64 * self.scale,
-                };
-                self.render_node(
-                    scene,
-                    hoisted_child.node_id,
-                    parent_style_transform.pre_translate(pos),
-                    clip_rect,
-                );
-            }
-        }
-
-        // Regular children
         if let Some(children) = &*self.node.paint_children.borrow() {
             for child_id in children {
-                // Fixed-position children do not scroll with their containing block
-                // (their layout location is relative to its unscrolled border box),
-                // so cancel out the scroll offset applied to the transform above.
-                let child = &self.context.dom.as_ref().tree()[*child_id];
-                let child_transform = if child.taffy_position() == taffy::Position::Fixed {
-                    // The root element's scroll is the viewport scroll (applied in
-                    // `paint_scene`), not the node's own scroll offset.
-                    let scroll = if Some(self.node.id) == self.context.root_element_id {
-                        self.context.dom.as_ref().viewport_scroll()
-                    } else {
-                        *self.node.scroll_offset()
-                    };
-                    parent_style_transform.pre_translate(kurbo::Vec2 {
-                        x: scroll.x * self.scale,
-                        y: scroll.y * self.scale,
-                    })
-                } else {
-                    parent_style_transform
-                };
-                self.render_node(scene, *child_id, child_transform, clip_rect);
+                self.render_node(scene, *child_id, parent_style_transform, clip_rect);
             }
         }
+    }
 
-        // Positive z_index hoisted nodes
-        if let Some(hoisted) = &self.node.stacking_context {
-            for hoisted_child in hoisted.pos_z_hoisted_children() {
-                let pos = kurbo::Vec2 {
-                    x: hoisted_child.position.x as f64 * self.scale,
-                    y: hoisted_child.position.y as f64 * self.scale,
-                };
-                self.render_node(
+    fn draw_negative_stacked_entries(
+        &self,
+        scene: &mut impl PaintScene,
+        unscrolled_transform: Affine,
+        clip_rect: Rect,
+    ) {
+        if let Some(sc) = &self.node.stacking_context {
+            for entry in sc.negative_entries() {
+                self.draw_stacked_entry(scene, entry.node_id, unscrolled_transform, clip_rect);
+            }
+        }
+    }
+
+    fn draw_non_negative_stacked_entries(
+        &self,
+        scene: &mut impl PaintScene,
+        unscrolled_transform: Affine,
+        clip_rect: Rect,
+    ) {
+        if let Some(sc) = &self.node.stacking_context {
+            for entry in sc.non_negative_entries() {
+                self.draw_stacked_entry(scene, entry.node_id, unscrolled_transform, clip_rect);
+            }
+        }
+    }
+
+    /// Draw one stacked entry of this node's stacking context, resolving its
+    /// coordinate space offset (and any intermediate scroll-container clips)
+    /// from the geometry (containing-block) chain. `unscrolled_transform` is
+    /// this node's border-box transform, *without* its scroll offset applied
+    /// (the offset resolution accounts for scrolling itself, since fixed
+    /// descendants are exempt from it).
+    fn draw_stacked_entry(
+        &self,
+        scene: &mut impl PaintScene,
+        entry_id: NodeId,
+        unscrolled_transform: Affine,
+        clip_rect: Rect,
+    ) {
+        let viewport_scroll = self.context.dom.as_ref().viewport_scroll();
+        let viewport_scroll = taffy::Point {
+            x: viewport_scroll.x as f32,
+            y: viewport_scroll.y as f32,
+        };
+        let Some((offset, clip)) = self.node.stacked_entry_offset(entry_id, viewport_scroll) else {
+            return;
+        };
+        let transform = unscrolled_transform.pre_translate(kurbo::Vec2 {
+            x: offset.x as f64 * self.scale,
+            y: offset.y as f64 * self.scale,
+        });
+        match clip {
+            None => self.render_node(scene, entry_id, transform, clip_rect),
+            Some(clip) => {
+                // Clip to the padding boxes of scroll/clip containers between
+                // the entry and this stacking context root. The clip is in
+                // this node's unscrolled border-box space (CSS pixels).
+                let scaled_clip = Rect::new(
+                    clip.x0 * self.scale,
+                    clip.y0 * self.scale,
+                    clip.x1 * self.scale,
+                    clip.y1 * self.scale,
+                );
+                let screen_transform = Affine::translate(Vec2 {
+                    x: -self.context.initial_x,
+                    y: -self.context.initial_y,
+                }) * unscrolled_transform;
+                let clip_rect =
+                    clip_rect.intersect(screen_transform.transform_rect_bbox(scaled_clip));
+                self.context.layer_manager.maybe_with_layer(
                     scene,
-                    hoisted_child.node_id,
-                    parent_style_transform.pre_translate(pos),
-                    clip_rect,
+                    true,
+                    1.0,
+                    unscrolled_transform,
+                    &scaled_clip,
+                    None,
+                    None,
+                    |scene| {
+                        self.render_node(scene, entry_id, transform, clip_rect);
+                    },
                 );
             }
         }

@@ -25,6 +25,7 @@ pub(crate) mod damage;
 pub(crate) mod inline;
 pub(crate) mod list;
 pub(crate) mod replaced;
+pub mod stacking;
 pub(crate) mod table;
 
 use self::replaced::{
@@ -454,12 +455,22 @@ impl LayoutContainingBlock for BaseDocument {
         let containing_block = dom_node_id(node_id);
         let node = self.node_from_id(node_id);
         let mut vec = node.hoisted_children.borrow_mut();
+        // Clear the inverse pointer of boxes which are no longer hoisted to
+        // this containing block (`layout_parent` is left untouched: it tracks
+        // structural ancestry, not containing-block geometry).
+        for &old_id in vec.iter() {
+            if self.nodes.contains_key(old_id)
+                && self.nodes[old_id].oof_containing_block.get() == Some(containing_block)
+            {
+                self.nodes[old_id].oof_containing_block.set(None);
+            }
+        }
         vec.clear();
         vec.extend(hoisted.iter().copied().map(dom_node_id));
         drop(vec);
         for &hoisted_id in hoisted {
             self.node_from_id(hoisted_id)
-                .layout_parent
+                .oof_containing_block
                 .set(Some(containing_block));
         }
     }
@@ -476,7 +487,7 @@ impl LayoutContainingBlock for BaseDocument {
         drop(vec);
         for &hoisted_id in hoisted {
             self.node_from_id(hoisted_id)
-                .layout_parent
+                .oof_containing_block
                 .set(Some(containing_block));
         }
     }
