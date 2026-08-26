@@ -1,5 +1,5 @@
 use crate::Document;
-use crate::layout::damage::HoistedPaintChildren;
+use crate::layout::stacking::StackingContext;
 use bitflags::bitflags;
 use blitz_traits::events::{
     BlitzPointerEvent, BlitzPointerId, DomEventData, HitResult, PointerCoords,
@@ -102,15 +102,23 @@ pub struct Node {
     /// containing block. Recorded by Taffy's out-of-flow positioning pass. The
     /// `Layout.location` of these boxes is relative to this node's border box.
     pub hoisted_children: RefCell<ThinVec<NodeId>>,
+    /// The inverse of `hoisted_children`: for an out-of-flow box, the node that
+    /// is its containing block (whose `hoisted_children` list contains it).
+    pub oof_containing_block: Cell<Option<NodeId>>,
     /// Anonymous block boxes created for this node during layout construction.
     ///
     /// Anonymous blocks live only in the slab (they are not part of the DOM
     /// `children` list), so we track the ones we own here to be able to
     /// deallocate them when this node is reconstructed.
     pub anonymous_blocks: ThinVec<NodeId>,
-    /// The same as layout_children, but sorted by z-index
+    /// The in-flow (non-stacked) subset of layout_children, in paint order
+    /// (floats above other in-flow content, flex/grid `order` honoured).
+    /// Stacked children are recorded as entries of the nearest enclosing real
+    /// stacking context instead (see [`StackingContext`]).
     pub paint_children: RefCell<Option<ThinVec<NodeId>>>,
-    pub stacking_context: Option<Box<HoistedPaintChildren>>,
+    /// The derived stacking-context membership, present iff this node
+    /// establishes a real stacking context.
+    pub stacking_context: Option<Box<StackingContext>>,
 
     // Flags
     pub flags: NodeFlags,
@@ -388,6 +396,7 @@ impl Node {
             parent: None,
             children: ThinVec::new(),
             layout_parent: Cell::new(None),
+            oof_containing_block: Cell::new(None),
             layout_children: RefCell::new(None),
             hoisted_children: RefCell::new(ThinVec::new()),
             anonymous_blocks: ThinVec::new(),
@@ -785,6 +794,34 @@ impl Node {
 
         0.0
     }
+}
+
+/// The contribution of one geometry-chain hop (from `child` to its geometry
+/// parent `parent`) to a box's position in an ancestor's coordinate space:
+/// the child's layout location, adjusted for the parent's scroll offset
+/// (which fixed-position boxes are exempt from; fixed boxes whose containing
+/// block is the root element are additionally exempt from the viewport
+/// scroll, which the paint/hit roots apply globally).
+fn hop_contribution(
+    child: &Node,
+    parent: &Node,
+    viewport_scroll: taffy::Point<f32>,
+) -> taffy::Point<f32> {
+    let location = child.final_layout().location;
+    let mut out = taffy::Point {
+        x: location.x,
+        y: location.y,
+    };
+    if child.taffy_position() == taffy::Position::Fixed {
+        if parent.is_root_element_node() {
+            out.x += viewport_scroll.x;
+            out.y += viewport_scroll.y;
+        }
+    } else {
+        out.x -= parent.scroll_offset().x as f32;
+        out.y -= parent.scroll_offset().y as f32;
+    }
+    out
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -1263,16 +1300,15 @@ impl Node {
 
     // https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_positioned_layout/Stacking_context#features_creating_stacking_contexts
     pub fn is_stacking_context_root(&self, is_flex_or_grid_item: bool) -> bool {
+        use style::computed_values::isolation::T as Isolation;
+        use style::computed_values::mix_blend_mode::T as MixBlendMode;
+
         let Some(style) = self.primary_styles() else {
             return false;
         };
 
         let position = style.clone_position();
         let has_z_index = !style.clone_z_index().is_auto();
-
-        if style.clone_opacity() != 1.0 {
-            return true;
-        }
 
         let position_based = match position {
             Position::Fixed | Position::Sticky => true,
@@ -1283,19 +1319,187 @@ impl Node {
             return true;
         }
 
-        if self.transform().is_some() {
-            return true;
-        }
-
+        // opacity, filter, clip-path, mask
         if self.applies_atomic_paint_effect() {
             return true;
         }
 
-        // TODO: mix-blend-mode
-        // TODO: isolation
-        // TODO: contain
+        let effects = style.get_effects();
+        if effects.mix_blend_mode != MixBlendMode::Normal {
+            return true;
+        }
+        if style.get_box().isolation == Isolation::Isolate {
+            return true;
+        }
+
+        // transform/translate/rotate/scale/perspective, backdrop-filter,
+        // will-change, contain: layout/paint, container-type
+        if self.establishes_fixed_containing_block() {
+            return true;
+        }
+
+        // CSS animations create a stacking context (approximation: for any
+        // animated property, not only stacking-context-inducing ones).
+        if style.get_ui().specifies_animations() {
+            return true;
+        }
 
         false
+    }
+
+    /// Whether this box is *stacked*: painted as a stacking-context entry of
+    /// the nearest enclosing real stacking context rather than as an in-flow
+    /// `paint_children` member of its parent. This is true for all positioned
+    /// boxes (including `z-index: auto` "stacking containers"), flex/grid
+    /// items with a non-auto z-index, and any box that establishes a real
+    /// stacking context for another reason (opacity, transform, etc).
+    pub fn is_stacked(&self, is_flex_or_grid_item: bool) -> bool {
+        let Some(style) = self.primary_styles() else {
+            return false;
+        };
+        if style.clone_position() != Position::Static {
+            return true;
+        }
+        if is_flex_or_grid_item && !style.clone_z_index().is_auto() {
+            return true;
+        }
+        self.is_stacking_context_root(is_flex_or_grid_item)
+    }
+
+    /// The parent whose coordinate space this node's `Layout.location` is
+    /// relative to: the containing block for out-of-flow boxes (as recorded by
+    /// Taffy's out-of-flow positioning pass), the structural layout parent
+    /// otherwise.
+    pub fn paint_geometry_parent(&self) -> Option<NodeId> {
+        if self.taffy_position().is_out_of_flow() {
+            if let Some(cb) = self.oof_containing_block.get() {
+                return Some(cb);
+            }
+        }
+        self.layout_parent.get()
+    }
+
+    /// Whether this node is the document's root element (its DOM parent is the
+    /// document node).
+    pub(crate) fn is_root_element_node(&self) -> bool {
+        self.parent
+            .is_some_and(|pid| matches!(self.with(pid).data, NodeData::Document(_)))
+    }
+
+    /// Resolve the offset of a stacked entry's coordinate space relative to
+    /// this stacking-context root's *unscrolled* border-box space (the space
+    /// in which a direct in-flow child paints at
+    /// `Layout.location - root.scroll_offset()`), by walking the geometry
+    /// (containing-block) parent chains of both nodes to their common
+    /// ancestor.
+    ///
+    /// Also accumulates the clip rectangles (padding boxes, in the same space,
+    /// in CSS pixels) of clipping ancestors on the entry's geometry chain
+    /// below the common ancestor. The root's own clip (and the clips of
+    /// ancestors of the common ancestor) are excluded: those are applied by
+    /// the layers the root paints inside of.
+    ///
+    /// Returns `None` if the nodes have no common geometry ancestor.
+    pub fn stacked_entry_offset(
+        &self,
+        entry_id: NodeId,
+        viewport_scroll: taffy::Point<f32>,
+    ) -> Option<(taffy::Point<f32>, Option<KurboRect>)> {
+        // The entry's geometry ancestor chain (entry itself first).
+        let mut chain: Vec<NodeId> = Vec::new();
+        let mut cur = entry_id;
+        loop {
+            chain.push(cur);
+            match self.with(cur).paint_geometry_parent() {
+                Some(p) => cur = p,
+                None => break,
+            }
+        }
+
+        // Walk up from this root, accumulating hop contributions, until we
+        // reach a node on the entry's chain (the common geometry ancestor).
+        let mut root_sum = taffy::Point {
+            x: 0.0f32,
+            y: 0.0f32,
+        };
+        let mut q = self.id;
+        let common_idx = loop {
+            if let Some(idx) = chain.iter().position(|&id| id == q) {
+                break idx;
+            }
+            let parent_id = self.with(q).paint_geometry_parent()?;
+            let c = hop_contribution(self.with(q), self.with(parent_id), viewport_scroll);
+            root_sum.x += c.x;
+            root_sum.y += c.y;
+            q = parent_id;
+        };
+
+        // Accumulate the entry's hop contributions up to the common ancestor,
+        // and the clips of clipping ancestors strictly between the entry and
+        // the common ancestor.
+        let mut entry_sum = taffy::Point {
+            x: 0.0f32,
+            y: 0.0f32,
+        };
+        let mut clip: Option<KurboRect> = None;
+        for i in (0..common_idx).rev() {
+            let child = self.with(chain[i]);
+            let parent = self.with(chain[i + 1]);
+            // `entry_sum` currently holds B(parent -> Q): the position of
+            // `parent`'s border-box origin, plus `root_sum`.
+            if i + 1 < common_idx && parent.clips_overflow() {
+                let layout = parent.final_layout();
+                let rect = KurboRect::new(
+                    (entry_sum.x - root_sum.x + layout.border.left) as f64,
+                    (entry_sum.y - root_sum.y + layout.border.top) as f64,
+                    (entry_sum.x - root_sum.x + layout.size.width - layout.border.right) as f64,
+                    (entry_sum.y - root_sum.y + layout.size.height - layout.border.bottom) as f64,
+                );
+                clip = Some(match clip {
+                    Some(existing) => existing.intersect(rect),
+                    None => rect,
+                });
+            }
+            let c = hop_contribution(child, parent, viewport_scroll);
+            entry_sum.x += c.x;
+            entry_sum.y += c.y;
+        }
+
+        let entry_location = self.with(entry_id).final_layout().location;
+        let offset = taffy::Point {
+            x: entry_sum.x - root_sum.x - entry_location.x,
+            y: entry_sum.y - root_sum.y - entry_location.y,
+        };
+        Some((offset, clip))
+    }
+
+    /// Whether a stacked entry of this node's stacking context escapes this
+    /// node's own overflow clip: true when the entry's geometry
+    /// (containing-block) chain does not pass through this node (e.g. a
+    /// fixed-position descendant of a scroll container whose containing block
+    /// is an ancestor of the scroll container).
+    pub fn stacked_entry_escapes_clip(&self, entry_id: NodeId) -> bool {
+        let mut cur = entry_id;
+        loop {
+            match self.with(cur).paint_geometry_parent() {
+                Some(p) if p == self.id => return false,
+                Some(p) => cur = p,
+                None => return true,
+            }
+        }
+    }
+
+    /// Whether this box clips its overflowing content (scroll containers,
+    /// `overflow: hidden/clip`, `contain: paint`).
+    pub(crate) fn clips_overflow(&self) -> bool {
+        use style::values::computed::{Contain, Overflow};
+        let Some(style) = self.primary_styles() else {
+            return false;
+        };
+        let box_style = style.get_box();
+        !matches!(box_style.overflow_x, Overflow::Visible)
+            || !matches!(box_style.overflow_y, Overflow::Visible)
+            || box_style.clone_contain().contains(Contain::PAINT)
     }
 
     /// Whether this node's styles apply an atomic paint effect (opacity, filter,
@@ -1401,8 +1605,8 @@ impl Node {
     ///    - The result of recursively calling child.hit() on the the child element that is
     ///      positioned at that position if there is one.
     ///
-    /// TODO: z-index
-    /// (If multiple children are positioned at the position then a random one will be recursed into)
+    /// Stacked boxes are tested in reverse paint order (highest z-index first),
+    /// so the topmost box at the position wins.
     pub fn hit(&self, x: f32, y: f32, scale: f64) -> Option<HitResult> {
         self.hit_inner(x, y, scale, &mut None, taffy::Point::ZERO)
     }
@@ -1463,16 +1667,13 @@ impl Node {
             || y < 0.0
             || y > overflow_rect.bottom + self.scroll_offset().y as f32);
 
-        let matches_hoisted_content = match &self.stacking_context {
-            Some(sc) => {
-                let content_area = sc.content_area;
-                x >= content_area.left + self.scroll_offset().x as f32
-                    && x <= content_area.right + self.scroll_offset().x as f32
-                    && y >= content_area.top + self.scroll_offset().y as f32
-                    && y <= content_area.bottom + self.scroll_offset().y as f32
-            }
-            None => false,
-        };
+        // Stacked entries may lie outside this node's own bounds and overflow
+        // (e.g. an out-of-flow box whose containing block is an ancestor), so
+        // a stacking context with entries can never be culled early.
+        let has_stacked_entries = self
+            .stacking_context
+            .as_ref()
+            .is_some_and(|sc| !sc.entries.is_empty());
 
         // `scrollable_overflow` is stored in device (scaled) pixels, whereas the
         // coordinates here are in CSS pixels, so unscale it before comparing.
@@ -1483,7 +1684,7 @@ impl Node {
             && y >= (overflow.y0 / scale) as f32
             && y <= (overflow.y1 / scale) as f32;
 
-        if !matches_self && !matches_content && !matches_hoisted_content && !matches_overflow {
+        if !matches_self && !matches_content && !has_stacked_entries && !matches_overflow {
             return None;
         }
 
@@ -1507,66 +1708,32 @@ impl Node {
             y -= content_box_offset.y;
         }
 
-        // Positive z_index hoisted children
-        if matches_hoisted_content {
-            if let Some(hoisted) = &self.stacking_context {
-                for hoisted_child in hoisted.pos_z_hoisted_children().rev() {
-                    let x = x - hoisted_child.position.x;
-                    let y = y - hoisted_child.position.y;
-                    if let Some(hit) = self.with(hoisted_child.node_id).hit_inner(
-                        x,
-                        y,
-                        scale,
-                        scrollbar,
-                        taffy::Point::ZERO,
-                    ) {
-                        return Some(hit);
-                    }
+        // Stacked entries with a zero/auto or positive z-index (topmost first)
+        if let Some(sc) = &self.stacking_context {
+            for entry in sc.non_negative_entries().iter().rev() {
+                if let Some(hit) =
+                    self.hit_stacked_entry(entry.node_id, x, y, scale, scrollbar, viewport_scroll)
+                {
+                    return Some(hit);
                 }
             }
         }
 
-        // Call `.hit()` on each child in turn. If any return `Some` then return that value. Else return `Some(self.id).
+        // Call `.hit()` on each in-flow child in turn. If any return `Some` then return that value.
         for child_id in self.paint_children.borrow().iter().flatten().rev() {
             let child = self.with(*child_id);
-            let child_position = child.taffy_position();
-            let mut child_x = x;
-            let mut child_y = y;
-            if child_position.is_out_of_flow() {
-                // Out-of-flow children's layout location is relative to this node's
-                // border box, so undo the inline-root content-box offset applied above
-                if self.flags.is_inline_root() {
-                    child_x += content_box_offset.x;
-                    child_y += content_box_offset.y;
-                }
-                // Fixed-position children do not scroll with their containing block
-                if child_position == taffy::Position::Fixed {
-                    child_x -= self.scroll_offset().x as f32 + viewport_scroll.x;
-                    child_y -= self.scroll_offset().y as f32 + viewport_scroll.y;
-                }
-            }
-            if let Some(hit) =
-                child.hit_inner(child_x, child_y, scale, scrollbar, taffy::Point::ZERO)
-            {
+            if let Some(hit) = child.hit_inner(x, y, scale, scrollbar, viewport_scroll) {
                 return Some(hit);
             }
         }
 
-        // Negative z_index hoisted children
-        if matches_hoisted_content {
-            if let Some(hoisted) = &self.stacking_context {
-                for hoisted_child in hoisted.neg_z_hoisted_children().rev() {
-                    let x = x - hoisted_child.position.x;
-                    let y = y - hoisted_child.position.y;
-                    if let Some(hit) = self.with(hoisted_child.node_id).hit_inner(
-                        x,
-                        y,
-                        scale,
-                        scrollbar,
-                        taffy::Point::ZERO,
-                    ) {
-                        return Some(hit);
-                    }
+        // Stacked entries with a negative z-index (topmost first)
+        if let Some(sc) = &self.stacking_context {
+            for entry in sc.negative_entries().iter().rev() {
+                if let Some(hit) =
+                    self.hit_stacked_entry(entry.node_id, x, y, scale, scrollbar, viewport_scroll)
+                {
+                    return Some(hit);
                 }
             }
         }
@@ -1610,6 +1777,54 @@ impl Node {
         }
 
         None
+    }
+
+    /// Hit-test a stacked entry of this node's stacking context, resolving its
+    /// coordinate space offset (and any intermediate clips) from the geometry
+    /// (containing-block) chain. `x`/`y` are in this node's scrolled content
+    /// space, as adjusted by `hit_inner`.
+    #[allow(clippy::too_many_arguments)]
+    fn hit_stacked_entry(
+        &self,
+        entry_id: NodeId,
+        x: f32,
+        y: f32,
+        scale: f64,
+        scrollbar: &mut Option<crate::node::ScrollbarRef>,
+        viewport_scroll: taffy::Point<f32>,
+    ) -> Option<HitResult> {
+        let (offset, clip) = self.stacked_entry_offset(entry_id, viewport_scroll)?;
+
+        // Convert to this node's unscrolled border-box space (undoing the
+        // inline-root content-box offset applied by `hit_inner`, since entry
+        // offsets are resolved in border-box space).
+        let mut px = x - self.scroll_offset().x as f32;
+        let mut py = y - self.scroll_offset().y as f32;
+        if self.flags.is_inline_root() {
+            let layout = self.final_layout();
+            px += layout.padding.left + layout.border.left;
+            py += layout.padding.top + layout.border.top;
+        }
+
+        // Reject points clipped away by scroll/clip containers between the
+        // entry and its stacking context root.
+        if let Some(clip) = clip {
+            if (px as f64) < clip.x0
+                || (px as f64) > clip.x1
+                || (py as f64) < clip.y0
+                || (py as f64) > clip.y1
+            {
+                return None;
+            }
+        }
+
+        self.with(entry_id).hit_inner(
+            px - offset.x,
+            py - offset.y,
+            scale,
+            scrollbar,
+            viewport_scroll,
+        )
     }
 
     /// Find the inline root ancestor of this node (or self if this is an inline root).
@@ -1666,14 +1881,22 @@ impl Node {
 
     /// Computes the Document-relative coordinates of the `Node`
     pub fn absolute_position(&self, x: f32, y: f32) -> crate::util::Point<f32> {
-        let x = x + self.final_layout().location.x - self.scroll_offset().x as f32;
-        let y = y + self.final_layout().location.y - self.scroll_offset().y as f32;
+        let mut x = x + self.final_layout().location.x - self.scroll_offset().x as f32;
+        let mut y = y + self.final_layout().location.y - self.scroll_offset().y as f32;
 
-        // Recurse up the layout hierarchy
-        self.layout_parent
-            .get()
-            .map(|i| self.with(i).absolute_position(x, y))
-            .unwrap_or(crate::util::Point { x, y })
+        // Recurse up the geometry (containing block) hierarchy
+        match self.paint_geometry_parent() {
+            Some(i) => {
+                let parent = self.with(i);
+                // Fixed-position boxes do not scroll with their containing block
+                if self.taffy_position() == taffy::Position::Fixed {
+                    x += parent.scroll_offset().x as f32;
+                    y += parent.scroll_offset().y as f32;
+                }
+                parent.absolute_position(x, y)
+            }
+            None => crate::util::Point { x, y },
+        }
     }
 
     /// Whether this node can act as an [`offset_parent`](Self::offset_parent): a positioned
@@ -1705,7 +1928,7 @@ impl Node {
     pub fn offset_parent(&self) -> Option<&Node> {
         let mut node = self;
         loop {
-            node = self.with(node.layout_parent.get()?);
+            node = self.with(node.paint_geometry_parent()?);
             if node.is_offset_parent() {
                 return Some(node);
             }
@@ -1723,7 +1946,7 @@ impl Node {
             x += layout.location.x;
             y += layout.location.y;
 
-            let Some(parent_id) = current.layout_parent.get() else {
+            let Some(parent_id) = current.paint_geometry_parent() else {
                 break;
             };
             let parent = self.with(parent_id);

@@ -76,3 +76,41 @@ fn earlier_abspos_stays_below_static_when_later_in_tree_order_is_static() {
         "positioned content paints above in-flow content regardless of tree order"
     );
 }
+
+#[test]
+fn abspos_under_opacity_ancestor_keeps_effect() {
+    // The opacity div is not the abspos child's containing block (that's the
+    // outer relative div), but it IS its paint/effect ancestor: the abspos
+    // content must still be blended by the ancestor's opacity.
+    let px = center_pixel(
+        r#"<html><body style="margin:0; background:#ffffff">
+            <div style="position:relative; width:100px; height:100px;">
+                <div style="opacity:0.5; width:100px; height:100px;">
+                    <div style="position:absolute; inset:0; background:#ff0000;"></div>
+                </div>
+            </div>
+        </body></html>"#,
+    );
+    assert_eq!(
+        px,
+        [255, 127, 127],
+        "abspos under an opacity ancestor (not its CB) must be blended by that opacity"
+    );
+}
+
+#[test]
+fn negative_z_abspos_paints_below_in_flow_sibling() {
+    let px = center_pixel(
+        r#"<html><body style="margin:0">
+            <div style="position:relative; width:100px; height:100px;">
+                <div style="position:absolute; inset:0; background:#ff0000; z-index:-1;"></div>
+                <div style="width:100px; height:100px; background:#0000ff;"></div>
+            </div>
+        </body></html>"#,
+    );
+    assert_eq!(
+        px,
+        [0, 0, 255],
+        "negative z-index abspos must paint below in-flow sibling content"
+    );
+}
