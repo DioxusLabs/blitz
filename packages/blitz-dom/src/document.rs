@@ -1532,7 +1532,9 @@ impl BaseDocument {
     /// - `HAS_EMPTY_SELECTOR`: the container itself may match `:empty`, so restyle
     ///   its subtree (and its later siblings if the grandparent has
     ///   `HAS_SLOW_SELECTOR_LATER_SIBLINGS`, for `:empty ~ E`).
-    /// - `HAS_SLOW_SELECTOR` (`:nth-last-child` etc): restyle all children.
+    /// - `HAS_SLOW_SELECTOR` (`:nth-last-child` etc): restyle the whole container
+    ///   (all children would need restyling anyway, so a single subtree hint on
+    ///   the container is cheaper, matching Gecko's `RestyleWholeContainer`).
     /// - `HAS_SLOW_SELECTOR_LATER_SIBLINGS` (`:nth-child` etc): restyle children
     ///   at or after the change position.
     /// - `HAS_EDGE_CHILD_SELECTOR` (`:first-child`/`:last-child`/`:only-child`):
@@ -1570,7 +1572,20 @@ impl BaseDocument {
             return;
         }
 
-        if restyle_all || restyle_later || restyle_edges {
+        if restyle_all {
+            // Restyling the container is the most we can do here, so we're done.
+            if let Some(mut data) = self.nodes[parent_id]
+                .try_stylo_element_data_mut()
+                .and_then(|s| s.get_mut())
+            {
+                data.hint |= RestyleHint::restyle_subtree();
+            }
+            self.nodes[parent_id].set_dirty_descendants();
+            self.nodes[parent_id].mark_ancestors_dirty();
+            return;
+        }
+
+        if restyle_later || restyle_edges {
             let children = self.nodes[parent_id].children.clone();
             let is_element = |id: &NodeId| self.nodes[*id].is_element();
             let first_element = children.iter().copied().find(is_element);
@@ -1595,9 +1610,7 @@ impl BaseDocument {
                     || Some(child_id) == last_element
                     || Some(child_id) == before_change
                     || Some(child_id) == after_change;
-                let affected = restyle_all
-                    || (restyle_later && idx >= change_idx)
-                    || (restyle_edges && is_edge);
+                let affected = (restyle_later && idx >= change_idx) || (restyle_edges && is_edge);
                 if !affected {
                     continue;
                 }
