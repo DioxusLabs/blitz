@@ -2,6 +2,7 @@ use crate::NodeTree;
 use crate::events::{DragMode, handle_dom_event};
 use crate::layout::construct::ConstructionTask;
 use crate::layout::damage::ALL_DAMAGE;
+use crate::layout::inline::{InlineOofCandidate, inline_fragment_line_rects};
 use crate::mutator::ViewportMut;
 use crate::net::{
     Resource, ResourceHandler, ResourceLoadResponse, StylesheetHandler, StylesheetLoader,
@@ -336,6 +337,12 @@ pub struct BaseDocument {
     /// the style traversal and by pseudo-element box construction).
     pub(crate) pending_style_image_nodes: Vec<NodeId>,
 
+    /// Out-of-flow inline boxes whose containing block is a positioned
+    /// non-atomic inline ancestor within the same inline formatting context.
+    /// Recorded by inline layout and laid out by the inline root's out-of-flow
+    /// positioning pass (`layout_inline_containing_block_oof`).
+    pub(crate) inline_oof_candidates: Vec<InlineOofCandidate>,
+
     // Tracks in-flight "critical" resources (e.g. stylesheets linked from the `<head>`),
     // keyed by request id
     pub(crate) pending_critical_resources: HashSet<usize>,
@@ -476,6 +483,7 @@ impl BaseDocument {
             image_cache: HashMap::new(),
             pending_images: HashMap::new(),
             pending_style_image_nodes: Vec::new(),
+            inline_oof_candidates: Vec::new(),
             pending_critical_resources: HashSet::new(),
             controls_to_form: HashMap::new(),
             net_provider,
@@ -2255,8 +2263,6 @@ impl BaseDocument {
     /// the containing inline root's text layout. Returns `None` for nodes that have
     /// their own layout box (which should use `get_client_bounding_rect` instead).
     pub fn inline_fragment_rects(&self, node_id: NodeId) -> Option<Vec<BoundingRect>> {
-        use parley::PositionedLayoutItem;
-
         let node = self.get_node(node_id)?;
 
         // Only non-atomic inline elements lack their own layout box: they are
@@ -2302,62 +2308,15 @@ impl BaseDocument {
             + (root_layout.padding.top + root_layout.border.top) as f64
             - self.viewport_scroll.y;
 
-        let mut rects: Vec<BoundingRect> = Vec::new();
-        for line in layout.lines() {
-            let line_metrics = line.metrics();
-            // Union all of the target's fragments on this line into a single rect
-            let mut line_rect: Option<(f64, f64, f64, f64)> = None;
-            let mut add = |x0: f64, y0: f64, x1: f64, y1: f64| {
-                line_rect = Some(match line_rect {
-                    Some((lx0, ly0, lx1, ly1)) => {
-                        (lx0.min(x0), ly0.min(y0), lx1.max(x1), ly1.max(y1))
-                    }
-                    None => (x0, y0, x1, y1),
-                });
-            };
-
-            for item in line.items() {
-                match item {
-                    PositionedLayoutItem::GlyphRun(glyph_run) => {
-                        if !is_in_target(glyph_run.style().brush.id) {
-                            continue;
-                        }
-                        let x0 = glyph_run.offset() as f64;
-                        let x1 = x0 + glyph_run.advance() as f64;
-                        // Use the line box's block extent rather than the
-                        // run's font ascent/descent: fonts with small
-                        // typographic metrics would otherwise produce rects
-                        // that clip the rendered glyphs. This matches the
-                        // geometry used for text selection highlights.
-                        let y0 = line_metrics.block_min_coord as f64;
-                        let y1 = line_metrics.block_max_coord as f64;
-                        add(x0, y0, x1, y1);
-                    }
-                    PositionedLayoutItem::InlineBox(inline_box) => {
-                        if !is_in_target(NodeId::from_u64(inline_box.id)) {
-                            continue;
-                        }
-                        let x0 = inline_box.x as f64;
-                        let y0 = inline_box.y as f64;
-                        add(
-                            x0,
-                            y0,
-                            x0 + inline_box.width as f64,
-                            y0 + inline_box.height as f64,
-                        );
-                    }
-                }
-            }
-
-            if let Some((x0, y0, x1, y1)) = line_rect {
-                rects.push(BoundingRect {
-                    x: origin_x + x0 / scale,
-                    y: origin_y + y0 / scale,
-                    width: (x1 - x0) / scale,
-                    height: (y1 - y0) / scale,
-                });
-            }
-        }
+        let rects = inline_fragment_line_rects(layout, is_in_target)
+            .into_iter()
+            .map(|rect| BoundingRect {
+                x: origin_x + rect.left as f64 / scale,
+                y: origin_y + rect.top as f64 / scale,
+                width: (rect.right - rect.left) as f64 / scale,
+                height: (rect.bottom - rect.top) as f64 / scale,
+            })
+            .collect();
 
         Some(rects)
     }

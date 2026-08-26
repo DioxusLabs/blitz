@@ -1532,6 +1532,29 @@ impl Node {
         !effects.filter.0.is_empty() || !effects.backdrop_filter.0.is_empty()
     }
 
+    /// [`Self::establishes_fixed_containing_block`] for a non-atomic inline box.
+    /// Such boxes are not transformable and cannot be size/layout contained, so
+    /// only filters (and `will-change` of them) apply.
+    pub(crate) fn inline_establishes_fixed_containing_block(&self) -> bool {
+        use style::values::specified::box_::WillChangeBits;
+
+        let Some(style) = self.primary_styles() else {
+            return false;
+        };
+
+        if style
+            .get_box()
+            .will_change
+            .bits
+            .intersects(WillChangeBits::FIXPOS_CB_NON_SVG)
+        {
+            return true;
+        }
+
+        let effects = style.get_effects();
+        !effects.filter.0.is_empty() || !effects.backdrop_filter.0.is_empty()
+    }
+
     /// Whether this node's styles establish a containing block for
     /// `position: absolute` descendants even when the node is not positioned
     /// (e.g. `will-change: position`).

@@ -1,12 +1,13 @@
 use blitz_traits::node_id::NodeId;
-use parley::{AlignmentOptions, IndentOptions};
-use style::values::specified::box_::DisplayOutside;
+use parley::{AlignmentOptions, IndentOptions, Layout, PositionedLayoutItem};
+use style::values::specified::box_::{DisplayInside, DisplayOutside};
 use style::values::{computed::CSSPixelLength, generics::text::GenericTextIndent};
 use taffy::{
     AvailableSpace, BlockContext, BlockFormattingContext, BoxSizing, CollapsibleMarginSet,
-    CoreStyle as _, Direction, LayoutInput, LayoutOutput, LayoutPartialTree as _, MaybeMath as _,
-    MaybeResolve as _, OofCandidate, OofCandidates, OofPositioningArea, Overflow, Point,
-    RequestedAxis, ResolveOrZero as _, RunMode, Size, SizingMode, StaticEdge, StaticPosition,
+    CoreStyle as _, Direction, LayoutContainingBlock as _, LayoutInput, LayoutOutput,
+    LayoutPartialTree as _, MaybeMath as _, MaybeResolve as _, OofCandidate, OofCandidates,
+    OofPositioningArea, Overflow, Point, Position, RequestedAxis, ResolveOrZero as _, RunMode,
+    Size, SizingMode, StaticEdge, StaticPosition, compute_oof_layout,
 };
 
 #[cfg(feature = "floats")]
@@ -15,9 +16,242 @@ use parley::YieldData;
 use taffy::{BlockItemStyle as _, Clear, Float, prelude::TaffyMaxContent};
 
 use super::resolve_calc_value;
-use crate::BaseDocument;
+use crate::node::TextBrush;
+use crate::{BaseDocument, dom_node_id, taffy_node_id};
+
+/// An out-of-flow inline box whose containing block is a positioned non-atomic
+/// inline ancestor (`containing_block`) within the inline formatting context
+/// rooted at `inline_root`. Such ancestors are style spans of the root's text
+/// layout rather than layout nodes, so the box cannot be bubbled to them by the
+/// out-of-flow positioning pass; it is instead laid out against the ancestor's
+/// fragment box (`area`, relative to the root's border box) and hoisted to the
+/// inline root.
+pub(crate) struct InlineOofCandidate {
+    pub inline_root: NodeId,
+    pub containing_block: NodeId,
+    pub candidate: OofCandidate,
+    pub area: OofPositioningArea,
+}
+
+/// The per-line fragment rects of the non-atomic inline element(s) selected by
+/// `is_in_target`, in layout units relative to the inline root's content box.
+/// All of the target's fragments on a line are unioned into a single rect.
+pub(crate) fn inline_fragment_line_rects(
+    layout: &Layout<TextBrush>,
+    is_in_target: impl Fn(NodeId) -> bool,
+) -> Vec<taffy::Rect<f32>> {
+    let mut rects = Vec::new();
+    for line in layout.lines() {
+        let line_metrics = line.metrics();
+        let mut line_rect: Option<taffy::Rect<f32>> = None;
+        let mut add = |rect: taffy::Rect<f32>| {
+            line_rect = Some(match line_rect {
+                Some(acc) => taffy::Rect {
+                    left: acc.left.min(rect.left),
+                    right: acc.right.max(rect.right),
+                    top: acc.top.min(rect.top),
+                    bottom: acc.bottom.max(rect.bottom),
+                },
+                None => rect,
+            });
+        };
+
+        for item in line.items() {
+            match item {
+                PositionedLayoutItem::GlyphRun(glyph_run) => {
+                    if !is_in_target(glyph_run.style().brush.id) {
+                        continue;
+                    }
+                    // Use the line box's block extent rather than the run's font
+                    // ascent/descent: fonts with small typographic metrics would
+                    // otherwise produce rects that clip the rendered glyphs. This
+                    // matches the geometry used for text selection highlights.
+                    add(taffy::Rect {
+                        left: glyph_run.offset(),
+                        right: glyph_run.offset() + glyph_run.advance(),
+                        top: line_metrics.block_min_coord,
+                        bottom: line_metrics.block_max_coord,
+                    });
+                }
+                PositionedLayoutItem::InlineBox(inline_box) => {
+                    if !is_in_target(NodeId::from_u64(inline_box.id)) {
+                        continue;
+                    }
+                    add(taffy::Rect {
+                        left: inline_box.x,
+                        right: inline_box.x + inline_box.width,
+                        top: inline_box.y,
+                        bottom: inline_box.y + inline_box.height,
+                    });
+                }
+            }
+        }
+
+        rects.extend(line_rect);
+    }
+    rects
+}
 
 impl BaseDocument {
+    /// The nearest ancestor of `child` that is a non-atomic inline within the
+    /// inline formatting context rooted at `inline_root` and establishes the
+    /// containing block for an out-of-flow box with the given `position`.
+    fn inline_containing_block(
+        &self,
+        inline_root: NodeId,
+        child: NodeId,
+        position: Position,
+    ) -> Option<NodeId> {
+        let mut current = self.nodes[child].parent?;
+        while current != inline_root {
+            let node = &self.nodes[current];
+            let display = node.display_style()?;
+            match (display.outside(), display.inside()) {
+                // display:contents elements generate no box and so cannot be a
+                // containing block: look through them.
+                (DisplayOutside::None, DisplayInside::Contents) => {}
+                (DisplayOutside::Inline, DisplayInside::Flow) => {
+                    let establishes_fixed_cb = node.inline_establishes_fixed_containing_block();
+                    let claimed = match position {
+                        Position::Fixed => establishes_fixed_cb,
+                        _ => {
+                            establishes_fixed_cb
+                                || node.layout_style().position().is_positioned()
+                                || node.establishes_absolute_containing_block()
+                        }
+                    };
+                    if claimed {
+                        return Some(current);
+                    }
+                }
+                // Reached the inline root's container (the root is an anonymous
+                // block) or some other box that is not part of this IFC.
+                _ => return None,
+            }
+            current = node.parent?;
+        }
+        None
+    }
+
+    /// The containing block established by the non-atomic inline `containing_block`
+    /// for out-of-flow descendants, relative to the inline root's border box
+    /// (CSS 2.1 §10.1: the top-left of its first fragment through the bottom-right
+    /// of its last fragment; mirrored for `direction: rtl`).
+    fn inline_containing_block_area(
+        &self,
+        layout: &Layout<TextBrush>,
+        inline_root: NodeId,
+        containing_block: NodeId,
+        content_box_offset: Point<f32>,
+    ) -> Option<OofPositioningArea> {
+        let is_in_target = |mut id: NodeId| -> bool {
+            loop {
+                if id == containing_block {
+                    return true;
+                }
+                if id == inline_root {
+                    return false;
+                }
+                match self.nodes.get(id).and_then(|n| n.parent) {
+                    Some(parent) => id = parent,
+                    None => return false,
+                }
+            }
+        };
+        let rects = inline_fragment_line_rects(layout, is_in_target);
+        let first = rects.first()?;
+        let last = rects.last()?;
+        let is_rtl = self.nodes[containing_block].layout_style().direction() == Direction::Rtl;
+        let (left, right) = if is_rtl {
+            (last.left, first.right)
+        } else {
+            (first.left, last.right)
+        };
+        let scale = layout.scale();
+        Some(OofPositioningArea {
+            size: Size {
+                width: ((right - left) / scale).max(0.0),
+                height: ((last.bottom - first.top) / scale).max(0.0),
+            },
+            offset: Point {
+                x: left / scale + content_box_offset.x,
+                y: first.top / scale + content_box_offset.y,
+            },
+        })
+    }
+
+    /// Lay out the out-of-flow boxes recorded by `compute_inline_layout` whose
+    /// containing block is a positioned inline within the IFC rooted at `node_id`,
+    /// hoisting them to the inline root. Runs after the root's own out-of-flow
+    /// positioning pass (`compute_oof_layout`), which resets its hoisted list.
+    pub(crate) fn layout_inline_containing_block_oof(
+        &mut self,
+        node_id: taffy::NodeId,
+        output: &mut LayoutOutput,
+    ) {
+        let inline_root = dom_node_id(node_id);
+        if !self
+            .inline_oof_candidates
+            .iter()
+            .any(|c| c.inline_root == inline_root)
+        {
+            return;
+        }
+        let pending = std::mem::take(&mut self.inline_oof_candidates);
+        let (mine, others): (Vec<_>, Vec<_>) = pending
+            .into_iter()
+            .partition(|c| c.inline_root == inline_root);
+        self.inline_oof_candidates = others;
+
+        let root_area_offset = output
+            .oof_positioning_area
+            .map(|area| area.offset)
+            .unwrap_or(Point::ZERO);
+        let mut hoisted: Vec<taffy::NodeId> = Vec::new();
+        for InlineOofCandidate {
+            containing_block,
+            candidate,
+            area,
+            ..
+        } in mine
+        {
+            let mut cb_output = LayoutOutput::HIDDEN;
+            cb_output.oof_candidates.push(candidate);
+            cb_output.oof_positioning_area = Some(area);
+            let cb_node_id = taffy_node_id(containing_block);
+            compute_oof_layout(self, cb_node_id, &mut cb_output);
+
+            // The inline has no layout box of its own: re-home the claimed boxes to
+            // the inline root, whose border box their locations are relative to.
+            let claimed: Vec<taffy::NodeId> = self.nodes[containing_block]
+                .hoisted_children
+                .borrow()
+                .iter()
+                .map(|&id| taffy_node_id(id))
+                .collect();
+            self.set_hoisted_children(cb_node_id, &[]);
+            hoisted.extend(claimed);
+
+            // Candidates the inline did not claim continue bubbling from the root
+            output.oof_candidates.append(&mut cb_output.oof_candidates);
+
+            // The overflow contribution is relative to the inline's area: translate
+            // it into the root's scroll-origin-relative coordinates
+            let delta = Point {
+                x: area.offset.x - root_area_offset.x,
+                y: area.offset.y - root_area_offset.y,
+            };
+            let overflow = cb_output.scrollable_overflow_rect;
+            output.scrollable_overflow_rect = output.scrollable_overflow_rect.union(taffy::Rect {
+                left: overflow.left + delta.x,
+                right: overflow.right + delta.x,
+                top: overflow.top + delta.y,
+                bottom: overflow.bottom + delta.y,
+            });
+        }
+        self.add_hoisted_children(node_id, &hoisted);
+    }
+
     pub(crate) fn compute_inline_layout(
         &mut self,
         node_id: NodeId,
@@ -803,7 +1037,7 @@ impl BaseDocument {
                                 },
                             };
 
-                            oof_candidates.push(OofCandidate {
+                            let candidate = OofCandidate {
                                 node: taffy::NodeId::from(ibox.id),
                                 order,
                                 position,
@@ -822,7 +1056,41 @@ impl BaseDocument {
                                         StaticEdge::Start,
                                     ),
                                 },
-                            });
+                            };
+
+                            // A positioned inline ancestor within this IFC is the box's
+                            // containing block. It is not a layout node, so the box cannot
+                            // bubble to it: resolve it here against the inline's fragment box.
+                            // (Candidates are only consumed when performing layout.)
+                            let ibox_node_id = NodeId::from_u64(ibox.id);
+                            let inline_cb = if inputs.run_mode == RunMode::PerformLayout {
+                                self.inline_containing_block(node_id, ibox_node_id, position)
+                                    .and_then(|cb| {
+                                        let area = self.inline_containing_block_area(
+                                            &inline_layout.layout,
+                                            node_id,
+                                            cb,
+                                            Point {
+                                                x: container_pb.left,
+                                                y: container_pb.top,
+                                            },
+                                        )?;
+                                        Some((cb, area))
+                                    })
+                            } else {
+                                None
+                            };
+                            match inline_cb {
+                                Some((containing_block, area)) => {
+                                    self.inline_oof_candidates.push(InlineOofCandidate {
+                                        inline_root: node_id,
+                                        containing_block,
+                                        candidate,
+                                        area,
+                                    });
+                                }
+                                None => oof_candidates.push(candidate),
+                            }
                         } else if is_floated {
                             let layout =
                                 self.nodes[NodeId::from_u64(ibox.id)].unrounded_layout_mut();
