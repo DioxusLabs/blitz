@@ -1729,8 +1729,10 @@ impl Node {
             }
         }
 
-        // Inline children
-        if self.flags.is_inline_root() {
+        // Inline children. Text never lies outside this node's overflow area,
+        // and Parley clamps out-of-range block offsets to the nearest line, so
+        // only consult the text layout for points that are within it.
+        if self.flags.is_inline_root() && (matches_self || matches_content || matches_overflow) {
             let element_data = &self.element_data().unwrap();
             if let Some(ild) = element_data.inline_layout_data.as_ref() {
                 let layout = &ild.layout;
