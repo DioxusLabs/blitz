@@ -179,7 +179,7 @@ impl BaseDocument {
                 transform *= *t
             }
 
-            let overflow = *node.scrollable_overflow();
+            let overflow = *node.transformed_overflow();
             return transform.transform_rect_bbox(overflow);
         }
 
@@ -206,7 +206,7 @@ impl BaseDocument {
             overflow = overflow.union(child_rect_in_self);
         }
 
-        *self.nodes[node_id].scrollable_overflow_mut() = overflow;
+        *self.nodes[node_id].transformed_overflow_mut() = overflow;
         *self.nodes[node_id].layout_children.get_mut() = layout_children;
 
         let scaled_x = self.nodes[node_id].final_layout().location.x as f64 * scale;

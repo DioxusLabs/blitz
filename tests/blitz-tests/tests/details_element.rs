@@ -106,7 +106,7 @@ fn clicking_summary_toggles_open() {
 
 #[test]
 fn summary_hit_area_matches_box_at_hidpi() {
-    // `scrollable_overflow` is stored in device (scaled) pixels while hit-test
+    // `transformed_overflow` is stored in device (scaled) pixels while hit-test
     // coordinates are CSS pixels. Before unscaling it in `Node::hit()`, every
     // element's hit area was inflated by the HiDPI scale factor, so at 2x the
     // summary's effective hit area was ~double its box (as seen on

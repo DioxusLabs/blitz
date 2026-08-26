@@ -260,13 +260,13 @@ impl Node {
     }
 
     #[inline]
-    pub fn scrollable_overflow(&self) -> &KurboRect {
-        &self.layout_data().scrollable_overflow
+    pub fn transformed_overflow(&self) -> &KurboRect {
+        &self.layout_data().transformed_overflow
     }
 
     #[inline]
-    pub fn scrollable_overflow_mut(&mut self) -> &mut KurboRect {
-        &mut self.layout_data_mut().scrollable_overflow
+    pub fn transformed_overflow_mut(&mut self) -> &mut KurboRect {
+        &mut self.layout_data_mut().transformed_overflow
     }
 
     /// Style data from stylo, if this node kind carries it (element or document
@@ -1358,9 +1358,9 @@ impl Node {
             None => false,
         };
 
-        // `scrollable_overflow` is stored in device (scaled) pixels, whereas the
+        // `transformed_overflow` is stored in device (scaled) pixels, whereas the
         // coordinates here are in CSS pixels, so unscale it before comparing.
-        let overflow = *self.scrollable_overflow();
+        let overflow = *self.transformed_overflow();
 
         let matches_overflow = x >= (overflow.x0 / scale) as f32
             && x <= (overflow.x1 / scale) as f32

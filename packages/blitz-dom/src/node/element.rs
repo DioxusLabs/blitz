@@ -116,7 +116,7 @@ pub struct ElementData {
     pub transform: Option<Affine>,
 }
 
-/// Taffy layout output state (cache, layouts, scroll offset and overflow).
+/// Taffy layout output state (cache, layouts, scroll offset and transformed overflow).
 ///
 /// Lazily boxed on [`ElementData`] / [`DocumentData`]: inline-level elements
 /// are positioned by the inline (parley) layout rather than by taffy, so most
@@ -127,7 +127,9 @@ pub struct LayoutData {
     pub unrounded_layout: Layout,
     pub final_layout: Layout,
     pub scroll_offset: crate::Point<f64>,
-    pub scrollable_overflow: KurboRect,
+    /// Device-pixel subtree bounds in this node's coordinate space, including
+    /// descendant transforms. This is distinct from Taffy's CSS scrollable overflow.
+    pub transformed_overflow: KurboRect,
 }
 
 impl LayoutData {
@@ -137,7 +139,7 @@ impl LayoutData {
             unrounded_layout: Layout::new(),
             final_layout: Layout::new(),
             scroll_offset: crate::Point::ZERO,
-            scrollable_overflow: KurboRect::ZERO,
+            transformed_overflow: KurboRect::ZERO,
         }
     }
 }

@@ -379,7 +379,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         };
 
         // Don't render things that are out of view
-        let overflow = *node.scrollable_overflow();
+        let overflow = *node.transformed_overflow();
         let transform = parent_style_transform
             * Affine::translate(box_position)
             * node.transform().unwrap_or_default();
@@ -404,7 +404,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         // Optimise zero-area (/very small area) clips by not rendering at all
         let clip_area = content_box_size.width * content_box_size.height;
         let overflow_area =
-            node.scrollable_overflow().width() * node.scrollable_overflow().height();
+            node.transformed_overflow().width() * node.transformed_overflow().height();
         if should_clip && clip_area < 0.01 && overflow_area < 0.01 {
             return;
         }
