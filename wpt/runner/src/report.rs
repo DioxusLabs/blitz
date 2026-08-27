@@ -6,7 +6,7 @@ use wptreport::{
     wpt_report::WptReport,
 };
 
-use crate::{TestResult, TestStatus};
+use crate::{TestKind, TestResult, TestStatus};
 
 fn get_git_hash(path: &Path) -> String {
     let output = Command::new("git")
@@ -81,6 +81,11 @@ pub fn generate_report(
 ) -> WptReport {
     let results: Vec<_> = results
         .into_iter()
+        // Files with no detectable test type (no reftest links, checkLayout()
+        // call, or testharness.js include) are "visual"/"manual"/"support"
+        // entries in the upstream WPT manifest: not automatable tests, and not
+        // run by other engines, so they don't belong in the report.
+        .filter(|test| !(test.kind == TestKind::Unknown && matches!(test.status, TestStatus::Skip)))
         .map(|test| wpt_report::TestResult {
             test: test.name,
             status: convert_status(test.status),
