@@ -527,17 +527,6 @@ impl Node {
         }
     }
 
-    /// Set appropriate damage for Stylo when an element's style attribute is updated
-    pub(crate) fn mark_style_attr_updated(&mut self) {
-        if let Some(stylo_element_data) = self.try_stylo_element_data_mut() {
-            if let Some(mut data) = stylo_element_data.get_mut() {
-                data.hint |= RestyleHint::RESTYLE_STYLE_ATTRIBUTE;
-            }
-        }
-        self.set_dirty_descendants();
-        self.mark_ancestors_dirty();
-    }
-
     /// Marks all ancestors of this node as having dirty descendants.
     /// This propagates the dirty flag up the tree so that the style traversal
     /// knows to visit the subtree containing this node.
