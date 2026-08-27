@@ -724,7 +724,7 @@ impl BaseDocument {
             self.url.url_extra_data(),
         );
         if did_change {
-            node.mark_style_attr_updated();
+            node.set_restyle_hint(RestyleHint::RESTYLE_STYLE_ATTRIBUTE);
         }
     }
 
@@ -736,7 +736,7 @@ impl BaseDocument {
             self.url.url_extra_data(),
         );
         if did_change {
-            node.mark_style_attr_updated();
+            node.set_restyle_hint(RestyleHint::RESTYLE_STYLE_ATTRIBUTE);
         }
     }
 
