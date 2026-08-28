@@ -762,11 +762,7 @@ fn get_content(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult
     }
 
     // Lazily create the contents fragment for templates created by script
-    let contents_id = ctx
-        .doc
-        .borrow_mut()
-        .mutate()
-        .template_contents(node_id);
+    let contents_id = ctx.doc.borrow_mut().mutate().template_contents(node_id);
     Ok(node_wrapper(&ctx, contents_id, context).into())
 }
 
