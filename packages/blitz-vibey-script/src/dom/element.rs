@@ -855,7 +855,10 @@ fn scroll_height(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResu
 /// viewport (per the CSS overflow propagation rules), so its offset is the
 /// viewport scroll offset.
 fn current_scroll_offset(doc: &blitz_dom::BaseDocument, node_id: NodeId) -> blitz_dom::Point<f64> {
-    if doc.try_root_element().is_some_and(|root| root.id == node_id) {
+    if doc
+        .try_root_element()
+        .is_some_and(|root| root.id == node_id)
+    {
         doc.viewport_scroll()
     } else {
         doc.get_node(node_id)
