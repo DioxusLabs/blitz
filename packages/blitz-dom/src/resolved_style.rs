@@ -7,6 +7,7 @@
 
 use cssparser::{Parser, ParserInput};
 use selectors::matching::QuirksMode;
+use style::computed_values::box_sizing::T as BoxSizing;
 use style::parser::ParserContext;
 use style::properties::declaration_block::{Importance, parse_style_attribute};
 use style::properties::{
@@ -229,14 +230,22 @@ impl BaseDocument {
                 }
             }
             "width" | "height" if has_layout_box => {
-                // Used value: content-box size
+                // Used value: the layout size interpreted according to `box-sizing`
+                // (border-box size for `border-box`, content-box size for `content-box`)
                 let layout = node.final_layout();
+                let border_box = styles.get_position().box_sizing == BoxSizing::BorderBox;
                 let size = if property_name == "width" {
-                    layout.size.width
-                        - layout.border.left
-                        - layout.border.right
-                        - layout.padding.left
-                        - layout.padding.right
+                    if border_box {
+                        layout.size.width
+                    } else {
+                        layout.size.width
+                            - layout.border.left
+                            - layout.border.right
+                            - layout.padding.left
+                            - layout.padding.right
+                    }
+                } else if border_box {
+                    layout.size.height
                 } else {
                     layout.size.height
                         - layout.border.top
