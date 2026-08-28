@@ -17,6 +17,7 @@ use style::stylesheets::supports_rule::parse_condition_or_declaration;
 use style::stylesheets::{CssRuleType, Origin};
 use style::values::computed::length::CSSPixelLength;
 use style::values::resolved;
+use style::values::specified::box_::DisplayInside;
 use style_traits::{CssStringWriter, ParsingMode, ToCss};
 use taffy::DetailedGridTracksInfo;
 
@@ -222,13 +223,13 @@ impl BaseDocument {
             return String::new();
         };
 
-        let has_layout_box =
-            node.flags.is_in_document() && node.style().display != taffy::Display::None;
+        let display = styles.clone_display();
+        let has_layout_box = node.flags.is_in_document() && !display.is_none();
 
         // Layout-dependent "used value" special cases
         match property_name {
             "grid-template-columns" | "grid-template-rows"
-                if node.style().display == taffy::Display::Grid =>
+                if display.inside() == DisplayInside::Grid =>
             {
                 if let Some(info) = node
                     .element_data()
