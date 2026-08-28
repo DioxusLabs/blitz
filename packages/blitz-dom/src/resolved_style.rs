@@ -19,7 +19,6 @@ use style::values::computed::length::CSSPixelLength;
 use style::values::resolved;
 use style::values::specified::box_::DisplayInside;
 use style_traits::{CssStringWriter, ParsingMode, ToCss};
-use taffy::DetailedGridTracksInfo;
 
 use blitz_traits::node_id::NodeId;
 
@@ -28,19 +27,6 @@ use crate::BaseDocument;
 /// Serialize a used length (in CSS pixels) the way stylo serializes computed lengths
 fn format_px(px: f32) -> String {
     CSSPixelLength::new(px).to_css_string()
-}
-
-/// Serialize the used sizes of a set of grid tracks (e.g. `100px 200px`)
-fn format_grid_tracks<S: taffy::CheapCloneStr>(tracks: &DetailedGridTracksInfo<S>) -> String {
-    if tracks.positions.is_empty() {
-        return "none".to_string();
-    }
-    tracks
-        .positions
-        .iter()
-        .map(|line| format_px(line.end - line.start))
-        .collect::<Vec<_>>()
-        .join(" ")
 }
 
 /// Check whether `name` names a CSS property supported by the style engine.
@@ -235,12 +221,11 @@ impl BaseDocument {
                     .element_data()
                     .and_then(|data| data.detailed_grid_info.as_ref())
                 {
-                    let tracks = if property_name == "grid-template-columns" {
-                        &info.columns
+                    return if property_name == "grid-template-columns" {
+                        info.grid_template_columns()
                     } else {
-                        &info.rows
+                        info.grid_template_rows()
                     };
-                    return format_grid_tracks(tracks);
                 }
             }
             "width" | "height" if has_layout_box => {
