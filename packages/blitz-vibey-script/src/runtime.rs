@@ -216,7 +216,7 @@ const BOOTSTRAP_JS: &str = r#"
     // Stub constructors for interfaces referenced by `instanceof` probes
     // (e.g. React probes `x instanceof HTMLInputElement`); without them such
     // probes throw "right-hand side of 'instanceof' is not an object". All
-    // blitz-script elements share a single prototype, so tag-specific
+    // blitz-vibey-script elements share a single prototype, so tag-specific
     // interfaces cannot be truthfully modelled: these always answer false.
     for (const name of [
         "EventTarget", "CharacterData", "Text", "Comment", "DocumentFragment",
@@ -482,7 +482,7 @@ impl ScriptRuntime {
         // TextDecoder, structuredClone, queueMicrotask and URL.
         //
         // Deliberately NOT registered:
-        // - TimeoutExtension: blitz-script has its own setTimeout/setInterval/
+        // - TimeoutExtension: blitz-vibey-script has its own setTimeout/setInterval/
         //   requestAnimationFrame implementation integrated with the document's
         //   event loop and timer thread
         // - FetchExtension/AbortControllerExtension: fetch should go through

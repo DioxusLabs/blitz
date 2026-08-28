@@ -226,7 +226,7 @@ impl Document for DioxusDocument {
 
         // Poll any sub-documents, which may have pending async operations of
         // their own (e.g. JavaScript timers when the sub-document is a
-        // `ScriptDocument` from blitz-script)
+        // `ScriptDocument` from blitz-vibey-script)
         let subdoc_changes = self.inner.borrow_mut().poll_subdocuments(Some(&waker));
 
         {

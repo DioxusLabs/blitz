@@ -971,9 +971,9 @@ dependencies = [
  "blitz-html",
  "blitz-net",
  "blitz-paint",
- "blitz-script",
  "blitz-shell",
  "blitz-traits",
+ "blitz-vibey-script",
  "color",
  "dioxus",
  "dioxus-native",
@@ -1041,24 +1041,6 @@ dependencies = [
  "taffy",
  "tracing",
  "usvg",
-]
-
-[[package]]
-name = "blitz-script"
-version = "0.3.0-beta.2"
-dependencies = [
- "blitz-dom",
- "blitz-html",
- "blitz-traits",
- "boa_engine",
- "boa_gc",
- "boa_runtime",
- "data-url",
- "keyboard-types 0.7.0",
- "markup5ever",
- "tracing",
- "url",
- "web-time",
 ]
 
 [[package]]
@@ -1133,6 +1115,24 @@ dependencies = [
  "serde",
  "smol_str",
  "url",
+]
+
+[[package]]
+name = "blitz-vibey-script"
+version = "0.3.0-beta.2"
+dependencies = [
+ "blitz-dom",
+ "blitz-html",
+ "blitz-traits",
+ "boa_engine",
+ "boa_gc",
+ "boa_runtime",
+ "data-url",
+ "keyboard-types 0.7.0",
+ "markup5ever",
+ "tracing",
+ "url",
+ "web-time",
 ]
 
 [[package]]
@@ -1385,8 +1385,8 @@ dependencies = [
  "blitz-html",
  "blitz-net",
  "blitz-paint",
- "blitz-script",
  "blitz-traits",
+ "blitz-vibey-script",
  "browser-persistence",
  "dioxus-native",
  "image",
@@ -10064,8 +10064,8 @@ dependencies = [
  "blitz-dom",
  "blitz-html",
  "blitz-paint",
- "blitz-script",
  "blitz-traits",
+ "blitz-vibey-script",
  "data-url",
  "dify",
  "env_logger",

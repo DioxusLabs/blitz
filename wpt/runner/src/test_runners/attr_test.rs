@@ -1,7 +1,7 @@
 use std::time::{Duration, Instant};
 
 use blitz_dom::{BaseDocument, Document as _, Node};
-use blitz_script::ScriptDocument;
+use blitz_vibey_script::ScriptDocument;
 use log::warn;
 use style_traits::ToCss;
 

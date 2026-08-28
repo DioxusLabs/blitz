@@ -10,7 +10,7 @@
 //! ### Example
 //!
 //! ```rust
-//! use blitz_script::ScriptDocument;
+//! use blitz_vibey_script::ScriptDocument;
 //! use blitz_dom::DocumentConfig;
 //!
 //! let mut doc = ScriptDocument::from_html(

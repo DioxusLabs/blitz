@@ -216,7 +216,7 @@ async fn build_page_document(
     signal: &AbortSignal,
 ) -> (SubDocumentAttr, String, Option<String>) {
     use blitz_dom::Document as _;
-    use blitz_script::ScriptDocument;
+    use blitz_vibey_script::ScriptDocument;
     use std::collections::HashMap;
 
     let document = ScriptDocument::from_html(html, config);
@@ -240,7 +240,7 @@ async fn build_page_document(
     let mut document = document.with_fetcher(PrefetchedScriptFetcher { scripts });
     document.execute_scripts();
     for error in document.take_js_errors() {
-        tracing::error!("blitz-script: {error}");
+        tracing::error!("blitz-vibey-script: {error}");
     }
 
     let inner = document.inner();
@@ -254,7 +254,7 @@ async fn build_page_document(
     (SubDocumentAttr::new(document), title, favicon_url)
 }
 
-/// A [`blitz_script::ScriptFetcher`] which serves prefetched script sources from
+/// A [`blitz_vibey_script::ScriptFetcher`] which serves prefetched script sources from
 /// memory, falling back to the default fetcher (`file:` and `data:` URLs)
 #[cfg(feature = "javascript")]
 struct PrefetchedScriptFetcher {
@@ -262,11 +262,11 @@ struct PrefetchedScriptFetcher {
 }
 
 #[cfg(feature = "javascript")]
-impl blitz_script::ScriptFetcher for PrefetchedScriptFetcher {
-    fn fetch(&self, url: &Url) -> Result<String, blitz_script::FetchError> {
+impl blitz_vibey_script::ScriptFetcher for PrefetchedScriptFetcher {
+    fn fetch(&self, url: &Url) -> Result<String, blitz_vibey_script::FetchError> {
         if let Some(source) = self.scripts.get(url) {
             return Ok(source.clone());
         }
-        blitz_script::DefaultScriptFetcher.fetch(url)
+        blitz_vibey_script::DefaultScriptFetcher.fetch(url)
     }
 }

@@ -1,5 +1,5 @@
 //! Load an HTML file (by default the Preact TodoMVC example in examples/preact)
-//! in a window with JavaScript enabled, using `blitz-script`'s Boa-based script
+//! in a window with JavaScript enabled, using `blitz-vibey-script`'s Boa-based script
 //! engine.
 //!
 //! ```sh
@@ -8,8 +8,8 @@
 
 use anyrender_vello::VelloWindowRenderer as WindowRenderer;
 use blitz_dom::DocumentConfig;
-use blitz_script::ScriptDocument;
 use blitz_shell::{BlitzApplication, BlitzShellProxy, WindowConfig, create_default_event_loop};
+use blitz_vibey_script::ScriptDocument;
 
 fn main() {
     let raw_path = std::env::args()

@@ -4,8 +4,8 @@
 use std::path::PathBuf;
 
 use blitz_dom::{Document, DocumentConfig, NodeId};
-use blitz_script::ScriptDocument;
 use blitz_traits::events::{BlitzKeyEvent, DomEvent, KeyState, UiEvent};
+use blitz_vibey_script::ScriptDocument;
 use keyboard_types::{Code, Key, Location, Modifiers};
 use url::Url;
 

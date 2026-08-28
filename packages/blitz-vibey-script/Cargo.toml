@@ -1,7 +1,7 @@
 [package]
-name = "blitz-script"
+name = "blitz-vibey-script"
 description = "JavaScript execution for Blitz using the Boa engine"
-documentation = "https://docs.rs/blitz-script"
+documentation = "https://docs.rs/blitz-vibey-script"
 version.workspace = true
 license.workspace = true
 homepage.workspace = true

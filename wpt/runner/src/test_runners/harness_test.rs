@@ -1,12 +1,12 @@
 //! Runner for testharness.js tests: executes the test file's JavaScript (including
-//! the real testharness.js framework) using `blitz-script`, and collects the
+//! the real testharness.js framework) using `blitz-vibey-script`, and collects the
 //! harness results via a custom `testharnessreport.js`.
 
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use blitz_dom::Document as _;
-use blitz_script::{FetchError, ScriptDocument, ScriptFetcher};
+use blitz_vibey_script::{FetchError, ScriptDocument, ScriptFetcher};
 use log::warn;
 use url::Url;
 
@@ -19,7 +19,7 @@ const HARNESS_TIMEOUT: Duration = Duration::from_secs(5);
 /// Custom `testharnessreport.js` served in place of WPT's stock one (which is
 /// designed to be replaced by test runners). It disables the DOM output section
 /// and reports results to the runner via the `__blitz_send_message` native
-/// function provided by blitz-script.
+/// function provided by blitz-vibey-script.
 ///
 /// The `timeout_multiplier` scales down testharness's internal timeout (10s by
 /// default) so that tests which will never complete (e.g. ones waiting for

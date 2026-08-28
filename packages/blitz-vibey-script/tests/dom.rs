@@ -1,8 +1,8 @@
-//! Tests for the JavaScript DOM APIs exposed by blitz-script
+//! Tests for the JavaScript DOM APIs exposed by blitz-vibey-script
 
 use blitz_dom::{Document, DocumentConfig};
-use blitz_script::ScriptDocument;
 use blitz_traits::events::DomEvent;
+use blitz_vibey_script::ScriptDocument;
 use keyboard_types::Modifiers;
 
 fn doc_from_html(html: &str) -> ScriptDocument {

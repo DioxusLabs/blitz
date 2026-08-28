@@ -2,7 +2,7 @@ use anyrender::{ImageRenderer as _, PaintScene as _};
 use blitz_dom::util::Color;
 use blitz_dom::{BaseDocument, Document as _};
 use blitz_paint::paint_scene;
-use blitz_script::ScriptDocument;
+use blitz_vibey_script::ScriptDocument;
 use image::{ImageBuffer, ImageFormat};
 use log::warn;
 use peniko::Fill;

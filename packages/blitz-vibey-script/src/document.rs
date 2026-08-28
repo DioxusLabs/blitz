@@ -223,7 +223,7 @@ impl ScriptDocument {
     /// Record an error for collection via [`take_js_errors`](Self::take_js_errors)
     fn record_error(&mut self, message: String) {
         #[cfg(feature = "tracing")]
-        tracing::error!("blitz-script: {message}");
+        tracing::error!("blitz-vibey-script: {message}");
         self.runtime.ctx.state.borrow_mut().record_error(message);
     }
 
@@ -308,7 +308,7 @@ impl ScriptDocument {
             let (tx, rx) = channel::<Instant>();
             let waker = Arc::clone(&self.waker);
             std::thread::Builder::new()
-                .name("blitz-script-timers".to_string())
+                .name("blitz-vibey-script-timers".to_string())
                 .spawn(move || timer_thread_main(rx, waker))
                 .expect("failed to spawn timer thread");
             tx
