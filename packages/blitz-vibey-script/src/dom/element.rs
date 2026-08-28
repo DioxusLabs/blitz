@@ -766,7 +766,7 @@ fn get_content(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult
         .doc
         .borrow_mut()
         .mutate()
-        .ensure_template_contents(node_id);
+        .template_contents(node_id);
     Ok(node_wrapper(&ctx, contents_id, context).into())
 }
 

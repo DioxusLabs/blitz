@@ -165,8 +165,8 @@ impl DocumentMutator<'_> {
     /// `<template>` element. The contents node is detached from the tree (so it
     /// is inert: never styled or rendered) and is exposed to JavaScript as the
     /// template's `content` DocumentFragment.
-    pub fn ensure_template_contents(&mut self, template_id: NodeId) -> NodeId {
-        if let Some(contents_id) = self.template_contents(template_id) {
+    pub fn template_contents(&mut self, template_id: NodeId) -> NodeId {
+        if let Some(contents_id) = self.try_template_contents(template_id) {
             return contents_id;
         }
         let name = QualName::new(
@@ -186,7 +186,7 @@ impl DocumentMutator<'_> {
     }
 
     /// The "template contents" fragment node of a `<template>` element (if any)
-    pub fn template_contents(&self, template_id: NodeId) -> Option<NodeId> {
+    pub fn try_template_contents(&self, template_id: NodeId) -> Option<NodeId> {
         self.doc
             .get_node(template_id)
             .and_then(|node| node.element_data())
