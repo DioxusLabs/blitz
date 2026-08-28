@@ -7,8 +7,7 @@ use dioxus_core::{AttributeValue, IntoAttributeValue};
 pub struct SubDocumentAttr(WriteOnceAttr<Box<dyn Document>>);
 
 impl SubDocumentAttr {
-    /// Accepts any [`Document`] implementation, e.g. a plain [`BaseDocument`](blitz_dom::BaseDocument)
-    /// or a `ScriptDocument` from `blitz-vibey-script`.
+    /// Accepts any [`Document`] implementation, e.g. a plain [`BaseDocument`](blitz_dom::BaseDocument).
     pub fn new(doc: impl Document) -> Self {
         let id = doc.id();
         Self(WriteOnceAttr::new(id, Box::new(doc) as Box<dyn Document>))
