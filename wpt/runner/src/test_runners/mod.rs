@@ -172,9 +172,11 @@ pub fn process_test_file(
 
 fn is_crash_test(relative_path: &str) -> bool {
     relative_path.split('/').any(|seg| seg == "crashtests")
-        || [".html", ".htm", ".xht", ".xhtml"]
-            .iter()
-            .any(|ext| relative_path.ends_with(&format!("-crash{ext}")))
+        || ["", ".https", ".h2", ".www"].iter().any(|flag| {
+            [".html", ".htm", ".xht", ".xhtml"]
+                .iter()
+                .any(|ext| relative_path.ends_with(&format!("-crash{flag}{ext}")))
+        })
 }
 
 fn parse_and_resolve_document(
