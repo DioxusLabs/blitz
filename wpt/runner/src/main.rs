@@ -213,6 +213,25 @@ fn collect_tests(wpt_dir: &Path) -> Vec<PathBuf> {
         suites.push("css/css-grid".to_string());
     }
 
+    // "full" runs every top-level suite except `encoding`
+    if suites.iter().any(|suite| suite == "full") {
+        suites = fs::read_dir(wpt_dir)
+            .expect("Failed to read WPT_DIR")
+            .filter_map(|entry| {
+                let entry = entry.expect("Failed to read WPT_DIR entry");
+                if !entry.file_type().is_ok_and(|t| t.is_dir()) {
+                    return None;
+                }
+                let name = entry.file_name().to_string_lossy().into_owned();
+                if name == "encoding" || name.starts_with('.') {
+                    return None;
+                }
+                Some(name)
+            })
+            .collect();
+        suites.sort_unstable();
+    }
+
     for suite in suites {
         for pat in ["", "/**/*.htm", "/**/*.html", "/**/*.xht", "/**/*.xhtml"] {
             let pattern = format!("{}/{}{}", wpt_dir.display(), suite, pat);
