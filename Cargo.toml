@@ -171,12 +171,9 @@ web-time = "1"
 console_error_panic_hook = "0.1"
 
 # JavaScript engine (Boa)
-# Pinned to a git revision of Boa's main branch because released versions of Boa
-# (<= 0.21.1) require `icu_normalizer ~2.0.0`, which conflicts with the
-# `icu_normalizer ^2.1.1` requirement of `parley`.
-boa_engine = { git = "https://github.com/boa-dev/boa.git", rev = "8a1e8fe07f626f7a067afc2c9885d5d87de4bb5d" }
-boa_runtime = { git = "https://github.com/boa-dev/boa.git", rev = "8a1e8fe07f626f7a067afc2c9885d5d87de4bb5d" }
-boa_gc = { git = "https://github.com/boa-dev/boa.git", rev = "8a1e8fe07f626f7a067afc2c9885d5d87de4bb5d" }
+boa_engine = "0.22"
+boa_runtime = "0.22"
+boa_gc = "0.22"
 
 # Other dependencies
 rustc-hash = "2.1.2"
