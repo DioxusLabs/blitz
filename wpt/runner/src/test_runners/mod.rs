@@ -1,6 +1,7 @@
 use std::sync::LazyLock;
 use std::{fs, sync::Arc, time::Instant};
 
+use blitz_dom::traversal::TreeTraverser;
 use blitz_dom::{BaseDocument, DocumentConfig};
 use blitz_html::{HtmlDocument, HtmlProvider};
 use log::{debug, warn};
@@ -23,39 +24,31 @@ pub use ref_test::process_ref_test;
 /// execute JavaScript (a JavaScript-typed script with either a `src`
 /// attribute or inline content)?
 pub fn document_has_scripts(doc: &BaseDocument) -> bool {
-    let mut stack = vec![doc.root_node().id];
-
-    while let Some(node_id) = stack.pop() {
+    TreeTraverser::new(doc).any(|node_id| {
         let Some(node) = doc.get_node(node_id) else {
-            continue;
+            return false;
         };
-
-        if let Some(element) = node.element_data() {
-            if element.name.local == blitz_dom::local_name!("script") {
-                // Skip non-JavaScript script types (e.g. JSON data blocks)
-                let script_type = element
-                    .attr(blitz_dom::local_name!("type"))
-                    .unwrap_or("")
-                    .trim()
-                    .to_ascii_lowercase();
-                let is_js = matches!(
-                    script_type.as_str(),
-                    "" | "text/javascript" | "application/javascript" | "module"
-                );
-                if is_js
-                    && (element.attr(blitz_dom::local_name!("src")).is_some()
-                        || !node.text_content().trim().is_empty())
-                {
-                    return true;
-                }
-                continue;
-            }
+        let Some(element) = node.element_data() else {
+            return false;
+        };
+        if element.name.local != blitz_dom::local_name!("script") {
+            return false;
         }
 
-        stack.extend(node.children.iter().copied());
-    }
-
-    false
+        // Skip non-JavaScript script types (e.g. JSON data blocks)
+        let script_type = element
+            .attr(blitz_dom::local_name!("type"))
+            .unwrap_or("")
+            .trim()
+            .to_ascii_lowercase();
+        let is_js = matches!(
+            script_type.as_str(),
+            "" | "text/javascript" | "application/javascript" | "module"
+        );
+        is_js
+            && (element.attr(blitz_dom::local_name!("src")).is_some()
+                || !node.text_content().trim().is_empty())
+    })
 }
 
 /// Matches each `<script>` tag with its attributes and body
