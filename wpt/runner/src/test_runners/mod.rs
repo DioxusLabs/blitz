@@ -19,12 +19,43 @@ pub use crash_test::process_crash_test;
 pub use harness_test::process_harness_test;
 pub use ref_test::process_ref_test;
 
-/// Does the HTML contain an inline `<script>` (one without a `src` attribute)?
-/// Used as a heuristic for "requires JavaScript to be executed".
-pub fn has_inline_script(ctx: &ThreadCtx, html: &str) -> bool {
-    ctx.inline_script_re
-        .captures_iter(html)
-        .any(|captures| !captures.get(1).unwrap().as_str().contains("src"))
+/// Does the parsed document contain any `<script>` element which would
+/// execute JavaScript (a JavaScript-typed script with either a `src`
+/// attribute or inline content)?
+pub fn document_has_scripts(doc: &BaseDocument) -> bool {
+    let mut stack = vec![doc.root_node().id];
+
+    while let Some(node_id) = stack.pop() {
+        let Some(node) = doc.get_node(node_id) else {
+            continue;
+        };
+
+        if let Some(element) = node.element_data() {
+            if element.name.local == blitz_dom::local_name!("script") {
+                // Skip non-JavaScript script types (e.g. JSON data blocks)
+                let script_type = element
+                    .attr(blitz_dom::local_name!("type"))
+                    .unwrap_or("")
+                    .trim()
+                    .to_ascii_lowercase();
+                let is_js = matches!(
+                    script_type.as_str(),
+                    "" | "text/javascript" | "application/javascript" | "module"
+                );
+                if is_js
+                    && (element.attr(blitz_dom::local_name!("src")).is_some()
+                        || !node.text_content().trim().is_empty())
+                {
+                    return true;
+                }
+                continue;
+            }
+        }
+
+        stack.extend(node.children.iter().copied());
+    }
+
+    false
 }
 
 /// Matches each `<script>` tag with its attributes and body

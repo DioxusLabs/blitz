@@ -287,7 +287,6 @@ struct ThreadCtx {
     rel_re: Regex,
     href_re: Regex,
     attrtest_re: Regex,
-    inline_script_re: Regex,
     float_re: Regex,
     intrinsic_re: Regex,
     calc_re: Regex,
@@ -510,10 +509,6 @@ fn main() {
                         Regex::new(r#"checkLayout\(\s*['"]([^'"]*)['"]\s*(,\s*(true|false))?\)"#)
                             .unwrap();
 
-                    // Matches the attributes of each `<script>` tag so that inline
-                    // scripts (no `src` attribute) can be detected
-                    let inline_script_re = Regex::new(r#"<script([^>]*)>"#).unwrap();
-
                     let dummy_base_url = Url::parse("http://dummy.local").unwrap();
                     let navigation_provider = Arc::new(DummyNavigationProvider);
 
@@ -531,7 +526,6 @@ fn main() {
                         rel_re,
                         href_re,
                         attrtest_re,
-                        inline_script_re,
                         float_re,
                         intrinsic_re,
                         calc_re,

@@ -15,7 +15,7 @@ use url::Url;
 
 use super::fuzzy::{FuzzySpec, fuzzy_buffer_diff, parse_fuzzy_metas, tolerance_for_reference};
 use super::harness_test::WptScriptFetcher;
-use super::{has_inline_script, parse_and_resolve_document, pump_net_provider};
+use super::{document_has_scripts, parse_and_resolve_document, pump_net_provider};
 use crate::{BufferKind, HEIGHT, SCALE, SubtestCounts, TestFlags, ThreadCtx, WIDTH};
 
 pub fn process_ref_test(
@@ -216,10 +216,10 @@ fn render_html_to_buffer(
 ) {
     let mut document = parse_and_resolve_document(ctx, html, relative_path);
 
-    if has_inline_script(ctx, html) {
-        // The document contains an inline script, so it (probably) requires
-        // JavaScript to render correctly: upgrade it to a `ScriptDocument`
-        // (without reparsing) and execute its scripts before rendering.
+    if document_has_scripts(&document) {
+        // The document contains scripts, so it (probably) requires JavaScript
+        // to render correctly: upgrade it to a `ScriptDocument` (without
+        // reparsing) and execute its scripts before rendering.
         let mut script_document = ScriptDocument::from_base_document(document)
             .with_fetcher(WptScriptFetcher::new(ctx.wpt_dir.clone()));
         script_document.execute_scripts();
