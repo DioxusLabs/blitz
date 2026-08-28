@@ -168,24 +168,23 @@ fn path_contains_directory(path: &Path, dir_name: &str) -> bool {
         .any(|component| component.as_os_str() == dir_name)
 }
 
+const TEST_EXTENSIONS: &[&str] = &["htm", "html", "xht", "xhtm", "xhtml", "xml", "svg"];
+
+fn has_suffix_with_test_extension(path_str: &str, suffix: &str) -> bool {
+    TEST_EXTENSIONS
+        .iter()
+        .any(|ext| path_str.ends_with(&format!("{suffix}.{ext}")))
+}
+
 fn filter_path(p: &Path) -> bool {
     // let is_tentative = path_buf.ends_with("tentative.html");
     let path_str = p.to_string_lossy();
-    let is_ref = path_str.ends_with("-ref.html")
-        || path_str.ends_with("-ref.htm")
-        || path_str.ends_with("-ref.xhtml")
-        || path_str.ends_with("-ref.xht")
+    let is_ref = has_suffix_with_test_extension(&path_str, "-ref")
         || path_contains_directory(p, "reference");
     // Negative references for mismatch reftests
-    let is_notref = path_str.ends_with("-notref.html")
-        || path_str.ends_with("-notref.htm")
-        || path_str.ends_with("-notref.xhtml")
-        || path_str.ends_with("-notref.xht");
+    let is_notref = has_suffix_with_test_extension(&path_str, "-notref");
     // Manual tests require human interaction/verification and cannot be run automatically
-    let is_manual = path_str.ends_with("-manual.html")
-        || path_str.ends_with("-manual.htm")
-        || path_str.ends_with("-manual.xhtml")
-        || path_str.ends_with("-manual.xht");
+    let is_manual = has_suffix_with_test_extension(&path_str, "-manual");
     // `support`, `tools` and `resources` directories contain helper files, not tests
     // (matching the upstream WPT manifest rules)
     let is_support_file = path_contains_directory(p, "support")
@@ -233,7 +232,9 @@ fn collect_tests(wpt_dir: &Path) -> Vec<PathBuf> {
     }
 
     for suite in suites {
-        for pat in ["", "/**/*.htm", "/**/*.html", "/**/*.xht", "/**/*.xhtml"] {
+        for pat in std::iter::once(String::new())
+            .chain(TEST_EXTENSIONS.iter().map(|ext| format!("/**/*.{ext}")))
+        {
             let pattern = format!("{}/{}{}", wpt_dir.display(), suite, pat);
 
             let glob_results = glob::glob(&pattern).expect("Invalid glob pattern.");

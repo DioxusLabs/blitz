@@ -197,7 +197,7 @@ pub fn process_test_file(
 fn is_crash_test(relative_path: &str) -> bool {
     relative_path.split('/').any(|seg| seg == "crashtests")
         || ["", ".https", ".h2", ".www"].iter().any(|flag| {
-            [".html", ".htm", ".xht", ".xhtml"]
+            [".html", ".htm", ".xht", ".xhtm", ".xhtml", ".xml", ".svg"]
                 .iter()
                 .any(|ext| relative_path.ends_with(&format!("-crash{flag}{ext}")))
         })
@@ -220,9 +220,12 @@ fn parse_and_resolve_document(
         ..Default::default()
     };
 
-    // `.xht`/`.xhtml` files must be parsed as XML: content sniffing cannot
-    // detect all XHTML documents (e.g. ones with a plain `<!DOCTYPE html>`)
-    let is_xml = relative_path.ends_with(".xht") || relative_path.ends_with(".xhtml");
+    // Extensions which wptserve serves with an XML content type must be parsed
+    // as XML: content sniffing cannot detect all XHTML documents (e.g. ones
+    // with a plain `<!DOCTYPE html>`)
+    let is_xml = [".xht", ".xhtm", ".xhtml", ".xml", ".svg"]
+        .iter()
+        .any(|ext| relative_path.ends_with(ext));
     let mut document = if is_xml {
         HtmlDocument::from_xml(html, config)
     } else {
