@@ -33,6 +33,7 @@ markup5ever = { workspace = true }
 
 # Other dependencies
 keyboard-types = { workspace = true }
+log = "0.4"
 url = { workspace = true }
 data-url = { workspace = true }
 web-time = { workspace = true }

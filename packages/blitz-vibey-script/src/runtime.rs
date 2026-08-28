@@ -15,8 +15,9 @@ use boa_engine::value::JsValue;
 use boa_engine::{
     Context, JsError, JsNativeError, JsResult, JsString, NativeFunction, Source, js_string,
 };
+use boa_engine::{Finalize, Trace};
 use boa_runtime::Console;
-use boa_runtime::console::DefaultLogger;
+use boa_runtime::console::{ConsoleState, Logger};
 use url::Url;
 use web_time::{Duration, Instant};
 
@@ -453,6 +454,30 @@ impl ModuleLoader for BlitzModuleLoader {
     }
 }
 
+/// Console logger which routes all console output to the `log` crate at
+/// `debug` level (target `js_console`), keeping stdout/stderr clean.
+#[derive(Debug, Trace, Finalize)]
+struct LogCrateLogger;
+
+impl Logger for LogCrateLogger {
+    fn log(&self, msg: String, _state: &ConsoleState, _context: &mut Context) -> JsResult<()> {
+        log::debug!(target: "js_console", "{msg}");
+        Ok(())
+    }
+
+    fn info(&self, msg: String, state: &ConsoleState, context: &mut Context) -> JsResult<()> {
+        self.log(msg, state, context)
+    }
+
+    fn warn(&self, msg: String, state: &ConsoleState, context: &mut Context) -> JsResult<()> {
+        self.log(msg, state, context)
+    }
+
+    fn error(&self, msg: String, state: &ConsoleState, context: &mut Context) -> JsResult<()> {
+        self.log(msg, state, context)
+    }
+}
+
 pub(crate) struct ScriptRuntime {
     pub context: Context,
     pub ctx: DomCtx,
@@ -475,7 +500,7 @@ impl ScriptRuntime {
         let ctx = DomCtx::new(doc);
         context.insert_data(ctx.clone());
 
-        Console::register_with_logger(DefaultLogger, &mut context)
+        Console::register_with_logger(LogCrateLogger, &mut context)
             .expect("failed to register console");
 
         // Register boa_runtime's web-API extensions: atob/btoa, TextEncoder/

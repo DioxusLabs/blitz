@@ -1129,6 +1129,7 @@ dependencies = [
  "boa_runtime",
  "data-url",
  "keyboard-types 0.7.0",
+ "log",
  "markup5ever",
  "tracing",
  "url",
