@@ -253,3 +253,7 @@ css/cssom-view/scrollIntoView-iframes.html scroll-events
 css/motion/animation/offset-path-interpolation-008.html harness-timeout
 css/selectors/focus-in-focus-event-001.html harness-timeout
 css/selectors/focus-in-focusin-event-001.html harness-timeout
+css/css-backgrounds/animations/box-shadow-interpolation.html harness-timeout
+css/css-fonts/discrete-no-interpolation.html harness-timeout
+css/css-grid/animation/grid-template-rows-interpolation.html harness-timeout
+css/css-masking/animations/clip-path-interpolation-shape.html harness-timeout
