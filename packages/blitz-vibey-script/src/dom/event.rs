@@ -213,7 +213,7 @@ fn event_layer(this: &JsValue) -> JsResult<()> {
 fn type_getter(this: &JsValue, _: &[JsValue], _context: &mut Context) -> JsResult<JsValue> {
     event_layer(this)?;
     let obj = this.as_object().unwrap();
-    with_event(&obj, |e| js_str(&e.type_).into())
+    with_event(&obj, |e| js_str(&e.type_))
 }
 
 fn target_getter(this: &JsValue, _: &[JsValue], _context: &mut Context) -> JsResult<JsValue> {

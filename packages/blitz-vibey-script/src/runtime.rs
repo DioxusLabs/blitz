@@ -1372,7 +1372,7 @@ fn css_supports(_: &JsValue, args: &[JsValue], context: &mut Context) -> JsResul
 }
 
 fn get_computed_style(_: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    let Some(node_id) = args.first().and_then(|value| node_id_of_value(value)) else {
+    let Some(node_id) = args.first().and_then(node_id_of_value) else {
         return Err(boa_engine::JsNativeError::typ()
             .with_message("getComputedStyle: argument is not an Element")
             .into());

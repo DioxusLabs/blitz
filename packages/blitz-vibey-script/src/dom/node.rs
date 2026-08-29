@@ -355,7 +355,7 @@ fn set_node_value(this: &JsValue, args: &[JsValue], context: &mut Context) -> Js
 
 fn arg_node_id(args: &[JsValue], index: usize) -> JsResult<NodeId> {
     args.get(index)
-        .and_then(|value| node_id_of_value(value))
+        .and_then(node_id_of_value)
         .ok_or_else(|| native_error!(typ, "argument is not a DOM node"))
 }
 
@@ -590,7 +590,7 @@ fn has_child_nodes(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsRe
 fn contains(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
     let node_id = this_node_id(this)?;
-    let Some(mut current) = args.first().and_then(|arg| node_id_of_value(arg)) else {
+    let Some(mut current) = args.first().and_then(node_id_of_value) else {
         return Ok(JsValue::from(false));
     };
 
