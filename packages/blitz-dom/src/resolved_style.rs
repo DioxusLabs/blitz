@@ -8,6 +8,7 @@
 use cssparser::{Parser, ParserInput};
 use selectors::matching::QuirksMode;
 use style::computed_values::box_sizing::T as BoxSizing;
+use style::computed_values::position::T as Position;
 use style::parser::ParserContext;
 use style::properties::declaration_block::{Importance, parse_style_attribute};
 use style::properties::{
@@ -16,7 +17,9 @@ use style::properties::{
 };
 use style::stylesheets::supports_rule::parse_condition_or_declaration;
 use style::stylesheets::{CssRuleType, Origin};
+use style::values::computed::LengthPercentage;
 use style::values::computed::length::CSSPixelLength;
+use style::values::generics::position::Inset as GenericInset;
 use style::values::resolved;
 use style::values::specified::box_::DisplayInside;
 use style_traits::{CssStringWriter, ParsingMode, ToCss};
@@ -28,6 +31,61 @@ use crate::BaseDocument;
 /// Serialize a used length (in CSS pixels) the way stylo serializes computed lengths
 fn format_px(px: f32) -> String {
     CSSPixelLength::new(px).to_css_string()
+}
+
+/// Resolve a computed inset value to CSS pixels against the given percentage
+/// basis. Returns `None` for `auto` (and unsupported anchor functions).
+fn resolve_inset<P>(val: &GenericInset<P, LengthPercentage>, basis: f32) -> Option<f32> {
+    match val {
+        GenericInset::LengthPercentage(lp) => Some(lp.resolve(CSSPixelLength::new(basis)).px()),
+        _ => None,
+    }
+}
+
+/// Serialize a transform matrix component rounded to 6 decimal places (as
+/// browsers do when serializing resolved transform matrices)
+fn format_matrix_component(v: f64) -> String {
+    let rounded = (v * 1e6).round() / 1e6;
+    // Avoid "-0"
+    let rounded = if rounded == 0.0 { 0.0 } else { rounded };
+    format!("{rounded}")
+}
+
+/// Serialize a used transform matrix the way `getComputedStyle()` does
+/// (`matrix(...)` for 2D transforms, `matrix3d(...)` otherwise).
+fn format_matrix(m: &euclid::default::Transform3D<f64>, is_3d: bool) -> String {
+    let c = format_matrix_component;
+    if is_3d {
+        format!(
+            "matrix3d({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {})",
+            c(m.m11),
+            c(m.m12),
+            c(m.m13),
+            c(m.m14),
+            c(m.m21),
+            c(m.m22),
+            c(m.m23),
+            c(m.m24),
+            c(m.m31),
+            c(m.m32),
+            c(m.m33),
+            c(m.m34),
+            c(m.m41),
+            c(m.m42),
+            c(m.m43),
+            c(m.m44)
+        )
+    } else {
+        format!(
+            "matrix({}, {}, {}, {}, {}, {})",
+            c(m.m11),
+            c(m.m12),
+            c(m.m21),
+            c(m.m22),
+            c(m.m41),
+            c(m.m42)
+        )
+    }
 }
 
 /// Check whether `name` names a CSS property supported by the style engine.
@@ -254,6 +312,139 @@ impl BaseDocument {
                         - layout.padding.bottom
                 };
                 return format_px(size.max(0.0));
+            }
+            "margin-top" | "margin-right" | "margin-bottom" | "margin-left" if has_layout_box => {
+                // Used value: the margin resolved by layout (percentages and
+                // `auto` margins resolved to lengths)
+                let layout = node.final_layout();
+                let margin = match property_name {
+                    "margin-top" => layout.margin.top,
+                    "margin-right" => layout.margin.right,
+                    "margin-bottom" => layout.margin.bottom,
+                    "margin-left" => layout.margin.left,
+                    _ => unreachable!(),
+                };
+                return format_px(margin);
+            }
+            "top" | "right" | "bottom" | "left" if has_layout_box => {
+                let position = styles.clone_position();
+                let parent_layout = node
+                    .layout_parent
+                    .get()
+                    .and_then(|id| self.get_node(id))
+                    .map(|parent| *parent.final_layout());
+
+                match position {
+                    // Used value: the relative offset. The non-`auto` side of
+                    // each axis wins (`top`/`left` take precedence when both
+                    // are set) and the opposite side resolves to its negation.
+                    Position::Relative => {
+                        let (cb_width, cb_height) = parent_layout
+                            .map(|pl| {
+                                (
+                                    pl.size.width
+                                        - pl.border.left
+                                        - pl.border.right
+                                        - pl.padding.left
+                                        - pl.padding.right,
+                                    pl.size.height
+                                        - pl.border.top
+                                        - pl.border.bottom
+                                        - pl.padding.top
+                                        - pl.padding.bottom,
+                                )
+                            })
+                            .unwrap_or((0.0, 0.0));
+                        let pos_styles = styles.get_position();
+                        let is_vertical = matches!(property_name, "top" | "bottom");
+                        let basis = if is_vertical { cb_height } else { cb_width };
+                        let (start, end) = if is_vertical {
+                            (
+                                resolve_inset(&pos_styles.top, basis),
+                                resolve_inset(&pos_styles.bottom, basis),
+                            )
+                        } else {
+                            (
+                                resolve_inset(&pos_styles.left, basis),
+                                resolve_inset(&pos_styles.right, basis),
+                            )
+                        };
+                        let used_start = match (start, end) {
+                            (Some(start), _) => start,
+                            (None, Some(end)) => -end,
+                            (None, None) => 0.0,
+                        };
+                        let used = if matches!(property_name, "top" | "left") {
+                            used_start
+                        } else {
+                            -used_start
+                        };
+                        return format_px(used);
+                    }
+                    // A specified (non-`auto`) inset resolves as-is (with
+                    // percentages resolved against the containing block), even
+                    // when overconstrained. An `auto` inset resolves to the
+                    // used distance between the box's margin edge and the
+                    // corresponding edge of the containing block's padding box.
+                    Position::Absolute | Position::Fixed => {
+                        if let Some(pl) = parent_layout {
+                            let cb_width = pl.size.width - pl.border.left - pl.border.right;
+                            let cb_height = pl.size.height - pl.border.top - pl.border.bottom;
+
+                            let pos_styles = styles.get_position();
+                            let (inset, basis) = match property_name {
+                                "top" => (&pos_styles.top, cb_height),
+                                "bottom" => (&pos_styles.bottom, cb_height),
+                                "left" => (&pos_styles.left, cb_width),
+                                "right" => (&pos_styles.right, cb_width),
+                                _ => unreachable!(),
+                            };
+                            if let Some(value) = resolve_inset(inset, basis) {
+                                return format_px(value);
+                            }
+
+                            let layout = node.final_layout();
+                            let margin_box_top =
+                                layout.location.y - layout.margin.top - pl.border.top;
+                            let margin_box_left =
+                                layout.location.x - layout.margin.left - pl.border.left;
+                            let margin_box_width =
+                                layout.margin.left + layout.size.width + layout.margin.right;
+                            let margin_box_height =
+                                layout.margin.top + layout.size.height + layout.margin.bottom;
+                            let used = match property_name {
+                                "top" => margin_box_top,
+                                "bottom" => cb_height - margin_box_top - margin_box_height,
+                                "left" => margin_box_left,
+                                "right" => cb_width - margin_box_left - margin_box_width,
+                                _ => unreachable!(),
+                            };
+                            return format_px(used);
+                        }
+                    }
+                    // `static` and `sticky` boxes resolve to the computed value
+                    _ => {}
+                }
+            }
+            "transform" if has_layout_box => {
+                let transform = &styles.get_box().transform;
+                if !transform.0.is_empty() {
+                    // Used value: the transform list resolved to a matrix, with
+                    // percentages resolved against the border box
+                    let layout = node.final_layout();
+                    let reference_box = euclid::Rect::new(
+                        euclid::Point2D::new(CSSPixelLength::new(0.0), CSSPixelLength::new(0.0)),
+                        euclid::Size2D::new(
+                            CSSPixelLength::new(layout.size.width),
+                            CSSPixelLength::new(layout.size.height),
+                        ),
+                    );
+                    if let Ok((matrix, is_3d)) =
+                        transform.to_transform_3d_matrix_f64(Some(&reference_box))
+                    {
+                        return format_matrix(&matrix, is_3d);
+                    }
+                }
             }
             _ => {}
         }
