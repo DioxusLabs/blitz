@@ -69,12 +69,11 @@ pub fn document_has_scripts(doc: &BaseDocument) -> bool {
         let Some(node) = doc.get_node(node_id) else {
             return false;
         };
-        if let Some(element) = node.element_data() {
-            if element.name.local == blitz_dom::local_name!("body")
-                && element.attr(blitz_dom::local_name!("onload")).is_some()
-            {
-                return true;
-            }
+        if let Some(element) = node.element_data()
+            && element.name.local == blitz_dom::local_name!("body")
+            && element.attr(blitz_dom::local_name!("onload")).is_some()
+        {
+            return true;
         }
         let Some(element) = as_js_script_element(node) else {
             return false;
