@@ -59,6 +59,7 @@ fn convert_status(status: TestStatus) -> wpt_report::TestStatus {
     match status {
         TestStatus::Pass => wpt_report::TestStatus::Pass,
         TestStatus::Fail => wpt_report::TestStatus::Fail,
+        TestStatus::Timeout => wpt_report::TestStatus::Timeout,
         TestStatus::Skip => wpt_report::TestStatus::Skip,
         TestStatus::Crash => wpt_report::TestStatus::Crash,
     }
@@ -68,6 +69,7 @@ fn convert_subtest_status(status: TestStatus) -> wpt_report::SubtestStatus {
     match status {
         TestStatus::Pass => wpt_report::SubtestStatus::Pass,
         TestStatus::Fail => wpt_report::SubtestStatus::Fail,
+        TestStatus::Timeout => wpt_report::SubtestStatus::Timeout,
         TestStatus::Skip => wpt_report::SubtestStatus::Skip,
         TestStatus::Crash => unreachable!(),
     }
@@ -131,6 +133,7 @@ pub fn generate_expectations(results: &[TestResult]) -> String {
             let c = match subtest.status {
                 TestStatus::Pass => 'Y',
                 TestStatus::Fail => 'N',
+                TestStatus::Timeout => 'T',
                 TestStatus::Skip => '.',
                 TestStatus::Crash => unreachable!(),
             };

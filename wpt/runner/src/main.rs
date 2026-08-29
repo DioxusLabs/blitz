@@ -105,6 +105,7 @@ impl Display for TestKind {
 enum TestStatus {
     Pass,
     Fail,
+    Timeout,
     Skip,
     Crash,
 }
@@ -114,6 +115,7 @@ impl TestStatus {
         match self {
             TestStatus::Pass => "PASS",
             TestStatus::Fail => "FAIL",
+            TestStatus::Timeout => "TIMEOUT",
             TestStatus::Skip => "SKIP",
             TestStatus::Crash => "CRASH",
         }
@@ -343,6 +345,7 @@ impl TestResult {
                 write!(out, "{}", result_str.yellow()).unwrap()
             }
             TestStatus::Fail => write!(out, "{}", result_str.red()).unwrap(),
+            TestStatus::Timeout => write!(out, "{}", result_str.bright_red()).unwrap(),
             TestStatus::Skip => write!(out, "{}", result_str.bright_black()).unwrap(),
             TestStatus::Crash => write!(out, "{}", result_str.bright_magenta()).unwrap(),
         };
@@ -434,6 +437,7 @@ fn main() {
 
     let pass_count = AtomicU32::new(0);
     let fail_count = AtomicU32::new(0);
+    let timeout_count = AtomicU32::new(0);
     let skip_count = AtomicU32::new(0);
     let crash_count = AtomicU32::new(0);
 
@@ -601,6 +605,7 @@ fn main() {
                     }
                     fail_count.fetch_add(1, Ordering::Relaxed)
                 }
+                TestStatus::Timeout => timeout_count.fetch_add(1, Ordering::Relaxed),
                 TestStatus::Skip => skip_count.fetch_add(1, Ordering::Relaxed),
                 TestStatus::Crash => crash_count.fetch_add(1, Ordering::Relaxed),
             };
@@ -672,10 +677,11 @@ fn main() {
 
     let pass_count = pass_count.load(Ordering::SeqCst);
     let fail_count = fail_count.load(Ordering::SeqCst);
+    let timeout_count = timeout_count.load(Ordering::SeqCst);
     let crash_count = crash_count.load(Ordering::SeqCst);
     let skip_count = skip_count.load(Ordering::SeqCst);
 
-    let run_count = pass_count + fail_count + crash_count;
+    let run_count = pass_count + fail_count + timeout_count + crash_count;
     let count = count as u32;
 
     let fractional_pass_count = fractional_pass_count.load(Ordering::SeqCst);
@@ -704,6 +710,8 @@ fn main() {
     let fractional_pass_percent_total = as_percent(fractional_pass_count as u32, count);
     let fail_percent_run = as_percent(fail_count, run_count);
     let fail_percent_total = as_percent(fail_count, count);
+    let timeout_percent_run = as_percent(timeout_count, run_count);
+    let timeout_percent_total = as_percent(timeout_count, count);
     let crash_percent_run = as_percent(crash_count, run_count);
     let crash_percent_total = as_percent(crash_count, count);
 
@@ -732,6 +740,9 @@ fn main() {
     );
     println!(
         "{fail_count:>4} tests FAILED ({fail_percent_run:.2}% of run; {fail_percent_total:.2}% of found)"
+    );
+    println!(
+        "{timeout_count:>4} tests TIMED OUT ({timeout_percent_run:.2}% of run; {timeout_percent_total:.2}% of found)"
     );
 
     println!("{}", "\nCounting partial tests:".bright_black());

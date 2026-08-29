@@ -132,14 +132,15 @@ pub fn process_harness_test(
         // Timeout, or no pending timers: the harness will never complete
         None => {
             warn!("{relative_path}: testharness.js did not report results");
-            (TestStatus::Fail, SubtestCounts::ZERO_OF_ONE, Vec::new())
+            (TestStatus::Timeout, SubtestCounts::ZERO_OF_ONE, Vec::new())
         }
     }
 }
 
 /// Harness statuses: 0 = OK, 1 = ERROR, 2 = TIMEOUT, 3 = PRECONDITION_FAILED
-const HARNESS_OK: i64 = 0;
-const HARNESS_PRECONDITION_FAILED: i64 = 3;
+const HARNESS_STATUS_OK: i64 = 0;
+const HARNESS_STATUS_TIMEOUT: i64 = 2;
+const HARNESS_STATUS_PRECONDITION_FAILED: i64 = 3;
 
 /// Compute the overall test outcome from a testharness.js harness status code
 /// and its subtest results. A PRECONDITION_FAILED harness status or subtest
@@ -150,11 +151,13 @@ pub(super) fn harness_outcome(
     subtest_results: Vec<SubtestResult>,
 ) -> (TestStatus, SubtestCounts, Vec<SubtestResult>) {
     if subtest_results.is_empty() {
-        return if harness_status == HARNESS_PRECONDITION_FAILED {
-            (TestStatus::Skip, SubtestCounts::ZERO_OF_ZERO, Vec::new())
-        } else {
-            // OK with no subtests, or ERROR/TIMEOUT: fail the test
-            (TestStatus::Fail, SubtestCounts::ZERO_OF_ONE, Vec::new())
+        return match harness_status {
+            HARNESS_STATUS_PRECONDITION_FAILED => {
+                (TestStatus::Skip, SubtestCounts::ZERO_OF_ZERO, Vec::new())
+            }
+            HARNESS_STATUS_TIMEOUT => (TestStatus::Timeout, SubtestCounts::ZERO_OF_ONE, Vec::new()),
+            // OK with no subtests, or ERROR: fail the test
+            _ => (TestStatus::Fail, SubtestCounts::ZERO_OF_ONE, Vec::new()),
         };
     }
 
@@ -170,10 +173,11 @@ pub(super) fn harness_outcome(
         pass: pass_count,
         total: subtest_results.len() as u32 - skip_count,
     };
-    let status = if !matches!(harness_status, HARNESS_OK | HARNESS_PRECONDITION_FAILED) {
-        TestStatus::Fail
-    } else {
-        subtest_counts.as_status()
+    let status = match harness_status {
+        HARNESS_STATUS_OK | HARNESS_STATUS_PRECONDITION_FAILED => subtest_counts.as_status(),
+        // A non-OK harness status fails the test even if subtests passed
+        HARNESS_STATUS_TIMEOUT => TestStatus::Timeout,
+        _ => TestStatus::Fail,
     };
 
     (status, subtest_counts, subtest_results)
@@ -202,6 +206,7 @@ pub(super) fn parse_results(message: &str) -> Option<(i64, Vec<SubtestResult>)> 
             let status_code = test.get("status").and_then(|s| s.as_i64()).unwrap_or(1);
             let status = match status_code {
                 0 => TestStatus::Pass,
+                2 => TestStatus::Timeout,
                 // PRECONDITION_FAILED is skip-like, not a failure
                 4 => TestStatus::Skip,
                 _ => TestStatus::Fail,
