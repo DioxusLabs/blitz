@@ -45,14 +45,22 @@ fn as_js_script_element(node: &blitz_dom::Node) -> Option<&blitz_dom::node::Elem
     is_js.then_some(element)
 }
 
-/// Does the parsed document contain any `<script>` element which would
-/// execute JavaScript (a JavaScript-typed script with either a `src`
-/// attribute or inline content)?
+/// Does the parsed document contain any JavaScript which would execute:
+/// either a JavaScript-typed `<script>` element with a `src` attribute or
+/// inline content, or a `<body onload="...">` handler (which the script
+/// runtime installs as the window's `load` handler)?
 pub fn document_has_scripts(doc: &BaseDocument) -> bool {
     TreeTraverser::new(doc).any(|node_id| {
         let Some(node) = doc.get_node(node_id) else {
             return false;
         };
+        if let Some(element) = node.element_data() {
+            if element.name.local == blitz_dom::local_name!("body")
+                && element.attr(blitz_dom::local_name!("onload")).is_some()
+            {
+                return true;
+            }
+        }
         let Some(element) = as_js_script_element(node) else {
             return false;
         };
