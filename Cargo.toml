@@ -7,6 +7,7 @@ members = [
     "packages/blitz-html",
     "packages/blitz-net",
     "packages/blitz-paint",
+    "packages/blitz-vibey-script",
     "packages/blitz-shell",
     "packages/blitz",
     "packages/stylo_taffy",
@@ -36,7 +37,7 @@ homepage = "https://github.com/dioxuslabs/blitz"
 repository = "https://github.com/dioxuslabs/blitz"
 categories = ["gui"]
 edition = "2024"
-rust-version = "1.90.0"
+rust-version = "1.91.0"
 
 [workspace.dependencies]
 # Blitz dependencies(in-repo)
@@ -45,6 +46,7 @@ blitz-dom = { version = "=0.3.0-beta.2", path = "./packages/blitz-dom", default-
 blitz-html = { version = "=0.3.0-beta.2", path = "./packages/blitz-html", default-features = false }
 blitz-net = { version = "=0.3.0-beta.2", path = "./packages/blitz-net", default-features = false }
 blitz-paint = { version = "=0.3.0-beta.2", path = "./packages/blitz-paint", default-features = false }
+blitz-vibey-script = { version = "=0.3.0-beta.2", path = "./packages/blitz-vibey-script", default-features = false }
 blitz-shell = { version = "=0.3.0-beta.2", path = "./packages/blitz-shell", default-features = false }
 blitz-traits = { version = "=0.3.0-beta.2", path = "./packages/blitz-traits", default-features = false }
 stylo_taffy = { version = "=0.3.0-beta.2", path = "./packages/stylo_taffy", default-features = false }
@@ -168,6 +170,11 @@ web-sys = "0.3.98"
 web-time = "1"
 console_error_panic_hook = "0.1"
 
+# JavaScript engine (Boa)
+boa_engine = "0.22"
+boa_runtime = "0.22"
+boa_gc = "0.22"
+
 # Other dependencies
 rustc-hash = "2.1.2"
 bytes = "1.7.1"
@@ -234,7 +241,7 @@ edition = "2024"
 description = "Top level crate for Blitz"
 license = "MIT OR Apache-2.0"
 keywords = ["dom", "ui", "gui", "react", "wasm"]
-rust-version = "1.90.0"
+rust-version = "1.91.0"
 publish = false
 
 [features]
@@ -253,6 +260,7 @@ blitz-traits = { workspace = true }
 blitz-paint = { workspace = true }
 blitz-shell = { workspace = true }
 blitz-net = { workspace = true }
+blitz-vibey-script = { workspace = true }
 blitz = { workspace = true, features = ["net"] }
 dioxus = { workspace = true }
 dioxus-native = { workspace = true, features = [
@@ -262,6 +270,7 @@ dioxus-native = { workspace = true, features = [
     "prelude",
 ] }
 euclid = { workspace = true }
+url = { workspace = true }
 reqwest = { workspace = true }
 tokio = { workspace = true, features = ["macros"] }
 image = { workspace = true }

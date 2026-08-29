@@ -284,8 +284,9 @@ impl<'m, 'doc> TreeSink for DocumentHtmlParser<'m, 'doc> {
     }
 
     fn get_template_contents(&self, target: &Self::Handle) -> Self::Handle {
-        // TODO: implement templates properly. This should allow to function like regular elements.
-        *target
+        // Parse a template element's children into its (detached, inert)
+        // "template contents" fragment node rather than into the element itself
+        self.mutr().template_contents(*target)
     }
 
     fn same_node(&self, x: &Self::Handle, y: &Self::Handle) -> bool {
