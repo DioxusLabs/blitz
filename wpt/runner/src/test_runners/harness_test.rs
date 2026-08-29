@@ -137,26 +137,40 @@ pub fn process_harness_test(
     }
 }
 
+/// Harness statuses: 0 = OK, 1 = ERROR, 2 = TIMEOUT, 3 = PRECONDITION_FAILED
+const HARNESS_OK: i64 = 0;
+const HARNESS_PRECONDITION_FAILED: i64 = 3;
+
 /// Compute the overall test outcome from a testharness.js harness status code
-/// and its subtest results
+/// and its subtest results. A PRECONDITION_FAILED harness status or subtest
+/// status is skip-like (matching WPT's expectations model) rather than a
+/// failure; skipped subtests are excluded from the counts entirely.
 pub(super) fn harness_outcome(
     harness_status: i64,
     subtest_results: Vec<SubtestResult>,
 ) -> (TestStatus, SubtestCounts, Vec<SubtestResult>) {
-    // A non-OK harness status (ERROR/TIMEOUT) fails the test even if subtests passed
-    if harness_status != 0 && subtest_results.is_empty() {
-        return (TestStatus::Fail, SubtestCounts::ZERO_OF_ONE, Vec::new());
+    if subtest_results.is_empty() {
+        return if harness_status == HARNESS_PRECONDITION_FAILED {
+            (TestStatus::Skip, SubtestCounts::ZERO_OF_ZERO, Vec::new())
+        } else {
+            // OK with no subtests, or ERROR/TIMEOUT: fail the test
+            (TestStatus::Fail, SubtestCounts::ZERO_OF_ONE, Vec::new())
+        };
     }
 
     let pass_count = subtest_results
         .iter()
         .filter(|result| matches!(result.status, TestStatus::Pass))
         .count() as u32;
+    let skip_count = subtest_results
+        .iter()
+        .filter(|result| matches!(result.status, TestStatus::Skip))
+        .count() as u32;
     let subtest_counts = SubtestCounts {
         pass: pass_count,
-        total: subtest_results.len() as u32,
+        total: subtest_results.len() as u32 - skip_count,
     };
-    let status = if harness_status != 0 {
+    let status = if !matches!(harness_status, HARNESS_OK | HARNESS_PRECONDITION_FAILED) {
         TestStatus::Fail
     } else {
         subtest_counts.as_status()
@@ -186,10 +200,11 @@ pub(super) fn parse_results(message: &str) -> Option<(i64, Vec<SubtestResult>)> 
                 .to_string();
             // Test statuses: 0 = PASS, 1 = FAIL, 2 = TIMEOUT, 3 = NOTRUN, 4 = PRECONDITION_FAILED
             let status_code = test.get("status").and_then(|s| s.as_i64()).unwrap_or(1);
-            let status = if status_code == 0 {
-                TestStatus::Pass
-            } else {
-                TestStatus::Fail
+            let status = match status_code {
+                0 => TestStatus::Pass,
+                // PRECONDITION_FAILED is skip-like, not a failure
+                4 => TestStatus::Skip,
+                _ => TestStatus::Fail,
             };
             let errors = test
                 .get("message")
