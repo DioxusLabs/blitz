@@ -1,15 +1,13 @@
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use anyrender::{ImageRenderer as _, PaintScene as _};
 use blitz_dom::util::Color;
 use blitz_dom::{BaseDocument, Document as _};
 use blitz_paint::paint_scene;
-use blitz_vibey_script::ScriptDocument;
 use peniko::Fill;
 use peniko::kurbo::Rect;
 
-use super::harness_test::WptScriptFetcher;
-use super::{parse_and_resolve_document, pump_net_provider};
+use super::{parse_and_resolve_document, pump_net_provider, pump_timers, run_document_scripts};
 use crate::{BufferKind, HEIGHT, SCALE, SubtestCounts, TestFlags, ThreadCtx, WIDTH};
 
 /// How long to keep running pending JS timers (crashtests often crash in
@@ -28,24 +26,14 @@ pub fn process_crash_test(
     let mut document = parse_and_resolve_document(ctx, html, relative_path);
 
     if flags.contains(TestFlags::USES_SCRIPT) {
-        let mut script_document = ScriptDocument::from_base_document(document)
-            .with_fetcher(WptScriptFetcher::new(ctx.wpt_dir.clone()));
-        script_document.execute_scripts();
+        let mut script_document = run_document_scripts(ctx, document);
 
         // Run JS timers due within a short budget, re-resolving in between
         // (crashes are often triggered by post-load DOM/style mutation)
-        let deadline = Instant::now() + TIMER_BUDGET;
-        while let Some(timer_deadline) = script_document.next_timer_deadline() {
-            if timer_deadline > deadline {
-                break;
-            }
-            let now = Instant::now();
-            if timer_deadline > now {
-                std::thread::sleep(timer_deadline - now);
-            }
-            script_document.poll(None);
-            script_document.inner_mut().resolve(0.0);
-        }
+        pump_timers(&mut script_document, TIMER_BUDGET, |doc| {
+            doc.inner_mut().resolve(0.0);
+            None::<()>
+        });
 
         // JS errors don't fail a crashtest, but drain them so they're not
         // misattributed elsewhere

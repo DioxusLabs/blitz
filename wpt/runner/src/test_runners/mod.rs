@@ -1,11 +1,15 @@
 use std::sync::LazyLock;
+use std::time::Duration;
 use std::{fs, sync::Arc, time::Instant};
 
 use blitz_dom::traversal::TreeTraverser;
-use blitz_dom::{BaseDocument, DocumentConfig};
+use blitz_dom::{BaseDocument, Document as _, DocumentConfig};
 use blitz_html::{HtmlDocument, HtmlProvider};
+use blitz_vibey_script::ScriptDocument;
 use log::{debug, warn};
 use regex::Regex;
+
+use harness_test::WptScriptFetcher;
 
 use crate::{SubtestCounts, TestFlags, TestKind, TestStatus, ThreadCtx};
 
@@ -85,6 +89,42 @@ pub fn attr_test_needs_scripts(doc: &BaseDocument) -> bool {
             .trim()
             .is_empty()
     })
+}
+
+/// Wrap a parsed document in a [`ScriptDocument`] with the WPT script fetcher
+/// and execute its scripts
+pub fn run_document_scripts(ctx: &ThreadCtx, document: BaseDocument) -> ScriptDocument {
+    let mut script_document = ScriptDocument::from_base_document(document)
+        .with_fetcher(WptScriptFetcher::new(ctx.wpt_dir.clone()));
+    script_document.execute_scripts();
+    script_document
+}
+
+/// Pump the document's pending JS timers until `check` produces a result or
+/// there are no more timers due within `budget`. `check` runs once before any
+/// timer fires and again after each timer poll.
+pub fn pump_timers<T>(
+    document: &mut ScriptDocument,
+    budget: Duration,
+    mut check: impl FnMut(&mut ScriptDocument) -> Option<T>,
+) -> Option<T> {
+    let deadline = Instant::now() + budget;
+    loop {
+        if let Some(result) = check(document) {
+            return Some(result);
+        }
+        match document.next_timer_deadline() {
+            Some(timer_deadline) if timer_deadline <= deadline => {
+                let now = Instant::now();
+                if timer_deadline > now {
+                    std::thread::sleep(timer_deadline - now);
+                }
+                document.poll(None);
+            }
+            // Timer budget expired, or no pending timers
+            _ => return None,
+        }
+    }
 }
 
 pub struct SubtestResult {

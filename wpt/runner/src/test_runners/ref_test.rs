@@ -2,7 +2,6 @@ use anyrender::{ImageRenderer as _, PaintScene as _};
 use blitz_dom::util::Color;
 use blitz_dom::{BaseDocument, Document as _};
 use blitz_paint::paint_scene;
-use blitz_vibey_script::ScriptDocument;
 use image::{ImageBuffer, ImageFormat};
 use log::warn;
 use peniko::Fill;
@@ -14,8 +13,9 @@ use std::path::Path;
 use url::Url;
 
 use super::fuzzy::{FuzzySpec, fuzzy_buffer_diff, parse_fuzzy_metas, tolerance_for_reference};
-use super::harness_test::WptScriptFetcher;
-use super::{document_has_scripts, parse_and_resolve_document, pump_net_provider};
+use super::{
+    document_has_scripts, parse_and_resolve_document, pump_net_provider, run_document_scripts,
+};
 use crate::{BufferKind, HEIGHT, SCALE, SubtestCounts, TestFlags, ThreadCtx, WIDTH};
 
 pub fn process_ref_test(
@@ -220,9 +220,7 @@ fn render_html_to_buffer(
         // The document contains scripts, so it (probably) requires JavaScript
         // to render correctly: upgrade it to a `ScriptDocument` (without
         // reparsing) and execute its scripts before rendering.
-        let mut script_document = ScriptDocument::from_base_document(document)
-            .with_fetcher(WptScriptFetcher::new(ctx.wpt_dir.clone()));
-        script_document.execute_scripts();
+        let mut script_document = run_document_scripts(ctx, document);
         for error in script_document.take_js_errors() {
             warn!("{relative_path}: {error}");
         }

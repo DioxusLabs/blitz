@@ -3,14 +3,13 @@
 //! harness results via a custom `testharnessreport.js`.
 
 use std::path::PathBuf;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-use blitz_dom::Document as _;
-use blitz_vibey_script::{FetchError, ScriptDocument, ScriptFetcher};
+use blitz_vibey_script::{FetchError, ScriptFetcher};
 use log::warn;
 use url::Url;
 
-use super::{SubtestResult, parse_and_resolve_document};
+use super::{SubtestResult, parse_and_resolve_document, pump_timers, run_document_scripts};
 use crate::{SubtestCounts, TestStatus, ThreadCtx};
 
 /// How long to wait for the harness to complete (async tests, timers)
@@ -90,10 +89,7 @@ pub fn process_harness_test(
     relative_path: &str,
 ) -> (TestStatus, SubtestCounts, Vec<SubtestResult>) {
     let document = parse_and_resolve_document(ctx, html, relative_path);
-    let mut document = ScriptDocument::from_base_document(document)
-        .with_fetcher(WptScriptFetcher::new(ctx.wpt_dir.clone()));
-
-    document.execute_scripts();
+    let mut document = run_document_scripts(ctx, document);
 
     // Pump timers until the harness reports results (or the timeout expires).
     // Synchronous tests complete during `execute_scripts` (testharness completes
@@ -102,15 +98,23 @@ pub fn process_harness_test(
     // Uncaught JS errors fail the test immediately: in a real browser they would
     // reach testharness's window `error` handler and produce a harness ERROR, but
     // here they typically mean the harness will never complete.
-    let deadline = Instant::now() + HARNESS_TIMEOUT;
-    let results = loop {
+    let outcome = pump_timers(&mut document, HARNESS_TIMEOUT, |document| {
         let messages = document.take_messages();
         if let Some(results) = messages.iter().find_map(|msg| parse_results(msg)) {
-            break results;
+            return Some(Ok(results));
         }
-
         let js_errors = document.take_js_errors();
         if !js_errors.is_empty() {
+            return Some(Err(js_errors));
+        }
+        None
+    });
+
+    match outcome {
+        Some(Ok((harness_status, subtest_results))) => {
+            harness_outcome(harness_status, subtest_results)
+        }
+        Some(Err(js_errors)) => {
             for error in &js_errors {
                 warn!("{relative_path}: {error}");
             }
@@ -119,31 +123,18 @@ pub fn process_harness_test(
                 status: TestStatus::Fail,
                 errors: js_errors,
             }];
-            return (
+            (
                 TestStatus::Fail,
                 SubtestCounts::ZERO_OF_ONE,
                 subtest_results,
-            );
+            )
         }
-
-        let now = Instant::now();
-        let has_expired = now >= deadline;
-        let next_timer_deadline = document.next_timer_deadline();
-        let (false, Some(timer_deadline)) = (has_expired, next_timer_deadline) else {
-            // Timeout, or no pending timers: the harness will never complete
+        // Timeout, or no pending timers: the harness will never complete
+        None => {
             warn!("{relative_path}: testharness.js did not report results");
-            return (TestStatus::Fail, SubtestCounts::ZERO_OF_ONE, Vec::new());
-        };
-
-        let wake_at = timer_deadline.min(deadline);
-        if wake_at > now {
-            std::thread::sleep(wake_at - now);
+            (TestStatus::Fail, SubtestCounts::ZERO_OF_ONE, Vec::new())
         }
-        document.poll(None);
-    };
-
-    let (harness_status, subtest_results) = results;
-    harness_outcome(harness_status, subtest_results)
+    }
 }
 
 /// Compute the overall test outcome from a testharness.js harness status code

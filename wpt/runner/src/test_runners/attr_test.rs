@@ -1,13 +1,13 @@
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use blitz_dom::{BaseDocument, Document as _, Node};
-use blitz_vibey_script::ScriptDocument;
 use log::warn;
 use style_traits::ToCss;
 
-use super::harness_test::{self, WptScriptFetcher};
+use super::harness_test;
 use super::{
     SubtestResult, attr_test_needs_scripts, parse_and_resolve_document, pump_net_provider,
+    pump_timers, run_document_scripts,
 };
 use crate::{SubtestCounts, TestStatus, ThreadCtx};
 
@@ -34,9 +34,7 @@ pub fn process_attr_test(
     // `checkLayout()` keep the fast no-JS path (the checkLayout checks are
     // re-implemented natively below).
     if attr_test_needs_scripts(&document) {
-        let mut script_document = ScriptDocument::from_base_document(document)
-            .with_fetcher(WptScriptFetcher::new(ctx.wpt_dir.clone()));
-        script_document.execute_scripts();
+        let mut script_document = run_document_scripts(ctx, document);
         for error in script_document.take_js_errors() {
             warn!("{relative_path}: {error}");
         }
@@ -44,26 +42,12 @@ pub fn process_attr_test(
         // checkLayout() calls done() on load, but testharness defers its
         // completion callbacks through timers: run JS timers due within a
         // short budget so the results message can arrive
-        let deadline = Instant::now() + Duration::from_millis(100);
-        let harness_results = loop {
-            let results = script_document
-                .take_messages()
-                .iter()
-                .find_map(|message| harness_test::parse_results(message));
-            if results.is_some() {
-                break results;
-            }
-            let now = Instant::now();
-            match script_document.next_timer_deadline() {
-                Some(timer_deadline) if timer_deadline <= deadline => {
-                    if timer_deadline > now {
-                        std::thread::sleep(timer_deadline - now);
-                    }
-                    script_document.poll(None);
-                }
-                _ => break None,
-            }
-        };
+        let harness_results =
+            pump_timers(&mut script_document, Duration::from_millis(100), |doc| {
+                doc.take_messages()
+                    .iter()
+                    .find_map(|message| harness_test::parse_results(message))
+            });
 
         // Scripts may have mutated the DOM: re-resolve and load any
         // newly-requested resources
