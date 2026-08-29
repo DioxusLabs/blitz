@@ -13,11 +13,11 @@ use crate::shared::{
     instance_method, js_fn_ptr, native_error, native_fn_ptr,
 };
 
+use super::node::{append, prepend, replace_children};
+use super::style::{CSSStyleDeclaration, StyleLayer};
 use super::{
     dom_ctx, js_str, node_or_null, node_wrapper, this_node_id, to_rust_string, wrap_style_object,
 };
-use super::node::{append, prepend, replace_children};
-use super::style::{CSSStyleDeclaration, StyleLayer};
 use crate::state::DomCtx;
 
 /// `Element` own block. All data lives in the `Node` layer; this layer only
@@ -45,8 +45,19 @@ impl ExtendLayer for ElementLayer {
 
         instance_getter!(class, "tagName", js_fn_ptr!(tag_name, &realm), attr);
         instance_getter!(class, "localName", js_fn_ptr!(local_name, &realm), attr);
-        instance_getter!(class, "namespaceURI", js_fn_ptr!(namespace_uri, &realm), attr);
-        instance_accessor!(class, "id", js_fn_ptr!(get_id, &realm), js_fn_ptr!(set_id, &realm), attr);
+        instance_getter!(
+            class,
+            "namespaceURI",
+            js_fn_ptr!(namespace_uri, &realm),
+            attr
+        );
+        instance_accessor!(
+            class,
+            "id",
+            js_fn_ptr!(get_id, &realm),
+            js_fn_ptr!(set_id, &realm),
+            attr
+        );
         instance_accessor!(
             class,
             "className",
@@ -54,7 +65,13 @@ impl ExtendLayer for ElementLayer {
             js_fn_ptr!(set_class_name, &realm),
             attr
         );
-        instance_accessor!(class, "value", js_fn_ptr!(get_value, &realm), js_fn_ptr!(set_value, &realm), attr);
+        instance_accessor!(
+            class,
+            "value",
+            js_fn_ptr!(get_value, &realm),
+            js_fn_ptr!(set_value, &realm),
+            attr
+        );
         instance_accessor!(
             class,
             "checked",
@@ -90,7 +107,12 @@ impl ExtendLayer for ElementLayer {
             js_fn_ptr!(set_selection_end, &realm),
             attr
         );
-        instance_method!(class, "setSelectionRange", 2, native_fn_ptr!(set_selection_range));
+        instance_method!(
+            class,
+            "setSelectionRange",
+            2,
+            native_fn_ptr!(set_selection_range)
+        );
         instance_accessor!(
             class,
             "placeholder",
@@ -98,7 +120,13 @@ impl ExtendLayer for ElementLayer {
             js_fn_ptr!(set_placeholder, &realm),
             attr
         );
-        instance_accessor!(class, "type", js_fn_ptr!(get_type, &realm), js_fn_ptr!(set_type, &realm), attr);
+        instance_accessor!(
+            class,
+            "type",
+            js_fn_ptr!(get_type, &realm),
+            js_fn_ptr!(set_type, &realm),
+            attr
+        );
         instance_accessor!(
             class,
             "autofocus",
@@ -117,19 +145,59 @@ impl ExtendLayer for ElementLayer {
         instance_getter!(class, "outerHTML", js_fn_ptr!(get_outer_html, &realm), attr);
         instance_getter!(class, "content", js_fn_ptr!(get_content, &realm), attr);
         instance_getter!(class, "children", js_fn_ptr!(children, &realm), attr);
-        instance_getter!(class, "childElementCount", js_fn_ptr!(child_element_count, &realm), attr);
-        instance_getter!(class, "firstElementChild", js_fn_ptr!(first_element_child, &realm), attr);
-        instance_getter!(class, "lastElementChild", js_fn_ptr!(last_element_child, &realm), attr);
-        instance_getter!(class, "nextElementSibling", js_fn_ptr!(next_element_sibling, &realm), attr);
-        instance_getter!(class, "previousElementSibling", js_fn_ptr!(previous_element_sibling, &realm), attr);
+        instance_getter!(
+            class,
+            "childElementCount",
+            js_fn_ptr!(child_element_count, &realm),
+            attr
+        );
+        instance_getter!(
+            class,
+            "firstElementChild",
+            js_fn_ptr!(first_element_child, &realm),
+            attr
+        );
+        instance_getter!(
+            class,
+            "lastElementChild",
+            js_fn_ptr!(last_element_child, &realm),
+            attr
+        );
+        instance_getter!(
+            class,
+            "nextElementSibling",
+            js_fn_ptr!(next_element_sibling, &realm),
+            attr
+        );
+        instance_getter!(
+            class,
+            "previousElementSibling",
+            js_fn_ptr!(previous_element_sibling, &realm),
+            attr
+        );
         instance_getter!(class, "offsetWidth", js_fn_ptr!(offset_width, &realm), attr);
-        instance_getter!(class, "offsetHeight", js_fn_ptr!(offset_height, &realm), attr);
+        instance_getter!(
+            class,
+            "offsetHeight",
+            js_fn_ptr!(offset_height, &realm),
+            attr
+        );
         instance_getter!(class, "offsetLeft", js_fn_ptr!(offset_left, &realm), attr);
         instance_getter!(class, "offsetTop", js_fn_ptr!(offset_top, &realm), attr);
         instance_getter!(class, "clientWidth", js_fn_ptr!(client_width, &realm), attr);
-        instance_getter!(class, "clientHeight", js_fn_ptr!(client_height, &realm), attr);
+        instance_getter!(
+            class,
+            "clientHeight",
+            js_fn_ptr!(client_height, &realm),
+            attr
+        );
         instance_getter!(class, "scrollWidth", js_fn_ptr!(scroll_width, &realm), attr);
-        instance_getter!(class, "scrollHeight", js_fn_ptr!(scroll_height, &realm), attr);
+        instance_getter!(
+            class,
+            "scrollHeight",
+            js_fn_ptr!(scroll_height, &realm),
+            attr
+        );
         instance_accessor!(
             class,
             "scrollTop",
@@ -151,24 +219,54 @@ impl ExtendLayer for ElementLayer {
 
         instance_method!(class, "getAttribute", 1, native_fn_ptr!(get_attribute));
         instance_method!(class, "setAttribute", 2, native_fn_ptr!(set_attribute));
-        instance_method!(class, "removeAttribute", 1, native_fn_ptr!(remove_attribute));
+        instance_method!(
+            class,
+            "removeAttribute",
+            1,
+            native_fn_ptr!(remove_attribute)
+        );
         instance_method!(class, "hasAttribute", 1, native_fn_ptr!(has_attribute));
         instance_method!(class, "focus", 0, native_fn_ptr!(focus));
         instance_method!(class, "blur", 0, native_fn_ptr!(blur));
-        instance_method!(class, "getBoundingClientRect", 0, native_fn_ptr!(get_bounding_client_rect));
+        instance_method!(
+            class,
+            "getBoundingClientRect",
+            0,
+            native_fn_ptr!(get_bounding_client_rect)
+        );
         instance_method!(class, "getClientRects", 0, native_fn_ptr!(get_client_rects));
         // ParentNode mixin mutation helpers
         instance_method!(class, "append", 1, native_fn_ptr!(append));
         instance_method!(class, "prepend", 1, native_fn_ptr!(prepend));
-        instance_method!(class, "replaceChildren", 1, native_fn_ptr!(replace_children));
+        instance_method!(
+            class,
+            "replaceChildren",
+            1,
+            native_fn_ptr!(replace_children)
+        );
 
         instance_method!(class, "querySelector", 1, native_fn_ptr!(query_selector));
-        instance_method!(class, "querySelectorAll", 1, native_fn_ptr!(query_selector_all));
+        instance_method!(
+            class,
+            "querySelectorAll",
+            1,
+            native_fn_ptr!(query_selector_all)
+        );
         instance_method!(class, "matches", 1, native_fn_ptr!(matches));
         instance_method!(class, "webkitMatchesSelector", 1, native_fn_ptr!(matches));
         instance_method!(class, "closest", 1, native_fn_ptr!(closest));
-        instance_method!(class, "getElementsByTagName", 1, native_fn_ptr!(get_elements_by_tag_name));
-        instance_method!(class, "getElementsByClassName", 1, native_fn_ptr!(get_elements_by_class_name));
+        instance_method!(
+            class,
+            "getElementsByTagName",
+            1,
+            native_fn_ptr!(get_elements_by_tag_name)
+        );
+        instance_method!(
+            class,
+            "getElementsByClassName",
+            1,
+            native_fn_ptr!(get_elements_by_class_name)
+        );
 
         Ok(())
     }

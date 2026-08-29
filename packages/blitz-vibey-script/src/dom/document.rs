@@ -10,11 +10,11 @@ use crate::shared::{
     native_error, native_fn_ptr,
 };
 
+use super::node::{append, prepend, replace_children};
 use super::{
     dom_ctx, js_str, node_or_null, node_wrapper, qual_name, qual_name_ns, this_node_id,
     to_rust_string,
 };
-use super::node::{append, prepend, replace_children};
 
 /// `Document` own block. All data lives in the `Node` layer; this layer only
 /// contributes the document interface to the prototype chain.
@@ -40,11 +40,26 @@ impl ExtendLayer for DocumentLayer {
         let realm = class.context().realm().clone();
         let attr = Attribute::CONFIGURABLE | Attribute::NON_ENUMERABLE;
 
-        instance_getter!(class, "documentElement", js_fn_ptr!(document_element, &realm), attr);
+        instance_getter!(
+            class,
+            "documentElement",
+            js_fn_ptr!(document_element, &realm),
+            attr
+        );
         instance_getter!(class, "body", js_fn_ptr!(body, &realm), attr);
-        instance_getter!(class, "scrollingElement", js_fn_ptr!(scrolling_element, &realm), attr);
+        instance_getter!(
+            class,
+            "scrollingElement",
+            js_fn_ptr!(scrolling_element, &realm),
+            attr
+        );
         instance_getter!(class, "head", js_fn_ptr!(head, &realm), attr);
-        instance_getter!(class, "activeElement", js_fn_ptr!(active_element, &realm), attr);
+        instance_getter!(
+            class,
+            "activeElement",
+            js_fn_ptr!(active_element, &realm),
+            attr
+        );
         instance_getter!(class, "defaultView", js_fn_ptr!(default_view, &realm), attr);
         instance_getter!(class, "title", js_fn_ptr!(title, &realm), attr);
         instance_getter!(class, "readyState", js_fn_ptr!(ready_state, &realm), attr);
@@ -68,22 +83,67 @@ impl ExtendLayer for DocumentLayer {
         );
 
         instance_method!(class, "createElement", 1, native_fn_ptr!(create_element));
-        instance_method!(class, "createElementNS", 2, native_fn_ptr!(create_element_ns));
+        instance_method!(
+            class,
+            "createElementNS",
+            2,
+            native_fn_ptr!(create_element_ns)
+        );
         instance_method!(class, "createTextNode", 1, native_fn_ptr!(create_text_node));
         instance_method!(class, "createComment", 1, native_fn_ptr!(create_comment));
-        instance_method!(class, "createDocumentFragment", 0, native_fn_ptr!(create_document_fragment));
-        instance_method!(class, "getElementById", 1, native_fn_ptr!(get_element_by_id));
-        instance_method!(class, "getElementsByTagName", 1, native_fn_ptr!(get_elements_by_tag_name));
-        instance_method!(class, "getElementsByClassName", 1, native_fn_ptr!(get_elements_by_class_name));
+        instance_method!(
+            class,
+            "createDocumentFragment",
+            0,
+            native_fn_ptr!(create_document_fragment)
+        );
+        instance_method!(
+            class,
+            "getElementById",
+            1,
+            native_fn_ptr!(get_element_by_id)
+        );
+        instance_method!(
+            class,
+            "getElementsByTagName",
+            1,
+            native_fn_ptr!(get_elements_by_tag_name)
+        );
+        instance_method!(
+            class,
+            "getElementsByClassName",
+            1,
+            native_fn_ptr!(get_elements_by_class_name)
+        );
         instance_method!(class, "querySelector", 1, native_fn_ptr!(query_selector));
-        instance_method!(class, "querySelectorAll", 1, native_fn_ptr!(query_selector_all));
-        instance_method!(class, "elementFromPoint", 2, native_fn_ptr!(element_from_point));
-        instance_method!(class, "elementsFromPoint", 2, native_fn_ptr!(elements_from_point));
+        instance_method!(
+            class,
+            "querySelectorAll",
+            1,
+            native_fn_ptr!(query_selector_all)
+        );
+        instance_method!(
+            class,
+            "elementFromPoint",
+            2,
+            native_fn_ptr!(element_from_point)
+        );
+        instance_method!(
+            class,
+            "elementsFromPoint",
+            2,
+            native_fn_ptr!(elements_from_point)
+        );
 
         // ParentNode mixin mutation helpers
         instance_method!(class, "append", 1, native_fn_ptr!(append));
         instance_method!(class, "prepend", 1, native_fn_ptr!(prepend));
-        instance_method!(class, "replaceChildren", 1, native_fn_ptr!(replace_children));
+        instance_method!(
+            class,
+            "replaceChildren",
+            1,
+            native_fn_ptr!(replace_children)
+        );
 
         Ok(())
     }

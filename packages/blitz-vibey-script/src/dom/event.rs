@@ -101,17 +101,52 @@ impl ExtendLayer for EventLayer {
         instance_getter!(class, "type", js_fn_ptr!(type_getter, &realm), attr);
         instance_getter!(class, "target", js_fn_ptr!(target_getter, &realm), attr);
         instance_getter!(class, "srcElement", js_fn_ptr!(target_getter, &realm), attr);
-        instance_getter!(class, "currentTarget", js_fn_ptr!(current_target_getter, &realm), attr);
+        instance_getter!(
+            class,
+            "currentTarget",
+            js_fn_ptr!(current_target_getter, &realm),
+            attr
+        );
         instance_getter!(class, "bubbles", js_fn_ptr!(bubbles_getter, &realm), attr);
-        instance_getter!(class, "cancelable", js_fn_ptr!(cancelable_getter, &realm), attr);
+        instance_getter!(
+            class,
+            "cancelable",
+            js_fn_ptr!(cancelable_getter, &realm),
+            attr
+        );
         instance_getter!(class, "composed", js_fn_ptr!(composed_getter, &realm), attr);
-        instance_getter!(class, "isTrusted", js_fn_ptr!(is_trusted_getter, &realm), attr);
-        instance_getter!(class, "eventPhase", js_fn_ptr!(event_phase_getter, &realm), attr);
-        instance_getter!(class, "timeStamp", js_fn_ptr!(time_stamp_getter, &realm), attr);
-        instance_getter!(class, "defaultPrevented", js_fn_ptr!(default_prevented, &realm), attr);
+        instance_getter!(
+            class,
+            "isTrusted",
+            js_fn_ptr!(is_trusted_getter, &realm),
+            attr
+        );
+        instance_getter!(
+            class,
+            "eventPhase",
+            js_fn_ptr!(event_phase_getter, &realm),
+            attr
+        );
+        instance_getter!(
+            class,
+            "timeStamp",
+            js_fn_ptr!(time_stamp_getter, &realm),
+            attr
+        );
+        instance_getter!(
+            class,
+            "defaultPrevented",
+            js_fn_ptr!(default_prevented, &realm),
+            attr
+        );
 
         instance_method!(class, "preventDefault", 0, native_fn_ptr!(prevent_default));
-        instance_method!(class, "stopPropagation", 0, native_fn_ptr!(stop_propagation));
+        instance_method!(
+            class,
+            "stopPropagation",
+            0,
+            native_fn_ptr!(stop_propagation)
+        );
         instance_method!(
             class,
             "stopImmediatePropagation",
@@ -122,7 +157,12 @@ impl ExtendLayer for EventLayer {
         // `nativeEvent.getModifierState(...)`; without it, dispatching a
         // key/mouse event into React throws "not a callable function". Reads
         // back the event's own `ctrlKey`/`shiftKey`/`altKey`/`metaKey` fields.
-        instance_method!(class, "getModifierState", 1, native_fn_ptr!(get_modifier_state));
+        instance_method!(
+            class,
+            "getModifierState",
+            1,
+            native_fn_ptr!(get_modifier_state)
+        );
 
         Ok(())
     }
@@ -182,7 +222,11 @@ fn target_getter(this: &JsValue, _: &[JsValue], _context: &mut Context) -> JsRes
     with_event(&obj, |e| e.target.clone())
 }
 
-fn current_target_getter(this: &JsValue, _: &[JsValue], _context: &mut Context) -> JsResult<JsValue> {
+fn current_target_getter(
+    this: &JsValue,
+    _: &[JsValue],
+    _context: &mut Context,
+) -> JsResult<JsValue> {
     event_layer(this)?;
     let obj = this.as_object().unwrap();
     with_event(&obj, |e| e.current_target.borrow().clone())
@@ -221,9 +265,7 @@ fn time_stamp_getter(this: &JsValue, _: &[JsValue], _context: &mut Context) -> J
 fn default_prevented(this: &JsValue, _: &[JsValue], _context: &mut Context) -> JsResult<JsValue> {
     event_layer(this)?;
     let obj = this.as_object().unwrap();
-    Ok(JsValue::from(
-        event_flag(&obj, |e| e.prevented.get()),
-    ))
+    Ok(JsValue::from(event_flag(&obj, |e| e.prevented.get())))
 }
 
 fn prevent_default(this: &JsValue, _: &[JsValue], _context: &mut Context) -> JsResult<JsValue> {

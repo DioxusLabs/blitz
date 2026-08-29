@@ -21,6 +21,8 @@ pub(crate) use native_error;
 
 /// Construct a "node not found" ReferenceError.
 macro_rules! err_node {
-    ($id:expr) => {||native_error!(reference, "node {:?} not found", $id)};
+    ($id:expr) => {
+        || native_error!(reference, "node {:?} not found", $id)
+    };
 }
 pub(crate) use err_node;

@@ -99,9 +99,7 @@ impl OwnDataRegistry {
     /// during construction.
     fn new<T: OwnBlock>() -> Self {
         Self {
-            slots: (0..T::DEPTH)
-                .map(|_| GcRefCell::new(None))
-                .collect(),
+            slots: (0..T::DEPTH).map(|_| GcRefCell::new(None)).collect(),
         }
     }
 
@@ -140,18 +138,15 @@ impl OwnDataRegistry {
                 T::CLASS_NAME
             ));
         };
-        let data = data
-            .as_any_ref()
-            .downcast_ref::<T>()
-            .ok_or_else(|| {
-                let msg = format!(
-                    "{}: own block type mismatch (expected any={:?}, actual any={:?})",
-                    T::CLASS_NAME,
-                    std::any::TypeId::of::<T>(),
-                    data.as_any_ref().type_id()
-                );
-                boa_engine::JsError::from(boa_engine::JsNativeError::typ().with_message(msg))
-            })?;
+        let data = data.as_any_ref().downcast_ref::<T>().ok_or_else(|| {
+            let msg = format!(
+                "{}: own block type mismatch (expected any={:?}, actual any={:?})",
+                T::CLASS_NAME,
+                std::any::TypeId::of::<T>(),
+                data.as_any_ref().type_id()
+            );
+            boa_engine::JsError::from(boa_engine::JsNativeError::typ().with_message(msg))
+        })?;
         Ok(f(data))
     }
 
@@ -164,10 +159,9 @@ impl OwnDataRegistry {
                 T::CLASS_NAME
             ));
         };
-        let data = data
-            .as_any_mut()
-            .downcast_mut::<T>()
-            .ok_or_else(|| crate::shared::native_error!(typ, "{}: own block type mismatch", T::CLASS_NAME))?;
+        let data = data.as_any_mut().downcast_mut::<T>().ok_or_else(|| {
+            crate::shared::native_error!(typ, "{}: own block type mismatch", T::CLASS_NAME)
+        })?;
         Ok(f(data))
     }
 }
@@ -257,7 +251,9 @@ impl<'a, P: EmitOwn> Super<'a, P> {
     #[inline]
     pub fn call(self, parent_args: &[JsValue], ctx: &mut Context) -> JsResult<SuperDone<'a>> {
         P::emit_own(self.instance, parent_args, ctx)?;
-        Ok(SuperDone { this: self.instance })
+        Ok(SuperDone {
+            this: self.instance,
+        })
     }
 }
 
@@ -325,7 +321,10 @@ impl<T: ExtendLayer> EmitOwn for T {
     fn emit_own(instance: &JsObject, args: &[JsValue], ctx: &mut Context) -> JsResult<()> {
         // Hand the super handle to build; the parent's construction is
         // triggered by the `sup.call` inside build.
-        let sup = Super::<T::Parent> { instance, _parent: PhantomData };
+        let sup = Super::<T::Parent> {
+            instance,
+            _parent: PhantomData,
+        };
         let constructed = T::build(args, ctx, sup)?;
         // By the time build returns, super has run (guaranteed by SuperDone)
         // and this layer's own data is written into its slot.
@@ -333,7 +332,11 @@ impl<T: ExtendLayer> EmitOwn for T {
     }
 
     #[inline]
-    fn populate_chain(instance: &JsObject, chain: LayerChain<T>, ctx: &mut Context) -> JsResult<()> {
+    fn populate_chain(
+        instance: &JsObject,
+        chain: LayerChain<T>,
+        ctx: &mut Context,
+    ) -> JsResult<()> {
         // Parent slots first (ES super order): move the field in directly.
         T::Parent::populate_chain(instance, chain.parent, ctx)?;
         set_own_block::<T>(instance, chain.own)
@@ -354,7 +357,9 @@ impl<T: ExtendLayer> Extended<T> {
     /// ZST shell returned by `data_constructor` (never instantiated on the
     /// overridden `construct` path).
     fn shell() -> Self {
-        Extended { _marker: PhantomData }
+        Extended {
+            _marker: PhantomData,
+        }
     }
 }
 
@@ -450,10 +455,9 @@ where
     let Some(parent_proto_ctor) = <E::Layer as ExtendLayer>::Parent::class_handles(ctx)? else {
         return Ok(()); // The parent is RootLayer: no prototype chain to link.
     };
-    let child_sc = ctx
-        .realm()
-        .get_class::<E>()
-        .ok_or_else(|| crate::shared::native_error!(typ, "{} not registered", E::Layer::CLASS_NAME))?;
+    let child_sc = ctx.realm().get_class::<E>().ok_or_else(|| {
+        crate::shared::native_error!(typ, "{} not registered", E::Layer::CLASS_NAME)
+    })?;
     let (parent_proto, parent_ctor) = parent_proto_ctor;
     child_sc.prototype().set_prototype(Some(parent_proto));
     child_sc.constructor().set_prototype(Some(parent_ctor));

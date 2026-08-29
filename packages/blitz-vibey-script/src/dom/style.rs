@@ -11,8 +11,8 @@ use crate::shared::{
 };
 use crate::state::DomCtx;
 
-use super::{dom_ctx, js_str, to_rust_string};
 use super::element::attr_name;
+use super::{dom_ctx, js_str, to_rust_string};
 
 /// `CSSStyleDeclaration` own block: the styled node.
 #[derive(Debug, Default, Clone, Trace, Finalize, JsData)]
@@ -56,7 +56,12 @@ impl ExtendLayer for StyleLayer {
         );
         instance_method!(class, "setProperty", 2, native_fn_ptr!(set_property));
         instance_method!(class, "removeProperty", 1, native_fn_ptr!(remove_property));
-        instance_method!(class, "getPropertyValue", 1, native_fn_ptr!(get_property_value));
+        instance_method!(
+            class,
+            "getPropertyValue",
+            1,
+            native_fn_ptr!(get_property_value)
+        );
 
         Ok(())
     }

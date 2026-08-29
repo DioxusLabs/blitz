@@ -9,7 +9,7 @@ use boa_engine::property::Attribute;
 use boa_engine::{Context, Finalize, JsData, JsResult, JsValue, Trace};
 
 use crate::shared::{
-    ExtendLayer, Extended, Super, Constructed, instance_accessor, instance_getter, instance_method,
+    Constructed, ExtendLayer, Extended, Super, instance_accessor, instance_getter, instance_method,
     js_fn_ptr, native_error, native_fn_ptr,
 };
 use crate::state::DomCtx;
@@ -54,14 +54,29 @@ impl ExtendLayer for NodeLayer {
         instance_getter!(class, "nodeType", js_fn_ptr!(node_type, &realm), attr);
         instance_getter!(class, "nodeName", js_fn_ptr!(node_name, &realm), attr);
         instance_getter!(class, "parentNode", js_fn_ptr!(parent_node, &realm), attr);
-        instance_getter!(class, "parentElement", js_fn_ptr!(parent_node, &realm), attr);
+        instance_getter!(
+            class,
+            "parentElement",
+            js_fn_ptr!(parent_node, &realm),
+            attr
+        );
         instance_getter!(class, "childNodes", js_fn_ptr!(child_nodes, &realm), attr);
         instance_getter!(class, "firstChild", js_fn_ptr!(first_child, &realm), attr);
         instance_getter!(class, "lastChild", js_fn_ptr!(last_child, &realm), attr);
-        instance_getter!(class, "previousSibling", js_fn_ptr!(previous_sibling, &realm), attr);
+        instance_getter!(
+            class,
+            "previousSibling",
+            js_fn_ptr!(previous_sibling, &realm),
+            attr
+        );
         instance_getter!(class, "nextSibling", js_fn_ptr!(next_sibling, &realm), attr);
         instance_getter!(class, "isConnected", js_fn_ptr!(is_connected, &realm), attr);
-        instance_getter!(class, "ownerDocument", js_fn_ptr!(owner_document, &realm), attr);
+        instance_getter!(
+            class,
+            "ownerDocument",
+            js_fn_ptr!(owner_document, &realm),
+            attr
+        );
         instance_accessor!(
             class,
             "textContent",
@@ -89,8 +104,18 @@ impl ExtendLayer for NodeLayer {
         instance_method!(class, "hasChildNodes", 0, native_fn_ptr!(has_child_nodes));
         instance_method!(class, "contains", 1, native_fn_ptr!(contains));
         instance_method!(class, "cloneNode", 1, native_fn_ptr!(clone_node));
-        instance_method!(class, "addEventListener", 2, native_fn_ptr!(add_event_listener));
-        instance_method!(class, "removeEventListener", 2, native_fn_ptr!(remove_event_listener));
+        instance_method!(
+            class,
+            "addEventListener",
+            2,
+            native_fn_ptr!(add_event_listener)
+        );
+        instance_method!(
+            class,
+            "removeEventListener",
+            2,
+            native_fn_ptr!(remove_event_listener)
+        );
 
         Ok(())
     }
@@ -331,9 +356,7 @@ fn set_node_value(this: &JsValue, args: &[JsValue], context: &mut Context) -> Js
 fn arg_node_id(args: &[JsValue], index: usize) -> JsResult<NodeId> {
     args.get(index)
         .and_then(|value| node_id_of_value(value))
-        .ok_or_else(|| {
-            native_error!(typ, "argument is not a DOM node")
-        })
+        .ok_or_else(|| native_error!(typ, "argument is not a DOM node"))
 }
 
 fn append_child(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
@@ -467,11 +490,7 @@ fn insertable_node_ids(ctx: &DomCtx, node_id: NodeId) -> Vec<NodeId> {
 /// Convert the arguments of a ParentNode/ChildNode mutation method into node
 /// ids, creating (detached) text nodes for string arguments and expanding
 /// DocumentFragments into their children
-fn arg_node_ids(
-    ctx: &DomCtx,
-    args: &[JsValue],
-    context: &mut Context,
-) -> JsResult<Vec<NodeId>> {
+fn arg_node_ids(ctx: &DomCtx, args: &[JsValue], context: &mut Context) -> JsResult<Vec<NodeId>> {
     let mut node_ids = Vec::with_capacity(args.len());
     for arg in args {
         match node_id_of_value(arg) {
@@ -665,10 +684,9 @@ fn add_event_listener(
         .or_default();
 
     // Duplicate listeners (same callback + capture flag) are ignored
-    if !listeners
-        .iter()
-        .any(|l| boa_engine::object::JsObject::equals(&l.callback, &callback) && l.capture == capture)
-    {
+    if !listeners.iter().any(|l| {
+        boa_engine::object::JsObject::equals(&l.callback, &callback) && l.capture == capture
+    }) {
         listeners.push(crate::state::Listener {
             callback,
             capture,

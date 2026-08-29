@@ -21,13 +21,11 @@ use boa_runtime::console::{ConsoleState, Logger};
 use url::Url;
 use web_time::{Duration, Instant};
 
-use crate::dom::event::{
-    create_event, create_event_for_dom_event, event_flag, set_current_target,
-};
+use crate::dom::event::{create_event, create_event_for_dom_event, event_flag, set_current_target};
 use crate::dom::style::{ComputedStyle, ComputedStyleLayer};
 use crate::dom::{dom_ctx, node_id_of_value, node_wrapper, to_rust_string, wrap_style_object};
-use crate::shared::from_chain;
 use crate::fetch::ScriptFetcher;
+use crate::shared::from_chain;
 use crate::state::{DomCtx, Listener, ReadyState};
 
 /// JS bootstrap for APIs that are easiest to define in JS
@@ -998,8 +996,7 @@ impl ScriptRuntime {
             }
         }
 
-        set_current_target(&event_obj, JsValue::null())
-            .expect("failed to update currentTarget");
+        set_current_target(&event_obj, JsValue::null()).expect("failed to update currentTarget");
 
         // Feed `preventDefault` / `stopPropagation` back into Blitz
         if event_flag(&event_obj, |event| event.prevented.get()) {
