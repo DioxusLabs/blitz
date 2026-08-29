@@ -45,6 +45,7 @@ pub struct ScriptDocument {
     // `Waker` passed to `poll`) when the next JS timer is due.
     waker: Arc<Mutex<Option<Waker>>>,
     timer_thread: Option<Sender<Instant>>,
+    timer_thread_enabled: bool,
 }
 
 impl ScriptDocument {
@@ -100,7 +101,19 @@ impl ScriptDocument {
             scripts_executed: false,
             waker: Arc::new(Mutex::new(None)),
             timer_thread: None,
+            timer_thread_enabled: true,
         }
+    }
+
+    /// Disable the background timer thread which wakes the event loop (via the
+    /// `Waker` passed to `poll`) when the next JS timer is due.
+    ///
+    /// Useful for embedders which drive timers manually by polling
+    /// [`next_timer_deadline`](Self::next_timer_deadline) and calling
+    /// [`poll`](blitz_traits::Document::poll), and therefore don't need wakeups.
+    pub fn without_timer_thread(mut self) -> Self {
+        self.timer_thread_enabled = false;
+        self
     }
 
     /// Override the [`ScriptFetcher`] used to load external (`src="..."`) scripts
@@ -300,6 +313,9 @@ impl ScriptDocument {
     /// Ensure the timer thread is armed to wake the event loop when the next
     /// JS timer is due.
     fn arm_timer_thread(&mut self) {
+        if !self.timer_thread_enabled {
+            return;
+        }
         let Some(deadline) = self.runtime.next_timer_deadline() else {
             return;
         };

@@ -117,7 +117,10 @@ pub fn attr_test_needs_scripts(doc: &BaseDocument) -> bool {
 /// Wrap a parsed document in a [`ScriptDocument`] with the WPT script fetcher
 /// and execute its scripts
 pub fn run_document_scripts(ctx: &ThreadCtx, document: BaseDocument) -> ScriptDocument {
+    // The runner drives timers manually via `pump_timers`, so the background
+    // timer wakeup thread is unnecessary
     let mut script_document = ScriptDocument::from_base_document(document)
+        .without_timer_thread()
         .with_fetcher(WptScriptFetcher::new(ctx.wpt_dir.clone()));
     script_document.execute_scripts();
     script_document
