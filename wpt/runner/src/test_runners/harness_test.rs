@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use blitz_vibey_script::{FetchError, ScriptFetcher};
-use log::warn;
+use log::{debug, warn};
 use url::Url;
 
 use super::{SubtestResult, parse_and_resolve_document, pump_timers, run_document_scripts};
@@ -50,10 +50,28 @@ add_completion_callback(function (tests, harness_status) {
 /// a *real user* to perform the action, so such tests hang until the harness
 /// timeout. Setting `in_automation` makes every command reject immediately
 /// ("...not implemented by testdriver-vendor.js" errors from testdriver.js's
-/// default `test_driver_internal` implementations), converting those timeouts
-/// into fast failures.
+/// default `test_driver_internal` implementations); wrapping those commands lets
+/// the runner skip the unsupported test as soon as one is invoked.
 const TESTDRIVER_VENDOR_JS: &str = r#"
 window.test_driver_internal.in_automation = true;
+(function wrapUnsupportedCommands(value, prefix) {
+    Object.keys(value).forEach(function (key) {
+        const child = value[key];
+        const command = prefix ? prefix + "." + key : key;
+        if (typeof child === "function") {
+            value[key] = function () {
+                __blitz_send_message(JSON.stringify({
+                    type: "unsupported_feature",
+                    feature: "testdriver",
+                    command: command,
+                }));
+                return child.apply(this, arguments);
+            };
+        } else if (child && typeof child === "object") {
+            wrapUnsupportedCommands(child, command);
+        }
+    });
+})(window.test_driver_internal, "");
 "#;
 
 /// A [`ScriptFetcher`] which resolves script URLs against the local WPT checkout,
@@ -83,6 +101,12 @@ impl ScriptFetcher for WptScriptFetcher {
     }
 }
 
+enum HarnessPumpOutcome {
+    Results(i64, Vec<SubtestResult>),
+    JsErrors(Vec<String>),
+    UnsupportedFeature(String, String),
+}
+
 pub fn process_harness_test(
     ctx: &mut ThreadCtx,
     html: &str,
@@ -100,21 +124,27 @@ pub fn process_harness_test(
     // here they typically mean the harness will never complete.
     let outcome = pump_timers(&mut document, HARNESS_TIMEOUT, |document| {
         let messages = document.take_messages();
-        if let Some(results) = messages.iter().find_map(|msg| parse_results(msg)) {
-            return Some(Ok(results));
+        if let Some((feature, command)) = messages
+            .iter()
+            .find_map(|msg| parse_unsupported_feature(msg))
+        {
+            return Some(HarnessPumpOutcome::UnsupportedFeature(feature, command));
+        }
+        if let Some((status, results)) = messages.iter().find_map(|msg| parse_results(msg)) {
+            return Some(HarnessPumpOutcome::Results(status, results));
         }
         let js_errors = document.take_js_errors();
         if !js_errors.is_empty() {
-            return Some(Err(js_errors));
+            return Some(HarnessPumpOutcome::JsErrors(js_errors));
         }
         None
     });
 
     match outcome {
-        Some(Ok((harness_status, subtest_results))) => {
+        Some(HarnessPumpOutcome::Results(harness_status, subtest_results)) => {
             harness_outcome(harness_status, subtest_results)
         }
-        Some(Err(js_errors)) => {
+        Some(HarnessPumpOutcome::JsErrors(js_errors)) => {
             for error in &js_errors {
                 warn!("{relative_path}: {error}");
             }
@@ -128,6 +158,10 @@ pub fn process_harness_test(
                 SubtestCounts::ZERO_OF_ONE,
                 subtest_results,
             )
+        }
+        Some(HarnessPumpOutcome::UnsupportedFeature(feature, command)) => {
+            debug!("Skipping {relative_path}: unsupported {feature} command {command}");
+            (TestStatus::Skip, SubtestCounts::ZERO_OF_ZERO, Vec::new())
         }
         // Timeout, or no pending timers: the harness will never complete
         None => {
@@ -183,6 +217,17 @@ pub(super) fn harness_outcome(
     (status, subtest_counts, subtest_results)
 }
 
+fn parse_unsupported_feature(message: &str) -> Option<(String, String)> {
+    let value: serde_json::Value = serde_json::from_str(message).ok()?;
+    if value.get("type")?.as_str()? != "unsupported_feature" {
+        return None;
+    }
+    Some((
+        value.get("feature")?.as_str()?.to_string(),
+        value.get("command")?.as_str()?.to_string(),
+    ))
+}
+
 /// Parse the JSON results message sent by the custom `testharnessreport.js`.
 /// Returns the harness status code and the subtest results.
 pub(super) fn parse_results(message: &str) -> Option<(i64, Vec<SubtestResult>)> {
@@ -225,4 +270,36 @@ pub(super) fn parse_results(message: &str) -> Option<(i64, Vec<SubtestResult>)> 
         .collect();
 
     Some((harness_status, subtest_results))
+}
+
+#[cfg(test)]
+mod tests {
+    use blitz_dom::DocumentConfig;
+    use blitz_html::HtmlDocument;
+    use blitz_vibey_script::ScriptDocument;
+
+    use super::*;
+
+    #[test]
+    fn testdriver_command_reports_unsupported_feature() {
+        let document = HtmlDocument::from_html("<html></html>", DocumentConfig::default());
+        let mut document = ScriptDocument::from_base_document(document.into());
+        document.eval(
+            "window.test_driver_internal = { in_automation: false, send_keys: function () {} };",
+        );
+        document.eval(TESTDRIVER_VENDOR_JS);
+        document.eval("window.test_driver_internal.send_keys();");
+
+        let messages = document.take_messages();
+        assert_eq!(messages.len(), 1);
+        assert_eq!(
+            parse_unsupported_feature(&messages[0]),
+            Some(("testdriver".to_string(), "send_keys".to_string()))
+        );
+    }
+
+    #[test]
+    fn ignores_other_messages_as_unsupported_features() {
+        assert_eq!(parse_unsupported_feature(r#"{"type":"wpt_results"}"#), None);
+    }
 }
