@@ -20,6 +20,27 @@ pub use crash_test::process_crash_test;
 pub use harness_test::process_harness_test;
 pub use ref_test::process_ref_test;
 
+/// Is the node a `<script>` element whose `type` would execute as JavaScript?
+/// Returns the node if so.
+fn as_js_script_element(node: &blitz_dom::Node) -> Option<&blitz_dom::node::ElementData> {
+    let element = node.element_data()?;
+    if element.name.local != blitz_dom::local_name!("script") {
+        return None;
+    }
+
+    // Skip non-JavaScript script types (e.g. JSON data blocks)
+    let script_type = element
+        .attr(blitz_dom::local_name!("type"))
+        .unwrap_or("")
+        .trim()
+        .to_ascii_lowercase();
+    let is_js = matches!(
+        script_type.as_str(),
+        "" | "text/javascript" | "application/javascript" | "module"
+    );
+    is_js.then_some(element)
+}
+
 /// Does the parsed document contain any `<script>` element which would
 /// execute JavaScript (a JavaScript-typed script with either a `src`
 /// attribute or inline content)?
@@ -28,32 +49,13 @@ pub fn document_has_scripts(doc: &BaseDocument) -> bool {
         let Some(node) = doc.get_node(node_id) else {
             return false;
         };
-        let Some(element) = node.element_data() else {
+        let Some(element) = as_js_script_element(node) else {
             return false;
         };
-        if element.name.local != blitz_dom::local_name!("script") {
-            return false;
-        }
-
-        // Skip non-JavaScript script types (e.g. JSON data blocks)
-        let script_type = element
-            .attr(blitz_dom::local_name!("type"))
-            .unwrap_or("")
-            .trim()
-            .to_ascii_lowercase();
-        let is_js = matches!(
-            script_type.as_str(),
-            "" | "text/javascript" | "application/javascript" | "module"
-        );
-        is_js
-            && (element.attr(blitz_dom::local_name!("src")).is_some()
-                || !node.text_content().trim().is_empty())
+        element.attr(blitz_dom::local_name!("src")).is_some()
+            || !node.text_content().trim().is_empty()
     })
 }
-
-/// Matches each `<script>` tag with its attributes and body
-static SCRIPT_BODY_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"(?s)<script([^>]*)>(.*?)</script>"#).unwrap());
 
 /// Matches inline-script statements which don't require script execution for a
 /// checkLayout (attr) test: the `checkLayout()` call itself (re-implemented
@@ -66,14 +68,20 @@ static TRIVIAL_ATTR_SCRIPT_RE: LazyLock<Regex> = LazyLock::new(|| {
 /// Does a checkLayout (attr) test's inline script do anything beyond calling
 /// `checkLayout()` (e.g. generate the test DOM)? If so, scripts must be
 /// executed before the native layout checks can see the full test DOM.
-pub fn attr_test_needs_scripts(html: &str) -> bool {
-    SCRIPT_BODY_RE.captures_iter(html).any(|captures| {
-        if captures.get(1).unwrap().as_str().contains("src") {
+pub fn attr_test_needs_scripts(doc: &BaseDocument) -> bool {
+    TreeTraverser::new(doc).any(|node_id| {
+        let Some(node) = doc.get_node(node_id) else {
+            return false;
+        };
+        let Some(element) = as_js_script_element(node) else {
+            return false;
+        };
+        if element.attr(blitz_dom::local_name!("src")).is_some() {
             return false;
         }
-        let body = captures.get(2).unwrap().as_str();
+        let body = node.text_content();
         !TRIVIAL_ATTR_SCRIPT_RE
-            .replace_all(body, "")
+            .replace_all(&body, "")
             .trim()
             .is_empty()
     })

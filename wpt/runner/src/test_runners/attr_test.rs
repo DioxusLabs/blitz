@@ -33,7 +33,7 @@ pub fn process_attr_test(
     // the harness-reported results. Tests whose inline script only *calls*
     // `checkLayout()` keep the fast no-JS path (the checkLayout checks are
     // re-implemented natively below).
-    if attr_test_needs_scripts(html) {
+    if attr_test_needs_scripts(&document) {
         let mut script_document = ScriptDocument::from_base_document(document)
             .with_fetcher(WptScriptFetcher::new(ctx.wpt_dir.clone()));
         script_document.execute_scripts();
