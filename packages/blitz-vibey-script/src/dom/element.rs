@@ -211,7 +211,7 @@ fn clear_attr(ctx: &DomCtx, node_id: NodeId, name: &str) {
 
 fn attr_getter(name: &str, this: &JsValue, context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this, context)?;
+    let node_id = this_node_id(this)?;
     Ok(js_str(&read_attr(&ctx, node_id, name).unwrap_or_default()))
 }
 
@@ -222,7 +222,7 @@ fn attr_setter(
     context: &mut Context,
 ) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this, context)?;
+    let node_id = this_node_id(this)?;
     let value = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
     write_attr(&ctx, node_id, name, &value);
     Ok(JsValue::undefined())
@@ -232,7 +232,7 @@ fn attr_setter(
 
 fn tag_name(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this, context)?;
+    let node_id = this_node_id(this)?;
     let doc = ctx.doc.borrow();
     let name = doc
         .get_node(node_id)
@@ -244,7 +244,7 @@ fn tag_name(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<Js
 
 fn local_name(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this, context)?;
+    let node_id = this_node_id(this)?;
     let doc = ctx.doc.borrow();
     let name = doc
         .get_node(node_id)
@@ -256,7 +256,7 @@ fn local_name(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<
 
 fn namespace_uri(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this, context)?;
+    let node_id = this_node_id(this)?;
     let doc = ctx.doc.borrow();
     let ns = doc
         .get_node(node_id)
@@ -284,7 +284,7 @@ pub(crate) fn element_child_ids(doc: &blitz_dom::BaseDocument, node_id: NodeId) 
 
 fn children(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this, context)?;
+    let node_id = this_node_id(this)?;
     let child_ids = element_child_ids(&ctx.doc.borrow(), node_id);
     let wrappers: Vec<JsValue> = child_ids
         .into_iter()
@@ -299,7 +299,7 @@ pub(crate) fn child_element_count(
     context: &mut Context,
 ) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this, context)?;
+    let node_id = this_node_id(this)?;
     let count = element_child_ids(&ctx.doc.borrow(), node_id).len();
     Ok(JsValue::from(count as f64))
 }
@@ -310,7 +310,7 @@ pub(crate) fn first_element_child(
     context: &mut Context,
 ) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this, context)?;
+    let node_id = this_node_id(this)?;
     let child_id = element_child_ids(&ctx.doc.borrow(), node_id)
         .first()
         .copied();
@@ -323,7 +323,7 @@ pub(crate) fn last_element_child(
     context: &mut Context,
 ) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this, context)?;
+    let node_id = this_node_id(this)?;
     let child_id = element_child_ids(&ctx.doc.borrow(), node_id)
         .last()
         .copied();
@@ -354,7 +354,7 @@ fn element_sibling(
 
 fn next_element_sibling(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this, context)?;
+    let node_id = this_node_id(this)?;
     let sibling_id = element_sibling(&ctx.doc.borrow(), node_id, 1);
     Ok(node_or_null(&ctx, sibling_id, context))
 }
@@ -365,7 +365,7 @@ fn previous_element_sibling(
     context: &mut Context,
 ) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this, context)?;
+    let node_id = this_node_id(this)?;
     let sibling_id = element_sibling(&ctx.doc.borrow(), node_id, -1);
     Ok(node_or_null(&ctx, sibling_id, context))
 }
@@ -374,7 +374,7 @@ fn previous_element_sibling(
 
 fn get_attribute(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this, context)?;
+    let node_id = this_node_id(this)?;
     let name = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?
         .to_ascii_lowercase();
     match read_attr(&ctx, node_id, &name) {
@@ -385,7 +385,7 @@ fn get_attribute(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsR
 
 fn set_attribute(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this, context)?;
+    let node_id = this_node_id(this)?;
     let name = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?
         .to_ascii_lowercase();
     let value = to_rust_string(args.get(1).unwrap_or(&JsValue::undefined()), context)?;
@@ -395,7 +395,7 @@ fn set_attribute(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsR
 
 fn remove_attribute(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this, context)?;
+    let node_id = this_node_id(this)?;
     let name = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?
         .to_ascii_lowercase();
     clear_attr(&ctx, node_id, &name);
@@ -404,7 +404,7 @@ fn remove_attribute(this: &JsValue, args: &[JsValue], context: &mut Context) -> 
 
 fn has_attribute(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this, context)?;
+    let node_id = this_node_id(this)?;
     let name = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?
         .to_ascii_lowercase();
     Ok(JsValue::from(read_attr(&ctx, node_id, &name).is_some()))
@@ -446,14 +446,14 @@ fn set_type(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult
 
 fn get_autofocus(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this, context)?;
+    let node_id = this_node_id(this)?;
     Ok(JsValue::from(
         read_attr(&ctx, node_id, "autofocus").is_some(),
     ))
 }
 fn set_autofocus(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this, context)?;
+    let node_id = this_node_id(this)?;
     let value = args.first().map(JsValue::to_boolean).unwrap_or(false);
     if value {
         // blitz-dom's autofocus handling expects the value "true"
@@ -466,7 +466,7 @@ fn set_autofocus(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsR
 
 fn get_value(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this, context)?;
+    let node_id = this_node_id(this)?;
     let value = {
         let doc = ctx.doc.borrow();
         doc.get_node(node_id)
@@ -491,7 +491,7 @@ fn set_value(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResul
 
 fn get_checked(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this, context)?;
+    let node_id = this_node_id(this)?;
     let checked = {
         let doc = ctx.doc.borrow();
         doc.get_node(node_id)
@@ -508,7 +508,7 @@ fn get_checked(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult
 
 fn set_checked(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this, context)?;
+    let node_id = this_node_id(this)?;
     let checked = args.first().map(JsValue::to_boolean).unwrap_or(false);
     // blitz-dom's checked handling parses the value as a boolean
     write_attr(
@@ -522,7 +522,7 @@ fn set_checked(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsRes
 
 fn get_disabled(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this, context)?;
+    let node_id = this_node_id(this)?;
     Ok(JsValue::from(
         read_attr(&ctx, node_id, "disabled").is_some(),
     ))
@@ -530,7 +530,7 @@ fn get_disabled(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResul
 
 fn set_disabled(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this, context)?;
+    let node_id = this_node_id(this)?;
     let disabled = args.first().map(JsValue::to_boolean).unwrap_or(false);
     if disabled {
         write_attr(&ctx, node_id, "disabled", "");
@@ -542,13 +542,13 @@ fn set_disabled(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsRe
 
 fn get_hidden(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this, context)?;
+    let node_id = this_node_id(this)?;
     Ok(JsValue::from(read_attr(&ctx, node_id, "hidden").is_some()))
 }
 
 fn set_hidden(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this, context)?;
+    let node_id = this_node_id(this)?;
     let hidden = args.first().map(JsValue::to_boolean).unwrap_or(false);
     if hidden {
         write_attr(&ctx, node_id, "hidden", "");
@@ -613,7 +613,7 @@ fn set_selection_utf16_range(
 
 fn get_selection_start(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this, context)?;
+    let node_id = this_node_id(this)?;
     let mut doc = ctx.doc.borrow_mut();
     // The text editor is created during layout construction
     doc.resolve(0.0);
@@ -625,7 +625,7 @@ fn get_selection_start(this: &JsValue, _: &[JsValue], context: &mut Context) -> 
 
 fn get_selection_end(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this, context)?;
+    let node_id = this_node_id(this)?;
     let mut doc = ctx.doc.borrow_mut();
     // The text editor is created during layout construction
     doc.resolve(0.0);
@@ -641,7 +641,7 @@ fn set_selection_start(
     context: &mut Context,
 ) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this, context)?;
+    let node_id = this_node_id(this)?;
     let start = args
         .first()
         .unwrap_or(&JsValue::undefined())
@@ -657,7 +657,7 @@ fn set_selection_start(
 
 fn set_selection_end(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this, context)?;
+    let node_id = this_node_id(this)?;
     let end = args
         .first()
         .unwrap_or(&JsValue::undefined())
@@ -677,7 +677,7 @@ fn set_selection_range(
     context: &mut Context,
 ) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this, context)?;
+    let node_id = this_node_id(this)?;
     let start = args
         .first()
         .unwrap_or(&JsValue::undefined())
@@ -697,7 +697,7 @@ fn set_selection_range(
 // === Style ===
 
 fn get_style(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    let node_id = this_node_id(this, context)?;
+    let node_id = this_node_id(this)?;
     let obj = from_chain!((CSSStyleDeclaration, context) StyleLayer { node_id })?;
     Ok(wrap_style_object(obj, context))
 }
@@ -706,7 +706,7 @@ fn get_style(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<J
 
 fn get_inner_html(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this, context)?;
+    let node_id = this_node_id(this)?;
     let doc = ctx.doc.borrow();
     let mut html = String::new();
     if let Some(node) = doc.get_node(node_id) {
@@ -721,7 +721,7 @@ fn get_inner_html(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsRes
 
 fn set_inner_html(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this, context)?;
+    let node_id = this_node_id(this)?;
     let html = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
 
     let mut doc = ctx.doc.borrow_mut();
@@ -739,7 +739,7 @@ fn set_inner_html(this: &JsValue, args: &[JsValue], context: &mut Context) -> Js
 /// Returns `undefined` for non-template elements.
 fn get_content(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this, context)?;
+    let node_id = this_node_id(this)?;
 
     let is_template = ctx
         .doc
@@ -758,7 +758,7 @@ fn get_content(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult
 
 fn get_outer_html(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this, context)?;
+    let node_id = this_node_id(this)?;
     let doc = ctx.doc.borrow();
     let html = doc
         .get_node(node_id)
@@ -771,14 +771,14 @@ fn get_outer_html(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsRes
 
 fn focus(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this, context)?;
+    let node_id = this_node_id(this)?;
     ctx.doc.borrow_mut().set_focus_to(node_id);
     Ok(JsValue::undefined())
 }
 
 fn blur(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let _ = this_node_id(this, context)?;
+    let _ = this_node_id(this)?;
     ctx.doc.borrow_mut().clear_focus();
     Ok(JsValue::undefined())
 }
@@ -794,7 +794,7 @@ fn layout_value(
     f: impl FnOnce(&blitz_dom::Node) -> f32,
 ) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this, context)?;
+    let node_id = this_node_id(this)?;
     let mut doc = ctx.doc.borrow_mut();
     doc.resolve(0.0);
     let value = doc.get_node(node_id).map(f).unwrap_or(0.0);
@@ -947,14 +947,14 @@ pub(crate) fn parse_scroll_to_args(
 
 fn get_scroll_top(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this, context)?;
+    let node_id = this_node_id(this)?;
     let doc = ctx.doc.borrow();
     Ok(JsValue::from(current_scroll_offset(&doc, node_id).y))
 }
 
 fn get_scroll_left(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this, context)?;
+    let node_id = this_node_id(this)?;
     let doc = ctx.doc.borrow();
     Ok(JsValue::from(current_scroll_offset(&doc, node_id).x))
 }
@@ -962,7 +962,7 @@ fn get_scroll_left(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsRe
 fn set_scroll_top(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let value = scroll_coord(args.first().unwrap_or(&JsValue::undefined()), context)?;
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this, context)?;
+    let node_id = this_node_id(this)?;
     let mut doc = ctx.doc.borrow_mut();
     doc.resolve(0.0);
     let current = current_scroll_offset(&doc, node_id);
@@ -973,7 +973,7 @@ fn set_scroll_top(this: &JsValue, args: &[JsValue], context: &mut Context) -> Js
 fn set_scroll_left(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let value = scroll_coord(args.first().unwrap_or(&JsValue::undefined()), context)?;
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this, context)?;
+    let node_id = this_node_id(this)?;
     let mut doc = ctx.doc.borrow_mut();
     doc.resolve(0.0);
     let current = current_scroll_offset(&doc, node_id);
@@ -984,7 +984,7 @@ fn set_scroll_left(this: &JsValue, args: &[JsValue], context: &mut Context) -> J
 fn scroll_to_method(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let parsed = parse_scroll_to_args(args, context)?;
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this, context)?;
+    let node_id = this_node_id(this)?;
     let mut doc = ctx.doc.borrow_mut();
     doc.resolve(0.0);
     let current = current_scroll_offset(&doc, node_id);
@@ -1000,7 +1000,7 @@ fn scroll_to_method(this: &JsValue, args: &[JsValue], context: &mut Context) -> 
 fn scroll_by_method(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let parsed = parse_scroll_to_args(args, context)?;
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this, context)?;
+    let node_id = this_node_id(this)?;
     let mut doc = ctx.doc.borrow_mut();
     doc.resolve(0.0);
     doc.scroll_by(
@@ -1065,7 +1065,7 @@ fn scroll_into_view(this: &JsValue, args: &[JsValue], context: &mut Context) -> 
     };
 
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this, context)?;
+    let node_id = this_node_id(this)?;
     let mut doc = ctx.doc.borrow_mut();
     doc.resolve(0.0);
     doc.scroll_into_view(node_id, behavior, block, inline);
@@ -1098,7 +1098,7 @@ fn get_bounding_client_rect(
     context: &mut Context,
 ) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this, context)?;
+    let node_id = this_node_id(this)?;
     ctx.doc.borrow_mut().resolve(0.0);
     let rect = ctx.doc.borrow().get_client_bounding_rect(node_id);
     let (x, y, width, height) = match rect {
@@ -1110,7 +1110,7 @@ fn get_bounding_client_rect(
 
 fn get_client_rects(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this, context)?;
+    let node_id = this_node_id(this)?;
     ctx.doc.borrow_mut().resolve(0.0);
 
     // One rect per box fragment: a single border-box rect for nodes with their
@@ -1146,7 +1146,7 @@ fn invalid_selector_error(context: &mut Context, selector: &str) -> boa_engine::
 
 fn query_selector(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this, context)?;
+    let node_id = this_node_id(this)?;
     let selector = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
 
     let result = ctx.doc.borrow().query_selector_in(node_id, &selector);
@@ -1163,7 +1163,7 @@ fn query_selector_all(
     context: &mut Context,
 ) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this, context)?;
+    let node_id = this_node_id(this)?;
     let selector = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
 
     let matches = ctx.doc.borrow().query_selector_all_in(node_id, &selector);
@@ -1180,7 +1180,7 @@ fn query_selector_all(
 
 fn matches(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this, context)?;
+    let node_id = this_node_id(this)?;
     let selector = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
 
     match ctx.doc.borrow().matches_selector(node_id, &selector) {
@@ -1191,7 +1191,7 @@ fn matches(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<
 
 fn closest(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this, context)?;
+    let node_id = this_node_id(this)?;
     let selector = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
 
     let result = ctx.doc.borrow().closest(node_id, &selector);
@@ -1207,7 +1207,7 @@ fn get_elements_by_tag_name(
     context: &mut Context,
 ) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this, context)?;
+    let node_id = this_node_id(this)?;
     let tag = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?
         .to_ascii_lowercase();
     let match_all = tag == "*";
@@ -1229,7 +1229,7 @@ fn get_elements_by_class_name(
     context: &mut Context,
 ) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this, context)?;
+    let node_id = this_node_id(this)?;
     let class_arg = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
     let class_names: Vec<&str> = class_arg.split_whitespace().collect();
 

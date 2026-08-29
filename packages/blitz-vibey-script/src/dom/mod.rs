@@ -36,15 +36,15 @@ pub(crate) fn dom_ctx(context: &mut Context) -> JsResult<DomCtx> {
 }
 
 /// Extract the node id from a DOM node wrapper's `Node` own block
-pub(crate) fn node_id_of_value(value: &JsValue, context: &mut Context) -> Option<NodeId> {
+pub(crate) fn node_id_of_value(value: &JsValue) -> Option<NodeId> {
     let obj = value.as_object()?;
-    with_own::<NodeLayer, _>(&obj, context, |node| node.node_id).ok()
+    with_own::<NodeLayer, _>(&obj, |node| node.node_id).ok()
 }
 
 /// Extract the node id from the `this` value of a native function
-pub(crate) fn this_node_id(this: &JsValue, context: &mut Context) -> JsResult<NodeId> {
+pub(crate) fn this_node_id(this: &JsValue) -> JsResult<NodeId> {
     let obj = as_object!(this, typ, "`this` is not a DOM node")?;
-    with_own::<NodeLayer, _>(&obj, context, |node| node.node_id)
+    with_own::<NodeLayer, _>(&obj, |node| node.node_id)
 }
 
 /// Get (or create) the unique JS wrapper object for a DOM node.

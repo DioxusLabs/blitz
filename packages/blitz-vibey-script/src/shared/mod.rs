@@ -10,8 +10,8 @@ mod macros;
 mod native_function;
 
 pub use extends::{
-    Constructed, EmitOwn, Extended, ExtendedOf, ExtendLayer, LayerChain, RootLayer, Super, SuperDone,
-    link_prototype, own_symbol, with_own, with_own_mut,
+    Constructed, EmitOwn, Extended, ExtendedOf, ExtendLayer, LayerChain, OwnBlock, OwnDataRegistry,
+    RootLayer, Super, SuperDone, link_prototype, set_own_block, with_own, with_own_mut,
 };
 pub(crate) use boa_value::as_object;
 pub(crate) use error::{err_node, native_error};

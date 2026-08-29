@@ -101,18 +101,18 @@ pub(crate) fn register(context: &mut Context) -> JsResult<()> {
     Ok(())
 }
 
-fn this_style_node_id(this: &JsValue, context: &mut Context) -> JsResult<NodeId> {
+fn this_style_node_id(this: &JsValue) -> JsResult<NodeId> {
     let obj = this
         .as_object()
         .ok_or_else(|| native_error!(typ, "`this` is not a style object"))?;
-    with_own::<StyleLayer, _>(&obj, context, |style| style.node_id)
+    with_own::<StyleLayer, _>(&obj, |style| style.node_id)
 }
 
-fn this_computed_style_node_id(this: &JsValue, context: &mut Context) -> JsResult<NodeId> {
+fn this_computed_style_node_id(this: &JsValue) -> JsResult<NodeId> {
     let obj = this
         .as_object()
         .ok_or_else(|| native_error!(typ, "`this` is not a style object"))?;
-    with_own::<ComputedStyleLayer, _>(&obj, context, |style| style.node_id)
+    with_own::<ComputedStyleLayer, _>(&obj, |style| style.node_id)
 }
 
 fn get_empty_string(_: &JsValue, _: &[JsValue], _: &mut Context) -> JsResult<JsValue> {
@@ -129,7 +129,7 @@ fn get_resolved_property_value(
     context: &mut Context,
 ) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_computed_style_node_id(this, context)?;
+    let node_id = this_computed_style_node_id(this)?;
     let name = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?
         .trim()
         .to_ascii_lowercase();
@@ -160,7 +160,7 @@ fn write_style_attr(ctx: &DomCtx, node_id: NodeId, style_attr: &str) {
 
 fn get_css_text(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_style_node_id(this, context)?;
+    let node_id = this_style_node_id(this)?;
     let style_attr = read_style_attr(&ctx, node_id);
     let css = ctx.doc.borrow().style_attr_serialize(&style_attr);
     Ok(js_str(&css))
@@ -168,7 +168,7 @@ fn get_css_text(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResul
 
 fn set_css_text(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_style_node_id(this, context)?;
+    let node_id = this_style_node_id(this)?;
     let css = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
     // Parse and re-serialize so that the stored attribute is canonical and
     // invalid declarations are dropped
@@ -179,7 +179,7 @@ fn set_css_text(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsRe
 
 fn set_property(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_style_node_id(this, context)?;
+    let node_id = this_style_node_id(this)?;
     let name = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
     let value = to_rust_string(args.get(1).unwrap_or(&JsValue::undefined()), context)?;
     let priority = to_rust_string(args.get(2).unwrap_or(&JsValue::undefined()), context)?;
@@ -199,7 +199,7 @@ fn set_property(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsRe
 
 fn remove_property(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_style_node_id(this, context)?;
+    let node_id = this_style_node_id(this)?;
     let name = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
 
     let style_attr = read_style_attr(&ctx, node_id);
@@ -220,7 +220,7 @@ fn get_property_value(
     context: &mut Context,
 ) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_style_node_id(this, context)?;
+    let node_id = this_style_node_id(this)?;
     let name = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
 
     let style_attr = read_style_attr(&ctx, node_id);

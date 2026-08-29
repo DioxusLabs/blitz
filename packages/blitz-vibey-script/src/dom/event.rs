@@ -138,79 +138,66 @@ pub(crate) fn register(context: &mut Context) -> JsResult<()> {
 
 /// Read the event's own block.
 #[inline]
-pub(crate) fn with_event<R>(
-    event: &JsObject,
-    context: &mut Context,
-    f: impl FnOnce(&EventLayer) -> R,
-) -> JsResult<R> {
-    with_own::<EventLayer, R>(event, context, f)
+pub(crate) fn with_event<R>(event: &JsObject, f: impl FnOnce(&EventLayer) -> R) -> JsResult<R> {
+    with_own::<EventLayer, R>(event, f)
 }
 
 /// Write to the event's own block in place.
 #[inline]
 pub(crate) fn with_event_mut<R>(
     event: &JsObject,
-    context: &mut Context,
     f: impl FnOnce(&mut EventLayer) -> R,
 ) -> JsResult<R> {
-    with_own_mut::<EventLayer, R>(event, context, f)
+    with_own_mut::<EventLayer, R>(event, f)
 }
 
 /// Read a dispatch flag from the event (false if `event` is not an `Event`).
-pub(crate) fn event_flag(
-    event: &JsObject,
-    context: &mut Context,
-    f: impl FnOnce(&EventLayer) -> bool,
-) -> bool {
-    with_event(event, context, f).unwrap_or(false)
+pub(crate) fn event_flag(event: &JsObject, f: impl FnOnce(&EventLayer) -> bool) -> bool {
+    with_event(event, f).unwrap_or(false)
 }
 
 /// Update `currentTarget` on the event's own block (used by the dispatcher).
-pub(crate) fn set_current_target(
-    event: &JsObject,
-    target: JsValue,
-    context: &mut Context,
-) -> JsResult<()> {
-    with_event_mut(event, context, |e| *e.current_target.borrow_mut() = target)
+pub(crate) fn set_current_target(event: &JsObject, target: JsValue) -> JsResult<()> {
+    with_event_mut(event, |e| *e.current_target.borrow_mut() = target)
 }
 
 // ── Accessor implementations ─────────────────────────────────────────
 
-fn event_layer(this: &JsValue, context: &mut Context) -> JsResult<()> {
+fn event_layer(this: &JsValue) -> JsResult<()> {
     let obj = this
         .as_object()
         .ok_or_else(|| crate::shared::native_error!(typ, "not an Event object"))?;
-    with_own::<EventLayer, _>(&obj, context, |_| ()).map(|_| ())
+    with_own::<EventLayer, _>(&obj, |_| ()).map(|_| ())
 }
 
-fn type_getter(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    event_layer(this, context)?;
+fn type_getter(this: &JsValue, _: &[JsValue], _context: &mut Context) -> JsResult<JsValue> {
+    event_layer(this)?;
     let obj = this.as_object().unwrap();
-    with_event(&obj, context, |e| js_str(&e.type_).into())
+    with_event(&obj, |e| js_str(&e.type_).into())
 }
 
-fn target_getter(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    event_layer(this, context)?;
+fn target_getter(this: &JsValue, _: &[JsValue], _context: &mut Context) -> JsResult<JsValue> {
+    event_layer(this)?;
     let obj = this.as_object().unwrap();
-    with_event(&obj, context, |e| e.target.clone())
+    with_event(&obj, |e| e.target.clone())
 }
 
-fn current_target_getter(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    event_layer(this, context)?;
+fn current_target_getter(this: &JsValue, _: &[JsValue], _context: &mut Context) -> JsResult<JsValue> {
+    event_layer(this)?;
     let obj = this.as_object().unwrap();
-    with_event(&obj, context, |e| e.current_target.borrow().clone())
+    with_event(&obj, |e| e.current_target.borrow().clone())
 }
 
-fn bubbles_getter(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    event_layer(this, context)?;
+fn bubbles_getter(this: &JsValue, _: &[JsValue], _context: &mut Context) -> JsResult<JsValue> {
+    event_layer(this)?;
     let obj = this.as_object().unwrap();
-    with_event(&obj, context, |e| JsValue::from(e.bubbles))
+    with_event(&obj, |e| JsValue::from(e.bubbles))
 }
 
-fn cancelable_getter(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    event_layer(this, context)?;
+fn cancelable_getter(this: &JsValue, _: &[JsValue], _context: &mut Context) -> JsResult<JsValue> {
+    event_layer(this)?;
     let obj = this.as_object().unwrap();
-    with_event(&obj, context, |e| JsValue::from(e.cancelable))
+    with_event(&obj, |e| JsValue::from(e.cancelable))
 }
 
 fn composed_getter(_: &JsValue, _: &[JsValue], _: &mut Context) -> JsResult<JsValue> {
@@ -225,49 +212,47 @@ fn event_phase_getter(_: &JsValue, _: &[JsValue], _: &mut Context) -> JsResult<J
     Ok(JsValue::from(2))
 }
 
-fn time_stamp_getter(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    event_layer(this, context)?;
+fn time_stamp_getter(this: &JsValue, _: &[JsValue], _context: &mut Context) -> JsResult<JsValue> {
+    event_layer(this)?;
     let obj = this.as_object().unwrap();
-    with_event(&obj, context, |e| JsValue::from(e.time_stamp))
+    with_event(&obj, |e| JsValue::from(e.time_stamp))
 }
 
-fn default_prevented(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    event_layer(this, context)?;
+fn default_prevented(this: &JsValue, _: &[JsValue], _context: &mut Context) -> JsResult<JsValue> {
+    event_layer(this)?;
     let obj = this.as_object().unwrap();
     Ok(JsValue::from(
-        event_flag(&obj, context, |e| e.prevented.get()),
+        event_flag(&obj, |e| e.prevented.get()),
     ))
 }
 
-fn prevent_default(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+fn prevent_default(this: &JsValue, _: &[JsValue], _context: &mut Context) -> JsResult<JsValue> {
     let obj = this
         .as_object()
         .ok_or_else(|| crate::shared::native_error!(typ, "not an Event object"))?;
-    with_event_mut(&obj, context, |e| {
-        if e.cancelable {
-            e.prevented.set(true);
-        }
+    with_event_mut(&obj, |e| {
+        e.prevented.set(true);
     })?;
     Ok(JsValue::undefined())
 }
 
-fn stop_propagation(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+fn stop_propagation(this: &JsValue, _: &[JsValue], _context: &mut Context) -> JsResult<JsValue> {
     let obj = this
         .as_object()
         .ok_or_else(|| crate::shared::native_error!(typ, "not an Event object"))?;
-    with_event_mut(&obj, context, |e| e.stopped.set(true))?;
+    with_event_mut(&obj, |e| e.stopped.set(true))?;
     Ok(JsValue::undefined())
 }
 
 fn stop_immediate_propagation(
     this: &JsValue,
     _: &[JsValue],
-    context: &mut Context,
+    _context: &mut Context,
 ) -> JsResult<JsValue> {
     let obj = this
         .as_object()
         .ok_or_else(|| crate::shared::native_error!(typ, "not an Event object"))?;
-    with_event_mut(&obj, context, |e| {
+    with_event_mut(&obj, |e| {
         e.stopped.set(true);
         e.stopped_immediate.set(true);
     })?;

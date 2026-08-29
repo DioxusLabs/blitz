@@ -98,7 +98,7 @@ pub(crate) fn register(context: &mut Context) -> JsResult<()> {
 
 fn document_element(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let _ = this_node_id(this, context)?;
+    let _ = this_node_id(this)?;
     let root_id = ctx.doc.borrow().try_root_element().map(|root| root.id);
     Ok(node_or_null(&ctx, root_id, context))
 }
@@ -111,33 +111,33 @@ fn scrolling_element(this: &JsValue, args: &[JsValue], context: &mut Context) ->
 
 fn body(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let _ = this_node_id(this, context)?;
+    let _ = this_node_id(this)?;
     let body_id = ctx.doc.borrow().find_body_node().map(|node| node.id);
     Ok(node_or_null(&ctx, body_id, context))
 }
 
 fn head(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let _ = this_node_id(this, context)?;
+    let _ = this_node_id(this)?;
     let head_id = ctx.doc.borrow().find_head_node().map(|node| node.id);
     Ok(node_or_null(&ctx, head_id, context))
 }
 
 fn active_element(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let _ = this_node_id(this, context)?;
+    let _ = this_node_id(this)?;
     let focus_id = ctx.doc.borrow().get_focussed_node_id();
     Ok(node_or_null(&ctx, focus_id, context))
 }
 
 fn default_view(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    let _ = this_node_id(this, context)?;
+    let _ = this_node_id(this)?;
     Ok(context.global_object().into())
 }
 
 fn title(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let _ = this_node_id(this, context)?;
+    let _ = this_node_id(this)?;
     let title = ctx
         .doc
         .borrow()
@@ -149,7 +149,7 @@ fn title(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsVal
 
 fn ready_state(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let _ = this_node_id(this, context)?;
+    let _ = this_node_id(this)?;
     let ready_state = ctx.state.borrow().ready_state;
     Ok(js_str(ready_state.as_str()))
 }
@@ -158,7 +158,7 @@ fn ready_state(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult
 
 fn create_element(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let _ = this_node_id(this, context)?;
+    let _ = this_node_id(this)?;
     let tag = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?
         .to_ascii_lowercase();
     let node_id = {
@@ -170,7 +170,7 @@ fn create_element(this: &JsValue, args: &[JsValue], context: &mut Context) -> Js
 
 fn create_element_ns(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let _ = this_node_id(this, context)?;
+    let _ = this_node_id(this)?;
     let ns = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
     let tag = to_rust_string(args.get(1).unwrap_or(&JsValue::undefined()), context)?;
     let node_id = {
@@ -183,7 +183,7 @@ fn create_element_ns(this: &JsValue, args: &[JsValue], context: &mut Context) ->
 
 fn create_text_node(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let _ = this_node_id(this, context)?;
+    let _ = this_node_id(this)?;
     let text = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
     let node_id = {
         let mut doc = ctx.doc.borrow_mut();
@@ -194,7 +194,7 @@ fn create_text_node(this: &JsValue, args: &[JsValue], context: &mut Context) -> 
 
 fn create_comment(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let _ = this_node_id(this, context)?;
+    let _ = this_node_id(this)?;
     let text = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
     let node_id = {
         let mut doc = ctx.doc.borrow_mut();
@@ -209,7 +209,7 @@ fn create_document_fragment(
     context: &mut Context,
 ) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let _ = this_node_id(this, context)?;
+    let _ = this_node_id(this)?;
     let node_id = {
         let mut doc = ctx.doc.borrow_mut();
         doc.mutate()
@@ -222,7 +222,7 @@ fn create_document_fragment(
 
 fn get_element_by_id(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let _ = this_node_id(this, context)?;
+    let _ = this_node_id(this)?;
     let id = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
     let node_id = ctx.doc.borrow().get_element_by_id(&id);
     Ok(node_or_null(&ctx, node_id, context))
@@ -234,7 +234,7 @@ fn get_elements_by_tag_name(
     context: &mut Context,
 ) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let _ = this_node_id(this, context)?;
+    let _ = this_node_id(this)?;
     let tag = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?
         .to_ascii_lowercase();
     let match_all = tag == "*";
@@ -257,7 +257,7 @@ fn get_elements_by_class_name(
     context: &mut Context,
 ) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let _ = this_node_id(this, context)?;
+    let _ = this_node_id(this)?;
     let class_arg = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
     let class_names: Vec<&str> = class_arg.split_whitespace().collect();
 
@@ -297,7 +297,7 @@ fn element_from_point(
     context: &mut Context,
 ) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let _ = this_node_id(this, context)?;
+    let _ = this_node_id(this)?;
     let (x, y) = point_args(args, context)?;
 
     let element_id = {
@@ -315,7 +315,7 @@ fn elements_from_point(
     context: &mut Context,
 ) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let _ = this_node_id(this, context)?;
+    let _ = this_node_id(this)?;
     let (x, y) = point_args(args, context)?;
 
     let element_ids: Vec<NodeId> = {
@@ -343,7 +343,7 @@ fn invalid_selector_error(context: &mut Context, selector: &str) -> boa_engine::
 
 fn query_selector(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let _ = this_node_id(this, context)?;
+    let _ = this_node_id(this)?;
     let selector = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
     let node_id = match ctx.doc.borrow().query_selector(&selector) {
         Ok(node_id) => node_id,
@@ -358,7 +358,7 @@ fn query_selector_all(
     context: &mut Context,
 ) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let _ = this_node_id(this, context)?;
+    let _ = this_node_id(this)?;
     let selector = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
     let matches = match ctx.doc.borrow().query_selector_all(&selector) {
         Ok(matches) => matches,

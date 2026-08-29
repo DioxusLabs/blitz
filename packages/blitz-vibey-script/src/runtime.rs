@@ -945,7 +945,7 @@ impl ScriptRuntime {
             }
 
             let current_target: JsValue = node_wrapper(&ctx, node_id, context).into();
-            set_current_target(&event_obj, current_target.clone(), context)
+            set_current_target(&event_obj, current_target.clone())
                 .expect("failed to update currentTarget");
 
             for callback in callbacks {
@@ -955,18 +955,18 @@ impl ScriptRuntime {
                 {
                     report_js_error(&ctx, "event listener", &error);
                 }
-                if event_flag(&event_obj, context, |event| event.stopped_immediate.get()) {
+                if event_flag(&event_obj, |event| event.stopped_immediate.get()) {
                     break 'chain;
                 }
             }
 
-            if !bubbles || event_flag(&event_obj, context, |event| event.stopped.get()) {
+            if !bubbles || event_flag(&event_obj, |event| event.stopped.get()) {
                 break;
             }
         }
 
         // Window-level listeners
-        if bubbles && !event_flag(&event_obj, context, |event| event.stopped.get()) {
+        if bubbles && !event_flag(&event_obj, |event| event.stopped.get()) {
             let listeners: Vec<Listener> = {
                 let mut state = ctx.state.borrow_mut();
                 match state.window_listeners.get_mut(name) {
@@ -980,7 +980,7 @@ impl ScriptRuntime {
             };
             if !listeners.is_empty() {
                 let global: JsValue = context.global_object().into();
-                set_current_target(&event_obj, global.clone(), context)
+                set_current_target(&event_obj, global.clone())
                     .expect("failed to update currentTarget");
                 for listener in listeners {
                     any_called = true;
@@ -991,21 +991,21 @@ impl ScriptRuntime {
                     {
                         report_js_error(&ctx, "event listener", &error);
                     }
-                    if event_flag(&event_obj, context, |event| event.stopped_immediate.get()) {
+                    if event_flag(&event_obj, |event| event.stopped_immediate.get()) {
                         break;
                     }
                 }
             }
         }
 
-        set_current_target(&event_obj, JsValue::null(), context)
+        set_current_target(&event_obj, JsValue::null())
             .expect("failed to update currentTarget");
 
         // Feed `preventDefault` / `stopPropagation` back into Blitz
-        if event_flag(&event_obj, context, |event| event.prevented.get()) {
+        if event_flag(&event_obj, |event| event.prevented.get()) {
             event_state.prevent_default();
         }
-        if event_flag(&event_obj, context, |event| event.stopped.get()) {
+        if event_flag(&event_obj, |event| event.stopped.get()) {
             event_state.stop_propagation();
         }
         if any_called {
@@ -1375,7 +1375,7 @@ fn css_supports(_: &JsValue, args: &[JsValue], context: &mut Context) -> JsResul
 }
 
 fn get_computed_style(_: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    let Some(node_id) = args.first().and_then(|value| node_id_of_value(value, context)) else {
+    let Some(node_id) = args.first().and_then(|value| node_id_of_value(value)) else {
         return Err(boa_engine::JsNativeError::typ()
             .with_message("getComputedStyle: argument is not an Element")
             .into());
