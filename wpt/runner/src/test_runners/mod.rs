@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::LazyLock;
 use std::time::Duration;
 use std::{fs, sync::Arc, time::Instant};
@@ -23,6 +24,20 @@ pub use attr_test::process_attr_test;
 pub use crash_test::process_crash_test;
 pub use harness_test::process_harness_test;
 pub use ref_test::process_ref_test;
+
+static TIMEOUT_QUARANTINE: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| {
+    let mut tests = HashMap::new();
+    for line in include_str!("../../timeout-quarantine.txt").lines() {
+        let (path, reason) = line
+            .split_once(' ')
+            .expect("timeout quarantine entries must contain a path and reason");
+        assert!(
+            tests.insert(path, reason).is_none(),
+            "duplicate timeout quarantine entry: {path}"
+        );
+    }
+    tests
+});
 
 /// Is the node a `<script>` element whose `type` would execute as JavaScript?
 /// Returns the node if so.
@@ -152,6 +167,19 @@ pub fn process_test_file(
     Vec<SubtestResult>,
 ) {
     debug!("Processing test file: {relative_path}");
+
+    if !ctx.run_quarantined
+        && let Some(reason) = TIMEOUT_QUARANTINE.get(relative_path)
+    {
+        debug!("Skipping quarantined test {relative_path}: {reason}");
+        return (
+            TestKind::TestHarness,
+            TestFlags::empty(),
+            TestStatus::Skip,
+            SubtestCounts::ZERO_OF_ZERO,
+            Vec::new(),
+        );
+    }
 
     let file_contents = match fs::read_to_string(ctx.wpt_dir.join(relative_path)) {
         Ok(contents) => contents,
@@ -337,4 +365,18 @@ pub fn pump_net_provider(ctx: &ThreadCtx, document: &mut BaseDocument) {
     }
 
     document.resolve(0.0);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn timeout_quarantine_is_valid() {
+        assert_eq!(TIMEOUT_QUARANTINE.len(), 207);
+        assert_eq!(
+            TIMEOUT_QUARANTINE.get("css/selectors/focus-visible-001.html"),
+            Some(&"testdriver")
+        );
+    }
 }
