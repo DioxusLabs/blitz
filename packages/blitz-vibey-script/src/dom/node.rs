@@ -1,89 +1,144 @@
-//! The `Node` (and `CharacterData`) prototypes: tree structure, tree mutation,
+//! The `Node` and `CharacterData` classes: tree structure, tree mutation,
 //! text content and event listener registration.
 
 use blitz_dom::NodeId;
 use blitz_dom::node::NodeData;
-use boa_engine::object::JsObject;
+use boa_engine::class::ClassBuilder;
 use boa_engine::object::builtins::JsArray;
-use boa_engine::value::JsValue;
-use boa_engine::{Context, JsNativeError, JsResult};
+use boa_engine::property::Attribute;
+use boa_engine::{Context, Finalize, JsData, JsResult, JsValue, Trace};
+
+use crate::shared::{
+    ExtendLayer, Extended, Super, Constructed, instance_accessor, instance_getter, instance_method,
+    js_fn_ptr, native_error, native_fn_ptr,
+};
+use crate::state::DomCtx;
 
 use super::{
-    define_accessor, define_method, dom_ctx, js_str, node_id_of_value, node_or_null, node_wrapper,
-    this_node_id, to_rust_string,
+    dom_ctx, js_str, node_id_of_value, node_or_null, node_wrapper, this_node_id, to_rust_string,
 };
-use crate::state::Listener;
 
-pub(crate) fn init_node_proto(proto: &JsObject, context: &mut Context) {
-    define_accessor(proto, "nodeType", Some(node_type), None, context);
-    define_accessor(proto, "nodeName", Some(node_name), None, context);
-    define_accessor(proto, "parentNode", Some(parent_node), None, context);
-    define_accessor(proto, "parentElement", Some(parent_node), None, context);
-    define_accessor(proto, "childNodes", Some(child_nodes), None, context);
-    define_accessor(proto, "firstChild", Some(first_child), None, context);
-    define_accessor(proto, "lastChild", Some(last_child), None, context);
-    define_accessor(
-        proto,
-        "previousSibling",
-        Some(previous_sibling),
-        None,
-        context,
-    );
-    define_accessor(proto, "nextSibling", Some(next_sibling), None, context);
-    define_accessor(proto, "isConnected", Some(is_connected), None, context);
-    define_accessor(proto, "ownerDocument", Some(owner_document), None, context);
-    define_accessor(
-        proto,
-        "textContent",
-        Some(text_content),
-        Some(set_text_content),
-        context,
-    );
-    define_accessor(
-        proto,
-        "nodeValue",
-        Some(node_value),
-        Some(set_node_value),
-        context,
-    );
+// ── Layers ───────────────────────────────────────────────────────────
 
-    define_method(proto, "appendChild", 1, append_child, context);
-    define_method(proto, "insertBefore", 2, insert_before, context);
-    define_method(proto, "removeChild", 1, remove_child, context);
-    define_method(proto, "replaceChild", 2, replace_child, context);
-    define_method(proto, "remove", 0, remove, context);
-    // ChildNode mixin
-    define_method(proto, "before", 1, before, context);
-    define_method(proto, "after", 1, after, context);
-    define_method(proto, "replaceWith", 1, replace_with, context);
-    define_method(proto, "hasChildNodes", 0, has_child_nodes, context);
-    define_method(proto, "contains", 1, contains, context);
-    define_method(proto, "cloneNode", 1, clone_node, context);
-    define_method(proto, "addEventListener", 2, add_event_listener, context);
-    define_method(
-        proto,
-        "removeEventListener",
-        2,
-        remove_event_listener,
-        context,
-    );
+/// `Node` own block: the wrapped blitz-dom node id.
+#[derive(Debug, Default, Clone, Trace, Finalize, JsData)]
+pub(crate) struct NodeLayer {
+    #[unsafe_ignore_trace]
+    pub node_id: NodeId,
 }
 
-pub(crate) fn init_character_data_proto(proto: &JsObject, context: &mut Context) {
-    define_accessor(
-        proto,
-        "data",
-        Some(node_value),
-        Some(set_node_value),
-        context,
-    );
+/// `CharacterData` own block. All data lives in the `Node` layer; this layer
+/// only contributes the `data` accessor to the prototype chain.
+#[derive(Debug, Default, Clone, Trace, Finalize, JsData)]
+pub(crate) struct CharacterDataLayer;
+
+pub(crate) type Node = Extended<NodeLayer>;
+pub(crate) type CharacterData = Extended<CharacterDataLayer>;
+
+impl ExtendLayer for NodeLayer {
+    type Parent = crate::shared::RootLayer;
+    const CLASS_NAME: &'static str = "Node";
+
+    fn build(
+        _args: &[JsValue],
+        _ctx: &mut Context,
+        _sup: Super<'_, Self::Parent>,
+    ) -> JsResult<Constructed<Self>> {
+        Err(native_error!(typ, "Illegal constructor"))
+    }
+
+    fn define_members(class: &mut ClassBuilder<'_>) -> JsResult<()> {
+        let realm = class.context().realm().clone();
+        let attr = Attribute::CONFIGURABLE | Attribute::NON_ENUMERABLE;
+
+        instance_getter!(class, "nodeType", js_fn_ptr!(node_type, &realm), attr);
+        instance_getter!(class, "nodeName", js_fn_ptr!(node_name, &realm), attr);
+        instance_getter!(class, "parentNode", js_fn_ptr!(parent_node, &realm), attr);
+        instance_getter!(class, "parentElement", js_fn_ptr!(parent_node, &realm), attr);
+        instance_getter!(class, "childNodes", js_fn_ptr!(child_nodes, &realm), attr);
+        instance_getter!(class, "firstChild", js_fn_ptr!(first_child, &realm), attr);
+        instance_getter!(class, "lastChild", js_fn_ptr!(last_child, &realm), attr);
+        instance_getter!(class, "previousSibling", js_fn_ptr!(previous_sibling, &realm), attr);
+        instance_getter!(class, "nextSibling", js_fn_ptr!(next_sibling, &realm), attr);
+        instance_getter!(class, "isConnected", js_fn_ptr!(is_connected, &realm), attr);
+        instance_getter!(class, "ownerDocument", js_fn_ptr!(owner_document, &realm), attr);
+        instance_accessor!(
+            class,
+            "textContent",
+            js_fn_ptr!(text_content, &realm),
+            js_fn_ptr!(set_text_content, &realm),
+            attr
+        );
+        instance_accessor!(
+            class,
+            "nodeValue",
+            js_fn_ptr!(node_value, &realm),
+            js_fn_ptr!(set_node_value, &realm),
+            attr
+        );
+
+        instance_method!(class, "appendChild", 1, native_fn_ptr!(append_child));
+        instance_method!(class, "insertBefore", 2, native_fn_ptr!(insert_before));
+        instance_method!(class, "removeChild", 1, native_fn_ptr!(remove_child));
+        instance_method!(class, "replaceChild", 2, native_fn_ptr!(replace_child));
+        instance_method!(class, "remove", 0, native_fn_ptr!(remove));
+        // ChildNode mixin
+        instance_method!(class, "before", 1, native_fn_ptr!(before));
+        instance_method!(class, "after", 1, native_fn_ptr!(after));
+        instance_method!(class, "replaceWith", 1, native_fn_ptr!(replace_with));
+        instance_method!(class, "hasChildNodes", 0, native_fn_ptr!(has_child_nodes));
+        instance_method!(class, "contains", 1, native_fn_ptr!(contains));
+        instance_method!(class, "cloneNode", 1, native_fn_ptr!(clone_node));
+        instance_method!(class, "addEventListener", 2, native_fn_ptr!(add_event_listener));
+        instance_method!(class, "removeEventListener", 2, native_fn_ptr!(remove_event_listener));
+
+        Ok(())
+    }
+}
+
+impl ExtendLayer for CharacterDataLayer {
+    type Parent = NodeLayer;
+    const CLASS_NAME: &'static str = "CharacterData";
+
+    fn build(
+        _args: &[JsValue],
+        _ctx: &mut Context,
+        _sup: Super<'_, Self::Parent>,
+    ) -> JsResult<Constructed<Self>> {
+        Err(native_error!(typ, "Illegal constructor"))
+    }
+
+    fn define_members(class: &mut ClassBuilder<'_>) -> JsResult<()> {
+        let realm = class.context().realm().clone();
+        let attr = Attribute::CONFIGURABLE | Attribute::NON_ENUMERABLE;
+
+        instance_accessor!(
+            class,
+            "data",
+            js_fn_ptr!(node_value, &realm),
+            js_fn_ptr!(set_node_value, &realm),
+            attr
+        );
+
+        Ok(())
+    }
+}
+
+/// Register the `Node` and `CharacterData` classes and wire up the
+/// `CharacterData -> Node` prototype chain.
+pub(crate) fn register(context: &mut Context) -> JsResult<()> {
+    context.register_global_class::<Node>()?;
+    context.register_global_class::<CharacterData>()?;
+    crate::shared::link_prototype::<Node>(context)?;
+    crate::shared::link_prototype::<CharacterData>(context)?;
+    Ok(())
 }
 
 // === Read-only tree structure ===
 
 fn node_type(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     let doc = ctx.doc.borrow();
     let node_type = match doc.get_node(node_id).map(|node| &node.data) {
         Some(NodeData::Document(_)) => 9,
@@ -98,7 +153,7 @@ fn node_type(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<J
 
 fn node_name(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     let doc = ctx.doc.borrow();
     let name = match doc.get_node(node_id).map(|node| &node.data) {
         Some(NodeData::Document(_)) => "#document".to_string(),
@@ -116,7 +171,7 @@ fn node_name(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<J
 
 fn parent_node(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     let parent_id = ctx
         .doc
         .borrow()
@@ -125,7 +180,7 @@ fn parent_node(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult
     Ok(node_or_null(&ctx, parent_id, context))
 }
 
-fn child_ids(ctx: &crate::state::DomCtx, node_id: NodeId) -> Vec<NodeId> {
+fn child_ids(ctx: &DomCtx, node_id: NodeId) -> Vec<NodeId> {
     ctx.doc
         .borrow()
         .get_node(node_id)
@@ -135,7 +190,7 @@ fn child_ids(ctx: &crate::state::DomCtx, node_id: NodeId) -> Vec<NodeId> {
 
 fn child_nodes(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     let children = child_ids(&ctx, node_id);
     let wrappers: Vec<JsValue> = children
         .into_iter()
@@ -146,7 +201,7 @@ fn child_nodes(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult
 
 fn first_child(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     let child_id = ctx
         .doc
         .borrow()
@@ -157,7 +212,7 @@ fn first_child(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult
 
 fn last_child(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     let child_id = ctx
         .doc
         .borrow()
@@ -166,7 +221,7 @@ fn last_child(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<
     Ok(node_or_null(&ctx, child_id, context))
 }
 
-fn sibling(ctx: &crate::state::DomCtx, node_id: NodeId, offset: isize) -> Option<NodeId> {
+fn sibling(ctx: &DomCtx, node_id: NodeId, offset: isize) -> Option<NodeId> {
     let doc = ctx.doc.borrow();
     let node = doc.get_node(node_id)?;
     let parent = doc.get_node(node.parent?)?;
@@ -177,21 +232,21 @@ fn sibling(ctx: &crate::state::DomCtx, node_id: NodeId, offset: isize) -> Option
 
 fn previous_sibling(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     let sibling_id = sibling(&ctx, node_id, -1);
     Ok(node_or_null(&ctx, sibling_id, context))
 }
 
 fn next_sibling(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     let sibling_id = sibling(&ctx, node_id, 1);
     Ok(node_or_null(&ctx, sibling_id, context))
 }
 
 fn is_connected(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     let connected = ctx
         .doc
         .borrow()
@@ -202,7 +257,7 @@ fn is_connected(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResul
 
 fn owner_document(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let _ = this_node_id(this)?;
+    let _ = this_node_id(this, context)?;
     let root_id = ctx.doc.borrow().root_node().id;
     Ok(node_or_null(&ctx, Some(root_id), context))
 }
@@ -211,7 +266,7 @@ fn owner_document(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsRes
 
 fn text_content(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     let doc = ctx.doc.borrow();
     let text = doc
         .get_node(node_id)
@@ -222,7 +277,7 @@ fn text_content(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResul
 
 fn set_text_content(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     let text = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
 
     let is_text_like = {
@@ -253,7 +308,7 @@ fn set_text_content(this: &JsValue, args: &[JsValue], context: &mut Context) -> 
 
 fn node_value(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     let doc = ctx.doc.borrow();
     match doc.get_node(node_id).map(|node| &node.data) {
         Some(NodeData::Text(data)) => Ok(js_str(&data.content)),
@@ -264,7 +319,7 @@ fn node_value(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<
 
 fn set_node_value(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     let text = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
     let mut doc = ctx.doc.borrow_mut();
     doc.mutate().set_node_text(node_id, &text);
@@ -273,18 +328,18 @@ fn set_node_value(this: &JsValue, args: &[JsValue], context: &mut Context) -> Js
 
 // === Tree mutation ===
 
-fn arg_node_id(args: &[JsValue], index: usize) -> JsResult<NodeId> {
-    args.get(index).and_then(node_id_of_value).ok_or_else(|| {
-        JsNativeError::typ()
-            .with_message("argument is not a DOM node")
-            .into()
-    })
+fn arg_node_id(args: &[JsValue], index: usize, context: &mut Context) -> JsResult<NodeId> {
+    args.get(index)
+        .and_then(|value| node_id_of_value(value, context))
+        .ok_or_else(|| {
+            native_error!(typ, "argument is not a DOM node")
+        })
 }
 
 fn append_child(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let parent_id = this_node_id(this)?;
-    let child_id = arg_node_id(args, 0)?;
+    let parent_id = this_node_id(this, context)?;
+    let child_id = arg_node_id(args, 0, context)?;
     // Inserting a DocumentFragment moves its children
     let node_ids = insertable_node_ids(&ctx, child_id);
 
@@ -302,15 +357,15 @@ fn append_child(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsRe
 
 fn insert_before(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let parent_id = this_node_id(this)?;
-    let new_id = arg_node_id(args, 0)?;
+    let parent_id = this_node_id(this, context)?;
+    let new_id = arg_node_id(args, 0, context)?;
 
     // A null/undefined reference node means "append"
     let ref_arg = args.get(1).cloned().unwrap_or_default();
     let ref_id = if ref_arg.is_null_or_undefined() {
         None
     } else {
-        Some(arg_node_id(args, 1)?)
+        Some(arg_node_id(args, 1, context)?)
     };
 
     // Inserting a node before itself is a no-op
@@ -335,8 +390,8 @@ fn insert_before(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsR
 
 fn remove_child(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let _parent_id = this_node_id(this)?;
-    let child_id = arg_node_id(args, 0)?;
+    let _parent_id = this_node_id(this, context)?;
+    let child_id = arg_node_id(args, 0, context)?;
 
     let mut doc = ctx.doc.borrow_mut();
     // Note: the node is detached rather than dropped so that JS wrappers
@@ -347,9 +402,9 @@ fn remove_child(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsRe
 
 fn replace_child(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let _parent_id = this_node_id(this)?;
-    let new_id = arg_node_id(args, 0)?;
-    let old_id = arg_node_id(args, 1)?;
+    let _parent_id = this_node_id(this, context)?;
+    let new_id = arg_node_id(args, 0, context)?;
+    let old_id = arg_node_id(args, 1, context)?;
 
     if new_id != old_id {
         let mut doc = ctx.doc.borrow_mut();
@@ -365,7 +420,7 @@ fn replace_child(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsR
 
 fn remove(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     let mut doc = ctx.doc.borrow_mut();
     let mut mutr = doc.mutate();
     if mutr.node_has_parent(node_id) {
@@ -388,7 +443,7 @@ pub(crate) fn is_fragment(doc: &blitz_dom::BaseDocument, node_id: NodeId) -> boo
 /// Resolve a node argument for insertion, per the DOM spec's "insert a node"
 /// steps: DocumentFragments are expanded into (and their children detached
 /// from) their children; other nodes insert as themselves.
-fn insertable_node_ids(ctx: &crate::state::DomCtx, node_id: NodeId) -> Vec<NodeId> {
+fn insertable_node_ids(ctx: &DomCtx, node_id: NodeId) -> Vec<NodeId> {
     let mut doc = ctx.doc.borrow_mut();
     if !is_fragment(&doc, node_id) {
         return vec![node_id];
@@ -413,13 +468,13 @@ fn insertable_node_ids(ctx: &crate::state::DomCtx, node_id: NodeId) -> Vec<NodeI
 /// ids, creating (detached) text nodes for string arguments and expanding
 /// DocumentFragments into their children
 fn arg_node_ids(
-    ctx: &crate::state::DomCtx,
+    ctx: &DomCtx,
     args: &[JsValue],
     context: &mut Context,
 ) -> JsResult<Vec<NodeId>> {
     let mut node_ids = Vec::with_capacity(args.len());
     for arg in args {
-        match node_id_of_value(arg) {
+        match node_id_of_value(arg, context) {
             Some(node_id) => node_ids.extend(insertable_node_ids(ctx, node_id)),
             None => {
                 let text = to_rust_string(arg, context)?;
@@ -442,7 +497,7 @@ fn detach_all(mutr: &mut blitz_dom::DocumentMutator<'_>, node_ids: &[NodeId]) {
 
 pub(crate) fn append(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let parent_id = this_node_id(this)?;
+    let parent_id = this_node_id(this, context)?;
     let node_ids = arg_node_ids(&ctx, args, context)?;
     let mut doc = ctx.doc.borrow_mut();
     doc.mutate().append_children(parent_id, &node_ids);
@@ -455,7 +510,7 @@ pub(crate) fn prepend(
     context: &mut Context,
 ) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let parent_id = this_node_id(this)?;
+    let parent_id = this_node_id(this, context)?;
     let node_ids = arg_node_ids(&ctx, args, context)?;
     let mut doc = ctx.doc.borrow_mut();
     doc.mutate().prepend_nodes(parent_id, &node_ids);
@@ -468,7 +523,7 @@ pub(crate) fn replace_children(
     context: &mut Context,
 ) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let parent_id = this_node_id(this)?;
+    let parent_id = this_node_id(this, context)?;
     let node_ids = arg_node_ids(&ctx, args, context)?;
     let mut doc = ctx.doc.borrow_mut();
     doc.mutate().replace_children(parent_id, &node_ids);
@@ -477,7 +532,7 @@ pub(crate) fn replace_children(
 
 fn before(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let anchor_id = this_node_id(this)?;
+    let anchor_id = this_node_id(this, context)?;
     let node_ids = arg_node_ids(&ctx, args, context)?;
     let mut doc = ctx.doc.borrow_mut();
     doc.mutate().before_node(anchor_id, &node_ids);
@@ -486,7 +541,7 @@ fn before(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<J
 
 fn after(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let anchor_id = this_node_id(this)?;
+    let anchor_id = this_node_id(this, context)?;
     let node_ids = arg_node_ids(&ctx, args, context)?;
     let mut doc = ctx.doc.borrow_mut();
     doc.mutate().after_node(anchor_id, &node_ids);
@@ -495,7 +550,7 @@ fn after(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<Js
 
 fn replace_with(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let anchor_id = this_node_id(this)?;
+    let anchor_id = this_node_id(this, context)?;
     let node_ids = arg_node_ids(&ctx, args, context)?;
     let mut doc = ctx.doc.borrow_mut();
     doc.mutate().replace_with_nodes(anchor_id, &node_ids);
@@ -504,7 +559,7 @@ fn replace_with(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsRe
 
 fn has_child_nodes(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     let has_children = ctx
         .doc
         .borrow()
@@ -515,8 +570,8 @@ fn has_child_nodes(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsRe
 
 fn contains(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
-    let Some(mut current) = args.first().and_then(node_id_of_value) else {
+    let node_id = this_node_id(this, context)?;
+    let Some(mut current) = args.first().and_then(|arg| node_id_of_value(arg, context)) else {
         return Ok(JsValue::from(false));
     };
 
@@ -534,7 +589,7 @@ fn contains(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult
 
 fn clone_node(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     let deep = args.first().map(JsValue::to_boolean).unwrap_or(false);
 
     enum CloneSrc {
@@ -575,7 +630,7 @@ fn add_event_listener(
     context: &mut Context,
 ) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     let event_type = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
     let Some(callback) = args.get(1).and_then(|value| value.as_object()) else {
         return Ok(JsValue::undefined());
@@ -612,9 +667,9 @@ fn add_event_listener(
     // Duplicate listeners (same callback + capture flag) are ignored
     if !listeners
         .iter()
-        .any(|l| JsObject::equals(&l.callback, &callback) && l.capture == capture)
+        .any(|l| boa_engine::object::JsObject::equals(&l.callback, &callback) && l.capture == capture)
     {
-        listeners.push(Listener {
+        listeners.push(crate::state::Listener {
             callback,
             capture,
             once,
@@ -630,7 +685,7 @@ fn remove_event_listener(
     context: &mut Context,
 ) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     let event_type = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
     let Some(callback) = args.get(1).and_then(|value| value.as_object()) else {
         return Ok(JsValue::undefined());
@@ -652,7 +707,9 @@ fn remove_event_listener(
         .get_mut(&node_id)
         .and_then(|map| map.get_mut(&event_type))
     {
-        listeners.retain(|l| !(JsObject::equals(&l.callback, &callback) && l.capture == capture));
+        listeners.retain(|l| {
+            !(boa_engine::object::JsObject::equals(&l.callback, &callback) && l.capture == capture)
+        });
     }
 
     Ok(JsValue::undefined())

@@ -1,197 +1,189 @@
-//! The `Element` prototype: attributes, DOM properties (`value`, `checked`, ...),
+//! The `Element` class: attributes, DOM properties (`value`, `checked`, ...),
 //! `style`, `innerHTML` and friends.
 
 use blitz_dom::{LocalName, NodeId, QualName, ScrollBehavior, ScrollLogicalPosition};
+use boa_engine::class::ClassBuilder;
 use boa_engine::object::{JsObject, ObjectInitializer};
 use boa_engine::property::Attribute as PropAttribute;
 use boa_engine::value::JsValue;
-use boa_engine::{Context, JsNativeError, JsResult, js_string};
+use boa_engine::{Context, Finalize, JsData, JsNativeError, JsResult, Trace, js_string};
+
+use crate::shared::{
+    Constructed, ExtendLayer, Extended, Super, from_chain, instance_accessor, instance_getter,
+    instance_method, js_fn_ptr, native_error, native_fn_ptr,
+};
 
 use super::{
-    define_accessor, define_method, dom_ctx, js_str, node_wrapper, this_node_id, to_rust_string,
+    dom_ctx, js_str, node_or_null, node_wrapper, this_node_id, to_rust_string, wrap_style_object,
 };
+use super::node::{append, prepend, replace_children};
+use super::style::{CSSStyleDeclaration, StyleLayer};
 use crate::state::DomCtx;
+
+/// `Element` own block. All data lives in the `Node` layer; this layer only
+/// contributes the element interface to the prototype chain.
+#[derive(Debug, Default, Clone, Trace, Finalize, JsData)]
+pub(crate) struct ElementLayer;
+
+pub(crate) type Element = Extended<ElementLayer>;
+
+impl ExtendLayer for ElementLayer {
+    type Parent = super::node::NodeLayer;
+    const CLASS_NAME: &'static str = "Element";
+
+    fn build(
+        _args: &[JsValue],
+        _ctx: &mut Context,
+        _sup: Super<'_, Self::Parent>,
+    ) -> JsResult<Constructed<Self>> {
+        Err(native_error!(typ, "Illegal constructor"))
+    }
+
+    fn define_members(class: &mut ClassBuilder<'_>) -> JsResult<()> {
+        let realm = class.context().realm().clone();
+        let attr = PropAttribute::CONFIGURABLE | PropAttribute::NON_ENUMERABLE;
+
+        instance_getter!(class, "tagName", js_fn_ptr!(tag_name, &realm), attr);
+        instance_getter!(class, "localName", js_fn_ptr!(local_name, &realm), attr);
+        instance_getter!(class, "namespaceURI", js_fn_ptr!(namespace_uri, &realm), attr);
+        instance_accessor!(class, "id", js_fn_ptr!(get_id, &realm), js_fn_ptr!(set_id, &realm), attr);
+        instance_accessor!(
+            class,
+            "className",
+            js_fn_ptr!(get_class_name, &realm),
+            js_fn_ptr!(set_class_name, &realm),
+            attr
+        );
+        instance_accessor!(class, "value", js_fn_ptr!(get_value, &realm), js_fn_ptr!(set_value, &realm), attr);
+        instance_accessor!(
+            class,
+            "checked",
+            js_fn_ptr!(get_checked, &realm),
+            js_fn_ptr!(set_checked, &realm),
+            attr
+        );
+        instance_accessor!(
+            class,
+            "disabled",
+            js_fn_ptr!(get_disabled, &realm),
+            js_fn_ptr!(set_disabled, &realm),
+            attr
+        );
+        instance_accessor!(
+            class,
+            "hidden",
+            js_fn_ptr!(get_hidden, &realm),
+            js_fn_ptr!(set_hidden, &realm),
+            attr
+        );
+        instance_accessor!(
+            class,
+            "selectionStart",
+            js_fn_ptr!(get_selection_start, &realm),
+            js_fn_ptr!(set_selection_start, &realm),
+            attr
+        );
+        instance_accessor!(
+            class,
+            "selectionEnd",
+            js_fn_ptr!(get_selection_end, &realm),
+            js_fn_ptr!(set_selection_end, &realm),
+            attr
+        );
+        instance_method!(class, "setSelectionRange", 2, native_fn_ptr!(set_selection_range));
+        instance_accessor!(
+            class,
+            "placeholder",
+            js_fn_ptr!(get_placeholder, &realm),
+            js_fn_ptr!(set_placeholder, &realm),
+            attr
+        );
+        instance_accessor!(class, "type", js_fn_ptr!(get_type, &realm), js_fn_ptr!(set_type, &realm), attr);
+        instance_accessor!(
+            class,
+            "autofocus",
+            js_fn_ptr!(get_autofocus, &realm),
+            js_fn_ptr!(set_autofocus, &realm),
+            attr
+        );
+        instance_getter!(class, "style", js_fn_ptr!(get_style, &realm), attr);
+        instance_accessor!(
+            class,
+            "innerHTML",
+            js_fn_ptr!(get_inner_html, &realm),
+            js_fn_ptr!(set_inner_html, &realm),
+            attr
+        );
+        instance_getter!(class, "outerHTML", js_fn_ptr!(get_outer_html, &realm), attr);
+        instance_getter!(class, "content", js_fn_ptr!(get_content, &realm), attr);
+        instance_getter!(class, "children", js_fn_ptr!(children, &realm), attr);
+        instance_getter!(class, "childElementCount", js_fn_ptr!(child_element_count, &realm), attr);
+        instance_getter!(class, "firstElementChild", js_fn_ptr!(first_element_child, &realm), attr);
+        instance_getter!(class, "lastElementChild", js_fn_ptr!(last_element_child, &realm), attr);
+        instance_getter!(class, "nextElementSibling", js_fn_ptr!(next_element_sibling, &realm), attr);
+        instance_getter!(class, "previousElementSibling", js_fn_ptr!(previous_element_sibling, &realm), attr);
+        instance_getter!(class, "offsetWidth", js_fn_ptr!(offset_width, &realm), attr);
+        instance_getter!(class, "offsetHeight", js_fn_ptr!(offset_height, &realm), attr);
+        instance_getter!(class, "offsetLeft", js_fn_ptr!(offset_left, &realm), attr);
+        instance_getter!(class, "offsetTop", js_fn_ptr!(offset_top, &realm), attr);
+        instance_getter!(class, "clientWidth", js_fn_ptr!(client_width, &realm), attr);
+        instance_getter!(class, "clientHeight", js_fn_ptr!(client_height, &realm), attr);
+        instance_getter!(class, "scrollWidth", js_fn_ptr!(scroll_width, &realm), attr);
+        instance_getter!(class, "scrollHeight", js_fn_ptr!(scroll_height, &realm), attr);
+        instance_accessor!(
+            class,
+            "scrollTop",
+            js_fn_ptr!(get_scroll_top, &realm),
+            js_fn_ptr!(set_scroll_top, &realm),
+            attr
+        );
+        instance_accessor!(
+            class,
+            "scrollLeft",
+            js_fn_ptr!(get_scroll_left, &realm),
+            js_fn_ptr!(set_scroll_left, &realm),
+            attr
+        );
+        instance_method!(class, "scroll", 2, native_fn_ptr!(scroll_to_method));
+        instance_method!(class, "scrollTo", 2, native_fn_ptr!(scroll_to_method));
+        instance_method!(class, "scrollBy", 2, native_fn_ptr!(scroll_by_method));
+        instance_method!(class, "scrollIntoView", 0, native_fn_ptr!(scroll_into_view));
+
+        instance_method!(class, "getAttribute", 1, native_fn_ptr!(get_attribute));
+        instance_method!(class, "setAttribute", 2, native_fn_ptr!(set_attribute));
+        instance_method!(class, "removeAttribute", 1, native_fn_ptr!(remove_attribute));
+        instance_method!(class, "hasAttribute", 1, native_fn_ptr!(has_attribute));
+        instance_method!(class, "focus", 0, native_fn_ptr!(focus));
+        instance_method!(class, "blur", 0, native_fn_ptr!(blur));
+        instance_method!(class, "getBoundingClientRect", 0, native_fn_ptr!(get_bounding_client_rect));
+        instance_method!(class, "getClientRects", 0, native_fn_ptr!(get_client_rects));
+        // ParentNode mixin mutation helpers
+        instance_method!(class, "append", 1, native_fn_ptr!(append));
+        instance_method!(class, "prepend", 1, native_fn_ptr!(prepend));
+        instance_method!(class, "replaceChildren", 1, native_fn_ptr!(replace_children));
+
+        instance_method!(class, "querySelector", 1, native_fn_ptr!(query_selector));
+        instance_method!(class, "querySelectorAll", 1, native_fn_ptr!(query_selector_all));
+        instance_method!(class, "matches", 1, native_fn_ptr!(matches));
+        instance_method!(class, "webkitMatchesSelector", 1, native_fn_ptr!(matches));
+        instance_method!(class, "closest", 1, native_fn_ptr!(closest));
+        instance_method!(class, "getElementsByTagName", 1, native_fn_ptr!(get_elements_by_tag_name));
+        instance_method!(class, "getElementsByClassName", 1, native_fn_ptr!(get_elements_by_class_name));
+
+        Ok(())
+    }
+}
+
+/// Register the `Element` class and wire up the `Element -> Node` prototype chain.
+pub(crate) fn register(context: &mut Context) -> JsResult<()> {
+    context.register_global_class::<Element>()?;
+    crate::shared::link_prototype::<Element>(context)?;
+    Ok(())
+}
 
 /// Construct a `QualName` for an attribute (no namespace)
 pub(crate) fn attr_name(local: &str) -> QualName {
     QualName::new(None, markup5ever::ns!(), LocalName::from(local))
-}
-
-pub(crate) fn init_element_proto(proto: &JsObject, context: &mut Context) {
-    define_accessor(proto, "tagName", Some(tag_name), None, context);
-    define_accessor(proto, "localName", Some(local_name), None, context);
-    define_accessor(proto, "namespaceURI", Some(namespace_uri), None, context);
-    define_accessor(proto, "id", Some(get_id), Some(set_id), context);
-    define_accessor(
-        proto,
-        "className",
-        Some(get_class_name),
-        Some(set_class_name),
-        context,
-    );
-    define_accessor(proto, "value", Some(get_value), Some(set_value), context);
-    define_accessor(
-        proto,
-        "checked",
-        Some(get_checked),
-        Some(set_checked),
-        context,
-    );
-    define_accessor(
-        proto,
-        "disabled",
-        Some(get_disabled),
-        Some(set_disabled),
-        context,
-    );
-    define_accessor(proto, "hidden", Some(get_hidden), Some(set_hidden), context);
-    define_accessor(
-        proto,
-        "selectionStart",
-        Some(get_selection_start),
-        Some(set_selection_start),
-        context,
-    );
-    define_accessor(
-        proto,
-        "selectionEnd",
-        Some(get_selection_end),
-        Some(set_selection_end),
-        context,
-    );
-    define_method(proto, "setSelectionRange", 2, set_selection_range, context);
-    define_accessor(
-        proto,
-        "placeholder",
-        Some(get_placeholder),
-        Some(set_placeholder),
-        context,
-    );
-    define_accessor(proto, "type", Some(get_type), Some(set_type), context);
-    define_accessor(
-        proto,
-        "autofocus",
-        Some(get_autofocus),
-        Some(set_autofocus),
-        context,
-    );
-    define_accessor(proto, "style", Some(get_style), None, context);
-    define_accessor(
-        proto,
-        "innerHTML",
-        Some(get_inner_html),
-        Some(set_inner_html),
-        context,
-    );
-    define_accessor(proto, "outerHTML", Some(get_outer_html), None, context);
-    define_accessor(proto, "content", Some(get_content), None, context);
-    define_accessor(proto, "children", Some(children), None, context);
-    define_accessor(
-        proto,
-        "childElementCount",
-        Some(child_element_count),
-        None,
-        context,
-    );
-    define_accessor(
-        proto,
-        "firstElementChild",
-        Some(first_element_child),
-        None,
-        context,
-    );
-    define_accessor(
-        proto,
-        "lastElementChild",
-        Some(last_element_child),
-        None,
-        context,
-    );
-    define_accessor(
-        proto,
-        "nextElementSibling",
-        Some(next_element_sibling),
-        None,
-        context,
-    );
-    define_accessor(
-        proto,
-        "previousElementSibling",
-        Some(previous_element_sibling),
-        None,
-        context,
-    );
-    define_accessor(proto, "offsetWidth", Some(offset_width), None, context);
-    define_accessor(proto, "offsetHeight", Some(offset_height), None, context);
-    define_accessor(proto, "offsetLeft", Some(offset_left), None, context);
-    define_accessor(proto, "offsetTop", Some(offset_top), None, context);
-    define_accessor(proto, "clientWidth", Some(client_width), None, context);
-    define_accessor(proto, "clientHeight", Some(client_height), None, context);
-    define_accessor(proto, "scrollWidth", Some(scroll_width), None, context);
-    define_accessor(proto, "scrollHeight", Some(scroll_height), None, context);
-    define_accessor(
-        proto,
-        "scrollTop",
-        Some(get_scroll_top),
-        Some(set_scroll_top),
-        context,
-    );
-    define_accessor(
-        proto,
-        "scrollLeft",
-        Some(get_scroll_left),
-        Some(set_scroll_left),
-        context,
-    );
-    define_method(proto, "scroll", 2, scroll_to_method, context);
-    define_method(proto, "scrollTo", 2, scroll_to_method, context);
-    define_method(proto, "scrollBy", 2, scroll_by_method, context);
-    define_method(proto, "scrollIntoView", 0, scroll_into_view, context);
-
-    define_method(proto, "getAttribute", 1, get_attribute, context);
-    define_method(proto, "setAttribute", 2, set_attribute, context);
-    define_method(proto, "removeAttribute", 1, remove_attribute, context);
-    define_method(proto, "hasAttribute", 1, has_attribute, context);
-    define_method(proto, "focus", 0, focus, context);
-    define_method(proto, "blur", 0, blur, context);
-    define_method(
-        proto,
-        "getBoundingClientRect",
-        0,
-        get_bounding_client_rect,
-        context,
-    );
-    define_method(proto, "getClientRects", 0, get_client_rects, context);
-    // ParentNode mixin mutation helpers
-    define_method(proto, "append", 1, super::node::append, context);
-    define_method(proto, "prepend", 1, super::node::prepend, context);
-    define_method(
-        proto,
-        "replaceChildren",
-        1,
-        super::node::replace_children,
-        context,
-    );
-
-    define_method(proto, "querySelector", 1, query_selector, context);
-    define_method(proto, "querySelectorAll", 1, query_selector_all, context);
-    define_method(proto, "matches", 1, matches, context);
-    define_method(proto, "webkitMatchesSelector", 1, matches, context);
-    define_method(proto, "closest", 1, closest, context);
-    define_method(
-        proto,
-        "getElementsByTagName",
-        1,
-        get_elements_by_tag_name,
-        context,
-    );
-    define_method(
-        proto,
-        "getElementsByClassName",
-        1,
-        get_elements_by_class_name,
-        context,
-    );
 }
 
 // === Attribute helpers ===
@@ -219,7 +211,7 @@ fn clear_attr(ctx: &DomCtx, node_id: NodeId, name: &str) {
 
 fn attr_getter(name: &str, this: &JsValue, context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     Ok(js_str(&read_attr(&ctx, node_id, name).unwrap_or_default()))
 }
 
@@ -230,7 +222,7 @@ fn attr_setter(
     context: &mut Context,
 ) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     let value = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
     write_attr(&ctx, node_id, name, &value);
     Ok(JsValue::undefined())
@@ -240,7 +232,7 @@ fn attr_setter(
 
 fn tag_name(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     let doc = ctx.doc.borrow();
     let name = doc
         .get_node(node_id)
@@ -252,7 +244,7 @@ fn tag_name(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<Js
 
 fn local_name(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     let doc = ctx.doc.borrow();
     let name = doc
         .get_node(node_id)
@@ -264,7 +256,7 @@ fn local_name(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<
 
 fn namespace_uri(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     let doc = ctx.doc.borrow();
     let ns = doc
         .get_node(node_id)
@@ -292,7 +284,7 @@ pub(crate) fn element_child_ids(doc: &blitz_dom::BaseDocument, node_id: NodeId) 
 
 fn children(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     let child_ids = element_child_ids(&ctx.doc.borrow(), node_id);
     let wrappers: Vec<JsValue> = child_ids
         .into_iter()
@@ -307,7 +299,7 @@ pub(crate) fn child_element_count(
     context: &mut Context,
 ) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     let count = element_child_ids(&ctx.doc.borrow(), node_id).len();
     Ok(JsValue::from(count as f64))
 }
@@ -318,11 +310,11 @@ pub(crate) fn first_element_child(
     context: &mut Context,
 ) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     let child_id = element_child_ids(&ctx.doc.borrow(), node_id)
         .first()
         .copied();
-    Ok(super::node_or_null(&ctx, child_id, context))
+    Ok(node_or_null(&ctx, child_id, context))
 }
 
 pub(crate) fn last_element_child(
@@ -331,11 +323,11 @@ pub(crate) fn last_element_child(
     context: &mut Context,
 ) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     let child_id = element_child_ids(&ctx.doc.borrow(), node_id)
         .last()
         .copied();
-    Ok(super::node_or_null(&ctx, child_id, context))
+    Ok(node_or_null(&ctx, child_id, context))
 }
 
 /// Find the nearest element sibling in the direction given by `offset`
@@ -362,9 +354,9 @@ fn element_sibling(
 
 fn next_element_sibling(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     let sibling_id = element_sibling(&ctx.doc.borrow(), node_id, 1);
-    Ok(super::node_or_null(&ctx, sibling_id, context))
+    Ok(node_or_null(&ctx, sibling_id, context))
 }
 
 fn previous_element_sibling(
@@ -373,16 +365,16 @@ fn previous_element_sibling(
     context: &mut Context,
 ) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     let sibling_id = element_sibling(&ctx.doc.borrow(), node_id, -1);
-    Ok(super::node_or_null(&ctx, sibling_id, context))
+    Ok(node_or_null(&ctx, sibling_id, context))
 }
 
 // === Attributes ===
 
 fn get_attribute(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     let name = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?
         .to_ascii_lowercase();
     match read_attr(&ctx, node_id, &name) {
@@ -393,7 +385,7 @@ fn get_attribute(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsR
 
 fn set_attribute(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     let name = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?
         .to_ascii_lowercase();
     let value = to_rust_string(args.get(1).unwrap_or(&JsValue::undefined()), context)?;
@@ -403,7 +395,7 @@ fn set_attribute(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsR
 
 fn remove_attribute(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     let name = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?
         .to_ascii_lowercase();
     clear_attr(&ctx, node_id, &name);
@@ -412,7 +404,7 @@ fn remove_attribute(this: &JsValue, args: &[JsValue], context: &mut Context) -> 
 
 fn has_attribute(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     let name = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?
         .to_ascii_lowercase();
     Ok(JsValue::from(read_attr(&ctx, node_id, &name).is_some()))
@@ -454,14 +446,14 @@ fn set_type(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult
 
 fn get_autofocus(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     Ok(JsValue::from(
         read_attr(&ctx, node_id, "autofocus").is_some(),
     ))
 }
 fn set_autofocus(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     let value = args.first().map(JsValue::to_boolean).unwrap_or(false);
     if value {
         // blitz-dom's autofocus handling expects the value "true"
@@ -474,7 +466,7 @@ fn set_autofocus(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsR
 
 fn get_value(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     let value = {
         let doc = ctx.doc.borrow();
         doc.get_node(node_id)
@@ -499,7 +491,7 @@ fn set_value(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResul
 
 fn get_checked(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     let checked = {
         let doc = ctx.doc.borrow();
         doc.get_node(node_id)
@@ -516,7 +508,7 @@ fn get_checked(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult
 
 fn set_checked(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     let checked = args.first().map(JsValue::to_boolean).unwrap_or(false);
     // blitz-dom's checked handling parses the value as a boolean
     write_attr(
@@ -530,7 +522,7 @@ fn set_checked(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsRes
 
 fn get_disabled(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     Ok(JsValue::from(
         read_attr(&ctx, node_id, "disabled").is_some(),
     ))
@@ -538,7 +530,7 @@ fn get_disabled(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResul
 
 fn set_disabled(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     let disabled = args.first().map(JsValue::to_boolean).unwrap_or(false);
     if disabled {
         write_attr(&ctx, node_id, "disabled", "");
@@ -550,13 +542,13 @@ fn set_disabled(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsRe
 
 fn get_hidden(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     Ok(JsValue::from(read_attr(&ctx, node_id, "hidden").is_some()))
 }
 
 fn set_hidden(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     let hidden = args.first().map(JsValue::to_boolean).unwrap_or(false);
     if hidden {
         write_attr(&ctx, node_id, "hidden", "");
@@ -621,7 +613,7 @@ fn set_selection_utf16_range(
 
 fn get_selection_start(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     let mut doc = ctx.doc.borrow_mut();
     // The text editor is created during layout construction
     doc.resolve(0.0);
@@ -633,7 +625,7 @@ fn get_selection_start(this: &JsValue, _: &[JsValue], context: &mut Context) -> 
 
 fn get_selection_end(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     let mut doc = ctx.doc.borrow_mut();
     // The text editor is created during layout construction
     doc.resolve(0.0);
@@ -649,7 +641,7 @@ fn set_selection_start(
     context: &mut Context,
 ) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     let start = args
         .first()
         .unwrap_or(&JsValue::undefined())
@@ -665,7 +657,7 @@ fn set_selection_start(
 
 fn set_selection_end(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     let end = args
         .first()
         .unwrap_or(&JsValue::undefined())
@@ -685,7 +677,7 @@ fn set_selection_range(
     context: &mut Context,
 ) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     let start = args
         .first()
         .unwrap_or(&JsValue::undefined())
@@ -705,18 +697,16 @@ fn set_selection_range(
 // === Style ===
 
 fn get_style(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
-    let proto = ctx.state.borrow().protos().style.clone();
-    let obj = JsObject::from_proto_and_data(Some(proto), super::NodeRef { node_id });
-    Ok(super::wrap_style_object(obj, context))
+    let node_id = this_node_id(this, context)?;
+    let obj = from_chain!((CSSStyleDeclaration, context) StyleLayer { node_id })?;
+    Ok(wrap_style_object(obj, context))
 }
 
 // === innerHTML / outerHTML ===
 
 fn get_inner_html(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     let doc = ctx.doc.borrow();
     let mut html = String::new();
     if let Some(node) = doc.get_node(node_id) {
@@ -731,7 +721,7 @@ fn get_inner_html(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsRes
 
 fn set_inner_html(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     let html = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
 
     let mut doc = ctx.doc.borrow_mut();
@@ -749,7 +739,7 @@ fn set_inner_html(this: &JsValue, args: &[JsValue], context: &mut Context) -> Js
 /// Returns `undefined` for non-template elements.
 fn get_content(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
 
     let is_template = ctx
         .doc
@@ -768,7 +758,7 @@ fn get_content(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult
 
 fn get_outer_html(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     let doc = ctx.doc.borrow();
     let html = doc
         .get_node(node_id)
@@ -781,14 +771,14 @@ fn get_outer_html(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsRes
 
 fn focus(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     ctx.doc.borrow_mut().set_focus_to(node_id);
     Ok(JsValue::undefined())
 }
 
 fn blur(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let _ = this_node_id(this)?;
+    let _ = this_node_id(this, context)?;
     ctx.doc.borrow_mut().clear_focus();
     Ok(JsValue::undefined())
 }
@@ -804,7 +794,7 @@ fn layout_value(
     f: impl FnOnce(&blitz_dom::Node) -> f32,
 ) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     let mut doc = ctx.doc.borrow_mut();
     doc.resolve(0.0);
     let value = doc.get_node(node_id).map(f).unwrap_or(0.0);
@@ -957,14 +947,14 @@ pub(crate) fn parse_scroll_to_args(
 
 fn get_scroll_top(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     let doc = ctx.doc.borrow();
     Ok(JsValue::from(current_scroll_offset(&doc, node_id).y))
 }
 
 fn get_scroll_left(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     let doc = ctx.doc.borrow();
     Ok(JsValue::from(current_scroll_offset(&doc, node_id).x))
 }
@@ -972,7 +962,7 @@ fn get_scroll_left(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsRe
 fn set_scroll_top(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let value = scroll_coord(args.first().unwrap_or(&JsValue::undefined()), context)?;
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     let mut doc = ctx.doc.borrow_mut();
     doc.resolve(0.0);
     let current = current_scroll_offset(&doc, node_id);
@@ -983,7 +973,7 @@ fn set_scroll_top(this: &JsValue, args: &[JsValue], context: &mut Context) -> Js
 fn set_scroll_left(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let value = scroll_coord(args.first().unwrap_or(&JsValue::undefined()), context)?;
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     let mut doc = ctx.doc.borrow_mut();
     doc.resolve(0.0);
     let current = current_scroll_offset(&doc, node_id);
@@ -994,7 +984,7 @@ fn set_scroll_left(this: &JsValue, args: &[JsValue], context: &mut Context) -> J
 fn scroll_to_method(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let parsed = parse_scroll_to_args(args, context)?;
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     let mut doc = ctx.doc.borrow_mut();
     doc.resolve(0.0);
     let current = current_scroll_offset(&doc, node_id);
@@ -1010,7 +1000,7 @@ fn scroll_to_method(this: &JsValue, args: &[JsValue], context: &mut Context) -> 
 fn scroll_by_method(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let parsed = parse_scroll_to_args(args, context)?;
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     let mut doc = ctx.doc.borrow_mut();
     doc.resolve(0.0);
     doc.scroll_by(
@@ -1075,7 +1065,7 @@ fn scroll_into_view(this: &JsValue, args: &[JsValue], context: &mut Context) -> 
     };
 
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     let mut doc = ctx.doc.borrow_mut();
     doc.resolve(0.0);
     doc.scroll_into_view(node_id, behavior, block, inline);
@@ -1108,7 +1098,7 @@ fn get_bounding_client_rect(
     context: &mut Context,
 ) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     ctx.doc.borrow_mut().resolve(0.0);
     let rect = ctx.doc.borrow().get_client_bounding_rect(node_id);
     let (x, y, width, height) = match rect {
@@ -1120,7 +1110,7 @@ fn get_bounding_client_rect(
 
 fn get_client_rects(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     ctx.doc.borrow_mut().resolve(0.0);
 
     // One rect per box fragment: a single border-box rect for nodes with their
@@ -1156,7 +1146,7 @@ fn invalid_selector_error(context: &mut Context, selector: &str) -> boa_engine::
 
 fn query_selector(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     let selector = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
 
     let result = ctx.doc.borrow().query_selector_in(node_id, &selector);
@@ -1164,7 +1154,7 @@ fn query_selector(this: &JsValue, args: &[JsValue], context: &mut Context) -> Js
         Ok(result) => result,
         Err(_) => return Err(invalid_selector_error(context, &selector)),
     };
-    Ok(super::node_or_null(&ctx, result, context))
+    Ok(node_or_null(&ctx, result, context))
 }
 
 fn query_selector_all(
@@ -1173,7 +1163,7 @@ fn query_selector_all(
     context: &mut Context,
 ) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     let selector = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
 
     let matches = ctx.doc.borrow().query_selector_all_in(node_id, &selector);
@@ -1190,7 +1180,7 @@ fn query_selector_all(
 
 fn matches(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     let selector = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
 
     match ctx.doc.borrow().matches_selector(node_id, &selector) {
@@ -1201,12 +1191,12 @@ fn matches(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<
 
 fn closest(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     let selector = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
 
     let result = ctx.doc.borrow().closest(node_id, &selector);
     match result {
-        Ok(result) => Ok(super::node_or_null(&ctx, result, context)),
+        Ok(result) => Ok(node_or_null(&ctx, result, context)),
         Err(_) => Err(invalid_selector_error(context, &selector)),
     }
 }
@@ -1217,7 +1207,7 @@ fn get_elements_by_tag_name(
     context: &mut Context,
 ) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     let tag = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?
         .to_ascii_lowercase();
     let match_all = tag == "*";
@@ -1239,7 +1229,7 @@ fn get_elements_by_class_name(
     context: &mut Context,
 ) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_node_id(this, context)?;
     let class_arg = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
     let class_names: Vec<&str> = class_arg.split_whitespace().collect();
 

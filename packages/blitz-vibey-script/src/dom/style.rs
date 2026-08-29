@@ -1,39 +1,118 @@
-//! A minimal `CSSStyleDeclaration` binding (`element.style`).
+//! `CSSStyleDeclaration` bindings (`element.style` and `getComputedStyle`).
 
 use blitz_dom::NodeId;
-use boa_engine::object::JsObject;
-use boa_engine::value::JsValue;
-use boa_engine::{Context, JsResult};
+use boa_engine::class::ClassBuilder;
+use boa_engine::property::Attribute;
+use boa_engine::{Context, Finalize, JsData, JsResult, JsValue, Trace};
 
+use crate::shared::{
+    Constructed, ExtendLayer, Extended, RootLayer, Super, instance_accessor, instance_getter,
+    instance_method, js_fn_ptr, native_error, native_fn_ptr, with_own,
+};
+use crate::state::DomCtx;
+
+use super::{dom_ctx, js_str, to_rust_string};
 use super::element::attr_name;
-use super::{define_accessor, define_method, dom_ctx, js_str, this_node_id, to_rust_string};
 
-pub(crate) fn init_style_proto(proto: &JsObject, context: &mut Context) {
-    define_accessor(
-        proto,
-        "cssText",
-        Some(get_css_text),
-        Some(set_css_text),
-        context,
-    );
-    define_method(proto, "setProperty", 2, set_property, context);
-    define_method(proto, "removeProperty", 1, remove_property, context);
-    define_method(proto, "getPropertyValue", 1, get_property_value, context);
+/// `CSSStyleDeclaration` own block: the styled node.
+#[derive(Debug, Default, Clone, Trace, Finalize, JsData)]
+pub(crate) struct StyleLayer {
+    #[unsafe_ignore_trace]
+    pub node_id: NodeId,
 }
 
-/// The prototype for the read-only `CSSStyleDeclaration`s returned by
-/// `getComputedStyle()`. Property reads return *resolved* values.
-pub(crate) fn init_computed_style_proto(proto: &JsObject, context: &mut Context) {
-    define_accessor(proto, "cssText", Some(get_empty_string), None, context);
-    define_method(proto, "setProperty", 2, noop, context);
-    define_method(proto, "removeProperty", 1, noop, context);
-    define_method(
-        proto,
-        "getPropertyValue",
-        1,
-        get_resolved_property_value,
-        context,
-    );
+/// `ComputedStyle` own block: the inspected node.
+#[derive(Debug, Default, Clone, Trace, Finalize, JsData)]
+pub(crate) struct ComputedStyleLayer {
+    #[unsafe_ignore_trace]
+    pub node_id: NodeId,
+}
+
+pub(crate) type CSSStyleDeclaration = Extended<StyleLayer>;
+pub(crate) type ComputedStyle = Extended<ComputedStyleLayer>;
+
+impl ExtendLayer for StyleLayer {
+    type Parent = RootLayer;
+    const CLASS_NAME: &'static str = "CSSStyleDeclaration";
+
+    fn build(
+        _args: &[JsValue],
+        _ctx: &mut Context,
+        _sup: Super<'_, Self::Parent>,
+    ) -> JsResult<Constructed<Self>> {
+        Err(native_error!(typ, "Illegal constructor"))
+    }
+
+    fn define_members(class: &mut ClassBuilder<'_>) -> JsResult<()> {
+        let realm = class.context().realm().clone();
+        let attr = Attribute::CONFIGURABLE | Attribute::NON_ENUMERABLE;
+
+        instance_accessor!(
+            class,
+            "cssText",
+            js_fn_ptr!(get_css_text, &realm),
+            js_fn_ptr!(set_css_text, &realm),
+            attr
+        );
+        instance_method!(class, "setProperty", 2, native_fn_ptr!(set_property));
+        instance_method!(class, "removeProperty", 1, native_fn_ptr!(remove_property));
+        instance_method!(class, "getPropertyValue", 1, native_fn_ptr!(get_property_value));
+
+        Ok(())
+    }
+}
+
+impl ExtendLayer for ComputedStyleLayer {
+    type Parent = RootLayer;
+    const CLASS_NAME: &'static str = "ComputedStyle";
+
+    fn build(
+        _args: &[JsValue],
+        _ctx: &mut Context,
+        _sup: Super<'_, Self::Parent>,
+    ) -> JsResult<Constructed<Self>> {
+        Err(native_error!(typ, "Illegal constructor"))
+    }
+
+    fn define_members(class: &mut ClassBuilder<'_>) -> JsResult<()> {
+        let realm = class.context().realm().clone();
+        let attr = Attribute::CONFIGURABLE | Attribute::NON_ENUMERABLE;
+
+        // Read-only `CSSStyleDeclaration`s: property reads return *resolved*
+        // values, and mutation methods are no-ops.
+        instance_getter!(class, "cssText", js_fn_ptr!(get_empty_string, &realm), attr);
+        instance_method!(class, "setProperty", 2, native_fn_ptr!(noop));
+        instance_method!(class, "removeProperty", 1, native_fn_ptr!(noop));
+        instance_method!(
+            class,
+            "getPropertyValue",
+            1,
+            native_fn_ptr!(get_resolved_property_value)
+        );
+
+        Ok(())
+    }
+}
+
+/// Register the style classes (root classes: no prototype links).
+pub(crate) fn register(context: &mut Context) -> JsResult<()> {
+    context.register_global_class::<CSSStyleDeclaration>()?;
+    context.register_global_class::<ComputedStyle>()?;
+    Ok(())
+}
+
+fn this_style_node_id(this: &JsValue, context: &mut Context) -> JsResult<NodeId> {
+    let obj = this
+        .as_object()
+        .ok_or_else(|| native_error!(typ, "`this` is not a style object"))?;
+    with_own::<StyleLayer, _>(&obj, context, |style| style.node_id)
+}
+
+fn this_computed_style_node_id(this: &JsValue, context: &mut Context) -> JsResult<NodeId> {
+    let obj = this
+        .as_object()
+        .ok_or_else(|| native_error!(typ, "`this` is not a style object"))?;
+    with_own::<ComputedStyleLayer, _>(&obj, context, |style| style.node_id)
 }
 
 fn get_empty_string(_: &JsValue, _: &[JsValue], _: &mut Context) -> JsResult<JsValue> {
@@ -50,7 +129,7 @@ fn get_resolved_property_value(
     context: &mut Context,
 ) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_computed_style_node_id(this, context)?;
     let name = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?
         .trim()
         .to_ascii_lowercase();
@@ -64,7 +143,7 @@ fn get_resolved_property_value(
 }
 
 /// Read the node's `style` attribute (empty string if unset)
-fn read_style_attr(ctx: &crate::state::DomCtx, node_id: NodeId) -> String {
+fn read_style_attr(ctx: &DomCtx, node_id: NodeId) -> String {
     ctx.doc
         .borrow()
         .get_node(node_id)
@@ -73,7 +152,7 @@ fn read_style_attr(ctx: &crate::state::DomCtx, node_id: NodeId) -> String {
         .to_string()
 }
 
-fn write_style_attr(ctx: &crate::state::DomCtx, node_id: NodeId, style_attr: &str) {
+fn write_style_attr(ctx: &DomCtx, node_id: NodeId, style_attr: &str) {
     let mut doc = ctx.doc.borrow_mut();
     doc.mutate()
         .set_attribute(node_id, attr_name("style"), style_attr);
@@ -81,7 +160,7 @@ fn write_style_attr(ctx: &crate::state::DomCtx, node_id: NodeId, style_attr: &st
 
 fn get_css_text(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_style_node_id(this, context)?;
     let style_attr = read_style_attr(&ctx, node_id);
     let css = ctx.doc.borrow().style_attr_serialize(&style_attr);
     Ok(js_str(&css))
@@ -89,7 +168,7 @@ fn get_css_text(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResul
 
 fn set_css_text(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_style_node_id(this, context)?;
     let css = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
     // Parse and re-serialize so that the stored attribute is canonical and
     // invalid declarations are dropped
@@ -100,7 +179,7 @@ fn set_css_text(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsRe
 
 fn set_property(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_style_node_id(this, context)?;
     let name = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
     let value = to_rust_string(args.get(1).unwrap_or(&JsValue::undefined()), context)?;
     let priority = to_rust_string(args.get(2).unwrap_or(&JsValue::undefined()), context)?;
@@ -120,7 +199,7 @@ fn set_property(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsRe
 
 fn remove_property(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_style_node_id(this, context)?;
     let name = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
 
     let style_attr = read_style_attr(&ctx, node_id);
@@ -141,7 +220,7 @@ fn get_property_value(
     context: &mut Context,
 ) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
+    let node_id = this_style_node_id(this, context)?;
     let name = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
 
     let style_attr = read_style_attr(&ctx, node_id);

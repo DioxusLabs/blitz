@@ -11,17 +11,6 @@ use boa_engine::{Finalize, JsData, Trace};
 
 use crate::timers::TimerQueue;
 
-/// Prototype objects for the DOM wrapper classes
-pub(crate) struct DomProtos {
-    pub node: JsObject,
-    pub element: JsObject,
-    pub character_data: JsObject,
-    pub document: JsObject,
-    pub event: JsObject,
-    pub style: JsObject,
-    pub computed_style: JsObject,
-}
-
 /// The document's `readyState`
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) enum ReadyState {
@@ -59,8 +48,6 @@ pub(crate) type ListenerMap = HashMap<String, Vec<Listener>>;
 /// heap act as roots (they keep their referents alive).
 #[derive(Default)]
 pub(crate) struct RuntimeState {
-    /// Prototypes for DOM wrapper objects. Set once during runtime initialisation.
-    pub protos: Option<DomProtos>,
     /// Cache of JS wrapper objects, keyed by node id.
     ///
     /// DOM wrappers must be cached so that a given DOM node is always represented
@@ -103,12 +90,6 @@ impl RuntimeState {
                 .push("(further errors suppressed)".to_string()),
             Ordering::Greater => {}
         }
-    }
-
-    pub fn protos(&self) -> &DomProtos {
-        self.protos
-            .as_ref()
-            .expect("DOM prototypes not initialised")
     }
 }
 

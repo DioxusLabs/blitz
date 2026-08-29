@@ -21,10 +21,12 @@ use boa_runtime::console::{ConsoleState, Logger};
 use url::Url;
 use web_time::{Duration, Instant};
 
-use crate::dom::event::{EventRef, create_event, create_event_for_dom_event};
-use crate::dom::{
-    NodeRef, dom_ctx, node_id_of_value, node_wrapper, to_rust_string, wrap_style_object,
+use crate::dom::event::{
+    create_event, create_event_for_dom_event, event_flag, set_current_target,
 };
+use crate::dom::style::{ComputedStyle, ComputedStyleLayer};
+use crate::dom::{dom_ctx, node_id_of_value, node_wrapper, to_rust_string, wrap_style_object};
+use crate::shared::from_chain;
 use crate::fetch::ScriptFetcher;
 use crate::state::{DomCtx, Listener, ReadyState};
 
@@ -192,8 +194,9 @@ const BOOTSTRAP_JS: &str = r#"
         });
     };
 
-    // DOM interface objects (`Node`, `Element`, ...) wired up to the native
-    // wrapper prototypes so that constants and `instanceof` checks work.
+    // DOM interface objects. `Node`, `Document`, `Element`, `CharacterData`,
+    // `Event` and `CSSStyleDeclaration` are native classes registered on the
+    // context; the aliases below cover legacy names.
     const makeInterface = (name, proto) => {
         const iface = function () {
             throw new TypeError("Illegal constructor");
@@ -208,17 +211,17 @@ const BOOTSTRAP_JS: &str = r#"
         return iface;
     };
 
+    globalThis.HTMLDocument = globalThis.Document;
+
     const documentProto = Object.getPrototypeOf(document);
     const nodeProto = Object.getPrototypeOf(documentProto);
-    globalThis.Node = makeInterface("Node", nodeProto);
-    globalThis.Document = makeInterface("Document", documentProto);
-    globalThis.HTMLDocument = globalThis.Document;
 
     // Stub constructors for interfaces referenced by `instanceof` probes
     // (e.g. React probes `x instanceof HTMLInputElement`); without them such
-    // probes throw "right-hand side of 'instanceof' is not an object". All
-    // blitz-vibey-script elements share a single prototype, so tag-specific
-    // interfaces cannot be truthfully modelled: these always answer false.
+    // probes throw "right-hand side of 'instanceof' is not an object". Native
+    // classes are skipped by the guard. Tag-specific element interfaces cannot
+    // be truthfully modelled (all elements share the `Element` prototype):
+    // these always answer false.
     for (const name of [
         "EventTarget", "CharacterData", "Text", "Comment", "DocumentFragment",
         "HTMLInputElement", "HTMLTextAreaElement", "HTMLSelectElement",
@@ -233,7 +236,6 @@ const BOOTSTRAP_JS: &str = r#"
     }
     if (document.documentElement) {
         const elementProto = Object.getPrototypeOf(document.documentElement);
-        globalThis.Element = makeInterface("Element", elementProto);
         globalThis.HTMLElement = globalThis.Element;
 
         // `classList` (DOMTokenList), backed by the `class` attribute
@@ -525,7 +527,7 @@ impl ScriptRuntime {
         )
         .expect("failed to register boa_runtime extensions");
 
-        crate::dom::init_protos(&ctx, &mut context);
+        crate::dom::register_dom_classes(&mut context).expect("failed to register DOM classes");
 
         // `document`
         let root_id = ctx.doc.borrow().root_node().id;
@@ -905,12 +907,6 @@ impl ScriptRuntime {
 
         let target: JsValue = node_wrapper(&ctx, chain[0], context).into();
         let event_obj = make_event(&ctx, &target, context);
-        let event_ref = |event_obj: &JsObject, f: &dyn Fn(&EventRef) -> bool| -> bool {
-            event_obj
-                .downcast_ref::<EventRef>()
-                .map(|event| f(&event))
-                .unwrap_or(false)
-        };
 
         let mut any_called = false;
 
@@ -949,7 +945,8 @@ impl ScriptRuntime {
             }
 
             let current_target: JsValue = node_wrapper(&ctx, node_id, context).into();
-            crate::dom::define_value(&event_obj, "currentTarget", current_target.clone(), context);
+            set_current_target(&event_obj, current_target.clone(), context)
+                .expect("failed to update currentTarget");
 
             for callback in callbacks {
                 any_called = true;
@@ -958,18 +955,18 @@ impl ScriptRuntime {
                 {
                     report_js_error(&ctx, "event listener", &error);
                 }
-                if event_ref(&event_obj, &|event| event.stopped_immediate.get()) {
+                if event_flag(&event_obj, context, |event| event.stopped_immediate.get()) {
                     break 'chain;
                 }
             }
 
-            if !bubbles || event_ref(&event_obj, &|event| event.stopped.get()) {
+            if !bubbles || event_flag(&event_obj, context, |event| event.stopped.get()) {
                 break;
             }
         }
 
         // Window-level listeners
-        if bubbles && !event_ref(&event_obj, &|event| event.stopped.get()) {
+        if bubbles && !event_flag(&event_obj, context, |event| event.stopped.get()) {
             let listeners: Vec<Listener> = {
                 let mut state = ctx.state.borrow_mut();
                 match state.window_listeners.get_mut(name) {
@@ -983,7 +980,8 @@ impl ScriptRuntime {
             };
             if !listeners.is_empty() {
                 let global: JsValue = context.global_object().into();
-                crate::dom::define_value(&event_obj, "currentTarget", global.clone(), context);
+                set_current_target(&event_obj, global.clone(), context)
+                    .expect("failed to update currentTarget");
                 for listener in listeners {
                     any_called = true;
                     if let Err(error) =
@@ -993,20 +991,21 @@ impl ScriptRuntime {
                     {
                         report_js_error(&ctx, "event listener", &error);
                     }
-                    if event_ref(&event_obj, &|event| event.stopped_immediate.get()) {
+                    if event_flag(&event_obj, context, |event| event.stopped_immediate.get()) {
                         break;
                     }
                 }
             }
         }
 
-        crate::dom::define_value(&event_obj, "currentTarget", JsValue::null(), context);
+        set_current_target(&event_obj, JsValue::null(), context)
+            .expect("failed to update currentTarget");
 
         // Feed `preventDefault` / `stopPropagation` back into Blitz
-        if event_ref(&event_obj, &|event| event.prevented.get()) {
+        if event_flag(&event_obj, context, |event| event.prevented.get()) {
             event_state.prevent_default();
         }
-        if event_ref(&event_obj, &|event| event.stopped.get()) {
+        if event_flag(&event_obj, context, |event| event.stopped.get()) {
             event_state.stop_propagation();
         }
         if any_called {
@@ -1376,14 +1375,13 @@ fn css_supports(_: &JsValue, args: &[JsValue], context: &mut Context) -> JsResul
 }
 
 fn get_computed_style(_: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    let ctx = dom_ctx(context)?;
-    let Some(node_id) = args.first().and_then(node_id_of_value) else {
+    let Some(node_id) = args.first().and_then(|value| node_id_of_value(value, context)) else {
         return Err(boa_engine::JsNativeError::typ()
             .with_message("getComputedStyle: argument is not an Element")
             .into());
     };
-    let proto = ctx.state.borrow().protos().computed_style.clone();
-    let obj = JsObject::from_proto_and_data(Some(proto), NodeRef { node_id });
+    let obj = from_chain!((ComputedStyle, context) ComputedStyleLayer { node_id })
+        .expect("failed to build ComputedStyle");
     Ok(wrap_style_object(obj, context))
 }
 
