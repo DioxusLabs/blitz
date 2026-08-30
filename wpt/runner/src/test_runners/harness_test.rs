@@ -13,7 +13,7 @@ use super::{SubtestResult, parse_and_resolve_document, pump_timers, run_document
 use crate::{SubtestCounts, TestStatus, ThreadCtx};
 
 /// How long to wait for the harness to complete (async tests, timers)
-const HARNESS_TIMEOUT: Duration = Duration::from_secs(5);
+const HARNESS_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Custom `testharnessreport.js` served in place of WPT's stock one (which is
 /// designed to be replaced by test runners). It disables the DOM output section
@@ -26,8 +26,14 @@ const HARNESS_TIMEOUT: Duration = Duration::from_secs(5);
 /// TIMEOUT harness status quickly instead of hitting the runner's
 /// [`HARNESS_TIMEOUT`] backstop. It also proportionally shortens
 /// `step_timeout()` delays, speeding up legitimately-passing async tests.
+///
+/// The internal timeout is real (wall-clock) time and races against the
+/// test's own script execution, so it must comfortably exceed the runtime of
+/// the heaviest completing tests (the interpolation suites run for ~1s of
+/// script time each, longer on loaded CI machines) or their results flap
+/// between TIMEOUT and their true status from run to run.
 const TESTHARNESSREPORT_JS: &str = r#"
-setup({ output: false, debug: false, timeout_multiplier: 0.1 });
+setup({ output: false, debug: false, timeout_multiplier: 0.5 });
 add_completion_callback(function (tests, harness_status) {
     __blitz_send_message(JSON.stringify({
         type: "wpt_results",
