@@ -81,21 +81,27 @@ pub(crate) fn node_wrapper(ctx: &DomCtx, node_id: NodeId, context: &mut Context)
     let wrapper = match kind {
         WrapperKind::Document => from_chain!(
             (document::Document, context),
-            crate::events::EventTargetLayer,
+            crate::events::EventTargetLayer {
+                listeners: Default::default(),
+            },
             NodeLayer { node_id },
             document::DocumentLayer,
         )
         .expect("failed to build Document wrapper"),
         WrapperKind::Element => from_chain!(
             (element::Element, context),
-            crate::events::EventTargetLayer,
+            crate::events::EventTargetLayer {
+                listeners: Default::default(),
+            },
             NodeLayer { node_id },
             element::ElementLayer,
         )
         .expect("failed to build Element wrapper"),
         WrapperKind::Text => from_chain!(
             (text::Text, context),
-            crate::events::EventTargetLayer,
+            crate::events::EventTargetLayer {
+                listeners: Default::default(),
+            },
             NodeLayer { node_id },
             character_data::CharacterDataLayer,
             text::TextLayer,
@@ -103,7 +109,9 @@ pub(crate) fn node_wrapper(ctx: &DomCtx, node_id: NodeId, context: &mut Context)
         .expect("failed to build Text wrapper"),
         WrapperKind::Comment => from_chain!(
             (comment::Comment, context),
-            crate::events::EventTargetLayer,
+            crate::events::EventTargetLayer {
+                listeners: Default::default(),
+            },
             NodeLayer { node_id },
             character_data::CharacterDataLayer,
             comment::CommentLayer,
@@ -111,7 +119,9 @@ pub(crate) fn node_wrapper(ctx: &DomCtx, node_id: NodeId, context: &mut Context)
         .expect("failed to build Comment wrapper"),
         WrapperKind::Node => from_chain!(
             (node::Node, context),
-            crate::events::EventTargetLayer,
+            crate::events::EventTargetLayer {
+                listeners: Default::default(),
+            },
             NodeLayer { node_id },
         )
         .expect("failed to build Node wrapper"),

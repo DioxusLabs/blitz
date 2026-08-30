@@ -11,6 +11,21 @@ fn doc_from_html(html: &str) -> ScriptDocument {
     doc
 }
 
+fn dispatch_click(doc: &mut ScriptDocument, selector: &str) {
+    let click_event = {
+        let inner = doc.inner();
+        let node_id = inner.query_selector(selector).unwrap().unwrap();
+        DomEvent::new(
+            node_id,
+            inner
+                .get_node(node_id)
+                .unwrap()
+                .synthetic_click_event(Modifiers::empty()),
+        )
+    };
+    doc.dispatch_dom_event(click_event);
+}
+
 fn text_of_selector(doc: &ScriptDocument, selector: &str) -> String {
     let inner = doc.inner();
     let node_id = inner
@@ -575,4 +590,145 @@ fn interface_constructor_globals() {
         text_of_selector(&doc, "#out"),
         "function,function,function,function|false|true"
     );
+}
+
+// ── Three-phase dispatch over the DOM chain ───────────────────────────
+
+// Outside dispatch, `eventPhase` is 0; inside, the phase constants match the
+// DOM walk (capture 1 / target 2 / bubble 3) and capture-only listeners fire
+// only during the capture phase.
+#[test]
+fn event_phase_values_across_dispatch_phases() {
+    let mut doc = doc_from_html(
+        r#"
+        <html><body>
+            <div id="outer"><div id="inner"><button id="leaf">hi</button></div></div>
+            <div id="out"></div>
+            <script>
+                globalThis.__phaseLog = [];
+                const log = globalThis.__phaseLog;
+                const leaf = document.getElementById("leaf");
+                const idle = new Event("idle");
+                log.push(`idle:${idle.eventPhase}`);
+                document.getElementById("outer").addEventListener("click", (e) => {
+                    log.push(`outer:${e.eventPhase}`);
+                }, true);
+                document.getElementById("inner").addEventListener("click", (e) => {
+                    log.push(`inner:${e.eventPhase}`);
+                });
+                leaf.addEventListener("click", (e) => {
+                    log.push(`leaf:${e.eventPhase}:${e.target === leaf}`);
+                });
+            </script>
+        </body></html>
+        "#,
+    );
+    dispatch_click(&mut doc, "#leaf");
+    doc.eval(r#"document.getElementById("out").textContent = globalThis.__phaseLog.join("|");"#);
+    assert_eq!(
+        text_of_selector(&doc, "#out"),
+        "idle:0|outer:1|leaf:2:true|inner:3"
+    );
+}
+
+// `stopPropagation()` called during the capture phase keeps the event from
+// reaching the target and bubble phases; later capture listeners on the same
+// receiver still run.
+#[test]
+fn capture_phase_propagation_stops() {
+    let mut doc = doc_from_html(
+        r#"
+        <html><body>
+            <div id="outer"><div id="inner"><button id="leaf">hi</button></div></div>
+            <div id="out"></div>
+            <script>
+                globalThis.__log = [];
+                const log = globalThis.__log;
+                const record = (name) => () => log.push(name);
+                document.getElementById("outer").addEventListener("click", (e) => {
+                    record("outer-cap")();
+                    e.stopPropagation();
+                }, true);
+                document.getElementById("outer").addEventListener("click", record("outer-cap-2"), true);
+                document.getElementById("inner").addEventListener("click", record("inner-bub"));
+                document.getElementById("leaf").addEventListener("click", record("leaf"));
+            </script>
+        </body></html>
+        "#,
+    );
+    dispatch_click(&mut doc, "#leaf");
+    doc.eval(r#"document.getElementById("out").textContent = globalThis.__log.join("|");"#);
+    assert_eq!(text_of_selector(&doc, "#out"), "outer-cap|outer-cap-2");
+}
+
+// `stopImmediatePropagation()` silences the remaining listeners of the same
+// receiver within the current phase.
+#[test]
+fn stop_immediate_propagation_within_receiver() {
+    let mut doc = doc_from_html(
+        r#"
+        <html><body>
+            <button id="leaf">hi</button>
+            <div id="out"></div>
+            <script>
+                globalThis.__log = [];
+                const log = globalThis.__log;
+                const leaf = document.getElementById("leaf");
+                leaf.addEventListener("click", () => log.push("third"), true);
+                leaf.addEventListener("click", (e) => {
+                    log.push("first");
+                    e.stopImmediatePropagation();
+                });
+                leaf.addEventListener("click", () => log.push("second"));
+            </script>
+        </body></html>
+        "#,
+    );
+    dispatch_click(&mut doc, "#leaf");
+    doc.eval(r#"document.getElementById("out").textContent = globalThis.__log.join("|");"#);
+    assert_eq!(text_of_selector(&doc, "#out"), "third|first");
+}
+
+// After dispatch finishes, the transient fields are cleared: an event
+// reference kept by a listener reads `currentTarget: null` and
+// `eventPhase: 0` afterwards.
+#[test]
+fn transient_dispatch_state_reset_after_dispatch() {
+    let mut doc = doc_from_html(
+        r#"
+        <html><body><button id="leaf">hi</button><div id="out"></div>
+        <script>
+            globalThis.saved = null;
+            document.getElementById("leaf").addEventListener("click", (e) => {
+                globalThis.saved = e;
+            });
+        </script></body></html>
+        "#,
+    );
+    dispatch_click(&mut doc, "#leaf");
+    doc.eval(
+        r#"document.getElementById("out").textContent =
+            `${globalThis.saved.currentTarget === null}|${globalThis.saved.eventPhase}`;"#,
+    );
+    assert_eq!(text_of_selector(&doc, "#out"), "true|0");
+}
+
+// `event.target` is wrapped lazily, through the same wrapper cache — the
+// wrapper seen by a listener is the very object `getElementById` returns.
+#[test]
+fn lazy_target_shares_wrapper_identity() {
+    let mut doc = doc_from_html(
+        r#"
+        <html><body><button id="leaf">hi</button><div id="out"></div>
+        <script>
+            globalThis.same = null;
+            document.getElementById("leaf").addEventListener("click", (e) => {
+                globalThis.same = e.target === document.getElementById("leaf");
+            });
+        </script></body></html>
+        "#,
+    );
+    dispatch_click(&mut doc, "#leaf");
+    doc.eval(r#"document.getElementById("out").textContent = String(globalThis.same);"#);
+    assert_eq!(text_of_selector(&doc, "#out"), "true");
 }

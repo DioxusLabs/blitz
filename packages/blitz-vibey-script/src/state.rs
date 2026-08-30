@@ -30,11 +30,10 @@ impl ReadyState {
     }
 }
 
-/// An event listener registered via `addEventListener`
+/// An event listener registered on `window`
 #[derive(Clone)]
 pub(crate) struct Listener {
     pub callback: JsObject,
-    pub capture: bool,
     pub once: bool,
 }
 
@@ -54,8 +53,6 @@ pub(crate) struct RuntimeState {
     /// by the *same* JS object: scripts rely on object identity (`===`) and on
     /// expando properties persisting across accesses.
     pub node_wrappers: HashMap<NodeId, JsObject>,
-    /// Event listeners registered on nodes, keyed by node id then event type.
-    pub node_listeners: HashMap<NodeId, ListenerMap>,
     /// Event listeners registered on `window`.
     pub window_listeners: ListenerMap,
     /// Pending timers (`setTimeout`/`setInterval`/`requestAnimationFrame`)

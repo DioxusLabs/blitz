@@ -1,17 +1,23 @@
 //! JS `Event` class dispatched to script event listeners.
 //!
-//! Core configuration (`type`, `target`, `bubbles`, `cancelable`, ...) and the
-//! dispatch flags set by `preventDefault` / `stopPropagation` live in the
-//! `EventLayer` own block. Type-specific data lives in the derived layers
+//! Configuration fields (`type`, `bubbles`, `cancelable`, `timeStamp`) are
+//! immutable and live flat in the `EventLayer` own block. Mutable dispatch
+//! state (`target`, `currentTarget`, `eventPhase`, the flags set by
+//! `preventDefault` / `stopPropagation`) lives in the `GcRefCell<EventState>`
+//! block, written by the event methods and by the dispatch driver.
+//!
+//! `target` / `currentTarget` are held as [`DispatchTarget`] values: the
+//! dispatch side never materializes node wrappers up front — a lazy callable
+//! wraps the node only when the JS side first reads the getter (cached after
+//! first resolution). Type-specific data lives in the derived layers
 //! (`UIEvent`, `MouseEvent`, `KeyboardEvent`, ...); the creation helpers below
 //! pick the right chain per `DomEventData` variant.
-
-use std::cell::Cell;
 
 use blitz_traits::events::DomEventData;
 use boa_engine::class::ClassBuilder;
 use boa_engine::gc::GcRefCell;
 use boa_engine::object::JsObject;
+use boa_engine::object::builtins::JsFunction;
 use boa_engine::property::Attribute;
 use boa_engine::{Context, Finalize, JsData, JsResult, JsValue, Trace};
 
@@ -26,48 +32,109 @@ use crate::events::{
 };
 use crate::shared::{
     Constructed, ExtendLayer, Extended, RootLayer, Super, from_chain, instance_getter,
-    instance_method, js_fn_ptr, native_fn_ptr, with_own, with_own_mut,
+    instance_method, js_fn_ptr, native_fn_ptr, with_own,
 };
-use crate::state::DomCtx;
 
-/// `Event` own block: configuration + dispatch flags.
+// ── Dispatch target ──────────────────────────────────────────────────
+
+/// A reference to the event's `target` / `currentTarget`.
+///
+/// The target is not always a node (it can be the window), and node wrappers
+/// are built lazily — so the reference is held either as a direct value, or
+/// as a `JsFunction` that produces it on first read (cached afterwards).
+#[derive(Default, Clone, Debug, Trace, Finalize, JsData)]
+pub(crate) enum DispatchTarget {
+    /// No target assigned.
+    #[default]
+    None,
+    /// A directly held value.
+    Direct(JsValue),
+    /// Lazily produces the target; the result is cached after first resolve.
+    Callable {
+        callable: JsFunction,
+        cached: Option<JsValue>,
+    },
+}
+
+impl DispatchTarget {
+    pub(crate) fn from_value(value: JsValue) -> Self {
+        Self::Direct(value)
+    }
+
+    pub(crate) fn from_callable(callable: JsFunction) -> Self {
+        Self::Callable {
+            callable,
+            cached: None,
+        }
+    }
+
+    /// Produce the target (`null` when unset). Resolving a `Callable` caches
+    /// its result, so every read of `event.target` yields the same wrapper.
+    pub(crate) fn resolve(&mut self, context: &mut Context) -> JsResult<JsValue> {
+        match self {
+            Self::None => Ok(JsValue::null()),
+            Self::Direct(value) => Ok(value.clone()),
+            Self::Callable { callable, cached } => {
+                if let Some(value) = cached {
+                    return Ok(value.clone());
+                }
+                let value = callable.call(&JsValue::null(), &[], context)?;
+                *cached = Some(value.clone());
+                Ok(value)
+            }
+        }
+    }
+}
+
+// ── Mutable dispatch state ───────────────────────────────────────────
+
+/// Per-event dispatch state, written by the event methods and by the
+/// dispatch driver.
+#[derive(Default, Clone, Debug, Trace, Finalize, JsData)]
+pub(crate) struct EventState {
+    pub target: DispatchTarget,
+    pub current_target: DispatchTarget,
+    pub phase: u8,
+    pub canceled: bool,
+    pub stop_propagation: bool,
+    pub stop_immediate: bool,
+    pub dispatching: bool,
+}
+
+/// Dispatch phases, as reported through `event.eventPhase`.
+pub(crate) const NONE_PHASE: u8 = 0;
+pub(crate) const CAPTURING_PHASE: u8 = 1;
+pub(crate) const AT_TARGET_PHASE: u8 = 2;
+pub(crate) const BUBBLING_PHASE: u8 = 3;
+
+// ── Layer ────────────────────────────────────────────────────────────
+
+/// `Event` own block: configuration fields + the dispatch state block.
 #[derive(Debug, Clone, Trace, Finalize, JsData)]
 pub(crate) struct EventLayer {
     #[unsafe_ignore_trace]
     pub type_: String,
-    pub target: JsValue,
-    /// Updated by the dispatcher as the event propagates.
-    pub current_target: GcRefCell<JsValue>,
     #[unsafe_ignore_trace]
     pub bubbles: bool,
     #[unsafe_ignore_trace]
     pub cancelable: bool,
     #[unsafe_ignore_trace]
-    pub prevented: Cell<bool>,
-    #[unsafe_ignore_trace]
-    pub stopped: Cell<bool>,
-    #[unsafe_ignore_trace]
-    pub stopped_immediate: Cell<bool>,
-    #[unsafe_ignore_trace]
     pub time_stamp: f64,
+    pub state: GcRefCell<EventState>,
 }
 
 impl EventLayer {
-    pub fn new(type_: String, bubbles: bool, cancelable: bool, target: JsValue) -> Self {
+    pub(crate) fn new(type_: String, bubbles: bool, cancelable: bool) -> Self {
         let time_stamp = web_time::SystemTime::now()
             .duration_since(web_time::UNIX_EPOCH)
             .map(|duration| duration.as_secs_f64() * 1000.0)
             .unwrap_or(0.0);
         Self {
             type_,
-            target,
-            current_target: GcRefCell::new(JsValue::null()),
             bubbles,
             cancelable,
-            prevented: Cell::new(false),
-            stopped: Cell::new(false),
-            stopped_immediate: Cell::new(false),
             time_stamp,
+            state: GcRefCell::new(EventState::default()),
         }
     }
 }
@@ -96,7 +163,7 @@ impl ExtendLayer for EventLayer {
         let done = sup.call(&[], ctx)?;
         Ok(Constructed::new(
             done,
-            EventLayer::new(type_, bubbles, cancelable, JsValue::null()),
+            EventLayer::new(type_, bubbles, cancelable),
         ))
     }
 
@@ -188,66 +255,56 @@ pub(crate) fn with_event<R>(event: &JsObject, f: impl FnOnce(&EventLayer) -> R) 
     with_own::<EventLayer, R>(event, f)
 }
 
-/// Write to the event's own block in place.
+/// Read from the event's dispatch state block.
 #[inline]
-pub(crate) fn with_event_mut<R>(
+pub(crate) fn with_state<R>(event: &JsObject, f: impl FnOnce(&EventState) -> R) -> JsResult<R> {
+    with_event(event, |e| f(&e.state.borrow()))
+}
+
+/// Write to the event's dispatch state block.
+#[inline]
+pub(crate) fn with_state_mut<R>(
     event: &JsObject,
-    f: impl FnOnce(&mut EventLayer) -> R,
+    f: impl FnOnce(&mut EventState) -> R,
 ) -> JsResult<R> {
-    with_own_mut::<EventLayer, R>(event, f)
+    with_event(event, |e| f(&mut e.state.borrow_mut()))
 }
 
-/// Read a dispatch flag from the event (false if `event` is not an `Event`).
-pub(crate) fn event_flag(event: &JsObject, f: impl FnOnce(&EventLayer) -> bool) -> bool {
-    with_event(event, f).unwrap_or(false)
-}
-
-/// Update `currentTarget` on the event's own block (used by the dispatcher).
-pub(crate) fn set_current_target(event: &JsObject, target: JsValue) -> JsResult<()> {
-    with_event_mut(event, |e| *e.current_target.borrow_mut() = target)
+/// Read a dispatch flag from the event's state (false if `event` is not an
+/// `Event`).
+pub(crate) fn event_flag(event: &JsObject, f: impl FnOnce(&EventState) -> bool) -> bool {
+    with_state(event, f).unwrap_or(false)
 }
 
 // ── Accessor implementations ─────────────────────────────────────────
 
-fn event_layer(this: &JsValue) -> JsResult<()> {
-    let obj = this
-        .as_object()
-        .ok_or_else(|| crate::shared::native_error!(typ, "not an Event object"))?;
-    with_own::<EventLayer, _>(&obj, |_| ()).map(|_| ())
+fn this_event(this: &JsValue) -> JsResult<JsObject> {
+    this.as_object()
+        .ok_or_else(|| crate::shared::native_error!(typ, "not an Event object"))
 }
 
 fn type_getter(this: &JsValue, _: &[JsValue], _context: &mut Context) -> JsResult<JsValue> {
-    event_layer(this)?;
-    let obj = this.as_object().unwrap();
-    with_event(&obj, |e| js_str(&e.type_))
+    with_event(&this_event(this)?, |e| js_str(&e.type_))
 }
 
-fn target_getter(this: &JsValue, _: &[JsValue], _context: &mut Context) -> JsResult<JsValue> {
-    event_layer(this)?;
-    let obj = this.as_object().unwrap();
-    with_event(&obj, |e| e.target.clone())
+fn target_getter(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    with_state_mut(&this_event(this)?, |st| st.target.resolve(context))?
 }
 
 fn current_target_getter(
     this: &JsValue,
     _: &[JsValue],
-    _context: &mut Context,
+    context: &mut Context,
 ) -> JsResult<JsValue> {
-    event_layer(this)?;
-    let obj = this.as_object().unwrap();
-    with_event(&obj, |e| e.current_target.borrow().clone())
+    with_state_mut(&this_event(this)?, |st| st.current_target.resolve(context))?
 }
 
 fn bubbles_getter(this: &JsValue, _: &[JsValue], _context: &mut Context) -> JsResult<JsValue> {
-    event_layer(this)?;
-    let obj = this.as_object().unwrap();
-    with_event(&obj, |e| JsValue::from(e.bubbles))
+    with_event(&this_event(this)?, |e| JsValue::from(e.bubbles))
 }
 
 fn cancelable_getter(this: &JsValue, _: &[JsValue], _context: &mut Context) -> JsResult<JsValue> {
-    event_layer(this)?;
-    let obj = this.as_object().unwrap();
-    with_event(&obj, |e| JsValue::from(e.cancelable))
+    with_event(&this_event(this)?, |e| JsValue::from(e.cancelable))
 }
 
 fn composed_getter(_: &JsValue, _: &[JsValue], _: &mut Context) -> JsResult<JsValue> {
@@ -258,39 +315,29 @@ fn is_trusted_getter(_: &JsValue, _: &[JsValue], _: &mut Context) -> JsResult<Js
     Ok(JsValue::from(true))
 }
 
-fn event_phase_getter(_: &JsValue, _: &[JsValue], _: &mut Context) -> JsResult<JsValue> {
-    Ok(JsValue::from(2))
+fn event_phase_getter(this: &JsValue, _: &[JsValue], _context: &mut Context) -> JsResult<JsValue> {
+    with_state(&this_event(this)?, |st| JsValue::from(st.phase))
 }
 
 fn time_stamp_getter(this: &JsValue, _: &[JsValue], _context: &mut Context) -> JsResult<JsValue> {
-    event_layer(this)?;
-    let obj = this.as_object().unwrap();
-    with_event(&obj, |e| JsValue::from(e.time_stamp))
+    with_event(&this_event(this)?, |e| JsValue::from(e.time_stamp))
 }
 
 fn default_prevented(this: &JsValue, _: &[JsValue], _context: &mut Context) -> JsResult<JsValue> {
-    event_layer(this)?;
-    let obj = this.as_object().unwrap();
-    Ok(JsValue::from(event_flag(&obj, |e| e.prevented.get())))
+    with_state(&this_event(this)?, |st| JsValue::from(st.canceled))
 }
 
 fn prevent_default(this: &JsValue, _: &[JsValue], _context: &mut Context) -> JsResult<JsValue> {
-    let obj = this
-        .as_object()
-        .ok_or_else(|| crate::shared::native_error!(typ, "not an Event object"))?;
-    with_event_mut(&obj, |e| {
-        if e.cancelable {
-            e.prevented.set(true);
-        }
-    })?;
+    let obj = this_event(this)?;
+    let cancelable = with_event(&obj, |e| e.cancelable)?;
+    if cancelable {
+        with_state_mut(&obj, |st| st.canceled = true)?;
+    }
     Ok(JsValue::undefined())
 }
 
 fn stop_propagation(this: &JsValue, _: &[JsValue], _context: &mut Context) -> JsResult<JsValue> {
-    let obj = this
-        .as_object()
-        .ok_or_else(|| crate::shared::native_error!(typ, "not an Event object"))?;
-    with_event_mut(&obj, |e| e.stopped.set(true))?;
+    with_state_mut(&this_event(this)?, |st| st.stop_propagation = true)?;
     Ok(JsValue::undefined())
 }
 
@@ -299,12 +346,9 @@ fn stop_immediate_propagation(
     _: &[JsValue],
     _context: &mut Context,
 ) -> JsResult<JsValue> {
-    let obj = this
-        .as_object()
-        .ok_or_else(|| crate::shared::native_error!(typ, "not an Event object"))?;
-    with_event_mut(&obj, |e| {
-        e.stopped.set(true);
-        e.stopped_immediate.set(true);
+    with_state_mut(&this_event(this)?, |st| {
+        st.stop_propagation = true;
+        st.stop_immediate = true;
     })?;
     Ok(JsValue::undefined())
 }
@@ -334,16 +378,14 @@ fn get_modifier_state(
 
 /// Create a bare JS `Event` object with the standard `Event` fields
 pub(crate) fn create_event(
-    _ctx: &DomCtx,
     event_type: &str,
     bubbles: bool,
     cancelable: bool,
-    target: &JsValue,
     context: &mut Context,
 ) -> JsObject {
     from_chain!(
         (Event, context),
-        EventLayer::new(event_type.to_string(), bubbles, cancelable, target.clone()),
+        EventLayer::new(event_type.to_string(), bubbles, cancelable),
     )
     .expect("failed to create JS event")
 }
@@ -352,14 +394,12 @@ pub(crate) fn create_event(
 /// that matches the event's interface (`WheelEvent`, `KeyboardEvent`, ...) and
 /// populating the derived layers' own blocks
 pub(crate) fn create_event_for_dom_event(
-    ctx: &DomCtx,
     data: &DomEventData,
     bubbles: bool,
     cancelable: bool,
-    target: &JsValue,
     context: &mut Context,
 ) -> JsObject {
-    let layer = EventLayer::new(data.name().to_string(), bubbles, cancelable, target.clone());
+    let layer = EventLayer::new(data.name().to_string(), bubbles, cancelable);
 
     match data {
         // `MouseEvent`/`PointerEvent`-family events carry the same coordinate
@@ -429,6 +469,6 @@ pub(crate) fn create_event_for_dom_event(
         )
         .expect("failed to create JS InputEvent"),
 
-        _ => create_event(ctx, data.name(), bubbles, cancelable, target, context),
+        _ => create_event(data.name(), bubbles, cancelable, context),
     }
 }

@@ -13,7 +13,8 @@ pub(crate) mod ui_event;
 pub(crate) mod wheel_event;
 
 pub(crate) use base::event::{
-    create_event, create_event_for_dom_event, event_flag, set_current_target,
+    AT_TARGET_PHASE, BUBBLING_PHASE, CAPTURING_PHASE, DispatchTarget, NONE_PHASE, create_event,
+    create_event_for_dom_event, event_flag, with_state, with_state_mut,
 };
 pub(crate) use base::event_target::EventTargetLayer;
 

@@ -23,9 +23,12 @@ use web_time::{Duration, Instant};
 
 use crate::dom::style::{ComputedStyle, ComputedStyleLayer};
 use crate::dom::{dom_ctx, node_id_of_value, node_wrapper, to_rust_string, wrap_style_object};
-use crate::events::{create_event, create_event_for_dom_event, event_flag, set_current_target};
+use crate::events::{
+    AT_TARGET_PHASE, BUBBLING_PHASE, CAPTURING_PHASE, DispatchTarget, EventTargetLayer, NONE_PHASE,
+    create_event, create_event_for_dom_event, event_flag, with_state, with_state_mut,
+};
 use crate::fetch::ScriptFetcher;
-use crate::shared::from_chain;
+use crate::shared::{from_chain, with_own};
 use crate::state::{DomCtx, Listener, ReadyState};
 
 /// JS bootstrap for APIs that are easiest to define in JS
@@ -398,7 +401,7 @@ const BOOTSTRAP_JS: &str = r#"
 
 /// Record an unhandled JavaScript error in the runtime state, for the embedder
 /// to collect via [`ScriptDocument::take_js_errors`](crate::ScriptDocument::take_js_errors)
-fn report_js_error(ctx: &DomCtx, what: &str, error: &boa_engine::JsError) {
+pub(crate) fn report_js_error(ctx: &DomCtx, what: &str, error: &boa_engine::JsError) {
     #[cfg(feature = "tracing")]
     tracing::error!("Uncaught JS error in {what}: {error}");
     ctx.state
@@ -813,15 +816,8 @@ impl ScriptRuntime {
             chain,
             &name,
             event.bubbles,
-            |ctx, target, context| {
-                create_event_for_dom_event(
-                    ctx,
-                    &event.data,
-                    event.bubbles,
-                    event.cancelable,
-                    target,
-                    context,
-                )
+            |context| {
+                create_event_for_dom_event(&event.data, event.bubbles, event.cancelable, context)
             },
             event_state,
         );
@@ -837,7 +833,7 @@ impl ScriptRuntime {
                 chain,
                 "change",
                 true,
-                |ctx, target, context| create_event(ctx, "change", true, false, target, context),
+                |context| create_event("change", true, false, context),
                 &mut change_state,
             );
             if change_state.redraw_is_requested() {
@@ -865,106 +861,123 @@ impl ScriptRuntime {
             })
     }
 
-    /// Dispatch an event named `name` along `chain`, using `make_event` to lazily
-    /// construct the JS event object. Returns `true` if any listener was invoked.
+    /// Dispatch an event named `name` along `chain` (target-first), using
+    /// `make_event` to lazily construct the JS event object. The walk runs
+    /// capture → target → bubble over the chain; `target` and `currentTarget`
+    /// are resolved lazily, so a node wrapper is only built when JS first
+    /// reads the getter (or when the receiver needs its own-block listeners).
+    /// Returns `true` if any listener was invoked.
     fn dispatch_event_inner(
         &mut self,
         chain: &[NodeId],
         name: &str,
         bubbles: bool,
-        make_event: impl FnOnce(&DomCtx, &JsValue, &mut Context) -> JsObject,
+        make_event: impl FnOnce(&mut Context) -> JsObject,
         event_state: &mut EventState,
     ) -> bool {
         let ctx = self.ctx.clone();
         let context = &mut self.context;
-        let on_name = JsString::from(format!("on{name}"));
 
-        // Fast path: bail if no listener of this type could possibly be registered
+        // Fast path: node listeners live in the node wrapper's `EventTarget`
+        // own block, so only nodes script has touched (cached wrappers) can
+        // have any; window listeners live in the runtime state.
         let may_have_listeners = {
             let state = ctx.state.borrow();
-            let registry_hit = chain.iter().any(|node_id| {
-                state
-                    .node_listeners
-                    .get(node_id)
-                    .and_then(|map| map.get(name))
-                    .is_some_and(|listeners| !listeners.is_empty())
-            }) || state
-                .window_listeners
-                .get(name)
-                .is_some_and(|listeners| !listeners.is_empty());
-            // `on<event>` handlers can only exist on nodes that script has touched
-            // (i.e. nodes with a cached wrapper)
             let wrapper_hit = chain
                 .iter()
                 .any(|node_id| state.node_wrappers.contains_key(node_id));
-            registry_hit || wrapper_hit
+            let window_hit = state
+                .window_listeners
+                .get(name)
+                .is_some_and(|listeners| !listeners.is_empty());
+            wrapper_hit || window_hit
         };
         if !may_have_listeners {
             return false;
         }
 
-        let target: JsValue = node_wrapper(&ctx, chain[0], context).into();
-        let event_obj = make_event(&ctx, &target, context);
+        let event_obj = make_event(context);
 
+        // Lazy target: wrap the target node only when JS first reads
+        // `event.target` (the wrapper call is a cache lookup for nodes script
+        // has touched).
+        match wrap_node_dispatch_target(chain[0], context) {
+            Ok(target) => with_state_mut(&event_obj, |st| {
+                st.dispatching = true;
+                st.target = target;
+            })
+            .expect("failed to set event target"),
+            Err(error) => report_js_error(&ctx, "event target", &error),
+        }
+
+        let mut propagation_stopped = false;
         let mut any_called = false;
 
-        'chain: for &node_id in chain {
-            // Gather listeners for this node: `addEventListener` listeners plus
-            // an `on<event>` property handler (if any)
-            let mut callbacks: Vec<JsObject> = Vec::new();
-            {
-                let mut state = ctx.state.borrow_mut();
-                if let Some(listeners) = state
-                    .node_listeners
-                    .get_mut(&node_id)
-                    .and_then(|map| map.get_mut(name))
-                {
-                    callbacks.extend(listeners.iter().map(|l| l.callback.clone()));
-                    // `once` listeners are removed at dispatch time
-                    listeners.retain(|l| !l.once);
-                }
+        // Capture phase (root → target's parent): capture listeners only.
+        for &node_id in chain.iter().skip(1).rev() {
+            if propagation_stopped {
+                break;
             }
-            let wrapper = ctx.state.borrow().node_wrappers.get(&node_id).cloned();
-            if let Some(wrapper) = wrapper {
-                if let Ok(handler) = wrapper.get(on_name.clone(), context) {
-                    if let Some(handler) = handler.as_object() {
-                        if handler.is_callable() {
-                            callbacks.push(handler);
-                        }
-                    }
-                }
-            }
+            let (stopped, called) = dispatch_to_node(
+                &ctx,
+                &event_obj,
+                node_id,
+                name,
+                &DispatchStep {
+                    phase: CAPTURING_PHASE,
+                    invoke_capture: true,
+                    invoke_non_capture: false,
+                },
+                context,
+            );
+            propagation_stopped |= stopped;
+            any_called |= called;
+        }
 
-            if callbacks.is_empty() {
-                if !bubbles {
+        // Target phase: both listener flavors plus the `on<event>` handler.
+        if !propagation_stopped {
+            let (stopped, called) = dispatch_to_node(
+                &ctx,
+                &event_obj,
+                chain[0],
+                name,
+                &DispatchStep {
+                    phase: AT_TARGET_PHASE,
+                    invoke_capture: true,
+                    invoke_non_capture: true,
+                },
+                context,
+            );
+            propagation_stopped |= stopped;
+            any_called |= called;
+        }
+
+        // Bubble phase (target's parent → root): non-capture listeners plus
+        // the `on<event>` handler.
+        if bubbles && !propagation_stopped {
+            for &node_id in chain.iter().skip(1) {
+                if propagation_stopped {
                     break;
                 }
-                continue;
-            }
-
-            let current_target: JsValue = node_wrapper(&ctx, node_id, context).into();
-            set_current_target(&event_obj, current_target.clone())
-                .expect("failed to update currentTarget");
-
-            for callback in callbacks {
-                any_called = true;
-                if let Err(error) =
-                    callback.call(&current_target, &[event_obj.clone().into()], context)
-                {
-                    report_js_error(&ctx, "event listener", &error);
-                }
-                if event_flag(&event_obj, |event| event.stopped_immediate.get()) {
-                    break 'chain;
-                }
-            }
-
-            if !bubbles || event_flag(&event_obj, |event| event.stopped.get()) {
-                break;
+                let (stopped, called) = dispatch_to_node(
+                    &ctx,
+                    &event_obj,
+                    node_id,
+                    name,
+                    &DispatchStep {
+                        phase: BUBBLING_PHASE,
+                        invoke_capture: false,
+                        invoke_non_capture: true,
+                    },
+                    context,
+                );
+                propagation_stopped |= stopped;
+                any_called |= called;
             }
         }
 
-        // Window-level listeners
-        if bubbles && !event_flag(&event_obj, |event| event.stopped.get()) {
+        // Window-level listeners (bubble only)
+        if bubbles && !event_flag(&event_obj, |st| st.stop_propagation) {
             let listeners: Vec<Listener> = {
                 let mut state = ctx.state.borrow_mut();
                 match state.window_listeners.get_mut(name) {
@@ -978,8 +991,11 @@ impl ScriptRuntime {
             };
             if !listeners.is_empty() {
                 let global: JsValue = context.global_object().into();
-                set_current_target(&event_obj, global.clone())
-                    .expect("failed to update currentTarget");
+                with_state_mut(&event_obj, |st| {
+                    st.phase = BUBBLING_PHASE;
+                    st.current_target = DispatchTarget::from_value(global.clone());
+                })
+                .expect("failed to update currentTarget");
                 for listener in listeners {
                     any_called = true;
                     if let Err(error) =
@@ -989,20 +1005,27 @@ impl ScriptRuntime {
                     {
                         report_js_error(&ctx, "event listener", &error);
                     }
-                    if event_flag(&event_obj, |event| event.stopped_immediate.get()) {
+                    if event_flag(&event_obj, |st| st.stop_immediate) {
                         break;
                     }
                 }
             }
         }
 
-        set_current_target(&event_obj, JsValue::null()).expect("failed to update currentTarget");
+        // Per the DOM spec, after dispatch ends the transient values are
+        // cleared so async callbacks read `currentTarget: null`.
+        with_state_mut(&event_obj, |st| {
+            st.current_target = DispatchTarget::None;
+            st.phase = NONE_PHASE;
+            st.dispatching = false;
+        })
+        .expect("failed to reset event state");
 
         // Feed `preventDefault` / `stopPropagation` back into Blitz
-        if event_flag(&event_obj, |event| event.prevented.get()) {
+        if event_flag(&event_obj, |st| st.canceled) {
             event_state.prevent_default();
         }
-        if event_flag(&event_obj, |event| event.stopped.get()) {
+        if event_flag(&event_obj, |st| st.stop_propagation) {
             event_state.stop_propagation();
         }
         if any_called {
@@ -1020,7 +1043,7 @@ impl ScriptRuntime {
             &[root_id],
             name,
             true,
-            |ctx, target, context| create_event(ctx, name, true, false, target, context),
+            |context| create_event(name, true, false, context),
             &mut event_state,
         );
         if ran {
@@ -1047,8 +1070,12 @@ impl ScriptRuntime {
         };
 
         let global: JsValue = context.global_object().into();
-        let event_obj = create_event(&ctx, name, false, false, &global, context);
-        crate::dom::define_value(&event_obj, "currentTarget", global.clone(), context);
+        let event_obj = create_event(name, false, false, context);
+        with_state_mut(&event_obj, |st| {
+            st.target = DispatchTarget::from_value(global.clone());
+            st.current_target = DispatchTarget::from_value(global.clone());
+        })
+        .expect("failed to set window event target");
 
         let mut any_called = false;
         for listener in listeners {
@@ -1080,6 +1107,96 @@ impl ScriptRuntime {
         }
         any_called
     }
+}
+
+/// Build a lazy dispatch target: a `JsFunction` that wraps the node the first
+/// time the event's `target` getter is read (cached afterwards).
+fn wrap_node_dispatch_target(node_id: NodeId, context: &mut Context) -> JsResult<DispatchTarget> {
+    let realm = context.realm().clone();
+    let node_id = node_id.as_u64();
+    let callable = NativeFunction::from_copy_closure_with_captures(
+        move |_this, _args, node_id: &u64, context: &mut Context| {
+            let ctx = context
+                .get_data::<DomCtx>()
+                .cloned()
+                .ok_or_else(|| JsNativeError::typ().with_message("DOM context missing"))?;
+            let wrapper = node_wrapper(&ctx, NodeId::from_u64(*node_id), context);
+            Ok(wrapper.into())
+        },
+        node_id,
+    )
+    .to_js_function(&realm);
+    Ok(DispatchTarget::from_callable(callable))
+}
+
+/// Per-phase dispatch plan for one receiver.
+struct DispatchStep {
+    phase: u8,
+    invoke_capture: bool,
+    invoke_non_capture: bool,
+}
+
+/// Dispatch `event_obj` to a single receiver node: set `currentTarget` and
+/// `eventPhase`, invoke the node wrapper's registered listeners per the plan
+/// and, outside the capture phase, the `on<event>` property handler. Returns
+/// `(propagation_stopped, any_listener_called)`.
+fn dispatch_to_node(
+    ctx: &DomCtx,
+    event_obj: &JsObject,
+    node_id: NodeId,
+    event_type: &str,
+    step: &DispatchStep,
+    context: &mut Context,
+) -> (bool, bool) {
+    let wrapper = node_wrapper(ctx, node_id, context);
+
+    with_state_mut(event_obj, |st| {
+        st.phase = step.phase;
+        st.current_target = DispatchTarget::from_value(wrapper.clone().into());
+    })
+    .expect("failed to update currentTarget");
+
+    let mut invoke = |capture: bool| {
+        with_own::<EventTargetLayer, _>(&wrapper, |target| {
+            target.invoke_listeners(event_obj, event_type, capture, ctx, context)
+        })
+        .unwrap_or((false, false))
+    };
+
+    let mut stopped = false;
+    let mut called = false;
+    if step.invoke_capture {
+        let (s, c) = invoke(true);
+        stopped |= s;
+        called |= c;
+    }
+    if step.invoke_non_capture {
+        let (s, c) = invoke(false);
+        stopped |= s;
+        called |= c;
+
+        // The `on<event>` property handler rides the non-capture flavor.
+        let on_name = JsString::from(format!("on{event_type}"));
+        if let Ok(handler) = wrapper.get(on_name, context) {
+            if let Some(handler) = handler.as_object().filter(|h| h.is_callable()) {
+                called = true;
+                let current_target = with_state(event_obj, |st| st.current_target.clone())
+                    .ok()
+                    .and_then(|mut target| target.resolve(context).ok())
+                    .unwrap_or_else(JsValue::undefined);
+                if let Err(error) =
+                    handler.call(&current_target, &[event_obj.clone().into()], context)
+                {
+                    report_js_error(ctx, "event listener", &error);
+                }
+                if event_flag(event_obj, |st| st.stop_immediate) {
+                    return (true, called);
+                }
+            }
+        }
+    }
+
+    (stopped, called)
 }
 
 fn register_global(context: &mut Context, name: &str, value: JsValue) {
@@ -1373,7 +1490,7 @@ fn css_supports(_: &JsValue, args: &[JsValue], context: &mut Context) -> JsResul
 
 fn get_computed_style(_: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let Some(node_id) = args.first().and_then(node_id_of_value) else {
-        return Err(boa_engine::JsNativeError::typ()
+        return Err(JsNativeError::typ()
             .with_message("getComputedStyle: argument is not an Element")
             .into());
     };
@@ -1429,7 +1546,6 @@ fn window_add_event_listener(
     {
         listeners.push(Listener {
             callback,
-            capture: false,
             once: false,
         });
     }
