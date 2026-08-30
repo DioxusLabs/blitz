@@ -8,11 +8,13 @@
 //! document up via the `DomCtx` stored as host-defined data on the Boa
 //! `Context`.
 
+pub(crate) mod character_data;
+pub(crate) mod comment;
 pub(crate) mod document;
 pub(crate) mod element;
-pub(crate) mod event;
 pub(crate) mod node;
 pub(crate) mod style;
+pub(crate) mod text;
 
 use blitz_dom::node::NodeData;
 use blitz_dom::{LocalName, Namespace, NodeId, QualName};
@@ -61,7 +63,8 @@ pub(crate) fn node_wrapper(ctx: &DomCtx, node_id: NodeId, context: &mut Context)
     enum WrapperKind {
         Document,
         Element,
-        CharacterData,
+        Text,
+        Comment,
         Node,
     }
     let kind = {
@@ -69,32 +72,46 @@ pub(crate) fn node_wrapper(ctx: &DomCtx, node_id: NodeId, context: &mut Context)
         match doc.get_node(node_id).map(|node| &node.data) {
             Some(NodeData::Document(_)) => WrapperKind::Document,
             Some(NodeData::Element(_)) | Some(NodeData::AnonymousBlock(_)) => WrapperKind::Element,
-            Some(NodeData::Text(_)) | Some(NodeData::Comment { .. }) => WrapperKind::CharacterData,
+            Some(NodeData::Text(_)) => WrapperKind::Text,
+            Some(NodeData::Comment { .. }) => WrapperKind::Comment,
             None => WrapperKind::Node,
         }
     };
 
     let wrapper = match kind {
         WrapperKind::Document => from_chain!(
-            (document::Document, context)
+            (document::Document, context),
+            crate::events::EventTargetLayer,
             NodeLayer { node_id },
             document::DocumentLayer,
         )
         .expect("failed to build Document wrapper"),
         WrapperKind::Element => from_chain!(
-            (element::Element, context)
+            (element::Element, context),
+            crate::events::EventTargetLayer,
             NodeLayer { node_id },
             element::ElementLayer,
         )
         .expect("failed to build Element wrapper"),
-        WrapperKind::CharacterData => from_chain!(
-            (node::CharacterData, context)
+        WrapperKind::Text => from_chain!(
+            (text::Text, context),
+            crate::events::EventTargetLayer,
             NodeLayer { node_id },
-            node::CharacterDataLayer,
+            character_data::CharacterDataLayer,
+            text::TextLayer,
         )
-        .expect("failed to build CharacterData wrapper"),
+        .expect("failed to build Text wrapper"),
+        WrapperKind::Comment => from_chain!(
+            (comment::Comment, context),
+            crate::events::EventTargetLayer,
+            NodeLayer { node_id },
+            character_data::CharacterDataLayer,
+            comment::CommentLayer,
+        )
+        .expect("failed to build Comment wrapper"),
         WrapperKind::Node => from_chain!(
-            (node::Node, context)
+            (node::Node, context),
+            crate::events::EventTargetLayer,
             NodeLayer { node_id },
         )
         .expect("failed to build Node wrapper"),
@@ -196,8 +213,12 @@ pub(crate) const ON_EVENT_TYPES: &[&str] = &[
 
 /// Register all DOM classes and wire up their prototype chains.
 pub(crate) fn register_dom_classes(context: &mut Context) -> JsResult<()> {
-    event::register(context)?;
+    // Event-target side first: `Node` links to `EventTarget`
+    crate::events::register(context)?;
     node::register(context)?;
+    character_data::register(context)?;
+    text::register(context)?;
+    comment::register(context)?;
     element::register(context)?;
     document::register(context)?;
     style::register(context)?;

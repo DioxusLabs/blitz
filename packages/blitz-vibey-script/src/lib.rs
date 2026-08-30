@@ -32,6 +32,7 @@
 mod document;
 mod dom;
 mod event_handler;
+mod events;
 mod fetch;
 mod runtime;
 pub mod shared;

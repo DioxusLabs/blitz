@@ -21,9 +21,9 @@ use boa_runtime::console::{ConsoleState, Logger};
 use url::Url;
 use web_time::{Duration, Instant};
 
-use crate::dom::event::{create_event, create_event_for_dom_event, event_flag, set_current_target};
 use crate::dom::style::{ComputedStyle, ComputedStyleLayer};
 use crate::dom::{dom_ctx, node_id_of_value, node_wrapper, to_rust_string, wrap_style_object};
+use crate::events::{create_event, create_event_for_dom_event, event_flag, set_current_target};
 use crate::fetch::ScriptFetcher;
 use crate::shared::from_chain;
 use crate::state::{DomCtx, Listener, ReadyState};
@@ -1377,7 +1377,7 @@ fn get_computed_style(_: &JsValue, args: &[JsValue], context: &mut Context) -> J
             .with_message("getComputedStyle: argument is not an Element")
             .into());
     };
-    let obj = from_chain!((ComputedStyle, context) ComputedStyleLayer { node_id })
+    let obj = from_chain!((ComputedStyle, context), ComputedStyleLayer { node_id })
         .expect("failed to build ComputedStyle");
     Ok(wrap_style_object(obj, context))
 }

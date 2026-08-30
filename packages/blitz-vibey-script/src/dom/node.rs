@@ -1,5 +1,4 @@
-//! The `Node` and `CharacterData` classes: tree structure, tree mutation,
-//! text content and event listener registration.
+//! The `Node` class: tree structure, tree mutation, text content.
 
 use blitz_dom::NodeId;
 use blitz_dom::node::NodeData;
@@ -9,8 +8,8 @@ use boa_engine::property::Attribute;
 use boa_engine::{Context, Finalize, JsData, JsResult, JsValue, Trace};
 
 use crate::shared::{
-    Constructed, ExtendLayer, Extended, Super, instance_accessor, instance_getter, instance_method,
-    js_fn_ptr, native_error, native_fn_ptr,
+    ExtendLayer, Extended, instance_accessor, instance_getter, instance_method, js_fn_ptr,
+    native_error, native_fn_ptr,
 };
 use crate::state::DomCtx;
 
@@ -18,7 +17,7 @@ use super::{
     dom_ctx, js_str, node_id_of_value, node_or_null, node_wrapper, this_node_id, to_rust_string,
 };
 
-// ── Layers ───────────────────────────────────────────────────────────
+// ── Layer ────────────────────────────────────────────────────────────
 
 /// `Node` own block: the wrapped blitz-dom node id.
 #[derive(Debug, Default, Clone, Trace, Finalize, JsData)]
@@ -27,25 +26,11 @@ pub(crate) struct NodeLayer {
     pub node_id: NodeId,
 }
 
-/// `CharacterData` own block. All data lives in the `Node` layer; this layer
-/// only contributes the `data` accessor to the prototype chain.
-#[derive(Debug, Default, Clone, Trace, Finalize, JsData)]
-pub(crate) struct CharacterDataLayer;
-
 pub(crate) type Node = Extended<NodeLayer>;
-pub(crate) type CharacterData = Extended<CharacterDataLayer>;
 
 impl ExtendLayer for NodeLayer {
-    type Parent = crate::shared::RootLayer;
+    type Parent = crate::events::EventTargetLayer;
     const CLASS_NAME: &'static str = "Node";
-
-    fn build(
-        _args: &[JsValue],
-        _ctx: &mut Context,
-        _sup: Super<'_, Self::Parent>,
-    ) -> JsResult<Constructed<Self>> {
-        Err(native_error!(typ, "Illegal constructor"))
-    }
 
     fn define_members(class: &mut ClassBuilder<'_>) -> JsResult<()> {
         let realm = class.context().realm().clone();
@@ -104,58 +89,15 @@ impl ExtendLayer for NodeLayer {
         instance_method!(class, "hasChildNodes", 0, native_fn_ptr!(has_child_nodes));
         instance_method!(class, "contains", 1, native_fn_ptr!(contains));
         instance_method!(class, "cloneNode", 1, native_fn_ptr!(clone_node));
-        instance_method!(
-            class,
-            "addEventListener",
-            2,
-            native_fn_ptr!(add_event_listener)
-        );
-        instance_method!(
-            class,
-            "removeEventListener",
-            2,
-            native_fn_ptr!(remove_event_listener)
-        );
 
         Ok(())
     }
 }
 
-impl ExtendLayer for CharacterDataLayer {
-    type Parent = NodeLayer;
-    const CLASS_NAME: &'static str = "CharacterData";
-
-    fn build(
-        _args: &[JsValue],
-        _ctx: &mut Context,
-        _sup: Super<'_, Self::Parent>,
-    ) -> JsResult<Constructed<Self>> {
-        Err(native_error!(typ, "Illegal constructor"))
-    }
-
-    fn define_members(class: &mut ClassBuilder<'_>) -> JsResult<()> {
-        let realm = class.context().realm().clone();
-        let attr = Attribute::CONFIGURABLE | Attribute::NON_ENUMERABLE;
-
-        instance_accessor!(
-            class,
-            "data",
-            js_fn_ptr!(node_value, &realm),
-            js_fn_ptr!(set_node_value, &realm),
-            attr
-        );
-
-        Ok(())
-    }
-}
-
-/// Register the `Node` and `CharacterData` classes and wire up the
-/// `CharacterData -> Node` prototype chain.
+/// Register the `Node` class and wire up the `Node -> EventTarget` prototype chain.
 pub(crate) fn register(context: &mut Context) -> JsResult<()> {
     context.register_global_class::<Node>()?;
-    context.register_global_class::<CharacterData>()?;
     crate::shared::link_prototype::<Node>(context)?;
-    crate::shared::link_prototype::<CharacterData>(context)?;
     Ok(())
 }
 
@@ -331,7 +273,11 @@ fn set_text_content(this: &JsValue, args: &[JsValue], context: &mut Context) -> 
     Ok(JsValue::undefined())
 }
 
-fn node_value(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+pub(crate) fn node_value(
+    this: &JsValue,
+    _: &[JsValue],
+    context: &mut Context,
+) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
     let node_id = this_node_id(this)?;
     let doc = ctx.doc.borrow();
@@ -342,7 +288,11 @@ fn node_value(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<
     }
 }
 
-fn set_node_value(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+pub(crate) fn set_node_value(
+    this: &JsValue,
+    args: &[JsValue],
+    context: &mut Context,
+) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
     let node_id = this_node_id(this)?;
     let text = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
@@ -639,96 +589,4 @@ fn clone_node(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResu
     };
 
     Ok(node_wrapper(&ctx, new_node_id, context).into())
-}
-
-// === Event listeners ===
-
-fn add_event_listener(
-    this: &JsValue,
-    args: &[JsValue],
-    context: &mut Context,
-) -> JsResult<JsValue> {
-    let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
-    let event_type = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
-    let Some(callback) = args.get(1).and_then(|value| value.as_object()) else {
-        return Ok(JsValue::undefined());
-    };
-    if !callback.is_callable() {
-        return Ok(JsValue::undefined());
-    }
-
-    // Parse options (bool `capture` or `{ capture, once }`)
-    let mut capture = false;
-    let mut once = false;
-    match args.get(2) {
-        Some(options) if options.is_object() => {
-            let options = options.as_object().unwrap();
-            capture = options
-                .get(boa_engine::js_string!("capture"), context)?
-                .to_boolean();
-            once = options
-                .get(boa_engine::js_string!("once"), context)?
-                .to_boolean();
-        }
-        Some(options) => capture = options.to_boolean(),
-        None => {}
-    }
-
-    let mut state = ctx.state.borrow_mut();
-    let listeners = state
-        .node_listeners
-        .entry(node_id)
-        .or_default()
-        .entry(event_type)
-        .or_default();
-
-    // Duplicate listeners (same callback + capture flag) are ignored
-    if !listeners.iter().any(|l| {
-        boa_engine::object::JsObject::equals(&l.callback, &callback) && l.capture == capture
-    }) {
-        listeners.push(crate::state::Listener {
-            callback,
-            capture,
-            once,
-        });
-    }
-
-    Ok(JsValue::undefined())
-}
-
-fn remove_event_listener(
-    this: &JsValue,
-    args: &[JsValue],
-    context: &mut Context,
-) -> JsResult<JsValue> {
-    let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
-    let event_type = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
-    let Some(callback) = args.get(1).and_then(|value| value.as_object()) else {
-        return Ok(JsValue::undefined());
-    };
-
-    let capture = match args.get(2) {
-        Some(options) if options.is_object() => options
-            .as_object()
-            .unwrap()
-            .get(boa_engine::js_string!("capture"), context)?
-            .to_boolean(),
-        Some(options) => options.to_boolean(),
-        None => false,
-    };
-
-    let mut state = ctx.state.borrow_mut();
-    if let Some(listeners) = state
-        .node_listeners
-        .get_mut(&node_id)
-        .and_then(|map| map.get_mut(&event_type))
-    {
-        listeners.retain(|l| {
-            !(boa_engine::object::JsObject::equals(&l.callback, &callback) && l.capture == capture)
-        });
-    }
-
-    Ok(JsValue::undefined())
 }

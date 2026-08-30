@@ -2,27 +2,33 @@
 //!
 //! Core configuration (`type`, `target`, `bubbles`, `cancelable`, ...) and the
 //! dispatch flags set by `preventDefault` / `stopPropagation` live in the
-//! `EventLayer` own block. Type-specific fields (pointer coordinates, key
-//! names, ...) are attached as plain properties on the instance at creation
-//! time (see `create_event_for_dom_event`).
+//! `EventLayer` own block. Type-specific data lives in the derived layers
+//! (`UIEvent`, `MouseEvent`, `KeyboardEvent`, ...); the creation helpers below
+//! pick the right chain per `DomEventData` variant.
 
 use std::cell::Cell;
 
-use blitz_traits::events::{BlitzKeyEvent, BlitzPointerEvent, BlitzWheelDelta, DomEventData};
+use blitz_traits::events::DomEventData;
 use boa_engine::class::ClassBuilder;
 use boa_engine::gc::GcRefCell;
 use boa_engine::object::JsObject;
 use boa_engine::property::Attribute;
 use boa_engine::{Context, Finalize, JsData, JsResult, JsValue, Trace};
-use keyboard_types::Modifiers;
 
+use crate::dom::{js_str, to_rust_string};
+use crate::events::{
+    input_event::{InputEvent, InputEventLayer},
+    keyboard_event::{KeyboardEvent, KeyboardEventLayer},
+    mouse_event::{MouseEvent, MouseEventLayer},
+    pointer_event::{PointerEvent, PointerEventLayer},
+    ui_event::UIEventLayer,
+    wheel_event::{WheelEvent, WheelEventLayer},
+};
 use crate::shared::{
     Constructed, ExtendLayer, Extended, RootLayer, Super, from_chain, instance_getter,
     instance_method, js_fn_ptr, native_fn_ptr, with_own, with_own_mut,
 };
 use crate::state::DomCtx;
-
-use super::{define_value, js_str, to_rust_string};
 
 /// `Event` own block: configuration + dispatch flags.
 #[derive(Debug, Clone, Trace, Finalize, JsData)]
@@ -273,7 +279,9 @@ fn prevent_default(this: &JsValue, _: &[JsValue], _context: &mut Context) -> JsR
         .as_object()
         .ok_or_else(|| crate::shared::native_error!(typ, "not an Event object"))?;
     with_event_mut(&obj, |e| {
-        e.prevented.set(true);
+        if e.cancelable {
+            e.prevented.set(true);
+        }
     })?;
     Ok(JsValue::undefined())
 }
@@ -324,7 +332,7 @@ fn get_modifier_state(
 
 // ── Construction ─────────────────────────────────────────────────────
 
-/// Create a JS event object with the standard `Event` fields
+/// Create a bare JS `Event` object with the standard `Event` fields
 pub(crate) fn create_event(
     _ctx: &DomCtx,
     event_type: &str,
@@ -334,117 +342,15 @@ pub(crate) fn create_event(
     context: &mut Context,
 ) -> JsObject {
     from_chain!(
-        (Event, context)
+        (Event, context),
         EventLayer::new(event_type.to_string(), bubbles, cancelable, target.clone()),
     )
     .expect("failed to create JS event")
 }
 
-fn add_modifiers(event: &JsObject, mods: Modifiers, context: &mut Context) {
-    define_value(
-        event,
-        "ctrlKey",
-        JsValue::from(mods.contains(Modifiers::CONTROL)),
-        context,
-    );
-    define_value(
-        event,
-        "shiftKey",
-        JsValue::from(mods.contains(Modifiers::SHIFT)),
-        context,
-    );
-    define_value(
-        event,
-        "altKey",
-        JsValue::from(mods.contains(Modifiers::ALT)),
-        context,
-    );
-    define_value(
-        event,
-        "metaKey",
-        JsValue::from(mods.contains(Modifiers::META)),
-        context,
-    );
-}
-
-fn add_pointer_fields(event: &JsObject, data: &BlitzPointerEvent, context: &mut Context) {
-    define_value(
-        event,
-        "clientX",
-        JsValue::from(data.client_x() as f64),
-        context,
-    );
-    define_value(
-        event,
-        "clientY",
-        JsValue::from(data.client_y() as f64),
-        context,
-    );
-    define_value(event, "x", JsValue::from(data.client_x() as f64), context);
-    define_value(event, "y", JsValue::from(data.client_y() as f64), context);
-    define_value(event, "pageX", JsValue::from(data.page_x() as f64), context);
-    define_value(event, "pageY", JsValue::from(data.page_y() as f64), context);
-    define_value(
-        event,
-        "screenX",
-        JsValue::from(data.screen_x() as f64),
-        context,
-    );
-    define_value(
-        event,
-        "screenY",
-        JsValue::from(data.screen_y() as f64),
-        context,
-    );
-    define_value(
-        event,
-        "offsetX",
-        JsValue::from(data.element_x() as f64),
-        context,
-    );
-    define_value(
-        event,
-        "offsetY",
-        JsValue::from(data.element_y() as f64),
-        context,
-    );
-    define_value(event, "button", JsValue::from(data.button as u8), context);
-    define_value(
-        event,
-        "buttons",
-        JsValue::from(data.buttons.bits()),
-        context,
-    );
-    define_value(event, "detail", JsValue::from(1), context);
-    add_modifiers(event, data.mods, context);
-}
-
-fn add_key_fields(event: &JsObject, data: &BlitzKeyEvent, context: &mut Context) {
-    define_value(event, "key", js_str(&data.key.to_string()), context);
-    define_value(event, "code", js_str(&data.code.to_string()), context);
-    define_value(
-        event,
-        "location",
-        JsValue::from(data.location as u32),
-        context,
-    );
-    define_value(
-        event,
-        "repeat",
-        JsValue::from(data.is_auto_repeating),
-        context,
-    );
-    define_value(
-        event,
-        "isComposing",
-        JsValue::from(data.is_composing),
-        context,
-    );
-    add_modifiers(event, data.modifiers, context);
-}
-
-/// Create a JS event object for a Blitz [`DomEventData`], populating
-/// type-specific fields (mouse coordinates, key names, etc)
+/// Create a JS event object for a Blitz [`DomEventData`], building the chain
+/// that matches the event's interface (`WheelEvent`, `KeyboardEvent`, ...) and
+/// populating the derived layers' own blocks
 pub(crate) fn create_event_for_dom_event(
     ctx: &DomCtx,
     data: &DomEventData,
@@ -453,9 +359,12 @@ pub(crate) fn create_event_for_dom_event(
     target: &JsValue,
     context: &mut Context,
 ) -> JsObject {
-    let event = create_event(ctx, data.name(), bubbles, cancelable, target, context);
+    let layer = EventLayer::new(data.name().to_string(), bubbles, cancelable, target.clone());
 
     match data {
+        // `MouseEvent`/`PointerEvent`-family events carry the same coordinate
+        // and modifier data; touches ride the PointerEvent interface here
+        // (there is no separate touch interface).
         DomEventData::PointerMove(pointer)
         | DomEventData::PointerDown(pointer)
         | DomEventData::PointerUp(pointer)
@@ -464,46 +373,62 @@ pub(crate) fn create_event_for_dom_event(
         | DomEventData::PointerLeave(pointer)
         | DomEventData::PointerOver(pointer)
         | DomEventData::PointerOut(pointer)
-        | DomEventData::MouseMove(pointer)
+        | DomEventData::TouchStart(pointer)
+        | DomEventData::TouchMove(pointer)
+        | DomEventData::TouchEnd(pointer)
+        | DomEventData::TouchCancel(pointer) => from_chain!(
+            (PointerEvent, context),
+            layer,
+            UIEventLayer { detail: 1 },
+            MouseEventLayer::from_pointer(pointer),
+            PointerEventLayer,
+        )
+        .expect("failed to create JS PointerEvent"),
+
+        DomEventData::MouseMove(pointer)
         | DomEventData::MouseDown(pointer)
         | DomEventData::MouseUp(pointer)
         | DomEventData::MouseEnter(pointer)
         | DomEventData::MouseLeave(pointer)
         | DomEventData::MouseOver(pointer)
         | DomEventData::MouseOut(pointer)
-        | DomEventData::TouchStart(pointer)
-        | DomEventData::TouchMove(pointer)
-        | DomEventData::TouchEnd(pointer)
-        | DomEventData::TouchCancel(pointer)
         | DomEventData::Click(pointer)
         | DomEventData::ContextMenu(pointer)
-        | DomEventData::DoubleClick(pointer) => {
-            add_pointer_fields(&event, pointer, context);
-        }
+        | DomEventData::DoubleClick(pointer) => from_chain!(
+            (MouseEvent, context),
+            layer,
+            UIEventLayer { detail: 1 },
+            MouseEventLayer::from_pointer(pointer),
+        )
+        .expect("failed to create JS MouseEvent"),
+
+        DomEventData::Wheel(wheel) => from_chain!(
+            (WheelEvent, context),
+            layer,
+            UIEventLayer { detail: 0 },
+            MouseEventLayer::from_wheel(wheel),
+            WheelEventLayer::from_blitz(wheel),
+        )
+        .expect("failed to create JS WheelEvent"),
 
         DomEventData::KeyPress(key) | DomEventData::KeyDown(key) | DomEventData::KeyUp(key) => {
-            add_key_fields(&event, key, context);
+            from_chain!(
+                (KeyboardEvent, context),
+                layer,
+                UIEventLayer { detail: 0 },
+                KeyboardEventLayer::from_blitz(key),
+            )
+            .expect("failed to create JS KeyboardEvent")
         }
 
-        DomEventData::Wheel(wheel) => {
-            let (delta_x, delta_y, delta_mode) = match wheel.delta {
-                BlitzWheelDelta::Lines(x, y) => (x, y, 1),
-                BlitzWheelDelta::Pixels(x, y) => (x, y, 0),
-            };
-            define_value(&event, "deltaX", JsValue::from(delta_x), context);
-            define_value(&event, "deltaY", JsValue::from(delta_y), context);
-            define_value(&event, "deltaZ", JsValue::from(0.0), context);
-            define_value(&event, "deltaMode", JsValue::from(delta_mode), context);
-            add_modifiers(&event, wheel.mods, context);
-        }
+        DomEventData::Input(input) => from_chain!(
+            (InputEvent, context),
+            layer,
+            UIEventLayer { detail: 0 },
+            InputEventLayer::from_blitz(input),
+        )
+        .expect("failed to create JS InputEvent"),
 
-        DomEventData::Input(input) => {
-            define_value(&event, "data", js_str(&input.value), context);
-            define_value(&event, "inputType", js_str("insertText"), context);
-        }
-
-        _ => {}
+        _ => create_event(ctx, data.name(), bubbles, cancelable, target, context),
     }
-
-    event
 }

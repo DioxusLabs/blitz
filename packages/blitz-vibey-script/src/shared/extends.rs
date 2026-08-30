@@ -263,11 +263,22 @@ pub trait ExtendLayer: OwnBlock + Sized + NativeObject + Clone + 'static {
     /// Build this layer. Must call `sup.call(parent_args, ctx)` where ES
     /// semantics place `super`, and assemble the returned `SuperDone` into
     /// the `Constructed`. Code order before/after the call is the ES order.
+    ///
+    /// The default rejects construction: most DOM layers are identity-only
+    /// interfaces that scripts cannot `new` directly (instances come from
+    /// Rust-side wrapper construction). Layers with a real JS constructor
+    /// override this.
     fn build(
-        args: &[JsValue],
-        ctx: &mut Context,
-        sup: Super<'_, Self::Parent>,
-    ) -> JsResult<Constructed<Self>>;
+        _args: &[JsValue],
+        _ctx: &mut Context,
+        _sup: Super<'_, Self::Parent>,
+    ) -> JsResult<Constructed<Self>> {
+        Err(crate::shared::native_error!(
+            typ,
+            "Failed to construct '{}': Illegal constructor",
+            Self::CLASS_NAME
+        ))
+    }
 
     fn define_members(class: &mut ClassBuilder<'_>) -> JsResult<()>;
 }

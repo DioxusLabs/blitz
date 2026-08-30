@@ -6,8 +6,8 @@ use boa_engine::property::Attribute;
 use boa_engine::{Context, Finalize, JsData, JsResult, JsValue, Trace};
 
 use crate::shared::{
-    Constructed, ExtendLayer, Extended, RootLayer, Super, instance_accessor, instance_getter,
-    instance_method, js_fn_ptr, native_error, native_fn_ptr, with_own,
+    ExtendLayer, Extended, RootLayer, instance_accessor, instance_getter, instance_method,
+    js_fn_ptr, native_error, native_fn_ptr, with_own,
 };
 use crate::state::DomCtx;
 
@@ -34,15 +34,6 @@ pub(crate) type ComputedStyle = Extended<ComputedStyleLayer>;
 impl ExtendLayer for StyleLayer {
     type Parent = RootLayer;
     const CLASS_NAME: &'static str = "CSSStyleDeclaration";
-
-    fn build(
-        _args: &[JsValue],
-        _ctx: &mut Context,
-        _sup: Super<'_, Self::Parent>,
-    ) -> JsResult<Constructed<Self>> {
-        Err(native_error!(typ, "Illegal constructor"))
-    }
-
     fn define_members(class: &mut ClassBuilder<'_>) -> JsResult<()> {
         let realm = class.context().realm().clone();
         let attr = Attribute::CONFIGURABLE | Attribute::NON_ENUMERABLE;
@@ -70,15 +61,6 @@ impl ExtendLayer for StyleLayer {
 impl ExtendLayer for ComputedStyleLayer {
     type Parent = RootLayer;
     const CLASS_NAME: &'static str = "ComputedStyle";
-
-    fn build(
-        _args: &[JsValue],
-        _ctx: &mut Context,
-        _sup: Super<'_, Self::Parent>,
-    ) -> JsResult<Constructed<Self>> {
-        Err(native_error!(typ, "Illegal constructor"))
-    }
-
     fn define_members(class: &mut ClassBuilder<'_>) -> JsResult<()> {
         let realm = class.context().realm().clone();
         let attr = Attribute::CONFIGURABLE | Attribute::NON_ENUMERABLE;

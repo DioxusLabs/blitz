@@ -6,8 +6,7 @@ use boa_engine::object::builtins::JsArray;
 use boa_engine::{Context, Finalize, JsData, JsResult, JsValue, Trace};
 
 use crate::shared::{
-    Constructed, ExtendLayer, Extended, Super, instance_getter, instance_method, js_fn_ptr,
-    native_error, native_fn_ptr,
+    ExtendLayer, Extended, instance_getter, instance_method, js_fn_ptr, native_fn_ptr,
 };
 
 use super::node::{append, prepend, replace_children};
@@ -26,15 +25,6 @@ pub(crate) type Document = Extended<DocumentLayer>;
 impl ExtendLayer for DocumentLayer {
     type Parent = super::node::NodeLayer;
     const CLASS_NAME: &'static str = "Document";
-
-    fn build(
-        _args: &[JsValue],
-        _ctx: &mut Context,
-        _sup: Super<'_, Self::Parent>,
-    ) -> JsResult<Constructed<Self>> {
-        Err(native_error!(typ, "Illegal constructor"))
-    }
-
     fn define_members(class: &mut ClassBuilder<'_>) -> JsResult<()> {
         use boa_engine::property::Attribute;
         let realm = class.context().realm().clone();

@@ -102,7 +102,7 @@ macro_rules! layer_chain {
 }
 
 macro_rules! from_chain {
-    (($for:ty, $ctx:expr) $($tt:tt)+) => {
+    (($for:ty, $ctx:expr), $($tt:tt)+) => {
         <$for>::from_chain($crate::shared::layer_chain!($($tt)+), $ctx)
     };
 }
