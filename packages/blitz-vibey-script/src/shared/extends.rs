@@ -79,17 +79,21 @@ impl<T: Any + Trace> OwnSlot for T {
     }
 }
 
+/// One own-block slot cell.
+type OwnSlotCell = GcRefCell<Option<Box<dyn OwnSlot>>>;
+
 /// The per-instance own-data store. One slot per real layer in the chain
-/// (`RootLayer` takes none); `T::IDX` addresses a layer's slot directly, so
-/// there is no bounds check or growth logic — the slot list is sized to the
-/// leaf layer's `DEPTH` at attach time.
+/// (`RootLayer` takes none); `T::IDX` addresses a layer's slot directly.
+/// The slot list is sized to the leaf layer's `DEPTH` once at attach time
+/// and never resized, so it lives in a boxed slice rather than a growable
+/// vector.
 ///
 /// Each slot is its own `GcRefCell`, so borrowing layer A's slot never blocks
 /// layer B's — only concurrent shared/mutable access to the same layer's slot
 /// conflicts.
 #[derive(Trace, Finalize, JsData)]
 pub struct OwnDataRegistry {
-    slots: Vec<GcRefCell<Option<Box<dyn OwnSlot>>>>,
+    slots: Box<[OwnSlotCell]>,
 }
 
 impl OwnDataRegistry {
@@ -103,10 +107,7 @@ impl OwnDataRegistry {
         }
     }
 
-    /// Write `T`'s data into its slot. `T::IDX` is a compile-time constant
-    /// and a registry is always sized for the chain `T` is constructed on,
-    /// so this is a plain slot assignment with no bounds check.
-    #[inline]
+    /// Write `T`'s data into its slot. `T::IDX` is a compile-time constant.
     fn set_slot_for<T: ExtendLayer>(&self, data: T) {
         *self.slots[T::IDX].borrow_mut() = Some(Box::new(data));
     }
@@ -114,8 +115,7 @@ impl OwnDataRegistry {
     /// Resolve the slot cell for `T`. Fails if `T::IDX` is out of range (the
     /// receiver was built for a shorter chain — e.g. a child layer's getter
     /// invoked on a parent-only instance).
-    #[inline]
-    fn slot_for<T: ExtendLayer>(&self) -> JsResult<&GcRefCell<Option<Box<dyn OwnSlot>>>> {
+    fn slot_for<T: ExtendLayer>(&self) -> JsResult<&OwnSlotCell> {
         self.slots.get(T::IDX).ok_or_else(|| {
             crate::shared::native_error!(
                 typ,
@@ -169,7 +169,6 @@ impl OwnDataRegistry {
 // ── Registry attach + accessor helpers ───────────────────────────────
 
 /// Write a layer's data into its slot.
-#[inline]
 pub fn set_own_block<T: ExtendLayer>(this: &JsObject, data: T) -> JsResult<()> {
     let registry = this
         .downcast_ref::<OwnDataRegistry>()
@@ -180,7 +179,6 @@ pub fn set_own_block<T: ExtendLayer>(this: &JsObject, data: T) -> JsResult<()> {
 
 /// Read a layer's own block by shared reference. The registry borrow is held
 /// for the duration of `f` — do not downcast `obj` again before it returns.
-#[inline]
 pub fn with_own<T, R>(obj: &JsObject, f: impl FnOnce(&T) -> R) -> JsResult<R>
 where
     T: ExtendLayer,
@@ -194,7 +192,6 @@ where
 /// Mutate a layer's own block in place through the callback. The `&mut T`
 /// borrow lives only inside `f` — do not touch the same own block again
 /// before it returns.
-#[inline]
 pub fn with_own_mut<T, R>(obj: &JsObject, f: impl FnOnce(&mut T) -> R) -> JsResult<R>
 where
     T: ExtendLayer,
@@ -218,6 +215,7 @@ pub struct SuperDone<'a> {
 
 impl<'a> SuperDone<'a> {
     /// The instance, valid once every parent layer's slot is filled.
+    #[inline]
     pub fn this(&self) -> &JsObject {
         self.this
     }
@@ -248,7 +246,6 @@ impl<'a, P: EmitOwn> Super<'a, P> {
     /// on the instance) and return the completion token carrying the
     /// instance. After this call the parent's data is fully initialized and
     /// readable through the token.
-    #[inline]
     pub fn call(self, parent_args: &[JsValue], ctx: &mut Context) -> JsResult<SuperDone<'a>> {
         P::emit_own(self.instance, parent_args, ctx)?;
         Ok(SuperDone {
@@ -278,13 +275,13 @@ pub trait ExtendLayer: OwnBlock + Sized + NativeObject + Clone + 'static {
 // ── EmitOwn: recursive driver ────────────────────────────────────────
 
 pub trait EmitOwn {
-    /// JS `new` path: build each layer from the args and fill its slot on
-    /// the instance.
-    fn emit_own(instance: &JsObject, args: &[JsValue], ctx: &mut Context) -> JsResult<()>;
-
     /// The chain type of the Rust data path. `RootLayer::Chain` is `()`;
     /// `T::Chain` is `LayerChain<T>`.
     type Chain;
+
+    /// JS `new` path: build each layer from the args and fill its slot on
+    /// the instance.
+    fn emit_own(instance: &JsObject, args: &[JsValue], ctx: &mut Context) -> JsResult<()>;
 
     /// Fill the instance's slots from an existing data chain (move
     /// destructure, no take), parent layer first.
@@ -298,10 +295,12 @@ pub struct RootLayer;
 impl EmitOwn for RootLayer {
     type Chain = ();
 
+    #[inline]
     fn emit_own(_instance: &JsObject, _args: &[JsValue], _ctx: &mut Context) -> JsResult<()> {
         Ok(())
     }
 
+    #[inline]
     fn populate_chain(_instance: &JsObject, _chain: (), _ctx: &mut Context) -> JsResult<()> {
         Ok(())
     }
@@ -317,7 +316,6 @@ pub struct LayerChain<T: ExtendLayer> {
 impl<T: ExtendLayer> EmitOwn for T {
     type Chain = LayerChain<T>;
 
-    #[inline]
     fn emit_own(instance: &JsObject, args: &[JsValue], ctx: &mut Context) -> JsResult<()> {
         // Hand the super handle to build; the parent's construction is
         // triggered by the `sup.call` inside build.
@@ -331,7 +329,6 @@ impl<T: ExtendLayer> EmitOwn for T {
         set_own_block::<T>(instance, constructed.own)
     }
 
-    #[inline]
     fn populate_chain(
         instance: &JsObject,
         chain: LayerChain<T>,
@@ -369,6 +366,10 @@ where
 {
     const NAME: &'static str = T::CLASS_NAME;
 
+    fn init(class: &mut ClassBuilder<'_>) -> JsResult<()> {
+        T::define_members(class)
+    }
+
     /// Default data path; the overridden `construct` never runs it.
     fn data_constructor(_nt: &JsValue, _args: &[JsValue], _ctx: &mut Context) -> JsResult<Self> {
         Ok(Extended::shell())
@@ -376,7 +377,6 @@ where
 
     /// JS `new X()` path: resolve the prototype, attach an `OwnDataRegistry`
     /// sized for this chain, and fill the layers' slots recursively.
-    #[inline]
     fn construct(new_target: &JsValue, args: &[JsValue], ctx: &mut Context) -> JsResult<JsObject> {
         if new_target.is_undefined() {
             return Err(crate::shared::native_error!(
@@ -396,10 +396,6 @@ where
         let instance = Self::new_shell(prototype);
         <T as EmitOwn>::emit_own(&instance, args, ctx)?;
         Ok(instance)
-    }
-
-    fn init(class: &mut ClassBuilder<'_>) -> JsResult<()> {
-        T::define_members(class)
     }
 }
 
@@ -421,7 +417,6 @@ impl<T: ExtendLayer> Extended<T> {
     /// Rust-side creation from args, mirroring the JS `new` path: attach the
     /// registry and fill the layers recursively via `emit_own`.
     /// For layers whose own data is buildable from the given args.
-    #[inline]
     pub fn new_native(args: &[JsValue], ctx: &mut Context) -> JsResult<JsObject> {
         let prototype = Self::registered_prototype(ctx)?;
         let instance = Self::new_shell(prototype);
@@ -434,7 +429,6 @@ impl<T: ExtendLayer> Extended<T> {
     /// `LayerChain<T>` has non-`Option` fields, so nothing is taken.
     /// For layers whose own data comes from Rust and cannot be built from
     /// args (e.g. DOM nodes carrying a node_id).
-    #[inline]
     pub fn from_chain(chain: <T as EmitOwn>::Chain, ctx: &mut Context) -> JsResult<JsObject> {
         let prototype = Self::registered_prototype(ctx)?;
         let instance = Self::new_shell(prototype);
