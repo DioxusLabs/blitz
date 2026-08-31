@@ -18,11 +18,13 @@ mod attr_test;
 mod crash_test;
 mod fuzzy;
 mod harness_test;
+mod js_wrapper;
 mod ref_test;
 
 pub use attr_test::process_attr_test;
 pub use crash_test::process_crash_test;
 pub use harness_test::process_harness_test;
+pub use js_wrapper::wrapper_html_for_js_test;
 pub use ref_test::process_ref_test;
 
 static TIMEOUT_QUARANTINE: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| {
@@ -224,6 +226,26 @@ pub fn process_test_file(
     }
     if ctx.script_re.is_match(&file_contents) {
         flags |= TestFlags::USES_SCRIPT;
+    }
+
+    // JS-file (`.any.js` / `.window.js`) testharness test: synthesize the
+    // wrapper HTML which wptserve would serve and run it as a harness test
+    if relative_path.ends_with(".any.js") || relative_path.ends_with(".window.js") {
+        flags |= TestFlags::USES_SCRIPT;
+        return match wrapper_html_for_js_test(relative_path, &file_contents) {
+            Some(html) => {
+                let (status, counts, results) = process_harness_test(ctx, &html, relative_path);
+                (TestKind::TestHarness, flags, status, counts, results)
+            }
+            // No window variant (worker-only test): not a runnable test
+            None => (
+                TestKind::Unknown,
+                flags,
+                TestStatus::Skip,
+                SubtestCounts::ZERO_OF_ZERO,
+                Vec::new(),
+            ),
+        };
     }
 
     // Crash Test
