@@ -20,12 +20,67 @@ use crate::shared::{
 };
 use crate::state::DomCtx;
 
+/// The callable backing one registered listener, in its registration shape.
+#[derive(Debug, Clone, Trace, Finalize, JsData)]
+pub(crate) enum ListenerCallback {
+    /// `addEventListener(type, fn)`.
+    Function(JsObject),
+    /// `addEventListener(type, listenerObject)` — invoked through the
+    /// object's `handleEvent`, with the listener object as `this`.
+    HandlerObject {
+        obj: JsObject,
+        handle_event: JsObject,
+    },
+    /// The `on<event>` attribute handler, always a function. `this` is the
+    /// current receiver, like `Function`.
+    AttributeFunction(JsObject),
+}
+
+impl ListenerCallback {
+    /// The callable to invoke for this shape.
+    fn callable(&self) -> &JsObject {
+        match self {
+            Self::Function(callable) => callable,
+            Self::HandlerObject { handle_event, .. } => handle_event,
+            Self::AttributeFunction(callable) => callable,
+        }
+    }
+
+    /// The `this` value for the invocation. `None` means the current
+    /// receiver (the event's `currentTarget`).
+    fn this_value(&self) -> Option<JsValue> {
+        match self {
+            Self::HandlerObject { obj, .. } => Some(obj.clone().into()),
+            _ => None,
+        }
+    }
+
+    /// Whether this is an `on<event>` attribute handler.
+    fn is_attribute(&self) -> bool {
+        matches!(self, Self::AttributeFunction(_))
+    }
+
+    /// Strict-equality identity for duplicate/removal checks: two callbacks
+    /// match when they share the shape and the underlying JS value
+    /// (`Function`/`AttributeFunction` compare the function, `HandlerObject`
+    /// compares the listener object).
+    fn same_registration(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Function(a), Self::Function(b)) => JsObject::equals(a, b),
+            (Self::HandlerObject { obj: a, .. }, Self::HandlerObject { obj: b, .. }) => {
+                JsObject::equals(a, b)
+            }
+            _ => false,
+        }
+    }
+}
+
 /// One registered listener.
 #[derive(Debug, Clone, Trace, Finalize, JsData)]
 pub(crate) struct ListenerEntry {
     #[unsafe_ignore_trace]
     pub event_type: String,
-    pub callback: JsObject,
+    pub callback: ListenerCallback,
     #[unsafe_ignore_trace]
     pub capture: bool,
     #[unsafe_ignore_trace]
@@ -92,11 +147,23 @@ fn this_target(this: &JsValue) -> JsResult<JsObject> {
         .ok_or_else(|| crate::shared::native_error!(typ, "not an EventTarget object"))
 }
 
-/// Extract the callback argument (second position), requiring a callable.
-fn callback_arg(args: &[JsValue]) -> Option<JsObject> {
-    args.get(1)
-        .and_then(|value| value.as_object())
-        .filter(|callback| callback.is_callable())
+/// Parse the callback argument (second position) into its registration
+/// shape: a callable function, or an event-listener object with a callable
+/// `handleEvent`. Any other value registers nothing.
+fn parse_listener_callback(
+    value: Option<&JsValue>,
+    context: &mut Context,
+) -> Option<ListenerCallback> {
+    let obj = value?.as_object()?;
+    if obj.is_callable() {
+        return Some(ListenerCallback::Function(obj));
+    }
+    let handle_event = obj
+        .get(boa_engine::js_string!("handleEvent"), context)
+        .ok()?
+        .as_object()
+        .filter(|handle| handle.is_callable())?;
+    Some(ListenerCallback::HandlerObject { obj, handle_event })
 }
 
 /// Parse the `options` argument: a `capture` boolean or an options object.
@@ -120,7 +187,7 @@ fn add_event_listener(
 ) -> JsResult<JsValue> {
     let obj = this_target(this)?;
     let event_type = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
-    let Some(callback) = callback_arg(args) else {
+    let Some(callback) = parse_listener_callback(args.get(1), context) else {
         return Ok(JsValue::undefined());
     };
     let capture = capture_option(args, context)?;
@@ -138,11 +205,11 @@ fn add_event_listener(
 
     with_own::<EventTargetLayer, _>(&obj, |target| {
         let mut listeners = target.listeners.borrow_mut();
-        // Duplicate listeners (same callback + capture flag) are ignored
+        // Duplicate listeners (same callback shape + capture flag) are ignored
         if !listeners.iter().any(|l| {
             l.event_type == event_type
                 && l.capture == capture
-                && JsObject::equals(&l.callback, &callback)
+                && l.callback.same_registration(&callback)
         }) {
             listeners.push(ListenerEntry {
                 event_type,
@@ -163,7 +230,7 @@ fn remove_event_listener(
 ) -> JsResult<JsValue> {
     let obj = this_target(this)?;
     let event_type = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
-    let Some(callback) = callback_arg(args) else {
+    let Some(callback) = parse_listener_callback(args.get(1), context) else {
         return Ok(JsValue::undefined());
     };
     let capture = capture_option(args, context)?;
@@ -172,7 +239,7 @@ fn remove_event_listener(
         target.listeners.borrow_mut().retain(|l| {
             !(l.event_type == event_type
                 && l.capture == capture
-                && JsObject::equals(&l.callback, &callback))
+                && l.callback.same_registration(&callback))
         });
     })?;
 
@@ -180,9 +247,41 @@ fn remove_event_listener(
 }
 
 impl EventTargetLayer {
+    /// The registered `on<event>` attribute listener for `event_type`, if any.
+    pub(crate) fn attribute_listener(&self, event_type: &str) -> Option<JsObject> {
+        self.listeners
+            .borrow()
+            .iter()
+            .find(|l| l.event_type == event_type && l.callback.is_attribute())
+            .map(|l| l.callback.callable().clone())
+    }
+
+    /// Replace the `on<event>` attribute listener for `event_type`: any
+    /// previous attribute listener goes away and `handler` (always a
+    /// callable) is registered in the attribute shape.
+    pub(crate) fn set_attribute_listener(&self, event_type: &str, handler: JsObject) {
+        let mut listeners = self.listeners.borrow_mut();
+        listeners.retain(|l| !(l.event_type == event_type && l.callback.is_attribute()));
+        listeners.push(ListenerEntry {
+            event_type: event_type.to_string(),
+            callback: ListenerCallback::AttributeFunction(handler),
+            capture: false,
+            once: false,
+        });
+    }
+
+    /// Remove the `on<event>` attribute listener for `event_type` (the
+    /// attribute was assigned a non-callable value).
+    pub(crate) fn remove_attribute_listener(&self, event_type: &str) {
+        self.listeners
+            .borrow_mut()
+            .retain(|l| !(l.event_type == event_type && l.callback.is_attribute()));
+    }
+
     /// Invoke this target's listeners matching `event_type` and the capture
     /// flag, in registration order. The event's `currentTarget` supplies the
-    /// invocation `this`, and its state is read back for
+    /// invocation `this` (except for `handleEvent` objects, which receive
+    /// themselves), and the event state is read back for
     /// `stopPropagation` / `stopImmediatePropagation`. Returns
     /// `(propagation_stopped, any_listener_called)`.
     pub(crate) fn invoke_listeners(
@@ -196,9 +295,9 @@ impl EventTargetLayer {
         // Snapshot the matching callbacks and drop fired `once` entries up
         // front, so callbacks never run while the list is borrowed and
         // re-entrant registration is safe.
-        let callbacks: Vec<JsObject> = {
+        let callbacks: Vec<ListenerCallback> = {
             let mut listeners = self.listeners.borrow_mut();
-            let matching: Vec<JsObject> = listeners
+            let matching: Vec<ListenerCallback> = listeners
                 .iter()
                 .filter(|l| l.event_type == event_type && l.capture == capture)
                 .map(|l| l.callback.clone())
@@ -215,7 +314,13 @@ impl EventTargetLayer {
         let mut called = false;
         for callback in callbacks {
             called = true;
-            if let Err(error) = callback.call(&current_target, &[event_obj.clone().into()], context)
+            let this_value = callback
+                .this_value()
+                .unwrap_or_else(|| current_target.clone());
+            if let Err(error) =
+                callback
+                    .callable()
+                    .call(&this_value, &[event_obj.clone().into()], context)
             {
                 crate::runtime::report_js_error(ctx, "event listener", &error);
             }

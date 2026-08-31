@@ -25,7 +25,7 @@ use crate::dom::style::{ComputedStyle, ComputedStyleLayer};
 use crate::dom::{dom_ctx, node_id_of_value, node_wrapper, to_rust_string, wrap_style_object};
 use crate::events::{
     AT_TARGET_PHASE, BUBBLING_PHASE, CAPTURING_PHASE, DispatchTarget, EventTargetLayer, NONE_PHASE,
-    create_event, create_event_for_dom_event, event_flag, with_state, with_state_mut,
+    create_event, create_event_for_dom_event, event_flag, with_state_mut,
 };
 use crate::fetch::ScriptFetcher;
 use crate::shared::{from_chain, with_own};
@@ -1138,7 +1138,7 @@ struct DispatchStep {
 
 /// Dispatch `event_obj` to a single receiver node: set `currentTarget` and
 /// `eventPhase`, invoke the node wrapper's registered listeners per the plan
-/// and, outside the capture phase, the `on<event>` property handler. Returns
+/// (`on<event>` attribute handlers ride the non-capture flavor). Returns
 /// `(propagation_stopped, any_listener_called)`.
 fn dispatch_to_node(
     ctx: &DomCtx,
@@ -1174,26 +1174,6 @@ fn dispatch_to_node(
         let (s, c) = invoke(false);
         stopped |= s;
         called |= c;
-
-        // The `on<event>` property handler rides the non-capture flavor.
-        let on_name = JsString::from(format!("on{event_type}"));
-        if let Ok(handler) = wrapper.get(on_name, context) {
-            if let Some(handler) = handler.as_object().filter(|h| h.is_callable()) {
-                called = true;
-                let current_target = with_state(event_obj, |st| st.current_target.clone())
-                    .ok()
-                    .and_then(|mut target| target.resolve(context).ok())
-                    .unwrap_or_else(JsValue::undefined);
-                if let Err(error) =
-                    handler.call(&current_target, &[event_obj.clone().into()], context)
-                {
-                    report_js_error(ctx, "event listener", &error);
-                }
-                if event_flag(event_obj, |st| st.stop_immediate) {
-                    return (true, called);
-                }
-            }
-        }
     }
 
     (stopped, called)

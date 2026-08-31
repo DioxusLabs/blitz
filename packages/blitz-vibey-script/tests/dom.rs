@@ -732,3 +732,119 @@ fn lazy_target_shares_wrapper_identity() {
     doc.eval(r#"document.getElementById("out").textContent = String(globalThis.same);"#);
     assert_eq!(text_of_selector(&doc, "#out"), "true");
 }
+
+// Assigning `on<event>` registers the handler as the event's attribute
+// listener: reassignment replaces it, assigning a non-callable removes it,
+// and the getter reflects the registered handler.
+#[test]
+fn on_property_assignments_register_replace_and_remove() {
+    let doc = doc_from_html(
+        r#"
+        <html><body><button id="leaf">hi</button><div id="out"></div>
+        <script>
+            globalThis.__log = [];
+            const leaf = document.getElementById("leaf");
+            const first = () => globalThis.__log.push("first");
+            const second = () => globalThis.__log.push("second");
+            leaf.onclick = first;
+            const reflect = [leaf.onclick === first];
+            leaf.onclick = second;
+            reflect.push(leaf.onclick === second);
+            leaf.dispatchEvent(new Event("click"));
+            reflect.push(globalThis.__log.join(","));
+            leaf.onclick = null;
+            reflect.push(leaf.onclick === null);
+            leaf.dispatchEvent(new Event("click"));
+            reflect.push(globalThis.__log.join(","));
+            document.getElementById("out").textContent = reflect.join("|");
+        </script></body></html>
+        "#,
+    );
+    assert_eq!(
+        text_of_selector(&doc, "#out"),
+        "true|true|second|true|second"
+    );
+}
+
+// Assigning a non-callable to `on<event>` leaves no attribute listener —
+// both over a fresh property and over a previously registered handler.
+#[test]
+fn on_property_non_callable_assignment_clears_listener() {
+    let doc = doc_from_html(
+        r#"
+        <html><body><div id="out"></div>
+        <script>
+            const results = [];
+            let div = document.createElement("div");
+            div.onclick = 1;
+            results.push(div.onclick === null);
+            div.onclick = () => {};
+            div.onclick = 1;
+            results.push(div.onclick === null);
+            document.getElementById("out").textContent = results.join("|");
+        </script></body></html>
+        "#,
+    );
+    assert_eq!(text_of_selector(&doc, "#out"), "true|true");
+}
+
+// The `on<event>` getter returns the very function that was assigned.
+#[test]
+fn on_property_getter_returns_assigned_function() {
+    let doc = doc_from_html(
+        r#"
+        <html><body><div id="out"></div>
+        <script>
+            let div = document.createElement("div");
+            let handle = () => {};
+            div.onclick = handle;
+            document.getElementById("out").textContent = String(div.onclick === handle);
+        </script></body></html>
+        "#,
+    );
+    assert_eq!(text_of_selector(&doc, "#out"), "true");
+}
+
+// The `onclick` property handler participates in dispatch as a listener
+// registered at its assignment time. The two cases below differ only in
+// registration order, so their firing order differs accordingly:
+// listener-first fires handle2 before handle1; property-first the reverse.
+#[test]
+fn node_dispatch_event_fires_add_listeners() {
+    let doc = doc_from_html(
+        r#"
+        <html><body><div id="out"></div>
+        <script>
+            const log = [];
+            let div = document.createElement("div");
+            function handle1() { log.push("handle1"); }
+            function handle2() { log.push("handle2"); }
+            div.addEventListener("click", handle2);
+            div.onclick = handle1;
+            div.dispatchEvent(new Event("click"));
+            document.getElementById("out").textContent = log.join(",");
+        </script></body></html>
+        "#,
+    );
+    assert_eq!(text_of_selector(&doc, "#out"), "handle2,handle1");
+}
+
+#[test]
+fn node_dispatch_event_fires_property_handler_first_when_assigned_first() {
+    let doc = doc_from_html(
+        r#"
+        <html><body><div id="out"></div>
+        <script>
+            const log = [];
+            let div = document.createElement("div");
+            function handle1() { log.push("handle1"); }
+            function handle2() { log.push("handle2"); }
+            div.onclick = handle1;
+            div.addEventListener("click", handle2);
+            div.dispatchEvent(new Event("click"));
+            document.getElementById("out").textContent = log.join(",");
+        </script></body></html>
+        "#,
+    );
+    assert_eq!(text_of_selector(&doc, "#out"), "handle1,handle2");
+}

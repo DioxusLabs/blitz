@@ -8,8 +8,8 @@ use boa_engine::property::Attribute;
 use boa_engine::{Context, Finalize, JsData, JsResult, JsValue, Trace};
 
 use crate::shared::{
-    ExtendLayer, Extended, instance_accessor, instance_getter, instance_method, js_fn_ptr,
-    native_error, native_fn_ptr,
+    ExtendLayer, Extended, instance_accessor, instance_getter, instance_method,
+    js_copy_closure_with_captures, js_fn_ptr, native_error, native_fn_ptr, with_own,
 };
 use crate::state::DomCtx;
 
@@ -90,7 +90,99 @@ impl ExtendLayer for NodeLayer {
         instance_method!(class, "contains", 1, native_fn_ptr!(contains));
         instance_method!(class, "cloneNode", 1, native_fn_ptr!(clone_node));
 
+        define_on_event_attributes(class);
+
         Ok(())
+    }
+}
+
+/// Event types for which `on<event>` IDL-style attributes are defined on the
+/// node prototype. Frameworks (e.g. Preact) use `'onclick' in dom` checks to
+/// infer the correct casing of event names, so these need to be present.
+const ON_EVENT_TYPES: &[&str] = &[
+    "click",
+    "dblclick",
+    "contextmenu",
+    "mousedown",
+    "mouseup",
+    "mousemove",
+    "mouseenter",
+    "mouseleave",
+    "mouseover",
+    "mouseout",
+    "pointerdown",
+    "pointerup",
+    "pointermove",
+    "pointercancel",
+    "pointerenter",
+    "pointerleave",
+    "pointerover",
+    "pointerout",
+    "touchstart",
+    "touchmove",
+    "touchend",
+    "touchcancel",
+    "keydown",
+    "keyup",
+    "keypress",
+    "input",
+    "change",
+    "focus",
+    "blur",
+    "focusin",
+    "focusout",
+    "submit",
+    "scroll",
+    "wheel",
+    "load",
+];
+
+/// Define the `on<event>` IDL-style attributes on the node prototype:
+/// assigning a callable registers it as the event's attribute listener
+/// (replacing any previous one), assigning anything else removes it. The
+/// getter reflects the registered handler.
+fn define_on_event_attributes(class: &mut ClassBuilder<'_>) {
+    let realm = class.context().realm().clone();
+    for (index, event_type) in ON_EVENT_TYPES.iter().enumerate() {
+        let getter = js_copy_closure_with_captures!(
+            |this, _args, index: &u16, _context| {
+                let obj = this
+                    .as_object()
+                    .ok_or_else(|| native_error!(typ, "not a DOM node"))?;
+                let event_type = ON_EVENT_TYPES[*index as usize];
+                let handler = with_own::<crate::events::EventTargetLayer, _>(&obj, |target| {
+                    target.attribute_listener(event_type)
+                })?;
+                Ok(handler.map(JsValue::from).unwrap_or_else(JsValue::null))
+            },
+            index as u16,
+            &realm
+        );
+        let setter = js_copy_closure_with_captures!(
+            |this, args, index: &u16, _context| {
+                let obj = this
+                    .as_object()
+                    .ok_or_else(|| native_error!(typ, "not a DOM node"))?;
+                let event_type = ON_EVENT_TYPES[*index as usize];
+                let handler = args.first().and_then(|value| value.as_object());
+                with_own::<crate::events::EventTargetLayer, _>(&obj, |target| {
+                    match handler.filter(|candidate| candidate.is_callable()) {
+                        Some(handler) => target.set_attribute_listener(event_type, handler),
+                        None => target.remove_attribute_listener(event_type),
+                    }
+                })?;
+                Ok(JsValue::undefined())
+            },
+            index as u16,
+            &realm
+        );
+        instance_accessor!(
+            class,
+            format!("on{event_type}"),
+            getter,
+            setter,
+            Attribute::CONFIGURABLE | Attribute::NON_ENUMERABLE
+        );
     }
 }
 

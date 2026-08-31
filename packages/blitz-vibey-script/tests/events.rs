@@ -143,6 +143,38 @@ fn event_flags_outside_dispatch() {
     assert_eq!(result, ["0", "null", "true", "false", "false", "true"]);
 }
 
+// An event-listener object (`{ handleEvent }`) is invoked through its
+// `handleEvent` with the object itself as `this`, and is removable by
+// passing the object back to `removeEventListener`.
+#[test]
+fn event_target_accepts_handle_event_objects() {
+    let mut doc = ScriptDocument::from_html("<body></body>", DocumentConfig::default());
+    doc.execute_scripts();
+
+    let result = eval_report(
+        &mut doc,
+        r#"
+        const et = new EventTarget();
+        let heard = null;
+        let thisWas = null;
+        const listener = {
+            handleEvent(event) {
+                heard = event.type;
+                thisWas = this === listener;
+            },
+        };
+        et.addEventListener("hola", listener);
+        et.dispatchEvent(new Event("hola"));
+        const first = [heard, thisWas];
+        et.removeEventListener("hola", listener);
+        heard = null;
+        et.dispatchEvent(new Event("hola"));
+        push(first[0]); push(first[1]); push(heard);
+    "#,
+    );
+    assert_eq!(result, ["hola", "true", "null"]);
+}
+
 #[test]
 fn interface_layers_reject_construction_with_browser_message() {
     let mut doc = ScriptDocument::from_html("<body></body>", DocumentConfig::default());
@@ -164,4 +196,67 @@ fn interface_layers_reject_construction_with_browser_message() {
             "Failed to construct 'Text': Illegal constructor",
         ]
     );
+}
+
+// `class A extends EventTarget` — the subclass instance carries its own
+// listener block (filled by `super()`), prototype methods resolve through
+// the `EventTarget.prototype` link, and the callback `this` is the instance.
+#[test]
+fn event_target_subclass_instances_own_their_listeners() {
+    let mut doc = ScriptDocument::from_html("<body></body>", DocumentConfig::default());
+    doc.execute_scripts();
+
+    let result = eval_report(
+        &mut doc,
+        r#"
+        class A extends EventTarget {
+            constructor() {
+                super();
+                this.name = "EventTarget Child Test";
+            }
+        }
+
+        const a = new A();
+        let heard = null;
+        a.addEventListener("idk", function () {
+            heard = this.name;
+        });
+
+        const returned = a.dispatchEvent(new Event("idk"));
+        push(returned); push(heard);
+        push(a instanceof A); push(a instanceof EventTarget);
+    "#,
+    );
+    assert_eq!(result, ["true", "EventTarget Child Test", "true", "true"]);
+}
+
+// The callback `this` follows the listener shape: a plain function runs with
+// the dispatch receiver as `this`, while a `{ handleEvent }` object runs
+// with the object itself — even when both registrations share one
+// `handleEvent` function.
+#[test]
+fn listener_shape_determines_callback_this() {
+    let mut doc = ScriptDocument::from_html("<body></body>", DocumentConfig::default());
+    doc.execute_scripts();
+
+    let result = eval_report(
+        &mut doc,
+        r#"
+        class ET extends EventTarget {
+            constructor() { super(); this.name = "ET" }
+        }
+
+        let et = new ET();
+
+        function handleEvent () {
+            push(this.name);
+        }
+
+        et.addEventListener("notify", handleEvent);
+        et.addEventListener("notify", { name: "EL", handleEvent });
+
+        et.dispatchEvent(new Event("notify"))
+    "#,
+    );
+    assert_eq!(result, ["ET", "EL"]);
 }

@@ -19,7 +19,6 @@ pub(crate) mod text;
 use blitz_dom::node::NodeData;
 use blitz_dom::{LocalName, Namespace, NodeId, QualName};
 use boa_engine::object::JsObject;
-use boa_engine::property::PropertyKey;
 use boa_engine::value::JsValue;
 use boa_engine::{Context, JsNativeError, JsResult, JsString};
 
@@ -165,62 +164,6 @@ pub(crate) fn to_rust_string(value: &JsValue, context: &mut Context) -> JsResult
     Ok(value.to_string(context)?.to_std_string_lossy())
 }
 
-/// Define a plain data property
-pub(crate) fn define_value(obj: &JsObject, name: &str, value: JsValue, context: &mut Context) {
-    obj.define_property_or_throw(
-        PropertyKey::from(JsString::from(name)),
-        boa_engine::property::PropertyDescriptor::builder()
-            .value(value)
-            .writable(true)
-            .enumerable(false)
-            .configurable(true)
-            .build(),
-        context,
-    )
-    .expect("failed to define DOM property");
-}
-
-/// Event types for which `on<event>` IDL-style properties are defined on the
-/// node prototype. Frameworks (e.g. Preact) use `'onclick' in dom` checks to
-/// infer the correct casing of event names, so these need to be present.
-pub(crate) const ON_EVENT_TYPES: &[&str] = &[
-    "click",
-    "dblclick",
-    "contextmenu",
-    "mousedown",
-    "mouseup",
-    "mousemove",
-    "mouseenter",
-    "mouseleave",
-    "mouseover",
-    "mouseout",
-    "pointerdown",
-    "pointerup",
-    "pointermove",
-    "pointercancel",
-    "pointerenter",
-    "pointerleave",
-    "pointerover",
-    "pointerout",
-    "touchstart",
-    "touchmove",
-    "touchend",
-    "touchcancel",
-    "keydown",
-    "keyup",
-    "keypress",
-    "input",
-    "change",
-    "focus",
-    "blur",
-    "focusin",
-    "focusout",
-    "submit",
-    "scroll",
-    "wheel",
-    "load",
-];
-
 /// Register all DOM classes and wire up their prototype chains.
 pub(crate) fn register_dom_classes(context: &mut Context) -> JsResult<()> {
     // Event-target side first: `Node` links to `EventTarget`
@@ -232,20 +175,6 @@ pub(crate) fn register_dom_classes(context: &mut Context) -> JsResult<()> {
     element::register(context)?;
     document::register(context)?;
     style::register(context)?;
-
-    // `on<event>` IDL-style properties (default null) on the Node prototype
-    let node_proto = context
-        .get_global_class::<node::Node>()
-        .expect("Node class not registered")
-        .prototype();
-    for event_type in ON_EVENT_TYPES {
-        define_value(
-            &node_proto,
-            &format!("on{event_type}"),
-            JsValue::null(),
-            context,
-        );
-    }
 
     Ok(())
 }
