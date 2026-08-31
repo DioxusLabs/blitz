@@ -257,3 +257,4 @@ css/css-backgrounds/animations/box-shadow-interpolation.html harness-timeout
 css/css-fonts/discrete-no-interpolation.html harness-timeout
 css/css-grid/animation/grid-template-rows-interpolation.html harness-timeout
 css/css-masking/animations/clip-path-interpolation-shape.html harness-timeout
+html/webappapis/scripting/processing-model-2/integration-with-the-javascript-agent-formalism/atomics-wait-async.https.any.js unbounded-job-execution

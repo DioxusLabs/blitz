@@ -398,7 +398,7 @@ mod tests {
 
     #[test]
     fn timeout_quarantine_is_valid() {
-        assert_eq!(TIMEOUT_QUARANTINE.len(), 259);
+        assert_eq!(TIMEOUT_QUARANTINE.len(), 260);
         assert_eq!(
             TIMEOUT_QUARANTINE.get("css/selectors/focus-visible-001.html"),
             Some(&"testdriver")
