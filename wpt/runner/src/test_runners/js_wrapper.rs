@@ -33,16 +33,17 @@ fn globals_include_window(metas: &[(&str, &str)]) -> bool {
     value.split(',').any(|item| item.trim() == "window")
 }
 
-/// Build the wrapper HTML for a `.any.js` or `.window.js` test. Returns `None`
-/// for `.any.js` tests whose `// META: global=` list excludes the `window`
-/// global (worker-only tests), which have no window variant to run.
-pub fn wrapper_html_for_js_test(relative_path: &str, js_source: &str) -> Option<String> {
+/// Whether the runner can run this `.any.js` / `.window.js` test, i.e.
+/// whether it has a window variant. `.any.js` tests whose `// META: global=`
+/// list excludes the `window` global (worker-only tests) cannot be run.
+pub fn js_test_has_window_variant(relative_path: &str, js_source: &str) -> bool {
+    !relative_path.ends_with(".any.js") || globals_include_window(&parse_metas(js_source))
+}
+
+/// Build the wrapper HTML for a `.any.js` or `.window.js` test.
+pub fn wrapper_html_for_js_test(relative_path: &str, js_source: &str) -> String {
     let is_any = relative_path.ends_with(".any.js");
     let metas = parse_metas(js_source);
-
-    if is_any && !globals_include_window(&metas) {
-        return None;
-    }
 
     let mut meta_tags = String::new();
     let mut script_tags = String::new();
@@ -81,7 +82,7 @@ pub fn wrapper_html_for_js_test(relative_path: &str, js_source: &str) -> Option<
         ""
     };
 
-    Some(format!(
+    format!(
         "<!doctype html>\n\
          <meta charset=utf-8>\n\
          {meta_tags}\
@@ -91,7 +92,7 @@ pub fn wrapper_html_for_js_test(relative_path: &str, js_source: &str) -> Option<
          {script_tags}\
          <div id=log></div>\n\
          <script src=\"/{relative_path}\"></script>\n"
-    ))
+    )
 }
 
 #[cfg(test)]
@@ -105,7 +106,7 @@ mod tests {
                   //META: timeout=long\n\
                   'use strict';\n\
                   // META: script=ignored-after-code.js\n";
-        let html = wrapper_html_for_js_test("dom/foo.any.js", js).unwrap();
+        let html = wrapper_html_for_js_test("dom/foo.any.js", js);
         assert!(html.contains("<title>A &lt;title&gt;</title>"));
         assert!(html.contains("<script src=\"/common/utils.js\"></script>"));
         assert!(html.contains("<meta name=\"timeout\" content=\"long\">"));
@@ -116,7 +117,7 @@ mod tests {
 
     #[test]
     fn window_js_has_no_global_block() {
-        let html = wrapper_html_for_js_test("dom/foo.window.js", "test(() => {});").unwrap();
+        let html = wrapper_html_for_js_test("dom/foo.window.js", "test(() => {});");
         assert!(!html.contains("self.GLOBAL"));
         assert!(html.contains("<script src=\"/dom/foo.window.js\"></script>"));
     }
@@ -124,8 +125,9 @@ mod tests {
     #[test]
     fn worker_only_any_js_is_excluded() {
         let js = "// META: global=worker\ntest(() => {});";
-        assert!(wrapper_html_for_js_test("dom/foo.any.js", js).is_none());
+        assert!(!js_test_has_window_variant("dom/foo.any.js", js));
         let js = "// META: global=window,worker\ntest(() => {});";
-        assert!(wrapper_html_for_js_test("dom/foo.any.js", js).is_some());
+        assert!(js_test_has_window_variant("dom/foo.any.js", js));
+        assert!(js_test_has_window_variant("dom/foo.window.js", js));
     }
 }
