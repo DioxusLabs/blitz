@@ -10110,6 +10110,7 @@ dependencies = [
  "dify",
  "env_logger",
  "glob",
+ "html-escape",
  "image",
  "log",
  "markup5ever",
