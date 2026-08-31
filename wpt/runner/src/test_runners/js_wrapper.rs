@@ -24,14 +24,6 @@ fn parse_metas(js_source: &str) -> Vec<(&str, &str)> {
     metas
 }
 
-fn escape_html_text(value: &str) -> String {
-    value.replace('&', "&amp;").replace('<', "&lt;")
-}
-
-fn escape_html_attr(value: &str) -> String {
-    value.replace('&', "&amp;").replace('"', "&quot;")
-}
-
 /// Does the test's `// META: global=` line (or the `.any.js` default of
 /// "window,dedicatedworker") include the `window` global?
 fn globals_include_window(metas: &[(&str, &str)]) -> bool {
@@ -60,12 +52,15 @@ pub fn wrapper_html_for_js_test(relative_path: &str, js_source: &str) -> Option<
                 meta_tags.push_str("<meta name=\"timeout\" content=\"long\">\n");
             }
             "title" => {
-                meta_tags.push_str(&format!("<title>{}</title>\n", escape_html_text(value)));
+                meta_tags.push_str(&format!(
+                    "<title>{}</title>\n",
+                    html_escape::encode_text(value)
+                ));
             }
             "script" => {
                 script_tags.push_str(&format!(
                     "<script src=\"{}\"></script>\n",
-                    escape_html_attr(value)
+                    html_escape::encode_double_quoted_attribute(value)
                 ));
             }
             _ => {}
@@ -111,7 +106,7 @@ mod tests {
                   'use strict';\n\
                   // META: script=ignored-after-code.js\n";
         let html = wrapper_html_for_js_test("dom/foo.any.js", js).unwrap();
-        assert!(html.contains("<title>A &lt;title></title>"));
+        assert!(html.contains("<title>A &lt;title&gt;</title>"));
         assert!(html.contains("<script src=\"/common/utils.js\"></script>"));
         assert!(html.contains("<meta name=\"timeout\" content=\"long\">"));
         assert!(!html.contains("ignored-after-code.js"));
