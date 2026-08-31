@@ -10130,8 +10130,14 @@ dependencies = [
  "terminal-link",
  "thread_local",
  "url",
+ "wpt-runner-types",
  "wptreport",
 ]
+
+[[package]]
+name = "wpt-runner-types"
+version = "0.0.13"
+source = "git+https://github.com/nicoburns/wpt-rs?rev=961f8b905f22b9aa592979625614dccf3a0d3223#961f8b905f22b9aa592979625614dccf3a0d3223"
 
 [[package]]
 name = "wptreport"
