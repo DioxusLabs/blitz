@@ -60,16 +60,17 @@ pub(crate) fn this_node_id(this: &JsValue) -> JsResult<NodeId> {
 ///
 /// Wrappers are cached in [`RuntimeState::node_wrappers`](crate::state::RuntimeState::node_wrappers)
 /// so that object identity (`===`) and expando properties behave as scripts expect.
-pub(crate) fn node_wrapper(ctx: &DomCtx, node_id: NodeId, _context: &mut Context) -> JsObject {
+pub(crate) fn node_wrapper(ctx: &DomCtx, node_id: NodeId, context: &mut Context) -> JsObject {
     if let Some(wrapper) = ctx.state.borrow().node_wrappers.get(&node_id) {
         return wrapper.clone();
     }
 
-    let proto = {
+    let (proto, is_body) = {
         let doc = ctx.doc.borrow();
         let state = ctx.state.borrow();
         let protos = state.protos();
-        match doc.get_node(node_id).map(|node| &node.data) {
+        let node_data = doc.get_node(node_id).map(|node| &node.data);
+        let proto = match node_data {
             Some(NodeData::Document(_)) => protos.document.clone(),
             Some(NodeData::Element(_)) | Some(NodeData::AnonymousBlock(_)) => {
                 protos.element.clone()
@@ -78,15 +79,101 @@ pub(crate) fn node_wrapper(ctx: &DomCtx, node_id: NodeId, _context: &mut Context
                 protos.character_data.clone()
             }
             None => protos.node.clone(),
-        }
+        };
+        let is_body = matches!(
+            node_data,
+            Some(NodeData::Element(element))
+                if element.name.local == blitz_dom::local_name!("body")
+                    || element.name.local == blitz_dom::local_name!("frameset")
+        );
+        (proto, is_body)
     };
 
     let wrapper = JsObject::from_proto_and_data(Some(proto), NodeRef { node_id });
+    if is_body {
+        define_window_forwarding_handlers(&wrapper, context);
+    }
     ctx.state
         .borrow_mut()
         .node_wrappers
         .insert(node_id, wrapper.clone());
     wrapper
+}
+
+/// Event handler IDL attributes on `<body>` / `<frameset>` elements that are
+/// aliases for the corresponding window event handlers, per the HTML spec
+/// ("window-reflecting body element event handler set" plus the
+/// `WindowEventHandlers` mixin).
+const WINDOW_REFLECTING_BODY_EVENTS: &[&str] = &[
+    "afterprint",
+    "beforeprint",
+    "beforeunload",
+    "blur",
+    "error",
+    "focus",
+    "hashchange",
+    "languagechange",
+    "load",
+    "message",
+    "messageerror",
+    "offline",
+    "online",
+    "pagehide",
+    "pageshow",
+    "popstate",
+    "rejectionhandled",
+    "resize",
+    "scroll",
+    "storage",
+    "unhandledrejection",
+    "unload",
+];
+
+/// Define `on<event>` accessors on a `<body>` / `<frameset>` wrapper that
+/// forward gets and sets to the window's corresponding handler.
+fn define_window_forwarding_handlers(wrapper: &JsObject, context: &mut Context) {
+    for name in WINDOW_REFLECTING_BODY_EVENTS {
+        let prop = format!("on{name}");
+        let getter = FunctionObjectBuilder::new(
+            context.realm(),
+            NativeFunction::from_copy_closure(move |_this, _args, context| {
+                context
+                    .global_object()
+                    .get(JsString::from(format!("on{name}")), context)
+            }),
+        )
+        .name(JsString::from(format!("get {prop}")))
+        .length(0)
+        .build();
+        let setter = FunctionObjectBuilder::new(
+            context.realm(),
+            NativeFunction::from_copy_closure(move |_this, args, context| {
+                let value = args.first().cloned().unwrap_or_default();
+                context.global_object().set(
+                    JsString::from(format!("on{name}")),
+                    value,
+                    false,
+                    context,
+                )?;
+                Ok(JsValue::undefined())
+            }),
+        )
+        .name(JsString::from(format!("set {prop}")))
+        .length(1)
+        .build();
+        wrapper
+            .define_property_or_throw(
+                PropertyKey::from(JsString::from(prop)),
+                PropertyDescriptor::builder()
+                    .get(getter)
+                    .set(setter)
+                    .enumerable(false)
+                    .configurable(true)
+                    .build(),
+                context,
+            )
+            .expect("failed to define body event handler accessor");
+    }
 }
 
 /// Convert an optional node id to a JS value (wrapper object or `null`)
