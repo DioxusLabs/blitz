@@ -1157,6 +1157,7 @@ impl BaseDocument {
                 net_provider: self.net_provider.clone(),
                 shell_provider: self.shell_provider.clone(),
                 abort_signal: self.abort_signal.clone(),
+                import_depth: 0,
             }),
             None,
             QuirksMode::NoQuirks,
