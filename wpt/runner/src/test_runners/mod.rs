@@ -119,9 +119,12 @@ pub fn attr_test_needs_scripts(doc: &BaseDocument) -> bool {
 /// and execute its scripts
 pub fn run_document_scripts(ctx: &ThreadCtx, document: BaseDocument) -> ScriptDocument {
     // The runner drives timers manually via `pump_timers`, so the background
-    // timer wakeup thread is unnecessary
+    // timer wakeup thread is unnecessary. Timers run on virtual time: there is
+    // no external event source, so `pump_timers` fast-forwards the clock to
+    // each timer deadline instead of sleeping until it.
     let mut script_document = ScriptDocument::from_base_document(document)
         .without_timer_thread()
+        .with_virtual_time()
         .with_fetcher(WptScriptFetcher::new(ctx.wpt_dir.clone()));
     script_document.execute_scripts();
     script_document
@@ -130,22 +133,28 @@ pub fn run_document_scripts(ctx: &ThreadCtx, document: BaseDocument) -> ScriptDo
 /// Pump the document's pending JS timers until `check` produces a result or
 /// there are no more timers due within `budget`. `check` runs once before any
 /// timer fires and again after each timer poll.
+///
+/// The document runs on virtual time (see [`run_document_scripts`]): instead
+/// of sleeping until the next timer deadline, the clock is fast-forwarded to
+/// it, so timers fire in deadline order without wall-clock waiting. `budget`
+/// bounds both virtual time and (as a backstop for timer callbacks which
+/// reschedule themselves indefinitely, e.g. rAF loops) real time.
 pub fn pump_timers<T>(
     document: &mut ScriptDocument,
     budget: Duration,
     mut check: impl FnMut(&mut ScriptDocument) -> Option<T>,
 ) -> Option<T> {
-    let deadline = Instant::now() + budget;
+    let real_deadline = Instant::now() + budget;
+    let virtual_deadline = document.clock_now() + budget;
     loop {
         if let Some(result) = check(document) {
             return Some(result);
         }
         match document.next_timer_deadline() {
-            Some(timer_deadline) if timer_deadline <= deadline => {
-                let now = Instant::now();
-                if timer_deadline > now {
-                    std::thread::sleep(timer_deadline - now);
-                }
+            Some(timer_deadline)
+                if timer_deadline <= virtual_deadline && Instant::now() < real_deadline =>
+            {
+                document.advance_clock_to(timer_deadline);
                 document.poll(None);
             }
             // Timer budget expired, or no pending timers
