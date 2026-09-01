@@ -286,7 +286,6 @@ impl Buffers {
 struct ThreadCtx {
     worker_index: usize,
     run_quarantined: bool,
-    run_slow: bool,
     viewport: Viewport,
     net_provider: Arc<WptNetProvider<Resource>>,
     navigation_provider: Arc<dyn NavigationProvider>,
@@ -429,7 +428,6 @@ fn main() {
 
     let verbose = env::args().any(|arg| arg == "--verbose" || arg == "-v");
     let run_quarantined = env::args().any(|arg| arg == "--run-quarantined");
-    let run_slow = env::args().any(|arg| arg == "--run-slow");
     let wpt_dir = path::absolute(env::var("WPT_DIR").expect("WPT_DIR is not set")).unwrap();
     info!("WPT_DIR: {}", wpt_dir.display());
     if !wpt_dir.exists() {
@@ -531,7 +529,6 @@ fn main() {
                     RefCell::new(ThreadCtx {
                         worker_index,
                         run_quarantined,
-                        run_slow,
                         viewport,
                         net_provider,
                         renderer,

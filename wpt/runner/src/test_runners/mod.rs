@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::LazyLock;
 use std::time::Duration;
 use std::{fs, sync::Arc, time::Instant};
@@ -37,17 +37,6 @@ static TIMEOUT_QUARANTINE: LazyLock<HashMap<&'static str, &'static str>> = LazyL
             tests.insert(path, reason).is_none(),
             "duplicate timeout quarantine entry: {path}"
         );
-    }
-    tests
-});
-
-/// Tests which are legitimately slow: they would likely complete (and may even
-/// pass) given enough time, but exceed the harness timeout, making them both
-/// expensive to run and flaky. Enable with `--run-slow`.
-static SLOW_TESTS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
-    let mut tests = HashSet::new();
-    for path in include_str!("../../slow-tests.txt").lines() {
-        assert!(tests.insert(path), "duplicate slow test entry: {path}");
     }
     tests
 });
@@ -196,17 +185,6 @@ pub fn process_test_file(
         && let Some(reason) = TIMEOUT_QUARANTINE.get(relative_path)
     {
         debug!("Skipping quarantined test {relative_path}: {reason}");
-        return (
-            TestKind::TestHarness,
-            TestFlags::empty(),
-            TestStatus::Skip,
-            SubtestCounts::ZERO_OF_ZERO,
-            Vec::new(),
-        );
-    }
-
-    if !ctx.run_slow && SLOW_TESTS.contains(relative_path) {
-        debug!("Skipping slow test {relative_path}");
         return (
             TestKind::TestHarness,
             TestFlags::empty(),
@@ -429,16 +407,10 @@ mod tests {
 
     #[test]
     fn timeout_quarantine_is_valid() {
-        assert_eq!(TIMEOUT_QUARANTINE.len(), 237);
+        assert_eq!(TIMEOUT_QUARANTINE.len(), 247);
         assert_eq!(
             TIMEOUT_QUARANTINE.get("css/selectors/focus-visible-001.html"),
             Some(&"testdriver")
         );
-    }
-
-    #[test]
-    fn slow_tests_is_valid() {
-        assert_eq!(SLOW_TESTS.len(), 23);
-        assert!(SLOW_TESTS.contains("css/css-color/parsing/color-computed-hsl.html"));
     }
 }
