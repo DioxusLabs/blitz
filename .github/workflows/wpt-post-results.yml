@@ -46,4 +46,4 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ steps.pull-request.outputs.number }}
           RUN_URL: ${{ github.event.workflow_run.html_url }}
-        run: python3 ./.github/scripts/wpt_diff_to_pr.py ./wpt/output/wptdiff.txt
+        run: python3 ./.github/scripts/wpt_diff_to_pr.py ./wpt/output/wptdiff.json
