@@ -29,6 +29,7 @@
 //!   (the registry borrow is held for the duration of the callback).
 
 use boa_engine::class::{Class, ClassBuilder};
+use boa_engine::context::intrinsics::Intrinsics;
 use boa_engine::gc::GcRefCell;
 use boa_engine::object::{NativeObject, PROTOTYPE};
 use boa_engine::{Context, Finalize, JsData, JsObject, JsResult, JsValue, Trace};
@@ -348,6 +349,41 @@ impl<T: ExtendLayer> EmitOwn for T {
         // Parent slots first (ES super order): move the field in directly.
         T::Parent::populate_chain(instance, chain.parent, ctx)?;
         set_own_block::<T>(instance, chain.own)
+    }
+}
+
+// ── HostGlobal: the host-hooks global object path ────────────────────
+
+/// A layer chain that can be born as a host global object.
+///
+/// The host hooks create the realm's global object before a `Context`
+/// exists, so the ordinary `from_chain!` path (a registered class
+/// prototype) is unavailable there. A host global is instead created from
+/// pure layer data plus the realm's intrinsics: [`Self::host_global`]
+/// attaches the registry and fills every slot through [`Self::host_fill`].
+/// `Class::init` later defines the members on the class prototype and
+/// links the global object into it.
+///
+/// Implementing this is an explicit opt-in for host-owned globals; the
+/// chain data must be pure at host-creation time (realm-bound objects are
+/// created later, from the layers' state).
+pub trait HostGlobal: ExtendLayer {
+    /// Move the chain's layers into their slots on a freshly attached
+    /// registry, parent layer first. Written by the chain's leaf layer —
+    /// only it knows the chain's exact shape — using the public
+    /// `set_own_block` per layer.
+    fn host_fill(object: &JsObject, chain: <Self as EmitOwn>::Chain) -> JsResult<()>;
+
+    /// Create the realm's global object from the pure chain data: an
+    /// object with the intrinsic `Object.prototype`, a registry sized for
+    /// the chain, and every slot filled by [`Self::host_fill`].
+    fn host_global(chain: <Self as EmitOwn>::Chain, intrinsics: &Intrinsics) -> JsResult<JsObject> {
+        let object = JsObject::from_proto_and_data(
+            JsObject::with_object_proto(intrinsics),
+            OwnDataRegistry::new::<Self>(),
+        );
+        Self::host_fill(&object, chain)?;
+        Ok(object)
     }
 }
 

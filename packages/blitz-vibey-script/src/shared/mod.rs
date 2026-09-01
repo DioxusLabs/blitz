@@ -12,8 +12,9 @@ mod native_function;
 pub(crate) use boa_value::as_object;
 pub(crate) use error::{err_node, native_error};
 pub use extends::{
-    Constructed, EmitOwn, ExtendLayer, Extended, ExtendedOf, LayerChain, OwnBlock, OwnDataRegistry,
-    RootLayer, Super, SuperDone, link_prototype, set_own_block, with_own, with_own_mut,
+    Constructed, EmitOwn, ExtendLayer, Extended, ExtendedOf, HostGlobal, LayerChain, OwnBlock,
+    OwnDataRegistry, RootLayer, Super, SuperDone, link_prototype, set_own_block, with_own,
+    with_own_mut,
 };
 pub(crate) use macros::{
     from_chain, instance_accessor, instance_getter, instance_method, instance_property,

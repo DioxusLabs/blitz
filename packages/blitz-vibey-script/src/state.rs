@@ -2,11 +2,9 @@
 //! JavaScript side (native functions registered with the Boa `Context`).
 
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::rc::Rc;
 
 use blitz_dom::{BaseDocument, NodeId};
-use boa_engine::object::JsObject;
 use boa_engine::{Finalize, JsData, Trace};
 
 use crate::clock::ScriptClock;
@@ -32,15 +30,6 @@ impl ReadyState {
     }
 }
 
-/// An event listener registered on `window`
-#[derive(Clone)]
-pub(crate) struct Listener {
-    pub callback: JsObject,
-    pub once: bool,
-}
-
-pub(crate) type ListenerMap = HashMap<String, Vec<Listener>>;
-
 /// State owned by the script runtime but shared (via `Rc`) with the native
 /// functions exposed to JavaScript.
 ///
@@ -51,8 +40,6 @@ pub(crate) type ListenerMap = HashMap<String, Vec<Listener>>;
 pub(crate) struct RuntimeState {
     /// Cache of JS wrapper objects, keyed by node id (see [`NodeWrappers`]).
     pub node_wrappers: NodeWrappers,
-    /// Event listeners registered on `window`.
-    pub window_listeners: ListenerMap,
     /// Pending timers (`setTimeout`/`setInterval`/`requestAnimationFrame`)
     pub timers: TimerQueue,
     /// The clock driving timer deadlines and `Date`

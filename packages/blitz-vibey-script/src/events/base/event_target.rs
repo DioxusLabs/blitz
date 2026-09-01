@@ -9,6 +9,7 @@
 
 use boa_engine::class::ClassBuilder;
 use boa_engine::gc::GcRefCell;
+use boa_engine::property::Attribute;
 use boa_engine::{Context, Finalize, JsData, JsObject, JsResult, JsValue, Trace};
 
 use crate::dom::{dom_ctx, dom_exception, this_node_id, to_rust_string};
@@ -18,7 +19,8 @@ use crate::events::base::event::{
 };
 use crate::runtime::dispatch_event_on_chain;
 use crate::shared::{
-    Constructed, ExtendLayer, Extended, RootLayer, Super, instance_method, native_fn_ptr, with_own,
+    Constructed, ExtendLayer, Extended, RootLayer, Super, instance_accessor, instance_method,
+    js_copy_closure_with_captures, native_error, native_fn_ptr, with_own,
 };
 use crate::state::DomCtx;
 
@@ -78,9 +80,7 @@ impl ListenerCallback {
     fn same_registration(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::Function(a), Self::Function(b)) => JsObject::equals(a, b),
-            (Self::HandlerObject(a), Self::HandlerObject(b)) => {
-                JsObject::equals(a, b)
-            }
+            (Self::HandlerObject(a), Self::HandlerObject(b)) => JsObject::equals(a, b),
             _ => false,
         }
     }
@@ -192,12 +192,20 @@ fn capture_option(args: &[JsValue], context: &mut Context) -> JsResult<bool> {
     }
 }
 
-fn add_event_listener(
+pub(crate) fn add_event_listener(
     this: &JsValue,
     args: &[JsValue],
     context: &mut Context,
 ) -> JsResult<JsValue> {
-    let obj = this_target(this)?;
+    // WebIDL semantics: an interface operation called with no receiver
+    // (or detached) receives `undefined` as `this`; it binds the global
+    // this — the realm's `globalThis`, i.e. the window.
+    let this = if this.is_null_or_undefined() {
+        context.global_object().clone().into()
+    } else {
+        this.clone()
+    };
+    let obj = this_target(&this)?;
     let event_type = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
     let Some(callback) = parse_listener_callback(args.get(1), context) else {
         return Ok(JsValue::undefined());
@@ -235,12 +243,18 @@ fn add_event_listener(
     Ok(JsValue::undefined())
 }
 
-fn remove_event_listener(
+pub(crate) fn remove_event_listener(
     this: &JsValue,
     args: &[JsValue],
     context: &mut Context,
 ) -> JsResult<JsValue> {
-    let obj = this_target(this)?;
+    // Same global-this binding as `add_event_listener`.
+    let this = if this.is_null_or_undefined() {
+        context.global_object().clone().into()
+    } else {
+        this.clone()
+    };
+    let obj = this_target(&this)?;
     let event_type = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
     let Some(callback) = parse_listener_callback(args.get(1), context) else {
         return Ok(JsValue::undefined());
@@ -438,4 +452,58 @@ fn dispatch_event(this: &JsValue, args: &[JsValue], context: &mut Context) -> Js
     })?;
 
     Ok(JsValue::from(!with_state(&event_obj, |st| st.canceled)?))
+}
+
+// ── `on<event>` IDL-style attributes ─────────────────────────────────
+
+/// Define the `on<event>` IDL-style attributes for `types` on the class
+/// prototype: assigning a callable registers it as the event's attribute
+/// listener (replacing any previous one), assigning anything else removes
+/// it. The getter reflects the registered handler. Each class defines its
+/// own set of event types (`Node`, `Window`), per the HTML spec's handler
+/// mixins.
+pub(crate) fn define_on_event_attributes(
+    class: &mut ClassBuilder<'_>,
+    types: &'static [&'static str],
+) {
+    let realm = class.context().realm().clone();
+    for event_type in types.iter().copied() {
+        let getter = js_copy_closure_with_captures!(
+            |this, _args, event_type: &&'static str, context| {
+                let obj = this
+                    .as_object()
+                    .ok_or_else(|| native_error!(typ, "not an event target"))?;
+                let handler = with_own::<EventTargetLayer, _>(&obj, |target| {
+                    target.attribute_listener(event_type, context)
+                })?;
+                Ok(handler.map(JsValue::from).unwrap_or_else(JsValue::null))
+            },
+            event_type,
+            &realm
+        );
+        let setter = js_copy_closure_with_captures!(
+            |this, args, event_type: &&'static str, _context| {
+                let obj = this
+                    .as_object()
+                    .ok_or_else(|| native_error!(typ, "not an event target"))?;
+                let handler = args.first().and_then(|value| value.as_object());
+                with_own::<EventTargetLayer, _>(&obj, |target| {
+                    match handler.filter(|candidate| candidate.is_callable()) {
+                        Some(handler) => target.set_attribute_listener(event_type, handler),
+                        None => target.remove_attribute_listener(event_type),
+                    }
+                })?;
+                Ok(JsValue::undefined())
+            },
+            event_type,
+            &realm
+        );
+        instance_accessor!(
+            class,
+            format!("on{event_type}"),
+            getter,
+            setter,
+            Attribute::CONFIGURABLE | Attribute::NON_ENUMERABLE
+        );
+    }
 }

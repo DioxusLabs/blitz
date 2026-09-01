@@ -41,6 +41,7 @@ pub mod shared;
 mod state;
 mod switchable_ref;
 mod timers;
+mod window;
 
 pub use document::ScriptDocument;
 pub use fetch::{DefaultScriptFetcher, FetchError, ScriptFetcher};
