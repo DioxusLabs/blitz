@@ -941,129 +941,7 @@ impl ScriptRuntime {
             Err(error) => report_js_error(&ctx, "event target", &error),
         }
 
-        let mut propagation_stopped = false;
-        let mut any_called = false;
-
-        // Capture phase (root → target's parent): capture listeners only.
-        for &node_id in chain.iter().skip(1).rev() {
-            if propagation_stopped {
-                break;
-            }
-            let (stopped, called) = dispatch_to_node(
-                &ctx,
-                &event_obj,
-                node_id,
-                name,
-                &DispatchStep {
-                    phase: CAPTURING_PHASE,
-                    invoke_capture: true,
-                    invoke_non_capture: false,
-                },
-                context,
-            );
-            propagation_stopped |= stopped;
-            any_called |= called;
-        }
-
-        // Target phase: both listener flavors plus the `on<event>` handler.
-        if !propagation_stopped {
-            let (stopped, called) = dispatch_to_node(
-                &ctx,
-                &event_obj,
-                chain[0],
-                name,
-                &DispatchStep {
-                    phase: AT_TARGET_PHASE,
-                    invoke_capture: true,
-                    invoke_non_capture: true,
-                },
-                context,
-            );
-            propagation_stopped |= stopped;
-            any_called |= called;
-        }
-
-        // Bubble phase (target's parent → root): non-capture listeners plus
-        // the `on<event>` handler.
-        if bubbles && !propagation_stopped {
-            for &node_id in chain.iter().skip(1) {
-                if propagation_stopped {
-                    break;
-                }
-                let (stopped, called) = dispatch_to_node(
-                    &ctx,
-                    &event_obj,
-                    node_id,
-                    name,
-                    &DispatchStep {
-                        phase: BUBBLING_PHASE,
-                        invoke_capture: false,
-                        invoke_non_capture: true,
-                    },
-                    context,
-                );
-                propagation_stopped |= stopped;
-                any_called |= called;
-            }
-        }
-
-        // Window-level listeners (bubble only)
-        if bubbles && !event_flag(&event_obj, |st| st.stop_propagation) {
-            let listeners: Vec<Listener> = {
-                let mut state = ctx.state.borrow_mut();
-                match state.window_listeners.get_mut(name) {
-                    Some(listeners) => {
-                        let cloned = listeners.clone();
-                        listeners.retain(|l| !l.once);
-                        cloned
-                    }
-                    None => Vec::new(),
-                }
-            };
-            if !listeners.is_empty() {
-                let global: JsValue = context.global_object().into();
-                with_state_mut(&event_obj, |st| {
-                    st.phase = BUBBLING_PHASE;
-                    st.current_target = DispatchTarget::from_value(global.clone());
-                })
-                .expect("failed to update currentTarget");
-                for listener in listeners {
-                    any_called = true;
-                    if let Err(error) =
-                        listener
-                            .callback
-                            .call(&global, &[event_obj.clone().into()], context)
-                    {
-                        report_js_error(&ctx, "event listener", &error);
-                    }
-                    if event_flag(&event_obj, |st| st.stop_immediate) {
-                        break;
-                    }
-                }
-            }
-        }
-
-        // Per the DOM spec, after dispatch ends the transient values are
-        // cleared so async callbacks read `currentTarget: null`.
-        with_state_mut(&event_obj, |st| {
-            st.current_target = DispatchTarget::None;
-            st.phase = NONE_PHASE;
-            st.dispatching = false;
-        })
-        .expect("failed to reset event state");
-
-        // Feed `preventDefault` / `stopPropagation` back into Blitz
-        if event_flag(&event_obj, |st| st.canceled) {
-            event_state.prevent_default();
-        }
-        if event_flag(&event_obj, |st| st.stop_propagation) {
-            event_state.stop_propagation();
-        }
-        if any_called {
-            event_state.request_redraw();
-        }
-
-        any_called
+        dispatch_event_on_chain(&ctx, chain, name, bubbles, &event_obj, event_state, context)
     }
 
     /// Dispatch a simple event (e.g. `DOMContentLoaded`) targeting the document node
@@ -1089,15 +967,12 @@ impl ScriptRuntime {
         let context = &mut self.context;
 
         let listeners: Vec<Listener> = {
-            let mut state = ctx.state.borrow_mut();
-            match state.window_listeners.get_mut(name) {
-                Some(listeners) => {
-                    let cloned = listeners.clone();
-                    listeners.retain(|l| !l.once);
-                    cloned
-                }
-                None => Vec::new(),
-            }
+            let state = ctx.state.borrow();
+            state
+                .window_listeners
+                .get(name)
+                .cloned()
+                .unwrap_or_default()
         };
 
         let global: JsValue = context.global_object().into();
@@ -1111,6 +986,13 @@ impl ScriptRuntime {
         let mut any_called = false;
         for listener in listeners {
             any_called = true;
+            // `once` is removed right before its call.
+            if listener.once {
+                let mut state = ctx.state.borrow_mut();
+                if let Some(stored) = state.window_listeners.get_mut(name) {
+                    stored.retain(|l| !JsObject::equals(&l.callback, &listener.callback));
+                }
+            }
             if let Err(error) =
                 listener
                     .callback
@@ -1138,6 +1020,149 @@ impl ScriptRuntime {
         }
         any_called
     }
+}
+
+/// Walk `event_obj` through the capture → target → bubble phases over
+/// `chain`, then the window-level listeners, and reset the event's
+/// transient state afterwards. `preventDefault` / `stopPropagation` are
+/// fed back into `event_state`. Returns `true` if any listener was invoked.
+pub(crate) fn dispatch_event_on_chain(
+    ctx: &DomCtx,
+    chain: &[NodeId],
+    event_type: &str,
+    bubbles: bool,
+    event_obj: &JsObject,
+    event_state: &mut EventState,
+    context: &mut Context,
+) -> bool {
+    let mut propagation_stopped = false;
+    let mut any_called = false;
+
+    // Capture phase (root → target's parent): capture listeners only.
+    for &node_id in chain.iter().skip(1).rev() {
+        if propagation_stopped {
+            break;
+        }
+        let (stopped, called) = dispatch_to_node(
+            ctx,
+            event_obj,
+            node_id,
+            event_type,
+            &DispatchStep {
+                phase: CAPTURING_PHASE,
+                invoke_capture: true,
+                invoke_non_capture: false,
+            },
+            context,
+        );
+        propagation_stopped |= stopped;
+        any_called |= called;
+    }
+
+    // Target phase: both listener flavors.
+    if !propagation_stopped {
+        let (stopped, called) = dispatch_to_node(
+            ctx,
+            event_obj,
+            chain[0],
+            event_type,
+            &DispatchStep {
+                phase: AT_TARGET_PHASE,
+                invoke_capture: true,
+                invoke_non_capture: true,
+            },
+            context,
+        );
+        propagation_stopped |= stopped;
+        any_called |= called;
+    }
+
+    // Bubble phase (target's parent → root): non-capture listeners.
+    if bubbles && !propagation_stopped {
+        for &node_id in chain.iter().skip(1) {
+            if propagation_stopped {
+                break;
+            }
+            let (stopped, called) = dispatch_to_node(
+                ctx,
+                event_obj,
+                node_id,
+                event_type,
+                &DispatchStep {
+                    phase: BUBBLING_PHASE,
+                    invoke_capture: false,
+                    invoke_non_capture: true,
+                },
+                context,
+            );
+            propagation_stopped |= stopped;
+            any_called |= called;
+        }
+    }
+
+    // Window-level listeners (bubble only)
+    if bubbles && !event_flag(event_obj, |st| st.stop_propagation) {
+        let listeners: Vec<Listener> = {
+            let state = ctx.state.borrow();
+            state
+                .window_listeners
+                .get(event_type)
+                .cloned()
+                .unwrap_or_default()
+        };
+        if !listeners.is_empty() {
+            let global: JsValue = context.global_object().into();
+            with_state_mut(event_obj, |st| {
+                st.phase = BUBBLING_PHASE;
+                st.current_target = DispatchTarget::from_value(global.clone());
+            })
+            .expect("failed to update currentTarget");
+            for listener in listeners {
+                // A previously-run listener may have stopped the dispatch.
+                // `once` entries are removed right before their call, so an
+                // un-fired once stays registered.
+                if event_flag(event_obj, |st| st.stop_immediate) {
+                    break;
+                }
+                any_called = true;
+                if listener.once {
+                    let mut state = ctx.state.borrow_mut();
+                    if let Some(stored) = state.window_listeners.get_mut(event_type) {
+                        stored.retain(|l| !JsObject::equals(&l.callback, &listener.callback));
+                    }
+                }
+                if let Err(error) =
+                    listener
+                        .callback
+                        .call(&global, &[event_obj.clone().into()], context)
+                {
+                    report_js_error(ctx, "event listener", &error);
+                }
+            }
+        }
+    }
+
+    // Per the DOM spec, after dispatch ends the transient values are
+    // cleared so async callbacks read `currentTarget: null`.
+    with_state_mut(event_obj, |st| {
+        st.current_target = DispatchTarget::None;
+        st.phase = NONE_PHASE;
+        st.dispatching = false;
+    })
+    .expect("failed to reset event state");
+
+    // Feed `preventDefault` / `stopPropagation` back into Blitz
+    if event_flag(event_obj, |st| st.canceled) {
+        event_state.prevent_default();
+    }
+    if event_flag(event_obj, |st| st.stop_propagation) {
+        event_state.stop_propagation();
+    }
+    if any_called {
+        event_state.request_redraw();
+    }
+
+    any_called
 }
 
 /// Build a lazy dispatch target: a `JsFunction` that wraps the node the first
@@ -1169,8 +1194,8 @@ struct DispatchStep {
 
 /// Dispatch `event_obj` to a single receiver node: set `currentTarget` and
 /// `eventPhase`, invoke the node wrapper's registered listeners per the plan
-/// (`on<event>` attribute handlers ride the non-capture flavor). Returns
-/// `(propagation_stopped, any_listener_called)`.
+/// (capture flavor before the non-capture flavor on the target itself).
+/// Returns `(propagation_stopped, any_listener_called)`.
 fn dispatch_to_node(
     ctx: &DomCtx,
     event_obj: &JsObject,
@@ -1179,7 +1204,12 @@ fn dispatch_to_node(
     step: &DispatchStep,
     context: &mut Context,
 ) -> (bool, bool) {
-    let wrapper = node_wrapper(ctx, node_id, context);
+    // Listeners live in the wrapper's own block; a node without a cached
+    // wrapper has none, so there is nothing to invoke and no wrapper is
+    // materialized for it.
+    let Some(wrapper) = ctx.state.borrow().node_wrappers.get(node_id) else {
+        return (false, false);
+    };
 
     with_state_mut(event_obj, |st| {
         st.phase = step.phase;
@@ -1201,7 +1231,9 @@ fn dispatch_to_node(
         stopped |= s;
         called |= c;
     }
-    if step.invoke_non_capture {
+    // stopImmediatePropagation ends the dispatch; plain stopPropagation
+    // leaves this receiver's remaining (non-capture) listeners in place.
+    if step.invoke_non_capture && !event_flag(event_obj, |st| st.stop_immediate) {
         let (s, c) = invoke(false);
         stopped |= s;
         called |= c;
@@ -1548,6 +1580,17 @@ fn window_add_event_listener(
     else {
         return Ok(JsValue::undefined());
     };
+    // `once` is only read off the options object (the boolean form has none).
+    let once = args
+        .get(2)
+        .and_then(|options| options.as_object())
+        .and_then(|options| {
+            options
+                .get(boa_engine::js_string!("once"), context)
+                .ok()
+                .map(|value| value.to_boolean())
+        })
+        .unwrap_or(false);
 
     let mut state = ctx.state.borrow_mut();
     let listeners = state.window_listeners.entry(event_type).or_default();
@@ -1555,10 +1598,7 @@ fn window_add_event_listener(
         .iter()
         .any(|l| JsObject::equals(&l.callback, &callback))
     {
-        listeners.push(Listener {
-            callback,
-            once: false,
-        });
+        listeners.push(Listener { callback, once });
     }
     Ok(JsValue::undefined())
 }

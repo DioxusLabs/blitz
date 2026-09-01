@@ -848,3 +848,90 @@ fn node_dispatch_event_fires_property_handler_first_when_assigned_first() {
     );
     assert_eq!(text_of_selector(&doc, "#out"), "handle1,handle2");
 }
+
+// `node.dispatchEvent()` walks the full DOM chain: capture listeners on the
+// ancestors fire top-down, the target's own capture listeners fire before its
+// non-capture ones, then non-capture listeners bubble bottom-up — but only
+// when the event bubbles.
+#[test]
+fn node_dispatch_event_propagates_through_dom_tree() {
+    let doc = doc_from_html(
+        r#"
+        <html><body>
+            <div id="outer"><div id="inner"><button id="leaf">hi</button></div></div>
+            <div id="out"></div>
+            <script>
+                globalThis.__log = [];
+                const log = globalThis.__log;
+                const record = (name) => () => log.push(name);
+                const outer = document.getElementById("outer");
+                const inner = document.getElementById("inner");
+                const leaf = document.getElementById("leaf");
+                outer.addEventListener("ping", record("outer-cap"), true);
+                inner.addEventListener("ping", record("inner-bub"));
+                leaf.addEventListener("ping", record("leaf-cap"), true);
+                leaf.addEventListener("ping", record("leaf-bub"));
+                leaf.dispatchEvent(new Event("ping", { bubbles: true }));
+                const bubbled = log.join(",");
+                log.length = 0;
+                leaf.dispatchEvent(new Event("ping"));
+                const unbubbled = log.join(",");
+                document.getElementById("out").textContent = `${bubbled}|${unbubbled}`;
+            </script>
+        </body></html>
+        "#,
+    );
+    assert_eq!(
+        text_of_selector(&doc, "#out"),
+        "outer-cap,leaf-cap,leaf-bub,inner-bub|outer-cap,leaf-cap,leaf-bub"
+    );
+}
+
+// `stopImmediatePropagation()` in a target-phase capture listener ends the
+// dispatch: the target's own non-capture listeners and the bubble walk
+// (including window listeners) do not run.
+#[test]
+fn stop_immediate_in_target_capture_halts_the_rest() {
+    let doc = doc_from_html(
+        r#"
+        <html><body><button id="leaf">hi</button><div id="out"></div>
+        <script>
+            globalThis.__log = [];
+            const log = globalThis.__log;
+            window.addEventListener("ping", () => log.push("window"));
+            const leaf = document.getElementById("leaf");
+            leaf.addEventListener("ping", (e) => { log.push("leaf-cap"); e.stopImmediatePropagation(); }, true);
+            leaf.addEventListener("ping", () => log.push("leaf-bub"));
+            leaf.dispatchEvent(new Event("ping", { bubbles: true }));
+            document.getElementById("out").textContent = log.join(",");
+        </script></body></html>
+        "#,
+    );
+    assert_eq!(text_of_selector(&doc, "#out"), "leaf-cap");
+}
+
+// `once` window listeners are removed right before their call: one halted by
+// `stopImmediatePropagation` stays registered and fires on the next dispatch.
+#[test]
+fn window_once_survives_a_halted_dispatch() {
+    let mut doc = doc_from_html(
+        r#"
+        <html><body><button id="leaf">hi</button><div id="out"></div>
+        <script>
+            globalThis.__log = [];
+            const log = globalThis.__log;
+            window.addEventListener("click", (e) => { log.push("w1"); e.stopImmediatePropagation(); }, { once: true });
+            window.addEventListener("click", () => log.push("w2"), { once: true });
+        </script></body></html>
+        "#,
+    );
+    dispatch_click(&mut doc, "#leaf");
+    doc.eval(r#"document.getElementById("out").textContent = globalThis.__log.join(",");"#);
+    assert_eq!(text_of_selector(&doc, "#out"), "w1");
+
+    // The halted once listener was never invoked, so it is still registered
+    // and fires on the second dispatch (the first one was already removed).
+    dispatch_click(&mut doc, "#leaf");
+    doc.eval(r#"document.getElementById("out").textContent = globalThis.__log.join(",");"#);
+    assert_eq!(text_of_selector(&doc, "#out"), "w1,w2");
+}

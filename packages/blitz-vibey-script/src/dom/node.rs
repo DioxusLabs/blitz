@@ -185,13 +185,13 @@ fn define_on_event_attributes(class: &mut ClassBuilder<'_>) {
     let realm = class.context().realm().clone();
     for (index, event_type) in ON_EVENT_TYPES.iter().enumerate() {
         let getter = js_copy_closure_with_captures!(
-            |this, _args, index: &u16, _context| {
+            |this, _args, index: &u16, context| {
                 let obj = this
                     .as_object()
                     .ok_or_else(|| native_error!(typ, "not a DOM node"))?;
                 let event_type = ON_EVENT_TYPES[*index as usize];
                 let handler = with_own::<crate::events::EventTargetLayer, _>(&obj, |target| {
-                    target.attribute_listener(event_type)
+                    target.attribute_listener(event_type, context)
                 })?;
                 Ok(handler.map(JsValue::from).unwrap_or_else(JsValue::null))
             },

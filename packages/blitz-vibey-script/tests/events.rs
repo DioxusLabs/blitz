@@ -260,3 +260,112 @@ fn listener_shape_determines_callback_this() {
     );
     assert_eq!(result, ["ET", "EL"]);
 }
+
+// On the target itself, capture-registered listeners run before the
+// non-capture ones, regardless of registration order.
+#[test]
+fn event_target_dispatch_runs_capture_before_non_capture() {
+    let mut doc = ScriptDocument::from_html("<body></body>", DocumentConfig::default());
+    doc.execute_scripts();
+
+    let result = eval_report(
+        &mut doc,
+        r#"
+        const et = new EventTarget();
+        const log = [];
+        et.addEventListener("ping", () => log.push("bubble-first"));
+        et.addEventListener("ping", () => log.push("capture"), true);
+        et.addEventListener("ping", () => log.push("bubble-second"));
+        et.dispatchEvent(new Event("ping"));
+        push(log.join(","));
+    "#,
+    );
+    assert_eq!(result, ["capture,bubble-first,bubble-second"]);
+}
+
+// `stopImmediatePropagation()` inside a capture-registered listener ends the
+// dispatch: the non-capture flavor does not run at all.
+#[test]
+fn stop_immediate_in_capture_halts_the_second_flavor() {
+    let mut doc = ScriptDocument::from_html("<body></body>", DocumentConfig::default());
+    doc.execute_scripts();
+
+    let result = eval_report(
+        &mut doc,
+        r#"
+        const et = new EventTarget();
+        const log = [];
+        et.addEventListener("ping", (e) => { log.push("capture"); e.stopImmediatePropagation(); }, true);
+        et.addEventListener("ping", () => log.push("bubble"));
+        et.dispatchEvent(new Event("ping"));
+        push(log.join(","));
+    "#,
+    );
+    assert_eq!(result, ["capture"]);
+}
+
+// Dispatching an event that is already being dispatched throws an
+// `InvalidStateError` DOMException instead of corrupting the outer dispatch.
+#[test]
+fn reentrant_dispatch_event_is_rejected() {
+    let mut doc = ScriptDocument::from_html("<body></body>", DocumentConfig::default());
+    doc.execute_scripts();
+
+    let result = eval_report(
+        &mut doc,
+        r#"
+        const et = new EventTarget();
+        const log = [];
+        et.addEventListener("ping", (e) => {
+            try { et.dispatchEvent(e); log.push("no-error"); }
+            catch (err) { log.push(err.name); }
+        });
+        et.dispatchEvent(new Event("ping"));
+        push(log.join(","));
+    "#,
+    );
+    assert_eq!(result, ["InvalidStateError"]);
+}
+
+// A `once` listener halted by `stopImmediatePropagation` is never invoked and
+// therefore stays registered; it fires on the next dispatch.
+#[test]
+fn once_kept_when_its_dispatch_is_halted() {
+    let mut doc = ScriptDocument::from_html("<body></body>", DocumentConfig::default());
+    doc.execute_scripts();
+
+    let result = eval_report(
+        &mut doc,
+        r#"
+        const et = new EventTarget();
+        const log = [];
+        et.addEventListener("ping", (e) => { log.push("first"); e.stopImmediatePropagation(); }, { once: true });
+        et.addEventListener("ping", () => log.push("second"), { once: true });
+        et.dispatchEvent(new Event("ping"));
+        et.dispatchEvent(new Event("ping"));
+        push(log.join(","));
+    "#,
+    );
+    assert_eq!(result, ["first,second"]);
+}
+
+// A listener object's `handleEvent` is read at dispatch time: replacing it
+// after registration takes effect on the next dispatch.
+#[test]
+fn handle_event_replacement_takes_effect() {
+    let mut doc = ScriptDocument::from_html("<body></body>", DocumentConfig::default());
+    doc.execute_scripts();
+
+    let result = eval_report(
+        &mut doc,
+        r#"
+        const et = new EventTarget();
+        const listener = { handleEvent() { push("first"); } };
+        et.addEventListener("ping", listener);
+        et.dispatchEvent(new Event("ping"));
+        listener.handleEvent = () => push("second");
+        et.dispatchEvent(new Event("ping"));
+    "#,
+    );
+    assert_eq!(result, ["first", "second"]);
+}
