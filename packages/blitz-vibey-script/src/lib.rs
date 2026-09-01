@@ -34,9 +34,11 @@ mod dom;
 mod event_handler;
 mod events;
 mod fetch;
+mod node_wrappers;
 mod runtime;
 pub mod shared;
 mod state;
+mod switchable_ref;
 mod timers;
 
 pub use document::ScriptDocument;

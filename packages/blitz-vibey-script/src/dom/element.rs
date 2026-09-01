@@ -813,14 +813,11 @@ fn set_inner_html(this: &JsValue, args: &[JsValue], context: &mut Context) -> Js
     let node_id = this_node_id(this)?;
     let html = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
 
-    let mut doc = ctx.doc.borrow_mut();
-    let mut mutr = doc.mutate();
-    // Detach (rather than drop) any existing children so that JS wrappers
+    // Detach (rather than drop) the existing children so that JS wrappers
     // referencing them remain valid.
-    for child_id in mutr.child_ids(node_id) {
-        mutr.remove_node(child_id);
-    }
-    mutr.set_inner_html(node_id, &html);
+    ctx.detach_children(node_id);
+    let mut doc = ctx.doc.borrow_mut();
+    doc.mutate().set_inner_html(node_id, &html);
     Ok(JsValue::undefined())
 }
 

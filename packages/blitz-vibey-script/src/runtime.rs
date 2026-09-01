@@ -885,7 +885,7 @@ impl ScriptRuntime {
             let state = ctx.state.borrow();
             let wrapper_hit = chain
                 .iter()
-                .any(|node_id| state.node_wrappers.contains_key(node_id));
+                .any(|node_id| state.node_wrappers.contains_key(*node_id));
             let window_hit = state
                 .window_listeners
                 .get(name)

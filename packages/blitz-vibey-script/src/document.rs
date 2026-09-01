@@ -233,6 +233,11 @@ impl ScriptDocument {
         std::mem::take(&mut self.runtime.ctx.state.borrow_mut().uncaught_errors)
     }
 
+    /// Force a full garbage collection of the JS heap.
+    pub fn run_gc(&mut self) {
+        boa_gc::force_collect();
+    }
+
     /// Record an error for collection via [`take_js_errors`](Self::take_js_errors)
     fn record_error(&mut self, message: String) {
         #[cfg(feature = "tracing")]

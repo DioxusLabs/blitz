@@ -88,15 +88,15 @@ macro_rules! static_method {
 /// `layer_chain!(.. base_chain, C { z }, D)`
 macro_rules! layer_chain {
     // Start from an existing chain
-    (.. $base:expr$(, $own:expr)+ $(,)?) => {{
+    (.. $base:expr$(, $own:expr)* $(,)?) => {{
         let __layer_chain_acc = $base;
-        $( let __layer_chain_acc = $crate::shared::LayerChain { own: $own, parent: __layer_chain_acc }; )+
+        $( let __layer_chain_acc = $crate::shared::LayerChain { own: $own, parent: __layer_chain_acc }; )*
         __layer_chain_acc
     }};
     // Start from the root (), accumulating through successive shadowing
-    ($($own:expr),+ $(,)?) => {{
+    ($($own:expr),* $(,)?) => {{
         let __layer_chain_acc = ();
-        $( let __layer_chain_acc = $crate::shared::LayerChain { own: $own, parent: __layer_chain_acc }; )+
+        $( let __layer_chain_acc = $crate::shared::LayerChain { own: $own, parent: __layer_chain_acc }; )*
         __layer_chain_acc
     }};
 }

@@ -16,13 +16,15 @@ pub(crate) mod node;
 pub(crate) mod style;
 pub(crate) mod text;
 
+use std::rc::Rc;
+
 use blitz_dom::node::NodeData;
 use blitz_dom::{LocalName, Namespace, NodeId, QualName};
 use boa_engine::object::JsObject;
 use boa_engine::value::JsValue;
 use boa_engine::{Context, JsNativeError, JsResult, JsString};
 
-use crate::shared::{as_object, from_chain, with_own};
+use crate::shared::{as_object, from_chain, layer_chain, with_own};
 use crate::state::DomCtx;
 
 use node::NodeLayer;
@@ -53,8 +55,8 @@ pub(crate) fn this_node_id(this: &JsValue) -> JsResult<NodeId> {
 /// Wrappers are cached in the runtime state (`RuntimeState::node_wrappers`) so
 /// that object identity (`===`) and expando properties behave as scripts expect.
 pub(crate) fn node_wrapper(ctx: &DomCtx, node_id: NodeId, context: &mut Context) -> JsObject {
-    if let Some(wrapper) = ctx.state.borrow().node_wrappers.get(&node_id) {
-        return wrapper.clone();
+    if let Some(wrapper) = ctx.state.borrow().node_wrappers.get(node_id) {
+        return wrapper;
     }
 
     // Classify the node first: the document borrow must not be held across
@@ -77,51 +79,47 @@ pub(crate) fn node_wrapper(ctx: &DomCtx, node_id: NodeId, context: &mut Context)
         }
     };
 
+    let base_later = layer_chain!(
+        crate::events::EventTargetLayer {
+            listeners: Default::default(),
+        },
+        NodeLayer {
+            node_id,
+            state: Rc::downgrade(&ctx.state),
+            doc: Rc::downgrade(&ctx.doc),
+        },
+    );
+
     let wrapper = match kind {
         WrapperKind::Document => from_chain!(
             (document::Document, context),
-            crate::events::EventTargetLayer {
-                listeners: Default::default(),
-            },
-            NodeLayer { node_id },
+            ..base_later,
             document::DocumentLayer,
         )
         .expect("failed to build Document wrapper"),
         WrapperKind::Element => from_chain!(
             (element::Element, context),
-            crate::events::EventTargetLayer {
-                listeners: Default::default(),
-            },
-            NodeLayer { node_id },
+            ..base_later,
             element::ElementLayer,
         )
         .expect("failed to build Element wrapper"),
         WrapperKind::Text => from_chain!(
             (text::Text, context),
-            crate::events::EventTargetLayer {
-                listeners: Default::default(),
-            },
-            NodeLayer { node_id },
+            ..base_later,
             character_data::CharacterDataLayer,
             text::TextLayer,
         )
         .expect("failed to build Text wrapper"),
         WrapperKind::Comment => from_chain!(
             (comment::Comment, context),
-            crate::events::EventTargetLayer {
-                listeners: Default::default(),
-            },
-            NodeLayer { node_id },
+            ..base_later,
             character_data::CharacterDataLayer,
             comment::CommentLayer,
         )
         .expect("failed to build Comment wrapper"),
         WrapperKind::Node => from_chain!(
             (node::Node, context),
-            crate::events::EventTargetLayer {
-                listeners: Default::default(),
-            },
-            NodeLayer { node_id },
+            ..base_later,
         )
         .expect("failed to build Node wrapper"),
     };

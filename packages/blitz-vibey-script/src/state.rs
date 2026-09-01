@@ -9,6 +9,7 @@ use blitz_dom::{BaseDocument, NodeId};
 use boa_engine::object::JsObject;
 use boa_engine::{Finalize, JsData, Trace};
 
+use crate::node_wrappers::NodeWrappers;
 use crate::timers::TimerQueue;
 
 /// The document's `readyState`
@@ -47,12 +48,8 @@ pub(crate) type ListenerMap = HashMap<String, Vec<Listener>>;
 /// heap act as roots (they keep their referents alive).
 #[derive(Default)]
 pub(crate) struct RuntimeState {
-    /// Cache of JS wrapper objects, keyed by node id.
-    ///
-    /// DOM wrappers must be cached so that a given DOM node is always represented
-    /// by the *same* JS object: scripts rely on object identity (`===`) and on
-    /// expando properties persisting across accesses.
-    pub node_wrappers: HashMap<NodeId, JsObject>,
+    /// Cache of JS wrapper objects, keyed by node id (see [`NodeWrappers`]).
+    pub node_wrappers: NodeWrappers,
     /// Event listeners registered on `window`.
     pub window_listeners: ListenerMap,
     /// Pending timers (`setTimeout`/`setInterval`/`requestAnimationFrame`)
@@ -106,6 +103,82 @@ impl DomCtx {
         Self {
             doc,
             state: Rc::new(RefCell::new(RuntimeState::default())),
+        }
+    }
+
+    // ── Reference switching ──────────────────────────────────────────
+
+    /// Check if a node is in the document using the blitz internal flag.
+    pub(crate) fn is_in_document(&self, node_id: NodeId) -> bool {
+        self.doc
+            .borrow()
+            .get_node(node_id)
+            .is_some_and(|node| node.flags.is_in_document())
+    }
+
+    /// Recursively switch all cached wrappers in a subtree to strong refs.
+    ///
+    /// **Caller must ensure `node_id` is in the document.**
+    fn make_subtree_strong(&self, node_id: NodeId) {
+        self.state.borrow_mut().node_wrappers.make_strong(node_id);
+        let child_ids: Vec<NodeId> = self
+            .doc
+            .borrow()
+            .get_node(node_id)
+            .map(|node| node.children.to_vec())
+            .unwrap_or_default();
+        for child_id in child_ids {
+            self.make_subtree_strong(child_id);
+        }
+    }
+
+    /// Recursively switch all cached wrappers in a subtree to weak refs.
+    fn make_subtree_weak(&self, node_id: NodeId) {
+        self.state.borrow_mut().node_wrappers.make_weak(node_id);
+        let child_ids: Vec<NodeId> = self
+            .doc
+            .borrow()
+            .get_node(node_id)
+            .map(|node| node.children.to_vec())
+            .unwrap_or_default();
+        for child_id in child_ids {
+            self.make_subtree_weak(child_id);
+        }
+    }
+
+    /// Switch a subtree to strong refs if the parent is in the document.
+    pub(crate) fn make_in_document_subtree_strong(&self, parent_id: NodeId, child_id: NodeId) {
+        if self.is_in_document(parent_id) {
+            self.make_subtree_strong(child_id);
+        }
+    }
+
+    /// Switch a subtree to weak refs if the node is in the document.
+    /// If the node is already detached, no-op.
+    ///
+    /// **Must be called before `remove_node`**, while the node still has its
+    /// parent chain so `is_in_document` can be evaluated.
+    pub(crate) fn make_in_document_subtree_weak(&self, node_id: NodeId) {
+        if self.is_in_document(node_id) {
+            self.make_subtree_weak(node_id);
+        }
+    }
+
+    /// Collect, weaken, and detach all children of `node_id`.
+    pub(crate) fn detach_children(&self, node_id: NodeId) {
+        let children: Vec<NodeId> = {
+            let doc = self.doc.borrow();
+            doc.get_node(node_id)
+                .map(|node| node.children.iter().copied().collect())
+                .unwrap_or_default()
+        };
+        for child_id in &children {
+            self.make_in_document_subtree_weak(*child_id);
+        }
+        let mut doc = self.doc.borrow_mut();
+        let mut mutator = doc.mutate();
+        for child_id in &children {
+            mutator.remove_node(*child_id);
         }
     }
 }

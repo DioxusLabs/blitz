@@ -1,17 +1,21 @@
 //! The `Node` class: tree structure, tree mutation, text content.
 
-use blitz_dom::NodeId;
+use std::cell::RefCell;
+use std::rc::Weak;
+
+use blitz_dom::{BaseDocument, NodeId};
 use blitz_dom::node::NodeData;
 use boa_engine::class::ClassBuilder;
 use boa_engine::object::builtins::JsArray;
 use boa_engine::property::Attribute;
 use boa_engine::{Context, Finalize, JsData, JsResult, JsValue, Trace};
 
+use crate::node_wrappers::{cleanup_detached_subtree, has_live_descendant};
 use crate::shared::{
     ExtendLayer, Extended, instance_accessor, instance_getter, instance_method,
     js_copy_closure_with_captures, js_fn_ptr, native_error, native_fn_ptr, with_own,
 };
-use crate::state::DomCtx;
+use crate::state::{DomCtx, RuntimeState};
 
 use super::{
     dom_ctx, js_str, node_id_of_value, node_or_null, node_wrapper, this_node_id, to_rust_string,
@@ -20,10 +24,46 @@ use super::{
 // ── Layer ────────────────────────────────────────────────────────────
 
 /// `Node` own block: the wrapped blitz-dom node id.
-#[derive(Debug, Default, Clone, Trace, Finalize, JsData)]
+#[derive(Debug, Default, Clone, Trace, JsData)]
 pub(crate) struct NodeLayer {
     #[unsafe_ignore_trace]
     pub node_id: NodeId,
+    /// Lets the finalizer below reach the wrapper cache and the document's
+    /// node tree when the GC collects the wrapper (only possible while its
+    /// cache entry is weak).
+    #[unsafe_ignore_trace]
+    pub state: Weak<RefCell<RuntimeState>>,
+    #[unsafe_ignore_trace]
+    pub doc: Weak<RefCell<BaseDocument>>,
+}
+
+impl Finalize for NodeLayer {
+    fn finalize(&self) {
+        // The finalizer only fires for weak cache entries, i.e. wrappers the
+        // GC collected after their node was detached from the tree. If the
+        // state or the document is already gone, the cache was dropped too.
+        let Some(state) = self.state.upgrade() else {
+            return;
+        };
+        let Some(doc) = self.doc.upgrade() else {
+            return;
+        };
+
+        state.borrow_mut().node_wrappers.remove(self.node_id);
+
+        let mut doc = doc.borrow_mut();
+        let Some(node) = doc.get_node(self.node_id) else {
+            return;
+        };
+        let is_detached = node.parent.is_none();
+
+        let wrappers = &state.borrow().node_wrappers;
+        if is_detached && !has_live_descendant(&doc, wrappers, self.node_id) {
+            doc.mutate().remove_and_drop_node(self.node_id);
+            return;
+        }
+        cleanup_detached_subtree(&mut doc, wrappers, self.node_id);
+    }
 }
 
 pub(crate) type Node = Extended<NodeLayer>;
@@ -347,17 +387,16 @@ fn set_text_content(this: &JsValue, args: &[JsValue], context: &mut Context) -> 
         )
     };
 
-    let mut doc = ctx.doc.borrow_mut();
-    let mut mutr = doc.mutate();
     if is_text_like {
-        mutr.set_node_text(node_id, &text);
+        let mut doc = ctx.doc.borrow_mut();
+        doc.mutate().set_node_text(node_id, &text);
     } else {
-        // Detach (rather than drop) any existing children so that JS wrappers
+        // Detach (rather than drop) the existing children so that JS wrappers
         // referencing them remain valid.
-        for child_id in mutr.child_ids(node_id) {
-            mutr.remove_node(child_id);
-        }
+        ctx.detach_children(node_id);
         if !text.is_empty() {
+            let mut doc = ctx.doc.borrow_mut();
+            let mut mutr = doc.mutate();
             let text_id = mutr.create_text_node(&text);
             mutr.append_children(node_id, &[text_id]);
         }
@@ -408,6 +447,12 @@ fn append_child(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsRe
     // Inserting a DocumentFragment moves its children
     let node_ids = insertable_node_ids(&ctx, child_id);
 
+    // Switch the moved subtrees to weak before detaching, while the parent
+    // chain is intact.
+    for node_id in &node_ids {
+        ctx.make_in_document_subtree_weak(*node_id);
+    }
+
     let mut doc = ctx.doc.borrow_mut();
     let mut mutr = doc.mutate();
     // Detach from any current parent first. This also makes "move to end of
@@ -416,6 +461,10 @@ fn append_child(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsRe
     mutr.append_children(parent_id, &node_ids);
     drop(mutr);
     drop(doc);
+
+    for node_id in &node_ids {
+        ctx.make_in_document_subtree_strong(parent_id, *node_id);
+    }
 
     Ok(args[0].clone())
 }
@@ -441,6 +490,12 @@ fn insert_before(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsR
     // Inserting a DocumentFragment moves its children
     let node_ids = insertable_node_ids(&ctx, new_id);
 
+    // Switch the moved subtrees to weak before detaching, while the parent
+    // chain is intact.
+    for node_id in &node_ids {
+        ctx.make_in_document_subtree_weak(*node_id);
+    }
+
     let mut doc = ctx.doc.borrow_mut();
     let mut mutr = doc.mutate();
     detach_all(&mut mutr, &node_ids);
@@ -450,6 +505,13 @@ fn insert_before(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsR
         }
         _ => mutr.append_children(parent_id, &node_ids),
     }
+    drop(mutr);
+    drop(doc);
+
+    for node_id in &node_ids {
+        ctx.make_in_document_subtree_strong(parent_id, *node_id);
+    }
+
     Ok(args[0].clone())
 }
 
@@ -457,6 +519,9 @@ fn remove_child(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsRe
     let ctx = dom_ctx(context)?;
     let _parent_id = this_node_id(this)?;
     let child_id = arg_node_id(args, 0)?;
+
+    // Switch to weak before removing, while the parent chain is intact.
+    ctx.make_in_document_subtree_weak(child_id);
 
     let mut doc = ctx.doc.borrow_mut();
     // Note: the node is detached rather than dropped so that JS wrappers
@@ -472,13 +537,22 @@ fn replace_child(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsR
     let old_id = arg_node_id(args, 1)?;
 
     if new_id != old_id {
+        // Switch to weak before removing, while the parent chain is intact.
+        ctx.make_in_document_subtree_weak(new_id);
         let mut doc = ctx.doc.borrow_mut();
         let mut mutr = doc.mutate();
         if mutr.node_has_parent(new_id) {
             mutr.remove_node(new_id);
         }
         mutr.insert_nodes_before(old_id, &[new_id]);
-        mutr.remove_node(old_id);
+        drop(mutr);
+        drop(doc);
+        // The new node is now in the document -> strong.
+        ctx.make_in_document_subtree_strong(new_id, new_id);
+        // Switch to weak before removing, while the parent chain is intact.
+        ctx.make_in_document_subtree_weak(old_id);
+        let mut doc = ctx.doc.borrow_mut();
+        doc.mutate().remove_node(old_id);
     }
     Ok(args[1].clone())
 }
@@ -486,6 +560,8 @@ fn replace_child(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsR
 fn remove(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
     let node_id = this_node_id(this)?;
+    // Switch to weak before removing, while the parent chain is intact.
+    ctx.make_in_document_subtree_weak(node_id);
     let mut doc = ctx.doc.borrow_mut();
     let mut mutr = doc.mutate();
     if mutr.node_has_parent(node_id) {
@@ -562,6 +638,10 @@ pub(crate) fn append(this: &JsValue, args: &[JsValue], context: &mut Context) ->
     let node_ids = arg_node_ids(&ctx, args, context)?;
     let mut doc = ctx.doc.borrow_mut();
     doc.mutate().append_children(parent_id, &node_ids);
+    drop(doc);
+    for node_id in &node_ids {
+        ctx.make_in_document_subtree_strong(parent_id, *node_id);
+    }
     Ok(JsValue::undefined())
 }
 
@@ -575,6 +655,10 @@ pub(crate) fn prepend(
     let node_ids = arg_node_ids(&ctx, args, context)?;
     let mut doc = ctx.doc.borrow_mut();
     doc.mutate().prepend_nodes(parent_id, &node_ids);
+    drop(doc);
+    for node_id in &node_ids {
+        ctx.make_in_document_subtree_strong(parent_id, *node_id);
+    }
     Ok(JsValue::undefined())
 }
 
@@ -586,8 +670,25 @@ pub(crate) fn replace_children(
     let ctx = dom_ctx(context)?;
     let parent_id = this_node_id(this)?;
     let node_ids = arg_node_ids(&ctx, args, context)?;
+
+    // Switch the replaced children to weak before detaching, while the parent
+    // chain is intact.
+    let old_children: Vec<NodeId> = ctx
+        .doc
+        .borrow()
+        .get_node(parent_id)
+        .map(|node| node.children.to_vec())
+        .unwrap_or_default();
+    for child_id in &old_children {
+        ctx.make_in_document_subtree_weak(*child_id);
+    }
+
     let mut doc = ctx.doc.borrow_mut();
     doc.mutate().replace_children(parent_id, &node_ids);
+    drop(doc);
+    for node_id in &node_ids {
+        ctx.make_in_document_subtree_strong(parent_id, *node_id);
+    }
     Ok(JsValue::undefined())
 }
 
@@ -597,6 +698,10 @@ fn before(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<J
     let node_ids = arg_node_ids(&ctx, args, context)?;
     let mut doc = ctx.doc.borrow_mut();
     doc.mutate().before_node(anchor_id, &node_ids);
+    drop(doc);
+    for node_id in &node_ids {
+        ctx.make_in_document_subtree_strong(anchor_id, *node_id);
+    }
     Ok(JsValue::undefined())
 }
 
@@ -606,6 +711,10 @@ fn after(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<Js
     let node_ids = arg_node_ids(&ctx, args, context)?;
     let mut doc = ctx.doc.borrow_mut();
     doc.mutate().after_node(anchor_id, &node_ids);
+    drop(doc);
+    for node_id in &node_ids {
+        ctx.make_in_document_subtree_strong(anchor_id, *node_id);
+    }
     Ok(JsValue::undefined())
 }
 
@@ -613,8 +722,18 @@ fn replace_with(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsRe
     let ctx = dom_ctx(context)?;
     let anchor_id = this_node_id(this)?;
     let node_ids = arg_node_ids(&ctx, args, context)?;
+
+    // Switch the replaced node to weak before detaching, while the parent
+    // chain is intact.
+    ctx.make_in_document_subtree_weak(anchor_id);
+
     let mut doc = ctx.doc.borrow_mut();
     doc.mutate().replace_with_nodes(anchor_id, &node_ids);
+    drop(doc);
+    // The new nodes are now in the document -> strong.
+    for node_id in &node_ids {
+        ctx.make_in_document_subtree_strong(*node_id, *node_id);
+    }
     Ok(JsValue::undefined())
 }
 
