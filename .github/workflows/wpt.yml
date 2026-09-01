@@ -43,7 +43,7 @@ jobs:
       - name: Build WPT runner
         run: cargo build -rp wpt
       - name: Run WPT tests
-        run: cargo run -rp wpt css
+        run: cargo run -rp wpt css svg
       - name: Compress report (zstd)
         run: zstd -22 --ultra -o ./wpt/output/wptreport.json.zst ./wpt/output/wptreport.json
       - uses: actions/upload-artifact@v7
