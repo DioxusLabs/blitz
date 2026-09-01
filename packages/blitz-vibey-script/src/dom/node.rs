@@ -3,8 +3,8 @@
 use std::cell::RefCell;
 use std::rc::Weak;
 
-use blitz_dom::{BaseDocument, NodeId};
 use blitz_dom::node::NodeData;
+use blitz_dom::{BaseDocument, NodeId};
 use boa_engine::class::ClassBuilder;
 use boa_engine::object::builtins::JsArray;
 use boa_engine::property::Attribute;

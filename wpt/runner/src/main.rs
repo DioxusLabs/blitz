@@ -233,9 +233,17 @@ fn collect_tests(wpt_dir: &Path) -> Vec<PathBuf> {
         suites.sort_unstable();
     }
 
+    // JS-file tests which wptserve wraps in an auto-generated HTML document
+    const JS_TEST_SUFFIXES: &[&str] = &["any.js", "window.js"];
+
     for suite in suites {
         for pat in std::iter::once(String::new())
             .chain(TEST_EXTENSIONS.iter().map(|ext| format!("/**/*.{ext}")))
+            .chain(
+                JS_TEST_SUFFIXES
+                    .iter()
+                    .map(|suffix| format!("/**/*.{suffix}")),
+            )
         {
             let pattern = format!("{}/{}{}", wpt_dir.display(), suite, pat);
 
@@ -624,8 +632,19 @@ fn main() {
                 Ordering::Relaxed,
             );
 
+            // JS-file tests are known by the URL of their auto-generated
+            // wrapper page (e.g. `foo.any.js` runs as `foo.any.html`), so
+            // report them under that name to match other engines' reports
+            let name = if let Some(stem) = relative_path.strip_suffix(".any.js") {
+                format!("{stem}.any.html")
+            } else if let Some(stem) = relative_path.strip_suffix(".window.js") {
+                format!("{stem}.window.html")
+            } else {
+                relative_path
+            };
+
             let result = TestResult {
-                name: relative_path,
+                name,
                 kind,
                 flags,
                 status,

@@ -8,6 +8,7 @@
 //! document up via the `DomCtx` stored as host-defined data on the Boa
 //! `Context`.
 
+pub(crate) mod body;
 pub(crate) mod character_data;
 pub(crate) mod comment;
 pub(crate) mod document;
@@ -68,15 +69,25 @@ pub(crate) fn node_wrapper(ctx: &DomCtx, node_id: NodeId, context: &mut Context)
         Comment,
         Node,
     }
-    let kind = {
+    let (kind, is_body) = {
         let doc = ctx.doc.borrow();
-        match doc.get_node(node_id).map(|node| &node.data) {
+        let node_data = doc.get_node(node_id).map(|node| &node.data);
+        let kind = match node_data {
             Some(NodeData::Document(_)) => WrapperKind::Document,
             Some(NodeData::Element(_)) | Some(NodeData::AnonymousBlock(_)) => WrapperKind::Element,
             Some(NodeData::Text(_)) => WrapperKind::Text,
             Some(NodeData::Comment { .. }) => WrapperKind::Comment,
             None => WrapperKind::Node,
-        }
+        };
+        // `<body>` / `<frameset>` wrappers sit one layer higher: the
+        // window-reflecting event handler accessors defined by `BodyLayer`.
+        let is_body = matches!(
+            node_data,
+            Some(NodeData::Element(element))
+                if element.name.local == blitz_dom::local_name!("body")
+                    || element.name.local == blitz_dom::local_name!("frameset")
+        );
+        (kind, is_body)
     };
 
     let base_later = layer_chain!(
@@ -97,12 +108,24 @@ pub(crate) fn node_wrapper(ctx: &DomCtx, node_id: NodeId, context: &mut Context)
             document::DocumentLayer,
         )
         .expect("failed to build Document wrapper"),
-        WrapperKind::Element => from_chain!(
-            (element::Element, context),
-            ..base_later,
-            element::ElementLayer,
-        )
-        .expect("failed to build Element wrapper"),
+        WrapperKind::Element => {
+            if is_body {
+                from_chain!(
+                    (body::Body, context),
+                    ..base_later,
+                    element::ElementLayer,
+                    body::BodyLayer,
+                )
+                .expect("failed to build HTMLBodyElement wrapper")
+            } else {
+                from_chain!(
+                    (element::Element, context),
+                    ..base_later,
+                    element::ElementLayer,
+                )
+                .expect("failed to build Element wrapper")
+            }
+        }
         WrapperKind::Text => from_chain!(
             (text::Text, context),
             ..base_later,
@@ -117,11 +140,9 @@ pub(crate) fn node_wrapper(ctx: &DomCtx, node_id: NodeId, context: &mut Context)
             comment::CommentLayer,
         )
         .expect("failed to build Comment wrapper"),
-        WrapperKind::Node => from_chain!(
-            (node::Node, context),
-            ..base_later,
-        )
-        .expect("failed to build Node wrapper"),
+        WrapperKind::Node => {
+            from_chain!((node::Node, context), ..base_later,).expect("failed to build Node wrapper")
+        }
     };
 
     ctx.state
@@ -171,6 +192,7 @@ pub(crate) fn register_dom_classes(context: &mut Context) -> JsResult<()> {
     text::register(context)?;
     comment::register(context)?;
     element::register(context)?;
+    body::register(context)?;
     document::register(context)?;
     style::register(context)?;
 

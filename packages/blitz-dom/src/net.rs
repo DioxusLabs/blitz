@@ -159,6 +159,7 @@ impl NetHandler for ResourceHandler<StylesheetHandler> {
                 net_provider: self.data.net_provider.clone(),
                 shell_provider: self.shell_provider.clone(),
                 abort_signal: self.data.abort_signal.clone(),
+                import_depth: 0,
             }),
             None, // error_reporter
             QuirksMode::NoQuirks,
@@ -172,6 +173,12 @@ impl NetHandler for ResourceHandler<StylesheetHandler> {
     }
 }
 
+/// Maximum depth of nested `@import` rules. Imports nested deeper than this
+/// are refused, preventing unbounded recursion (e.g. a stylesheet whose
+/// resolved `@import` URL yields another stylesheet importing in turn, with
+/// the URL growing geometrically at each level).
+const MAX_IMPORT_DEPTH: usize = 16;
+
 #[derive(Clone)]
 pub(crate) struct StylesheetLoader {
     pub(crate) tx: Sender<DocumentEvent>,
@@ -179,6 +186,9 @@ pub(crate) struct StylesheetLoader {
     pub(crate) net_provider: Arc<dyn NetProvider>,
     pub(crate) shell_provider: Arc<dyn ShellProvider>,
     pub(crate) abort_signal: Option<AbortSignal>,
+    /// Depth of `@import` nesting for the stylesheet this loader is parsing
+    /// (0 for a top-level stylesheet)
+    pub(crate) import_depth: usize,
 }
 impl ServoStylesheetLoader for StylesheetLoader {
     fn request_stylesheet(
@@ -190,7 +200,7 @@ impl ServoStylesheetLoader for StylesheetLoader {
         supports: Option<ImportSupportsCondition>,
         layer: ImportLayer,
     ) -> ServoArc<Locked<ImportRule>> {
-        if !supports.as_ref().is_none_or(|s| s.enabled) {
+        if self.import_depth >= MAX_IMPORT_DEPTH || !supports.as_ref().is_none_or(|s| s.enabled) {
             return ServoArc::new(lock.wrap(ImportRule {
                 url,
                 stylesheet: ImportSheet::new_refused(),
@@ -220,7 +230,10 @@ impl ServoStylesheetLoader for StylesheetLoader {
                 self.shell_provider.clone(),
                 NestedStylesheetHandler {
                     url: url.clone(),
-                    loader: self.clone(),
+                    loader: StylesheetLoader {
+                        import_depth: self.import_depth + 1,
+                        ..self.clone()
+                    },
                     lock: lock.clone(),
                     media,
                     import_rule: import.clone(),

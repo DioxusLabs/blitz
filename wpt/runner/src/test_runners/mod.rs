@@ -18,11 +18,13 @@ mod attr_test;
 mod crash_test;
 mod fuzzy;
 mod harness_test;
+mod js_wrapper;
 mod ref_test;
 
 pub use attr_test::process_attr_test;
 pub use crash_test::process_crash_test;
 pub use harness_test::process_harness_test;
+pub use js_wrapper::{js_test_has_window_variant, wrapper_html_for_js_test};
 pub use ref_test::process_ref_test;
 
 static TIMEOUT_QUARANTINE: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| {
@@ -226,6 +228,27 @@ pub fn process_test_file(
         flags |= TestFlags::USES_SCRIPT;
     }
 
+    // JS-file (`.any.js` / `.window.js`) testharness test: synthesize the
+    // wrapper HTML which wptserve would serve and run it as a harness test
+    if relative_path.ends_with(".any.js") || relative_path.ends_with(".window.js") {
+        flags |= TestFlags::USES_SCRIPT;
+
+        // No window variant (worker-only test): not a runnable test
+        if !js_test_has_window_variant(relative_path, &file_contents) {
+            return (
+                TestKind::Unknown,
+                flags,
+                TestStatus::Skip,
+                SubtestCounts::ZERO_OF_ZERO,
+                Vec::new(),
+            );
+        }
+
+        let html = wrapper_html_for_js_test(relative_path, &file_contents);
+        let (status, counts, results) = process_harness_test(ctx, &html, relative_path);
+        return (TestKind::TestHarness, flags, status, counts, results);
+    }
+
     // Crash Test
     if is_crash_test(relative_path) {
         let counts = process_crash_test(ctx, relative_path, &file_contents, flags);
@@ -375,7 +398,7 @@ mod tests {
 
     #[test]
     fn timeout_quarantine_is_valid() {
-        assert_eq!(TIMEOUT_QUARANTINE.len(), 259);
+        assert_eq!(TIMEOUT_QUARANTINE.len(), 260);
         assert_eq!(
             TIMEOUT_QUARANTINE.get("css/selectors/focus-visible-001.html"),
             Some(&"testdriver")

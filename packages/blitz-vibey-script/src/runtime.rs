@@ -2,6 +2,7 @@
 //! dispatches events / timers into JavaScript.
 
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::path::Path;
 use std::rc::Rc;
 
@@ -415,6 +416,10 @@ pub(crate) fn report_js_error(ctx: &DomCtx, what: &str, error: &boa_engine::JsEr
 struct BlitzModuleLoader {
     fetcher: Rc<RefCell<Box<dyn ScriptFetcher>>>,
     base_url: Option<Url>,
+    /// Modules already fetched and parsed, keyed by resolved URL. Serving
+    /// repeat imports from here breaks import cycles (e.g. `a.js` importing
+    /// `b.js` which imports `a.js`), which would otherwise load forever.
+    modules: RefCell<HashMap<Url, Module>>,
 }
 
 impl BlitzModuleLoader {
@@ -428,6 +433,14 @@ impl BlitzModuleLoader {
             .and_then(|path| Url::parse(path).ok());
         let base = referrer_url.or_else(|| self.base_url.clone())?;
         base.join(specifier).ok()
+    }
+
+    fn get(&self, url: &Url) -> Option<Module> {
+        self.modules.borrow().get(url).cloned()
+    }
+
+    fn insert(&self, url: Url, module: Module) {
+        self.modules.borrow_mut().insert(url, module);
     }
 }
 
@@ -447,13 +460,18 @@ impl ModuleLoader for BlitzModuleLoader {
                         .with_message(format!("could not resolve module specifier {specifier:?}")),
                 )
             })?;
+        if let Some(module) = self.get(&url) {
+            return Ok(module);
+        }
         let code = self.fetcher.borrow().fetch(&url).map_err(|error| {
             JsError::from(
                 JsNativeError::typ().with_message(format!("failed to fetch module {url}: {error}")),
             )
         })?;
         let source = Source::from_reader(code.as_bytes(), Some(Path::new(url.as_str())));
-        Module::parse(source, None, &mut context.borrow_mut())
+        let module = Module::parse(source, None, &mut context.borrow_mut())?;
+        self.insert(url, module.clone());
+        Ok(module)
     }
 }
 
@@ -484,6 +502,7 @@ impl Logger for LogCrateLogger {
 pub(crate) struct ScriptRuntime {
     pub context: Context,
     pub ctx: DomCtx,
+    module_loader: Rc<BlitzModuleLoader>,
 }
 
 impl ScriptRuntime {
@@ -495,9 +514,10 @@ impl ScriptRuntime {
         let module_loader = Rc::new(BlitzModuleLoader {
             fetcher,
             base_url: base_url.cloned(),
+            modules: RefCell::new(HashMap::new()),
         });
         let mut context = Context::builder()
-            .module_loader(module_loader)
+            .module_loader(module_loader.clone())
             .build()
             .expect("failed to build JS context");
         let ctx = DomCtx::new(doc);
@@ -624,7 +644,11 @@ impl ScriptRuntime {
             .build();
         register_global(&mut context, "CSS", css_namespace.into());
 
-        let mut runtime = Self { context, ctx };
+        let mut runtime = Self {
+            context,
+            ctx,
+            module_loader,
+        };
 
         // Small JS bootstrap for APIs that are easiest to define in JS
         runtime.eval_internal(BOOTSTRAP_JS, "<blitz-bootstrap>");
@@ -670,6 +694,13 @@ impl ScriptRuntime {
                 return;
             }
         };
+        // Register the module so that imports resolving to this URL (including
+        // circular ones) reuse it rather than re-fetching
+        if let Some(url) = url
+            && self.module_loader.get(url).is_none()
+        {
+            self.module_loader.insert(url.clone(), module.clone());
+        }
 
         let promise = module.load_link_evaluate(&mut self.context);
         self.run_jobs(&description);

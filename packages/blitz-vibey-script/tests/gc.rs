@@ -91,9 +91,7 @@ fn detached_listeners_stop_after_gc() {
         "#,
     );
 
-    doc.eval(
-        "document.getElementById('root').removeChild(document.getElementById('t'));",
-    );
+    doc.eval("document.getElementById('root').removeChild(document.getElementById('t'));");
 
     // No JS references the wrapper anymore and the cache entry is weak, so
     // the GC collects it and the finalizer reclaims the detached node.
