@@ -532,23 +532,55 @@ fn remove_child(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsRe
 
 fn replace_child(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let _parent_id = this_node_id(this)?;
+    let parent_id = this_node_id(this)?;
     let new_id = arg_node_id(args, 0)?;
     let old_id = arg_node_id(args, 1)?;
 
+    // Spec checks: the new child must not be an inclusive ancestor of this
+    // node, and the old child must actually be a child of this node.
+    {
+        let doc = ctx.doc.borrow();
+        let mut ancestor_id = Some(parent_id);
+        while let Some(id) = ancestor_id {
+            if id == new_id {
+                return Err(super::dom_exception(
+                    context,
+                    "HierarchyRequestError",
+                    "the new child is an inclusive ancestor of this node",
+                ));
+            }
+            ancestor_id = doc.get_node(id).and_then(|node| node.parent);
+        }
+        if doc.get_node(old_id).and_then(|node| node.parent) != Some(parent_id) {
+            return Err(super::dom_exception(
+                context,
+                "NotFoundError",
+                "the node to be replaced is not a child of this node",
+            ));
+        }
+    }
+
     if new_id != old_id {
-        // Switch to weak before removing, while the parent chain is intact.
-        ctx.make_in_document_subtree_weak(new_id);
+        // Inserting a DocumentFragment moves its children
+        let node_ids = insertable_node_ids(&ctx, new_id);
+
+        // Switch the moved subtrees to weak before detaching, while the
+        // parent chain is intact.
+        for node_id in &node_ids {
+            ctx.make_in_document_subtree_weak(*node_id);
+        }
+
         let mut doc = ctx.doc.borrow_mut();
         let mut mutr = doc.mutate();
-        if mutr.node_has_parent(new_id) {
-            mutr.remove_node(new_id);
-        }
-        mutr.insert_nodes_before(old_id, &[new_id]);
+        detach_all(&mut mutr, &node_ids);
+        mutr.insert_nodes_before(old_id, &node_ids);
         drop(mutr);
         drop(doc);
-        // The new node is now in the document -> strong.
-        ctx.make_in_document_subtree_strong(new_id, new_id);
+
+        for node_id in &node_ids {
+            ctx.make_in_document_subtree_strong(parent_id, *node_id);
+        }
+
         // Switch to weak before removing, while the parent chain is intact.
         ctx.make_in_document_subtree_weak(old_id);
         let mut doc = ctx.doc.borrow_mut();

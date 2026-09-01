@@ -516,11 +516,15 @@ impl ScriptRuntime {
             base_url: base_url.cloned(),
             modules: RefCell::new(HashMap::new()),
         });
+        let ctx = DomCtx::new(doc);
+        // Share the runtime's clock with boa so that `Date` observes the same
+        // (possibly virtual) time as timers
+        let clock = ctx.state.borrow().clock.clone();
         let mut context = Context::builder()
             .module_loader(module_loader.clone())
+            .clock(Rc::new(crate::clock::BoaClockAdapter::new(clock)))
             .build()
             .expect("failed to build JS context");
-        let ctx = DomCtx::new(doc);
         context.insert_data(ctx.clone());
 
         Console::register_with_logger(LogCrateLogger, &mut context)
@@ -815,7 +819,11 @@ impl ScriptRuntime {
 
     /// Run all timers that are currently due. Returns `true` if any JavaScript was run.
     pub fn run_due_timers(&mut self) -> bool {
-        let due = self.ctx.state.borrow_mut().timers.take_due(Instant::now());
+        let due = {
+            let mut state = self.ctx.state.borrow_mut();
+            let now = state.clock.now();
+            state.timers.take_due(now)
+        };
         if due.is_empty() {
             return false;
         }
@@ -1387,11 +1395,9 @@ fn set_timeout(_: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult
     let Some((callback, delay, rest)) = timer_args(args, context)? else {
         return Ok(JsValue::from(0));
     };
-    let id = ctx
-        .state
-        .borrow_mut()
-        .timers
-        .add(delay, None, callback, rest);
+    let mut state = ctx.state.borrow_mut();
+    let now = state.clock.now();
+    let id = state.timers.add(now, delay, None, callback, rest);
     Ok(JsValue::from(id as f64))
 }
 
@@ -1400,11 +1406,9 @@ fn set_interval(_: &JsValue, args: &[JsValue], context: &mut Context) -> JsResul
     let Some((callback, delay, rest)) = timer_args(args, context)? else {
         return Ok(JsValue::from(0));
     };
-    let id = ctx
-        .state
-        .borrow_mut()
-        .timers
-        .add(delay, Some(delay), callback, rest);
+    let mut state = ctx.state.borrow_mut();
+    let now = state.clock.now();
+    let id = state.timers.add(now, delay, Some(delay), callback, rest);
     Ok(JsValue::from(id as f64))
 }
 
@@ -1423,7 +1427,10 @@ fn request_animation_frame(
     };
     // Approximate the next frame as ~16ms away
     let timestamp = JsValue::from(16.0);
-    let id = ctx.state.borrow_mut().timers.add(
+    let mut state = ctx.state.borrow_mut();
+    let now = state.clock.now();
+    let id = state.timers.add(
+        now,
         Duration::from_millis(16),
         None,
         callback,
