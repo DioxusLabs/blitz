@@ -163,6 +163,9 @@ const BLOCKED_TESTS: &[&str] = &[
     "css/css-sizing/aspect-ratio/zero-or-infinity-006.html",
     "css/css-sizing/aspect-ratio/zero-or-infinity-009.html",
     "css/css-sizing/aspect-ratio/zero-or-infinity-010.html",
+    // Stack overflow: usvg's clipPath conversion recurses forever on
+    // clip-paths that reference each other in a cycle
+    "css/css-masking/clip-path-svg-content/clip-path-recursion-001.svg",
 ];
 
 fn path_contains_directory(path: &Path, dir_name: &str) -> bool {
@@ -503,7 +506,9 @@ fn main() {
                         ColorScheme::Light,
                     );
                     let net_provider = Arc::new(WptNetProvider::new(&wpt_dir));
-                    let link_re = Regex::new(r#"<link\s[^>]*>"#).unwrap();
+                    // SVG reftests declare their references with a namespace
+                    // prefix (`<html:link rel="match">`)
+                    let link_re = Regex::new(r#"<(?:[A-Za-z_][\w.\-]*:)?link\s[^>]*>"#).unwrap();
                     let rel_re = Regex::new(r#"rel\s*=\s*['"]?(match|mismatch)['"]?"#).unwrap();
                     let href_re =
                         Regex::new(r#"href\s*=\s*(?:['"]([^'"]+)['"]|([^\s'">]+))"#).unwrap();
