@@ -22,6 +22,7 @@ pub(crate) struct TimerQueue {
 impl TimerQueue {
     pub fn add(
         &mut self,
+        now: Instant,
         delay: Duration,
         interval: Option<Duration>,
         callback: JsObject,
@@ -31,7 +32,7 @@ impl TimerQueue {
         let id = self.next_id;
         self.timers.push(Timer {
             id,
-            deadline: Instant::now() + delay,
+            deadline: now + delay,
             interval,
             callback,
             args,

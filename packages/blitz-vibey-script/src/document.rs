@@ -116,6 +116,33 @@ impl ScriptDocument {
         self
     }
 
+    /// Switch the document's clock (which drives JS timer deadlines and
+    /// `Date`) to virtual time: time stops and only advances via
+    /// [`advance_clock_to`](Self::advance_clock_to).
+    ///
+    /// Intended for embedders which drive timers manually by polling
+    /// [`next_timer_deadline`](Self::next_timer_deadline) and calling
+    /// [`poll`](blitz_traits::Document::poll): instead of sleeping until the
+    /// next deadline they can jump the clock straight to it, preserving timer
+    /// ordering without wall-clock waiting. Should be combined with
+    /// [`without_timer_thread`](Self::without_timer_thread) (the timer thread
+    /// sleeps in real time).
+    pub fn with_virtual_time(self) -> Self {
+        self.runtime.ctx.state.borrow().clock.make_virtual();
+        self
+    }
+
+    /// The current time according to the document's clock (virtual or real)
+    pub fn clock_now(&self) -> Instant {
+        self.runtime.ctx.state.borrow().clock.now()
+    }
+
+    /// Advance a virtual clock to `deadline` (never backwards). Does nothing
+    /// unless [`with_virtual_time`](Self::with_virtual_time) was used.
+    pub fn advance_clock_to(&mut self, deadline: Instant) {
+        self.runtime.ctx.state.borrow().clock.advance_to(deadline);
+    }
+
     /// Override the [`ScriptFetcher`] used to load external (`src="..."`) scripts
     /// and ES module imports. The default fetcher supports `file:` and `data:` URLs.
     pub fn with_fetcher(self, fetcher: impl ScriptFetcher) -> Self {

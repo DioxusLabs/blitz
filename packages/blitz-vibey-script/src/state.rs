@@ -9,6 +9,7 @@ use blitz_dom::{BaseDocument, NodeId};
 use boa_engine::object::JsObject;
 use boa_engine::{Finalize, JsData, Trace};
 
+use crate::clock::ScriptClock;
 use crate::timers::TimerQueue;
 
 /// Prototype objects for the DOM wrapper classes
@@ -73,6 +74,8 @@ pub(crate) struct RuntimeState {
     pub window_listeners: ListenerMap,
     /// Pending timers (`setTimeout`/`setInterval`/`requestAnimationFrame`)
     pub timers: TimerQueue,
+    /// The clock driving timer deadlines and `Date`
+    pub clock: ScriptClock,
     /// Messages sent from JavaScript to the embedder via the
     /// `__blitz_send_message` native function. Drained with
     /// [`ScriptDocument::take_messages`](crate::ScriptDocument::take_messages).
