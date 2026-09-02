@@ -108,6 +108,13 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
       - run: cargo clippy --workspace -- -D warnings
 
+  ci-scripts:
+    name: "Test CI scripts"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m unittest discover -s .github/scripts
+
   doc:
     name: Documentation
     runs-on: ubuntu-latest
