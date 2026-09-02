@@ -32,10 +32,7 @@ jobs:
         with:
           toolchain: 1.91
       - run: perl -pi.bak -e 's/opt-level = 2/opt-level = 0/g' Cargo.toml
-      - uses: awalsh128/cache-apt-pkgs-action@latest
-        with:
-          packages: libfontconfig-dev
-          version: 1.0
+      - run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
       - run: cargo build --workspace
 
   build-features-default:
@@ -45,10 +42,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - run: perl -pi.bak -e 's/opt-level = 2/opt-level = 0/g' Cargo.toml
-      - uses: awalsh128/cache-apt-pkgs-action@latest
-        with:
-          packages: libfontconfig-dev
-          version: 1.0
+      - run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
       - run: cargo build --workspace
 
   test-features-default:
@@ -58,10 +52,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - run: perl -pi.bak -e 's/opt-level = 2/opt-level = 0/g' Cargo.toml
-      - uses: awalsh128/cache-apt-pkgs-action@latest
-        with:
-          packages: libfontconfig-dev
-          version: 1.0
+      - run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
       - run: cargo test --workspace
 
   build-counter:
@@ -71,10 +62,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - run: perl -pi.bak -e 's/opt-level = 2/opt-level = 0/g' Cargo.toml
-      - uses: awalsh128/cache-apt-pkgs-action@latest
-        with:
-          packages: libfontconfig-dev
-          version: 1.0
+      - run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
       - run: cargo build -p counter
 
   # wasm_hello is a standalone workspace; seven_guis and todomvc are workspace
@@ -117,10 +105,7 @@ jobs:
           toolchain: stable
           components: clippy
       - run: perl -pi.bak -e 's/opt-level = 2/opt-level = 0/g' Cargo.toml
-      - uses: awalsh128/cache-apt-pkgs-action@latest
-        with:
-          packages: libfontconfig-dev
-          version: 1.0
+      - run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
       - run: cargo clippy --workspace -- -D warnings
 
   doc:
