@@ -949,7 +949,6 @@ dependencies = [
  "stylo_traits",
  "svgtypes",
  "taffy",
- "test-that",
  "thin-vec",
  "thread_local",
  "tracing",
@@ -1100,6 +1099,7 @@ dependencies = [
  "markup5ever",
  "stylo",
  "taffy",
+ "test-that",
  "usvg",
 ]
 
