@@ -457,6 +457,11 @@ impl LayoutContainingBlock for BaseDocument {
         vec.clear();
         vec.extend(hoisted.iter().copied().map(dom_node_id));
         drop(vec);
+        if hoisted.is_empty() {
+            self.oof_containing_blocks.remove(&containing_block);
+        } else {
+            self.oof_containing_blocks.insert(containing_block);
+        }
         for &hoisted_id in hoisted {
             self.node_from_id(hoisted_id)
                 .layout_parent
@@ -473,7 +478,11 @@ impl LayoutContainingBlock for BaseDocument {
                 vec.push(id);
             }
         }
+        let is_empty = vec.is_empty();
         drop(vec);
+        if !is_empty {
+            self.oof_containing_blocks.insert(containing_block);
+        }
         for &hoisted_id in hoisted {
             self.node_from_id(hoisted_id)
                 .layout_parent

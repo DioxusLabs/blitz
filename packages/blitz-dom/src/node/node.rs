@@ -1,5 +1,5 @@
 use crate::Document;
-use crate::layout::damage::HoistedPaintChildren;
+use crate::layout::damage::{HoistedPaintChild, HoistedPaintChildren};
 use bitflags::bitflags;
 use blitz_traits::events::{
     BlitzPointerEvent, BlitzPointerId, DomEventData, HitResult, PointerCoords,
@@ -111,6 +111,11 @@ pub struct Node {
     /// The same as layout_children, but sorted by z-index
     pub paint_children: RefCell<Option<ThinVec<NodeId>>>,
     pub stacking_context: Option<Box<HoistedPaintChildren>>,
+    /// The `HoistedPaintChild` entries that this node's subtree contributed to
+    /// the nearest ancestor stacking context during the last style flush.
+    /// Allows the flush to skip clean subtrees while still reproducing their
+    /// contributions when an ancestor stacking context is rebuilt.
+    pub sc_contribution_cache: RefCell<ThinVec<HoistedPaintChild>>,
 
     // Flags
     pub flags: NodeFlags,
@@ -393,6 +398,7 @@ impl Node {
             anonymous_blocks: ThinVec::new(),
             paint_children: RefCell::new(None),
             stacking_context: None,
+            sc_contribution_cache: RefCell::new(ThinVec::new()),
 
             flags: NodeFlags::empty(),
             data,
@@ -1255,6 +1261,53 @@ impl Node {
             .unwrap_or(0)
     }
 
+    /// The position of a hoisted paint child's coordinate origin (the border
+    /// box of its `layout_parent`) relative to this node, which owns the
+    /// stacking-context entry list the child is painted from.
+    ///
+    /// Derived from the `layout_parent` chain at use-time (rather than baked
+    /// in when the child is hoisted) so that it is always in sync with the
+    /// current layout and scroll offsets. Usually this node is an ancestor on
+    /// the child's `layout_parent` chain; when it is instead an atomic paint
+    /// effect ancestor *below* the child's containing block (see
+    /// `attach_hoisted_children`), the offset is accumulated walking from this
+    /// node up to the containing block and negated.
+    pub fn hoisted_child_position(&self, child_id: NodeId) -> taffy::Point<f32> {
+        let start = self.with(child_id).layout_parent.get();
+
+        let mut position = taffy::Point::<f32>::ZERO;
+        let mut current = start;
+        while let Some(id) = current {
+            if id == self.id {
+                return position;
+            }
+            let node = self.with(id);
+            let location = node.final_layout().location;
+            let scroll = *node.scroll_offset();
+            position.x += location.x - scroll.x as f32;
+            position.y += location.y - scroll.y as f32;
+            current = node.layout_parent.get();
+        }
+
+        let Some(start) = start else {
+            return taffy::Point::ZERO;
+        };
+        let mut position = taffy::Point::<f32>::ZERO;
+        let mut current = self.id;
+        while current != start {
+            let node = self.with(current);
+            let location = node.final_layout().location;
+            let scroll = *node.scroll_offset();
+            position.x -= location.x - scroll.x as f32;
+            position.y -= location.y - scroll.y as f32;
+            match node.layout_parent.get() {
+                Some(parent) => current = parent,
+                None => break,
+            }
+        }
+        position
+    }
+
     // https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_positioned_layout/Stacking_context#features_creating_stacking_contexts
     pub fn is_stacking_context_root(&self, is_flex_or_grid_item: bool) -> bool {
         let Some(style) = self.primary_styles() else {
@@ -1448,8 +1501,9 @@ impl Node {
         if matches_hoisted_content {
             if let Some(hoisted) = &self.stacking_context {
                 for hoisted_child in hoisted.pos_z_hoisted_children().rev() {
-                    let x = x - hoisted_child.position.x;
-                    let y = y - hoisted_child.position.y;
+                    let position = self.hoisted_child_position(hoisted_child.node_id);
+                    let x = x - position.x;
+                    let y = y - position.y;
                     if let Some(hit) = self.with(hoisted_child.node_id).hit_inner(
                         x,
                         y,
@@ -1493,8 +1547,9 @@ impl Node {
         if matches_hoisted_content {
             if let Some(hoisted) = &self.stacking_context {
                 for hoisted_child in hoisted.neg_z_hoisted_children().rev() {
-                    let x = x - hoisted_child.position.x;
-                    let y = y - hoisted_child.position.y;
+                    let position = self.hoisted_child_position(hoisted_child.node_id);
+                    let x = x - position.x;
+                    let y = y - position.y;
                     if let Some(hit) = self.with(hoisted_child.node_id).hit_inner(
                         x,
                         y,
