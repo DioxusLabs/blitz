@@ -1334,6 +1334,7 @@ impl Drop for ViewportMut<'_> {
 #[cfg(test)]
 mod test {
     use style::media_queries::MediaType;
+    use style::servo_arc::Arc as ServoArc;
     use style_dom::ElementState;
 
     use std::sync::{
@@ -1712,5 +1713,85 @@ mod test {
                 .x,
             120.0
         );
+    }
+
+    #[test]
+    fn style_property_mutation_copies_blocks_in_rule_tree() {
+        let mut document = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(800, 600, 1.0, ColorScheme::Light)),
+            ..Default::default()
+        });
+        let root_id = document.root_node().id;
+
+        let div_id = {
+            let mut mutator = document.mutate();
+            let div_id = mutator.create_element(qual_name!("div"), vec![]);
+            mutator.set_style_property(div_id, "width", "100px");
+            mutator.set_style_property(div_id, "height", "50px");
+            mutator.append_children(root_id, &[div_id]);
+            div_id
+        };
+
+        let style_block = |document: &BaseDocument| {
+            document
+                .get_node(div_id)
+                .unwrap()
+                .element_data()
+                .unwrap()
+                .style_attribute
+                .clone()
+                .unwrap()
+        };
+
+        let before_resolve = style_block(&document);
+        {
+            let mut mutator = document.mutate();
+            mutator.set_style_property(div_id, "height", "60px");
+        }
+        // Not yet in the rule tree: mutated in place.
+        assert!(ServoArc::ptr_eq(&before_resolve, &style_block(&document)));
+
+        document.resolve(0.0);
+        let in_rule_tree = style_block(&document);
+        assert!(
+            in_rule_tree
+                .read_with(&document.guard.read())
+                .immutable
+                .load(Ordering::Relaxed)
+        );
+
+        {
+            let mut mutator = document.mutate();
+            mutator.set_style_property(div_id, "width", "200px");
+        }
+        let after_set = style_block(&document);
+        assert!(!ServoArc::ptr_eq(&in_rule_tree, &after_set));
+        {
+            let guard = document.guard.read();
+            let old = in_rule_tree.read_with(&guard);
+            let new = after_set.read_with(&guard);
+            assert_eq!(old.declarations().len(), 2);
+            assert_eq!(new.declarations().len(), 2);
+            assert_ne!(old, new);
+        }
+
+        document.resolve(0.0);
+        assert_eq!(
+            document.get_node(div_id).unwrap().final_layout().size.width,
+            200.0
+        );
+
+        let in_rule_tree = style_block(&document);
+        {
+            let mut mutator = document.mutate();
+            mutator.remove_style_property(div_id, "height");
+        }
+        let after_remove = style_block(&document);
+        assert!(!ServoArc::ptr_eq(&in_rule_tree, &after_remove));
+        {
+            let guard = document.guard.read();
+            assert_eq!(in_rule_tree.read_with(&guard).declarations().len(), 2);
+            assert_eq!(after_remove.read_with(&guard).declarations().len(), 1);
+        }
     }
 }
