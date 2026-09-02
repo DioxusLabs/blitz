@@ -34,58 +34,6 @@ fn query_for_font_styles<'a>(
     query
 }
 
-/// The used value of `line-height: normal` for the first available font matching
-/// `font_styles`: ascent + descent + line gap, at `font_size` (in CSS px).
-///
-/// Each metric is rounded to a whole device pixel (at `scale` device px per CSS px)
-/// before summing, matching Chromium and Parley's pixel-quantized line metrics.
-pub(crate) fn normal_line_height(
-    font_ctx: &mut FontContext,
-    font_styles: &FontStyles,
-    font_size: f32,
-    scale: f32,
-) -> Option<f32> {
-    use parley::fontique::{QueryFont, QueryStatus};
-    use skrifa::instance::{LocationRef, Size};
-    use skrifa::metrics::Metrics;
-
-    let variations = stylo_to_parley::font_variations(&font_styles.font_variation_settings);
-
-    // The "first available font" is the first font in the family list that contains
-    // U+0020 (space). See https://drafts.csswg.org/css-fonts/#first-available-font
-    let mut query = query_for_font_styles(font_ctx, font_styles);
-    let mut first_font: Option<QueryFont> = None;
-    let mut font: Option<QueryFont> = None;
-    query.matches_with(|q_font| {
-        if first_font.is_none() {
-            first_font = Some(q_font.clone());
-        }
-        let has_space = skrifa::FontRef::from_index(q_font.blob.as_ref(), q_font.index)
-            .is_ok_and(|font_ref| Charmap::new(&font_ref).map(' ').is_some());
-        if has_space {
-            font = Some(q_font.clone());
-            QueryStatus::Stop
-        } else {
-            QueryStatus::Continue
-        }
-    });
-    let font = font.or(first_font)?;
-
-    let font_ref = skrifa::FontRef::from_index(font.blob.as_ref(), font.index).ok()?;
-    let location = font_ref.axes().location(
-        variations
-            .iter()
-            .map(|v| (skrifa::Tag::from_be_bytes(v.tag.to_bytes()), v.value)),
-    );
-    let metrics = Metrics::new(
-        &font_ref,
-        Size::new(font_size * scale),
-        LocationRef::from(&location),
-    );
-    let line_height = metrics.ascent.round() + (-metrics.descent).round() + metrics.leading.round();
-    Some(line_height / scale)
-}
-
 #[derive(Clone)]
 pub(crate) struct BlitzFontMetricsProvider {
     pub(crate) font_ctx: Arc<Mutex<FontContext>>,
