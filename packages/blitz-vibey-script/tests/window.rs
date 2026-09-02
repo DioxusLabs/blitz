@@ -171,6 +171,25 @@ fn detached_listener_binds_the_window() {
     assert_eq!(result, ["true", "true"]);
 }
 
+// The same WebIDL rule covers `dispatchEvent`: a detached or bare call
+// dispatches on the window (the global this), not on `undefined`.
+#[test]
+fn detached_dispatch_event_binds_the_window() {
+    let mut doc = doc_from_html("<body></body>");
+    let result = eval_report(
+        &mut doc,
+        r#"
+        let hits = 0;
+        const bump = () => { hits += 1; };
+        const dispatch = EventTarget.prototype.dispatchEvent;
+        window.addEventListener("click", bump);
+        dispatch(new Event("click"));
+        push(hits);
+    "#,
+    );
+    assert_eq!(result, ["1"]);
+}
+
 // A `once` window listener is removed right before its call: it fires on the
 // first dispatch only, and a same-shaped re-registration after removal is
 // accepted again.

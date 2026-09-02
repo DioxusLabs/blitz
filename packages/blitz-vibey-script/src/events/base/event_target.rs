@@ -51,10 +51,7 @@ impl ListenerCallback {
                 .as_object()
                 .filter(|handle| handle.is_callable())
                 .ok_or_else(|| {
-                    crate::shared::native_error!(
-                        typ,
-                        "listener object has no callable `handleEvent`"
-                    )
+                    native_error!(typ, "listener object has no callable `handleEvent`")
                 })?),
         }
     }
@@ -155,7 +152,7 @@ pub(crate) fn register(context: &mut Context) -> JsResult<()> {
 
 fn this_target(this: &JsValue) -> JsResult<JsObject> {
     this.as_object()
-        .ok_or_else(|| crate::shared::native_error!(typ, "not an EventTarget object"))
+        .ok_or_else(|| native_error!(typ, "not an EventTarget object"))
 }
 
 /// Parse the callback argument (second position) into its registration
@@ -378,10 +375,16 @@ impl EventTargetLayer {
 }
 
 fn dispatch_event(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    let obj = this_target(this)?;
+    // Same global-this binding as the listener operations.
+    let this = if this.is_null_or_undefined() {
+        context.global_object().clone().into()
+    } else {
+        this.clone()
+    };
+    let obj = this_target(&this)?;
     let ctx = dom_ctx(context)?;
     let Some(event_obj) = args.first().and_then(|value| value.as_object()) else {
-        return Err(crate::shared::native_error!(
+        return Err(native_error!(
             typ,
             "dispatchEvent: argument is not an Event"
         ));
@@ -401,7 +404,7 @@ fn dispatch_event(this: &JsValue, args: &[JsValue], context: &mut Context) -> Js
 
     // A DOM node target walks the full capture/target/bubble chain over the
     // node's DOM ancestors; a plain `EventTarget` dispatches to itself only.
-    if let Ok(node_id) = this_node_id(this) {
+    if let Ok(node_id) = this_node_id(&this) {
         let chain = {
             let doc = ctx.doc.borrow();
             doc.node_chain(node_id)
