@@ -54,6 +54,11 @@ class Change:
             return "+"
         if self.newly_failing or self.kind == "removed":
             return "-"
+        if self.before == self.after:
+            if self.delta > 0:
+                return "+"
+            if self.delta < 0:
+                return "-"
         return "!"
 
 
