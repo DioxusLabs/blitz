@@ -26,24 +26,26 @@ class Change:
         self.kind = entry["kind"]
 
         if self.kind == "added":
+            self.before, self.after = None, entry["status"]
             self.status = "ADD"
             self.counts = entry["counts"]
             self.delta = self.counts["pass"]
         elif self.kind == "removed":
+            self.before, self.after = entry["status"], None
             self.status = "REM"
             self.counts = entry["counts"]
             self.delta = -self.counts["pass"]
         else:
-            before, after = entry["before"], entry["after"]
-            self.status = f"{before} => {after}"
+            self.before, self.after = entry["before"], entry["after"]
+            self.status = f"{self.before} => {self.after}"
             self.counts = entry["counts_after"]
             self.delta = self.counts["pass"] - entry["counts_before"]["pass"]
 
         self.newly_passing = self.kind == "changed" and (
-            entry["before"] not in PASSING_STATUSES and entry["after"] in PASSING_STATUSES
+            self.before not in PASSING_STATUSES and self.after in PASSING_STATUSES
         )
         self.newly_failing = self.kind == "changed" and (
-            entry["before"] in PASSING_STATUSES and entry["after"] not in PASSING_STATUSES
+            self.before in PASSING_STATUSES and self.after not in PASSING_STATUSES
         )
 
     @property
@@ -73,6 +75,12 @@ class Diff:
     @property
     def subtests_lost(self):
         return -sum(change.delta for change in self.changes if change.delta < 0)
+
+    def status_delta(self, status):
+        """The change in the number of tests with the given status."""
+        return self.count(lambda c: c.after == status) - self.count(
+            lambda c: c.before == status
+        )
 
 
 def format_lines(diff):
@@ -117,6 +125,10 @@ def render(diff, run_url):
                 parts.append(f"**{count}** {label}")
         if parts:
             headline += " Tests: " + ", ".join(parts) + "."
+        for status, label in [("CRASH", "Crashes"), ("TIMEOUT", "Timeouts")]:
+            delta = diff.status_delta(status)
+            if delta:
+                headline += f" {label}: **{delta:+}**."
 
     out = [START_MARKER, "## WPT results", "", headline, ""]
 

@@ -67,9 +67,10 @@ class RenderTest(unittest.TestCase):
         section = render(Diff(ENTRIES), run_url=None)
         self.assertIn(
             "Subtests: **254** newly passing, **12** newly failing (net +242). "
-            "Tests: **1** added, **1** removed.",
+            "Tests: **1** added, **1** removed. Timeouts: **+1**.",
             section,
         )
+        self.assertNotIn("Crashes", section)
         self.assertIn("<summary>Full diff (5 changed tests)</summary>", section)
 
     def test_no_changes(self):
