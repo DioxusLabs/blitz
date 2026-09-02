@@ -198,13 +198,13 @@ impl BaseDocument {
         if let Some(ref children) = layout_children {
             for &child_id in children {
                 // Out-of-flow children are laid out relative to their containing
-                // block, not their DOM parent: their overflow contribution is
-                // accounted for at the containing block (below) instead.
-                let is_out_of_flow = self.nodes[child_id].taffy_position().is_out_of_flow();
-                let child_rect_in_self = self.resolve_transforms(child_id);
-                if !is_out_of_flow {
-                    overflow = overflow.union(child_rect_in_self);
+                // block, not their DOM parent: they are visited (and their overflow
+                // accounted for) via the containing block's hoisted list below.
+                if self.nodes[child_id].is_hoisted() {
+                    continue;
                 }
+                let child_rect_in_self = self.resolve_transforms(child_id);
+                overflow = overflow.union(child_rect_in_self);
             }
         }
         let hoisted_children =
@@ -217,12 +217,12 @@ impl BaseDocument {
             overflow = overflow.union(child_rect_in_self);
         }
         *self.nodes[node_id].hoisted_children.borrow_mut() = hoisted_children;
-        if let Some(before) = self.nodes[node_id].before() {
-            let child_rect_in_self = self.resolve_transforms(before);
-            overflow = overflow.union(child_rect_in_self);
-        }
-        if let Some(after) = self.nodes[node_id].after() {
-            let child_rect_in_self = self.resolve_transforms(after);
+        for pseudo in [self.nodes[node_id].before(), self.nodes[node_id].after()] {
+            let Some(pseudo) = pseudo else { continue };
+            if self.nodes[pseudo].is_hoisted() {
+                continue;
+            }
+            let child_rect_in_self = self.resolve_transforms(pseudo);
             overflow = overflow.union(child_rect_in_self);
         }
 
