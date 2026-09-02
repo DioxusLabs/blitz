@@ -6,9 +6,10 @@ use std::rc::Rc;
 
 use blitz_dom::{BaseDocument, NodeId};
 use boa_engine::{Finalize, JsData, Trace};
+use boa_gc::force_collect;
 
 use crate::clock::ScriptClock;
-use crate::node_wrappers::NodeWrappers;
+use crate::node_wrappers::{NodeWrappers, cleanup_detached_subtree, has_live_descendant};
 use crate::timers::TimerQueue;
 
 /// The document's `readyState`
@@ -152,6 +153,46 @@ impl DomCtx {
         if self.is_in_document(node_id) {
             self.make_subtree_weak(node_id);
         }
+    }
+
+    /// Apply queued weak switches and reclaim nodes whose wrapper the GC
+    /// collected.
+    ///
+    /// `WeakJsObject::new` allocates in the GC heap and can trigger a
+    /// synchronous `Collector::collect`; running it while a `RuntimeState` or
+    /// document borrow is alive would let the collector re-enter those cells
+    /// and panic. The queued switches, the collection, and the reclamation
+    /// therefore all run here, where neither cell is borrowed. Call from the
+    /// embedder side after JS execution, never while holding either cell.
+    pub(crate) fn flush_wrapper_switches(&self) {
+        if !self.state.borrow().node_wrappers.has_pending_weak() {
+            return;
+        }
+        self.state.borrow_mut().node_wrappers.flush_pending_weak();
+        // Make the weakened wrappers reclaimable right now instead of waiting
+        // for an allocation-driven collection, so the reclamation below sees
+        // a stable state
+        force_collect();
+        let stale = self.state.borrow_mut().node_wrappers.take_stale();
+        for node_id in stale {
+            self.reclaim_detached_node(node_id);
+        }
+    }
+
+    /// Reclaim the Rust-side storage of a node whose JS wrapper was collected.
+    fn reclaim_detached_node(&self, node_id: NodeId) {
+        let mut doc = self.doc.borrow_mut();
+        let Some(node) = doc.get_node(node_id) else {
+            return;
+        };
+        let is_detached = node.parent.is_none();
+
+        let wrappers = &self.state.borrow().node_wrappers;
+        if is_detached && !has_live_descendant(&doc, wrappers, node_id) {
+            doc.mutate().remove_and_drop_node(node_id);
+            return;
+        }
+        cleanup_detached_subtree(&mut doc, wrappers, node_id);
     }
 
     /// Collect, weaken, and detach all children of `node_id`.

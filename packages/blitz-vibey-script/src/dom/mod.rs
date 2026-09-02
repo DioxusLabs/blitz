@@ -17,8 +17,6 @@ pub(crate) mod node;
 pub(crate) mod style;
 pub(crate) mod text;
 
-use std::rc::Rc;
-
 use blitz_dom::node::NodeData;
 use blitz_dom::{LocalName, Namespace, NodeId, QualName};
 use boa_engine::object::JsObject;
@@ -94,11 +92,7 @@ pub(crate) fn node_wrapper(ctx: &DomCtx, node_id: NodeId, context: &mut Context)
         crate::events::EventTargetLayer {
             listeners: Default::default(),
         },
-        NodeLayer {
-            node_id,
-            state: Rc::downgrade(&ctx.state),
-            doc: Rc::downgrade(&ctx.doc),
-        },
+        NodeLayer { node_id },
     );
 
     let wrapper = match kind {

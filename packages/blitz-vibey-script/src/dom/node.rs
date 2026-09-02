@@ -1,21 +1,17 @@
 //! The `Node` class: tree structure, tree mutation, text content.
 
-use std::cell::RefCell;
-use std::rc::Weak;
-
+use blitz_dom::NodeId;
 use blitz_dom::node::NodeData;
-use blitz_dom::{BaseDocument, NodeId};
 use boa_engine::class::ClassBuilder;
 use boa_engine::object::builtins::JsArray;
 use boa_engine::property::Attribute;
 use boa_engine::{Context, Finalize, JsData, JsResult, JsValue, Trace};
 
-use crate::node_wrappers::{cleanup_detached_subtree, has_live_descendant};
 use crate::shared::{
     ExtendLayer, Extended, instance_accessor, instance_getter, instance_method, js_fn_ptr,
     native_error, native_fn_ptr,
 };
-use crate::state::{DomCtx, RuntimeState};
+use crate::state::DomCtx;
 
 use super::{
     dom_ctx, js_str, node_id_of_value, node_or_null, node_wrapper, this_node_id, to_rust_string,
@@ -24,46 +20,10 @@ use super::{
 // ── Layer ────────────────────────────────────────────────────────────
 
 /// `Node` own block: the wrapped blitz-dom node id.
-#[derive(Debug, Default, Clone, Trace, JsData)]
+#[derive(Debug, Default, Clone, Trace, Finalize, JsData)]
 pub(crate) struct NodeLayer {
     #[unsafe_ignore_trace]
     pub node_id: NodeId,
-    /// Lets the finalizer below reach the wrapper cache and the document's
-    /// node tree when the GC collects the wrapper (only possible while its
-    /// cache entry is weak).
-    #[unsafe_ignore_trace]
-    pub state: Weak<RefCell<RuntimeState>>,
-    #[unsafe_ignore_trace]
-    pub doc: Weak<RefCell<BaseDocument>>,
-}
-
-impl Finalize for NodeLayer {
-    fn finalize(&self) {
-        // The finalizer only fires for weak cache entries, i.e. wrappers the
-        // GC collected after their node was detached from the tree. If the
-        // state or the document is already gone, the cache was dropped too.
-        let Some(state) = self.state.upgrade() else {
-            return;
-        };
-        let Some(doc) = self.doc.upgrade() else {
-            return;
-        };
-
-        state.borrow_mut().node_wrappers.remove(self.node_id);
-
-        let mut doc = doc.borrow_mut();
-        let Some(node) = doc.get_node(self.node_id) else {
-            return;
-        };
-        let is_detached = node.parent.is_none();
-
-        let wrappers = &state.borrow().node_wrappers;
-        if is_detached && !has_live_descendant(&doc, wrappers, self.node_id) {
-            doc.mutate().remove_and_drop_node(self.node_id);
-            return;
-        }
-        cleanup_detached_subtree(&mut doc, wrappers, self.node_id);
-    }
 }
 
 pub(crate) type Node = Extended<NodeLayer>;

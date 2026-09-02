@@ -6,9 +6,13 @@
 //!
 //! Entries start strong so that event listeners registered on wrappers are
 //! never lost, and can be switched to weak to hand a detached node's wrapper
-//! back to the GC. When a weak wrapper is collected, the GC runs `NodeLayer`'s
-//! finalizer, which removes the stale entry and reclaims the detached
-//! subtree's Rust-side node storage (see [`cleanup_detached_subtree`]).
+//! back to the GC. The switch itself allocates a GC weak handle and can
+//! trigger a synchronous collection, so `make_weak` only *queues* the node id;
+//! [`NodeWrappers::flush_pending_weak`] performs the actual switch and must be
+//! called while no `RuntimeState`/document borrow is alive (see
+//! `DomCtx::flush_wrapper_switches`). After a collection, [`NodeWrappers::take_stale`]
+//! reports the entries whose wrapper was reclaimed so the caller can drop the
+//! detached subtree's Rust-side node storage.
 
 use std::collections::HashMap;
 
@@ -21,6 +25,8 @@ use crate::switchable_ref::SwitchableRef;
 #[derive(Default)]
 pub(crate) struct NodeWrappers {
     entries: HashMap<NodeId, SwitchableRef>,
+    /// Nodes queued by `make_weak`, switched for real by `flush_pending_weak`.
+    pending_weak: Vec<NodeId>,
 }
 
 impl NodeWrappers {
@@ -41,25 +47,59 @@ impl NodeWrappers {
         self.entries.contains_key(&node_id)
     }
 
-    /// Switch a cache entry to weak. No-op if already weak or not in cache.
+    /// Queue a switch to weak for a cache entry. No-op if already weak or not
+    /// in cache. The actual switch is deferred to `flush_pending_weak`
+    /// because `WeakJsObject::new` allocates in the GC heap and can trigger a
+    /// synchronous collection, which must not happen while a caller holds a
+    /// `RuntimeState` borrow (the collector's finalizers would re-enter it).
     pub(crate) fn make_weak(&mut self, node_id: NodeId) {
-        if let Some(entry) = self.entries.get_mut(&node_id) {
-            entry.make_weak();
+        if self
+            .entries
+            .get(&node_id)
+            .is_some_and(|entry| matches!(entry, SwitchableRef::Strong(_)))
+        {
+            self.pending_weak.push(node_id);
         }
     }
 
     /// Switch a cache entry to strong. No-op if already strong. Returns
-    /// `false` if the entry is missing or its wrapper was collected.
+    /// `false` if the entry is missing or its wrapper was collected. Also
+    /// cancels a pending weak switch: re-attaching a node must keep its
+    /// wrapper strong even before the queue is flushed.
     pub(crate) fn make_strong(&mut self, node_id: NodeId) -> bool {
+        self.pending_weak.retain(|&id| id != node_id);
         self.entries
             .get_mut(&node_id)
             .is_some_and(|entry| entry.make_strong())
     }
 
-    /// Remove a cache entry. Called when a weak wrapper has been collected
-    /// (see `NodeLayer`'s `Finalize` impl).
-    pub(crate) fn remove(&mut self, node_id: NodeId) {
-        self.entries.remove(&node_id);
+    /// Whether any weak switches are still queued.
+    pub(crate) fn has_pending_weak(&self) -> bool {
+        !self.pending_weak.is_empty()
+    }
+
+    /// Perform the queued weak switches. Must run while no `RuntimeState`/
+    /// document borrow is alive; idempotent per node.
+    pub(crate) fn flush_pending_weak(&mut self) {
+        for node_id in std::mem::take(&mut self.pending_weak) {
+            if let Some(entry) = self.entries.get_mut(&node_id) {
+                entry.make_weak();
+            }
+        }
+    }
+
+    /// Remove and return the entries whose wrapper was collected. Must run
+    /// after a collection that may have reclaimed weakened wrappers.
+    pub(crate) fn take_stale(&mut self) -> Vec<NodeId> {
+        let stale: Vec<NodeId> = self
+            .entries
+            .iter()
+            .filter_map(|(&id, entry)| (!entry.is_alive()).then_some(id))
+            .collect();
+        for id in &stale {
+            self.entries.remove(id);
+        }
+        stale
     }
 
     /// Whether the entry's wrapper is still alive. `false` if the cache has
@@ -69,19 +109,6 @@ impl NodeWrappers {
         self.entries
             .get(&node_id)
             .is_some_and(|entry| entry.is_alive())
-    }
-
-    /// Remove all entries whose reference is dead (wrapper collected).
-    #[allow(unused)]
-    pub(crate) fn sweep(&mut self) {
-        let stale: Vec<NodeId> = self
-            .entries
-            .iter()
-            .filter_map(|(&id, entry)| (!entry.is_alive()).then_some(id))
-            .collect();
-        for id in stale {
-            self.entries.remove(&id);
-        }
     }
 
     /// Number of entries currently in the cache.
