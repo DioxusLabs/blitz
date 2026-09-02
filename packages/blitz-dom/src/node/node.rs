@@ -1214,6 +1214,17 @@ impl Node {
             .unwrap_or(taffy::Position::Static)
     }
 
+    /// Whether the node is an out-of-flow box that Taffy positions from its containing
+    /// block's hoisted child list rather than from its parent (`display: none` boxes
+    /// generate no box and are never hoisted).
+    pub fn is_hoisted(&self) -> bool {
+        self.primary_styles().is_some_and(|s| {
+            let box_style = s.get_box();
+            stylo_taffy::convert::position(box_style.position).is_out_of_flow()
+                && stylo_taffy::convert::display(box_style.display) != taffy::Display::None
+        })
+    }
+
     pub fn text_content(&self) -> String {
         let mut out = String::new();
         self.write_text_content(&mut out);
