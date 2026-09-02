@@ -53,11 +53,11 @@ class FormatLinesTest(unittest.TestCase):
         self.assertEqual(
             format_lines(Diff(ENTRIES)),
             [
-                "+ ADD            [  4/    6] (  +4) /css/added.html",
-                "+ FAIL => OK     [477/23423] (+244) /css/big.html",
-                "- OK => TIMEOUT  [  0/    1] ( -10) /css/regressed.html",
-                "- REM            [  2/    3] (  -2) /css/removed.html",
-                "! FAIL => FAIL   [  9/   10] (  +6) /css/subtests-only.html",
+                "+ ADD            [  4/    6]    +4  /css/added.html",
+                "+ FAIL => OK     [477/23423]  +244  /css/big.html",
+                "- OK => TIMEOUT  [  0/    1]   -10  /css/regressed.html",
+                "- REM            [  2/    3]    -2  /css/removed.html",
+                "! FAIL => FAIL   [  9/   10]    +6  /css/subtests-only.html",
             ],
         )
 

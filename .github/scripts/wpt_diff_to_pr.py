@@ -83,7 +83,7 @@ def format_lines(diff):
     delta_width = max(len(f"{change.delta:+}") for change in diff.changes)
 
     return [
-        "{} {:<{}}  [{:>{}}/{:>{}}] ({:>{}}) {}".format(
+        "{} {:<{}}  [{:>{}}/{:>{}}]  {:>{}}  {}".format(
             change.marker,
             change.status,
             status_width,
