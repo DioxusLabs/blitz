@@ -113,6 +113,11 @@ impl<T: Deref<Target = ComputedValues>> taffy::CoreStyle for TaffyStyloStyle<T> 
     }
 
     #[inline]
+    fn is_containing_block(&self) -> taffy::ContainingBlockClaims {
+        convert::containing_block_claims(&self.style)
+    }
+
+    #[inline]
     fn inset(&self) -> taffy::Rect<taffy::LengthPercentageAuto> {
         let position_styles = self.style.get_position();
         taffy::Rect {
@@ -625,5 +630,25 @@ impl<T: Deref<Target = ComputedValues>> taffy::GridItemStyle for TaffyStyloStyle
             self.style.get_position().justify_self.0,
             self.style.clone_direction() == stylo::Direction::Rtl,
         )
+    }
+}
+
+impl<T: Deref<Target = ComputedValues>> taffy::OofItemStyle for TaffyStyloStyle<T> {
+    #[inline]
+    fn grid_row(&self) -> taffy::Line<taffy::GridPlacement<Atom>> {
+        let position_styles = self.style.get_position();
+        taffy::Line {
+            start: convert::grid_line(&position_styles.grid_row_start),
+            end: convert::grid_line(&position_styles.grid_row_end),
+        }
+    }
+
+    #[inline]
+    fn grid_column(&self) -> taffy::Line<taffy::GridPlacement<Atom>> {
+        let position_styles = self.style.get_position();
+        taffy::Line {
+            start: convert::grid_line(&position_styles.grid_column_start),
+            end: convert::grid_line(&position_styles.grid_column_end),
+        }
     }
 }

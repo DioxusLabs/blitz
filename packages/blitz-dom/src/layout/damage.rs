@@ -611,6 +611,34 @@ impl BaseDocument {
                 let position = style.clone_position();
                 let z_index = style.clone_z_index().integer_or(0);
 
+                // Out-of-flow boxes are hoisted to their containing block by Taffy's
+                // out-of-flow positioning pass and their layout location is relative to
+                // the containing block's border box. When this node is the child's
+                // containing block (it claims the child's position type), the child
+                // stays in this node's paint list, preserving tree order among
+                // positioned siblings. Otherwise it is painted (and hit-tested) via
+                // the containing block's `hoisted_children` list (see
+                // `attach_hoisted_children`), not via its DOM parent.
+                if matches!(position, Position::Absolute | Position::Fixed) {
+                    let parent = &self.nodes[node_id];
+                    // The root element is the initial containing block: it claims
+                    // every candidate not claimed by a closer containing block.
+                    let is_root = self.try_root_element().is_some_and(|el| el.id == node_id);
+                    let parent_claims = is_root
+                        || parent
+                            .containing_block_claims()
+                            .for_position(stylo_taffy::convert::position(position));
+                    if !parent_claims {
+                        continue;
+                    }
+                    // Z-indexed out-of-flow boxes are routed to their stacking
+                    // context by `attach_hoisted_children` after layout, when
+                    // their containing-block-relative location is known.
+                    if z_index != 0 {
+                        continue;
+                    }
+                }
+
                 // TODO: more complete hoisting detection
                 // z-index applies to static flex/grid items too
                 // (css-flexbox-1 §painting, css-grid-1 §z-order).
@@ -678,7 +706,7 @@ fn float_to_order(pos: Float) -> i32 {
 /// Appendix E step 8); within a level the stable sort preserves
 /// (order-modified) document order.
 #[inline(always)]
-fn node_to_paint_order(node: &Node, is_flex_or_grid: bool) -> (i32, i32) {
+pub(crate) fn node_to_paint_order(node: &Node, is_flex_or_grid: bool) -> (i32, i32) {
     let Some(style) = node.primary_styles() else {
         return (0, 0);
     };

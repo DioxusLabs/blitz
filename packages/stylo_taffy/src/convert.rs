@@ -249,14 +249,82 @@ pub fn box_sizing(input: stylo::BoxSizing) -> taffy::BoxSizing {
 #[inline]
 pub fn position(input: stylo::Position) -> taffy::Position {
     match input {
-        // TODO: support position:static
+        stylo::Position::Static => taffy::Position::Static,
         stylo::Position::Relative => taffy::Position::Relative,
-        stylo::Position::Static => taffy::Position::Relative,
-
-        // TODO: support position:fixed and sticky
         stylo::Position::Absolute => taffy::Position::Absolute,
-        stylo::Position::Fixed => taffy::Position::Absolute,
+        stylo::Position::Fixed => taffy::Position::Fixed,
+        // TODO: support position:sticky
         stylo::Position::Sticky => taffy::Position::Relative,
+    }
+}
+
+/// Whether a style establishes a containing block for `position: fixed` (and therefore also
+/// `position: absolute`) descendants, independently of its `position` value.
+///
+/// <https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_positioned_layout/Containing_block#identifying_the_containing_block>
+pub fn establishes_fixed_containing_block(style: &stylo::ComputedValues) -> bool {
+    use style::values::computed::{Perspective, Rotate, Scale, Translate};
+    use style::values::specified::box_::{Contain, ContainerType, WillChangeBits};
+
+    let box_style = style.get_box();
+    if !box_style.transform.0.is_empty()
+        || !matches!(box_style.translate, Translate::None)
+        || !matches!(box_style.rotate, Rotate::None)
+        || !matches!(box_style.scale, Scale::None)
+        || !matches!(box_style.perspective, Perspective::None)
+    {
+        return true;
+    }
+    if box_style.will_change.bits.intersects(
+        WillChangeBits::TRANSFORM
+            | WillChangeBits::PERSPECTIVE
+            | WillChangeBits::FIXPOS_CB_NON_SVG
+            | WillChangeBits::CONTAIN,
+    ) {
+        return true;
+    }
+    if box_style
+        .contain
+        .intersects(Contain::LAYOUT | Contain::PAINT)
+    {
+        return true;
+    }
+    if box_style
+        .container_type
+        .intersects(ContainerType::SIZE | ContainerType::INLINE_SIZE)
+    {
+        return true;
+    }
+
+    let effects = style.get_effects();
+    !effects.filter.0.is_empty() || !effects.backdrop_filter.0.is_empty()
+}
+
+/// Whether a style establishes a containing block for `position: absolute` descendants even
+/// when it is not positioned (e.g. `will-change: position`).
+///
+/// <https://drafts.csswg.org/css-will-change/#will-change>
+pub fn establishes_absolute_containing_block(style: &stylo::ComputedValues) -> bool {
+    use style::values::specified::box_::WillChangeBits;
+
+    style
+        .get_box()
+        .will_change
+        .bits
+        .intersects(WillChangeBits::POSITION)
+}
+
+/// Which out-of-flow positions a style establishes a containing block for.
+///
+/// Positioned (non-`static`) elements are containing blocks for `absolute` boxes; elements that
+/// establish a fixed containing block (transforms, filters, `will-change`, `contain`, ...) are
+/// containing blocks for both `absolute` and `fixed` boxes.
+pub fn containing_block_claims(style: &stylo::ComputedValues) -> taffy::ContainingBlockClaims {
+    let is_positioned = style.get_box().position != stylo::Position::Static;
+    let fixed = establishes_fixed_containing_block(style);
+    taffy::ContainingBlockClaims {
+        absolute: is_positioned || fixed || establishes_absolute_containing_block(style),
+        fixed,
     }
 }
 
