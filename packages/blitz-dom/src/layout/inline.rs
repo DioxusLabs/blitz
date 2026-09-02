@@ -312,6 +312,10 @@ impl BaseDocument {
                 ibox.height = 0.0;
             } else {
                 let output = self.compute_child_layout(taffy::NodeId::from(ibox.id), child_inputs);
+                ibox.baseline = output
+                    .baselines
+                    .first
+                    .map(|baseline| (margin.top + baseline) * scale);
                 ibox.width = (margin.left + margin.right + output.size.width) * scale;
                 // Vertical margins adjust the space the box reserves in the line, but the
                 // reserved space cannot be negative.
@@ -604,7 +608,7 @@ impl BaseDocument {
                         // dbg!(&layout.size);
                         // dbg!(&layout.location);
 
-                        state.append_inline_box_to_line(box_break_data.advance, 0.0);
+                        state.append_inline_box_to_line(box_break_data.advance, 0.0, 0.0, false);
 
                         // if float.is_floated() {
                         //     println!("INLINE FLOATED BOX ({}) {:?}", ibox.id, float);
