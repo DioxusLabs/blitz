@@ -1,4 +1,5 @@
 use blitz_traits::node_id::NodeId;
+use image::{DynamicImage, ImageDecoder as _, ImageReader, metadata::Orientation};
 use selectors::context::QuirksMode;
 use std::sync::atomic::Ordering as Ao;
 use std::{
@@ -522,9 +523,22 @@ pub(crate) struct DocumentSrcHandler;
 
 impl NetHandler for ResourceHandler<DocumentSrcHandler> {
     fn bytes(self: Box<Self>, resolved_url: String, bytes: Bytes) {
-        let html = String::from_utf8_lossy(&bytes).into_owned();
+        let html = if image::guess_format(&bytes).is_ok() {
+            image_document_html(&resolved_url)
+        } else {
+            String::from_utf8_lossy(&bytes).into_owned()
+        };
         self.respond(resolved_url, Ok(Resource::DocumentSrc(html)));
     }
+}
+
+/// Synthesize an HTML document that displays a raster image, for when an
+/// embedded document's URL points directly at an image rather than HTML.
+fn image_document_html(url: &str) -> String {
+    let src = html_escape::encode_double_quoted_attribute(url);
+    format!(
+        "<!DOCTYPE html><html><head><style>body{{margin:0}}img{{display:block}}</style></head><body><img src=\"{src}\"></body></html>"
+    )
 }
 
 pub struct ImageHandler {
@@ -545,11 +559,7 @@ impl NetHandler for ResourceHandler<ImageHandler> {
 
 impl ImageHandler {
     fn parse(&self, bytes: Bytes) -> Result<Resource, String> {
-        let image_err = match image::ImageReader::new(Cursor::new(&bytes))
-            .with_guessed_format()
-            .expect("IO errors impossible with Cursor")
-            .decode()
-        {
+        let image_err = match decode_raster_image(&bytes) {
             Ok(image) => {
                 let width = image.width();
                 let height = image.height();
@@ -580,6 +590,21 @@ impl ImageHandler {
             bytes.len()
         ))
     }
+}
+
+/// Decode a raster image, applying any EXIF orientation it carries.
+///
+/// This corresponds to the initial value of the CSS `image-orientation`
+/// property (`from-image`). `image-orientation: none` is not supported.
+fn decode_raster_image(bytes: &[u8]) -> image::ImageResult<DynamicImage> {
+    let mut decoder = ImageReader::new(Cursor::new(bytes))
+        .with_guessed_format()
+        .expect("IO errors impossible with Cursor")
+        .into_decoder()?;
+    let orientation = decoder.orientation().unwrap_or(Orientation::NoTransforms);
+    let mut image = DynamicImage::from_decoder(decoder)?;
+    image.apply_orientation(orientation);
+    Ok(image)
 }
 
 #[cfg(test)]
