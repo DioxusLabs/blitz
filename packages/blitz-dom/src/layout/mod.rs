@@ -15,9 +15,9 @@ use style::values::computed::length_percentage::CalcLengthPercentage;
 use stylo_taffy::TaffyStyloStyle;
 use taffy::{
     BlockContext, CoreStyle as _, DetailedLayoutInfo, FlexDirection, LayoutContainingBlock,
-    LayoutPartialTree, NodeId, OofClaims, ResolveOrZero, RoundTree, TraversePartialTree,
-    TraverseTree, compute_block_layout, compute_cached_layout, compute_flexbox_layout,
-    compute_grid_layout, compute_leaf_layout, compute_oof_layout, prelude::*,
+    LayoutPartialTree, NodeId, ResolveOrZero, RoundTree, TraversePartialTree, TraverseTree,
+    compute_block_layout, compute_cached_layout, compute_flexbox_layout, compute_grid_layout,
+    compute_leaf_layout, compute_oof_layout, prelude::*,
 };
 
 pub(crate) mod construct;
@@ -478,18 +478,6 @@ impl LayoutContainingBlock for BaseDocument {
             self.node_from_id(hoisted_id)
                 .layout_parent
                 .set(Some(containing_block));
-        }
-    }
-
-    fn oof_claims(&self, node_id: NodeId) -> OofClaims {
-        let node = self.node_from_id(node_id);
-        let is_positioned = node.layout_style().position().is_positioned();
-        let establishes_fixed_cb = node.establishes_fixed_containing_block();
-        OofClaims {
-            absolute: is_positioned
-                || establishes_fixed_cb
-                || node.establishes_absolute_containing_block(),
-            fixed: establishes_fixed_cb,
         }
     }
 

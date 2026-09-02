@@ -1324,69 +1324,12 @@ impl Node {
             .any(|image| !matches!(image, GenericImage::None))
     }
 
-    /// Whether this node's styles establish a containing block for
-    /// `position: fixed` (and therefore also `position: absolute`) descendants.
-    ///
-    /// <https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_positioned_layout/Containing_block#identifying_the_containing_block>
-    pub(crate) fn establishes_fixed_containing_block(&self) -> bool {
-        use style::values::computed::{Perspective, Rotate, Scale, Translate};
-        use style::values::specified::box_::{Contain, ContainerType, WillChangeBits};
-
-        let Some(style) = self.primary_styles() else {
-            return false;
-        };
-
-        let box_style = style.get_box();
-        if !box_style.transform.0.is_empty()
-            || !matches!(box_style.translate, Translate::None)
-            || !matches!(box_style.rotate, Rotate::None)
-            || !matches!(box_style.scale, Scale::None)
-            || !matches!(box_style.perspective, Perspective::None)
-        {
-            return true;
-        }
-        if box_style.will_change.bits.intersects(
-            WillChangeBits::TRANSFORM
-                | WillChangeBits::PERSPECTIVE
-                | WillChangeBits::FIXPOS_CB_NON_SVG
-                | WillChangeBits::CONTAIN,
-        ) {
-            return true;
-        }
-        if box_style
-            .contain
-            .intersects(Contain::LAYOUT | Contain::PAINT)
-        {
-            return true;
-        }
-        if box_style
-            .container_type
-            .intersects(ContainerType::SIZE | ContainerType::INLINE_SIZE)
-        {
-            return true;
-        }
-
-        let effects = style.get_effects();
-        !effects.filter.0.is_empty() || !effects.backdrop_filter.0.is_empty()
-    }
-
-    /// Whether this node's styles establish a containing block for
-    /// `position: absolute` descendants even when the node is not positioned
-    /// (e.g. `will-change: position`).
-    ///
-    /// <https://drafts.csswg.org/css-will-change/#will-change>
-    pub(crate) fn establishes_absolute_containing_block(&self) -> bool {
-        use style::values::specified::box_::WillChangeBits;
-
-        let Some(style) = self.primary_styles() else {
-            return false;
-        };
-
-        style
-            .get_box()
-            .will_change
-            .bits
-            .intersects(WillChangeBits::POSITION)
+    /// Which out-of-flow positions this node's styles establish a containing block for
+    /// (see [`stylo_taffy::convert::containing_block_claims`]). Nodes without styles claim nothing.
+    pub(crate) fn containing_block_claims(&self) -> taffy::ContainingBlockClaims {
+        self.primary_styles()
+            .map(|style| stylo_taffy::convert::containing_block_claims(&style))
+            .unwrap_or(taffy::ContainingBlockClaims::NONE)
     }
 
     /// Takes an (x, y) position (relative to the *parent's* top-left corner) and returns:
