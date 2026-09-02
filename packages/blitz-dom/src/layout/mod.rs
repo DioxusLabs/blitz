@@ -617,8 +617,7 @@ impl RoundTree for BaseDocument {
     }
 
     fn is_hoisted(&self, node_id: NodeId) -> bool {
-        let node = self.node_from_id(node_id);
-        node.taffy_position().is_out_of_flow() && node.taffy_display() != Display::None
+        self.node_from_id(node_id).is_hoisted()
     }
 
     fn hoisted_child_count(&self, node_id: NodeId) -> usize {
