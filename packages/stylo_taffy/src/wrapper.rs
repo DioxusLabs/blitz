@@ -627,3 +627,23 @@ impl<T: Deref<Target = ComputedValues>> taffy::GridItemStyle for TaffyStyloStyle
         )
     }
 }
+
+impl<T: Deref<Target = ComputedValues>> taffy::OofItemStyle for TaffyStyloStyle<T> {
+    #[inline]
+    fn grid_row(&self) -> taffy::Line<taffy::GridPlacement<Atom>> {
+        let position_styles = self.style.get_position();
+        taffy::Line {
+            start: convert::grid_line(&position_styles.grid_row_start),
+            end: convert::grid_line(&position_styles.grid_row_end),
+        }
+    }
+
+    #[inline]
+    fn grid_column(&self) -> taffy::Line<taffy::GridPlacement<Atom>> {
+        let position_styles = self.style.get_position();
+        taffy::Line {
+            start: convert::grid_line(&position_styles.grid_column_start),
+            end: convert::grid_line(&position_styles.grid_column_end),
+        }
+    }
+}

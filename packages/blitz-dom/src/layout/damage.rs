@@ -1,14 +1,12 @@
-use blitz_traits::node_id::NodeId;
-use std::ops::Range;
-
 use crate::Node;
 use crate::net::ResourceHandler;
 use crate::node::NodeFlags;
 use crate::{
     BaseDocument, net::ImageHandler, node::ImageResourceData, node::Status, util::ImageLayerKind,
 };
+use blitz_traits::node_id::NodeId;
+use kurbo::Rect;
 use style::properties::ComputedValues;
-use style::properties::generated::longhands::position::computed_value::T as Position;
 use style::selector_parser::RestyleDamage;
 use style::url::ComputedUrl;
 use style::values::computed::Float;
@@ -16,7 +14,6 @@ use style::values::generics::image::Image as StyloImage;
 use style::values::specified::align::AlignFlags;
 use style::values::specified::box_::DisplayInside;
 use style::values::specified::box_::DisplayOutside;
-use taffy::Rect;
 use thin_vec::ThinVec;
 
 pub(crate) const CONSTRUCT_BOX: RestyleDamage =
@@ -47,6 +44,11 @@ impl BaseDocument {
             return RestyleDamage::empty();
         };
         damage |= damage_from_parent;
+        if damage.contains(RestyleDamage::REBUILD_STACKING_CONTEXT)
+            || damage.intersects(CONSTRUCT_BOX | CONSTRUCT_FC | CONSTRUCT_DESCENDENT)
+        {
+            self.nodes[node_id].stacking_dirty_self.set(true);
+        }
 
         // Skip subtrees which contain no damage. Anonymous nodes are never
         // skipped themselves because damage marking walks the DOM parent
@@ -166,6 +168,8 @@ impl BaseDocument {
         node.clear_damage_mut();
         node.unset_damaged_descendants();
         node.unset_dirty_descendants();
+        node.stacking_dirty_self.set(false);
+        node.spatial_dirty_self.set(false);
     }
 }
 
@@ -292,94 +296,71 @@ pub(crate) fn compute_layout_damage(old: &ComputedValues, new: &ComputedValues) 
     }
 }
 
-/// A child with a z_index that is hoisted up to it's containing Stacking Context for paint purposes
-#[derive(Debug, Clone)]
-pub struct HoistedPaintChild {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StackingLevel {
+    Negative(i32),
+    Auto,
+    Zero,
+    Positive(i32),
+}
+
+/// An atomic stacking context or positioned `z-index:auto` container in a
+/// real stacking context's paint order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StackingEntry {
     pub node_id: NodeId,
-    pub z_index: i32,
-    pub position: taffy::Point<f32>,
+    pub level: StackingLevel,
 }
 
-#[derive(Debug)]
-pub struct HoistedPaintChildren {
-    pub children: Vec<HoistedPaintChild>,
-    /// The number of hoisted point children with negative z_index
-    pub negative_z_count: u32,
-
-    pub content_area: taffy::Rect<f32>,
+#[derive(Debug, Default)]
+pub struct StackingContext {
+    pub negative: Vec<StackingEntry>,
+    pub auto_and_zero: Vec<StackingEntry>,
+    pub positive: Vec<StackingEntry>,
+    /// Bounds of all retained entries in the context root's local coordinate
+    /// space. `None` represents either an empty context or conservatively
+    /// disables pruning when scrolling can move entries independently.
+    pub content_bounds: Option<Rect>,
+    pub(crate) bounds_dirty: bool,
 }
 
-impl HoistedPaintChildren {
-    fn new() -> Self {
-        Self {
-            children: Vec::new(),
-            negative_z_count: 0,
-            content_area: taffy::Rect::ZERO,
-        }
+impl StackingContext {
+    pub fn has_entries(&self) -> bool {
+        !self.negative.is_empty() || !self.auto_and_zero.is_empty() || !self.positive.is_empty()
     }
 
-    pub fn reset(&mut self) {
-        self.children.clear();
-        self.negative_z_count = 0;
-    }
-
-    pub fn compute_content_size(&mut self, doc: &BaseDocument) {
-        fn child_pos(child: &HoistedPaintChild, doc: &BaseDocument) -> Rect<f32> {
-            let node = &doc.nodes[child.node_id];
-            let left = child.position.x + node.final_layout().location.x;
-            let top = child.position.y + node.final_layout().location.y;
-            let right = left + node.final_layout().size.width;
-            let bottom = top + node.final_layout().size.height;
-
-            taffy::Rect {
-                top,
-                left,
-                bottom,
-                right,
-            }
-        }
-
-        if self.children.is_empty() {
-            self.content_area = taffy::Rect::ZERO;
-        } else {
-            self.content_area = child_pos(&self.children[0], doc);
-            for child in self.children[1..].iter() {
-                let pos = child_pos(child, doc);
-                self.content_area.left = self.content_area.left.min(pos.left);
-                self.content_area.top = self.content_area.top.min(pos.top);
-                self.content_area.right = self.content_area.right.max(pos.right);
-                self.content_area.bottom = self.content_area.bottom.max(pos.bottom);
-            }
+    pub fn push(&mut self, entry: StackingEntry) {
+        match entry.level {
+            StackingLevel::Negative(_) => self.negative.push(entry),
+            StackingLevel::Auto | StackingLevel::Zero => self.auto_and_zero.push(entry),
+            StackingLevel::Positive(_) => self.positive.push(entry),
         }
     }
 
     pub fn sort(&mut self) {
-        self.children.sort_by_key(|c| c.z_index);
-        self.negative_z_count = self.children.iter().take_while(|c| c.z_index < 0).count() as u32;
-    }
-
-    pub fn neg_z_range(&self) -> Range<usize> {
-        0..(self.negative_z_count as usize)
-    }
-
-    pub fn pos_z_range(&self) -> Range<usize> {
-        (self.negative_z_count as usize)..self.children.len()
-    }
-
-    pub fn neg_z_hoisted_children(
-        &self,
-    ) -> impl ExactSizeIterator<Item = &HoistedPaintChild> + DoubleEndedIterator {
-        self.children[self.neg_z_range()].iter()
-    }
-
-    pub fn pos_z_hoisted_children(
-        &self,
-    ) -> impl ExactSizeIterator<Item = &HoistedPaintChild> + DoubleEndedIterator {
-        self.children[self.pos_z_range()].iter()
+        self.negative.sort_by_key(|entry| match entry.level {
+            StackingLevel::Negative(z) => z,
+            _ => unreachable!(),
+        });
+        self.positive.sort_by_key(|entry| match entry.level {
+            StackingLevel::Positive(z) => z,
+            _ => unreachable!(),
+        });
     }
 }
 
 impl BaseDocument {
+    pub(crate) fn dirty_stacking_context_bounds_for(&mut self, node_id: NodeId) {
+        let mut owner = self.nodes[node_id].stacking_context_owner.get();
+        while let Some(context_root) = owner {
+            let node = &mut self.nodes[context_root];
+            if let Some(context) = &mut node.stacking_context {
+                context.bounds_dirty = true;
+            }
+            owner = node.stacking_context_owner.get();
+        }
+    }
+
     pub(crate) fn invalidate_inline_contexts(&mut self) {
         let scale = self.viewport.scale();
 
@@ -418,8 +399,25 @@ impl BaseDocument {
         }
     }
 
-    pub fn flush_styles_to_layout(&mut self, node_id: NodeId) {
-        self.flush_styles_to_layout_impl(node_id, None);
+    pub fn clear_layout_caches(&mut self, node_id: NodeId) {
+        if !self.nodes.contains_key(node_id) {
+            return;
+        }
+        let children = self.nodes[node_id].layout_children.borrow().clone();
+        let node = &mut self.nodes[node_id];
+        node.clear_layout_cache();
+        if let Some(inline_layout) = node
+            .data
+            .downcast_element_mut()
+            .and_then(|element| element.inline_layout_data.as_mut())
+        {
+            inline_layout.content_widths = None;
+        }
+        if let Some(children) = children {
+            for child_id in children {
+                self.clear_layout_caches(child_id);
+            }
+        }
     }
 
     /// Flush the image layers of nodes whose style changed during the last
@@ -531,170 +529,208 @@ impl BaseDocument {
         }
     }
 
-    /// Walk the whole tree, rebuilding paint children and hoisting z-indexed boxes
-    fn flush_styles_to_layout_impl(
+    pub fn rebuild_stacking_contexts(&mut self, root_id: NodeId) {
+        if !self.incremental_layout || self.nodes[root_id].stacking_context.is_none() {
+            self.rebuild_stacking_context(root_id);
+            return;
+        }
+
+        let mut dirty_contexts = Vec::new();
+        self.collect_dirty_stacking_contexts(root_id, root_id, false, &mut dirty_contexts);
+        dirty_contexts.retain(|context_id| self.nodes.contains_key(*context_id));
+        dirty_contexts
+            .sort_unstable_by_key(|context_id| (self.layout_depth(*context_id), *context_id));
+        dirty_contexts.dedup();
+        for context_id in dirty_contexts {
+            if !self.is_current_stacking_context_root(context_id, root_id) {
+                self.nodes[context_id].stacking_context = None;
+                continue;
+            }
+            self.rebuild_stacking_context(context_id);
+        }
+    }
+
+    fn is_current_stacking_context_root(&self, node_id: NodeId, root_id: NodeId) -> bool {
+        if node_id == root_id {
+            return true;
+        }
+
+        let is_flex_or_grid_item = self.nodes[node_id]
+            .layout_parent
+            .get()
+            .and_then(|parent_id| self.nodes.get(parent_id))
+            .and_then(Node::display_style)
+            .is_some_and(|display| {
+                matches!(display.inside(), DisplayInside::Flex | DisplayInside::Grid)
+            });
+        self.nodes[node_id].is_stacking_context_root(is_flex_or_grid_item)
+    }
+
+    fn layout_depth(&self, mut node_id: NodeId) -> usize {
+        let mut depth = 0;
+        while let Some(parent_id) = self.nodes[node_id].layout_parent.get() {
+            depth += 1;
+            node_id = parent_id;
+        }
+        depth
+    }
+
+    fn collect_dirty_stacking_contexts(
         &mut self,
         node_id: NodeId,
-        parent_stacking_context: Option<&mut HoistedPaintChildren>,
+        containing_context: NodeId,
+        is_flex_or_grid_item: bool,
+        dirty_contexts: &mut Vec<NodeId>,
     ) {
-        let mut new_stacking_context: HoistedPaintChildren = HoistedPaintChildren::new();
-        let stacking_context = &mut new_stacking_context;
-
-        let incremental = self.incremental_layout;
-        let display = {
-            let node = self.nodes.get_mut(node_id).unwrap();
-
-            let Some(display) = node.display_style() else {
-                return;
-            };
-
-            // In non-incremental mode we unconditionally clear the Taffy cache.
-            // In incremental mode this is handled as part of damage propagation.
-            if !incremental {
-                node.clear_layout_cache();
-                if let Some(inline_layout) = node
-                    .data
-                    .downcast_element_mut()
-                    .and_then(|el| el.inline_layout_data.as_mut())
-                {
-                    inline_layout.content_widths = None;
-                }
-            }
-
-            display
-        };
-
-        // If the node has children, then take those children and...
-        let children = self.nodes[node_id].layout_children.borrow_mut().take();
-        if let Some(mut children) = children {
-            let is_flex_or_grid =
-                matches!(display.inside(), DisplayInside::Flex | DisplayInside::Grid);
-
-            // Recursively call flush_styles_to_layout on each child
-            for &child in children.iter() {
-                self.flush_styles_to_layout_impl(
-                    child,
-                    match self.nodes[child].is_stacking_context_root(is_flex_or_grid) {
-                        true => None,
-                        false => Some(stacking_context),
-                    },
-                );
-            }
-
-            // Sort layout_children
-            if is_flex_or_grid {
-                children.sort_by(|left, right| {
-                    let left_node = self.nodes.get(*left).unwrap();
-                    let right_node = self.nodes.get(*right).unwrap();
-                    left_node.order().cmp(&right_node.order())
-                });
-            }
-
-            // Reserve space for paint_children
-            let mut paint_children = self.nodes[node_id].paint_children.borrow_mut();
-            if paint_children.is_none() {
-                *paint_children = Some(ThinVec::new());
-            }
-            let paint_children = paint_children.as_mut().unwrap();
-            paint_children.clear();
-            paint_children.reserve(children.len());
-
-            // Push children to either paint_children or layout_children depending on
-            for &child_id in children.iter() {
-                let child = &self.nodes[child_id];
-
-                let Some(style) = child.primary_styles() else {
-                    paint_children.push(child_id);
-                    continue;
-                };
-
-                let position = style.clone_position();
-                let z_index = style.clone_z_index().integer_or(0);
-
-                // TODO: more complete hoisting detection
-                // z-index applies to static flex/grid items too
-                // (css-flexbox-1 §painting, css-grid-1 §z-order).
-                if z_index != 0 && (position != Position::Static || is_flex_or_grid) {
-                    stacking_context.children.push(HoistedPaintChild {
-                        node_id: child_id,
-                        z_index,
-                        position: taffy::Point::ZERO,
-                    })
-                } else {
-                    paint_children.push(child_id);
-                }
-            }
-
-            // Sort paint_children
-            paint_children.sort_by(|left, right| {
-                let left_node = self.nodes.get(*left).unwrap();
-                let right_node = self.nodes.get(*right).unwrap();
-                node_to_paint_order(left_node, is_flex_or_grid)
-                    .cmp(&node_to_paint_order(right_node, is_flex_or_grid))
-            });
-
-            // Put children back
-            *self.nodes[node_id].layout_children.borrow_mut() = Some(children);
+        if !self.nodes.contains_key(node_id) {
+            return;
+        }
+        let node = &self.nodes[node_id];
+        if node_id != containing_context
+            && !node.stacking_dirty_self.get()
+            && !node.has_damaged_descendants()
+            && !node.is_anonymous()
+        {
+            return;
         }
 
-        if let Some(parent_stacking_context) = parent_stacking_context {
-            let position = self.nodes[node_id].final_layout().location;
-            let scroll_offset = *self.nodes[node_id].scroll_offset();
-            for hoisted in stacking_context.children.iter_mut() {
-                hoisted.position.x += position.x - scroll_offset.x as f32;
-                hoisted.position.y += position.y - scroll_offset.y as f32;
+        let is_context =
+            node_id == containing_context || node.is_stacking_context_root(is_flex_or_grid_item);
+        if node.stacking_dirty_self.get() {
+            if let Some(old_owner) = node.stacking_context_owner.get() {
+                dirty_contexts.push(old_owner);
             }
-            parent_stacking_context
-                .children
-                .extend(stacking_context.children.iter().cloned());
+            dirty_contexts.push(containing_context);
+            let rebuild_owned_context = node.stacking_context.is_none()
+                || node
+                    .damage()
+                    .is_some_and(|damage| damage.contains(RestyleDamage::RECALCULATE_OVERFLOW));
+            if is_context && node_id != containing_context && rebuild_owned_context {
+                dirty_contexts.push(node_id);
+            }
+        }
+
+        let child_context = if is_context {
+            node_id
         } else {
-            stacking_context.sort();
-            stacking_context.compute_content_size(self);
-            self.nodes[node_id].stacking_context = Some(Box::new(new_stacking_context));
+            containing_context
+        };
+        let is_flex_or_grid = node.display_style().is_some_and(|display| {
+            matches!(display.inside(), DisplayInside::Flex | DisplayInside::Grid)
+        });
+        let children = self.nodes[node_id].layout_children.borrow_mut().take();
+        for child_id in children.as_deref().unwrap_or(&[]).iter().copied() {
+            self.collect_dirty_stacking_contexts(
+                child_id,
+                child_context,
+                is_flex_or_grid,
+                dirty_contexts,
+            );
+        }
+        *self.nodes[node_id].layout_children.borrow_mut() = children;
+    }
+
+    fn rebuild_stacking_context(&mut self, context_root: NodeId) {
+        let mut context = StackingContext::default();
+        self.collect_stacking_children(context_root, context_root, &mut context);
+        context.sort();
+        context.bounds_dirty = true;
+        self.nodes[context_root].stacking_context = Some(Box::new(context));
+    }
+
+    fn collect_stacking_children(
+        &mut self,
+        context_root: NodeId,
+        node_id: NodeId,
+        context: &mut StackingContext,
+    ) {
+        let is_flex_or_grid = self.nodes[node_id].display_style().is_some_and(|display| {
+            matches!(display.inside(), DisplayInside::Flex | DisplayInside::Grid)
+        });
+        let children = self.nodes[node_id].layout_children.borrow_mut().take();
+        let mut paint_children = ThinVec::with_capacity(children.as_ref().map_or(0, ThinVec::len));
+
+        for child_id in children.as_deref().unwrap_or(&[]).iter().copied() {
+            if !self.nodes.contains_key(child_id) {
+                continue;
+            }
+            self.nodes[child_id]
+                .stacking_context_owner
+                .set(Some(context_root));
+            let child_is_context = self.nodes[child_id].is_stacking_context_root(is_flex_or_grid);
+            if child_is_context {
+                if self.nodes[child_id].stacking_context.is_none() {
+                    self.rebuild_stacking_context(child_id);
+                }
+                context.push(StackingEntry {
+                    node_id: child_id,
+                    level: stacking_level(&self.nodes[child_id], is_flex_or_grid),
+                });
+                continue;
+            }
+
+            if self.nodes[child_id].stacking_context.is_some() {
+                self.nodes[child_id].stacking_context = None;
+            }
+
+            if self.nodes[child_id].is_positioned_stacking_container() {
+                context.push(StackingEntry {
+                    node_id: child_id,
+                    level: StackingLevel::Auto,
+                });
+            } else {
+                paint_children.push(child_id);
+            }
+            self.collect_stacking_children(context_root, child_id, context);
+        }
+
+        paint_children.sort_by_key(|child_id| {
+            match self.nodes[*child_id]
+                .primary_styles()
+                .map(|style| style.clone_float())
+            {
+                Some(Float::None) | None => 0,
+                Some(_) => 1,
+            }
+        });
+        *self.nodes[node_id].layout_children.borrow_mut() = children;
+        *self.nodes[node_id].paint_children.borrow_mut() = Some(paint_children);
+    }
+
+    pub(crate) fn sort_layout_children(&mut self, node_id: NodeId) {
+        let is_flex_or_grid = self.nodes[node_id].display_style().is_some_and(|display| {
+            matches!(display.inside(), DisplayInside::Flex | DisplayInside::Grid)
+        });
+        if !is_flex_or_grid {
+            return;
+        }
+
+        if let Some(children) = self.nodes[node_id].layout_children.borrow_mut().as_mut() {
+            children.sort_by_key(|child_id| {
+                let child = &self.nodes[*child_id];
+                if child.taffy_position().is_out_of_flow() {
+                    0
+                } else {
+                    child.order()
+                }
+            });
         }
     }
 }
 
-#[inline(always)]
-fn position_to_order(pos: Position) -> i32 {
-    match pos {
-        Position::Static => 0,
-        // All positioned descendants with z-index: auto share one paint
-        // level (CSS 2.1 Appendix E step 8); the stable sort keeps them in
-        // tree order among themselves, above in-flow content and floats.
-        Position::Relative | Position::Sticky | Position::Absolute | Position::Fixed => 2,
-    }
-}
-#[inline(always)]
-fn float_to_order(pos: Float) -> i32 {
-    match pos {
-        Float::None => 0,
-        _ => 1,
-    }
-}
-
-/// Paint sort key: (paint level, order-modified position). Positioned
-/// (z-index: auto) descendants paint above in-flow content (CSS 2.1
-/// Appendix E step 8); within a level the stable sort preserves
-/// (order-modified) document order.
-#[inline(always)]
-fn node_to_paint_order(node: &Node, is_flex_or_grid: bool) -> (i32, i32) {
+fn stacking_level(node: &Node, is_flex_or_grid_item: bool) -> StackingLevel {
     let Some(style) = node.primary_styles() else {
-        return (0, 0);
+        return StackingLevel::Zero;
     };
-    let position = style.clone_position();
-    if is_flex_or_grid {
-        match position {
-            Position::Static => (0, style.clone_order()),
-            Position::Relative | Position::Sticky => (2, style.clone_order()),
-            // Out-of-flow children are not flex/grid items: `order` does
-            // not apply; tree order does.
-            Position::Absolute | Position::Fixed => (2, 0),
-        }
-    } else {
-        (
-            position_to_order(position) + float_to_order(style.clone_float()),
-            0,
-        )
+    if node.taffy_position() == taffy::Position::Static && !is_flex_or_grid_item {
+        return StackingLevel::Zero;
+    }
+    if style.clone_z_index().is_auto() {
+        return StackingLevel::Zero;
+    }
+    match style.clone_z_index().integer_or(0) {
+        z if z < 0 => StackingLevel::Negative(z),
+        0 => StackingLevel::Zero,
+        z => StackingLevel::Positive(z),
     }
 }

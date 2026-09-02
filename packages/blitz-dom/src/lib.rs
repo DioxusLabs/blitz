@@ -78,6 +78,7 @@ pub mod util;
 #[cfg(feature = "accessibility")]
 mod accessibility;
 
+pub use crate::layout::damage::{StackingEntry, StackingLevel};
 pub use crate::layout::replaced::IntrinsicSizes;
 #[cfg(feature = "custom-widget")]
 pub use crate::node::Widget;

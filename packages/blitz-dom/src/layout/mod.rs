@@ -14,10 +14,12 @@ use style::values::computed::CSSPixelLength;
 use style::values::computed::length_percentage::CalcLengthPercentage;
 use stylo_taffy::TaffyStyloStyle;
 use taffy::{
-    BlockContext, CoreStyle as _, FlexDirection, LayoutPartialTree, NodeId, ResolveOrZero,
-    RoundTree, TraversePartialTree, TraverseTree, compute_block_layout, compute_cached_layout,
-    compute_flexbox_layout, compute_grid_layout, compute_leaf_layout, prelude::*,
+    BlockContext, CoreStyle as _, DetailedLayoutInfo, FlexDirection, LayoutContainingBlock,
+    LayoutPartialTree, NodeId, OofClaims, ResolveOrZero, RoundTree, TraversePartialTree,
+    TraverseTree, compute_block_layout, compute_cached_layout, compute_flexbox_layout,
+    compute_grid_layout, compute_leaf_layout, compute_oof_layout, prelude::*,
 };
+use thin_vec::ThinVec;
 
 pub(crate) mod construct;
 pub(crate) mod damage;
@@ -430,8 +432,93 @@ impl LayoutPartialTree for BaseDocument {
         inputs: taffy::LayoutInput,
     ) -> taffy::LayoutOutput {
         compute_cached_layout(self, node_id, inputs, |tree, node_id, inputs| {
-            tree.compute_child_layout_internal(node_id, inputs, None)
+            let mut output = tree.compute_child_layout_internal(node_id, inputs, None);
+            if inputs.run_mode == taffy::RunMode::PerformLayout {
+                compute_oof_layout(tree, node_id, &mut output);
+            }
+            output
         })
+    }
+}
+
+impl LayoutContainingBlock for BaseDocument {
+    type OofItemStyle<'a>
+        = TaffyStyloStyle<ComputedStyleRef<'a>>
+    where
+        Self: 'a;
+
+    fn get_oof_item_style(&self, node_id: NodeId) -> Self::OofItemStyle<'_> {
+        self.node_from_id(node_id).layout_style()
+    }
+
+    fn set_hoisted_children(&mut self, node_id: NodeId, hoisted: &[NodeId]) {
+        let containing_block = dom_node_id(node_id);
+        let new_children: ThinVec<crate::NodeId> =
+            hoisted.iter().copied().map(dom_node_id).collect();
+        let old_children = {
+            let node = self.node_from_id(node_id);
+            let mut vec = node.hoisted_children.borrow_mut();
+            if *vec == new_children {
+                return;
+            }
+            std::mem::replace(&mut *vec, new_children.clone())
+        };
+
+        self.nodes[containing_block].spatial_dirty_self.set(true);
+        for old_id in old_children {
+            if !self.nodes.contains_key(old_id) {
+                continue;
+            }
+            let old_node = &self.nodes[old_id];
+            if old_node.oof_containing_block.get() == Some(containing_block)
+                && !new_children.contains(&old_id)
+            {
+                old_node.oof_containing_block.set(None);
+                old_node.spatial_dirty_self.set(true);
+            }
+        }
+        for &hoisted_id in hoisted {
+            let child = self.node_from_id(hoisted_id);
+            child.oof_containing_block.set(Some(containing_block));
+            child.spatial_dirty_self.set(true);
+        }
+    }
+
+    fn add_hoisted_children(&mut self, node_id: NodeId, hoisted: &[NodeId]) {
+        let containing_block = dom_node_id(node_id);
+        let node = self.node_from_id(node_id);
+        let mut vec = node.hoisted_children.borrow_mut();
+        for id in hoisted.iter().copied().map(dom_node_id) {
+            if !vec.contains(&id) {
+                vec.push(id);
+            }
+        }
+        drop(vec);
+        self.nodes[containing_block].spatial_dirty_self.set(true);
+        for &hoisted_id in hoisted {
+            let child = self.node_from_id(hoisted_id);
+            child.oof_containing_block.set(Some(containing_block));
+            child.spatial_dirty_self.set(true);
+        }
+    }
+
+    fn oof_claims(&self, node_id: NodeId) -> OofClaims {
+        let node = self.node_from_id(node_id);
+        let is_positioned = node.layout_style().position().is_positioned();
+        let establishes_fixed_cb = node.establishes_fixed_containing_block();
+        OofClaims {
+            absolute: is_positioned
+                || establishes_fixed_cb
+                || node.establishes_absolute_containing_block(),
+            fixed: establishes_fixed_cb,
+        }
+    }
+
+    fn get_detailed_layout_info(&self, node_id: NodeId) -> &DetailedLayoutInfo<Atom> {
+        self.node_from_id(node_id)
+            .element_data()
+            .map(|element| &element.detailed_layout_info)
+            .unwrap_or(&DetailedLayoutInfo::None)
     }
 }
 
@@ -493,7 +580,11 @@ impl taffy::LayoutBlockContainer for BaseDocument {
         block_ctx: Option<&mut BlockContext<'_>>,
     ) -> taffy::LayoutOutput {
         compute_cached_layout(self, node_id, inputs, |tree, node_id, inputs| {
-            tree.compute_child_layout_internal(node_id, inputs, block_ctx)
+            let mut output = tree.compute_child_layout_internal(node_id, inputs, block_ctx);
+            if inputs.run_mode == taffy::RunMode::PerformLayout {
+                compute_oof_layout(tree, node_id, &mut output);
+            }
+            output
         })
     }
 }
@@ -544,7 +635,7 @@ impl taffy::LayoutGridContainer for BaseDocument {
     ) {
         let node = self.node_from_id_mut(node_id);
         if let Some(element) = node.element_data_mut() {
-            element.detailed_grid_info = Some(Box::new(detailed_grid_info));
+            element.detailed_layout_info = DetailedLayoutInfo::Grid(Box::new(detailed_grid_info));
         }
     }
 }
@@ -555,7 +646,25 @@ impl RoundTree for BaseDocument {
     }
 
     fn set_final_layout(&mut self, node_id: NodeId, layout: &Layout) {
-        *self.node_from_id_mut(node_id).final_layout_mut() = *layout;
+        let node_id = dom_node_id(node_id);
+        if self.nodes[node_id].final_layout() != layout {
+            *self.nodes[node_id].final_layout_mut() = *layout;
+            self.nodes[node_id].spatial_dirty_self.set(true);
+            self.dirty_stacking_context_bounds_for(node_id);
+        }
+    }
+
+    fn is_hoisted(&self, node_id: NodeId) -> bool {
+        let node = self.node_from_id(node_id);
+        node.taffy_position().is_out_of_flow() && node.taffy_display() != Display::None
+    }
+
+    fn hoisted_child_count(&self, node_id: NodeId) -> usize {
+        self.node_from_id(node_id).hoisted_children.borrow().len()
+    }
+
+    fn get_hoisted_child_id(&self, node_id: NodeId, index: usize) -> NodeId {
+        taffy_node_id(self.node_from_id(node_id).hoisted_children.borrow()[index])
     }
 }
 

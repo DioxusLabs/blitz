@@ -100,16 +100,21 @@ impl BaseDocument {
         self.flush_pending_style_images();
         timer.record_time("pconstruct");
 
-        // Merge stylo into taffy
-        self.flush_styles_to_layout(root_node_id);
-        timer.record_time("flush");
+        if !self.incremental_layout {
+            self.clear_layout_caches(root_node_id);
+        }
 
         // Next we resolve layout with the data resolved by stlist
         self.resolve_layout();
         timer.record_time("layout");
 
-        // Resolve transforms
+        self.rebuild_stacking_contexts(root_node_id);
+        timer.record_time("stacking");
+
+        // Resolve transforms and overflow through layout/containing-block
+        // geometry after stacking membership has been finalized.
         self.resolve_transforms(root_node_id);
+        self.resolve_stacking_context_bounds(root_node_id, self.viewport.scale_f64());
         timer.record_time("transform");
 
         // Clear all damage and dirty flags, walking only subtrees which are
@@ -170,6 +175,7 @@ impl BaseDocument {
             .damage()
             .map(|d| d.contains(style::selector_parser::RestyleDamage::RECALCULATE_OVERFLOW))
             .unwrap_or(false)
+            && !self.nodes[node_id].spatial_dirty_self.get()
         {
             let node = &self.nodes[node_id];
             let location = node.final_layout().location.map(|v| v as f64 * scale);
@@ -193,10 +199,26 @@ impl BaseDocument {
 
         if let Some(ref children) = layout_children {
             for &child_id in children {
+                // Out-of-flow children are laid out relative to their containing
+                // block, not their DOM parent: their overflow contribution is
+                // accounted for at the containing block (below) instead.
+                if self.nodes[child_id].taffy_position().is_out_of_flow() {
+                    continue;
+                }
                 let child_rect_in_self = self.resolve_transforms(child_id);
                 overflow = overflow.union(child_rect_in_self);
             }
         }
+        let hoisted_children =
+            std::mem::take(&mut *self.nodes[node_id].hoisted_children.borrow_mut());
+        for &child_id in &hoisted_children {
+            if !self.nodes.contains_key(child_id) {
+                continue;
+            }
+            let child_rect_in_self = self.resolve_transforms(child_id);
+            overflow = overflow.union(child_rect_in_self);
+        }
+        *self.nodes[node_id].hoisted_children.borrow_mut() = hoisted_children;
         if let Some(before) = self.nodes[node_id].before() {
             let child_rect_in_self = self.resolve_transforms(before);
             overflow = overflow.union(child_rect_in_self);
@@ -206,7 +228,11 @@ impl BaseDocument {
             overflow = overflow.union(child_rect_in_self);
         }
 
+        let overflow_changed = *self.nodes[node_id].scrollable_overflow() != overflow;
         *self.nodes[node_id].scrollable_overflow_mut() = overflow;
+        if overflow_changed || self.nodes[node_id].spatial_dirty_self.get() {
+            self.dirty_stacking_context_bounds_for(node_id);
+        }
         *self.nodes[node_id].layout_children.get_mut() = layout_children;
 
         let scaled_x = self.nodes[node_id].final_layout().location.x as f64 * scale;
@@ -219,6 +245,106 @@ impl BaseDocument {
         };
 
         full.transform_rect_bbox(overflow)
+    }
+
+    fn resolve_stacking_context_bounds(&mut self, context_root: NodeId, scale: f64) {
+        let Some(mut context) = self.nodes[context_root].stacking_context.take() else {
+            return;
+        };
+        let root = &self.nodes[context_root];
+        let needs_recompute = !self.incremental_layout
+            || context.bounds_dirty
+            || root.spatial_dirty_self.get()
+            || root
+                .damage()
+                .is_some_and(|damage| damage.contains(RestyleDamage::RECALCULATE_OVERFLOW));
+        if !needs_recompute {
+            self.nodes[context_root].stacking_context = Some(context);
+            return;
+        }
+
+        let mut content_bounds: Option<Rect> = None;
+        for entry in context
+            .negative
+            .iter()
+            .chain(&context.auto_and_zero)
+            .chain(&context.positive)
+        {
+            if self.nodes[entry.node_id].stacking_context.is_some() {
+                self.resolve_stacking_context_bounds(entry.node_id, scale);
+            }
+            let Some(entry_bounds) = self.stacking_entry_bounds(context_root, entry.node_id, scale)
+            else {
+                context.content_bounds = None;
+                context.bounds_dirty = false;
+                self.nodes[context_root].stacking_context = Some(context);
+                return;
+            };
+            content_bounds = Some(match content_bounds {
+                Some(bounds) => bounds.union(entry_bounds),
+                None => entry_bounds,
+            });
+        }
+        context.content_bounds = content_bounds;
+        context.bounds_dirty = false;
+        self.nodes[context_root].stacking_context = Some(context);
+    }
+
+    fn stacking_entry_bounds(
+        &self,
+        context_root: NodeId,
+        entry_id: NodeId,
+        scale: f64,
+    ) -> Option<Rect> {
+        if !self.stacking_entry_bounds_are_scroll_independent(context_root, entry_id) {
+            return None;
+        }
+
+        let child = &self.nodes[entry_id];
+        let mut bounds = *child.scrollable_overflow();
+        if let Some(context) = &child.stacking_context
+            && context.has_entries()
+        {
+            bounds = bounds.union(context.content_bounds?);
+        }
+
+        let position = self.nodes[context_root].stacking_entry_position(entry_id);
+        let location = child.final_layout().location;
+        let mut transform = Affine::translate((
+            (position.x + location.x) as f64 * scale,
+            (position.y + location.y) as f64 * scale,
+        ));
+        if let Some(child_transform) = child.transform() {
+            transform *= *child_transform;
+        }
+        Some(transform.transform_rect_bbox(bounds))
+    }
+
+    fn stacking_entry_bounds_are_scroll_independent(
+        &self,
+        context_root: NodeId,
+        entry_id: NodeId,
+    ) -> bool {
+        let child = &self.nodes[entry_id];
+        if child.taffy_position() == taffy::Position::Fixed {
+            return false;
+        }
+
+        let containing_block = child.oof_containing_block.get();
+        let mut applies_spatial_effects = containing_block.is_none();
+        let mut current = child.layout_parent.get();
+        while let Some(id) = current {
+            if id == context_root {
+                return true;
+            }
+            let ancestor = &self.nodes[id];
+            applies_spatial_effects |= containing_block == Some(id);
+            if applies_spatial_effects && ancestor.clips_overflow() {
+                return false;
+            }
+            current = ancestor.layout_parent.get();
+        }
+        false
     }
 
     /// Ensure that the layout_children field is populated for all nodes
@@ -291,6 +417,7 @@ impl BaseDocument {
                 // damage.insert(RestyleDamage::RELAYOUT | RestyleDamage::REPAINT);
             }
 
+            doc.sort_layout_children(node_id);
             doc.nodes[node_id].set_damage(damage);
         }
     }
