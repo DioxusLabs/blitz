@@ -292,28 +292,35 @@ pub(crate) fn white_space_collapse(input: stylo::WhiteSpaceCollapse) -> parley::
     }
 }
 
-/// Map the `vertical-align` shorthand (Stylo stores it as the css-inline-3 longhands
-/// `alignment-baseline` + `baseline-shift`) to Parley's `VerticalAlign`.
+/// Map the css-inline-3 `alignment-baseline` and `baseline-shift` longhands (which Stylo
+/// stores in place of the `vertical-align` shorthand) to Parley's `VerticalAlign`.
 ///
 /// Percentages are resolved against the element's own `line-height`.
 pub(crate) fn vertical_align(style: &stylo::ComputedValues) -> parley::VerticalAlign {
     let box_styles = style.get_box();
-    match box_styles.clone_baseline_shift() {
+    let alignment = match box_styles.clone_alignment_baseline() {
+        stylo::AlignmentBaseline::Baseline => parley::AlignmentBaseline::Baseline,
+        stylo::AlignmentBaseline::TextTop => parley::AlignmentBaseline::TextTop,
+        stylo::AlignmentBaseline::TextBottom => parley::AlignmentBaseline::TextBottom,
+        stylo::AlignmentBaseline::Middle => parley::AlignmentBaseline::Middle,
+    };
+    let shift = match box_styles.clone_baseline_shift() {
         stylo::BaselineShift::Keyword(stylo::BaselineShiftKeyword::Sub) => {
-            parley::VerticalAlign::Sub
+            parley::BaselineShift::Sub
         }
         stylo::BaselineShift::Keyword(stylo::BaselineShiftKeyword::Super) => {
-            parley::VerticalAlign::Super
+            parley::BaselineShift::Super
         }
         stylo::BaselineShift::Keyword(stylo::BaselineShiftKeyword::Top) => {
-            parley::VerticalAlign::Top
+            parley::BaselineShift::Top
         }
         stylo::BaselineShift::Keyword(stylo::BaselineShiftKeyword::Bottom) => {
-            parley::VerticalAlign::Bottom
+            parley::BaselineShift::Bottom
         }
-        // `center` is not a `vertical-align` value; treat it as `middle`.
+        // TODO: `center` (align the aligned subtree's centre with the line box's centre) is not
+        // representable in Parley yet. Approximate it with `middle`.
         stylo::BaselineShift::Keyword(stylo::BaselineShiftKeyword::Center) => {
-            parley::VerticalAlign::Middle
+            return parley::VerticalAlign::MIDDLE;
         }
         stylo::BaselineShift::Length(lp) => {
             let shift = if lp.has_percentage() {
@@ -328,17 +335,10 @@ pub(crate) fn vertical_align(style: &stylo::ComputedValues) -> parley::VerticalA
             } else {
                 lp.resolve(Length::new(0.0)).px()
             };
-            if shift != 0.0 {
-                return parley::VerticalAlign::Length(shift);
-            }
-            match box_styles.clone_alignment_baseline() {
-                stylo::AlignmentBaseline::TextTop => parley::VerticalAlign::TextTop,
-                stylo::AlignmentBaseline::TextBottom => parley::VerticalAlign::TextBottom,
-                stylo::AlignmentBaseline::Middle => parley::VerticalAlign::Middle,
-                _ => parley::VerticalAlign::Baseline,
-            }
+            parley::BaselineShift::Length(shift)
         }
-    }
+    };
+    parley::VerticalAlign::new(alignment, shift)
 }
 
 pub(crate) fn style(
