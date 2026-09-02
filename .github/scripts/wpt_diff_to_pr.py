@@ -85,20 +85,21 @@ class Diff:
 
 def format_lines(diff):
     """Render the changes as diff-syntax lines, aligned into columns."""
+
+    def counts_of(change):
+        return "[{}/{}]".format(change.counts["pass"], change.counts["total"])
+
     status_width = max(len(change.status) for change in diff.changes)
-    pass_width = max(len(str(change.counts["pass"])) for change in diff.changes)
-    total_width = max(len(str(change.counts["total"])) for change in diff.changes)
+    counts_width = max(len(counts_of(change)) for change in diff.changes)
     delta_width = max(len(f"{change.delta:+}") for change in diff.changes)
 
     return [
-        "{} {:<{}}  [{:>{}}/{:>{}}]  {:>{}}  {}".format(
+        "{} {:<{}}  {:>{}}  {:>{}}  {}".format(
             change.marker,
             change.status,
             status_width,
-            change.counts["pass"],
-            pass_width,
-            change.counts["total"],
-            total_width,
+            counts_of(change),
+            counts_width,
             f"{change.delta:+}",
             delta_width,
             change.test,
