@@ -286,15 +286,6 @@ fn push_non_whitespace_children_and_pseudos(layout_children: &mut ThinVec<NodeId
     }
 }
 
-/// Convert a relative line height to an absolute one
-fn resolve_line_height(line_height: parley::LineHeight, font_size: f32) -> f32 {
-    match line_height {
-        parley::LineHeight::FontSizeRelative(relative) => relative * font_size,
-        parley::LineHeight::Absolute(absolute) => absolute,
-        parley::LineHeight::MetricsRelative(relative) => relative * font_size, //unreachable!(),
-    }
-}
-
 /// Result of classifying the in-flow children of a flow container as
 /// all-block, all-inline and/or all-out-of-flow.
 struct FlowClassification {
@@ -1036,8 +1027,6 @@ pub(crate) fn build_inline_layout_into(
         .map(|s| stylo_to_parley::style(inline_context_root_node_id, s))
         .unwrap_or_default();
 
-    let root_line_height = resolve_line_height(parley_style.line_height, parley_style.font_size);
-
     // Create a parley tree builder
     let mut builder = layout_ctx.tree_builder(font_ctx, scale, true, &parley_style);
 
@@ -1086,7 +1075,6 @@ pub(crate) fn build_inline_layout_into(
             before_id,
             collapse_mode,
             text_transform,
-            root_line_height,
         );
     }
     for child_id in root_node.children.iter().copied() {
@@ -1097,7 +1085,6 @@ pub(crate) fn build_inline_layout_into(
             child_id,
             collapse_mode,
             text_transform,
-            root_line_height,
         );
     }
     if let Some(after_id) = root_node.after() {
@@ -1108,7 +1095,6 @@ pub(crate) fn build_inline_layout_into(
             after_id,
             collapse_mode,
             text_transform,
-            root_line_height,
         );
     }
 
@@ -1122,7 +1108,6 @@ pub(crate) fn build_inline_layout_into(
         node_id: NodeId,
         collapse_mode: WhiteSpaceCollapse,
         parent_text_transform: TextTransform,
-        root_line_height: f32,
     ) {
         let node = &nodes[node_id];
 
@@ -1179,7 +1164,6 @@ pub(crate) fn build_inline_layout_into(
                                 child_id,
                                 collapse_mode,
                                 text_transform,
-                                root_line_height,
                             );
                         }
                     }
@@ -1199,6 +1183,11 @@ pub(crate) fn build_inline_layout_into(
                                 // Width and height are set during layout
                                 width: 0.0,
                                 height: 0.0,
+                                baseline: None,
+                                vertical_align: node
+                                    .primary_styles()
+                                    .map(|s| stylo_to_parley::vertical_align(&s))
+                                    .unwrap_or_default(),
                             });
                         } else if *tag_name == local_name!("br") {
                             // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
@@ -1210,24 +1199,10 @@ pub(crate) fn build_inline_layout_into(
                             builder.set_white_space_mode(collapse_mode);
                         } else {
                             // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
-                            let mut style = node
+                            let style = node
                                 .primary_styles()
                                 .map(|s| stylo_to_parley::style(node.id, &s))
                                 .unwrap_or_default();
-
-                            // dbg!(&style);
-
-                            let font_size = style.font_size;
-
-                            // Floor the line-height of the span by the line-height of the inline context
-                            // See https://www.w3.org/TR/CSS21/visudet.html#line-height
-                            style.line_height = parley::LineHeight::Absolute(
-                                resolve_line_height(style.line_height, font_size)
-                                    .max(root_line_height),
-                            );
-
-                            // dbg!(node_id);
-                            // dbg!(&style);
 
                             builder.push_style_span(style);
 
@@ -1239,7 +1214,6 @@ pub(crate) fn build_inline_layout_into(
                                     before_id,
                                     collapse_mode,
                                     text_transform,
-                                    root_line_height,
                                 );
                             }
 
@@ -1251,7 +1225,6 @@ pub(crate) fn build_inline_layout_into(
                                     child_id,
                                     collapse_mode,
                                     text_transform,
-                                    root_line_height,
                                 );
                             }
                             if let Some(after_id) = node.after() {
@@ -1262,7 +1235,6 @@ pub(crate) fn build_inline_layout_into(
                                     after_id,
                                     collapse_mode,
                                     text_transform,
-                                    root_line_height,
                                 );
                             }
 
@@ -1279,6 +1251,11 @@ pub(crate) fn build_inline_layout_into(
                             // Width and height are set during layout
                             width: 0.0,
                             height: 0.0,
+                            baseline: None,
+                            vertical_align: node
+                                .primary_styles()
+                                .map(|s| stylo_to_parley::vertical_align(&s))
+                                .unwrap_or_default(),
                         });
                     }
                 };

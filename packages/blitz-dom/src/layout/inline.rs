@@ -305,17 +305,33 @@ impl BaseDocument {
             let is_floated = false;
 
             let is_absolute = style.position() == Position::Absolute;
+            // The baseline of an inline-block is the baseline of its last in-flow line box,
+            // unless it has no line boxes or its `overflow` is not `visible`, in which case
+            // it is the bottom margin edge (CSS 2 §10.8.1).
+            let overflow = style.overflow();
+            let has_visible_overflow =
+                overflow.x == Overflow::Visible && overflow.y == Overflow::Visible;
             drop(style);
 
             if is_absolute || is_floated {
                 ibox.width = 0.0;
                 ibox.height = 0.0;
+                ibox.baseline = None;
             } else {
                 let output = self.compute_child_layout(taffy::NodeId::from(ibox.id), child_inputs);
                 ibox.width = (margin.left + margin.right + output.size.width) * scale;
                 // Vertical margins adjust the space the box reserves in the line, but the
                 // reserved space cannot be negative.
                 ibox.height = (margin.top + margin.bottom + output.size.height).max(0.0) * scale;
+                ibox.baseline = if has_visible_overflow {
+                    output
+                        .baselines
+                        .last
+                        .or(output.baselines.first)
+                        .map(|baseline| (margin.top + baseline) * scale)
+                } else {
+                    None
+                };
             }
         }
 
@@ -604,7 +620,13 @@ impl BaseDocument {
                         // dbg!(&layout.size);
                         // dbg!(&layout.location);
 
-                        state.append_inline_box_to_line(box_break_data.advance, 0.0);
+                        // Floats are out-of-flow and must not contribute to the line's height.
+                        state.append_inline_box_to_line(
+                            box_break_data.advance,
+                            f32::NEG_INFINITY,
+                            f32::NEG_INFINITY,
+                            true,
+                        );
 
                         // if float.is_floated() {
                         //     println!("INLINE FLOATED BOX ({}) {:?}", ibox.id, float);
@@ -827,11 +849,10 @@ impl BaseDocument {
         // println!("known_dimensions: w: {:?} h: {:?}", inputs.known_dimensions.width, inputs.known_dimensions.height);
         // println!("\n");
 
-        let first_baseline = inline_layout
-            .layout
-            .lines()
-            .next()
-            .map(|line| (line.metrics().baseline / scale) + container_pb.top);
+        let line_baseline =
+            |line: parley::Line<'_, _>| (line.metrics().baseline / scale) + container_pb.top;
+        let first_baseline = inline_layout.layout.lines().next().map(line_baseline);
+        let last_baseline = inline_layout.layout.lines().last().map(line_baseline);
 
         // Put layout back
         self.nodes[node_id]
@@ -854,7 +875,10 @@ impl BaseDocument {
                     bottom: content_extent.height,
                 }
             },
-            baselines: taffy::Baselines::from_first(first_baseline),
+            baselines: taffy::Baselines {
+                first: first_baseline,
+                last: last_baseline,
+            },
             top_margin: CollapsibleMarginSet::ZERO,
             bottom_margin: CollapsibleMarginSet::ZERO,
             margins_can_collapse_through: !has_styles_preventing_being_collapsed_through
