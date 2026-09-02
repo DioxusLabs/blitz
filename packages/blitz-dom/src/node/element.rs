@@ -708,16 +708,35 @@ impl ElementData {
             return false;
         };
 
-        if self.style_attribute.is_none() {
-            self.style_attribute = Some(ServoArc::new(guard.wrap(PropertyDeclarationBlock::new())));
-        }
-        self.style_attribute
-            .as_mut()
-            .unwrap()
+        self.mutable_style_attribute(guard)
             .write_with(&mut guard.write())
             .extend(source_property_declaration.drain(), Importance::Normal);
 
         true
+    }
+
+    // Copy-on-write: once Stylo has put this block in the rule tree it may be
+    // shared with other elements' styles (mirrors Gecko's
+    // nsDOMCSSDeclaration::EnsureBlockMutable).
+    fn mutable_style_attribute(
+        &mut self,
+        guard: &SharedRwLock,
+    ) -> &ServoArc<Locked<PropertyDeclarationBlock>> {
+        let cloned = match &self.style_attribute {
+            None => Some(PropertyDeclarationBlock::new()),
+            Some(arc) => {
+                let read = guard.read();
+                let block = arc.read_with(&read);
+                block
+                    .immutable
+                    .load(std::sync::atomic::Ordering::Relaxed)
+                    .then(|| block.clone())
+            }
+        };
+        if let Some(block) = cloned {
+            self.style_attribute = Some(ServoArc::new(guard.wrap(block)));
+        }
+        self.style_attribute.as_ref().unwrap()
     }
 
     pub fn remove_style_property(
@@ -743,13 +762,15 @@ impl ElementData {
             return false;
         };
 
-        if let Some(style) = &mut self.style_attribute {
-            let mut guard = guard.write();
-            let style = style.write_with(&mut guard);
-            if let Some(index) = style.first_declaration_to_remove(&property_id) {
-                style.remove_property(&property_id, index);
-                return true;
-            }
+        if self.style_attribute.is_none() {
+            return false;
+        }
+        let style = self.mutable_style_attribute(guard);
+        let mut guard = guard.write();
+        let style = style.write_with(&mut guard);
+        if let Some(index) = style.first_declaration_to_remove(&property_id) {
+            style.remove_property(&property_id, index);
+            return true;
         }
 
         false
