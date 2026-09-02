@@ -16,7 +16,9 @@ use taffy::{
 
 use crate::BaseDocument;
 
+use super::construct::{AnonKind, create_anonymous_node};
 use super::damage::{CONSTRUCT_BOX, CONSTRUCT_DESCENDENT, CONSTRUCT_FC};
+use super::replaced::is_replaced_element;
 use super::resolve_calc_value;
 
 pub struct TableTreeWrapper<'doc> {
@@ -68,12 +70,7 @@ fn side_width(width: app_units::Au, style: BorderStyle) -> f32 {
 pub(crate) fn build_table_context(
     doc: &mut BaseDocument,
     table_root_node_id: NodeId,
-) -> (TableContext, Vec<NodeId>) {
-    let mut cells: Vec<TableCell> = Vec::new();
-    let mut rows: Vec<TableRow> = Vec::new();
-    let mut row = 0u16;
-    let mut col = 0u16;
-
+) -> (TableContext, Vec<NodeId>, Vec<NodeId>) {
     let root_node = &mut doc.nodes[table_root_node_id];
 
     let children = std::mem::take(&mut root_node.children);
@@ -103,25 +100,38 @@ pub(crate) fn build_table_context(
 
     drop(stylo_styles);
 
-    let mut column_sizes: Vec<taffy::TrackSizingFunction> = Vec::new();
-    let mut first_cell_border: Option<ServoArc<Border>> = None;
+    let mut builder = TableBuilder {
+        table_root_node_id,
+        is_fixed,
+        border_collapse,
+        row: 0,
+        col: 0,
+        cells: Vec::new(),
+        rows: Vec::new(),
+        columns: Vec::new(),
+        first_cell_border: None,
+        anonymous_nodes: Vec::new(),
+        open_anon_row: None,
+        open_anon_cell: None,
+    };
     for child_id in children.iter().copied() {
-        collect_table_cells(
-            doc,
-            child_id,
-            is_fixed,
-            border_collapse,
-            &mut row,
-            &mut col,
-            &mut cells,
-            &mut rows,
-            &mut column_sizes,
-            &mut first_cell_border,
-        );
+        builder.visit(doc, child_id, false);
     }
-    column_sizes.resize(col as usize, style_helpers::auto());
 
-    style.grid_template_columns = column_sizes.into_iter().map(|dim| dim.into()).collect();
+    let TableBuilder {
+        row,
+        col,
+        cells,
+        rows,
+        mut columns,
+        first_cell_border,
+        anonymous_nodes,
+        ..
+    } = builder;
+
+    columns.resize(col as usize, style_helpers::auto());
+
+    style.grid_template_columns = columns.into_iter().map(|dim| dim.into()).collect();
     style.grid_template_rows = vec![style_helpers::auto(); row as usize];
 
     style.gap = match border_collapse {
@@ -182,192 +192,271 @@ pub(crate) fn build_table_context(
             border_style: first_cell_border,
         },
         layout_children,
+        anonymous_nodes,
     )
 }
 
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn collect_table_cells(
-    doc: &mut BaseDocument,
-    node_id: NodeId,
+/// Walks a table's descendants, mapping rows/cells into the table grid and
+/// generating anonymous rows/cells around misplaced children per the box
+/// fixup rules of CSS 2.2 §17.2.1: consecutive runs of non-table-internal
+/// children share a single anonymous cell, and cells (real or anonymous)
+/// occurring outside a row share a single anonymous row.
+struct TableBuilder {
+    table_root_node_id: NodeId,
     is_fixed: bool,
     border_collapse: BorderCollapse,
-    row: &mut u16,
-    col: &mut u16,
-    cells: &mut Vec<TableCell>,
-    rows: &mut Vec<TableRow>,
-    columns: &mut Vec<TrackSizingFunction>,
-    first_cell_border: &mut Option<ServoArc<Border>>,
-) {
-    let node = &mut doc.nodes[node_id];
+    row: u16,
+    col: u16,
+    cells: Vec<TableCell>,
+    rows: Vec<TableRow>,
+    columns: Vec<TrackSizingFunction>,
+    first_cell_border: Option<ServoArc<Border>>,
+    /// Anonymous row/cell nodes created during this build. Recorded on the
+    /// table root (via `LayoutChildren::anonymous_blocks`) so they are
+    /// deallocated the next time it is reconstructed.
+    anonymous_nodes: Vec<NodeId>,
+    /// The anonymous row currently accepting cells that occur outside a real
+    /// row. Closed by any real row or row group.
+    open_anon_row: Option<NodeId>,
+    /// The anonymous cell currently accepting misplaced children. Closed by
+    /// any table-internal sibling.
+    open_anon_cell: Option<NodeId>,
+}
 
-    if !node.is_element() {
-        return;
-    }
+impl TableBuilder {
+    /// `in_row` is true when `node_id` is a child of a real table-row.
+    fn visit(&mut self, doc: &mut BaseDocument, node_id: NodeId, in_row: bool) {
+        let node = &mut doc.nodes[node_id];
 
-    let Some(display) = node.primary_styles().map(|s| s.clone_display()) else {
-        #[cfg(feature = "tracing")]
-        tracing::info!("Ignoring table descendent because it has no styles");
-        return;
-    };
-
-    if display.outside() == DisplayOutside::None {
-        node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
-        return;
-    }
-
-    match display.inside() {
-        DisplayInside::TableRowGroup
-        | DisplayInside::TableHeaderGroup
-        | DisplayInside::TableFooterGroup
-        | DisplayInside::Contents => {
-            let children = std::mem::take(&mut doc.nodes[node_id].children);
-            for child_id in children.iter().copied() {
-                doc.nodes[child_id]
-                    .remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
-                collect_table_cells(
-                    doc,
-                    child_id,
-                    is_fixed,
-                    border_collapse,
-                    row,
-                    col,
-                    cells,
-                    rows,
-                    columns,
-                    first_cell_border,
-                );
+        if !node.is_element() {
+            // Non-whitespace text gets an anonymous cell. Whitespace-only
+            // text only joins an already-open anonymous cell.
+            if node.is_text_node() && (!node.is_whitespace_node() || self.open_anon_cell.is_some())
+            {
+                self.push_into_anon_cell(doc, node_id, in_row);
             }
-            doc.nodes[node_id].children = children;
+            return;
         }
-        DisplayInside::TableRow => {
-            node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
-            *row += 1;
-            *col = 0;
 
-            rows.push(TableRow {
-                node_id,
+        let Some(display) = node.primary_styles().map(|s| s.clone_display()) else {
+            #[cfg(feature = "tracing")]
+            tracing::info!("Ignoring table descendent because it has no styles");
+            return;
+        };
+
+        if display.outside() == DisplayOutside::None {
+            node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
+            return;
+        }
+
+        // Captions are not part of the table grid. Blitz does not yet
+        // generate the table wrapper box that would hold them, so they are
+        // dropped rather than being wrapped in an anonymous cell. They do
+        // not close an open anonymous run.
+        if display.outside() == DisplayOutside::TableCaption {
+            node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
+            return;
+        }
+
+        // Table display values on replaced elements are treated as ordinary
+        // content: per CSS 2.2 §17.2.1 the table box generation rules apply
+        // to non-replaced elements only.
+        let is_replaced = node
+            .element_data()
+            .is_some_and(|el| is_replaced_element(&el.name.local));
+        if is_replaced {
+            self.push_into_anon_cell(doc, node_id, in_row);
+            return;
+        }
+
+        match display.inside() {
+            DisplayInside::TableRowGroup
+            | DisplayInside::TableHeaderGroup
+            | DisplayInside::TableFooterGroup => {
+                self.open_anon_cell = None;
+                self.open_anon_row = None;
+                self.visit_children(doc, node_id, false);
+            }
+            // display:contents is transparent for box generation: its
+            // children participate as if they were siblings of the contents
+            // node, so open anonymous runs are neither closed nor reopened.
+            DisplayInside::Contents => {
+                doc.nodes[node_id]
+                    .remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
+                self.visit_children(doc, node_id, in_row);
+            }
+            DisplayInside::TableRow => {
+                self.open_anon_cell = None;
+                self.open_anon_row = None;
+
+                doc.nodes[node_id]
+                    .remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
+                self.row += 1;
+                self.col = 0;
+
+                self.rows.push(TableRow {
+                    node_id,
+                    height: 0.0,
+                });
+
+                self.visit_children(doc, node_id, true);
+                self.open_anon_cell = None;
+            }
+            DisplayInside::TableCell => {
+                self.open_anon_cell = None;
+                if !in_row {
+                    self.ensure_anon_row(doc);
+                }
+                self.push_cell(doc, node_id, true);
+            }
+            // Non-table-internal children generate an anonymous table cell
+            // around them, with consecutive runs sharing a single cell.
+            DisplayInside::Flow
+            | DisplayInside::FlowRoot
+            | DisplayInside::Flex
+            | DisplayInside::Grid
+            | DisplayInside::Table => {
+                self.push_into_anon_cell(doc, node_id, in_row);
+            }
+            DisplayInside::TableColumnGroup | DisplayInside::TableColumn => {
+                doc.nodes[node_id]
+                    .remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
+                //Ignore
+            }
+            DisplayInside::None => {
+                doc.nodes[node_id]
+                    .remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
+                // Ignore
+            }
+        }
+    }
+
+    fn visit_children(&mut self, doc: &mut BaseDocument, node_id: NodeId, in_row: bool) {
+        let children = std::mem::take(&mut doc.nodes[node_id].children);
+        for child_id in children.iter().copied() {
+            self.visit(doc, child_id, in_row);
+        }
+        doc.nodes[node_id].children = children;
+    }
+
+    /// Open an anonymous row to hold cells occurring outside a real row.
+    fn ensure_anon_row(&mut self, doc: &mut BaseDocument) {
+        if self.open_anon_row.is_none() {
+            let anon_id = create_anonymous_node(doc, self.table_root_node_id, AnonKind::TableRow);
+            // Anonymous rows are not layout children, so construction damage
+            // would never be cleared by the resolve pass.
+            doc.nodes[anon_id].remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
+            self.anonymous_nodes.push(anon_id);
+
+            self.row += 1;
+            self.col = 0;
+            self.rows.push(TableRow {
+                node_id: anon_id,
                 height: 0.0,
             });
-
-            let children = std::mem::take(&mut doc.nodes[node_id].children);
-            for child_id in children.iter().copied() {
-                collect_table_cells(
-                    doc,
-                    child_id,
-                    is_fixed,
-                    border_collapse,
-                    row,
-                    col,
-                    cells,
-                    rows,
-                    columns,
-                    first_cell_border,
-                );
-            }
-            doc.nodes[node_id].children = children;
+            self.open_anon_row = Some(anon_id);
         }
-        // Table-cell children, plus non-table-internal children which, per the
-        // CSS tables spec, generate an anonymous table cell around them.
-        DisplayInside::TableCell
-        | DisplayInside::Flow
-        | DisplayInside::FlowRoot
-        | DisplayInside::Flex
-        | DisplayInside::Grid => {
-            // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
-            let is_cell = display.inside() == DisplayInside::TableCell;
-            let stylo_style = &node.primary_styles().unwrap();
-            let colspan: u16 = if is_cell {
-                node.attr(local_name!("colspan"))
-                    .and_then(|val| val.parse().ok())
-                    .unwrap_or(1)
-            } else {
-                1
-            };
-            let rowspan: u16 = if is_cell {
-                node.attr(local_name!("rowspan"))
-                    .and_then(|val| val.parse::<u16>().ok())
-                    .map(|v| v.clamp(1, 65534))
-                    .unwrap_or(1)
-            } else {
-                1
-            };
-            let mut style = stylo_taffy::to_taffy_style(stylo_style);
+    }
 
-            if is_cell && first_cell_border.is_none() {
-                *first_cell_border = Some(stylo_style.clone_border());
+    /// Append a misplaced (non-table-internal) child to the currently-open
+    /// anonymous cell, opening one (and an anonymous row if needed) first.
+    fn push_into_anon_cell(&mut self, doc: &mut BaseDocument, node_id: NodeId, in_row: bool) {
+        if self.open_anon_cell.is_none() {
+            if !in_row {
+                self.ensure_anon_row(doc);
             }
+            let container_id = doc.nodes[node_id].parent.unwrap_or(self.table_root_node_id);
+            let anon_id = create_anonymous_node(doc, container_id, AnonKind::TableCell);
+            self.anonymous_nodes.push(anon_id);
+            self.push_cell(doc, anon_id, false);
+            self.open_anon_cell = Some(anon_id);
+        }
+        doc.nodes[self.open_anon_cell.unwrap()]
+            .children
+            .push(node_id);
+    }
 
-            // Cells occurring before any row are placed in an anonymous row
-            if *row == 0 {
-                *row = 1;
-            }
+    /// Map a cell (real or anonymous) into the table grid. `is_real_cell`
+    /// controls whether the cell's border participates in the table's
+    /// collapsed-border approximation.
+    fn push_cell(&mut self, doc: &mut BaseDocument, node_id: NodeId, is_real_cell: bool) {
+        let node = &mut doc.nodes[node_id];
+        let stylo_style = &node.primary_styles().unwrap();
+        let colspan: u16 = node
+            .attr(local_name!("colspan"))
+            .and_then(|val| val.parse().ok())
+            .unwrap_or(1);
+        let rowspan: u16 = node
+            .attr(local_name!("rowspan"))
+            .and_then(|val| val.parse::<u16>().ok())
+            .map(|v| v.clamp(1, 65534))
+            .unwrap_or(1);
+        let mut style = stylo_taffy::to_taffy_style(stylo_style);
 
-            if *row == 1 {
-                let column = match style.size.width.tag() {
-                    taffy::CompactLength::LENGTH_TAG => {
-                        let len = style.size.width.value();
-                        let padding = style.padding.resolve_or_zero(None, resolve_calc_value);
-                        let border = style.border.resolve_or_zero(None, resolve_calc_value);
-                        match style.box_sizing {
-                            taffy::BoxSizing::ContentBox => style_helpers::length(
-                                len + padding.left + padding.right + border.left + border.right,
-                            ),
-                            taffy::BoxSizing::BorderBox => style_helpers::length(len),
-                        }
+        if is_real_cell && self.first_cell_border.is_none() {
+            self.first_cell_border = Some(stylo_style.clone_border());
+        }
+
+        // Cells occurring before any row are placed in an anonymous row
+        if self.row == 0 {
+            self.row = 1;
+        }
+
+        if self.row == 1 {
+            let column = match style.size.width.tag() {
+                taffy::CompactLength::LENGTH_TAG => {
+                    let len = style.size.width.value();
+                    let padding = style.padding.resolve_or_zero(None, resolve_calc_value);
+                    let border = style.border.resolve_or_zero(None, resolve_calc_value);
+                    match style.box_sizing {
+                        taffy::BoxSizing::ContentBox => style_helpers::length(
+                            len + padding.left + padding.right + border.left + border.right,
+                        ),
+                        taffy::BoxSizing::BorderBox => style_helpers::length(len),
                     }
-                    taffy::CompactLength::PERCENT_TAG => {
-                        if is_fixed {
-                            style_helpers::percent(style.size.width.value())
-                        } else {
-                            style_helpers::auto()
-                        }
+                }
+                taffy::CompactLength::PERCENT_TAG => {
+                    if self.is_fixed {
+                        style_helpers::percent(style.size.width.value())
+                    } else {
+                        style_helpers::auto()
                     }
-                    taffy::CompactLength::AUTO_TAG => style_helpers::auto(),
-                    // Dimension values are always length, percentage, auto or calc(),
-                    // so any other tag is a calc() value. Pass it through so that
-                    // Taffy resolves it against the table's inner width.
-                    _ => style.size.width.into(),
-                };
-                columns.push(column);
-            }
-
-            // Zero-out cell borders is BorderCollapse is Collapse
-            // Borders are handled at the table level in this mode
-            if is_cell && border_collapse == BorderCollapse::Collapse {
-                style.border = taffy::Rect::ZERO.map(style_helpers::length);
-            }
-
-            // The margin properties do not apply to table-internal elements
-            if is_cell {
-                style.margin = taffy::Rect::ZERO.map(style_helpers::length);
-            }
-
-            // Let Taffy auto-place the column. Combined with
-            // `grid_auto_flow: RowDense` set on the table root, each cell
-            // scans from the first track in its row for a free position,
-            // which makes cells automatically skip columns occupied by
-            // rowspan cells from earlier rows.
-            style.grid_column = taffy::Line {
-                start: style_helpers::auto(),
-                end: style_helpers::span(colspan),
+                }
+                taffy::CompactLength::AUTO_TAG => style_helpers::auto(),
+                // Dimension values are always length, percentage, auto or calc(),
+                // so any other tag is a calc() value. Pass it through so that
+                // Taffy resolves it against the table's inner width.
+                _ => style.size.width.into(),
             };
-            style.grid_row = taffy::Line {
-                start: style_helpers::line(*row as i16),
-                end: style_helpers::span(rowspan),
-            };
-            style.size.width = style_helpers::auto();
-            cells.push(TableCell { node_id, style });
+            self.columns.push(column);
+        }
 
-            *col += colspan;
+        // Zero-out cell borders is BorderCollapse is Collapse
+        // Borders are handled at the table level in this mode
+        if self.border_collapse == BorderCollapse::Collapse {
+            style.border = taffy::Rect::ZERO.map(style_helpers::length);
         }
-        DisplayInside::TableColumnGroup | DisplayInside::TableColumn | DisplayInside::Table => {
-            node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
-            //Ignore
-        }
-        DisplayInside::None => {
-            node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
-            // Ignore
-        }
+
+        // The margin properties do not apply to table-internal elements
+        style.margin = taffy::Rect::ZERO.map(style_helpers::length);
+
+        // Let Taffy auto-place the column. Combined with
+        // `grid_auto_flow: RowDense` set on the table root, each cell
+        // scans from the first track in its row for a free position,
+        // which makes cells automatically skip columns occupied by
+        // rowspan cells from earlier rows.
+        style.grid_column = taffy::Line {
+            start: style_helpers::auto(),
+            end: style_helpers::span(colspan),
+        };
+        style.grid_row = taffy::Line {
+            start: style_helpers::line(self.row as i16),
+            end: style_helpers::span(rowspan),
+        };
+        style.size.width = style_helpers::auto();
+        self.cells.push(TableCell { node_id, style });
+
+        self.col += colspan;
     }
 }
 

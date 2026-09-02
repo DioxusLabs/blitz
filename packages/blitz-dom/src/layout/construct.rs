@@ -41,7 +41,6 @@ const DUMMY_NAME: QualName = qual_name!("div", html);
 /// The kind of anonymous box to generate, determining which precomputed
 /// pseudo-element supplies its style (and hence its `display`).
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-#[allow(dead_code, reason = "table variants are used by upcoming table fixups")]
 pub(crate) enum AnonKind {
     Block,
     Table,
@@ -136,6 +135,10 @@ pub(crate) enum ConstructionTaskResultData {
 pub(crate) struct LayoutChildren {
     pub(crate) children: ThinVec<NodeId>,
     pub(crate) anonymous_block_id: Option<NodeId>,
+    /// The currently-open anonymous table wrapping a run of table-internal
+    /// children occurring outside a table (missing-parent fixup, CSS 2.2
+    /// §17.2.1). Closed by any non-table-internal sibling.
+    pub(crate) anonymous_table_id: Option<NodeId>,
     /// All anonymous blocks created while collecting these layout children.
     ///
     /// These are recorded on the container node so they can be deallocated the
@@ -182,6 +185,7 @@ impl LayoutChildren {
         }
 
         self.anonymous_block_id = None;
+        self.anonymous_table_id = None;
     }
 
     fn push_wrapped(
@@ -190,10 +194,40 @@ impl LayoutChildren {
         child_id: NodeId,
         doc: &mut BaseDocument,
     ) {
+        // A wrapped (text/inline) child terminates any open run of
+        // table-internal children, except that whitespace between
+        // table-internal boxes is discarded (CSS 2.2 §17.2.1).
+        if self.anonymous_table_id.is_some() {
+            if doc.nodes[child_id].is_whitespace_node() {
+                return;
+            }
+            self.anonymous_table_id = None;
+        }
         if self.anonymous_block_id.is_none() {
             self.create_anonymous_block(container_node_id, doc);
         }
         doc.nodes[self.anonymous_block_id.unwrap()]
+            .children
+            .push(child_id);
+    }
+
+    /// Append a table-internal child (row, row group, cell, ...) occurring
+    /// outside a table to the currently-open anonymous table, opening one
+    /// first if needed. Consecutive runs share a single anonymous table.
+    fn push_wrapped_in_table(
+        &mut self,
+        container_node_id: NodeId,
+        child_id: NodeId,
+        doc: &mut BaseDocument,
+    ) {
+        if self.anonymous_table_id.is_none() {
+            self.maybe_push_anon_block(doc);
+            let node_id = create_anonymous_node(doc, container_node_id, AnonKind::Table);
+            self.children.push(node_id);
+            self.anonymous_blocks.push(node_id);
+            self.anonymous_table_id = Some(node_id);
+        }
+        doc.nodes[self.anonymous_table_id.unwrap()]
             .children
             .push(child_id);
     }
@@ -242,6 +276,14 @@ fn text_item_needs_wrap(child_node_kind: NodeKind, _display_outside: DisplayOuts
     child_node_kind == NodeKind::Text
 }
 
+/// Whether a node is a replaced element. Table display values on replaced
+/// elements are treated as ordinary content (CSS 2.2 §17.2.1 applies to
+/// non-replaced elements only).
+fn node_is_replaced(node: &Node) -> bool {
+    node.element_data()
+        .is_some_and(|el| is_replaced_element(&el.name.local))
+}
+
 /// Push a single hoisted child, recursing through display:contents nodes and
 /// wrapping text/inline children per the ancestor container's `WrapContext`.
 fn push_hoisted_child(
@@ -255,6 +297,12 @@ fn push_hoisted_child(
     if matches!(child_display.inside(), DisplayInside::Contents) {
         collect_layout_children_with_wrap(doc, child_id, out, wrap);
         return;
+    }
+    if child_display.outside() == DisplayOutside::InternalTable && !node_is_replaced(child) {
+        if let Some(wrap_ctx) = wrap {
+            out.push_wrapped_in_table(wrap_ctx.container_node_id, child_id, doc);
+            return;
+        }
     }
     if let Some(wrap_ctx) = wrap {
         let child_node_kind = child.data.kind();
@@ -327,6 +375,10 @@ struct FlowClassification {
     all_inline: bool,
     all_out_of_flow: bool,
     has_contents: bool,
+    /// The container has table-internal children (rows, row groups, cells,
+    /// ...) which, occurring outside a table, must be wrapped in an
+    /// anonymous table box.
+    has_stray_table_internal: bool,
 }
 
 impl Default for FlowClassification {
@@ -336,6 +388,7 @@ impl Default for FlowClassification {
             all_inline: true,
             all_out_of_flow: true,
             has_contents: false,
+            has_stray_table_internal: false,
         }
     }
 }
@@ -421,9 +474,17 @@ fn classify_flow_children(
             classification.all_out_of_flow = false;
             match display.outside() {
                 DisplayOutside::None => {}
-                DisplayOutside::Block
-                | DisplayOutside::TableCaption
-                | DisplayOutside::InternalTable => classification.all_inline = false,
+                DisplayOutside::InternalTable => {
+                    classification.all_inline = false;
+                    // Table display values on replaced elements are treated
+                    // as ordinary content, not table-internal boxes.
+                    if !node_is_replaced(child) {
+                        classification.has_stray_table_internal = true;
+                    }
+                }
+                DisplayOutside::Block | DisplayOutside::TableCaption => {
+                    classification.all_inline = false
+                }
                 DisplayOutside::Inline => {
                     classification.all_block = false;
 
@@ -573,7 +634,7 @@ fn collect_layout_children_with_wrap(
             // ::before/::after pseudos must be checked too: a pseudo with
             // display:contents hoists its text content into the container.
             let container = &doc.nodes[container_node_id];
-            let has_text_node_or_contents = container
+            let needs_complex = container
                 .children
                 .iter()
                 .copied()
@@ -583,10 +644,12 @@ fn collect_layout_children_with_wrap(
                 .any(|child| {
                     let display = child.display_style().unwrap_or(Display::inline());
                     let node_kind = child.data.kind();
-                    display.inside() == DisplayInside::Contents || node_kind == NodeKind::Text
+                    display.inside() == DisplayInside::Contents
+                        || display.outside() == DisplayOutside::InternalTable
+                        || node_kind == NodeKind::Text
                 });
 
-            if !has_text_node_or_contents {
+            if !needs_complex {
                 return push_non_whitespace_children_and_pseudos(
                     &mut out.children,
                     &doc.nodes[container_node_id],
@@ -603,7 +666,9 @@ fn collect_layout_children_with_wrap(
         }
 
         DisplayInside::Table => {
-            let (table_context, tlayout_children) = build_table_context(doc, container_node_id);
+            let (table_context, tlayout_children, anonymous_nodes) =
+                build_table_context(doc, container_node_id);
+            out.anonymous_blocks.extend(anonymous_nodes);
             #[allow(clippy::arc_with_non_send_sync)]
             let data = SpecialElementData::TableRoot(Arc::new(table_context));
             doc.nodes[container_node_id]
@@ -623,13 +688,9 @@ fn collect_layout_children_with_wrap(
             }
         }
 
-        // Flow, FlowRoot and TableCell, plus internal table displays (row,
-        // row group, column, ...) occurring outside of a table. Blitz does
-        // not yet generate anonymous table wrapper boxes for the latter, so
-        // they are laid out as flow containers, which crucially ensures
-        // their text children get wrapped rather than being pushed as bare
-        // layout children (text nodes carry no style and cannot be laid out
-        // as block/flex/grid items).
+        // Flow, FlowRoot and TableCell. Table-internal children (rows, row
+        // groups, cells, ...) occurring outside a table are wrapped in an
+        // anonymous table box by the classification below.
         _ => {
             let mut classification = FlowClassification::default();
             classify_flow_children(doc, container_node_id, &mut classification);
@@ -668,7 +729,10 @@ fn collect_layout_children_with_wrap(
 
             // If the children are either all inline or all block then simply return the regular children
             // as the layout children
-            if classification.all_block & !classification.has_contents {
+            if classification.all_block
+                & !classification.has_contents
+                & !classification.has_stray_table_internal
+            {
                 return push_non_whitespace_children_and_pseudos(
                     &mut out.children,
                     &doc.nodes[container_node_id],
@@ -870,6 +934,13 @@ fn collect_complex_layout_children(
                 needs_wrap,
             });
             collect_layout_children_with_wrap(doc, child_id, out, wrap)
+        }
+        // Table-internal children occurring outside a table get wrapped in
+        // an anonymous table box (missing-parent fixup)
+        else if child_display.outside() == DisplayOutside::InternalTable
+            && !node_is_replaced(&doc.nodes[child_id])
+        {
+            out.push_wrapped_in_table(container_node_id, child_id, doc);
         }
         // Push nodes that need wrapping into the current "anonymous block container".
         // If there is not an open one then we create one.
