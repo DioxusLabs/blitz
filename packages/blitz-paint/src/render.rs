@@ -382,7 +382,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         let overflow = *node.scrollable_overflow();
         let transform = parent_style_transform
             * Affine::translate(box_position)
-            * node.transform().unwrap_or_default();
+            * node.transform().as_deref().copied().unwrap_or_default();
 
         let screen_transform = Affine::translate(Vec2 {
             x: -self.initial_x,

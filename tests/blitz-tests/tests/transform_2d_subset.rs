@@ -18,6 +18,7 @@ fn transform_coeffs(harness: &Harness, selector: &str) -> Option<[f64; 6]> {
         .get_node(node_id)
         .unwrap()
         .transform()
+        .as_deref()
         .map(|affine| affine.as_coeffs())
 }
 

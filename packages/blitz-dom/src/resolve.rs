@@ -175,7 +175,7 @@ impl BaseDocument {
             let location = node.final_layout().location.map(|v| v as f64 * scale);
 
             let mut transform = Affine::translate((location.x, location.y));
-            if let Some(t) = node.transform() {
+            if let Some(t) = node.transform().as_deref() {
                 transform *= *t
             }
 
