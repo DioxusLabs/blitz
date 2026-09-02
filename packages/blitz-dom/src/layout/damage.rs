@@ -420,6 +420,22 @@ impl BaseDocument {
 
     pub fn flush_styles_to_layout(&mut self, node_id: NodeId) {
         self.flush_styles_to_layout_impl(node_id, None);
+
+        // The used overflow of the element whose overflow is propagated to the viewport
+        // is `visible`: it must not establish a scroll container of its own.
+        if let Some(source_id) = self.viewport_overflow_propagation_source() {
+            let node = self.nodes.get_mut(source_id).unwrap();
+            let style = node.style_mut();
+            if style.overflow.x != taffy::Overflow::Visible
+                || style.overflow.y != taffy::Overflow::Visible
+            {
+                style.overflow = taffy::Point {
+                    x: taffy::Overflow::Visible,
+                    y: taffy::Overflow::Visible,
+                };
+                style.scrollbar_width = 0.0;
+            }
+        }
     }
 
     /// Flush the image layers of nodes whose style changed during the last
