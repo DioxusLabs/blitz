@@ -708,7 +708,7 @@ impl ElementData {
             return false;
         };
 
-        self.mutable_style_attribute(guard)
+        self.style_attr_mut(guard)
             .write_with(&mut guard.write())
             .extend(source_property_declaration.drain(), Importance::Normal);
 
@@ -718,7 +718,7 @@ impl ElementData {
     // Copy-on-write: once Stylo has put this block in the rule tree it may be
     // shared with other elements' styles (mirrors Gecko's
     // nsDOMCSSDeclaration::EnsureBlockMutable).
-    fn mutable_style_attribute(
+    fn style_attr_mut(
         &mut self,
         guard: &SharedRwLock,
     ) -> &ServoArc<Locked<PropertyDeclarationBlock>> {
@@ -765,7 +765,7 @@ impl ElementData {
         if self.style_attribute.is_none() {
             return false;
         }
-        let style = self.mutable_style_attribute(guard);
+        let style = self.style_attr_mut(guard);
         let mut guard = guard.write();
         let style = style.write_with(&mut guard);
         if let Some(index) = style.first_declaration_to_remove(&property_id) {
