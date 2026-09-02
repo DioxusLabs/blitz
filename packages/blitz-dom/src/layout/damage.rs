@@ -625,16 +625,9 @@ impl BaseDocument {
                     // every candidate not claimed by a closer containing block.
                     let is_root = self.try_root_element().is_some_and(|el| el.id == node_id);
                     let parent_claims = is_root
-                        || match position {
-                            Position::Fixed => parent.establishes_fixed_containing_block(),
-                            _ => {
-                                parent
-                                    .primary_styles()
-                                    .is_some_and(|s| s.clone_position() != Position::Static)
-                                    || parent.establishes_fixed_containing_block()
-                                    || parent.establishes_absolute_containing_block()
-                            }
-                        };
+                        || parent
+                            .containing_block_claims()
+                            .for_position(stylo_taffy::convert::position(position));
                     if !parent_claims {
                         continue;
                     }

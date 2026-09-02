@@ -113,6 +113,11 @@ impl<T: Deref<Target = ComputedValues>> taffy::CoreStyle for TaffyStyloStyle<T> 
     }
 
     #[inline]
+    fn is_containing_block(&self) -> taffy::ContainingBlockClaims {
+        convert::containing_block_claims(&self.style)
+    }
+
+    #[inline]
     fn inset(&self) -> taffy::Rect<taffy::LengthPercentageAuto> {
         let position_styles = self.style.get_position();
         taffy::Rect {
