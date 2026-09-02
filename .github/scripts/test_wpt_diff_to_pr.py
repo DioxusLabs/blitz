@@ -63,12 +63,11 @@ class FormatLinesTest(unittest.TestCase):
 
 
 class RenderTest(unittest.TestCase):
-    def test_headline_counts_tests_and_subtests(self):
+    def test_headline_counts_subtests(self):
         section = render(Diff(ENTRIES), run_url=None)
         self.assertIn(
-            "**1** newly passing, **1** newly failing (net +0), **1** other change, "
-            "**1** added test, **1** removed test. "
-            "Subtests: **+242** net (+254, -12).",
+            "Subtests: **254** newly passing, **12** newly failing (net +242). "
+            "Tests: **1** added, **1** removed.",
             section,
         )
         self.assertIn("<summary>Full diff (5 changed tests)</summary>", section)

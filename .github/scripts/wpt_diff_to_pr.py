@@ -103,25 +103,20 @@ def render(diff, run_url):
     if diff.is_empty:
         headline = "No changes in test results compared to `main`."
     else:
-        newly_passing = diff.count(lambda c: c.newly_passing)
-        newly_failing = diff.count(lambda c: c.newly_failing)
-        net = newly_passing - newly_failing
-        parts = [
-            f"**{newly_passing}** newly passing",
-            f"**{newly_failing}** newly failing (net {net:+})",
-        ]
-        for count, label in [
-            (diff.count(lambda c: c.kind == "changed" and not (c.newly_passing or c.newly_failing)), "other change"),
-            (diff.count(lambda c: c.kind == "added"), "added test"),
-            (diff.count(lambda c: c.kind == "removed"), "removed test"),
-        ]:
-            if count:
-                parts.append(f"**{count}** {label}{'s' if count != 1 else ''}")
         gained, lost = diff.subtests_gained, diff.subtests_lost
         headline = (
-            ", ".join(parts)
-            + f". Subtests: **{gained - lost:+}** net (+{gained}, -{lost})."
+            f"Subtests: **{gained}** newly passing, **{lost}** newly failing "
+            f"(net {gained - lost:+})."
         )
+        parts = []
+        for count, label in [
+            (diff.count(lambda c: c.kind == "added"), "added"),
+            (diff.count(lambda c: c.kind == "removed"), "removed"),
+        ]:
+            if count:
+                parts.append(f"**{count}** {label}")
+        if parts:
+            headline += " Tests: " + ", ".join(parts) + "."
 
     out = [START_MARKER, "## WPT results", "", headline, ""]
 
