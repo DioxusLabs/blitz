@@ -125,13 +125,13 @@ pub fn build_single_font_ctx(font_data: &[u8]) -> FontContext {
     use parley::fontique::{Blob, Collection, CollectionOptions, GenericFamily, SourceCache};
     use std::sync::Arc;
 
-    let mut ctx = FontContext {
-        source_cache: SourceCache::new_shared(),
-        collection: Collection::new(CollectionOptions {
+    let mut ctx = FontContext::from_parts(
+        Collection::new(CollectionOptions {
             shared: false,
             system_fonts: false,
         }),
-    };
+        SourceCache::new_shared(),
+    );
     let decoded = decode_font_bytes(font_data).into_owned();
     let registered = ctx
         .collection

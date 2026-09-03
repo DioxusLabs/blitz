@@ -838,7 +838,7 @@ impl ElementCx<'_, '_> {
             let mut draw_text_context = self.context.draw_text_context.borrow_mut();
             crate::text::stroke_text(
                 scene,
-                text_layout.layout.lines(),
+                &text_layout.layout,
                 self.context.dom,
                 transform,
                 self.scale,
@@ -904,7 +904,7 @@ impl ElementCx<'_, '_> {
             let mut draw_text_context = self.context.draw_text_context.borrow_mut();
             crate::text::stroke_text(
                 scene,
-                input_data.editor.try_layout().unwrap().lines(),
+                input_data.editor.try_layout().unwrap(),
                 self.context.dom,
                 transform,
                 self.scale,
@@ -952,7 +952,7 @@ impl ElementCx<'_, '_> {
             let mut draw_text_context = self.context.draw_text_context.borrow_mut();
             crate::text::stroke_text(
                 scene,
-                layout.lines(),
+                layout,
                 self.context.dom,
                 transform,
                 self.scale,
