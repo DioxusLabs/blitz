@@ -259,8 +259,9 @@ impl BaseDocument {
                 .maybe_set(known_dimensions.width)
                 .maybe_set(node_size.width)
                 .map_definite_value(|size| {
-                    size.maybe_clamp(node_min_size.width, node_max_size.width)
-                        - content_box_inset.horizontal_axis_sum()
+                    (size.maybe_clamp(node_min_size.width, node_max_size.width)
+                        - content_box_inset.horizontal_axis_sum())
+                    .max(0.0)
                 }),
             height: known_dimensions
                 .height
@@ -270,8 +271,9 @@ impl BaseDocument {
                 .maybe_set(known_dimensions.height)
                 .maybe_set(node_size.height)
                 .map_definite_value(|size| {
-                    size.maybe_clamp(node_min_size.height, node_max_size.height)
-                        - content_box_inset.vertical_axis_sum()
+                    (size.maybe_clamp(node_min_size.height, node_max_size.height)
+                        - content_box_inset.vertical_axis_sum())
+                    .max(0.0)
                 }),
         };
 
