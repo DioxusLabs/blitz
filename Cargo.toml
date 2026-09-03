@@ -318,3 +318,7 @@ rustc-hash = { workspace = true }
 # parley = { path = "../parley/parley" }
 # fontique = { path = "../parley/fontique" }
 
+[patch.crates-io]
+boa_engine = { git = "https://github.com/boa-dev/boa.git", rev="10ef23505ecae734a4984d7839fec99a7ca8482c" }
+boa_runtime = { git = "https://github.com/boa-dev/boa.git", rev="10ef23505ecae734a4984d7839fec99a7ca8482c" }
+boa_gc = { git = "https://github.com/boa-dev/boa.git", rev="10ef23505ecae734a4984d7839fec99a7ca8482c" }

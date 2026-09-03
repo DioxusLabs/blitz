@@ -203,6 +203,7 @@ impl ScriptDocument {
             .set_ready_state(crate::state::ReadyState::Complete);
         self.runtime.install_body_onload_attribute();
         self.runtime.dispatch_window_event("load");
+        self.runtime.ctx.flush_wrapper_switches();
 
         self.request_redraw();
         self.arm_timer_thread();
@@ -235,6 +236,7 @@ impl ScriptDocument {
     pub fn eval(&mut self, code: &str) {
         self.runtime.sync_named_element_globals();
         self.runtime.eval(code, "<eval>");
+        self.runtime.ctx.flush_wrapper_switches();
         self.request_redraw();
         self.arm_timer_thread();
     }
@@ -258,6 +260,11 @@ impl ScriptDocument {
     /// [`tracing::error!`].
     pub fn take_js_errors(&mut self) -> Vec<String> {
         std::mem::take(&mut self.runtime.ctx.state.borrow_mut().uncaught_errors)
+    }
+
+    /// Force a full garbage collection of the JS heap.
+    pub fn run_gc(&mut self) {
+        boa_gc::force_collect();
     }
 
     /// Record an error for collection via [`take_js_errors`](Self::take_js_errors)
@@ -286,6 +293,7 @@ impl ScriptDocument {
         };
         let mut driver = EventDriver::new(&mut self.inner, handler);
         driver.handle_dom_event(event);
+        self.runtime.ctx.flush_wrapper_switches();
 
         self.request_redraw();
         self.arm_timer_thread();
@@ -414,6 +422,7 @@ impl Document for ScriptDocument {
         };
         let mut driver = EventDriver::new(&mut self.inner, handler);
         driver.handle_ui_event(event);
+        self.runtime.ctx.flush_wrapper_switches();
 
         // JS may have mutated the DOM or scheduled timers
         self.request_redraw();
@@ -441,6 +450,7 @@ impl Document for ScriptDocument {
         }
 
         ran |= self.runtime.run_due_timers();
+        self.runtime.ctx.flush_wrapper_switches();
         self.arm_timer_thread();
         ran
     }

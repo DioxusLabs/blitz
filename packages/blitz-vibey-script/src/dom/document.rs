@@ -1,100 +1,149 @@
-//! The `Document` prototype: node creation and lookup.
+//! The `Document` class: node creation and lookup.
 
 use blitz_dom::NodeId;
-use boa_engine::object::JsObject;
+use boa_engine::class::ClassBuilder;
 use boa_engine::object::builtins::JsArray;
-use boa_engine::value::JsValue;
-use boa_engine::{Context, JsResult};
+use boa_engine::{Context, Finalize, JsData, JsResult, JsValue, Trace};
 
-use super::{
-    define_accessor, define_method, dom_ctx, node_or_null, node_wrapper, qual_name, qual_name_ns,
-    this_node_id, to_rust_string,
+use crate::shared::{
+    ExtendLayer, Extended, instance_getter, instance_method, js_fn_ptr, native_fn_ptr,
 };
 
-pub(crate) fn init_document_proto(proto: &JsObject, context: &mut Context) {
-    define_accessor(
-        proto,
-        "documentElement",
-        Some(document_element),
-        None,
-        context,
-    );
-    define_accessor(proto, "body", Some(body), None, context);
-    define_accessor(
-        proto,
-        "scrollingElement",
-        Some(scrolling_element),
-        None,
-        context,
-    );
-    define_accessor(proto, "head", Some(head), None, context);
-    define_accessor(proto, "activeElement", Some(active_element), None, context);
-    define_accessor(proto, "defaultView", Some(default_view), None, context);
-    define_accessor(proto, "title", Some(title), None, context);
-    define_accessor(proto, "readyState", Some(ready_state), None, context);
-    define_accessor(
-        proto,
-        "childElementCount",
-        Some(super::element::child_element_count),
-        None,
-        context,
-    );
-    define_accessor(
-        proto,
-        "firstElementChild",
-        Some(super::element::first_element_child),
-        None,
-        context,
-    );
-    define_accessor(
-        proto,
-        "lastElementChild",
-        Some(super::element::last_element_child),
-        None,
-        context,
-    );
+use super::node::{append, prepend, replace_children};
+use super::{
+    dom_ctx, js_str, node_or_null, node_wrapper, qual_name, qual_name_ns, this_node_id,
+    to_rust_string,
+};
 
-    define_method(proto, "createElement", 1, create_element, context);
-    define_method(proto, "createElementNS", 2, create_element_ns, context);
-    define_method(proto, "createTextNode", 1, create_text_node, context);
-    define_method(proto, "createComment", 1, create_comment, context);
-    define_method(
-        proto,
-        "createDocumentFragment",
-        0,
-        create_document_fragment,
-        context,
-    );
-    define_method(proto, "getElementById", 1, get_element_by_id, context);
-    define_method(
-        proto,
-        "getElementsByTagName",
-        1,
-        get_elements_by_tag_name,
-        context,
-    );
-    define_method(
-        proto,
-        "getElementsByClassName",
-        1,
-        get_elements_by_class_name,
-        context,
-    );
-    define_method(proto, "querySelector", 1, query_selector, context);
-    define_method(proto, "querySelectorAll", 1, query_selector_all, context);
-    define_method(proto, "elementFromPoint", 2, element_from_point, context);
-    define_method(proto, "elementsFromPoint", 2, elements_from_point, context);
+/// `Document` own block. All data lives in the `Node` layer; this layer only
+/// contributes the document interface to the prototype chain.
+#[derive(Debug, Default, Clone, Trace, Finalize, JsData)]
+pub(crate) struct DocumentLayer;
 
-    // ParentNode mixin mutation helpers
-    define_method(proto, "append", 1, super::node::append, context);
-    define_method(proto, "prepend", 1, super::node::prepend, context);
-    define_method(
-        proto,
-        "replaceChildren",
-        1,
-        super::node::replace_children,
-        context,
-    );
+pub(crate) type Document = Extended<DocumentLayer>;
+
+impl ExtendLayer for DocumentLayer {
+    type Parent = super::node::NodeLayer;
+    const CLASS_NAME: &'static str = "Document";
+    fn define_members(class: &mut ClassBuilder<'_>) -> JsResult<()> {
+        use boa_engine::property::Attribute;
+        let realm = class.context().realm().clone();
+        let attr = Attribute::CONFIGURABLE | Attribute::NON_ENUMERABLE;
+
+        instance_getter!(
+            class,
+            "documentElement",
+            js_fn_ptr!(document_element, &realm),
+            attr
+        );
+        instance_getter!(class, "body", js_fn_ptr!(body, &realm), attr);
+        instance_getter!(
+            class,
+            "scrollingElement",
+            js_fn_ptr!(scrolling_element, &realm),
+            attr
+        );
+        instance_getter!(class, "head", js_fn_ptr!(head, &realm), attr);
+        instance_getter!(
+            class,
+            "activeElement",
+            js_fn_ptr!(active_element, &realm),
+            attr
+        );
+        instance_getter!(class, "defaultView", js_fn_ptr!(default_view, &realm), attr);
+        instance_getter!(class, "title", js_fn_ptr!(title, &realm), attr);
+        instance_getter!(class, "readyState", js_fn_ptr!(ready_state, &realm), attr);
+        instance_getter!(
+            class,
+            "childElementCount",
+            js_fn_ptr!(super::element::child_element_count, &realm),
+            attr
+        );
+        instance_getter!(
+            class,
+            "firstElementChild",
+            js_fn_ptr!(super::element::first_element_child, &realm),
+            attr
+        );
+        instance_getter!(
+            class,
+            "lastElementChild",
+            js_fn_ptr!(super::element::last_element_child, &realm),
+            attr
+        );
+
+        instance_method!(class, "createElement", 1, native_fn_ptr!(create_element));
+        instance_method!(
+            class,
+            "createElementNS",
+            2,
+            native_fn_ptr!(create_element_ns)
+        );
+        instance_method!(class, "createTextNode", 1, native_fn_ptr!(create_text_node));
+        instance_method!(class, "createComment", 1, native_fn_ptr!(create_comment));
+        instance_method!(
+            class,
+            "createDocumentFragment",
+            0,
+            native_fn_ptr!(create_document_fragment)
+        );
+        instance_method!(
+            class,
+            "getElementById",
+            1,
+            native_fn_ptr!(get_element_by_id)
+        );
+        instance_method!(
+            class,
+            "getElementsByTagName",
+            1,
+            native_fn_ptr!(get_elements_by_tag_name)
+        );
+        instance_method!(
+            class,
+            "getElementsByClassName",
+            1,
+            native_fn_ptr!(get_elements_by_class_name)
+        );
+        instance_method!(class, "querySelector", 1, native_fn_ptr!(query_selector));
+        instance_method!(
+            class,
+            "querySelectorAll",
+            1,
+            native_fn_ptr!(query_selector_all)
+        );
+        instance_method!(
+            class,
+            "elementFromPoint",
+            2,
+            native_fn_ptr!(element_from_point)
+        );
+        instance_method!(
+            class,
+            "elementsFromPoint",
+            2,
+            native_fn_ptr!(elements_from_point)
+        );
+
+        // ParentNode mixin mutation helpers
+        instance_method!(class, "append", 1, native_fn_ptr!(append));
+        instance_method!(class, "prepend", 1, native_fn_ptr!(prepend));
+        instance_method!(
+            class,
+            "replaceChildren",
+            1,
+            native_fn_ptr!(replace_children)
+        );
+
+        Ok(())
+    }
+}
+
+/// Register the `Document` class and wire up the `Document -> Node` prototype chain.
+pub(crate) fn register(context: &mut Context) -> JsResult<()> {
+    context.register_global_class::<Document>()?;
+    crate::shared::link_prototype::<Document>(context)?;
+    Ok(())
 }
 
 fn document_element(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
@@ -145,14 +194,14 @@ fn title(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsVal
         .find_title_node()
         .map(|node| node.text_content())
         .unwrap_or_default();
-    Ok(super::js_str(&title))
+    Ok(js_str(&title))
 }
 
 fn ready_state(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
     let _ = this_node_id(this)?;
     let ready_state = ctx.state.borrow().ready_state;
-    Ok(super::js_str(ready_state.as_str()))
+    Ok(js_str(ready_state.as_str()))
 }
 
 // === Node creation ===

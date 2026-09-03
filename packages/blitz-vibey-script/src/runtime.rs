@@ -10,8 +10,7 @@ use blitz_dom::{BaseDocument, NodeId};
 use blitz_traits::events::{DomEvent, DomEventData, EventState};
 use boa_engine::builtins::promise::PromiseState;
 use boa_engine::module::{Module, ModuleLoader, ModuleRequest, Referrer};
-use boa_engine::object::{JsObject, ObjectInitializer};
-use boa_engine::property::Attribute;
+use boa_engine::object::JsObject;
 use boa_engine::value::JsValue;
 use boa_engine::{
     Context, JsError, JsNativeError, JsResult, JsString, NativeFunction, Source, js_string,
@@ -22,12 +21,15 @@ use boa_runtime::console::{ConsoleState, Logger};
 use url::Url;
 use web_time::{Duration, Instant};
 
-use crate::dom::event::{EventRef, create_event, create_event_for_dom_event};
-use crate::dom::{
-    NodeRef, dom_ctx, node_id_of_value, node_wrapper, to_rust_string, wrap_style_object,
+use crate::dom::style::{ComputedStyle, ComputedStyleLayer};
+use crate::dom::{dom_ctx, node_id_of_value, node_wrapper, to_rust_string, wrap_style_object};
+use crate::events::{
+    AT_TARGET_PHASE, BUBBLING_PHASE, CAPTURING_PHASE, DispatchTarget, EventTargetLayer, NONE_PHASE,
+    create_event, create_event_for_dom_event, event_flag, with_state_mut,
 };
 use crate::fetch::ScriptFetcher;
-use crate::state::{DomCtx, Listener, ReadyState};
+use crate::shared::{from_chain, with_own};
+use crate::state::{DomCtx, ReadyState};
 
 /// JS bootstrap for APIs that are easiest to define in JS
 const BOOTSTRAP_JS: &str = r#"
@@ -193,8 +195,9 @@ const BOOTSTRAP_JS: &str = r#"
         });
     };
 
-    // DOM interface objects (`Node`, `Element`, ...) wired up to the native
-    // wrapper prototypes so that constants and `instanceof` checks work.
+    // DOM interface objects. `Node`, `Document`, `Element`, `CharacterData`,
+    // `Event` and `CSSStyleDeclaration` are native classes registered on the
+    // context; the aliases below cover legacy names.
     const makeInterface = (name, proto) => {
         const iface = function () {
             throw new TypeError("Illegal constructor");
@@ -209,17 +212,17 @@ const BOOTSTRAP_JS: &str = r#"
         return iface;
     };
 
+    globalThis.HTMLDocument = globalThis.Document;
+
     const documentProto = Object.getPrototypeOf(document);
     const nodeProto = Object.getPrototypeOf(documentProto);
-    globalThis.Node = makeInterface("Node", nodeProto);
-    globalThis.Document = makeInterface("Document", documentProto);
-    globalThis.HTMLDocument = globalThis.Document;
 
     // Stub constructors for interfaces referenced by `instanceof` probes
     // (e.g. React probes `x instanceof HTMLInputElement`); without them such
-    // probes throw "right-hand side of 'instanceof' is not an object". All
-    // blitz-vibey-script elements share a single prototype, so tag-specific
-    // interfaces cannot be truthfully modelled: these always answer false.
+    // probes throw "right-hand side of 'instanceof' is not an object". Native
+    // classes are skipped by the guard. Tag-specific element interfaces cannot
+    // be truthfully modelled (all elements share the `Element` prototype):
+    // these always answer false.
     for (const name of [
         "EventTarget", "CharacterData", "Text", "Comment", "DocumentFragment",
         "HTMLInputElement", "HTMLTextAreaElement", "HTMLSelectElement",
@@ -234,7 +237,6 @@ const BOOTSTRAP_JS: &str = r#"
     }
     if (document.documentElement) {
         const elementProto = Object.getPrototypeOf(document.documentElement);
-        globalThis.Element = makeInterface("Element", elementProto);
         globalThis.HTMLElement = globalThis.Element;
 
         // `classList` (DOMTokenList), backed by the `class` attribute
@@ -399,7 +401,7 @@ const BOOTSTRAP_JS: &str = r#"
 
 /// Record an unhandled JavaScript error in the runtime state, for the embedder
 /// to collect via [`ScriptDocument::take_js_errors`](crate::ScriptDocument::take_js_errors)
-fn report_js_error(ctx: &DomCtx, what: &str, error: &boa_engine::JsError) {
+pub(crate) fn report_js_error(ctx: &DomCtx, what: &str, error: &boa_engine::JsError) {
     #[cfg(feature = "tracing")]
     tracing::error!("Uncaught JS error in {what}: {error}");
     ctx.state
@@ -517,9 +519,14 @@ impl ScriptRuntime {
         // Share the runtime's clock with boa so that `Date` observes the same
         // (possibly virtual) time as timers
         let clock = ctx.state.borrow().clock.clone();
+        // The realm's global object (the window) is born from the host hooks,
+        // carrying the runtime's base URL as its layer data
         let mut context = Context::builder()
             .module_loader(module_loader.clone())
             .clock(Rc::new(crate::clock::BoaClockAdapter::new(clock)))
+            .host_hooks(Rc::new(crate::window::ScriptHooks {
+                base_url: base_url.cloned(),
+            }))
             .build()
             .expect("failed to build JS context");
         context.insert_data(ctx.clone());
@@ -549,101 +556,11 @@ impl ScriptRuntime {
         )
         .expect("failed to register boa_runtime extensions");
 
-        crate::dom::init_protos(&ctx, &mut context);
+        crate::dom::register_dom_classes(&mut context).expect("failed to register DOM classes");
 
-        // `document`
-        let root_id = ctx.doc.borrow().root_node().id;
-        let document_wrapper = node_wrapper(&ctx, root_id, &mut context);
-        register_global(&mut context, "document", document_wrapper.into());
-
-        // `window` and friends (aliases for the global object)
-        let global: JsValue = context.global_object().into();
-        register_global(&mut context, "window", global.clone());
-        register_global(&mut context, "self", global.clone());
-        // There is only ever a single frame, so `parent` and `top` refer to the
-        // window itself and `opener` is null
-        register_global(&mut context, "parent", global.clone());
-        register_global(&mut context, "top", global);
-        register_global(&mut context, "opener", JsValue::null());
-
-        // `location`
-        let location = build_location(base_url, &mut context);
-        register_global(&mut context, "location", location);
-
-        // `navigator`
-        let navigator = ObjectInitializer::new(&mut context)
-            .property(
-                js_string!("userAgent"),
-                js_string!("Mozilla/5.0 (compatible; Blitz)"),
-                Attribute::all(),
-            )
-            .build();
-        register_global(&mut context, "navigator", navigator.into());
-
-        // Timers and window event listeners
-        register_global_fn(&mut context, "setTimeout", 2, set_timeout);
-        register_global_fn(&mut context, "clearTimeout", 1, clear_timer);
-        register_global_fn(&mut context, "setInterval", 2, set_interval);
-        register_global_fn(&mut context, "clearInterval", 1, clear_timer);
-        register_global_fn(
-            &mut context,
-            "requestAnimationFrame",
-            1,
-            request_animation_frame,
-        );
-        register_global_fn(&mut context, "cancelAnimationFrame", 1, clear_timer);
-        register_global_fn(
-            &mut context,
-            "addEventListener",
-            2,
-            window_add_event_listener,
-        );
-        register_global_fn(
-            &mut context,
-            "removeEventListener",
-            2,
-            window_remove_event_listener,
-        );
-
-        // Embedder message channel (see `ScriptDocument::take_messages`)
-        register_global_fn(&mut context, "__blitz_send_message", 1, send_message);
-
-        // CSS property support check, used by the style Proxy's `has` trap
-        register_global_fn(
-            &mut context,
-            "__blitz_css_property_supported",
-            1,
-            css_property_supported,
-        );
-
-        // `getComputedStyle`
-        register_global_fn(&mut context, "getComputedStyle", 1, get_computed_style);
-
-        // Viewport dimensions
-        register_global_accessor(&mut context, "innerWidth", inner_width);
-        register_global_accessor(&mut context, "innerHeight", inner_height);
-        register_global_accessor(&mut context, "outerWidth", inner_width);
-        register_global_accessor(&mut context, "outerHeight", inner_height);
-        register_global_accessor(&mut context, "devicePixelRatio", device_pixel_ratio);
-
-        // Viewport scrolling
-        register_global_accessor(&mut context, "scrollX", scroll_x);
-        register_global_accessor(&mut context, "scrollY", scroll_y);
-        register_global_accessor(&mut context, "pageXOffset", scroll_x);
-        register_global_accessor(&mut context, "pageYOffset", scroll_y);
-        register_global_fn(&mut context, "scroll", 2, window_scroll_to);
-        register_global_fn(&mut context, "scrollTo", 2, window_scroll_to);
-        register_global_fn(&mut context, "scrollBy", 2, window_scroll_by);
-
-        // The `CSS` namespace object. `CSS.escape` is defined in the JS bootstrap.
-        let css_namespace = ObjectInitializer::new(&mut context)
-            .function(
-                NativeFunction::from_fn_ptr(css_supports),
-                js_string!("supports"),
-                1,
-            )
-            .build();
-        register_global(&mut context, "CSS", css_namespace.into());
+        // `Window` (the global object built by the host hooks) — after the
+        // `EventTarget` chain it links to.
+        crate::window::register(&mut context).expect("failed to register the Window class");
 
         let mut runtime = Self {
             context,
@@ -852,15 +769,8 @@ impl ScriptRuntime {
             chain,
             &name,
             event.bubbles,
-            |ctx, target, context| {
-                create_event_for_dom_event(
-                    ctx,
-                    &event.data,
-                    event.bubbles,
-                    event.cancelable,
-                    target,
-                    context,
-                )
+            |context| {
+                create_event_for_dom_event(&event.data, event.bubbles, event.cancelable, context)
             },
             event_state,
         );
@@ -876,7 +786,7 @@ impl ScriptRuntime {
                 chain,
                 "change",
                 true,
-                |ctx, target, context| create_event(ctx, "change", true, false, target, context),
+                |context| create_event("change", true, false, context),
                 &mut change_state,
             );
             if change_state.redraw_is_requested() {
@@ -904,155 +814,62 @@ impl ScriptRuntime {
             })
     }
 
-    /// Dispatch an event named `name` along `chain`, using `make_event` to lazily
-    /// construct the JS event object. Returns `true` if any listener was invoked.
+    /// Dispatch an event named `name` along `chain` (target-first), using
+    /// `make_event` to lazily construct the JS event object. The walk runs
+    /// capture → target → bubble over the chain; `target` and `currentTarget`
+    /// are resolved lazily, so a node wrapper is only built when JS first
+    /// reads the getter (or when the receiver needs its own-block listeners).
+    /// Returns `true` if any listener was invoked.
     fn dispatch_event_inner(
         &mut self,
         chain: &[NodeId],
         name: &str,
         bubbles: bool,
-        make_event: impl FnOnce(&DomCtx, &JsValue, &mut Context) -> JsObject,
+        make_event: impl FnOnce(&mut Context) -> JsObject,
         event_state: &mut EventState,
     ) -> bool {
         let ctx = self.ctx.clone();
         let context = &mut self.context;
-        let on_name = JsString::from(format!("on{name}"));
 
-        // Fast path: bail if no listener of this type could possibly be registered
+        // Fast path: node listeners live in the node wrapper's `EventTarget`
+        // own block, so only nodes script has touched (cached wrappers) can
+        // have any; the window's listeners live in its own `EventTarget`
+        // layer.
         let may_have_listeners = {
             let state = ctx.state.borrow();
-            let registry_hit = chain.iter().any(|node_id| {
-                state
-                    .node_listeners
-                    .get(node_id)
-                    .and_then(|map| map.get(name))
-                    .is_some_and(|listeners| !listeners.is_empty())
-            }) || state
-                .window_listeners
-                .get(name)
-                .is_some_and(|listeners| !listeners.is_empty());
-            // `on<event>` handlers can only exist on nodes that script has touched
-            // (i.e. nodes with a cached wrapper)
             let wrapper_hit = chain
                 .iter()
-                .any(|node_id| state.node_wrappers.contains_key(node_id));
-            registry_hit || wrapper_hit
+                .any(|node_id| state.node_wrappers.contains_key(*node_id));
+            let window_hit =
+                with_own::<EventTargetLayer, _>(&context.global_object().clone(), |target| {
+                    target
+                        .listeners
+                        .borrow()
+                        .iter()
+                        .any(|l| l.event_type == name)
+                })
+                .unwrap_or(false);
+            wrapper_hit || window_hit
         };
         if !may_have_listeners {
             return false;
         }
 
-        let target: JsValue = node_wrapper(&ctx, chain[0], context).into();
-        let event_obj = make_event(&ctx, &target, context);
-        let event_ref = |event_obj: &JsObject, f: &dyn Fn(&EventRef) -> bool| -> bool {
-            event_obj
-                .downcast_ref::<EventRef>()
-                .map(|event| f(&event))
-                .unwrap_or(false)
-        };
+        let event_obj = make_event(context);
 
-        let mut any_called = false;
-
-        'chain: for &node_id in chain {
-            // Gather listeners for this node: `addEventListener` listeners plus
-            // an `on<event>` property handler (if any)
-            let mut callbacks: Vec<JsObject> = Vec::new();
-            {
-                let mut state = ctx.state.borrow_mut();
-                if let Some(listeners) = state
-                    .node_listeners
-                    .get_mut(&node_id)
-                    .and_then(|map| map.get_mut(name))
-                {
-                    callbacks.extend(listeners.iter().map(|l| l.callback.clone()));
-                    // `once` listeners are removed at dispatch time
-                    listeners.retain(|l| !l.once);
-                }
-            }
-            let wrapper = ctx.state.borrow().node_wrappers.get(&node_id).cloned();
-            if let Some(wrapper) = wrapper {
-                if let Ok(handler) = wrapper.get(on_name.clone(), context) {
-                    if let Some(handler) = handler.as_object() {
-                        if handler.is_callable() {
-                            callbacks.push(handler);
-                        }
-                    }
-                }
-            }
-
-            if callbacks.is_empty() {
-                if !bubbles {
-                    break;
-                }
-                continue;
-            }
-
-            let current_target: JsValue = node_wrapper(&ctx, node_id, context).into();
-            crate::dom::define_value(&event_obj, "currentTarget", current_target.clone(), context);
-
-            for callback in callbacks {
-                any_called = true;
-                if let Err(error) =
-                    callback.call(&current_target, &[event_obj.clone().into()], context)
-                {
-                    report_js_error(&ctx, "event listener", &error);
-                }
-                if event_ref(&event_obj, &|event| event.stopped_immediate.get()) {
-                    break 'chain;
-                }
-            }
-
-            if !bubbles || event_ref(&event_obj, &|event| event.stopped.get()) {
-                break;
-            }
+        // Lazy target: wrap the target node only when JS first reads
+        // `event.target` (the wrapper call is a cache lookup for nodes script
+        // has touched).
+        match wrap_node_dispatch_target(chain[0], context) {
+            Ok(target) => with_state_mut(&event_obj, |st| {
+                st.dispatching = true;
+                st.target = target;
+            })
+            .expect("failed to set event target"),
+            Err(error) => report_js_error(&ctx, "event target", &error),
         }
 
-        // Window-level listeners
-        if bubbles && !event_ref(&event_obj, &|event| event.stopped.get()) {
-            let listeners: Vec<Listener> = {
-                let mut state = ctx.state.borrow_mut();
-                match state.window_listeners.get_mut(name) {
-                    Some(listeners) => {
-                        let cloned = listeners.clone();
-                        listeners.retain(|l| !l.once);
-                        cloned
-                    }
-                    None => Vec::new(),
-                }
-            };
-            if !listeners.is_empty() {
-                let global: JsValue = context.global_object().into();
-                crate::dom::define_value(&event_obj, "currentTarget", global.clone(), context);
-                for listener in listeners {
-                    any_called = true;
-                    if let Err(error) =
-                        listener
-                            .callback
-                            .call(&global, &[event_obj.clone().into()], context)
-                    {
-                        report_js_error(&ctx, "event listener", &error);
-                    }
-                    if event_ref(&event_obj, &|event| event.stopped_immediate.get()) {
-                        break;
-                    }
-                }
-            }
-        }
-
-        crate::dom::define_value(&event_obj, "currentTarget", JsValue::null(), context);
-
-        // Feed `preventDefault` / `stopPropagation` back into Blitz
-        if event_ref(&event_obj, &|event| event.prevented.get()) {
-            event_state.prevent_default();
-        }
-        if event_ref(&event_obj, &|event| event.stopped.get()) {
-            event_state.stop_propagation();
-        }
-        if any_called {
-            event_state.request_redraw();
-        }
-
-        any_called
+        dispatch_event_on_chain(&ctx, chain, name, bubbles, &event_obj, event_state, context)
     }
 
     /// Dispatch a simple event (e.g. `DOMContentLoaded`) targeting the document node
@@ -1063,7 +880,7 @@ impl ScriptRuntime {
             &[root_id],
             name,
             true,
-            |ctx, target, context| create_event(ctx, name, true, false, target, context),
+            |context| create_event(name, true, false, context),
             &mut event_state,
         );
         if ran {
@@ -1076,47 +893,37 @@ impl ScriptRuntime {
     pub fn dispatch_window_event(&mut self, name: &str) -> bool {
         let ctx = self.ctx.clone();
         let context = &mut self.context;
+        let window = context.global_object().clone();
+        let global: JsValue = window.clone().into();
 
-        let listeners: Vec<Listener> = {
-            let mut state = ctx.state.borrow_mut();
-            match state.window_listeners.get_mut(name) {
-                Some(listeners) => {
-                    let cloned = listeners.clone();
-                    listeners.retain(|l| !l.once);
-                    cloned
-                }
-                None => Vec::new(),
-            }
-        };
+        let event_obj = create_event(name, false, false, context);
+        with_state_mut(&event_obj, |st| {
+            st.dispatching = true;
+            st.target = DispatchTarget::from_value(global.clone());
+            st.current_target = DispatchTarget::from_value(global.clone());
+        })
+        .expect("failed to set window event target");
 
-        let global: JsValue = context.global_object().into();
-        let event_obj = create_event(&ctx, name, false, false, &global, context);
-        crate::dom::define_value(&event_obj, "currentTarget", global.clone(), context);
-
+        // The window's listeners (registered and `on<event>` handlers alike)
+        // live in its `EventTarget` own block; capture-registered ones run
+        // first, like on any single target.
         let mut any_called = false;
-        for listener in listeners {
-            any_called = true;
-            if let Err(error) =
-                listener
-                    .callback
-                    .call(&global, &[event_obj.clone().into()], context)
-            {
-                report_js_error(&ctx, "event listener", &error);
+        with_own::<EventTargetLayer, _>(&window, |target| {
+            let (_, called) = target.invoke_listeners(&event_obj, name, true, &ctx, context);
+            any_called |= called;
+            if !event_flag(&event_obj, |st| st.stop_immediate) {
+                let (_, called) = target.invoke_listeners(&event_obj, name, false, &ctx, context);
+                any_called |= called;
             }
-        }
+        })
+        .expect("window is not an event target");
 
-        // `window.onload = ...` style handler
-        let on_name = JsString::from(format!("on{name}"));
-        if let Ok(handler) = context.global_object().get(on_name, context) {
-            if let Some(handler) = handler.as_object() {
-                if handler.is_callable() {
-                    any_called = true;
-                    if let Err(error) = handler.call(&global, &[event_obj.into()], context) {
-                        report_js_error(&ctx, "event listener", &error);
-                    }
-                }
-            }
-        }
+        with_state_mut(&event_obj, |st| {
+            st.current_target = DispatchTarget::None;
+            st.phase = NONE_PHASE;
+            st.dispatching = false;
+        })
+        .expect("failed to reset window event state");
 
         if any_called {
             self.run_jobs("event microtasks");
@@ -1125,114 +932,207 @@ impl ScriptRuntime {
     }
 }
 
-fn register_global(context: &mut Context, name: &str, value: JsValue) {
-    context
-        .register_global_property(
-            JsString::from(name),
-            value,
-            Attribute::WRITABLE.union(Attribute::CONFIGURABLE),
-        )
-        .expect("failed to register global");
-}
-
-fn register_global_accessor(
+/// Walk `event_obj` through the capture → target → bubble phases over
+/// `chain`, then the window-level listeners, and reset the event's
+/// transient state afterwards. `preventDefault` / `stopPropagation` are
+/// fed back into `event_state`. Returns `true` if any listener was invoked.
+pub(crate) fn dispatch_event_on_chain(
+    ctx: &DomCtx,
+    chain: &[NodeId],
+    event_type: &str,
+    bubbles: bool,
+    event_obj: &JsObject,
+    event_state: &mut EventState,
     context: &mut Context,
-    name: &str,
-    getter: fn(&JsValue, &[JsValue], &mut Context) -> JsResult<JsValue>,
-) {
-    use boa_engine::object::FunctionObjectBuilder;
-    use boa_engine::property::{PropertyDescriptor, PropertyKey};
+) -> bool {
+    let mut propagation_stopped = false;
+    let mut any_called = false;
 
-    let getter_fn =
-        FunctionObjectBuilder::new(context.realm(), NativeFunction::from_fn_ptr(getter))
-            .name(JsString::from(format!("get {name}")))
-            .length(0)
-            .build();
-    context
-        .global_object()
-        .define_property_or_throw(
-            PropertyKey::from(JsString::from(name)),
-            PropertyDescriptor::builder()
-                .get(getter_fn)
-                .enumerable(false)
-                .configurable(true)
-                .build(),
+    // Capture phase (root → target's parent): capture listeners only.
+    for &node_id in chain.iter().skip(1).rev() {
+        if propagation_stopped {
+            break;
+        }
+        let (stopped, called) = dispatch_to_node(
+            ctx,
+            event_obj,
+            node_id,
+            event_type,
+            &DispatchStep {
+                phase: CAPTURING_PHASE,
+                invoke_capture: true,
+                invoke_non_capture: false,
+            },
             context,
-        )
-        .expect("failed to register global accessor");
+        );
+        propagation_stopped |= stopped;
+        any_called |= called;
+    }
+
+    // Target phase: both listener flavors.
+    if !propagation_stopped {
+        let (stopped, called) = dispatch_to_node(
+            ctx,
+            event_obj,
+            chain[0],
+            event_type,
+            &DispatchStep {
+                phase: AT_TARGET_PHASE,
+                invoke_capture: true,
+                invoke_non_capture: true,
+            },
+            context,
+        );
+        propagation_stopped |= stopped;
+        any_called |= called;
+    }
+
+    // Bubble phase (target's parent → root): non-capture listeners.
+    if bubbles && !propagation_stopped {
+        for &node_id in chain.iter().skip(1) {
+            if propagation_stopped {
+                break;
+            }
+            let (stopped, called) = dispatch_to_node(
+                ctx,
+                event_obj,
+                node_id,
+                event_type,
+                &DispatchStep {
+                    phase: BUBBLING_PHASE,
+                    invoke_capture: false,
+                    invoke_non_capture: true,
+                },
+                context,
+            );
+            propagation_stopped |= stopped;
+            any_called |= called;
+        }
+    }
+
+    // Window-level listeners (bubble only). The window's listeners live in
+    // its `EventTarget` own block; capture-registered entries run first so
+    // every registered listener fires, as they did before the window became
+    // a full event target.
+    if bubbles && !event_flag(event_obj, |st| st.stop_propagation) {
+        let window = context.global_object().clone();
+        let global: JsValue = window.clone().into();
+        with_state_mut(event_obj, |st| {
+            st.phase = BUBBLING_PHASE;
+            st.current_target = DispatchTarget::from_value(global.clone());
+        })
+        .expect("failed to update currentTarget");
+        with_own::<EventTargetLayer, _>(&window, |target| {
+            let (_, called) = target.invoke_listeners(event_obj, event_type, true, ctx, context);
+            any_called |= called;
+            // A previously-run listener may have stopped the dispatch.
+            if !event_flag(event_obj, |st| st.stop_immediate) {
+                let (_, called) =
+                    target.invoke_listeners(event_obj, event_type, false, ctx, context);
+                any_called |= called;
+            }
+        })
+        .expect("window is not an event target");
+    }
+
+    // Per the DOM spec, after dispatch ends the transient values are
+    // cleared so async callbacks read `currentTarget: null`.
+    with_state_mut(event_obj, |st| {
+        st.current_target = DispatchTarget::None;
+        st.phase = NONE_PHASE;
+        st.dispatching = false;
+    })
+    .expect("failed to reset event state");
+
+    // Feed `preventDefault` / `stopPropagation` back into Blitz
+    if event_flag(event_obj, |st| st.canceled) {
+        event_state.prevent_default();
+    }
+    if event_flag(event_obj, |st| st.stop_propagation) {
+        event_state.stop_propagation();
+    }
+    if any_called {
+        event_state.request_redraw();
+    }
+
+    any_called
 }
 
-fn register_global_fn(
+/// Build a lazy dispatch target: a `JsFunction` that wraps the node the first
+/// time the event's `target` getter is read (cached afterwards).
+fn wrap_node_dispatch_target(node_id: NodeId, context: &mut Context) -> JsResult<DispatchTarget> {
+    let realm = context.realm().clone();
+    let node_id = node_id.as_u64();
+    let callable = NativeFunction::from_copy_closure_with_captures(
+        move |_this, _args, node_id: &u64, context: &mut Context| {
+            let ctx = context
+                .get_data::<DomCtx>()
+                .cloned()
+                .ok_or_else(|| JsNativeError::typ().with_message("DOM context missing"))?;
+            let wrapper = node_wrapper(&ctx, NodeId::from_u64(*node_id), context);
+            Ok(wrapper.into())
+        },
+        node_id,
+    )
+    .to_js_function(&realm);
+    Ok(DispatchTarget::from_callable(callable))
+}
+
+/// Per-phase dispatch plan for one receiver.
+struct DispatchStep {
+    phase: u8,
+    invoke_capture: bool,
+    invoke_non_capture: bool,
+}
+
+/// Dispatch `event_obj` to a single receiver node: set `currentTarget` and
+/// `eventPhase`, invoke the node wrapper's registered listeners per the plan
+/// (capture flavor before the non-capture flavor on the target itself).
+/// Returns `(propagation_stopped, any_listener_called)`.
+fn dispatch_to_node(
+    ctx: &DomCtx,
+    event_obj: &JsObject,
+    node_id: NodeId,
+    event_type: &str,
+    step: &DispatchStep,
     context: &mut Context,
-    name: &str,
-    length: usize,
-    body: fn(&JsValue, &[JsValue], &mut Context) -> JsResult<JsValue>,
-) {
-    context
-        .register_global_callable(
-            JsString::from(name),
-            length,
-            NativeFunction::from_fn_ptr(body),
-        )
-        .expect("failed to register global function");
-}
-
-fn build_location(base_url: Option<&Url>, context: &mut Context) -> JsValue {
-    let (href, protocol, host, pathname, search, hash, origin) = match base_url {
-        Some(url) => (
-            url.to_string(),
-            format!("{}:", url.scheme()),
-            url.host_str().unwrap_or_default().to_string(),
-            url.path().to_string(),
-            url.query().map(|q| format!("?{q}")).unwrap_or_default(),
-            url.fragment().map(|f| format!("#{f}")).unwrap_or_default(),
-            url.origin().ascii_serialization(),
-        ),
-        None => (
-            "about:blank".to_string(),
-            "about:".to_string(),
-            String::new(),
-            "blank".to_string(),
-            String::new(),
-            String::new(),
-            "null".to_string(),
-        ),
+) -> (bool, bool) {
+    // Listeners live in the wrapper's own block; a node without a cached
+    // wrapper has none, so there is nothing to invoke and no wrapper is
+    // materialized for it.
+    let Some(wrapper) = ctx.state.borrow().node_wrappers.get(node_id) else {
+        return (false, false);
     };
-    ObjectInitializer::new(context)
-        .property(js_string!("href"), JsString::from(href), Attribute::all())
-        .property(
-            js_string!("protocol"),
-            JsString::from(protocol),
-            Attribute::all(),
-        )
-        .property(
-            js_string!("host"),
-            JsString::from(host.clone()),
-            Attribute::all(),
-        )
-        .property(
-            js_string!("hostname"),
-            JsString::from(host),
-            Attribute::all(),
-        )
-        .property(
-            js_string!("pathname"),
-            JsString::from(pathname),
-            Attribute::all(),
-        )
-        .property(
-            js_string!("search"),
-            JsString::from(search),
-            Attribute::all(),
-        )
-        .property(js_string!("hash"), JsString::from(hash), Attribute::all())
-        .property(
-            js_string!("origin"),
-            JsString::from(origin),
-            Attribute::all(),
-        )
-        .build()
-        .into()
+
+    with_state_mut(event_obj, |st| {
+        st.phase = step.phase;
+        st.current_target = DispatchTarget::from_value(wrapper.clone().into());
+    })
+    .expect("failed to update currentTarget");
+
+    let mut invoke = |capture: bool| {
+        with_own::<EventTargetLayer, _>(&wrapper, |target| {
+            target.invoke_listeners(event_obj, event_type, capture, ctx, context)
+        })
+        .unwrap_or((false, false))
+    };
+
+    let mut stopped = false;
+    let mut called = false;
+    if step.invoke_capture {
+        let (s, c) = invoke(true);
+        stopped |= s;
+        called |= c;
+    }
+    // stopImmediatePropagation ends the dispatch; plain stopPropagation
+    // leaves this receiver's remaining (non-capture) listeners in place.
+    if step.invoke_non_capture && !event_flag(event_obj, |st| st.stop_immediate) {
+        let (s, c) = invoke(false);
+        stopped |= s;
+        called |= c;
+    }
+
+    (stopped, called)
 }
 
 // === Timer + window listener native functions ===
@@ -1265,7 +1165,11 @@ fn timer_args(
     )))
 }
 
-fn set_timeout(_: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+pub(crate) fn set_timeout(
+    _: &JsValue,
+    args: &[JsValue],
+    context: &mut Context,
+) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
     let Some((callback, delay, rest)) = timer_args(args, context)? else {
         return Ok(JsValue::from(0));
@@ -1276,7 +1180,11 @@ fn set_timeout(_: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult
     Ok(JsValue::from(id as f64))
 }
 
-fn set_interval(_: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+pub(crate) fn set_interval(
+    _: &JsValue,
+    args: &[JsValue],
+    context: &mut Context,
+) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
     let Some((callback, delay, rest)) = timer_args(args, context)? else {
         return Ok(JsValue::from(0));
@@ -1287,7 +1195,7 @@ fn set_interval(_: &JsValue, args: &[JsValue], context: &mut Context) -> JsResul
     Ok(JsValue::from(id as f64))
 }
 
-fn request_animation_frame(
+pub(crate) fn request_animation_frame(
     _: &JsValue,
     args: &[JsValue],
     context: &mut Context,
@@ -1316,7 +1224,7 @@ fn request_animation_frame(
 
 // === Viewport dimensions ===
 
-fn inner_width(_: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+pub(crate) fn inner_width(_: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
     let doc = ctx.doc.borrow();
     let viewport = doc.viewport();
@@ -1325,7 +1233,7 @@ fn inner_width(_: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<Js
     ))
 }
 
-fn inner_height(_: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+pub(crate) fn inner_height(_: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
     let doc = ctx.doc.borrow();
     let viewport = doc.viewport();
@@ -1334,7 +1242,11 @@ fn inner_height(_: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<J
     ))
 }
 
-fn device_pixel_ratio(_: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+pub(crate) fn device_pixel_ratio(
+    _: &JsValue,
+    _: &[JsValue],
+    context: &mut Context,
+) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
     let scale = ctx.doc.borrow().viewport().scale();
     Ok(JsValue::from(scale as f64))
@@ -1342,19 +1254,23 @@ fn device_pixel_ratio(_: &JsValue, _: &[JsValue], context: &mut Context) -> JsRe
 
 // === Viewport scrolling ===
 
-fn scroll_x(_: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+pub(crate) fn scroll_x(_: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
     Ok(JsValue::from(ctx.doc.borrow().viewport_scroll().x))
 }
 
-fn scroll_y(_: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+pub(crate) fn scroll_y(_: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
     Ok(JsValue::from(ctx.doc.borrow().viewport_scroll().y))
 }
 
 /// `window.scrollTo`/`window.scroll`: scroll the viewport, which blitz-dom
 /// models as a programmatic scroll of the root element.
-fn window_scroll_to(_: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+pub(crate) fn window_scroll_to(
+    _: &JsValue,
+    args: &[JsValue],
+    context: &mut Context,
+) -> JsResult<JsValue> {
     let parsed = crate::dom::element::parse_scroll_to_args(args, context)?;
     let ctx = dom_ctx(context)?;
     let mut doc = ctx.doc.borrow_mut();
@@ -1372,7 +1288,11 @@ fn window_scroll_to(_: &JsValue, args: &[JsValue], context: &mut Context) -> JsR
     Ok(JsValue::undefined())
 }
 
-fn window_scroll_by(_: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+pub(crate) fn window_scroll_by(
+    _: &JsValue,
+    args: &[JsValue],
+    context: &mut Context,
+) -> JsResult<JsValue> {
     let parsed = crate::dom::element::parse_scroll_to_args(args, context)?;
     let ctx = dom_ctx(context)?;
     let mut doc = ctx.doc.borrow_mut();
@@ -1389,18 +1309,13 @@ fn window_scroll_by(_: &JsValue, args: &[JsValue], context: &mut Context) -> JsR
     Ok(JsValue::undefined())
 }
 
-fn css_property_supported(
+/// `CSS.supports()`: the two-argument form checks a property/value declaration,
+/// the one-argument form evaluates a `@supports` condition
+pub(crate) fn css_supports(
     _: &JsValue,
     args: &[JsValue],
     context: &mut Context,
 ) -> JsResult<JsValue> {
-    let name = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
-    Ok(JsValue::from(blitz_dom::css_property_is_supported(&name)))
-}
-
-/// `CSS.supports()`: the two-argument form checks a property/value declaration,
-/// the one-argument form evaluates a `@supports` condition
-fn css_supports(_: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
     let supported = if args.len() >= 2 {
         let property = to_rust_string(&args[0], context)?;
@@ -1413,30 +1328,26 @@ fn css_supports(_: &JsValue, args: &[JsValue], context: &mut Context) -> JsResul
     Ok(JsValue::from(supported))
 }
 
-fn get_computed_style(_: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    let ctx = dom_ctx(context)?;
+pub(crate) fn get_computed_style(
+    _: &JsValue,
+    args: &[JsValue],
+    context: &mut Context,
+) -> JsResult<JsValue> {
     let Some(node_id) = args.first().and_then(node_id_of_value) else {
-        return Err(boa_engine::JsNativeError::typ()
+        return Err(JsNativeError::typ()
             .with_message("getComputedStyle: argument is not an Element")
             .into());
     };
-    let proto = ctx.state.borrow().protos().computed_style.clone();
-    let obj = JsObject::from_proto_and_data(Some(proto), NodeRef { node_id });
+    let obj = from_chain!((ComputedStyle, context), ComputedStyleLayer { node_id })
+        .expect("failed to build ComputedStyle");
     Ok(wrap_style_object(obj, context))
 }
 
-fn send_message(_: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    let ctx = dom_ctx(context)?;
-    let message = args
-        .first()
-        .unwrap_or(&JsValue::undefined())
-        .to_string(context)?
-        .to_std_string_lossy();
-    ctx.state.borrow_mut().outbound_messages.push(message);
-    Ok(JsValue::undefined())
-}
-
-fn clear_timer(_: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+pub(crate) fn clear_timer(
+    _: &JsValue,
+    args: &[JsValue],
+    context: &mut Context,
+) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
     let id = match args.first() {
         Some(value) => value.to_number(context)?,
@@ -1444,56 +1355,6 @@ fn clear_timer(_: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult
     };
     if id.is_finite() && id >= 0.0 {
         ctx.state.borrow_mut().timers.remove(id as u64);
-    }
-    Ok(JsValue::undefined())
-}
-
-fn window_add_event_listener(
-    _: &JsValue,
-    args: &[JsValue],
-    context: &mut Context,
-) -> JsResult<JsValue> {
-    let ctx = dom_ctx(context)?;
-    let event_type =
-        crate::dom::to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
-    let Some(callback) = args
-        .get(1)
-        .and_then(|value| value.as_object())
-        .filter(|obj| obj.is_callable())
-    else {
-        return Ok(JsValue::undefined());
-    };
-
-    let mut state = ctx.state.borrow_mut();
-    let listeners = state.window_listeners.entry(event_type).or_default();
-    if !listeners
-        .iter()
-        .any(|l| JsObject::equals(&l.callback, &callback))
-    {
-        listeners.push(Listener {
-            callback,
-            capture: false,
-            once: false,
-        });
-    }
-    Ok(JsValue::undefined())
-}
-
-fn window_remove_event_listener(
-    _: &JsValue,
-    args: &[JsValue],
-    context: &mut Context,
-) -> JsResult<JsValue> {
-    let ctx = dom_ctx(context)?;
-    let event_type =
-        crate::dom::to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
-    let Some(callback) = args.get(1).and_then(|value| value.as_object()) else {
-        return Ok(JsValue::undefined());
-    };
-
-    let mut state = ctx.state.borrow_mut();
-    if let Some(listeners) = state.window_listeners.get_mut(&event_type) {
-        listeners.retain(|l| !JsObject::equals(&l.callback, &callback));
     }
     Ok(JsValue::undefined())
 }

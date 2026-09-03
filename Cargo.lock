@@ -1185,8 +1185,7 @@ dependencies = [
 [[package]]
 name = "boa_ast"
 version = "0.22.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9221b0a090572b4a118b46c5874c0781fe4bc9546b85f0a615b8bfb609ca4ed7"
+source = "git+https://github.com/boa-dev/boa.git?rev=10ef23505ecae734a4984d7839fec99a7ca8482c#10ef23505ecae734a4984d7839fec99a7ca8482c"
 dependencies = [
  "bitflags 2.13.1",
  "boa_interner",
@@ -1201,8 +1200,7 @@ dependencies = [
 [[package]]
 name = "boa_engine"
 version = "0.22.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5d6aaf7fdc4299df68adb67e1a5440a51d34630a1f5271b9698fd74bc97b60d9"
+source = "git+https://github.com/boa-dev/boa.git?rev=10ef23505ecae734a4984d7839fec99a7ca8482c#10ef23505ecae734a4984d7839fec99a7ca8482c"
 dependencies = [
  "aligned-vec",
  "arrayvec",
@@ -1218,6 +1216,8 @@ dependencies = [
  "cfg-if",
  "cow-utils",
  "dashmap",
+ "data-encoding",
+ "data-encoding-macro",
  "dynify",
  "either",
  "fast-float2",
@@ -1258,8 +1258,7 @@ dependencies = [
 [[package]]
 name = "boa_gc"
 version = "0.22.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "af82119558ab1002d1978c8459b53a3ebb506177d29a3aca37c07c1777b1d966"
+source = "git+https://github.com/boa-dev/boa.git?rev=10ef23505ecae734a4984d7839fec99a7ca8482c#10ef23505ecae734a4984d7839fec99a7ca8482c"
 dependencies = [
  "arrayvec",
  "boa_macros",
@@ -1272,8 +1271,7 @@ dependencies = [
 [[package]]
 name = "boa_interner"
 version = "0.22.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "317c631e791f5cb7d0017e43c0a758b0eaffd40c34c4c360e2a6be7752b78cd1"
+source = "git+https://github.com/boa-dev/boa.git?rev=10ef23505ecae734a4984d7839fec99a7ca8482c#10ef23505ecae734a4984d7839fec99a7ca8482c"
 dependencies = [
  "boa_gc",
  "boa_macros",
@@ -1288,8 +1286,7 @@ dependencies = [
 [[package]]
 name = "boa_macros"
 version = "0.22.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b882fd440dc0f4b7441367cf89567bb077920356750c9a76a16c002d8ec2fa5c"
+source = "git+https://github.com/boa-dev/boa.git?rev=10ef23505ecae734a4984d7839fec99a7ca8482c#10ef23505ecae734a4984d7839fec99a7ca8482c"
 dependencies = [
  "cfg-if",
  "cow-utils",
@@ -1302,8 +1299,7 @@ dependencies = [
 [[package]]
 name = "boa_parser"
 version = "0.22.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "641e81b3c8cbb7a2140547fb3ea534e9edf210b4e8c920b5fa864a919e11fbcf"
+source = "git+https://github.com/boa-dev/boa.git?rev=10ef23505ecae734a4984d7839fec99a7ca8482c#10ef23505ecae734a4984d7839fec99a7ca8482c"
 dependencies = [
  "bitflags 2.13.1",
  "boa_ast",
@@ -1320,8 +1316,7 @@ dependencies = [
 [[package]]
 name = "boa_runtime"
 version = "0.22.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c4f64cd1483c17ad23f3c9792cc1f949618178b79b0b25d3fee8f07d3019edd5"
+source = "git+https://github.com/boa-dev/boa.git?rev=10ef23505ecae734a4984d7839fec99a7ca8482c#10ef23505ecae734a4984d7839fec99a7ca8482c"
 dependencies = [
  "boa_engine",
  "boa_gc",
@@ -1339,8 +1334,7 @@ dependencies = [
 [[package]]
 name = "boa_string"
 version = "0.22.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "30bf86c2bcff5bf2547acbfc516c5d3108ca527cb131511d749bf6fbef762c0e"
+source = "git+https://github.com/boa-dev/boa.git?rev=10ef23505ecae734a4984d7839fec99a7ca8482c#10ef23505ecae734a4984d7839fec99a7ca8482c"
 dependencies = [
  "fast-float2",
  "itoa",
@@ -1353,8 +1347,7 @@ dependencies = [
 [[package]]
 name = "boa_wintertc"
 version = "0.22.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c66d29a1e767039bfa1981bf149966d4a4d7453190abe13ffccd8aaf95031299"
+source = "git+https://github.com/boa-dev/boa.git?rev=10ef23505ecae734a4984d7839fec99a7ca8482c#10ef23505ecae734a4984d7839fec99a7ca8482c"
 dependencies = [
  "base64 0.23.1",
  "boa_engine",
@@ -2241,6 +2234,26 @@ name = "data-encoding"
 version = "2.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4583a4551df46e2792f82ceeac45e850d2e2d5debba0b91f102385cda5b11f06"
+
+[[package]]
+name = "data-encoding-macro"
+version = "0.1.21"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c6a127ecbb3c4632e1525380e04c0c3fcf8dcb44d32a79ea290d8a36906edcd8"
+dependencies = [
+ "data-encoding",
+ "data-encoding-macro-internal",
+]
+
+[[package]]
+name = "data-encoding-macro-internal"
+version = "0.1.19"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c54e03a951783e8b327515db3f2a2fd0e3bed362a96b066f341ce66ed49b4ead"
+dependencies = [
+ "data-encoding",
+ "syn 2.0.119",
+]
 
 [[package]]
 name = "data-url"
@@ -7419,8 +7432,7 @@ dependencies = [
 [[package]]
 name = "small_btree"
 version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0ba60d2df92ba73864714808ca68c059734853e6ab722b40e1cf543ebb3a057a"
+source = "git+https://github.com/boa-dev/boa.git?rev=10ef23505ecae734a4984d7839fec99a7ca8482c#10ef23505ecae734a4984d7839fec99a7ca8482c"
 dependencies = [
  "arrayvec",
 ]
@@ -7928,8 +7940,7 @@ dependencies = [
 [[package]]
 name = "tag_ptr"
 version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c0e973b34477b7823833469eb0f5a3a60370fef7a453e02d751b59180d0a5a05"
+source = "git+https://github.com/boa-dev/boa.git?rev=10ef23505ecae734a4984d7839fec99a7ca8482c#10ef23505ecae734a4984d7839fec99a7ca8482c"
 
 [[package]]
 name = "tap"
