@@ -181,13 +181,42 @@ fn has_suffix_with_test_extension(path_str: &str, suffix: &str) -> bool {
         .any(|ext| path_str.ends_with(&format!("{suffix}.{ext}")))
 }
 
+/// Matches file stems which the upstream WPT manifest classifies as reference files:
+/// `foo-ref`, `foo-notref`, `foo-ref2`, `foo_ref-a`, `ref-foo`, ...
+static REFERENCE_NAME_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(^|[\-_])(not)?ref[0-9]*([\-_]|$)").unwrap());
+
+/// Reference-named files are still tests in the upstream WPT manifest if their content makes them
+/// a reftest (`<link rel=match|mismatch>`, see RFC #15) or a testharness test.
+static REFERENCE_IS_TEST_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r#"<(?:[A-Za-z_][\w.\-]*:)?link\s[^>]*rel\s*=\s*['"]?(match|mismatch)['"]?[^>]*>|/resources/testharness\.js"#,
+    )
+    .unwrap()
+});
+
+/// Is the path a reference file (by upstream WPT naming rules) which is *not* also a test?
+fn is_non_test_reference(p: &Path) -> bool {
+    let stem = p
+        .file_stem()
+        .map(|s| s.to_string_lossy())
+        .unwrap_or_default();
+    let is_ref_name = path_contains_directory(p, "reference") || REFERENCE_NAME_RE.is_match(&stem);
+    if !is_ref_name {
+        return false;
+    }
+    // Only reference-named files are sniffed, so the extra read is limited to a
+    // small fraction of the tree.
+    match fs::read_to_string(p) {
+        Ok(contents) => !REFERENCE_IS_TEST_RE.is_match(&contents),
+        Err(_) => true,
+    }
+}
+
 fn filter_path(p: &Path) -> bool {
     // let is_tentative = path_buf.ends_with("tentative.html");
     let path_str = p.to_string_lossy();
-    let is_ref = has_suffix_with_test_extension(&path_str, "-ref")
-        || path_contains_directory(p, "reference");
-    // Negative references for mismatch reftests
-    let is_notref = has_suffix_with_test_extension(&path_str, "-notref");
+    let is_ref = is_non_test_reference(p);
     // Manual tests require human interaction/verification and cannot be run automatically
     let is_manual = has_suffix_with_test_extension(&path_str, "-manual");
     // `support`, `tools` and `resources` directories contain helper files, not tests
@@ -202,7 +231,7 @@ fn filter_path(p: &Path) -> bool {
 
     let is_dir = p.is_dir();
 
-    !(is_ref | is_notref | is_manual | is_support_file | is_blocked | is_dir)
+    !(is_ref | is_manual | is_support_file | is_blocked | is_dir)
 }
 
 fn collect_tests(wpt_dir: &Path) -> Vec<PathBuf> {
@@ -440,6 +469,14 @@ fn main() {
     }
     let test_paths = collect_tests(&wpt_dir);
     let count = test_paths.len();
+
+    // `--list` prints the selected test files (relative to WPT_DIR) without running them
+    if env::args().any(|arg| arg == "--list") {
+        for path in &test_paths {
+            println!("{}", path.strip_prefix(&wpt_dir).unwrap_or(path).display());
+        }
+        return;
+    }
 
     let cargo_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let out_dir = cargo_dir.parent().unwrap().join("output");
