@@ -372,16 +372,16 @@ impl BaseDocument {
             })
             .unwrap_or_else(|| {
                 use parley::fontique::{Collection, CollectionOptions, SourceCache};
-                let mut font_ctx = FontContext {
-                    source_cache: SourceCache::new_shared(),
-                    collection: Collection::new(CollectionOptions {
+                let mut font_ctx = FontContext::from_parts(
+                    Collection::new(CollectionOptions {
                         shared: false,
                         system_fonts: cfg!(all(
                             feature = "system-fonts",
                             not(target_arch = "wasm32")
                         )),
                     }),
-                };
+                    SourceCache::new_shared(),
+                );
                 font_ctx
                     .collection
                     .register_fonts(Blob::new(Arc::new(crate::BULLET_FONT) as _), None);
