@@ -604,7 +604,12 @@ impl BaseDocument {
                         // dbg!(&layout.size);
                         // dbg!(&layout.location);
 
-                        state.append_inline_box_to_line(box_break_data.advance, 0.0);
+                        state.append_inline_box_to_line(
+                            box_break_data.advance,
+                            f32::NEG_INFINITY,
+                            f32::NEG_INFINITY,
+                            true,
+                        );
 
                         // if float.is_floated() {
                         //     println!("INLINE FLOATED BOX ({}) {:?}", ibox.id, float);
