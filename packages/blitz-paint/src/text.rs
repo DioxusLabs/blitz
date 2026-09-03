@@ -206,7 +206,8 @@ fn resolve_decoration_entry(doc: &BaseDocument, node_id: NodeId) -> DecorationSt
 /// decorating box (its own text), falling back to the first run it covers.
 #[derive(Clone)]
 struct DecorationRunGeometry {
-    /// The line's baseline (shared by every run on the line).
+    /// The baseline the decoration is positioned from (the run's own, `vertical-align`
+    /// shifted, baseline).
     baseline: f32,
     ascent: f32,
     descent: f32,
@@ -391,15 +392,29 @@ fn flush_line_decorations(
     scale: f64,
     deco_boxes: &[LineDecoration],
     win_ascent_ratios: &mut WinAscentCache,
+    inline_root_id: NodeId,
+    line_baseline: f32,
 ) {
     // Draw innermost boxes first so ancestors' decorations paint on top, matching the
     // per-run drawing order this replaced (`stack.iter().rev()`).
     for acc in deco_boxes.iter().rev() {
         let deco = &acc.deco;
         // Prefer the decorating box's own font; fall back to the first run it covers.
-        let Some(geom) = acc.own.as_ref().or(acc.first.as_ref()) else {
-            continue;
+        let geom = match (&acc.own, &acc.first) {
+            (Some(own), _) => own.clone(),
+            (None, Some(first)) => {
+                let mut geom = first.clone();
+                // A descendant run's baseline may be shifted by `vertical-align`, but the
+                // decoration is positioned from the decorating box's own baseline. For the
+                // inline root that is the line's baseline.
+                if acc.node_id == inline_root_id {
+                    geom.baseline = line_baseline;
+                }
+                geom
+            }
+            (None, None) => continue,
         };
+        let geom = &geom;
         let width = acc.max_x - acc.min_x;
         if width <= 0.0 {
             continue;
@@ -696,7 +711,15 @@ pub(crate) fn stroke_text<'a>(
             }
         }
 
-        flush_line_decorations(scene, transform, scale, deco_boxes, win_ascent_ratios);
+        flush_line_decorations(
+            scene,
+            transform,
+            scale,
+            deco_boxes,
+            win_ascent_ratios,
+            inline_root_id,
+            line.metrics().baseline,
+        );
     }
 }
 
