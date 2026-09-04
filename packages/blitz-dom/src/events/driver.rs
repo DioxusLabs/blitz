@@ -1,7 +1,7 @@
 use crate::Document;
 use blitz_traits::events::{
-    BlitzPointerEvent, BlitzPointerId, DomEvent, DomEventData, EventDispatchSource, EventState,
-    Point, PointerCoords, UiEvent,
+    BlitzDragEvent, BlitzPointerEvent, BlitzPointerId, DomEvent, DomEventData, EventDispatchSource,
+    EventState, Point, PointerCoords, UiEvent,
 };
 use blitz_traits::node_id::NodeId;
 
@@ -170,6 +170,39 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
         }
     }
 
+    pub fn handle_drag_move(&mut self, event: &BlitzDragEvent) -> Option<NodeId> {
+        let mut doc = self.doc.inner_mut();
+
+        let prev_hover_node_id = doc.hover_node_id;
+        let changed = doc.set_hover_to(event.page_x(), event.page_y());
+        let hover_node_id = doc.hover_node_id;
+
+        drop(doc);
+
+        if !changed {
+            return prev_hover_node_id;
+        }
+
+        // DragLeave, DragEnter already bubbles
+        //  https://developer.mozilla.org/en-US/docs/Web/API/HTML_Drag_and_Drop_API/Drag_operations#dragging_over_elements_and_specifying_drop_targets
+        if let Some(target) = hover_node_id {
+            self.handle_dom_event(DomEvent::new(
+                target,
+                DomEventData::DragEnter(event.clone()),
+                EventDispatchSource::Input,
+            ));
+        }
+        if let Some(target) = prev_hover_node_id {
+            self.handle_dom_event(DomEvent::new(
+                target,
+                DomEventData::DragLeave(event.clone()),
+                EventDispatchSource::Input,
+            ));
+        }
+
+        hover_node_id
+    }
+
     pub fn handle_ui_event(&mut self, event: UiEvent) {
         // Events queued on the document since a driver last ran come before the new event
         self.flush_pending_events();
@@ -219,6 +252,15 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
                 self.handle_pointer_leave(event);
                 hover_node_id = None;
             }
+            UiEvent::DragEnter(event) => {
+                let mut doc = self.doc.inner_mut();
+                doc.set_hover_to(event.page_x(), event.page_y());
+                hover_node_id = doc.hover_node_id;
+                drop(doc);
+            }
+            UiEvent::DragOver(event) => {
+                hover_node_id = self.handle_drag_move(event);
+            }
             _ => {}
         };
 
@@ -234,6 +276,12 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
             UiEvent::Ime(_) => focussed_node_id,
             UiEvent::Paste(_) => focussed_node_id,
             UiEvent::AppleStandardKeybinding(_) => focussed_node_id,
+            UiEvent::DragEnter(_) => hover_node_id,
+            UiEvent::DragOver(_) => hover_node_id,
+            UiEvent::DragLeave(_) => hover_node_id,
+            UiEvent::Drop(_) => hover_node_id,
+            // uses event source node as target
+            UiEvent::OutgoingDrop(_) | UiEvent::OutgoingCancel(_) | UiEvent::DragStart(_) => None,
         };
         // Fall back to the root element. A document without a root element (e.g. an
         // empty iframe sub-document) has no event target, so there is nothing to do.
@@ -292,6 +340,71 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
                 );
                 self.run_default_action(&mut dom_event, false);
                 self.flush_pending_events();
+            }
+            UiEvent::DragEnter(data) => self.handle_dom_event(DomEvent::new(
+                target,
+                DomEventData::DragEnter(data),
+                EventDispatchSource::Input,
+            )),
+            UiEvent::DragOver(data) => {
+                if let Some(source_id) = data.source.get_node_id() {
+                    self.handle_dom_event(DomEvent::new(
+                        source_id,
+                        DomEventData::Drag(data.clone()),
+                        EventDispatchSource::Input,
+                    ));
+                }
+                self.handle_dom_event(DomEvent::new(
+                    target,
+                    DomEventData::DragOver(data),
+                    EventDispatchSource::Input,
+                ))
+            }
+            UiEvent::DragLeave(data) => self.handle_dom_event(DomEvent::new(
+                target,
+                DomEventData::DragLeave(data),
+                EventDispatchSource::Input,
+            )),
+            UiEvent::Drop(data) => {
+                if let Some(source_id) = data.source.get_node_id() {
+                    self.handle_dom_event(DomEvent::new(
+                        target,
+                        DomEventData::Drop(data.clone()),
+                        EventDispatchSource::Input,
+                    ));
+                    // dragend always fires last on the source
+                    self.handle_dom_event(DomEvent::new(
+                        source_id,
+                        DomEventData::DragEnd(data),
+                        EventDispatchSource::Input,
+                    ));
+                } else {
+                    self.handle_dom_event(DomEvent::new(
+                        target,
+                        DomEventData::Drop(data),
+                        EventDispatchSource::Input,
+                    ));
+                }
+            }
+            // html doesn't differenciate between outgoing cancel and outgoing drop, it sends drag end in both cases
+            UiEvent::OutgoingDrop(data) | UiEvent::OutgoingCancel(data) => {
+                if let Some(source_id) = data.source.get_node_id() {
+                    self.handle_dom_event(DomEvent::new(
+                        source_id,
+                        DomEventData::DragEnd(data),
+                        EventDispatchSource::Input,
+                    ));
+                }
+            }
+            UiEvent::DragStart(data) => {
+                self.doc.inner_mut().set_mousedown_node_id(None);
+                if let Some(source_id) = data.source.get_node_id() {
+                    self.handle_dom_event(DomEvent::new(
+                        source_id,
+                        DomEventData::DragStart(data),
+                        EventDispatchSource::Input,
+                    ));
+                }
             }
         };
 
@@ -450,8 +563,8 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
             | DomEventData::MouseOver(data)
             | DomEventData::MouseOut(data)
             | DomEventData::TouchStart(data)
-            | DomEventData::TouchEnd(data)
             | DomEventData::TouchMove(data)
+            | DomEventData::TouchEnd(data)
             | DomEventData::TouchCancel(data)
             | DomEventData::Click(data)
             | DomEventData::ContextMenu(data)
@@ -459,6 +572,18 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
                 self.adjust_element_coords(event.target, &data.coords, &mut data.element)
             }
             DomEventData::Wheel(data) => {
+                self.adjust_element_coords(event.target, &data.coords, &mut data.element)
+            }
+            DomEventData::DragStart(data)
+            | DomEventData::Drag(data)
+            | DomEventData::DragEnd(data)
+            | DomEventData::DragEnter(data)
+            | DomEventData::DragOver(data)
+            | DomEventData::DragLeave(data) => {
+                self.adjust_element_coords(event.target, &data.coords, &mut data.element)
+            }
+            DomEventData::Drop(data) => {
+                data.data_transfer_mut().readable();
                 self.adjust_element_coords(event.target, &data.coords, &mut data.element)
             }
             _ => {}
