@@ -1,3 +1,4 @@
+mod dnd;
 mod driver;
 mod focus;
 mod ime;
@@ -90,6 +91,26 @@ fn map_dom_event_to_ui_event(
         DomEventData::Blur(_) => None,
         DomEventData::FocusIn(_) => None,
         DomEventData::FocusOut(_) => None,
+
+        // Thse events can only trigger on a specific node in document where a drag started
+        // so they don't need to be adjusted?
+        DomEventData::DragStart(_) => None,
+        DomEventData::Drag(_) => None,
+        DomEventData::DragEnd(_) => None,
+
+        // Enter/leave events will be recreated by sub-document's event driver
+        // based dragover events
+        DomEventData::DragEnter(_) => None,
+        DomEventData::DragLeave(_) => None,
+
+        DomEventData::DragOver(mut event) => {
+            adjust_coords_for_subdocument(&mut event.coords, node_offset, viewport_scroll);
+            Some(UiEvent::DragOver(event))
+        }
+        DomEventData::Drop(mut event) => {
+            adjust_coords_for_subdocument(&mut event.coords, node_offset, viewport_scroll);
+            Some(UiEvent::Drop(event))
+        }
     }
 }
 
@@ -294,6 +315,31 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
             // Do nothing (no default action)
         }
         DomEventData::FocusOut(_) => {
+            // Do nothing (no default action)
+        }
+        DomEventData::DragStart(_) => {
+            // Do nothing (no default action)
+        }
+        DomEventData::Drag(_) => {
+            // Do nothing (no default action)
+        }
+        DomEventData::DragEnd(_) => {
+            // Do nothing (no default action)
+        }
+        DomEventData::DragEnter(_) => {
+            // Do nothing (no default action)
+        }
+        DomEventData::DragOver(event) => {
+            use blitz_traits::events::BlitzDragOperation;
+            // todo set drop effect based on node type or if it has drop zone
+            // this needs to be set here and not in dragenter as keyboard modifiers can affect the effect
+
+            event.data_transfer_mut().drop_effect = BlitzDragOperation::Copy;
+        }
+        DomEventData::DragLeave(_) => {
+            // Do nothing (no default action)
+        }
+        DomEventData::Drop(_) => {
             // Do nothing (no default action)
         }
     }
