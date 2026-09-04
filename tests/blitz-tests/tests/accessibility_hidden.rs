@@ -1,16 +1,14 @@
 use accesskit::{Node as AccessKitNode, Role};
-use blitz_dom::{Attribute, BaseDocument, DocumentConfig, qual_name};
+use blitz_dom::DocumentConfig;
+use blitz_html::{HtmlDocument, HtmlProvider};
+use blitz_traits::shell::{ColorScheme, Viewport};
+use std::sync::Arc;
 use test_that::prelude::*;
 
 #[test]
 fn includes_ordinary_div_as_node() -> TestResult<()> {
-    let mut document = BaseDocument::new(DocumentConfig::default());
-    let mut mutator = document.mutate();
-    let html_element_id = mutator.create_element(qual_name!("html"), vec![]);
-    mutator.append_children(mutator.doc.root_node().id, &[html_element_id]);
-    let div_element_id = mutator.create_element(qual_name!("div"), vec![]);
-    mutator.append_children(html_element_id, &[div_element_id]);
-    drop(mutator);
+    let mut document =
+        HtmlDocument::from_html("<html><div></div></html>", default_document_config());
     document.resolve(0.0);
 
     let tree_update = document.build_accessibility_tree();
@@ -29,19 +27,8 @@ fn includes_ordinary_div_as_node() -> TestResult<()> {
 
 #[test]
 fn excludes_div_with_hidden_attribute() -> TestResult<()> {
-    let mut document = BaseDocument::new(DocumentConfig::default());
-    let mut mutator = document.mutate();
-    let html_element_id = mutator.create_element(qual_name!("html"), vec![]);
-    mutator.append_children(mutator.doc.root_node().id, &[html_element_id]);
-    let div_element_id = mutator.create_element(
-        qual_name!("div"),
-        vec![Attribute {
-            name: qual_name!("hidden"),
-            value: String::new(),
-        }],
-    );
-    mutator.append_children(html_element_id, &[div_element_id]);
-    drop(mutator);
+    let mut document =
+        HtmlDocument::from_html("<html><div hidden></div></html>", default_document_config());
     document.resolve(0.0);
 
     let tree_update = document.build_accessibility_tree();
@@ -59,19 +46,10 @@ fn excludes_div_with_hidden_attribute() -> TestResult<()> {
 
 #[test]
 fn excludes_div_with_display_none() -> TestResult<()> {
-    let mut document = BaseDocument::new(DocumentConfig::default());
-    let mut mutator = document.mutate();
-    let html_element_id = mutator.create_element(qual_name!("html"), vec![]);
-    mutator.append_children(mutator.doc.root_node().id, &[html_element_id]);
-    let div_element_id = mutator.create_element(
-        qual_name!("div"),
-        vec![Attribute {
-            name: qual_name!("style"),
-            value: "display: none;".to_string(),
-        }],
+    let mut document = HtmlDocument::from_html(
+        r#"<html><div style="display: none;"></div></html>"#,
+        default_document_config(),
     );
-    mutator.append_children(html_element_id, &[div_element_id]);
-    drop(mutator);
     document.resolve(0.0);
 
     let tree_update = document.build_accessibility_tree();
@@ -89,19 +67,10 @@ fn excludes_div_with_display_none() -> TestResult<()> {
 
 #[test]
 fn excludes_div_with_visibility_hidden() -> TestResult<()> {
-    let mut document = BaseDocument::new(DocumentConfig::default());
-    let mut mutator = document.mutate();
-    let html_element_id = mutator.create_element(qual_name!("html"), vec![]);
-    mutator.append_children(mutator.doc.root_node().id, &[html_element_id]);
-    let div_element_id = mutator.create_element(
-        qual_name!("div"),
-        vec![Attribute {
-            name: qual_name!("style"),
-            value: "visibility: hidden;".to_string(),
-        }],
+    let mut document = HtmlDocument::from_html(
+        r#"<html><div style="visibility: hidden;"></div></html>"#,
+        default_document_config(),
     );
-    mutator.append_children(html_element_id, &[div_element_id]);
-    drop(mutator);
     document.resolve(0.0);
 
     let tree_update = document.build_accessibility_tree();
@@ -119,19 +88,10 @@ fn excludes_div_with_visibility_hidden() -> TestResult<()> {
 
 #[test]
 fn sets_hidden_flag_on_element_with_aria_hidden_attribute() -> TestResult<()> {
-    let mut document = BaseDocument::new(DocumentConfig::default());
-    let mut mutator = document.mutate();
-    let html_element_id = mutator.create_element(qual_name!("html"), vec![]);
-    mutator.append_children(mutator.doc.root_node().id, &[html_element_id]);
-    let div_element_id = mutator.create_element(
-        qual_name!("div"),
-        vec![Attribute {
-            name: qual_name!("aria-hidden"),
-            value: "true".to_string(),
-        }],
+    let mut document = HtmlDocument::from_html(
+        r#"<html><div aria-hidden="true"></div></html>"#,
+        default_document_config(),
     );
-    mutator.append_children(html_element_id, &[div_element_id]);
-    drop(mutator);
     document.resolve(0.0);
 
     let tree_update = document.build_accessibility_tree();
@@ -146,4 +106,12 @@ fn sets_hidden_flag_on_element_with_aria_hidden_attribute() -> TestResult<()> {
             })
         ))
     )
+}
+
+fn default_document_config() -> DocumentConfig {
+    DocumentConfig {
+        viewport: Some(Viewport::new(800, 600, 1.0, ColorScheme::Light)),
+        html_parser_provider: Some(Arc::new(HtmlProvider) as _),
+        ..Default::default()
+    }
 }
