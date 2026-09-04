@@ -15,6 +15,7 @@ prelude = ["dep:dioxus-core-macro", "dep:dioxus-hooks", "dep:dioxus-signals", "d
 
 # DOM features
 svg = ["blitz-dom/svg", "blitz-paint/svg"]
+svg-native = ["blitz-dom/svg-native", "blitz-paint/svg-native", "dioxus-native-dom/svg-native"]
 floats = ["blitz-dom/floats"]
 autofocus = ["blitz-dom/autofocus"]
 system-fonts = ["blitz-dom/system-fonts"]

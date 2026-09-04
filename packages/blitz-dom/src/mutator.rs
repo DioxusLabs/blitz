@@ -307,6 +307,16 @@ impl DocumentMutator<'_> {
             }
         }
 
+        // Attribute change in SVG-ns element inside an inline fragment invalidates that fragment's `SvgContext`.
+        #[cfg(feature = "svg-native")]
+        if node_is_in_document
+            && self.doc.nodes[node_id]
+                .element_data()
+                .is_some_and(|element| element.name.ns == markup5ever::ns!(svg))
+        {
+            self.doc.propagate_svg_damage(node_id);
+        }
+
         let node = &mut self.doc.nodes[node_id];
 
         let NodeData::Element(ref mut element) = node.data else {
@@ -1034,6 +1044,8 @@ impl<'doc> DocumentMutator<'doc> {
                 SpecialElementData::CheckboxInput(_) => {}
                 #[cfg(feature = "file-input")]
                 SpecialElementData::FileInput(_) => {}
+                #[cfg(feature = "svg-native")]
+                SpecialElementData::SvgRoot(_) => {}
                 SpecialElementData::None => {}
             }
         });

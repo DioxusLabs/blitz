@@ -14,6 +14,8 @@ rust-version.workspace = true
 default = ["svg"]
 tracing = ["dep:tracing"]
 svg = ["dep:anyrender_svg", "dep:usvg", "blitz-dom/svg"]
+# First-party inline <svg> rendering. Default off; additive-only.
+svg-native = ["blitz-dom/svg-native"]
 custom-widget = ["blitz-dom/custom-widget"]
 font-embolden = []
 apple-font-embolden = []

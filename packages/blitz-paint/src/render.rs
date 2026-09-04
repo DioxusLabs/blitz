@@ -4,6 +4,8 @@ mod box_shadow;
 mod clip_path;
 mod form_controls;
 mod mask;
+#[cfg(feature = "svg-native")]
+mod svg;
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -528,7 +530,9 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                                     y: -node.scroll_offset().y * self.scale,
                                 });
                                 cx.draw_image(scene);
-                                #[cfg(feature = "svg")]
+                                #[cfg(feature = "svg-native")]
+                                cx.draw_svg_fragment(scene);
+                                #[cfg(all(feature = "svg", not(feature = "svg-native")))]
                                 cx.draw_svg(scene);
                                 #[cfg(feature = "custom-widget")]
                                 cx.draw_custom_widget(scene);
@@ -617,6 +621,8 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             transform,
             #[cfg(feature = "svg")]
             svg: element.svg_data(),
+            #[cfg(feature = "svg-native")]
+            svg_root: element.svg_root_data(),
             text_input: element.text_input_data(),
             list_item: element.list_item_data.as_deref(),
             devtools: self.dom.devtools(),
@@ -662,7 +668,10 @@ struct ElementCx<'dom, 'a> {
     element: &'dom ElementData,
     transform: Affine,
     #[cfg(feature = "svg")]
+    #[cfg_attr(feature = "svg-native", allow(dead_code))]
     svg: Option<&'dom usvg::Tree>,
+    #[cfg(feature = "svg-native")]
+    svg_root: Option<&'dom blitz_dom::svg::SvgContext>,
     text_input: Option<&'dom TextInputData>,
     list_item: Option<&'dom ListItemLayout>,
     devtools: &'dom DevtoolSettings,
@@ -1010,6 +1019,7 @@ impl ElementCx<'_, '_> {
     }
 
     #[cfg(feature = "svg")]
+    #[cfg_attr(feature = "svg-native", allow(dead_code))]
     fn draw_svg(&self, scene: &mut impl PaintScene) {
         use style::properties::generated::longhands::object_fit::computed_value::T as ObjectFit;
 

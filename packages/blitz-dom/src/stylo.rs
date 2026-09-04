@@ -58,6 +58,17 @@ use style_dom::ElementState;
 
 use style::values::computed::text::TextAlign as StyloTextAlign;
 
+// `synthesize_presentational_hints_for_legacy_attributes` only gets `&self` with no path back to
+// the owning `BaseDocument`, but SVG presentation-attribute parsing needs a `UrlExtraData` to
+// hand to Stylo's declaration parser.
+#[cfg(feature = "svg-native")]
+static SVG_URL_EXTRA_DATA: std::sync::LazyLock<style::stylesheets::UrlExtraData> =
+    std::sync::LazyLock::new(|| {
+        style::stylesheets::UrlExtraData(style::servo_arc::Arc::new(
+            url::Url::parse("about:blank").unwrap(),
+        ))
+    });
+
 impl crate::document::BaseDocument {
     pub fn resolve_stylist(&mut self, now: f64) {
         style::thread_state::enter(ThreadState::LAYOUT);
@@ -378,7 +389,7 @@ impl selectors::Element for BlitzNode<'_> {
     }
 
     fn is_html_element_in_html_document(&self) -> bool {
-        true // self.has_namespace(ns!(html))
+        self.is_element() && self.namespace() == &markup5ever::ns!(html)
     }
 
     fn has_local_name(&self, local_name: &LocalName) -> bool {
@@ -395,14 +406,19 @@ impl selectors::Element for BlitzNode<'_> {
 
     fn attr_matches(
         &self,
-        _ns: &NamespaceConstraint<&GenericAtomIdent<NamespaceStaticSet>>,
+        ns: &NamespaceConstraint<&GenericAtomIdent<NamespaceStaticSet>>,
         local_name: &GenericAtomIdent<LocalNameStaticSet>,
         operation: &AttrSelectorOperation<&AtomString>,
     ) -> bool {
-        match self.data.attr(local_name.0.clone()) {
-            None => false,
-            Some(attr_value) => operation.eval_str(attr_value),
-        }
+        self.data.attrs().is_some_and(|attrs| {
+            attrs.iter().any(|attr| {
+                let ns_matches = match ns {
+                    NamespaceConstraint::Any => true,
+                    NamespaceConstraint::Specific(url) => attr.name.ns == ***url,
+                };
+                ns_matches && attr.name.local == local_name.0 && operation.eval_str(&attr.value)
+            })
+        })
     }
 
     fn match_non_ts_pseudo_class(
@@ -594,7 +610,7 @@ impl<'a> TElement for BlitzNode<'a> {
     }
 
     fn is_html_element(&self) -> bool {
-        self.is_element()
+        self.is_element() && self.namespace() == &markup5ever::ns!(html)
     }
 
     // not implemented.....
@@ -602,9 +618,8 @@ impl<'a> TElement for BlitzNode<'a> {
         false
     }
 
-    // need to check the namespace
     fn is_svg_element(&self) -> bool {
-        false
+        self.is_element() && self.namespace() == &markup5ever::ns!(svg)
     }
 
     fn style_attribute(&self) -> Option<ArcBorrow<'_, Locked<PropertyDeclarationBlock>>> {
@@ -778,10 +793,13 @@ impl<'a> TElement for BlitzNode<'a> {
         None
     }
 
-    fn get_attr(&self, attr: &style::LocalName, _ns: &style::Namespace) -> Option<String> {
-        // TODO: filter by namespace
+    fn get_attr(&self, attr: &style::LocalName, ns: &style::Namespace) -> Option<String> {
         // TODO: case-insensitive matching for HTML-ns attrs
-        self.attr(attr.0.clone()).map(|s| s.to_string())
+        self.data
+            .attrs()?
+            .iter()
+            .find(|a| a.name.local == **attr && a.name.ns == **ns)
+            .map(|a| a.value.to_string())
     }
 
     fn lang_attr(&self) -> Option<style::selector_parser::AttrValue> {
@@ -825,6 +843,26 @@ impl<'a> TElement for BlitzNode<'a> {
         };
 
         let tag = &elem.name.local;
+
+        // SVG presentation attributes. Gated on both the feature flag and the element's namespace.
+        #[cfg(feature = "svg-native")]
+        if elem.name.ns == markup5ever::ns!(svg) {
+            for attr in elem.attrs() {
+                for mut source_decl in crate::svg::attrs::svg_presentation_hint(
+                    &attr.name.local,
+                    &attr.value,
+                    &SVG_URL_EXTRA_DATA,
+                ) {
+                    let mut block = PropertyDeclarationBlock::new();
+                    block.extend(source_decl.drain(), Importance::Normal);
+                    hints.push(ApplicableDeclarationBlock::from_declarations(
+                        Arc::new(self.guard().wrap(block)),
+                        CascadeLevel::new(CascadeOrigin::PresHints),
+                        LayerOrder::root(),
+                    ));
+                }
+            }
+        }
 
         let mut push_style = |decl: PropertyDeclaration| {
             hints.push(ApplicableDeclarationBlock::from_declarations(

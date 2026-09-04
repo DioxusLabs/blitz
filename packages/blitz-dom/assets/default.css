@@ -5,6 +5,7 @@
 @namespace url(http://www.w3.org/1999/xhtml);
 /* set default namespace to HTML */
 @namespace xul url(http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul);
+@namespace svg url(http://www.w3.org/2000/svg);
 
 @font-face {
     font-family: -moz-bullet-font;
@@ -1126,3 +1127,45 @@ slot {
         background-color: transparent;
     }
 }
+
+/* SVG (svg-native): shape from Gecko's layout/style/res/svg.css.
+ * `display:none` on non-rendered containers means the normal box/paint
+ * traversal never needs to special-case them -- the cascade already hides
+ * them; `<defs>`/gradient/etc lookups go through `id_map`, not a render
+ * walk. Note: no `pointer-events` UA rule here -- the full keyword set
+ * (`visiblePainted` etc) is gecko-only on this Stylo build (see
+ * svg/hit_test.rs), so hit-testing hardcodes that semantics for `auto`
+ * directly rather than via an (unparseable) UA declaration. */
+svg|svg {
+    display: inline;
+}
+
+svg|svg:not(:root),
+svg|symbol,
+svg|image,
+svg|marker,
+svg|pattern,
+svg|foreignObject {
+    overflow: hidden;
+}
+
+svg|defs,
+svg|clipPath,
+svg|marker,
+svg|mask,
+svg|pattern,
+svg|symbol,
+svg|filter,
+svg|linearGradient,
+svg|radialGradient,
+svg|stop,
+svg|title,
+svg|desc,
+svg|metadata {
+    display: none;
+}
+
+svg|foreignObject {
+    display: block;
+}
+
