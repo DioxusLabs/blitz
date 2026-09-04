@@ -79,11 +79,6 @@ impl BaseDocument {
 impl BlitzDomNode {
     // https://www.w3.org/TR/wai-aria-1.2/#tree_exclusion
     fn is_hidden_from_accessibility_tree(&self) -> bool {
-        if let Some(element_data) = self.element_data()
-            && element_data.has_attr(local_name!("hidden"))
-        {
-            return true;
-        }
         self.try_stylo_element_data()
             .as_ref()
             .and_then(|s| s.get())
