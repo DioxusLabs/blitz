@@ -42,6 +42,8 @@ atomic_refcell = { workspace = true }
 tracing = { workspace = true, optional = true }
 futures-util = { workspace = true }
 data-url = { workspace = true, optional = true }
+url = { workspace = true }
+bytes = { workspace = true }
 
 # WASM
 web-time = { workspace = true }
