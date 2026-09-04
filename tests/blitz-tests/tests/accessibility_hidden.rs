@@ -20,61 +20,8 @@ fn includes_ordinary_div_as_node() -> TestResult<()> {
         contains((
             anything(),
             matches_pattern!(AccessKitNode {
-                role(): eq(Role::GenericContainer)
-            })
-        ))
-    )
-}
-
-#[test]
-fn includes_div_with_button_role() -> TestResult<()> {
-    let mut document = BaseDocument::new(DocumentConfig::default());
-    let mut mutator = document.mutate();
-    let html_element_id = mutator.create_element(qual_name!("html"), vec![]);
-    mutator.append_children(mutator.doc.root_node().id, &[html_element_id]);
-    let div_element_id = mutator.create_element(
-        qual_name!("div"),
-        vec![Attribute {
-            name: qual_name!("role"),
-            value: "button".to_string(),
-        }],
-    );
-    mutator.append_children(html_element_id, &[div_element_id]);
-    drop(mutator);
-    document.resolve(0.0);
-
-    let tree_update = document.build_accessibility_tree();
-
-    verify_that!(
-        tree_update.nodes,
-        contains((
-            anything(),
-            matches_pattern!(AccessKitNode {
-                role(): eq(Role::Button)
-            })
-        ))
-    )
-}
-
-#[test]
-fn includes_button_with_button_role() -> TestResult<()> {
-    let mut document = BaseDocument::new(DocumentConfig::default());
-    let mut mutator = document.mutate();
-    let html_element_id = mutator.create_element(qual_name!("html"), vec![]);
-    mutator.append_children(mutator.doc.root_node().id, &[html_element_id]);
-    let div_element_id = mutator.create_element(qual_name!("button"), vec![]);
-    mutator.append_children(html_element_id, &[div_element_id]);
-    drop(mutator);
-    document.resolve(0.0);
-
-    let tree_update = document.build_accessibility_tree();
-
-    verify_that!(
-        tree_update.nodes,
-        contains((
-            anything(),
-            matches_pattern!(AccessKitNode {
-                role(): eq(Role::Button)
+                role(): eq(Role::GenericContainer),
+                is_hidden(): eq(false),
             })
         ))
     )
