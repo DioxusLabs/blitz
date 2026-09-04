@@ -6,9 +6,16 @@ impl BaseDocument {
     pub fn build_accessibility_tree(&self) -> TreeUpdate {
         let mut nodes = std::collections::HashMap::new();
         let mut window = AccessKitNode::new(Role::Window);
+        let mut hidden_nodes = std::collections::HashSet::new();
 
         self.visit(|node_id, node| {
-            if node.is_hidden_from_accessibility_tree() {
+            if node.is_hidden_from_accessibility_tree()
+                || node
+                    .parent
+                    .map(|p| hidden_nodes.contains(&p))
+                    .unwrap_or(false)
+            {
+                hidden_nodes.insert(node_id);
                 return;
             }
             let parent = node

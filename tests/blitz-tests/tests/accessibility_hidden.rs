@@ -108,6 +108,34 @@ fn sets_hidden_flag_on_element_with_aria_hidden_attribute() -> TestResult<()> {
     )
 }
 
+#[test]
+fn excludes_child_element_of_hidden_element() -> TestResult<()> {
+    let mut document = HtmlDocument::from_html(
+        r#"<html>
+          <head/>
+          <body>
+            <div hidden="true">
+              <button/>
+            </div>
+          </body>
+        </html>"#,
+        default_document_config(),
+    );
+    document.resolve(0.0);
+
+    let tree_update = document.build_accessibility_tree();
+
+    verify_that!(
+        tree_update.nodes,
+        not(contains((
+            anything(),
+            matches_pattern!(AccessKitNode {
+                role(): eq(Role::Button),
+            })
+        )))
+    )
+}
+
 fn default_document_config() -> DocumentConfig {
     DocumentConfig {
         viewport: Some(Viewport::new(800, 600, 1.0, ColorScheme::Light)),
