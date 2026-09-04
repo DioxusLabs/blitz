@@ -149,12 +149,12 @@ fn app() -> Element {
     const TOP_PAD: &str = if cfg!(target_os = "android") {
         "30px"
     } else {
-        ""
+        "0px"
     };
     const BOTTOM_PAD: &str = if cfg!(target_os = "android") {
         "44px"
     } else {
-        ""
+        "0px"
     };
 
     let show_fps: Signal<bool> = use_signal(|| false);
@@ -168,8 +168,7 @@ fn app() -> Element {
     rsx!(
         div {
             id: "frame",
-            padding_top: TOP_PAD,
-            padding_bottom: BOTTOM_PAD,
+            style: "--safe-area-top: {TOP_PAD}; padding-top: {TOP_PAD}; padding-bottom: {BOTTOM_PAD};",
             class: if IS_MOBILE { "mobile" } else { "" },
             title { "{window_title}" }
             document::Link { rel: "stylesheet", href: BROWSER_UI_STYLES }

@@ -21,10 +21,8 @@ use style::{
 };
 use style_dom::ElementState;
 use style_traits::ParsingMode;
-use taffy::{
-    Cache,
-    prelude::{Layout, Style},
-};
+use taffy::{Cache, prelude::Layout};
+use thin_vec::ThinVec;
 use url::Url;
 
 use super::stylo_data::StyloData;
@@ -67,9 +65,9 @@ pub struct ElementData {
     ///   - The text editor for input/textarea elements
     pub special_data: SpecialElementData,
 
-    pub background_images: Vec<Option<ImageResourceData>>,
+    pub background_images: ThinVec<Option<ImageResourceData>>,
 
-    pub mask_images: Vec<Option<ImageResourceData>>,
+    pub mask_images: ThinVec<Option<ImageResourceData>>,
 
     /// Parley text layout (elements with inline inner display mode only)
     pub inline_layout_data: Option<Box<TextLayout>>,
@@ -99,6 +97,9 @@ pub struct ElementData {
     /// Whether any descendant of this node needs restyling.
     /// Used by Stylo's incremental style traversal to skip unchanged subtrees.
     pub dirty_descendants: AtomicBool,
+    /// Whether this node or any of its descendants may carry `RestyleDamage`.
+    /// Used by the damage propagation pass to skip unchanged subtrees.
+    pub damaged_descendants: AtomicBool,
 
     // Pseudo element nodes
     pub before: Option<NodeId>,
@@ -109,14 +110,78 @@ pub struct ElementData {
     pub detailed_grid_info: Option<Box<taffy::DetailedGridInfo<Atom>>>,
 
     // Taffy layout data:
-    pub style: Style<Atom>,
     pub display_constructed_as: StyloDisplay,
+    /// Layout output state (`None` until layout first writes to this node).
+    pub layout_data: Option<Box<LayoutData>>,
+    pub transform: Option<Box<Affine>>,
+}
+
+/// Taffy layout output state (cache, layouts, scroll offset and overflow).
+///
+/// Lazily boxed on [`ElementData`] / [`DocumentData`]: inline-level elements
+/// are positioned by the inline (parley) layout rather than by taffy, so most
+/// nodes on text-heavy pages never allocate one.
+#[derive(Debug, Clone)]
+pub struct LayoutData {
     pub cache: Cache,
     pub unrounded_layout: Layout,
     pub final_layout: Layout,
     pub scroll_offset: crate::Point<f64>,
     pub scrollable_overflow: KurboRect,
-    pub transform: Option<Affine>,
+}
+
+impl LayoutData {
+    pub const fn new() -> Self {
+        Self {
+            cache: Cache::new(),
+            unrounded_layout: Layout::new(),
+            final_layout: Layout::new(),
+            scroll_offset: crate::Point::ZERO,
+            scrollable_overflow: KurboRect::ZERO,
+        }
+    }
+}
+
+impl Default for LayoutData {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Shared read-only default returned by accessors for nodes whose
+/// [`LayoutData`] has never been allocated.
+pub(crate) static DEFAULT_LAYOUT_DATA: LayoutData = LayoutData::new();
+
+impl ElementData {
+    /// This element's layout output state, or a shared default if layout has
+    /// never written to this element.
+    #[inline]
+    pub fn layout_data(&self) -> &LayoutData {
+        self.layout_data.as_deref().unwrap_or(&DEFAULT_LAYOUT_DATA)
+    }
+
+    /// Mutable access to this element's layout output state, allocating it if
+    /// it does not yet exist.
+    #[inline]
+    pub fn layout_data_mut(&mut self) -> &mut LayoutData {
+        self.layout_data.get_or_insert_default()
+    }
+}
+
+impl DocumentData {
+    /// The document node's layout output state, or a shared default if layout
+    /// has never written to it.
+    #[inline]
+    pub fn layout_data(&self) -> &LayoutData {
+        self.layout_data.as_deref().unwrap_or(&DEFAULT_LAYOUT_DATA)
+    }
+
+    /// Mutable access to the document node's layout output state, allocating
+    /// it if it does not yet exist.
+    #[inline]
+    pub fn layout_data_mut(&mut self) -> &mut LayoutData {
+        self.layout_data.get_or_insert_default()
+    }
 }
 
 /// Data specific to the [`Document`](super::super::Document) root node.
@@ -134,17 +199,14 @@ pub struct DocumentData {
     /// [`Node`](super::Node) is constructed.
     pub guard: Option<SharedRwLock>,
     pub dirty_descendants: AtomicBool,
+    pub damaged_descendants: AtomicBool,
     pub element_state: ElementState,
     pub has_snapshot: bool,
     pub snapshot_handled: AtomicBool,
-    pub style: Style<Atom>,
     pub display_constructed_as: StyloDisplay,
-    pub cache: Cache,
-    pub unrounded_layout: Layout,
-    pub final_layout: Layout,
-    pub scroll_offset: crate::Point<f64>,
-    pub scrollable_overflow: KurboRect,
-    pub transform: Option<Affine>,
+    /// Layout output state (`None` until layout first writes to this node).
+    pub layout_data: Option<Box<LayoutData>>,
+    pub transform: Option<Box<Affine>>,
 }
 
 // Hand-written like `ElementData`'s, because `ElementSelectorFlags` does not
@@ -155,16 +217,12 @@ impl std::fmt::Debug for DocumentData {
             .field("stylo_element_data", &self.stylo_element_data)
             .field("guard", &self.guard)
             .field("dirty_descendants", &self.dirty_descendants)
+            .field("damaged_descendants", &self.damaged_descendants)
             .field("element_state", &self.element_state)
             .field("has_snapshot", &self.has_snapshot)
             .field("snapshot_handled", &self.snapshot_handled)
-            .field("style", &self.style)
             .field("display_constructed_as", &self.display_constructed_as)
-            .field("cache", &self.cache)
-            .field("unrounded_layout", &self.unrounded_layout)
-            .field("final_layout", &self.final_layout)
-            .field("scroll_offset", &self.scroll_offset)
-            .field("scrollable_overflow", &self.scrollable_overflow)
+            .field("layout_data", &self.layout_data)
             .field("transform", &self.transform)
             .finish_non_exhaustive()
     }
@@ -177,16 +235,12 @@ impl DocumentData {
             selector_flags: Cell::new(ElementSelectorFlags::empty()),
             guard: None,
             dirty_descendants: AtomicBool::new(true),
+            damaged_descendants: AtomicBool::new(true),
             element_state: ElementState::empty(),
             has_snapshot: false,
             snapshot_handled: AtomicBool::new(false),
-            style: Default::default(),
             display_constructed_as: StyloDisplay::Block,
-            cache: Cache::new(),
-            unrounded_layout: Layout::new(),
-            final_layout: Layout::new(),
-            scroll_offset: crate::Point::ZERO,
-            scrollable_overflow: KurboRect::ZERO,
+            layout_data: None,
             transform: None,
         }
     }
@@ -257,16 +311,12 @@ impl Clone for ElementData {
             has_snapshot: false,
             snapshot_handled: AtomicBool::new(false),
             dirty_descendants: AtomicBool::new(true),
+            damaged_descendants: AtomicBool::new(true),
             before: None,
             after: None,
             detailed_grid_info: None,
-            style: Default::default(),
             display_constructed_as: StyloDisplay::Block,
-            cache: Cache::new(),
-            unrounded_layout: Layout::new(),
-            final_layout: Layout::new(),
-            scroll_offset: crate::Point::ZERO,
-            scrollable_overflow: KurboRect::ZERO,
+            layout_data: None,
             transform: None,
         }
     }
@@ -365,8 +415,8 @@ impl ElementData {
             list_item_data: None,
             special_data: SpecialElementData::None,
             template_contents: None,
-            background_images: Vec::new(),
-            mask_images: Vec::new(),
+            background_images: ThinVec::new(),
+            mask_images: ThinVec::new(),
 
             stylo_element_data: Default::default(),
             selector_flags: Cell::new(ElementSelectorFlags::empty()),
@@ -375,19 +425,28 @@ impl ElementData {
             has_snapshot: false,
             snapshot_handled: AtomicBool::new(false),
             dirty_descendants: AtomicBool::new(true),
+            damaged_descendants: AtomicBool::new(true),
             before: None,
             after: None,
             detailed_grid_info: None,
-            style: Default::default(),
             display_constructed_as: StyloDisplay::Block,
-            cache: Cache::new(),
-            unrounded_layout: Layout::new(),
-            final_layout: Layout::new(),
-            scroll_offset: crate::Point::ZERO,
-            scrollable_overflow: KurboRect::ZERO,
+            layout_data: None,
             transform: None,
         };
         data.flush_is_focussable();
+        data.flush_link_state();
+
+        // Mirror the `checked` attribute into the element state so that `:checked`
+        // selectors can be matched (and invalidated) from `ElementState`.
+        if data.name.local == local_name!("input")
+            && matches!(
+                data.attr(local_name!("type")),
+                Some("checkbox") | Some("radio")
+            )
+            && data.has_attr(local_name!("checked"))
+        {
+            data.element_state.insert(ElementState::CHECKED);
+        }
 
         // The element state needs to be modified if the element can be disabled.
         if data.can_be_disabled() {
@@ -422,6 +481,27 @@ impl ElementData {
 
     pub fn can_be_disabled(&self) -> bool {
         local_names!("button", "input", "select", "textarea").contains(&self.name.local)
+    }
+
+    /// Whether this element is a link (an `<a>` or `<area>` element with an `href` attribute)
+    pub fn is_link(&self) -> bool {
+        (self.name.local == local_name!("a") || self.name.local == local_name!("area"))
+            && self.has_attr(local_name!("href"))
+    }
+
+    /// Sync the visitedness bits of `element_state` with the element's link-ness.
+    /// Blitz does not track browsing history, so all links are unvisited.
+    ///
+    /// Stylo's snapshot invalidation (`ElementWrapper::is_link`) determines link-ness
+    /// from these state bits, so they must be kept accurate for `:link`/`:any-link`
+    /// selectors to be correctly invalidated. Must be called whenever the `href`
+    /// attribute is added or removed.
+    pub fn flush_link_state(&mut self) {
+        self.element_state
+            .remove(ElementState::VISITED_OR_UNVISITED);
+        if self.is_link() {
+            self.element_state.insert(ElementState::UNVISITED);
+        }
     }
 
     pub fn image_data(&self) -> Option<&ImageData> {
@@ -533,6 +613,16 @@ impl ElementData {
         }
     }
 
+    /// Set the checked state of a checkbox/radio input, keeping the
+    /// `ElementState::CHECKED` bit (used for `:checked` selector matching and
+    /// invalidation) in sync with the special data.
+    pub fn set_checkbox_input_checked(&mut self, checked: bool) {
+        if let Some(is_checked) = self.checkbox_input_checked_mut() {
+            *is_checked = checked;
+        }
+        self.element_state.set(ElementState::CHECKED, checked);
+    }
+
     #[cfg(feature = "file-input")]
     pub fn file_data(&self) -> Option<&FileData> {
         match &self.special_data {
@@ -633,16 +723,35 @@ impl ElementData {
             return false;
         };
 
-        if self.style_attribute.is_none() {
-            self.style_attribute = Some(ServoArc::new(guard.wrap(PropertyDeclarationBlock::new())));
-        }
-        self.style_attribute
-            .as_mut()
-            .unwrap()
+        self.mutable_style_attribute(guard)
             .write_with(&mut guard.write())
             .extend(source_property_declaration.drain(), Importance::Normal);
 
         true
+    }
+
+    // Copy-on-write: once Stylo has put this block in the rule tree it may be
+    // shared with other elements' styles (mirrors Gecko's
+    // nsDOMCSSDeclaration::EnsureBlockMutable).
+    fn mutable_style_attribute(
+        &mut self,
+        guard: &SharedRwLock,
+    ) -> &ServoArc<Locked<PropertyDeclarationBlock>> {
+        let cloned = match &self.style_attribute {
+            None => Some(PropertyDeclarationBlock::new()),
+            Some(arc) => {
+                let read = guard.read();
+                let block = arc.read_with(&read);
+                block
+                    .immutable
+                    .load(std::sync::atomic::Ordering::Relaxed)
+                    .then(|| block.clone())
+            }
+        };
+        if let Some(block) = cloned {
+            self.style_attribute = Some(ServoArc::new(guard.wrap(block)));
+        }
+        self.style_attribute.as_ref().unwrap()
     }
 
     pub fn remove_style_property(
@@ -668,13 +777,15 @@ impl ElementData {
             return false;
         };
 
-        if let Some(style) = &mut self.style_attribute {
-            let mut guard = guard.write();
-            let style = style.write_with(&mut guard);
-            if let Some(index) = style.first_declaration_to_remove(&property_id) {
-                style.remove_property(&property_id, index);
-                return true;
-            }
+        if self.style_attribute.is_none() {
+            return false;
+        }
+        let style = self.mutable_style_attribute(guard);
+        let mut guard = guard.write();
+        let style = style.write_with(&mut guard);
+        if let Some(index) = style.first_declaration_to_remove(&property_id) {
+            style.remove_property(&property_id, index);
+            return true;
         }
 
         false

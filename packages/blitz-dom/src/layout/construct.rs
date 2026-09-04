@@ -426,6 +426,11 @@ fn collect_layout_children_with_wrap(
     out: &mut LayoutChildren,
     wrap: Option<WrapContext>,
 ) {
+    // Record the `display` the box is being constructed with
+    if let Some(display) = doc.nodes[container_node_id].display_style() {
+        *doc.nodes[container_node_id].display_constructed_as_mut() = display;
+    }
+
     // Reset construction flags
     // TODO: make incremental and only remove this if the element is no longer an inline root
     doc.nodes[container_node_id]
@@ -730,7 +735,7 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: NodeId) {
         let after_node_id = node.after();
 
         // Note: yes these are kinda backwards
-        let style_data = node.stylo_element_data_opt().and_then(|s| s.get());
+        let style_data = node.try_stylo_element_data().and_then(|s| s.get());
         let before_style = style_data
             .as_ref()
             .and_then(|d| d.styles.pseudos.as_array()[1].clone());
@@ -786,6 +791,8 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: NodeId) {
             let node = &mut doc.nodes[node_id];
             node.set_pe_by_index(idx, Some(new_node_id));
             node.insert_damage(ALL_DAMAGE);
+
+            doc.pending_style_image_nodes.push(new_node_id);
         }
 
         // Else: Update psuedo element
@@ -795,8 +802,8 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: NodeId) {
             //
             // Note: this deliberately compares the text itself rather than relying on
             // the style-pointer comparison below, as the pseudo-element's style may
-            // already have been updated by `sync_pseudo_element_styles` during damage
-            // propagation without the text having been updated.
+            // already have been updated by `sync_pseudo_element_styles` during the
+            // style traversal without the text having been updated.
             let new_text = pe_content_text(&pe_style).map(str::to_string);
             let existing_text_node_id = doc.nodes[pe_node_id]
                 .children
@@ -828,7 +835,7 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: NodeId) {
             }
 
             let mut node_styles = doc.nodes[pe_node_id]
-                .stylo_element_data_opt_mut()
+                .try_stylo_element_data_mut()
                 .and_then(|s| s.get_mut());
             let node_styles = &mut node_styles.as_mut().unwrap();
             node_styles.damage.insert(ALL_DAMAGE);
@@ -837,6 +844,7 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: NodeId) {
             if !std::ptr::eq(&**primary_styles.as_ref().unwrap(), &*pe_style) {
                 *primary_styles = Some(pe_style);
                 node_styles.set_restyled();
+                doc.pending_style_image_nodes.push(pe_node_id);
             }
         }
     }
@@ -939,6 +947,7 @@ fn create_checkbox_input(doc: &mut BaseDocument, input_element_id: NodeId) {
     if !matches!(element.special_data, SpecialElementData::CheckboxInput(_)) {
         let checked = element.has_attr(local_name!("checked"));
         element.special_data = SpecialElementData::CheckboxInput(checked);
+        element.set_checkbox_input_checked(checked);
     }
 }
 

@@ -182,11 +182,7 @@ pub fn inset(val: &stylo::InsetVal) -> taffy::LengthPercentageAuto {
 
 #[inline]
 pub fn is_block(input: stylo::Display) -> bool {
-    matches!(input.outside(), stylo::DisplayOutside::Block)
-        && matches!(
-            input.inside(),
-            stylo::DisplayInside::Flow | stylo::DisplayInside::FlowRoot
-        )
+    self::display(input) == taffy::Display::Block
 }
 
 #[inline]

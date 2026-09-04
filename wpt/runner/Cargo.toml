@@ -14,6 +14,7 @@ cpu = ["dep:anyrender_vello_cpu"]
 [dependencies]
 blitz-dom = { workspace = true, features = ["svg", "floats", "system-fonts", "woff"] }
 blitz-html = {workspace = true }
+blitz-vibey-script = { workspace = true }
 blitz-traits = { workspace = true }
 blitz-paint = { workspace = true, features = ["default"] }
 anyrender = { workspace = true }
@@ -31,6 +32,7 @@ url = { workspace = true }
 data-url = { workspace = true }
 png = { version = "0.17" }
 glob = { version = "0.3.1" }
+html-escape = { workspace = true }
 dify = { version = "0.7.4", default-features = false }
 env_logger = { version = "0.11.5" }
 owo-colors = "4.1.0"

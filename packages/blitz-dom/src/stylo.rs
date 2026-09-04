@@ -3,6 +3,7 @@
 
 use blitz_traits::node_id::NodeId;
 use std::ptr::NonNull;
+use std::sync::Mutex;
 use std::sync::atomic::Ordering;
 
 use crate::StyleThreading;
@@ -151,15 +152,20 @@ impl crate::document::BaseDocument {
         // dbg!(root);
         let token = RecalcStyle::pre_traverse(root, &context);
 
+        let mut nodes_needing_style_image_flush = Vec::new();
         if token.should_traverse() {
             // Style the elements, resolving their data
-            let traverser = RecalcStyle::new(context);
+            let mut traverser = RecalcStyle::new(context);
             // `Sequential` bypasses Stylo's global pool. See `StyleThreading`.
             let pool_guard = matches!(self.style_threading, StyleThreading::Parallel)
                 .then(|| STYLE_THREAD_POOL.pool());
             let rayon_pool = pool_guard.as_ref().and_then(|g| g.as_ref());
             style::driver::traverse_dom(&traverser, token, rayon_pool);
+            nodes_needing_style_image_flush =
+                std::mem::take(traverser.nodes_needing_style_image_flush.get_mut().unwrap());
         }
+        self.pending_style_image_nodes
+            .extend(nodes_needing_style_image_flush);
 
         for opaque in self.snapshots.keys() {
             let id = NodeId::from_u64(opaque.id() as u64);
@@ -423,18 +429,9 @@ impl selectors::Element for BlitzNode<'_> {
         match *pseudo_class {
             NonTSPseudoClass::Active => self.element_state().contains(ElementState::ACTIVE),
             NonTSPseudoClass::AnyLink => self
-                .data
-                .downcast_element()
-                .map(|elem| {
-                    (elem.name.local == local_name!("a") || elem.name.local == local_name!("area"))
-                        && elem.attr(local_name!("href")).is_some()
-                })
-                .unwrap_or(false),
-            NonTSPseudoClass::Checked => self
-                .data
-                .downcast_element()
-                .and_then(|elem| elem.checkbox_input_checked())
-                .unwrap_or(false),
+                .element_state()
+                .intersects(ElementState::VISITED_OR_UNVISITED),
+            NonTSPseudoClass::Checked => self.element_state().contains(ElementState::CHECKED),
             NonTSPseudoClass::Valid => false,
             NonTSPseudoClass::Invalid => false,
             NonTSPseudoClass::Defined => false,
@@ -448,14 +445,7 @@ impl selectors::Element for BlitzNode<'_> {
             NonTSPseudoClass::Indeterminate => false,
             NonTSPseudoClass::Lang(_) => false,
             NonTSPseudoClass::CustomState(_) => false,
-            NonTSPseudoClass::Link => self
-                .data
-                .downcast_element()
-                .map(|elem| {
-                    (elem.name.local == local_name!("a") || elem.name.local == local_name!("area"))
-                        && elem.attr(local_name!("href")).is_some()
-                })
-                .unwrap_or(false),
+            NonTSPseudoClass::Link => self.element_state().contains(ElementState::UNVISITED),
             NonTSPseudoClass::PlaceholderShown => false,
             NonTSPseudoClass::ReadWrite => false,
             NonTSPseudoClass::ReadOnly => false,
@@ -485,7 +475,7 @@ impl selectors::Element for BlitzNode<'_> {
         pe: &PseudoElement,
         _context: &mut MatchingContext<Self::Impl>,
     ) -> bool {
-        let pseudo = match self.stylo_element_data_opt().and_then(|s| s.get()) {
+        let pseudo = match self.try_stylo_element_data().and_then(|s| s.get()) {
             Some(el) => el
                 .styles
                 .get_primary()
@@ -697,9 +687,14 @@ impl<'a> TElement for BlitzNode<'a> {
         self.snapshot_handled().store(true, Ordering::SeqCst);
     }
 
+    // Stylo calls this on elements it is already traversing (or has already
+    // reached via invalidation), so the ancestor chain must not be re-marked:
+    // ancestors visited earlier in the preorder traversal have had their bits
+    // cleared, and re-flagging them leaves stale `dirty_descendants` bits that
+    // break the early-out invariant of `Node::mark_ancestors_dirty` (a set bit
+    // implies all ancestors are set).
     unsafe fn set_dirty_descendants(&self) {
         Node::set_dirty_descendants(self);
-        Node::mark_ancestors_dirty(self);
     }
 
     unsafe fn unset_dirty_descendants(&self) {
@@ -725,11 +720,11 @@ impl<'a> TElement for BlitzNode<'a> {
     }
 
     fn has_data(&self) -> bool {
-        self.stylo_element_data_opt().is_some_and(|s| s.has_data())
+        self.try_stylo_element_data().is_some_and(|s| s.has_data())
     }
 
     fn borrow_data(&self) -> Option<ElementDataRef<'_>> {
-        self.stylo_element_data_opt().and_then(|s| s.get())
+        self.try_stylo_element_data().and_then(|s| s.get())
     }
 
     fn mutate_data(&self) -> Option<ElementDataMut<'_>> {
@@ -1279,24 +1274,28 @@ use style::traversal::recalc_style_at;
 
 pub struct RecalcStyle<'a> {
     context: SharedStyleContext<'a>,
+    /// Nodes whose `background-image`/`mask-image` layers need flushing to
+    /// dedicated storage on the node (see `flush_image_layers_from_style`)
+    /// because their style changed during this traversal.
+    nodes_needing_style_image_flush: Mutex<Vec<NodeId>>,
 }
 
 impl<'a> RecalcStyle<'a> {
     pub fn new(context: SharedStyleContext<'a>) -> Self {
-        RecalcStyle { context }
+        RecalcStyle {
+            context,
+            nodes_needing_style_image_flush: Mutex::new(Vec::new()),
+        }
     }
 }
 
 #[allow(unsafe_code)]
-impl<E> DomTraversal<E> for RecalcStyle<'_>
-where
-    E: TElement,
-{
-    fn process_preorder<F: FnMut(E::ConcreteNode)>(
+impl<'dom> DomTraversal<BlitzNode<'dom>> for RecalcStyle<'_> {
+    fn process_preorder<F: FnMut(BlitzNode<'dom>)>(
         &self,
         traversal_data: &PerLevelTraversalData,
-        context: &mut StyleContext<E>,
-        node: E::ConcreteNode,
+        context: &mut StyleContext<BlitzNode<'dom>>,
+        node: BlitzNode<'dom>,
         note_child: F,
     ) {
         if let Some(el) = node.as_element() {
@@ -1304,8 +1303,27 @@ where
             let mut data = unsafe { el.ensure_data() };
             recalc_style_at(self, traversal_data, context, el, &mut data, note_child);
 
+            sync_pseudo_element_styles(el, &data, &self.nodes_needing_style_image_flush);
+
+            if !data.damage.is_empty() {
+                // Mark the ancestor chain so that the damage propagation pass
+                // visits this element.
+                el.mark_damaged();
+
+                if data
+                    .styles
+                    .get_primary()
+                    .is_some_and(|style| needs_style_image_flush(el, style))
+                {
+                    self.nodes_needing_style_image_flush
+                        .lock()
+                        .unwrap()
+                        .push(el.id);
+                }
+            }
+
             // Gets set later on
-            unsafe { el.unset_dirty_descendants() }
+            el.unset_dirty_descendants();
         }
     }
 
@@ -1314,7 +1332,11 @@ where
         false
     }
 
-    fn process_postorder(&self, _style_context: &mut StyleContext<E>, _node: E::ConcreteNode) {
+    fn process_postorder(
+        &self,
+        _style_context: &mut StyleContext<BlitzNode<'dom>>,
+        _node: BlitzNode<'dom>,
+    ) {
         panic!("this should never be called")
     }
 
@@ -1322,6 +1344,118 @@ where
     fn shared_context(&self) -> &SharedStyleContext<'_> {
         &self.context
     }
+}
+
+/// Flush updated pseudo-element (`::before`/`::after`) styles from the owning
+/// element's freshly-computed stylo data to the pseudo-element's anonymous node.
+///
+/// Pseudo-element styles are normally flushed to the pseudo-element's node
+/// during box construction (see `flush_pseudo_elements`), but in incremental
+/// mode box construction only runs for nodes with construction damage.
+/// Pseudo-element style changes which don't require reconstruction (e.g.
+/// animations/transitions of repaint- or relayout-only properties) must still
+/// be flushed to the pseudo-element's node - along with the damage they imply -
+/// so that layout and paint see the new style.
+///
+/// This runs during the style traversal, immediately after the owning element
+/// has been restyled, because that is where the old and new pseudo styles can
+/// be diffed precisely (the pseudo node's stored primary style is the "old"
+/// style; the owner's just-computed pseudo styles are the "new" ones).
+///
+/// SAFETY: the style traversal has exclusive access to the tree, and each
+/// pseudo-element node is only ever accessed from its owning element's
+/// `process_preorder` (pseudo nodes are not part of the DOM child list and are
+/// not themselves visited by the traversal), so mutating the pseudo node's
+/// stylo data here cannot race with any other traversal thread.
+#[allow(unsafe_code)]
+fn sync_pseudo_element_styles(
+    el: &Node,
+    data: &style::data::ElementData,
+    nodes_needing_style_image_flush: &Mutex<Vec<NodeId>>,
+) {
+    let before_node_id = el.before();
+    let after_node_id = el.after();
+    if before_node_id.is_none() && after_node_id.is_none() {
+        return;
+    }
+
+    // Note: yes these are kinda backwards (see `flush_pseudo_elements`)
+    let pseudos = data.styles.pseudos.as_array();
+    let before_style = pseudos[1].clone();
+    let after_style = pseudos[0].clone();
+
+    // Creation and removal of pseudo-elements is handled during box construction
+    // (Stylo generates construction damage for those cases), so only the case
+    // where the pseudo-element both was and remains present is handled here.
+    for (pe_node_id, pe_style) in [(before_node_id, before_style), (after_node_id, after_style)] {
+        let (Some(pe_node_id), Some(pe_style)) = (pe_node_id, pe_style) else {
+            continue;
+        };
+        let pe_node = el.with(pe_node_id);
+        let Some(stylo_data) = pe_node.try_stylo_element_data() else {
+            continue;
+        };
+        let mut pe_data = match unsafe { stylo_data.unsafe_stylo_only_mut() } {
+            Some(data) => data,
+            None => continue,
+        };
+        let Some(old_style) = pe_data.styles.primary.clone() else {
+            continue;
+        };
+        if std::ptr::eq(&*old_style, &*pe_style) {
+            continue;
+        }
+
+        let diff = RestyleDamage::compute_style_difference::<&Node>(&old_style, &pe_style);
+        if !diff.damage.is_empty() {
+            pe_data.damage.insert(diff.damage);
+            pe_node.mark_damaged();
+
+            if needs_style_image_flush(pe_node, &pe_style) {
+                nodes_needing_style_image_flush
+                    .lock()
+                    .unwrap()
+                    .push(pe_node_id);
+            }
+        }
+        pe_data.styles.primary = Some(pe_style);
+        pe_data.set_restyled();
+    }
+}
+
+/// Whether a node's `background-image`/`mask-image` layers need flushing to
+/// dedicated storage on the node: the URLs referenced by the new style differ
+/// from the image data currently stored on the node.
+fn needs_style_image_flush(node: &Node, style: &ComputedValues) -> bool {
+    use crate::node::ImageResourceData;
+    use style::url::ComputedUrl;
+    use style::values::computed::image::Image;
+
+    fn out_of_sync(style_images: &[Image], stored: &[Option<ImageResourceData>]) -> bool {
+        if style_images.len() != stored.len() {
+            // Differing lengths only matter if either side references an image
+            // (a style list of `none` layers and empty storage are in sync).
+            return style_images
+                .iter()
+                .any(|image| matches!(image, Image::Url(_)))
+                || stored.iter().any(Option::is_some);
+        }
+        std::iter::zip(style_images, stored).any(|(style_image, stored)| {
+            match (style_image, stored) {
+                (Image::Url(ComputedUrl::Valid(url)), Some(data)) => **url != *data.url,
+                (Image::Url(ComputedUrl::Valid(_)), None) => true,
+                (_, Some(_)) => true,
+                (_, None) => false,
+            }
+        })
+    }
+
+    node.data.downcast_element().is_some_and(|el| {
+        out_of_sync(
+            &style.get_background().background_image.0,
+            &el.background_images,
+        ) || out_of_sync(&style.get_svg().mask_image.0, &el.mask_images)
+    })
 }
 
 #[test]

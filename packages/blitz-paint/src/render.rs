@@ -296,7 +296,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         let node = &self.dom.as_ref().tree()[node_id];
 
         // Early return if the element is hidden
-        if matches!(node.style().display, taffy::Display::None) {
+        if matches!(node.taffy_display(), taffy::Display::None) {
             return;
         }
 
@@ -384,7 +384,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         let overflow = *node.scrollable_overflow();
         let transform = parent_style_transform
             * Affine::translate(box_position)
-            * node.transform().unwrap_or_default();
+            * node.transform().as_deref().copied().unwrap_or_default();
 
         let screen_transform = Affine::translate(Vec2 {
             x: -self.initial_x,
@@ -598,9 +598,9 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             .primary_styles()
             .as_ref()
             .map(|styles| (*styles).clone())
-            .unwrap_or(
-                ComputedValues::initial_values_with_font_override(Font::initial_values()).to_arc(),
-            );
+            .unwrap_or_else(|| {
+                ComputedValues::initial_values_with_font_override(Font::initial_values()).to_arc()
+            });
 
         let scale = self.scale;
 
@@ -1155,7 +1155,7 @@ impl ElementCx<'_, '_> {
             let shape = &self.frame.border_box;
             let stroke = Stroke::new(self.scale);
 
-            let stroke_color = match self.node.style().display {
+            let stroke_color = match self.node.taffy_display() {
                 taffy::Display::Block | taffy::Display::FlowRoot => {
                     Color::new([1.0, 0.0, 0.0, 1.0])
                 }

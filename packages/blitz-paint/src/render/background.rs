@@ -146,6 +146,9 @@ impl ElementCx<'_, '_> {
 
         for idx in (0..layer_count).rev() {
             let layer = ImageLayerStyles::from_background(bg_styles, image_data, idx);
+            if layer_paints_nothing(&layer) {
+                continue;
+            }
             let background_clip_path = self.box_path(layer.clip);
 
             self.context.layer_manager.maybe_with_layer(
@@ -864,6 +867,16 @@ fn compute_space_count_and_stride(bg_size: f64, size: f64) -> (u32, f64) {
     } + size;
 
     (count, stride)
+}
+
+/// Whether drawing the layer is guaranteed to paint nothing, making its clip
+/// layer unnecessary
+fn layer_paints_nothing(layer: &ImageLayerStyles) -> bool {
+    match layer.stylo_image {
+        GenericImage::None => true,
+        GenericImage::Url(_) => layer.image_data.is_none(),
+        _ => false,
+    }
 }
 
 #[inline]

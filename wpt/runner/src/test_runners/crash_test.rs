@@ -1,17 +1,56 @@
+use std::time::Duration;
+
 use anyrender::{ImageRenderer as _, PaintScene as _};
 use blitz_dom::util::Color;
+use blitz_dom::{BaseDocument, Document as _};
 use blitz_paint::paint_scene;
 use peniko::Fill;
 use peniko::kurbo::Rect;
 
-use super::parse_and_resolve_document;
-use crate::{BufferKind, HEIGHT, SCALE, SubtestCounts, ThreadCtx, WIDTH};
+use super::{parse_and_resolve_document, pump_net_provider, pump_timers, run_document_scripts};
+use crate::{BufferKind, HEIGHT, SCALE, SubtestCounts, TestFlags, ThreadCtx, WIDTH};
 
-/// Runs a crashtest: the test passes if the document parses, resolves style/layout,
-/// and renders without panicking. No image comparison is performed.
-pub fn process_crash_test(ctx: &mut ThreadCtx, relative_path: &str, html: &str) -> SubtestCounts {
+/// How long to keep running pending JS timers (crashtests often crash in
+/// `setTimeout`/`requestAnimationFrame` callbacks a few frames after load)
+const TIMER_BUDGET: Duration = Duration::from_millis(100);
+
+/// Runs a crashtest: the test passes if the document parses, executes its
+/// scripts, resolves style/layout, and renders without panicking. No image
+/// comparison is performed.
+pub fn process_crash_test(
+    ctx: &mut ThreadCtx,
+    relative_path: &str,
+    html: &str,
+    flags: TestFlags,
+) -> SubtestCounts {
     let mut document = parse_and_resolve_document(ctx, html, relative_path);
 
+    if flags.contains(TestFlags::USES_SCRIPT) {
+        let mut script_document = run_document_scripts(ctx, document);
+
+        // Run JS timers due within a short budget, re-resolving in between
+        // (crashes are often triggered by post-load DOM/style mutation)
+        pump_timers(&mut script_document, TIMER_BUDGET, |doc| {
+            doc.inner_mut().resolve(0.0);
+            None::<()>
+        });
+
+        // JS errors don't fail a crashtest, but drain them so they're not
+        // misattributed elsewhere
+        let _ = script_document.take_js_errors();
+
+        let mut doc = script_document.inner_mut();
+        doc.resolve(0.0);
+        pump_net_provider(ctx, &mut doc);
+        render_to_buffer(ctx, &mut doc);
+    } else {
+        render_to_buffer(ctx, &mut document);
+    }
+
+    SubtestCounts::ONE_OF_ONE
+}
+
+fn render_to_buffer(ctx: &mut ThreadCtx, document: &mut BaseDocument) {
     let buf = ctx.buffers.get_mut(BufferKind::Test);
     ctx.renderer.render_to_vec(
         |scene| {
@@ -26,10 +65,8 @@ pub fn process_crash_test(ctx: &mut ThreadCtx, relative_path: &str, html: &str) 
                 &Rect::new(0.0, 0.0, WIDTH as f64, HEIGHT as f64),
             );
 
-            paint_scene(scene, &mut document, SCALE, WIDTH, HEIGHT, 0, 0);
+            paint_scene(scene, document, SCALE, WIDTH, HEIGHT, 0, 0);
         },
         buf,
     );
-
-    SubtestCounts::ONE_OF_ONE
 }

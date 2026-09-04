@@ -6,7 +6,7 @@ use wptreport::{
     wpt_report::WptReport,
 };
 
-use crate::{TestResult, TestStatus};
+use crate::{TestKind, TestResult, TestStatus};
 
 fn get_git_hash(path: &Path) -> String {
     let output = Command::new("git")
@@ -59,6 +59,7 @@ fn convert_status(status: TestStatus) -> wpt_report::TestStatus {
     match status {
         TestStatus::Pass => wpt_report::TestStatus::Pass,
         TestStatus::Fail => wpt_report::TestStatus::Fail,
+        TestStatus::Timeout => wpt_report::TestStatus::Timeout,
         TestStatus::Skip => wpt_report::TestStatus::Skip,
         TestStatus::Crash => wpt_report::TestStatus::Crash,
     }
@@ -68,6 +69,7 @@ fn convert_subtest_status(status: TestStatus) -> wpt_report::SubtestStatus {
     match status {
         TestStatus::Pass => wpt_report::SubtestStatus::Pass,
         TestStatus::Fail => wpt_report::SubtestStatus::Fail,
+        TestStatus::Timeout => wpt_report::SubtestStatus::Timeout,
         TestStatus::Skip => wpt_report::SubtestStatus::Skip,
         TestStatus::Crash => unreachable!(),
     }
@@ -81,6 +83,11 @@ pub fn generate_report(
 ) -> WptReport {
     let results: Vec<_> = results
         .into_iter()
+        // Files with no detectable test type (no reftest links, checkLayout()
+        // call, or testharness.js include) are "visual"/"manual"/"support"
+        // entries in the upstream WPT manifest: not automatable tests, and not
+        // run by other engines, so they don't belong in the report.
+        .filter(|test| !(test.kind == TestKind::Unknown && matches!(test.status, TestStatus::Skip)))
         .map(|test| wpt_report::TestResult {
             test: test.name,
             status: convert_status(test.status),
@@ -126,6 +133,7 @@ pub fn generate_expectations(results: &[TestResult]) -> String {
             let c = match subtest.status {
                 TestStatus::Pass => 'Y',
                 TestStatus::Fail => 'N',
+                TestStatus::Timeout => 'T',
                 TestStatus::Skip => '.',
                 TestStatus::Crash => unreachable!(),
             };

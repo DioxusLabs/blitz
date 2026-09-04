@@ -12,6 +12,7 @@ rust-version.workspace = true
 
 
 [dependencies]
+bitflags = { workspace = true }
 taffy = { workspace = true }
 style = { workspace = true }
 style_atoms = { workspace = true }

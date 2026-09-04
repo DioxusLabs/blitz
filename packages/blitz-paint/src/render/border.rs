@@ -545,6 +545,12 @@ impl ElementCx<'_, '_> {
             return;
         }
 
+        // Border widths are not adjusted for border-style in computed styles,
+        // so a border with `none`/`hidden` style must be treated as zero-width.
+        if border_style.border_top_style.none_or_hidden() {
+            return;
+        }
+
         let border_width = border_style.border_top_width.0.to_f64_px();
 
         // Draw horizontal inner borders (the gutters between adjacent row tracks)

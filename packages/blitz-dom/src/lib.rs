@@ -52,22 +52,26 @@ mod layout;
 mod mutator;
 mod query_selector;
 mod resolve;
+/// Computation of resolved CSS property values (`getComputedStyle()`)
+mod resolved_style;
 /// Scrolling of nodes and the viewport, and scroll animations.
 mod scrolling;
 mod selection;
 /// Implementations that interact with servo's style engine
 mod stylo;
+mod stylo_device;
 mod stylo_to_cursor_icon;
 mod stylo_to_kurbo;
 mod stylo_to_parley;
 #[cfg(feature = "svg-native")]
 pub mod svg;
-mod traversal;
+pub mod traversal;
 /// Versioned storage for the nodes of the DOM tree.
 mod tree;
 
 mod url;
 
+pub use resolved_style::css_property_is_supported;
 pub use stylo_to_kurbo::resolve_2d_transform;
 
 pub mod net;
@@ -81,6 +85,8 @@ pub use crate::layout::replaced::IntrinsicSizes;
 pub use crate::node::Widget;
 
 pub use blitz_traits::node_id::NodeId;
+// Re-export taffy: it is part of blitz-dom's public API (e.g. `Node::style`,
+// `Node::final_layout`)
 pub use config::{DocumentConfig, StyleThreading};
 pub use document::{BaseDocument, DocGuard, DocGuardMut, Document, PlainDocument};
 pub use markup5ever::{

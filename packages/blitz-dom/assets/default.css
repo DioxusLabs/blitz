@@ -54,6 +54,11 @@ input {
     display: inline-block;
 }
 
+/* https://html.spec.whatwg.org/#hidden-elements */
+input[type="hidden" i] {
+    display: none !important;
+}
+
 input[type="checkbox"] {
     width: 14px;
     height: 14px;

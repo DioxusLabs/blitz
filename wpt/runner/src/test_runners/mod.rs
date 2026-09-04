@@ -1,19 +1,167 @@
+use std::collections::HashMap;
+use std::sync::LazyLock;
+use std::time::Duration;
 use std::{fs, sync::Arc, time::Instant};
 
-use blitz_dom::{BaseDocument, DocumentConfig};
-use blitz_html::HtmlDocument;
+use blitz_dom::traversal::TreeTraverser;
+use blitz_dom::{BaseDocument, Document as _, DocumentConfig};
+use blitz_html::{HtmlDocument, HtmlProvider};
+use blitz_vibey_script::ScriptDocument;
 use log::{debug, warn};
+use regex::Regex;
+
+use harness_test::WptScriptFetcher;
 
 use crate::{SubtestCounts, TestFlags, TestKind, TestStatus, ThreadCtx};
 
 mod attr_test;
 mod crash_test;
 mod fuzzy;
+mod harness_test;
+mod js_wrapper;
 mod ref_test;
 
 pub use attr_test::process_attr_test;
 pub use crash_test::process_crash_test;
+pub use harness_test::process_harness_test;
+pub use js_wrapper::{js_test_has_window_variant, wrapper_html_for_js_test};
 pub use ref_test::process_ref_test;
+
+static TIMEOUT_QUARANTINE: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| {
+    let mut tests = HashMap::new();
+    for line in include_str!("../../timeout-quarantine.txt").lines() {
+        let (path, reason) = line
+            .split_once(' ')
+            .expect("timeout quarantine entries must contain a path and reason");
+        assert!(
+            tests.insert(path, reason).is_none(),
+            "duplicate timeout quarantine entry: {path}"
+        );
+    }
+    tests
+});
+
+/// Is the node a `<script>` element whose `type` would execute as JavaScript?
+/// Returns the node if so.
+fn as_js_script_element(node: &blitz_dom::Node) -> Option<&blitz_dom::node::ElementData> {
+    let element = node.element_data()?;
+    if element.name.local != blitz_dom::local_name!("script") {
+        return None;
+    }
+
+    // Skip non-JavaScript script types (e.g. JSON data blocks)
+    let script_type = element
+        .attr(blitz_dom::local_name!("type"))
+        .unwrap_or("")
+        .trim()
+        .to_ascii_lowercase();
+    let is_js = matches!(
+        script_type.as_str(),
+        "" | "text/javascript" | "application/javascript" | "module"
+    );
+    is_js.then_some(element)
+}
+
+/// Does the parsed document contain any JavaScript which would execute:
+/// either a JavaScript-typed `<script>` element with a `src` attribute or
+/// inline content, or a `<body onload="...">` handler (which the script
+/// runtime installs as the window's `load` handler)?
+pub fn document_has_scripts(doc: &BaseDocument) -> bool {
+    TreeTraverser::new(doc).any(|node_id| {
+        let Some(node) = doc.get_node(node_id) else {
+            return false;
+        };
+        if let Some(element) = node.element_data()
+            && element.name.local == blitz_dom::local_name!("body")
+            && element.attr(blitz_dom::local_name!("onload")).is_some()
+        {
+            return true;
+        }
+        let Some(element) = as_js_script_element(node) else {
+            return false;
+        };
+        element.attr(blitz_dom::local_name!("src")).is_some()
+            || !node.text_content().trim().is_empty()
+    })
+}
+
+/// Matches inline-script statements which don't require script execution for a
+/// checkLayout (attr) test: the `checkLayout()` call itself (re-implemented
+/// natively by the attr test runner) and testharness `setup()` calls
+static TRIVIAL_ATTR_SCRIPT_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"checkLayout\(\s*['"][^'"]*['"]\s*(,\s*(true|false))?\s*\)\s*;?|setup\(\s*\{[^{}]*\}\s*\)\s*;?"#)
+        .unwrap()
+});
+
+/// Does a checkLayout (attr) test's inline script do anything beyond calling
+/// `checkLayout()` (e.g. generate the test DOM)? If so, scripts must be
+/// executed before the native layout checks can see the full test DOM.
+pub fn attr_test_needs_scripts(doc: &BaseDocument) -> bool {
+    TreeTraverser::new(doc).any(|node_id| {
+        let Some(node) = doc.get_node(node_id) else {
+            return false;
+        };
+        let Some(element) = as_js_script_element(node) else {
+            return false;
+        };
+        if element.attr(blitz_dom::local_name!("src")).is_some() {
+            return false;
+        }
+        let body = node.text_content();
+        !TRIVIAL_ATTR_SCRIPT_RE
+            .replace_all(&body, "")
+            .trim()
+            .is_empty()
+    })
+}
+
+/// Wrap a parsed document in a [`ScriptDocument`] with the WPT script fetcher
+/// and execute its scripts
+pub fn run_document_scripts(ctx: &ThreadCtx, document: BaseDocument) -> ScriptDocument {
+    // The runner drives timers manually via `pump_timers`, so the background
+    // timer wakeup thread is unnecessary. Timers run on virtual time: there is
+    // no external event source, so `pump_timers` fast-forwards the clock to
+    // each timer deadline instead of sleeping until it.
+    let mut script_document = ScriptDocument::from_base_document(document)
+        .without_timer_thread()
+        .with_virtual_time()
+        .with_fetcher(WptScriptFetcher::new(ctx.wpt_dir.clone()));
+    script_document.execute_scripts();
+    script_document
+}
+
+/// Pump the document's pending JS timers until `check` produces a result or
+/// there are no more timers due within `budget`. `check` runs once before any
+/// timer fires and again after each timer poll.
+///
+/// The document runs on virtual time (see [`run_document_scripts`]): instead
+/// of sleeping until the next timer deadline, the clock is fast-forwarded to
+/// it, so timers fire in deadline order without wall-clock waiting. `budget`
+/// bounds both virtual time and (as a backstop for timer callbacks which
+/// reschedule themselves indefinitely, e.g. rAF loops) real time.
+pub fn pump_timers<T>(
+    document: &mut ScriptDocument,
+    budget: Duration,
+    mut check: impl FnMut(&mut ScriptDocument) -> Option<T>,
+) -> Option<T> {
+    let real_deadline = Instant::now() + budget;
+    let virtual_deadline = document.clock_now() + budget;
+    loop {
+        if let Some(result) = check(document) {
+            return Some(result);
+        }
+        match document.next_timer_deadline() {
+            Some(timer_deadline)
+                if timer_deadline <= virtual_deadline && Instant::now() < real_deadline =>
+            {
+                document.advance_clock_to(timer_deadline);
+                document.poll(None);
+            }
+            // Timer budget expired, or no pending timers
+            _ => return None,
+        }
+    }
+}
 
 pub struct SubtestResult {
     pub name: String,
@@ -32,6 +180,19 @@ pub fn process_test_file(
     Vec<SubtestResult>,
 ) {
     debug!("Processing test file: {relative_path}");
+
+    if !ctx.run_quarantined
+        && let Some(reason) = TIMEOUT_QUARANTINE.get(relative_path)
+    {
+        debug!("Skipping quarantined test {relative_path}: {reason}");
+        return (
+            TestKind::TestHarness,
+            TestFlags::empty(),
+            TestStatus::Skip,
+            SubtestCounts::ZERO_OF_ZERO,
+            Vec::new(),
+        );
+    }
 
     let file_contents = match fs::read_to_string(ctx.wpt_dir.join(relative_path)) {
         Ok(contents) => contents,
@@ -76,12 +237,15 @@ pub fn process_test_file(
         flags |= TestFlags::USES_SCRIPT;
     }
 
-    // Crash Test
-    if is_crash_test(relative_path) {
-        // Blitz doesn't run JavaScript, so skip crashtests which rely on it
-        if flags.contains(TestFlags::USES_SCRIPT) {
+    // JS-file (`.any.js` / `.window.js`) testharness test: synthesize the
+    // wrapper HTML which wptserve would serve and run it as a harness test
+    if relative_path.ends_with(".any.js") || relative_path.ends_with(".window.js") {
+        flags |= TestFlags::USES_SCRIPT;
+
+        // No window variant (worker-only test): not a runnable test
+        if !js_test_has_window_variant(relative_path, &file_contents) {
             return (
-                TestKind::Crash,
+                TestKind::Unknown,
                 flags,
                 TestStatus::Skip,
                 SubtestCounts::ZERO_OF_ZERO,
@@ -89,7 +253,14 @@ pub fn process_test_file(
             );
         }
 
-        let counts = process_crash_test(ctx, relative_path, &file_contents);
+        let html = wrapper_html_for_js_test(relative_path, &file_contents);
+        let (status, counts, results) = process_harness_test(ctx, &html, relative_path);
+        return (TestKind::TestHarness, flags, status, counts, results);
+    }
+
+    // Crash Test
+    if is_crash_test(relative_path) {
+        let counts = process_crash_test(ctx, relative_path, &file_contents, flags);
         let status = counts.as_status();
         return (TestKind::Crash, flags, status, counts, Vec::new());
     }
@@ -147,17 +318,12 @@ pub fn process_test_file(
 
         return (TestKind::Attr, flags, status, counts, results);
     }
+    drop(matches);
 
-    // Testharness (testharness.js) tests. Blitz doesn't run JavaScript, so these are
-    // classified but not run.
+    // Testharness (testharness.js) test
     if ctx.testharness_re.is_match(&file_contents) {
-        return (
-            TestKind::TestHarness,
-            flags,
-            TestStatus::Skip,
-            SubtestCounts::ZERO_OF_ZERO,
-            Vec::new(),
-        );
+        let (status, counts, results) = process_harness_test(ctx, &file_contents, relative_path);
+        return (TestKind::TestHarness, flags, status, counts, results);
     }
 
     // TODO: Handle other test formats.
@@ -172,9 +338,11 @@ pub fn process_test_file(
 
 fn is_crash_test(relative_path: &str) -> bool {
     relative_path.split('/').any(|seg| seg == "crashtests")
-        || [".html", ".htm", ".xht", ".xhtml"]
-            .iter()
-            .any(|ext| relative_path.ends_with(&format!("-crash{ext}")))
+        || ["", ".https", ".h2", ".www"].iter().any(|flag| {
+            [".html", ".htm", ".xht", ".xhtm", ".xhtml", ".xml", ".svg"]
+                .iter()
+                .any(|ext| relative_path.ends_with(&format!("-crash{flag}{ext}")))
+        })
 }
 
 fn parse_and_resolve_document(
@@ -183,26 +351,44 @@ fn parse_and_resolve_document(
     relative_path: &str,
 ) -> BaseDocument {
     ctx.net_provider.reset();
-    let mut document = HtmlDocument::from_html(
-        html,
-        DocumentConfig {
-            base_url: Some(ctx.dummy_base_url.join(relative_path).unwrap().to_string()),
-            font_ctx: Some(ctx.font_ctx.clone()),
-            net_provider: Some(Arc::clone(&ctx.net_provider) as _),
-            navigation_provider: Some(Arc::clone(&ctx.navigation_provider)),
-            ..Default::default()
-        },
-    );
+    let config = DocumentConfig {
+        base_url: Some(ctx.dummy_base_url.join(relative_path).unwrap().to_string()),
+        font_ctx: Some(ctx.font_ctx.clone()),
+        net_provider: Some(Arc::clone(&ctx.net_provider) as _),
+        navigation_provider: Some(Arc::clone(&ctx.navigation_provider)),
+        // Required for `innerHTML` support when the document is upgraded to
+        // a `ScriptDocument` (harness tests and ref tests with scripts)
+        html_parser_provider: Some(Arc::new(HtmlProvider)),
+        ..Default::default()
+    };
+
+    // Extensions which wptserve serves with an XML content type must be parsed
+    // as XML: content sniffing cannot detect all XHTML documents (e.g. ones
+    // with a plain `<!DOCTYPE html>`)
+    let is_xml = [".xht", ".xhtm", ".xhtml", ".xml", ".svg"]
+        .iter()
+        .any(|ext| relative_path.ends_with(ext));
+    let mut document = if is_xml {
+        HtmlDocument::from_xml(html, config)
+    } else {
+        HtmlDocument::from_html(html, config)
+    };
 
     document.as_mut().set_viewport(ctx.viewport.clone());
     document.as_mut().resolve(0.0);
+    pump_net_provider(ctx, document.as_mut());
 
-    // Load resources.
-    // Loop because loading a resource may result in further resources being requested
+    document.into()
+}
+
+/// Load pending resources (stylesheets, images, fonts), re-resolving the document
+/// as they arrive. Loops because loading a resource may result in further
+/// resources being requested.
+pub fn pump_net_provider(ctx: &ThreadCtx, document: &mut BaseDocument) {
     let start = Instant::now();
     while ctx.net_provider.pending_item_count() > 0 {
         ctx.net_provider.for_each(|_| {});
-        document.as_mut().resolve(0.0);
+        document.resolve(0.0);
         if Instant::now().duration_since(start).as_millis() > 500 {
             ctx.net_provider.log_pending_items();
             panic!(
@@ -212,7 +398,19 @@ fn parse_and_resolve_document(
         }
     }
 
-    document.as_mut().resolve(0.0);
+    document.resolve(0.0);
+}
 
-    document.into()
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn timeout_quarantine_is_valid() {
+        assert_eq!(TIMEOUT_QUARANTINE.len(), 247);
+        assert_eq!(
+            TIMEOUT_QUARANTINE.get("css/selectors/focus-visible-001.html"),
+            Some(&"testdriver")
+        );
+    }
 }

@@ -33,6 +33,7 @@ fn box_transform_coeffs(doc: &HtmlDocument) -> [f64; 6] {
     doc.get_node(box_id)
         .unwrap()
         .transform()
+        .as_deref()
         .expect("box should have a transform")
         .as_coeffs()
 }

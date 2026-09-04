@@ -75,6 +75,10 @@ impl BaseDocument {
         let root_node_id = self.root_element().id;
         debug_timer!(timer, feature = "log-phase-times");
 
+        // Apply any device changes (viewport resize, zoom, color-scheme, etc)
+        // accumulated since the last resolve as a single device rebuild.
+        self.flush_pending_device_changes();
+
         // we need to resolve stylist first since it will need to drive our layout bits
         self.resolve_stylist(current_time_for_animations);
         timer.record_time("style");
@@ -90,6 +94,10 @@ impl BaseDocument {
         timer.record_time("construct");
 
         self.resolve_deferred_tasks();
+        // Flush background/mask images from style to dedicated storage on the
+        // nodes whose style changed (queued by the style traversal and by
+        // pseudo-element box construction), fetching any not-yet-loaded images.
+        self.flush_pending_style_images();
         timer.record_time("pconstruct");
 
         // Merge stylo into taffy
@@ -104,12 +112,11 @@ impl BaseDocument {
         self.resolve_transforms(root_node_id);
         timer.record_time("transform");
 
-        // Clear all damage and dirty flags
+        // Clear all damage and dirty flags, walking only subtrees which are
+        // marked as (potentially) containing damage.
         if self.incremental_layout {
-            for (_, node) in self.nodes.iter_mut() {
-                node.clear_damage_mut();
-                node.unset_dirty_descendants();
-            }
+            let doc_node_id = self.root_node().id;
+            self.clear_damage_and_dirty_flags(doc_node_id);
             timer.record_time("c_damage");
         }
 
@@ -157,15 +164,24 @@ impl BaseDocument {
             return Rect::ZERO;
         }
 
+        let scale = self.viewport.scale_f64();
+
         if !self.nodes[node_id]
             .damage()
             .map(|d| d.contains(style::selector_parser::RestyleDamage::RECALCULATE_OVERFLOW))
             .unwrap_or(false)
         {
-            return *self.nodes[node_id].scrollable_overflow();
-        }
+            let node = &self.nodes[node_id];
+            let location = node.final_layout().location.map(|v| v as f64 * scale);
 
-        let scale = self.viewport.scale_f64();
+            let mut transform = Affine::translate((location.x, location.y));
+            if let Some(t) = node.transform().as_deref() {
+                transform *= *t
+            }
+
+            let overflow = *node.scrollable_overflow();
+            return transform.transform_rect_bbox(overflow);
+        }
 
         let transform = self.nodes[node_id].set_transform(scale as f32);
 
@@ -241,7 +257,7 @@ impl BaseDocument {
                     resolve_layout_children_recursive(doc, child_id);
                     doc.nodes[child_id].layout_parent.set(Some(node_id));
                     if let Some(mut data) = doc.nodes[child_id]
-                        .stylo_element_data_opt_mut()
+                        .try_stylo_element_data_mut()
                         .and_then(|s| s.get_mut())
                     {
                         data.damage
@@ -346,7 +362,7 @@ impl BaseDocument {
         for result in results {
             match result.data {
                 ConstructionTaskResultData::InlineLayout(layout) => {
-                    self.nodes[result.node_id].cache_mut().clear();
+                    self.nodes[result.node_id].clear_layout_cache();
                     self.nodes[result.node_id]
                         .element_data_mut()
                         .unwrap()

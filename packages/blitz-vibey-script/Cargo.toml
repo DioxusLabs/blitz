@@ -1,0 +1,48 @@
+[package]
+name = "blitz-vibey-script"
+description = "JavaScript execution for Blitz using the Boa engine"
+documentation = "https://docs.rs/blitz-vibey-script"
+version.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+categories.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[features]
+default = []
+tracing = ["dep:tracing", "blitz-dom/tracing"]
+
+[dependencies]
+# Blitz dependencies
+blitz-dom = { workspace = true, features = ["autofocus"] }
+blitz-html = { workspace = true }
+blitz-traits = { workspace = true }
+
+# Boa (JavaScript engine)
+# `annex-b` enables the Annex B (web-compatibility) ECMAScript features
+# (String.prototype.substr, escape/unescape, HTML comments in scripts, ...)
+# which all browsers implement and web content relies on
+boa_engine = { workspace = true, features = ["annex-b"] }
+boa_runtime = { workspace = true }
+boa_gc = { workspace = true }
+
+# Servo dependencies
+markup5ever = { workspace = true }
+
+# Other dependencies
+keyboard-types = { workspace = true }
+log = "0.4"
+url = { workspace = true }
+data-url = { workspace = true }
+web-time = { workspace = true }
+tracing = { workspace = true, optional = true }
+
+[dev-dependencies]
+blitz-traits = { workspace = true }
+# system-fonts is needed so that text inputs shape real text in tests
+# (the selection tests depend on cursor placement within a text layout)
+blitz-dom = { workspace = true, features = ["system-fonts"] }
+keyboard-types = { workspace = true }
+url = { workspace = true }

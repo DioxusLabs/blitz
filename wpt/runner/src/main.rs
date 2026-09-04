@@ -105,6 +105,7 @@ impl Display for TestKind {
 enum TestStatus {
     Pass,
     Fail,
+    Timeout,
     Skip,
     Crash,
 }
@@ -114,6 +115,7 @@ impl TestStatus {
         match self {
             TestStatus::Pass => "PASS",
             TestStatus::Fail => "FAIL",
+            TestStatus::Timeout => "TIMEOUT",
             TestStatus::Skip => "SKIP",
             TestStatus::Crash => "CRASH",
         }
@@ -161,6 +163,9 @@ const BLOCKED_TESTS: &[&str] = &[
     "css/css-sizing/aspect-ratio/zero-or-infinity-006.html",
     "css/css-sizing/aspect-ratio/zero-or-infinity-009.html",
     "css/css-sizing/aspect-ratio/zero-or-infinity-010.html",
+    // Stack overflow: usvg's clipPath conversion recurses forever on
+    // clip-paths that reference each other in a cycle
+    "css/css-masking/clip-path-svg-content/clip-path-recursion-001.svg",
 ];
 
 fn path_contains_directory(path: &Path, dir_name: &str) -> bool {
@@ -168,24 +173,52 @@ fn path_contains_directory(path: &Path, dir_name: &str) -> bool {
         .any(|component| component.as_os_str() == dir_name)
 }
 
+const TEST_EXTENSIONS: &[&str] = &["htm", "html", "xht", "xhtm", "xhtml", "xml", "svg"];
+
+fn has_suffix_with_test_extension(path_str: &str, suffix: &str) -> bool {
+    TEST_EXTENSIONS
+        .iter()
+        .any(|ext| path_str.ends_with(&format!("{suffix}.{ext}")))
+}
+
+/// Matches file stems which the upstream WPT manifest classifies as reference files:
+/// `foo-ref`, `foo-notref`, `foo-ref2`, `foo_ref-a`, `ref-foo`, ...
+static REFERENCE_NAME_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(^|[\-_])(not)?ref[0-9]*([\-_]|$)").unwrap());
+
+/// Reference-named files are still tests in the upstream WPT manifest if their content makes them
+/// a reftest (`<link rel=match|mismatch>`, see RFC #15) or a testharness test.
+static REFERENCE_IS_TEST_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r#"<(?:[A-Za-z_][\w.\-]*:)?link\s[^>]*rel\s*=\s*['"]?(match|mismatch)['"]?[^>]*>|/resources/testharness\.js"#,
+    )
+    .unwrap()
+});
+
+/// Is the path a reference file (by upstream WPT naming rules) which is *not* also a test?
+fn is_non_test_reference(p: &Path) -> bool {
+    let stem = p
+        .file_stem()
+        .map(|s| s.to_string_lossy())
+        .unwrap_or_default();
+    let is_ref_name = path_contains_directory(p, "reference") || REFERENCE_NAME_RE.is_match(&stem);
+    if !is_ref_name {
+        return false;
+    }
+    // Only reference-named files are sniffed, so the extra read is limited to a
+    // small fraction of the tree.
+    match fs::read_to_string(p) {
+        Ok(contents) => !REFERENCE_IS_TEST_RE.is_match(&contents),
+        Err(_) => true,
+    }
+}
+
 fn filter_path(p: &Path) -> bool {
     // let is_tentative = path_buf.ends_with("tentative.html");
     let path_str = p.to_string_lossy();
-    let is_ref = path_str.ends_with("-ref.html")
-        || path_str.ends_with("-ref.htm")
-        || path_str.ends_with("-ref.xhtml")
-        || path_str.ends_with("-ref.xht")
-        || path_contains_directory(p, "reference");
-    // Negative references for mismatch reftests
-    let is_notref = path_str.ends_with("-notref.html")
-        || path_str.ends_with("-notref.htm")
-        || path_str.ends_with("-notref.xhtml")
-        || path_str.ends_with("-notref.xht");
+    let is_ref = is_non_test_reference(p);
     // Manual tests require human interaction/verification and cannot be run automatically
-    let is_manual = path_str.ends_with("-manual.html")
-        || path_str.ends_with("-manual.htm")
-        || path_str.ends_with("-manual.xhtml")
-        || path_str.ends_with("-manual.xht");
+    let is_manual = has_suffix_with_test_extension(&path_str, "-manual");
     // `support`, `tools` and `resources` directories contain helper files, not tests
     // (matching the upstream WPT manifest rules)
     let is_support_file = path_contains_directory(p, "support")
@@ -198,7 +231,7 @@ fn filter_path(p: &Path) -> bool {
 
     let is_dir = p.is_dir();
 
-    !(is_ref | is_notref | is_manual | is_support_file | is_blocked | is_dir)
+    !(is_ref | is_manual | is_support_file | is_blocked | is_dir)
 }
 
 fn collect_tests(wpt_dir: &Path) -> Vec<PathBuf> {
@@ -213,8 +246,37 @@ fn collect_tests(wpt_dir: &Path) -> Vec<PathBuf> {
         suites.push("css/css-grid".to_string());
     }
 
+    // "full" runs every top-level suite except `encoding`
+    if suites.iter().any(|suite| suite == "full") {
+        suites = fs::read_dir(wpt_dir)
+            .expect("Failed to read WPT_DIR")
+            .filter_map(|entry| {
+                let entry = entry.expect("Failed to read WPT_DIR entry");
+                if !entry.file_type().is_ok_and(|t| t.is_dir()) {
+                    return None;
+                }
+                let name = entry.file_name().to_string_lossy().into_owned();
+                if name == "encoding" || name.starts_with('.') {
+                    return None;
+                }
+                Some(name)
+            })
+            .collect();
+        suites.sort_unstable();
+    }
+
+    // JS-file tests which wptserve wraps in an auto-generated HTML document
+    const JS_TEST_SUFFIXES: &[&str] = &["any.js", "window.js"];
+
     for suite in suites {
-        for pat in ["", "/**/*.htm", "/**/*.html", "/**/*.xht", "/**/*.xhtml"] {
+        for pat in std::iter::once(String::new())
+            .chain(TEST_EXTENSIONS.iter().map(|ext| format!("/**/*.{ext}")))
+            .chain(
+                JS_TEST_SUFFIXES
+                    .iter()
+                    .map(|suffix| format!("/**/*.{suffix}")),
+            )
+        {
             let pattern = format!("{}/{}{}", wpt_dir.display(), suite, pat);
 
             let glob_results = glob::glob(&pattern).expect("Invalid glob pattern.");
@@ -255,6 +317,7 @@ impl Buffers {
 }
 struct ThreadCtx {
     worker_index: usize,
+    run_quarantined: bool,
     viewport: Viewport,
     net_provider: Arc<WptNetProvider<Resource>>,
     navigation_provider: Arc<dyn NavigationProvider>,
@@ -323,6 +386,7 @@ impl TestResult {
                 write!(out, "{}", result_str.yellow()).unwrap()
             }
             TestStatus::Fail => write!(out, "{}", result_str.red()).unwrap(),
+            TestStatus::Timeout => write!(out, "{}", result_str.bright_red()).unwrap(),
             TestStatus::Skip => write!(out, "{}", result_str.bright_black()).unwrap(),
             TestStatus::Crash => write!(out, "{}", result_str.bright_magenta()).unwrap(),
         };
@@ -395,6 +459,7 @@ fn main() {
     std::panic::set_hook(Box::new(panic_backtrace::stash_panic_handler));
 
     let verbose = env::args().any(|arg| arg == "--verbose" || arg == "-v");
+    let run_quarantined = env::args().any(|arg| arg == "--run-quarantined");
     let wpt_dir = path::absolute(env::var("WPT_DIR").expect("WPT_DIR is not set")).unwrap();
     info!("WPT_DIR: {}", wpt_dir.display());
     if !wpt_dir.exists() {
@@ -405,6 +470,14 @@ fn main() {
     let test_paths = collect_tests(&wpt_dir);
     let count = test_paths.len();
 
+    // `--list` prints the selected test files (relative to WPT_DIR) without running them
+    if env::args().any(|arg| arg == "--list") {
+        for path in &test_paths {
+            println!("{}", path.strip_prefix(&wpt_dir).unwrap_or(path).display());
+        }
+        return;
+    }
+
     let cargo_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let out_dir = cargo_dir.parent().unwrap().join("output");
     if fs::exists(&out_dir).unwrap() {
@@ -414,6 +487,7 @@ fn main() {
 
     let pass_count = AtomicU32::new(0);
     let fail_count = AtomicU32::new(0);
+    let timeout_count = AtomicU32::new(0);
     let skip_count = AtomicU32::new(0);
     let crash_count = AtomicU32::new(0);
 
@@ -469,7 +543,9 @@ fn main() {
                         ColorScheme::Light,
                     );
                     let net_provider = Arc::new(WptNetProvider::new(&wpt_dir));
-                    let link_re = Regex::new(r#"<link\s[^>]*>"#).unwrap();
+                    // SVG reftests declare their references with a namespace
+                    // prefix (`<html:link rel="match">`)
+                    let link_re = Regex::new(r#"<(?:[A-Za-z_][\w.\-]*:)?link\s[^>]*>"#).unwrap();
                     let rel_re = Regex::new(r#"rel\s*=\s*['"]?(match|mismatch)['"]?"#).unwrap();
                     let href_re =
                         Regex::new(r#"href\s*=\s*(?:['"]([^'"]+)['"]|([^\s'">]+))"#).unwrap();
@@ -494,6 +570,7 @@ fn main() {
 
                     RefCell::new(ThreadCtx {
                         worker_index,
+                        run_quarantined,
                         viewport,
                         net_provider,
                         renderer,
@@ -581,6 +658,7 @@ fn main() {
                     }
                     fail_count.fetch_add(1, Ordering::Relaxed)
                 }
+                TestStatus::Timeout => timeout_count.fetch_add(1, Ordering::Relaxed),
                 TestStatus::Skip => skip_count.fetch_add(1, Ordering::Relaxed),
                 TestStatus::Crash => crash_count.fetch_add(1, Ordering::Relaxed),
             };
@@ -596,8 +674,19 @@ fn main() {
                 Ordering::Relaxed,
             );
 
+            // JS-file tests are known by the URL of their auto-generated
+            // wrapper page (e.g. `foo.any.js` runs as `foo.any.html`), so
+            // report them under that name to match other engines' reports
+            let name = if let Some(stem) = relative_path.strip_suffix(".any.js") {
+                format!("{stem}.any.html")
+            } else if let Some(stem) = relative_path.strip_suffix(".window.js") {
+                format!("{stem}.window.html")
+            } else {
+                relative_path
+            };
+
             let result = TestResult {
-                name: relative_path,
+                name,
                 kind,
                 flags,
                 status,
@@ -652,10 +741,11 @@ fn main() {
 
     let pass_count = pass_count.load(Ordering::SeqCst);
     let fail_count = fail_count.load(Ordering::SeqCst);
+    let timeout_count = timeout_count.load(Ordering::SeqCst);
     let crash_count = crash_count.load(Ordering::SeqCst);
     let skip_count = skip_count.load(Ordering::SeqCst);
 
-    let run_count = pass_count + fail_count + crash_count;
+    let run_count = pass_count + fail_count + timeout_count + crash_count;
     let count = count as u32;
 
     let fractional_pass_count = fractional_pass_count.load(Ordering::SeqCst);
@@ -684,6 +774,8 @@ fn main() {
     let fractional_pass_percent_total = as_percent(fractional_pass_count as u32, count);
     let fail_percent_run = as_percent(fail_count, run_count);
     let fail_percent_total = as_percent(fail_count, count);
+    let timeout_percent_run = as_percent(timeout_count, run_count);
+    let timeout_percent_total = as_percent(timeout_count, count);
     let crash_percent_run = as_percent(crash_count, run_count);
     let crash_percent_total = as_percent(crash_count, count);
 
@@ -712,6 +804,9 @@ fn main() {
     );
     println!(
         "{fail_count:>4} tests FAILED ({fail_percent_run:.2}% of run; {fail_percent_total:.2}% of found)"
+    );
+    println!(
+        "{timeout_count:>4} tests TIMED OUT ({timeout_percent_run:.2}% of run; {timeout_percent_total:.2}% of found)"
     );
 
     println!("{}", "\nCounting partial tests:".bright_black());

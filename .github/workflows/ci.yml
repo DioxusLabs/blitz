@@ -24,18 +24,15 @@ jobs:
   # We only run `cargo build` (not `cargo test`) so as to avoid requiring dev-dependencies to build with the MSRV
   # version. Building is likely sufficient as runtime errors varying between rust versions is very unlikely.
   build-msrv:
-    name: "MSRV Build [Rust 1.89]"
+    name: "MSRV Build [Rust 1.91]"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: 1.89
+          toolchain: 1.91
       - run: perl -pi.bak -e 's/opt-level = 2/opt-level = 0/g' Cargo.toml
-      - uses: awalsh128/cache-apt-pkgs-action@latest
-        with:
-          packages: libfontconfig-dev
-          version: 1.0
+      - run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
       - run: cargo build --workspace
 
   build-features-default:
@@ -45,10 +42,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - run: perl -pi.bak -e 's/opt-level = 2/opt-level = 0/g' Cargo.toml
-      - uses: awalsh128/cache-apt-pkgs-action@latest
-        with:
-          packages: libfontconfig-dev
-          version: 1.0
+      - run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
       - run: cargo build --workspace
 
   test-features-default:
@@ -58,10 +52,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - run: perl -pi.bak -e 's/opt-level = 2/opt-level = 0/g' Cargo.toml
-      - uses: awalsh128/cache-apt-pkgs-action@latest
-        with:
-          packages: libfontconfig-dev
-          version: 1.0
+      - run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
       - run: cargo test --workspace
 
   # The 4 feature states of blitz-dom/blitz-paint's `svg` (usvg) x
@@ -112,10 +103,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - run: perl -pi.bak -e 's/opt-level = 2/opt-level = 0/g' Cargo.toml
-      - uses: awalsh128/cache-apt-pkgs-action@latest
-        with:
-          packages: libfontconfig-dev
-          version: 1.0
+      - run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
       - run: cargo build -p counter
 
   # wasm_hello is a standalone workspace; seven_guis and todomvc are workspace
@@ -158,11 +146,15 @@ jobs:
           toolchain: stable
           components: clippy
       - run: perl -pi.bak -e 's/opt-level = 2/opt-level = 0/g' Cargo.toml
-      - uses: awalsh128/cache-apt-pkgs-action@latest
-        with:
-          packages: libfontconfig-dev
-          version: 1.0
+      - run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
       - run: cargo clippy --workspace -- -D warnings
+
+  ci-scripts:
+    name: "Test CI scripts"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m unittest discover -s .github/scripts
 
   doc:
     name: Documentation

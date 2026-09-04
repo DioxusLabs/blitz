@@ -4,7 +4,7 @@
 //! However, in Blitz, we do a style pass then a layout pass.
 //! This is slower, yes, but happens fast enough that it's not a huge issue.
 
-use crate::node::{ImageData, NodeData, SpecialElementData};
+use crate::node::{ComputedStyleRef, ImageData, NodeData, SpecialElementData};
 use crate::{document::BaseDocument, dom_node_id, node::Node, taffy_node_id};
 use markup5ever::{LocalName, local_name};
 use std::cell::Ref;
@@ -12,9 +12,10 @@ use std::sync::Arc;
 use style::Atom;
 use style::values::computed::CSSPixelLength;
 use style::values::computed::length_percentage::CalcLengthPercentage;
+use stylo_taffy::TaffyStyloStyle;
 use taffy::{
-    BlockContext, FlexDirection, LayoutPartialTree, NodeId, ResolveOrZero, RoundTree, Style,
-    TraversePartialTree, TraverseTree, compute_block_layout, compute_cached_layout,
+    BlockContext, CoreStyle as _, FlexDirection, LayoutPartialTree, NodeId, ResolveOrZero,
+    RoundTree, TraversePartialTree, TraverseTree, compute_block_layout, compute_cached_layout,
     compute_flexbox_layout, compute_grid_layout, compute_leaf_layout, prelude::*,
 };
 
@@ -152,7 +153,7 @@ impl BaseDocument {
 
                     return compute_leaf_layout(
                         inputs,
-                        node.style(),
+                        &node.layout_style(),
                         resolve_calc_value,
                         |_known_size, _available_space| taffy::Size {
                             width: cols
@@ -167,20 +168,20 @@ impl BaseDocument {
                     match element_data.attr(local_name!("type")) {
                         // if the input type is hidden, hide it
                         Some("hidden") => {
-                            node.style_mut().display = Display::None;
                             return taffy::LayoutOutput::HIDDEN;
                         }
                         Some("checkbox") => {
                             return compute_leaf_layout(
                                 inputs,
-                                node.style(),
+                                &node.layout_style(),
                                 resolve_calc_value,
                                 |_known_size, _available_space| {
-                                    let width = node.style().size.width.resolve_or_zero(
+                                    let size = node.layout_style().size();
+                                    let width = size.width.resolve_or_zero(
                                         inputs.parent_size.width,
                                         resolve_calc_value,
                                     );
-                                    let height = node.style().size.height.resolve_or_zero(
+                                    let height = size.height.resolve_or_zero(
                                         inputs.parent_size.height,
                                         resolve_calc_value,
                                     );
@@ -195,7 +196,7 @@ impl BaseDocument {
                         None | Some("text" | "password" | "email" | "tel" | "url" | "search") => {
                             return compute_leaf_layout(
                                 inputs,
-                                node.style(),
+                                &node.layout_style(),
                                 resolve_calc_value,
                                 |_known_size, _available_space| taffy::Size {
                                     width: match inputs.available_space.width {
@@ -349,7 +350,7 @@ impl BaseDocument {
 
                     return compute_replaced_layout(
                         inputs,
-                        node.style(),
+                        &node.layout_style(),
                         resolve_calc_value,
                         &replaced_context,
                     );
@@ -390,7 +391,7 @@ impl BaseDocument {
                 }
 
                 // The default CSS file will set
-                match node.style().display {
+                match node.taffy_display() {
                     Display::Block => compute_block_layout(self, node_id, inputs, block_ctx),
                     Display::FlowRoot => compute_block_layout(self, node_id, inputs, None),
                     Display::Flex => compute_flexbox_layout(self, node_id, inputs),
@@ -438,14 +439,14 @@ impl TraverseTree for BaseDocument {}
 
 impl LayoutPartialTree for BaseDocument {
     type CoreContainerStyle<'a>
-        = &'a taffy::Style<Atom>
+        = TaffyStyloStyle<ComputedStyleRef<'a>>
     where
         Self: 'a;
 
     type CustomIdent = Atom;
 
-    fn get_core_container_style(&self, node_id: NodeId) -> &Style<Atom> {
-        self.node_from_id(node_id).style()
+    fn get_core_container_style(&self, node_id: NodeId) -> Self::CoreContainerStyle<'_> {
+        self.node_from_id(node_id).layout_style()
     }
 
     fn set_unrounded_layout(&mut self, node_id: NodeId, layout: &Layout) {
@@ -471,11 +472,14 @@ impl LayoutPartialTree for BaseDocument {
 impl taffy::CacheTree for BaseDocument {
     #[inline]
     fn cache_get(
-        &self,
+        &mut self,
         node_id: NodeId,
         inputs: &taffy::LayoutInput,
     ) -> Option<taffy::LayoutOutput> {
-        self.node_from_id(node_id).cache().get(inputs)
+        self.node_from_id_mut(node_id)
+            .try_layout_data_mut()?
+            .cache
+            .get(inputs)
     }
 
     #[inline]
@@ -492,18 +496,18 @@ impl taffy::CacheTree for BaseDocument {
 
     #[inline]
     fn cache_clear(&mut self, node_id: NodeId) {
-        self.node_from_id_mut(node_id).cache_mut().clear();
+        self.node_from_id_mut(node_id).clear_layout_cache();
     }
 }
 
 impl taffy::LayoutBlockContainer for BaseDocument {
     type BlockContainerStyle<'a>
-        = &'a Style<Atom>
+        = TaffyStyloStyle<ComputedStyleRef<'a>>
     where
         Self: 'a;
 
     type BlockItemStyle<'a>
-        = &'a Style<Atom>
+        = TaffyStyloStyle<ComputedStyleRef<'a>>
     where
         Self: 'a;
 
@@ -530,12 +534,12 @@ impl taffy::LayoutBlockContainer for BaseDocument {
 
 impl taffy::LayoutFlexboxContainer for BaseDocument {
     type FlexboxContainerStyle<'a>
-        = &'a Style<Atom>
+        = TaffyStyloStyle<ComputedStyleRef<'a>>
     where
         Self: 'a;
 
     type FlexboxItemStyle<'a>
-        = &'a Style<Atom>
+        = TaffyStyloStyle<ComputedStyleRef<'a>>
     where
         Self: 'a;
 
@@ -550,12 +554,12 @@ impl taffy::LayoutFlexboxContainer for BaseDocument {
 
 impl taffy::LayoutGridContainer for BaseDocument {
     type GridContainerStyle<'a>
-        = &'a Style<Atom>
+        = TaffyStyloStyle<ComputedStyleRef<'a>>
     where
         Self: 'a;
 
     type GridItemStyle<'a>
-        = &'a Style<Atom>
+        = TaffyStyloStyle<ComputedStyleRef<'a>>
     where
         Self: 'a;
 
@@ -600,9 +604,9 @@ impl PrintTree for BaseDocument {
             NodeData::Comment { .. } => "COMMENT",
             NodeData::AnonymousBlock(_) => "ANONYMOUS BLOCK",
             NodeData::Element(_) => {
-                let style = node.style();
-                let display = match style.display {
-                    Display::Flex => match style.flex_direction {
+                let style = node.layout_style();
+                let display = match node.taffy_display() {
+                    Display::Flex => match taffy::FlexboxContainerStyle::flex_direction(&style) {
                         FlexDirection::Row | FlexDirection::RowReverse => "FLEX ROW",
                         FlexDirection::Column | FlexDirection::ColumnReverse => "FLEX COL",
                     },
