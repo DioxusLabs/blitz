@@ -8,7 +8,7 @@ impl BaseDocument {
         let mut window = AccessKitNode::new(Role::Window);
 
         self.visit(|node_id, node| {
-            if Self::is_hidden_from_accessibility_tree(node) {
+            if node.is_hidden_from_accessibility_tree() {
                 return;
             }
             let parent = node
@@ -34,24 +34,6 @@ impl BaseDocument {
             tree: Some(tree),
             focus: NodeId(self.focus_node_id.map(|id| id.as_u64()).unwrap_or(u64::MAX)),
         }
-    }
-
-    // https://www.w3.org/TR/wai-aria-1.2/#tree_exclusion
-    fn is_hidden_from_accessibility_tree(node: &BlitzDomNode) -> bool {
-        if let Some(element_data) = node.element_data()
-            && element_data.has_attr(local_name!("hidden"))
-        {
-            return true;
-        }
-        node.try_stylo_element_data()
-            .as_ref()
-            .and_then(|s| s.get())
-            .map(|s| {
-                s.styles.is_display_none()
-                    || s.styles.primary().clone_visibility()
-                        == visibility::computed_value::T::Hidden
-            })
-            .unwrap_or(false)
     }
 
     fn build_accessibility_node(
@@ -91,6 +73,26 @@ impl BaseDocument {
         parent.push_child(id);
 
         (id, builder)
+    }
+}
+
+impl BlitzDomNode {
+    // https://www.w3.org/TR/wai-aria-1.2/#tree_exclusion
+    fn is_hidden_from_accessibility_tree(&self) -> bool {
+        if let Some(element_data) = self.element_data()
+            && element_data.has_attr(local_name!("hidden"))
+        {
+            return true;
+        }
+        self.try_stylo_element_data()
+            .as_ref()
+            .and_then(|s| s.get())
+            .map(|s| {
+                s.styles.is_display_none()
+                    || s.styles.primary().clone_visibility()
+                        == visibility::computed_value::T::Hidden
+            })
+            .unwrap_or(false)
     }
 }
 
