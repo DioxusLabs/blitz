@@ -3362,11 +3362,28 @@ mod ime_focus_tests {
         assert!(shell.areas.lock().unwrap().is_empty());
 
         doc.resolve(0.0);
-        assert_eq!(*shell.areas.lock().unwrap(), vec![(0.0, 0.0, 100.0, 20.0)]);
+        // The area is the caret rect: at the start of the (empty) input, caret-width wide,
+        // vertically centred within the 20px content box.
+        let (x, y, w, h) = shell.areas.lock().unwrap()[0];
+        assert_eq!(x, 0.0);
+        assert!(w > 0.0 && w < 5.0, "caret width {w}");
+        assert!(h > 0.0 && h <= 20.0, "caret height {h}");
+        assert!(y >= 0.0 && y + h <= 20.0, "caret y {y} height {h}");
+        assert_eq!(shell.areas.lock().unwrap().len(), 1);
 
-        // Unchanged layout does not re-report the area
+        // Unchanged caret does not re-report the area
         doc.resolve(0.0);
         assert_eq!(shell.areas.lock().unwrap().len(), 1);
+
+        // Typing moves the caret, so the area is re-reported further right
+        doc.with_text_input(input, |mut driver| {
+            driver.insert_or_replace_selection("abc")
+        });
+        doc.resolve(0.0);
+        let areas = shell.areas.lock().unwrap();
+        assert_eq!(areas.len(), 2);
+        assert!(areas[1].0 > x, "caret should move right: {:?}", areas[1]);
+        drop(areas);
 
         doc.clear_focus();
         assert_eq!(*shell.enabled.lock().unwrap(), vec![true, false]);
