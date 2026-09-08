@@ -1,5 +1,5 @@
 use crate::{BaseDocument, ElementData, Node as BlitzDomNode, local_name};
-use accesskit::{Node as AccessKitNode, NodeId, Role, Tree, TreeId, TreeUpdate};
+use accesskit::{Node as AccessKitNode, NodeId, Rect, Role, Tree, TreeId, TreeUpdate};
 use style::properties::longhands::visibility;
 
 impl BaseDocument {
@@ -51,6 +51,9 @@ impl BaseDocument {
         let id = NodeId(node.id.as_u64());
 
         let mut builder = AccessKitNode::default();
+        if let Some(bounds) = self.accessibility_bounds(node) {
+            builder.set_bounds(bounds);
+        }
         if node.parent.is_none() {
             builder.set_role(Role::Window)
         } else if let Some(element_data) = node.element_data() {
@@ -80,6 +83,27 @@ impl BaseDocument {
         parent.push_child(id);
 
         (id, builder)
+    }
+
+    /// The node's bounding box in physical pixels relative to the viewport origin,
+    /// which is the coordinate space AccessKit expects for `bounds`. Text nodes have
+    /// no layout box of their own, so they use their parent element's bounds.
+    fn accessibility_bounds(&self, node: &BlitzDomNode) -> Option<Rect> {
+        let node_id = if node.is_text_node() {
+            node.parent?
+        } else if node.is_element() || node.parent.is_none() {
+            node.id
+        } else {
+            return None;
+        };
+        let rect = self.get_client_bounding_rect(node_id)?;
+        let scale = self.viewport().scale_f64();
+        Some(Rect::new(
+            rect.x * scale,
+            rect.y * scale,
+            (rect.x + rect.width) * scale,
+            (rect.y + rect.height) * scale,
+        ))
     }
 }
 
@@ -251,5 +275,61 @@ fn role_from_element_data(element_data: &ElementData) -> Option<Role> {
             }
         }
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{BaseDocument, DocumentConfig, qual_name};
+    use accesskit::NodeId;
+    use blitz_traits::shell::{ColorScheme, Viewport};
+
+    #[test]
+    fn nodes_have_layout_bounds() {
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(800, 600, 2.0, ColorScheme::Light)),
+            ..Default::default()
+        });
+        doc.add_user_agent_stylesheet(
+            "html, body, div { display: block; } body { margin: 0; } \
+             div { margin-left: 10px; margin-top: 20px; width: 300px; height: 100px; }",
+        );
+        let root_id = doc.root_node().id;
+
+        let mut mutator = doc.mutate();
+        let html = mutator.create_element(qual_name!("html"), vec![]);
+        let body = mutator.create_element(qual_name!("body"), vec![]);
+        let div = mutator.create_element(qual_name!("div"), vec![]);
+        let text = mutator.create_text_node("some text");
+        mutator.append_children(div, &[text]);
+        mutator.append_children(body, &[div]);
+        mutator.append_children(html, &[body]);
+        mutator.append_children(root_id, &[html]);
+        drop(mutator);
+        doc.resolve(0.0);
+
+        let update = doc.build_accessibility_tree();
+        let find = |id: crate::NodeId| {
+            update
+                .nodes
+                .iter()
+                .find(|(n, _)| *n == NodeId(id.as_u64()))
+                .map(|(_, node)| node)
+                .unwrap()
+        };
+
+        // Bounds are in physical pixels (scale factor 2.0).
+        let div_bounds = find(div).bounds().unwrap();
+        assert_eq!(div_bounds.x0, 20.0);
+        assert_eq!(div_bounds.y0, 40.0);
+        assert_eq!(div_bounds.width(), 600.0);
+        assert_eq!(div_bounds.height(), 200.0);
+
+        // Text nodes inherit their parent element's bounds.
+        assert_eq!(find(text).bounds().unwrap(), div_bounds);
+
+        let body_bounds = find(body).bounds().unwrap();
+        assert_eq!(body_bounds.x0, 0.0);
+        assert_eq!(body_bounds.width(), 800.0);
     }
 }
