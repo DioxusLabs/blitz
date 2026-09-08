@@ -680,18 +680,45 @@ impl Node {
         self.element_data().is_some_and(|el| el.is_text_input())
     }
 
-    /// The node's content box as `(x, y, width, height)` in CSS pixels, for use as the IME
-    /// cursor area. Returns `None` if the node is not a text input or has not been laid out
-    /// yet (e.g. it was focussed before the first layout).
+    /// The IME cursor area as `(x, y, width, height)` in CSS pixels relative to the viewport:
+    /// the caret rectangle of the text input (so IME candidate windows appear next to the
+    /// caret), falling back to the input's content box if the caret geometry is unavailable.
+    /// Returns `None` if the node is not a text input or has not been laid out yet (e.g. it
+    /// was focussed before the first layout).
     pub fn ime_cursor_area(&self) -> Option<(f32, f32, f32, f32)> {
-        self.element_data()?.text_input_data()?;
+        let input_data = self.element_data()?.text_input_data()?;
         let layout = self.final_layout();
         let pos = self.absolute_position(0.0, 0.0);
+        let content_x = pos.x + layout.content_box_x();
+        let content_y = pos.y + layout.content_box_y();
+
+        let caret = input_data
+            .editor
+            .try_layout()
+            .map(|text_layout| text_layout.scale())
+            .zip(input_data.editor.cursor_geometry(1.5));
+        let Some((scale, caret)) = caret else {
+            return Some((
+                content_x,
+                content_y,
+                layout.content_box_width(),
+                layout.content_box_height(),
+            ));
+        };
+
+        // Caret geometry is in scaled (device) pixels relative to the text content; convert
+        // to CSS pixels and apply the same centering/scroll offsets used when painting.
+        let (scroll_x, scroll_y) = if input_data.is_multiline {
+            (0.0, input_data.scroll_offset)
+        } else {
+            (input_data.scroll_offset, 0.0)
+        };
+        let y_offset = self.text_input_v_centering_offset(scale as f64) as f32;
         Some((
-            pos.x + layout.content_box_x(),
-            pos.y + layout.content_box_y(),
-            layout.content_box_width(),
-            layout.content_box_height(),
+            content_x + caret.x0 as f32 / scale - scroll_x,
+            content_y + y_offset + caret.y0 as f32 / scale - scroll_y,
+            (caret.x1 - caret.x0) as f32 / scale,
+            (caret.y1 - caret.y0) as f32 / scale,
         ))
     }
 

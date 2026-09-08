@@ -38,7 +38,7 @@ pub use crate::net::DataUriNetProvider;
 ))]
 use blitz_traits::shell::FileDialogFilter;
 use blitz_traits::shell::ShellProvider;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use winit::cursor::{Cursor, CursorIcon};
 use winit::dpi::{LogicalPosition, LogicalSize};
 pub use winit::event_loop::{ControlFlow, EventLoop, EventLoopProxy};
@@ -87,10 +87,17 @@ pub fn current_android_app() -> android_activity::AndroidApp {
 pub struct BlitzShellProvider {
     window: Arc<dyn Window>,
     proxy: BlitzShellProxy,
+    /// The most recently reported IME cursor area (logical position and size). Winit requires
+    /// an initial cursor area when enabling the IME with the `cursor_area` capability.
+    ime_cursor_area: Mutex<(LogicalPosition<f32>, LogicalSize<f32>)>,
 }
 impl BlitzShellProvider {
     pub fn new(window: Arc<dyn Window>, proxy: BlitzShellProxy) -> Self {
-        Self { window, proxy }
+        Self {
+            window,
+            proxy,
+            ime_cursor_area: Mutex::new(Default::default()),
+        }
     }
 }
 
@@ -115,19 +122,23 @@ impl ShellProvider for BlitzShellProvider {
     }
     fn set_ime_enabled(&self, is_enabled: bool) {
         if is_enabled {
+            let (position, size) = *self.ime_cursor_area.lock().unwrap();
+            let request_data =
+                ImeRequestData::default().with_cursor_area(position.into(), size.into());
             let _ = self.window.request_ime_update(ImeRequest::Enable(
-                ImeEnableRequest::new(ImeCapabilities::new(), ImeRequestData::default()).unwrap(),
+                ImeEnableRequest::new(ImeCapabilities::new().with_cursor_area(), request_data)
+                    .unwrap(),
             ));
         } else {
             let _ = self.window.request_ime_update(ImeRequest::Disable);
         }
     }
     fn set_ime_cursor_area(&self, x: f32, y: f32, width: f32, height: f32) {
+        let position = LogicalPosition::new(x, y);
+        let size = LogicalSize::new(width, height);
+        *self.ime_cursor_area.lock().unwrap() = (position, size);
         let _ = self.window.request_ime_update(ImeRequest::Update(
-            ImeRequestData::default().with_cursor_area(
-                LogicalPosition::new(x, y).into(),
-                LogicalSize::new(width, height).into(),
-            ),
+            ImeRequestData::default().with_cursor_area(position.into(), size.into()),
         ));
     }
 
