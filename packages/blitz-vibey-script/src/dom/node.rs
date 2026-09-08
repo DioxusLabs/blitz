@@ -1,82 +1,147 @@
-//! The `Node` (and `CharacterData`) prototypes: tree structure, tree mutation,
-//! text content and event listener registration.
+//! The `Node` class: tree structure, tree mutation, text content.
 
 use blitz_dom::NodeId;
 use blitz_dom::node::NodeData;
-use boa_engine::object::JsObject;
+use boa_engine::class::ClassBuilder;
 use boa_engine::object::builtins::JsArray;
-use boa_engine::value::JsValue;
-use boa_engine::{Context, JsNativeError, JsResult};
+use boa_engine::property::Attribute;
+use boa_engine::{Context, Finalize, JsData, JsResult, JsValue, Trace};
+
+use crate::shared::{
+    ExtendLayer, Extended, instance_accessor, instance_getter, instance_method, js_fn_ptr,
+    native_error, native_fn_ptr,
+};
+use crate::state::DomCtx;
 
 use super::{
-    define_accessor, define_method, dom_ctx, js_str, node_id_of_value, node_or_null, node_wrapper,
-    this_node_id, to_rust_string,
+    dom_ctx, js_str, node_id_of_value, node_or_null, node_wrapper, this_node_id, to_rust_string,
 };
-use crate::state::Listener;
 
-pub(crate) fn init_node_proto(proto: &JsObject, context: &mut Context) {
-    define_accessor(proto, "nodeType", Some(node_type), None, context);
-    define_accessor(proto, "nodeName", Some(node_name), None, context);
-    define_accessor(proto, "parentNode", Some(parent_node), None, context);
-    define_accessor(proto, "parentElement", Some(parent_node), None, context);
-    define_accessor(proto, "childNodes", Some(child_nodes), None, context);
-    define_accessor(proto, "firstChild", Some(first_child), None, context);
-    define_accessor(proto, "lastChild", Some(last_child), None, context);
-    define_accessor(
-        proto,
-        "previousSibling",
-        Some(previous_sibling),
-        None,
-        context,
-    );
-    define_accessor(proto, "nextSibling", Some(next_sibling), None, context);
-    define_accessor(proto, "isConnected", Some(is_connected), None, context);
-    define_accessor(proto, "ownerDocument", Some(owner_document), None, context);
-    define_accessor(
-        proto,
-        "textContent",
-        Some(text_content),
-        Some(set_text_content),
-        context,
-    );
-    define_accessor(
-        proto,
-        "nodeValue",
-        Some(node_value),
-        Some(set_node_value),
-        context,
-    );
+// ── Layer ────────────────────────────────────────────────────────────
 
-    define_method(proto, "appendChild", 1, append_child, context);
-    define_method(proto, "insertBefore", 2, insert_before, context);
-    define_method(proto, "removeChild", 1, remove_child, context);
-    define_method(proto, "replaceChild", 2, replace_child, context);
-    define_method(proto, "remove", 0, remove, context);
-    // ChildNode mixin
-    define_method(proto, "before", 1, before, context);
-    define_method(proto, "after", 1, after, context);
-    define_method(proto, "replaceWith", 1, replace_with, context);
-    define_method(proto, "hasChildNodes", 0, has_child_nodes, context);
-    define_method(proto, "contains", 1, contains, context);
-    define_method(proto, "cloneNode", 1, clone_node, context);
-    define_method(proto, "addEventListener", 2, add_event_listener, context);
-    define_method(
-        proto,
-        "removeEventListener",
-        2,
-        remove_event_listener,
-        context,
-    );
+/// `Node` own block: the wrapped blitz-dom node id.
+#[derive(Debug, Default, Clone, Trace, Finalize, JsData)]
+pub(crate) struct NodeLayer {
+    #[unsafe_ignore_trace]
+    pub node_id: NodeId,
 }
 
-pub(crate) fn init_character_data_proto(proto: &JsObject, context: &mut Context) {
-    define_accessor(
-        proto,
-        "data",
-        Some(node_value),
-        Some(set_node_value),
-        context,
-    );
+pub(crate) type Node = Extended<NodeLayer>;
+
+impl ExtendLayer for NodeLayer {
+    type Parent = crate::events::EventTargetLayer;
+    const CLASS_NAME: &'static str = "Node";
+
+    fn define_members(class: &mut ClassBuilder<'_>) -> JsResult<()> {
+        let realm = class.context().realm().clone();
+        let attr = Attribute::CONFIGURABLE | Attribute::NON_ENUMERABLE;
+
+        instance_getter!(class, "nodeType", js_fn_ptr!(node_type, &realm), attr);
+        instance_getter!(class, "nodeName", js_fn_ptr!(node_name, &realm), attr);
+        instance_getter!(class, "parentNode", js_fn_ptr!(parent_node, &realm), attr);
+        instance_getter!(
+            class,
+            "parentElement",
+            js_fn_ptr!(parent_node, &realm),
+            attr
+        );
+        instance_getter!(class, "childNodes", js_fn_ptr!(child_nodes, &realm), attr);
+        instance_getter!(class, "firstChild", js_fn_ptr!(first_child, &realm), attr);
+        instance_getter!(class, "lastChild", js_fn_ptr!(last_child, &realm), attr);
+        instance_getter!(
+            class,
+            "previousSibling",
+            js_fn_ptr!(previous_sibling, &realm),
+            attr
+        );
+        instance_getter!(class, "nextSibling", js_fn_ptr!(next_sibling, &realm), attr);
+        instance_getter!(class, "isConnected", js_fn_ptr!(is_connected, &realm), attr);
+        instance_getter!(
+            class,
+            "ownerDocument",
+            js_fn_ptr!(owner_document, &realm),
+            attr
+        );
+        instance_accessor!(
+            class,
+            "textContent",
+            js_fn_ptr!(text_content, &realm),
+            js_fn_ptr!(set_text_content, &realm),
+            attr
+        );
+        instance_accessor!(
+            class,
+            "nodeValue",
+            js_fn_ptr!(node_value, &realm),
+            js_fn_ptr!(set_node_value, &realm),
+            attr
+        );
+
+        instance_method!(class, "appendChild", 1, native_fn_ptr!(append_child));
+        instance_method!(class, "insertBefore", 2, native_fn_ptr!(insert_before));
+        instance_method!(class, "removeChild", 1, native_fn_ptr!(remove_child));
+        instance_method!(class, "replaceChild", 2, native_fn_ptr!(replace_child));
+        instance_method!(class, "remove", 0, native_fn_ptr!(remove));
+        // ChildNode mixin
+        instance_method!(class, "before", 1, native_fn_ptr!(before));
+        instance_method!(class, "after", 1, native_fn_ptr!(after));
+        instance_method!(class, "replaceWith", 1, native_fn_ptr!(replace_with));
+        instance_method!(class, "hasChildNodes", 0, native_fn_ptr!(has_child_nodes));
+        instance_method!(class, "contains", 1, native_fn_ptr!(contains));
+        instance_method!(class, "cloneNode", 1, native_fn_ptr!(clone_node));
+
+        crate::events::base::event_target::define_on_event_attributes(class, ON_EVENT_TYPES);
+
+        Ok(())
+    }
+}
+
+/// Event types for which `on<event>` IDL-style attributes are defined on the
+/// node prototype. Frameworks (e.g. Preact) use `'onclick' in dom` checks to
+/// infer the correct casing of event names, so these need to be present.
+const ON_EVENT_TYPES: &[&str] = &[
+    "click",
+    "dblclick",
+    "contextmenu",
+    "mousedown",
+    "mouseup",
+    "mousemove",
+    "mouseenter",
+    "mouseleave",
+    "mouseover",
+    "mouseout",
+    "pointerdown",
+    "pointerup",
+    "pointermove",
+    "pointercancel",
+    "pointerenter",
+    "pointerleave",
+    "pointerover",
+    "pointerout",
+    "touchstart",
+    "touchmove",
+    "touchend",
+    "touchcancel",
+    "keydown",
+    "keyup",
+    "keypress",
+    "input",
+    "change",
+    "focus",
+    "blur",
+    "focusin",
+    "focusout",
+    "submit",
+    "scroll",
+    "wheel",
+    "load",
+];
+
+/// Register the `Node` class and wire up the `Node -> EventTarget` prototype chain.
+pub(crate) fn register(context: &mut Context) -> JsResult<()> {
+    context.register_global_class::<Node>()?;
+    crate::shared::link_prototype::<Node>(context)?;
+    Ok(())
 }
 
 // === Read-only tree structure ===
@@ -125,7 +190,7 @@ fn parent_node(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult
     Ok(node_or_null(&ctx, parent_id, context))
 }
 
-fn child_ids(ctx: &crate::state::DomCtx, node_id: NodeId) -> Vec<NodeId> {
+fn child_ids(ctx: &DomCtx, node_id: NodeId) -> Vec<NodeId> {
     ctx.doc
         .borrow()
         .get_node(node_id)
@@ -166,7 +231,7 @@ fn last_child(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<
     Ok(node_or_null(&ctx, child_id, context))
 }
 
-fn sibling(ctx: &crate::state::DomCtx, node_id: NodeId, offset: isize) -> Option<NodeId> {
+fn sibling(ctx: &DomCtx, node_id: NodeId, offset: isize) -> Option<NodeId> {
     let doc = ctx.doc.borrow();
     let node = doc.get_node(node_id)?;
     let parent = doc.get_node(node.parent?)?;
@@ -233,17 +298,16 @@ fn set_text_content(this: &JsValue, args: &[JsValue], context: &mut Context) -> 
         )
     };
 
-    let mut doc = ctx.doc.borrow_mut();
-    let mut mutr = doc.mutate();
     if is_text_like {
-        mutr.set_node_text(node_id, &text);
+        let mut doc = ctx.doc.borrow_mut();
+        doc.mutate().set_node_text(node_id, &text);
     } else {
-        // Detach (rather than drop) any existing children so that JS wrappers
+        // Detach (rather than drop) the existing children so that JS wrappers
         // referencing them remain valid.
-        for child_id in mutr.child_ids(node_id) {
-            mutr.remove_node(child_id);
-        }
+        ctx.detach_children(node_id);
         if !text.is_empty() {
+            let mut doc = ctx.doc.borrow_mut();
+            let mut mutr = doc.mutate();
             let text_id = mutr.create_text_node(&text);
             mutr.append_children(node_id, &[text_id]);
         }
@@ -251,7 +315,11 @@ fn set_text_content(this: &JsValue, args: &[JsValue], context: &mut Context) -> 
     Ok(JsValue::undefined())
 }
 
-fn node_value(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+pub(crate) fn node_value(
+    this: &JsValue,
+    _: &[JsValue],
+    context: &mut Context,
+) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
     let node_id = this_node_id(this)?;
     let doc = ctx.doc.borrow();
@@ -262,7 +330,11 @@ fn node_value(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<
     }
 }
 
-fn set_node_value(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+pub(crate) fn set_node_value(
+    this: &JsValue,
+    args: &[JsValue],
+    context: &mut Context,
+) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
     let node_id = this_node_id(this)?;
     let text = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
@@ -274,11 +346,9 @@ fn set_node_value(this: &JsValue, args: &[JsValue], context: &mut Context) -> Js
 // === Tree mutation ===
 
 fn arg_node_id(args: &[JsValue], index: usize) -> JsResult<NodeId> {
-    args.get(index).and_then(node_id_of_value).ok_or_else(|| {
-        JsNativeError::typ()
-            .with_message("argument is not a DOM node")
-            .into()
-    })
+    args.get(index)
+        .and_then(node_id_of_value)
+        .ok_or_else(|| native_error!(typ, "argument is not a DOM node"))
 }
 
 fn append_child(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
@@ -288,6 +358,12 @@ fn append_child(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsRe
     // Inserting a DocumentFragment moves its children
     let node_ids = insertable_node_ids(&ctx, child_id);
 
+    // Switch the moved subtrees to weak before detaching, while the parent
+    // chain is intact.
+    for node_id in &node_ids {
+        ctx.make_in_document_subtree_weak(*node_id);
+    }
+
     let mut doc = ctx.doc.borrow_mut();
     let mut mutr = doc.mutate();
     // Detach from any current parent first. This also makes "move to end of
@@ -296,6 +372,10 @@ fn append_child(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsRe
     mutr.append_children(parent_id, &node_ids);
     drop(mutr);
     drop(doc);
+
+    for node_id in &node_ids {
+        ctx.make_in_document_subtree_strong(parent_id, *node_id);
+    }
 
     Ok(args[0].clone())
 }
@@ -321,6 +401,12 @@ fn insert_before(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsR
     // Inserting a DocumentFragment moves its children
     let node_ids = insertable_node_ids(&ctx, new_id);
 
+    // Switch the moved subtrees to weak before detaching, while the parent
+    // chain is intact.
+    for node_id in &node_ids {
+        ctx.make_in_document_subtree_weak(*node_id);
+    }
+
     let mut doc = ctx.doc.borrow_mut();
     let mut mutr = doc.mutate();
     detach_all(&mut mutr, &node_ids);
@@ -330,6 +416,13 @@ fn insert_before(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsR
         }
         _ => mutr.append_children(parent_id, &node_ids),
     }
+    drop(mutr);
+    drop(doc);
+
+    for node_id in &node_ids {
+        ctx.make_in_document_subtree_strong(parent_id, *node_id);
+    }
+
     Ok(args[0].clone())
 }
 
@@ -337,6 +430,9 @@ fn remove_child(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsRe
     let ctx = dom_ctx(context)?;
     let _parent_id = this_node_id(this)?;
     let child_id = arg_node_id(args, 0)?;
+
+    // Switch to weak before removing, while the parent chain is intact.
+    ctx.make_in_document_subtree_weak(child_id);
 
     let mut doc = ctx.doc.borrow_mut();
     // Note: the node is detached rather than dropped so that JS wrappers
@@ -351,6 +447,8 @@ fn replace_child(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsR
     let new_id = arg_node_id(args, 0)?;
     let old_id = arg_node_id(args, 1)?;
 
+    // Spec checks: the new child must not be an inclusive ancestor of this
+    // node, and the old child must actually be a child of this node.
     {
         let doc = ctx.doc.borrow();
         let mut ancestor_id = Some(parent_id);
@@ -377,11 +475,27 @@ fn replace_child(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsR
         // Inserting a DocumentFragment moves its children
         let node_ids = insertable_node_ids(&ctx, new_id);
 
+        // Switch the moved subtrees to weak before detaching, while the
+        // parent chain is intact.
+        for node_id in &node_ids {
+            ctx.make_in_document_subtree_weak(*node_id);
+        }
+
         let mut doc = ctx.doc.borrow_mut();
         let mut mutr = doc.mutate();
         detach_all(&mut mutr, &node_ids);
         mutr.insert_nodes_before(old_id, &node_ids);
-        mutr.remove_node(old_id);
+        drop(mutr);
+        drop(doc);
+
+        for node_id in &node_ids {
+            ctx.make_in_document_subtree_strong(parent_id, *node_id);
+        }
+
+        // Switch to weak before removing, while the parent chain is intact.
+        ctx.make_in_document_subtree_weak(old_id);
+        let mut doc = ctx.doc.borrow_mut();
+        doc.mutate().remove_node(old_id);
     }
     Ok(args[1].clone())
 }
@@ -389,6 +503,8 @@ fn replace_child(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsR
 fn remove(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
     let node_id = this_node_id(this)?;
+    // Switch to weak before removing, while the parent chain is intact.
+    ctx.make_in_document_subtree_weak(node_id);
     let mut doc = ctx.doc.borrow_mut();
     let mut mutr = doc.mutate();
     if mutr.node_has_parent(node_id) {
@@ -411,7 +527,7 @@ pub(crate) fn is_fragment(doc: &blitz_dom::BaseDocument, node_id: NodeId) -> boo
 /// Resolve a node argument for insertion, per the DOM spec's "insert a node"
 /// steps: DocumentFragments are expanded into (and their children detached
 /// from) their children; other nodes insert as themselves.
-fn insertable_node_ids(ctx: &crate::state::DomCtx, node_id: NodeId) -> Vec<NodeId> {
+fn insertable_node_ids(ctx: &DomCtx, node_id: NodeId) -> Vec<NodeId> {
     let mut doc = ctx.doc.borrow_mut();
     if !is_fragment(&doc, node_id) {
         return vec![node_id];
@@ -435,11 +551,7 @@ fn insertable_node_ids(ctx: &crate::state::DomCtx, node_id: NodeId) -> Vec<NodeI
 /// Convert the arguments of a ParentNode/ChildNode mutation method into node
 /// ids, creating (detached) text nodes for string arguments and expanding
 /// DocumentFragments into their children
-fn arg_node_ids(
-    ctx: &crate::state::DomCtx,
-    args: &[JsValue],
-    context: &mut Context,
-) -> JsResult<Vec<NodeId>> {
+fn arg_node_ids(ctx: &DomCtx, args: &[JsValue], context: &mut Context) -> JsResult<Vec<NodeId>> {
     let mut node_ids = Vec::with_capacity(args.len());
     for arg in args {
         match node_id_of_value(arg) {
@@ -469,6 +581,10 @@ pub(crate) fn append(this: &JsValue, args: &[JsValue], context: &mut Context) ->
     let node_ids = arg_node_ids(&ctx, args, context)?;
     let mut doc = ctx.doc.borrow_mut();
     doc.mutate().append_children(parent_id, &node_ids);
+    drop(doc);
+    for node_id in &node_ids {
+        ctx.make_in_document_subtree_strong(parent_id, *node_id);
+    }
     Ok(JsValue::undefined())
 }
 
@@ -482,6 +598,10 @@ pub(crate) fn prepend(
     let node_ids = arg_node_ids(&ctx, args, context)?;
     let mut doc = ctx.doc.borrow_mut();
     doc.mutate().prepend_nodes(parent_id, &node_ids);
+    drop(doc);
+    for node_id in &node_ids {
+        ctx.make_in_document_subtree_strong(parent_id, *node_id);
+    }
     Ok(JsValue::undefined())
 }
 
@@ -493,8 +613,25 @@ pub(crate) fn replace_children(
     let ctx = dom_ctx(context)?;
     let parent_id = this_node_id(this)?;
     let node_ids = arg_node_ids(&ctx, args, context)?;
+
+    // Switch the replaced children to weak before detaching, while the parent
+    // chain is intact.
+    let old_children: Vec<NodeId> = ctx
+        .doc
+        .borrow()
+        .get_node(parent_id)
+        .map(|node| node.children.to_vec())
+        .unwrap_or_default();
+    for child_id in &old_children {
+        ctx.make_in_document_subtree_weak(*child_id);
+    }
+
     let mut doc = ctx.doc.borrow_mut();
     doc.mutate().replace_children(parent_id, &node_ids);
+    drop(doc);
+    for node_id in &node_ids {
+        ctx.make_in_document_subtree_strong(parent_id, *node_id);
+    }
     Ok(JsValue::undefined())
 }
 
@@ -504,6 +641,10 @@ fn before(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<J
     let node_ids = arg_node_ids(&ctx, args, context)?;
     let mut doc = ctx.doc.borrow_mut();
     doc.mutate().before_node(anchor_id, &node_ids);
+    drop(doc);
+    for node_id in &node_ids {
+        ctx.make_in_document_subtree_strong(anchor_id, *node_id);
+    }
     Ok(JsValue::undefined())
 }
 
@@ -513,6 +654,10 @@ fn after(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<Js
     let node_ids = arg_node_ids(&ctx, args, context)?;
     let mut doc = ctx.doc.borrow_mut();
     doc.mutate().after_node(anchor_id, &node_ids);
+    drop(doc);
+    for node_id in &node_ids {
+        ctx.make_in_document_subtree_strong(anchor_id, *node_id);
+    }
     Ok(JsValue::undefined())
 }
 
@@ -520,8 +665,18 @@ fn replace_with(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsRe
     let ctx = dom_ctx(context)?;
     let anchor_id = this_node_id(this)?;
     let node_ids = arg_node_ids(&ctx, args, context)?;
+
+    // Switch the replaced node to weak before detaching, while the parent
+    // chain is intact.
+    ctx.make_in_document_subtree_weak(anchor_id);
+
     let mut doc = ctx.doc.borrow_mut();
     doc.mutate().replace_with_nodes(anchor_id, &node_ids);
+    drop(doc);
+    // The new nodes are now in the document -> strong.
+    for node_id in &node_ids {
+        ctx.make_in_document_subtree_strong(*node_id, *node_id);
+    }
     Ok(JsValue::undefined())
 }
 
@@ -588,95 +743,4 @@ fn clone_node(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResu
     };
 
     Ok(node_wrapper(&ctx, new_node_id, context).into())
-}
-
-// === Event listeners ===
-
-fn add_event_listener(
-    this: &JsValue,
-    args: &[JsValue],
-    context: &mut Context,
-) -> JsResult<JsValue> {
-    let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
-    let event_type = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
-    let Some(callback) = args.get(1).and_then(|value| value.as_object()) else {
-        return Ok(JsValue::undefined());
-    };
-    if !callback.is_callable() {
-        return Ok(JsValue::undefined());
-    }
-
-    // Parse options (bool `capture` or `{ capture, once }`)
-    let mut capture = false;
-    let mut once = false;
-    match args.get(2) {
-        Some(options) if options.is_object() => {
-            let options = options.as_object().unwrap();
-            capture = options
-                .get(boa_engine::js_string!("capture"), context)?
-                .to_boolean();
-            once = options
-                .get(boa_engine::js_string!("once"), context)?
-                .to_boolean();
-        }
-        Some(options) => capture = options.to_boolean(),
-        None => {}
-    }
-
-    let mut state = ctx.state.borrow_mut();
-    let listeners = state
-        .node_listeners
-        .entry(node_id)
-        .or_default()
-        .entry(event_type)
-        .or_default();
-
-    // Duplicate listeners (same callback + capture flag) are ignored
-    if !listeners
-        .iter()
-        .any(|l| JsObject::equals(&l.callback, &callback) && l.capture == capture)
-    {
-        listeners.push(Listener {
-            callback,
-            capture,
-            once,
-        });
-    }
-
-    Ok(JsValue::undefined())
-}
-
-fn remove_event_listener(
-    this: &JsValue,
-    args: &[JsValue],
-    context: &mut Context,
-) -> JsResult<JsValue> {
-    let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
-    let event_type = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
-    let Some(callback) = args.get(1).and_then(|value| value.as_object()) else {
-        return Ok(JsValue::undefined());
-    };
-
-    let capture = match args.get(2) {
-        Some(options) if options.is_object() => options
-            .as_object()
-            .unwrap()
-            .get(boa_engine::js_string!("capture"), context)?
-            .to_boolean(),
-        Some(options) => options.to_boolean(),
-        None => false,
-    };
-
-    let mut state = ctx.state.borrow_mut();
-    if let Some(listeners) = state
-        .node_listeners
-        .get_mut(&node_id)
-        .and_then(|map| map.get_mut(&event_type))
-    {
-        listeners.retain(|l| !(JsObject::equals(&l.callback, &callback) && l.capture == capture));
-    }
-
-    Ok(JsValue::undefined())
 }
