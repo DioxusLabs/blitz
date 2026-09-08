@@ -329,12 +329,12 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
         DomEventData::DragEnter(_) => {
             // Do nothing (no default action)
         }
-        DomEventData::DragOver(event) => {
-            use blitz_traits::events::BlitzDragOperation;
+        DomEventData::DragOver(_event) => {
+
             // todo set drop effect based on node type or if it has drop zone
             // this needs to be set here and not in dragenter as keyboard modifiers can affect the effect
-
-            event.data_transfer_mut().drop_effect = BlitzDragOperation::Copy;
+            // use blitz_traits::events::BlitzDragOperation;
+            // event.data_transfer_mut().drop_effect = BlitzDragOperation::Copy;
         }
         DomEventData::DragLeave(_) => {
             // Do nothing (no default action)

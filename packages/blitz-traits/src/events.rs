@@ -163,11 +163,11 @@ pub enum DomEventKind {
 
     DragStart,
     Drag,
+    DragEnd,
     DragEnter,
     DragOver,
     DragLeave,
     Drop,
-    DragEnd,
 
     AppleStandardKeybinding,
 }
@@ -222,11 +222,12 @@ impl FromStr for DomEventKind {
 
             "dragstart" => Ok(Self::DragStart),
             "drag" => Ok(Self::Drag),
+            "dragend" => Ok(Self::DragEnd),
             "dragenter" => Ok(Self::DragEnter),
             "dragover" => Ok(Self::DragOver),
             "dragleave" => Ok(Self::DragLeave),
             "drop" => Ok(Self::Drop),
-            "dragend" => Ok(Self::DragEnd),
+
             _ => Err(()),
         }
     }

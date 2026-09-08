@@ -642,21 +642,30 @@ impl<Rend: WindowRenderer> View<Rend> {
             source: node.into(),
         };
 
+        // this is done this way so that implementation of for_each_available_type
+        // for WinitDataTransfer actually works for outgoing drag events without
+        // issues with borrow checker or unsafe code, otherwise they will not have
+        // any data types within them
         self.doc.handle_ui_event(UiEvent::DragStart(event.clone()));
 
         let actions =
             blitz_drag_operations_to_winit_dnd_action(&data_transfer.borrow().effect_allowed);
-        let id = event_loop.start_drag(
+        match event_loop.start_drag(
             self.window_id(),
             Box::from(WinitDataTransfer::new(data_transfer)),
             &actions,
             None,
-        )?;
-
-        event.id = id.into_raw() as u64;
-
-        self.set_active_drag(event);
-        Ok(())
+        ) {
+            Ok(id) => {
+                event.id = id.into_raw() as u64;
+                self.set_active_drag(event);
+                Ok(())
+            }
+            Err(err) => {
+                self.doc.handle_ui_event(UiEvent::OutgoingCancel(event));
+                Err(err)
+            }
+        }
     }
 
     pub fn set_dnd_action(
@@ -952,6 +961,10 @@ impl<Rend: WindowRenderer> View<Rend> {
 
             WindowEvent::OutgoingDragDropped { id, .. } => {
                 if let Some(event) = self.remove_active_drag(id.into_raw() as u64) {
+                    // drags started with event_loop.start_drag could be clasified as outgoing
+                    // even if they are dropped within the same window
+                    // `INTERNAL_DROP_THRESHOLD` is here to make sure that it's not clasified as
+                    // outgoung drop while actually being a regular drop
                      if self.internal_drag.elapsed() < INTERNAL_DROP_THRESHOLD {
                         self.doc.handle_ui_event(UiEvent::Drop(event));
                      } else {
@@ -1069,7 +1082,11 @@ impl<Rend: WindowRenderer> View<Rend> {
                         ControlFlow::Continue(())
                     });
 
-                    self.pending_data_transfers = Some((event, serial_ids));
+                    if serial_ids.is_empty() {
+                        self.doc.handle_ui_event(UiEvent::Drop(event));
+                    } else {
+                        self.pending_data_transfers = Some((event, serial_ids));
+                    }
                 }
             },
             WindowEvent::DragLeft { id } => {

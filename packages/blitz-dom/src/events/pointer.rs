@@ -226,15 +226,21 @@ pub(crate) fn handle_pointermove<F: FnMut(DomEvent)>(
                 BlitzPointerId::Mouse | BlitzPointerId::Pen => {
                     if let Some(mousedown_node_id) = doc.mousedown_node_id {
                         let node = &doc.nodes[mousedown_node_id];
+                        // todo: nearest ancestor with draggable=true
                         let draggable = node
                             .data
                             .attr(local_name!("draggable"))
-                            .map(|v| v != "false")
+                            .map(|v| v == "true")
                             .unwrap_or_default();
 
-                        let auto_text_drag = !draggable && doc.is_text_selected_at_position(x, y);
+                        // todo: images, links, inputs, textbox, text formatted in html
+                        let auto_text_drag = !draggable
+                            && doc.is_text_selected_at_position(
+                                doc.mousedown_position.x,
+                                doc.mousedown_position.y,
+                            );
 
-                        if draggable | auto_text_drag {
+                        if draggable || auto_text_drag {
                             let mut items = BlitzInternalDataTransferItems::default();
 
                             if auto_text_drag && let Some(text) = doc.get_selected_text() {
