@@ -41,6 +41,11 @@ pub(crate) fn winit_ime_to_blitz(event: Ime) -> BlitzImeEvent {
             before_bytes,
             after_bytes,
         },
+        _ => {
+            #[cfg(feature = "tracing")]
+            tracing::error!("unsupported Ime variant: {event:?}");
+            BlitzImeEvent::Disabled
+        }
     }
 }
 
@@ -73,6 +78,11 @@ pub(crate) fn pointer_source_to_blitz(source: &PointerSource) -> BlitzPointerId 
         // TODO: TabletTool and Unknown events
         PointerSource::TabletTool { .. } => BlitzPointerId::Pen,
         PointerSource::Unknown => BlitzPointerId::Mouse,
+        _ => {
+            #[cfg(feature = "tracing")]
+            tracing::error!("unsupported PointerSource variant: {source:?}");
+            BlitzPointerId::Mouse
+        }
     }
 }
 
@@ -84,6 +94,11 @@ pub(crate) fn pointer_kind_to_blitz(kind: &PointerKind) -> BlitzPointerId {
         // TODO: TabletTool and Unknown events
         PointerKind::TabletTool(_) => BlitzPointerId::Pen,
         PointerKind::Unknown => BlitzPointerId::Mouse,
+        _ => {
+            #[cfg(feature = "tracing")]
+            tracing::error!("unsupported PointerKind variant: {kind:?}");
+            BlitzPointerId::Mouse
+        }
     }
 }
 
@@ -97,6 +112,11 @@ pub(crate) fn button_source_to_blitz(source: &ButtonSource) -> BlitzPointerId {
 
         // TODO: Unknown events
         ButtonSource::Unknown(_) => BlitzPointerId::Mouse,
+        _ => {
+            #[cfg(feature = "tracing")]
+            tracing::error!("unsupported ButtonSource variant: {source:?}");
+            BlitzPointerId::Mouse
+        }
     }
 }
 
@@ -120,6 +140,11 @@ pub(crate) fn pointer_source_to_blitz_details(source: &PointerSource) -> Pointer
             altitude: data.angle.map(|angle| angle.altitude).unwrap_or(0.0),
             azimuth: data.angle.map(|angle| angle.azimuth).unwrap_or(0.0),
         },
+        _ => {
+            #[cfg(feature = "tracing")]
+            tracing::error!("unsupported PointerSource variant: {source:?}");
+            PointerDetails::default()
+        }
     }
 }
 
