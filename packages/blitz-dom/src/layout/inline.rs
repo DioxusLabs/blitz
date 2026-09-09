@@ -200,7 +200,7 @@ impl BaseDocument {
         // || matches!(node_size.height, Some(h) if h > 0.0)
         // || matches!(node_min_size.height, Some(h) if h > 0.0)
         // || !inline_layout.text.is_empty();
-        // || !inline_layout.layout.inline_boxes().is_empty();
+        // || inline_layout.layout.inline_boxes().len() > 0;
 
         // Resolve node's preferred/min/max sizes (width/heights) against the available space (percentages resolve to pixel values)
         // For ContentSize mode, we pretend that the node has no size styles as these should be ignored.
@@ -239,7 +239,7 @@ impl BaseDocument {
         // Short circuit if inline context contains no text or inline boxes
         if !has_styles_preventing_being_collapsed_through
             && inline_layout.text.is_empty()
-            && inline_layout.layout.inline_boxes().is_empty()
+            && inline_layout.layout.inline_boxes().len() == 0
         {
             // Put layout back
             self.nodes[node_id]
@@ -702,7 +702,7 @@ impl BaseDocument {
         // but a line box containing no text, inline boxes or other in-flow content is a
         // zero-height line box in CSS (CSS2 §9.4.2).
         let has_inline_content =
-            !inline_layout.text.is_empty() || !inline_layout.layout.inline_boxes().is_empty();
+            !inline_layout.text.is_empty() || inline_layout.layout.inline_boxes().len() > 0;
 
         #[allow(unused_mut)]
         let mut height = if has_inline_content {
