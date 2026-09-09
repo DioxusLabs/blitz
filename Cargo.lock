@@ -3275,7 +3275,7 @@ dependencies = [
 [[package]]
 name = "fontique"
 version = "0.11.0"
-source = "git+https://github.com/DioxusLabs/parley?rev=e08c7f57994fb4c5e129e59b13d15f4f113a325e#e08c7f57994fb4c5e129e59b13d15f4f113a325e"
+source = "git+https://github.com/DioxusLabs/parley?rev=0384e4d22e34fb9603b3eadb97236cc286e4f391#0384e4d22e34fb9603b3eadb97236cc286e4f391"
 dependencies = [
  "hashbrown 0.17.1",
  "linebender_resource_handle",
@@ -5942,12 +5942,12 @@ dependencies = [
 [[package]]
 name = "parlance"
 version = "0.1.0"
-source = "git+https://github.com/DioxusLabs/parley?rev=e08c7f57994fb4c5e129e59b13d15f4f113a325e#e08c7f57994fb4c5e129e59b13d15f4f113a325e"
+source = "git+https://github.com/DioxusLabs/parley?rev=0384e4d22e34fb9603b3eadb97236cc286e4f391#0384e4d22e34fb9603b3eadb97236cc286e4f391"
 
 [[package]]
 name = "parley"
 version = "0.11.0"
-source = "git+https://github.com/DioxusLabs/parley?rev=e08c7f57994fb4c5e129e59b13d15f4f113a325e#e08c7f57994fb4c5e129e59b13d15f4f113a325e"
+source = "git+https://github.com/DioxusLabs/parley?rev=0384e4d22e34fb9603b3eadb97236cc286e4f391#0384e4d22e34fb9603b3eadb97236cc286e4f391"
 dependencies = [
  "fontique",
  "hashbrown 0.17.1",
@@ -5961,7 +5961,7 @@ dependencies = [
 [[package]]
 name = "parley_data"
 version = "0.11.0"
-source = "git+https://github.com/DioxusLabs/parley?rev=e08c7f57994fb4c5e129e59b13d15f4f113a325e#e08c7f57994fb4c5e129e59b13d15f4f113a325e"
+source = "git+https://github.com/DioxusLabs/parley?rev=0384e4d22e34fb9603b3eadb97236cc286e4f391#0384e4d22e34fb9603b3eadb97236cc286e4f391"
 dependencies = [
  "icu_properties",
 ]
@@ -5969,7 +5969,7 @@ dependencies = [
 [[package]]
 name = "parley_engine"
 version = "0.11.0"
-source = "git+https://github.com/DioxusLabs/parley?rev=e08c7f57994fb4c5e129e59b13d15f4f113a325e#e08c7f57994fb4c5e129e59b13d15f4f113a325e"
+source = "git+https://github.com/DioxusLabs/parley?rev=0384e4d22e34fb9603b3eadb97236cc286e4f391#0384e4d22e34fb9603b3eadb97236cc286e4f391"
 dependencies = [
  "fontique",
  "harfrust",
