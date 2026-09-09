@@ -327,6 +327,8 @@ pub(crate) fn vertical_align(style: &stylo::ComputedValues) -> parley::VerticalA
                 let font_styles = style.get_font();
                 let font_size = font_styles.font_size.used_size.0.px();
                 let line_height = match font_styles.line_height {
+                    // TODO: `normal` resolves against the first available font's metrics, which
+                    // aren't available here; 1.2 is the usual approximation.
                     stylo::LineHeight::Normal => font_size * 1.2,
                     stylo::LineHeight::Number(num) => font_size * num.0,
                     stylo::LineHeight::Length(value) => value.0.px(),
@@ -351,7 +353,7 @@ pub(crate) fn style(
     // Convert font size and line height
     let font_size = font_styles.font_size.used_size.0.px();
     let line_height = match font_styles.line_height {
-        stylo::LineHeight::Normal => parley::LineHeight::FontSizeRelative(1.2),
+        stylo::LineHeight::Normal => parley::LineHeight::NORMAL,
         stylo::LineHeight::Number(num) => parley::LineHeight::FontSizeRelative(num.0),
         stylo::LineHeight::Length(value) => parley::LineHeight::Absolute(value.0.px()),
     };
