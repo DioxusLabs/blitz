@@ -214,6 +214,15 @@ pub(crate) fn compute_layout_damage(old: &ComputedValues, new: &ComputedValues) 
             return true;
         }
 
+        // Table properties (border-spacing, border-collapse, ...) are baked
+        // into the TableContext at construction time, so changing them
+        // requires reconstructing the table's box tree.
+        if old.get_inherited_table() != new.get_inherited_table()
+            || old.get_table() != new.get_table()
+        {
+            return true;
+        }
+
         if new_box.display.outside() == DisplayOutside::Block
             && new_box.display.inside() == DisplayInside::Flow
         {
