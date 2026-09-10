@@ -45,6 +45,8 @@ pub(crate) fn init_element_proto(proto: &JsObject, context: &mut Context) {
         context,
     );
     define_accessor(proto, "hidden", Some(get_hidden), Some(set_hidden), context);
+    define_accessor(proto, "width", Some(get_width), Some(set_width), context);
+    define_accessor(proto, "height", Some(get_height), Some(set_height), context);
     define_accessor(
         proto,
         "selectionStart",
@@ -564,6 +566,109 @@ fn set_hidden(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResu
         clear_attr(&ctx, node_id, "hidden");
     }
     Ok(JsValue::undefined())
+}
+
+// === `width`/`height` (`unsigned long` reflected content attributes) ===
+//
+// Only the elements whose `width`/`height` content attributes are reflected as
+// numbers by their IDL interface (`HTMLCanvasElement`, `HTMLImageElement`, ...)
+// get the reflected property. A canvas defaults to its 300x150 bitmap size.
+
+fn element_local_name(ctx: &DomCtx, node_id: NodeId) -> Option<LocalName> {
+    let doc = ctx.doc.borrow();
+    let element = doc.get_node(node_id)?.element_data()?;
+    Some(element.name.local.clone())
+}
+
+fn dimension_attr_default(tag: &LocalName, attr: &str) -> Option<u32> {
+    match &**tag {
+        "canvas" => Some(if attr == "width" { 300 } else { 150 }),
+        "img" | "video" | "iframe" | "embed" | "object" => Some(0),
+        _ => None,
+    }
+}
+
+/// Parse a reflected `unsigned long` content attribute (HTML "rules for parsing
+/// non-negative integers"), falling back to `default` on a missing/invalid value
+fn parse_unsigned_long_attr(value: Option<String>, default: u32) -> u32 {
+    value
+        .as_deref()
+        .map(str::trim)
+        .and_then(|value| {
+            let value = value.strip_prefix('+').unwrap_or(value);
+            let digits: &str = value
+                .split(|c: char| !c.is_ascii_digit())
+                .next()
+                .unwrap_or("");
+            digits.parse::<u32>().ok()
+        })
+        .filter(|value| *value <= 2147483647)
+        .unwrap_or(default)
+}
+
+fn dimension_getter(attr: &str, this: &JsValue, context: &mut Context) -> JsResult<JsValue> {
+    let ctx = dom_ctx(context)?;
+    let node_id = this_node_id(this)?;
+    let Some(tag) = element_local_name(&ctx, node_id) else {
+        return Ok(JsValue::undefined());
+    };
+    let Some(default) = dimension_attr_default(&tag, attr) else {
+        return Ok(JsValue::undefined());
+    };
+    let value = parse_unsigned_long_attr(read_attr(&ctx, node_id, attr), default);
+    Ok(JsValue::from(value))
+}
+
+fn dimension_setter(
+    attr: &str,
+    this: &JsValue,
+    args: &[JsValue],
+    context: &mut Context,
+) -> JsResult<JsValue> {
+    let ctx = dom_ctx(context)?;
+    let node_id = this_node_id(this)?;
+    let Some(tag) = element_local_name(&ctx, node_id) else {
+        return Ok(JsValue::undefined());
+    };
+    let Some(default) = dimension_attr_default(&tag, attr) else {
+        // Not a reflected attribute on this element: behave like a plain
+        // expando property so `div.width = x` still round-trips.
+        if let Some(obj) = this.as_object() {
+            obj.create_data_property_or_throw(
+                boa_engine::JsString::from(attr),
+                args.first().cloned().unwrap_or_default(),
+                context,
+            )?;
+        }
+        return Ok(JsValue::undefined());
+    };
+    // WebIDL `unsigned long` conversion: ToNumber, then modulo 2^32; values
+    // outside the (0, 2^31) range fall back to the default
+    let number = args
+        .first()
+        .unwrap_or(&JsValue::undefined())
+        .to_number(context)?;
+    let value = if number.is_finite() {
+        let value = number.trunc().rem_euclid(4294967296.0) as u32;
+        if value > 2147483647 { default } else { value }
+    } else {
+        0
+    };
+    write_attr(&ctx, node_id, attr, &value.to_string());
+    Ok(JsValue::undefined())
+}
+
+fn get_width(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    dimension_getter("width", this, context)
+}
+fn set_width(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    dimension_setter("width", this, args, context)
+}
+fn get_height(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    dimension_getter("height", this, context)
+}
+fn set_height(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    dimension_setter("height", this, args, context)
 }
 
 // === Text input selection (`selectionStart`/`selectionEnd`) ===
