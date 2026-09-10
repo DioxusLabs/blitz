@@ -29,7 +29,8 @@ pub struct TableTreeWrapper<'doc> {
     pub(crate) ctx: Arc<TableContext>,
 }
 
-#[derive(Debug, Clone)]
+// Deliberately not `Clone`: `style` may hold raw pointers into `calc_values`.
+#[derive(Debug)]
 pub struct TableContext {
     pub style: taffy::Style<Atom>,
     pub cells: Vec<TableCell>,
