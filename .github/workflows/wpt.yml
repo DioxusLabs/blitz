@@ -14,7 +14,7 @@ env:
   RUSTDOCFLAGS: "-D warnings"
   CARGO_REGISTRIES_CRATES_IO_PROTOCOL: "sparse"
   WPT_DIR: "./wpt/tests"
-  WPT_COMMIT: "a95401e4e06351eb1e15f0e15cf50abf08fa545f"
+  WPT_COMMIT: "5a5b2b591b39c59d5bca77819db305474dcfd18a"
 
 permissions:
   contents: read
