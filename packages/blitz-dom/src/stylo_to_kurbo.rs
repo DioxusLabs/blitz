@@ -37,6 +37,11 @@ pub fn resolve_2d_transform(
     let rotate = match &box_styles.rotate {
         Rotate::None => None,
         Rotate::Rotate(angle) => Some(angle.radians64()),
+        // A rotation about the z axis stays in the plane; the sign of the
+        // axis component decides the direction, its magnitude cancels out.
+        Rotate::Rotate3D(x, y, z, angle) if *x == 0.0 && *y == 0.0 && *z != 0.0 => {
+            Some(angle.radians64() * z.signum() as f64)
+        }
         // TODO: support 3D transforms
         Rotate::Rotate3D(_, _, _, _) => None,
     };
