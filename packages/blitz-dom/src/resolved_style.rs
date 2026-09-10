@@ -19,7 +19,7 @@ use style::stylesheets::supports_rule::parse_condition_or_declaration;
 use style::stylesheets::{CssRuleType, Origin};
 use style::values::computed::LengthPercentage;
 use style::values::computed::length::CSSPixelLength;
-use style::values::generics::position::Inset as GenericInset;
+use style::values::generics::position::{Inset as GenericInset, PreferredRatio};
 use style::values::resolved;
 use style::values::specified::box_::DisplayInside;
 use style_traits::{CssStringWriter, ParsingMode, ToCss};
@@ -264,12 +264,24 @@ impl BaseDocument {
         let Some(node) = self.get_node(node_id) else {
             return String::new();
         };
-        let Some(styles) = node.primary_styles() else {
-            return String::new();
+        // Elements inside a `display: none` subtree are skipped by the style
+        // traversal, so their style has to be computed on demand.
+        let undisplayed_styles;
+        let stored_styles = node.primary_styles();
+        let styles: &ComputedValues = match &stored_styles {
+            Some(styles) => styles,
+            None => match self.resolve_undisplayed_style(node_id) {
+                Some(styles) => {
+                    undisplayed_styles = styles;
+                    &undisplayed_styles
+                }
+                None => return String::new(),
+            },
         };
 
         let display = styles.clone_display();
-        let has_layout_box = node.flags.is_in_document() && !display.is_none();
+        let has_layout_box =
+            node.flags.is_in_document() && !display.is_none() && stored_styles.is_some();
 
         // Layout-dependent "used value" special cases
         match property_name {
@@ -426,6 +438,24 @@ impl BaseDocument {
                     _ => {}
                 }
             }
+            // `min-width: auto` / `min-height: auto` resolve to `auto` only for
+            // boxes with a preferred aspect ratio and for flex and grid items;
+            // otherwise (including when no box is generated) they resolve to `0px`
+            "min-width" | "min-height" => {
+                let pos_styles = styles.get_position();
+                let is_auto = if property_name == "min-width" {
+                    pos_styles.min_width.is_auto()
+                } else {
+                    pos_styles.min_height.is_auto()
+                };
+                let has_aspect_ratio =
+                    !matches!(pos_styles.aspect_ratio.ratio, PreferredRatio::None);
+                let preserves_auto =
+                    has_layout_box && (has_aspect_ratio || self.is_flex_or_grid_item(node_id));
+                if is_auto && !preserves_auto {
+                    return format_px(0.0);
+                }
+            }
             "transform" if has_layout_box => {
                 let transform = &styles.get_box().transform;
                 if !transform.0.is_empty() {
@@ -455,9 +485,28 @@ impl BaseDocument {
         };
         match property_id.as_shorthand() {
             // Serialize shorthands from the resolved values of their longhands
-            Ok(shorthand) => serialize_resolved_shorthand(&styles, shorthand),
+            Ok(shorthand) => serialize_resolved_shorthand(styles, shorthand),
             Err(declaration_id) => styles.computed_value_to_string(declaration_id),
         }
+    }
+
+    /// Whether the node's box is a flex or grid item, i.e. its nearest ancestor
+    /// that generates a box (skipping `display: contents` ancestors) is a flex
+    /// or grid container.
+    fn is_flex_or_grid_item(&self, node_id: NodeId) -> bool {
+        let mut parent_id = self.get_node(node_id).and_then(|node| node.parent);
+        while let Some(parent) = parent_id.and_then(|id| self.get_node(id)) {
+            let Some(parent_styles) = parent.primary_styles() else {
+                return false;
+            };
+            let display = parent_styles.clone_display();
+            if display.is_contents() {
+                parent_id = parent.parent;
+                continue;
+            }
+            return matches!(display.inside(), DisplayInside::Flex | DisplayInside::Grid);
+        }
+        false
     }
 }
 
