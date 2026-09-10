@@ -5,11 +5,16 @@ use atomic_refcell::AtomicRefCell;
 use markup5ever::local_name;
 use style::properties::style_structs::Border;
 use style::servo_arc::Arc as ServoArc;
+use style::values::computed::length_percentage::{
+    CalcLengthPercentage, CalcNode, ComputedLeaf, Unpacked as UnpackedLengthPercentage,
+};
+use style::values::computed::{Length, LengthPercentage, Percentage};
 use style::values::specified::box_::{DisplayInside, DisplayOutside};
 use style::{
     Atom, computed_values::border_collapse::T as BorderCollapse,
     computed_values::table_layout::T as TableLayout, values::computed::BorderStyle,
 };
+use style_traits::values::specified::AllowedNumericType;
 use taffy::{
     DetailedGridInfo, LayoutPartialTree as _, ResolveOrZero, TrackSizingFunction, style_helpers,
 };
@@ -29,9 +34,14 @@ pub struct TableContext {
     pub style: taffy::Style<Atom>,
     pub cells: Vec<TableCell>,
     pub rows: Vec<TableRow>,
+    pub columns: Vec<TableColumn>,
     pub computed_grid_info: AtomicRefCell<Option<DetailedGridInfo<Atom>>>,
     pub border_style: Option<ServoArc<Border>>,
     pub border_collapse: BorderCollapse,
+    /// Backing storage for `calc()` track sizes synthesised by the table layout code.
+    /// Taffy stores calc values as raw pointers, so these must outlive the `style`.
+    #[allow(dead_code)]
+    calc_values: Vec<LengthPercentage>,
 }
 
 // #[derive(Debug, Clone, Eq, PartialEq)]
@@ -45,6 +55,11 @@ pub struct TableCell {
     // kind: TableItemKind,
     node_id: NodeId,
     style: taffy::Style<Atom>,
+}
+
+#[derive(Debug, Clone)]
+pub struct TableColumn {
+    pub node_id: NodeId,
 }
 
 #[derive(Debug, Clone)]
@@ -63,6 +78,35 @@ fn side_width(width: app_units::Au, style: BorderStyle) -> f32 {
     } else {
         width.to_f32_px()
     }
+}
+
+/// Build a `calc(<percent> + <length>)` track sizing function. The calc value is
+/// boxed and stored in `calc_values` so that the raw pointer Taffy holds stays valid.
+fn percent_plus_length(
+    calc_values: &mut Vec<LengthPercentage>,
+    percent: f32,
+    length: f32,
+) -> TrackSizingFunction {
+    let node = CalcNode::Sum(
+        vec![
+            CalcNode::Leaf(ComputedLeaf::Percentage(Percentage(percent))),
+            CalcNode::Leaf(ComputedLeaf::Length(Length::new(length))),
+        ]
+        .into(),
+    );
+    let value = LengthPercentage::new_calc(node, AllowedNumericType::NonNegative);
+    let dim = match value.unpack() {
+        UnpackedLengthPercentage::Calc(calc) => {
+            let ptr = calc as *const CalcLengthPercentage as *const ();
+            // SAFETY: the pointer targets the heap allocation owned by `value`, which
+            // is kept alive by `calc_values` for as long as the TableContext exists.
+            unsafe { taffy::Dimension::from_raw(taffy::CompactLength::calc(ptr)) }
+        }
+        UnpackedLengthPercentage::Length(len) => style_helpers::length(len.px()),
+        UnpackedLengthPercentage::Percentage(p) => style_helpers::percent(p.0),
+    };
+    calc_values.push(value);
+    dim.into()
 }
 
 pub(crate) fn build_table_context(
@@ -93,8 +137,9 @@ pub(crate) fn build_table_context(
     style.grid_auto_columns = Vec::new();
     style.grid_auto_rows = Vec::new();
 
+    // The fixed table layout algorithm only applies when the table has a non-auto width
     let is_fixed = match stylo_styles.clone_table_layout() {
-        TableLayout::Fixed => true,
+        TableLayout::Fixed => !style.size.width.is_auto(),
         TableLayout::Auto => false,
     };
 
@@ -103,8 +148,19 @@ pub(crate) fn build_table_context(
 
     drop(stylo_styles);
 
+    let mut columns: Vec<TableColumn> = Vec::new();
     let mut column_sizes: Vec<taffy::TrackSizingFunction> = Vec::new();
+    for child_id in children.iter().copied() {
+        collect_columns(doc, child_id, &mut columns, &mut column_sizes);
+    }
+    // Column widths only take effect in the fixed table layout algorithm
+    if !is_fixed {
+        column_sizes.clear();
+    }
     let mut first_cell_border: Option<ServoArc<Border>> = None;
+    // Percentage widths set on first-row cells: (column index, percentage, padding + border)
+    let mut percent_columns: Vec<(u16, f32, f32)> = Vec::new();
+    let mut calc_values: Vec<LengthPercentage> = Vec::new();
     for child_id in children.iter().copied() {
         collect_table_cells(
             doc,
@@ -117,9 +173,51 @@ pub(crate) fn build_table_context(
             &mut rows,
             &mut column_sizes,
             &mut first_cell_border,
+            &mut percent_columns,
         );
     }
-    column_sizes.resize(col as usize, style_helpers::auto());
+    let remaining_column = if is_fixed {
+        style_helpers::minmax(style_helpers::length(0.0), style_helpers::fr(1.0))
+    } else {
+        style_helpers::auto()
+    };
+    column_sizes.resize(col as usize, remaining_column);
+    if is_fixed {
+        // In the fixed table layout algorithm, percentage column widths resolve against
+        // the table's content width minus the horizontal border-spacing between columns,
+        // whereas Taffy resolves percentage tracks against the container's inner width
+        // (from which only the outer border-spacing has been removed via padding). Fold
+        // the inner border-spacing into the percentage using `calc(N% - N * spacing)`.
+        let spacing_x = match border_collapse {
+            BorderCollapse::Separate => border_spacing.width.px(),
+            BorderCollapse::Collapse => 0.0,
+        };
+        let inner_spacing = spacing_x * col.saturating_sub(1) as f32;
+        let mut percent_track = |percent: f32, extra: f32| -> TrackSizingFunction {
+            let extra = extra - percent * inner_spacing;
+            if extra == 0.0 {
+                style_helpers::percent(percent)
+            } else {
+                percent_plus_length(&mut calc_values, percent, extra)
+            }
+        };
+
+        for column in column_sizes.iter_mut() {
+            if column.max.is_auto() {
+                *column = remaining_column;
+            } else if column.max.into_raw().tag() == taffy::CompactLength::PERCENT_TAG {
+                *column = percent_track(column.max.into_raw().value(), 0.0);
+            }
+        }
+
+        // Percentage widths on cells apply to the cell's content box, so the
+        // cell's horizontal padding and border must be added to the column width.
+        for (col_idx, percent, extra) in percent_columns {
+            if let Some(column) = column_sizes.get_mut(col_idx as usize) {
+                *column = percent_track(percent, extra);
+            }
+        }
+    }
 
     style.grid_template_columns = column_sizes.into_iter().map(|dim| dim.into()).collect();
     style.grid_template_rows = vec![style_helpers::auto(); row as usize];
@@ -177,12 +275,63 @@ pub(crate) fn build_table_context(
             style,
             cells,
             rows,
+            columns,
             computed_grid_info: AtomicRefCell::new(None),
             border_collapse,
             border_style: first_cell_border,
+            calc_values,
         },
         layout_children,
     )
+}
+
+/// Collect `<col>` elements (and `display: table-column` elements) along with their
+/// widths, which take precedence over cell widths in the fixed table layout algorithm.
+/// Columns without a specified width are recorded as `auto`.
+fn collect_columns(
+    doc: &mut BaseDocument,
+    node_id: NodeId,
+    columns: &mut Vec<TableColumn>,
+    column_sizes: &mut Vec<TrackSizingFunction>,
+) {
+    let node = &doc.nodes[node_id];
+    if !node.is_element() {
+        return;
+    }
+    let Some(display) = node.primary_styles().map(|s| s.clone_display()) else {
+        return;
+    };
+
+    match display.inside() {
+        DisplayInside::TableColumnGroup => {
+            let children = std::mem::take(&mut doc.nodes[node_id].children);
+            for child_id in children.iter().copied() {
+                collect_columns(doc, child_id, columns, column_sizes);
+            }
+            doc.nodes[node_id].children = children;
+        }
+        DisplayInside::TableColumn => {
+            let style = stylo_taffy::to_taffy_style(&node.primary_styles().unwrap());
+            let span: u16 = node
+                .attr(local_name!("span"))
+                .and_then(|val| val.parse::<u16>().ok())
+                .map(|v| v.max(1))
+                .unwrap_or(1);
+            let column = match style.size.width.tag() {
+                taffy::CompactLength::LENGTH_TAG => style_helpers::length(style.size.width.value()),
+                taffy::CompactLength::PERCENT_TAG => {
+                    style_helpers::percent(style.size.width.value())
+                }
+                // Browsers treat calc() widths on columns as auto
+                _ => style_helpers::auto(),
+            };
+            for _ in 0..span {
+                columns.push(TableColumn { node_id });
+                column_sizes.push(column);
+            }
+        }
+        _ => {}
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -197,6 +346,7 @@ pub(crate) fn collect_table_cells(
     rows: &mut Vec<TableRow>,
     columns: &mut Vec<TrackSizingFunction>,
     first_cell_border: &mut Option<ServoArc<Border>>,
+    percent_columns: &mut Vec<(u16, f32, f32)>,
 ) {
     let node = &mut doc.nodes[node_id];
 
@@ -235,6 +385,7 @@ pub(crate) fn collect_table_cells(
                     rows,
                     columns,
                     first_cell_border,
+                    percent_columns,
                 );
             }
             doc.nodes[node_id].children = children;
@@ -262,6 +413,7 @@ pub(crate) fn collect_table_cells(
                     rows,
                     columns,
                     first_cell_border,
+                    percent_columns,
                 );
             }
             doc.nodes[node_id].children = children;
@@ -284,7 +436,16 @@ pub(crate) fn collect_table_cells(
                 *first_cell_border = Some(stylo_style.clone_border());
             }
 
-            if *row == 1 {
+            // In the fixed table layout algorithm the widths of columns are not
+            // affected by cell contents, so cells must not impose a min-content
+            // floor on their tracks.
+            if is_fixed {
+                style.min_size.width = style_helpers::length(0.0);
+            }
+
+            let col_needs_width = (*col as usize) >= columns.len()
+                || (is_fixed && colspan == 1 && columns[*col as usize].max.is_auto());
+            if *row == 1 && col_needs_width {
                 let column = match style.size.width.tag() {
                     taffy::CompactLength::LENGTH_TAG => {
                         let len = style.size.width.value();
@@ -299,6 +460,18 @@ pub(crate) fn collect_table_cells(
                     }
                     taffy::CompactLength::PERCENT_TAG => {
                         if is_fixed {
+                            let extra = match style.box_sizing {
+                                taffy::BoxSizing::ContentBox => {
+                                    let padding =
+                                        style.padding.resolve_or_zero(None, resolve_calc_value);
+                                    let border =
+                                        style.border.resolve_or_zero(None, resolve_calc_value);
+                                    padding.left + padding.right + border.left + border.right
+                                }
+                                taffy::BoxSizing::BorderBox => 0.0,
+                            };
+                            // Resolved in `build_table_context` once the column count is known
+                            percent_columns.push((*col, style.size.width.value(), extra));
                             style_helpers::percent(style.size.width.value())
                         } else {
                             style_helpers::auto()
@@ -310,7 +483,11 @@ pub(crate) fn collect_table_cells(
                     // Taffy resolves it against the table's inner width.
                     _ => style.size.width.into(),
                 };
-                columns.push(column);
+                if (*col as usize) < columns.len() {
+                    columns[*col as usize] = column;
+                } else {
+                    columns.push(column);
+                }
             }
 
             // Zero-out cell borders is BorderCollapse is Collapse
