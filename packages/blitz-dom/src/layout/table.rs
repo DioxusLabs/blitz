@@ -244,6 +244,16 @@ pub(crate) fn build_table_context(
     } else {
         style_helpers::auto()
     };
+    // Trailing `<col>` columns which contain no cells and have no definite width
+    // (i.e. would be zero-width) are dropped, so they don't add border-spacing.
+    while column_sizes.len() > cursor.num_columns as usize
+        && column_sizes
+            .last()
+            .is_some_and(|c| c.min.into_raw().tag() == taffy::CompactLength::AUTO_TAG)
+    {
+        column_sizes.pop();
+        columns.pop();
+    }
     let num_columns = cursor.num_columns.max(column_sizes.len() as u16);
     column_sizes.resize(num_columns as usize, remaining_column);
     if is_fixed {
@@ -381,13 +391,32 @@ fn collect_columns(
                 .and_then(|val| val.parse::<u16>().ok())
                 .map(|v| v.max(1))
                 .unwrap_or(1);
-            let column = match style.size.width.tag() {
-                taffy::CompactLength::LENGTH_TAG => style_helpers::length(style.size.width.value()),
+            let column: TrackSizingFunction = match style.size.width.tag() {
+                taffy::CompactLength::LENGTH_TAG => {
+                    // A definite `max-width` clamps the column width; a zero width is treated as auto
+                    let mut width = style.size.width.value();
+                    if style.max_size.width.into_raw().tag() == taffy::CompactLength::LENGTH_TAG {
+                        width = width.min(style.max_size.width.into_raw().value());
+                    }
+                    if width > 0.0 {
+                        style_helpers::length(width)
+                    } else {
+                        style_helpers::auto()
+                    }
+                }
                 taffy::CompactLength::PERCENT_TAG => {
                     style_helpers::percent(style.size.width.value())
                 }
                 // Browsers treat calc() widths on columns as auto
                 _ => style_helpers::auto(),
+            };
+            // A definite `min-width` on a column acts as a floor on its width
+            let column = match style.min_size.width.into_raw().tag() {
+                taffy::CompactLength::LENGTH_TAG if column.max.is_auto() => style_helpers::minmax(
+                    style_helpers::length(style.min_size.width.into_raw().value()),
+                    style_helpers::auto(),
+                ),
+                _ => column,
             };
             for _ in 0..span {
                 columns.push(TableColumn { node_id });
@@ -512,7 +541,7 @@ fn collect_table_cells(
             let col_needs_width =
                 (col as usize) >= columns.len() || columns[col as usize].max.is_auto();
             if *row == 1 && col_needs_width {
-                let column = match style.size.width.tag() {
+                let column: TrackSizingFunction = match style.size.width.tag() {
                     taffy::CompactLength::LENGTH_TAG => {
                         let len = style.size.width.value();
                         let padding = style.padding.resolve_or_zero(None, resolve_calc_value);
@@ -550,7 +579,9 @@ fn collect_table_cells(
                     _ => style.size.width.into(),
                 };
                 if (col as usize) < columns.len() {
-                    columns[col as usize] = column;
+                    if !column.max.is_auto() {
+                        columns[col as usize] = column;
+                    }
                 } else {
                     columns.resize(col as usize, style_helpers::auto());
                     columns.push(column);
