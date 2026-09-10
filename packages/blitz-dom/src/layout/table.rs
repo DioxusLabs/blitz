@@ -58,6 +58,48 @@ pub struct TableCell {
     style: taffy::Style<Atom>,
 }
 
+/// Tracks the current column position while walking the table's cells, so that
+/// cells are assigned the same columns Taffy's dense auto-placement will give them
+/// (skipping columns still occupied by rowspan cells from earlier rows).
+#[derive(Debug, Default)]
+struct ColumnCursor {
+    /// The column the next cell in the current row will be placed in
+    col: u16,
+    /// The total number of columns seen so far
+    num_columns: u16,
+    /// For each column, the number of further rows it is occupied by a rowspan cell
+    rowspans: Vec<u16>,
+}
+
+impl ColumnCursor {
+    fn start_row(&mut self) {
+        self.col = 0;
+        for remaining in self.rowspans.iter_mut() {
+            *remaining = remaining.saturating_sub(1);
+        }
+    }
+
+    /// Advance past occupied columns, returning the column of the next cell
+    fn next_free(&mut self) -> u16 {
+        while self.rowspans.get(self.col as usize).is_some_and(|r| *r > 0) {
+            self.col += 1;
+        }
+        self.col
+    }
+
+    fn place(&mut self, colspan: u16, rowspan: u16) {
+        let end = self.col + colspan;
+        if self.rowspans.len() < end as usize {
+            self.rowspans.resize(end as usize, 0);
+        }
+        for remaining in &mut self.rowspans[self.col as usize..end as usize] {
+            *remaining = rowspan - 1;
+        }
+        self.col = end;
+        self.num_columns = self.num_columns.max(end);
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct TableColumn {
     pub node_id: NodeId,
@@ -117,7 +159,7 @@ pub(crate) fn build_table_context(
     let mut cells: Vec<TableCell> = Vec::new();
     let mut rows: Vec<TableRow> = Vec::new();
     let mut row = 0u16;
-    let mut col = 0u16;
+    let mut cursor = ColumnCursor::default();
 
     let root_node = &mut doc.nodes[table_root_node_id];
 
@@ -154,35 +196,56 @@ pub(crate) fn build_table_context(
     for child_id in children.iter().copied() {
         collect_columns(doc, child_id, &mut columns, &mut column_sizes);
     }
-    // Column widths only take effect in the fixed table layout algorithm
+    // Percentage column widths only take effect in the fixed table layout algorithm
     if !is_fixed {
-        column_sizes.clear();
+        for column in column_sizes.iter_mut() {
+            if column.max.into_raw().tag() == taffy::CompactLength::PERCENT_TAG {
+                *column = style_helpers::auto();
+            }
+        }
     }
     let mut first_cell_border: Option<ServoArc<Border>> = None;
     // Percentage widths set on first-row cells: (column index, percentage, padding + border)
     let mut percent_columns: Vec<(u16, f32, f32)> = Vec::new();
     let mut calc_values: Vec<LengthPercentage> = Vec::new();
-    for child_id in children.iter().copied() {
-        collect_table_cells(
-            doc,
-            child_id,
-            is_fixed,
-            border_collapse,
-            &mut row,
-            &mut col,
-            &mut cells,
-            &mut rows,
-            &mut column_sizes,
-            &mut first_cell_border,
-            &mut percent_columns,
-        );
+    // Header row groups are laid out before other rows, and footer row groups after
+    let row_group_order = |doc: &BaseDocument, child_id: NodeId| -> u8 {
+        let display = doc.nodes[child_id]
+            .primary_styles()
+            .map(|s| s.clone_display());
+        match display.map(|d| d.inside()) {
+            Some(DisplayInside::TableHeaderGroup) => 0,
+            Some(DisplayInside::TableFooterGroup) => 2,
+            _ => 1,
+        }
+    };
+    for order in 0..3 {
+        for child_id in children.iter().copied() {
+            if row_group_order(doc, child_id) != order {
+                continue;
+            }
+            collect_table_cells(
+                doc,
+                child_id,
+                is_fixed,
+                border_collapse,
+                &mut row,
+                &mut cursor,
+                &mut cells,
+                &mut rows,
+                &mut column_sizes,
+                &mut first_cell_border,
+                &mut percent_columns,
+            );
+        }
     }
     let remaining_column = if is_fixed {
         style_helpers::minmax(style_helpers::length(0.0), style_helpers::fr(1.0))
     } else {
         style_helpers::auto()
     };
-    column_sizes.resize(col as usize, remaining_column);
+    let num_columns = cursor.num_columns.max(column_sizes.len() as u16);
+    column_sizes.resize(num_columns as usize, remaining_column);
     if is_fixed {
         // In the fixed table layout algorithm, percentage column widths resolve against
         // the table's content width minus the horizontal border-spacing between columns,
@@ -193,7 +256,7 @@ pub(crate) fn build_table_context(
             BorderCollapse::Separate => border_spacing.width.px(),
             BorderCollapse::Collapse => 0.0,
         };
-        let inner_spacing = spacing_x * col.saturating_sub(1) as f32;
+        let inner_spacing = spacing_x * num_columns.saturating_sub(1) as f32;
         let mut percent_track = |percent: f32, extra: f32| -> TrackSizingFunction {
             let extra = extra - percent * inner_spacing;
             if extra == 0.0 {
@@ -336,13 +399,13 @@ fn collect_columns(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn collect_table_cells(
+fn collect_table_cells(
     doc: &mut BaseDocument,
     node_id: NodeId,
     is_fixed: bool,
     border_collapse: BorderCollapse,
     row: &mut u16,
-    col: &mut u16,
+    cursor: &mut ColumnCursor,
     cells: &mut Vec<TableCell>,
     rows: &mut Vec<TableRow>,
     columns: &mut Vec<TrackSizingFunction>,
@@ -381,7 +444,7 @@ pub(crate) fn collect_table_cells(
                     is_fixed,
                     border_collapse,
                     row,
-                    col,
+                    cursor,
                     cells,
                     rows,
                     columns,
@@ -394,7 +457,7 @@ pub(crate) fn collect_table_cells(
         DisplayInside::TableRow => {
             node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
             *row += 1;
-            *col = 0;
+            cursor.start_row();
 
             rows.push(TableRow {
                 node_id,
@@ -409,7 +472,7 @@ pub(crate) fn collect_table_cells(
                     is_fixed,
                     border_collapse,
                     row,
-                    col,
+                    cursor,
                     cells,
                     rows,
                     columns,
@@ -432,6 +495,7 @@ pub(crate) fn collect_table_cells(
                 .map(|v| v.clamp(1, 65534))
                 .unwrap_or(1);
             let mut style = stylo_taffy::to_taffy_style(stylo_style);
+            let col = cursor.next_free();
 
             if first_cell_border.is_none() {
                 *first_cell_border = Some(stylo_style.clone_border());
@@ -444,8 +508,9 @@ pub(crate) fn collect_table_cells(
                 style.min_size.width = style_helpers::length(0.0);
             }
 
-            let col_needs_width = (*col as usize) >= columns.len()
-                || (is_fixed && colspan == 1 && columns[*col as usize].max.is_auto());
+            // Column widths from `<col>` elements take precedence over cell widths
+            let col_needs_width =
+                (col as usize) >= columns.len() || columns[col as usize].max.is_auto();
             if *row == 1 && col_needs_width {
                 let column = match style.size.width.tag() {
                     taffy::CompactLength::LENGTH_TAG => {
@@ -472,7 +537,7 @@ pub(crate) fn collect_table_cells(
                                 taffy::BoxSizing::BorderBox => 0.0,
                             };
                             // Resolved in `build_table_context` once the column count is known
-                            percent_columns.push((*col, style.size.width.value(), extra));
+                            percent_columns.push((col, style.size.width.value(), extra));
                             style_helpers::percent(style.size.width.value())
                         } else {
                             style_helpers::auto()
@@ -484,9 +549,10 @@ pub(crate) fn collect_table_cells(
                     // Taffy resolves it against the table's inner width.
                     _ => style.size.width.into(),
                 };
-                if (*col as usize) < columns.len() {
-                    columns[*col as usize] = column;
+                if (col as usize) < columns.len() {
+                    columns[col as usize] = column;
                 } else {
+                    columns.resize(col as usize, style_helpers::auto());
                     columns.push(column);
                 }
             }
@@ -516,7 +582,7 @@ pub(crate) fn collect_table_cells(
             style.size.width = style_helpers::auto();
             cells.push(TableCell { node_id, style });
 
-            *col += colspan;
+            cursor.place(colspan, rowspan);
         }
         DisplayInside::Flow
         | DisplayInside::FlowRoot
