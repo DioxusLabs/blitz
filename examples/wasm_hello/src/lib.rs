@@ -75,13 +75,13 @@ const HTML: &str = r#"<!doctype html>
 fn build_font_context() -> FontContext {
     // Browsers don't expose system fonts to wasm, so register a bundled font and
     // alias it to every generic family the stylesheet might ask for.
-    let mut ctx = FontContext {
-        source_cache: SourceCache::new_shared(),
-        collection: Collection::new(CollectionOptions {
+    let mut ctx = FontContext::from_parts(
+        Collection::new(CollectionOptions {
             shared: false,
             system_fonts: false,
         }),
-    };
+        SourceCache::new_shared(),
+    );
     let font_bytes = decode_font_bytes(DEJAVU_SANS).into_owned();
     let registered = ctx
         .collection
