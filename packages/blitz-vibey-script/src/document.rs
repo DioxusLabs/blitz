@@ -232,6 +232,14 @@ impl ScriptDocument {
     }
 
     /// Evaluate arbitrary JavaScript code in the document's script context
+    /// Give the embedder access to the Boa [`Context`](boa_engine::Context),
+    /// e.g. to register native functions or globals of its own. Call this
+    /// before [`execute_scripts`](Self::execute_scripts) so that scripts can
+    /// see what was registered.
+    pub fn with_context<R>(&mut self, f: impl FnOnce(&mut boa_engine::Context) -> R) -> R {
+        f(&mut self.runtime.context)
+    }
+
     pub fn eval(&mut self, code: &str) {
         self.runtime.sync_named_element_globals();
         self.runtime.eval(code, "<eval>");
