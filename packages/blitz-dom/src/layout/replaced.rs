@@ -154,9 +154,26 @@ pub fn compute_replaced_layout(
     // (CSS2 §10.3.2) when the available width is definite; shrink-to-fit
     // contexts (min/max-content) contain it within the default object size.
     //
-    // Only the intrinsic ratio participates here: the `aspect-ratio` property
-    // affects the sizing of the box, not the natural dimensions of its content.
+    // The intrinsic ratio transfers directly between the natural (content)
+    // dimensions. A ratio from the `aspect-ratio` property instead applies to
+    // the box given by `box-sizing` (CSS Sizing 4 §5), so transferring through
+    // it converts to that box and back.
     let intrinsic_ratio = intrinsic.ratio.filter(is_usable_ratio);
+    let style_ratio = style.aspect_ratio().filter(is_usable_ratio);
+    let transferred_height = |w: f32| {
+        intrinsic_ratio.map(|r| w / r).or_else(|| {
+            style_ratio.map(|r| {
+                ((w + box_sizing_adjustment.width) / r - box_sizing_adjustment.height).max(0.0)
+            })
+        })
+    };
+    let transferred_width = |h: f32| {
+        intrinsic_ratio.map(|r| h * r).or_else(|| {
+            style_ratio.map(|r| {
+                ((h + box_sizing_adjustment.height) * r - box_sizing_adjustment.width).max(0.0)
+            })
+        })
+    };
     let default_size = context.default_object_size;
     let inherent_size = match (intrinsic.width, intrinsic.height) {
         (Some(w), Some(h)) => Size {
@@ -165,12 +182,10 @@ pub fn compute_replaced_layout(
         },
         (Some(w), None) => Size {
             width: w,
-            height: intrinsic_ratio
-                .map(|r| w / r)
-                .unwrap_or(default_size.height),
+            height: transferred_height(w).unwrap_or(default_size.height),
         },
         (None, Some(h)) => Size {
-            width: intrinsic_ratio.map(|r| h * r).unwrap_or(default_size.width),
+            width: transferred_width(h).unwrap_or(default_size.width),
             height: h,
         },
         (None, None) => match intrinsic_ratio {

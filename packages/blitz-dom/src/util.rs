@@ -199,7 +199,7 @@ mod svg_tests {
         assert_eq!(svg.intrinsic_width(), None);
         assert_eq!(svg.intrinsic_height(), None);
         // The aspect ratio is still available from the viewBox.
-        assert!((svg.aspect_ratio() - (485.0 / 58.0)).abs() < 1e-3);
+        assert!((svg.aspect_ratio().unwrap() - (485.0 / 58.0)).abs() < 1e-3);
     }
 
     #[test]
@@ -232,6 +232,47 @@ mod svg_tests {
         let svg = parse_svg_image(src).unwrap();
         assert_eq!(svg.intrinsic_width(), None);
         assert_eq!(svg.intrinsic_height(), None);
+    }
+
+    #[test]
+    fn viewport_relative_dimensions_are_not_intrinsic() {
+        // Viewport-relative units behave like percentages for intrinsic
+        // sizing: no intrinsic dimension in that axis.
+        let src = br#"<svg xmlns="http://www.w3.org/2000/svg" width="100vw" height="50vh" viewBox="0 0 200 100"></svg>"#;
+        let svg = parse_svg_image(src).unwrap();
+        assert_eq!(svg.intrinsic_width(), None);
+        assert_eq!(svg.intrinsic_height(), None);
+        assert_eq!(svg.aspect_ratio(), Some(2.0));
+    }
+
+    #[test]
+    fn zero_and_negative_dimensions_are_zero_intrinsic() {
+        // A zero or negative width/height is a *zero* intrinsic dimension
+        // (matching browsers), and the SVG must still parse even though usvg
+        // rejects non-positive sizes.
+        let src = br#"<svg xmlns="http://www.w3.org/2000/svg" width="0" height="50"><rect width="10" height="10"/></svg>"#;
+        let svg = parse_svg_image(src).unwrap();
+        assert_eq!(svg.intrinsic_width(), Some(0.0));
+        assert_eq!(svg.intrinsic_height(), Some(50.0));
+        assert_eq!(svg.aspect_ratio(), None);
+
+        let src = br#"<svg xmlns="http://www.w3.org/2000/svg" width="-100" height="-50" viewBox="0 0 100 50"></svg>"#;
+        let svg = parse_svg_image(src).unwrap();
+        assert_eq!(svg.intrinsic_width(), Some(0.0));
+        assert_eq!(svg.intrinsic_height(), Some(0.0));
+        assert_eq!(svg.aspect_ratio(), None);
+    }
+
+    #[test]
+    fn no_dimensions_and_no_viewbox_has_no_intrinsic_ratio() {
+        let src =
+            br#"<svg xmlns="http://www.w3.org/2000/svg"><rect width="10" height="10"/></svg>"#;
+        let svg = parse_svg_image(src).unwrap();
+        assert_eq!(svg.intrinsic_width(), None);
+        assert_eq!(svg.intrinsic_height(), None);
+        assert_eq!(svg.aspect_ratio(), None);
+        // Default object size fallback
+        assert_eq!(svg.intrinsic_size(), (300.0, 150.0));
     }
 }
 
