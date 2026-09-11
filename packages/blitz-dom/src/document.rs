@@ -834,6 +834,37 @@ impl BaseDocument {
             .unwrap()
     }
 
+    /// The element whose `overflow` is propagated to the viewport, per
+    /// <https://drafts.csswg.org/css-overflow-3/#overflow-propagation>: the root element,
+    /// or the `<body>` when the root element's overflow is `visible`. The used overflow of
+    /// that element is `visible` (it must not establish a scroll container or independent
+    /// formatting context of its own).
+    pub fn viewport_overflow_propagation_source(&self) -> Option<NodeId> {
+        let root = self.try_root_element()?;
+        let root_styles = root.primary_styles()?;
+        // Any containment on the root element suppresses propagation
+        // (https://drafts.csswg.org/css-contain-2/#containment-types)
+        if !root_styles.clone_contain().is_empty() {
+            return None;
+        }
+        let root_is_visible = root_styles.clone_overflow_x() == Overflow::Visible
+            && root_styles.clone_overflow_y() == Overflow::Visible;
+        if !root_is_visible {
+            return Some(root.id);
+        }
+        let body_id = root.children.iter().copied().find(|id| {
+            self.nodes[*id]
+                .data
+                .is_element_with_tag_name(&local_name!("body"))
+        })?;
+        // Any containment on the <body> likewise suppresses propagation
+        let body_styles = self.nodes[body_id].primary_styles()?;
+        if !body_styles.clone_contain().is_empty() {
+            return None;
+        }
+        Some(body_id)
+    }
+
     pub fn create_node(&mut self, node_data: NodeData) -> NodeId {
         let tree_ptr = self.nodes.as_mut() as *mut NodeTree;
         let guard = self.guard.clone();
