@@ -323,6 +323,35 @@ impl BaseDocument {
             .unwrap_or_default()
     }
 
+    /// Ancestors of `node_id` in document order, for `:hover`/`:active` propagation.
+    /// Starts at `node_id` and follows the layout-parent chain like `node_layout_ancestors`,
+    /// but when a node has no layout parent at all it climbs DOM parents until it reaches one
+    /// that does, so the chain still reaches the enclosing HTML element.
+    pub fn node_interaction_ancestors(&self, node_id: NodeId) -> Vec<NodeId> {
+        let mut ancestors = Vec::with_capacity(12);
+        let mut maybe_id = Some(node_id);
+        while let Some(id) = maybe_id {
+            ancestors.push(id);
+            if let Some(layout_parent) = self.nodes[id].layout_parent.get() {
+                let mut maybe = Some(layout_parent);
+                while let Some(pid) = maybe {
+                    ancestors.push(pid);
+                    maybe = self.nodes[pid].layout_parent.get();
+                }
+                break;
+            }
+            maybe_id = self.nodes[id].parent;
+        }
+        ancestors.reverse();
+        ancestors
+    }
+
+    pub fn maybe_node_interaction_ancestors(&self, node_id: Option<NodeId>) -> Vec<NodeId> {
+        node_id
+            .map(|id| self.node_interaction_ancestors(id))
+            .unwrap_or_default()
+    }
+
     /// Compare the document order of two nodes.
     /// Returns Ordering::Less if node_a comes before node_b in document order.
     /// Returns Ordering::Greater if node_a comes after node_b.
