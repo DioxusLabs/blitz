@@ -263,6 +263,8 @@ pub struct BaseDocument {
     pub(crate) last_client_pointer_position: Option<taffy::Point<f32>>,
     /// The node which is currently focussed (if any)
     pub(crate) focus_node_id: Option<NodeId>,
+    /// The IME cursor area most recently reported to the shell for the focussed text input
+    pub(crate) last_ime_cursor_area: Option<(f32, f32, f32, f32)>,
     /// The node which is currently active (if any)
     pub(crate) active_node_id: Option<NodeId>,
     /// The node which recieved a mousedown event (if any)
@@ -458,6 +460,7 @@ impl BaseDocument {
             hover_node_is_text: false,
             last_client_pointer_position: None,
             focus_node_id: None,
+            last_ime_cursor_area: None,
             active_node_id: None,
             mousedown_node_id: None,
             has_active_animations: false,
@@ -1672,8 +1675,23 @@ impl BaseDocument {
         );
 
         self.focus_node_id = Some(focus_node_id);
+        self.last_ime_cursor_area = self.nodes[focus_node_id].ime_cursor_area();
 
         true
+    }
+
+    /// Report the focussed text input's content box to the shell as the IME cursor area,
+    /// if it has changed since it was last reported. Must be called after layout.
+    pub(crate) fn sync_ime_cursor_area(&mut self) {
+        let Some(node) = self.focus_node_id.and_then(|id| self.get_node(id)) else {
+            return;
+        };
+        let area = node.ime_cursor_area();
+        if let Some((x, y, width, height)) = area.filter(|a| Some(*a) != self.last_ime_cursor_area)
+        {
+            self.shell_provider.set_ime_cursor_area(x, y, width, height);
+            self.last_ime_cursor_area = area;
+        }
     }
 
     pub fn active_node(&mut self) -> bool {
@@ -3294,5 +3312,63 @@ mod font_face_override_tests {
             "registered family should report the CSS-declared name, \
              not the font file's internal `name` table entry",
         );
+    }
+}
+
+#[cfg(test)]
+mod ime_focus_tests {
+    use super::*;
+    use crate::qual_name;
+    use blitz_traits::shell::{ColorScheme, ShellProvider};
+    use std::sync::Mutex;
+
+    #[derive(Default)]
+    struct RecordingShell {
+        enabled: Mutex<Vec<bool>>,
+        areas: Mutex<Vec<(f32, f32, f32, f32)>>,
+    }
+    impl ShellProvider for RecordingShell {
+        fn set_ime_enabled(&self, is_enabled: bool) {
+            self.enabled.lock().unwrap().push(is_enabled);
+        }
+        fn set_ime_cursor_area(&self, x: f32, y: f32, width: f32, height: f32) {
+            self.areas.lock().unwrap().push((x, y, width, height));
+        }
+    }
+
+    /// An input focussed before the first layout (e.g. via `autofocus`) must still enable
+    /// the IME, and its cursor area must be reported once layout has run.
+    #[test]
+    fn focus_before_layout_enables_ime() {
+        let shell = Arc::new(RecordingShell::default());
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
+            shell_provider: Some(shell.clone()),
+            ..Default::default()
+        });
+        doc.add_user_agent_stylesheet("html, body { display: block; margin: 0 } input { display: block; width: 100px; height: 20px; padding: 0; border: 0 }");
+        let root_id = doc.root_node().id;
+        let mut mutator = doc.mutate();
+        let html = mutator.create_element(qual_name!("html"), vec![]);
+        let body = mutator.create_element(qual_name!("body"), vec![]);
+        let input = mutator.create_element(qual_name!("input"), vec![]);
+        mutator.append_children(body, &[input]);
+        mutator.append_children(html, &[body]);
+        mutator.append_children(root_id, &[html]);
+        drop(mutator);
+
+        doc.set_focus_to(input);
+        assert_eq!(*shell.enabled.lock().unwrap(), vec![true]);
+        assert!(shell.areas.lock().unwrap().is_empty());
+
+        doc.resolve(0.0);
+        assert_eq!(*shell.areas.lock().unwrap(), vec![(0.0, 0.0, 100.0, 20.0)]);
+
+        // Unchanged layout does not re-report the area
+        doc.resolve(0.0);
+        assert_eq!(shell.areas.lock().unwrap().len(), 1);
+
+        doc.clear_focus();
+        assert_eq!(*shell.enabled.lock().unwrap(), vec![true, false]);
     }
 }
