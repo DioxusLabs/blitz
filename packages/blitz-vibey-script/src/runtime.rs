@@ -9,6 +9,7 @@ use std::rc::Rc;
 use blitz_dom::{BaseDocument, NodeId};
 use blitz_traits::events::{DomEvent, DomEventData, EventState};
 use boa_engine::builtins::promise::PromiseState;
+use boa_engine::context::HostHooks;
 use boa_engine::module::{Module, ModuleLoader, ModuleRequest, Referrer};
 use boa_engine::object::{JsObject, ObjectInitializer};
 use boa_engine::property::Attribute;
@@ -1276,10 +1277,27 @@ pub(crate) struct ScriptRuntime {
 }
 
 impl ScriptRuntime {
+    #[allow(dead_code)]
     pub fn new(
         doc: Rc<RefCell<BaseDocument>>,
         base_url: Option<&Url>,
         fetcher: Rc<RefCell<Box<dyn ScriptFetcher>>>,
+    ) -> Self {
+        Self::with_host_hooks(
+            doc,
+            base_url,
+            fetcher,
+            Rc::new(boa_engine::context::DefaultHooks),
+        )
+    }
+
+    /// Like [`new`](Self::new), but with custom Boa [`HostHooks`] (e.g. to fix
+    /// the timezone `Date` reports, independent of the machine's locale).
+    pub fn with_host_hooks<H: HostHooks + 'static>(
+        doc: Rc<RefCell<BaseDocument>>,
+        base_url: Option<&Url>,
+        fetcher: Rc<RefCell<Box<dyn ScriptFetcher>>>,
+        host_hooks: Rc<H>,
     ) -> Self {
         let module_loader = Rc::new(BlitzModuleLoader {
             fetcher: Rc::clone(&fetcher),
@@ -1296,6 +1314,7 @@ impl ScriptRuntime {
         // (possibly virtual) time as timers
         let clock = ctx.state.borrow().clock.clone();
         let mut context = Context::builder()
+            .host_hooks(host_hooks)
             .module_loader(module_loader.clone())
             .clock(Rc::new(crate::clock::BoaClockAdapter::new(clock)))
             .build()
