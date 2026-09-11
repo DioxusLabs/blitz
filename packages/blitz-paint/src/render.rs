@@ -401,6 +401,23 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             return;
         }
 
+        // Cull elements whose transformed geometry is not representable in f32 (e.g.
+        // `transform: scale(99e99)`): the renderer works in f32 and flattening such paths
+        // can attempt to allocate an unbounded number of line segments.
+        let f32_max = f64::from(f32::MAX);
+        if !screen_bbox.is_finite()
+            || [
+                screen_bbox.x0,
+                screen_bbox.y0,
+                screen_bbox.x1,
+                screen_bbox.y1,
+            ]
+            .iter()
+            .any(|c| c.abs() > f32_max)
+        {
+            return;
+        }
+
         // Optimise zero-area (/very small area) clips by not rendering at all
         let clip_area = content_box_size.width * content_box_size.height;
         let overflow_area =
