@@ -29,7 +29,10 @@ use cursor_icon::CursorIcon;
 use linebender_resource_handle::Blob;
 use markup5ever::{LocalName, local_name};
 use parley::{FontContext, PlainEditorDriver};
-use selectors::{Element, matching::QuirksMode};
+use selectors::{
+    Element,
+    matching::{ElementSelectorFlags, QuirksMode},
+};
 use smallvec::SmallVec;
 use std::any::Any;
 use std::cell::RefCell;
@@ -1521,6 +1524,171 @@ impl BaseDocument {
             self.snapshot_node_state_only(node_id);
         }
         cb(&mut self.nodes[node_id]);
+    }
+
+    /// Restyle the children of a container after a child insertion or removal,
+    /// based on the container's [`ElementSelectorFlags`] (mirroring Gecko's
+    /// `RestyleManager::RestyleForInsertOrChange` / `RestyleForRemove`):
+    ///
+    /// - `HAS_EMPTY_SELECTOR`: the container itself may match `:empty`, so restyle
+    ///   its subtree (and its later siblings if the grandparent has
+    ///   `HAS_SLOW_SELECTOR_LATER_SIBLINGS`, for `:empty ~ E`).
+    /// - `HAS_SLOW_SELECTOR` (`:nth-last-child` etc): restyle the whole container
+    ///   (all children would need restyling anyway, so a single subtree hint on
+    ///   the container is cheaper, matching Gecko's `RestyleWholeContainer`).
+    /// - `HAS_SLOW_SELECTOR_LATER_SIBLINGS` (`:nth-child` etc): restyle children
+    ///   at or after the change position.
+    /// - `HAS_EDGE_CHILD_SELECTOR` (`:first-child`/`:last-child`/`:only-child`):
+    ///   restyle the first and last element children.
+    ///
+    /// `change_idx` is the index at which a child was inserted, or the index the
+    /// removed child used to occupy (i.e. the index of the first child whose
+    /// sibling indices may have changed). Must be called *after* the child list
+    /// has been updated.
+    pub(crate) fn restyle_for_child_insert_or_remove(
+        &mut self,
+        parent_id: NodeId,
+        change_idx: usize,
+    ) {
+        let parent = &self.nodes[parent_id];
+        if !parent.flags.is_in_document() {
+            return;
+        }
+        let flags = parent.selector_flags().get();
+
+        // It is somewhat common to remove all nodes in a container from the
+        // beginning. Going through the later-siblings code-path for that would
+        // be quadratic, so escalate changes at the start of the container to a
+        // whole-container restyle instead (which the pending-subtree-restyle
+        // check below then dedupes), matching Gecko's `ContentWillBeRemoved`.
+        let restyle_all = flags.contains(ElementSelectorFlags::HAS_SLOW_SELECTOR)
+            || (flags.contains(ElementSelectorFlags::HAS_SLOW_SELECTOR_LATER_SIBLINGS)
+                && change_idx == 0);
+        let restyle_later = flags.contains(ElementSelectorFlags::HAS_SLOW_SELECTOR_LATER_SIBLINGS);
+        let restyle_edges = flags.contains(ElementSelectorFlags::HAS_EDGE_CHILD_SELECTOR);
+        let restyle_self = flags.contains(ElementSelectorFlags::HAS_EMPTY_SELECTOR);
+
+        if !(restyle_all || restyle_later || restyle_edges || restyle_self) {
+            return;
+        }
+
+        // If the container is already pending a whole-subtree restyle then every
+        // child is already covered; skip the sibling walk. The hint is cleared
+        // when the traversal restyles the container, so this dedupes repeated
+        // mutations within a single style flush (avoiding quadratic behavior
+        // when e.g. removing all children one by one).
+        if self.nodes[parent_id]
+            .try_stylo_element_data()
+            .and_then(|s| s.get())
+            .is_some_and(|data| data.hint.contains(RestyleHint::restyle_subtree()))
+        {
+            return;
+        }
+
+        if restyle_self {
+            // Restyling the container's whole subtree covers everything the
+            // other flags would, so we're done (matching Gecko's
+            // `RestyleForEmptyChange`).
+            self.restyle_for_empty_change(parent_id);
+            return;
+        }
+
+        if restyle_all {
+            // Restyling the container is the most we can do here, so we're done.
+            if let Some(mut data) = self.nodes[parent_id]
+                .try_stylo_element_data_mut()
+                .and_then(|s| s.get_mut())
+            {
+                data.hint |= RestyleHint::restyle_subtree();
+            }
+            self.nodes[parent_id].set_dirty_descendants();
+            self.nodes[parent_id].mark_ancestors_dirty();
+            return;
+        }
+
+        if restyle_later || restyle_edges {
+            // Take the child list to avoid allocating; put it back once done.
+            let children = std::mem::take(&mut self.nodes[parent_id].children);
+            let is_element = |id: &NodeId| self.nodes[*id].is_element();
+            let first_element = children.iter().copied().find(is_element);
+            let last_element = children.iter().rev().copied().find(is_element);
+            // The nearest element children on either side of the change may have
+            // gained or lost edge-child status (e.g. the previous last child
+            // after an append, or the previous first child after a prepend).
+            let before_change = children[..change_idx.min(children.len())]
+                .iter()
+                .rev()
+                .copied()
+                .find(is_element);
+            let after_change = children[change_idx.min(children.len())..]
+                .iter()
+                .copied()
+                .find(is_element);
+            for (idx, child_id) in children.iter().copied().enumerate() {
+                if !self.nodes[child_id].is_element() {
+                    continue;
+                }
+                let is_edge = Some(child_id) == first_element
+                    || Some(child_id) == last_element
+                    || Some(child_id) == before_change
+                    || Some(child_id) == after_change;
+                let affected = (restyle_later && idx >= change_idx) || (restyle_edges && is_edge);
+                if !affected {
+                    continue;
+                }
+                if let Some(mut data) = self.nodes[child_id]
+                    .try_stylo_element_data_mut()
+                    .and_then(|s| s.get_mut())
+                {
+                    data.hint |= RestyleHint::restyle_subtree();
+                }
+            }
+            self.nodes[parent_id].children = children;
+        }
+
+        // Mark ancestors dirty so the style traversal visits the restyled nodes.
+        self.nodes[parent_id].set_dirty_descendants();
+        self.nodes[parent_id].mark_ancestors_dirty();
+    }
+
+    /// Restyle a container whose `:empty` status may have changed (mirroring
+    /// Gecko's `RestyleManager::RestyleForEmptyChange`): restyle the container's
+    /// subtree, and in the `:empty + E` / `:empty ~ E` cases (grandparent has
+    /// `HAS_SLOW_SELECTOR_LATER_SIBLINGS`) also restyle its later siblings.
+    pub(crate) fn restyle_for_empty_change(&mut self, container_id: NodeId) {
+        if let Some(mut data) = self.nodes[container_id]
+            .try_stylo_element_data_mut()
+            .and_then(|s| s.get_mut())
+        {
+            data.hint |= RestyleHint::restyle_subtree();
+        }
+
+        if let Some(grandparent_id) = self.nodes[container_id].parent {
+            let grandparent_flags = self.nodes[grandparent_id].selector_flags().get();
+            if grandparent_flags.contains(ElementSelectorFlags::HAS_SLOW_SELECTOR_LATER_SIBLINGS) {
+                // Take the child list to avoid allocating; put it back once done.
+                let siblings = std::mem::take(&mut self.nodes[grandparent_id].children);
+                let container_idx = siblings.iter().position(|id| *id == container_id);
+                if let Some(container_idx) = container_idx {
+                    for sibling_id in siblings[container_idx + 1..].iter().copied() {
+                        if !self.nodes[sibling_id].is_element() {
+                            continue;
+                        }
+                        if let Some(mut data) = self.nodes[sibling_id]
+                            .try_stylo_element_data_mut()
+                            .and_then(|s| s.get_mut())
+                        {
+                            data.hint |= RestyleHint::restyle_subtree();
+                        }
+                    }
+                }
+                self.nodes[grandparent_id].children = siblings;
+                self.nodes[grandparent_id].set_dirty_descendants();
+            }
+        }
+
+        self.nodes[container_id].set_dirty_descendants();
+        self.nodes[container_id].mark_ancestors_dirty();
     }
 
     // Takes (x, y) co-ordinates (relative to the )
