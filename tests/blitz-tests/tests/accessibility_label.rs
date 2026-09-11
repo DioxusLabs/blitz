@@ -51,7 +51,7 @@ fn includes_aria_labelledby_as_labelled_by_for_one_node() -> TestResult<()> {
             anything(),
             matches_pattern!(AccessKitNode {
                 role(): eq(Role::Button),
-                *labelled_by(): container_eq(vec![*label_node_id]),
+                *labelled_by(): eq(vec![*label_node_id]),
             })
         ))
     )
@@ -97,7 +97,7 @@ fn includes_aria_labelledby_as_labelled_by_for_two_nodes() -> TestResult<()> {
             anything(),
             matches_pattern!(AccessKitNode {
                 role(): eq(Role::Button),
-                *labelled_by(): container_eq(expected_node_ids),
+                *labelled_by(): eq(expected_node_ids),
             })
         ))
     )
@@ -119,7 +119,7 @@ fn ignores_labelledby_element_which_does_not_correspond_to_element_in_the_dom() 
             anything(),
             matches_pattern!(AccessKitNode {
                 role(): eq(Role::Button),
-                *labelled_by(): empty(),
+                *labelled_by(): eq(vec![]),
             })
         ))
     )
