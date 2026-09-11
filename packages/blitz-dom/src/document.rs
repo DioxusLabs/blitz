@@ -180,6 +180,16 @@ impl Document for Rc<RefCell<BaseDocument>> {
     }
 }
 
+/// How focus was moved to an element. Determines whether the element
+/// matches `:focus-visible` (keyboard and script focus show a focus ring;
+/// pointer focus only does so for keyboard-input elements).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FocusSource {
+    Keyboard,
+    Pointer,
+    Script,
+}
+
 pub enum DocumentEvent {
     ResourceLoad(ResourceLoadResponse),
     /// A navigation originating from within an iframe's sub-document
@@ -1618,7 +1628,7 @@ impl BaseDocument {
     pub fn focus_next_node(&mut self) -> Option<NodeId> {
         let focussed_node_id = self.get_focussed_node_id()?;
         let id = self.next_node(&self.nodes[focussed_node_id], |node| node.is_focussable())?;
-        self.set_focus_to(id);
+        self.set_focus_to_with_source(id, FocusSource::Keyboard);
         Some(id)
     }
 
@@ -1626,7 +1636,7 @@ impl BaseDocument {
     pub fn focus_prev_node(&mut self) -> Option<NodeId> {
         let focussed_node_id = self.get_focussed_node_id()?;
         let id = self.prev_node(&self.nodes[focussed_node_id], |node| node.is_focussable())?;
-        self.set_focus_to(id);
+        self.set_focus_to_with_source(id, FocusSource::Keyboard);
         Some(id)
     }
 
@@ -1645,10 +1655,35 @@ impl BaseDocument {
         self.mousedown_node_id = node_id.and_then(|id| self.nearest_non_anonymous_ancestor(id));
     }
     pub fn set_focus_to(&mut self, focus_node_id: NodeId) -> bool {
+        self.set_focus_to_with_source(focus_node_id, FocusSource::Script)
+    }
+
+    pub fn set_focus_to_with_source(&mut self, focus_node_id: NodeId, source: FocusSource) -> bool {
         let Some(focus_node_id) = self.nearest_non_anonymous_ancestor(focus_node_id) else {
             return false;
         };
+        let focus_visible = match source {
+            FocusSource::Keyboard | FocusSource::Script => true,
+            // Pointer-initiated focus only shows a focus ring on elements which
+            // support keyboard input (per the :focus-visible heuristics)
+            FocusSource::Pointer => self.nodes[focus_node_id]
+                .element_data()
+                .is_some_and(|el| el.text_input_data().is_some()),
+        };
         if Some(focus_node_id) == self.focus_node_id {
+            // Update the focus ring visibility to reflect the latest focus source
+            let has_ring = self.nodes[focus_node_id]
+                .element_state()
+                .contains(ElementState::FOCUSRING);
+            if has_ring != focus_visible {
+                self.snapshot_node_and(focus_node_id, ElementState::FOCUSRING, |node| {
+                    if let Some(data) = node.element_data_mut() {
+                        data.element_state
+                            .set(ElementState::FOCUSRING, focus_visible);
+                    }
+                    node.mark_ancestors_dirty();
+                });
+            }
             return false;
         }
 
@@ -1668,7 +1703,7 @@ impl BaseDocument {
         self.snapshot_node_and(
             focus_node_id,
             ElementState::FOCUS | ElementState::FOCUSRING,
-            |node| node.focus(shell_provider),
+            |node| node.focus(shell_provider, focus_visible),
         );
 
         self.focus_node_id = Some(focus_node_id);

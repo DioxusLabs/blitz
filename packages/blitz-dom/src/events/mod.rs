@@ -13,7 +13,7 @@ use keyboard::{KeyboardOrTextInputEvent, handle_key_or_input_event};
 pub(crate) use pointer::DragMode;
 use pointer::{handle_click, handle_pointerdown, handle_pointermove, handle_pointerup};
 
-use crate::{BaseDocument, events::pointer::handle_wheel};
+use crate::{BaseDocument, document::FocusSource, events::pointer::handle_wheel};
 
 fn adjust_coords_for_subdocument(
     coords: &mut PointerCoords,
@@ -133,7 +133,7 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
             generate_focus_events(
                 doc,
                 &mut |doc| {
-                    doc.set_focus_to(target_node_id);
+                    doc.set_focus_to_with_source(target_node_id, FocusSource::Pointer);
                 },
                 &mut dispatch_event,
             );
@@ -163,7 +163,7 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
             generate_focus_events(
                 doc,
                 &mut |doc| {
-                    doc.set_focus_to(target_node_id);
+                    doc.set_focus_to_with_source(target_node_id, FocusSource::Pointer);
                 },
                 &mut dispatch_event,
             );
