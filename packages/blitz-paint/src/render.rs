@@ -844,6 +844,7 @@ impl ElementCx<'_, '_> {
                 self.scale,
                 self.node.id,
                 &mut draw_text_context,
+                None,
             );
         }
     }
@@ -902,15 +903,28 @@ impl ElementCx<'_, '_> {
 
             // Render text
             let mut draw_text_context = self.context.draw_text_context.borrow_mut();
-            crate::text::stroke_text(
-                scene,
-                input_data.editor.try_layout().unwrap().lines(),
-                self.context.dom,
-                transform,
-                self.scale,
-                self.node.id,
-                &mut draw_text_context,
-            );
+            match input_data.placeholder.as_ref() {
+                Some(placeholder) if input_data.shows_placeholder() => crate::text::stroke_text(
+                    scene,
+                    placeholder.layout.lines(),
+                    self.context.dom,
+                    transform,
+                    self.scale,
+                    self.node.id,
+                    &mut draw_text_context,
+                    Some(placeholder.color),
+                ),
+                _ => crate::text::stroke_text(
+                    scene,
+                    input_data.editor.try_layout().unwrap().lines(),
+                    self.context.dom,
+                    transform,
+                    self.scale,
+                    self.node.id,
+                    &mut draw_text_context,
+                    None,
+                ),
+            }
         }
     }
 
@@ -958,6 +972,7 @@ impl ElementCx<'_, '_> {
                 self.scale,
                 self.node.id,
                 &mut draw_text_context,
+                None,
             );
         }
     }
