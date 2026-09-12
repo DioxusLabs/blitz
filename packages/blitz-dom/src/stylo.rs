@@ -440,14 +440,21 @@ impl selectors::Element for BlitzNode<'_> {
 
     fn attr_matches(
         &self,
-        _ns: &NamespaceConstraint<&GenericAtomIdent<NamespaceStaticSet>>,
+        ns: &NamespaceConstraint<&GenericAtomIdent<NamespaceStaticSet>>,
         local_name: &GenericAtomIdent<LocalNameStaticSet>,
         operation: &AttrSelectorOperation<&AtomString>,
     ) -> bool {
-        match self.data.attr(local_name.0.clone()) {
-            None => false,
-            Some(attr_value) => operation.eval_str(attr_value),
-        }
+        let Some(attrs) = self.data.attrs() else {
+            return false;
+        };
+        attrs.iter().any(|attr| {
+            attr.name.local == local_name.0
+                && match ns {
+                    NamespaceConstraint::Any => true,
+                    NamespaceConstraint::Specific(ns) => attr.name.ns == ns.0,
+                }
+                && operation.eval_str(&attr.value)
+        })
     }
 
     fn match_non_ts_pseudo_class(
@@ -823,10 +830,12 @@ impl<'a> TElement for BlitzNode<'a> {
         None
     }
 
-    fn get_attr(&self, attr: &style::LocalName, _ns: &style::Namespace) -> Option<String> {
-        // TODO: filter by namespace
+    fn get_attr(&self, attr: &style::LocalName, ns: &style::Namespace) -> Option<String> {
         // TODO: case-insensitive matching for HTML-ns attrs
-        self.attr(attr.0.clone()).map(|s| s.to_string())
+        self.attrs()?
+            .iter()
+            .find(|a| a.name.local == attr.0 && a.name.ns == ns.0)
+            .map(|a| a.value.clone())
     }
 
     fn lang_attr(&self) -> Option<style::selector_parser::AttrValue> {
