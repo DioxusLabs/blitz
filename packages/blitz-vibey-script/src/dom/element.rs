@@ -206,7 +206,7 @@ pub(crate) fn init_element_proto(proto: &JsObject, context: &mut Context) {
 
 // === Attribute helpers ===
 
-fn read_attr(ctx: &DomCtx, node_id: NodeId, name: &str) -> Option<String> {
+pub(crate) fn read_attr(ctx: &DomCtx, node_id: NodeId, name: &str) -> Option<String> {
     let doc = ctx.doc.borrow();
     let node = doc.get_node(node_id)?;
     let element = node.element_data()?;
@@ -217,7 +217,7 @@ fn read_attr(ctx: &DomCtx, node_id: NodeId, name: &str) -> Option<String> {
         .map(|attr| attr.value.clone())
 }
 
-fn write_attr(ctx: &DomCtx, node_id: NodeId, name: &str, value: &str) {
+pub(crate) fn write_attr(ctx: &DomCtx, node_id: NodeId, name: &str, value: &str) {
     let mut doc = ctx.doc.borrow_mut();
     doc.mutate().set_attribute(node_id, attr_name(name), value);
 }
