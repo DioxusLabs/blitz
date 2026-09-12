@@ -262,9 +262,24 @@ const BOOTSTRAP_JS: &str = r#"
     // via indexed access) property names
     const isCssPropName = (prop) =>
         typeof prop === "string" && /^-?[a-zA-Z][a-zA-Z0-9-]*$/.test(prop);
+    // Declarations exposing `length`/`item()` (e.g. `getComputedStyle()`) also
+    // support indexed access (`style[0]`) and iteration.
+    const isIndex = (prop) => typeof prop === "string" && /^\d+$/.test(prop);
+    const isIndexed = (target) => typeof target.item === "function";
+    const styleIterator = function* () {
+        for (let i = 0; i < this.length; i++) yield this.item(i);
+    };
     globalThis.__blitz_wrap_style = function (native) {
         return new Proxy(native, {
             get(target, prop) {
+                if (isIndexed(target)) {
+                    if (isIndex(prop)) {
+                        return Number(prop) < target.length ? target.item(Number(prop)) : undefined;
+                    }
+                    if (prop === Symbol.iterator && !(prop in target)) {
+                        return styleIterator.bind(target);
+                    }
+                }
                 if (isCssPropName(prop) && !(prop in target)) {
                     return target.getPropertyValue(toKebab(prop));
                 }
@@ -285,9 +300,34 @@ const BOOTSTRAP_JS: &str = r#"
             // property (used by WPT's computed-value test helpers)
             has(target, prop) {
                 if (Reflect.has(target, prop)) return true;
+                if (isIndexed(target)) {
+                    if (isIndex(prop)) return Number(prop) < target.length;
+                    if (prop === Symbol.iterator) return true;
+                }
                 return (
                     isCssPropName(prop) && __blitz_css_property_supported(toKebab(prop))
                 );
+            },
+            ownKeys(target) {
+                const keys = [];
+                if (isIndexed(target)) {
+                    for (let i = 0; i < target.length; i++) keys.push(String(i));
+                }
+                for (const key of Reflect.ownKeys(target)) {
+                    if (!keys.includes(key)) keys.push(key);
+                }
+                return keys;
+            },
+            getOwnPropertyDescriptor(target, prop) {
+                if (isIndexed(target) && isIndex(prop) && Number(prop) < target.length) {
+                    return {
+                        value: target.item(Number(prop)),
+                        enumerable: true,
+                        configurable: true,
+                        writable: false,
+                    };
+                }
+                return Reflect.getOwnPropertyDescriptor(target, prop);
             },
         });
     };

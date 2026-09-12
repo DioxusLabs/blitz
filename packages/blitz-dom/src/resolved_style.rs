@@ -12,8 +12,8 @@ use style::computed_values::position::T as Position;
 use style::parser::ParserContext;
 use style::properties::declaration_block::{Importance, parse_style_attribute};
 use style::properties::{
-    ComputedValues, PropertyDeclaration, PropertyDeclarationBlock, PropertyId, ShorthandId,
-    SourcePropertyDeclaration, parse_one_declaration_into,
+    ComputedValues, NonCustomPropertyId, PropertyDeclaration, PropertyDeclarationBlock, PropertyId,
+    ShorthandId, SourcePropertyDeclaration, parse_one_declaration_into,
 };
 use style::stylesheets::supports_rule::parse_condition_or_declaration;
 use style::stylesheets::{CssRuleType, Origin};
@@ -21,12 +21,14 @@ use style::values::computed::LengthPercentage;
 use style::values::computed::length::CSSPixelLength;
 use style::values::generics::position::{Inset as GenericInset, PreferredRatio};
 use style::values::resolved;
-use style::values::specified::box_::DisplayInside;
+use style::values::specified::box_::{DisplayInside, DisplayOutside};
 use style_traits::{CssStringWriter, ParsingMode, ToCss};
 
 use blitz_traits::node_id::NodeId;
 
 use crate::BaseDocument;
+use crate::layout::replaced::is_replaced_element;
+use crate::local_name;
 
 /// Serialize a used length (in CSS pixels) the way stylo serializes computed lengths
 fn format_px(px: f32) -> String {
@@ -96,6 +98,22 @@ pub fn css_property_is_supported(name: &str) -> bool {
         PropertyId::parse_enabled_for_all_content(name),
         Ok(property_id) if !matches!(property_id, PropertyId::Custom(_))
     )
+}
+
+/// The names of the properties exposed by the `CSSStyleDeclaration` returned
+/// from `getComputedStyle()` (its indexed properties): every enabled longhand,
+/// sorted alphabetically.
+pub fn resolved_style_property_names() -> &'static [&'static str] {
+    static NAMES: std::sync::OnceLock<Vec<&'static str>> = std::sync::OnceLock::new();
+    NAMES.get_or_init(|| {
+        let mut names: Vec<&'static str> = NonCustomPropertyId::iter()
+            .filter_map(|id| id.as_longhand())
+            .map(|longhand| longhand.name())
+            .filter(|name| PropertyId::parse_enabled_for_all_content(name).is_ok())
+            .collect();
+        names.sort_unstable();
+        names
+    })
 }
 
 impl BaseDocument {
@@ -280,8 +298,22 @@ impl BaseDocument {
         };
 
         let display = styles.clone_display();
-        let has_layout_box =
+        // Non-atomic inline elements are laid out as style spans within their
+        // inline root's text layout rather than as boxes of their own, so their
+        // layout-dependent properties resolve to computed (not used) values.
+        let is_non_atomic_inline = display.outside() == DisplayOutside::Inline
+            && display.inside() == DisplayInside::Flow
+            && !node.flags.is_inline_root()
+            && node.element_data().is_none_or(|data| {
+                let tag = &data.name.local;
+                !(is_replaced_element(tag)
+                    || *tag == local_name!("input")
+                    || *tag == local_name!("textarea")
+                    || *tag == local_name!("button"))
+            });
+        let generates_box =
             node.flags.is_in_document() && !display.is_none() && stored_styles.is_some();
+        let has_layout_box = generates_box && !is_non_atomic_inline;
 
         // Layout-dependent "used value" special cases
         match property_name {
@@ -467,7 +499,7 @@ impl BaseDocument {
                 let has_aspect_ratio =
                     !matches!(pos_styles.aspect_ratio.ratio, PreferredRatio::None);
                 let preserves_auto =
-                    has_layout_box && (has_aspect_ratio || self.is_flex_or_grid_item(node_id));
+                    generates_box && (has_aspect_ratio || self.is_flex_or_grid_item(node_id));
                 if is_auto && !preserves_auto {
                     return format_px(0.0);
                 }
