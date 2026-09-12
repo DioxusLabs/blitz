@@ -962,12 +962,51 @@ fn offset_top(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<
     layout_value(this, context, |node| node.offset_top_left().y.round())
 }
 
+/// `clientWidth`/`clientHeight`. For the root element (in no-quirks mode, which
+/// is all Blitz supports) these are the viewport dimensions minus scrollbars.
+fn client_size(
+    this: &JsValue,
+    context: &mut Context,
+    axis: impl FnOnce(&blitz_dom::Node) -> f32,
+    viewport_axis: impl FnOnce(&blitz_dom::Node, (f32, f32)) -> f32,
+) -> JsResult<JsValue> {
+    let ctx = dom_ctx(context)?;
+    let node_id = this_node_id(this)?;
+    let mut doc = ctx.doc.borrow_mut();
+    doc.resolve(0.0);
+    let Some(node) = doc.get_node(node_id) else {
+        return Ok(JsValue::from(0.0));
+    };
+    let value = if node_id == doc.root_element().id {
+        let viewport = doc.viewport();
+        let scale = viewport.scale();
+        let size = (
+            viewport.window_size.0 as f32 / scale,
+            viewport.window_size.1 as f32 / scale,
+        );
+        viewport_axis(node, size)
+    } else {
+        axis(node)
+    };
+    Ok(JsValue::from(value.round() as f64))
+}
+
 fn client_width(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    layout_value(this, context, |node| node.client_width().round())
+    client_size(
+        this,
+        context,
+        |node| node.client_width(),
+        |node, (w, _)| w - node.final_layout().scrollbar_size.width,
+    )
 }
 
 fn client_height(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    layout_value(this, context, |node| node.client_height().round())
+    client_size(
+        this,
+        context,
+        |node| node.client_height(),
+        |node, (_, h)| h - node.final_layout().scrollbar_size.height,
+    )
 }
 
 fn scroll_width(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
