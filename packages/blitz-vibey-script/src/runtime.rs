@@ -1335,6 +1335,11 @@ impl ScriptRuntime {
                 js_string!("supports"),
                 1,
             )
+            .function(
+                NativeFunction::from_fn_ptr(css_register_property),
+                js_string!("registerProperty"),
+                1,
+            )
             .build();
         register_global(&mut context, "CSS", css_namespace.into());
 
@@ -2104,6 +2109,69 @@ fn css_supports(_: &JsValue, args: &[JsValue], context: &mut Context) -> JsResul
         ctx.doc.borrow().css_supports_condition(&condition)
     };
     Ok(JsValue::from(supported))
+}
+
+/// `CSS.registerProperty({ name, syntax = "*", inherits, initialValue })`
+/// <https://drafts.css-houdini.org/css-properties-values-api-1/#the-registerproperty-function>
+fn css_register_property(
+    _: &JsValue,
+    args: &[JsValue],
+    context: &mut Context,
+) -> JsResult<JsValue> {
+    use blitz_dom::RegisterCustomPropertyResult as Result_;
+
+    let ctx = dom_ctx(context)?;
+    let Some(descriptor) = args.first().and_then(JsValue::as_object) else {
+        return Err(JsNativeError::typ()
+            .with_message("CSS.registerProperty: argument must be a PropertyDefinition dictionary")
+            .into());
+    };
+    let get = |key: &str, context: &mut Context| -> JsResult<Option<String>> {
+        let value = descriptor.get(js_string!(key), context)?;
+        if value.is_undefined() {
+            return Ok(None);
+        }
+        Ok(Some(to_rust_string(&value, context)?))
+    };
+    let Some(name) = get("name", context)? else {
+        return Err(JsNativeError::typ()
+            .with_message("CSS.registerProperty: 'name' is required")
+            .into());
+    };
+    let inherits = descriptor.get(js_string!("inherits"), context)?;
+    if inherits.is_undefined() {
+        return Err(JsNativeError::typ()
+            .with_message("CSS.registerProperty: 'inherits' is required")
+            .into());
+    }
+    let inherits = inherits.to_boolean();
+    let syntax = get("syntax", context)?.unwrap_or_else(|| "*".to_string());
+    let initial_value = get("initialValue", context)?;
+
+    let result = ctx.doc.borrow_mut().register_custom_property(
+        &name,
+        &syntax,
+        inherits,
+        initial_value.as_deref(),
+    );
+    let error = match result {
+        Result_::SuccessfullyRegistered => return Ok(JsValue::undefined()),
+        Result_::InvalidName => JsNativeError::syntax().with_message(format!(
+            "CSS.registerProperty: '{name}' is not a valid custom property name"
+        )),
+        Result_::AlreadyRegistered => JsNativeError::error().with_message(format!(
+            "CSS.registerProperty: '{name}' is already registered"
+        )),
+        Result_::InvalidSyntax => JsNativeError::syntax()
+            .with_message(format!("CSS.registerProperty: invalid syntax '{syntax}'")),
+        Result_::NoInitialValue => JsNativeError::syntax().with_message(
+            "CSS.registerProperty: 'initialValue' is required for non-universal syntax",
+        ),
+        Result_::InvalidInitialValue | Result_::InitialValueNotComputationallyIndependent => {
+            JsNativeError::syntax().with_message("CSS.registerProperty: invalid 'initialValue'")
+        }
+    };
+    Err(error.into())
 }
 
 fn get_computed_style(_: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
