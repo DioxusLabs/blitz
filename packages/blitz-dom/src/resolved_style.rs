@@ -16,7 +16,8 @@ use style::properties::{
     SourcePropertyDeclaration, parse_one_declaration_into,
 };
 use style::stylesheets::supports_rule::parse_condition_or_declaration;
-use style::stylesheets::{CssRuleType, Origin};
+use style::stylesheets::{CssRuleType, Origin, OriginSet};
+use style::stylist::RegisterCustomPropertyResult;
 use style::values::computed::LengthPercentage;
 use style::values::computed::length::CSSPixelLength;
 use style::values::generics::position::{Inset as GenericInset, PreferredRatio};
@@ -251,6 +252,27 @@ impl BaseDocument {
             Default::default(),
         );
         condition.eval(&context)
+    }
+
+    /// Register a custom property via script (`CSS.registerProperty()`).
+    /// On success all styles are invalidated so that declarations of the
+    /// property are re-parsed against the new registration.
+    pub fn register_custom_property(
+        &mut self,
+        name: &str,
+        syntax: &str,
+        inherits: bool,
+        initial_value: Option<&str>,
+    ) -> RegisterCustomPropertyResult {
+        let url_data = self.url.url_extra_data();
+        let result =
+            self.stylist
+                .register_custom_property(&url_data, name, syntax, inherits, initial_value);
+        if matches!(result, RegisterCustomPropertyResult::SuccessfullyRegistered) {
+            self.stylist
+                .force_stylesheet_origins_dirty(OriginSet::all());
+        }
+        result
     }
 
     /// Compute the resolved value of a CSS property for the given node, as exposed
