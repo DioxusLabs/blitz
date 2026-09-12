@@ -102,8 +102,15 @@ fn set_property(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsRe
     let ctx = dom_ctx(context)?;
     let node_id = this_node_id(this)?;
     let name = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
-    let value = to_rust_string(args.get(1).unwrap_or(&JsValue::undefined()), context)?;
-    let priority = to_rust_string(args.get(2).unwrap_or(&JsValue::undefined()), context)?;
+    // Both arguments are `[LegacyNullToEmptyString]` in the WebIDL
+    let value = match args.get(1) {
+        Some(v) if !v.is_null() => to_rust_string(v, context)?,
+        _ => String::new(),
+    };
+    let priority = match args.get(2) {
+        Some(v) if !v.is_null() => to_rust_string(v, context)?,
+        _ => String::new(),
+    };
     let important = priority.eq_ignore_ascii_case("important");
 
     let style_attr = read_style_attr(&ctx, node_id);
