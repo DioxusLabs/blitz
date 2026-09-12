@@ -25,6 +25,8 @@ pub(crate) fn init_style_proto(proto: &JsObject, context: &mut Context) {
 /// `getComputedStyle()`. Property reads return *resolved* values.
 pub(crate) fn init_computed_style_proto(proto: &JsObject, context: &mut Context) {
     define_accessor(proto, "cssText", Some(get_empty_string), None, context);
+    define_accessor(proto, "length", Some(get_resolved_length), None, context);
+    define_method(proto, "item", 1, get_resolved_item, context);
     define_method(proto, "setProperty", 2, noop, context);
     define_method(proto, "removeProperty", 1, noop, context);
     define_method(
@@ -42,6 +44,26 @@ fn get_empty_string(_: &JsValue, _: &[JsValue], _: &mut Context) -> JsResult<JsV
 
 fn noop(_: &JsValue, _: &[JsValue], _: &mut Context) -> JsResult<JsValue> {
     Ok(JsValue::undefined())
+}
+
+fn get_resolved_length(_: &JsValue, _: &[JsValue], _: &mut Context) -> JsResult<JsValue> {
+    Ok(JsValue::from(
+        blitz_dom::resolved_style_property_names().len() as u32,
+    ))
+}
+
+fn get_resolved_item(_: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    let index = args
+        .first()
+        .unwrap_or(&JsValue::undefined())
+        .to_number(context)?;
+    let names = blitz_dom::resolved_style_property_names();
+    let name = if index >= 0.0 && index < names.len() as f64 {
+        names[index as usize]
+    } else {
+        ""
+    };
+    Ok(js_str(name))
 }
 
 fn get_resolved_property_value(
