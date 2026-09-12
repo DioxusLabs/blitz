@@ -8,8 +8,10 @@ use std::rc::Rc;
 use blitz_dom::{BaseDocument, NodeId};
 use boa_engine::object::JsObject;
 use boa_engine::{Finalize, JsData, Trace};
+use url::Url;
 
 use crate::clock::ScriptClock;
+use crate::fetch::ScriptFetcher;
 use crate::timers::TimerQueue;
 
 /// Prototype objects for the DOM wrapper classes
@@ -86,6 +88,10 @@ pub(crate) struct RuntimeState {
     /// listeners, timer callbacks and promise jobs). Drained with
     /// [`ScriptDocument::take_js_errors`](crate::ScriptDocument::take_js_errors).
     pub uncaught_errors: Vec<String>,
+    /// The document base URL, against which `fetch()` URLs are resolved
+    pub base_url: Option<Url>,
+    /// Fetcher backing `fetch()` (shared with `<script src>` and module loading)
+    pub fetcher: Option<Rc<RefCell<Box<dyn ScriptFetcher>>>>,
 }
 
 /// Maximum number of errors stored in [`RuntimeState::uncaught_errors`] between
