@@ -319,6 +319,15 @@ const BOOTSTRAP_JS: &str = r#"
     // probes throw "right-hand side of 'instanceof' is not an object". All
     // blitz-vibey-script elements share a single prototype, so tag-specific
     // interfaces cannot be truthfully modelled: these always answer false.
+    // `Window`: the global object's interface (`window instanceof Window`).
+    // Feature-detection code (and WPT's idlharness) uses `'Window' in self`
+    // to tell a window global from a worker or ShadowRealm global.
+    if (typeof globalThis.Window === "undefined") {
+        const windowProto = Object.create(Object.getPrototypeOf(globalThis));
+        Object.setPrototypeOf(globalThis, windowProto);
+        globalThis.Window = makeInterface("Window", windowProto);
+    }
+
     for (const name of [
         "EventTarget", "CharacterData", "Text", "Comment", "DocumentFragment",
         "HTMLInputElement", "HTMLTextAreaElement", "HTMLSelectElement",
