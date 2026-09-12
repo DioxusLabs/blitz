@@ -281,20 +281,13 @@ fn rule_attributes(rule: &CssRule, guard: &SharedRwLockReadGuard) -> Vec<(&'stat
 
 impl BaseDocument {
     /// The owner nodes (`<style>` / `<link>` elements) of the document's author
-    /// stylesheets, in document order (`document.styleSheets`).
-    pub fn stylesheet_owner_nodes(&self) -> Vec<NodeId> {
-        let mut owners = Vec::new();
-        let mut stack = vec![self.root_node_id];
-        while let Some(node_id) = stack.pop() {
-            let Some(node) = self.nodes.get(node_id) else {
-                continue;
-            };
-            if self.nodes_to_stylesheet.contains_key(&node_id) {
-                owners.push(node_id);
-            }
-            stack.extend(node.children.iter().rev().copied());
-        }
-        owners
+    /// stylesheets (`document.styleSheets`).
+    ///
+    /// Ordered by node id, which matches document order for stylesheets
+    /// created while parsing (and is the order the stylist uses too, see
+    /// `add_stylesheet_for_node`).
+    pub fn stylesheet_owner_nodes(&self) -> impl Iterator<Item = NodeId> + '_ {
+        self.nodes_to_stylesheet.keys().copied()
     }
 
     /// Whether `node_id` currently owns a stylesheet

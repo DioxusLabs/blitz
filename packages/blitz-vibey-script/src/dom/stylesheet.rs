@@ -92,7 +92,7 @@ fn cssom_error(err: CssomError, context: &mut Context, what: &str) -> boa_engine
 
 fn owner_nodes(_: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
-    let owners = ctx.doc.borrow().stylesheet_owner_nodes();
+    let owners: Vec<NodeId> = ctx.doc.borrow().stylesheet_owner_nodes().collect();
     let wrappers: Vec<JsValue> = owners
         .into_iter()
         .map(|node_id| node_wrapper(&ctx, node_id, context).into())
