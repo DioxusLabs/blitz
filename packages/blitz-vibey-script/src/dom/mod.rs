@@ -9,6 +9,7 @@
 pub(crate) mod document;
 pub(crate) mod element;
 pub(crate) mod event;
+pub(crate) mod hyperlink;
 pub(crate) mod node;
 pub(crate) mod style;
 pub(crate) mod stylesheet;
@@ -348,6 +349,7 @@ pub(crate) fn init_protos(ctx: &DomCtx, context: &mut Context) {
     let element_proto = JsObject::with_object_proto(context.intrinsics());
     element_proto.set_prototype(Some(node_proto.clone()));
     element::init_element_proto(&element_proto, context);
+    hyperlink::init_hyperlink_accessors(&element_proto, context);
 
     let character_data_proto = JsObject::with_object_proto(context.intrinsics());
     character_data_proto.set_prototype(Some(node_proto.clone()));
