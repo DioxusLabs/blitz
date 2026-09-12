@@ -95,12 +95,16 @@ impl WptScriptFetcher {
 
 impl ScriptFetcher for WptScriptFetcher {
     fn fetch(&self, url: &Url) -> Result<String, FetchError> {
-        let path = url.path();
+        let mut path = url.path();
         if path.ends_with("/resources/testharnessreport.js") {
             return Ok(TESTHARNESSREPORT_JS.to_string());
         }
         if path.ends_with("/resources/testdriver-vendor.js") {
             return Ok(TESTDRIVER_VENDOR_JS.to_string());
+        }
+        // wptserve rewrites this URL (see `rewrites` in tools/serve/serve.py)
+        if path == "/resources/WebIDLParser.js" {
+            path = "/resources/webidl2/lib/webidl2.js";
         }
         let relative_path = path.strip_prefix('/').unwrap_or(path);
         std::fs::read_to_string(self.wpt_dir.join(relative_path)).map_err(FetchError::Io)
