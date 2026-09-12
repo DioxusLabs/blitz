@@ -87,7 +87,11 @@ fn get_css_text(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResul
     Ok(js_str(&css))
 }
 
-fn set_css_text(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+pub(crate) fn set_css_text(
+    this: &JsValue,
+    args: &[JsValue],
+    context: &mut Context,
+) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
     let node_id = this_node_id(this)?;
     let css = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;

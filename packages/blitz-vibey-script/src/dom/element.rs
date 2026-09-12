@@ -77,7 +77,14 @@ pub(crate) fn init_element_proto(proto: &JsObject, context: &mut Context) {
         Some(set_autofocus),
         context,
     );
-    define_accessor(proto, "style", Some(get_style), None, context);
+    // `style` is `[PutForwards=cssText]`: assignment sets `style.cssText`
+    define_accessor(
+        proto,
+        "style",
+        Some(get_style),
+        Some(super::style::set_css_text),
+        context,
+    );
     define_accessor(proto, "sheet", Some(get_sheet), None, context);
     define_accessor(
         proto,
