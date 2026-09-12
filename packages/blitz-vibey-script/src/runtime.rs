@@ -1713,6 +1713,36 @@ impl ScriptRuntime {
         any_called
     }
 
+    /// Dispatch a plain `Event` named `name` at `node_id`, to listeners
+    /// registered with `addEventListener` and to `on<name>` handlers, along
+    /// the ancestor chain when `bubbles`. For events the embedder knows about
+    /// but Blitz does not raise itself (an image that finished loading, say).
+    /// Returns `true` if any listener was invoked.
+    pub fn dispatch_simple_event(&mut self, node_id: NodeId, name: &str, bubbles: bool) -> bool {
+        let chain = {
+            let doc = self.ctx.doc.borrow();
+            let mut chain = vec![node_id];
+            let mut current = node_id;
+            while let Some(parent) = doc.get_node(current).and_then(|node| node.parent) {
+                chain.push(parent);
+                current = parent;
+            }
+            chain
+        };
+        let mut event_state = EventState::default();
+        let called = self.dispatch_event_inner(
+            &chain,
+            name,
+            bubbles,
+            |ctx, target, context| create_event(ctx, name, bubbles, false, target, context),
+            &mut event_state,
+        );
+        if called {
+            self.run_jobs("event microtasks");
+        }
+        called
+    }
+
     fn target_is_checkbox_or_radio(&self, node_id: NodeId) -> bool {
         let doc = self.ctx.doc.borrow();
         doc.get_node(node_id)
