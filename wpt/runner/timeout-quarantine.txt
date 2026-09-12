@@ -9,6 +9,7 @@ css/css-animations/responsive/fill-forwards-viewport-units.html animation-events
 css/css-cascade/import-conditions.html dynamic-load-events
 css/css-cascade/layer-import.html dynamic-load-events
 css/css-cascade/layer-media-query.html dynamic-load-events
+css/css-cascade/layer-rules-cssom.html dynamic-load-events
 css/css-cascade/layer-statement-before-import.html dynamic-load-events
 css/css-cascade/scope-implicit-external.html dynamic-load-events
 css/css-color-adjust/rendering/dark-color-scheme/color-scheme-iframe-dynamic.html dynamic-load-events
@@ -30,6 +31,8 @@ css/css-fonts/variations/font-opentype-collections.html rendering-frame
 css/css-fonts/variations/font-style-interpolation.html rendering-frame
 css/css-fonts/variations/font-weight-interpolation.html rendering-frame
 css/css-image-animation/image-animation-pseudo-animated-image-dynamic.html dynamic-load-events
+css/css-logical/animation-002.html animation-events
+css/css-logical/animation-004.html animation-events
 css/css-mixins/mixins/mixin-media-query-invalidation-2.html dynamic-load-events
 css/css-mixins/mixins/mixin-media-query-invalidation.html dynamic-load-events
 css/css-overflow/overflow-auto-scrolling-with-margin-and-transform.html testdriver
@@ -112,6 +115,8 @@ css/css-transitions/events-006.html transition-events
 css/css-transitions/events-008.html transition-events
 css/css-transitions/inherit-height-transition.html transition-events
 css/css-transitions/non-rendered-element-001.html transition-events
+css/css-transitions/non-rendered-element-002.html transition-events
+css/css-transitions/non-rendered-element-004.tentative.html transition-events
 css/css-transitions/properties-value-001.html transition-events
 css/css-transitions/properties-value-002.html transition-events
 css/css-transitions/properties-value-003.html transition-events
