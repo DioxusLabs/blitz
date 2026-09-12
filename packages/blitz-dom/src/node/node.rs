@@ -1529,6 +1529,18 @@ impl Node {
             .unwrap_or(crate::util::Point { x, y })
     }
 
+    /// Computes the Document-relative coordinates of the `Node` from the unrounded
+    /// (sub-pixel) layout, for CSSOM geometry APIs such as `getBoundingClientRect`
+    pub fn unrounded_absolute_position(&self, x: f32, y: f32) -> crate::util::Point<f32> {
+        let x = x + self.unrounded_layout().location.x - self.scroll_offset().x as f32;
+        let y = y + self.unrounded_layout().location.y - self.scroll_offset().y as f32;
+
+        self.layout_parent
+            .get()
+            .map(|i| self.with(i).unrounded_absolute_position(x, y))
+            .unwrap_or(crate::util::Point { x, y })
+    }
+
     /// Whether this node can act as an [`offset_parent`](Self::offset_parent): a positioned
     /// element, or one of the elements that always qualify (`body`, `td`, `th`).
     fn is_offset_parent(&self) -> bool {

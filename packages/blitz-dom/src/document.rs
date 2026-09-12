@@ -2241,13 +2241,13 @@ impl BaseDocument {
         }
 
         let node = self.get_node(node_id)?;
-        let pos = node.absolute_position(0.0, 0.0);
+        let pos = node.unrounded_absolute_position(0.0, 0.0);
 
         Some(BoundingRect {
-            x: pos.x as f64 - self.viewport_scroll.x,
-            y: pos.y as f64 - self.viewport_scroll.y,
-            width: node.unrounded_layout().size.width as f64,
-            height: node.unrounded_layout().size.height as f64,
+            x: snap_to_layout_unit(pos.x as f64 - self.viewport_scroll.x),
+            y: snap_to_layout_unit(pos.y as f64 - self.viewport_scroll.y),
+            width: snap_to_layout_unit(node.unrounded_layout().size.width as f64),
+            height: snap_to_layout_unit(node.unrounded_layout().size.height as f64),
         })
     }
 
@@ -2304,8 +2304,8 @@ impl BaseDocument {
         };
 
         // Fragment rects are relative to the inline root's content box.
-        let root_layout = inline_root.final_layout();
-        let root_pos = inline_root.absolute_position(0.0, 0.0);
+        let root_layout = inline_root.unrounded_layout();
+        let root_pos = inline_root.unrounded_absolute_position(0.0, 0.0);
         let origin_x = root_pos.x as f64
             + (root_layout.padding.left + root_layout.border.left) as f64
             - self.viewport_scroll.x;
@@ -2362,10 +2362,10 @@ impl BaseDocument {
 
             if let Some((x0, y0, x1, y1)) = line_rect {
                 rects.push(BoundingRect {
-                    x: origin_x + x0 / scale,
-                    y: origin_y + y0 / scale,
-                    width: (x1 - x0) / scale,
-                    height: (y1 - y0) / scale,
+                    x: snap_to_layout_unit(origin_x + x0 / scale),
+                    y: snap_to_layout_unit(origin_y + y0 / scale),
+                    width: snap_to_layout_unit((x1 - x0) / scale),
+                    height: snap_to_layout_unit((y1 - y0) / scale),
                 });
             }
         }
@@ -2739,6 +2739,13 @@ pub struct BoundingRect {
     pub y: f64,
     pub width: f64,
     pub height: f64,
+}
+
+/// Snap a CSSOM geometry value to a 1/64px grid (the precision of Blink's `LayoutUnit`).
+/// Layout values are accumulated in `f32`, so e.g. seven `55/7`-wide flex items would
+/// otherwise end at `55.0000005` and appear to overflow their 55px container.
+fn snap_to_layout_unit(value: f64) -> f64 {
+    (value * 64.0).round() / 64.0
 }
 
 impl AsRef<BaseDocument> for BaseDocument {
