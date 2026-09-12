@@ -121,6 +121,23 @@ impl ScriptDocument {
         }
     }
 
+    /// Dispatch a plain `Event` named `name` at `node_id` (see
+    /// [`ScriptRuntime::dispatch_simple_event`]). Returns `true` if any
+    /// listener ran.
+    pub fn dispatch_simple_event(
+        &mut self,
+        node_id: blitz_dom::NodeId,
+        name: &str,
+        bubbles: bool,
+    ) -> bool {
+        let called = self.runtime.dispatch_simple_event(node_id, name, bubbles);
+        if called {
+            self.request_redraw();
+            self.arm_timer_thread();
+        }
+        called
+    }
+
     /// Disable the background timer thread which wakes the event loop (via the
     /// `Waker` passed to `poll`) when the next JS timer is due.
     ///
