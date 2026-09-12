@@ -1747,6 +1747,15 @@ impl ScriptRuntime {
 
         let target: JsValue = node_wrapper(&ctx, chain[0], context).into();
         let event_obj = make_event(&ctx, &target, context);
+
+        // `window.event`: the event being dispatched is readable from the global
+        // object for the duration of the dispatch, for listeners written against
+        // the old IE-style API (`window.event.keyCode`) rather than the argument.
+        let window = context.global_object();
+        let previous_event = window
+            .get(JsString::from("event"), context)
+            .unwrap_or(JsValue::undefined());
+        crate::dom::define_value(&window, "event", event_obj.clone().into(), context);
         let event_ref = |event_obj: &JsObject, f: &dyn Fn(&EventRef) -> bool| -> bool {
             event_obj
                 .downcast_ref::<EventRef>()
@@ -1810,6 +1819,11 @@ impl ScriptRuntime {
             }
         }
 
+        let restore_event = |context: &mut Context| {
+            let window = context.global_object();
+            crate::dom::define_value(&window, "event", previous_event.clone(), context);
+        };
+
         // Window-level listeners
         if bubbles && !event_ref(&event_obj, &|event| event.stopped.get()) {
             let listeners: Vec<Listener> = {
@@ -1843,6 +1857,7 @@ impl ScriptRuntime {
         }
 
         crate::dom::define_value(&event_obj, "currentTarget", JsValue::null(), context);
+        restore_event(context);
 
         // Feed `preventDefault` / `stopPropagation` back into Blitz
         if event_ref(&event_obj, &|event| event.prevented.get()) {
