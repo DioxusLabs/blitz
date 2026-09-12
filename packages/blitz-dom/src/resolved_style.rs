@@ -347,9 +347,10 @@ impl BaseDocument {
                     .map(|parent| *parent.final_layout());
 
                 match position {
-                    // Used value: the relative offset. The non-`auto` side of
-                    // each axis wins (`top`/`left` take precedence when both
-                    // are set) and the opposite side resolves to its negation.
+                    // Used value: the relative offset. An `auto` side resolves
+                    // to the negation of the opposite side. When both sides
+                    // are set the axis is overconstrained and each side
+                    // resolves to its computed value instead.
                     Position::Relative => {
                         let (cb_width, cb_height) = parent_layout
                             .map(|pl| {
@@ -381,15 +382,30 @@ impl BaseDocument {
                                 resolve_inset(&pos_styles.right, basis),
                             )
                         };
-                        let used_start = match (start, end) {
-                            (Some(start), _) => start,
-                            (None, Some(end)) => -end,
+                        let is_start = matches!(property_name, "top" | "left");
+                        let used = match (start, end) {
+                            (Some(start), Some(end)) => {
+                                if is_start {
+                                    start
+                                } else {
+                                    end
+                                }
+                            }
+                            (Some(start), None) => {
+                                if is_start {
+                                    start
+                                } else {
+                                    -start
+                                }
+                            }
+                            (None, Some(end)) => {
+                                if is_start {
+                                    -end
+                                } else {
+                                    end
+                                }
+                            }
                             (None, None) => 0.0,
-                        };
-                        let used = if matches!(property_name, "top" | "left") {
-                            used_start
-                        } else {
-                            -used_start
                         };
                         return format_px(used);
                     }
