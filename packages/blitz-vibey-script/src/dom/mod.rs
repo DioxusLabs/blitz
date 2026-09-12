@@ -11,6 +11,7 @@ pub(crate) mod element;
 pub(crate) mod event;
 pub(crate) mod node;
 pub(crate) mod style;
+pub(crate) mod stylesheet;
 
 use blitz_dom::node::NodeData;
 use blitz_dom::{LocalName, Namespace, NodeId, QualName};
@@ -207,7 +208,7 @@ pub(crate) fn to_rust_string(value: &JsValue, context: &mut Context) -> JsResult
     Ok(value.to_string(context)?.to_std_string_lossy())
 }
 
-type NativeFnPtr = fn(&JsValue, &[JsValue], &mut Context) -> JsResult<JsValue>;
+pub(crate) type NativeFnPtr = fn(&JsValue, &[JsValue], &mut Context) -> JsResult<JsValue>;
 
 /// Define a method on a prototype object
 pub(crate) fn define_method(
@@ -439,6 +440,20 @@ pub(crate) fn dom_exception(
     JsNativeError::typ()
         .with_message(format!("{name}: {message}"))
         .into()
+}
+
+/// Call a global JS helper function (defined by the runtime bootstrap script)
+/// with `this` set to `undefined`. Returns `undefined` if the helper is missing.
+pub(crate) fn call_js_helper(
+    name: &str,
+    args: &[JsValue],
+    context: &mut Context,
+) -> JsResult<JsValue> {
+    let helper = context.global_object().get(JsString::from(name), context)?;
+    match helper.as_object().filter(|obj| obj.is_callable()) {
+        Some(helper) => helper.call(&JsValue::undefined(), args, context),
+        None => Ok(JsValue::undefined()),
+    }
 }
 
 /// Wrap a native `CSSStyleDeclaration` object in the JS `Proxy` (defined by the

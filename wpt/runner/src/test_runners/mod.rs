@@ -407,7 +407,35 @@ mod tests {
 
     #[test]
     fn timeout_quarantine_is_valid() {
-        assert_eq!(TIMEOUT_QUARANTINE.len(), 247);
+        const KNOWN_REASONS: &[&str] = &[
+            "animation-events",
+            "content-visibility-events",
+            "dynamic-load-events",
+            "focus-events",
+            "font-loading-events",
+            "manual-interaction",
+            "media-query-events",
+            "no-tests-registered",
+            "rendering-frame",
+            "scroll-events",
+            "testdriver",
+            "transition-events",
+            "unbounded-job-execution",
+            "unsupported-async-browser-behavior",
+        ];
+
+        // Loading the map already rejects lines without a reason and duplicate paths
+        assert!(!TIMEOUT_QUARANTINE.is_empty());
+        for (path, reason) in TIMEOUT_QUARANTINE.iter() {
+            assert!(
+                !path.is_empty() && !path.contains(char::is_whitespace),
+                "invalid quarantined test path: {path:?}"
+            );
+            assert!(
+                KNOWN_REASONS.contains(reason),
+                "unknown quarantine reason {reason:?} for {path} (add it to KNOWN_REASONS if intentional)"
+            );
+        }
         assert_eq!(
             TIMEOUT_QUARANTINE.get("css/selectors/focus-visible-001.html"),
             Some(&"testdriver")
