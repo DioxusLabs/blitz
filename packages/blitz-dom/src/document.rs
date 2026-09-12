@@ -1272,6 +1272,14 @@ impl BaseDocument {
                 let node_id = res.node_id.unwrap();
                 self.add_stylesheet_for_node(css, node_id);
             }
+            Resource::ImportedCss(import_rule, sheet) => {
+                let mut guard = self.guard.write();
+                import_rule.write_with(&mut guard).stylesheet =
+                    style::stylesheets::import_rule::ImportSheet::Sheet(sheet);
+                drop(guard);
+                self.stylist
+                    .force_stylesheet_origins_dirty(style::stylesheets::OriginSet::all());
+            }
             Resource::Image(_kind, width, height, image_data) => {
                 // Create the ImageData and cache it
                 let image = ImageData::Raster(RasterImageData::new(width, height, image_data));

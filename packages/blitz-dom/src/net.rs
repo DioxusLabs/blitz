@@ -60,6 +60,8 @@ pub enum Resource {
     #[cfg(feature = "svg")]
     Svg(ImageType, crate::node::SvgImageData),
     Css(DocumentStyleSheet),
+    /// Stylesheet loaded for an `@import` rule, to be attached to the rule on the document thread
+    ImportedCss(ServoArc<Locked<ImportRule>>, ServoArc<Stylesheet>),
     Font(Bytes, FontFaceOverrides),
     /// HTML fetched for an `<iframe>` element's `src`
     DocumentSrc(String),
@@ -288,11 +290,8 @@ impl NetHandler for ResourceHandler<NestedStylesheetHandler> {
             self.data.loader.abort_signal.as_ref(),
         );
 
-        let mut guard = self.data.lock.write();
-        self.data.import_rule.write_with(&mut guard).stylesheet = ImportSheet::Sheet(sheet);
-        drop(guard);
-
-        self.respond(resolved_url, Ok(Resource::None))
+        let import_rule = self.data.import_rule.clone();
+        self.respond(resolved_url, Ok(Resource::ImportedCss(import_rule, sheet)))
     }
 }
 
