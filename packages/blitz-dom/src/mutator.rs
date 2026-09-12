@@ -1131,6 +1131,7 @@ impl<'doc> DocumentMutator<'doc> {
             .force_stylesheet_origins_dirty(OriginSet::all());
 
         self.doc.nodes_to_stylesheet.remove(&node_id);
+        self.doc.stylesheet_generation += 1;
     }
 
     fn load_image(&mut self, target_id: NodeId) {

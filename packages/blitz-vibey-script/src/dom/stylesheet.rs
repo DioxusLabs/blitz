@@ -19,6 +19,7 @@ pub(crate) fn register(context: &mut Context) {
     let fns: &[(&str, usize, super::NativeFnPtr)] = &[
         ("__blitz_stylesheet_owner_nodes", 0, owner_nodes),
         ("__blitz_node_has_stylesheet", 1, node_has_stylesheet),
+        ("__blitz_stylesheet_generation", 0, stylesheet_generation),
         ("__blitz_sheet_rule_count", 2, rule_count),
         ("__blitz_sheet_rule_info", 2, rule_info),
         ("__blitz_sheet_insert_rule", 4, insert_rule),
@@ -105,6 +106,12 @@ fn node_has_stylesheet(_: &JsValue, args: &[JsValue], context: &mut Context) -> 
         return Ok(JsValue::from(false));
     };
     Ok(JsValue::from(ctx.doc.borrow().node_has_stylesheet(node_id)))
+}
+
+fn stylesheet_generation(_: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    let ctx = dom_ctx(context)?;
+    let generation = ctx.doc.borrow().stylesheet_generation();
+    Ok(JsValue::from(generation as f64))
 }
 
 fn rule_count(_: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {

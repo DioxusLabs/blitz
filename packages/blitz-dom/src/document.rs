@@ -300,6 +300,10 @@ pub struct BaseDocument {
     pub(crate) nodes_to_id: HashMap<String, SmallVec<[NodeId; 1]>>,
     /// Map of `<style>` and `<link>` node IDs to their associated stylesheet
     pub(crate) nodes_to_stylesheet: BTreeMap<NodeId, DocumentStyleSheet>,
+    /// Incremented whenever `nodes_to_stylesheet` changes (a stylesheet is
+    /// added, replaced or removed), so that CSSOM wrappers can detect that
+    /// their cached rule data is stale.
+    pub(crate) stylesheet_generation: u64,
     /// Stylesheets added by the useragent
     /// where the key is the hashed CSS
     pub(crate) ua_stylesheets: HashMap<String, DocumentStyleSheet>,
@@ -448,6 +452,7 @@ impl BaseDocument {
             url: base_url,
             ua_stylesheets: HashMap::new(),
             nodes_to_stylesheet: BTreeMap::new(),
+            stylesheet_generation: 0,
             font_ctx,
             #[cfg(feature = "parallel-construct")]
             thread_font_contexts: ThreadLocal::new(),
@@ -1175,6 +1180,7 @@ impl BaseDocument {
 
     pub fn add_stylesheet_for_node(&mut self, stylesheet: DocumentStyleSheet, node_id: NodeId) {
         let old = self.nodes_to_stylesheet.insert(node_id, stylesheet.clone());
+        self.stylesheet_generation += 1;
 
         if let Some(old) = old {
             self.stylist.remove_stylesheet(old, &self.guard.read())

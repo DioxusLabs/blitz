@@ -187,11 +187,14 @@ fn css_rule_interface(rule: &CssRule) -> &'static str {
 
 /// Join the CSS serializations of `items` with `", "`
 fn comma_separated<'a, T: ToCss + 'a>(items: impl IntoIterator<Item = &'a T>) -> String {
-    items
-        .into_iter()
-        .map(|item| item.to_css_string())
-        .collect::<Vec<_>>()
-        .join(", ")
+    let mut css = CssStringWriter::new();
+    for (i, item) in items.into_iter().enumerate() {
+        if i > 0 {
+            css.push_str(", ");
+        }
+        let _ = item.to_css(&mut style_traits::CssWriter::new(&mut css));
+    }
+    css
 }
 
 fn rule_attributes(rule: &CssRule, guard: &SharedRwLockReadGuard) -> Vec<(&'static str, String)> {
@@ -219,10 +222,10 @@ fn rule_attributes(rule: &CssRule, guard: &SharedRwLockReadGuard) -> Vec<(&'stat
                 ),
             ]
         }
-        CssRule::Media(r) => {
-            let media = r.media_queries.read_with(guard).to_css_string();
-            vec![("conditionText", media.clone()), ("media", media)]
-        }
+        CssRule::Media(r) => vec![(
+            "conditionText",
+            r.media_queries.read_with(guard).to_css_string(),
+        )],
         CssRule::Supports(r) => vec![("conditionText", r.condition.to_css_string())],
         CssRule::Container(r) => vec![("conditionText", r.conditions.to_css_string())],
         CssRule::Page(r) => vec![("selectorText", r.read_with(guard).selectors.to_css_string())],
@@ -299,6 +302,13 @@ impl BaseDocument {
         self.nodes_to_stylesheet.contains_key(&node_id)
     }
 
+    /// A counter which changes whenever the set of stylesheets (or the
+    /// stylesheet object owned by some node) changes. CSSOM wrappers use it to
+    /// detect that rule data cached on the script side is stale.
+    pub fn stylesheet_generation(&self) -> u64 {
+        self.stylesheet_generation
+    }
+
     fn stylesheet_loader(&self) -> StylesheetLoader {
         StylesheetLoader {
             tx: self.tx.clone(),
@@ -310,44 +320,57 @@ impl BaseDocument {
         }
     }
 
-    /// Resolve `path` to the rule it denotes, along with its ancestor rules
-    /// (outermost first).
+    /// Resolve `path` to the rule it denotes. The rule's ancestors (outermost
+    /// first) are passed to `on_ancestor` as they are traversed.
     fn resolve_rule(
         sheet: &DocumentStyleSheet,
         guard: &SharedRwLockReadGuard,
         path: &[usize],
-    ) -> Option<(Vec<CssRule>, RuleHandle)> {
+        on_ancestor: impl FnMut(&CssRule),
+    ) -> Option<RuleHandle> {
         let (index, parent_path) = path.split_last()?;
-        let (ancestors, list) = Self::resolve_rule_list(sheet, guard, parent_path)?;
-        let handle = match list {
+        let list = Self::resolve_rule_list(sheet, guard, parent_path, on_ancestor)?;
+        Some(match list {
             RuleList::Css(rules) => RuleHandle::Rule(rules.read_with(guard).0.get(*index)?.clone()),
             RuleList::Keyframes(keyframes) => {
                 RuleHandle::Keyframe(keyframes.read_with(guard).keyframes.get(*index)?.clone())
             }
-        };
-        Some((ancestors, handle))
+        })
     }
 
     /// Resolve `path` to the rule list owned by the rule it denotes (or the
-    /// stylesheet's top-level rule list for an empty path), along with the
-    /// ancestor rules of that list (outermost first, including the rule at
-    /// `path` itself).
+    /// stylesheet's top-level rule list for an empty path). The ancestor rules
+    /// of that list (outermost first, including the rule at `path` itself) are
+    /// passed to `on_ancestor` as they are traversed.
     fn resolve_rule_list(
         sheet: &DocumentStyleSheet,
         guard: &SharedRwLockReadGuard,
         path: &[usize],
-    ) -> Option<(Vec<CssRule>, RuleList)> {
-        let mut ancestors = Vec::with_capacity(path.len());
+        mut on_ancestor: impl FnMut(&CssRule),
+    ) -> Option<RuleList> {
         let mut list = RuleList::Css(sheet.contents(guard).rules.clone());
         for &index in path {
             let RuleList::Css(rules) = &list else {
                 return None;
             };
-            let rule = rules.read_with(guard).0.get(index)?.clone();
-            let child_list = child_rule_list(&rule, guard)?;
-            ancestors.push(rule);
+            let rules = rules.read_with(guard);
+            let rule = rules.0.get(index)?;
+            let child_list = child_rule_list(rule, guard)?;
+            on_ancestor(rule);
             list = child_list;
         }
+        Some(list)
+    }
+
+    /// [`Self::resolve_rule_list`], also collecting the ancestor rules
+    fn resolve_rule_list_with_ancestors(
+        sheet: &DocumentStyleSheet,
+        guard: &SharedRwLockReadGuard,
+        path: &[usize],
+    ) -> Option<(Vec<CssRule>, RuleList)> {
+        let mut ancestors = Vec::with_capacity(path.len());
+        let list =
+            Self::resolve_rule_list(sheet, guard, path, |rule| ancestors.push(rule.clone()))?;
         Some((ancestors, list))
     }
 
@@ -355,7 +378,7 @@ impl BaseDocument {
     pub fn stylesheet_rule_count(&self, node_id: NodeId, path: &[usize]) -> Option<usize> {
         let sheet = self.nodes_to_stylesheet.get(&node_id)?;
         let guard = self.guard.read();
-        let (_, list) = Self::resolve_rule_list(sheet, &guard, path)?;
+        let list = Self::resolve_rule_list(sheet, &guard, path, |_| {})?;
         Some(match list {
             RuleList::Css(rules) => rules.read_with(&guard).0.len(),
             RuleList::Keyframes(keyframes) => keyframes.read_with(&guard).keyframes.len(),
@@ -366,7 +389,7 @@ impl BaseDocument {
     pub fn stylesheet_rule_info(&self, node_id: NodeId, path: &[usize]) -> Option<CssRuleInfo> {
         let sheet = self.nodes_to_stylesheet.get(&node_id)?;
         let guard = self.guard.read();
-        let (_, handle) = Self::resolve_rule(sheet, &guard, path)?;
+        let handle = Self::resolve_rule(sheet, &guard, path, |_| {})?;
         let mut css_text = CssStringWriter::new();
         let has_style = declaration_target(&handle, &guard).is_some();
         Some(match handle {
@@ -416,7 +439,8 @@ impl BaseDocument {
 
         let (ancestors, list) = {
             let guard = lock.read();
-            Self::resolve_rule_list(&sheet, &guard, path).ok_or(CssomError::NotFound)?
+            Self::resolve_rule_list_with_ancestors(&sheet, &guard, path)
+                .ok_or(CssomError::NotFound)?
         };
 
         let (new_rule, index) = match &list {
@@ -512,7 +536,8 @@ impl BaseDocument {
 
         let (ancestors, list) = {
             let guard = lock.read();
-            Self::resolve_rule_list(&sheet, &guard, path).ok_or(CssomError::NotFound)?
+            Self::resolve_rule_list_with_ancestors(&sheet, &guard, path)
+                .ok_or(CssomError::NotFound)?
         };
 
         let (removed_rule, change_kind, ancestors) = match &list {
@@ -545,14 +570,30 @@ impl BaseDocument {
         Ok(())
     }
 
+    /// The declarations of the rule at `path`, for read-only access
     fn rule_declaration_target(
+        &self,
+        node_id: NodeId,
+        path: &[usize],
+        guard: &SharedRwLockReadGuard,
+    ) -> Option<DeclarationTarget> {
+        let sheet = self.nodes_to_stylesheet.get(&node_id)?;
+        let handle = Self::resolve_rule(sheet, guard, path, |_| {})?;
+        declaration_target(&handle, guard)
+    }
+
+    /// The declarations of the rule at `path`, along with what is needed to
+    /// notify the stylist after mutating them: the stylesheet, the rule to
+    /// report as changed and its ancestors.
+    fn rule_declaration_target_mut(
         &self,
         node_id: NodeId,
         path: &[usize],
     ) -> Option<(DocumentStyleSheet, Vec<CssRule>, CssRule, DeclarationTarget)> {
         let sheet = self.nodes_to_stylesheet.get(&node_id)?.clone();
         let guard = self.guard.read();
-        let (ancestors, handle) = Self::resolve_rule(&sheet, &guard, path)?;
+        let mut ancestors = Vec::with_capacity(path.len());
+        let handle = Self::resolve_rule(&sheet, &guard, path, |rule| ancestors.push(rule.clone()))?;
         let target = declaration_target(&handle, &guard)?;
         // For keyframes, the rule to report as changed is the owning
         // `@keyframes` rule
@@ -573,8 +614,8 @@ impl BaseDocument {
         node_id: NodeId,
         path: &[usize],
     ) -> Option<String> {
-        let (_, _, _, target) = self.rule_declaration_target(node_id, path)?;
         let guard = self.guard.read();
+        let target = self.rule_declaration_target(node_id, path, &guard)?;
         let mut css = CssStringWriter::new();
         match target {
             DeclarationTarget::Block { block, .. } => {
@@ -600,8 +641,8 @@ impl BaseDocument {
         node_id: NodeId,
         path: &[usize],
     ) -> Option<Vec<String>> {
-        let (_, _, _, target) = self.rule_declaration_target(node_id, path)?;
         let guard = self.guard.read();
+        let target = self.rule_declaration_target(node_id, path, &guard)?;
         Some(match target {
             DeclarationTarget::Block { block, .. } => block
                 .read_with(&guard)
@@ -629,8 +670,8 @@ impl BaseDocument {
         path: &[usize],
         property: &str,
     ) -> Option<(String, bool)> {
-        let (_, _, _, target) = self.rule_declaration_target(node_id, path)?;
         let guard = self.guard.read();
+        let target = self.rule_declaration_target(node_id, path, &guard)?;
         let mut css = CssStringWriter::new();
         let important = match target {
             DeclarationTarget::Block { block, .. } => {
@@ -668,7 +709,7 @@ impl BaseDocument {
             return Ok(());
         }
         let (sheet, ancestors, rule, target) = self
-            .rule_declaration_target(node_id, path)
+            .rule_declaration_target_mut(node_id, path)
             .ok_or(CssomError::NotFound)?;
         let url_data = self.url.url_extra_data();
         let lock = &self.guard;
@@ -751,7 +792,7 @@ impl BaseDocument {
         property: &str,
     ) -> Result<String, CssomError> {
         let (sheet, ancestors, rule, target) = self
-            .rule_declaration_target(node_id, path)
+            .rule_declaration_target_mut(node_id, path)
             .ok_or(CssomError::NotFound)?;
         let lock = &self.guard;
         let mut removed_value = CssStringWriter::new();
@@ -804,7 +845,7 @@ impl BaseDocument {
         css: &str,
     ) -> Result<(), CssomError> {
         let (sheet, ancestors, rule, target) = self
-            .rule_declaration_target(node_id, path)
+            .rule_declaration_target_mut(node_id, path)
             .ok_or(CssomError::NotFound)?;
         let DeclarationTarget::Block { block, rule_type } = target else {
             return Err(CssomError::NotSupported);

@@ -496,6 +496,7 @@ const BOOTSTRAP_JS: &str = r#"
             set cssText(value) {
                 const d = data(this);
                 __blitz_sheet_style_set_css_text(d.owner, d.path, String(value));
+                touchSheet(data(d.rule).sheet);
             }
             get length() {
                 const d = data(this);
@@ -518,10 +519,13 @@ const BOOTSTRAP_JS: &str = r#"
                 value = value === null || value === undefined ? "" : String(value);
                 const important = String(priority ?? "").toLowerCase() === "important";
                 __blitz_sheet_style_set(d.owner, d.path, String(name), value, important);
+                touchSheet(data(d.rule).sheet);
             }
             removeProperty(name) {
                 const d = data(this);
-                return __blitz_sheet_style_remove(d.owner, d.path, String(name));
+                const removed = __blitz_sheet_style_remove(d.owner, d.path, String(name));
+                touchSheet(data(d.rule).sheet);
+                return removed;
             }
             get parentRule() {
                 return data(this).rule;
@@ -663,7 +667,13 @@ const BOOTSTRAP_JS: &str = r#"
         });
         defineRuleClass("CSSStyleRule", CSSGroupingRule, [styleGetter], { selectorText: str });
         defineRuleClass("CSSNestedDeclarations", CSSRule, [styleGetter]);
-        defineRuleClass("CSSMediaRule", CSSConditionRule, [], { media: (v) => makeMediaList(str(v)) });
+        defineRuleClass("CSSMediaRule", CSSConditionRule, [
+            {
+                get media() {
+                    return makeMediaList(this.conditionText);
+                },
+            },
+        ]);
         defineRuleClass("CSSSupportsRule", CSSConditionRule, []);
         defineRuleClass("CSSContainerRule", CSSConditionRule, [], {
             containerName: () => "",
@@ -758,13 +768,32 @@ const BOOTSTRAP_JS: &str = r#"
         // `cssRules[i]` accesses return the same object; the cache is dropped
         // whenever the rule list is mutated (indices shift).
         const ruleCaches = new WeakMap();
-        const invalidateRules = (sheet) => ruleCaches.delete(sheet);
+        // Per-sheet mutation counter, so that rule wrappers re-fetch their
+        // (serialized) info from the native side only when it may have changed.
+        // The document-wide native counter is folded in so that replacing a
+        // node's stylesheet (e.g. editing a `<style>`'s text) is detected too.
+        const generations = new WeakMap();
+        const sheetGeneration = (sheet) => (sheet && generations.get(sheet)) || 0;
+        const generation = (sheet) =>
+            __blitz_stylesheet_generation() + ":" + sheetGeneration(sheet);
+        const touchSheet = (sheet) => {
+            if (sheet) generations.set(sheet, sheetGeneration(sheet) + 1);
+        };
+        const invalidateRules = (sheet) => {
+            ruleCaches.delete(sheet);
+            touchSheet(sheet);
+        };
         const ruleAt = (sheet, owner, path, parentRule) => {
             const key = path.join("/");
             let cache = sheet && ruleCaches.get(sheet);
+            if (cache && cache.generation !== generation(sheet)) {
+                ruleCaches.delete(sheet);
+                cache = undefined;
+            }
             if (cache && cache.has(key)) return cache.get(key);
-            const info = __blitz_sheet_rule_info(owner, path);
+            let info = __blitz_sheet_rule_info(owner, path);
             if (info === null) return null;
+            let infoGeneration = generation(sheet);
             const cls = ruleClasses[info.interface] || CSSRule;
             const rule = construct(cls, (r) =>
                 internals.set(r, {
@@ -772,11 +801,22 @@ const BOOTSTRAP_JS: &str = r#"
                     owner,
                     path,
                     parentRule,
-                    info: () => __blitz_sheet_rule_info(owner, path) || info,
+                    info: () => {
+                        const current = generation(sheet);
+                        if (current !== infoGeneration) {
+                            info = __blitz_sheet_rule_info(owner, path) || info;
+                            infoGeneration = current;
+                        }
+                        return info;
+                    },
                 })
             );
             if (sheet) {
-                if (!cache) ruleCaches.set(sheet, (cache = new Map()));
+                if (!cache) {
+                    cache = new Map();
+                    cache.generation = infoGeneration;
+                    ruleCaches.set(sheet, cache);
+                }
                 cache.set(key, rule);
             }
             return rule;
