@@ -576,3 +576,128 @@ fn interface_constructor_globals() {
         "function,function,function,function|false|true"
     );
 }
+
+// `document.styleSheets` / `element.sheet` expose stylesheets with a live,
+// mutable `cssRules` list.
+#[test]
+fn cssom_stylesheet_rules() {
+    let doc = doc_from_html(
+        r##"
+        <html><head>
+            <style id="first">.a { color: red; } @media (min-width: 10px) { .b { margin: 1px } }</style>
+        </head><body>
+            <style id="second"></style>
+            <div id="out"></div>
+            <script>
+                const sheets = document.styleSheets;
+                const first = document.getElementById("first").sheet;
+                const second = document.getElementById("second").sheet;
+                const parts = [];
+                parts.push(sheets.length, sheets[0] === first, sheets.item(1) === second);
+                parts.push(first.ownerNode.id, first instanceof CSSStyleSheet, second.cssRules.length);
+
+                const rule = first.cssRules[0];
+                parts.push(rule.constructor.name, rule.type, rule.selectorText, rule.cssText);
+                parts.push(rule.style.color, rule.style.getPropertyValue("color"), rule.parentStyleSheet === first);
+
+                const media = first.cssRules[1];
+                parts.push(media.constructor.name, media.conditionText, media.cssRules.length);
+                parts.push(media.cssRules[0].parentRule === media, media.cssRules[0].style.margin);
+
+                second.insertRule("p { padding: 2px }", 0);
+                second.insertRule("h1 { padding: 3px }", 1);
+                parts.push(second.cssRules.length, second.cssRules[1].selectorText);
+                second.deleteRule(0);
+                parts.push(second.cssRules.length, second.cssRules[0].selectorText);
+
+                let err = "none";
+                try { second.insertRule("not a rule", 0); } catch (e) { err = e.name; }
+                parts.push(err);
+                try { second.deleteRule(5); } catch (e) { err = e.name; }
+                parts.push(err);
+
+                document.getElementById("out").textContent = parts.join("|");
+            </script>
+        </body></html>
+        "##,
+    );
+    assert_eq!(
+        text_of_selector(&doc, "#out"),
+        "2|true|true|first|true|0\
+         |CSSStyleRule|1|.a|.a { color: red; }|red|red|true\
+         |CSSMediaRule|(min-width: 10px)|1|true|1px\
+         |2|h1|1|h1\
+         |SyntaxError|IndexSizeError"
+    );
+}
+
+// Rules inserted or modified through the CSSOM take effect on computed styles.
+#[test]
+fn cssom_mutations_restyle() {
+    let doc = doc_from_html(
+        r##"
+        <html><head><style id="sheet">.box { width: 10px }</style></head><body>
+            <div id="box" class="box"></div>
+            <div id="out"></div>
+            <script>
+                const box = document.getElementById("box");
+                const sheet = document.getElementById("sheet").sheet;
+                const parts = [getComputedStyle(box).width];
+                sheet.insertRule("#box { width: 20px }", 1);
+                parts.push(getComputedStyle(box).width);
+                sheet.cssRules[1].style.setProperty("width", "30px");
+                parts.push(getComputedStyle(box).width, sheet.cssRules[1].cssText);
+                sheet.cssRules[1].style.cssText = "width: 40px; height: 5px";
+                parts.push(getComputedStyle(box).width, sheet.cssRules[1].style.length);
+                sheet.cssRules[1].style.removeProperty("width");
+                parts.push(getComputedStyle(box).width);
+                sheet.deleteRule(0);
+                parts.push(getComputedStyle(box).width);
+                document.getElementById("out").textContent = parts.join("|");
+            </script>
+        </body></html>
+        "##,
+    );
+    assert_eq!(
+        text_of_selector(&doc, "#out"),
+        "10px|20px|30px|#box { width: 30px; }|40px|2|10px|0px"
+    );
+}
+
+// `@font-face` and `@keyframes` rules expose their descriptors / keyframes.
+#[test]
+fn cssom_font_face_and_keyframes() {
+    let doc = doc_from_html(
+        r##"
+        <html><head>
+            <style id="sheet">
+                @font-face { font-family: "Foo"; src: url(foo.ttf) }
+                @keyframes spin { from { opacity: 0 } to { opacity: 1 } }
+            </style>
+        </head><body>
+            <div id="out"></div>
+            <script>
+                const sheet = document.getElementById("sheet").sheet;
+                const parts = [];
+                const face = sheet.cssRules[0];
+                parts.push(face.constructor.name, face.type, face.style.getPropertyValue("font-family"));
+                parts.push(face.style.getPropertyValue("src") !== "", face.style.fontFamily);
+                const frames = sheet.cssRules[1];
+                parts.push(frames.constructor.name, frames.name, frames.cssRules.length);
+                parts.push(frames.cssRules[0].keyText, frames.cssRules[1].style.opacity);
+                frames.appendRule("50% { opacity: 0.5 }");
+                parts.push(frames.cssRules.length, frames.findRule("50%").cssText);
+                frames.deleteRule("from");
+                parts.push(frames.cssRules.length, frames.cssRules[0].keyText);
+                document.getElementById("out").textContent = parts.join("|");
+            </script>
+        </body></html>
+        "##,
+    );
+    assert_eq!(
+        text_of_selector(&doc, "#out"),
+        "CSSFontFaceRule|5|\"Foo\"|true|\"Foo\"\
+         |CSSKeyframesRule|spin|2|0%|1\
+         |3|50% { opacity: 0.5; }|2|100%"
+    );
+}

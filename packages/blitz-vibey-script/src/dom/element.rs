@@ -78,6 +78,7 @@ pub(crate) fn init_element_proto(proto: &JsObject, context: &mut Context) {
         context,
     );
     define_accessor(proto, "style", Some(get_style), None, context);
+    define_accessor(proto, "sheet", Some(get_sheet), None, context);
     define_accessor(
         proto,
         "innerHTML",
@@ -815,6 +816,22 @@ fn get_style(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<J
     let proto = ctx.state.borrow().protos().style.clone();
     let obj = JsObject::from_proto_and_data(Some(proto), super::NodeRef { node_id });
     Ok(super::wrap_style_object(obj, context))
+}
+
+/// `HTMLStyleElement.sheet` / `HTMLLinkElement.sheet`: the `CSSStyleSheet`
+/// object (built by the JS bootstrap) for the element's stylesheet, or `null`
+fn get_sheet(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    this_node_id(this)?;
+    let sheet = super::call_js_helper(
+        "__blitz_sheet_for_node",
+        std::slice::from_ref(this),
+        context,
+    )?;
+    Ok(if sheet.is_undefined() {
+        JsValue::null()
+    } else {
+        sheet
+    })
 }
 
 // === innerHTML / outerHTML ===

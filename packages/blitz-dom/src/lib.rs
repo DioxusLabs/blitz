@@ -40,6 +40,8 @@ mod document;
 pub mod node;
 
 mod config;
+/// CSSOM stylesheet access (`document.styleSheets`, `CSSStyleSheet`, `CSSRule`)
+mod cssom;
 mod debug;
 mod events;
 mod font_metrics;
@@ -69,6 +71,7 @@ mod tree;
 
 mod url;
 
+pub use cssom::{CssRuleInfo, CssomError};
 pub use resolved_style::css_property_is_supported;
 pub use stylo_to_kurbo::resolve_2d_transform;
 
