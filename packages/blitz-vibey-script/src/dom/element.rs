@@ -1,6 +1,7 @@
 //! The `Element` prototype: attributes, DOM properties (`value`, `checked`, ...),
 //! `style`, `innerHTML` and friends.
 
+use crate::dom::define_value;
 use blitz_dom::{LocalName, NodeId, QualName, ScrollBehavior, ScrollLogicalPosition};
 use boa_engine::object::{JsObject, ObjectInitializer};
 use boa_engine::property::Attribute as PropAttribute;
@@ -172,6 +173,8 @@ pub(crate) fn init_element_proto(proto: &JsObject, context: &mut Context) {
     define_method(proto, "setAttribute", 2, set_attribute, context);
     define_method(proto, "removeAttribute", 1, remove_attribute, context);
     define_method(proto, "hasAttribute", 1, has_attribute, context);
+    define_method(proto, "getAttributeNames", 0, get_attribute_names, context);
+    define_accessor(proto, "attributes", Some(attributes), None, context);
     define_method(proto, "focus", 0, focus, context);
     define_method(proto, "blur", 0, blur, context);
     define_method(
@@ -409,6 +412,54 @@ fn get_attribute(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsR
         Some(value) => Ok(js_str(&value)),
         None => Ok(JsValue::null()),
     }
+}
+
+/// All attributes of the element as `(name, value)` pairs, in order.
+fn read_attrs(ctx: &DomCtx, node_id: NodeId) -> Vec<(String, String)> {
+    let doc = ctx.doc.borrow();
+    doc.get_node(node_id)
+        .and_then(|node| node.element_data())
+        .map(|element| {
+            element
+                .attrs()
+                .iter()
+                .map(|attr| (attr.name.local.to_string(), attr.value.clone()))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn get_attribute_names(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    let ctx = dom_ctx(context)?;
+    let node_id = this_node_id(this)?;
+    let names: Vec<JsValue> = read_attrs(&ctx, node_id)
+        .into_iter()
+        .map(|(name, _)| js_str(&name))
+        .collect();
+    Ok(boa_engine::object::builtins::JsArray::from_iter(names, context).into())
+}
+
+/// `element.attributes`: a snapshot `NamedNodeMap` — an array-like of
+/// `Attr`-shaped objects (`name`, `value`, `nodeName`, `nodeValue`), which is
+/// what jQuery's `.data()` walks to collect `data-*` attributes.
+fn attributes(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    let ctx = dom_ctx(context)?;
+    let node_id = this_node_id(this)?;
+    let items: Vec<JsValue> = read_attrs(&ctx, node_id)
+        .into_iter()
+        .map(|(name, value)| {
+            let attr = JsObject::with_object_proto(context.intrinsics());
+            define_value(&attr, "name", js_str(&name), context);
+            define_value(&attr, "nodeName", js_str(&name), context);
+            define_value(&attr, "localName", js_str(&name), context);
+            define_value(&attr, "value", js_str(&value), context);
+            define_value(&attr, "nodeValue", js_str(&value), context);
+            define_value(&attr, "specified", JsValue::from(true), context);
+            attr.into()
+        })
+        .collect();
+    let map = boa_engine::object::builtins::JsArray::from_iter(items.iter().cloned(), context);
+    Ok(map.into())
 }
 
 fn set_attribute(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
