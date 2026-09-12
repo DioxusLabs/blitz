@@ -78,6 +78,105 @@ const BOOTSTRAP_JS: &str = r#"
         };
     }
 
+    // `fetch()`: a minimal Fetch API on top of the synchronous `__blitz_fetch_sync`
+    // native (which goes through the document's ScriptFetcher). Bodies are
+    // text-only; `Headers` is a simple case-insensitive map.
+    if (typeof globalThis.fetch !== "function") {
+        class Headers {
+            #map = new Map();
+            constructor(init) {
+                if (init instanceof Headers) {
+                    for (const [k, v] of init) this.append(k, v);
+                } else if (Array.isArray(init)) {
+                    for (const [k, v] of init) this.append(k, v);
+                } else if (init && typeof init === "object") {
+                    for (const k of Object.keys(init)) this.append(k, init[k]);
+                }
+            }
+            append(name, value) {
+                const key = String(name).toLowerCase();
+                const existing = this.#map.get(key);
+                this.#map.set(key, existing === undefined ? String(value) : existing + ", " + value);
+            }
+            set(name, value) { this.#map.set(String(name).toLowerCase(), String(value)); }
+            get(name) { return this.#map.get(String(name).toLowerCase()) ?? null; }
+            has(name) { return this.#map.has(String(name).toLowerCase()); }
+            delete(name) { this.#map.delete(String(name).toLowerCase()); }
+            forEach(cb, thisArg) { for (const [k, v] of this) cb.call(thisArg, v, k, this); }
+            *entries() { yield* [...this.#map.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1)); }
+            *keys() { for (const [k] of this.entries()) yield k; }
+            *values() { for (const [, v] of this.entries()) yield v; }
+            [Symbol.iterator]() { return this.entries(); }
+        }
+
+        class Response {
+            #body;
+            #bodyUsed = false;
+            constructor(body = null, init = {}) {
+                this.#body = body === null || body === undefined ? "" : String(body);
+                const status = init.status === undefined ? 200 : Number(init.status);
+                if (!Number.isInteger(status) || status < 200 || status > 599) {
+                    throw new RangeError("The status provided (" + status + ") is outside the range [200, 599].");
+                }
+                Object.defineProperties(this, {
+                    status: { value: status, enumerable: true },
+                    statusText: { value: init.statusText === undefined ? "" : String(init.statusText), enumerable: true },
+                    headers: { value: new Headers(init.headers), enumerable: true },
+                    url: { value: init.url === undefined ? "" : String(init.url), enumerable: true },
+                    type: { value: "basic", enumerable: true },
+                    redirected: { value: false, enumerable: true },
+                });
+            }
+            get ok() { return this.status >= 200 && this.status <= 299; }
+            get bodyUsed() { return this.#bodyUsed; }
+            #consume() {
+                if (this.#bodyUsed) {
+                    return Promise.reject(new TypeError("body stream already read"));
+                }
+                this.#bodyUsed = true;
+                return Promise.resolve(this.#body);
+            }
+            text() { return this.#consume(); }
+            json() { return this.#consume().then((text) => JSON.parse(text)); }
+            arrayBuffer() { return this.#consume().then((text) => new TextEncoder().encode(text).buffer); }
+            clone() {
+                if (this.#bodyUsed) throw new TypeError("Response body is already used");
+                return new Response(this.#body, {
+                    status: this.status, statusText: this.statusText, headers: this.headers, url: this.url,
+                });
+            }
+        }
+
+        globalThis.Headers = Headers;
+        globalThis.Response = Response;
+        globalThis.fetch = function fetch(input, init) {
+            return new Promise((resolve, reject) => {
+                let url;
+                try {
+                    url = input && typeof input === "object" && "url" in input ? String(input.url) : String(input);
+                } catch (e) {
+                    reject(e);
+                    return;
+                }
+                const method = String(init?.method ?? "GET").toUpperCase();
+                if (method !== "GET" && method !== "HEAD") {
+                    reject(new TypeError("fetch: only GET and HEAD requests are supported"));
+                    return;
+                }
+                try {
+                    const [status, resolvedUrl, text] = __blitz_fetch_sync(url);
+                    resolve(new Response(method === "HEAD" ? "" : text, {
+                        status,
+                        statusText: status === 200 ? "OK" : status === 404 ? "Not Found" : "",
+                        url: resolvedUrl,
+                    }));
+                } catch (e) {
+                    reject(e);
+                }
+            });
+        };
+    }
+
     if (typeof globalThis.DOMException !== "function") {
         const DOM_EXCEPTION_CODES = {
             IndexSizeError: 1,
@@ -1042,11 +1141,16 @@ impl ScriptRuntime {
         fetcher: Rc<RefCell<Box<dyn ScriptFetcher>>>,
     ) -> Self {
         let module_loader = Rc::new(BlitzModuleLoader {
-            fetcher,
+            fetcher: Rc::clone(&fetcher),
             base_url: base_url.cloned(),
             modules: RefCell::new(HashMap::new()),
         });
         let ctx = DomCtx::new(doc);
+        {
+            let mut state = ctx.state.borrow_mut();
+            state.base_url = base_url.cloned();
+            state.fetcher = Some(fetcher);
+        }
         // Share the runtime's clock with boa so that `Date` observes the same
         // (possibly virtual) time as timers
         let clock = ctx.state.borrow().clock.clone();
@@ -1140,6 +1244,9 @@ impl ScriptRuntime {
 
         // Embedder message channel (see `ScriptDocument::take_messages`)
         register_global_fn(&mut context, "__blitz_send_message", 1, send_message);
+
+        // Synchronous resource fetch backing the bootstrap's `fetch()`
+        register_global_fn(&mut context, "__blitz_fetch_sync", 1, fetch_sync);
 
         // CSS property support check, used by the style Proxy's `has` trap
         register_global_fn(
@@ -1971,6 +2078,57 @@ fn send_message(_: &JsValue, args: &[JsValue], context: &mut Context) -> JsResul
         .to_std_string_lossy();
     ctx.state.borrow_mut().outbound_messages.push(message);
     Ok(JsValue::undefined())
+}
+
+/// `__blitz_fetch_sync(url)`: resolve `url` against the document base URL and
+/// fetch it via the document's [`ScriptFetcher`]. Returns `[status, url, text]`:
+/// a missing resource yields a 404 (like an HTTP server would), any other
+/// failure throws a `TypeError` (a network error, in `fetch()` terms).
+fn fetch_sync(_: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    use boa_engine::object::builtins::JsArray;
+
+    let ctx = dom_ctx(context)?;
+    let input = args
+        .first()
+        .unwrap_or(&JsValue::undefined())
+        .to_string(context)?
+        .to_std_string_lossy();
+
+    let (base_url, fetcher) = {
+        let state = ctx.state.borrow();
+        (state.base_url.clone(), state.fetcher.clone())
+    };
+    let url = match &base_url {
+        Some(base) => base.join(&input),
+        None => Url::parse(&input),
+    }
+    .map_err(|_| JsNativeError::typ().with_message(format!("Failed to parse URL from {input}")))?;
+    let fetcher =
+        fetcher.ok_or_else(|| JsNativeError::typ().with_message("fetch is unavailable"))?;
+
+    let (status, text) = match fetcher.borrow().fetch(&url) {
+        Ok(text) => (200, text),
+        Err(crate::fetch::FetchError::Io(error))
+            if error.kind() == std::io::ErrorKind::NotFound =>
+        {
+            (404, String::new())
+        }
+        Err(error) => {
+            return Err(JsNativeError::typ()
+                .with_message(format!("Failed to fetch {url}: {error}"))
+                .into());
+        }
+    };
+
+    Ok(JsArray::from_iter(
+        [
+            JsValue::from(status),
+            JsString::from(url.as_str()).into(),
+            JsString::from(text).into(),
+        ],
+        context,
+    )
+    .into())
 }
 
 fn clear_timer(_: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {

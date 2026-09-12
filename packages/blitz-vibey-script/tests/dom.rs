@@ -701,3 +701,53 @@ fn cssom_font_face_and_keyframes() {
          |3|50% { opacity: 0.5; }|2|100%"
     );
 }
+
+#[test]
+fn fetch_via_script_fetcher() {
+    use blitz_vibey_script::{FetchError, ScriptFetcher};
+    use url::Url;
+
+    struct MapFetcher;
+    impl ScriptFetcher for MapFetcher {
+        fn fetch(&self, url: &Url) -> Result<String, FetchError> {
+            match url.path() {
+                "/data.json" => Ok(r#"{"answer": 42}"#.to_string()),
+                _ => Err(FetchError::Io(std::io::Error::from(
+                    std::io::ErrorKind::NotFound,
+                ))),
+            }
+        }
+    }
+
+    let mut doc = ScriptDocument::from_html(
+        r#"
+        <html><body>
+            <div id="out"></div>
+            <div id="missing"></div>
+            <script>
+                fetch("/data.json")
+                    .then((r) => { if (!r.ok) throw new Error("not ok"); return r.json(); })
+                    .then((json) => {
+                        document.getElementById("out").textContent = String(json.answer);
+                    });
+                fetch("missing.txt").then((r) => {
+                    document.getElementById("missing").textContent =
+                        r.status + " " + r.ok + " " + r.url;
+                });
+            </script>
+        </body></html>
+        "#,
+        DocumentConfig {
+            base_url: Some("http://example.test/dir/page.html".to_string()),
+            ..Default::default()
+        },
+    )
+    .with_fetcher(MapFetcher);
+    doc.execute_scripts();
+    assert_eq!(doc.take_js_errors(), Vec::<String>::new());
+    assert_eq!(text_of_selector(&doc, "#out"), "42");
+    assert_eq!(
+        text_of_selector(&doc, "#missing"),
+        "404 false http://example.test/dir/missing.txt"
+    );
+}
