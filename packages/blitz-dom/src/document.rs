@@ -2241,7 +2241,7 @@ impl BaseDocument {
         }
 
         let node = self.get_node(node_id)?;
-        let pos = node.absolute_position(0.0, 0.0);
+        let pos = node.unrounded_absolute_position(0.0, 0.0);
 
         Some(BoundingRect {
             x: pos.x as f64 - self.viewport_scroll.x,
@@ -2304,8 +2304,8 @@ impl BaseDocument {
         };
 
         // Fragment rects are relative to the inline root's content box.
-        let root_layout = inline_root.final_layout();
-        let root_pos = inline_root.absolute_position(0.0, 0.0);
+        let root_layout = inline_root.unrounded_layout();
+        let root_pos = inline_root.unrounded_absolute_position(0.0, 0.0);
         let origin_x = root_pos.x as f64
             + (root_layout.padding.left + root_layout.border.left) as f64
             - self.viewport_scroll.x;
