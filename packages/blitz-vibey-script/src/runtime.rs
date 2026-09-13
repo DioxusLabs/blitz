@@ -29,6 +29,9 @@ use crate::dom::{
 use crate::fetch::ScriptFetcher;
 use crate::state::{DomCtx, Listener, ReadyState};
 
+/// Geometry Interfaces (DOMPoint, DOMRect, DOMQuad, DOMMatrix), defined in JS
+const GEOMETRY_JS: &str = include_str!("geometry.js");
+
 /// JS bootstrap for APIs that are easiest to define in JS
 const BOOTSTRAP_JS: &str = r#"
 (function () {
@@ -1307,6 +1310,7 @@ impl ScriptRuntime {
 
         // `getComputedStyle`
         register_global_fn(&mut context, "getComputedStyle", 1, get_computed_style);
+        register_global_fn(&mut context, "__blitz_parse_transform", 1, parse_transform);
 
         // CSSOM stylesheet natives (`__blitz_sheet_*`), used by the bootstrap's
         // `CSSStyleSheet` / `CSSRule` implementation
@@ -1351,6 +1355,7 @@ impl ScriptRuntime {
 
         // Small JS bootstrap for APIs that are easiest to define in JS
         runtime.eval_internal(BOOTSTRAP_JS, "<blitz-bootstrap>");
+        runtime.eval_internal(GEOMETRY_JS, "<blitz-geometry>");
 
         runtime
     }
@@ -2094,6 +2099,26 @@ fn css_property_supported(
 ) -> JsResult<JsValue> {
     let name = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
     Ok(JsValue::from(blitz_dom::css_property_is_supported(&name)))
+}
+
+/// `__blitz_parse_transform(string)`: parse a CSS `<transform-list>` into a
+/// 4x4 matrix. Returns `[elements, is2D]` (16 column-major elements), or
+/// `null` if the string is not a valid transform list.
+fn parse_transform(_: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    let ctx = dom_ctx(context)?;
+    let value = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
+    let Some((elements, is_2d)) = ctx.doc.borrow().parse_transform_matrix(&value) else {
+        return Ok(JsValue::null());
+    };
+    let elements = boa_engine::object::builtins::JsArray::from_iter(
+        elements.into_iter().map(JsValue::from),
+        context,
+    );
+    Ok(boa_engine::object::builtins::JsArray::from_iter(
+        [elements.into(), JsValue::from(is_2d)],
+        context,
+    )
+    .into())
 }
 
 /// `CSS.supports()`: the two-argument form checks a property/value declaration,

@@ -272,6 +272,43 @@ impl BaseDocument {
         condition.eval(&context)
     }
 
+    /// Parse a CSS `transform` list into a 4x4 matrix, as required by the
+    /// `DOMMatrix(DOMString)` constructor and `DOMMatrix.setMatrixValue()`
+    /// (<https://drafts.fxtf.org/geometry/#parse-a-string-into-an-abstract-matrix>).
+    ///
+    /// Returns the 16 matrix components in column-major order (`m11, m12, ...,
+    /// m44`) and whether the list contained only 2D transform functions.
+    /// Returns `None` if the string fails to parse as a transform list or uses
+    /// relative lengths (which cannot be resolved without a context).
+    pub fn parse_transform_matrix(&self, value: &str) -> Option<([f64; 16], bool)> {
+        use style::properties::longhands::transform;
+        let url_data = self.url.url_extra_data();
+        let context = ParserContext::new(
+            Origin::Author,
+            &url_data,
+            Some(CssRuleType::Style),
+            ParsingMode::DEFAULT,
+            QuirksMode::NoQuirks,
+            Default::default(),
+            None,
+            None,
+            Default::default(),
+        );
+        let mut input = ParserInput::new(value);
+        let mut parser = Parser::new(&mut input);
+        let transform = parser
+            .parse_entirely(|t| transform::parse(&context, t))
+            .ok()?;
+        let (m, is_3d) = transform.to_transform_3d_matrix_f64(None).ok()?;
+        Some((
+            [
+                m.m11, m.m12, m.m13, m.m14, m.m21, m.m22, m.m23, m.m24, m.m31, m.m32, m.m33, m.m34,
+                m.m41, m.m42, m.m43, m.m44,
+            ],
+            !is_3d,
+        ))
+    }
+
     /// Register a custom property via script (`CSS.registerProperty()`).
     /// On success all styles are invalidated so that declarations of the
     /// property are re-parsed against the new registration.
