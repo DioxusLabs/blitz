@@ -2105,9 +2105,8 @@ fn css_property_supported(
 /// 4x4 matrix. Returns `[elements, is2D]` (16 column-major elements), or
 /// `null` if the string is not a valid transform list.
 fn parse_transform(_: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    let ctx = dom_ctx(context)?;
     let value = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
-    let Some((elements, is_2d)) = ctx.doc.borrow().parse_transform_matrix(&value) else {
+    let Some((elements, is_2d)) = blitz_dom::parse_transform_matrix(&value) else {
         return Ok(JsValue::null());
     };
     let elements = boa_engine::object::builtins::JsArray::from_iter(

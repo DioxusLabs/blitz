@@ -72,7 +72,9 @@ mod tree;
 mod url;
 
 pub use cssom::{CssRuleInfo, CssomError};
-pub use resolved_style::{css_property_is_supported, resolved_style_property_names};
+pub use resolved_style::{
+    css_property_is_supported, parse_transform_matrix, resolved_style_property_names,
+};
 pub use stylo_to_kurbo::resolve_2d_transform;
 
 pub mod net;
