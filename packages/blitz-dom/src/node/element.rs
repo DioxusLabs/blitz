@@ -127,6 +127,8 @@ pub struct LayoutData {
     pub unrounded_layout: Layout,
     pub final_layout: Layout,
     pub scroll_offset: crate::Point<f64>,
+    /// Shift applied to a `position: sticky` box after layout (see `sticky.rs`).
+    pub sticky_offset: crate::Point<f32>,
     pub scrollable_overflow: KurboRect,
 }
 
@@ -137,6 +139,7 @@ impl LayoutData {
             unrounded_layout: Layout::new(),
             final_layout: Layout::new(),
             scroll_offset: crate::Point::ZERO,
+            sticky_offset: crate::Point { x: 0.0, y: 0.0 },
             scrollable_overflow: KurboRect::ZERO,
         }
     }

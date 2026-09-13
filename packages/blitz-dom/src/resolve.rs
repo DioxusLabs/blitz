@@ -157,6 +157,7 @@ impl BaseDocument {
         timer.record_time("subdocs");
 
         timer.print_times(&format!("Resolve({}): ", self.id()));
+        self.update_sticky_offsets();
     }
 
     fn resolve_transforms(&mut self, node_id: NodeId) -> Rect {
