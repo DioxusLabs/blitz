@@ -440,6 +440,22 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         let mut clip_path_for_layer = clip_path_shape.unwrap_or(default_clip);
         clip_path_for_layer.apply_affine(Affine::scale(self.scale));
 
+        // CSS 2 `clip` property (absolutely positioned elements only). Applies to the whole of
+        // the element's rendering (including outlines and shadows), so it is the outermost layer.
+        let css_clip_rect = cx.css_clip_rect();
+        if css_clip_rect.is_some_and(|rect| rect.is_zero_area()) {
+            return;
+        }
+        let css_clip_layer_pushed = self.layer_manager.maybe_push_layer(
+            scene,
+            css_clip_rect.is_some(),
+            1.0,
+            cx.transform,
+            &css_clip_rect.unwrap_or(Rect::ZERO),
+            None,
+            None,
+        );
+
         cx.draw_outline(scene);
         cx.draw_outset_box_shadow(scene);
 
@@ -556,6 +572,9 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                 cx.maybe_pop_css_mask_layer(scene, mask_layer_pushed);
             },
         );
+
+        self.layer_manager
+            .maybe_pop_layer(scene, css_clip_layer_pushed);
     }
 
     fn render_node(
