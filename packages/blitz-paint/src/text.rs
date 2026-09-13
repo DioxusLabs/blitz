@@ -5,6 +5,7 @@ use parley::{Affinity, Cursor, Layout, Line, PositionedLayoutItem, Selection};
 use peniko::Fill;
 use std::collections::HashMap;
 use style::properties::generated::longhands::text_decoration_style::computed_value::T as TextDecorationStyle;
+use style::properties::generated::longhands::visibility::computed_value::T as Visibility;
 use style::values::computed::{
     Length, LengthPercentage, TextDecorationLength, TextDecorationLine, TextUnderlinePosition,
 };
@@ -43,6 +44,9 @@ pub(crate) fn draw_inline_backgrounds<'a>(
             let Some(styles) = doc.get_node(node_id).and_then(|node| node.primary_styles()) else {
                 continue;
             };
+            if styles.get_inherited_box().visibility != Visibility::Visible {
+                continue;
+            }
 
             let current_color = styles.clone_color();
             let bg_color = styles
@@ -143,6 +147,9 @@ struct ResolvedDecoration {
 /// consecutive runs doesn't re-resolve them.
 struct DecorationStackEntry {
     node_id: NodeId,
+    /// Whether this node's `visibility` is `visible`. Glyphs of runs whose innermost node
+    /// is hidden are not painted, and a hidden node does not paint its decorations.
+    visible: bool,
     /// This node's (inherited) text colour, used for the glyphs of runs whose
     /// innermost node is this one.
     text_color: Color,
@@ -155,11 +162,13 @@ fn resolve_decoration_entry(doc: &BaseDocument, node_id: NodeId) -> DecorationSt
     let Some(styles) = doc.get_node(node_id).and_then(|node| node.primary_styles()) else {
         return DecorationStackEntry {
             node_id,
+            visible: true,
             text_color: Color::BLACK,
             decoration: None,
         };
     };
 
+    let visible = styles.get_inherited_box().visibility == Visibility::Visible;
     let itext = styles.get_inherited_text();
     let text = styles.get_text();
     let text_color = itext.color.as_color_color();
@@ -171,7 +180,7 @@ fn resolve_decoration_entry(doc: &BaseDocument, node_id: NodeId) -> DecorationSt
     // Decorations propagate through the box tree, and a `display: contents` element
     // generates no box, so its decorations have no effect on descendants.
     let is_contents = styles.clone_display().is_contents();
-    let decoration = (!is_contents && line.intersects(drawn_lines)).then(|| {
+    let decoration = (visible && !is_contents && line.intersects(drawn_lines)).then(|| {
         // `text-decoration-color: currentColor` (the initial value) resolves against
         // the decorating box's own colour, not the descendant run's.
         let color = text
@@ -195,6 +204,7 @@ fn resolve_decoration_entry(doc: &BaseDocument, node_id: NodeId) -> DecorationSt
 
     DecorationStackEntry {
         node_id,
+        visible,
         text_color,
         decoration,
     }
@@ -609,6 +619,11 @@ pub(crate) fn stroke_text<'a>(
                     stack.push(resolve_decoration_entry(doc, node_id));
                 }
 
+                // `visibility` inherits, so the innermost node determines whether the run's
+                // glyphs are painted. Hidden runs still take part in decoration bookkeeping
+                // below so that visible ancestors' decorations span them.
+                let run_visible = stack.last().is_none_or(|e| e.visible);
+
                 // The glyph colour comes from the run's own node (the stack top): `color`
                 // inherits, so the innermost inline element already carries the right value.
                 let text_color = stack.last().map(|e| e.text_color).unwrap_or(Color::BLACK);
@@ -620,23 +635,25 @@ pub(crate) fn stroke_text<'a>(
                     kurbo::Vec2::default()
                 };
 
-                scene.draw_glyphs(
-                    font,
-                    font_size,
-                    !FONT_EMBOLDEN_ENABLED, // hint
-                    run.normalized_coords(),
-                    embolden,
-                    Fill::NonZero,
-                    &anyrender::Paint::from(text_color),
-                    1.0, // alpha
-                    transform,
-                    glyph_xform,
-                    glyph_run.positioned_glyphs().map(|glyph| anyrender::Glyph {
-                        id: glyph.id as _,
-                        x: glyph.x,
-                        y: glyph.y,
-                    }),
-                );
+                if run_visible {
+                    scene.draw_glyphs(
+                        font,
+                        font_size,
+                        !FONT_EMBOLDEN_ENABLED, // hint
+                        run.normalized_coords(),
+                        embolden,
+                        Fill::NonZero,
+                        &anyrender::Paint::from(text_color),
+                        1.0, // alpha
+                        transform,
+                        glyph_xform,
+                        glyph_run.positioned_glyphs().map(|glyph| anyrender::Glyph {
+                            id: glyph.id as _,
+                            x: glyph.x,
+                            y: glyph.y,
+                        }),
+                    );
+                }
 
                 // Accumulate this run's contribution to each decorating box on its ancestor
                 // path. The decoration is drawn once per box after the whole line has been
