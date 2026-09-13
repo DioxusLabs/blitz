@@ -817,6 +817,16 @@ const BOOTSTRAP_JS: &str = r#"
             conditionText: str,
         });
         defineRuleClass("CSSStyleRule", CSSGroupingRule, [styleGetter], { selectorText: str });
+        Object.defineProperty(ruleClasses.CSSStyleRule.prototype, "selectorText", {
+            get: attrGetter("selectorText", str),
+            set(value) {
+                const d = data(this);
+                __blitz_sheet_set_selector_text(d.owner, d.path, String(value));
+                touchSheet(d.sheet);
+            },
+            configurable: true,
+            enumerable: true,
+        });
         defineRuleClass("CSSNestedDeclarations", CSSRule, [styleGetter]);
         defineRuleClass("CSSMediaRule", CSSConditionRule, [
             {

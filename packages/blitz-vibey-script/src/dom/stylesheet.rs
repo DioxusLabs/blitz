@@ -24,6 +24,7 @@ pub(crate) fn register(context: &mut Context) {
         ("__blitz_sheet_rule_info", 2, rule_info),
         ("__blitz_sheet_insert_rule", 4, insert_rule),
         ("__blitz_sheet_delete_rule", 3, delete_rule),
+        ("__blitz_sheet_set_selector_text", 3, set_selector_text),
         ("__blitz_sheet_style_css_text", 2, style_css_text),
         ("__blitz_sheet_style_set_css_text", 3, style_set_css_text),
         (
@@ -222,6 +223,20 @@ fn style_css_text(_: &JsValue, args: &[JsValue], context: &mut Context) -> JsRes
         .stylesheet_rule_style_css_text(node_id, &path)
         .unwrap_or_default();
     Ok(js_str(&css))
+}
+
+fn set_selector_text(_: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    let ctx = dom_ctx(context)?;
+    let node_id = node_arg(args, 0)?;
+    let path = path_arg(args, 1, context)?;
+    let selectors = string_arg(args, 2, context)?;
+    // `selectorText` assignment never throws per CSSOM: invalid selectors (and
+    // rules without selectors) leave the rule unchanged
+    let _ = ctx
+        .doc
+        .borrow_mut()
+        .stylesheet_rule_set_selector_text(node_id, &path, &selectors);
+    Ok(JsValue::undefined())
 }
 
 fn style_set_css_text(_: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
