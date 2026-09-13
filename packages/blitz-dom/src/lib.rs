@@ -65,6 +65,8 @@ mod stylo_device;
 mod stylo_to_cursor_icon;
 mod stylo_to_kurbo;
 mod stylo_to_parley;
+/// `position: sticky` offsets, resolved after layout.
+mod sticky;
 pub mod traversal;
 /// Versioned storage for the nodes of the DOM tree.
 mod tree;

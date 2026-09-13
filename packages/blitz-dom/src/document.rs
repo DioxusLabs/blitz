@@ -2204,6 +2204,7 @@ impl BaseDocument {
 
     pub fn set_viewport_scroll(&mut self, scroll: crate::Point<f64>) {
         self.nodes.set_viewport_scroll(scroll);
+        self.update_sticky_offsets();
     }
 
     /// Find the node targeted by a URL fragment (the `#...` part of a URL).
