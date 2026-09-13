@@ -88,6 +88,10 @@ pub(crate) struct RuntimeState {
     /// listeners, timer callbacks and promise jobs). Drained with
     /// [`ScriptDocument::take_js_errors`](crate::ScriptDocument::take_js_errors).
     pub uncaught_errors: Vec<String>,
+    /// Set while a window `error` event is being dispatched for an uncaught
+    /// exception, so that exceptions thrown by `error` handlers themselves are
+    /// only recorded and not re-dispatched
+    pub dispatching_error_event: bool,
     /// The document base URL, against which `fetch()` URLs are resolved
     pub base_url: Option<Url>,
     /// Fetcher backing `fetch()` (shared with `<script src>` and module loading)

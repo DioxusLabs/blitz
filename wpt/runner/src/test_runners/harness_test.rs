@@ -113,7 +113,6 @@ impl ScriptFetcher for WptScriptFetcher {
 
 enum HarnessPumpOutcome {
     Results(i64, Vec<SubtestResult>),
-    JsErrors(Vec<String>),
     UnsupportedFeature(String, String),
 }
 
@@ -129,9 +128,11 @@ pub fn process_harness_test(
     // Synchronous tests complete during `execute_scripts` (testharness completes
     // on the `load` event); async tests may schedule timers.
     //
-    // Uncaught JS errors fail the test immediately: in a real browser they would
-    // reach testharness's window `error` handler and produce a harness ERROR, but
-    // here they typically mean the harness will never complete.
+    // Uncaught JS errors are dispatched to testharness's window `error` handler
+    // (as in a browser), which records a harness ERROR alongside the subtests
+    // completed so far and completes the harness. So they don't end the run on
+    // their own; they only decide the outcome if the harness never reports.
+    let mut js_errors = Vec::new();
     let outcome = pump_timers(&mut document, HARNESS_TIMEOUT, |document| {
         let messages = document.take_messages();
         if let Some((feature, command)) = messages
@@ -143,21 +144,25 @@ pub fn process_harness_test(
         if let Some((status, results)) = messages.iter().find_map(|msg| parse_results(msg)) {
             return Some(HarnessPumpOutcome::Results(status, results));
         }
-        let js_errors = document.take_js_errors();
-        if !js_errors.is_empty() {
-            return Some(HarnessPumpOutcome::JsErrors(js_errors));
-        }
+        js_errors.extend(document.take_js_errors());
         None
     });
+    js_errors.extend(document.take_js_errors());
+    for error in &js_errors {
+        warn!("{relative_path}: {error}");
+    }
 
     match outcome {
         Some(HarnessPumpOutcome::Results(harness_status, subtest_results)) => {
             harness_outcome(harness_status, subtest_results)
         }
-        Some(HarnessPumpOutcome::JsErrors(js_errors)) => {
-            for error in &js_errors {
-                warn!("{relative_path}: {error}");
-            }
+        Some(HarnessPumpOutcome::UnsupportedFeature(feature, command)) => {
+            debug!("Skipping {relative_path}: unsupported {feature} command {command}");
+            (TestStatus::Skip, SubtestCounts::ZERO_OF_ZERO, Vec::new())
+        }
+        // The harness never reported, and an uncaught error is the likely cause
+        // (e.g. it threw before testharness.js was even loaded)
+        None if !js_errors.is_empty() => {
             let subtest_results = vec![SubtestResult {
                 name: "Uncaught JS error".to_string(),
                 status: TestStatus::Fail,
@@ -168,10 +173,6 @@ pub fn process_harness_test(
                 SubtestCounts::ZERO_OF_ONE,
                 subtest_results,
             )
-        }
-        Some(HarnessPumpOutcome::UnsupportedFeature(feature, command)) => {
-            debug!("Skipping {relative_path}: unsupported {feature} command {command}");
-            (TestStatus::Skip, SubtestCounts::ZERO_OF_ZERO, Vec::new())
         }
         // Timeout, or no pending timers: the harness will never complete
         None => {

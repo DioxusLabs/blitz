@@ -751,3 +751,36 @@ fn fetch_via_script_fetcher() {
         "404 false http://example.test/dir/missing.txt"
     );
 }
+
+#[test]
+fn uncaught_errors_fire_window_error_event() {
+    let mut doc = doc_from_html(
+        r#"
+        <html><body>
+            <div id="out"></div>
+            <script>
+                window.addEventListener("error", (e) => {
+                    document.getElementById("out").textContent +=
+                        "[" + e.type + ":" + e.message + ":" + (e.error instanceof TypeError) + "]";
+                });
+                window.onerror = (message) => {
+                    document.getElementById("out").textContent += "[onerror:" + message + "]";
+                    throw new Error("from handler");
+                };
+            </script>
+            <script>null.foo;</script>
+            <script>document.getElementById("out").textContent += "[after]";</script>
+        </body></html>
+        "#,
+    );
+    doc.execute_scripts();
+    let errors = doc.take_js_errors();
+    assert_eq!(errors.len(), 2, "{errors:?}");
+    assert!(errors[0].contains("TypeError"), "{errors:?}");
+    assert!(errors[1].contains("from handler"), "{errors:?}");
+    let out = text_of_selector(&doc, "#out");
+    assert!(
+        out.starts_with("[error:") && out.contains(":true][onerror:") && out.ends_with("[after]"),
+        "{out}"
+    );
+}
