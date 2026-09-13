@@ -15,8 +15,9 @@ use style::properties::{
     ComputedValues, NonCustomPropertyId, PropertyDeclaration, PropertyDeclarationBlock, PropertyId,
     ShorthandId, SourcePropertyDeclaration, parse_one_declaration_into,
 };
+use style::servo_arc::Arc as ServoArc;
 use style::stylesheets::supports_rule::parse_condition_or_declaration;
-use style::stylesheets::{CssRuleType, Origin, OriginSet};
+use style::stylesheets::{CssRuleType, Origin, OriginSet, UrlExtraData};
 use style::stylist::RegisterCustomPropertyResult;
 use style::values::computed::LengthPercentage;
 use style::values::computed::length::CSSPixelLength;
@@ -26,6 +27,7 @@ use style::values::specified::box_::{DisplayInside, DisplayOutside};
 use style_traits::{CssStringWriter, ParsingMode, ToCss};
 
 use blitz_traits::node_id::NodeId;
+use url::Url;
 
 use crate::BaseDocument;
 use crate::layout::replaced::is_replaced_element;
@@ -99,6 +101,44 @@ pub fn css_property_is_supported(name: &str) -> bool {
         PropertyId::parse_enabled_for_all_content(name),
         Ok(property_id) if !matches!(property_id, PropertyId::Custom(_))
     )
+}
+
+/// Parse a CSS `transform` list into a 4x4 matrix, as required by the
+/// `DOMMatrix(DOMString)` constructor and `DOMMatrix.setMatrixValue()`
+/// (<https://drafts.fxtf.org/geometry/#parse-a-string-into-an-abstract-matrix>).
+///
+/// Returns the 16 matrix components in column-major order (`m11, m12, ...,
+/// m44`) and whether the list contained only 2D transform functions.
+/// Returns `None` if the string fails to parse as a transform list or uses
+/// relative lengths (which cannot be resolved without a context).
+pub fn parse_transform_matrix(value: &str) -> Option<([f64; 16], bool)> {
+    use style::properties::longhands::transform;
+    // Transform lists cannot contain URLs, so any base URL will do
+    let url_data = UrlExtraData(ServoArc::new(Url::parse("about:blank").unwrap()));
+    let context = ParserContext::new(
+        Origin::Author,
+        &url_data,
+        Some(CssRuleType::Style),
+        ParsingMode::DEFAULT,
+        QuirksMode::NoQuirks,
+        Default::default(),
+        None,
+        None,
+        Default::default(),
+    );
+    let mut input = ParserInput::new(value);
+    let mut parser = Parser::new(&mut input);
+    let transform = parser
+        .parse_entirely(|t| transform::parse(&context, t))
+        .ok()?;
+    let (m, is_3d) = transform.to_transform_3d_matrix_f64(None).ok()?;
+    Some((
+        [
+            m.m11, m.m12, m.m13, m.m14, m.m21, m.m22, m.m23, m.m24, m.m31, m.m32, m.m33, m.m34,
+            m.m41, m.m42, m.m43, m.m44,
+        ],
+        !is_3d,
+    ))
 }
 
 /// The names of the properties exposed by the `CSSStyleDeclaration` returned
