@@ -24,7 +24,7 @@ use web_time::{Duration, Instant};
 
 use crate::dom::event::{EventRef, create_event, create_event_for_dom_event};
 use crate::dom::{
-    NodeRef, dom_ctx, node_id_of_value, node_wrapper, to_rust_string, wrap_style_object,
+    NodeRef, dom_ctx, js_str, node_id_of_value, node_wrapper, to_rust_string, wrap_style_object,
 };
 use crate::fetch::ScriptFetcher;
 use crate::state::{DomCtx, Listener, ReadyState};
@@ -1091,14 +1091,90 @@ const BOOTSTRAP_JS: &str = r#"
 })();
 "#;
 
-/// Record an unhandled JavaScript error in the runtime state, for the embedder
-/// to collect via [`ScriptDocument::take_js_errors`](crate::ScriptDocument::take_js_errors)
-fn report_js_error(ctx: &DomCtx, what: &str, error: &boa_engine::JsError) {
+/// Report an unhandled JavaScript error: record it in the runtime state for the
+/// embedder to collect via
+/// [`ScriptDocument::take_js_errors`](crate::ScriptDocument::take_js_errors),
+/// then fire an `error` event at the window (the HTML "report an exception"
+/// steps) so that `window.onerror` / `addEventListener("error")` handlers
+/// observe it.
+fn report_js_error(ctx: &DomCtx, context: &mut Context, what: &str, error: &JsError) {
     #[cfg(feature = "tracing")]
     tracing::error!("Uncaught JS error in {what}: {error}");
-    ctx.state
-        .borrow_mut()
-        .record_error(format!("Uncaught JS error in {what}: {error}"));
+    let already_dispatching = {
+        let mut state = ctx.state.borrow_mut();
+        state.record_error(format!("Uncaught JS error in {what}: {error}"));
+        std::mem::replace(&mut state.dispatching_error_event, true)
+    };
+    if already_dispatching {
+        return;
+    }
+    dispatch_error_event(ctx, context, error);
+    ctx.state.borrow_mut().dispatching_error_event = false;
+}
+
+/// Fire an `ErrorEvent`-shaped `error` event at the window for an uncaught
+/// exception. Exceptions thrown by the handlers themselves are recorded (via
+/// [`report_js_error`]) but do not fire further `error` events.
+fn dispatch_error_event(ctx: &DomCtx, context: &mut Context, error: &JsError) {
+    let listeners: Vec<Listener> = {
+        let mut state = ctx.state.borrow_mut();
+        match state.window_listeners.get_mut("error") {
+            Some(listeners) => {
+                let cloned = listeners.clone();
+                listeners.retain(|l| !l.once);
+                cloned
+            }
+            None => Vec::new(),
+        }
+    };
+    let onerror = context
+        .global_object()
+        .get(js_string!("onerror"), context)
+        .ok()
+        .and_then(|handler| handler.as_object().filter(|h| h.is_callable()));
+    if listeners.is_empty() && onerror.is_none() {
+        return;
+    }
+
+    let global: JsValue = context.global_object().into();
+    let event_obj = create_event(ctx, "error", false, true, &global, context);
+    crate::dom::define_value(&event_obj, "currentTarget", global.clone(), context);
+    let error_value = error
+        .clone()
+        .into_opaque(context)
+        .unwrap_or_else(|_| js_str(&error.to_string()));
+    let message = error_value
+        .as_object()
+        .and_then(|obj| obj.get(js_string!("message"), context).ok())
+        .filter(|message| message.is_string())
+        .unwrap_or_else(|| js_str(&error.to_string()));
+    crate::dom::define_value(&event_obj, "message", message.clone(), context);
+    crate::dom::define_value(&event_obj, "filename", js_str(""), context);
+    crate::dom::define_value(&event_obj, "lineno", JsValue::from(0), context);
+    crate::dom::define_value(&event_obj, "colno", JsValue::from(0), context);
+    crate::dom::define_value(&event_obj, "error", error_value.clone(), context);
+
+    for listener in listeners {
+        if let Err(error) = listener
+            .callback
+            .call(&global, &[event_obj.clone().into()], context)
+        {
+            report_js_error(ctx, context, "error event listener", &error);
+        }
+    }
+    // `window.onerror(message, source, lineno, colno, error)`
+    if let Some(handler) = onerror {
+        let args = [
+            message,
+            js_str(""),
+            JsValue::from(0),
+            JsValue::from(0),
+            error_value,
+        ];
+        if let Err(error) = handler.call(&global, &args, context) {
+            report_js_error(ctx, context, "error event listener", &error);
+        }
+    }
 }
 
 /// A [`ModuleLoader`] which fetches ES module imports synchronously via the
@@ -1379,14 +1455,14 @@ impl ScriptRuntime {
 
     fn eval_internal(&mut self, code: &str, description: &str) {
         if let Err(error) = self.context.eval(Source::from_bytes(code)) {
-            report_js_error(&self.ctx, description, &error);
+            report_js_error(&self.ctx, &mut self.context, description, &error);
         }
     }
 
     /// Run pending promise jobs (microtasks)
     pub fn run_jobs(&mut self, description: &str) {
         if let Err(error) = self.context.run_jobs() {
-            report_js_error(&self.ctx, description, &error);
+            report_js_error(&self.ctx, &mut self.context, description, &error);
         }
     }
 
@@ -1404,7 +1480,7 @@ impl ScriptRuntime {
         let module = match Module::parse(source, None, &mut self.context) {
             Ok(module) => module,
             Err(error) => {
-                report_js_error(&self.ctx, &description, &error);
+                report_js_error(&self.ctx, &mut self.context, &description, &error);
                 return;
             }
         };
@@ -1419,7 +1495,12 @@ impl ScriptRuntime {
         let promise = module.load_link_evaluate(&mut self.context);
         self.run_jobs(&description);
         if let PromiseState::Rejected(reason) = promise.state() {
-            report_js_error(&self.ctx, &description, &JsError::from_opaque(reason));
+            report_js_error(
+                &self.ctx,
+                &mut self.context,
+                &description,
+                &JsError::from_opaque(reason),
+            );
         }
     }
 
@@ -1543,7 +1624,7 @@ impl ScriptRuntime {
                     .callback
                     .call(&JsValue::undefined(), &timer.args, &mut self.context)
             {
-                report_js_error(&self.ctx, "timer callback", &error);
+                report_js_error(&self.ctx, &mut self.context, "timer callback", &error);
             }
         }
         self.run_jobs("timer microtasks");
@@ -1708,7 +1789,7 @@ impl ScriptRuntime {
                 if let Err(error) =
                     callback.call(&current_target, &[event_obj.clone().into()], context)
                 {
-                    report_js_error(&ctx, "event listener", &error);
+                    report_js_error(&ctx, context, "event listener", &error);
                 }
                 if event_ref(&event_obj, &|event| event.stopped_immediate.get()) {
                     break 'chain;
@@ -1743,7 +1824,7 @@ impl ScriptRuntime {
                             .callback
                             .call(&global, &[event_obj.clone().into()], context)
                     {
-                        report_js_error(&ctx, "event listener", &error);
+                        report_js_error(&ctx, context, "event listener", &error);
                     }
                     if event_ref(&event_obj, &|event| event.stopped_immediate.get()) {
                         break;
@@ -1814,7 +1895,7 @@ impl ScriptRuntime {
                     .callback
                     .call(&global, &[event_obj.clone().into()], context)
             {
-                report_js_error(&ctx, "event listener", &error);
+                report_js_error(&ctx, context, "event listener", &error);
             }
         }
 
@@ -1825,7 +1906,7 @@ impl ScriptRuntime {
                 if handler.is_callable() {
                     any_called = true;
                     if let Err(error) = handler.call(&global, &[event_obj.into()], context) {
-                        report_js_error(&ctx, "event listener", &error);
+                        report_js_error(&ctx, context, "event listener", &error);
                     }
                 }
             }
