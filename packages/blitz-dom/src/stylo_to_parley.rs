@@ -278,13 +278,20 @@ pub(crate) fn font_features(font_styles: &stylo::Font) -> Vec<parley::FontFeatur
     features
 }
 
+pub(crate) fn text_wrap_mode(input: stylo::TextWrapMode) -> parley::TextWrapMode {
+    match input {
+        stylo::TextWrapMode::Wrap => parley::TextWrapMode::Wrap,
+        stylo::TextWrapMode::Nowrap => parley::TextWrapMode::NoWrap,
+    }
+}
+
 pub(crate) fn white_space_collapse(input: stylo::WhiteSpaceCollapse) -> parley::WhiteSpaceCollapse {
     match input {
         stylo::WhiteSpaceCollapse::Collapse => parley::WhiteSpaceCollapse::Collapse,
         stylo::WhiteSpaceCollapse::Preserve => parley::WhiteSpaceCollapse::Preserve,
 
-        // TODO: Implement PreserveBreaks and BreakSpaces modes
-        stylo::WhiteSpaceCollapse::PreserveBreaks => parley::WhiteSpaceCollapse::Preserve,
+        stylo::WhiteSpaceCollapse::PreserveBreaks => parley::WhiteSpaceCollapse::PreserveBreaks,
+        // TODO: Implement BreakSpaces mode
         stylo::WhiteSpaceCollapse::BreakSpaces => parley::WhiteSpaceCollapse::Preserve,
     }
 }
@@ -367,10 +374,7 @@ pub(crate) fn style(
         stylo::OverflowWrap::BreakWord => parley::OverflowWrap::BreakWord,
         stylo::OverflowWrap::Anywhere => parley::OverflowWrap::Anywhere,
     };
-    let text_wrap_mode = match itext_styles.text_wrap_mode {
-        stylo::TextWrapMode::Wrap => parley::TextWrapMode::Wrap,
-        stylo::TextWrapMode::Nowrap => parley::TextWrapMode::NoWrap,
-    };
+    let text_wrap_mode = text_wrap_mode(itext_styles.text_wrap_mode);
 
     parley::TextStyle {
         // font_family: parley::FontFamily::Single(FontFamilyName::Generic(GenericFamily::SystemUi)),
@@ -386,6 +390,7 @@ pub(crate) fn style(
         word_spacing,
         letter_spacing,
         text_wrap_mode,
+        white_space_collapse: white_space_collapse(itext_styles.white_space_collapse),
         overflow_wrap,
         word_break,
 
