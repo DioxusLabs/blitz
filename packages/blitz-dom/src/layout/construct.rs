@@ -1,5 +1,6 @@
 use blitz_traits::node_id::NodeId;
 use core::str;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use markup5ever::{QualName, local_name, ns};
@@ -10,9 +11,10 @@ use parley::{
 use style::{
     computed_values::position::T as PositionProperty,
     data::ElementData as StyloElementData,
+    properties::ComputedValues,
     shared_lock::StylesheetGuards,
     values::{
-        computed::{Content, ContentItem, Display, Float, TextTransform},
+        computed::{Content, ContentItem, Display, Float, TextTransform, font::LineHeight},
         specified::box_::{DisplayInside, DisplayOutside},
     },
 };
@@ -20,6 +22,7 @@ use thin_vec::ThinVec;
 
 use crate::{
     BaseDocument, ElementData, Node, NodeData,
+    font_metrics::normal_line_height,
     layout::damage::{CONSTRUCT_BOX, CONSTRUCT_DESCENDENT, CONSTRUCT_FC},
     node::{
         ListItemLayout, ListItemLayoutPosition, Marker, NodeFlags, NodeKind, SpecialElementData,
@@ -286,12 +289,77 @@ fn push_non_whitespace_children_and_pseudos(layout_children: &mut ThinVec<NodeId
     }
 }
 
-/// Convert a relative line height to an absolute one
-fn resolve_line_height(line_height: parley::LineHeight, font_size: f32) -> f32 {
-    match line_height {
-        parley::LineHeight::FontSizeRelative(relative) => relative * font_size,
-        parley::LineHeight::Absolute(absolute) => absolute,
-        parley::LineHeight::MetricsRelative(relative) => relative * font_size, //unreachable!(),
+/// Resolve the used `line-height` (in CSS px) of an element. `normal` is resolved
+/// from the metrics of the element's first available font.
+fn resolve_line_height(font_ctx: &mut FontContext, style: &ComputedValues, scale: f32) -> f32 {
+    let font = style.get_font();
+    let font_size = font.font_size.used_size.0.px();
+    match font.line_height {
+        LineHeight::Normal => {
+            normal_line_height(font_ctx, font, font_size, scale).unwrap_or(font_size * 1.2)
+        }
+        LineHeight::Number(num) => font_size * num.0,
+        LineHeight::Length(value) => value.0.px(),
+    }
+}
+
+/// Whether an inline-level element is laid out as a Parley style span (as opposed
+/// to an atomic inline box) within an inline formatting context.
+fn is_inline_style_span(element_data: &ElementData) -> bool {
+    let tag_name = &element_data.name.local;
+    !(is_replaced_element(tag_name)
+        || *tag_name == local_name!("input")
+        || *tag_name == local_name!("textarea")
+        || *tag_name == local_name!("button")
+        || *tag_name == local_name!("br"))
+}
+
+/// Iterate a node's `::before` pseudo, children and `::after` pseudo, in tree order.
+fn children_and_pseudos(node: &Node) -> impl Iterator<Item = NodeId> + '_ {
+    node.before()
+        .into_iter()
+        .chain(node.children.iter().copied())
+        .chain(node.after())
+}
+
+/// Pre-compute the used line-height of every inline style span within an inline
+/// formatting context, floored by the line-height of the inline context's root.
+/// See https://www.w3.org/TR/CSS21/visudet.html#line-height
+///
+/// This has to happen before the Parley `TreeBuilder` is created as the builder
+/// holds a mutable borrow of the `FontContext`.
+fn collect_span_line_heights(
+    nodes: &crate::NodeTree,
+    font_ctx: &mut FontContext,
+    node_id: NodeId,
+    root_line_height: f32,
+    scale: f32,
+    out: &mut HashMap<NodeId, f32>,
+) {
+    let node = &nodes[node_id];
+    let (NodeData::Element(element_data) | NodeData::AnonymousBlock(element_data)) = &node.data
+    else {
+        return;
+    };
+
+    let display = node.display_style().unwrap_or(Display::inline());
+    match (display.outside(), display.inside()) {
+        (DisplayOutside::None, DisplayInside::Contents) => {
+            for child_id in node.children.iter().copied() {
+                collect_span_line_heights(nodes, font_ctx, child_id, root_line_height, scale, out);
+            }
+        }
+        (DisplayOutside::Inline, DisplayInside::Flow) if is_inline_style_span(element_data) => {
+            if let Some(style) = node.primary_styles() {
+                let line_height =
+                    resolve_line_height(font_ctx, &style, scale).max(root_line_height);
+                out.insert(node_id, line_height);
+            }
+            for child_id in children_and_pseudos(node) {
+                collect_span_line_heights(nodes, font_ctx, child_id, root_line_height, scale, out);
+            }
+        }
+        _ => {}
     }
 }
 
@@ -1034,12 +1102,31 @@ pub(crate) fn build_inline_layout_into(
             .and_then(|parent_id| nodes[parent_id].primary_styles())
     });
 
-    let parley_style = root_node_style
+    let mut parley_style = root_node_style
         .as_ref()
         .map(|s| stylo_to_parley::style(inline_context_root_node_id, s))
         .unwrap_or_default();
 
-    let root_line_height = resolve_line_height(parley_style.line_height, parley_style.font_size);
+    // The line-height of the inline context's root (the "strut"). `normal` is resolved
+    // against the root's first available font rather than per-run by Parley, so that
+    // fallback fonts don't change the line height.
+    let root_line_height = root_node_style
+        .as_deref()
+        .map(|s| resolve_line_height(font_ctx, s, scale))
+        .unwrap_or(parley_style.font_size * 1.2);
+    parley_style.line_height = parley::LineHeight::Absolute(root_line_height);
+
+    let mut span_line_heights = HashMap::new();
+    for child_id in children_and_pseudos(root_node) {
+        collect_span_line_heights(
+            nodes,
+            font_ctx,
+            child_id,
+            root_line_height,
+            scale,
+            &mut span_line_heights,
+        );
+    }
 
     // Create a parley tree builder
     let mut builder = layout_ctx.tree_builder(font_ctx, scale, true, &parley_style);
@@ -1089,7 +1176,7 @@ pub(crate) fn build_inline_layout_into(
             before_id,
             collapse_mode,
             text_transform,
-            root_line_height,
+            &span_line_heights,
         );
     }
     for child_id in root_node.children.iter().copied() {
@@ -1100,7 +1187,7 @@ pub(crate) fn build_inline_layout_into(
             child_id,
             collapse_mode,
             text_transform,
-            root_line_height,
+            &span_line_heights,
         );
     }
     if let Some(after_id) = root_node.after() {
@@ -1111,7 +1198,7 @@ pub(crate) fn build_inline_layout_into(
             after_id,
             collapse_mode,
             text_transform,
-            root_line_height,
+            &span_line_heights,
         );
     }
 
@@ -1125,7 +1212,7 @@ pub(crate) fn build_inline_layout_into(
         node_id: NodeId,
         collapse_mode: WhiteSpaceCollapse,
         parent_text_transform: TextTransform,
-        root_line_height: f32,
+        span_line_heights: &HashMap<NodeId, f32>,
     ) {
         let node = &nodes[node_id];
 
@@ -1182,7 +1269,7 @@ pub(crate) fn build_inline_layout_into(
                                 child_id,
                                 collapse_mode,
                                 text_transform,
-                                root_line_height,
+                                span_line_heights,
                             );
                         }
                     }
@@ -1218,16 +1305,11 @@ pub(crate) fn build_inline_layout_into(
                                 .map(|s| stylo_to_parley::style(node.id, &s))
                                 .unwrap_or_default();
 
-                            // dbg!(&style);
-
-                            let font_size = style.font_size;
-
                             // Floor the line-height of the span by the line-height of the inline context
                             // See https://www.w3.org/TR/CSS21/visudet.html#line-height
-                            style.line_height = parley::LineHeight::Absolute(
-                                resolve_line_height(style.line_height, font_size)
-                                    .max(root_line_height),
-                            );
+                            if let Some(line_height) = span_line_heights.get(&node_id) {
+                                style.line_height = parley::LineHeight::Absolute(*line_height);
+                            }
 
                             // dbg!(node_id);
                             // dbg!(&style);
@@ -1242,7 +1324,7 @@ pub(crate) fn build_inline_layout_into(
                                     before_id,
                                     collapse_mode,
                                     text_transform,
-                                    root_line_height,
+                                    span_line_heights,
                                 );
                             }
 
@@ -1254,7 +1336,7 @@ pub(crate) fn build_inline_layout_into(
                                     child_id,
                                     collapse_mode,
                                     text_transform,
-                                    root_line_height,
+                                    span_line_heights,
                                 );
                             }
                             if let Some(after_id) = node.after() {
@@ -1265,7 +1347,7 @@ pub(crate) fn build_inline_layout_into(
                                     after_id,
                                     collapse_mode,
                                     text_transform,
-                                    root_line_height,
+                                    span_line_heights,
                                 );
                             }
 
