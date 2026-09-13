@@ -9,6 +9,7 @@
 
 use cssparser::{Parser, ParserInput};
 use selectors::matching::QuirksMode;
+use selectors::parser::{ParseRelative, SelectorList};
 use style::font_face::FontFaceRule;
 use style::invalidation::stylesheets::RuleChangeKind;
 use style::parser::ParserContext;
@@ -17,6 +18,7 @@ use style::properties::{
     Importance, PropertyDeclarationBlock, PropertyId, SourcePropertyDeclaration,
     parse_one_declaration_into,
 };
+use style::selector_parser::SelectorParser;
 use style::servo_arc::Arc as ServoArc;
 use style::shared_lock::{Locked, SharedRwLockReadGuard, ToCssWithGuard};
 use style::stylesheets::keyframes_rule::{Keyframe, KeyframesRule};
@@ -827,6 +829,84 @@ impl BaseDocument {
         self.stylist
             .rule_changed(&sheet, &rule, &guard, change_kind, &ancestor_refs);
         Ok(removed_value)
+    }
+
+    /// Replace the selectors of the style rule at `path` with those parsed
+    /// from `selectors` (`CSSStyleRule.selectorText` setter). Per CSSOM, an
+    /// invalid selector list leaves the rule unchanged (without throwing).
+    pub fn stylesheet_rule_set_selector_text(
+        &mut self,
+        node_id: NodeId,
+        path: &[usize],
+        selectors: &str,
+    ) -> Result<(), CssomError> {
+        let sheet = self
+            .nodes_to_stylesheet
+            .get(&node_id)
+            .ok_or(CssomError::NotFound)?
+            .clone();
+        let lock = &self.guard;
+
+        let (ancestors, style_rule) = {
+            let guard = lock.read();
+            let mut ancestors = Vec::with_capacity(path.len());
+            let handle =
+                Self::resolve_rule(&sheet, &guard, path, |rule| ancestors.push(rule.clone()))
+                    .ok_or(CssomError::NotFound)?;
+            let RuleHandle::Rule(CssRule::Style(style_rule)) = handle else {
+                return Err(CssomError::NotSupported);
+            };
+            (ancestors, style_rule)
+        };
+
+        // Nested style rules take relative selectors (`> .a`), resolved
+        // against the innermost enclosing style rule or `@scope`, mirroring
+        // stylo's `NestingContext`.
+        let parse_relative = ancestors
+            .iter()
+            .rev()
+            .find_map(|rule| match rule.rule_type() {
+                CssRuleType::Style => Some(ParseRelative::ForNesting),
+                CssRuleType::Scope => Some(ParseRelative::ForScope),
+                _ => None,
+            })
+            .unwrap_or(ParseRelative::No);
+
+        let new_selectors = {
+            let guard = lock.read();
+            let contents = sheet.contents(&guard);
+            let selector_parser = SelectorParser {
+                stylesheet_origin: contents.origin,
+                namespaces: &contents.namespaces,
+                url_data: &contents.url_data,
+                for_supports_rule: false,
+            };
+            let mut input = ParserInput::new(selectors);
+            let mut parser = Parser::new(&mut input);
+            let Ok(new_selectors) =
+                SelectorList::parse(&selector_parser, &mut parser, parse_relative)
+            else {
+                return Ok(());
+            };
+            new_selectors
+        };
+
+        {
+            let mut guard = lock.write();
+            style_rule.write_with(&mut guard).selectors = new_selectors;
+        }
+
+        let guard = lock.read();
+        let rule = CssRule::Style(style_rule);
+        let ancestor_refs: Vec<CssRuleRef> = ancestors.iter().map(CssRuleRef::from).collect();
+        self.stylist.rule_changed(
+            &sheet,
+            &rule,
+            &guard,
+            RuleChangeKind::Generic,
+            &ancestor_refs,
+        );
+        Ok(())
     }
 
     /// Replace the declarations of the rule at `path` with those parsed from
