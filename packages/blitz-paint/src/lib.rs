@@ -49,6 +49,9 @@ pub fn paint_scene(
     x_offset: u32,
     y_offset: u32,
 ) {
+    // Sticky boxes follow the current scroll position.
+    doc.update_sticky_offsets();
+
     // Run `.paint()` on every custom widget in the document (and all subdocuments) ahead of time.
     // This helps us avoid borrow-checker issues as we recurse down the tree (`.paint()` require `&mut self`).
     //

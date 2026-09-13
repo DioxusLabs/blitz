@@ -297,6 +297,8 @@ impl BaseDocument {
                 if offset == initial {
                     return false;
                 }
+                // Sticky boxes follow the scroll before any script can measure them.
+                self.update_sticky_offsets();
 
                 if let Some(root) = self.try_root_element() {
                     let root_id = root.id;
@@ -341,6 +343,8 @@ impl BaseDocument {
                     client_width: layout.size.width as i32,
                     client_height: layout.size.height as i32,
                 };
+                // Sticky boxes follow the scroll before any script can measure them.
+                self.update_sticky_offsets();
                 dispatch_event(DomEvent::new(node_id, DomEventData::Scroll(event)));
 
                 self.show_scrollbars(node_id);
