@@ -17,6 +17,9 @@
 //! directly in the table's grid, so rows and row groups have no box of their
 //! own. A sticky cell is therefore constrained by the table, and a sticky
 //! row/row group is measured from its cells and its shift handed down to them.
+//! The sticky view rectangle is the intersection of the scrollports between
+//! the box and its containing block; a `position: fixed` or transformed
+//! ancestor ends the search (its contents do not move with the page).
 //!
 //! [`LayoutData::sticky_offset`]: crate::node::LayoutData::sticky_offset
 
@@ -52,11 +55,29 @@ fn scrolls(overflow: Overflow) -> bool {
 }
 
 impl BaseDocument {
-    /// Recomputes the sticky offset of every `position: sticky` box.
-    ///
-    /// Called at the end of style/layout resolution and before each paint,
-    /// which also covers scrolling (a scroll always requests a repaint).
+    /// Finds every `position: sticky` box (a full tree walk, done after
+    /// style/layout resolution) and computes their offsets.
     pub fn update_sticky_offsets(&mut self) {
+        let root = self.root_node_id;
+        let mut found = Vec::new();
+        let mut stack = vec![root];
+        while let Some(id) = stack.pop() {
+            let node = &self.nodes[id];
+            stack.extend(node.children.iter().rev().copied());
+            if node.primary_styles().is_some_and(|s| s.clone_position() == Position::Sticky) {
+                found.push(id);
+            }
+        }
+        self.sticky_nodes = found;
+        self.refresh_sticky_offsets();
+    }
+
+    /// Recomputes the offsets of the known sticky boxes. Called on every
+    /// scroll write and before each paint: O(1) when the document has none.
+    pub fn refresh_sticky_offsets(&mut self) {
+        if self.sticky_nodes.is_empty() {
+            return;
+        }
         let root = self.root_node_id;
         let viewport = self.viewport();
         let scale = viewport.scale_f64() as f32;
@@ -67,33 +88,29 @@ impl BaseDocument {
         let viewport_scroll = self.viewport_scroll();
         let viewport_scroll = (viewport_scroll.x as f32, viewport_scroll.y as f32);
 
-        // Pass 1: clear (shifts handed down by boxless ancestors accumulate).
-        let mut stack = vec![root];
-        while let Some(id) = stack.pop() {
-            let node = &self.nodes[id];
-            stack.extend(node.children.iter().copied());
-            if node.element_data().is_some() {
-                self.nodes[id].layout_data_mut().sticky_offset = crate::Point { x: 0.0, y: 0.0 };
+        let sticky: Vec<NodeId> = self
+            .sticky_nodes
+            .iter()
+            .copied()
+            .filter(|id| self.nodes.get(*id).is_some_and(|n| n.element_data().is_some()))
+            .collect();
+        // Pass 1: clear (shifts handed down by boxless table parts accumulate).
+        for id in &sticky {
+            self.nodes[*id].layout_data_mut().sticky_offset = crate::Point { x: 0.0, y: 0.0 };
+            if is_boxless_table_part(&self.nodes[*id]) {
+                self.hand_down_shift(*id, f32::NAN, f32::NAN);
             }
         }
-        // Pass 2: parents are visited before children, so a nested sticky box
-        // reads its ancestors' shifts already resolved.
-        let mut stack = vec![root];
-        while let Some(id) = stack.pop() {
-            let node = &self.nodes[id];
-            stack.extend(node.children.iter().rev().copied());
-            let is_sticky = node
-                .primary_styles()
-                .is_some_and(|s| s.clone_position() == Position::Sticky);
-            if is_sticky {
-                let (x, y) = self.sticky_offset_for(id, root, viewport_size, viewport_scroll);
-                let ld = self.nodes[id].layout_data_mut();
-                ld.sticky_offset.x += x;
-                ld.sticky_offset.y += y;
-                if !has_box(&self.nodes[id]) {
-                    // A sticky row / row group: its cells paint the shift.
-                    self.hand_down_shift(id, x, y);
-                }
+        // Pass 2: ancestors first (tree order), so a nested sticky box reads
+        // its ancestors' shifts already resolved.
+        for id in sticky {
+            let (x, y) = self.sticky_offset_for(id, root, viewport_size, viewport_scroll);
+            let ld = self.nodes[id].layout_data_mut();
+            ld.sticky_offset.x += x;
+            ld.sticky_offset.y += y;
+            if is_boxless_table_part(&self.nodes[id]) {
+                // A sticky row / row group: its cells paint the shift.
+                self.hand_down_shift(id, x, y);
             }
         }
     }
@@ -115,7 +132,7 @@ impl BaseDocument {
         };
         let layout = node.final_layout();
         // Boxless table parts are measured from the cells they contain.
-        let (own_x, own_y, width, height, margin) = if has_box(node) {
+        let (own_x, own_y, width, height, margin) = if !is_boxless_table_part(node) {
             (layout.location.x, layout.location.y, layout.size.width, layout.size.height, layout.margin)
         } else {
             match self.cells_extent(id) {
@@ -129,6 +146,10 @@ impl BaseDocument {
         // document when the viewport scrolls it).
         let mut x = own_x;
         let mut y = own_y;
+        // The nearest scroll container fixes the coordinate space; a
+        // `position: fixed` or transformed ancestor ends the walk too, as a
+        // scroller that never scrolls (its contents do not move with the page,
+        // so a sticky box inside it behaves like a relative one).
         let mut container: Option<NodeId> = None;
         let mut cur = node.parent;
         while let Some(a) = cur {
@@ -138,7 +159,8 @@ impl BaseDocument {
             let anc = &self.nodes[a];
             if let Some(s) = anc.primary_styles() {
                 let b = s.get_box();
-                if scrolls(b.overflow_x) || scrolls(b.overflow_y) {
+                let fixed = s.clone_position() == Position::Fixed;
+                if scrolls(b.overflow_x) || scrolls(b.overflow_y) || fixed || anc.transform().is_some() {
                     container = Some(a);
                     break;
                 }
@@ -152,18 +174,8 @@ impl BaseDocument {
 
         // The scrollport (padding box of the scroll container, or the
         // viewport), expressed in the same coordinate space as (x, y).
-        let scrollport = match container {
-            Some(c) => {
-                let cn = &self.nodes[c];
-                let l = cn.final_layout();
-                let so = cn.scroll_offset();
-                Rect {
-                    x0: l.border.left + so.x as f32,
-                    y0: l.border.top + so.y as f32,
-                    x1: l.border.left + so.x as f32 + (l.size.width - l.border.left - l.border.right),
-                    y1: l.border.top + so.y as f32 + (l.size.height - l.border.top - l.border.bottom),
-                }
-            }
+        let mut scrollport = match container {
+            Some(c) => scrollport_of(&self.nodes[c], 0.0, 0.0),
             None => Rect {
                 x0: viewport_scroll.0,
                 y0: viewport_scroll.1,
@@ -177,13 +189,62 @@ impl BaseDocument {
         let mut cb_id = parent_id;
         let mut parent_x = x - own_x;
         let mut parent_y = y - own_y;
-        while cb_id != root && !has_box(&self.nodes[cb_id]) {
+        while cb_id != root && is_boxless_table_part(&self.nodes[cb_id]) {
             let Some(up) = self.nodes[cb_id].parent else { break };
             let l = self.nodes[cb_id].final_layout();
             let shift = self.nodes[cb_id].sticky_offset();
             parent_x -= l.location.x + shift.x;
             parent_y -= l.location.y + shift.y;
             cb_id = up;
+        }
+        // CSS Position 3 §3.5: the sticky view rectangle is the intersection
+        // of the scrollports of every scroll container between the box and
+        // its containing block. Only scrollers *below* the containing block
+        // count: when the nearest scroller is above it (the usual case, the
+        // containing block being the parent box) there is nothing to
+        // intersect, and outer scrollports must not shrink the rectangle.
+        let container_below_cb = container.is_some_and(|first| {
+            let mut cur = self.nodes[first].parent;
+            while let Some(a) = cur {
+                if a == cb_id {
+                    return true;
+                }
+                cur = self.nodes[a].parent;
+            }
+            false
+        });
+        if let (Some(first), true) = (container, container_below_cb) {
+            let mut origin_x = 0.0f32; // origin of `cur` in the first container's space
+            let mut origin_y = 0.0f32;
+            let mut cur = Some(first);
+            while let Some(c) = cur {
+                if c == cb_id || c == root {
+                    break;
+                }
+                let cn = &self.nodes[c];
+                let l = cn.final_layout();
+                let shift = cn.sticky_offset();
+                origin_x -= l.location.x + shift.x;
+                origin_y -= l.location.y + shift.y;
+                let Some(up) = cn.parent else { break };
+                let upn = &self.nodes[up];
+                if up == root {
+                    scrollport = scrollport.intersect(Rect {
+                        x0: origin_x + viewport_scroll.0,
+                        y0: origin_y + viewport_scroll.1,
+                        x1: origin_x + viewport_scroll.0 + viewport_size.0,
+                        y1: origin_y + viewport_scroll.1 + viewport_size.1,
+                    });
+                    break;
+                }
+                if let Some(s) = upn.primary_styles() {
+                    let b = s.get_box();
+                    if scrolls(b.overflow_x) || scrolls(b.overflow_y) {
+                        scrollport = scrollport.intersect(scrollport_of(upn, origin_x, origin_y));
+                    }
+                }
+                cur = Some(up);
+            }
         }
         let parent = &self.nodes[cb_id];
         let pl = parent.final_layout();
@@ -236,11 +297,47 @@ impl BaseDocument {
     }
 }
 
-/// Whether layout gave this node a box of its own. Table rows and row groups
-/// don't get one: their cells are laid out in the table's grid.
-fn has_box(node: &crate::node::Node) -> bool {
+/// Table parts that get no box of their own in Blitz: their cells are laid
+/// out directly in the table's grid (`layout/table.rs`).
+fn is_boxless_table_part(node: &crate::node::Node) -> bool {
+    use style::values::specified::box_::DisplayInside;
+    node.primary_styles().is_some_and(|s| {
+        matches!(
+            s.clone_display().inside(),
+            DisplayInside::TableRow
+                | DisplayInside::TableRowGroup
+                | DisplayInside::TableHeaderGroup
+                | DisplayInside::TableFooterGroup
+                | DisplayInside::TableColumn
+                | DisplayInside::TableColumnGroup
+        )
+    })
+}
+
+/// Scrollport (padding box, offset by the current scroll) of a scroll
+/// container whose border-box origin is at (`ox`, `oy`) in the target space.
+fn scrollport_of(node: &crate::node::Node, ox: f32, oy: f32) -> Rect {
     let l = node.final_layout();
-    l.size.width > 0.0 || l.size.height > 0.0
+    let so = node.scroll_offset();
+    let x0 = ox + l.border.left + so.x as f32;
+    let y0 = oy + l.border.top + so.y as f32;
+    Rect {
+        x0,
+        y0,
+        x1: x0 + (l.size.width - l.border.left - l.border.right),
+        y1: y0 + (l.size.height - l.border.top - l.border.bottom),
+    }
+}
+
+impl Rect {
+    fn intersect(self, other: Rect) -> Rect {
+        Rect {
+            x0: self.x0.max(other.x0),
+            y0: self.y0.max(other.y0),
+            x1: self.x1.min(other.x1).max(self.x0.max(other.x0)),
+            y1: self.y1.min(other.y1).max(self.y0.max(other.y0)),
+        }
+    }
 }
 
 impl BaseDocument {
@@ -254,7 +351,7 @@ impl BaseDocument {
             if node.element_data().is_none() {
                 continue;
             }
-            if has_box(node) {
+            if !is_boxless_table_part(node) {
                 let l = node.final_layout();
                 let (x0, y0) = (l.location.x, l.location.y);
                 let (x1, y1) = (x0 + l.size.width, y0 + l.size.height);
@@ -276,10 +373,15 @@ impl BaseDocument {
             if self.nodes[c].element_data().is_none() {
                 continue;
             }
-            if has_box(&self.nodes[c]) {
+            if !is_boxless_table_part(&self.nodes[c]) {
                 let ld = self.nodes[c].layout_data_mut();
-                ld.sticky_offset.x += dx;
-                ld.sticky_offset.y += dy;
+                // NaN means "clear" (pass 1 of `refresh_sticky_offsets`).
+                if dx.is_nan() {
+                    ld.sticky_offset = crate::Point { x: 0.0, y: 0.0 };
+                } else {
+                    ld.sticky_offset.x += dx;
+                    ld.sticky_offset.y += dy;
+                }
             } else {
                 let more: Vec<NodeId> = self.nodes[c].children.iter().copied().collect();
                 stack.extend(more);
