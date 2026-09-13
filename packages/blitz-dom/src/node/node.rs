@@ -259,6 +259,12 @@ impl Node {
         &mut self.layout_data_mut().scroll_offset
     }
 
+    /// Shift of a `position: sticky` box relative to its laid-out position.
+    #[inline]
+    pub fn sticky_offset(&self) -> crate::Point<f32> {
+        self.layout_data().sticky_offset
+    }
+
     #[inline]
     pub fn scrollable_overflow(&self) -> &KurboRect {
         &self.layout_data().scrollable_overflow
@@ -1320,8 +1326,9 @@ impl Node {
             .primary_styles()
             .is_some_and(|style| style.clone_pointer_events() == PointerEvents::None);
 
-        let mut x = x - self.final_layout().location.x + self.scroll_offset().x as f32;
-        let mut y = y - self.final_layout().location.y + self.scroll_offset().y as f32;
+        let sticky = self.sticky_offset();
+        let mut x = x - self.final_layout().location.x - sticky.x + self.scroll_offset().x as f32;
+        let mut y = y - self.final_layout().location.y - sticky.y + self.scroll_offset().y as f32;
 
         if let Some(t) = self.transform().as_deref() {
             let p = t.inverse() * kurbo::Point::new(x as f64 * scale, y as f64 * scale);
@@ -1519,6 +1526,7 @@ impl Node {
 
     /// Computes the Document-relative coordinates of the `Node`
     pub fn absolute_position(&self, x: f32, y: f32) -> crate::util::Point<f32> {
+        // In-flow position (no sticky shift): what `scrollIntoView` targets.
         let x = x + self.final_layout().location.x - self.scroll_offset().x as f32;
         let y = y + self.final_layout().location.y - self.scroll_offset().y as f32;
 
@@ -1532,8 +1540,9 @@ impl Node {
     /// Computes the Document-relative coordinates of the `Node` from the unrounded
     /// (sub-pixel) layout, for CSSOM geometry APIs such as `getBoundingClientRect`
     pub fn unrounded_absolute_position(&self, x: f32, y: f32) -> crate::util::Point<f32> {
-        let x = x + self.unrounded_layout().location.x - self.scroll_offset().x as f32;
-        let y = y + self.unrounded_layout().location.y - self.scroll_offset().y as f32;
+        let sticky = self.sticky_offset();
+        let x = x + self.unrounded_layout().location.x + sticky.x - self.scroll_offset().x as f32;
+        let y = y + self.unrounded_layout().location.y + sticky.y - self.scroll_offset().y as f32;
 
         self.layout_parent
             .get()
@@ -1585,8 +1594,10 @@ impl Node {
         let mut current = self;
         loop {
             let layout = current.final_layout();
-            x += layout.location.x;
-            y += layout.location.y;
+            // `offsetTop` of a sticky box reports where it is drawn.
+            let sticky = current.sticky_offset();
+            x += layout.location.x + sticky.x;
+            y += layout.location.y + sticky.y;
 
             let Some(parent_id) = current.layout_parent.get() else {
                 break;

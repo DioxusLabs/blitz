@@ -2,6 +2,7 @@ use crate::convert;
 use bitflags::bitflags;
 use convert::stylo;
 use std::ops::Deref;
+use taffy::style_helpers::TaffyAuto as _;
 use style::properties::ComputedValues;
 use style::values::CustomIdent;
 use style::{Atom, OwnedSlice};
@@ -114,6 +115,17 @@ impl<T: Deref<Target = ComputedValues>> taffy::CoreStyle for TaffyStyloStyle<T> 
 
     #[inline]
     fn inset(&self) -> taffy::Rect<taffy::LengthPercentageAuto> {
+        // `position: sticky` is laid out as relative, but its insets are
+        // sticking thresholds applied after layout (blitz-dom's sticky
+        // resolution), not relative offsets: Taffy must not see them.
+        if self.style.get_box().position == stylo::Position::Sticky {
+            return taffy::Rect {
+                left: taffy::LengthPercentageAuto::AUTO,
+                right: taffy::LengthPercentageAuto::AUTO,
+                top: taffy::LengthPercentageAuto::AUTO,
+                bottom: taffy::LengthPercentageAuto::AUTO,
+            };
+        }
         let position_styles = self.style.get_position();
         taffy::Rect {
             left: convert::inset(&position_styles.left),
