@@ -67,3 +67,56 @@ fn out_of_flow_placeholder_retains_its_text_offset() {
     assert_eq!(text.layout.inline_boxes()[0].index, 2);
     assert_eq!(text.layout.len(), 1);
 }
+
+#[test]
+fn break_spaces_wraps_preserved_spaces_across_spans_and_br() {
+    for display in ["inline", "contents"] {
+        let harness = Harness::from_html(&format!(
+            "<div id='test' style='width:1px;white-space:break-spaces'>a <span style='display:{display}'>  </span>b<br>  c</div>",
+        ));
+        let doc = harness.base();
+        let text = inline(&doc, "#test");
+        assert_eq!(text.text, "a   b\n  c");
+        let lines: Vec<_> = text
+            .layout
+            .lines()
+            .map(|line| &text.text[line.text_range()])
+            .collect();
+        assert_eq!(lines, ["a ", " ", " ", "b\n", " ", " ", "c"]);
+        for line in text.layout.lines() {
+            assert_eq!(line.metrics().hanging_advance, 0.);
+        }
+    }
+}
+
+#[test]
+fn display_contents_break_spaces_restores_parent_collapsing() {
+    let harness = Harness::from_html(
+        "<div id='test'>a <span style='display:contents;white-space:break-spaces'>  b<br>  c</span>  d</div>",
+    );
+    let doc = harness.base();
+    let text = inline(&doc, "#test");
+    assert_eq!(text.text, "a   b\n  c d");
+    assert_eq!(text.layout.len(), 2);
+}
+
+#[test]
+fn break_spaces_includes_whitespace_in_intrinsic_widths_and_alignment() {
+    let harness = Harness::from_html(
+        "<style>div{white-space:break-spaces;text-align:right;width:200px}</style>\
+         <div id='one'>a </div><div id='two'>a  </div>\
+         <div id='nowrap' style='text-wrap-mode:nowrap'>a  </div>",
+    );
+    let doc = harness.base();
+    let one = &inline(&doc, "#one").layout;
+    let two = &inline(&doc, "#two").layout;
+    let nowrap = &inline(&doc, "#nowrap").layout;
+    let one_widths = one.calculate_content_widths();
+    let two_widths = two.calculate_content_widths();
+    assert!(two_widths.max > one_widths.max);
+    assert!((two_widths.min - one_widths.max).abs() < 0.01);
+    assert!((nowrap.calculate_content_widths().min - two_widths.max).abs() < 0.01);
+    let line = two.get(0).unwrap();
+    assert!((line.metrics().offset + line.metrics().advance - 200.).abs() < 0.01);
+    assert_eq!(line.metrics().hanging_advance, 0.);
+}
