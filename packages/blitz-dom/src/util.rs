@@ -9,6 +9,32 @@ pub(crate) const ACTION_MOD: Modifiers = Modifiers::SUPER;
 #[cfg(not(target_os = "macos"))]
 pub(crate) const ACTION_MOD: Modifiers = Modifiers::CONTROL;
 
+/// Normalizes a key event triggered with an action modifier (Cmd on macOS, Ctrl on others)
+/// to a lowercase ASCII character, prioritizing physical key code (Code) over layout-specific
+/// logical characters (Key).
+pub(crate) fn action_key(event: &blitz_traits::events::BlitzKeyEvent) -> Option<char> {
+    use keyboard_types::{Code, Key};
+
+    match event.code {
+        Code::KeyA => Some('a'),
+        Code::KeyC => Some('c'),
+        Code::KeyV => Some('v'),
+        Code::KeyX => Some('x'),
+        Code::KeyZ => Some('z'),
+        _ => match &event.key {
+            Key::Character(c) if c.len() == 1 => {
+                let ch = c.chars().next()?;
+                if ch.is_ascii_alphabetic() {
+                    Some(ch.to_ascii_lowercase())
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        },
+    }
+}
+
 pub type Color = AlphaColor<Srgb>;
 
 /// Decode raw font bytes, decompressing WOFF/WOFF2 if the `woff` feature is enabled.

@@ -6,7 +6,7 @@ use blitz_traits::{
 use keyboard_types::{Key, Modifiers};
 use parley::{ContentWidths, FontContext, LayoutContext};
 
-use crate::util::ACTION_MOD;
+use crate::util::{ACTION_MOD, action_key};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 /// Parley Brush type for Blitz which contains the Blitz node id
@@ -211,39 +211,41 @@ impl TextInputData {
         let is_multiline = self.is_multiline;
         let editor = &mut self.editor;
         let mut driver = editor.driver(font_ctx, layout_ctx);
-        match event.key {
-            Key::Character(c) if action_mod && matches!(c.as_str(), "c" | "x" | "v") => {
-                match c.to_lowercase().as_str() {
-                    "c" => {
-                        if let Some(text) = driver.editor.selected_text() {
-                            let _ = shell_provider.set_clipboard_text(text.to_owned());
-                        }
-                        return None;
+
+        if action_mod {
+            match action_key(&event) {
+                Some('c') => {
+                    if let Some(text) = driver.editor.selected_text() {
+                        let _ = shell_provider.set_clipboard_text(text.to_owned());
                     }
-                    "x" => {
-                        if let Some(text) = driver.editor.selected_text() {
-                            let _ = shell_provider.set_clipboard_text(text.to_owned());
-                            driver.delete_selection();
-                            return Some(GeneratedTextInputEvent::Input);
-                        }
-                        return None;
-                    }
-                    "v" => {
-                        let text = shell_provider.get_clipboard_text().unwrap_or_default();
-                        driver.insert_or_replace_selection(&text);
+                    return None;
+                }
+                Some('x') => {
+                    if let Some(text) = driver.editor.selected_text() {
+                        let _ = shell_provider.set_clipboard_text(text.to_owned());
+                        driver.delete_selection();
                         return Some(GeneratedTextInputEvent::Input);
                     }
-                    _ => unreachable!(),
+                    return None;
                 }
-            }
-            Key::Character(c) if action_mod && matches!(c.to_lowercase().as_str(), "a") => {
-                if shift {
-                    driver.collapse_selection()
-                } else {
-                    driver.select_all()
+                Some('v') => {
+                    let text = shell_provider.get_clipboard_text().unwrap_or_default();
+                    driver.insert_or_replace_selection(&text);
+                    return Some(GeneratedTextInputEvent::Input);
                 }
-                return Some(GeneratedTextInputEvent::Select);
+                Some('a') => {
+                    if shift {
+                        driver.collapse_selection();
+                    } else {
+                        driver.select_all();
+                    }
+                    return Some(GeneratedTextInputEvent::Select);
+                }
+                _ => {}
             }
+        }
+
+        match event.key {
             Key::ArrowLeft => {
                 #[cfg(target_os = "macos")]
                 if action_mod {
