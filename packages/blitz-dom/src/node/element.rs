@@ -476,6 +476,21 @@ impl ElementData {
         local_names!("button", "input", "select", "textarea").contains(&self.name.local)
     }
 
+    /// Whether this element is a `<textarea>` or an `<input>` of a type that takes text
+    /// input (and so gets a text editor and receives IME events). Unlike
+    /// [`text_input_data`](Self::text_input_data), this does not depend on layout
+    /// having run yet.
+    pub fn is_text_input(&self) -> bool {
+        if self.name.local == local_name!("textarea") {
+            return true;
+        }
+        self.name.local == local_name!("input")
+            && matches!(
+                self.attr(local_name!("type")),
+                None | Some("text" | "password" | "email" | "number" | "search" | "tel" | "url")
+            )
+    }
+
     /// Whether this element is a link (an `<a>` or `<area>` element with an `href` attribute)
     pub fn is_link(&self) -> bool {
         (self.name.local == local_name!("a") || self.name.local == local_name!("area"))
