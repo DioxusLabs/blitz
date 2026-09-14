@@ -353,7 +353,9 @@ impl<'a> TNode for BlitzNode<'a> {
 
     fn as_element(&self) -> Option<Self::ConcreteElement> {
         match self.data {
-            NodeData::Element { .. } if !self.flags.contains(NodeFlags::IS_SHADOW_ROOT) => Some(self),
+            NodeData::Element { .. } if !self.flags.contains(NodeFlags::IS_SHADOW_ROOT) => {
+                Some(self)
+            }
             _ => None,
         }
     }
@@ -366,7 +368,9 @@ impl<'a> TNode for BlitzNode<'a> {
     }
 
     fn as_shadow_root(&self) -> Option<Self::ConcreteShadowRoot> {
-        self.flags.contains(NodeFlags::IS_SHADOW_ROOT).then_some(self)
+        self.flags
+            .contains(NodeFlags::IS_SHADOW_ROOT)
+            .then_some(self)
     }
 }
 
@@ -391,7 +395,8 @@ impl selectors::Element for BlitzNode<'_> {
     }
 
     fn parent_node_is_shadow_root(&self) -> bool {
-        self.parent_node().is_some_and(|p| p.flags.contains(NodeFlags::IS_SHADOW_ROOT))
+        self.parent_node()
+            .is_some_and(|p| p.flags.contains(NodeFlags::IS_SHADOW_ROOT))
     }
 
     fn containing_shadow_host(&self) -> Option<Self> {

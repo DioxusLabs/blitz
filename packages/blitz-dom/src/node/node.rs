@@ -107,7 +107,8 @@ pub struct Node {
     /// For a light child of a shadow host: the slot it is assigned to.
     pub assigned_slot: Option<NodeId>,
     /// Stylesheets scoped to this shadow root (set on `IS_SHADOW_ROOT` nodes only).
-    pub author_styles: Option<Box<style::author_styles::AuthorStyles<style::stylesheets::DocumentStyleSheet>>>,
+    pub author_styles:
+        Option<Box<style::author_styles::AuthorStyles<style::stylesheets::DocumentStyleSheet>>>,
     /// Our parent in the layout hierachy: a separate list that includes anonymous collections of inline elements
     pub layout_parent: Cell<Option<NodeId>>,
     /// A separate child list that includes anonymous collections of inline elements

@@ -106,7 +106,9 @@ impl BaseDocument {
     }
 
     pub(crate) fn assign_slots_for(&mut self, host_id: NodeId) {
-        let Some(root_id) = self.nodes[host_id].shadow_root else { return };
+        let Some(root_id) = self.nodes[host_id].shadow_root else {
+            return;
+        };
         // Slots of this shadow tree in tree order, not descending into nested
         // shadow trees (their slots belong to their own host).
         let mut slots: Vec<NodeId> = Vec::new();
@@ -185,23 +187,43 @@ impl BaseDocument {
 
     /// Registers a stylesheet with the shadow root that scopes `owner_id`.
     /// Returns false when the owner is in the document tree.
-    pub(crate) fn add_shadow_stylesheet(&mut self, owner_id: NodeId, sheet: DocumentStyleSheet) -> bool {
-        let Some(root) = self.containing_shadow_root(owner_id) else { return false };
+    pub(crate) fn add_shadow_stylesheet(
+        &mut self,
+        owner_id: NodeId,
+        sheet: DocumentStyleSheet,
+    ) -> bool {
+        let Some(root) = self.containing_shadow_root(owner_id) else {
+            return false;
+        };
         let guard = self.guard.read();
         let Self { nodes, stylist, .. } = self;
-        let Some(styles) = nodes[root].author_styles.as_mut() else { return false };
-        styles.stylesheets.append_stylesheet(Some(stylist.device()), &CustomMediaMap::default(), sheet.clone(), &guard);
+        let Some(styles) = nodes[root].author_styles.as_mut() else {
+            return false;
+        };
+        styles.stylesheets.append_stylesheet(
+            Some(stylist.device()),
+            &CustomMediaMap::default(),
+            sheet.clone(),
+            &guard,
+        );
         self.shadow_stylesheets.insert(owner_id, (root, sheet));
         true
     }
 
     /// Unregisters the stylesheet owned by `owner_id` from its shadow root, if any.
     pub(crate) fn remove_shadow_stylesheet(&mut self, owner_id: NodeId) -> bool {
-        let Some((root, sheet)) = self.shadow_stylesheets.remove(&owner_id) else { return false };
+        let Some((root, sheet)) = self.shadow_stylesheets.remove(&owner_id) else {
+            return false;
+        };
         let guard = self.guard.read();
         let Self { nodes, stylist, .. } = self;
         if let Some(styles) = nodes[root].author_styles.as_mut() {
-            styles.stylesheets.remove_stylesheet(Some(stylist.device()), &CustomMediaMap::default(), sheet, &guard);
+            styles.stylesheets.remove_stylesheet(
+                Some(stylist.device()),
+                &CustomMediaMap::default(),
+                sheet,
+                &guard,
+            );
         }
         true
     }
@@ -213,7 +235,9 @@ impl BaseDocument {
     pub(crate) fn rescope_stylesheets(&mut self, subtree: NodeId) {
         let mut stack = vec![subtree];
         while let Some(id) = stack.pop() {
-            let Some(node) = self.nodes.get(id) else { continue };
+            let Some(node) = self.nodes.get(id) else {
+                continue;
+            };
             stack.extend(node.children.iter().copied());
             let sheet = match node.element_data().map(|el| &el.special_data) {
                 Some(crate::node::SpecialElementData::Stylesheet(sheet)) => sheet.clone(),
@@ -226,7 +250,8 @@ impl BaseDocument {
                 {
                     let guard = self.guard.read();
                     self.stylist.remove_stylesheet(sheet.clone(), &guard);
-                    self.stylist.force_stylesheet_origins_dirty(style::stylesheets::OriginSet::all());
+                    self.stylist
+                        .force_stylesheet_origins_dirty(style::stylesheets::OriginSet::all());
                 }
                 self.add_shadow_stylesheet(id, sheet);
                 self.damage_box_owner(id);
@@ -243,7 +268,9 @@ impl BaseDocument {
         let guard = self.guard.read();
         let Self { nodes, stylist, .. } = self;
         for host in hosts {
-            let Some(root) = nodes[host].shadow_root else { continue };
+            let Some(root) = nodes[host].shadow_root else {
+                continue;
+            };
             let flushed = match nodes[root].author_styles.as_mut() {
                 Some(styles) if styles.stylesheets.dirty() => {
                     let _invalidations = styles.flush(stylist, &guard);
@@ -253,8 +280,12 @@ impl BaseDocument {
             };
             if flushed {
                 // Styles inside the shadow tree changed: restyle the host's subtree.
-                if let Some(mut data) = nodes[host].try_stylo_element_data_mut().and_then(|s| s.get_mut()) {
-                    data.hint |= style::invalidation::element::restyle_hints::RestyleHint::restyle_subtree();
+                if let Some(mut data) = nodes[host]
+                    .try_stylo_element_data_mut()
+                    .and_then(|s| s.get_mut())
+                {
+                    data.hint |=
+                        style::invalidation::element::restyle_hints::RestyleHint::restyle_subtree();
                 }
                 nodes[host].mark_ancestors_dirty();
             }
@@ -277,7 +308,6 @@ impl BaseDocument {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -285,7 +315,10 @@ mod tests {
     use markup5ever::{LocalName, QualName, ns};
 
     fn el(m: &mut DocumentMutator<'_>, tag: &str) -> NodeId {
-        m.create_element(QualName::new(None, ns!(html), LocalName::from(tag)), Vec::new())
+        m.create_element(
+            QualName::new(None, ns!(html), LocalName::from(tag)),
+            Vec::new(),
+        )
     }
 
     #[test]
@@ -296,14 +329,22 @@ mod tests {
             let host = el(&mut m, "div");
             let a = el(&mut m, "p");
             let b = el(&mut m, "span");
-            m.set_attribute(b, QualName::new(None, ns!(), LocalName::from("slot")), "side");
+            m.set_attribute(
+                b,
+                QualName::new(None, ns!(), LocalName::from("slot")),
+                "side",
+            );
             m.append_children(host, &[a, b]);
             let root = m.attach_shadow(host, ShadowRootMode::Open);
             let slot_default = el(&mut m, "slot");
             let fallback = m.create_text_node("fallback");
             m.append_children(slot_default, &[fallback]);
             let slot_named = el(&mut m, "slot");
-            m.set_attribute(slot_named, QualName::new(None, ns!(), LocalName::from("name")), "side");
+            m.set_attribute(
+                slot_named,
+                QualName::new(None, ns!(), LocalName::from("name")),
+                "side",
+            );
             m.append_children(root, &[slot_default, slot_named]);
             (host, a, b, root, slot_default, slot_named, fallback)
         };

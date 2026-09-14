@@ -29,7 +29,7 @@ use crate::{
         TextBrush, TextInputData, TextLayout,
     },
     qual_name, stylo_to_parley,
-    traversal::{iter_children, iter_children_and_pseudos},
+    traversal::iter_children,
 };
 
 use super::{
@@ -590,7 +590,8 @@ fn collect_layout_children_with_wrap(
     // Skip further construction if the node has no children or psuedo-children
     {
         let node = &doc.nodes[container_node_id];
-        if node.composed_children().is_empty() && node.before().is_none() && node.after().is_none() {
+        if node.composed_children().is_empty() && node.before().is_none() && node.after().is_none()
+        {
             return;
         }
     }
@@ -987,7 +988,9 @@ pub(crate) fn find_inline_layout_embedded_boxes(
     flush_inline_pseudos_recursive(doc, inline_context_root_node_id);
 
     // Composed children: a host's shadow tree, a slot's assigned nodes.
-    let inline_root_children: Vec<NodeId> = doc.nodes[inline_context_root_node_id].composed_children().to_vec();
+    let inline_root_children: Vec<NodeId> = doc.nodes[inline_context_root_node_id]
+        .composed_children()
+        .to_vec();
     let inline_root_before = doc.nodes[inline_context_root_node_id].before();
     let inline_root_after = doc.nodes[inline_context_root_node_id].after();
     let mut visit = |child_id: NodeId| {
