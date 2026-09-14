@@ -26,10 +26,12 @@ pub struct TextLayout {
     pub text: String,
     pub content_widths: Option<ContentWidths>,
     pub layout: parley::layout::Layout<TextBrush>,
-    /// `text-overflow` marker for lines that overflow the inline root's content
-    /// box when the root clips (`overflow` other than `visible`): `None` clips,
-    /// `Some("…")` for `ellipsis`, `Some(s)` for the string form.
-    pub text_overflow: Option<String>,
+    /// Inline-end `text-overflow` value when the inline root (or, for an
+    /// anonymous root, its parent) clips its overflow; `None` otherwise.
+    pub text_overflow: Option<style::values::specified::text::TextOverflowSide>,
+    /// Lines truncated by `text-overflow`, computed after layout
+    /// (`layout::text_overflow`), consumed by the painter.
+    pub overflow: Option<Box<crate::text_overflow::TextOverflowLayout>>,
 }
 
 impl TextLayout {

@@ -1086,24 +1086,20 @@ pub(crate) fn find_inline_layout_embedded_boxes(
     }
 }
 
-/// The `text-overflow` marker to draw at the inline-end edge of overflowing
-/// lines, if the element both clips its overflow and asks for one.
-fn text_overflow_marker(style: &style::properties::ComputedValues) -> Option<String> {
+/// The inline-end `text-overflow` value of an element that clips its
+/// overflow; `None` when it does not clip or asks for `clip`.
+fn text_overflow_marker(style: &style::properties::ComputedValues) -> Option<style::values::specified::text::TextOverflowSide> {
     use style::values::computed::Overflow;
     use style::values::specified::text::TextOverflowSide;
-    let overflow = style.get_box().overflow_x;
-    if matches!(overflow, Overflow::Visible) {
+    if matches!(style.get_box().overflow_x, Overflow::Visible) {
         return None;
     }
-    let value = &style.get_text().text_overflow;
     // Stylo stores a single value as `(Clip, value)` with `sides_are_logical`,
     // and two values as `(start, end)`: either way `second` is the inline-end
     // side, which is the right edge in Blitz's left-to-right inline layout.
-    let side = &value.second;
-    match side {
+    match &style.get_text().text_overflow.second {
         TextOverflowSide::Clip => None,
-        TextOverflowSide::Ellipsis => Some("\u{2026}".to_string()),
-        TextOverflowSide::String(s) => Some(s.to_string()),
+        side => Some(side.clone()),
     }
 }
 
