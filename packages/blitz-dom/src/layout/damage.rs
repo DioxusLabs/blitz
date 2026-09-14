@@ -63,13 +63,21 @@ impl BaseDocument {
         let children = std::mem::take(&mut self.nodes[node_id].children);
         let layout_children = std::mem::take(self.nodes[node_id].layout_children.get_mut());
         let use_layout_children = self.nodes[node_id].should_traverse_layout_children();
+        // Composed tree too: a shadow root has no style data of its own, so
+        // damage in a shadow tree must reach the host through the root's
+        // children — whichever list is walked below (the old layout children
+        // predate a newly attached or changed shadow tree).
+        let shadow_children: Vec<NodeId> = match self.nodes[node_id].shadow_root {
+            Some(root) => self.nodes[root].children.iter().copied().collect(),
+            None => Vec::new(),
+        };
         if use_layout_children {
             let layout_children = layout_children.as_ref().unwrap();
-            for child in layout_children.iter() {
+            for child in layout_children.iter().chain(shadow_children.iter()) {
                 damage |= self.propagate_damage_flags(*child, damage_for_children);
             }
         } else {
-            for child in children.iter() {
+            for child in children.iter().chain(shadow_children.iter()) {
                 damage |= self.propagate_damage_flags(*child, damage_for_children);
             }
             if let Some(before_id) = self.nodes[node_id].before() {

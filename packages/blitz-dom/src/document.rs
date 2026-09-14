@@ -304,6 +304,10 @@ pub struct BaseDocument {
     /// added, replaced or removed), so that CSSOM wrappers can detect that
     /// their cached rule data is stale.
     pub(crate) stylesheet_generation: u64,
+    /// Elements with an attached shadow root (see `shadow.rs`).
+    pub(crate) shadow_hosts: Vec<NodeId>,
+    /// Stylesheets owned by nodes inside shadow trees: owner → (shadow root, sheet).
+    pub(crate) shadow_stylesheets: BTreeMap<NodeId, (NodeId, DocumentStyleSheet)>,
     /// Stylesheets added by the useragent
     /// where the key is the hashed CSS
     pub(crate) ua_stylesheets: HashMap<String, DocumentStyleSheet>,
@@ -456,6 +460,8 @@ impl BaseDocument {
             url: base_url,
             ua_stylesheets: HashMap::new(),
             nodes_to_stylesheet: BTreeMap::new(),
+            shadow_hosts: Vec::new(),
+            shadow_stylesheets: BTreeMap::new(),
             stylesheet_generation: 0,
             font_ctx,
             #[cfg(feature = "parallel-construct")]
@@ -1183,6 +1189,25 @@ impl BaseDocument {
     }
 
     pub fn add_stylesheet_for_node(&mut self, stylesheet: DocumentStyleSheet, node_id: NodeId) {
+        // Sheets inside a shadow tree are scoped to it, never to the document.
+        if self.containing_shadow_root(node_id).is_some() {
+            self.remove_shadow_stylesheet(node_id);
+            crate::net::fetch_font_face(
+                self.tx.clone(),
+                self.id,
+                Some(node_id),
+                &stylesheet.0,
+                &self.net_provider,
+                &self.shell_provider,
+                &self.guard.read(),
+                self.abort_signal.as_ref(),
+            );
+            if let Some(element) = self.nodes[node_id].element_data_mut() {
+                element.special_data = SpecialElementData::Stylesheet(stylesheet.clone());
+            }
+            self.add_shadow_stylesheet(node_id, stylesheet);
+            return;
+        }
         let old = self.nodes_to_stylesheet.insert(node_id, stylesheet.clone());
         self.stylesheet_generation += 1;
 
