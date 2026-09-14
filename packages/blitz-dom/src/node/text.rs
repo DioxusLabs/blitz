@@ -6,7 +6,7 @@ use blitz_traits::{
 use keyboard_types::{Key, Modifiers};
 use parley::{ContentWidths, FontContext, LayoutContext};
 
-use crate::util::ACTION_MOD;
+use crate::util::{ACTION_MOD, action_key};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 /// Parley Brush type for Blitz which contains the Blitz node id
@@ -211,127 +211,194 @@ impl TextInputData {
         let is_multiline = self.is_multiline;
         let editor = &mut self.editor;
         let mut driver = editor.driver(font_ctx, layout_ctx);
+
+        if action_mod {
+            match action_key(&event) {
+                Some('c') => {
+                    if let Some(text) = driver.editor.selected_text() {
+                        let _ = shell_provider.set_clipboard_text(text.to_owned());
+                    }
+                    return None;
+                }
+                Some('x') => {
+                    if let Some(text) = driver.editor.selected_text() {
+                        let _ = shell_provider.set_clipboard_text(text.to_owned());
+                        driver.delete_selection();
+                        return Some(GeneratedTextInputEvent::Input);
+                    }
+                    return None;
+                }
+                Some('v') => {
+                    let text = shell_provider.get_clipboard_text().unwrap_or_default();
+                    driver.insert_or_replace_selection(&text);
+                    return Some(GeneratedTextInputEvent::Input);
+                }
+                Some('a') => {
+                    if shift {
+                        driver.collapse_selection();
+                    } else {
+                        driver.select_all();
+                    }
+                    return Some(GeneratedTextInputEvent::Select);
+                }
+                _ => {}
+            }
+        }
+
         match event.key {
-            Key::Character(c) if action_mod && matches!(c.as_str(), "c" | "x" | "v") => {
-                match c.to_lowercase().as_str() {
-                    "c" => {
-                        if let Some(text) = driver.editor.selected_text() {
-                            let _ = shell_provider.set_clipboard_text(text.to_owned());
-                        }
+            Key::ArrowLeft => {
+                #[cfg(target_os = "macos")]
+                if action_mod {
+                    if shift {
+                        driver.select_to_line_start();
+                    } else {
+                        driver.move_to_line_start();
                     }
-                    "x" => {
-                        if let Some(text) = driver.editor.selected_text() {
-                            let _ = shell_provider.set_clipboard_text(text.to_owned());
-                            driver.delete_selection()
-                        }
-                    }
-                    "v" => {
-                        let text = shell_provider.get_clipboard_text().unwrap_or_default();
-                        driver.insert_or_replace_selection(&text)
-                    }
-                    _ => unreachable!(),
+                    return Some(GeneratedTextInputEvent::Select);
                 }
 
-                return Some(GeneratedTextInputEvent::Input);
-            }
-            Key::Character(c) if action_mod && matches!(c.to_lowercase().as_str(), "a") => {
-                if shift {
-                    driver.collapse_selection()
-                } else {
-                    driver.select_all()
-                }
-                return Some(GeneratedTextInputEvent::Select);
-            }
-            Key::ArrowLeft => {
-                if action_mod {
-                    if shift {
-                        driver.select_word_left()
+                #[cfg(not(target_os = "macos"))]
+                {
+                    if action_mod {
+                        if shift {
+                            driver.select_word_left();
+                        } else {
+                            driver.move_word_left();
+                        }
+                    } else if shift {
+                        driver.select_left();
                     } else {
-                        driver.move_word_left()
+                        driver.move_left();
                     }
-                } else if shift {
-                    driver.select_left()
-                } else {
-                    driver.move_left()
+                    return Some(GeneratedTextInputEvent::Select);
                 }
-                return Some(GeneratedTextInputEvent::Select);
             }
             Key::ArrowRight => {
+                #[cfg(target_os = "macos")]
                 if action_mod {
                     if shift {
-                        driver.select_word_right()
+                        driver.select_to_line_end();
                     } else {
-                        driver.move_word_right()
+                        driver.move_to_line_end();
                     }
-                } else if shift {
-                    driver.select_right()
-                } else {
-                    driver.move_right()
+                    return Some(GeneratedTextInputEvent::Select);
                 }
-                return Some(GeneratedTextInputEvent::Select);
+
+                #[cfg(not(target_os = "macos"))]
+                {
+                    if action_mod {
+                        if shift {
+                            driver.select_word_right();
+                        } else {
+                            driver.move_word_right();
+                        }
+                    } else if shift {
+                        driver.select_right();
+                    } else {
+                        driver.move_right();
+                    }
+                    return Some(GeneratedTextInputEvent::Select);
+                }
             }
             Key::ArrowUp => {
-                if shift {
-                    driver.select_up()
-                } else {
-                    driver.move_up()
+                #[cfg(target_os = "macos")]
+                if action_mod {
+                    if shift {
+                        driver.select_to_text_start();
+                    } else {
+                        driver.move_to_text_start();
+                    }
+                    return Some(GeneratedTextInputEvent::Select);
                 }
-                return Some(GeneratedTextInputEvent::Select);
+
+                #[cfg(not(target_os = "macos"))]
+                {
+                    if shift {
+                        driver.select_up();
+                    } else {
+                        driver.move_up();
+                    }
+                    return Some(GeneratedTextInputEvent::Select);
+                }
             }
             Key::ArrowDown => {
-                if shift {
-                    driver.select_down()
-                } else {
-                    driver.move_down()
+                #[cfg(target_os = "macos")]
+                if action_mod {
+                    if shift {
+                        driver.select_to_text_end();
+                    } else {
+                        driver.move_to_text_end();
+                    }
+                    return Some(GeneratedTextInputEvent::Select);
                 }
-                return Some(GeneratedTextInputEvent::Select);
+
+                #[cfg(not(target_os = "macos"))]
+                {
+                    if shift {
+                        driver.select_down();
+                    } else {
+                        driver.move_down();
+                    }
+                    return Some(GeneratedTextInputEvent::Select);
+                }
+            }
+            Key::Backspace => {
+                #[cfg(target_os = "macos")]
+                if action_mod {
+                    if driver.editor.raw_selection().is_collapsed() {
+                        driver.select_to_line_start();
+                    }
+                    driver.delete_selection();
+                    return Some(GeneratedTextInputEvent::Input);
+                }
+
+                #[cfg(not(target_os = "macos"))]
+                {
+                    if action_mod {
+                        driver.backdelete_word();
+                    } else {
+                        driver.backdelete();
+                    }
+                    return Some(GeneratedTextInputEvent::Input);
+                }
+            }
+            // On macOS this is handled by the apple standard keybindings
+            #[cfg(not(target_os = "macos"))]
+            Key::Delete => {
+                if action_mod {
+                    driver.delete_word();
+                } else {
+                    driver.delete();
+                }
+                return Some(GeneratedTextInputEvent::Input);
             }
             Key::Home => {
                 if action_mod {
                     if shift {
-                        driver.select_to_text_start()
+                        driver.select_to_text_start();
                     } else {
-                        driver.move_to_text_start()
+                        driver.move_to_text_start();
                     }
                 } else if shift {
-                    driver.select_to_line_start()
+                    driver.select_to_line_start();
                 } else {
-                    driver.move_to_line_start()
+                    driver.move_to_line_start();
                 }
                 return Some(GeneratedTextInputEvent::Select);
             }
             Key::End => {
                 if action_mod {
                     if shift {
-                        driver.select_to_text_end()
+                        driver.select_to_text_end();
                     } else {
-                        driver.move_to_text_end()
+                        driver.move_to_text_end();
                     }
                 } else if shift {
-                    driver.select_to_line_end()
+                    driver.select_to_line_end();
                 } else {
-                    driver.move_to_line_end()
+                    driver.move_to_line_end();
                 }
                 return Some(GeneratedTextInputEvent::Select);
-            }
-            Key::Delete => {
-                if action_mod {
-                    driver.delete_word()
-                } else {
-                    driver.delete()
-                }
-                return Some(GeneratedTextInputEvent::Input);
-            }
-
-            // On macOS this is handled by the apple standard keybindings
-            #[cfg(not(target_os = "macos"))]
-            Key::Backspace => {
-                if action_mod {
-                    driver.backdelete_word()
-                } else {
-                    driver.backdelete()
-                }
-                return Some(GeneratedTextInputEvent::Input);
             }
 
             Key::Character(c) if c == "\n" => {
@@ -482,6 +549,25 @@ impl TextInputData {
                     return Some(GeneratedTextInputEvent::Input);
                 }
             }
+            "copy:" => {
+                if let Some(text) = driver.editor.selected_text() {
+                    let _ = shell_provider.set_clipboard_text(text.to_owned());
+                }
+                return None;
+            }
+            "cut:" => {
+                if let Some(text) = driver.editor.selected_text() {
+                    let _ = shell_provider.set_clipboard_text(text.to_owned());
+                    driver.delete_selection();
+                    return Some(GeneratedTextInputEvent::Input);
+                }
+                return None;
+            }
+            "paste:" => {
+                let text = shell_provider.get_clipboard_text().unwrap_or_default();
+                driver.insert_or_replace_selection(&text);
+                return Some(GeneratedTextInputEvent::Input);
+            }
 
             // Moving the Insertion Pointer
 
@@ -584,7 +670,7 @@ impl TextInputData {
                 return Some(GeneratedTextInputEvent::Select);
             }
             "moveToEndOfDocumentAndModifySelection:" => {
-                driver.move_to_text_end();
+                driver.select_to_text_end();
                 return Some(GeneratedTextInputEvent::Select);
             }
 
