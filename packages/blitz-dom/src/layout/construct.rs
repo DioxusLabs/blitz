@@ -1088,7 +1088,9 @@ pub(crate) fn find_inline_layout_embedded_boxes(
 
 /// The inline-end `text-overflow` value of an element that clips its
 /// overflow; `None` when it does not clip or asks for `clip`.
-fn text_overflow_marker(style: &style::properties::ComputedValues) -> Option<style::values::specified::text::TextOverflowSide> {
+fn text_overflow_marker(
+    style: &style::properties::ComputedValues,
+) -> Option<style::values::specified::text::TextOverflowSide> {
     use style::values::computed::Overflow;
     use style::values::specified::text::TextOverflowSide;
     if matches!(style.get_box().overflow_x, Overflow::Visible) {
@@ -1225,7 +1227,11 @@ pub(crate) fn build_inline_layout_into(
     // container) reads it from its parent element.
     text_layout.text_overflow = {
         let root = &nodes[inline_context_root_node_id];
-        let owner = if root.is_anonymous() { root.parent.map(|p| &nodes[p]) } else { Some(root) };
+        let owner = if root.is_anonymous() {
+            root.parent.map(|p| &nodes[p])
+        } else {
+            Some(root)
+        };
         owner.and_then(|n| n.primary_styles().and_then(|s| text_overflow_marker(&s)))
     };
     return;

@@ -53,10 +53,17 @@ impl TextOverflowLayout {
 
 /// Shapes `marker` in `font` at `font_size`: glyph ids with their advances.
 /// `U+2026` falls back to three periods when the font lacks it.
-fn shape_marker(font: &FontData, font_size: f32, side: &TextOverflowSide) -> Option<(Vec<(u32, f32)>, f32)> {
+fn shape_marker(
+    font: &FontData,
+    font_size: f32,
+    side: &TextOverflowSide,
+) -> Option<(Vec<(u32, f32)>, f32)> {
     let font_ref = FontRef::from_index(font.data.as_ref(), font.index).ok()?;
     let charmap = font_ref.charmap();
-    let metrics = font_ref.glyph_metrics(skrifa::instance::Size::new(font_size), skrifa::instance::LocationRef::default());
+    let metrics = font_ref.glyph_metrics(
+        skrifa::instance::Size::new(font_size),
+        skrifa::instance::LocationRef::default(),
+    );
     let shape = |text: &mut dyn Iterator<Item = char>| -> Option<(Vec<(u32, f32)>, f32)> {
         let mut glyphs = Vec::new();
         let mut advance = 0.0f32;
@@ -70,7 +77,9 @@ fn shape_marker(font: &FontData, font_size: f32, side: &TextOverflowSide) -> Opt
     };
     match side {
         TextOverflowSide::Clip => None,
-        TextOverflowSide::Ellipsis => shape(&mut std::iter::once('\u{2026}')).or_else(|| shape(&mut "...".chars())),
+        TextOverflowSide::Ellipsis => {
+            shape(&mut std::iter::once('\u{2026}')).or_else(|| shape(&mut "...".chars()))
+        }
         TextOverflowSide::String(s) => shape(&mut s.as_ref().chars()),
     }
 }
@@ -78,7 +87,11 @@ fn shape_marker(font: &FontData, font_size: f32, side: &TextOverflowSide) -> Opt
 /// Finds the lines wider than `max_width` (layout units) and decides, for
 /// each, the cut and the marker. `side` is the inline-end `text-overflow`
 /// value; `Clip` yields `None`.
-pub fn compute(layout: &Layout<TextBrush>, side: &TextOverflowSide, max_width: f32) -> Option<Box<TextOverflowLayout>> {
+pub fn compute(
+    layout: &Layout<TextBrush>,
+    side: &TextOverflowSide,
+    max_width: f32,
+) -> Option<Box<TextOverflowLayout>> {
     if matches!(side, TextOverflowSide::Clip) {
         return None;
     }
@@ -95,7 +108,9 @@ pub fn compute(layout: &Layout<TextBrush>, side: &TextOverflowSide, max_width: f
         };
         let font = first.run().font().clone();
         let font_size = first.run().font_size();
-        let Some((glyphs, advance)) = shape_marker(&font, font_size, side) else { continue };
+        let Some((glyphs, advance)) = shape_marker(&font, font_size, side) else {
+            continue;
+        };
         let cut_x = (max_width - advance).max(0.0);
         // The marker starts right after the last glyph that fits, so it is
         // never separated from the text by a gap.
@@ -114,7 +129,13 @@ pub fn compute(layout: &Layout<TextBrush>, side: &TextOverflowSide, max_width: f
             cut_x,
             marker_x,
             baseline: first.baseline(),
-            marker: Marker { font, font_size, brush: first.style().brush.clone(), glyphs, advance },
+            marker: Marker {
+                font,
+                font_size,
+                brush: first.style().brush,
+                glyphs,
+                advance,
+            },
         });
     }
     (!out.lines.is_empty()).then(|| Box::new(out))
