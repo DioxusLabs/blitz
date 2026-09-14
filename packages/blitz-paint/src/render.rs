@@ -855,6 +855,23 @@ impl ElementCx<'_, '_> {
 
             // Render text
             let mut draw_text_context = self.context.draw_text_context.borrow_mut();
+            let marker = text_layout.text_overflow.as_deref();
+            // The available width is the clipping element's content box; for an
+            // anonymous inline root that is the parent element.
+            let clip_width = if self.node.is_anonymous() {
+                self.node
+                    .parent
+                    .and_then(|p| self.context.dom.get_node(p))
+                    .map(|n| n.final_layout())
+                    .map(|l| (l.size.width - l.border.left - l.border.right - l.padding.left - l.padding.right) as f64 * self.scale)
+                    .unwrap_or(self.frame.content_box.width())
+            } else {
+                self.frame.content_box.width()
+            };
+            let overflow = marker.map(|marker| crate::text::TextOverflowClip {
+                max_width: clip_width as f32,
+                marker,
+            });
             crate::text::stroke_text(
                 scene,
                 text_layout.layout.lines(),
@@ -863,6 +880,7 @@ impl ElementCx<'_, '_> {
                 self.scale,
                 self.node.id,
                 &mut draw_text_context,
+                overflow,
             );
         }
     }
@@ -929,6 +947,7 @@ impl ElementCx<'_, '_> {
                 self.scale,
                 self.node.id,
                 &mut draw_text_context,
+                None,
             );
         }
     }
@@ -977,6 +996,7 @@ impl ElementCx<'_, '_> {
                 self.scale,
                 self.node.id,
                 &mut draw_text_context,
+                None,
             );
         }
     }
