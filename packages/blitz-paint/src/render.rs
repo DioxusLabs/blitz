@@ -145,7 +145,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             .map(|(node_id, start, end)| (node_id, (start, end)))
             .collect();
 
-        let layer_manager = LayerManager::default();
+        let layer_manager = LayerManager;
         let root_element_id = dom.try_root_element().map(|el| el.id);
 
         Self {

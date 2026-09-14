@@ -1,19 +1,9 @@
 use anyrender::{Filter, PaintScene};
 use kurbo::{Affine, Shape};
 use peniko::Mix;
-use std::{cell::Cell, sync::Arc};
+use std::sync::Arc;
 
-const LAYER_LIMIT: u32 = 1024;
-
-#[derive(Default)]
-pub(crate) struct LayerManager {
-    layers_used: Cell<u32>,
-    layer_depth: Cell<u32>,
-    layers_wanted: Cell<u32>,
-
-    #[allow(unused)] // Only used for debugging. Enabled as required.
-    layer_depth_used: Cell<u32>,
-}
+pub(crate) struct LayerManager;
 
 impl LayerManager {
     #[allow(clippy::too_many_arguments)]
@@ -55,15 +45,7 @@ impl LayerManager {
         if !condition {
             return false;
         }
-        self.layers_wanted.update(|x| x + 1);
 
-        // Check if clips are above limit
-        let layers_available = self.layers_used.get() <= LAYER_LIMIT;
-        if !layers_available {
-            return false;
-        }
-
-        // Actually push the layer
         if opacity == 1.0 && filter.is_none() && backdrop_filter.is_none() {
             scene.push_clip_layer(transform, shape);
         } else {
@@ -77,18 +59,12 @@ impl LayerManager {
             );
         };
 
-        // Update accounting
-        self.layers_used.update(|x| x + 1);
-        self.layer_depth.update(|x| x + 1);
-        self.layer_depth.update(|x| x.max(self.layer_depth.get()));
-
         true
     }
 
     pub(crate) fn maybe_pop_layer(&self, scene: &mut impl PaintScene, condition: bool) {
         if condition {
             scene.pop_layer();
-            self.layer_depth.update(|x| x - 1);
         }
     }
 }
