@@ -33,9 +33,6 @@ pub struct TextLayout {
     /// containing block (as `SPAN_*_CB` flags). The inline root claims those boxes in its place.
     /// Set by each `RunMode::PerformLayout` run of inline layout.
     pub span_cb_flags: stylo_taffy::StyleFlags,
-    /// Inline-end `text-overflow` value when the inline root (or, for an
-    /// anonymous root, its parent) clips its overflow; `None` otherwise.
-    pub text_overflow: Option<style::values::specified::text::TextOverflowSide>,
     /// Lines truncated by `text-overflow`, computed after layout
     /// (`layout::text_overflow`), consumed by the painter.
     pub overflow: Option<Box<crate::text_overflow::TextOverflowLayout>>,
