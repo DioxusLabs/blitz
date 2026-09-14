@@ -562,6 +562,7 @@ fn flush_line_decorations(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn stroke_text<'a>(
     scene: &mut impl PaintScene,
     lines: impl Iterator<Item = Line<'a, TextBrush>>,
@@ -668,7 +669,11 @@ pub(crate) fn stroke_text<'a>(
                                 return None;
                             }
                         }
-                        Some(anyrender::Glyph { id: glyph.id as _, x: glyph.x, y: glyph.y })
+                        Some(anyrender::Glyph {
+                            id: glyph.id as _,
+                            x: glyph.x,
+                            y: glyph.y,
+                        })
                     }),
                 );
 
@@ -684,7 +689,11 @@ pub(crate) fn stroke_text<'a>(
                             .glyphs
                             .iter()
                             .map(|(id, adv)| {
-                                let g = anyrender::Glyph { id: *id as _, x, y: cut.baseline };
+                                let g = anyrender::Glyph {
+                                    id: *id as _,
+                                    x,
+                                    y: cut.baseline,
+                                };
                                 x += adv;
                                 g
                             })

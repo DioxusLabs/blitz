@@ -821,10 +821,9 @@ impl LayoutPassState<'_> {
 
         // `text-overflow`: lines are final now; find the ones to truncate and
         // shape their marker (layout units: `width` is already scaled).
-        inline_layout.overflow = inline_layout
-            .text_overflow
-            .as_ref()
-            .and_then(|side| crate::layout::text_overflow::compute(&inline_layout.layout, side, width));
+        inline_layout.overflow = inline_layout.text_overflow.as_ref().and_then(|side| {
+            crate::layout::text_overflow::compute(&inline_layout.layout, side, width)
+        });
 
         // Parley lays out empty text as a single strut-height line (text-editor semantics),
         // but a line box containing no text, inline boxes or other in-flow content is a
