@@ -655,10 +655,9 @@ impl BaseDocument {
 
         // `text-overflow`: lines are final now; find the ones to truncate and
         // shape their marker (layout units: `width` is already scaled).
-        inline_layout.overflow = inline_layout
-            .text_overflow
-            .as_ref()
-            .and_then(|side| crate::layout::text_overflow::compute(&inline_layout.layout, side, width));
+        inline_layout.overflow = inline_layout.text_overflow.as_ref().and_then(|side| {
+            crate::layout::text_overflow::compute(&inline_layout.layout, side, width)
+        });
 
         let mut height = inline_layout.layout.height();
 
