@@ -26,6 +26,10 @@ pub struct TextLayout {
     pub text: String,
     pub content_widths: Option<ContentWidths>,
     pub layout: parley::layout::Layout<TextBrush>,
+    /// `text-overflow` marker for lines that overflow the inline root's content
+    /// box when the root clips (`overflow` other than `visible`): `None` clips,
+    /// `Some("…")` for `ellipsis`, `Some(s)` for the string form.
+    pub text_overflow: Option<String>,
 }
 
 impl TextLayout {

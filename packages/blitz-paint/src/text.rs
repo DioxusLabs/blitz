@@ -538,6 +538,36 @@ fn flush_line_decorations(
     }
 }
 
+/// `text-overflow` handling for one inline context: lines wider than
+/// `max_width` (layout units) are cut at a glyph boundary and end with `marker`.
+#[derive(Clone, Copy)]
+pub(crate) struct TextOverflowClip<'a> {
+    pub max_width: f32,
+    pub marker: &'a str,
+}
+
+/// Glyph ids and total advance of `marker` in `font` at `font_size`, or
+/// `None` when the font cannot show it (a fallback of "..." is tried then).
+fn marker_glyphs(font: &parley::FontData, font_size: f32, marker: &str) -> Option<(Vec<(u32, f32)>, f32)> {
+    use skrifa::MetadataProvider as _;
+    use skrifa::raw::FontRef;
+    let font_ref = FontRef::from_index(font.data.as_ref(), font.index).ok()?;
+    let charmap = font_ref.charmap();
+    let metrics = font_ref.glyph_metrics(skrifa::instance::Size::new(font_size), skrifa::instance::LocationRef::default());
+    let shape = |text: &str| -> Option<(Vec<(u32, f32)>, f32)> {
+        let mut glyphs = Vec::new();
+        let mut advance = 0.0f32;
+        for ch in text.chars() {
+            let gid = charmap.map(ch)?;
+            let adv = metrics.advance_width(gid).unwrap_or(0.0);
+            glyphs.push((gid.to_u32(), adv));
+            advance += adv;
+        }
+        Some((glyphs, advance))
+    };
+    shape(marker).or_else(|| if marker == "\u{2026}" { shape("...") } else { None })
+}
+
 pub(crate) fn stroke_text<'a>(
     scene: &mut impl PaintScene,
     lines: impl Iterator<Item = Line<'a, TextBrush>>,
@@ -546,6 +576,7 @@ pub(crate) fn stroke_text<'a>(
     scale: f64,
     inline_root_id: NodeId,
     context: &mut DrawTextContext,
+    text_overflow: Option<TextOverflowClip<'_>>,
 ) {
     let DrawTextContext {
         stack,
@@ -565,6 +596,25 @@ pub(crate) fn stroke_text<'a>(
     // for each run, only resolve styles for the nodes newly descended into (popping
     // as we ascend). `path_scratch` is a reusable buffer for the run's node path.
     for line in lines {
+        // `text-overflow`: does this line need truncating, and where does the marker go?
+        // Resolved per line from the first glyph run, whose font draws the marker.
+        let mut cut: Option<(f32, Vec<(u32, f32)>)> = None;
+        let mut marker_drawn = false;
+        if let Some(clip) = text_overflow {
+            let line_advance = line.metrics().advance;
+            if line_advance > clip.max_width + 0.5 {
+                let first_run = line.items().find_map(|item| match item {
+                    PositionedLayoutItem::GlyphRun(run) => Some(run),
+                    _ => None,
+                });
+                if let Some(run) = first_run {
+                    if let Some((glyphs, advance)) = marker_glyphs(run.run().font(), run.run().font_size(), clip.marker) {
+                        let cut_x = (clip.max_width - advance).max(0.0);
+                        cut = Some((cut_x, glyphs));
+                    }
+                }
+            }
+        }
         // Decorations accumulated for this line, keyed by decorating box, so each box is
         // painted once (spanning all its runs) using its own font — matching Firefox, which
         // draws one decoration per box rather than one stepped segment per differently-sized
@@ -631,12 +681,53 @@ pub(crate) fn stroke_text<'a>(
                     1.0, // alpha
                     transform,
                     glyph_xform,
-                    glyph_run.positioned_glyphs().map(|glyph| anyrender::Glyph {
-                        id: glyph.id as _,
-                        x: glyph.x,
-                        y: glyph.y,
+                    glyph_run.positioned_glyphs().filter_map(|glyph| {
+                        // Truncated line: keep the glyphs that end before the cut.
+                        if let Some((cut_x, _)) = &cut {
+                            if glyph.x + glyph.advance > *cut_x + 0.01 {
+                                return None;
+                            }
+                        }
+                        Some(anyrender::Glyph { id: glyph.id as _, x: glyph.x, y: glyph.y })
                     }),
                 );
+
+                // Draw the `text-overflow` marker once, right after the kept glyphs, with
+                // this run's font so it matches size, colour and style.
+                if let Some((cut_x, marker)) = &cut {
+                    let run_end = glyph_run.offset() + glyph_run.advance();
+                    let this_run_reaches_cut = run_end >= *cut_x - 0.01;
+                    if !marker_drawn && this_run_reaches_cut {
+                        marker_drawn = true;
+                        let mut x = glyph_run
+                            .positioned_glyphs()
+                            .filter(|g| g.x + g.advance <= *cut_x + 0.01)
+                            .map(|g| g.x + g.advance)
+                            .fold(glyph_run.offset(), f32::max);
+                        let baseline = glyph_run.baseline();
+                        let glyphs: Vec<anyrender::Glyph> = marker
+                            .iter()
+                            .map(|(id, adv)| {
+                                let g = anyrender::Glyph { id: *id as _, x, y: baseline };
+                                x += adv;
+                                g
+                            })
+                            .collect();
+                        scene.draw_glyphs(
+                            font,
+                            font_size,
+                            !FONT_EMBOLDEN_ENABLED,
+                            run.normalized_coords(),
+                            embolden,
+                            Fill::NonZero,
+                            &anyrender::Paint::from(text_color),
+                            1.0,
+                            transform,
+                            glyph_xform,
+                            glyphs.into_iter(),
+                        );
+                    }
+                }
 
                 // Accumulate this run's contribution to each decorating box on its ancestor
                 // path. The decoration is drawn once per box after the whole line has been
@@ -655,7 +746,15 @@ pub(crate) fn stroke_text<'a>(
                 };
                 let run_node_id = style.brush.id;
                 let run_x0 = glyph_run.offset() as f64;
-                let run_x1 = run_x0 + glyph_run.advance() as f64;
+                let mut run_x1 = run_x0 + glyph_run.advance() as f64;
+                // On a truncated line, decorations stop before the marker (the
+                // marker itself is undecorated, as in Chrome).
+                if let Some((cut_x, _)) = &cut {
+                    run_x1 = run_x1.min(*cut_x as f64);
+                    if run_x1 <= run_x0 {
+                        continue;
+                    }
+                }
 
                 for entry in stack.iter() {
                     if entry.decoration.is_none() {
