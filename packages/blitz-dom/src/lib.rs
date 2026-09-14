@@ -59,14 +59,14 @@ mod resolved_style;
 /// Scrolling of nodes and the viewport, and scroll animations.
 mod scrolling;
 mod selection;
+/// `position: sticky` offsets, resolved after layout.
+mod sticky;
 /// Implementations that interact with servo's style engine
 mod stylo;
 mod stylo_device;
 mod stylo_to_cursor_icon;
 mod stylo_to_kurbo;
 mod stylo_to_parley;
-/// `position: sticky` offsets, resolved after layout.
-mod sticky;
 pub mod traversal;
 /// Versioned storage for the nodes of the DOM tree.
 mod tree;
