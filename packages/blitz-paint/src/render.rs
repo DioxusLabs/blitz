@@ -863,6 +863,18 @@ impl ElementCx<'_, '_> {
                 self.scale,
                 self.node.id,
                 &mut draw_text_context,
+                text_layout.overflow.as_deref().map(|overflow| {
+                    // Horizontal scroll of the clipping box (the parent for an anonymous root).
+                    let scroller = if self.node.is_anonymous() {
+                        self.node.parent.and_then(|p| self.context.dom.get_node(p))
+                    } else {
+                        Some(self.node)
+                    };
+                    let scroll_x = scroller
+                        .map(|n| (n.scroll_offset().x * self.scale) as f32)
+                        .unwrap_or(0.0);
+                    (overflow, scroll_x)
+                }),
             );
         }
     }
@@ -929,6 +941,7 @@ impl ElementCx<'_, '_> {
                 self.scale,
                 self.node.id,
                 &mut draw_text_context,
+                None,
             );
         }
     }
@@ -977,6 +990,7 @@ impl ElementCx<'_, '_> {
                 self.scale,
                 self.node.id,
                 &mut draw_text_context,
+                None,
             );
         }
     }
