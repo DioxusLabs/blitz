@@ -33,6 +33,10 @@ pub struct TextLayout {
     /// containing block (as `SPAN_*_CB` flags). The inline root claims those boxes in its place.
     /// Set by each `RunMode::PerformLayout` run of inline layout.
     pub span_cb_flags: stylo_taffy::StyleFlags,
+    /// `text-overflow` marker for lines that overflow the inline root's content
+    /// box when the root clips (`overflow` other than `visible`): `None` clips,
+    /// `Some("…")` for `ellipsis`, `Some(s)` for the string form.
+    pub text_overflow: Option<String>,
 }
 
 impl TextLayout {
