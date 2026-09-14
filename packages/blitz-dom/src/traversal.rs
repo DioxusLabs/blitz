@@ -17,32 +17,6 @@ macro_rules! iter_children {
 }
 pub(crate) use iter_children;
 
-macro_rules! iter_children_and_pseudos {
-    ($node_expr:expr, $cb:expr) => {{
-        // Load node
-        let node = &mut $node_expr;
-
-        // Copy before, after, and take children
-        let before = node.before();
-        let after = node.after();
-        let children = core::mem::take(&mut node.children);
-
-        if let Some(before) = before {
-            $cb(before)
-        }
-        for child_id in children.iter().copied() {
-            $cb(child_id)
-        }
-        if let Some(after) = after {
-            $cb(after)
-        }
-
-        // Reload node and put children back
-        $node_expr.children = children;
-    }};
-}
-pub(crate) use iter_children_and_pseudos;
-
 #[derive(Clone)]
 /// An pre-order tree traverser for a [BaseDocument](crate::document::BaseDocument).
 pub struct TreeTraverser<'a> {

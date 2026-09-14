@@ -1439,7 +1439,11 @@ fn attach_shadow(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsR
         .and_then(|o| o.get(js_string!("mode"), context).ok())
         .map(|v| v.display().to_string())
         .unwrap_or_default();
-    let mode = if mode.contains("closed") { blitz_dom::shadow::ShadowRootMode::Closed } else { blitz_dom::shadow::ShadowRootMode::Open };
+    let mode = if mode.contains("closed") {
+        blitz_dom::shadow::ShadowRootMode::Closed
+    } else {
+        blitz_dom::shadow::ShadowRootMode::Open
+    };
     let root_id = {
         let mut doc = ctx.doc.borrow_mut();
         let mut mutr = doc.mutate();
@@ -1456,7 +1460,11 @@ fn shadow_root(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult
         let doc = ctx.doc.borrow();
         doc.shadow_root_of(host_id).filter(|root| {
             doc.get_node(*root)
-                .and_then(|n| n.data.attr(blitz_dom::local_name!("mode")).map(|m| m != "closed"))
+                .and_then(|n| {
+                    n.data
+                        .attr(blitz_dom::local_name!("mode"))
+                        .map(|m| m != "closed")
+                })
                 .unwrap_or(true)
         })
     };
