@@ -1059,6 +1059,11 @@ slot {
     display: contents;
 }
 
+/* Shadow root node inserted by attachShadow (see blitz-dom/src/shadow.rs) */
+shadow-root {
+    display: contents;
+}
+
 /* Un-invert images and videos for users using inverted colors.
  * "User agents must add the following rule to their UA style sheet"
  * https://www.w3.org/TR/mediaqueries-5/#inverted

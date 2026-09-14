@@ -162,6 +162,19 @@ impl BaseDocument {
         }
     }
 
+    /// Composed-tree variant of [`Self::iter_children_mut`], for box
+    /// construction: a shadow host's shadow children, a slot's assigned nodes.
+    pub fn iter_composed_children_mut(
+        &mut self,
+        node_id: NodeId,
+        mut cb: impl FnMut(NodeId, &mut BaseDocument),
+    ) {
+        let children: Vec<NodeId> = self.nodes[node_id].composed_children().to_vec();
+        for child_id in children {
+            cb(child_id, self);
+        }
+    }
+
     pub fn iter_children_mut(
         &mut self,
         node_id: NodeId,
@@ -207,7 +220,8 @@ impl BaseDocument {
         }
         self.nodes[node_id].set_pe_by_index(1, before);
 
-        self.iter_children_mut(node_id, &mut cb);
+        // Box construction walks the composed tree.
+        self.iter_composed_children_mut(node_id, &mut cb);
 
         let after = self.nodes[node_id].after();
         self.nodes[node_id].set_pe_by_index(0, None);
