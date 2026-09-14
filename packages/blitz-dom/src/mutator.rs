@@ -548,6 +548,7 @@ impl DocumentMutator<'_> {
             parent.mark_ancestors_dirty();
             parent.children.retain(|id| *id != node_id);
             self.maybe_record_node(parent_id);
+            self.doc.damage_box_owner(parent_id);
         }
     }
 
@@ -676,8 +677,8 @@ impl DocumentMutator<'_> {
                 continue;
             };
 
+            self.doc.damage_box_owner(old_parent_id);
             let old_parent = &mut self.doc.nodes[old_parent_id];
-            old_parent.insert_damage(ALL_DAMAGE);
 
             // TODO: make this fine grained / conditional based on ElementSelectorFlags
             if child_was_in_doc {
@@ -695,8 +696,10 @@ impl DocumentMutator<'_> {
             self.maybe_record_node(old_parent_id);
         }
 
+        // A shadow root carries no style data, so its damage goes to the host:
+        // the element whose boxes are rebuilt from the composed tree.
+        self.doc.damage_box_owner(parent_id);
         let new_parent = &mut self.doc.nodes[parent_id];
-        new_parent.insert_damage(ALL_DAMAGE);
 
         // TODO: make this fine grained / conditional based on ElementSelectorFlags
         if new_parent_is_in_document {
@@ -725,6 +728,9 @@ impl DocumentMutator<'_> {
         }
 
         self.maybe_record_node(parent_id);
+        for child_id in child_ids.iter().copied() {
+            self.doc.rescope_stylesheets(child_id);
+        }
     }
 
     // Tree mutation methods (that defer to other methods)
@@ -1124,6 +1130,9 @@ impl<'doc> DocumentMutator<'doc> {
             unreachable!();
         };
 
+        if self.doc.remove_shadow_stylesheet(node_id) {
+            return;
+        }
         let guard = self.doc.guard.read();
         self.doc.stylist.remove_stylesheet(stylesheet, &guard);
         self.doc
