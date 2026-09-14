@@ -5,11 +5,11 @@ use bitflags::bitflags;
 use convert::stylo;
 use std::ops::Deref;
 use style::logical_geometry::WritingMode;
-use taffy::style_helpers::TaffyAuto as _;
 use style::properties::ComputedValues;
 use style::values::CustomIdent;
 use style::{Atom, OwnedSlice};
 use taffy::ResolveOrZero;
+use taffy::style_helpers::TaffyAuto as _;
 
 #[cfg(feature = "grid")]
 use style::values::{

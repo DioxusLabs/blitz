@@ -13,13 +13,14 @@
 //! kept inside the containing block, nested sticky boxes (an inner box sees
 //! its outer box already shifted), overconstrained insets resolved by writing
 //! mode and direction, transforms (the shift is applied before the box's
-//! own transform, as the spec orders), and table parts: Blitz lays cells out
+//! own transform, as the spec orders; transformed ancestors do not stop the
+//! scroller search), and table parts: Blitz lays cells out
 //! directly in the table's grid, so rows and row groups have no box of their
 //! own. A sticky cell is therefore constrained by the table, and a sticky
 //! row/row group is measured from its cells and its shift handed down to them.
 //! The sticky view rectangle is the intersection of the scrollports between
-//! the box and its containing block; a `position: fixed` or transformed
-//! ancestor ends the search (its contents do not move with the page).
+//! the box and its containing block; a `position: fixed` ancestor ends the
+//! search (its contents do not move with the page).
 //!
 //! [`LayoutData::sticky_offset`]: crate::node::LayoutData::sticky_offset
 
@@ -27,9 +28,9 @@ use blitz_traits::node_id::NodeId;
 use style::computed_values::direction::T as Direction;
 use style::computed_values::position::T as Position;
 use style::logical_geometry::WritingModeProperty as WritingMode;
+use style::values::computed::LengthPercentage;
 use style::values::computed::Overflow;
 use style::values::computed::length::CSSPixelLength;
-use style::values::computed::LengthPercentage;
 use style::values::generics::position::Inset as GenericInset;
 
 use crate::BaseDocument;
@@ -64,7 +65,10 @@ impl BaseDocument {
         while let Some(id) = stack.pop() {
             let node = &self.nodes[id];
             stack.extend(node.children.iter().rev().copied());
-            if node.primary_styles().is_some_and(|s| s.clone_position() == Position::Sticky) {
+            if node
+                .primary_styles()
+                .is_some_and(|s| s.clone_position() == Position::Sticky)
+            {
                 found.push(id);
             }
         }
@@ -92,7 +96,11 @@ impl BaseDocument {
             .sticky_nodes
             .iter()
             .copied()
-            .filter(|id| self.nodes.get(*id).is_some_and(|n| n.element_data().is_some()))
+            .filter(|id| {
+                self.nodes
+                    .get(*id)
+                    .is_some_and(|n| n.element_data().is_some())
+            })
             .collect();
         // Pass 1: clear (shifts handed down by boxless table parts accumulate).
         for id in &sticky {
@@ -133,7 +141,13 @@ impl BaseDocument {
         let layout = node.final_layout();
         // Boxless table parts are measured from the cells they contain.
         let (own_x, own_y, width, height, margin) = if !is_boxless_table_part(node) {
-            (layout.location.x, layout.location.y, layout.size.width, layout.size.height, layout.margin)
+            (
+                layout.location.x,
+                layout.location.y,
+                layout.size.width,
+                layout.size.height,
+                layout.margin,
+            )
         } else {
             match self.cells_extent(id) {
                 Some((x0, y0, x1, y1)) => (x0, y0, x1 - x0, y1 - y0, taffy::Rect::zero()),
@@ -147,9 +161,11 @@ impl BaseDocument {
         let mut x = own_x;
         let mut y = own_y;
         // The nearest scroll container fixes the coordinate space; a
-        // `position: fixed` or transformed ancestor ends the walk too, as a
-        // scroller that never scrolls (its contents do not move with the page,
-        // so a sticky box inside it behaves like a relative one).
+        // `position: fixed` ancestor ends the walk too, as a scroller that
+        // never scrolls (its contents do not move with the page, so a sticky
+        // box inside it behaves like a relative one). A transformed ancestor
+        // is *not* a stop: it moves with the page like any in-flow box, and
+        // folds into the coordinate mapping.
         let mut container: Option<NodeId> = None;
         let mut cur = node.parent;
         while let Some(a) = cur {
@@ -160,7 +176,7 @@ impl BaseDocument {
             if let Some(s) = anc.primary_styles() {
                 let b = s.get_box();
                 let fixed = s.clone_position() == Position::Fixed;
-                if scrolls(b.overflow_x) || scrolls(b.overflow_y) || fixed || anc.transform().is_some() {
+                if scrolls(b.overflow_x) || scrolls(b.overflow_y) || fixed {
                     container = Some(a);
                     break;
                 }
@@ -190,7 +206,9 @@ impl BaseDocument {
         let mut parent_x = x - own_x;
         let mut parent_y = y - own_y;
         while cb_id != root && is_boxless_table_part(&self.nodes[cb_id]) {
-            let Some(up) = self.nodes[cb_id].parent else { break };
+            let Some(up) = self.nodes[cb_id].parent else {
+                break;
+            };
             let l = self.nodes[cb_id].final_layout();
             let shift = self.nodes[cb_id].sticky_offset();
             parent_x -= l.location.x + shift.x;
@@ -258,8 +276,12 @@ impl BaseDocument {
         // box is the whole scrollable area, not just the visible box.
         if container == Some(cb_id) {
             // `scroll_width/height`: padding box or the scrollable overflow, whichever is larger.
-            cb.x1 = cb.x1.max(parent_x + pl.border.left + parent.scroll_width() - pl.padding.right);
-            cb.y1 = cb.y1.max(parent_y + pl.border.top + parent.scroll_height() - pl.padding.bottom);
+            cb.x1 = cb
+                .x1
+                .max(parent_x + pl.border.left + parent.scroll_width() - pl.padding.right);
+            cb.y1 = cb
+                .y1
+                .max(parent_y + pl.border.top + parent.scroll_height() - pl.padding.bottom);
         }
 
         let pos = styles.get_position();
@@ -268,26 +290,47 @@ impl BaseDocument {
         let left = resolve_inset(&pos.left, scrollport.x1 - scrollport.x0);
         let right = resolve_inset(&pos.right, scrollport.x1 - scrollport.x0);
 
-
         // The margin box is what must stay inside the containing block.
         let m = margin;
         // Overconstraint is resolved in the containing block's writing mode and
         // direction (CSS 2.1 §9.4.3 / Position 3), not the sticky box's own.
         let (writing_mode, direction) = match parent.primary_styles() {
-            Some(cb) => (cb.get_inherited_box().writing_mode, cb.get_inherited_box().direction),
-            None => (styles.get_inherited_box().writing_mode, styles.get_inherited_box().direction),
+            Some(cb) => (
+                cb.get_inherited_box().writing_mode,
+                cb.get_inherited_box().direction,
+            ),
+            None => (
+                styles.get_inherited_box().writing_mode,
+                styles.get_inherited_box().direction,
+            ),
         };
         let (start_wins_x, start_wins_y) = overconstraint_winners(writing_mode, direction);
         (
             axis_offset(
-                Axis { pos: x, size: width, margin_start: m.left, margin_end: m.right, start_inset: left, end_inset: right, start_wins: start_wins_x },
+                Axis {
+                    pos: x,
+                    size: width,
+                    margin_start: m.left,
+                    margin_end: m.right,
+                    start_inset: left,
+                    end_inset: right,
+                    start_wins: start_wins_x,
+                },
                 scrollport.x0,
                 scrollport.x1,
                 cb.x0,
                 cb.x1,
             ),
             axis_offset(
-                Axis { pos: y, size: height, margin_start: m.top, margin_end: m.bottom, start_inset: top, end_inset: bottom, start_wins: start_wins_y },
+                Axis {
+                    pos: y,
+                    size: height,
+                    margin_start: m.top,
+                    margin_end: m.bottom,
+                    start_inset: top,
+                    end_inset: bottom,
+                    start_wins: start_wins_y,
+                },
                 scrollport.y0,
                 scrollport.y1,
                 cb.y0,
@@ -472,25 +515,66 @@ mod tests {
     use super::*;
 
     fn axis(pos: f32, size: f32, start: Option<f32>, end: Option<f32>) -> Axis {
-        Axis { pos, size, margin_start: 0.0, margin_end: 0.0, start_inset: start, end_inset: end, start_wins: true }
+        Axis {
+            pos,
+            size,
+            margin_start: 0.0,
+            margin_end: 0.0,
+            start_inset: start,
+            end_inset: end,
+            start_wins: true,
+        }
     }
 
     #[test]
     fn sticks_to_top_and_stops_at_containing_block_end() {
         // Box at y=100, 20px tall, containing block 0..=400, viewport scrolled to 150 with top: 10.
-        assert_eq!(axis_offset(axis(100.0, 20.0, Some(10.0), None), 150.0, 750.0, 0.0, 400.0), 60.0);
+        assert_eq!(
+            axis_offset(
+                axis(100.0, 20.0, Some(10.0), None),
+                150.0,
+                750.0,
+                0.0,
+                400.0
+            ),
+            60.0
+        );
         // Scrolled past the containing block: the box stops at cb_end - size.
-        assert_eq!(axis_offset(axis(100.0, 20.0, Some(10.0), None), 600.0, 1200.0, 0.0, 400.0), 280.0);
+        assert_eq!(
+            axis_offset(
+                axis(100.0, 20.0, Some(10.0), None),
+                600.0,
+                1200.0,
+                0.0,
+                400.0
+            ),
+            280.0
+        );
         // Not yet reached: no shift.
-        assert_eq!(axis_offset(axis(100.0, 20.0, Some(10.0), None), 0.0, 600.0, 0.0, 400.0), 0.0);
+        assert_eq!(
+            axis_offset(axis(100.0, 20.0, Some(10.0), None), 0.0, 600.0, 0.0, 400.0),
+            0.0
+        );
     }
 
     #[test]
     fn sticks_to_bottom() {
         // Box at y=900 in a 600px viewport at scroll 0 with bottom: 0 → pulled up to 580.
-        assert_eq!(axis_offset(axis(900.0, 20.0, None, Some(0.0)), 0.0, 600.0, 0.0, 1000.0), -320.0);
+        assert_eq!(
+            axis_offset(axis(900.0, 20.0, None, Some(0.0)), 0.0, 600.0, 0.0, 1000.0),
+            -320.0
+        );
         // Cannot move above its containing block start.
-        assert_eq!(axis_offset(axis(900.0, 20.0, None, Some(0.0)), 0.0, 600.0, 700.0, 1000.0), -200.0);
+        assert_eq!(
+            axis_offset(
+                axis(900.0, 20.0, None, Some(0.0)),
+                0.0,
+                600.0,
+                700.0,
+                1000.0
+            ),
+            -200.0
+        );
     }
 
     #[test]
@@ -512,25 +596,57 @@ mod tests {
 
     #[test]
     fn writing_mode_and_direction_pick_the_winner() {
-        assert_eq!(overconstraint_winners(WritingMode::HorizontalTb, Direction::Ltr), (true, true));
-        assert_eq!(overconstraint_winners(WritingMode::HorizontalTb, Direction::Rtl), (false, true));
-        assert_eq!(overconstraint_winners(WritingMode::VerticalRl, Direction::Ltr), (false, true));
-        assert_eq!(overconstraint_winners(WritingMode::VerticalLr, Direction::Rtl), (true, false));
+        assert_eq!(
+            overconstraint_winners(WritingMode::HorizontalTb, Direction::Ltr),
+            (true, true)
+        );
+        assert_eq!(
+            overconstraint_winners(WritingMode::HorizontalTb, Direction::Rtl),
+            (false, true)
+        );
+        assert_eq!(
+            overconstraint_winners(WritingMode::VerticalRl, Direction::Ltr),
+            (false, true)
+        );
+        assert_eq!(
+            overconstraint_winners(WritingMode::VerticalLr, Direction::Rtl),
+            (true, false)
+        );
     }
 
     #[test]
     fn taller_than_the_space_between_insets_follows_the_winner() {
         // WPT top-and-bottom-overconstrained: 200px box, scroller 100px, top: 20, bottom: 0,
         // in-flow at y=200 in a 600px containing block.
-        let a = |start_wins| Axis { pos: 200.0, size: 200.0, margin_start: 0.0, margin_end: 0.0, start_inset: Some(20.0), end_inset: Some(0.0), start_wins };
+        let a = |start_wins| Axis {
+            pos: 200.0,
+            size: 200.0,
+            margin_start: 0.0,
+            margin_end: 0.0,
+            start_inset: Some(20.0),
+            end_inset: Some(0.0),
+            start_wins,
+        };
         assert_eq!(200.0 + axis_offset(a(true), 0.0, 100.0, 0.0, 600.0), 20.0);
-        assert_eq!(200.0 + axis_offset(a(true), 160.0, 260.0, 0.0, 600.0), 180.0);
-        assert_eq!(200.0 + axis_offset(a(true), 220.0, 320.0, 0.0, 600.0), 240.0);
-        assert_eq!(200.0 + axis_offset(a(true), 500.0, 600.0, 0.0, 600.0), 400.0);
+        assert_eq!(
+            200.0 + axis_offset(a(true), 160.0, 260.0, 0.0, 600.0),
+            180.0
+        );
+        assert_eq!(
+            200.0 + axis_offset(a(true), 220.0, 320.0, 0.0, 600.0),
+            240.0
+        );
+        assert_eq!(
+            200.0 + axis_offset(a(true), 500.0, 600.0, 0.0, 600.0),
+            400.0
+        );
     }
 
     #[test]
     fn auto_insets_do_nothing() {
-        assert_eq!(axis_offset(axis(100.0, 20.0, None, None), 500.0, 1100.0, 0.0, 400.0), 0.0);
+        assert_eq!(
+            axis_offset(axis(100.0, 20.0, None, None), 500.0, 1100.0, 0.0, 400.0),
+            0.0
+        );
     }
 }
