@@ -32,6 +32,7 @@ pub(crate) mod table;
 pub(crate) mod text_transform;
 #[cfg(feature = "writing-mode")]
 pub(crate) mod writing_mode;
+pub mod text_overflow;
 
 use self::replaced::{
     IntrinsicSizes, ReplacedContext, compute_replaced_layout, is_replaced_element,
