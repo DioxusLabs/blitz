@@ -1299,6 +1299,7 @@ pub(crate) fn build_inline_layout_into(
                                 // Width and height are set during layout
                                 width: 0.0,
                                 height: 0.0,
+                                baseline: None,
                             });
                         } else if *tag_name == local_name!("br") {
                             // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
@@ -1374,6 +1375,7 @@ pub(crate) fn build_inline_layout_into(
                             // Width and height are set during layout
                             width: 0.0,
                             height: 0.0,
+                            baseline: None,
                         });
                     }
                 };
