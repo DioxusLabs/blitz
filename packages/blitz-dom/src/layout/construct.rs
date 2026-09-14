@@ -549,7 +549,7 @@ fn collect_layout_children_with_wrap(
                 doc.nodes[id].remove_damage(CONSTRUCT_BOX | CONSTRUCT_DESCENDENT | CONSTRUCT_FC);
             });
 
-            match crate::util::parse_svg_image(outer_html.as_bytes()) {
+            match crate::util::parse_svg_image(outer_html.as_bytes(), doc.font_ctx.clone()) {
                 Ok(svg) => {
                     doc.get_node_mut(container_node_id)
                         .unwrap()

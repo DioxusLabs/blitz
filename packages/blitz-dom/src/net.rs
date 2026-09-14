@@ -1,5 +1,6 @@
 use blitz_traits::node_id::NodeId;
 use selectors::context::QuirksMode;
+use std::sync::Mutex;
 use std::sync::atomic::Ordering as Ao;
 use std::{
     io::Cursor,
@@ -549,11 +550,13 @@ impl NetHandler for ResourceHandler<DocumentSrcHandler> {
 }
 
 pub struct ImageHandler {
+    /// Needed so SVG `<text>` resolves through the document's font collection.
+    font_ctx: Arc<Mutex<parley::FontContext>>,
     kind: ImageType,
 }
 impl ImageHandler {
-    pub fn new(kind: ImageType) -> Self {
-        Self { kind }
+    pub fn new(kind: ImageType, font_ctx: Arc<Mutex<parley::FontContext>>) -> Self {
+        Self { kind, font_ctx }
     }
 }
 
@@ -588,7 +591,7 @@ impl ImageHandler {
         #[cfg(feature = "svg")]
         let svg_err = {
             use crate::util::parse_svg_image;
-            match parse_svg_image(&bytes) {
+            match parse_svg_image(&bytes, self.font_ctx.clone()) {
                 Ok(svg) => return Ok(Resource::Svg(self.kind, svg)),
                 Err(e) => e.to_string(),
             }
