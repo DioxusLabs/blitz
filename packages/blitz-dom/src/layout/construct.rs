@@ -1086,25 +1086,6 @@ pub(crate) fn find_inline_layout_embedded_boxes(
     }
 }
 
-/// The inline-end `text-overflow` value of an element that clips its
-/// overflow; `None` when it does not clip or asks for `clip`.
-fn text_overflow_marker(
-    style: &style::properties::ComputedValues,
-) -> Option<style::values::specified::text::TextOverflowSide> {
-    use style::values::computed::Overflow;
-    use style::values::specified::text::TextOverflowSide;
-    if matches!(style.get_box().overflow_x, Overflow::Visible) {
-        return None;
-    }
-    // Stylo stores a single value as `(Clip, value)` with `sides_are_logical`,
-    // and two values as `(start, end)`: either way `second` is the inline-end
-    // side, which is the right edge in Blitz's left-to-right inline layout.
-    match &style.get_text().text_overflow.second {
-        TextOverflowSide::Clip => None,
-        side => Some(side.clone()),
-    }
-}
-
 pub(crate) fn build_inline_layout_into(
     nodes: &crate::NodeTree,
     layout_ctx: &mut LayoutContext<TextBrush>,
@@ -1222,18 +1203,6 @@ pub(crate) fn build_inline_layout_into(
     }
 
     text_layout.text = builder.build_into(&mut text_layout.layout);
-    // `text-overflow` belongs to the element that clips; an anonymous inline
-    // root (the block Blitz wraps inline content in, e.g. inside a scroll
-    // container) reads it from its parent element.
-    text_layout.text_overflow = {
-        let root = &nodes[inline_context_root_node_id];
-        let owner = if root.is_anonymous() {
-            root.parent.map(|p| &nodes[p])
-        } else {
-            Some(root)
-        };
-        owner.and_then(|n| n.primary_styles().and_then(|s| text_overflow_marker(&s)))
-    };
     return;
 
     fn build_inline_layout_recursive(

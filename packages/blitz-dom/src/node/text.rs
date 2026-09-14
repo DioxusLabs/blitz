@@ -26,9 +26,6 @@ pub struct TextLayout {
     pub text: String,
     pub content_widths: Option<ContentWidths>,
     pub layout: parley::layout::Layout<TextBrush>,
-    /// Inline-end `text-overflow` value when the inline root (or, for an
-    /// anonymous root, its parent) clips its overflow; `None` otherwise.
-    pub text_overflow: Option<style::values::specified::text::TextOverflowSide>,
     /// Lines truncated by `text-overflow`, computed after layout
     /// (`layout::text_overflow`), consumed by the painter.
     pub overflow: Option<Box<crate::text_overflow::TextOverflowLayout>>,

@@ -547,7 +547,7 @@ pub(crate) fn stroke_text<'a>(
     scale: f64,
     inline_root_id: NodeId,
     context: &mut DrawTextContext,
-    text_overflow: Option<&blitz_dom::text_overflow::TextOverflowLayout>,
+    text_overflow: Option<(&blitz_dom::text_overflow::TextOverflowLayout, f32)>,
 ) {
     let DrawTextContext {
         stack,
@@ -567,9 +567,14 @@ pub(crate) fn stroke_text<'a>(
     // for each run, only resolve styles for the nodes newly descended into (popping
     // as we ascend). `path_scratch` is a reusable buffer for the run's node path.
     for (line_index, line) in lines.enumerate() {
-        // `text-overflow`: layout decided whether this line is truncated, where,
-        // and with which marker; paint only applies it.
-        let cut = text_overflow.and_then(|o| o.line(line_index));
+        // `text-overflow`: layout found the overflowing lines and shaped their
+        // marker; the cut itself depends on the scroll offset, so it is resolved
+        // here (cheaply) for every frame.
+        let truncated = text_overflow.and_then(|(o, scroll_x)| {
+            o.line(line_index).and_then(|l| {
+                blitz_dom::text_overflow::resolve(o, l, &line, scroll_x).map(|c| (l, c))
+            })
+        });
         let mut marker_drawn = false;
         // Decorations accumulated for this line, keyed by decorating box, so each box is
         // painted once (spanning all its runs) using its own font — matching Firefox, which
@@ -639,7 +644,7 @@ pub(crate) fn stroke_text<'a>(
                     glyph_xform,
                     glyph_run.positioned_glyphs().filter_map(|glyph| {
                         // Truncated line: keep the glyphs that end before the cut.
-                        if let Some(cut) = cut {
+                        if let Some((_, cut)) = truncated {
                             if glyph.x + glyph.advance > cut.cut_x + 0.01 {
                                 return None;
                             }
@@ -654,30 +659,30 @@ pub(crate) fn stroke_text<'a>(
 
                 // Draw the marker once, right after the kept glyphs, once the run that
                 // reaches the cut has been painted.
-                if let Some(cut) = cut {
+                if let Some((truncated_line, cut)) = truncated {
                     let run_end = glyph_run.offset() + glyph_run.advance();
                     if !marker_drawn && run_end >= cut.cut_x - 0.01 {
                         marker_drawn = true;
+                        let marker = &truncated_line.marker;
                         let mut x = cut.marker_x;
-                        let glyphs: Vec<anyrender::Glyph> = cut
-                            .marker
+                        let glyphs: Vec<anyrender::Glyph> = marker
                             .glyphs
                             .iter()
                             .map(|(id, adv)| {
                                 let g = anyrender::Glyph {
                                     id: *id as _,
                                     x,
-                                    y: cut.baseline,
+                                    y: truncated_line.baseline,
                                 };
                                 x += adv;
                                 g
                             })
                             .collect();
                         scene.draw_glyphs(
-                            &cut.marker.font,
-                            cut.marker.font_size,
+                            &marker.font,
+                            marker.font_size,
                             !FONT_EMBOLDEN_ENABLED,
-                            run.normalized_coords(),
+                            &marker.normalized_coords,
                             embolden,
                             Fill::NonZero,
                             &anyrender::Paint::from(text_color),
@@ -708,7 +713,7 @@ pub(crate) fn stroke_text<'a>(
                 let mut run_x1 = run_x0 + glyph_run.advance() as f64;
                 // On a truncated line, decorations stop before the marker (the
                 // marker itself is undecorated, as in Chrome).
-                if let Some(cut) = cut {
+                if let Some((_, cut)) = truncated {
                     run_x1 = run_x1.min(cut.cut_x as f64);
                     if run_x1 <= run_x0 {
                         continue;

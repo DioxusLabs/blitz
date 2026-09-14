@@ -649,10 +649,31 @@ impl BaseDocument {
         );
 
         // `text-overflow`: lines are final now; find the ones to truncate and
-        // shape their marker (layout units: `width` is already scaled).
-        inline_layout.overflow = inline_layout.text_overflow.as_ref().and_then(|side| {
-            crate::layout::text_overflow::compute(&inline_layout.layout, side, width)
-        });
+        // shape their marker (layout units: `width` is already scaled). Read
+        // from style here, not at construction, so a style-only change (which
+        // relayouts without reconstructing) is honoured. The property belongs
+        // to the block container: for the anonymous block Blitz wraps mixed
+        // content in, that is the parent; the anonymous wrappers around
+        // flex/grid items do not qualify.
+        inline_layout.overflow = {
+            let node = &self.nodes[node_id];
+            let owner = if node.is_anonymous() {
+                node.parent.map(|p| &self.nodes[p]).filter(|p| {
+                    p.primary_styles()
+                        .is_some_and(|s| crate::layout::text_overflow::is_block_container(&s))
+                })
+            } else {
+                Some(node)
+            };
+            owner
+                .and_then(|n| {
+                    n.primary_styles()
+                        .and_then(|s| crate::layout::text_overflow::side_for(&s))
+                })
+                .and_then(|side| {
+                    crate::layout::text_overflow::compute(&inline_layout.layout, &side, width)
+                })
+        };
 
         #[allow(unused_mut)]
         let mut height = inline_layout.layout.height();
