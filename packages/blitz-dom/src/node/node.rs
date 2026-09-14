@@ -1303,6 +1303,7 @@ impl Node {
     ) -> Option<HitResult> {
         use style::computed_values::pointer_events::T as PointerEvents;
         use style::computed_values::visibility::T as Visibility;
+        use style::values::computed::Overflow;
 
         // Don't hit on visbility:hidden elements
         if let Some(style) = self.primary_styles() {
@@ -1365,6 +1366,20 @@ impl Node {
             return None;
         }
 
+        // When overflow is hidden or clip on an axis, children are visually
+        // clipped to the border box. A child with a transform may escape the
+        // clip region geometrically, so we must prevent hit testing from
+        // matching it. If the point is outside the clip region on a clipped
+        // axis, we skip child hit testing entirely (but still allow the node
+        // itself to be hit, e.g. for scrollbar interaction).
+        let hit_children = !self.primary_styles().is_some_and(|style| {
+            let outside_x = matches!(style.clone_overflow_x(), Overflow::Hidden | Overflow::Clip)
+                && (x < 0.0 || x > size.width + self.scroll_offset().x as f32);
+            let outside_y = matches!(style.clone_overflow_y(), Overflow::Hidden | Overflow::Clip)
+                && (y < 0.0 || y > size.height + self.scroll_offset().y as f32);
+            outside_x || outside_y
+        });
+
         // Descendants overwrite, so the innermost scroll container's thumb
         // wins. Thumb coords are border-box relative (unscrolled).
         if matches_self
@@ -1376,77 +1391,79 @@ impl Node {
             *scrollbar = Some(sb);
         }
 
-        if self.flags.is_inline_root() {
-            let content_box_offset = taffy::Point {
-                x: self.final_layout().padding.left + self.final_layout().border.left,
-                y: self.final_layout().padding.top + self.final_layout().border.top,
-            };
-            x -= content_box_offset.x;
-            y -= content_box_offset.y;
-        }
+        if hit_children {
+            if self.flags.is_inline_root() {
+                let content_box_offset = taffy::Point {
+                    x: self.final_layout().padding.left + self.final_layout().border.left,
+                    y: self.final_layout().padding.top + self.final_layout().border.top,
+                };
+                x -= content_box_offset.x;
+                y -= content_box_offset.y;
+            }
 
-        // Positive z_index hoisted children
-        if matches_hoisted_content {
-            if let Some(hoisted) = &self.stacking_context {
-                for hoisted_child in hoisted.pos_z_hoisted_children().rev() {
-                    let x = x - hoisted_child.position.x;
-                    let y = y - hoisted_child.position.y;
-                    if let Some(hit) = self
-                        .with(hoisted_child.node_id)
-                        .hit_inner(x, y, scale, scrollbar)
-                    {
-                        return Some(hit);
+            // Positive z_index hoisted children
+            if matches_hoisted_content {
+                if let Some(hoisted) = &self.stacking_context {
+                    for hoisted_child in hoisted.pos_z_hoisted_children().rev() {
+                        let x = x - hoisted_child.position.x;
+                        let y = y - hoisted_child.position.y;
+                        if let Some(hit) = self
+                            .with(hoisted_child.node_id)
+                            .hit_inner(x, y, scale, scrollbar)
+                        {
+                            return Some(hit);
+                        }
                     }
                 }
             }
-        }
 
-        // Call `.hit()` on each child in turn. If any return `Some` then return that value. Else return `Some(self.id).
-        for child_id in self.paint_children.borrow().iter().flatten().rev() {
-            if let Some(hit) = self.with(*child_id).hit_inner(x, y, scale, scrollbar) {
-                return Some(hit);
+            // Call `.hit()` on each child in turn. If any return `Some` then return that value. Else return `Some(self.id).
+            for child_id in self.paint_children.borrow().iter().flatten().rev() {
+                if let Some(hit) = self.with(*child_id).hit_inner(x, y, scale, scrollbar) {
+                    return Some(hit);
+                }
             }
-        }
 
-        // Negative z_index hoisted children
-        if matches_hoisted_content {
-            if let Some(hoisted) = &self.stacking_context {
-                for hoisted_child in hoisted.neg_z_hoisted_children().rev() {
-                    let x = x - hoisted_child.position.x;
-                    let y = y - hoisted_child.position.y;
-                    if let Some(hit) = self
-                        .with(hoisted_child.node_id)
-                        .hit_inner(x, y, scale, scrollbar)
-                    {
-                        return Some(hit);
+            // Negative z_index hoisted children
+            if matches_hoisted_content {
+                if let Some(hoisted) = &self.stacking_context {
+                    for hoisted_child in hoisted.neg_z_hoisted_children().rev() {
+                        let x = x - hoisted_child.position.x;
+                        let y = y - hoisted_child.position.y;
+                        if let Some(hit) = self
+                            .with(hoisted_child.node_id)
+                            .hit_inner(x, y, scale, scrollbar)
+                        {
+                            return Some(hit);
+                        }
                     }
                 }
             }
-        }
 
-        // Inline children
-        if self.flags.is_inline_root() {
-            let element_data = &self.element_data().unwrap();
-            if let Some(ild) = element_data.inline_layout_data.as_ref() {
-                let layout = &ild.layout;
-                let scale = layout.scale();
+            // Inline children
+            if self.flags.is_inline_root() {
+                let element_data = &self.element_data().unwrap();
+                if let Some(ild) = element_data.inline_layout_data.as_ref() {
+                    let layout = &ild.layout;
+                    let scale = layout.scale();
 
-                if let Some((cluster, _side)) =
-                    Cluster::from_point_exact(layout, x * scale, y * scale)
-                {
-                    let style_index = cluster.glyphs().next()?.style_index();
-                    let node_id = layout.styles()[style_index].brush.id;
-                    let text_pointer_events_none = self
-                        .with(node_id)
-                        .primary_styles()
-                        .is_some_and(|style| style.clone_pointer_events() == PointerEvents::None);
-                    if !text_pointer_events_none {
-                        return Some(HitResult {
-                            node_id,
-                            x,
-                            y,
-                            is_text: true,
-                        });
+                    if let Some((cluster, _side)) =
+                        Cluster::from_point_exact(layout, x * scale, y * scale)
+                    {
+                        let style_index = cluster.glyphs().next()?.style_index();
+                        let node_id = layout.styles()[style_index].brush.id;
+                        let text_pointer_events_none =
+                            self.with(node_id).primary_styles().is_some_and(|style| {
+                                style.clone_pointer_events() == PointerEvents::None
+                            });
+                        if !text_pointer_events_none {
+                            return Some(HitResult {
+                                node_id,
+                                x,
+                                y,
+                                is_text: true,
+                            });
+                        }
                     }
                 }
             }
