@@ -3,21 +3,20 @@
 //!
 //! Split in two so that scrolling stays cheap:
 //! - **post-layout** ([`compute`], called from `inline.rs` right after the
-//!   lines are final): which lines overflow, their content advance, and the
-//!   marker shaped in the font of each line's first run. Stored on the
-//!   [`TextLayout`] as `Option<Box<TextOverflowLayout>>`.
-//! - **at paint time** ([`resolve`]): the cut position for the current
-//!   horizontal scroll offset, and whether the marker is needed at all — a
-//!   scrolled box whose content end is in view shows no marker
-//!   (css-overflow §5, "ellipsis-scrolling").
+//!   lines are final): which lines overflow and where their content ends,
+//!   plus the marker shaped once from the block container's style (font,
+//!   size, colour — css-overflow §5.2). Stored on the [`TextLayout`] as
+//!   `Option<Box<TextOverflowLayout>>`.
+//! - **at paint time** ([`resolve`]): the cut position (on a grapheme-cluster
+//!   boundary) for the current horizontal scroll offset, and whether the
+//!   marker is needed at all — a scrolled box whose content end is in view
+//!   shows no marker (css-overflow §5, "ellipsis-scrolling").
 //!
 //! DOM-free on purpose, so it can move into Parley later.
 //!
 //! [`TextLayout`]: crate::node::TextLayout
 
 use parley::{FontData, Layout, Line, PositionedLayoutItem};
-use skrifa::MetadataProvider as _;
-use skrifa::raw::FontRef;
 use style::properties::ComputedValues;
 use style::values::computed::Overflow;
 use style::values::specified::box_::DisplayInside;
@@ -25,34 +24,68 @@ use style::values::specified::text::TextOverflowSide;
 
 use crate::node::TextBrush;
 
-/// The marker of one truncated line, shaped in the font of that line's first
-/// run so it matches its size, style and variation settings.
+/// One shaped run of the marker (Parley may split it across fonts when the
+/// block's font lacks a glyph).
 #[derive(Clone, Debug)]
-pub struct Marker {
+pub struct MarkerRun {
     pub font: FontData,
     pub font_size: f32,
     pub normalized_coords: Vec<i16>,
-    pub brush: TextBrush,
-    /// Glyph ids and advances, in layout units.
+    /// Glyph ids with their x offset within the marker, in layout units.
     pub glyphs: Vec<(u32, f32)>,
+}
+
+/// The marker, shaped once per inline context in the **block container's**
+/// style (css-overflow §5.2: styled and baseline-aligned according to the
+/// block), so a small block cuts a large span with a small marker.
+#[derive(Clone, Debug)]
+pub struct Marker {
+    pub runs: Vec<MarkerRun>,
     pub advance: f32,
+    pub brush: TextBrush,
+}
+
+impl Marker {
+    /// Flattens a shaped marker layout (one line) into runs.
+    pub fn from_layout(layout: &Layout<TextBrush>, brush: TextBrush) -> Option<Self> {
+        let line = layout.lines().next()?;
+        let mut runs = Vec::new();
+        for item in line.items() {
+            if let PositionedLayoutItem::GlyphRun(run) = item {
+                let glyphs = run.positioned_glyphs().map(|g| (g.id, g.x)).collect();
+                runs.push(MarkerRun {
+                    font: run.run().font().clone(),
+                    font_size: run.run().font_size(),
+                    normalized_coords: run.run().normalized_coords().to_vec(),
+                    glyphs,
+                });
+            }
+        }
+        (!runs.is_empty()).then(|| Self {
+            runs,
+            advance: line.metrics().advance,
+            brush,
+        })
+    }
 }
 
 /// A line whose content is wider than the box.
 #[derive(Clone, Debug)]
 pub struct TruncatedLine {
     pub line_index: usize,
-    /// Advance of the line's content, trailing whitespace excluded.
-    pub advance: f32,
+    /// Where the line's content ends (`offset + advance`, trailing whitespace
+    /// excluded), in layout units: `text-indent` shifts it.
+    pub end: f32,
+    /// The line's baseline — the block's, not a run's (`vertical-align`).
     pub baseline: f32,
-    pub marker: Marker,
 }
 
-/// Every candidate line of an inline context, with the box width they are
-/// measured against.
+/// Every candidate line of an inline context, the box width they are
+/// measured against, and the marker they share.
 #[derive(Clone, Debug)]
 pub struct TextOverflowLayout {
     pub max_width: f32,
+    pub marker: Marker,
     pub lines: Vec<TruncatedLine>,
 }
 
@@ -95,88 +128,47 @@ pub fn is_block_container(styles: &ComputedValues) -> bool {
     )
 }
 
-/// Shapes the marker in `font` at `font_size`; `U+2026` falls back to three
-/// periods when the font lacks it.
-fn shape_marker(
-    font: &FontData,
-    font_size: f32,
-    side: &TextOverflowSide,
-) -> Option<(Vec<(u32, f32)>, f32)> {
-    let font_ref = FontRef::from_index(font.data.as_ref(), font.index).ok()?;
-    let charmap = font_ref.charmap();
-    let metrics = font_ref.glyph_metrics(
-        skrifa::instance::Size::new(font_size),
-        skrifa::instance::LocationRef::default(),
-    );
-    let shape = |text: &mut dyn Iterator<Item = char>| -> Option<(Vec<(u32, f32)>, f32)> {
-        let mut glyphs = Vec::new();
-        let mut advance = 0.0f32;
-        for ch in text {
-            let gid = charmap.map(ch)?;
-            let adv = metrics.advance_width(gid).unwrap_or(0.0);
-            glyphs.push((gid.to_u32(), adv));
-            advance += adv;
-        }
-        Some((glyphs, advance))
-    };
-    match side {
-        TextOverflowSide::Clip => None,
-        TextOverflowSide::Ellipsis => {
-            shape(&mut std::iter::once('\u{2026}')).or_else(|| shape(&mut "...".chars()))
-        }
-        TextOverflowSide::String(s) => shape(&mut s.as_ref().chars()),
-    }
-}
-
-/// Post-layout: the lines wider than `max_width` (layout units) with their
-/// shaped marker. Lines without a glyph run (only inline boxes) are skipped:
-/// there is no run to take a font from (see Limitations in the PR).
+/// Post-layout: the lines whose content ends past `max_width` (layout
+/// units), with the marker shaped from the block's style.
 pub fn compute(
     layout: &Layout<TextBrush>,
-    side: &TextOverflowSide,
+    marker: Marker,
     max_width: f32,
 ) -> Option<Box<TextOverflowLayout>> {
-    if matches!(side, TextOverflowSide::Clip) {
-        return None;
-    }
     let mut lines = Vec::new();
     for (index, line) in layout.lines().enumerate() {
         let metrics = line.metrics();
-        let advance = metrics.advance - metrics.trailing_whitespace;
-        if advance <= max_width + 0.5 {
+        let end = metrics.offset + metrics.advance - metrics.trailing_whitespace;
+        if end <= max_width + 0.5 {
             continue;
         }
-        let Some(first) = line.items().find_map(|item| match item {
-            PositionedLayoutItem::GlyphRun(run) => Some(run),
-            _ => None,
-        }) else {
+        // Lines made only of inline boxes have nothing to cut at glyph level.
+        let has_glyphs = line
+            .items()
+            .any(|item| matches!(item, PositionedLayoutItem::GlyphRun(_)));
+        if !has_glyphs {
             continue;
-        };
-        let font = first.run().font().clone();
-        let font_size = first.run().font_size();
-        let Some((glyphs, marker_advance)) = shape_marker(&font, font_size, side) else {
-            continue;
-        };
+        }
         lines.push(TruncatedLine {
             line_index: index,
-            advance,
-            baseline: first.baseline(),
-            marker: Marker {
-                font,
-                font_size,
-                normalized_coords: first.run().normalized_coords().to_vec(),
-                brush: first.style().brush,
-                glyphs,
-                advance: marker_advance,
-            },
+            end,
+            baseline: metrics.baseline,
         });
     }
-    (!lines.is_empty()).then(|| Box::new(TextOverflowLayout { max_width, lines }))
+    (!lines.is_empty()).then(|| {
+        Box::new(TextOverflowLayout {
+            max_width,
+            marker,
+            lines,
+        })
+    })
 }
 
 /// Paint time: the cut for one line given the box's horizontal scroll offset
 /// (layout units). `None` when the scrolled view already shows the end of the
-/// content, in which case the line is painted whole.
+/// content, in which case the line is painted whole. The cut falls on a
+/// grapheme-cluster boundary: whole characters are elided, never half a
+/// base+combining pair.
 pub fn resolve(
     layout: &TextOverflowLayout,
     truncated: &TruncatedLine,
@@ -184,22 +176,26 @@ pub fn resolve(
     scroll_x: f32,
 ) -> Option<Cut> {
     let visible_end = scroll_x + layout.max_width;
-    if truncated.advance <= visible_end + 0.5 {
+    if truncated.end <= visible_end + 0.5 {
         return None;
     }
-    let cut_x = (visible_end - truncated.marker.advance).max(scroll_x);
-    // The marker starts right after the last glyph that fits, so it is never
-    // separated from the text by a gap.
-    let mut marker_x = scroll_x;
+    let limit = (visible_end - layout.marker.advance).max(scroll_x);
+    // Last cluster boundary that fits before the marker.
+    let mut cut_x = scroll_x;
     for item in line.items() {
         if let PositionedLayoutItem::GlyphRun(run) = item {
-            for g in run.positioned_glyphs() {
-                let end = g.x + g.advance;
-                if end <= cut_x + 0.01 {
-                    marker_x = marker_x.max(end);
+            let mut x = run.offset();
+            for cluster in run.run().clusters() {
+                let end = x + cluster.advance();
+                if end <= limit + 0.01 {
+                    cut_x = cut_x.max(end);
                 }
+                x = end;
             }
         }
     }
-    Some(Cut { cut_x, marker_x })
+    Some(Cut {
+        cut_x,
+        marker_x: cut_x,
+    })
 }

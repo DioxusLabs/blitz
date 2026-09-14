@@ -16,6 +16,7 @@ use taffy::{BlockItemStyle as _, Clear, Float, prelude::TaffyMaxContent};
 
 use super::resolve_calc_value;
 use crate::BaseDocument;
+use crate::node::TextBrush;
 
 impl BaseDocument {
     pub(crate) fn compute_inline_layout(
@@ -656,23 +657,47 @@ impl BaseDocument {
         // content in, that is the parent; the anonymous wrappers around
         // flex/grid items do not qualify.
         inline_layout.overflow = {
+            use crate::layout::text_overflow::{Marker, compute, is_block_container, side_for};
+            use style::values::specified::text::TextOverflowSide;
             let node = &self.nodes[node_id];
             let owner = if node.is_anonymous() {
-                node.parent.map(|p| &self.nodes[p]).filter(|p| {
-                    p.primary_styles()
-                        .is_some_and(|s| crate::layout::text_overflow::is_block_container(&s))
+                node.parent.filter(|p| {
+                    self.nodes[*p]
+                        .primary_styles()
+                        .is_some_and(|s| is_block_container(&s))
                 })
             } else {
-                Some(node)
+                Some(node_id)
             };
-            owner
-                .and_then(|n| {
-                    n.primary_styles()
-                        .and_then(|s| crate::layout::text_overflow::side_for(&s))
-                })
-                .and_then(|side| {
-                    crate::layout::text_overflow::compute(&inline_layout.layout, &side, width)
-                })
+            let request = owner.and_then(|id| {
+                let styles = self.nodes[id].primary_styles()?;
+                let side = side_for(&styles)?;
+                let styles: style::servo_arc::Arc<style::properties::ComputedValues> =
+                    (*styles).clone();
+                Some((id, styles, side))
+            });
+            request.and_then(|(owner_id, styles, side)| {
+                // The marker is styled by the block (css-overflow §5.2): shape it
+                // with the block's parley style, which also gives font fallback.
+                let text: std::borrow::Cow<'_, str> = match &side {
+                    TextOverflowSide::Ellipsis => "\u{2026}".into(),
+                    TextOverflowSide::String(s) => s.as_ref().to_string().into(),
+                    TextOverflowSide::Clip => return None,
+                };
+                let parley_style = crate::stylo_to_parley::style(owner_id, &styles);
+                let mut marker_layout: parley::Layout<TextBrush> = parley::Layout::new();
+                {
+                    let mut font_ctx = self.font_ctx.lock().unwrap();
+                    let mut builder =
+                        self.layout_ctx
+                            .tree_builder(&mut font_ctx, scale, true, &parley_style);
+                    builder.push_text(&text);
+                    builder.build_into(&mut marker_layout);
+                }
+                marker_layout.break_all_lines(None);
+                let marker = Marker::from_layout(&marker_layout, parley_style.brush)?;
+                compute(&inline_layout.layout, marker, width)
+            })
         };
 
         #[allow(unused_mut)]

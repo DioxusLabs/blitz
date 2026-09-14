@@ -663,36 +663,44 @@ pub(crate) fn stroke_text<'a>(
                     let run_end = glyph_run.offset() + glyph_run.advance();
                     if !marker_drawn && run_end >= cut.cut_x - 0.01 {
                         marker_drawn = true;
-                        let marker = &truncated_line.marker;
-                        let mut x = cut.marker_x;
-                        let glyphs: Vec<anyrender::Glyph> = marker
-                            .glyphs
-                            .iter()
-                            .map(|(id, adv)| {
-                                let g = anyrender::Glyph {
+                        // The marker is the block's: its own font(s), size and colour,
+                        // on the line's baseline.
+                        let (overflow, _) = text_overflow.expect("truncated implies overflow data");
+                        let marker = &overflow.marker;
+                        let marker_color = {
+                            let id = marker.brush.id;
+                            doc.get_node(id)
+                                .and_then(|n| n.primary_styles())
+                                .map(|s| s.get_inherited_text().color.as_color_color())
+                                .unwrap_or(text_color)
+                        };
+                        for mrun in &marker.runs {
+                            let glyphs: Vec<anyrender::Glyph> = mrun
+                                .glyphs
+                                .iter()
+                                .map(|(id, gx)| anyrender::Glyph {
                                     id: *id as _,
-                                    x,
+                                    x: cut.marker_x + gx,
                                     y: truncated_line.baseline,
-                                };
-                                x += adv;
-                                g
-                            })
-                            .collect();
-                        scene.draw_glyphs(
-                            &marker.font,
-                            marker.font_size,
-                            !FONT_EMBOLDEN_ENABLED,
-                            &marker.normalized_coords,
-                            embolden,
-                            Fill::NonZero,
-                            &anyrender::Paint::from(text_color),
-                            1.0,
-                            transform,
-                            glyph_xform,
-                            glyphs.into_iter(),
-                        );
+                                })
+                                .collect();
+                            scene.draw_glyphs(
+                                &mrun.font,
+                                mrun.font_size,
+                                !FONT_EMBOLDEN_ENABLED,
+                                &mrun.normalized_coords,
+                                embolden,
+                                Fill::NonZero,
+                                &anyrender::Paint::from(marker_color),
+                                1.0,
+                                transform,
+                                glyph_xform,
+                                glyphs.into_iter(),
+                            );
+                        }
                     }
                 }
+
                 // Accumulate this run's contribution to each decorating box on its ancestor
                 // path. The decoration is drawn once per box after the whole line has been
                 // walked (see `flush_line_decorations`), so mixed font sizes within a box
