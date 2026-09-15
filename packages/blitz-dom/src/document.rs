@@ -298,9 +298,9 @@ pub struct BaseDocument {
     /// May contain multiple nodes for the same id: `get_element_by_id`
     /// returns the first in tree order.
     pub(crate) nodes_to_id: HashMap<String, SmallVec<[NodeId; 1]>>,
-    /// `position: sticky` boxes found by the last full sticky pass, in tree
-    /// order (ancestors first); scroll and paint refresh only these.
-    pub(crate) sticky_nodes: Vec<NodeId>,
+    /// Registered `position: sticky` boxes with their layout-invariant
+    /// constraints, sorted by depth (see `sticky.rs`).
+    pub(crate) sticky_nodes: Vec<crate::sticky::StickyEntry>,
     /// Map of `<style>` and `<link>` node IDs to their associated stylesheet
     pub(crate) nodes_to_stylesheet: BTreeMap<NodeId, DocumentStyleSheet>,
     /// Incremented whenever `nodes_to_stylesheet` changes (a stylesheet is
