@@ -298,7 +298,7 @@ impl BaseDocument {
                     return false;
                 }
                 // Sticky boxes follow the scroll before any script can measure them.
-                self.update_sticky_offsets();
+                self.refresh_sticky_offsets();
 
                 if let Some(root) = self.try_root_element() {
                     let root_id = root.id;
@@ -344,7 +344,7 @@ impl BaseDocument {
                     client_height: layout.size.height as i32,
                 };
                 // Sticky boxes follow the scroll before any script can measure them.
-                self.update_sticky_offsets();
+                self.refresh_sticky_offsets();
                 dispatch_event(DomEvent::new(node_id, DomEventData::Scroll(event)));
 
                 self.show_scrollbars(node_id);
@@ -630,8 +630,10 @@ impl BaseDocument {
         let Some(node) = self.nodes.get(node_id) else {
             return;
         };
-        let target =
-            node.absolute_position(node.scroll_offset().x as f32, node.scroll_offset().y as f32);
+        let target = node.in_flow_absolute_position(
+            node.scroll_offset().x as f32,
+            node.scroll_offset().y as f32,
+        );
         let target_size = node.final_layout().size;
         let Some(root_id) = self.try_root_element().map(|root| root.id) else {
             return;
