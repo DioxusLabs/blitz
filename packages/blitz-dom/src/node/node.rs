@@ -267,6 +267,30 @@ impl Node {
         self.layout_data().sticky_offset
     }
 
+    /// Where the box is drawn relative to its layout parent: the layout
+    /// location plus the paint-time `position: sticky` shift. Every geometry
+    /// consumer (paint, hit testing, CSSOM, caret and selection) reads this,
+    /// so none can drift out of step with what is on screen; only
+    /// `scrollIntoView` wants the in-flow location.
+    pub fn visual_location(&self) -> crate::Point<f32> {
+        let location = self.final_layout().location;
+        let sticky = self.sticky_offset();
+        crate::Point {
+            x: location.x + sticky.x,
+            y: location.y + sticky.y,
+        }
+    }
+
+    /// [`Self::visual_location`] from the unrounded layout (sub-pixel CSSOM).
+    pub fn unrounded_visual_location(&self) -> crate::Point<f32> {
+        let location = self.unrounded_layout().location;
+        let sticky = self.sticky_offset();
+        crate::Point {
+            x: location.x + sticky.x,
+            y: location.y + sticky.y,
+        }
+    }
+
     #[inline]
     pub fn scrollable_overflow(&self) -> &KurboRect {
         &self.layout_data().scrollable_overflow
@@ -1328,9 +1352,9 @@ impl Node {
             .primary_styles()
             .is_some_and(|style| style.clone_pointer_events() == PointerEvents::None);
 
-        let sticky = self.sticky_offset();
-        let mut x = x - self.final_layout().location.x - sticky.x + self.scroll_offset().x as f32;
-        let mut y = y - self.final_layout().location.y - sticky.y + self.scroll_offset().y as f32;
+        let visual = self.visual_location();
+        let mut x = x - visual.x + self.scroll_offset().x as f32;
+        let mut y = y - visual.y + self.scroll_offset().y as f32;
 
         if let Some(t) = self.transform().as_deref() {
             let p = t.inverse() * kurbo::Point::new(x as f64 * scale, y as f64 * scale);
@@ -1540,9 +1564,9 @@ impl Node {
     /// Computes the Document-relative coordinates of the `Node`
     pub fn absolute_position(&self, x: f32, y: f32) -> crate::util::Point<f32> {
         // Where the box is drawn: sticky shifts included (caret, selection, CSSOM).
-        let sticky = self.sticky_offset();
-        let x = x + self.final_layout().location.x + sticky.x - self.scroll_offset().x as f32;
-        let y = y + self.final_layout().location.y + sticky.y - self.scroll_offset().y as f32;
+        let visual = self.visual_location();
+        let x = x + visual.x - self.scroll_offset().x as f32;
+        let y = y + visual.y - self.scroll_offset().y as f32;
 
         // Recurse up the layout hierarchy
         self.layout_parent
@@ -1554,9 +1578,9 @@ impl Node {
     /// Computes the Document-relative coordinates of the `Node` from the unrounded
     /// (sub-pixel) layout, for CSSOM geometry APIs such as `getBoundingClientRect`
     pub fn unrounded_absolute_position(&self, x: f32, y: f32) -> crate::util::Point<f32> {
-        let sticky = self.sticky_offset();
-        let x = x + self.unrounded_layout().location.x + sticky.x - self.scroll_offset().x as f32;
-        let y = y + self.unrounded_layout().location.y + sticky.y - self.scroll_offset().y as f32;
+        let visual = self.unrounded_visual_location();
+        let x = x + visual.x - self.scroll_offset().x as f32;
+        let y = y + visual.y - self.scroll_offset().y as f32;
 
         self.layout_parent
             .get()
@@ -1607,11 +1631,10 @@ impl Node {
         let mut y = 0.0;
         let mut current = self;
         loop {
-            let layout = current.final_layout();
             // `offsetTop` of a sticky box reports where it is drawn.
-            let sticky = current.sticky_offset();
-            x += layout.location.x + sticky.x;
-            y += layout.location.y + sticky.y;
+            let visual = current.visual_location();
+            x += visual.x;
+            y += visual.y;
 
             let Some(parent_id) = current.layout_parent.get() else {
                 break;
