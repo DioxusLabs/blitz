@@ -541,6 +541,11 @@ impl BaseDocument {
         let stacking_context = &mut new_stacking_context;
 
         let incremental = self.incremental_layout;
+        // Keep the sticky registry in step with this node's styles.
+        let is_sticky = self.nodes[node_id]
+            .primary_styles()
+            .is_some_and(|s| s.clone_position() == style::computed_values::position::T::Sticky);
+        self.note_sticky(node_id, is_sticky);
         let display = {
             let node = self.nodes.get_mut(node_id).unwrap();
 

@@ -60,7 +60,7 @@ mod resolved_style;
 mod scrolling;
 mod selection;
 /// `position: sticky` offsets, resolved after layout.
-mod sticky;
+pub mod sticky;
 /// Implementations that interact with servo's style engine
 mod stylo;
 mod stylo_device;

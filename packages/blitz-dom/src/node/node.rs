@@ -58,6 +58,8 @@ bitflags! {
         const IS_TABLE_ROOT = 0b00000010;
         /// Whether the node is "in the document" (~= has a parent and isn't a template node)
         const IS_IN_DOCUMENT = 0b00000100;
+        /// Registered in the document's `position: sticky` list (`sticky.rs`).
+        const IS_STICKY = 0b00010000;
     }
 }
 
@@ -1524,11 +1526,23 @@ impl Node {
         Some(offset)
     }
 
-    /// Computes the Document-relative coordinates of the `Node`
-    pub fn absolute_position(&self, x: f32, y: f32) -> crate::util::Point<f32> {
-        // In-flow position (no sticky shift): what `scrollIntoView` targets.
+    /// Document-relative coordinates without sticky shifts: the in-flow
+    /// position, which `scrollIntoView` targets.
+    pub fn in_flow_absolute_position(&self, x: f32, y: f32) -> crate::util::Point<f32> {
         let x = x + self.final_layout().location.x - self.scroll_offset().x as f32;
         let y = y + self.final_layout().location.y - self.scroll_offset().y as f32;
+        self.layout_parent
+            .get()
+            .map(|i| self.with(i).in_flow_absolute_position(x, y))
+            .unwrap_or(crate::util::Point { x, y })
+    }
+
+    /// Computes the Document-relative coordinates of the `Node`
+    pub fn absolute_position(&self, x: f32, y: f32) -> crate::util::Point<f32> {
+        // Where the box is drawn: sticky shifts included (caret, selection, CSSOM).
+        let sticky = self.sticky_offset();
+        let x = x + self.final_layout().location.x + sticky.x - self.scroll_offset().x as f32;
+        let y = y + self.final_layout().location.y + sticky.y - self.scroll_offset().y as f32;
 
         // Recurse up the layout hierarchy
         self.layout_parent
