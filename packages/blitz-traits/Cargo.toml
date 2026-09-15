@@ -20,3 +20,4 @@ smol_str = { workspace = true }
 bitflags = { workspace = true }
 cursor-icon = { workspace = true }
 serde = { workspace = true }
+futures-core = { workspace = true }
