@@ -2391,8 +2391,9 @@ impl BaseDocument {
         let mut current = Some(node_id);
         while let Some(id) = current {
             let node = &self.nodes[id];
-            pos.x += node.unrounded_layout().location.x - node.scroll_offset().x as f32;
-            pos.y += node.unrounded_layout().location.y - node.scroll_offset().y as f32;
+            let visual = node.unrounded_visual_location();
+            pos.x += visual.x - node.scroll_offset().x as f32;
+            pos.y += visual.y - node.scroll_offset().y as f32;
             current = node.containing_block();
         }
         (pos, *self.nodes[node_id].unrounded_layout())

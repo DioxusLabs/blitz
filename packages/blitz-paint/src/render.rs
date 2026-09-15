@@ -289,15 +289,9 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
     }
 
     fn node_transform(&self, node: &Node, parent: Affine) -> Affine {
-        let location = node.final_layout().location;
-        let sticky = node.sticky_offset();
+        let visual = node.visual_location();
         parent
-            * Affine::translate(
-                Vec2::new(
-                    (location.x + sticky.x) as f64,
-                    (location.y + sticky.y) as f64,
-                ) * self.scale,
-            )
+            * Affine::translate(Vec2::new(visual.x as f64, visual.y as f64) * self.scale)
             * node.transform().as_deref().copied().unwrap_or_default()
     }
 
