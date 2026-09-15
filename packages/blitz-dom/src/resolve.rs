@@ -391,7 +391,7 @@ impl BaseDocument {
         // println!("\n\nRESOLVE LAYOUT\n===========\n");
 
         taffy::compute_root_layout(self, root_element_id, available_space);
-        taffy::round_layout(self, root_element_id);
+        crate::layout::round_layout(self, root_element_id, self.viewport.scale());
 
         // println!("\n\n");
         // taffy::print_tree(self, root_node_id)
