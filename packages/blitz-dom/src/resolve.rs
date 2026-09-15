@@ -156,6 +156,9 @@ impl BaseDocument {
         self.subdoc_is_animating = subdoc_is_animating;
         timer.record_time("subdocs");
 
+        self.update_sticky_offsets();
+        timer.record_time("sticky");
+
         timer.print_times(&format!("Resolve({}): ", self.id()));
     }
 
