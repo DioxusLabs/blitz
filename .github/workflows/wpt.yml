@@ -36,10 +36,15 @@ jobs:
           cache-workspace-crates: "true"
           cache-provider: "warpbuild"
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - uses: awalsh128/cache-apt-pkgs-action@latest
-        with:
-          packages: libfontconfig1-dev
-          version: 1.0
+      # cache-apt-pkgs-action is disabled: the cached tarball is workspace-relative and the
+      # WarpBuild arm64 runner uses /runner/_work instead of /home/runner/work, so entries
+      # created on GitHub-hosted runners extract to the wrong place and "restore" 0 packages.
+      # - uses: awalsh128/cache-apt-pkgs-action@latest
+      #   with:
+      #     packages: libfontconfig1-dev
+      #     version: 1.0
+      - name: Install Fontconfig
+        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
       - name: Clone WPT tests
         run: git clone --depth 1 --revision "$WPT_COMMIT" https://github.com/web-platform-tests/wpt ./wpt/tests
       - name: Build WPT runner
