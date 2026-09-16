@@ -1274,6 +1274,7 @@ impl<'doc> DocumentMutator<'doc> {
             let value = value.to_string();
             let id = self.create_text_node(&value);
             self.append_children(target_id, &[id]);
+            return;
         }
         #[cfg(feature = "file-input")]
         if let ("input", Some("file")) = (tagname, type_attr) {
