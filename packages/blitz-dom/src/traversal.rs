@@ -182,6 +182,34 @@ impl BaseDocument {
         }
     }
 
+    /// Like [`Self::iter_subtree_mut`], but also descends into shadow roots.
+    /// For in-document bookkeeping (added/removed subtrees) only: light-tree
+    /// callers rely on `iter_subtree_mut` staying light.
+    pub fn iter_subtree_with_shadow_mut(
+        &mut self,
+        node_id: NodeId,
+        mut cb: impl FnMut(NodeId, &mut BaseDocument),
+    ) {
+        cb(node_id, self);
+        iter_inner(self, node_id, &mut cb);
+        fn iter_inner(
+            doc: &mut BaseDocument,
+            node_id: NodeId,
+            cb: &mut impl FnMut(NodeId, &mut BaseDocument),
+        ) {
+            if let Some(root) = doc.nodes[node_id].shadow_root {
+                cb(root, doc);
+                iter_inner(doc, root, cb);
+            }
+            let children = std::mem::take(&mut doc.nodes[node_id].children);
+            for child_id in children.iter().cloned() {
+                cb(child_id, doc);
+                iter_inner(doc, child_id, cb);
+            }
+            doc.nodes[node_id].children = children;
+        }
+    }
+
     pub fn iter_children_and_pseudos_mut(
         &mut self,
         node_id: NodeId,
