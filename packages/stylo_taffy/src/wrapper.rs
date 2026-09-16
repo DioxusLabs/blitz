@@ -115,9 +115,6 @@ impl<T: Deref<Target = ComputedValues>> taffy::CoreStyle for TaffyStyloStyle<T> 
 
     #[inline]
     fn inset(&self) -> taffy::Rect<taffy::LengthPercentageAuto> {
-<<<<<<< HEAD
-        convert::inset_rect(&self.style)
-=======
         // `position: sticky` is laid out as relative, but its insets are
         // sticking thresholds applied after layout (blitz-dom's sticky
         // resolution), not relative offsets: Taffy must not see them.
@@ -129,14 +126,7 @@ impl<T: Deref<Target = ComputedValues>> taffy::CoreStyle for TaffyStyloStyle<T> 
                 bottom: taffy::LengthPercentageAuto::AUTO,
             };
         }
-        let position_styles = self.style.get_position();
-        taffy::Rect {
-            left: convert::inset(&position_styles.left),
-            right: convert::inset(&position_styles.right),
-            top: convert::inset(&position_styles.top),
-            bottom: convert::inset(&position_styles.bottom),
-        }
->>>>>>> 46969e16 (Implement position: sticky)
+        convert::inset_rect(&self.style)
     }
 
     #[inline]
