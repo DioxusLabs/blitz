@@ -61,7 +61,7 @@ bitflags! {
         /// Whether the node is an inline box whose in-flow content is block-level only
         const IS_INLINE_WITH_ONLY_BLOCK_CHILDREN = 0b00100000;
         /// Registered in the document's `position: sticky` list (`sticky.rs`).
-        const IS_STICKY = 0b00010000;
+        const IS_STICKY = 0b00001000;
     }
 }
 
