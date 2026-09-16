@@ -29,8 +29,46 @@ pub(crate) const CONSTRUCT_DESCENDENT: RestyleDamage =
 pub(crate) const ONLY_RELAYOUT: RestyleDamage =
     RestyleDamage::from_bits_retain(0b_0000_0000_0000_1000);
 
-pub(crate) const ALL_DAMAGE: RestyleDamage =
-    RestyleDamage::from_bits_retain(0b_0000_0000_0111_1111);
+/// A mutation somewhere inside an SVG fragment (`svg-native`) invalidates
+/// that fragment's `SvgContext` and needs it rebuilt. Kept separate from
+/// `CONSTRUCT_BOX` so mutating one `<svg>` root doesn't force an
+/// HTML-style whole-subtree box reconstruction, and so sibling `<svg>`
+/// roots are left untouched.
+pub(crate) const CONSTRUCT_SVG: RestyleDamage =
+    RestyleDamage::from_bits_retain(0b_0000_0000_1000_0000);
+
+// Composed from the individual bits above, not a literal: Servo's damage
+// bits are cumulative rather than disjoint, so a hand-picked literal here
+// silently drops whatever bit it forgets.
+pub(crate) const ALL_DAMAGE: RestyleDamage = RestyleDamage::from_bits_retain(
+    RestyleDamage::RELAYOUT.bits()
+        | CONSTRUCT_BOX.bits()
+        | CONSTRUCT_FC.bits()
+        | CONSTRUCT_DESCENDENT.bits()
+        | CONSTRUCT_SVG.bits(),
+);
+
+#[cfg(feature = "svg-native")]
+impl BaseDocument {
+    /// Mark the `SvgContext` containing `node_id` for rebuild. Walks the
+    /// DOM `parent` chain rather than `node_layout_ancestors`, because
+    /// nodes inside an SVG fragment have no Taffy layout parent at all.
+    /// Only the DOM tree connects them to their root `<svg>`.
+    pub(crate) fn propagate_svg_damage(&mut self, node_id: NodeId) {
+        use crate::node::SpecialElementData;
+
+        let mut cur = Some(node_id);
+        while let Some(id) = cur {
+            if let Some(elem) = self.nodes[id].data.downcast_element() {
+                if matches!(elem.special_data, SpecialElementData::SvgRoot(_)) {
+                    self.nodes[id].insert_damage(CONSTRUCT_SVG);
+                    return;
+                }
+            }
+            cur = self.nodes[id].parent;
+        }
+    }
+}
 
 impl BaseDocument {
     pub(crate) fn propagate_damage_flags(

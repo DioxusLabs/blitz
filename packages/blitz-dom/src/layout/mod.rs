@@ -268,6 +268,41 @@ impl BaseDocument {
                             }
                             ImageData::None => (IntrinsicSizes::default(), taffy::Size::ZERO),
                         },
+                        // `svg-native`: the `SvgContext` that would normally hold a parsed
+                        // `viewBox` doesn't exist yet here, so read the raw attribute instead.
+                        // `viewBox` isn't a CSS property, so there's no presentation-hint path
+                        // for it to arrive through anyway.
+                        #[cfg(feature = "svg-native")]
+                        SpecialElementData::SvgRoot(_) => {
+                            let viewbox_ratio = element_data
+                                .attr(local_name!("viewBox"))
+                                .and_then(crate::svg::viewport::parse_viewbox)
+                                .filter(|[_, _, width, height]| *width > 0.0 && *height > 0.0)
+                                .map(|[_, _, width, height]| (width / height) as f32);
+                            match viewbox_ratio {
+                                // https://svgwg.org/svg2-draft/coords.html#SizingSVGInCSS:
+                                // a `viewBox` alone gives an intrinsic ratio but no intrinsic
+                                // size, so this falls back to the default object size like
+                                // any other ratio-only replaced element.
+                                Some(ratio) => (
+                                    IntrinsicSizes {
+                                        width: None,
+                                        height: None,
+                                        ratio: Some(ratio),
+                                    },
+                                    DEFAULT_OBJECT_SIZE,
+                                ),
+                                // No usable `viewBox`: SVG's own default intrinsic size.
+                                None => (
+                                    IntrinsicSizes {
+                                        width: Some(300.0),
+                                        height: Some(150.0),
+                                        ratio: None,
+                                    },
+                                    DEFAULT_OBJECT_SIZE,
+                                ),
+                            }
+                        }
                         SpecialElementData::Canvas(_)
                         | SpecialElementData::SubDocument(_)
                         | SpecialElementData::None => {
