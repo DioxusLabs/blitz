@@ -246,7 +246,22 @@ pub fn box_sizing(input: stylo::BoxSizing) -> taffy::BoxSizing {
     }
 }
 
+/// Convert the inset properties to a Taffy `Rect`. Insets have no effect on
+/// `position: static` boxes, so they are reported as `auto` in that case.
 #[inline]
+pub fn inset_rect(style: &stylo::ComputedValues) -> taffy::Rect<taffy::LengthPercentageAuto> {
+    if style.get_box().position == stylo::Position::Static {
+        return taffy::Rect::auto();
+    }
+    let pos = style.get_position();
+    taffy::Rect {
+        left: self::inset(&pos.left),
+        right: self::inset(&pos.right),
+        top: self::inset(&pos.top),
+        bottom: self::inset(&pos.bottom),
+    }
+}
+
 pub fn position(input: stylo::Position) -> taffy::Position {
     match input {
         // TODO: support position:static
@@ -750,12 +765,7 @@ pub fn to_taffy_style(style: &stylo::ComputedValues) -> taffy::Style<Atom> {
         },
         aspect_ratio: self::aspect_ratio(pos.aspect_ratio),
 
-        inset: taffy::Rect {
-            left: self::inset(&pos.left),
-            right: self::inset(&pos.right),
-            top: self::inset(&pos.top),
-            bottom: self::inset(&pos.bottom),
-        },
+        inset: self::inset_rect(style),
         margin: taffy::Rect {
             left: self::margin(&margin.margin_left),
             right: self::margin(&margin.margin_right),
