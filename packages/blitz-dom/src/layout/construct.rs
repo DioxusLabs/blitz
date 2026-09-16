@@ -1033,14 +1033,6 @@ pub(crate) fn build_inline_layout_into(
     // Create a parley tree builder
     let mut builder = layout_ctx.tree_builder(font_ctx, scale, true, &parley_style);
 
-    // Set whitespace collapsing mode
-    let collapse_mode = root_node_style
-        .as_ref()
-        .map(|s| s.get_inherited_text().white_space_collapse)
-        .map(stylo_to_parley::white_space_collapse)
-        .unwrap_or(WhiteSpaceCollapse::Collapse);
-    builder.set_white_space_mode(collapse_mode);
-
     let text_transform = root_node_style
         .as_ref()
         .map(|s| s.clone_text_transform() & TextTransform::CASE_TRANSFORMS)
@@ -1076,7 +1068,6 @@ pub(crate) fn build_inline_layout_into(
             nodes,
             inline_context_root_node_id,
             before_id,
-            collapse_mode,
             text_transform,
         );
     }
@@ -1086,7 +1077,6 @@ pub(crate) fn build_inline_layout_into(
             nodes,
             inline_context_root_node_id,
             child_id,
-            collapse_mode,
             text_transform,
         );
     }
@@ -1096,7 +1086,6 @@ pub(crate) fn build_inline_layout_into(
             nodes,
             inline_context_root_node_id,
             after_id,
-            collapse_mode,
             text_transform,
         );
     }
@@ -1109,7 +1098,6 @@ pub(crate) fn build_inline_layout_into(
         nodes: &crate::NodeTree,
         parent_id: NodeId,
         node_id: NodeId,
-        collapse_mode: WhiteSpaceCollapse,
         parent_text_transform: TextTransform,
     ) {
         let node = &nodes[node_id];
@@ -1119,13 +1107,6 @@ pub(crate) fn build_inline_layout_into(
 
         let style = node.primary_styles();
         let style = style.as_ref();
-
-        // Set whitespace collapsing mode
-        let collapse_mode = style
-            .map(|s| s.clone_white_space_collapse())
-            .map(stylo_to_parley::white_space_collapse)
-            .unwrap_or(collapse_mode);
-        builder.set_white_space_mode(collapse_mode);
 
         let text_transform = style
             .map(|s| s.clone_text_transform() & TextTransform::CASE_TRANSFORMS)
@@ -1165,7 +1146,6 @@ pub(crate) fn build_inline_layout_into(
                                 nodes,
                                 parent_id,
                                 child_id,
-                                collapse_mode,
                                 text_transform,
                             );
                         }
@@ -1195,11 +1175,11 @@ pub(crate) fn build_inline_layout_into(
                         } else if *tag_name == local_name!("br") {
                             // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
                             // TODO: update span id for br spans
-                            builder.push_style_modification_span(&[]);
-                            builder.set_white_space_mode(WhiteSpaceCollapse::Preserve);
+                            builder.push_style_modification_span(&[
+                                StyleProperty::WhiteSpaceCollapse(WhiteSpaceCollapse::Preserve),
+                            ]);
                             builder.push_text("\n");
                             builder.pop_style_span();
-                            builder.set_white_space_mode(collapse_mode);
                         } else {
                             // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
                             let style = node
@@ -1215,7 +1195,6 @@ pub(crate) fn build_inline_layout_into(
                                     nodes,
                                     node_id,
                                     before_id,
-                                    collapse_mode,
                                     text_transform,
                                 );
                             }
@@ -1226,7 +1205,6 @@ pub(crate) fn build_inline_layout_into(
                                     nodes,
                                     node_id,
                                     child_id,
-                                    collapse_mode,
                                     text_transform,
                                 );
                             }
@@ -1236,7 +1214,6 @@ pub(crate) fn build_inline_layout_into(
                                     nodes,
                                     node_id,
                                     after_id,
-                                    collapse_mode,
                                     text_transform,
                                 );
                             }

@@ -285,9 +285,9 @@ pub(crate) fn white_space_collapse(input: stylo::WhiteSpaceCollapse) -> parley::
     match input {
         stylo::WhiteSpaceCollapse::Collapse => parley::WhiteSpaceCollapse::Collapse,
         stylo::WhiteSpaceCollapse::Preserve => parley::WhiteSpaceCollapse::Preserve,
+        stylo::WhiteSpaceCollapse::PreserveBreaks => parley::WhiteSpaceCollapse::PreserveBreaks,
 
-        // TODO: Implement PreserveBreaks and BreakSpaces modes
-        stylo::WhiteSpaceCollapse::PreserveBreaks => parley::WhiteSpaceCollapse::Preserve,
+        // TODO: Implement BreakSpaces mode
         stylo::WhiteSpaceCollapse::BreakSpaces => parley::WhiteSpaceCollapse::Preserve,
     }
 }
@@ -442,6 +442,7 @@ pub(crate) fn style(
         word_spacing,
         letter_spacing,
         text_wrap_mode,
+        white_space_collapse: white_space_collapse(itext_styles.white_space_collapse),
         overflow_wrap,
         word_break,
 
