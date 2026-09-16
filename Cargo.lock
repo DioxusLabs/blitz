@@ -3275,7 +3275,7 @@ dependencies = [
 [[package]]
 name = "fontique"
 version = "0.11.0"
-source = "git+https://github.com/DioxusLabs/parley?rev=db2513b37032dea62023a35acbc059d4b89e2d8a#db2513b37032dea62023a35acbc059d4b89e2d8a"
+source = "git+https://github.com/DioxusLabs/parley?rev=db0bc66eeee67a00f0651692458601fe4feb8c24#db0bc66eeee67a00f0651692458601fe4feb8c24"
 dependencies = [
  "hashbrown 0.17.1",
  "linebender_resource_handle",
@@ -5942,12 +5942,12 @@ dependencies = [
 [[package]]
 name = "parlance"
 version = "0.1.0"
-source = "git+https://github.com/DioxusLabs/parley?rev=db2513b37032dea62023a35acbc059d4b89e2d8a#db2513b37032dea62023a35acbc059d4b89e2d8a"
+source = "git+https://github.com/DioxusLabs/parley?rev=db0bc66eeee67a00f0651692458601fe4feb8c24#db0bc66eeee67a00f0651692458601fe4feb8c24"
 
 [[package]]
 name = "parley"
 version = "0.11.0"
-source = "git+https://github.com/DioxusLabs/parley?rev=db2513b37032dea62023a35acbc059d4b89e2d8a#db2513b37032dea62023a35acbc059d4b89e2d8a"
+source = "git+https://github.com/DioxusLabs/parley?rev=db0bc66eeee67a00f0651692458601fe4feb8c24#db0bc66eeee67a00f0651692458601fe4feb8c24"
 dependencies = [
  "fontique",
  "hashbrown 0.17.1",
@@ -5961,15 +5961,20 @@ dependencies = [
 [[package]]
 name = "parley_data"
 version = "0.11.0"
-source = "git+https://github.com/DioxusLabs/parley?rev=db2513b37032dea62023a35acbc059d4b89e2d8a#db2513b37032dea62023a35acbc059d4b89e2d8a"
+source = "git+https://github.com/DioxusLabs/parley?rev=db0bc66eeee67a00f0651692458601fe4feb8c24#db0bc66eeee67a00f0651692458601fe4feb8c24"
 dependencies = [
  "icu_properties",
 ]
 
 [[package]]
+name = "parley_emoji"
+version = "0.11.0"
+source = "git+https://github.com/DioxusLabs/parley?rev=db0bc66eeee67a00f0651692458601fe4feb8c24#db0bc66eeee67a00f0651692458601fe4feb8c24"
+
+[[package]]
 name = "parley_engine"
 version = "0.11.0"
-source = "git+https://github.com/DioxusLabs/parley?rev=db2513b37032dea62023a35acbc059d4b89e2d8a#db2513b37032dea62023a35acbc059d4b89e2d8a"
+source = "git+https://github.com/DioxusLabs/parley?rev=db0bc66eeee67a00f0651692458601fe4feb8c24#db0bc66eeee67a00f0651692458601fe4feb8c24"
 dependencies = [
  "fontique",
  "harfrust",
@@ -5980,6 +5985,7 @@ dependencies = [
  "linebender_resource_handle",
  "parlance",
  "parley_data",
+ "parley_emoji",
  "skrifa",
 ]
 
