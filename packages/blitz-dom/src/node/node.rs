@@ -59,7 +59,7 @@ bitflags! {
         /// Whether the node is "in the document" (~= has a parent and isn't a template node)
         const IS_IN_DOCUMENT = 0b00000100;
         /// Registered in the document's `position: sticky` list (`sticky.rs`).
-        const IS_STICKY = 0b00010000;
+        const IS_STICKY = 0b00001000;
     }
 }
 

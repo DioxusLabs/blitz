@@ -167,11 +167,26 @@ impl BaseDocument {
             viewport.window_size.1 as f32 / scale,
         );
         let mut entries = std::mem::take(&mut self.sticky_nodes);
+        // Drop nodes that left the document or have no box (`display: none`),
+        // clearing their flag so a node moved back in (keyed lists) registers
+        // again: the flag must mirror registration exactly.
+        let mut dropped = Vec::new();
         entries.retain(|e| {
-            self.nodes
-                .get(e.node)
-                .is_some_and(|n| n.flags.is_in_document() && n.element_data().is_some())
+            let keep = self.nodes.get(e.node).is_some_and(|n| {
+                n.flags.is_in_document()
+                    && n.element_data().is_some()
+                    && n.display_style().is_some()
+            });
+            if !keep {
+                dropped.push(e.node);
+            }
+            keep
         });
+        for id in dropped {
+            if let Some(n) = self.nodes.get_mut(id) {
+                n.flags.set(crate::node::NodeFlags::IS_STICKY, false);
+            }
+        }
         for entry in entries.iter_mut() {
             entry.constraints = self.constraints_for(entry.node, root, viewport_size);
         }
@@ -246,14 +261,16 @@ impl BaseDocument {
             (x0, y0, x1 - x0, y1 - y0, taffy::Rect::zero())
         };
 
-        // Walk up to the nearest scroll container (or fixed ancestor), noting
-        // sticky ancestors on the way; positions stay in-flow here — the
-        // ancestors' shifts are applied at refresh time.
+        // Walk up the *layout* parent chain (locations are relative to it: an
+        // inline-level box's layout parent is the inline root, not its span)
+        // to the nearest scroll container (or fixed ancestor), noting sticky
+        // ancestors on the way; positions stay in-flow here — the ancestors'
+        // shifts are applied at refresh time.
         let mut x = own_x;
         let mut y = own_y;
         let mut container: Option<NodeId> = None;
         let mut sticky_ancestors = Vec::new();
-        let mut cur = node.parent;
+        let mut cur = self.layout_ancestor(id);
         while let Some(a) = cur {
             if a == root {
                 break;
@@ -273,7 +290,7 @@ impl BaseDocument {
             let l = anc.final_layout();
             x += l.location.x;
             y += l.location.y;
-            cur = anc.parent;
+            cur = self.layout_ancestor(a);
         }
         sticky_ancestors.reverse();
 
@@ -289,13 +306,13 @@ impl BaseDocument {
             None => viewport_size,
         };
 
-        // Containing block: the content box of the nearest ancestor that has a
-        // box (for a cell in a row: the table).
-        let mut cb_id = parent_id;
+        // Containing block: the content box of the nearest layout ancestor
+        // that has a box (for a cell in a row: the table).
+        let mut cb_id = self.layout_ancestor(id).unwrap_or(parent_id);
         let mut parent_x = x - own_x;
         let mut parent_y = y - own_y;
         while cb_id != root && is_boxless_table_part(&self.nodes[cb_id]) {
-            let Some(up) = self.nodes[cb_id].parent else {
+            let Some(up) = self.layout_ancestor(cb_id) else {
                 break;
             };
             let l = self.nodes[cb_id].final_layout();
@@ -327,14 +344,14 @@ impl BaseDocument {
         let mut extra_scrollers = Vec::new();
         if let Some(first) = container {
             let below_cb = {
-                let mut cur = self.nodes[first].parent;
+                let mut cur = self.layout_ancestor(first);
                 let mut found = false;
                 while let Some(a) = cur {
                     if a == cb_id {
                         found = true;
                         break;
                     }
-                    cur = self.nodes[a].parent;
+                    cur = self.layout_ancestor(a);
                 }
                 found
             };
@@ -350,7 +367,9 @@ impl BaseDocument {
                     let l = cn.final_layout();
                     origin_x -= l.location.x;
                     origin_y -= l.location.y;
-                    let Some(up) = cn.parent else { break };
+                    let Some(up) = self.layout_ancestor(c) else {
+                        break;
+                    };
                     if up == root {
                         break;
                     }
@@ -399,6 +418,14 @@ impl BaseDocument {
             extra_scrollers,
             boxless,
         })
+    }
+
+    /// The node whose coordinate space `final_layout().location` is relative
+    /// to: the layout parent, falling back to the DOM parent for nodes that
+    /// are not in the layout tree (boxless table parts).
+    fn layout_ancestor(&self, id: NodeId) -> Option<NodeId> {
+        let node = &self.nodes[id];
+        node.layout_parent.get().or(node.parent)
     }
 
     /// The scroll-dependent part: the shift for the current scroll offsets.
