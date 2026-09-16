@@ -108,6 +108,10 @@ impl BaseDocument {
         self.resolve_layout();
         timer.record_time("layout");
 
+        // Hoisted (z-indexed) paint children are positioned relative to their stacking
+        // context root, which depends on the layout of every box in between.
+        self.resolve_hoisted_paint_positions();
+
         // Resolve transforms
         self.resolve_transforms(root_node_id);
         timer.record_time("transform");

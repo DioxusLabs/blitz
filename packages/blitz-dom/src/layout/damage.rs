@@ -419,7 +419,36 @@ impl BaseDocument {
     }
 
     pub fn flush_styles_to_layout(&mut self, node_id: NodeId) {
+        self.hoisted_paint_roots.clear();
         self.flush_styles_to_layout_impl(node_id, None);
+    }
+
+    /// Compute the offset of each hoisted (z-indexed) paint child relative to the stacking
+    /// context root it was hoisted to, from the freshly computed layout. Must run after
+    /// layout, as the offsets depend on the positions of every box between the two.
+    pub(crate) fn resolve_hoisted_paint_positions(&mut self) {
+        let roots = std::mem::take(&mut self.hoisted_paint_roots);
+        for &root_id in &roots {
+            let Some(mut stacking_context) = self.nodes[root_id].stacking_context.take() else {
+                continue;
+            };
+            for hoisted in stacking_context.children.iter_mut() {
+                let mut position = taffy::Point::ZERO;
+                let mut current = self.nodes[hoisted.node_id].layout_parent.get();
+                while let Some(node_id) = current.filter(|id| *id != root_id) {
+                    let node = &self.nodes[node_id];
+                    let location = node.final_layout().location;
+                    let scroll_offset = node.scroll_offset();
+                    position.x += location.x - scroll_offset.x as f32;
+                    position.y += location.y - scroll_offset.y as f32;
+                    current = node.layout_parent.get();
+                }
+                hoisted.position = position;
+            }
+            stacking_context.compute_content_size(self);
+            self.nodes[root_id].stacking_context = Some(stacking_context);
+        }
+        self.hoisted_paint_roots = roots;
     }
 
     /// Flush the image layers of nodes whose style changed during the last
@@ -638,18 +667,14 @@ impl BaseDocument {
         }
 
         if let Some(parent_stacking_context) = parent_stacking_context {
-            let position = self.nodes[node_id].final_layout().location;
-            let scroll_offset = *self.nodes[node_id].scroll_offset();
-            for hoisted in stacking_context.children.iter_mut() {
-                hoisted.position.x += position.x - scroll_offset.x as f32;
-                hoisted.position.y += position.y - scroll_offset.y as f32;
-            }
             parent_stacking_context
                 .children
                 .extend(stacking_context.children.iter().cloned());
         } else {
             stacking_context.sort();
-            stacking_context.compute_content_size(self);
+            if !stacking_context.children.is_empty() {
+                self.hoisted_paint_roots.push(node_id);
+            }
             self.nodes[node_id].stacking_context = Some(Box::new(new_stacking_context));
         }
     }

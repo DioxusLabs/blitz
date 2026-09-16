@@ -318,6 +318,9 @@ pub struct BaseDocument {
     pub(crate) changed_nodes: HashSet<NodeId>,
     /// Set of changed nodes for updating the accessibility tree
     pub(crate) deferred_construction_nodes: Vec<ConstructionTask>,
+    /// Stacking context roots which have z-indexed descendants hoisted to them for painting.
+    /// Rebuilt by `flush_styles_to_layout`; their hoisted positions are resolved after layout.
+    pub(crate) hoisted_paint_roots: Vec<NodeId>,
 
     /// Nodes that contain custom widgets
     #[cfg(feature = "custom-widget")]
@@ -474,6 +477,7 @@ impl BaseDocument {
             has_canvas: false,
             sub_document_nodes: HashSet::new(),
             iframe_loads: HashMap::new(),
+            hoisted_paint_roots: Vec::new(),
 
             #[cfg(feature = "custom-widget")]
             custom_widget_nodes: HashSet::new(),
