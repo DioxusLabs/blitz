@@ -1433,16 +1433,26 @@ fn get_elements_by_class_name(
 fn attach_shadow(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
     let host_id = this_node_id(this)?;
-    let mode = args
-        .first()
-        .and_then(|v| v.as_object())
-        .and_then(|o| o.get(js_string!("mode"), context).ok())
-        .map(|v| v.display().to_string())
-        .unwrap_or_default();
-    let mode = if mode.contains("closed") {
-        blitz_dom::shadow::ShadowRootMode::Closed
+    // `mode` is required and must be "open" or "closed" (ShadowRootMode).
+    let mode_value = match args.first().and_then(|v| v.as_object()) {
+        Some(init) => init.get(js_string!("mode"), context)?,
+        None => JsValue::undefined(),
+    };
+    let mode = if mode_value.is_undefined() {
+        String::new()
     } else {
-        blitz_dom::shadow::ShadowRootMode::Open
+        mode_value.to_string(context)?.to_std_string_escaped()
+    };
+    let mode = match mode.as_str() {
+        "open" => blitz_dom::shadow::ShadowRootMode::Open,
+        "closed" => blitz_dom::shadow::ShadowRootMode::Closed,
+        other => {
+            return Err(boa_engine::JsNativeError::typ()
+                .with_message(format!(
+                    "The provided value '{other}' is not a valid enum value of type ShadowRootMode."
+                ))
+                .into());
+        }
     };
     let root_id = {
         let mut doc = ctx.doc.borrow_mut();

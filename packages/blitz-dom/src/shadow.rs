@@ -195,19 +195,60 @@ impl BaseDocument {
         let Some(root) = self.containing_shadow_root(owner_id) else {
             return false;
         };
+        // Cascade order is the owner nodes' tree order, not registration
+        // (fetch-completion) order: two `<link>`s in one shadow tree must
+        // cascade the same way whichever load lands first. Insert before the
+        // first registered sheet whose owner comes later in the tree.
+        let key = self.tree_order_key(owner_id);
+        let before = self
+            .shadow_stylesheets
+            .iter()
+            .filter(|(_, (r, _))| *r == root)
+            .filter(|(other, _)| self.tree_order_key(**other) > key)
+            .min_by_key(|(other, _)| self.tree_order_key(**other))
+            .map(|(_, (_, sheet))| sheet.clone());
         let guard = self.guard.read();
         let Self { nodes, stylist, .. } = self;
         let Some(styles) = nodes[root].author_styles.as_mut() else {
             return false;
         };
-        styles.stylesheets.append_stylesheet(
-            Some(stylist.device()),
-            &CustomMediaMap::default(),
-            sheet.clone(),
-            &guard,
-        );
+        match before {
+            Some(before_sheet) => styles.stylesheets.insert_stylesheet_before(
+                Some(stylist.device()),
+                &CustomMediaMap::default(),
+                sheet.clone(),
+                before_sheet,
+                &guard,
+            ),
+            None => styles.stylesheets.append_stylesheet(
+                Some(stylist.device()),
+                &CustomMediaMap::default(),
+                sheet.clone(),
+                &guard,
+            ),
+        }
         self.shadow_stylesheets.insert(owner_id, (root, sheet));
         true
+    }
+
+    /// Position of a node in tree order (child indices from the root, shadow
+    /// roots counted under their host), comparable lexicographically.
+    fn tree_order_key(&self, id: NodeId) -> Vec<usize> {
+        let mut key = Vec::new();
+        let mut cur = id;
+        while let Some(parent) = self.nodes[cur].parent {
+            let p = &self.nodes[parent];
+            let index = if p.shadow_root == Some(cur) {
+                // The shadow tree precedes the light children.
+                0
+            } else {
+                1 + p.children.iter().position(|c| *c == cur).unwrap_or(0)
+            };
+            key.push(index);
+            cur = parent;
+        }
+        key.reverse();
+        key
     }
 
     /// Unregisters the stylesheet owned by `owner_id` from its shadow root, if any.
