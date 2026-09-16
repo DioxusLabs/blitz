@@ -24,7 +24,7 @@ permissions:
 jobs:
   wpt:
     name: "Run WPT Tests"
-    runs-on: ubuntu-latest
+    runs-on: warp-ubuntu-latest-arm64-16x
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
@@ -33,11 +33,19 @@ jobs:
         with:
           key: "blitz-wpt-linux"
           cache-all-crates: "true"
+          cache-workspace-crates: "true"
+          cache-provider: "warpbuild"
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - uses: awalsh128/cache-apt-pkgs-action@latest
+      # The cached tarball is workspace-relative and the WarpBuild arm64 runner uses
+      # /runner/_work instead of /home/runner/work, so entries created on GitHub-hosted
+      # runners extract to the wrong place and "restore" 0 packages. Including the runner
+      # label in `version` (the only user-controlled part of the cache key) keeps the
+      # cache entries separate per runner image.
+      - name: Install Fontconfig
+        uses: awalsh128/cache-apt-pkgs-action@latest
         with:
           packages: libfontconfig1-dev
-          version: 1.0
+          version: 1.0-warp-ubuntu-latest-arm64-16x
       - name: Clone WPT tests
         run: git clone --depth 1 --revision "$WPT_COMMIT" https://github.com/web-platform-tests/wpt ./wpt/tests
       - name: Build WPT runner
