@@ -41,7 +41,7 @@ use style::{
     Atom,
     context::{
         QuirksMode, RegisteredSpeculativePainter, RegisteredSpeculativePainters,
-        SharedStyleContext, StyleContext,
+        SharedStyleContext, StyleContext, ThreadLocalStyleContext,
     },
     dom::{LayoutIterator, NodeInfo, OpaqueNode, TDocument, TElement, TNode, TShadowRoot},
     global_style_data::GLOBAL_STYLE_DATA,
@@ -49,8 +49,9 @@ use style::{
     selector_parser::{NonTSPseudoClass, SelectorImpl},
     servo_arc::{Arc, ArcBorrow},
     shared_lock::{Locked, SharedRwLock, StylesheetGuards},
+    stylist::RuleInclusion,
     thread_state::ThreadState,
-    traversal::{DomTraversal, PerLevelTraversalData},
+    traversal::{DomTraversal, PerLevelTraversalData, resolve_style},
     traversal_flags::TraversalFlags,
     values::{AtomIdent, GenericAtomIdent},
 };
@@ -192,6 +193,50 @@ impl crate::document::BaseDocument {
         self.stylist.rule_tree().maybe_gc();
 
         style::thread_state::exit(ThreadState::LAYOUT);
+    }
+
+    /// Compute the style of an element which the regular style traversal
+    /// skipped because it lives inside a `display: none` subtree.
+    ///
+    /// The style traversal culls `display: none` subtrees, so such elements
+    /// never have styles stored on them, but `getComputedStyle()` must still
+    /// return their computed values. This resolves the style on demand
+    /// (styling any unstyled ancestors along the way) without storing it on the
+    /// node. Returns `None` for non-elements and elements outside the document.
+    pub fn resolve_undisplayed_style(&self, node_id: NodeId) -> Option<Arc<ComputedValues>> {
+        let node = self.nodes.get(node_id)?;
+        if !node.is_element() || !node.flags.is_in_document() {
+            return None;
+        }
+
+        style::thread_state::enter(ThreadState::LAYOUT);
+
+        let guard = &self.guard;
+        let guards = StylesheetGuards {
+            author: &guard.read(),
+            ua_or_user: &guard.read(),
+        };
+        let shared = SharedStyleContext {
+            traversal_flags: TraversalFlags::empty(),
+            stylist: &self.stylist,
+            options: GLOBAL_STYLE_DATA.options.clone(),
+            guards,
+            visited_styles_enabled: false,
+            animations: self.animations.clone(),
+            current_time_for_animations: 0.0,
+            snapshot_map: &self.snapshots,
+            registered_speculative_painters: &RegisteredPaintersImpl,
+        };
+        let mut thread_local = ThreadLocalStyleContext::new();
+        let mut context = StyleContext {
+            shared: &shared,
+            thread_local: &mut thread_local,
+        };
+        let styles = resolve_style(&mut context, node, RuleInclusion::All, None, None);
+
+        style::thread_state::exit(ThreadState::LAYOUT);
+
+        Some(styles.primary().clone())
     }
 }
 
@@ -410,14 +455,16 @@ impl selectors::Element for BlitzNode<'_> {
         local_name: &GenericAtomIdent<LocalNameStaticSet>,
         operation: &AttrSelectorOperation<&AtomString>,
     ) -> bool {
-        self.data.attrs().is_some_and(|attrs| {
-            attrs.iter().any(|attr| {
-                let ns_matches = match ns {
+        let Some(attrs) = self.data.attrs() else {
+            return false;
+        };
+        attrs.iter().any(|attr| {
+            attr.name.local == local_name.0
+                && match ns {
                     NamespaceConstraint::Any => true,
-                    NamespaceConstraint::Specific(url) => attr.name.ns == ***url,
-                };
-                ns_matches && attr.name.local == local_name.0 && operation.eval_str(&attr.value)
-            })
+                    NamespaceConstraint::Specific(ns) => attr.name.ns == ns.0,
+                }
+                && operation.eval_str(&attr.value)
         })
     }
 
@@ -795,11 +842,10 @@ impl<'a> TElement for BlitzNode<'a> {
 
     fn get_attr(&self, attr: &style::LocalName, ns: &style::Namespace) -> Option<String> {
         // TODO: case-insensitive matching for HTML-ns attrs
-        self.data
-            .attrs()?
+        self.attrs()?
             .iter()
-            .find(|a| a.name.local == **attr && a.name.ns == **ns)
-            .map(|a| a.value.to_string())
+            .find(|a| a.name.local == attr.0 && a.name.ns == ns.0)
+            .map(|a| a.value.clone())
     }
 
     fn lang_attr(&self) -> Option<style::selector_parser::AttrValue> {

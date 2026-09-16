@@ -300,6 +300,10 @@ pub struct BaseDocument {
     pub(crate) nodes_to_id: HashMap<String, SmallVec<[NodeId; 1]>>,
     /// Map of `<style>` and `<link>` node IDs to their associated stylesheet
     pub(crate) nodes_to_stylesheet: BTreeMap<NodeId, DocumentStyleSheet>,
+    /// Incremented whenever `nodes_to_stylesheet` changes (a stylesheet is
+    /// added, replaced or removed), so that CSSOM wrappers can detect that
+    /// their cached rule data is stale.
+    pub(crate) stylesheet_generation: u64,
     /// Stylesheets added by the useragent
     /// where the key is the hashed CSS
     pub(crate) ua_stylesheets: HashMap<String, DocumentStyleSheet>,
@@ -400,6 +404,10 @@ impl BaseDocument {
         style_config::set_pref!("layout.unimplemented", true);
         style_config::set_pref!("layout.columns.enabled", true);
         style_config::set_pref!("layout.css.basic-shape-shape.enabled", true);
+        style_config::set_pref!("layout.css.attr.enabled", true);
+        style_config::set_pref!("layout.css.tree-counting-functions.enabled", true);
+        style_config::set_pref!("layout.css.progress-function.enabled", true);
+        style_config::set_pref!("layout.variable_fonts.enabled", true);
         style_config::set_pref!("layout.threads", -1);
 
         let viewport = config.viewport.unwrap_or_default();
@@ -454,6 +462,7 @@ impl BaseDocument {
             url: base_url,
             ua_stylesheets: HashMap::new(),
             nodes_to_stylesheet: BTreeMap::new(),
+            stylesheet_generation: 0,
             font_ctx,
             #[cfg(feature = "parallel-construct")]
             thread_font_contexts: ThreadLocal::new(),
@@ -1183,6 +1192,7 @@ impl BaseDocument {
 
     pub fn add_stylesheet_for_node(&mut self, stylesheet: DocumentStyleSheet, node_id: NodeId) {
         let old = self.nodes_to_stylesheet.insert(node_id, stylesheet.clone());
+        self.stylesheet_generation += 1;
 
         if let Some(old) = old {
             self.stylist.remove_stylesheet(old, &self.guard.read())
@@ -1279,6 +1289,14 @@ impl BaseDocument {
             Resource::Css(css) => {
                 let node_id = res.node_id.unwrap();
                 self.add_stylesheet_for_node(css, node_id);
+            }
+            Resource::ImportedCss(import_rule, sheet) => {
+                let mut guard = self.guard.write();
+                import_rule.write_with(&mut guard).stylesheet =
+                    style::stylesheets::import_rule::ImportSheet::Sheet(sheet);
+                drop(guard);
+                self.stylist
+                    .force_stylesheet_origins_dirty(style::stylesheets::OriginSet::all());
             }
             Resource::Image(_kind, width, height, image_data) => {
                 // Create the ImageData and cache it
@@ -2232,13 +2250,13 @@ impl BaseDocument {
         }
 
         let node = self.get_node(node_id)?;
-        let pos = node.absolute_position(0.0, 0.0);
+        let pos = node.unrounded_absolute_position(0.0, 0.0);
 
         Some(BoundingRect {
-            x: pos.x as f64 - self.viewport_scroll.x,
-            y: pos.y as f64 - self.viewport_scroll.y,
-            width: node.unrounded_layout().size.width as f64,
-            height: node.unrounded_layout().size.height as f64,
+            x: snap_to_layout_unit(pos.x as f64 - self.viewport_scroll.x),
+            y: snap_to_layout_unit(pos.y as f64 - self.viewport_scroll.y),
+            width: snap_to_layout_unit(node.unrounded_layout().size.width as f64),
+            height: snap_to_layout_unit(node.unrounded_layout().size.height as f64),
         })
     }
 
@@ -2295,8 +2313,8 @@ impl BaseDocument {
         };
 
         // Fragment rects are relative to the inline root's content box.
-        let root_layout = inline_root.final_layout();
-        let root_pos = inline_root.absolute_position(0.0, 0.0);
+        let root_layout = inline_root.unrounded_layout();
+        let root_pos = inline_root.unrounded_absolute_position(0.0, 0.0);
         let origin_x = root_pos.x as f64
             + (root_layout.padding.left + root_layout.border.left) as f64
             - self.viewport_scroll.x;
@@ -2353,10 +2371,10 @@ impl BaseDocument {
 
             if let Some((x0, y0, x1, y1)) = line_rect {
                 rects.push(BoundingRect {
-                    x: origin_x + x0 / scale,
-                    y: origin_y + y0 / scale,
-                    width: (x1 - x0) / scale,
-                    height: (y1 - y0) / scale,
+                    x: snap_to_layout_unit(origin_x + x0 / scale),
+                    y: snap_to_layout_unit(origin_y + y0 / scale),
+                    width: snap_to_layout_unit((x1 - x0) / scale),
+                    height: snap_to_layout_unit((y1 - y0) / scale),
                 });
             }
         }
@@ -2730,6 +2748,13 @@ pub struct BoundingRect {
     pub y: f64,
     pub width: f64,
     pub height: f64,
+}
+
+/// Snap a CSSOM geometry value to a 1/64px grid (the precision of Blink's `LayoutUnit`).
+/// Layout values are accumulated in `f32`, so e.g. seven `55/7`-wide flex items would
+/// otherwise end at `55.0000005` and appear to overflow their 55px container.
+fn snap_to_layout_unit(value: f64) -> f64 {
+    (value * 64.0).round() / 64.0
 }
 
 impl AsRef<BaseDocument> for BaseDocument {

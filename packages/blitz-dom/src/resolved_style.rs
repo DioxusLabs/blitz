@@ -12,21 +12,26 @@ use style::computed_values::position::T as Position;
 use style::parser::ParserContext;
 use style::properties::declaration_block::{Importance, parse_style_attribute};
 use style::properties::{
-    ComputedValues, PropertyDeclaration, PropertyDeclarationBlock, PropertyId, ShorthandId,
-    SourcePropertyDeclaration, parse_one_declaration_into,
+    ComputedValues, NonCustomPropertyId, PropertyDeclaration, PropertyDeclarationBlock, PropertyId,
+    ShorthandId, SourcePropertyDeclaration, parse_one_declaration_into,
 };
+use style::servo_arc::Arc as ServoArc;
 use style::stylesheets::supports_rule::parse_condition_or_declaration;
-use style::stylesheets::{CssRuleType, Origin};
+use style::stylesheets::{CssRuleType, Origin, OriginSet, UrlExtraData};
+use style::stylist::RegisterCustomPropertyResult;
 use style::values::computed::LengthPercentage;
 use style::values::computed::length::CSSPixelLength;
-use style::values::generics::position::Inset as GenericInset;
+use style::values::generics::position::{Inset as GenericInset, PreferredRatio};
 use style::values::resolved;
-use style::values::specified::box_::DisplayInside;
+use style::values::specified::box_::{DisplayInside, DisplayOutside};
 use style_traits::{CssStringWriter, ParsingMode, ToCss};
 
 use blitz_traits::node_id::NodeId;
+use url::Url;
 
 use crate::BaseDocument;
+use crate::layout::replaced::is_replaced_element;
+use crate::local_name;
 
 /// Serialize a used length (in CSS pixels) the way stylo serializes computed lengths
 fn format_px(px: f32) -> String {
@@ -96,6 +101,60 @@ pub fn css_property_is_supported(name: &str) -> bool {
         PropertyId::parse_enabled_for_all_content(name),
         Ok(property_id) if !matches!(property_id, PropertyId::Custom(_))
     )
+}
+
+/// Parse a CSS `transform` list into a 4x4 matrix, as required by the
+/// `DOMMatrix(DOMString)` constructor and `DOMMatrix.setMatrixValue()`
+/// (<https://drafts.fxtf.org/geometry/#parse-a-string-into-an-abstract-matrix>).
+///
+/// Returns the 16 matrix components in column-major order (`m11, m12, ...,
+/// m44`) and whether the list contained only 2D transform functions.
+/// Returns `None` if the string fails to parse as a transform list or uses
+/// relative lengths (which cannot be resolved without a context).
+pub fn parse_transform_matrix(value: &str) -> Option<([f64; 16], bool)> {
+    use style::properties::longhands::transform;
+    // Transform lists cannot contain URLs, so any base URL will do
+    let url_data = UrlExtraData(ServoArc::new(Url::parse("about:blank").unwrap()));
+    let context = ParserContext::new(
+        Origin::Author,
+        &url_data,
+        Some(CssRuleType::Style),
+        ParsingMode::DEFAULT,
+        QuirksMode::NoQuirks,
+        Default::default(),
+        None,
+        None,
+        Default::default(),
+    );
+    let mut input = ParserInput::new(value);
+    let mut parser = Parser::new(&mut input);
+    let transform = parser
+        .parse_entirely(|t| transform::parse(&context, t))
+        .ok()?;
+    let (m, is_3d) = transform.to_transform_3d_matrix_f64(None).ok()?;
+    Some((
+        [
+            m.m11, m.m12, m.m13, m.m14, m.m21, m.m22, m.m23, m.m24, m.m31, m.m32, m.m33, m.m34,
+            m.m41, m.m42, m.m43, m.m44,
+        ],
+        !is_3d,
+    ))
+}
+
+/// The names of the properties exposed by the `CSSStyleDeclaration` returned
+/// from `getComputedStyle()` (its indexed properties): every enabled longhand,
+/// sorted alphabetically.
+pub fn resolved_style_property_names() -> &'static [&'static str] {
+    static NAMES: std::sync::OnceLock<Vec<&'static str>> = std::sync::OnceLock::new();
+    NAMES.get_or_init(|| {
+        let mut names: Vec<&'static str> = NonCustomPropertyId::iter()
+            .filter_map(|id| id.as_longhand())
+            .map(|longhand| longhand.name())
+            .filter(|name| PropertyId::parse_enabled_for_all_content(name).is_ok())
+            .collect();
+        names.sort_unstable();
+        names
+    })
 }
 
 impl BaseDocument {
@@ -253,6 +312,27 @@ impl BaseDocument {
         condition.eval(&context)
     }
 
+    /// Register a custom property via script (`CSS.registerProperty()`).
+    /// On success all styles are invalidated so that declarations of the
+    /// property are re-parsed against the new registration.
+    pub fn register_custom_property(
+        &mut self,
+        name: &str,
+        syntax: &str,
+        inherits: bool,
+        initial_value: Option<&str>,
+    ) -> RegisterCustomPropertyResult {
+        let url_data = self.url.url_extra_data();
+        let result =
+            self.stylist
+                .register_custom_property(&url_data, name, syntax, inherits, initial_value);
+        if matches!(result, RegisterCustomPropertyResult::SuccessfullyRegistered) {
+            self.stylist
+                .force_stylesheet_origins_dirty(OriginSet::all());
+        }
+        result
+    }
+
     /// Compute the resolved value of a CSS property for the given node, as exposed
     /// by `getComputedStyle()`. Returns an empty string for unknown properties and
     /// for nodes without styles.
@@ -264,12 +344,38 @@ impl BaseDocument {
         let Some(node) = self.get_node(node_id) else {
             return String::new();
         };
-        let Some(styles) = node.primary_styles() else {
-            return String::new();
+        // Elements inside a `display: none` subtree are skipped by the style
+        // traversal, so their style has to be computed on demand.
+        let undisplayed_styles;
+        let stored_styles = node.primary_styles();
+        let styles: &ComputedValues = match &stored_styles {
+            Some(styles) => styles,
+            None => match self.resolve_undisplayed_style(node_id) {
+                Some(styles) => {
+                    undisplayed_styles = styles;
+                    &undisplayed_styles
+                }
+                None => return String::new(),
+            },
         };
 
         let display = styles.clone_display();
-        let has_layout_box = node.flags.is_in_document() && !display.is_none();
+        // Non-atomic inline elements are laid out as style spans within their
+        // inline root's text layout rather than as boxes of their own, so their
+        // layout-dependent properties resolve to computed (not used) values.
+        let is_non_atomic_inline = display.outside() == DisplayOutside::Inline
+            && display.inside() == DisplayInside::Flow
+            && !node.flags.is_inline_root()
+            && node.element_data().is_none_or(|data| {
+                let tag = &data.name.local;
+                !(is_replaced_element(tag)
+                    || *tag == local_name!("input")
+                    || *tag == local_name!("textarea")
+                    || *tag == local_name!("button"))
+            });
+        let generates_box =
+            node.flags.is_in_document() && !display.is_none() && stored_styles.is_some();
+        let has_layout_box = generates_box && !is_non_atomic_inline;
 
         // Layout-dependent "used value" special cases
         match property_name {
@@ -335,9 +441,10 @@ impl BaseDocument {
                     .map(|parent| *parent.final_layout());
 
                 match position {
-                    // Used value: the relative offset. The non-`auto` side of
-                    // each axis wins (`top`/`left` take precedence when both
-                    // are set) and the opposite side resolves to its negation.
+                    // Used value: the relative offset. An `auto` side resolves
+                    // to the negation of the opposite side. When both sides
+                    // are set the axis is overconstrained and each side
+                    // resolves to its computed value instead.
                     Position::Relative => {
                         let (cb_width, cb_height) = parent_layout
                             .map(|pl| {
@@ -369,15 +476,30 @@ impl BaseDocument {
                                 resolve_inset(&pos_styles.right, basis),
                             )
                         };
-                        let used_start = match (start, end) {
-                            (Some(start), _) => start,
-                            (None, Some(end)) => -end,
+                        let is_start = matches!(property_name, "top" | "left");
+                        let used = match (start, end) {
+                            (Some(start), Some(end)) => {
+                                if is_start {
+                                    start
+                                } else {
+                                    end
+                                }
+                            }
+                            (Some(start), None) => {
+                                if is_start {
+                                    start
+                                } else {
+                                    -start
+                                }
+                            }
+                            (None, Some(end)) => {
+                                if is_start {
+                                    -end
+                                } else {
+                                    end
+                                }
+                            }
                             (None, None) => 0.0,
-                        };
-                        let used = if matches!(property_name, "top" | "left") {
-                            used_start
-                        } else {
-                            -used_start
                         };
                         return format_px(used);
                     }
@@ -426,6 +548,24 @@ impl BaseDocument {
                     _ => {}
                 }
             }
+            // `min-width: auto` / `min-height: auto` resolve to `auto` only for
+            // boxes with a preferred aspect ratio and for flex and grid items;
+            // otherwise (including when no box is generated) they resolve to `0px`
+            "min-width" | "min-height" => {
+                let pos_styles = styles.get_position();
+                let is_auto = if property_name == "min-width" {
+                    pos_styles.min_width.is_auto()
+                } else {
+                    pos_styles.min_height.is_auto()
+                };
+                let has_aspect_ratio =
+                    !matches!(pos_styles.aspect_ratio.ratio, PreferredRatio::None);
+                let preserves_auto =
+                    generates_box && (has_aspect_ratio || self.is_flex_or_grid_item(node_id));
+                if is_auto && !preserves_auto {
+                    return format_px(0.0);
+                }
+            }
             "transform" if has_layout_box => {
                 let transform = &styles.get_box().transform;
                 if !transform.0.is_empty() {
@@ -455,9 +595,28 @@ impl BaseDocument {
         };
         match property_id.as_shorthand() {
             // Serialize shorthands from the resolved values of their longhands
-            Ok(shorthand) => serialize_resolved_shorthand(&styles, shorthand),
+            Ok(shorthand) => serialize_resolved_shorthand(styles, shorthand),
             Err(declaration_id) => styles.computed_value_to_string(declaration_id),
         }
+    }
+
+    /// Whether the node's box is a flex or grid item, i.e. its nearest ancestor
+    /// that generates a box (skipping `display: contents` ancestors) is a flex
+    /// or grid container.
+    fn is_flex_or_grid_item(&self, node_id: NodeId) -> bool {
+        let mut parent_id = self.get_node(node_id).and_then(|node| node.parent);
+        while let Some(parent) = parent_id.and_then(|id| self.get_node(id)) {
+            let Some(parent_styles) = parent.primary_styles() else {
+                return false;
+            };
+            let display = parent_styles.clone_display();
+            if display.is_contents() {
+                parent_id = parent.parent;
+                continue;
+            }
+            return matches!(display.inside(), DisplayInside::Flex | DisplayInside::Grid);
+        }
+        false
     }
 }
 

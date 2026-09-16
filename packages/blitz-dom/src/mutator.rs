@@ -392,7 +392,9 @@ impl DocumentMutator<'_> {
             self.load_image(node_id);
         } else if (tag, attr) == tag_and_attr!("canvas", "src") {
             self.load_custom_paint_src(node_id);
-        } else if (tag, attr) == tag_and_attr!("link", "href") {
+        } else if (tag, attr) == tag_and_attr!("link", "href")
+            || (tag, attr) == tag_and_attr!("link", "rel")
+        {
             self.load_linked_stylesheet(node_id);
         } else if (tag, attr) == tag_and_attr!("iframe", "src")
             || (tag, attr) == tag_and_attr!("iframe", "srcdoc")
@@ -1141,6 +1143,7 @@ impl<'doc> DocumentMutator<'doc> {
             .force_stylesheet_origins_dirty(OriginSet::all());
 
         self.doc.nodes_to_stylesheet.remove(&node_id);
+        self.doc.stylesheet_generation += 1;
     }
 
     fn load_image(&mut self, target_id: NodeId) {

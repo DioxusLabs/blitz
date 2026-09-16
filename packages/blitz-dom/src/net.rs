@@ -60,6 +60,8 @@ pub enum Resource {
     #[cfg(feature = "svg")]
     Svg(ImageType, crate::node::SvgImageData),
     Css(DocumentStyleSheet),
+    /// Stylesheet loaded for an `@import` rule, to be attached to the rule on the document thread
+    ImportedCss(ServoArc<Locked<ImportRule>>, ServoArc<Stylesheet>),
     Font(Bytes, FontFaceOverrides),
     /// HTML fetched for an `<iframe>` element's `src`
     DocumentSrc(String),
@@ -288,11 +290,8 @@ impl NetHandler for ResourceHandler<NestedStylesheetHandler> {
             self.data.loader.abort_signal.as_ref(),
         );
 
-        let mut guard = self.data.lock.write();
-        self.data.import_rule.write_with(&mut guard).stylesheet = ImportSheet::Sheet(sheet);
-        drop(guard);
-
-        self.respond(resolved_url, Ok(Resource::None))
+        let import_rule = self.data.import_rule.clone();
+        self.respond(resolved_url, Ok(Resource::ImportedCss(import_rule, sheet)))
     }
 }
 
@@ -377,6 +376,7 @@ impl FontFaceHandler {
     }
 }
 
+/// Fetch the fonts of all `@font-face` rules in `sheet`
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn fetch_font_face(
     tx: Sender<DocumentEvent>,
@@ -388,10 +388,31 @@ pub(crate) fn fetch_font_face(
     read_guard: &SharedRwLockReadGuard,
     abort_signal: Option<&AbortSignal>,
 ) {
-    sheet
-        .contents(read_guard)
-        .rules(read_guard)
-        .iter()
+    fetch_font_face_rules(
+        sheet.contents(read_guard).rules(read_guard).iter(),
+        tx,
+        doc_id,
+        node_id,
+        network_provider,
+        shell_provider,
+        read_guard,
+        abort_signal,
+    )
+}
+
+/// Fetch the fonts of the `@font-face` rules among `rules`
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn fetch_font_face_rules<'a>(
+    rules: impl Iterator<Item = &'a CssRule>,
+    tx: Sender<DocumentEvent>,
+    doc_id: usize,
+    node_id: Option<NodeId>,
+    network_provider: &Arc<dyn NetProvider>,
+    shell_provider: &Arc<dyn ShellProvider>,
+    read_guard: &SharedRwLockReadGuard,
+    abort_signal: Option<&AbortSignal>,
+) {
+    rules
         .filter_map(|rule| match rule {
             CssRule::FontFace(font_face) => {
                 let descriptor = &font_face.read_with(read_guard).descriptors;

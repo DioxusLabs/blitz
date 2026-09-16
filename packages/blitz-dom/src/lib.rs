@@ -40,6 +40,8 @@ mod document;
 pub mod node;
 
 mod config;
+/// CSSOM stylesheet access (`document.styleSheets`, `CSSStyleSheet`, `CSSRule`)
+mod cssom;
 mod debug;
 mod events;
 mod font_metrics;
@@ -71,7 +73,10 @@ mod tree;
 
 mod url;
 
-pub use resolved_style::css_property_is_supported;
+pub use cssom::{CssRuleInfo, CssomError};
+pub use resolved_style::{
+    css_property_is_supported, parse_transform_matrix, resolved_style_property_names,
+};
 pub use stylo_to_kurbo::resolve_2d_transform;
 
 pub mod net;
@@ -113,6 +118,7 @@ pub fn dom_node_id(id: taffy::NodeId) -> NodeId {
 pub use style::Atom;
 pub use style::invalidation::element::restyle_hints::RestyleHint;
 pub use style::media_queries::MediaType;
+pub use style::stylist::RegisterCustomPropertyResult;
 pub type SelectorList = selectors::SelectorList<style::selector_parser::SelectorImpl>;
 pub use events::{EventDriver, EventHandler, NoopEventHandler};
 pub use html::{DummyHtmlParserProvider, HtmlParserProvider};

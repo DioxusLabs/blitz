@@ -24,10 +24,13 @@ use web_time::{Duration, Instant};
 
 use crate::dom::event::{EventRef, create_event, create_event_for_dom_event};
 use crate::dom::{
-    NodeRef, dom_ctx, node_id_of_value, node_wrapper, to_rust_string, wrap_style_object,
+    NodeRef, dom_ctx, js_str, node_id_of_value, node_wrapper, to_rust_string, wrap_style_object,
 };
 use crate::fetch::ScriptFetcher;
 use crate::state::{DomCtx, Listener, ReadyState};
+
+/// Geometry Interfaces (DOMPoint, DOMRect, DOMQuad, DOMMatrix), defined in JS
+const GEOMETRY_JS: &str = include_str!("geometry.js");
 
 /// JS bootstrap for APIs that are easiest to define in JS
 const BOOTSTRAP_JS: &str = r#"
@@ -75,6 +78,105 @@ const BOOTSTRAP_JS: &str = r#"
     if (typeof globalThis.queueMicrotask !== "function") {
         globalThis.queueMicrotask = function (callback) {
             Promise.resolve().then(callback);
+        };
+    }
+
+    // `fetch()`: a minimal Fetch API on top of the synchronous `__blitz_fetch_sync`
+    // native (which goes through the document's ScriptFetcher). Bodies are
+    // text-only; `Headers` is a simple case-insensitive map.
+    if (typeof globalThis.fetch !== "function") {
+        class Headers {
+            #map = new Map();
+            constructor(init) {
+                if (init instanceof Headers) {
+                    for (const [k, v] of init) this.append(k, v);
+                } else if (Array.isArray(init)) {
+                    for (const [k, v] of init) this.append(k, v);
+                } else if (init && typeof init === "object") {
+                    for (const k of Object.keys(init)) this.append(k, init[k]);
+                }
+            }
+            append(name, value) {
+                const key = String(name).toLowerCase();
+                const existing = this.#map.get(key);
+                this.#map.set(key, existing === undefined ? String(value) : existing + ", " + value);
+            }
+            set(name, value) { this.#map.set(String(name).toLowerCase(), String(value)); }
+            get(name) { return this.#map.get(String(name).toLowerCase()) ?? null; }
+            has(name) { return this.#map.has(String(name).toLowerCase()); }
+            delete(name) { this.#map.delete(String(name).toLowerCase()); }
+            forEach(cb, thisArg) { for (const [k, v] of this) cb.call(thisArg, v, k, this); }
+            *entries() { yield* [...this.#map.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1)); }
+            *keys() { for (const [k] of this.entries()) yield k; }
+            *values() { for (const [, v] of this.entries()) yield v; }
+            [Symbol.iterator]() { return this.entries(); }
+        }
+
+        class Response {
+            #body;
+            #bodyUsed = false;
+            constructor(body = null, init = {}) {
+                this.#body = body === null || body === undefined ? "" : String(body);
+                const status = init.status === undefined ? 200 : Number(init.status);
+                if (!Number.isInteger(status) || status < 200 || status > 599) {
+                    throw new RangeError("The status provided (" + status + ") is outside the range [200, 599].");
+                }
+                Object.defineProperties(this, {
+                    status: { value: status, enumerable: true },
+                    statusText: { value: init.statusText === undefined ? "" : String(init.statusText), enumerable: true },
+                    headers: { value: new Headers(init.headers), enumerable: true },
+                    url: { value: init.url === undefined ? "" : String(init.url), enumerable: true },
+                    type: { value: "basic", enumerable: true },
+                    redirected: { value: false, enumerable: true },
+                });
+            }
+            get ok() { return this.status >= 200 && this.status <= 299; }
+            get bodyUsed() { return this.#bodyUsed; }
+            #consume() {
+                if (this.#bodyUsed) {
+                    return Promise.reject(new TypeError("body stream already read"));
+                }
+                this.#bodyUsed = true;
+                return Promise.resolve(this.#body);
+            }
+            text() { return this.#consume(); }
+            json() { return this.#consume().then((text) => JSON.parse(text)); }
+            arrayBuffer() { return this.#consume().then((text) => new TextEncoder().encode(text).buffer); }
+            clone() {
+                if (this.#bodyUsed) throw new TypeError("Response body is already used");
+                return new Response(this.#body, {
+                    status: this.status, statusText: this.statusText, headers: this.headers, url: this.url,
+                });
+            }
+        }
+
+        globalThis.Headers = Headers;
+        globalThis.Response = Response;
+        globalThis.fetch = function fetch(input, init) {
+            return new Promise((resolve, reject) => {
+                let url;
+                try {
+                    url = input && typeof input === "object" && "url" in input ? String(input.url) : String(input);
+                } catch (e) {
+                    reject(e);
+                    return;
+                }
+                const method = String(init?.method ?? "GET").toUpperCase();
+                if (method !== "GET" && method !== "HEAD") {
+                    reject(new TypeError("fetch: only GET and HEAD requests are supported"));
+                    return;
+                }
+                try {
+                    const [status, resolvedUrl, text] = __blitz_fetch_sync(url);
+                    resolve(new Response(method === "HEAD" ? "" : text, {
+                        status,
+                        statusText: status === 200 ? "OK" : status === 404 ? "Not Found" : "",
+                        url: resolvedUrl,
+                    }));
+                } catch (e) {
+                    reject(e);
+                }
+            });
         };
     }
 
@@ -163,9 +265,24 @@ const BOOTSTRAP_JS: &str = r#"
     // via indexed access) property names
     const isCssPropName = (prop) =>
         typeof prop === "string" && /^-?[a-zA-Z][a-zA-Z0-9-]*$/.test(prop);
+    // Declarations exposing `length`/`item()` (e.g. `getComputedStyle()`) also
+    // support indexed access (`style[0]`) and iteration.
+    const isIndex = (prop) => typeof prop === "string" && /^\d+$/.test(prop);
+    const isIndexed = (target) => typeof target.item === "function";
+    const styleIterator = function* () {
+        for (let i = 0; i < this.length; i++) yield this.item(i);
+    };
     globalThis.__blitz_wrap_style = function (native) {
         return new Proxy(native, {
             get(target, prop) {
+                if (isIndexed(target)) {
+                    if (isIndex(prop)) {
+                        return Number(prop) < target.length ? target.item(Number(prop)) : undefined;
+                    }
+                    if (prop === Symbol.iterator && !(prop in target)) {
+                        return styleIterator.bind(target);
+                    }
+                }
                 if (isCssPropName(prop) && !(prop in target)) {
                     return target.getPropertyValue(toKebab(prop));
                 }
@@ -186,9 +303,34 @@ const BOOTSTRAP_JS: &str = r#"
             // property (used by WPT's computed-value test helpers)
             has(target, prop) {
                 if (Reflect.has(target, prop)) return true;
+                if (isIndexed(target)) {
+                    if (isIndex(prop)) return Number(prop) < target.length;
+                    if (prop === Symbol.iterator) return true;
+                }
                 return (
                     isCssPropName(prop) && __blitz_css_property_supported(toKebab(prop))
                 );
+            },
+            ownKeys(target) {
+                const keys = [];
+                if (isIndexed(target)) {
+                    for (let i = 0; i < target.length; i++) keys.push(String(i));
+                }
+                for (const key of Reflect.ownKeys(target)) {
+                    if (!keys.includes(key)) keys.push(key);
+                }
+                return keys;
+            },
+            getOwnPropertyDescriptor(target, prop) {
+                if (isIndexed(target) && isIndex(prop) && Number(prop) < target.length) {
+                    return {
+                        value: target.item(Number(prop)),
+                        enumerable: true,
+                        configurable: true,
+                        writable: false,
+                    };
+                }
+                return Reflect.getOwnPropertyDescriptor(target, prop);
             },
         });
     };
@@ -220,6 +362,15 @@ const BOOTSTRAP_JS: &str = r#"
     // probes throw "right-hand side of 'instanceof' is not an object". All
     // blitz-vibey-script elements share a single prototype, so tag-specific
     // interfaces cannot be truthfully modelled: these always answer false.
+    // `Window`: the global object's interface (`window instanceof Window`).
+    // Feature-detection code (and WPT's idlharness) uses `'Window' in self`
+    // to tell a window global from a worker or ShadowRealm global.
+    if (typeof globalThis.Window === "undefined") {
+        const windowProto = Object.create(Object.getPrototypeOf(globalThis));
+        Object.setPrototypeOf(globalThis, windowProto);
+        globalThis.Window = makeInterface("Window", windowProto);
+    }
+
     for (const name of [
         "EventTarget", "CharacterData", "Text", "Comment", "DocumentFragment",
         "HTMLInputElement", "HTMLTextAreaElement", "HTMLSelectElement",
@@ -360,6 +511,549 @@ const BOOTSTRAP_JS: &str = r#"
         };
     }
 
+    // CSSOM stylesheet API (`document.styleSheets`, `element.sheet`,
+    // `CSSStyleSheet`, `CSSRuleList`, `CSSRule` subclasses), backed by the
+    // `__blitz_sheet_*` natives. Stylesheets are keyed by their owner node and
+    // rules by a path of indices through nested rule lists.
+    {
+        const illegal = () => {
+            throw new TypeError("Illegal constructor");
+        };
+        // Internal (constructor-bypassing) construction flag
+        let constructing = false;
+        const construct = (cls, init) => {
+            constructing = true;
+            try {
+                const obj = new cls();
+                init(obj);
+                return obj;
+            } finally {
+                constructing = false;
+            }
+        };
+        const internals = new WeakMap();
+        const data = (obj) => {
+            const d = internals.get(obj);
+            if (!d) throw new TypeError("Illegal invocation");
+            return d;
+        };
+
+        // Array-like list objects (`StyleSheetList`, `CSSRuleList`, `MediaList`)
+        // support indexed access via a Proxy
+        const indexedProxy = (target) =>
+            new Proxy(target, {
+                // Getters and methods run against the target (not the proxy):
+                // their internal data is keyed by the target object
+                get(t, prop) {
+                    if (typeof prop === "string" && /^\d+$/.test(prop)) {
+                        const item = t.item(Number(prop));
+                        return item === null ? undefined : item;
+                    }
+                    const value = Reflect.get(t, prop, t);
+                    return typeof value === "function" ? value.bind(t) : value;
+                },
+                set(t, prop, value) {
+                    return Reflect.set(t, prop, value, t);
+                },
+                has(t, prop) {
+                    if (typeof prop === "string" && /^\d+$/.test(prop)) {
+                        return Number(prop) < t.length;
+                    }
+                    return Reflect.has(t, prop);
+                },
+                ownKeys(t) {
+                    const keys = [];
+                    for (let i = 0; i < t.length; i++) keys.push(String(i));
+                    return keys.concat(Reflect.ownKeys(t));
+                },
+                getOwnPropertyDescriptor(t, prop) {
+                    if (typeof prop === "string" && /^\d+$/.test(prop) && Number(prop) < t.length) {
+                        return { value: t.item(Number(prop)), enumerable: true, configurable: true, writable: false };
+                    }
+                    return Reflect.getOwnPropertyDescriptor(t, prop);
+                },
+            });
+        const defineIterable = (proto) => {
+            proto[Symbol.iterator] = function* () {
+                for (let i = 0; i < this.length; i++) yield this.item(i);
+            };
+            proto.forEach = function (callback, thisArg) {
+                for (let i = 0; i < this.length; i++) callback.call(thisArg, this.item(i), i, this);
+            };
+        };
+
+        class MediaList {
+            constructor() {
+                if (!constructing) illegal();
+            }
+            get mediaText() {
+                return data(this).text;
+            }
+            get length() {
+                return this.mediaText === "" ? 0 : this.mediaText.split(",").length;
+            }
+            item(index) {
+                if (this.mediaText === "") return null;
+                return this.mediaText.split(",").map((s) => s.trim())[index] ?? null;
+            }
+            toString() {
+                return this.mediaText;
+            }
+        }
+        defineIterable(MediaList.prototype);
+        const makeMediaList = (text) =>
+            indexedProxy(construct(MediaList, (m) => internals.set(m, { text })));
+
+        class StyleSheet {
+            constructor() {
+                if (!constructing) illegal();
+            }
+            get type() {
+                return "text/css";
+            }
+            get ownerNode() {
+                return data(this).owner;
+            }
+            get href() {
+                const owner = data(this).owner;
+                return owner.localName === "link" ? owner.getAttribute("href") : null;
+            }
+            get title() {
+                return data(this).owner.getAttribute("title");
+            }
+            get media() {
+                return makeMediaList(data(this).owner.getAttribute("media") || "");
+            }
+            get parentStyleSheet() {
+                return null;
+            }
+            get ownerRule() {
+                return null;
+            }
+            get disabled() {
+                return false;
+            }
+        }
+
+        // `CSSStyleDeclaration` for the declarations of a rule (`CSSStyleRule.style`, ...)
+        class RuleStyleDeclaration {
+            constructor() {
+                if (!constructing) illegal();
+            }
+            get cssText() {
+                const d = data(this);
+                return __blitz_sheet_style_css_text(d.owner, d.path);
+            }
+            set cssText(value) {
+                const d = data(this);
+                __blitz_sheet_style_set_css_text(d.owner, d.path, String(value));
+                touchSheet(data(d.rule).sheet);
+            }
+            get length() {
+                const d = data(this);
+                return __blitz_sheet_style_property_names(d.owner, d.path).length;
+            }
+            item(index) {
+                const d = data(this);
+                return __blitz_sheet_style_property_names(d.owner, d.path)[index] ?? "";
+            }
+            getPropertyValue(name) {
+                const d = data(this);
+                return __blitz_sheet_style_get(d.owner, d.path, String(name))[0];
+            }
+            getPropertyPriority(name) {
+                const d = data(this);
+                return __blitz_sheet_style_get(d.owner, d.path, String(name))[1] ? "important" : "";
+            }
+            setProperty(name, value, priority) {
+                const d = data(this);
+                value = value === null || value === undefined ? "" : String(value);
+                const important = String(priority ?? "").toLowerCase() === "important";
+                __blitz_sheet_style_set(d.owner, d.path, String(name), value, important);
+                touchSheet(data(d.rule).sheet);
+            }
+            removeProperty(name) {
+                const d = data(this);
+                const removed = __blitz_sheet_style_remove(d.owner, d.path, String(name));
+                touchSheet(data(d.rule).sheet);
+                return removed;
+            }
+            get parentRule() {
+                return data(this).rule;
+            }
+        }
+        defineIterable(RuleStyleDeclaration.prototype);
+        const makeRuleStyle = (owner, path, rule) =>
+            __blitz_wrap_style(
+                indexedProxy(
+                    construct(RuleStyleDeclaration, (s) => internals.set(s, { owner, path, rule }))
+                )
+            );
+
+        class CSSRuleList {
+            constructor() {
+                if (!constructing) illegal();
+            }
+            get length() {
+                const d = data(this);
+                return Math.max(0, __blitz_sheet_rule_count(d.owner, d.path));
+            }
+            item(index) {
+                const d = data(this);
+                index = Number(index);
+                if (!(index >= 0 && index < this.length)) return null;
+                return ruleAt(d.sheet, d.owner, d.path.concat(index), d.parentRule);
+            }
+        }
+        defineIterable(CSSRuleList.prototype);
+        const makeRuleList = (sheet, owner, path, parentRule) =>
+            indexedProxy(
+                construct(CSSRuleList, (l) => internals.set(l, { sheet, owner, path, parentRule }))
+            );
+
+        const CSS_RULE_TYPES = {
+            STYLE_RULE: 1,
+            CHARSET_RULE: 2,
+            IMPORT_RULE: 3,
+            MEDIA_RULE: 4,
+            FONT_FACE_RULE: 5,
+            PAGE_RULE: 6,
+            KEYFRAMES_RULE: 7,
+            KEYFRAME_RULE: 8,
+            MARGIN_RULE: 9,
+            NAMESPACE_RULE: 10,
+            COUNTER_STYLE_RULE: 11,
+            SUPPORTS_RULE: 12,
+            DOCUMENT_RULE: 13,
+            FONT_FEATURE_VALUES_RULE: 14,
+            VIEWPORT_RULE: 15,
+            REGION_STYLE_RULE: 16,
+        };
+
+        class CSSRule {
+            constructor() {
+                if (!constructing) illegal();
+            }
+            get type() {
+                return data(this).info().type;
+            }
+            get cssText() {
+                return data(this).info().cssText;
+            }
+            set cssText(_) {}
+            get parentRule() {
+                return data(this).parentRule;
+            }
+            get parentStyleSheet() {
+                return data(this).sheet;
+            }
+        }
+        for (const [name, value] of Object.entries(CSS_RULE_TYPES)) {
+            CSSRule[name] = value;
+            CSSRule.prototype[name] = value;
+        }
+
+        const attrGetter = (name, convert) =>
+            function () {
+                const value = data(this).info().attrs[name];
+                return convert ? convert(value) : value;
+            };
+        const defineAttrs = (cls, attrs) => {
+            for (const [name, convert] of Object.entries(attrs)) {
+                Object.defineProperty(cls.prototype, name, {
+                    get: attrGetter(name, convert),
+                    configurable: true,
+                    enumerable: true,
+                });
+            }
+        };
+        const cssRulesGetter = function () {
+            const d = data(this);
+            return d.rules || (d.rules = makeRuleList(d.sheet, d.owner, d.path, this));
+        };
+        const groupingMethods = {
+            get cssRules() {
+                return cssRulesGetter.call(this);
+            },
+            insertRule(rule, index) {
+                const d = data(this);
+                index = index === undefined ? 0 : Number(index) >>> 0;
+                const result = __blitz_sheet_insert_rule(d.owner, d.path, String(rule), index);
+                d.sheet && invalidateRules(d.sheet);
+                return result;
+            },
+            deleteRule(index) {
+                const d = data(this);
+                __blitz_sheet_delete_rule(d.owner, d.path, Number(index) >>> 0);
+                d.sheet && invalidateRules(d.sheet);
+            },
+        };
+        const styleGetter = {
+            get style() {
+                const d = data(this);
+                return d.style || (d.style = makeRuleStyle(d.owner, d.path, this));
+            },
+        };
+
+        const ruleClasses = {};
+        const defineRuleClass = (name, base, mixins, attrs) => {
+            const cls = class extends base {
+                constructor() {
+                    super();
+                }
+            };
+            Object.defineProperty(cls, "name", { value: name, configurable: true });
+            for (const mixin of mixins) {
+                Object.defineProperties(cls.prototype, Object.getOwnPropertyDescriptors(mixin));
+            }
+            if (attrs) defineAttrs(cls, attrs);
+            ruleClasses[name] = cls;
+            globalThis[name] = cls;
+            return cls;
+        };
+        const str = (v) => (v === undefined ? "" : v);
+        const CSSGroupingRule = defineRuleClass("CSSGroupingRule", CSSRule, [groupingMethods]);
+        const CSSConditionRule = defineRuleClass("CSSConditionRule", CSSGroupingRule, [], {
+            conditionText: str,
+        });
+        defineRuleClass("CSSStyleRule", CSSGroupingRule, [styleGetter], { selectorText: str });
+        Object.defineProperty(ruleClasses.CSSStyleRule.prototype, "selectorText", {
+            get: attrGetter("selectorText", str),
+            set(value) {
+                const d = data(this);
+                __blitz_sheet_set_selector_text(d.owner, d.path, String(value));
+                touchSheet(d.sheet);
+            },
+            configurable: true,
+            enumerable: true,
+        });
+        defineRuleClass("CSSNestedDeclarations", CSSRule, [styleGetter]);
+        defineRuleClass("CSSMediaRule", CSSConditionRule, [
+            {
+                get media() {
+                    return makeMediaList(this.conditionText);
+                },
+            },
+        ]);
+        defineRuleClass("CSSSupportsRule", CSSConditionRule, []);
+        defineRuleClass("CSSContainerRule", CSSConditionRule, [], {
+            containerName: () => "",
+            containerQuery: str,
+        });
+        defineRuleClass("CSSMozDocumentRule", CSSConditionRule, []);
+        defineRuleClass("CSSLayerBlockRule", CSSGroupingRule, [], { name: str });
+        defineRuleClass("CSSLayerStatementRule", CSSRule, [], {
+            nameList: (v) => (v ? v.split(",").map((s) => s.trim()) : []),
+        });
+        defineRuleClass("CSSScopeRule", CSSGroupingRule, []);
+        defineRuleClass("CSSStartingStyleRule", CSSGroupingRule, []);
+        defineRuleClass("CSSPageRule", CSSGroupingRule, [styleGetter], { selectorText: str });
+        defineRuleClass("CSSMarginRule", CSSRule, [styleGetter], { name: str });
+        defineRuleClass("CSSImportRule", CSSRule, [], {
+            href: str,
+            media: (v) => makeMediaList(str(v)),
+            styleSheet: () => null,
+            layerName: () => null,
+            supportsText: () => null,
+        });
+        defineRuleClass("CSSNamespaceRule", CSSRule, [], { namespaceURI: str, prefix: str });
+        defineRuleClass("CSSFontFaceRule", CSSRule, [styleGetter]);
+        defineRuleClass("CSSFontFeatureValuesRule", CSSRule, [], { fontFamily: str });
+        defineRuleClass("CSSFontPaletteValuesRule", CSSRule, [], {
+            name: str,
+            fontFamily: str,
+            basePalette: str,
+            overrideColors: str,
+        });
+        defineRuleClass("CSSCounterStyleRule", CSSRule, [], { name: str });
+        defineRuleClass("CSSPropertyRule", CSSRule, [], {
+            name: str,
+            syntax: str,
+            inherits: (v) => v === "true",
+            initialValue: (v) => (v ? v : null),
+        });
+        defineRuleClass("CSSPositionTryRule", CSSRule, [styleGetter], { name: str });
+        defineRuleClass("CSSViewTransitionRule", CSSRule, []);
+        defineRuleClass("CSSAppearanceBaseRule", CSSGroupingRule, []);
+        defineRuleClass("CSSCustomMediaRule", CSSRule, []);
+        defineRuleClass("CSSKeyframeRule", CSSRule, [styleGetter], { keyText: str });
+        defineRuleClass(
+            "CSSKeyframesRule",
+            CSSRule,
+            [
+                {
+                    get cssRules() {
+                        return cssRulesGetter.call(this);
+                    },
+                    get length() {
+                        return this.cssRules.length;
+                    },
+                    appendRule(rule) {
+                        const d = data(this);
+                        __blitz_sheet_insert_rule(d.owner, d.path, String(rule), 0);
+                        d.sheet && invalidateRules(d.sheet);
+                    },
+                    deleteRule(select) {
+                        const index = findKeyframeIndex(this, select);
+                        if (index === -1) return;
+                        const d = data(this);
+                        __blitz_sheet_delete_rule(d.owner, d.path, index);
+                        d.sheet && invalidateRules(d.sheet);
+                    },
+                    findRule(select) {
+                        const index = findKeyframeIndex(this, select);
+                        return index === -1 ? null : this.cssRules.item(index);
+                    },
+                },
+            ],
+            { name: str }
+        );
+        // Match a keyframe selector string the way `findRule`/`deleteRule` do
+        // (normalising `from`/`to` and whitespace), returning the last match
+        const findKeyframeIndex = (keyframesRule, select) => {
+            const normalise = (s) =>
+                String(s)
+                    .split(",")
+                    .map((k) => k.trim().toLowerCase())
+                    .map((k) => (k === "from" ? "0%" : k === "to" ? "100%" : k))
+                    .join(", ");
+            const wanted = normalise(select);
+            const rules = keyframesRule.cssRules;
+            for (let i = rules.length - 1; i >= 0; i--) {
+                if (normalise(rules.item(i).keyText) === wanted) return i;
+            }
+            return -1;
+        };
+
+        // Rule wrapper objects are cached per stylesheet by path so that repeated
+        // `cssRules[i]` accesses return the same object; the cache is dropped
+        // whenever the rule list is mutated (indices shift).
+        const ruleCaches = new WeakMap();
+        // Per-sheet mutation counter, so that rule wrappers re-fetch their
+        // (serialized) info from the native side only when it may have changed.
+        // The document-wide native counter is folded in so that replacing a
+        // node's stylesheet (e.g. editing a `<style>`'s text) is detected too.
+        const generations = new WeakMap();
+        const sheetGeneration = (sheet) => (sheet && generations.get(sheet)) || 0;
+        const generation = (sheet) =>
+            __blitz_stylesheet_generation() + ":" + sheetGeneration(sheet);
+        const touchSheet = (sheet) => {
+            if (sheet) generations.set(sheet, sheetGeneration(sheet) + 1);
+        };
+        const invalidateRules = (sheet) => {
+            ruleCaches.delete(sheet);
+            touchSheet(sheet);
+        };
+        const ruleAt = (sheet, owner, path, parentRule) => {
+            const key = path.join("/");
+            let cache = sheet && ruleCaches.get(sheet);
+            if (cache && cache.generation !== generation(sheet)) {
+                ruleCaches.delete(sheet);
+                cache = undefined;
+            }
+            if (cache && cache.has(key)) return cache.get(key);
+            let info = __blitz_sheet_rule_info(owner, path);
+            if (info === null) return null;
+            let infoGeneration = generation(sheet);
+            const cls = ruleClasses[info.interface] || CSSRule;
+            const rule = construct(cls, (r) =>
+                internals.set(r, {
+                    sheet,
+                    owner,
+                    path,
+                    parentRule,
+                    info: () => {
+                        const current = generation(sheet);
+                        if (current !== infoGeneration) {
+                            info = __blitz_sheet_rule_info(owner, path) || info;
+                            infoGeneration = current;
+                        }
+                        return info;
+                    },
+                })
+            );
+            if (sheet) {
+                if (!cache) {
+                    cache = new Map();
+                    cache.generation = infoGeneration;
+                    ruleCaches.set(sheet, cache);
+                }
+                cache.set(key, rule);
+            }
+            return rule;
+        };
+
+        class CSSStyleSheet extends StyleSheet {
+            constructor() {
+                super();
+            }
+            get cssRules() {
+                const d = data(this);
+                return d.rules || (d.rules = makeRuleList(this, d.owner, [], null));
+            }
+            get rules() {
+                return this.cssRules;
+            }
+            insertRule(rule, index) {
+                const d = data(this);
+                index = index === undefined ? 0 : Number(index) >>> 0;
+                const result = __blitz_sheet_insert_rule(d.owner, [], String(rule), index);
+                invalidateRules(this);
+                return result;
+            }
+            deleteRule(index) {
+                const d = data(this);
+                __blitz_sheet_delete_rule(d.owner, [], Number(index) >>> 0);
+                invalidateRules(this);
+            }
+            addRule(selector, block, index) {
+                const rule = (selector ?? "undefined") + " {" + (block ?? "undefined") + "}";
+                this.insertRule(rule, index === undefined ? this.cssRules.length : index);
+                return -1;
+            }
+            removeRule(index) {
+                this.deleteRule(index ?? 0);
+            }
+        }
+
+        class StyleSheetList {
+            constructor() {
+                if (!constructing) illegal();
+            }
+            get length() {
+                return data(this).sheets.length;
+            }
+            item(index) {
+                return data(this).sheets[index] ?? null;
+            }
+        }
+        defineIterable(StyleSheetList.prototype);
+
+        // One `CSSStyleSheet` object per owner node (node wrappers are cached,
+        // so identity is stable)
+        const sheets = new WeakMap();
+        globalThis.__blitz_sheet_for_node = (node) => {
+            if (!__blitz_node_has_stylesheet(node)) return null;
+            let sheet = sheets.get(node);
+            if (!sheet) {
+                sheet = construct(CSSStyleSheet, (s) => internals.set(s, { owner: node }));
+                sheets.set(node, sheet);
+            }
+            return sheet;
+        };
+        globalThis.__blitz_style_sheets = () => {
+            const list = __blitz_stylesheet_owner_nodes().map(__blitz_sheet_for_node);
+            return indexedProxy(construct(StyleSheetList, (l) => internals.set(l, { sheets: list })));
+        };
+
+        globalThis.StyleSheet = StyleSheet;
+        globalThis.CSSStyleSheet = CSSStyleSheet;
+        globalThis.StyleSheetList = StyleSheetList;
+        globalThis.CSSRuleList = CSSRuleList;
+        globalThis.CSSRule = CSSRule;
+        globalThis.MediaList = MediaList;
+    }
+
     // `document.fonts` (FontFaceSet) stub: all fonts report as loaded
     const fontFaceSet = {
         status: "loaded",
@@ -397,14 +1091,90 @@ const BOOTSTRAP_JS: &str = r#"
 })();
 "#;
 
-/// Record an unhandled JavaScript error in the runtime state, for the embedder
-/// to collect via [`ScriptDocument::take_js_errors`](crate::ScriptDocument::take_js_errors)
-fn report_js_error(ctx: &DomCtx, what: &str, error: &boa_engine::JsError) {
+/// Report an unhandled JavaScript error: record it in the runtime state for the
+/// embedder to collect via
+/// [`ScriptDocument::take_js_errors`](crate::ScriptDocument::take_js_errors),
+/// then fire an `error` event at the window (the HTML "report an exception"
+/// steps) so that `window.onerror` / `addEventListener("error")` handlers
+/// observe it.
+fn report_js_error(ctx: &DomCtx, context: &mut Context, what: &str, error: &JsError) {
     #[cfg(feature = "tracing")]
     tracing::error!("Uncaught JS error in {what}: {error}");
-    ctx.state
-        .borrow_mut()
-        .record_error(format!("Uncaught JS error in {what}: {error}"));
+    let already_dispatching = {
+        let mut state = ctx.state.borrow_mut();
+        state.record_error(format!("Uncaught JS error in {what}: {error}"));
+        std::mem::replace(&mut state.dispatching_error_event, true)
+    };
+    if already_dispatching {
+        return;
+    }
+    dispatch_error_event(ctx, context, error);
+    ctx.state.borrow_mut().dispatching_error_event = false;
+}
+
+/// Fire an `ErrorEvent`-shaped `error` event at the window for an uncaught
+/// exception. Exceptions thrown by the handlers themselves are recorded (via
+/// [`report_js_error`]) but do not fire further `error` events.
+fn dispatch_error_event(ctx: &DomCtx, context: &mut Context, error: &JsError) {
+    let listeners: Vec<Listener> = {
+        let mut state = ctx.state.borrow_mut();
+        match state.window_listeners.get_mut("error") {
+            Some(listeners) => {
+                let cloned = listeners.clone();
+                listeners.retain(|l| !l.once);
+                cloned
+            }
+            None => Vec::new(),
+        }
+    };
+    let onerror = context
+        .global_object()
+        .get(js_string!("onerror"), context)
+        .ok()
+        .and_then(|handler| handler.as_object().filter(|h| h.is_callable()));
+    if listeners.is_empty() && onerror.is_none() {
+        return;
+    }
+
+    let global: JsValue = context.global_object().into();
+    let event_obj = create_event(ctx, "error", false, true, &global, context);
+    crate::dom::define_value(&event_obj, "currentTarget", global.clone(), context);
+    let error_value = error
+        .clone()
+        .into_opaque(context)
+        .unwrap_or_else(|_| js_str(&error.to_string()));
+    let message = error_value
+        .as_object()
+        .and_then(|obj| obj.get(js_string!("message"), context).ok())
+        .filter(|message| message.is_string())
+        .unwrap_or_else(|| js_str(&error.to_string()));
+    crate::dom::define_value(&event_obj, "message", message.clone(), context);
+    crate::dom::define_value(&event_obj, "filename", js_str(""), context);
+    crate::dom::define_value(&event_obj, "lineno", JsValue::from(0), context);
+    crate::dom::define_value(&event_obj, "colno", JsValue::from(0), context);
+    crate::dom::define_value(&event_obj, "error", error_value.clone(), context);
+
+    for listener in listeners {
+        if let Err(error) = listener
+            .callback
+            .call(&global, &[event_obj.clone().into()], context)
+        {
+            report_js_error(ctx, context, "error event listener", &error);
+        }
+    }
+    // `window.onerror(message, source, lineno, colno, error)`
+    if let Some(handler) = onerror {
+        let args = [
+            message,
+            js_str(""),
+            JsValue::from(0),
+            JsValue::from(0),
+            error_value,
+        ];
+        if let Err(error) = handler.call(&global, &args, context) {
+            report_js_error(ctx, context, "error event listener", &error);
+        }
+    }
 }
 
 /// A [`ModuleLoader`] which fetches ES module imports synchronously via the
@@ -509,11 +1279,16 @@ impl ScriptRuntime {
         fetcher: Rc<RefCell<Box<dyn ScriptFetcher>>>,
     ) -> Self {
         let module_loader = Rc::new(BlitzModuleLoader {
-            fetcher,
+            fetcher: Rc::clone(&fetcher),
             base_url: base_url.cloned(),
             modules: RefCell::new(HashMap::new()),
         });
         let ctx = DomCtx::new(doc);
+        {
+            let mut state = ctx.state.borrow_mut();
+            state.base_url = base_url.cloned();
+            state.fetcher = Some(fetcher);
+        }
         // Share the runtime's clock with boa so that `Date` observes the same
         // (possibly virtual) time as timers
         let clock = ctx.state.borrow().clock.clone();
@@ -608,6 +1383,9 @@ impl ScriptRuntime {
         // Embedder message channel (see `ScriptDocument::take_messages`)
         register_global_fn(&mut context, "__blitz_send_message", 1, send_message);
 
+        // Synchronous resource fetch backing the bootstrap's `fetch()`
+        register_global_fn(&mut context, "__blitz_fetch_sync", 1, fetch_sync);
+
         // CSS property support check, used by the style Proxy's `has` trap
         register_global_fn(
             &mut context,
@@ -618,6 +1396,11 @@ impl ScriptRuntime {
 
         // `getComputedStyle`
         register_global_fn(&mut context, "getComputedStyle", 1, get_computed_style);
+        register_global_fn(&mut context, "__blitz_parse_transform", 1, parse_transform);
+
+        // CSSOM stylesheet natives (`__blitz_sheet_*`), used by the bootstrap's
+        // `CSSStyleSheet` / `CSSRule` implementation
+        crate::dom::stylesheet::register(&mut context);
 
         // Viewport dimensions
         register_global_accessor(&mut context, "innerWidth", inner_width);
@@ -642,6 +1425,11 @@ impl ScriptRuntime {
                 js_string!("supports"),
                 1,
             )
+            .function(
+                NativeFunction::from_fn_ptr(css_register_property),
+                js_string!("registerProperty"),
+                1,
+            )
             .build();
         register_global(&mut context, "CSS", css_namespace.into());
 
@@ -653,6 +1441,7 @@ impl ScriptRuntime {
 
         // Small JS bootstrap for APIs that are easiest to define in JS
         runtime.eval_internal(BOOTSTRAP_JS, "<blitz-bootstrap>");
+        runtime.eval_internal(GEOMETRY_JS, "<blitz-geometry>");
 
         runtime
     }
@@ -666,14 +1455,14 @@ impl ScriptRuntime {
 
     fn eval_internal(&mut self, code: &str, description: &str) {
         if let Err(error) = self.context.eval(Source::from_bytes(code)) {
-            report_js_error(&self.ctx, description, &error);
+            report_js_error(&self.ctx, &mut self.context, description, &error);
         }
     }
 
     /// Run pending promise jobs (microtasks)
     pub fn run_jobs(&mut self, description: &str) {
         if let Err(error) = self.context.run_jobs() {
-            report_js_error(&self.ctx, description, &error);
+            report_js_error(&self.ctx, &mut self.context, description, &error);
         }
     }
 
@@ -691,7 +1480,7 @@ impl ScriptRuntime {
         let module = match Module::parse(source, None, &mut self.context) {
             Ok(module) => module,
             Err(error) => {
-                report_js_error(&self.ctx, &description, &error);
+                report_js_error(&self.ctx, &mut self.context, &description, &error);
                 return;
             }
         };
@@ -706,7 +1495,12 @@ impl ScriptRuntime {
         let promise = module.load_link_evaluate(&mut self.context);
         self.run_jobs(&description);
         if let PromiseState::Rejected(reason) = promise.state() {
-            report_js_error(&self.ctx, &description, &JsError::from_opaque(reason));
+            report_js_error(
+                &self.ctx,
+                &mut self.context,
+                &description,
+                &JsError::from_opaque(reason),
+            );
         }
     }
 
@@ -830,7 +1624,7 @@ impl ScriptRuntime {
                     .callback
                     .call(&JsValue::undefined(), &timer.args, &mut self.context)
             {
-                report_js_error(&self.ctx, "timer callback", &error);
+                report_js_error(&self.ctx, &mut self.context, "timer callback", &error);
             }
         }
         self.run_jobs("timer microtasks");
@@ -995,7 +1789,7 @@ impl ScriptRuntime {
                 if let Err(error) =
                     callback.call(&current_target, &[event_obj.clone().into()], context)
                 {
-                    report_js_error(&ctx, "event listener", &error);
+                    report_js_error(&ctx, context, "event listener", &error);
                 }
                 if event_ref(&event_obj, &|event| event.stopped_immediate.get()) {
                     break 'chain;
@@ -1030,7 +1824,7 @@ impl ScriptRuntime {
                             .callback
                             .call(&global, &[event_obj.clone().into()], context)
                     {
-                        report_js_error(&ctx, "event listener", &error);
+                        report_js_error(&ctx, context, "event listener", &error);
                     }
                     if event_ref(&event_obj, &|event| event.stopped_immediate.get()) {
                         break;
@@ -1101,7 +1895,7 @@ impl ScriptRuntime {
                     .callback
                     .call(&global, &[event_obj.clone().into()], context)
             {
-                report_js_error(&ctx, "event listener", &error);
+                report_js_error(&ctx, context, "event listener", &error);
             }
         }
 
@@ -1112,7 +1906,7 @@ impl ScriptRuntime {
                 if handler.is_callable() {
                     any_called = true;
                     if let Err(error) = handler.call(&global, &[event_obj.into()], context) {
-                        report_js_error(&ctx, "event listener", &error);
+                        report_js_error(&ctx, context, "event listener", &error);
                     }
                 }
             }
@@ -1398,6 +2192,25 @@ fn css_property_supported(
     Ok(JsValue::from(blitz_dom::css_property_is_supported(&name)))
 }
 
+/// `__blitz_parse_transform(string)`: parse a CSS `<transform-list>` into a
+/// 4x4 matrix. Returns `[elements, is2D]` (16 column-major elements), or
+/// `null` if the string is not a valid transform list.
+fn parse_transform(_: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    let value = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
+    let Some((elements, is_2d)) = blitz_dom::parse_transform_matrix(&value) else {
+        return Ok(JsValue::null());
+    };
+    let elements = boa_engine::object::builtins::JsArray::from_iter(
+        elements.into_iter().map(JsValue::from),
+        context,
+    );
+    Ok(boa_engine::object::builtins::JsArray::from_iter(
+        [elements.into(), JsValue::from(is_2d)],
+        context,
+    )
+    .into())
+}
+
 /// `CSS.supports()`: the two-argument form checks a property/value declaration,
 /// the one-argument form evaluates a `@supports` condition
 fn css_supports(_: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
@@ -1411,6 +2224,69 @@ fn css_supports(_: &JsValue, args: &[JsValue], context: &mut Context) -> JsResul
         ctx.doc.borrow().css_supports_condition(&condition)
     };
     Ok(JsValue::from(supported))
+}
+
+/// `CSS.registerProperty({ name, syntax = "*", inherits, initialValue })`
+/// <https://drafts.css-houdini.org/css-properties-values-api-1/#the-registerproperty-function>
+fn css_register_property(
+    _: &JsValue,
+    args: &[JsValue],
+    context: &mut Context,
+) -> JsResult<JsValue> {
+    use blitz_dom::RegisterCustomPropertyResult as Result_;
+
+    let ctx = dom_ctx(context)?;
+    let Some(descriptor) = args.first().and_then(JsValue::as_object) else {
+        return Err(JsNativeError::typ()
+            .with_message("CSS.registerProperty: argument must be a PropertyDefinition dictionary")
+            .into());
+    };
+    let get = |key: &str, context: &mut Context| -> JsResult<Option<String>> {
+        let value = descriptor.get(js_string!(key), context)?;
+        if value.is_undefined() {
+            return Ok(None);
+        }
+        Ok(Some(to_rust_string(&value, context)?))
+    };
+    let Some(name) = get("name", context)? else {
+        return Err(JsNativeError::typ()
+            .with_message("CSS.registerProperty: 'name' is required")
+            .into());
+    };
+    let inherits = descriptor.get(js_string!("inherits"), context)?;
+    if inherits.is_undefined() {
+        return Err(JsNativeError::typ()
+            .with_message("CSS.registerProperty: 'inherits' is required")
+            .into());
+    }
+    let inherits = inherits.to_boolean();
+    let syntax = get("syntax", context)?.unwrap_or_else(|| "*".to_string());
+    let initial_value = get("initialValue", context)?;
+
+    let result = ctx.doc.borrow_mut().register_custom_property(
+        &name,
+        &syntax,
+        inherits,
+        initial_value.as_deref(),
+    );
+    let error = match result {
+        Result_::SuccessfullyRegistered => return Ok(JsValue::undefined()),
+        Result_::InvalidName => JsNativeError::syntax().with_message(format!(
+            "CSS.registerProperty: '{name}' is not a valid custom property name"
+        )),
+        Result_::AlreadyRegistered => JsNativeError::error().with_message(format!(
+            "CSS.registerProperty: '{name}' is already registered"
+        )),
+        Result_::InvalidSyntax => JsNativeError::syntax()
+            .with_message(format!("CSS.registerProperty: invalid syntax '{syntax}'")),
+        Result_::NoInitialValue => JsNativeError::syntax().with_message(
+            "CSS.registerProperty: 'initialValue' is required for non-universal syntax",
+        ),
+        Result_::InvalidInitialValue | Result_::InitialValueNotComputationallyIndependent => {
+            JsNativeError::syntax().with_message("CSS.registerProperty: invalid 'initialValue'")
+        }
+    };
+    Err(error.into())
 }
 
 fn get_computed_style(_: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
@@ -1434,6 +2310,57 @@ fn send_message(_: &JsValue, args: &[JsValue], context: &mut Context) -> JsResul
         .to_std_string_lossy();
     ctx.state.borrow_mut().outbound_messages.push(message);
     Ok(JsValue::undefined())
+}
+
+/// `__blitz_fetch_sync(url)`: resolve `url` against the document base URL and
+/// fetch it via the document's [`ScriptFetcher`]. Returns `[status, url, text]`:
+/// a missing resource yields a 404 (like an HTTP server would), any other
+/// failure throws a `TypeError` (a network error, in `fetch()` terms).
+fn fetch_sync(_: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    use boa_engine::object::builtins::JsArray;
+
+    let ctx = dom_ctx(context)?;
+    let input = args
+        .first()
+        .unwrap_or(&JsValue::undefined())
+        .to_string(context)?
+        .to_std_string_lossy();
+
+    let (base_url, fetcher) = {
+        let state = ctx.state.borrow();
+        (state.base_url.clone(), state.fetcher.clone())
+    };
+    let url = match &base_url {
+        Some(base) => base.join(&input),
+        None => Url::parse(&input),
+    }
+    .map_err(|_| JsNativeError::typ().with_message(format!("Failed to parse URL from {input}")))?;
+    let fetcher =
+        fetcher.ok_or_else(|| JsNativeError::typ().with_message("fetch is unavailable"))?;
+
+    let (status, text) = match fetcher.borrow().fetch(&url) {
+        Ok(text) => (200, text),
+        Err(crate::fetch::FetchError::Io(error))
+            if error.kind() == std::io::ErrorKind::NotFound =>
+        {
+            (404, String::new())
+        }
+        Err(error) => {
+            return Err(JsNativeError::typ()
+                .with_message(format!("Failed to fetch {url}: {error}"))
+                .into());
+        }
+    };
+
+    Ok(JsArray::from_iter(
+        [
+            JsValue::from(status),
+            JsString::from(url.as_str()).into(),
+            JsString::from(text).into(),
+        ],
+        context,
+    )
+    .into())
 }
 
 fn clear_timer(_: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {

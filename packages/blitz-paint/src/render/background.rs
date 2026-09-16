@@ -232,6 +232,36 @@ impl ElementCx<'_, '_> {
 
         let rows = PhysicalTracks::from_tracks(&grid_info.rows);
         let row_origin = rows.origin();
+        let inner_height = rows.span() as f64;
+
+        // Column backgrounds are painted beneath row backgrounds. Track positions are
+        // in logical order, matching the order in which columns were collected.
+        for (column, col_position) in table.columns.iter().zip(&grid_info.columns.positions) {
+            let col_node = &self.context.dom.get_node(column.node_id).unwrap();
+            let Some(style) = col_node.primary_styles() else {
+                continue;
+            };
+
+            let y = row_origin as f64;
+            let shape = Rect::new(
+                col_position.start as f64,
+                y,
+                col_position.end as f64,
+                y + inner_height,
+            )
+            .scale_from_origin(self.scale);
+
+            let current_color = style.clone_color();
+            let background_color = &style.get_background().background_color;
+            let bg_color = background_color
+                .resolve_to_absolute(&current_color)
+                .as_srgb_color();
+
+            if bg_color != Color::TRANSPARENT {
+                scene.fill(Fill::NonZero, self.transform, bg_color, None, &shape);
+            }
+        }
+
         for (row, row_position) in table.rows.iter().zip(rows.iter()) {
             let row_node = &self.context.dom.get_node(row.node_id).unwrap();
             let Some(style) = row_node.primary_styles() else {

@@ -58,11 +58,11 @@ browser-persistence = { path = "./apps/browser/persistence" }
 blitz-test-harness = { path = "./packages/blitz-test-harness" }
 
 # Servo dependencies
-style = { version = "0.20.0", package = "stylo" }
-style_traits = { version = "0.20.0", package = "stylo_traits" }
-style_atoms = { version = "0.20.0", package = "stylo_atoms" }
-style_config = { version = "0.20.0", package = "stylo_static_prefs" }
-style_dom = { version = "0.20.0", package = "stylo_dom" }
+style = { version = "0.21.0", package = "stylo" }
+style_traits = { version = "0.21.0", package = "stylo_traits" }
+style_atoms = { version = "0.21.0", package = "stylo_atoms" }
+style_config = { version = "0.21.0", package = "stylo_static_prefs" }
+style_dom = { version = "0.21.0", package = "stylo_dom" }
 selectors = { version = "0.40.0", package = "selectors" }
 cssparser = { version = "0.37.0" }
 
@@ -98,7 +98,7 @@ dioxus-cli-config = { version = "0.7.3" }
 dioxus-core-macro = { version = "0.7.3" }
 
 # Taffy + Parley + Fontations
-taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "1b918bafcab101dd234ebeb27da0443e24fd9de2", default-features = false, features = [
+taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "c17b313cd1be5a4def91522cf3ea5995e664ebf7", default-features = false, features = [
     "std",
     "flexbox",
     "grid",
@@ -133,7 +133,7 @@ svgtypes = "0.16.1" # Should match usvg's version
 
 # Windowing & Input
 raw-window-handle = "0.6.0"
-winit = { version = "=0.31.0-beta.2" }
+winit = { version = "=0.31.0-beta.3" }
 accesskit = "0.24"
 arboard = { version = "3.4.1", default-features = false }
 rfd = { version = "0.17.1", default-features = false }
@@ -188,6 +188,7 @@ smol_str = "0.3"
 bitflags = "2.8.0"
 bytemuck = "1"
 rayon = "1"
+test-that = "0.5.2"
 thread_local = "1"
 
 [profile.profile]
@@ -318,4 +319,3 @@ rustc-hash = { workspace = true }
 # [patch."https://github.com/linebender/parley"]
 # parley = { path = "../parley/parley" }
 # fontique = { path = "../parley/fontique" }
-

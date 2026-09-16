@@ -831,6 +831,11 @@ impl<Rend: WindowRenderer> View<Rend> {
                 let blitz_delta = match delta {
                     winit::event::MouseScrollDelta::LineDelta(x, y) => BlitzWheelDelta::Lines(x as f64, y as f64),
                     winit::event::MouseScrollDelta::PixelDelta(pos) => BlitzWheelDelta::Pixels(pos.x, pos.y),
+                    _ =>  {
+                        #[cfg(feature = "tracing")]
+                        tracing::error!("unsupported MouseScrollDelta variant: {delta:?}");
+                        BlitzWheelDelta::Pixels(0., 0.)
+                    }
                 };
 
                 let event = BlitzWheelEvent {
@@ -850,9 +855,9 @@ impl<Rend: WindowRenderer> View<Rend> {
             WindowEvent::DoubleTapGesture { .. } => {},
             WindowEvent::RotationGesture { .. } => {},
             WindowEvent::DragEntered { .. } => {},
-            WindowEvent::DragMoved { .. } => {},
             WindowEvent::DragDropped { .. } => {},
             WindowEvent::DragLeft { .. } => {},
+            _ => {}
         }
     }
 }
