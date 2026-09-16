@@ -24,7 +24,7 @@ permissions:
 jobs:
   wpt:
     name: "Run WPT Tests"
-    runs-on: warp-ubuntu-latest-x64-32x
+    runs-on: warp-ubuntu-latest-x64-8x
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
