@@ -17,7 +17,11 @@ fn is_svg_root(harness: &Harness, selector: &str) -> bool {
     let node_id = harness.node(selector);
     let doc = harness.base();
     matches!(
-        doc.get_node(node_id).unwrap().element_data().unwrap().special_data,
+        doc.get_node(node_id)
+            .unwrap()
+            .element_data()
+            .unwrap()
+            .special_data,
         SpecialElementData::SvgRoot(_)
     )
 }

@@ -72,24 +72,32 @@ pub fn rebuild_svg_fragments(doc: &mut BaseDocument) {
             doc.svg_root_nodes.remove(&node_id);
             continue;
         }
-        if !node.damage().is_some_and(|damage| damage.contains(CONSTRUCT_SVG)) {
+        if !node
+            .damage()
+            .is_some_and(|damage| damage.contains(CONSTRUCT_SVG))
+        {
             continue;
         }
 
         let layout = node.final_layout();
-        let content_width =
-            (layout.size.width - layout.border.left - layout.border.right
-                - layout.padding.left
-                - layout.padding.right)
-                .max(0.0);
-        let content_height =
-            (layout.size.height - layout.border.top - layout.border.bottom
-                - layout.padding.top
-                - layout.padding.bottom)
-                .max(0.0);
+        let content_width = (layout.size.width
+            - layout.border.left
+            - layout.border.right
+            - layout.padding.left
+            - layout.padding.right)
+            .max(0.0);
+        let content_height = (layout.size.height
+            - layout.border.top
+            - layout.border.bottom
+            - layout.padding.top
+            - layout.padding.bottom)
+            .max(0.0);
         let viewport = kurbo::Size::new(content_width as f64, content_height as f64);
 
-        let ctx = Arc::new(SvgContext { root: node_id, viewport });
+        let ctx = Arc::new(SvgContext {
+            root: node_id,
+            viewport,
+        });
         doc.get_node_mut(node_id)
             .unwrap()
             .element_data_mut()

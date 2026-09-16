@@ -30,10 +30,7 @@ mod tests {
 
     #[test]
     fn parses_comma_separated() {
-        assert_eq!(
-            parse_viewbox("0,0,485,58"),
-            Some([0.0, 0.0, 485.0, 58.0])
-        );
+        assert_eq!(parse_viewbox("0,0,485,58"), Some([0.0, 0.0, 485.0, 58.0]));
     }
 
     #[test]
