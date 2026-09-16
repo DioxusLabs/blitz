@@ -24,7 +24,7 @@ permissions:
 jobs:
   wpt:
     name: "Run WPT Tests"
-    runs-on: ubuntu-latest
+    runs-on: warp-ubuntu-latest-x64-16x
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
@@ -33,6 +33,8 @@ jobs:
         with:
           key: "blitz-wpt-linux"
           cache-all-crates: "true"
+          cache-workspace-crates: "true"
+          cache-provider: "warpbuild"
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: awalsh128/cache-apt-pkgs-action@latest
         with:
