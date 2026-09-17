@@ -268,8 +268,7 @@ pub fn position(input: stylo::Position) -> taffy::Position {
         stylo::Position::Relative => taffy::Position::Relative,
         stylo::Position::Absolute => taffy::Position::Absolute,
         stylo::Position::Fixed => taffy::Position::Fixed,
-        // TODO: support position:sticky
-        stylo::Position::Sticky => taffy::Position::Relative,
+        stylo::Position::Sticky => taffy::Position::Sticky,
     }
 }
 
