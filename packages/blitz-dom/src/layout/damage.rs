@@ -1,23 +1,17 @@
 use blitz_traits::node_id::NodeId;
-use std::ops::Range;
 
-use crate::Node;
 use crate::net::ResourceHandler;
 use crate::node::NodeFlags;
 use crate::{
     BaseDocument, net::ImageHandler, node::ImageResourceData, node::Status, util::ImageLayerKind,
 };
 use style::properties::ComputedValues;
-use style::properties::generated::longhands::position::computed_value::T as Position;
 use style::selector_parser::RestyleDamage;
 use style::url::ComputedUrl;
-use style::values::computed::Float;
 use style::values::generics::image::Image as StyloImage;
 use style::values::specified::align::AlignFlags;
 use style::values::specified::box_::DisplayInside;
 use style::values::specified::box_::DisplayOutside;
-use taffy::Rect;
-use thin_vec::ThinVec;
 
 pub(crate) const CONSTRUCT_BOX: RestyleDamage =
     RestyleDamage::from_bits_retain(0b_0000_0000_0001_0000);
@@ -292,98 +286,6 @@ pub(crate) fn compute_layout_damage(old: &ComputedValues, new: &ComputedValues) 
     }
 }
 
-/// A child with a z_index that is hoisted up to it's containing Stacking Context for paint purposes.
-///
-/// The child's position relative to the stacking context root is not stored:
-/// it is derived at use-time from the `containing_block()` chain (see
-/// `Node::hoisted_child_position`), so it never goes stale when layout or
-/// scroll offsets change elsewhere in the tree.
-#[derive(Debug, Clone)]
-pub struct HoistedPaintChild {
-    pub node_id: NodeId,
-    pub z_index: i32,
-}
-
-#[derive(Debug)]
-pub struct HoistedPaintChildren {
-    pub children: Vec<HoistedPaintChild>,
-    /// The number of hoisted point children with negative z_index
-    pub negative_z_count: u32,
-
-    pub content_area: taffy::Rect<f32>,
-}
-
-impl HoistedPaintChildren {
-    fn new() -> Self {
-        Self {
-            children: Vec::new(),
-            negative_z_count: 0,
-            content_area: taffy::Rect::ZERO,
-        }
-    }
-
-    pub fn reset(&mut self) {
-        self.children.clear();
-        self.negative_z_count = 0;
-    }
-
-    pub fn compute_content_size(&mut self, doc: &BaseDocument, owner_id: NodeId) {
-        fn child_pos(child: &HoistedPaintChild, doc: &BaseDocument, owner_id: NodeId) -> Rect<f32> {
-            let node = &doc.nodes[child.node_id];
-            let position = doc.nodes[owner_id].hoisted_child_position(child.node_id);
-            let left = position.x + node.final_layout().location.x;
-            let top = position.y + node.final_layout().location.y;
-            let right = left + node.final_layout().size.width;
-            let bottom = top + node.final_layout().size.height;
-
-            taffy::Rect {
-                top,
-                left,
-                bottom,
-                right,
-            }
-        }
-
-        if self.children.is_empty() {
-            self.content_area = taffy::Rect::ZERO;
-        } else {
-            self.content_area = child_pos(&self.children[0], doc, owner_id);
-            for child in self.children[1..].iter() {
-                let pos = child_pos(child, doc, owner_id);
-                self.content_area.left = self.content_area.left.min(pos.left);
-                self.content_area.top = self.content_area.top.min(pos.top);
-                self.content_area.right = self.content_area.right.max(pos.right);
-                self.content_area.bottom = self.content_area.bottom.max(pos.bottom);
-            }
-        }
-    }
-
-    pub fn sort(&mut self) {
-        self.children.sort_by_key(|c| c.z_index);
-        self.negative_z_count = self.children.iter().take_while(|c| c.z_index < 0).count() as u32;
-    }
-
-    pub fn neg_z_range(&self) -> Range<usize> {
-        0..(self.negative_z_count as usize)
-    }
-
-    pub fn pos_z_range(&self) -> Range<usize> {
-        (self.negative_z_count as usize)..self.children.len()
-    }
-
-    pub fn neg_z_hoisted_children(
-        &self,
-    ) -> impl ExactSizeIterator<Item = &HoistedPaintChild> + DoubleEndedIterator {
-        self.children[self.neg_z_range()].iter()
-    }
-
-    pub fn pos_z_hoisted_children(
-        &self,
-    ) -> impl ExactSizeIterator<Item = &HoistedPaintChild> + DoubleEndedIterator {
-        self.children[self.pos_z_range()].iter()
-    }
-}
-
 impl BaseDocument {
     pub(crate) fn invalidate_inline_contexts(&mut self) {
         let scale = self.viewport.scale();
@@ -421,10 +323,6 @@ impl BaseDocument {
                 self.nodes[parent_id].insert_damage(ALL_DAMAGE);
             }
         }
-    }
-
-    pub fn flush_styles_to_layout(&mut self, node_id: NodeId) {
-        self.flush_styles_to_layout_impl(node_id, None);
     }
 
     /// Flush the image layers of nodes whose style changed during the last
@@ -536,39 +434,28 @@ impl BaseDocument {
         }
     }
 
-    /// Walk the whole tree, rebuilding paint children and hoisting z-indexed boxes
-    fn flush_styles_to_layout_impl(
-        &mut self,
-        node_id: NodeId,
-        parent_stacking_context: Option<&mut HoistedPaintChildren>,
-    ) {
+    /// Prepare the tree for layout: clear Taffy caches (in non-incremental
+    /// mode) and sort flex/grid `layout_children` by `order`.
+    ///
+    /// Paint lists are built after layout by `build_paint_tree`.
+    pub fn flush_styles_to_layout(&mut self, node_id: NodeId) {
         let incremental = self.incremental_layout;
 
-        // Skip clean subtrees: their taffy styles, layout/paint child lists and
-        // stacking contexts are unchanged, and the entries the subtree
-        // contributed to an ancestor stacking context are replayed from the
-        // cache captured on the last flush that visited it. Damage propagation
-        // bubbles descendant damage into each ancestor's stored damage, so an
-        // empty damage value covers the whole subtree. Anonymous boxes are
-        // never skipped (damage marking walks the DOM parent chain, which
-        // bypasses them).
+        // Skip clean subtrees: their taffy styles and layout child lists are
+        // unchanged. Damage propagation bubbles descendant damage into each
+        // ancestor's stored damage, so an empty damage value covers the whole
+        // subtree. Anonymous boxes are never skipped (damage marking walks the
+        // DOM parent chain, which bypasses them).
         if incremental {
             let node = &self.nodes[node_id];
             let clean = node.damage().is_some_and(|d| d.is_empty())
                 && !node.has_damaged_descendants()
                 && !node.is_anonymous();
             if clean {
-                if let Some(parent_stacking_context) = parent_stacking_context {
-                    parent_stacking_context
-                        .children
-                        .extend(node.sc_contribution_cache.borrow().iter().cloned());
-                }
                 return;
             }
         }
 
-        let mut new_stacking_context: HoistedPaintChildren = HoistedPaintChildren::new();
-        let stacking_context = &mut new_stacking_context;
         let display = {
             let node = self.nodes.get_mut(node_id).unwrap();
 
@@ -592,25 +479,13 @@ impl BaseDocument {
             display
         };
 
-        // If the node has children, then take those children and...
         let children = self.nodes[node_id].layout_children.borrow_mut().take();
         if let Some(mut children) = children {
-            let is_flex_or_grid =
-                matches!(display.inside(), DisplayInside::Flex | DisplayInside::Grid);
-
-            // Recursively call flush_styles_to_layout on each child
             for &child in children.iter() {
-                self.flush_styles_to_layout_impl(
-                    child,
-                    match self.nodes[child].is_stacking_context_root(is_flex_or_grid) {
-                        true => None,
-                        false => Some(stacking_context),
-                    },
-                );
+                self.flush_styles_to_layout(child);
             }
 
-            // Sort layout_children
-            if is_flex_or_grid {
+            if matches!(display.inside(), DisplayInside::Flex | DisplayInside::Grid) {
                 children.sort_by(|left, right| {
                     let left_node = self.nodes.get(*left).unwrap();
                     let right_node = self.nodes.get(*right).unwrap();
@@ -618,138 +493,7 @@ impl BaseDocument {
                 });
             }
 
-            // Reserve space for paint_children
-            let mut paint_children = self.nodes[node_id].paint_children.borrow_mut();
-            if paint_children.is_none() {
-                *paint_children = Some(ThinVec::new());
-            }
-            let paint_children = paint_children.as_mut().unwrap();
-            paint_children.clear();
-            paint_children.reserve(children.len());
-
-            // Push children to either paint_children or layout_children depending on
-            for &child_id in children.iter() {
-                let child = &self.nodes[child_id];
-
-                let Some(style) = child.primary_styles() else {
-                    paint_children.push(child_id);
-                    continue;
-                };
-
-                let position = style.clone_position();
-                let z_index = style.clone_z_index().integer_or(0);
-
-                // Out-of-flow boxes are hoisted to their containing block by Taffy's
-                // out-of-flow positioning pass and their layout location is relative to
-                // the containing block's border box. When this node is the child's
-                // containing block (it claims the child's position type), the child
-                // stays in this node's paint list, preserving tree order among
-                // positioned siblings. Otherwise it is painted (and hit-tested) via
-                // the containing block's `hoisted_children` list (see
-                // `attach_hoisted_children`), not via its DOM parent.
-                if matches!(position, Position::Absolute | Position::Fixed) {
-                    let parent = &self.nodes[node_id];
-                    // The root element is the initial containing block: it claims
-                    // every candidate not claimed by a closer containing block.
-                    let is_root = self.try_root_element().is_some_and(|el| el.id == node_id);
-                    let parent_claims = is_root
-                        || parent
-                            .containing_block_claims()
-                            .for_position(stylo_taffy::convert::position(position));
-                    if !parent_claims {
-                        continue;
-                    }
-                    // Z-indexed out-of-flow boxes are routed to their stacking
-                    // context by `attach_hoisted_children` after layout, when
-                    // their containing-block-relative location is known.
-                    if z_index != 0 {
-                        continue;
-                    }
-                }
-
-                // TODO: more complete hoisting detection
-                // z-index applies to static flex/grid items too
-                // (css-flexbox-1 §painting, css-grid-1 §z-order).
-                if z_index != 0 && (position != Position::Static || is_flex_or_grid) {
-                    stacking_context.children.push(HoistedPaintChild {
-                        node_id: child_id,
-                        z_index,
-                    })
-                } else {
-                    paint_children.push(child_id);
-                }
-            }
-
-            // Sort paint_children
-            paint_children.sort_by(|left, right| {
-                let left_node = self.nodes.get(*left).unwrap();
-                let right_node = self.nodes.get(*right).unwrap();
-                node_to_paint_order(left_node, is_flex_or_grid)
-                    .cmp(&node_to_paint_order(right_node, is_flex_or_grid))
-            });
-
-            // Put children back
             *self.nodes[node_id].layout_children.borrow_mut() = Some(children);
         }
-
-        if let Some(parent_stacking_context) = parent_stacking_context {
-            if incremental {
-                let node = &self.nodes[node_id];
-                let mut cache = node.sc_contribution_cache.borrow_mut();
-                cache.clear();
-                cache.extend(stacking_context.children.iter().cloned());
-            }
-            parent_stacking_context
-                .children
-                .extend(stacking_context.children.iter().cloned());
-        } else {
-            stacking_context.sort();
-            stacking_context.compute_content_size(self, node_id);
-            self.nodes[node_id].stacking_context = Some(Box::new(new_stacking_context));
-        }
-    }
-}
-
-#[inline(always)]
-fn position_to_order(pos: Position) -> i32 {
-    match pos {
-        Position::Static => 0,
-        // All positioned descendants with z-index: auto share one paint
-        // level (CSS 2.1 Appendix E step 8); the stable sort keeps them in
-        // tree order among themselves, above in-flow content and floats.
-        Position::Relative | Position::Sticky | Position::Absolute | Position::Fixed => 2,
-    }
-}
-#[inline(always)]
-fn float_to_order(pos: Float) -> i32 {
-    match pos {
-        Float::None => 0,
-        _ => 1,
-    }
-}
-
-/// Paint sort key: (paint level, order-modified position). Positioned
-/// (z-index: auto) descendants paint above in-flow content (CSS 2.1
-/// Appendix E step 8); within a level the stable sort preserves
-/// (order-modified) document order.
-#[inline(always)]
-pub(crate) fn node_to_paint_order(node: &Node, is_flex_or_grid: bool) -> (i32, i32) {
-    let Some(style) = node.primary_styles() else {
-        return (0, 0);
-    };
-    let position = style.clone_position();
-    if is_flex_or_grid {
-        match position {
-            Position::Static => (0, style.clone_order()),
-            Position::Relative | Position::Sticky => (2, style.clone_order()),
-            // Out-of-flow children are not flex/grid items: `order` does
-            // not apply; tree order does.
-            Position::Absolute | Position::Fixed => (2, 0),
-        }
-    } else {
-        (
-            position_to_order(position) + float_to_order(style.clone_float()),
-            0,
-        )
     }
 }

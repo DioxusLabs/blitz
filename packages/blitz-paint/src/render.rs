@@ -493,6 +493,20 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                     .unwrap_or(Rect::ZERO);
 
                 let mut effect_layer_clip = cx.frame.border_box_path().bounding_box();
+                // Positioned descendants painted from this node's stacking
+                // context may lie outside its border box (e.g. an absolutely
+                // positioned box whose containing block is an ancestor).
+                if let Some(sc) = node.stacking_context.as_deref()
+                    && !sc.children.is_empty()
+                {
+                    let area = sc.content_area;
+                    effect_layer_clip = effect_layer_clip.union(Rect::new(
+                        area.left as f64 * self.scale,
+                        area.top as f64 * self.scale,
+                        area.right as f64 * self.scale,
+                        area.bottom as f64 * self.scale,
+                    ));
+                }
                 effect_layer_clip.x0 += filter_expansion_area.x0;
                 effect_layer_clip.y0 += filter_expansion_area.y0;
                 effect_layer_clip.x1 += filter_expansion_area.x1;
@@ -518,31 +532,43 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
 
                         // TODO: allow layers with opacity to be unclipped (overflow: visible)
                         let clip = if is_text_input {
-                            &cx.frame.content_box_path()
+                            cx.frame.content_box_path()
                         } else {
-                            &cx.frame.padding_box_path()
+                            cx.frame.padding_box_path()
                         };
+
+                        // Now that background has been drawn, offset pos and cx in order to draw our contents scrolled
+                        let content_position = Point {
+                            x: content_position.x - node.scroll_offset().x,
+                            y: content_position.y - node.scroll_offset().y,
+                        };
+                        cx.transform = cx.transform.then_translate(Vec2 {
+                            x: -node.scroll_offset().x * self.scale,
+                            y: -node.scroll_offset().y * self.scale,
+                        });
+
+                        // Hoisted stacking-context entries are drawn outside the
+                        // overflow clip layer, each taking the clip only if this
+                        // node is on its containing-block chain.
+                        let hoisted_clip = HoistedClip {
+                            should_clip,
+                            clip: &clip,
+                            transform: unscrolled_transform,
+                            unclipped_rect: clip_rect,
+                            clipped_rect: child_clip_rect,
+                        };
+                        cx.draw_hoisted_children(scene, ZOrder::Negative, &hoisted_clip);
 
                         // Clip layer if box requires clipping. Opacity set to 1.0
                         self.layer_manager.maybe_with_layer(
                             scene,
                             should_clip,
                             1.0, // opacity
-                            cx.transform,
-                            clip,
+                            unscrolled_transform,
+                            &clip,
                             None,
                             None,
                             |scene| {
-                                // Now that background has been drawn, offset pos and cx in order to draw our contents scrolled
-                                let content_position = Point {
-                                    x: content_position.x - node.scroll_offset().x,
-                                    y: content_position.y - node.scroll_offset().y,
-                                };
-
-                                cx.transform = cx.transform.then_translate(Vec2 {
-                                    x: -node.scroll_offset().x * self.scale,
-                                    y: -node.scroll_offset().y * self.scale,
-                                });
                                 cx.draw_image(scene);
                                 #[cfg(feature = "svg")]
                                 cx.draw_svg(scene);
@@ -553,9 +579,11 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                                 cx.draw_text_input_text(scene, content_position);
                                 cx.draw_inline_layout(scene, content_position);
                                 cx.draw_marker(scene, content_position);
-                                cx.draw_children(scene, cx.transform, child_clip_rect);
+                                cx.draw_paint_children(scene, child_clip_rect);
                             },
                         );
+
+                        cx.draw_hoisted_children(scene, ZOrder::Positive, &hoisted_clip);
 
                         // Overlay scrollbars, drawn unscrolled above the
                         // clipped content.
@@ -687,6 +715,26 @@ struct ElementCx<'dom, 'a> {
     devtools: &'dom DevtoolSettings,
     #[cfg_attr(not(feature = "custom-widget"), expect(unused))]
     custom_widget_scene: Option<&'a Scene>,
+}
+
+#[derive(Clone, Copy)]
+enum ZOrder {
+    Negative,
+    Positive,
+}
+
+/// A node's overflow clip as applied to the hoisted entries of its stacking
+/// context (see `ElementCx::draw_hoisted_children`).
+struct HoistedClip<'a> {
+    should_clip: bool,
+    /// Clip shape in the node's local (unscrolled) coordinates.
+    clip: &'a kurbo::BezPath,
+    /// The node's transform before its scroll offset is applied.
+    transform: Affine,
+    /// Cull rectangle for entries that escape the clip (the parent's).
+    unclipped_rect: Rect,
+    /// Cull rectangle for entries inside the clip (narrowed to it).
+    clipped_rect: Rect,
 }
 
 /// Converts parley BoundingBox into peniko Rect
@@ -981,71 +1029,85 @@ impl ElementCx<'_, '_> {
         }
     }
 
-    fn draw_children(
-        &self,
-        scene: &mut impl PaintScene,
-        parent_style_transform: Affine,
-        clip_rect: Rect,
-    ) {
-        // Negative z_index hoisted nodes
-
-        if let Some(hoisted) = &self.node.stacking_context {
-            for hoisted_child in hoisted.neg_z_hoisted_children() {
-                let position = self.node.hoisted_child_position(hoisted_child.node_id);
-                let pos = kurbo::Vec2 {
-                    x: position.x as f64 * self.scale,
-                    y: position.y as f64 * self.scale,
-                };
-                self.render_node(
-                    scene,
-                    hoisted_child.node_id,
-                    parent_style_transform.pre_translate(pos),
-                    clip_rect,
-                );
-            }
+    /// Fixed-position children of the root do not scroll with the viewport,
+    /// so cancel out the viewport scroll applied to the scene.
+    fn fixed_compensation(&self, child_id: NodeId) -> Vec2 {
+        let viewport_scroll = self.context.dom.as_ref().viewport_scroll();
+        let viewport_scroll = taffy::Point {
+            x: viewport_scroll.x as f32,
+            y: viewport_scroll.y as f32,
+        };
+        let compensation = self
+            .node
+            .fixed_child_scroll_compensation(child_id, viewport_scroll);
+        Vec2 {
+            x: compensation.x as f64 * self.scale,
+            y: compensation.y as f64 * self.scale,
         }
+    }
 
-        // Regular children
+    /// In-flow children and `z-index: auto` positioned children whose
+    /// containing block is this node, in paint order.
+    fn draw_paint_children(&self, scene: &mut impl PaintScene, clip_rect: Rect) {
         if let Some(children) = &*self.node.paint_children.borrow() {
             for child_id in children {
-                // Fixed-position children do not scroll with their containing block
-                // (their layout location is relative to its unscrolled border box),
-                // so cancel out the scroll offset applied to the transform above.
-                let child = &self.context.dom.as_ref().tree()[*child_id];
-                let child_transform = if child.taffy_position() == taffy::Position::Fixed {
-                    // The root element's scroll is the viewport scroll (applied in
-                    // `paint_scene`), not the node's own scroll offset.
-                    let scroll = if Some(self.node.id) == self.context.root_element_id {
-                        self.context.dom.as_ref().viewport_scroll()
-                    } else {
-                        *self.node.scroll_offset()
-                    };
-                    parent_style_transform.pre_translate(kurbo::Vec2 {
-                        x: scroll.x * self.scale,
-                        y: scroll.y * self.scale,
-                    })
-                } else {
-                    parent_style_transform
-                };
+                let child_transform = self
+                    .transform
+                    .pre_translate(self.fixed_compensation(*child_id));
                 self.render_node(scene, *child_id, child_transform, clip_rect);
             }
         }
+    }
 
-        // Positive z_index hoisted nodes
-        if let Some(hoisted) = &self.node.stacking_context {
-            for hoisted_child in hoisted.pos_z_hoisted_children() {
-                let position = self.node.hoisted_child_position(hoisted_child.node_id);
-                let pos = kurbo::Vec2 {
-                    x: position.x as f64 * self.scale,
-                    y: position.y as f64 * self.scale,
-                };
-                self.render_node(
-                    scene,
-                    hoisted_child.node_id,
-                    parent_style_transform.pre_translate(pos),
-                    clip_rect,
-                );
-            }
+    /// The hoisted entries of this node's stacking context with negative
+    /// (drawn below in-flow content) or non-negative z-index (drawn above).
+    ///
+    /// Entries are drawn from `self.transform` (which includes this node's
+    /// scroll offset) plus the offset of their containing block. This node's
+    /// overflow clip is pushed around an entry only when the node is on the
+    /// entry's containing-block chain: a box captured by a stacking context
+    /// below its containing block is positioned relative to, and clipped by,
+    /// that containing block instead.
+    fn draw_hoisted_children(
+        &self,
+        scene: &mut impl PaintScene,
+        z_order: ZOrder,
+        hoisted_clip: &HoistedClip<'_>,
+    ) {
+        let Some(hoisted) = &self.node.stacking_context else {
+            return;
+        };
+        let range = match z_order {
+            ZOrder::Negative => hoisted.neg_z_range(),
+            ZOrder::Positive => hoisted.pos_z_range(),
+        };
+        for hoisted_child in &hoisted.children[range] {
+            let child_id = hoisted_child.node_id;
+            let position = self.node.hoisted_child_position(child_id);
+            let pos = Vec2 {
+                x: position.x as f64 * self.scale,
+                y: position.y as f64 * self.scale,
+            };
+            let child_transform = self
+                .transform
+                .pre_translate(pos + self.fixed_compensation(child_id));
+
+            let clipped = hoisted_clip.should_clip && self.node.clips_hoisted_child(child_id);
+            let clip_rect = if clipped {
+                hoisted_clip.clipped_rect
+            } else {
+                hoisted_clip.unclipped_rect
+            };
+            self.context.layer_manager.maybe_with_layer(
+                scene,
+                clipped,
+                1.0,
+                hoisted_clip.transform,
+                hoisted_clip.clip,
+                None,
+                None,
+                |scene| self.render_node(scene, child_id, child_transform, clip_rect),
+            );
         }
     }
 
