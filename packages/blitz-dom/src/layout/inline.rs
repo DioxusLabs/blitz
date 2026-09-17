@@ -3,10 +3,11 @@ use parley::{AlignmentOptions, IndentOptions};
 use style::values::specified::box_::DisplayOutside;
 use style::values::{computed::CSSPixelLength, generics::text::GenericTextIndent};
 use taffy::{
-    AvailableSpace, BlockContext, BlockFormattingContext, BoxSizing, CollapsibleMarginSet,
-    CoreStyle as _, Direction, LayoutInput, LayoutOutput, LayoutPartialTree as _, MaybeMath as _,
-    MaybeResolve as _, OofCandidate, OofCandidates, OofPositioningArea, Overflow, Point,
-    RequestedAxis, ResolveOrZero as _, RunMode, Size, SizingMode, StaticEdge, StaticPosition,
+    AvailableSpace, AxisStaticEdge, AxisStaticPosition, BlockContext, BlockFormattingContext,
+    BoxSizing, CollapsibleMarginSet, CoreStyle as _, Direction, LayoutInput, LayoutOutput,
+    LayoutPartialTree as _, MaybeMath as _, MaybeResolve as _, OofCandidate, OofCandidates,
+    OofPositioningArea, Overflow, Point, RequestedAxis, ResolveOrZero as _, RunMode, Size,
+    SizingMode,
 };
 
 #[cfg(feature = "floats")]
@@ -810,18 +811,18 @@ impl BaseDocument {
                                 order,
                                 position,
                                 static_position: taffy::Point {
-                                    x: StaticPosition::from_edge(
+                                    x: AxisStaticPosition::from_edge(
                                         static_position.x,
                                         if container_direction == Direction::Rtl && is_inline_level
                                         {
-                                            StaticEdge::End
+                                            AxisStaticEdge::End
                                         } else {
-                                            StaticEdge::Start
+                                            AxisStaticEdge::Start
                                         },
                                     ),
-                                    y: StaticPosition::from_edge(
+                                    y: AxisStaticPosition::from_edge(
                                         static_position.y,
-                                        StaticEdge::Start,
+                                        AxisStaticEdge::Start,
                                     ),
                                 },
                             });
