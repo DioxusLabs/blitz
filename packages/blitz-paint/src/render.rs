@@ -493,6 +493,20 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                     .unwrap_or(Rect::ZERO);
 
                 let mut effect_layer_clip = cx.frame.border_box_path().bounding_box();
+                // Positioned descendants painted from this node's stacking
+                // context may lie outside its border box (e.g. an absolutely
+                // positioned box whose containing block is an ancestor).
+                if let Some(sc) = node.stacking_context.as_deref()
+                    && !sc.children.is_empty()
+                {
+                    let area = sc.content_area;
+                    effect_layer_clip = effect_layer_clip.union(Rect::new(
+                        area.left as f64 * self.scale,
+                        area.top as f64 * self.scale,
+                        area.right as f64 * self.scale,
+                        area.bottom as f64 * self.scale,
+                    ));
+                }
                 effect_layer_clip.x0 += filter_expansion_area.x0;
                 effect_layer_clip.y0 += filter_expansion_area.y0;
                 effect_layer_clip.x1 += filter_expansion_area.x1;
@@ -987,19 +1001,38 @@ impl ElementCx<'_, '_> {
         parent_style_transform: Affine,
         clip_rect: Rect,
     ) {
-        // Negative z_index hoisted nodes
+        let viewport_scroll = self.context.dom.as_ref().viewport_scroll();
+        let viewport_scroll = taffy::Point {
+            x: viewport_scroll.x as f32,
+            y: viewport_scroll.y as f32,
+        };
+        // Fixed-position children of the root do not scroll with the viewport,
+        // so cancel out the viewport scroll applied to the scene.
+        let fixed_compensation = |child_id: NodeId| {
+            let compensation = self
+                .node
+                .fixed_child_scroll_compensation(child_id, viewport_scroll);
+            kurbo::Vec2 {
+                x: compensation.x as f64 * self.scale,
+                y: compensation.y as f64 * self.scale,
+            }
+        };
+        let hoisted_transform = |child_id: NodeId| {
+            let position = self.node.hoisted_child_position(child_id);
+            let pos = kurbo::Vec2 {
+                x: position.x as f64 * self.scale,
+                y: position.y as f64 * self.scale,
+            };
+            parent_style_transform.pre_translate(pos + fixed_compensation(child_id))
+        };
 
+        // Negative z_index hoisted nodes
         if let Some(hoisted) = &self.node.stacking_context {
             for hoisted_child in hoisted.neg_z_hoisted_children() {
-                let position = self.node.hoisted_child_position(hoisted_child.node_id);
-                let pos = kurbo::Vec2 {
-                    x: position.x as f64 * self.scale,
-                    y: position.y as f64 * self.scale,
-                };
                 self.render_node(
                     scene,
                     hoisted_child.node_id,
-                    parent_style_transform.pre_translate(pos),
+                    hoisted_transform(hoisted_child.node_id),
                     clip_rect,
                 );
             }
@@ -1008,25 +1041,8 @@ impl ElementCx<'_, '_> {
         // Regular children
         if let Some(children) = &*self.node.paint_children.borrow() {
             for child_id in children {
-                // Fixed-position children do not scroll with their containing block
-                // (their layout location is relative to its unscrolled border box),
-                // so cancel out the scroll offset applied to the transform above.
-                let child = &self.context.dom.as_ref().tree()[*child_id];
-                let child_transform = if child.taffy_position() == taffy::Position::Fixed {
-                    // The root element's scroll is the viewport scroll (applied in
-                    // `paint_scene`), not the node's own scroll offset.
-                    let scroll = if Some(self.node.id) == self.context.root_element_id {
-                        self.context.dom.as_ref().viewport_scroll()
-                    } else {
-                        *self.node.scroll_offset()
-                    };
-                    parent_style_transform.pre_translate(kurbo::Vec2 {
-                        x: scroll.x * self.scale,
-                        y: scroll.y * self.scale,
-                    })
-                } else {
-                    parent_style_transform
-                };
+                let child_transform =
+                    parent_style_transform.pre_translate(fixed_compensation(*child_id));
                 self.render_node(scene, *child_id, child_transform, clip_rect);
             }
         }
@@ -1034,15 +1050,10 @@ impl ElementCx<'_, '_> {
         // Positive z_index hoisted nodes
         if let Some(hoisted) = &self.node.stacking_context {
             for hoisted_child in hoisted.pos_z_hoisted_children() {
-                let position = self.node.hoisted_child_position(hoisted_child.node_id);
-                let pos = kurbo::Vec2 {
-                    x: position.x as f64 * self.scale,
-                    y: position.y as f64 * self.scale,
-                };
                 self.render_node(
                     scene,
                     hoisted_child.node_id,
-                    parent_style_transform.pre_translate(pos),
+                    hoisted_transform(hoisted_child.node_id),
                     clip_rect,
                 );
             }

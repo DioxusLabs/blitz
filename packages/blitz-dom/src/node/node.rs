@@ -1,5 +1,5 @@
 use crate::Document;
-use crate::layout::damage::{HoistedPaintChild, HoistedPaintChildren};
+use crate::layout::paint_tree::{HoistedPaintChild, HoistedPaintChildren};
 use bitflags::bitflags;
 use blitz_traits::events::{
     BlitzPointerEvent, BlitzPointerId, DomEventData, HitResult, PointerCoords,
@@ -117,10 +117,15 @@ pub struct Node {
     pub paint_children: RefCell<Option<ThinVec<NodeId>>>,
     pub stacking_context: Option<Box<HoistedPaintChildren>>,
     /// The `HoistedPaintChild` entries that this node's subtree contributed to
-    /// the nearest ancestor stacking context during the last style flush.
-    /// Allows the flush to skip clean subtrees while still reproducing their
+    /// the nearest ancestor stacking context during the last paint-tree build.
+    /// Allows the build to skip clean subtrees while still reproducing their
     /// contributions when an ancestor stacking context is rebuilt.
     pub sc_contribution_cache: RefCell<ThinVec<HoistedPaintChild>>,
+    /// The `z-index: auto` out-of-flow boxes from this node's subtree whose
+    /// containing block lies above this node, as of the last paint-tree build
+    /// (see `BaseDocument::build_paint_tree`). Replayed when the subtree is
+    /// skipped as clean.
+    pub oof_bubble_cache: RefCell<ThinVec<NodeId>>,
 
     // Flags
     pub flags: NodeFlags,
@@ -405,6 +410,7 @@ impl Node {
             paint_children: RefCell::new(None),
             stacking_context: None,
             sc_contribution_cache: RefCell::new(ThinVec::new()),
+            oof_bubble_cache: RefCell::new(ThinVec::new()),
 
             flags: NodeFlags::empty(),
             data,
@@ -1285,10 +1291,14 @@ impl Node {
     /// Derived from the `containing_block()` chain at use-time (rather than baked
     /// in when the child is hoisted) so that it is always in sync with the
     /// current layout and scroll offsets. Usually this node is an ancestor on
-    /// the child's `containing_block()` chain; when it is instead an atomic paint
-    /// effect ancestor *below* the child's containing block (see
-    /// `attach_hoisted_children`), the offset is accumulated walking from this
-    /// node up to the containing block and negated.
+    /// the child's `containing_block()` chain; when it is instead a stacking
+    /// context root *below* the child's containing block (see
+    /// `BaseDocument::build_paint_tree`), the offset is accumulated walking from
+    /// this node up to the containing block and negated.
+    ///
+    /// Fixed-position children whose containing block is the root element do
+    /// not scroll with the viewport: see
+    /// [`fixed_child_scroll_compensation`](Self::fixed_child_scroll_compensation).
     pub fn hoisted_child_position(&self, child_id: NodeId) -> taffy::Point<f32> {
         let start = self.with(child_id).containing_block();
 
@@ -1323,6 +1333,37 @@ impl Node {
             }
         }
         position
+    }
+
+    /// The offset to add to a `position: fixed` child's painted position so
+    /// that it does not scroll with the viewport: the viewport scroll (which
+    /// is applied to the whole scene rather than stored on the root node) when
+    /// the child's containing block is the root element. Zero otherwise: a
+    /// fixed box whose containing block is a transformed (etc.) ancestor
+    /// scrolls with that ancestor's content like an absolutely positioned box.
+    pub fn fixed_child_scroll_compensation(
+        &self,
+        child_id: NodeId,
+        viewport_scroll: taffy::Point<f32>,
+    ) -> taffy::Point<f32> {
+        let child = self.with(child_id);
+        if child.taffy_position() != taffy::Position::Fixed {
+            return taffy::Point::ZERO;
+        }
+        let is_root_cb = child
+            .containing_block()
+            .is_some_and(|cb_id| self.with(cb_id).is_root_element());
+        if is_root_cb {
+            viewport_scroll
+        } else {
+            taffy::Point::ZERO
+        }
+    }
+
+    /// Whether this node is the document's root element (the `<html>` element).
+    pub fn is_root_element(&self) -> bool {
+        self.parent
+            .is_some_and(|parent| matches!(self.with(parent).data, NodeData::Document(_)))
     }
 
     // https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_positioned_layout/Stacking_context#features_creating_stacking_contexts
@@ -1394,14 +1435,6 @@ impl Node {
             .any(|image| !matches!(image, GenericImage::None))
     }
 
-    /// Which out-of-flow positions this node's styles establish a containing block for
-    /// (see [`stylo_taffy::convert::containing_block_claims`]). Nodes without styles claim nothing.
-    pub(crate) fn containing_block_claims(&self) -> taffy::ContainingBlockClaims {
-        self.primary_styles()
-            .map(|style| stylo_taffy::convert::containing_block_claims(&style))
-            .unwrap_or(taffy::ContainingBlockClaims::NONE)
-    }
-
     /// Takes an (x, y) position (relative to the *parent's* top-left corner) and returns:
     ///    - None if the position is outside of this node's bounds
     ///    - Some(HitResult) if the position is within the node but doesn't match any children
@@ -1424,10 +1457,10 @@ impl Node {
         y: f32,
         scale: f64,
         scrollbar: &mut Option<crate::node::ScrollbarRef>,
-        // The viewport scroll offset, passed in by the document for the root
-        // element only (the root element scrolls the viewport, so its scroll
-        // offset is stored on the document): fixed-position children of the
-        // root must not move with it. Zero for all other nodes.
+        // The viewport scroll offset (the root element scrolls the viewport, so
+        // its scroll offset is stored on the document rather than on the
+        // node): fixed-position boxes whose containing block is the root must
+        // not move with it.
         viewport_scroll: taffy::Point<f32>,
     ) -> Option<HitResult> {
         use style::computed_values::pointer_events::T as PointerEvents;
@@ -1473,10 +1506,16 @@ impl Node {
         let matches_hoisted_content = match &self.stacking_context {
             Some(sc) => {
                 let content_area = sc.content_area;
-                x >= content_area.left + self.scroll_offset().x as f32
-                    && x <= content_area.right + self.scroll_offset().x as f32
-                    && y >= content_area.top + self.scroll_offset().y as f32
-                    && y <= content_area.bottom + self.scroll_offset().y as f32
+                let contains = |x: f32, y: f32| {
+                    x >= content_area.left + self.scroll_offset().x as f32
+                        && x <= content_area.right + self.scroll_offset().x as f32
+                        && y >= content_area.top + self.scroll_offset().y as f32
+                        && y <= content_area.bottom + self.scroll_offset().y as f32
+                };
+                // Fixed-position entries whose containing block is the root
+                // are offset by the viewport scroll (see
+                // `fixed_child_scroll_compensation`).
+                contains(x, y) || contains(x - viewport_scroll.x, y - viewport_scroll.y)
             }
             None => false,
         };
@@ -1519,14 +1558,16 @@ impl Node {
             if let Some(hoisted) = &self.stacking_context {
                 for hoisted_child in hoisted.pos_z_hoisted_children().rev() {
                     let position = self.hoisted_child_position(hoisted_child.node_id);
-                    let x = x - position.x;
-                    let y = y - position.y;
+                    let compensation = self
+                        .fixed_child_scroll_compensation(hoisted_child.node_id, viewport_scroll);
+                    let x = x - position.x - compensation.x;
+                    let y = y - position.y - compensation.y;
                     if let Some(hit) = self.with(hoisted_child.node_id).hit_inner(
                         x,
                         y,
                         scale,
                         scrollbar,
-                        taffy::Point::ZERO,
+                        viewport_scroll,
                     ) {
                         return Some(hit);
                     }
@@ -1537,24 +1578,21 @@ impl Node {
         // Call `.hit()` on each child in turn. If any return `Some` then return that value. Else return `Some(self.id).
         for child_id in self.paint_children.borrow().iter().flatten().rev() {
             let child = self.with(*child_id);
-            let child_position = child.taffy_position();
             let mut child_x = x;
             let mut child_y = y;
-            if child_position.is_out_of_flow() {
+            if child.taffy_position().is_out_of_flow() {
                 // Out-of-flow children's layout location is relative to this node's
                 // border box, so undo the inline-root content-box offset applied above
                 if self.flags.is_inline_root() {
                     child_x += content_box_offset.x;
                     child_y += content_box_offset.y;
                 }
-                // Fixed-position children do not scroll with their containing block
-                if child_position == taffy::Position::Fixed {
-                    child_x -= self.scroll_offset().x as f32 + viewport_scroll.x;
-                    child_y -= self.scroll_offset().y as f32 + viewport_scroll.y;
-                }
+                // Fixed-position children of the root do not scroll with the viewport
+                let compensation = self.fixed_child_scroll_compensation(*child_id, viewport_scroll);
+                child_x -= compensation.x;
+                child_y -= compensation.y;
             }
-            if let Some(hit) =
-                child.hit_inner(child_x, child_y, scale, scrollbar, taffy::Point::ZERO)
+            if let Some(hit) = child.hit_inner(child_x, child_y, scale, scrollbar, viewport_scroll)
             {
                 return Some(hit);
             }
@@ -1565,14 +1603,16 @@ impl Node {
             if let Some(hoisted) = &self.stacking_context {
                 for hoisted_child in hoisted.neg_z_hoisted_children().rev() {
                     let position = self.hoisted_child_position(hoisted_child.node_id);
-                    let x = x - position.x;
-                    let y = y - position.y;
+                    let compensation = self
+                        .fixed_child_scroll_compensation(hoisted_child.node_id, viewport_scroll);
+                    let x = x - position.x - compensation.x;
+                    let y = y - position.y - compensation.y;
                     if let Some(hit) = self.with(hoisted_child.node_id).hit_inner(
                         x,
                         y,
                         scale,
                         scrollbar,
-                        taffy::Point::ZERO,
+                        viewport_scroll,
                     ) {
                         return Some(hit);
                     }

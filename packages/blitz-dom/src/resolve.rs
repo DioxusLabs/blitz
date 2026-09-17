@@ -100,7 +100,7 @@ impl BaseDocument {
         self.flush_pending_style_images();
         timer.record_time("pconstruct");
 
-        // Merge stylo into taffy
+        // Prepare the tree for layout
         self.flush_styles_to_layout(root_node_id);
         timer.record_time("flush");
 
@@ -108,13 +108,14 @@ impl BaseDocument {
         self.resolve_layout();
         timer.record_time("layout");
 
-        // Attach out-of-flow boxes to their containing block for painting and
-        // hit-testing
-        self.attach_hoisted_children();
-
         // Resolve transforms
         self.resolve_transforms(root_node_id);
         timer.record_time("transform");
+
+        // Build paint lists now that out-of-flow boxes have been assigned to
+        // their containing blocks and transforms are known
+        self.build_paint_tree(root_node_id);
+        timer.record_time("paint_tree");
 
         // Clear all damage and dirty flags, walking only subtrees which are
         // marked as (potentially) containing damage.
@@ -239,217 +240,6 @@ impl BaseDocument {
         };
 
         full.transform_rect_bbox(overflow)
-    }
-
-    /// The innermost DOM ancestor of `node_id`, strictly below `cb_id`, that applies
-    /// an atomic paint effect (opacity, clip-path, mask) to its subtree.
-    fn innermost_paint_effect_ancestor(&self, node_id: NodeId, cb_id: NodeId) -> Option<NodeId> {
-        let mut ancestor = self.nodes[node_id].parent;
-        while let Some(ancestor_id) = ancestor {
-            if ancestor_id == cb_id {
-                return None;
-            }
-            let node = &self.nodes[ancestor_id];
-            if node.applies_atomic_paint_effect() {
-                return Some(ancestor_id);
-            }
-            ancestor = node.parent;
-        }
-        None
-    }
-
-    /// Whether `a` precedes `b` in DOM pre-order (each node's ancestor path is
-    /// compared by child index at the first point of divergence; an ancestor
-    /// precedes its descendants).
-    fn is_before_in_tree_order(&self, a: NodeId, b: NodeId) -> bool {
-        if a == b {
-            return false;
-        }
-        let path = |mut id: NodeId| {
-            let mut path = vec![id];
-            while let Some(parent) = self.nodes[id].parent {
-                path.push(parent);
-                id = parent;
-            }
-            path.reverse();
-            path
-        };
-        let path_a = path(a);
-        let path_b = path(b);
-        for (i, (&na, &nb)) in path_a.iter().zip(path_b.iter()).enumerate() {
-            if na != nb {
-                if i == 0 {
-                    // Disjoint trees; fall back to a stable arbitrary order
-                    return na < nb;
-                }
-                let parent = &self.nodes[path_a[i - 1]];
-                return parent.index_of_child(na) < parent.index_of_child(nb);
-            }
-        }
-        // One is an ancestor of the other: the shorter path comes first
-        path_a.len() < path_b.len()
-    }
-
-    /// Attach out-of-flow (absolutely/fixed positioned) boxes to their containing
-    /// block, as recorded by Taffy's out-of-flow positioning pass in each node's
-    /// `hoisted_children` list:
-    ///
-    /// - appends each hoisted box to its containing block's `paint_children` so
-    ///   that paint and hit-testing visit it with the correct coordinates
-    ///   (out-of-flow boxes are skipped in their DOM parent's paint list).
-    fn attach_hoisted_children(&mut self) {
-        let mut modified_stacking_roots: Vec<NodeId> = Vec::new();
-        let mut pairs: Vec<(NodeId, Vec<NodeId>)> = Vec::new();
-        let mut stale_cbs: Vec<NodeId> = Vec::new();
-        for &cb_id in self.oof_containing_blocks.iter() {
-            let hoisted = self
-                .nodes
-                .get(cb_id)
-                .map(|node| node.hoisted_children.borrow());
-            match hoisted {
-                Some(hoisted) if !hoisted.is_empty() => {
-                    pairs.push((cb_id, hoisted.iter().copied().collect()));
-                }
-                // The containing block was removed from the document (or no
-                // longer has hoisted children): drop it from the registry.
-                _ => stale_cbs.push(cb_id),
-            }
-        }
-        for cb_id in stale_cbs {
-            self.oof_containing_blocks.remove(&cb_id);
-        }
-        // Iterate containing blocks in a deterministic order: entries pushed to
-        // a shared stacking context below keep a stable relative order (its
-        // z-index sort is stable).
-        pairs.sort_unstable_by_key(|(cb_id, _)| *cb_id);
-
-        for (cb_id, hoisted) in pairs {
-            // Nodes can be removed from the slab between layout passes; drop stale ids
-            let mut valid: Vec<NodeId> = hoisted
-                .into_iter()
-                .filter(|id| self.nodes.contains_key(*id))
-                .collect();
-            // Sort by z-index (stable sort preserves document order within a z-index)
-            valid.sort_by_key(|id| self.nodes[*id].z_index());
-
-            // Boxes whose containing block is their direct layout parent were kept
-            // in its paint tree by `flush_styles_to_layout` (paint_children or the
-            // stacking context, depending on z-index) in tree order, so only append
-            // the ones hoisted past their DOM parent.
-            let direct_layout_children: Vec<NodeId> = self.nodes[cb_id]
-                .layout_children
-                .borrow()
-                .as_ref()
-                .map(|c| c.to_vec())
-                .unwrap_or_default();
-
-            let cb_is_flex_or_grid = matches!(
-                self.nodes[cb_id].taffy_display(),
-                taffy::Display::Flex | taffy::Display::Grid
-            );
-            let mut z_indexed: Vec<NodeId> = Vec::new();
-            let mut effect_attached: Vec<(NodeId, NodeId)> = Vec::new();
-            {
-                let mut paint_children = self.nodes[cb_id].paint_children.borrow_mut();
-                let paint_children = paint_children.get_or_insert_with(thin_vec::ThinVec::new);
-                for &child_id in &valid {
-                    if self.nodes[child_id].z_index() != 0 {
-                        z_indexed.push(child_id);
-                        continue;
-                    }
-                    if direct_layout_children.contains(&child_id) {
-                        continue;
-                    }
-                    // Atomic paint effects (opacity, clip-path, mask) on a DOM ancestor
-                    // apply to out-of-flow descendants even when the ancestor is not
-                    // their containing block, so paint the box inside the innermost such
-                    // ancestor's effect layers rather than directly under the containing
-                    // block.
-                    if let Some(effect_ancestor) =
-                        self.innermost_paint_effect_ancestor(child_id, cb_id)
-                    {
-                        effect_attached.push((child_id, effect_ancestor));
-                        continue;
-                    }
-                    if !paint_children.contains(&child_id) {
-                        // Splice into the containing block's paint list at the
-                        // hoisted box's (paint level, tree order) position: z-index:
-                        // auto positioned boxes paint in tree order among positioned
-                        // siblings (CSS 2.1 Appendix E step 8), not last.
-                        let key = crate::layout::damage::node_to_paint_order(
-                            &self.nodes[child_id],
-                            cb_is_flex_or_grid,
-                        );
-                        let insert_at = paint_children
-                            .iter()
-                            .position(|&existing| {
-                                let existing_key = crate::layout::damage::node_to_paint_order(
-                                    &self.nodes[existing],
-                                    cb_is_flex_or_grid,
-                                );
-                                existing_key > key
-                                    || (existing_key == key
-                                        && self.is_before_in_tree_order(child_id, existing))
-                            })
-                            .unwrap_or(paint_children.len());
-                        paint_children.insert(insert_at, child_id);
-                    }
-                }
-            }
-
-            // Boxes painted inside an intermediate effect ancestor keep their
-            // containing-block-relative layout location; the compensating offset
-            // of the effect ancestor relative to the containing block is derived
-            // at paint/hit-test time (see `Node::hoisted_child_position`).
-            for (child_id, effect_ancestor) in effect_attached {
-                if let Some(sc) = self.nodes[effect_ancestor].stacking_context.as_mut() {
-                    if !sc.children.iter().any(|c| c.node_id == child_id) {
-                        sc.children.push(crate::layout::damage::HoistedPaintChild {
-                            node_id: child_id,
-                            z_index: 0,
-                        });
-                        modified_stacking_roots.push(effect_ancestor);
-                    }
-                }
-            }
-
-            // Children with a z-index belong to the nearest stacking context at
-            // or above the containing block: hoist them there (matching
-            // `flush_styles_to_layout`'s z-index hoisting). Their position
-            // relative to the stacking context root is derived at paint/hit-test
-            // time (see `Node::hoisted_child_position`).
-            for child_id in z_indexed {
-                let mut sc_root = cb_id;
-                while self.nodes[sc_root].stacking_context.is_none() {
-                    let Some(parent) = self.nodes[sc_root].containing_block() else {
-                        break;
-                    };
-                    sc_root = parent;
-                }
-
-                let z_index = self.nodes[child_id].z_index();
-                if let Some(sc) = self.nodes[sc_root].stacking_context.as_mut() {
-                    if !sc.children.iter().any(|c| c.node_id == child_id) {
-                        sc.children.push(crate::layout::damage::HoistedPaintChild {
-                            node_id: child_id,
-                            z_index,
-                        });
-                        modified_stacking_roots.push(sc_root);
-                    }
-                }
-            }
-        }
-
-        modified_stacking_roots.sort_unstable();
-        modified_stacking_roots.dedup();
-        for sc_root in modified_stacking_roots {
-            let mut sc = self.nodes[sc_root].stacking_context.take();
-            if let Some(sc) = sc.as_mut() {
-                sc.sort();
-                sc.compute_content_size(self, sc_root);
-            }
-            self.nodes[sc_root].stacking_context = sc;
-        }
     }
 
     /// Ensure that the layout_children field is populated for all nodes
