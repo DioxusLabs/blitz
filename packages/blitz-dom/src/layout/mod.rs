@@ -450,30 +450,19 @@ impl LayoutContainingBlock for BaseDocument {
         self.node_from_id(node_id).layout_style()
     }
 
-    fn set_hoisted_children(&mut self, node_id: NodeId, hoisted: &[NodeId]) {
-        let containing_block = dom_node_id(node_id);
-        let node = self.node_from_id(node_id);
-        let mut vec = node.hoisted_children.borrow_mut();
-        vec.clear();
-        vec.extend(hoisted.iter().copied().map(dom_node_id));
-        drop(vec);
-        for &hoisted_id in hoisted {
-            self.node_from_id(hoisted_id)
-                .layout_parent
-                .set(Some(containing_block));
-        }
+    fn clear_hoisted_children(&mut self, node_id: NodeId) {
+        self.node_from_id(node_id)
+            .hoisted_children
+            .borrow_mut()
+            .clear();
     }
 
     fn add_hoisted_children(&mut self, node_id: NodeId, hoisted: &[NodeId]) {
         let containing_block = dom_node_id(node_id);
         let node = self.node_from_id(node_id);
-        let mut vec = node.hoisted_children.borrow_mut();
-        for id in hoisted.iter().copied().map(dom_node_id) {
-            if !vec.contains(&id) {
-                vec.push(id);
-            }
-        }
-        drop(vec);
+        node.hoisted_children
+            .borrow_mut()
+            .extend(hoisted.iter().copied().map(dom_node_id));
         for &hoisted_id in hoisted {
             self.node_from_id(hoisted_id)
                 .layout_parent
