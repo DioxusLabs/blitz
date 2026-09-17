@@ -147,6 +147,41 @@ fn abspos_is_clipped_by_overflow_hidden_containing_block_ancestor() {
 }
 
 #[test]
+fn hoisted_box_captured_by_scrolling_stacking_context_is_not_clipped_by_it() {
+    // The inner fixed box is painted from the outer fixed box's stacking
+    // context but its containing block is the root: it is neither clipped
+    // nor scrolled by the outer scroller (css/css-position/position-fixed-scroll-nested-fixed).
+    let mut doc = document(
+        r#"<body style="margin:0">
+        <div id=outer style="position:fixed;width:100px;height:100px;overflow:auto;background:red">
+            <div style="position:fixed;width:200px;height:100px;background:lime"></div>
+            <div style="height:500px"></div>
+        </div>"#,
+    );
+    let outer = doc.query_selector("#outer").unwrap().unwrap();
+    doc.scroll_to(outer, 0.0, 200.0, ScrollBehavior::Instant);
+    let buf = render(&mut doc);
+    assert_eq!(pixel(&buf, 50, 50), LIME);
+    assert_eq!(pixel(&buf, 150, 50), LIME);
+    assert_eq!(pixel(&buf, 150, 150), TRANSPARENT);
+}
+
+#[test]
+fn abspos_children_of_flex_container_paint_in_tree_order_not_order() {
+    // `order` only applies to flex items; absolutely positioned children are
+    // not items (css/css-flexbox/flexbox-paint-ordering-003).
+    let mut doc = document(
+        r#"<body style="margin:0">
+        <div style="display:flex">
+            <div style="position:absolute;order:10;width:100px;height:100px;background:red"></div>
+            <div style="position:absolute;order:5;width:100px;height:100px;background:lime"></div>
+        </div>"#,
+    );
+    let buf = render(&mut doc);
+    assert_eq!(pixel(&buf, 50, 50), LIME);
+}
+
+#[test]
 fn fixed_boxes_do_not_scroll_with_the_viewport() {
     for z_index in ["auto", "10"] {
         let mut doc = document(&format!(

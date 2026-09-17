@@ -1271,11 +1271,17 @@ impl Node {
         }
     }
 
+    /// The `order` a flex/grid container sorts this child by. Out-of-flow
+    /// children are not flex/grid items, so `order` does not apply to them:
+    /// they keep tree order (which paint order depends on).
     pub fn order(&self) -> i32 {
         // ::before/::after pseudos are flex/grid items and honor `order`.
         // They sit first/last in layout_children, and the `order` sort is
         // stable, so ties keep ::before first and ::after last.
-        self.primary_styles().map(|s| s.clone_order()).unwrap_or(0)
+        self.primary_styles()
+            .filter(|s| !stylo_taffy::convert::position(s.get_box().position).is_out_of_flow())
+            .map(|s| s.clone_order())
+            .unwrap_or(0)
     }
 
     pub fn z_index(&self) -> i32 {
@@ -1333,6 +1339,21 @@ impl Node {
             }
         }
         position
+    }
+
+    /// Whether this node's overflow clip applies to a hoisted paint child:
+    /// true when this node is on the child's `containing_block()` chain. A
+    /// stacking context root that paints a box whose containing block lies
+    /// above it (see `BaseDocument::build_paint_tree`) does not clip that box.
+    pub fn clips_hoisted_child(&self, child_id: NodeId) -> bool {
+        let mut current = self.with(child_id).containing_block();
+        while let Some(id) = current {
+            if id == self.id {
+                return true;
+            }
+            current = self.with(id).containing_block();
+        }
+        false
     }
 
     /// The offset to add to a `position: fixed` child's painted position so
