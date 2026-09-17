@@ -791,9 +791,9 @@ impl BaseDocument {
                         // Re-measure the box to get its border-box size (this hits the layout
                         // cache). The size cannot be recovered from `ibox` dimensions as the
                         // space reserved in the line is clamped to be non-negative.
-                        let size = self
-                            .compute_child_layout(taffy::NodeId::from(ibox.id), child_inputs)
-                            .size;
+                        let output =
+                            self.compute_child_layout(taffy::NodeId::from(ibox.id), child_inputs);
+                        let size = output.size;
                         let node = &mut self.nodes[NodeId::from_u64(ibox.id)];
 
                         let inset_offset = taffy::Point {
@@ -807,6 +807,7 @@ impl BaseDocument {
 
                         let layout = node.unrounded_layout_mut();
                         layout.size = size;
+                        layout.scrollable_overflow_rect = output.scrollable_overflow_rect;
                         layout.location.x =
                             (ibox.x / scale) + margin.left + container_pb.left + inset_offset.x;
                         // A negative `margin-top` shrinks the space the box reserves in the
