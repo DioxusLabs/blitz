@@ -463,6 +463,7 @@ impl LayoutContainingBlock for BaseDocument {
             }
         }
         hoisted.clear();
+        drop(hoisted);
         self.oof_containing_blocks.remove(&containing_block);
     }
 

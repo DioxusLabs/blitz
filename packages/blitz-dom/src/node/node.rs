@@ -1279,18 +1279,18 @@ impl Node {
     }
 
     /// The position of a hoisted paint child's coordinate origin (the border
-    /// box of its `layout_parent`) relative to this node, which owns the
+    /// box of its `position_parent()`) relative to this node, which owns the
     /// stacking-context entry list the child is painted from.
     ///
-    /// Derived from the `layout_parent` chain at use-time (rather than baked
+    /// Derived from the `position_parent()` chain at use-time (rather than baked
     /// in when the child is hoisted) so that it is always in sync with the
     /// current layout and scroll offsets. Usually this node is an ancestor on
-    /// the child's `layout_parent` chain; when it is instead an atomic paint
+    /// the child's `position_parent()` chain; when it is instead an atomic paint
     /// effect ancestor *below* the child's containing block (see
     /// `attach_hoisted_children`), the offset is accumulated walking from this
     /// node up to the containing block and negated.
     pub fn hoisted_child_position(&self, child_id: NodeId) -> taffy::Point<f32> {
-        let start = self.with(child_id).layout_parent.get();
+        let start = self.with(child_id).position_parent();
 
         let mut position = taffy::Point::<f32>::ZERO;
         let mut current = start;
@@ -1303,7 +1303,7 @@ impl Node {
             let scroll = *node.scroll_offset();
             position.x += location.x - scroll.x as f32;
             position.y += location.y - scroll.y as f32;
-            current = node.layout_parent.get();
+            current = node.position_parent();
         }
 
         let Some(start) = start else {
@@ -1317,7 +1317,7 @@ impl Node {
             let scroll = *node.scroll_offset();
             position.x -= location.x - scroll.x as f32;
             position.y -= location.y - scroll.y as f32;
-            match node.layout_parent.get() {
+            match node.position_parent() {
                 Some(parent) => current = parent,
                 None => break,
             }

@@ -295,7 +295,7 @@ pub(crate) fn compute_layout_damage(old: &ComputedValues, new: &ComputedValues) 
 /// A child with a z_index that is hoisted up to it's containing Stacking Context for paint purposes.
 ///
 /// The child's position relative to the stacking context root is not stored:
-/// it is derived at use-time from the `layout_parent` chain (see
+/// it is derived at use-time from the `position_parent()` chain (see
 /// `Node::hoisted_child_position`), so it never goes stale when layout or
 /// scroll offsets change elsewhere in the tree.
 #[derive(Debug, Clone)]
