@@ -102,6 +102,11 @@ pub struct Node {
     /// containing block. Recorded by Taffy's out-of-flow positioning pass. The
     /// `Layout.location` of these boxes is relative to this node's border box.
     pub hoisted_children: RefCell<ThinVec<NodeId>>,
+    /// For an out-of-flow box that was hoisted by Taffy's out-of-flow positioning
+    /// pass, the node whose `hoisted_children` list contains it (its containing
+    /// block). The box's `Layout.location` is relative to this node rather than
+    /// to its `layout_parent`. `None` for in-flow boxes.
+    pub containing_block: Cell<Option<NodeId>>,
     /// Anonymous block boxes created for this node during layout construction.
     ///
     /// Anonymous blocks live only in the slab (they are not part of the DOM
@@ -388,6 +393,7 @@ impl Node {
             parent: None,
             children: ThinVec::new(),
             layout_parent: Cell::new(None),
+            containing_block: Cell::new(None),
             layout_children: RefCell::new(None),
             hoisted_children: RefCell::new(ThinVec::new()),
             anonymous_blocks: ThinVec::new(),
@@ -1612,14 +1618,21 @@ impl Node {
         Some(offset)
     }
 
+    /// The node that this node's `Layout.location` is relative to: the containing
+    /// block for a hoisted out-of-flow box, otherwise the `layout_parent`.
+    pub fn position_parent(&self) -> Option<NodeId> {
+        self.containing_block
+            .get()
+            .or_else(|| self.layout_parent.get())
+    }
+
     /// Computes the Document-relative coordinates of the `Node`
     pub fn absolute_position(&self, x: f32, y: f32) -> crate::util::Point<f32> {
         let x = x + self.final_layout().location.x - self.scroll_offset().x as f32;
         let y = y + self.final_layout().location.y - self.scroll_offset().y as f32;
 
-        // Recurse up the layout hierarchy
-        self.layout_parent
-            .get()
+        // Recurse up the positioning hierarchy
+        self.position_parent()
             .map(|i| self.with(i).absolute_position(x, y))
             .unwrap_or(crate::util::Point { x, y })
     }
@@ -1630,8 +1643,7 @@ impl Node {
         let x = x + self.unrounded_layout().location.x - self.scroll_offset().x as f32;
         let y = y + self.unrounded_layout().location.y - self.scroll_offset().y as f32;
 
-        self.layout_parent
-            .get()
+        self.position_parent()
             .map(|i| self.with(i).unrounded_absolute_position(x, y))
             .unwrap_or(crate::util::Point { x, y })
     }
@@ -1665,7 +1677,7 @@ impl Node {
     pub fn offset_parent(&self) -> Option<&Node> {
         let mut node = self;
         loop {
-            node = self.with(node.layout_parent.get()?);
+            node = self.with(node.position_parent()?);
             if node.is_offset_parent() {
                 return Some(node);
             }
@@ -1683,7 +1695,7 @@ impl Node {
             x += layout.location.x;
             y += layout.location.y;
 
-            let Some(parent_id) = current.layout_parent.get() else {
+            let Some(parent_id) = current.position_parent() else {
                 break;
             };
             let parent = self.with(parent_id);

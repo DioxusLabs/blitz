@@ -451,10 +451,18 @@ impl LayoutContainingBlock for BaseDocument {
     }
 
     fn clear_hoisted_children(&mut self, node_id: NodeId) {
-        self.node_from_id(node_id)
-            .hoisted_children
-            .borrow_mut()
-            .clear();
+        let containing_block = dom_node_id(node_id);
+        let mut hoisted = self.node_from_id(node_id).hoisted_children.borrow_mut();
+        for &hoisted_id in hoisted.iter() {
+            // A box which has since been claimed by another containing block
+            // must keep pointing at that one.
+            if let Some(node) = self.nodes.get(hoisted_id) {
+                if node.containing_block.get() == Some(containing_block) {
+                    node.containing_block.set(None);
+                }
+            }
+        }
+        hoisted.clear();
     }
 
     fn add_hoisted_children(&mut self, node_id: NodeId, hoisted: &[NodeId]) {
@@ -465,7 +473,7 @@ impl LayoutContainingBlock for BaseDocument {
             .extend(hoisted.iter().copied().map(dom_node_id));
         for &hoisted_id in hoisted {
             self.node_from_id(hoisted_id)
-                .layout_parent
+                .containing_block
                 .set(Some(containing_block));
         }
     }

@@ -109,7 +109,7 @@ impl BaseDocument {
         timer.record_time("layout");
 
         // Attach out-of-flow boxes to their containing block for painting and
-        // hit-testing, and repoint their layout_parent at the containing block
+        // hit-testing
         self.attach_hoisted_children();
 
         // Resolve transforms
@@ -294,9 +294,6 @@ impl BaseDocument {
     /// block, as recorded by Taffy's out-of-flow positioning pass in each node's
     /// `hoisted_children` list:
     ///
-    /// - repoints each hoisted box's `layout_parent` at its containing block so
-    ///   that coordinate accumulation (e.g. `absolute_position`) follows the
-    ///   containing block chain that its `Layout.location` is relative to; and
     /// - appends each hoisted box to its containing block's `paint_children` so
     ///   that paint and hit-testing visit it with the correct coordinates
     ///   (out-of-flow boxes are skipped in their DOM parent's paint list).
@@ -318,10 +315,6 @@ impl BaseDocument {
                 .collect();
             // Sort by z-index (stable sort preserves document order within a z-index)
             valid.sort_by_key(|id| self.nodes[*id].z_index());
-
-            for &child_id in &valid {
-                self.nodes[child_id].layout_parent.set(Some(cb_id));
-            }
 
             // Boxes whose containing block is their direct layout parent were kept
             // in its paint tree by `flush_styles_to_layout` (paint_children or the
@@ -400,7 +393,7 @@ impl BaseDocument {
                     let scroll = *node.scroll_offset();
                     position.x -= location.x - scroll.x as f32;
                     position.y -= location.y - scroll.y as f32;
-                    let Some(parent) = node.layout_parent.get() else {
+                    let Some(parent) = node.position_parent() else {
                         break;
                     };
                     ancestor = parent;
@@ -430,7 +423,7 @@ impl BaseDocument {
                     let scroll = *node.scroll_offset();
                     position.x += location.x - scroll.x as f32;
                     position.y += location.y - scroll.y as f32;
-                    let Some(parent) = node.layout_parent.get() else {
+                    let Some(parent) = node.position_parent() else {
                         break;
                     };
                     sc_root = parent;
