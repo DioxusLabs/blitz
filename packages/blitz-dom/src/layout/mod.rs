@@ -605,8 +605,8 @@ impl RoundTree for BaseDocument {
         *self.node_from_id_mut(node_id).final_layout_mut() = *layout;
     }
 
-    fn is_hoisted(&self, node_id: NodeId) -> bool {
-        self.node_from_id(node_id).is_hoisted()
+    fn is_out_of_flow(&self, node_id: NodeId) -> bool {
+        self.node_from_id(node_id).is_out_of_flow()
     }
 
     fn hoisted_child_count(&self, node_id: NodeId) -> usize {

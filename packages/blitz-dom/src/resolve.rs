@@ -200,7 +200,7 @@ impl BaseDocument {
                 // Out-of-flow children are laid out relative to their containing
                 // block, not their DOM parent: they are visited (and their overflow
                 // accounted for) via the containing block's hoisted list below.
-                if self.nodes[child_id].is_hoisted() {
+                if self.nodes[child_id].is_out_of_flow() {
                     continue;
                 }
                 let child_rect_in_self = self.resolve_transforms(child_id);
@@ -219,7 +219,7 @@ impl BaseDocument {
         *self.nodes[node_id].hoisted_children.borrow_mut() = hoisted_children;
         for pseudo in [self.nodes[node_id].before(), self.nodes[node_id].after()] {
             let Some(pseudo) = pseudo else { continue };
-            if self.nodes[pseudo].is_hoisted() {
+            if self.nodes[pseudo].is_out_of_flow() {
                 continue;
             }
             let child_rect_in_self = self.resolve_transforms(pseudo);

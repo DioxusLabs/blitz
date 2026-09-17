@@ -1217,7 +1217,7 @@ impl Node {
     /// Whether the node is an out-of-flow box that Taffy positions from its containing
     /// block's hoisted child list rather than from its parent (`display: none` boxes
     /// generate no box and are never hoisted).
-    pub fn is_hoisted(&self) -> bool {
+    pub fn is_out_of_flow(&self) -> bool {
         self.primary_styles().is_some_and(|s| {
             let box_style = s.get_box();
             stylo_taffy::convert::position(box_style.position).is_out_of_flow()
