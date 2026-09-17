@@ -1105,7 +1105,10 @@ pub(crate) fn build_inline_layout_into(
     let mut parley_style = root_node_style
         .as_ref()
         .map(|s| stylo_to_parley::style(inline_context_root_node_id, s))
-        .unwrap_or_default();
+        .unwrap_or_else(|| parley::TextStyle {
+            white_space_collapse: WhiteSpaceCollapse::Collapse,
+            ..Default::default()
+        });
 
     // The line-height of the inline context's root (the "strut"). `normal` is resolved
     // against the root's first available font rather than per-run by Parley, so that
@@ -1130,14 +1133,6 @@ pub(crate) fn build_inline_layout_into(
 
     // Create a parley tree builder
     let mut builder = layout_ctx.tree_builder(font_ctx, scale, true, &parley_style);
-
-    // Set whitespace collapsing mode
-    let collapse_mode = root_node_style
-        .as_ref()
-        .map(|s| s.get_inherited_text().white_space_collapse)
-        .map(stylo_to_parley::white_space_collapse)
-        .unwrap_or(WhiteSpaceCollapse::Collapse);
-    builder.set_white_space_mode(collapse_mode);
 
     let text_transform = root_node_style
         .as_ref()
@@ -1174,7 +1169,6 @@ pub(crate) fn build_inline_layout_into(
             nodes,
             inline_context_root_node_id,
             before_id,
-            collapse_mode,
             text_transform,
             &span_line_heights,
         );
@@ -1185,7 +1179,6 @@ pub(crate) fn build_inline_layout_into(
             nodes,
             inline_context_root_node_id,
             child_id,
-            collapse_mode,
             text_transform,
             &span_line_heights,
         );
@@ -1196,7 +1189,6 @@ pub(crate) fn build_inline_layout_into(
             nodes,
             inline_context_root_node_id,
             after_id,
-            collapse_mode,
             text_transform,
             &span_line_heights,
         );
@@ -1210,7 +1202,6 @@ pub(crate) fn build_inline_layout_into(
         nodes: &crate::NodeTree,
         parent_id: NodeId,
         node_id: NodeId,
-        collapse_mode: WhiteSpaceCollapse,
         parent_text_transform: TextTransform,
         span_line_heights: &HashMap<NodeId, f32>,
     ) {
@@ -1221,13 +1212,6 @@ pub(crate) fn build_inline_layout_into(
 
         let style = node.primary_styles();
         let style = style.as_ref();
-
-        // Set whitespace collapsing mode
-        let collapse_mode = style
-            .map(|s| s.clone_white_space_collapse())
-            .map(stylo_to_parley::white_space_collapse)
-            .unwrap_or(collapse_mode);
-        builder.set_white_space_mode(collapse_mode);
 
         let text_transform = style
             .map(|s| s.clone_text_transform() & TextTransform::CASE_TRANSFORMS)
@@ -1260,6 +1244,23 @@ pub(crate) fn build_inline_layout_into(
                         // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
                     }
                     (DisplayOutside::None, DisplayInside::Contents) => {
+                        let whitespace = style.map(|s| {
+                            [
+                                parley::StyleProperty::WhiteSpaceCollapse(
+                                    stylo_to_parley::white_space_collapse(
+                                        s.clone_white_space_collapse(),
+                                    ),
+                                ),
+                                parley::StyleProperty::TextWrapMode(
+                                    stylo_to_parley::text_wrap_mode(s.clone_text_wrap_mode()),
+                                ),
+                            ]
+                        });
+                        builder.push_style_modification_span(
+                            whitespace
+                                .as_ref()
+                                .map_or(&[][..], |styles| styles.as_slice()),
+                        );
                         for child_id in node.children.iter().copied() {
                             // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
                             build_inline_layout_recursive(
@@ -1267,11 +1268,11 @@ pub(crate) fn build_inline_layout_into(
                                 nodes,
                                 parent_id,
                                 child_id,
-                                collapse_mode,
                                 text_transform,
                                 span_line_heights,
                             );
                         }
+                        builder.pop_style_span();
                     }
                     (DisplayOutside::Inline, DisplayInside::Flow) => {
                         let tag_name = &element_data.name.local;
@@ -1289,21 +1290,27 @@ pub(crate) fn build_inline_layout_into(
                                 // Width and height are set during layout
                                 width: 0.0,
                                 height: 0.0,
+                                baseline: None,
                             });
                         } else if *tag_name == local_name!("br") {
                             // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
                             // TODO: update span id for br spans
-                            builder.push_style_modification_span(&[]);
-                            builder.set_white_space_mode(WhiteSpaceCollapse::Preserve);
+                            builder.push_style_modification_span(&[
+                                parley::StyleProperty::WhiteSpaceCollapse(
+                                    WhiteSpaceCollapse::Preserve,
+                                ),
+                            ]);
                             builder.push_text("\n");
                             builder.pop_style_span();
-                            builder.set_white_space_mode(collapse_mode);
                         } else {
                             // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
                             let mut style = node
                                 .primary_styles()
                                 .map(|s| stylo_to_parley::style(node.id, &s))
-                                .unwrap_or_default();
+                                .unwrap_or_else(|| parley::TextStyle {
+                                    white_space_collapse: WhiteSpaceCollapse::Collapse,
+                                    ..Default::default()
+                                });
 
                             // Floor the line-height of the span by the line-height of the inline context
                             // See https://www.w3.org/TR/CSS21/visudet.html#line-height
@@ -1322,7 +1329,6 @@ pub(crate) fn build_inline_layout_into(
                                     nodes,
                                     node_id,
                                     before_id,
-                                    collapse_mode,
                                     text_transform,
                                     span_line_heights,
                                 );
@@ -1334,7 +1340,6 @@ pub(crate) fn build_inline_layout_into(
                                     nodes,
                                     node_id,
                                     child_id,
-                                    collapse_mode,
                                     text_transform,
                                     span_line_heights,
                                 );
@@ -1345,7 +1350,6 @@ pub(crate) fn build_inline_layout_into(
                                     nodes,
                                     node_id,
                                     after_id,
-                                    collapse_mode,
                                     text_transform,
                                     span_line_heights,
                                 );
@@ -1364,6 +1368,7 @@ pub(crate) fn build_inline_layout_into(
                             // Width and height are set during layout
                             width: 0.0,
                             height: 0.0,
+                            baseline: None,
                         });
                     }
                 };
