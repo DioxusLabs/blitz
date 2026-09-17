@@ -316,6 +316,12 @@ pub struct BaseDocument {
     pub(crate) iframe_loads: HashMap<NodeId, crate::iframe::IframeLoad>,
     /// Set of changed nodes for updating the accessibility tree
     pub(crate) changed_nodes: HashSet<NodeId>,
+    /// Nodes that are the containing block of at least one out-of-flow
+    /// (hoisted) box, as reported by Taffy's out-of-flow positioning pass.
+    /// Maintained by `set_hoisted_children`/`add_hoisted_children` so that
+    /// `attach_hoisted_children` can visit only these nodes rather than
+    /// scanning the whole node slab.
+    pub(crate) oof_containing_blocks: HashSet<NodeId>,
     /// Set of changed nodes for updating the accessibility tree
     pub(crate) deferred_construction_nodes: Vec<ConstructionTask>,
 
@@ -481,6 +487,7 @@ impl BaseDocument {
             pending_resource_deallocations: Vec::new(),
 
             changed_nodes: HashSet::new(),
+            oof_containing_blocks: HashSet::new(),
             deferred_construction_nodes: Vec::new(),
             image_cache: HashMap::new(),
             pending_images: HashMap::new(),
@@ -1803,9 +1810,16 @@ impl BaseDocument {
             return (None, None);
         }
         let mut scrollbar = None;
-        let hit = self
-            .root_element()
-            .hit_inner(x, y, self.viewport().scale_f64(), &mut scrollbar);
+        let hit = self.root_element().hit_inner(
+            x,
+            y,
+            self.viewport().scale_f64(),
+            &mut scrollbar,
+            taffy::Point {
+                x: self.viewport_scroll.x as f32,
+                y: self.viewport_scroll.y as f32,
+            },
+        );
         (hit, scrollbar)
     }
 
