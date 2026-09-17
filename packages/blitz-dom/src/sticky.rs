@@ -169,24 +169,21 @@ impl BaseDocument {
         let mut entries = std::mem::take(&mut self.sticky_nodes);
         // Drop nodes that left the document or have no box (`display: none`),
         // clearing their flag so a node moved back in (keyed lists) registers
-        // again: the flag must mirror registration exactly.
-        let mut dropped = Vec::new();
+        // again: the flag must mirror registration exactly. The split borrow
+        // lets the flag be cleared inside `retain`, without a scratch Vec.
+        let nodes = &mut self.nodes;
         entries.retain(|e| {
-            let keep = self.nodes.get(e.node).is_some_and(|n| {
-                n.flags.is_in_document()
-                    && n.element_data().is_some()
-                    && n.display_style().is_some()
-            });
+            let Some(n) = nodes.get_mut(e.node) else {
+                return false;
+            };
+            let keep = n.flags.is_in_document()
+                && n.element_data().is_some()
+                && n.display_style().is_some_and(|d| !d.is_none());
             if !keep {
-                dropped.push(e.node);
+                n.flags.set(crate::node::NodeFlags::IS_STICKY, false);
             }
             keep
         });
-        for id in dropped {
-            if let Some(n) = self.nodes.get_mut(id) {
-                n.flags.set(crate::node::NodeFlags::IS_STICKY, false);
-            }
-        }
         for entry in entries.iter_mut() {
             entry.constraints = self.constraints_for(entry.node, root, viewport_size);
         }
