@@ -393,7 +393,7 @@ impl BaseDocument {
                     let scroll = *node.scroll_offset();
                     position.x -= location.x - scroll.x as f32;
                     position.y -= location.y - scroll.y as f32;
-                    let Some(parent) = node.position_parent() else {
+                    let Some(parent) = node.containing_block() else {
                         break;
                     };
                     ancestor = parent;
@@ -423,7 +423,7 @@ impl BaseDocument {
                     let scroll = *node.scroll_offset();
                     position.x += location.x - scroll.x as f32;
                     position.y += location.y - scroll.y as f32;
-                    let Some(parent) = node.position_parent() else {
+                    let Some(parent) = node.containing_block() else {
                         break;
                     };
                     sc_root = parent;

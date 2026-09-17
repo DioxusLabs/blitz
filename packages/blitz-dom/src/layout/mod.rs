@@ -457,8 +457,8 @@ impl LayoutContainingBlock for BaseDocument {
             // A box which has since been claimed by another containing block
             // must keep pointing at that one.
             if let Some(node) = self.nodes.get(hoisted_id) {
-                if node.containing_block.get() == Some(containing_block) {
-                    node.containing_block.set(None);
+                if node.oof_containing_block.get() == Some(containing_block) {
+                    node.oof_containing_block.set(None);
                 }
             }
         }
@@ -473,7 +473,7 @@ impl LayoutContainingBlock for BaseDocument {
             .extend(hoisted.iter().copied().map(dom_node_id));
         for &hoisted_id in hoisted {
             self.node_from_id(hoisted_id)
-                .containing_block
+                .oof_containing_block
                 .set(Some(containing_block));
         }
     }
