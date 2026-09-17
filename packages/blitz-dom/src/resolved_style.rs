@@ -438,8 +438,7 @@ impl BaseDocument {
             "top" | "right" | "bottom" | "left" if has_layout_box => {
                 let position = styles.clone_position();
                 let parent_layout = node
-                    .layout_parent
-                    .get()
+                    .position_parent()
                     .and_then(|id| self.get_node(id))
                     .map(|parent| *parent.final_layout());
 
