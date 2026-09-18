@@ -79,8 +79,7 @@ textarea {
     background-color: white;
 }
 
-input:focus,
-textarea:focus {
+:focus-visible {
     outline: 2px solid #4D90FE;
 }
 
