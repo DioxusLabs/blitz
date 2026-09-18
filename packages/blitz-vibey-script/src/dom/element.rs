@@ -8,7 +8,8 @@ use boa_engine::value::JsValue;
 use boa_engine::{Context, JsNativeError, JsResult, js_string};
 
 use super::{
-    define_accessor, define_method, dom_ctx, js_str, node_wrapper, this_node_id, to_rust_string,
+    define_accessor, define_method, dom_ctx, js_str, node_or_null, node_wrapper, this_node_id,
+    to_rust_string,
 };
 use crate::state::DomCtx;
 
@@ -159,6 +160,8 @@ pub(crate) fn init_element_proto(proto: &JsObject, context: &mut Context) {
     define_method(proto, "scrollIntoView", 0, scroll_into_view, context);
 
     define_method(proto, "getAttribute", 1, get_attribute, context);
+    define_method(proto, "attachShadow", 1, attach_shadow, context);
+    define_accessor(proto, "shadowRoot", Some(shadow_root), None, context);
     define_method(proto, "setAttribute", 2, set_attribute, context);
     define_method(proto, "removeAttribute", 1, remove_attribute, context);
     define_method(proto, "hasAttribute", 1, has_attribute, context);
@@ -1424,4 +1427,56 @@ fn get_elements_by_class_name(
         .map(|match_id| node_wrapper(&ctx, match_id, context).into())
         .collect();
     Ok(boa_engine::object::builtins::JsArray::from_iter(wrappers, context).into())
+}
+
+/// `element.attachShadow({ mode })` — the shadow root is returned as a node.
+fn attach_shadow(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    let ctx = dom_ctx(context)?;
+    let host_id = this_node_id(this)?;
+    // `mode` is required and must be "open" or "closed" (ShadowRootMode).
+    let mode_value = match args.first().and_then(|v| v.as_object()) {
+        Some(init) => init.get(js_string!("mode"), context)?,
+        None => JsValue::undefined(),
+    };
+    let mode = if mode_value.is_undefined() {
+        String::new()
+    } else {
+        mode_value.to_string(context)?.to_std_string_escaped()
+    };
+    let mode = match mode.as_str() {
+        "open" => blitz_dom::shadow::ShadowRootMode::Open,
+        "closed" => blitz_dom::shadow::ShadowRootMode::Closed,
+        other => {
+            return Err(boa_engine::JsNativeError::typ()
+                .with_message(format!(
+                    "The provided value '{other}' is not a valid enum value of type ShadowRootMode."
+                ))
+                .into());
+        }
+    };
+    let root_id = {
+        let mut doc = ctx.doc.borrow_mut();
+        let mut mutr = doc.mutate();
+        mutr.attach_shadow(host_id, mode)
+    };
+    Ok(node_wrapper(&ctx, root_id, context).into())
+}
+
+/// `element.shadowRoot` — open shadow roots only.
+fn shadow_root(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    let ctx = dom_ctx(context)?;
+    let host_id = this_node_id(this)?;
+    let root = {
+        let doc = ctx.doc.borrow();
+        doc.shadow_root_of(host_id).filter(|root| {
+            doc.get_node(*root)
+                .and_then(|n| {
+                    n.data
+                        .attr(blitz_dom::local_name!("mode"))
+                        .map(|m| m != "closed")
+                })
+                .unwrap_or(true)
+        })
+    };
+    Ok(node_or_null(&ctx, root, context))
 }

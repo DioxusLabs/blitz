@@ -10,6 +10,7 @@ use crate::StyleThreading;
 use crate::layout::damage::compute_layout_damage;
 use crate::node::Node;
 use crate::node::NodeData;
+use crate::node::NodeFlags;
 use markup5ever::{LocalName, LocalNameStaticSet, Namespace, NamespaceStaticSet, local_name};
 use selectors::bloom::BLOOM_HASH_MASK;
 use selectors::{
@@ -273,14 +274,16 @@ impl<'a> TShadowRoot for BlitzNode<'a> {
     }
 
     fn host(&self) -> <Self::ConcreteNode as TNode>::ConcreteElement {
-        todo!("Shadow roots not implemented")
+        let host = self.parent.expect("shadow root without a host");
+        self.with(host)
     }
 
     fn style_data<'b>(&self) -> Option<&'b style::stylist::CascadeData>
     where
         Self: 'b,
     {
-        todo!("Shadow roots not implemented")
+        let node: &'a Node = self;
+        node.author_styles.as_ref().map(|styles| &*styles.data)
     }
 }
 
@@ -328,7 +331,16 @@ impl<'a> TNode for BlitzNode<'a> {
     //
     // For the sake of this demo, we're just going to return the parent node ann
     fn traversal_parent(&self) -> Option<Self::ConcreteElement> {
-        self.parent_node().and_then(|node| node.as_element())
+        let parent = self.parent_node()?;
+        // Children of a shadow root inherit from the host.
+        if parent.flags.contains(NodeFlags::IS_SHADOW_ROOT) {
+            return parent.parent_node().and_then(|host| host.as_element());
+        }
+        // Light children of a host live in the flat tree under their slot.
+        if parent.shadow_root.is_some() {
+            return self.assigned_slot.map(|slot| self.with(slot));
+        }
+        parent.as_element()
     }
 
     fn opaque(&self) -> OpaqueNode {
@@ -341,7 +353,9 @@ impl<'a> TNode for BlitzNode<'a> {
 
     fn as_element(&self) -> Option<Self::ConcreteElement> {
         match self.data {
-            NodeData::Element { .. } => Some(self),
+            NodeData::Element { .. } if !self.flags.contains(NodeFlags::IS_SHADOW_ROOT) => {
+                Some(self)
+            }
             _ => None,
         }
     }
@@ -354,8 +368,9 @@ impl<'a> TNode for BlitzNode<'a> {
     }
 
     fn as_shadow_root(&self) -> Option<Self::ConcreteShadowRoot> {
-        // TODO: implement shadow DOM
-        None
+        self.flags
+            .contains(NodeFlags::IS_SHADOW_ROOT)
+            .then_some(self)
     }
 }
 
@@ -380,11 +395,12 @@ impl selectors::Element for BlitzNode<'_> {
     }
 
     fn parent_node_is_shadow_root(&self) -> bool {
-        false
+        self.parent_node()
+            .is_some_and(|p| p.flags.contains(NodeFlags::IS_SHADOW_ROOT))
     }
 
     fn containing_shadow_host(&self) -> Option<Self> {
-        None
+        TElement::containing_shadow(self).and_then(|root| root.parent_node())
     }
 
     fn is_pseudo_element(&self) -> bool {
@@ -550,7 +566,7 @@ impl selectors::Element for BlitzNode<'_> {
     }
 
     fn is_html_slot_element(&self) -> bool {
-        false
+        matches!(&self.data, NodeData::Element(el) if el.name.local.as_ref() == "slot")
     }
 
     fn has_id(
@@ -823,10 +839,18 @@ impl<'a> TElement for BlitzNode<'a> {
     }
 
     fn shadow_root(&self) -> Option<<Self::ConcreteNode as TNode>::ConcreteShadowRoot> {
-        None
+        self.shadow_root.map(|id| self.with(id))
     }
 
     fn containing_shadow(&self) -> Option<<Self::ConcreteNode as TNode>::ConcreteShadowRoot> {
+        let mut cur = self.parent;
+        while let Some(id) = cur {
+            let node = self.with(id);
+            if node.flags.contains(NodeFlags::IS_SHADOW_ROOT) {
+                return Some(node);
+            }
+            cur = node.parent;
+        }
         None
     }
 
@@ -1261,7 +1285,8 @@ impl<'a> Iterator for Traverser<'a> {
     type Item = BlitzNode<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let node_id = self.parent.children.get(self.child_index)?;
+        // Composed tree: a host's shadow children, a slot's assigned nodes.
+        let node_id = self.parent.composed_children().get(self.child_index)?;
         let node = self.parent.with(*node_id);
 
         self.child_index += 1;

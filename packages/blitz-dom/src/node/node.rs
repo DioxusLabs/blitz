@@ -58,6 +58,9 @@ bitflags! {
         const IS_TABLE_ROOT = 0b00000010;
         /// Whether the node is "in the document" (~= has a parent and isn't a template node)
         const IS_IN_DOCUMENT = 0b00000100;
+        /// The node is a shadow root (an element-like node named `shadow-root`
+        /// whose parent is its host).
+        const IS_SHADOW_ROOT = 0b00001000;
     }
 }
 
@@ -94,6 +97,18 @@ pub struct Node {
     pub parent: Option<NodeId>,
     // What are our children?
     pub children: ThinVec<NodeId>,
+    /// Shadow root attached to this element (`attachShadow`). `children` keeps
+    /// the light DOM; the composed (flat) tree is read through
+    /// [`Node::composed_children`], where a host yields its shadow root's
+    /// children and a `<slot>` its assigned nodes.
+    pub shadow_root: Option<NodeId>,
+    /// For a `<slot>`: the light children assigned to it (see `shadow.rs`).
+    pub assigned_nodes: ThinVec<NodeId>,
+    /// For a light child of a shadow host: the slot it is assigned to.
+    pub assigned_slot: Option<NodeId>,
+    /// Stylesheets scoped to this shadow root (set on `IS_SHADOW_ROOT` nodes only).
+    pub author_styles:
+        Option<Box<style::author_styles::AuthorStyles<style::stylesheets::DocumentStyleSheet>>>,
     /// Our parent in the layout hierachy: a separate list that includes anonymous collections of inline elements
     pub layout_parent: Cell<Option<NodeId>>,
     /// A separate child list that includes anonymous collections of inline elements
@@ -249,6 +264,26 @@ impl Node {
         &mut self.layout_data_mut().final_layout
     }
 
+    /// Children in the composed (flat) tree: what style, layout, paint and hit
+    /// testing walk. A shadow host yields its shadow root's children, a `<slot>`
+    /// its assigned nodes (its own children when nothing is assigned), any
+    /// other node its DOM children. Light-tree walks (`querySelector`,
+    /// `childNodes`, text content) must keep using `children`.
+    pub fn composed_children(&self) -> &[NodeId] {
+        if let Some(root) = self.shadow_root {
+            return &self.with(root).children;
+        }
+        if self.is_slot() && !self.assigned_nodes.is_empty() {
+            return &self.assigned_nodes;
+        }
+        &self.children
+    }
+
+    /// Whether this is an HTML `<slot>` element.
+    pub fn is_slot(&self) -> bool {
+        matches!(&self.data, NodeData::Element(el) if el.name.local.as_ref() == "slot")
+    }
+
     #[inline]
     pub fn scroll_offset(&self) -> &crate::Point<f64> {
         &self.layout_data().scroll_offset
@@ -383,6 +418,10 @@ impl Node {
             id,
             parent: None,
             children: ThinVec::new(),
+            shadow_root: None,
+            assigned_nodes: ThinVec::new(),
+            assigned_slot: None,
+            author_styles: None,
             layout_parent: Cell::new(None),
             layout_children: RefCell::new(None),
             anonymous_blocks: ThinVec::new(),
@@ -442,6 +481,11 @@ impl Node {
     }
 
     pub(crate) fn display_style(&self) -> Option<StyloDisplay> {
+        if self.flags.contains(NodeFlags::IS_SHADOW_ROOT) {
+            // Shadow roots are not elements for Stylo (never styled): they
+            // are transparent for box construction.
+            return Some(StyloDisplay::Contents);
+        }
         Some(self.primary_styles().as_ref()?.clone_display())
     }
 

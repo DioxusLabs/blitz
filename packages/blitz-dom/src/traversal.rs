@@ -17,32 +17,6 @@ macro_rules! iter_children {
 }
 pub(crate) use iter_children;
 
-macro_rules! iter_children_and_pseudos {
-    ($node_expr:expr, $cb:expr) => {{
-        // Load node
-        let node = &mut $node_expr;
-
-        // Copy before, after, and take children
-        let before = node.before();
-        let after = node.after();
-        let children = core::mem::take(&mut node.children);
-
-        if let Some(before) = before {
-            $cb(before)
-        }
-        for child_id in children.iter().copied() {
-            $cb(child_id)
-        }
-        if let Some(after) = after {
-            $cb(after)
-        }
-
-        // Reload node and put children back
-        $node_expr.children = children;
-    }};
-}
-pub(crate) use iter_children_and_pseudos;
-
 #[derive(Clone)]
 /// An pre-order tree traverser for a [BaseDocument](crate::document::BaseDocument).
 pub struct TreeTraverser<'a> {
@@ -162,6 +136,19 @@ impl BaseDocument {
         }
     }
 
+    /// Composed-tree variant of [`Self::iter_children_mut`], for box
+    /// construction: a shadow host's shadow children, a slot's assigned nodes.
+    pub fn iter_composed_children_mut(
+        &mut self,
+        node_id: NodeId,
+        mut cb: impl FnMut(NodeId, &mut BaseDocument),
+    ) {
+        let children: Vec<NodeId> = self.nodes[node_id].composed_children().to_vec();
+        for child_id in children {
+            cb(child_id, self);
+        }
+    }
+
     pub fn iter_children_mut(
         &mut self,
         node_id: NodeId,
@@ -195,6 +182,34 @@ impl BaseDocument {
         }
     }
 
+    /// Like [`Self::iter_subtree_mut`], but also descends into shadow roots.
+    /// For in-document bookkeeping (added/removed subtrees) only: light-tree
+    /// callers rely on `iter_subtree_mut` staying light.
+    pub fn iter_subtree_with_shadow_mut(
+        &mut self,
+        node_id: NodeId,
+        mut cb: impl FnMut(NodeId, &mut BaseDocument),
+    ) {
+        cb(node_id, self);
+        iter_inner(self, node_id, &mut cb);
+        fn iter_inner(
+            doc: &mut BaseDocument,
+            node_id: NodeId,
+            cb: &mut impl FnMut(NodeId, &mut BaseDocument),
+        ) {
+            if let Some(root) = doc.nodes[node_id].shadow_root {
+                cb(root, doc);
+                iter_inner(doc, root, cb);
+            }
+            let children = std::mem::take(&mut doc.nodes[node_id].children);
+            for child_id in children.iter().cloned() {
+                cb(child_id, doc);
+                iter_inner(doc, child_id, cb);
+            }
+            doc.nodes[node_id].children = children;
+        }
+    }
+
     pub fn iter_children_and_pseudos_mut(
         &mut self,
         node_id: NodeId,
@@ -207,7 +222,8 @@ impl BaseDocument {
         }
         self.nodes[node_id].set_pe_by_index(1, before);
 
-        self.iter_children_mut(node_id, &mut cb);
+        // Box construction walks the composed tree.
+        self.iter_composed_children_mut(node_id, &mut cb);
 
         let after = self.nodes[node_id].after();
         self.nodes[node_id].set_pe_by_index(0, None);

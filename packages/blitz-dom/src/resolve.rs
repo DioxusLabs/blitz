@@ -48,6 +48,11 @@ impl BaseDocument {
 
         // Process messages that have been sent to our message channel (e.g. loaded resource)
         self.handle_messages();
+        // Slots follow the current light DOM before styling the flat tree.
+        if !self.shadow_hosts.is_empty() {
+            self.assign_slots();
+            self.flush_shadow_styles();
+        }
 
         // While render-blocking resources (e.g. stylesheets linked from the `<head>`) are
         // still loading, don't resolve styles or layout (matching how browsers block

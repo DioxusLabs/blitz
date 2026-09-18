@@ -548,6 +548,7 @@ impl DocumentMutator<'_> {
             parent.mark_ancestors_dirty();
             parent.children.retain(|id| *id != node_id);
             self.maybe_record_node(parent_id);
+            self.doc.damage_box_owner(parent_id);
         }
     }
 
@@ -676,8 +677,8 @@ impl DocumentMutator<'_> {
                 continue;
             };
 
+            self.doc.damage_box_owner(old_parent_id);
             let old_parent = &mut self.doc.nodes[old_parent_id];
-            old_parent.insert_damage(ALL_DAMAGE);
 
             // TODO: make this fine grained / conditional based on ElementSelectorFlags
             if child_was_in_doc {
@@ -695,8 +696,10 @@ impl DocumentMutator<'_> {
             self.maybe_record_node(old_parent_id);
         }
 
+        // A shadow root carries no style data, so its damage goes to the host:
+        // the element whose boxes are rebuilt from the composed tree.
+        self.doc.damage_box_owner(parent_id);
         let new_parent = &mut self.doc.nodes[parent_id];
-        new_parent.insert_damage(ALL_DAMAGE);
 
         // TODO: make this fine grained / conditional based on ElementSelectorFlags
         if new_parent_is_in_document {
@@ -725,6 +728,9 @@ impl DocumentMutator<'_> {
         }
 
         self.maybe_record_node(parent_id);
+        for child_id in child_ids.iter().copied() {
+            self.doc.rescope_stylesheets(child_id);
+        }
     }
 
     // Tree mutation methods (that defer to other methods)
@@ -924,121 +930,125 @@ impl<'doc> DocumentMutator<'doc> {
     }
 
     fn process_added_subtree(&mut self, node_id: NodeId) {
-        self.doc.iter_subtree_mut(node_id, |node_id, doc| {
-            let node = &mut doc.nodes[node_id];
-            node.flags.set(NodeFlags::IS_IN_DOCUMENT, true);
-            node.insert_damage(ALL_DAMAGE);
+        // Shadow trees are in-document with their host: walk them too.
+        self.doc
+            .iter_subtree_with_shadow_mut(node_id, |node_id, doc| {
+                let node = &mut doc.nodes[node_id];
+                node.flags.set(NodeFlags::IS_IN_DOCUMENT, true);
+                node.insert_damage(ALL_DAMAGE);
 
-            // If the node has an "id" attribute, store it in the ID map.
-            if let Some(id_attr) = node.attr(local_name!("id")).map(ToString::to_string) {
-                doc.add_to_id_map(&id_attr, node_id);
-            }
-
-            let node = &mut doc.nodes[node_id];
-            let NodeData::Element(ref mut element) = node.data else {
-                return;
-            };
-
-            // Custom post-processing by element tag name
-            let tag = element.name.local.as_ref();
-            match tag {
-                "title" => self.title_node = Some(node_id),
-                "link" => self.eager_op_queue.push(SpecialOp::LoadStylesheet(node_id)),
-                "img" => self.eager_op_queue.push(SpecialOp::LoadImage(node_id)),
-                "iframe" => self.eager_op_queue.push(SpecialOp::LoadIframe(node_id)),
-                "canvas" => self
-                    .eager_op_queue
-                    .push(SpecialOp::LoadCustomPaintSource(node_id)),
-                "style" => {
-                    self.style_nodes.insert(node_id);
+                // If the node has an "id" attribute, store it in the ID map.
+                if let Some(id_attr) = node.attr(local_name!("id")).map(ToString::to_string) {
+                    doc.add_to_id_map(&id_attr, node_id);
                 }
-                "button" | "fieldset" | "input" | "select" | "textarea" | "object" | "output" => {
-                    self.eager_op_queue
-                        .push(SpecialOp::ProcessButtonInput(node_id));
-                    self.form_nodes.insert(node_id);
-                }
-                _ => {}
-            }
 
-            #[cfg(feature = "autofocus")]
-            if node.is_focussable() {
-                if let NodeData::Element(ref element) = node.data {
-                    if let Some(value) = element.attr(local_name!("autofocus")) {
-                        if value == "true" {
-                            self.node_to_autofocus = Some(node_id);
+                let node = &mut doc.nodes[node_id];
+                let NodeData::Element(ref mut element) = node.data else {
+                    return;
+                };
+
+                // Custom post-processing by element tag name
+                let tag = element.name.local.as_ref();
+                match tag {
+                    "title" => self.title_node = Some(node_id),
+                    "link" => self.eager_op_queue.push(SpecialOp::LoadStylesheet(node_id)),
+                    "img" => self.eager_op_queue.push(SpecialOp::LoadImage(node_id)),
+                    "iframe" => self.eager_op_queue.push(SpecialOp::LoadIframe(node_id)),
+                    "canvas" => self
+                        .eager_op_queue
+                        .push(SpecialOp::LoadCustomPaintSource(node_id)),
+                    "style" => {
+                        self.style_nodes.insert(node_id);
+                    }
+                    "button" | "fieldset" | "input" | "select" | "textarea" | "object"
+                    | "output" => {
+                        self.eager_op_queue
+                            .push(SpecialOp::ProcessButtonInput(node_id));
+                        self.form_nodes.insert(node_id);
+                    }
+                    _ => {}
+                }
+
+                #[cfg(feature = "autofocus")]
+                if node.is_focussable() {
+                    if let NodeData::Element(ref element) = node.data {
+                        if let Some(value) = element.attr(local_name!("autofocus")) {
+                            if value == "true" {
+                                self.node_to_autofocus = Some(node_id);
+                            }
                         }
                     }
                 }
-            }
-        });
+            });
 
         self.flush_eager_ops();
     }
 
     fn process_removed_subtree(&mut self, node_id: NodeId) {
-        self.doc.iter_subtree_mut(node_id, |node_id, doc| {
-            doc.nodes[node_id]
-                .flags
-                .set(NodeFlags::IS_IN_DOCUMENT, false);
+        self.doc
+            .iter_subtree_with_shadow_mut(node_id, |node_id, doc| {
+                doc.nodes[node_id]
+                    .flags
+                    .set(NodeFlags::IS_IN_DOCUMENT, false);
 
-            // Clear any interaction state that references this node, running
-            // the usual teardown steps (unhover/unactive the surviving
-            // ancestor chain, IME disable on blur of a focused input).
-            doc.clear_interaction_state_for_removed_node(node_id);
+                // Clear any interaction state that references this node, running
+                // the usual teardown steps (unhover/unactive the surviving
+                // ancestor chain, IME disable on blur of a focused input).
+                doc.clear_interaction_state_for_removed_node(node_id);
 
-            let node = &mut doc.nodes[node_id];
+                let node = &mut doc.nodes[node_id];
 
-            // Clear the text selection if one of its endpoints references this node.
-            // This prevents stale selection endpoint references.
-            if doc.text_selection.anchor.node_or_parent == Some(node_id)
-                || doc.text_selection.focus.node_or_parent == Some(node_id)
-            {
-                doc.text_selection.clear();
-            }
-
-            // Remove any snapshot for this node to prevent stale snapshot references
-            // during style invalidation.
-            if node.has_snapshot() {
-                let opaque_id = style::dom::TNode::opaque(&&*node);
-                doc.snapshots.remove(&opaque_id);
-                node.set_has_snapshot(false);
-            }
-
-            // If the node has an "id" attribute remove it from the ID map.
-            if let Some(id_attr) = node.attr(local_name!("id")).map(ToString::to_string) {
-                doc.remove_from_id_map(&id_attr, node_id);
-            }
-
-            let node = &mut doc.nodes[node_id];
-            let NodeData::Element(ref mut element) = node.data else {
-                return;
-            };
-
-            match &element.special_data {
-                SpecialElementData::SubDocument(_) => {
-                    self.eager_op_queue
-                        .push(SpecialOp::UnloadSubDocument(node_id));
+                // Clear the text selection if one of its endpoints references this node.
+                // This prevents stale selection endpoint references.
+                if doc.text_selection.anchor.node_or_parent == Some(node_id)
+                    || doc.text_selection.focus.node_or_parent == Some(node_id)
+                {
+                    doc.text_selection.clear();
                 }
-                #[cfg(feature = "custom-widget")]
-                SpecialElementData::CustomWidget(_) => {
-                    self.eager_op_queue
-                        .push(SpecialOp::UnloadCustomWidget(node_id));
+
+                // Remove any snapshot for this node to prevent stale snapshot references
+                // during style invalidation.
+                if node.has_snapshot() {
+                    let opaque_id = style::dom::TNode::opaque(&&*node);
+                    doc.snapshots.remove(&opaque_id);
+                    node.set_has_snapshot(false);
                 }
-                SpecialElementData::Stylesheet(_) => self
-                    .eager_op_queue
-                    .push(SpecialOp::UnloadStylesheet(node_id)),
-                SpecialElementData::Image(_) => {}
-                SpecialElementData::Canvas(_) => {
-                    self.recompute_is_animating = true;
+
+                // If the node has an "id" attribute remove it from the ID map.
+                if let Some(id_attr) = node.attr(local_name!("id")).map(ToString::to_string) {
+                    doc.remove_from_id_map(&id_attr, node_id);
                 }
-                SpecialElementData::TableRoot(_) => {}
-                SpecialElementData::TextInput(_) => {}
-                SpecialElementData::CheckboxInput(_) => {}
-                #[cfg(feature = "file-input")]
-                SpecialElementData::FileInput(_) => {}
-                SpecialElementData::None => {}
-            }
-        });
+
+                let node = &mut doc.nodes[node_id];
+                let NodeData::Element(ref mut element) = node.data else {
+                    return;
+                };
+
+                match &element.special_data {
+                    SpecialElementData::SubDocument(_) => {
+                        self.eager_op_queue
+                            .push(SpecialOp::UnloadSubDocument(node_id));
+                    }
+                    #[cfg(feature = "custom-widget")]
+                    SpecialElementData::CustomWidget(_) => {
+                        self.eager_op_queue
+                            .push(SpecialOp::UnloadCustomWidget(node_id));
+                    }
+                    SpecialElementData::Stylesheet(_) => self
+                        .eager_op_queue
+                        .push(SpecialOp::UnloadStylesheet(node_id)),
+                    SpecialElementData::Image(_) => {}
+                    SpecialElementData::Canvas(_) => {
+                        self.recompute_is_animating = true;
+                    }
+                    SpecialElementData::TableRoot(_) => {}
+                    SpecialElementData::TextInput(_) => {}
+                    SpecialElementData::CheckboxInput(_) => {}
+                    #[cfg(feature = "file-input")]
+                    SpecialElementData::FileInput(_) => {}
+                    SpecialElementData::None => {}
+                }
+            });
 
         self.flush_eager_ops();
     }
@@ -1124,6 +1134,9 @@ impl<'doc> DocumentMutator<'doc> {
             unreachable!();
         };
 
+        if self.doc.remove_shadow_stylesheet(node_id) {
+            return;
+        }
         let guard = self.doc.guard.read();
         self.doc.stylist.remove_stylesheet(stylesheet, &guard);
         self.doc
