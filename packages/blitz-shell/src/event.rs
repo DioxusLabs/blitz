@@ -1,3 +1,5 @@
+use blitz_traits::NodeId;
+use blitz_traits::events::BlitzDataTransferArc;
 use blitz_traits::navigation::NavigationOptions;
 use blitz_traits::net::NetWaker;
 use futures_util::task::ArcWake;
@@ -50,6 +52,12 @@ pub enum BlitzShellEvent {
         contents: String,
         retain_scroll_position: bool,
         is_md: bool,
+    },
+
+    StartDataTransfer {
+        window_id: WindowId,
+        data: BlitzDataTransferArc,
+        node: Option<NodeId>,
     },
 
     /// Delivered after the WASM resize-debounce window expires. Route to
