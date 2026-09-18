@@ -319,6 +319,15 @@ pub struct BaseDocument {
     /// Set of changed nodes for updating the accessibility tree
     pub(crate) deferred_construction_nodes: Vec<ConstructionTask>,
 
+    /// Root `<svg>` elements (`SpecialElementData::SvgRoot`), so
+    /// `rebuild_svg_fragments` doesn't have to scan the whole node slotmap
+    /// looking for them. Entries are added once, when a node first becomes
+    /// an `SvgRoot`, and never explicitly removed. `rebuild_svg_fragments`
+    /// prunes ids that no longer resolve to a live `SvgRoot` itself,
+    /// the only place that needs the set to be exact.
+    #[cfg(feature = "svg-native")]
+    pub(crate) svg_root_nodes: HashSet<NodeId>,
+
     /// Nodes that contain custom widgets
     #[cfg(feature = "custom-widget")]
     pub(crate) custom_widget_nodes: HashSet<NodeId>,
@@ -474,6 +483,9 @@ impl BaseDocument {
             has_canvas: false,
             sub_document_nodes: HashSet::new(),
             iframe_loads: HashMap::new(),
+
+            #[cfg(feature = "svg-native")]
+            svg_root_nodes: HashSet::new(),
 
             #[cfg(feature = "custom-widget")]
             custom_widget_nodes: HashSet::new(),
