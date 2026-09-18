@@ -667,19 +667,32 @@ impl Node {
         self.mark_ancestors_dirty();
 
         // If focussing a text input, enable IME and set IME area
-        if self
-            .element_data()
-            .and_then(|elem| elem.text_input_data())
-            .is_some()
-        {
+        if self.is_text_input() {
             shell_provider.set_ime_enabled(true);
-            let mut pos = self.absolute_position(0.0, 0.0);
-            pos.x += self.final_layout().content_box_x();
-            pos.y += self.final_layout().content_box_y();
-            let width = self.final_layout().content_box_width();
-            let height = self.final_layout().content_box_height();
-            shell_provider.set_ime_cursor_area(pos.x, pos.y, width, height);
+            if let Some((x, y, width, height)) = self.ime_cursor_area() {
+                shell_provider.set_ime_cursor_area(x, y, width, height);
+            }
         }
+    }
+
+    /// Whether this node is a text input element (see [`ElementData::is_text_input`])
+    pub fn is_text_input(&self) -> bool {
+        self.element_data().is_some_and(|el| el.is_text_input())
+    }
+
+    /// The node's content box as `(x, y, width, height)` in CSS pixels, for use as the IME
+    /// cursor area. Returns `None` if the node is not a text input or has not been laid out
+    /// yet (e.g. it was focussed before the first layout).
+    pub fn ime_cursor_area(&self) -> Option<(f32, f32, f32, f32)> {
+        self.element_data()?.text_input_data()?;
+        let layout = self.final_layout();
+        let pos = self.absolute_position(0.0, 0.0);
+        Some((
+            pos.x + layout.content_box_x(),
+            pos.y + layout.content_box_y(),
+            layout.content_box_width(),
+            layout.content_box_height(),
+        ))
     }
 
     pub fn blur(&mut self, shell_provider: Arc<dyn ShellProvider>) {
@@ -690,11 +703,7 @@ impl Node {
         self.mark_ancestors_dirty();
 
         // If blurring a text input, disable IME
-        if self
-            .element_data()
-            .and_then(|elem| elem.text_input_data())
-            .is_some()
-        {
+        if self.is_text_input() {
             shell_provider.set_ime_enabled(false);
         }
     }

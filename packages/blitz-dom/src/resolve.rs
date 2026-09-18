@@ -129,6 +129,11 @@ impl BaseDocument {
         // if the hovered node actually changes.
         self.refresh_hover();
 
+        // Keep the IME cursor area in sync with the (possibly moved) focussed text input.
+        // This also covers inputs focussed before their first layout (e.g. autofocus),
+        // for which `Node::focus` could not report an area.
+        self.sync_ime_cursor_area();
+
         let mut subdoc_is_animating = false;
         for &node_id in &self.sub_document_nodes {
             let node = &mut self.nodes[node_id];
