@@ -405,6 +405,9 @@ pub(crate) fn style(
         strikethrough_offset: Default::default(),
         strikethrough_size: Default::default(),
         strikethrough_brush: Default::default(),
+
+        // Used for password masking, which we don't need for regular text
+        grapheme_replacement: None,
     }
 }
 

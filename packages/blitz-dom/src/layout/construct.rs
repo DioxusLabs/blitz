@@ -519,13 +519,18 @@ fn collect_layout_children_with_wrap(
                 .downcast_element()
                 .and_then(|el| el.attr(local_name!("type")));
             if tag_name == "textarea" {
-                create_text_editor(doc, container_node_id, true);
+                create_text_editor(doc, container_node_id, true, false);
                 return;
             } else if matches!(
                 type_attr,
                 None | Some("text" | "password" | "email" | "number" | "search" | "tel" | "url")
             ) {
-                create_text_editor(doc, container_node_id, false);
+                create_text_editor(
+                    doc,
+                    container_node_id,
+                    false,
+                    matches!(type_attr, Some("password")),
+                );
                 return;
             } else if matches!(type_attr, Some("checkbox" | "radio")) {
                 create_checkbox_input(doc, container_node_id);
@@ -932,7 +937,12 @@ fn collect_complex_layout_children(
     out.maybe_push_anon_block(doc);
 }
 
-fn create_text_editor(doc: &mut BaseDocument, input_element_id: NodeId, is_multiline: bool) {
+fn create_text_editor(
+    doc: &mut BaseDocument,
+    input_element_id: NodeId,
+    is_multiline: bool,
+    is_password: bool,
+) {
     let node = &mut doc.nodes[input_element_id];
     let parley_style = node
         .primary_styles()
@@ -942,7 +952,7 @@ fn create_text_editor(doc: &mut BaseDocument, input_element_id: NodeId, is_multi
 
     let element = &mut node.data.downcast_element_mut().unwrap();
     if !matches!(element.special_data, SpecialElementData::TextInput(_)) {
-        let mut text_input_data = TextInputData::new(is_multiline);
+        let mut text_input_data = TextInputData::new(is_multiline, is_password);
         let editor = &mut text_input_data.editor;
         editor.set_text(element.attr(local_name!("value")).unwrap_or(""));
         element.special_data = SpecialElementData::TextInput(text_input_data);
@@ -1289,6 +1299,7 @@ pub(crate) fn build_inline_layout_into(
                                 // Width and height are set during layout
                                 width: 0.0,
                                 height: 0.0,
+                                baseline: None,
                             });
                         } else if *tag_name == local_name!("br") {
                             // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
@@ -1364,6 +1375,7 @@ pub(crate) fn build_inline_layout_into(
                             // Width and height are set during layout
                             width: 0.0,
                             height: 0.0,
+                            baseline: None,
                         });
                     }
                 };
