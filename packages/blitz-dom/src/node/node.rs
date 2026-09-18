@@ -1376,14 +1376,20 @@ impl Node {
             *scrollbar = Some(sb);
         }
 
-        if self.flags.is_inline_root() {
-            let content_box_offset = taffy::Point {
+        // Text clusters and callers of the returned coordinates work in the
+        // inline root's content box, but embedded boxes store border-box
+        // relative locations like every other child; apply the offset only
+        // where content-box coordinates are wanted, or atomic inlines in a
+        // padded inline root are hit one padding down and right of where
+        // they are painted.
+        let content_box_offset = if self.flags.is_inline_root() {
+            taffy::Point {
                 x: self.final_layout().padding.left + self.final_layout().border.left,
                 y: self.final_layout().padding.top + self.final_layout().border.top,
-            };
-            x -= content_box_offset.x;
-            y -= content_box_offset.y;
-        }
+            }
+        } else {
+            taffy::Point { x: 0.0, y: 0.0 }
+        };
 
         // Positive z_index hoisted children
         if matches_hoisted_content {
@@ -1426,6 +1432,8 @@ impl Node {
 
         // Inline children
         if self.flags.is_inline_root() {
+            let x = x - content_box_offset.x;
+            let y = y - content_box_offset.y;
             let element_data = &self.element_data().unwrap();
             if let Some(ild) = element_data.inline_layout_data.as_ref() {
                 let layout = &ild.layout;
@@ -1456,8 +1464,8 @@ impl Node {
         if matches_self && !pointer_events_none {
             return Some(HitResult {
                 node_id: self.id,
-                x,
-                y,
+                x: x - content_box_offset.x,
+                y: y - content_box_offset.y,
                 is_text: false,
             });
         }
