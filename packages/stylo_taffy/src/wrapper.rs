@@ -117,6 +117,14 @@ impl<T: Deref<Target = ComputedValues>> taffy::CoreStyle for TaffyStyloStyle<T> 
         convert::inset_rect(&self.style)
     }
 
+    /// Every box acts as the containing block for its own out-of-flow children, so
+    /// absolutely positioned boxes are laid out relative to their parent rather than
+    /// being hoisted to their CSS containing block.
+    #[inline]
+    fn is_containing_block(&self) -> taffy::ContainingBlockClaims {
+        taffy::ContainingBlockClaims::ALL
+    }
+
     #[inline]
     fn size(&self) -> taffy::Size<taffy::Dimension> {
         let position_styles = self.style.get_position();
@@ -584,6 +592,20 @@ impl<T: Deref<Target = ComputedValues>> taffy::GridContainerStyle for TaffyStylo
             (self.style.get_position().justify_items.computed.0).0,
             self.style.clone_direction() == stylo::Direction::Rtl,
         )
+    }
+}
+
+impl<T: Deref<Target = ComputedValues>> taffy::OofItemStyle for TaffyStyloStyle<T> {
+    #[cfg(feature = "grid")]
+    #[inline]
+    fn grid_row(&self) -> taffy::Line<taffy::GridPlacement<Atom>> {
+        taffy::GridItemStyle::grid_row(self)
+    }
+
+    #[cfg(feature = "grid")]
+    #[inline]
+    fn grid_column(&self) -> taffy::Line<taffy::GridPlacement<Atom>> {
+        taffy::GridItemStyle::grid_column(self)
     }
 }
 

@@ -264,14 +264,11 @@ pub fn inset_rect(style: &stylo::ComputedValues) -> taffy::Rect<taffy::LengthPer
 
 pub fn position(input: stylo::Position) -> taffy::Position {
     match input {
-        // TODO: support position:static
+        stylo::Position::Static => taffy::Position::Static,
         stylo::Position::Relative => taffy::Position::Relative,
-        stylo::Position::Static => taffy::Position::Relative,
-
-        // TODO: support position:fixed and sticky
         stylo::Position::Absolute => taffy::Position::Absolute,
-        stylo::Position::Fixed => taffy::Position::Absolute,
-        stylo::Position::Sticky => taffy::Position::Relative,
+        stylo::Position::Fixed => taffy::Position::Fixed,
+        stylo::Position::Sticky => taffy::Position::Sticky,
     }
 }
 
