@@ -19,8 +19,8 @@ use style::servo_arc::Arc as ServoArc;
 use style::stylesheets::supports_rule::parse_condition_or_declaration;
 use style::stylesheets::{CssRuleType, Origin, OriginSet, UrlExtraData};
 use style::stylist::RegisterCustomPropertyResult;
-use style::values::computed::LengthPercentage;
 use style::values::computed::length::CSSPixelLength;
+use style::values::computed::{GridTemplateAreas, GridTemplateComponent, LengthPercentage};
 use style::values::generics::position::{Inset as GenericInset, PreferredRatio};
 use style::values::resolved;
 use style::values::specified::box_::{DisplayInside, DisplayOutside};
@@ -391,6 +391,37 @@ impl BaseDocument {
                     } else {
                         info.grid_template_rows()
                     };
+                }
+            }
+            // Browsers serialize the `grid-template` shorthand from the computed
+            // track lists, except that a `none` track list on a grid container
+            // is replaced by the used (implicit) track sizes.
+            "grid-template" if display.inside() == DisplayInside::Grid => {
+                let pos_styles = styles.get_position();
+                let rows_are_none =
+                    matches!(pos_styles.grid_template_rows, GridTemplateComponent::None);
+                let columns_are_none = matches!(
+                    pos_styles.grid_template_columns,
+                    GridTemplateComponent::None
+                );
+                let info = node
+                    .element_data()
+                    .and_then(|data| data.detailed_grid_info.as_ref());
+                if let Some(info) = info
+                    && (rows_are_none || columns_are_none)
+                    && matches!(pos_styles.grid_template_areas, GridTemplateAreas::None)
+                {
+                    let rows = if rows_are_none {
+                        info.grid_template_rows()
+                    } else {
+                        pos_styles.grid_template_rows.to_css_string()
+                    };
+                    let columns = if columns_are_none {
+                        info.grid_template_columns()
+                    } else {
+                        pos_styles.grid_template_columns.to_css_string()
+                    };
+                    return format!("{rows} / {columns}");
                 }
             }
             "width" | "height" if has_layout_box => {
