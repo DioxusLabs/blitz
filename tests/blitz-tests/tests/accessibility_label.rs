@@ -119,7 +119,7 @@ fn ignores_labelledby_element_which_does_not_correspond_to_element_in_the_dom() 
             anything(),
             matches_pattern!(AccessKitNode {
                 role(): eq(Role::Button),
-                *labelled_by(): empty(),
+                *labelled_by(): is_empty(),
             })
         ))
     )
