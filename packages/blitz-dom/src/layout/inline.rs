@@ -5,7 +5,7 @@ use style::values::{computed::CSSPixelLength, generics::text::GenericTextIndent}
 use taffy::{
     AvailableSpace, BlockContext, BlockFormattingContext, BoxSizing, CollapsibleMarginSet,
     CoreStyle as _, Direction, LayoutInput, LayoutOutput, LayoutPartialTree as _, MaybeMath as _,
-    MaybeResolve as _, Overflow, Point, Position, RequestedAxis, ResolveOrZero as _, RunMode, Size,
+    MaybeResolve as _, Overflow, Point, RequestedAxis, ResolveOrZero as _, RunMode, Size,
     SizingMode,
 };
 
@@ -189,7 +189,7 @@ impl BaseDocument {
         let has_styles_preventing_being_collapsed_through = !style.is_block()
             || style.overflow().x.is_scroll_container()
             || style.overflow().y.is_scroll_container()
-            || style.position() == Position::Absolute
+            || style.position().is_out_of_flow()
             || padding.top > 0.0
             || padding.bottom > 0.0
             || border.top > 0.0
@@ -306,7 +306,7 @@ impl BaseDocument {
             #[cfg(not(feature = "floats"))]
             let is_floated = false;
 
-            let is_absolute = style.position() == Position::Absolute;
+            let is_absolute = style.position().is_out_of_flow();
             drop(style);
 
             if is_absolute || is_floated {
@@ -725,7 +725,7 @@ impl BaseDocument {
                     #[cfg(not(feature = "floats"))]
                     let is_floated = false;
 
-                    let is_absolute = style.position() == Position::Absolute;
+                    let is_absolute = style.position().is_out_of_flow();
                     let direction = style.direction();
 
                     // The static position of an absolutely positioned box depends on the
@@ -863,6 +863,10 @@ impl BaseDocument {
             margins_can_collapse_through: !has_styles_preventing_being_collapsed_through
                 && final_size.height == 0.0
                 && measured_size.height == 0.0,
+            // Out-of-flow inline children are laid out above (`layout_abspos_child`), so
+            // there are no candidates to bubble up and no positioning area to expose.
+            oof_candidates: taffy::OofCandidates::NONE,
+            oof_positioning_area: None,
         }
     }
 }
@@ -891,7 +895,7 @@ fn layout_abspos_child(
 
     // Skip items that are display:none or are not position:absolute
     if child_style.box_generation_mode() == taffy::BoxGenerationMode::None
-        || child_style.position() != taffy::Position::Absolute
+        || !child_style.position().is_out_of_flow()
     {
         return;
     }

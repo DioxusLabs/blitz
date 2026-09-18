@@ -382,9 +382,12 @@ impl BaseDocument {
             "grid-template-columns" | "grid-template-rows"
                 if display.inside() == DisplayInside::Grid =>
             {
-                if let Some(info) = node
-                    .element_data()
-                    .and_then(|data| data.detailed_grid_info.as_ref())
+                if let Some(info) =
+                    node.element_data()
+                        .and_then(|data| match &data.detailed_layout_info {
+                            taffy::DetailedLayoutInfo::Grid(info) => Some(info),
+                            _ => None,
+                        })
                 {
                     return if property_name == "grid-template-columns" {
                         info.grid_template_columns()
@@ -406,7 +409,10 @@ impl BaseDocument {
                 );
                 let info = node
                     .element_data()
-                    .and_then(|data| data.detailed_grid_info.as_ref());
+                    .and_then(|data| match &data.detailed_layout_info {
+                        taffy::DetailedLayoutInfo::Grid(info) => Some(info),
+                        _ => None,
+                    });
                 if let Some(info) = info
                     && (rows_are_none || columns_are_none)
                     && matches!(pos_styles.grid_template_areas, GridTemplateAreas::None)
