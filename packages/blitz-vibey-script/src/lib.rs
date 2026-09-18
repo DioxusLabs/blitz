@@ -41,3 +41,28 @@ mod timers;
 
 pub use document::ScriptDocument;
 pub use fetch::{DefaultScriptFetcher, FetchError, ScriptFetcher};
+
+/// Host-side helpers for native functions installed into the script context.
+///
+/// A host that adds its own bindings (e.g. a `<canvas>` 2D context) needs to
+/// get from a JS node wrapper back to the DOM node it stands for, and to the
+/// document itself, from inside a native call.
+pub mod host {
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    use blitz_dom::{BaseDocument, NodeId};
+    use boa_engine::{Context, JsValue};
+
+    /// The DOM node a JS wrapper object stands for, if it is one.
+    pub fn node_id_of(value: &JsValue) -> Option<NodeId> {
+        crate::dom::node_id_of_value(value)
+    }
+
+    /// The document behind this script context.
+    pub fn document_of(context: &mut Context) -> Option<Rc<RefCell<BaseDocument>>> {
+        crate::dom::dom_ctx(context)
+            .ok()
+            .map(|ctx| Rc::clone(&ctx.doc))
+    }
+}
