@@ -105,9 +105,9 @@ pub struct ElementData {
     pub before: Option<NodeId>,
     pub after: Option<NodeId>,
 
-    /// Detailed layout information from the most recent layout (grid track sizing for grid
-    /// containers). Used by devtools grid inspection and for positioning absolutely
-    /// positioned children of grid containers.
+    /// Detailed layout information from the most recent layout (currently
+    /// grid track sizing information for grid containers only). Used by
+    /// devtools grid inspection and out-of-flow grid-area positioning.
     pub detailed_layout_info: taffy::DetailedLayoutInfo<Atom>,
 
     // Taffy layout data:
