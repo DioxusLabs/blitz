@@ -762,7 +762,19 @@ pub fn to_taffy_style(style: &stylo::ComputedValues) -> taffy::Style<Atom> {
         },
         aspect_ratio: self::aspect_ratio(pos.aspect_ratio),
 
-        inset: self::inset_rect(style),
+        // `position: sticky` is laid out as relative (see `position`), but its
+        // insets are sticking thresholds, not relative offsets: they are applied
+        // after layout by blitz-dom's sticky resolution, so Taffy must ignore them.
+        inset: if style.clone_position() == stylo::Position::Sticky {
+            taffy::Rect {
+                left: taffy::LengthPercentageAuto::AUTO,
+                right: taffy::LengthPercentageAuto::AUTO,
+                top: taffy::LengthPercentageAuto::AUTO,
+                bottom: taffy::LengthPercentageAuto::AUTO,
+            }
+        } else {
+            self::inset_rect(style)
+        },
         margin: taffy::Rect {
             left: self::margin(&margin.margin_left),
             right: self::margin(&margin.margin_right),
