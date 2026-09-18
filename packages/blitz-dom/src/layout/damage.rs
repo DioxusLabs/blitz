@@ -638,6 +638,7 @@ impl BaseDocument {
         }
 
         if let Some(parent_stacking_context) = parent_stacking_context {
+            self.nodes[node_id].stacking_context = None;
             let position = self.nodes[node_id].final_layout().location;
             let scroll_offset = *self.nodes[node_id].scroll_offset();
             for hoisted in stacking_context.children.iter_mut() {
