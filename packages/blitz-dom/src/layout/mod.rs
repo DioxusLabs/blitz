@@ -88,23 +88,26 @@ impl BaseDocument {
         self.child_ids(node_id)
             .filter(move |child| self.is_out_of_flow(*child))
     }
+}
 
-    fn compute_child_layout_with_oof(
+impl BaseDocument {
+    /// Run the node's layout algorithm, then lay out the out-of-flow (absolute/fixed)
+    /// boxes for which it is the containing block. Must be called inside the layout
+    /// cache wrapper so that cache hits do not re-run the out-of-flow pass.
+    fn compute_child_layout_internal(
         &mut self,
         node_id: NodeId,
         inputs: taffy::tree::LayoutInput,
         block_ctx: Option<&mut BlockContext<'_>>,
     ) -> taffy::tree::LayoutOutput {
-        let mut output = self.compute_child_layout_internal(node_id, inputs, block_ctx);
+        let mut output = self.dispatch_child_layout(node_id, inputs, block_ctx);
         if inputs.run_mode == RunMode::PerformLayout {
             compute_oof_layout(self, node_id, &mut output);
         }
         output
     }
-}
 
-impl BaseDocument {
-    fn compute_child_layout_internal(
+    fn dispatch_child_layout(
         &mut self,
         node_id: NodeId,
         inputs: taffy::tree::LayoutInput,
@@ -452,7 +455,7 @@ impl LayoutPartialTree for BaseDocument {
         inputs: taffy::LayoutInput,
     ) -> taffy::LayoutOutput {
         compute_cached_layout(self, node_id, inputs, |tree, node_id, inputs| {
-            tree.compute_child_layout_with_oof(node_id, inputs, None)
+            tree.compute_child_layout_internal(node_id, inputs, None)
         })
     }
 }
@@ -538,7 +541,7 @@ impl taffy::LayoutBlockContainer for BaseDocument {
         block_ctx: Option<&mut BlockContext<'_>>,
     ) -> taffy::LayoutOutput {
         compute_cached_layout(self, node_id, inputs, |tree, node_id, inputs| {
-            tree.compute_child_layout_with_oof(node_id, inputs, block_ctx)
+            tree.compute_child_layout_internal(node_id, inputs, block_ctx)
         })
     }
 }
