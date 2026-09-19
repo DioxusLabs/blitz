@@ -63,18 +63,15 @@ pub fn app() -> Element {
             style { {include_str!("./todomvc.css")} }
             section { class: "todoapp",
                 TodoHeader { todos }
-                section { class: "main",
-                    if !todos.read().is_empty() {
-                        input {
-                            id: "toggle-all",
-                            class: "toggle-all",
-                            r#type: "checkbox",
-                            onchange: toggle_all,
-                            checked: active_todo_count() == 0,
-                        }
-                        label { r#for: "toggle-all" }
+                if !todos.read().is_empty() {
+                    button {
+                        class: "toggle-all",
+                        class: if active_todo_count() == 0 { "checked" },
+                        onclick: toggle_all,
+                        ">"
                     }
-
+                }
+                section { class: "main",
                     // Render the todos using the filtered_todos signal
                     // We pass the ID into the TodoEntry component so it can access the todo from the todos signal.
                     // Since we store the todos in a signal too, we also need to send down the todo list
