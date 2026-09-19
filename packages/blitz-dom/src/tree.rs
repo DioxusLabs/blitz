@@ -41,6 +41,10 @@ pub struct NodeTree {
     /// Scroll offset of the viewport (the root element scrolls the viewport,
     /// so its offset lives here rather than on the node).
     viewport_scroll: crate::Point<f64>,
+    /// The current version of each slot, by index (0 while the slot has never
+    /// been occupied). Lets an id whose version bits were lost be recovered:
+    /// see [`NodeTree::from_opaque`].
+    versions: Vec<u32>,
 }
 
 impl NodeTree {
@@ -49,6 +53,7 @@ impl NodeTree {
             map: SlotMap::with_key(),
             geometry_generation: AtomicU64::new(1),
             viewport_scroll: crate::Point::ZERO,
+            versions: Vec::new(),
         }
     }
 
@@ -70,6 +75,23 @@ impl NodeTree {
 
     pub(crate) fn bump_geometry_generation(&self) {
         self.geometry_generation.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Recover a [`NodeId`] from the raw value Stylo hands back in an
+    /// `OpaqueNode` (see `TNode::opaque`).
+    ///
+    /// `OpaqueNode` wraps a `usize`, so on 32-bit targets only the slot index
+    /// survives the round trip and the version bits come back as zero. In that
+    /// case the id of the slot's current occupant is returned; an id with its
+    /// version intact is returned as is. `None` if the slot is empty.
+    pub fn from_opaque(&self, raw: usize) -> Option<NodeId> {
+        let raw = raw as u64;
+        if raw >> 32 != 0 {
+            return Some(NodeId::from_u64(raw));
+        }
+        let index = raw as u32;
+        let version = *self.versions.get(index as usize)?;
+        (version != 0).then(|| NodeId::from_u64(raw | (u64::from(version) << 32)))
     }
 
     /// The number of live nodes in the map.
@@ -98,12 +120,22 @@ impl NodeTree {
 
     /// Insert a node constructed with knowledge of its own id.
     pub(crate) fn insert_with_key(&mut self, f: impl FnOnce(NodeId) -> Node) -> NodeId {
-        to_id(self.map.insert_with_key(|key| f(to_id(key))))
+        let id = to_id(self.map.insert_with_key(|key| f(to_id(key))));
+        let index = id.as_u64() as u32 as usize;
+        if self.versions.len() <= index {
+            self.versions.resize(index + 1, 0);
+        }
+        self.versions[index] = (id.as_u64() >> 32) as u32;
+        id
     }
 
     /// Remove the node with the given id, returning it if it was still live.
     pub(crate) fn remove(&mut self, id: NodeId) -> Option<Node> {
-        self.map.remove(to_key(id))
+        let node = self.map.remove(to_key(id))?;
+        if let Some(version) = self.versions.get_mut(id.as_u64() as u32 as usize) {
+            *version = 0;
+        }
+        Some(node)
     }
 
     /// Iterate over all live `(NodeId, &Node)` pairs.
