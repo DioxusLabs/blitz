@@ -1075,6 +1075,7 @@ dependencies = [
  "dioxus-core",
  "dioxus-native-dom",
  "keyboard-types 0.7.0",
+ "kurbo",
  "markup5ever",
  "stylo",
  "taffy",

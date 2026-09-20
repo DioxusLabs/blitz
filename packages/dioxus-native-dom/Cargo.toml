@@ -14,6 +14,7 @@ default = ["accessibility", "svg", "system-fonts"]
 
 # DOM features
 svg = ["blitz-dom/svg"]
+svg-native = ["blitz-dom/svg-native"]
 floats = ["blitz-dom/floats"]
 accessibility = ["blitz-dom/accessibility"]
 tracing = ["dep:tracing", "blitz-dom/tracing"]
