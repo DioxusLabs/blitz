@@ -307,6 +307,19 @@ impl DocumentMutator<'_> {
             }
         }
 
+        // An attribute change on an SVG-namespaced element invalidates the
+        // enclosing fragment. `ALL_DAMAGE` above already damaged `node_id`
+        // itself, but `rebuild_svg_fragments` checks damage on the fragment's
+        // *root* `<svg>` specifically.
+        #[cfg(feature = "svg-native")]
+        if node_is_in_document
+            && self.doc.nodes[node_id]
+                .element_data()
+                .is_some_and(|element| element.name.ns == markup5ever::ns!(svg))
+        {
+            self.doc.propagate_svg_damage(node_id);
+        }
+
         let node = &mut self.doc.nodes[node_id];
 
         let NodeData::Element(ref mut element) = node.data else {
@@ -418,6 +431,15 @@ impl DocumentMutator<'_> {
             {
                 self.doc.remove_from_id_map(&old_id, node_id);
             }
+        }
+
+        #[cfg(feature = "svg-native")]
+        if node_is_in_document
+            && self.doc.nodes[node_id]
+                .element_data()
+                .is_some_and(|element| element.name.ns == markup5ever::ns!(svg))
+        {
+            self.doc.propagate_svg_damage(node_id);
         }
 
         let node = &mut self.doc.nodes[node_id];
@@ -1032,6 +1054,8 @@ impl<'doc> DocumentMutator<'doc> {
                     self.recompute_is_animating = true;
                 }
                 SpecialElementData::TableRoot(_) => {}
+                #[cfg(feature = "svg-native")]
+                SpecialElementData::SvgRoot(_) => {}
                 SpecialElementData::TextInput(_) => {}
                 SpecialElementData::CheckboxInput(_) => {}
                 #[cfg(feature = "file-input")]

@@ -533,7 +533,26 @@ fn collect_layout_children_with_wrap(
             }
         }
 
-        #[cfg(feature = "svg")]
+        // First-party inline SVG (`svg-native`): the outermost `<svg>` in a
+        // subtree becomes a `SpecialElementData::SvgRoot` here; its actual
+        // geometry is built later, post-layout. A nested `<svg>` is not its
+        // own fragment root it stays part of the enclosing fragment,
+        // with its own inner viewport, which is why this only fires when
+        // the immediate parent isn't itself SVG-namespaced.
+        #[cfg(feature = "svg-native")]
+        if el.name.ns == ns!(svg) && matches!(tag_name, "svg") {
+            let parent_is_svg = doc.nodes[container_node_id]
+                .parent
+                .and_then(|parent_id| doc.nodes[parent_id].data.downcast_element())
+                .is_some_and(|parent_el| parent_el.name.ns == ns!(svg));
+
+            if !parent_is_svg {
+                crate::svg::construct::mark_svg_root(doc, container_node_id);
+                return;
+            }
+        }
+
+        #[cfg(all(feature = "svg", not(feature = "svg-native")))]
         if matches!(tag_name, "svg") {
             let mut outer_html = doc.get_node(container_node_id).unwrap().outer_html();
 

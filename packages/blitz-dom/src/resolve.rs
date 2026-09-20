@@ -393,6 +393,11 @@ impl BaseDocument {
         taffy::compute_root_layout(self, root_element_id, available_space);
         taffy::round_layout(self, root_element_id);
 
+        // Build/rebuild inline SVG fragments now that every root `<svg>`
+        // has a final content-box size.
+        #[cfg(feature = "svg-native")]
+        crate::svg::rebuild_svg_fragments(self);
+
         // println!("\n\n");
         // taffy::print_tree(self, root_node_id)
     }

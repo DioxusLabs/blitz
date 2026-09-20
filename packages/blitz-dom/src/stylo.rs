@@ -59,6 +59,18 @@ use style_dom::ElementState;
 
 use style::values::computed::text::TextAlign as StyloTextAlign;
 
+// `synthesize_presentational_hints_for_legacy_attributes` only gets `&self`,
+// with no path back to the owning `BaseDocument`, but SVG presentation-attr
+// parsing needs a `UrlExtraData` to hand to Stylo's declaration parser
+// (`svg::attrs::svg_presentation_hint`). A `static` rather than a
+// `thread_local`: parsing an SVG element's presentation attributes must not
+// depend on which worker thread the parallel style traversal happens to run it on.
+#[cfg(feature = "svg-native")]
+static SVG_URL_EXTRA_DATA: std::sync::LazyLock<style::stylesheets::UrlExtraData> =
+    std::sync::LazyLock::new(|| {
+        style::stylesheets::UrlExtraData(Arc::new(url::Url::parse("about:blank").unwrap()))
+    });
+
 impl crate::document::BaseDocument {
     pub fn resolve_stylist(&mut self, now: f64) {
         style::thread_state::enter(ThreadState::LAYOUT);
@@ -423,7 +435,7 @@ impl selectors::Element for BlitzNode<'_> {
     }
 
     fn is_html_element_in_html_document(&self) -> bool {
-        true // self.has_namespace(ns!(html))
+        self.is_element() && self.has_namespace(&markup5ever::ns!(html))
     }
 
     fn has_local_name(&self, local_name: &LocalName) -> bool {
@@ -646,7 +658,7 @@ impl<'a> TElement for BlitzNode<'a> {
     }
 
     fn is_html_element(&self) -> bool {
-        self.is_element()
+        self.is_element() && self.has_namespace(&markup5ever::ns!(html))
     }
 
     // not implemented.....
@@ -654,9 +666,11 @@ impl<'a> TElement for BlitzNode<'a> {
         false
     }
 
-    // need to check the namespace
+    // Stylo's own `style_adjuster.rs` consults this during cascade until
+    // `svg-native`, no SVG-namespaced element ever reached the cascade as
+    // real DOM, so this being hardcoded `false` had no observable effect.
     fn is_svg_element(&self) -> bool {
-        false
+        self.is_element() && self.has_namespace(&markup5ever::ns!(svg))
     }
 
     fn style_attribute(&self) -> Option<ArcBorrow<'_, Locked<PropertyDeclarationBlock>>> {
@@ -890,6 +904,24 @@ impl<'a> TElement for BlitzNode<'a> {
                 LayerOrder::root(),
             ));
         };
+
+        // SVG presentation attributes (`svg-native`). Gated on the
+        // element's namespace too, not just the feature flag, so it's a
+        // no-op for HTML content even when the feature is on.
+        #[cfg(feature = "svg-native")]
+        if elem.name.ns == markup5ever::ns!(svg) {
+            for attr in elem.attrs() {
+                if let Some(mut decl) = crate::svg::attrs::svg_presentation_hint(
+                    attr.name.local.as_ref(),
+                    &attr.value,
+                    &SVG_URL_EXTRA_DATA,
+                ) {
+                    for property in decl.drain().declarations {
+                        push_style(property);
+                    }
+                }
+            }
+        }
 
         fn parse_color_attr(value: &str) -> Option<(u8, u8, u8, f32)> {
             if !value.starts_with('#') {
