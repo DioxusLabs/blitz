@@ -1,5 +1,5 @@
 use crate::{BaseDocument, ElementData, Node as BlitzDomNode, local_name};
-use accesskit::{Node as AccessKitNode, NodeId, Role, Tree, TreeId, TreeUpdate};
+use accesskit::{Node as AccessKitNode, NodeId, Role, TreeId, TreeInfo, TreeUpdate};
 use style::properties::longhands::visibility;
 
 impl BaseDocument {
@@ -34,7 +34,7 @@ impl BaseDocument {
             .collect();
         nodes.push((NodeId(u64::MAX), window));
 
-        let tree = Tree::new(NodeId(u64::MAX));
+        let tree = TreeInfo::new(NodeId(u64::MAX));
         TreeUpdate {
             tree_id: TreeId::ROOT,
             nodes,
