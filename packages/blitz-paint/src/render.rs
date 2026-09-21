@@ -77,6 +77,15 @@ impl<'a> PhysicalTracks<'a> {
         }
     }
 
+    /// The logical (grid line order) index of a physically ordered track
+    pub(crate) fn logical(self, index: usize) -> usize {
+        if self.reversed {
+            self.positions.len() - 1 - index
+        } else {
+            index
+        }
+    }
+
     /// Iterate track positions in physical order
     pub(crate) fn iter(self) -> impl ExactSizeIterator<Item = taffy::Line<f32>> + 'a {
         (0..self.positions.len()).map(move |index| self.get(index))
