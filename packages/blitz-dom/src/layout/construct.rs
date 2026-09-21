@@ -23,7 +23,9 @@ use thin_vec::ThinVec;
 use crate::{
     BaseDocument, ElementData, Node, NodeData,
     font_metrics::normal_line_height,
-    layout::damage::{CONSTRUCT_BOX, CONSTRUCT_DESCENDENT, CONSTRUCT_FC},
+    layout::damage::{
+        CONSTRUCT_BOX, CONSTRUCT_DESCENDENT, CONSTRUCT_FC, sort_layout_children_by_order,
+    },
     node::{
         ListItemLayout, ListItemLayoutPosition, Marker, NodeFlags, NodeKind, SpecialElementData,
         TextBrush, TextInputData, TextLayout,
@@ -630,19 +632,22 @@ fn collect_layout_children_with_wrap(
                 });
 
             if !has_text_node_or_contents {
-                return push_non_whitespace_children_and_pseudos(
+                push_non_whitespace_children_and_pseudos(
                     &mut out.children,
                     &doc.nodes[container_node_id],
                 );
+            } else {
+                collect_complex_layout_children(
+                    doc,
+                    container_node_id,
+                    out,
+                    true,
+                    text_item_needs_wrap,
+                );
             }
 
-            collect_complex_layout_children(
-                doc,
-                container_node_id,
-                out,
-                true,
-                text_item_needs_wrap,
-            );
+            // Flex/grid items are laid out in order-modified document order.
+            sort_layout_children_by_order(&doc.nodes, &mut out.children);
         }
 
         DisplayInside::Table => {

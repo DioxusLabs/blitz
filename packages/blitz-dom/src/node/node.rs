@@ -1240,11 +1240,20 @@ impl Node {
         }
     }
 
+    /// The `order` sort key of this node within a flex/grid container's
+    /// `layout_children`. The list is stable-sorted by this key when the
+    /// container's children are constructed (`collect_layout_children`) and
+    /// re-collected when a child's `order` changes (`REORDER_CHILDREN` damage).
+    ///
+    /// ::before/::after pseudos are flex/grid items and honor `order`. They
+    /// sit first/last in the constructed list, and the sort is stable, so
+    /// ties keep ::before first and ::after last. Out-of-flow children are
+    /// not flex/grid items, so they key as 0 and keep source order.
     pub fn order(&self) -> i32 {
-        // ::before/::after pseudos are flex/grid items and honor `order`.
-        // They sit first/last in layout_children, and the `order` sort is
-        // stable, so ties keep ::before first and ::after last.
-        self.primary_styles().map(|s| s.clone_order()).unwrap_or(0)
+        self.primary_styles()
+            .filter(|s| !matches!(s.get_box().position, Position::Absolute | Position::Fixed))
+            .map(|s| s.clone_order())
+            .unwrap_or(0)
     }
 
     pub fn z_index(&self) -> i32 {

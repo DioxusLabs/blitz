@@ -4,6 +4,7 @@ use std::ops::Range;
 use crate::Node;
 use crate::net::ResourceHandler;
 use crate::node::NodeFlags;
+use crate::tree::NodeTree;
 use crate::{
     BaseDocument, net::ImageHandler, node::ImageResourceData, node::Status, util::ImageLayerKind,
 };
@@ -19,18 +20,28 @@ use style::values::specified::box_::DisplayOutside;
 use taffy::Rect;
 use thin_vec::ThinVec;
 
-pub(crate) const CONSTRUCT_BOX: RestyleDamage =
-    RestyleDamage::from_bits_retain(0b_0000_0000_0001_0000);
-pub(crate) const CONSTRUCT_FC: RestyleDamage =
-    RestyleDamage::from_bits_retain(0b_0000_0000_0010_0000);
-pub(crate) const CONSTRUCT_DESCENDENT: RestyleDamage =
-    RestyleDamage::from_bits_retain(0b_0000_0000_0100_0000);
+// Blitz-specific damage bits, in increasing order of severity above Servo's
+// `RestyleDamage::RELAYOUT` (0b1111).
 
 pub(crate) const ONLY_RELAYOUT: RestyleDamage =
     RestyleDamage::from_bits_retain(0b_0000_0000_0000_1000);
 
+/// The node's `order` changed: its flex/grid container must re-collect its
+/// `layout_children` (which sorts them). Consumed by the container in
+/// `propagate_damage_flags`, which marks itself `CONSTRUCT_BOX` without
+/// forwarding that further up. Deliberately not part of `ALL_DAMAGE`.
+pub(crate) const REORDER_CHILDREN: RestyleDamage =
+    RestyleDamage::from_bits_retain(0b_0000_0000_0001_0000);
+
+pub(crate) const CONSTRUCT_BOX: RestyleDamage =
+    RestyleDamage::from_bits_retain(0b_0000_0000_0010_0000);
+pub(crate) const CONSTRUCT_FC: RestyleDamage =
+    RestyleDamage::from_bits_retain(0b_0000_0000_0100_0000);
+pub(crate) const CONSTRUCT_DESCENDENT: RestyleDamage =
+    RestyleDamage::from_bits_retain(0b_0000_0000_1000_0000);
+
 pub(crate) const ALL_DAMAGE: RestyleDamage =
-    RestyleDamage::from_bits_retain(0b_0000_0000_0111_1111);
+    RestyleDamage::from_bits_retain(0b_0000_0000_1110_1111);
 
 impl BaseDocument {
     pub(crate) fn propagate_damage_flags(
@@ -60,25 +71,40 @@ impl BaseDocument {
         }
 
         let damage_for_children = RestyleDamage::empty();
+        let mut damage_from_children = RestyleDamage::empty();
         let children = std::mem::take(&mut self.nodes[node_id].children);
         let layout_children = std::mem::take(self.nodes[node_id].layout_children.get_mut());
         let use_layout_children = self.nodes[node_id].should_traverse_layout_children();
         if use_layout_children {
             let layout_children = layout_children.as_ref().unwrap();
             for child in layout_children.iter() {
-                damage |= self.propagate_damage_flags(*child, damage_for_children);
+                damage_from_children |= self.propagate_damage_flags(*child, damage_for_children);
             }
         } else {
             for child in children.iter() {
-                damage |= self.propagate_damage_flags(*child, damage_for_children);
+                damage_from_children |= self.propagate_damage_flags(*child, damage_for_children);
             }
             if let Some(before_id) = self.nodes[node_id].before() {
-                damage |= self.propagate_damage_flags(before_id, damage_for_children);
+                damage_from_children |= self.propagate_damage_flags(before_id, damage_for_children);
             }
             if let Some(after_id) = self.nodes[node_id].after() {
-                damage |= self.propagate_damage_flags(after_id, damage_for_children);
+                damage_from_children |= self.propagate_damage_flags(after_id, damage_for_children);
             }
         }
+
+        // A child's `order` changed: this container re-collects (and so re-sorts)
+        // its layout children. Only the direct parent consumes the flag, and the
+        // resulting `CONSTRUCT_BOX` is not forwarded further up: the container's
+        // own box is unchanged, so ancestors need only `RELAYOUT` (always set
+        // alongside `REORDER_CHILDREN`) plus `CONSTRUCT_DESCENDENT` so that a
+        // traversal gated on it still reaches this container.
+        let reorder = damage_from_children.contains(REORDER_CHILDREN)
+            && matches!(
+                self.nodes[node_id].display_constructed_as().inside(),
+                DisplayInside::Flex | DisplayInside::Grid
+            );
+        damage_from_children.remove(REORDER_CHILDREN);
+        damage |= damage_from_children;
 
         let node = &mut self.nodes[node_id];
 
@@ -91,7 +117,12 @@ impl BaseDocument {
         }
 
         // Compute damage to propagate to parent
-        let damage_for_parent = damage; // & RestyleDamage::RELAYOUT;
+        let mut damage_for_parent = damage; // & RestyleDamage::RELAYOUT;
+
+        if reorder {
+            damage.insert(CONSTRUCT_BOX);
+            damage_for_parent.insert(CONSTRUCT_DESCENDENT);
+        }
 
         // If the node or any of it's children have been mutated or their layout styles
         // have changed, then we should clear it's layout cache.
@@ -284,12 +315,35 @@ pub(crate) fn compute_layout_damage(old: &ComputedValues, new: &ComputedValues) 
         ALL_DAMAGE
     } else if text_shaping_needs_recollect() {
         ALL_DAMAGE
+    } else if old.get_position().order != new.get_position().order
+        // `position` is unchanged here (else the box tree would be rebuilt), so
+        // checking the new style suffices. Out-of-flow children are not flex/grid
+        // items: `Node::order()` keys them as 0 regardless of `order`.
+        && !matches!(
+            new.get_box().position,
+            Position::Absolute | Position::Fixed
+        )
+    {
+        RestyleDamage::RELAYOUT | REORDER_CHILDREN
     } else {
         // This element needs to be laid out again, but does not have any damage to
         // its box. In the future, we will distinguish between types of damage to the
         // fragment as well.
         RestyleDamage::RELAYOUT
     }
+}
+
+/// Stable-sort a flex/grid container's freshly constructed `layout_children`
+/// (in document order) by `order`. Skips the sort when every child has the
+/// default `order` (0).
+pub(crate) fn sort_layout_children_by_order(
+    nodes: &NodeTree,
+    layout_children: &mut ThinVec<NodeId>,
+) {
+    if layout_children.iter().all(|id| nodes[*id].order() == 0) {
+        return;
+    }
+    layout_children.sort_by_cached_key(|id| nodes[*id].order());
 }
 
 /// A child with a z_index that is hoisted up to it's containing Stacking Context for paint purposes
@@ -566,7 +620,7 @@ impl BaseDocument {
 
         // If the node has children, then take those children and...
         let children = self.nodes[node_id].layout_children.borrow_mut().take();
-        if let Some(mut children) = children {
+        if let Some(children) = children {
             let is_flex_or_grid =
                 matches!(display.inside(), DisplayInside::Flex | DisplayInside::Grid);
 
@@ -579,15 +633,6 @@ impl BaseDocument {
                         false => Some(stacking_context),
                     },
                 );
-            }
-
-            // Sort layout_children
-            if is_flex_or_grid {
-                children.sort_by(|left, right| {
-                    let left_node = self.nodes.get(*left).unwrap();
-                    let right_node = self.nodes.get(*right).unwrap();
-                    left_node.order().cmp(&right_node.order())
-                });
             }
 
             // Reserve space for paint_children
