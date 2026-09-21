@@ -195,18 +195,16 @@ impl BaseDocument {
     /// already reached through its owner, so only its nested anonymous boxes
     /// are recursed into.
     pub(crate) fn clear_damage_and_dirty_flags(&mut self, node_id: NodeId) {
-        let is_anonymous = {
-            // Anonymous boxes can be freed during construction while still
-            // listed in their owner's `anonymous_blocks`.
-            let Some(node) = self.nodes.get(node_id) else {
-                return;
-            };
-            let has_damage = node.damage().is_some_and(|d| !d.is_empty());
-            if !has_damage && !node.has_damaged_descendants() && !node.is_anonymous() {
-                return;
-            }
-            node.is_anonymous()
+        // Anonymous boxes can be freed during construction while still
+        // listed in their owner's `anonymous_blocks`.
+        let Some(node) = self.nodes.get(node_id) else {
+            return;
         };
+        let is_anonymous = node.is_anonymous();
+        let has_damage = node.damage().is_some_and(|d| !d.is_empty());
+        if !has_damage && !node.has_damaged_descendants() && !is_anonymous {
+            return;
+        }
 
         let anonymous_blocks = std::mem::take(&mut self.nodes[node_id].anonymous_blocks);
         for anon_id in anonymous_blocks.iter() {
