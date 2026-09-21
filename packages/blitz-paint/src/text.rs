@@ -538,6 +538,7 @@ fn flush_line_decorations(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn stroke_text<'a>(
     scene: &mut impl PaintScene,
     lines: impl Iterator<Item = Line<'a, TextBrush>>,
@@ -546,6 +547,7 @@ pub(crate) fn stroke_text<'a>(
     scale: f64,
     inline_root_id: NodeId,
     context: &mut DrawTextContext,
+    text_overflow: Option<(&blitz_dom::text_overflow::TextOverflowLayout, f32)>,
 ) {
     let DrawTextContext {
         stack,
@@ -564,7 +566,16 @@ pub(crate) fn stroke_text<'a>(
     // ancestor chain on every run, we cache each node's resolved values here and,
     // for each run, only resolve styles for the nodes newly descended into (popping
     // as we ascend). `path_scratch` is a reusable buffer for the run's node path.
-    for line in lines {
+    for (line_index, line) in lines.enumerate() {
+        // `text-overflow`: layout found the overflowing lines and shaped their
+        // marker; the cut itself depends on the scroll offset, so it is resolved
+        // here (cheaply) for every frame.
+        let truncated = text_overflow.and_then(|(o, scroll_x)| {
+            o.line(line_index).and_then(|l| {
+                blitz_dom::text_overflow::resolve(o, l, &line, scroll_x).map(|c| (l, c))
+            })
+        });
+        let mut marker_drawn = false;
         // Decorations accumulated for this line, keyed by decorating box, so each box is
         // painted once (spanning all its runs) using its own font — matching Firefox, which
         // draws one decoration per box rather than one stepped segment per differently-sized
@@ -631,12 +642,64 @@ pub(crate) fn stroke_text<'a>(
                     1.0, // alpha
                     transform,
                     glyph_xform,
-                    glyph_run.positioned_glyphs().map(|glyph| anyrender::Glyph {
-                        id: glyph.id as _,
-                        x: glyph.x,
-                        y: glyph.y,
+                    glyph_run.positioned_glyphs().filter_map(|glyph| {
+                        // Truncated line: keep the glyphs that end before the cut.
+                        if let Some((_, cut)) = truncated {
+                            if glyph.x + glyph.advance > cut.cut_x + 0.01 {
+                                return None;
+                            }
+                        }
+                        Some(anyrender::Glyph {
+                            id: glyph.id as _,
+                            x: glyph.x,
+                            y: glyph.y,
+                        })
                     }),
                 );
+
+                // Draw the marker once, right after the kept glyphs, once the run that
+                // reaches the cut has been painted.
+                if let Some((truncated_line, cut)) = truncated {
+                    let run_end = glyph_run.offset() + glyph_run.advance();
+                    if !marker_drawn && run_end >= cut.cut_x - 0.01 {
+                        marker_drawn = true;
+                        // The marker is the block's: its own font(s), size and colour,
+                        // on the line's baseline.
+                        let (overflow, _) = text_overflow.expect("truncated implies overflow data");
+                        let marker = &overflow.marker;
+                        let marker_color = {
+                            let id = marker.brush.id;
+                            doc.get_node(id)
+                                .and_then(|n| n.primary_styles())
+                                .map(|s| s.get_inherited_text().color.as_color_color())
+                                .unwrap_or(text_color)
+                        };
+                        for mrun in &marker.runs {
+                            let glyphs: Vec<anyrender::Glyph> = mrun
+                                .glyphs
+                                .iter()
+                                .map(|(id, gx)| anyrender::Glyph {
+                                    id: *id as _,
+                                    x: cut.marker_x + gx,
+                                    y: truncated_line.baseline,
+                                })
+                                .collect();
+                            scene.draw_glyphs(
+                                &mrun.font,
+                                mrun.font_size,
+                                !FONT_EMBOLDEN_ENABLED,
+                                &mrun.normalized_coords,
+                                embolden,
+                                Fill::NonZero,
+                                &anyrender::Paint::from(marker_color),
+                                1.0,
+                                transform,
+                                glyph_xform,
+                                glyphs.into_iter(),
+                            );
+                        }
+                    }
+                }
 
                 // Accumulate this run's contribution to each decorating box on its ancestor
                 // path. The decoration is drawn once per box after the whole line has been
@@ -655,7 +718,15 @@ pub(crate) fn stroke_text<'a>(
                 };
                 let run_node_id = style.brush.id;
                 let run_x0 = glyph_run.offset() as f64;
-                let run_x1 = run_x0 + glyph_run.advance() as f64;
+                let mut run_x1 = run_x0 + glyph_run.advance() as f64;
+                // On a truncated line, decorations stop before the marker (the
+                // marker itself is undecorated, as in Chrome).
+                if let Some((_, cut)) = truncated {
+                    run_x1 = run_x1.min(cut.cut_x as f64);
+                    if run_x1 <= run_x0 {
+                        continue;
+                    }
+                }
 
                 for entry in stack.iter() {
                     if entry.decoration.is_none() {
