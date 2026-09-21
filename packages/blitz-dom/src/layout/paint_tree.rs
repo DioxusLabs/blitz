@@ -213,11 +213,19 @@ impl BaseDocument {
             // that nothing in the subtree can have changed a paint list.
             // Anonymous boxes are never skipped: damage marking walks the DOM
             // parent chain, which bypasses them.
-            let clean = node
-                .damage()
-                .unwrap_or(ALL_DAMAGE)
-                .difference(RestyleDamage::REPAINT)
-                .is_empty()
+            //
+            // Whether a node is a stacking-context root also depends on its
+            // parent (z-indexed flex/grid items), which does not damage the
+            // node itself, so the role the caller resolved must match the one
+            // this node was last built with.
+            let role_unchanged =
+                node.stacking_context.is_some() == parent_stacking_context.is_none();
+            let clean = role_unchanged
+                && node
+                    .damage()
+                    .unwrap_or(ALL_DAMAGE)
+                    .difference(RestyleDamage::REPAINT)
+                    .is_empty()
                 && !node.is_anonymous();
             if clean {
                 if let Some(parent_stacking_context) = parent_stacking_context {

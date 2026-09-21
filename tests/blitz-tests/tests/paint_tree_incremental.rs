@@ -359,3 +359,93 @@ fn hoisted_position_is_memoised_per_generation() {
     assert_eq!(hit(&doc, 50.0, 20.0), b);
     assert!(entry(&doc));
 }
+
+const FLEX_ITEM_ROLE: &str = r#"<html><head><style>
+    body { margin: 0; }
+    #c { display: flex; width: 100px; height: 100px; }
+    #c:hover { display: block; }
+    #item { z-index: 3; width: 100px; height: 100px; }
+    #inner { position: relative; z-index: 3; width: 100px; height: 100px; background: red; }
+    #ext { position: absolute; left: 0; top: 0; z-index: 2; width: 100px; height: 100px; background: blue; }
+</style></head><body>
+    <div id="c"><div id="item"><div id="inner"></div></div></div>
+    <div id="ext"></div>
+</body></html>"#;
+
+/// Whether a static z-indexed child is a stacking-context root depends on
+/// its parent being a flex/grid container. Toggling the parent's `display`
+/// damages only the parent, so the child's role must be re-derived even
+/// though its own damage says it is clean.
+#[test]
+fn flex_item_role_change_rebuilds_child() {
+    for incremental in [false, true] {
+        let mut doc = make_doc(FLEX_ITEM_ROLE, incremental);
+        let item = id(&doc, "#item");
+        let inner = id(&doc, "#inner");
+
+        // Flex: `#item` is an SC root (z-index 3 flex item) above `#ext` (2).
+        assert!(doc.get_node(item).unwrap().stacking_context.is_some());
+        assert!(hoisted_entry(&doc, item, inner).is_some());
+        assert_eq!(hit(&doc, 50.0, 50.0), inner);
+
+        // Block: `#item` is a plain static block; `#inner` (z-index 3) is
+        // hoisted to the root stacking context, still above `#ext`.
+        hover(&mut doc, "#inner");
+        assert!(
+            doc.get_node(item).unwrap().stacking_context.is_none(),
+            "incremental={incremental}"
+        );
+        assert!(hoisted_entry(&doc, item, inner).is_none());
+        assert_eq!(hit(&doc, 50.0, 50.0), inner, "incremental={incremental}");
+
+        // Back to flex: `#item` becomes an SC root again and `#inner` must
+        // leave the root stacking context (otherwise it would paint twice /
+        // at the wrong level) and be owned by `#item`.
+        unhover(&mut doc);
+        assert!(
+            doc.get_node(item).unwrap().stacking_context.is_some(),
+            "incremental={incremental}"
+        );
+        assert!(hoisted_entry(&doc, item, inner).is_some());
+        let html = doc.root_element().id;
+        assert!(hoisted_entry(&doc, html, inner).is_none());
+        assert_eq!(hit(&doc, 50.0, 50.0), inner, "incremental={incremental}");
+    }
+}
+
+const REPARENT_ROLE: &str = r#"<html><head><style>
+    body { margin: 0; }
+    #flex { display: flex; width: 100px; height: 100px; }
+    #block { position: absolute; left: 0; top: 0; width: 100px; height: 100px; }
+    #item { z-index: 3; width: 100px; height: 100px; }
+    #inner { position: relative; z-index: 3; width: 100px; height: 100px; background: red; }
+    #ext { position: absolute; left: 0; top: 0; z-index: 2; width: 100px; height: 100px; background: blue; }
+</style></head><body>
+    <div id="flex"><div id="item"><div id="inner"></div></div></div>
+    <div id="block"></div>
+    <div id="ext"></div>
+</body></html>"#;
+
+/// Moving a clean subtree from a flex container into a block container
+/// changes the moved node's stacking-context role without a style change on
+/// the node itself.
+#[test]
+fn reparent_from_flex_to_block_rebuilds_child() {
+    for incremental in [false, true] {
+        let mut doc = make_doc(REPARENT_ROLE, incremental);
+        let item = id(&doc, "#item");
+        let inner = id(&doc, "#inner");
+        let block = id(&doc, "#block");
+        assert!(doc.get_node(item).unwrap().stacking_context.is_some());
+        assert_eq!(hit(&doc, 50.0, 50.0), inner);
+
+        doc.mutate().append_children(block, &[item]);
+        doc.resolve(0.0);
+
+        assert!(
+            doc.get_node(item).unwrap().stacking_context.is_none(),
+            "incremental={incremental}"
+        );
+        assert_eq!(hit(&doc, 50.0, 50.0), inner, "incremental={incremental}");
+    }
+}
