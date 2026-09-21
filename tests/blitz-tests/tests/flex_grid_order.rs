@@ -161,36 +161,40 @@ fn abspos_children_of_flex_container_ignore_order() {
     }
 }
 
-/// Changing `order` via a restyle (here `:hover`) re-sorts the container's
-/// `layout_children` in incremental mode without reconstructing any boxes.
+/// Changing `order` via a restyle (here `:hover`) re-collects the container's
+/// `layout_children` in incremental mode without reconstructing any ancestor.
 ///
-/// A bare text node forces an anonymous block wrapper, whose identity we use
-/// to detect box reconstruction of the container: reconstruction frees the
-/// old anonymous block and allocates a new one.
+/// Bare text nodes force anonymous block wrappers, whose identity we use to
+/// detect box reconstruction: reconstruction frees the old anonymous block
+/// and allocates a new one. The wrapper inside `#flex` may be replaced (the
+/// container re-collects its children); the one in `#parent` must not be.
 #[test]
-fn changing_order_via_restyle_resorts_without_reconstruction() {
+fn changing_order_via_restyle_resorts_without_ancestor_reconstruction() {
     const HTML: &str = r#"<html><head><style>
         #flex:hover #c { order: -1; }
         #flex:hover #a { order: 1; }
     </style></head><body style="margin:0">
-        <div id="flex" style="display:flex; width:400px; height:20px; font-size:10px; line-height:1;">
-            <div id="a" style="width:10px; height:10px;"></div>
-            <div id="b" style="width:10px; height:10px;"></div>
-            <div id="c" style="width:10px; height:10px;"></div>
-            x
+        <div id="parent" style="font-size:10px; line-height:1;">
+            <div id="flex" style="display:flex; width:400px; height:20px;">
+                <div id="a" style="width:10px; height:10px;"></div>
+                <div id="b" style="width:10px; height:10px;"></div>
+                <div id="c" style="width:10px; height:10px;"></div>
+                x
+            </div>
+            y
         </div>
     </body></html>"#;
 
     let mut doc = make_doc(HTML, true);
 
+    let parent_initial = layout_children(&doc, "#parent");
+    assert_eq!(ids_of(&doc, &parent_initial), ["flex", "<anon>"]);
     let initial = layout_children(&doc, "#flex");
     assert_eq!(ids_of(&doc, &initial), ["a", "b", "c", "<anon>"]);
-    let anon = *initial.last().unwrap();
-    let node_count = doc.tree().len();
     assert_eq!(x(&doc, "#a"), 0.0);
     assert_eq!(x(&doc, "#b"), 10.0);
     assert_eq!(x(&doc, "#c"), 20.0);
-    let text_x = doc.get_node(anon).unwrap().final_layout().location.x;
+    let text_x = doc.get_node(initial[3]).unwrap().final_layout().location.x;
     assert_eq!(text_x, 30.0);
 
     // Hover the container: c -> -1, a -> 1.
@@ -201,11 +205,14 @@ fn changing_order_via_restyle_resorts_without_reconstruction() {
     assert_eq!(ids_of(&doc, &hovered), ["c", "b", "<anon>", "a"]);
     assert_eq!(x(&doc, "#c"), 0.0);
     assert_eq!(x(&doc, "#b"), 10.0);
-    let anon_layout = *doc.get_node(anon).unwrap().final_layout();
+    let anon_layout = *doc.get_node(hovered[2]).unwrap().final_layout();
     assert_eq!(anon_layout.location.x, 20.0);
     assert_eq!(x(&doc, "#a"), 20.0 + anon_layout.size.width);
-    assert_eq!(hovered[2], anon, "anonymous block was reconstructed");
-    assert_eq!(doc.tree().len(), node_count, "nodes were (re)allocated");
+    assert_eq!(
+        layout_children(&doc, "#parent"),
+        parent_initial,
+        "ancestor was reconstructed"
+    );
 
     // Steady state: resolving again with no changes keeps the list.
     doc.resolve(0.0);
@@ -215,12 +222,18 @@ fn changing_order_via_restyle_resorts_without_reconstruction() {
     doc.set_hover_to(200.0, 200.0);
     doc.resolve(0.0);
 
-    let unhovered = layout_children(&doc, "#flex");
-    assert_eq!(unhovered, initial);
+    assert_eq!(
+        ids_of(&doc, &layout_children(&doc, "#flex")),
+        ["a", "b", "c", "<anon>"]
+    );
     assert_eq!(x(&doc, "#a"), 0.0);
     assert_eq!(x(&doc, "#b"), 10.0);
     assert_eq!(x(&doc, "#c"), 20.0);
-    assert_eq!(doc.tree().len(), node_count, "nodes were (re)allocated");
+    assert_eq!(
+        layout_children(&doc, "#parent"),
+        parent_initial,
+        "ancestor was reconstructed"
+    );
 }
 
 /// Changing `order` through the attribute API (which conservatively marks the

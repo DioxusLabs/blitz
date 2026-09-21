@@ -1243,7 +1243,7 @@ impl Node {
     /// The `order` sort key of this node within a flex/grid container's
     /// `layout_children`. The list is stable-sorted by this key when the
     /// container's children are constructed (`collect_layout_children`) and
-    /// re-sorted when a child's `order` changes (`propagate_damage_flags`).
+    /// re-collected when a child's `order` changes (`REORDER_CHILDREN` damage).
     ///
     /// ::before/::after pseudos are flex/grid items and honor `order`. They
     /// sit first/last in the constructed list, and the sort is stable, so

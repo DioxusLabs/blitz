@@ -1,9 +1,7 @@
 use blitz_traits::node_id::NodeId;
-use std::collections::HashMap;
 use std::ops::Range;
 
 use crate::Node;
-use crate::layout::construct::push_non_whitespace_children_and_pseudos;
 use crate::net::ResourceHandler;
 use crate::node::NodeFlags;
 use crate::tree::NodeTree;
@@ -28,10 +26,10 @@ use thin_vec::ThinVec;
 pub(crate) const ONLY_RELAYOUT: RestyleDamage =
     RestyleDamage::from_bits_retain(0b_0000_0000_0000_1000);
 
-/// The node's `order` changed: its flex/grid container must re-sort its
-/// `layout_children`. Consumed by the container in `propagate_damage_flags`
-/// (not forwarded further up) and deliberately not part of `ALL_DAMAGE`:
-/// a container which reconstructs its box sorts at construction anyway.
+/// The node's `order` changed: its flex/grid container must re-collect its
+/// `layout_children` (which sorts them). Consumed by the container in
+/// `propagate_damage_flags`, which marks itself `CONSTRUCT_BOX` without
+/// forwarding that further up. Deliberately not part of `ALL_DAMAGE`.
 pub(crate) const REORDER_CHILDREN: RestyleDamage =
     RestyleDamage::from_bits_retain(0b_0000_0000_0001_0000);
 
@@ -75,7 +73,7 @@ impl BaseDocument {
         let damage_for_children = RestyleDamage::empty();
         let mut damage_from_children = RestyleDamage::empty();
         let children = std::mem::take(&mut self.nodes[node_id].children);
-        let mut layout_children = std::mem::take(self.nodes[node_id].layout_children.get_mut());
+        let layout_children = std::mem::take(self.nodes[node_id].layout_children.get_mut());
         let use_layout_children = self.nodes[node_id].should_traverse_layout_children();
         if use_layout_children {
             let layout_children = layout_children.as_ref().unwrap();
@@ -94,35 +92,35 @@ impl BaseDocument {
             }
         }
 
-        // Put DOM children back (the re-sort below needs them for tie-breaking)
-        self.nodes[node_id].children = children;
-
-        // A child's `order` changed: re-sort this container's layout children.
-        // Only the container consumes this flag; it is not forwarded to the parent.
-        if damage_from_children.contains(REORDER_CHILDREN) {
-            if let Some(layout_children) = layout_children.as_mut() {
-                let display = self.nodes[node_id].display_constructed_as();
-                if matches!(display.inside(), DisplayInside::Flex | DisplayInside::Grid) {
-                    resort_layout_children_by_order(&self.nodes, node_id, layout_children);
-                }
-            }
-            damage_from_children.remove(REORDER_CHILDREN);
-        }
+        // A child's `order` changed: this container re-collects (and so re-sorts)
+        // its layout children. Only the direct parent consumes the flag, and the
+        // resulting `CONSTRUCT_BOX` is not forwarded further up: the container's
+        // own box is unchanged, so ancestors need only `RELAYOUT` (always set
+        // alongside `REORDER_CHILDREN`).
+        let reorder = damage_from_children.contains(REORDER_CHILDREN)
+            && matches!(
+                self.nodes[node_id].display_constructed_as().inside(),
+                DisplayInside::Flex | DisplayInside::Grid
+            );
+        damage_from_children.remove(REORDER_CHILDREN);
         damage |= damage_from_children;
 
         let node = &mut self.nodes[node_id];
 
-        // Put layout children back
+        // Put children back
+        node.children = children;
         *node.layout_children.get_mut() = layout_children;
 
         if damage.contains(CONSTRUCT_BOX) {
             damage.insert(RestyleDamage::RELAYOUT);
         }
 
-        // Compute damage to propagate to parent. `REORDER_CHILDREN` is consumed
-        // by the direct parent only; `RELAYOUT` (always set alongside it)
-        // already clears the parent's layout cache.
+        // Compute damage to propagate to parent
         let damage_for_parent = damage; // & RestyleDamage::RELAYOUT;
+
+        if reorder {
+            damage.insert(CONSTRUCT_BOX);
+        }
 
         // If the node or any of it's children have been mutated or their layout styles
         // have changed, then we should clear it's layout cache.
@@ -344,74 +342,6 @@ pub(crate) fn sort_layout_children_by_order(
         return;
     }
     layout_children.sort_by_cached_key(|id| nodes[*id].order());
-}
-
-/// Re-sort a flex/grid container's already-sorted `layout_children` after a
-/// child's `order` changed. Unlike at construction the list is no longer in
-/// document order, so it is first restored to document order and then
-/// stable-sorted by `order` exactly as at construction.
-///
-/// In the common case (every layout child is a real DOM child or pseudo of the
-/// container — no anonymous wrappers, no hoisted `display: contents` content)
-/// the document-ordered list is simply re-collected from the DOM `children`.
-/// Otherwise ties are broken by looking up each child's position in the DOM
-/// `children` (anonymous wrappers rank by their first wrapped node;
-/// `::before`/`::after` rank first/last).
-fn resort_layout_children_by_order(
-    nodes: &NodeTree,
-    container_id: NodeId,
-    layout_children: &mut ThinVec<NodeId>,
-) {
-    let container = &nodes[container_id];
-
-    let is_direct_child_or_pseudo = |id: &NodeId| {
-        let node = &nodes[*id];
-        node.parent == Some(container_id) && !node.is_anonymous()
-            || container.before() == Some(*id)
-            || container.after() == Some(*id)
-    };
-    if layout_children.iter().all(is_direct_child_or_pseudo) {
-        layout_children.clear();
-        push_non_whitespace_children_and_pseudos(layout_children, container);
-        sort_layout_children_by_order(nodes, layout_children);
-        return;
-    }
-
-    let dom_index: HashMap<NodeId, usize> = container
-        .children
-        .iter()
-        .enumerate()
-        .map(|(idx, id)| (*id, idx + 1))
-        .collect();
-
-    let doc_rank = |child: NodeId| -> usize {
-        if container.before() == Some(child) {
-            return 0;
-        }
-        if container.after() == Some(child) {
-            return usize::MAX;
-        }
-        let mut node_id = child;
-        loop {
-            let node = &nodes[node_id];
-            if node.is_anonymous() {
-                match node.children.first() {
-                    Some(first) => node_id = *first,
-                    None => return usize::MAX - 1,
-                }
-                continue;
-            }
-            if let Some(idx) = dom_index.get(&node_id) {
-                return *idx;
-            }
-            match node.parent {
-                Some(parent) if parent != container_id => node_id = parent,
-                _ => return usize::MAX - 1,
-            }
-        }
-    };
-
-    layout_children.sort_by_cached_key(|id| (nodes[*id].order(), doc_rank(*id)));
 }
 
 /// A child with a z_index that is hoisted up to it's containing Stacking Context for paint purposes
