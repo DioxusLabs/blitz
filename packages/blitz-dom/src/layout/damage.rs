@@ -44,11 +44,16 @@ pub(crate) const ALL_DAMAGE: RestyleDamage =
     RestyleDamage::from_bits_retain(0b_0000_0000_1110_1111);
 
 impl BaseDocument {
-    pub(crate) fn propagate_damage_flags(
-        &mut self,
-        node_id: NodeId,
-        damage_from_parent: RestyleDamage,
-    ) -> RestyleDamage {
+    /// Union `RestyleDamage` up the tree and clear the layout caches of every
+    /// node whose subtree needs relayout.
+    ///
+    /// Damage is stored on (styled) DOM nodes, so this pass walks the DOM tree
+    /// (`children` + `::before`/`::after`): `display:contents` nodes and the
+    /// inline descendants of inline roots carry damage but are not layout
+    /// children. Anonymous boxes only exist in the layout tree and are
+    /// therefore never visited; their caches are invalidated by walking
+    /// `layout_parent` upward from each damaged node instead.
+    pub(crate) fn propagate_damage_flags(&mut self, node_id: NodeId) -> RestyleDamage {
         let mut damage = if let Some(data) = self.nodes[node_id]
             .try_stylo_element_data_mut()
             .and_then(|s| s.get_mut())
@@ -57,7 +62,6 @@ impl BaseDocument {
         } else {
             return RestyleDamage::empty();
         };
-        damage |= damage_from_parent;
 
         // Skip subtrees which contain no damage. Anonymous nodes are never
         // skipped themselves because damage marking walks the DOM parent
@@ -70,26 +74,16 @@ impl BaseDocument {
             }
         }
 
-        let damage_for_children = RestyleDamage::empty();
         let mut damage_from_children = RestyleDamage::empty();
         let children = std::mem::take(&mut self.nodes[node_id].children);
-        let layout_children = std::mem::take(self.nodes[node_id].layout_children.get_mut());
-        let use_layout_children = self.nodes[node_id].should_traverse_layout_children();
-        if use_layout_children {
-            let layout_children = layout_children.as_ref().unwrap();
-            for child in layout_children.iter() {
-                damage_from_children |= self.propagate_damage_flags(*child, damage_for_children);
-            }
-        } else {
-            for child in children.iter() {
-                damage_from_children |= self.propagate_damage_flags(*child, damage_for_children);
-            }
-            if let Some(before_id) = self.nodes[node_id].before() {
-                damage_from_children |= self.propagate_damage_flags(before_id, damage_for_children);
-            }
-            if let Some(after_id) = self.nodes[node_id].after() {
-                damage_from_children |= self.propagate_damage_flags(after_id, damage_for_children);
-            }
+        for child in children.iter() {
+            damage_from_children |= self.propagate_damage_flags(*child);
+        }
+        if let Some(before_id) = self.nodes[node_id].before() {
+            damage_from_children |= self.propagate_damage_flags(before_id);
+        }
+        if let Some(after_id) = self.nodes[node_id].after() {
+            damage_from_children |= self.propagate_damage_flags(after_id);
         }
 
         // A child's `order` changed: this container re-collects (and so re-sorts)
@@ -110,7 +104,6 @@ impl BaseDocument {
 
         // Put children back
         node.children = children;
-        *node.layout_children.get_mut() = layout_children;
 
         if damage.contains(CONSTRUCT_BOX) {
             damage.insert(RestyleDamage::RELAYOUT);
@@ -126,20 +119,39 @@ impl BaseDocument {
 
         // If the node or any of it's children have been mutated or their layout styles
         // have changed, then we should clear it's layout cache.
+        let mut invalidate_anonymous_ancestors = false;
         if damage.intersects(ONLY_RELAYOUT | CONSTRUCT_BOX) {
-            node.clear_layout_cache();
-            if let Some(inline_layout) = node
-                .data
-                .downcast_element_mut()
-                .and_then(|el| el.inline_layout_data.as_mut())
-            {
-                inline_layout.content_widths = None;
-            }
+            node.invalidate_layout_cache();
+            invalidate_anonymous_ancestors = true;
             damage.remove(ONLY_RELAYOUT);
         }
 
         // Store damage for current node
         node.set_damage(damage);
+
+        // Anonymous boxes between this node and its nearest element ancestor
+        // are not visited by the DOM walk, so invalidate them here by walking
+        // `layout_parent`. Stop at the first non-anonymous node: elements are
+        // DOM ancestors and clear themselves when RELAYOUT reaches them.
+        //
+        // The chain is always usable: anonymous blocks are only freed by the
+        // reconstruct branch of `resolve_layout_children` (which immediately
+        // re-collects and resets `layout_parent` for every child it visits,
+        // recursing through the fresh anonymous blocks which are born with
+        // `ALL_DAMAGE`) and by node removal (the subtree leaves the document).
+        // So when this pass runs, a node's `layout_parent` chain is either
+        // current or owned by a container which reconstructs this frame. A
+        // stale key for a freed block yields `None` (slab keys are versioned).
+        if invalidate_anonymous_ancestors {
+            let mut current = self.nodes[node_id].layout_parent.get();
+            while let Some(ancestor) = current.and_then(|id| self.nodes.get_mut(id)) {
+                if !ancestor.is_anonymous() {
+                    break;
+                }
+                ancestor.invalidate_layout_cache();
+                current = ancestor.layout_parent.get();
+            }
+        }
 
         // let _is_fc_root = node
         //     .primary_styles()
