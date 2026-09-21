@@ -21,12 +21,8 @@ use style::values::specified::box_::DisplayOutside;
 use taffy::Rect;
 use thin_vec::ThinVec;
 
-pub(crate) const CONSTRUCT_BOX: RestyleDamage =
-    RestyleDamage::from_bits_retain(0b_0000_0000_0001_0000);
-pub(crate) const CONSTRUCT_FC: RestyleDamage =
-    RestyleDamage::from_bits_retain(0b_0000_0000_0010_0000);
-pub(crate) const CONSTRUCT_DESCENDENT: RestyleDamage =
-    RestyleDamage::from_bits_retain(0b_0000_0000_0100_0000);
+// Blitz-specific damage bits, in increasing order of severity above Servo's
+// `RestyleDamage::RELAYOUT` (0b1111).
 
 pub(crate) const ONLY_RELAYOUT: RestyleDamage =
     RestyleDamage::from_bits_retain(0b_0000_0000_0000_1000);
@@ -36,10 +32,17 @@ pub(crate) const ONLY_RELAYOUT: RestyleDamage =
 /// (not forwarded further up) and deliberately not part of `ALL_DAMAGE`:
 /// a container which reconstructs its box sorts at construction anyway.
 pub(crate) const REORDER_CHILDREN: RestyleDamage =
+    RestyleDamage::from_bits_retain(0b_0000_0000_0001_0000);
+
+pub(crate) const CONSTRUCT_BOX: RestyleDamage =
+    RestyleDamage::from_bits_retain(0b_0000_0000_0010_0000);
+pub(crate) const CONSTRUCT_FC: RestyleDamage =
+    RestyleDamage::from_bits_retain(0b_0000_0000_0100_0000);
+pub(crate) const CONSTRUCT_DESCENDENT: RestyleDamage =
     RestyleDamage::from_bits_retain(0b_0000_0000_1000_0000);
 
 pub(crate) const ALL_DAMAGE: RestyleDamage =
-    RestyleDamage::from_bits_retain(0b_0000_0000_0111_1111);
+    RestyleDamage::from_bits_retain(0b_0000_0000_1110_1111);
 
 impl BaseDocument {
     pub(crate) fn propagate_damage_flags(
