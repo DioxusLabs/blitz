@@ -96,7 +96,8 @@ impl BaseDocument {
         // its layout children. Only the direct parent consumes the flag, and the
         // resulting `CONSTRUCT_BOX` is not forwarded further up: the container's
         // own box is unchanged, so ancestors need only `RELAYOUT` (always set
-        // alongside `REORDER_CHILDREN`).
+        // alongside `REORDER_CHILDREN`) plus `CONSTRUCT_DESCENDENT` so that a
+        // traversal gated on it still reaches this container.
         let reorder = damage_from_children.contains(REORDER_CHILDREN)
             && matches!(
                 self.nodes[node_id].display_constructed_as().inside(),
@@ -116,10 +117,11 @@ impl BaseDocument {
         }
 
         // Compute damage to propagate to parent
-        let damage_for_parent = damage; // & RestyleDamage::RELAYOUT;
+        let mut damage_for_parent = damage; // & RestyleDamage::RELAYOUT;
 
         if reorder {
             damage.insert(CONSTRUCT_BOX);
+            damage_for_parent.insert(CONSTRUCT_DESCENDENT);
         }
 
         // If the node or any of it's children have been mutated or their layout styles
