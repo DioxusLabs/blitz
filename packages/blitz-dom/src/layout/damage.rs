@@ -189,11 +189,11 @@ impl BaseDocument {
     /// on all nodes which may carry them, using the `damaged_descendants`
     /// flags to skip clean subtrees (mirroring `propagate_damage_flags`).
     ///
-    /// Every node is visited exactly once: DOM nodes through `children` and
-    /// the `::before`/`::after` pseudos, anonymous boxes through the owning
-    /// node's `anonymous_blocks`. An anonymous box's `children` are DOM nodes
-    /// already reached through its owner, so only its nested anonymous boxes
-    /// are recursed into.
+    /// Every node is visited exactly once: DOM nodes through their parent's
+    /// `children`, pseudo-elements through their owner's `before`/`after`,
+    /// anonymous boxes through their owner's `anonymous_blocks`. An anonymous
+    /// box's `children` are DOM nodes already reached through its owner, so
+    /// they are not recursed into.
     pub(crate) fn clear_damage_and_dirty_flags(&mut self, node_id: NodeId) {
         // Anonymous boxes can be freed during construction while still
         // listed in their owner's `anonymous_blocks`.
@@ -216,12 +216,12 @@ impl BaseDocument {
             for child in children.iter() {
                 self.clear_damage_and_dirty_flags(*child);
             }
-            if let Some(before_id) = before {
-                self.clear_damage_and_dirty_flags(before_id);
-            }
-            if let Some(after_id) = after {
-                self.clear_damage_and_dirty_flags(after_id);
-            }
+        }
+        if let Some(before_id) = before {
+            self.clear_damage_and_dirty_flags(before_id);
+        }
+        if let Some(after_id) = after {
+            self.clear_damage_and_dirty_flags(after_id);
         }
 
         let node = &mut self.nodes[node_id];
