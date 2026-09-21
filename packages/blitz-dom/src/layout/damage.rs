@@ -343,7 +343,7 @@ pub(crate) fn sort_layout_children_by_order(
     if layout_children.iter().all(|id| nodes[*id].order() == 0) {
         return;
     }
-    layout_children.sort_by_key(|id| nodes[*id].order());
+    layout_children.sort_by_cached_key(|id| nodes[*id].order());
 }
 
 /// Re-sort a flex/grid container's already-sorted `layout_children` after a
