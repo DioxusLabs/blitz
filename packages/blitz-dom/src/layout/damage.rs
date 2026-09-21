@@ -188,35 +188,45 @@ impl BaseDocument {
     /// Clear damage and the `damaged_descendants`/`dirty_descendants` flags
     /// on all nodes which may carry them, using the `damaged_descendants`
     /// flags to skip clean subtrees (mirroring `propagate_damage_flags`).
+    ///
+    /// Every node is visited exactly once: DOM nodes through their parent's
+    /// `children`, pseudo-elements through their owner's `before`/`after`,
+    /// anonymous boxes through their owner's `anonymous_blocks`. An anonymous
+    /// box's `children` are DOM nodes already reached through its owner, so
+    /// they are not recursed into.
     pub(crate) fn clear_damage_and_dirty_flags(&mut self, node_id: NodeId) {
-        {
-            let node = &self.nodes[node_id];
-            let has_damage = node.damage().is_some_and(|d| !d.is_empty());
-            if !has_damage && !node.has_damaged_descendants() && !node.is_anonymous() {
-                return;
-            }
+        // Anonymous boxes can be freed during construction while still
+        // listed in their owner's `anonymous_blocks`.
+        let Some(node) = self.nodes.get_mut(node_id) else {
+            return;
+        };
+        let is_anonymous = node.is_anonymous();
+        let has_damage = node.damage().is_some_and(|d| !d.is_empty());
+        if !has_damage && !node.has_damaged_descendants() && !is_anonymous {
+            return;
         }
+        let anonymous_blocks = std::mem::take(&mut node.anonymous_blocks);
+        let children = std::mem::take(&mut node.children);
+        let (before, after) = (node.before(), node.after());
 
-        let children = std::mem::take(&mut self.nodes[node_id].children);
-        let layout_children = std::mem::take(self.nodes[node_id].layout_children.get_mut());
-        for child in children.iter() {
-            self.clear_damage_and_dirty_flags(*child);
+        for anon_id in anonymous_blocks.iter() {
+            self.clear_damage_and_dirty_flags(*anon_id);
         }
-        if let Some(layout_children) = layout_children.as_ref() {
-            for child in layout_children.iter() {
+        if !is_anonymous {
+            for child in children.iter() {
                 self.clear_damage_and_dirty_flags(*child);
             }
         }
-        if let Some(before_id) = self.nodes[node_id].before() {
+        if let Some(before_id) = before {
             self.clear_damage_and_dirty_flags(before_id);
         }
-        if let Some(after_id) = self.nodes[node_id].after() {
+        if let Some(after_id) = after {
             self.clear_damage_and_dirty_flags(after_id);
         }
 
         let node = &mut self.nodes[node_id];
+        node.anonymous_blocks = anonymous_blocks;
         node.children = children;
-        *node.layout_children.get_mut() = layout_children;
         node.clear_damage_mut();
         node.unset_damaged_descendants();
         node.unset_dirty_descendants();
