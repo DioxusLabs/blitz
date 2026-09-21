@@ -19,6 +19,7 @@ fn make_doc(html: &str, incremental: bool) -> HtmlDocument {
         DocumentConfig {
             viewport: Some(Viewport::new(WIDTH, HEIGHT, 1.0, ColorScheme::Light)),
             html_parser_provider: Some(Arc::new(HtmlProvider) as _),
+            base_url: Some("https://example.com/".to_string()),
             incremental: Some(incremental),
             ..Default::default()
         },
@@ -252,6 +253,89 @@ fn resolve_phase_timings() {
         }
         doc.resolve(0.0);
     }
+}
+
+/// Same measurements on a real-world page (stylesheets must be inlined):
+/// `PAINT_TREE_BENCH_HTML=/path/page.html cargo test ... external_page_timings`.
+/// Hit-tests the viewport centre; hovers the first laid-out `<a>`.
+/// With `--features blitz-dom/log-phase-times` it also prints per-phase frame timings.
+#[test]
+#[ignore]
+fn external_page_timings() {
+    let Ok(path) = std::env::var("PAINT_TREE_BENCH_HTML") else {
+        eprintln!("PAINT_TREE_BENCH_HTML not set; skipping");
+        return;
+    };
+    let html = std::fs::read_to_string(path).unwrap();
+
+    let mut doc = make_doc(&html, true);
+    let nodes = doc.tree().len();
+    let hoisted: usize = doc
+        .tree()
+        .iter()
+        .filter_map(|(_, n)| n.stacking_context.as_ref().map(|sc| sc.children.len()))
+        .sum();
+    println!("nodes: {nodes}, hoisted SC entries: {hoisted}");
+
+    let (hx, hy) = (WIDTH as f32 / 2.0, HEIGHT as f32 / 2.0);
+    const HITS: u32 = 200;
+    let hit = time_median(50, || {
+        for _ in 0..HITS {
+            std::hint::black_box(doc.hit(hx, hy));
+        }
+    }) / HITS;
+
+    let mut scene = NullScenePainter;
+    let render = time_median(20, || {
+        blitz_paint::paint_scene(&mut scene, &mut doc, 1.0, WIDTH, HEIGHT, 0, 0);
+    });
+
+    let anchor = doc
+        .query_selector_all("a")
+        .unwrap()
+        .into_iter()
+        .find(|id| {
+            let l = doc.get_node(*id).unwrap().final_layout();
+            l.size.width > 0.0 && l.size.height > 0.0
+        })
+        .unwrap();
+    let mut ax = 0.0;
+    let mut ay = 0.0;
+    let mut current = Some(anchor);
+    while let Some(id) = current {
+        let node = doc.get_node(id).unwrap();
+        ax += node.final_layout().location.x;
+        ay += node.final_layout().location.y;
+        current = node.layout_parent.get();
+    }
+    let mut on = false;
+    println!("--- incremental hover-only frames");
+    let hover_frame = time_median(20, || {
+        on = !on;
+        if on {
+            doc.set_hover_to(ax + 1.0, ay + 1.0);
+        } else {
+            doc.set_hover_to(WIDTH as f32 - 1.0, HEIGHT as f32 - 1.0);
+        }
+        doc.resolve(0.0);
+    });
+
+    println!("--- non-incremental frames");
+    let mut doc = make_doc(&html, false);
+    let full_frame = time_median(5, || {
+        doc.set_hover_to(ax + 1.0, ay + 1.0);
+        doc.resolve(0.0);
+        doc.set_hover_to(WIDTH as f32 - 1.0, HEIGHT as f32 - 1.0);
+        doc.resolve(0.0);
+    }) / 2;
+
+    println!(
+        "| external | {nodes} | {} | {} | {} | {} |",
+        fmt(hit),
+        fmt(render),
+        fmt(hover_frame),
+        fmt(full_frame)
+    );
 }
 
 #[test]
