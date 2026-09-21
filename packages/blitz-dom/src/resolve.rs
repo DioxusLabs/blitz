@@ -86,8 +86,8 @@ impl BaseDocument {
         // whole tree and let the same damage pipeline reconstruct and relayout
         // everything.
         if !self.incremental_layout {
-            let doc_node_id = self.root_node().id;
-            self.mark_all_damaged(doc_node_id);
+            self.mark_all_damaged();
+            timer.record_time("mark_all");
         }
 
         // Propagate damage flags (from mutation and restyles) up and down the tree

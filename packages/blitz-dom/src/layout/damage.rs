@@ -174,36 +174,15 @@ impl BaseDocument {
         damage_for_parent
     }
 
-    /// Mark every styled node in the tree rooted at `node_id` with `ALL_DAMAGE`
-    /// (non-incremental mode). Walks DOM `children`, `::before`/`::after` and
-    /// `layout_children` so that anonymous boxes are reached too; nodes reached
-    /// twice are simply marked twice, which is idempotent.
-    pub(crate) fn mark_all_damaged(&mut self, node_id: NodeId) {
-        if !self.nodes.contains_key(node_id) {
-            return;
+    /// Mark every node in the document with `ALL_DAMAGE` (non-incremental
+    /// mode). Iterates the node slotmap directly rather than walking the tree,
+    /// which is cheaper and also reaches pseudo-elements and anonymous boxes
+    /// without special-casing them. Detached nodes get marked too, which is
+    /// harmless: they are reconstructed on re-attachment anyway.
+    pub(crate) fn mark_all_damaged(&mut self) {
+        for (_, node) in self.nodes.iter_mut() {
+            node.insert_damage(ALL_DAMAGE);
         }
-        self.nodes[node_id].insert_damage(ALL_DAMAGE);
-
-        let children = std::mem::take(&mut self.nodes[node_id].children);
-        let layout_children = std::mem::take(self.nodes[node_id].layout_children.get_mut());
-        for child in children.iter() {
-            self.mark_all_damaged(*child);
-        }
-        if let Some(layout_children) = layout_children.as_ref() {
-            for child in layout_children.iter() {
-                self.mark_all_damaged(*child);
-            }
-        }
-        if let Some(before_id) = self.nodes[node_id].before() {
-            self.mark_all_damaged(before_id);
-        }
-        if let Some(after_id) = self.nodes[node_id].after() {
-            self.mark_all_damaged(after_id);
-        }
-
-        let node = &mut self.nodes[node_id];
-        node.children = children;
-        *node.layout_children.get_mut() = layout_children;
     }
 
     /// Clear damage and the `damaged_descendants`/`dirty_descendants` flags
