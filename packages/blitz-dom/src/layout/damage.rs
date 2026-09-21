@@ -306,18 +306,6 @@ pub(crate) fn compute_layout_damage(old: &ComputedValues, new: &ComputedValues) 
         false
     };
 
-    // `order` only reorders the element within its flex/grid container. Out-of-flow
-    // children are not flex/grid items (`Node::order()` keys them as 0).
-    let order_changed = || {
-        if old.get_position().order == new.get_position().order {
-            return false;
-        }
-        let is_oof = |style: &ComputedValues| {
-            stylo_taffy::convert::position(style.get_box().position).is_out_of_flow()
-        };
-        !(is_oof(old) && is_oof(new))
-    };
-
     #[allow(
         clippy::if_same_then_else,
         reason = "these branches will soon be different"
@@ -326,7 +314,12 @@ pub(crate) fn compute_layout_damage(old: &ComputedValues, new: &ComputedValues) 
         ALL_DAMAGE
     } else if text_shaping_needs_recollect() {
         ALL_DAMAGE
-    } else if order_changed() {
+    } else if old.get_position().order != new.get_position().order
+        // `position` is unchanged here (else the box tree would be rebuilt), so
+        // checking the new style suffices. Out-of-flow children are not flex/grid
+        // items: `Node::order()` keys them as 0 regardless of `order`.
+        && !stylo_taffy::convert::position(new.get_box().position).is_out_of_flow()
+    {
         RestyleDamage::RELAYOUT | REORDER_CHILDREN
     } else {
         // This element needs to be laid out again, but does not have any damage to
