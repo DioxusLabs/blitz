@@ -252,15 +252,18 @@ fn pseudo_elements_honour_order_in_flex_container() {
     const HTML: &str = r#"<html><head><style>
         #flex::before { content: ""; display:block; width:10px; height:10px; order: 1; }
         #flex::after { content: ""; display:block; width:10px; height:10px; order: -1; }
+        #b { order: 1; }
+        #flex:hover #a { order: 2; }
+        #flex:hover #b { order: 0; }
     </style></head><body style="margin:0">
-        <div id="flex" style="display:flex; width:400px;">
+        <div id="flex" style="display:flex; width:400px; height:10px;">
             <div id="a" style="width:10px; height:10px;"></div>
-            <div id="b" style="width:10px; height:10px; order: 1"></div>
+            <div id="b" style="width:10px; height:10px;"></div>
         </div>
     </body></html>"#;
 
     for incremental in [false, true] {
-        let doc = make_doc(HTML, incremental);
+        let mut doc = make_doc(HTML, incremental);
         let flex = doc.get_node(id(&doc, "#flex")).unwrap();
         let before = flex.before().expect("::before");
         let after = flex.after().expect("::after");
@@ -276,6 +279,26 @@ fn pseudo_elements_honour_order_in_flex_container() {
             doc.get_node(before).unwrap().final_layout().location.x,
             20.0
         );
+        assert_eq!(x(&doc, "#b"), 30.0);
+
+        // Hover: a -> 2, b -> 0. ::after (-1), b (0), ::before (1), a (2).
+        doc.set_hover_to(5.0, 5.0);
+        doc.resolve(0.0);
+        assert_eq!(
+            layout_children(&doc, "#flex"),
+            [after, id(&doc, "#b"), before, id(&doc, "#a")]
+        );
+        assert_eq!(x(&doc, "#b"), 10.0);
+        assert_eq!(x(&doc, "#a"), 30.0);
+
+        // Unhover: ties (::before, b) are back in source order.
+        doc.set_hover_to(200.0, 200.0);
+        doc.resolve(0.0);
+        assert_eq!(
+            layout_children(&doc, "#flex"),
+            [after, id(&doc, "#a"), before, id(&doc, "#b")]
+        );
+        assert_eq!(x(&doc, "#a"), 10.0);
         assert_eq!(x(&doc, "#b"), 30.0);
     }
 }

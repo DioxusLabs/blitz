@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::ops::Range;
 
 use crate::Node;
+use crate::layout::construct::push_non_whitespace_children_and_pseudos;
 use crate::net::ResourceHandler;
 use crate::node::NodeFlags;
 use crate::tree::NodeTree;
@@ -347,15 +348,35 @@ pub(crate) fn sort_layout_children_by_order(
 
 /// Re-sort a flex/grid container's already-sorted `layout_children` after a
 /// child's `order` changed. Unlike at construction the list is no longer in
-/// document order, so ties are broken by the child's position in the
-/// container's DOM `children` (anonymous wrappers rank by their first wrapped
-/// node; `::before`/`::after` rank first/last).
+/// document order, so it is first restored to document order and then
+/// stable-sorted by `order` exactly as at construction.
+///
+/// In the common case (every layout child is a real DOM child or pseudo of the
+/// container — no anonymous wrappers, no hoisted `display: contents` content)
+/// the document-ordered list is simply re-collected from the DOM `children`.
+/// Otherwise ties are broken by looking up each child's position in the DOM
+/// `children` (anonymous wrappers rank by their first wrapped node;
+/// `::before`/`::after` rank first/last).
 fn resort_layout_children_by_order(
     nodes: &NodeTree,
     container_id: NodeId,
     layout_children: &mut ThinVec<NodeId>,
 ) {
     let container = &nodes[container_id];
+
+    let is_direct_child_or_pseudo = |id: &NodeId| {
+        let node = &nodes[*id];
+        node.parent == Some(container_id) && !node.is_anonymous()
+            || container.before() == Some(*id)
+            || container.after() == Some(*id)
+    };
+    if layout_children.iter().all(is_direct_child_or_pseudo) {
+        layout_children.clear();
+        push_non_whitespace_children_and_pseudos(layout_children, container);
+        sort_layout_children_by_order(nodes, layout_children);
+        return;
+    }
+
     let dom_index: HashMap<NodeId, usize> = container
         .children
         .iter()

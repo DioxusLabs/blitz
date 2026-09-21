@@ -278,7 +278,10 @@ fn push_hoisted_children_and_pseudos(
     }
 }
 
-fn push_non_whitespace_children_and_pseudos(layout_children: &mut ThinVec<NodeId>, node: &Node) {
+pub(crate) fn push_non_whitespace_children_and_pseudos(
+    layout_children: &mut ThinVec<NodeId>,
+    node: &Node,
+) {
     if let Some(before) = node.before() {
         layout_children.push(before);
     }
