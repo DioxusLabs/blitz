@@ -174,6 +174,17 @@ impl BaseDocument {
         damage_for_parent
     }
 
+    /// Mark every node in the document with `ALL_DAMAGE` (non-incremental
+    /// mode). Iterates the node slotmap directly rather than walking the tree,
+    /// which is cheaper and also reaches pseudo-elements and anonymous boxes
+    /// without special-casing them. Detached nodes get marked too, which is
+    /// harmless: they are reconstructed on re-attachment anyway.
+    pub(crate) fn mark_all_damaged(&mut self) {
+        for (_, node) in self.nodes.iter_mut() {
+            node.insert_damage(ALL_DAMAGE);
+        }
+    }
+
     /// Clear damage and the `damaged_descendants`/`dirty_descendants` flags
     /// on all nodes which may carry them, using the `damaged_descendants`
     /// flags to skip clean subtrees (mirroring `propagate_damage_flags`).
@@ -606,28 +617,8 @@ impl BaseDocument {
         let mut new_stacking_context: HoistedPaintChildren = HoistedPaintChildren::new();
         let stacking_context = &mut new_stacking_context;
 
-        let incremental = self.incremental_layout;
-        let display = {
-            let node = self.nodes.get_mut(node_id).unwrap();
-
-            let Some(display) = node.display_style() else {
-                return;
-            };
-
-            // In non-incremental mode we unconditionally clear the Taffy cache.
-            // In incremental mode this is handled as part of damage propagation.
-            if !incremental {
-                node.clear_layout_cache();
-                if let Some(inline_layout) = node
-                    .data
-                    .downcast_element_mut()
-                    .and_then(|el| el.inline_layout_data.as_mut())
-                {
-                    inline_layout.content_widths = None;
-                }
-            }
-
-            display
+        let Some(display) = self.nodes[node_id].display_style() else {
+            return;
         };
 
         // If the node has children, then take those children and...

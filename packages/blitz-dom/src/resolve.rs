@@ -82,11 +82,17 @@ impl BaseDocument {
         self.resolve_stylist(current_time_for_animations);
         timer.record_time("style");
 
-        // Propagate damage flags (from mutation and restyles) up and down the tree
-        if self.incremental_layout {
-            self.propagate_damage_flags(root_node_id);
-            timer.record_time("damage");
+        // Non-incremental mode is "every node is damaged every frame": mark the
+        // whole tree and let the same damage pipeline reconstruct and relayout
+        // everything.
+        if !self.incremental_layout {
+            self.mark_all_damaged();
+            timer.record_time("mark_all");
         }
+
+        // Propagate damage flags (from mutation and restyles) up and down the tree
+        self.propagate_damage_flags(root_node_id);
+        timer.record_time("damage");
 
         // Fix up tree for layout (insert anonymous blocks as necessary, etc)
         self.resolve_layout_children();
@@ -115,11 +121,9 @@ impl BaseDocument {
 
         // Clear all damage and dirty flags, walking only subtrees which are
         // marked as (potentially) containing damage.
-        if self.incremental_layout {
-            let doc_node_id = self.root_node().id;
-            self.clear_damage_and_dirty_flags(doc_node_id);
-            timer.record_time("c_damage");
-        }
+        let doc_node_id = self.root_node().id;
+        self.clear_damage_and_dirty_flags(doc_node_id);
+        timer.record_time("c_damage");
 
         // Re-resolve the hover node from the pointer position against the fresh
         // layout. This must run *after* the damage/dirty flags are cleared
@@ -236,7 +240,7 @@ impl BaseDocument {
             let mut damage = doc.nodes[node_id].damage().unwrap_or(ALL_DAMAGE);
             let _flags = doc.nodes[node_id].flags;
 
-            if !doc.incremental_layout || damage.intersects(CONSTRUCT_FC | CONSTRUCT_BOX) {
+            if damage.intersects(CONSTRUCT_FC | CONSTRUCT_BOX) {
                 //} || flags.contains(NodeFlags::IS_INLINE_ROOT) {
 
                 // Deallocate the anonymous blocks created for this node in the
