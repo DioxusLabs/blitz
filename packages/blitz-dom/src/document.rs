@@ -211,7 +211,9 @@ pub struct BaseDocument {
     pub(crate) pending_device_changes: DeviceChanges,
     /// Strategy for Stylo's style traversal during `resolve`.
     pub(crate) style_threading: StyleThreading,
-    /// Whether incremental layout is enabled for this document.
+    /// Whether incremental layout is enabled for this document. When disabled,
+    /// every node is treated as damaged on every `resolve`, so the same damage
+    /// pipeline reconstructs and relays out the whole tree.
     pub(crate) incremental_layout: bool,
     /// How deeply this document is nested within other documents
     /// (0 for a root document). Used to limit `<iframe>` nesting depth.
@@ -1979,11 +1981,20 @@ impl BaseDocument {
     }
 
     /// Returns whether incremental layout is currently enabled for this document.
+    ///
+    /// Both modes run the same style → damage → box construction → layout
+    /// pipeline. In incremental mode only nodes carrying `RestyleDamage` (from
+    /// mutations or restyles) are reconstructed and have their layout caches
+    /// cleared; in non-incremental mode every node is marked damaged at the
+    /// start of each `resolve`, so everything is rebuilt each frame.
     pub fn incremental_layout(&self) -> bool {
         self.incremental_layout
     }
 
     /// Enables or disables incremental layout for this document.
+    ///
+    /// Disabling it does not switch to a separate code path: all nodes are
+    /// simply treated as damaged on every `resolve` (see [`Self::incremental_layout`]).
     pub fn set_incremental_layout(&mut self, enabled: bool) {
         self.incremental_layout = enabled;
     }

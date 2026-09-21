@@ -54,6 +54,10 @@ pub struct DocumentConfig {
     /// Defaults to [`StyleThreading::Parallel`].
     pub style_threading: StyleThreading,
     /// Whether incremental layout is enabled. Defaults to `true`.
+    ///
+    /// When disabled, every node is treated as damaged on each `resolve` and the
+    /// whole tree is reconstructed and laid out from scratch through the same
+    /// damage-driven pipeline used by incremental mode.
     pub incremental: Option<bool>,
     /// If set, every sub-resource `Request` blitz-dom creates for this
     /// document will carry this signal. Aborting it cancels every in-flight
