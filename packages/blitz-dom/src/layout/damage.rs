@@ -318,7 +318,10 @@ pub(crate) fn compute_layout_damage(old: &ComputedValues, new: &ComputedValues) 
         // `position` is unchanged here (else the box tree would be rebuilt), so
         // checking the new style suffices. Out-of-flow children are not flex/grid
         // items: `Node::order()` keys them as 0 regardless of `order`.
-        && !stylo_taffy::convert::position(new.get_box().position).is_out_of_flow()
+        && !matches!(
+            new.get_box().position,
+            Position::Absolute | Position::Fixed
+        )
     {
         RestyleDamage::RELAYOUT | REORDER_CHILDREN
     } else {

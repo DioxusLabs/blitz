@@ -1251,7 +1251,7 @@ impl Node {
     /// not flex/grid items, so they key as 0 and keep source order.
     pub fn order(&self) -> i32 {
         self.primary_styles()
-            .filter(|s| !stylo_taffy::convert::position(s.get_box().position).is_out_of_flow())
+            .filter(|s| !matches!(s.get_box().position, Position::Absolute | Position::Fixed))
             .map(|s| s.clone_order())
             .unwrap_or(0)
     }
