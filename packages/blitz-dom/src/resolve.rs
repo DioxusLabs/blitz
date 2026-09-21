@@ -18,7 +18,6 @@ thread_local! {
     pub(crate) static LAYOUT_CTX: RefCell<Option<Box<LayoutContext<TextBrush>>>> = const { RefCell::new(None) };
 }
 
-use style::selector_parser::RestyleDamage;
 use taffy::AvailableSpace;
 
 use crate::{
@@ -31,7 +30,7 @@ use crate::{
         },
         damage::{ALL_DAMAGE, CONSTRUCT_BOX, CONSTRUCT_DESCENDENT, CONSTRUCT_FC},
     },
-    node::TextBrush,
+    node::{NodeFlags, TextBrush},
 };
 
 impl BaseDocument {
@@ -85,12 +84,14 @@ impl BaseDocument {
 
         // Propagate damage flags (from mutation and restyles) up and down the tree
         if self.incremental_layout {
-            self.propagate_damage_flags(root_node_id, RestyleDamage::empty());
+            self.propagate_damage_flags(root_node_id);
             timer.record_time("damage");
         }
 
         // Fix up tree for layout (insert anonymous blocks as necessary, etc)
         self.resolve_layout_children();
+        #[cfg(debug_assertions)]
+        self.assert_layout_parents_consistent();
         timer.record_time("construct");
 
         self.resolve_deferred_tasks();
@@ -292,6 +293,31 @@ impl BaseDocument {
             }
 
             doc.nodes[node_id].set_damage(damage);
+        }
+    }
+
+    /// Every layout child must point back at its container via
+    /// `layout_parent`, which `propagate_damage_flags` relies on to reach
+    /// anonymous boxes.
+    #[cfg(debug_assertions)]
+    fn assert_layout_parents_consistent(&self) {
+        for (parent_id, node) in self.nodes.iter() {
+            if !node.flags.contains(NodeFlags::IS_IN_DOCUMENT) {
+                continue;
+            }
+            let Some(children) = node.layout_children.borrow().clone() else {
+                continue;
+            };
+            for child_id in children {
+                let Some(child) = self.nodes.get(child_id) else {
+                    panic!("layout child {child_id:?} of {parent_id:?} is not in the slab");
+                };
+                debug_assert_eq!(
+                    child.layout_parent.get(),
+                    Some(parent_id),
+                    "layout_parent of {child_id:?} does not point at its layout container {parent_id:?}"
+                );
+            }
         }
     }
 
