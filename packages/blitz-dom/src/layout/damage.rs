@@ -197,7 +197,7 @@ impl BaseDocument {
     pub(crate) fn clear_damage_and_dirty_flags(&mut self, node_id: NodeId) {
         // Anonymous boxes can be freed during construction while still
         // listed in their owner's `anonymous_blocks`.
-        let Some(node) = self.nodes.get(node_id) else {
+        let Some(node) = self.nodes.get_mut(node_id) else {
             return;
         };
         let is_anonymous = node.is_anonymous();
@@ -205,29 +205,28 @@ impl BaseDocument {
         if !has_damage && !node.has_damaged_descendants() && !is_anonymous {
             return;
         }
+        let anonymous_blocks = std::mem::take(&mut node.anonymous_blocks);
+        let children = std::mem::take(&mut node.children);
+        let (before, after) = (node.before(), node.after());
 
-        let anonymous_blocks = std::mem::take(&mut self.nodes[node_id].anonymous_blocks);
         for anon_id in anonymous_blocks.iter() {
             self.clear_damage_and_dirty_flags(*anon_id);
         }
-        self.nodes[node_id].anonymous_blocks = anonymous_blocks;
-
         if !is_anonymous {
-            let children = std::mem::take(&mut self.nodes[node_id].children);
             for child in children.iter() {
                 self.clear_damage_and_dirty_flags(*child);
             }
-            self.nodes[node_id].children = children;
-
-            if let Some(before_id) = self.nodes[node_id].before() {
+            if let Some(before_id) = before {
                 self.clear_damage_and_dirty_flags(before_id);
             }
-            if let Some(after_id) = self.nodes[node_id].after() {
+            if let Some(after_id) = after {
                 self.clear_damage_and_dirty_flags(after_id);
             }
         }
 
         let node = &mut self.nodes[node_id];
+        node.anonymous_blocks = anonymous_blocks;
+        node.children = children;
         node.clear_damage_mut();
         node.unset_damaged_descendants();
         node.unset_dirty_descendants();
