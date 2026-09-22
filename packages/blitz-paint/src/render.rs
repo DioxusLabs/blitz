@@ -111,8 +111,9 @@ pub struct BlitzDomPainter<'dom, 'a> {
     pub(crate) height: u32,
     pub(crate) initial_x: f64,
     pub(crate) initial_y: f64,
-    /// The id of the document's root element (cached to avoid re-resolving it for every element)
-    pub(crate) root_element_id: Option<NodeId>,
+    /// The id of the element whose overflow is propagated to the viewport (the root element,
+    /// or the `<body>` when the root element's overflow is `visible`)
+    pub(crate) viewport_overflow_source_id: Option<NodeId>,
     /// Scrollbar hover/drag state, resolved once per scene like the root element
     #[cfg(feature = "scrollbars")]
     pub(crate) hovered_scrollbar: Option<blitz_dom::node::ScrollbarRef>,
@@ -146,7 +147,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             .collect();
 
         let layer_manager = LayerManager::default();
-        let root_element_id = dom.try_root_element().map(|el| el.id);
+        let viewport_overflow_source_id = dom.viewport_overflow_propagation_source();
 
         Self {
             dom,
@@ -155,7 +156,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             height,
             initial_x,
             initial_y,
-            root_element_id,
+            viewport_overflow_source_id,
             #[cfg(feature = "scrollbars")]
             hovered_scrollbar: dom.hovered_scrollbar(),
             #[cfg(feature = "scrollbars")]
@@ -346,10 +347,11 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             .element_data()
             .and_then(|el| el.text_input_data())
             .is_some();
-        // The root element's overflow is propagated to the viewport (which is clipped by the
-        // window/surface bounds), so the root element must not clip its own overflow.
-        let is_root_element = self.root_element_id == Some(node_id);
-        let should_clip = !is_root_element
+        // The overflow of the root element (or the <body>, when the root's overflow is
+        // `visible`) is propagated to the viewport (which is clipped by the window/surface
+        // bounds), so that element must not clip its own overflow.
+        let propagates_overflow_to_viewport = self.viewport_overflow_source_id == Some(node_id);
+        let should_clip = !propagates_overflow_to_viewport
             && (is_image
                 || is_sub_doc
                 || is_text_input
