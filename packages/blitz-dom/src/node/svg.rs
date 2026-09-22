@@ -1,6 +1,6 @@
 //! SVG image data and CSS intrinsic sizing for SVG.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use usvg::roxmltree;
 
@@ -58,6 +58,8 @@ impl SvgIntrinsicDimensions {
     }
 }
 
+type ViewportTreeCacheEntry = ((u32, u32), Arc<usvg::Tree>);
+
 /// A parsed SVG image.
 ///
 /// usvg always resolves the root `<svg>` to a concrete [`usvg::Tree::size`],
@@ -72,6 +74,11 @@ pub struct SvgImageData {
     pub tree: Arc<usvg::Tree>,
     /// The dimensions declared on the root `<svg>` element.
     pub intrinsic_dimensions: SvgIntrinsicDimensions,
+    /// The original (decompressed) SVG source.
+    source: Arc<str>,
+    /// A re-parse of [`Self::source`] with the root viewport overridden to a
+    /// specific size, cached by that size. See [`Self::tree_for_viewport`].
+    viewport_tree_cache: Arc<Mutex<Option<ViewportTreeCacheEntry>>>,
 }
 
 impl SvgImageData {
@@ -92,39 +99,135 @@ impl SvgImageData {
         };
 
         let text = std::str::from_utf8(data).map_err(|_| usvg::Error::NotAnUtf8Str)?;
-        let xml_options = roxmltree::ParsingOptions {
+        let xml_options = || roxmltree::ParsingOptions {
             allow_dtd: true,
             ..Default::default()
         };
-        let doc = roxmltree::Document::parse_with_options(text, xml_options)
+        let doc = roxmltree::Document::parse_with_options(text, xml_options())
             .map_err(usvg::Error::ParsingFailed)?;
-        let tree = usvg::Tree::from_xmltree(&doc, options)?;
+        let intrinsic_dimensions = SvgIntrinsicDimensions::from_xmltree(&doc);
+
+        // usvg refuses to parse an SVG whose root `width`/`height` resolve to
+        // a zero or negative size, but such an SVG is still a valid image: the
+        // degenerate attribute gives a zero intrinsic dimension, and CSS can
+        // still size the element to something visible. Blank out the offending
+        // attributes (their byte ranges are known from the parsed document) so
+        // usvg resolves the viewport from the `viewBox`/defaults instead.
+        let degenerate_attr_ranges: Vec<std::ops::Range<usize>> = doc
+            .root_element()
+            .attributes()
+            .filter(|attr| {
+                matches!(attr.name(), "width" | "height")
+                    && attr
+                        .value()
+                        .parse::<svgtypes::Length>()
+                        .is_ok_and(|len| len.number <= 0.0)
+            })
+            .map(|attr| attr.range())
+            .collect();
+
+        let tree = if degenerate_attr_ranges.is_empty() {
+            usvg::Tree::from_xmltree(&doc, options)?
+        } else {
+            let mut patched = text.as_bytes().to_vec();
+            for range in degenerate_attr_ranges {
+                patched[range].fill(b' ');
+            }
+            let patched = std::str::from_utf8(&patched).map_err(|_| usvg::Error::NotAnUtf8Str)?;
+            let patched_doc = roxmltree::Document::parse_with_options(patched, xml_options())
+                .map_err(usvg::Error::ParsingFailed)?;
+            usvg::Tree::from_xmltree(&patched_doc, options)?
+        };
+
         Ok(Self {
             tree: Arc::new(tree),
-            intrinsic_dimensions: SvgIntrinsicDimensions::from_xmltree(&doc),
+            intrinsic_dimensions,
+            source: Arc::from(text),
+            viewport_tree_cache: Arc::new(Mutex::new(None)),
         })
     }
 
+    /// The SVG re-parsed with the root viewport forced to the given size in
+    /// CSS px, for an inline `<svg>` element whose viewport is established by
+    /// its CSS box: the root `width`/`height` are overridden so that usvg
+    /// resolves percentage lengths and the `viewBox`/`preserveAspectRatio`
+    /// mapping against the CSS-established viewport. Falls back to the
+    /// original tree if re-parsing fails. The result is cached by size.
+    pub fn tree_for_viewport(&self, width: f32, height: f32) -> Arc<usvg::Tree> {
+        let key = (width.to_bits(), height.to_bits());
+        let mut cache = self.viewport_tree_cache.lock().unwrap();
+        if let Some((cached_key, tree)) = &*cache {
+            if *cached_key == key {
+                return Arc::clone(tree);
+            }
+        }
+
+        let tree = self
+            .reparse_with_viewport(width, height)
+            .map(Arc::new)
+            .unwrap_or_else(|| Arc::clone(&self.tree));
+        *cache = Some((key, Arc::clone(&tree)));
+        tree
+    }
+
+    fn reparse_with_viewport(&self, width: f32, height: f32) -> Option<usvg::Tree> {
+        let text = &*self.source;
+        let xml_options = || roxmltree::ParsingOptions {
+            allow_dtd: true,
+            ..Default::default()
+        };
+        let doc = roxmltree::Document::parse_with_options(text, xml_options()).ok()?;
+        let root = doc.root_element();
+
+        // Blank out any declared root width/height (their byte ranges are
+        // known from the parsed document), then insert the viewport size as
+        // new attributes right after the root tag name.
+        let mut patched = text.to_string();
+        for attr in root.attributes() {
+            if matches!(attr.name(), "width" | "height") {
+                patched.replace_range(attr.range(), &" ".repeat(attr.range().len()));
+            }
+        }
+        let tag = root.tag_name();
+        let tag_len = match tag
+            .namespace()
+            .and_then(|ns| doc.root_element().lookup_prefix(ns))
+        {
+            Some(prefix) if !prefix.is_empty() => prefix.len() + 1 + tag.name().len(),
+            _ => tag.name().len(),
+        };
+        let insert_at = root.range().start + 1 + tag_len;
+        patched.insert_str(
+            insert_at,
+            &format!(" width=\"{width}px\" height=\"{height}px\""),
+        );
+
+        let patched_doc = roxmltree::Document::parse_with_options(&patched, xml_options()).ok()?;
+        let options = usvg::Options {
+            fontdb: Arc::clone(&*crate::util::FONT_DB),
+            ..Default::default()
+        };
+        usvg::Tree::from_xmltree(&patched_doc, &options).ok()
+    }
+
     /// The intrinsic width in CSS px, present only when the root `<svg>`
-    /// declared an absolute (non-percentage) `width`.
+    /// declared an absolute (non-percentage) `width`. A zero or negative
+    /// declared width is a zero intrinsic width (matching browsers), not an
+    /// absent one.
+    ///
+    /// Viewport-relative lengths (`vw`/`vh`/`vmin`/`vmax`) fail to parse as an
+    /// [`svgtypes::Length`] and so are already absent from
+    /// [`SvgIntrinsicDimensions`]; like percentages, they contribute no
+    /// intrinsic dimension.
     pub fn intrinsic_width(&self) -> Option<f32> {
-        use svgtypes::LengthUnit;
-        let declared = self
-            .intrinsic_dimensions
-            .width
-            .is_some_and(|len| len.unit != LengthUnit::Percent);
-        declared.then(|| self.tree.size().width())
+        self.intrinsic_dimensions.width.and_then(resolve_absolute)
     }
 
     /// The intrinsic height in CSS px, present only when the root `<svg>`
-    /// declared an absolute (non-percentage) `height`.
+    /// declared an absolute (non-percentage) `height`. See
+    /// [`Self::intrinsic_width`].
     pub fn intrinsic_height(&self) -> Option<f32> {
-        use svgtypes::LengthUnit;
-        let declared = self
-            .intrinsic_dimensions
-            .height
-            .is_some_and(|len| len.unit != LengthUnit::Percent);
-        declared.then(|| self.tree.size().height())
+        self.intrinsic_dimensions.height.and_then(resolve_absolute)
     }
 
     /// The aspect ratio of the root `<svg>`'s `viewBox`, if it declares one.
@@ -143,7 +246,7 @@ impl SvgImageData {
     pub fn resolved_width(&self, container_width: Option<f32>) -> Option<f32> {
         use svgtypes::LengthUnit;
         match self.intrinsic_dimensions.width {
-            Some(len) if len.unit != LengthUnit::Percent => Some(self.tree.size().width()),
+            Some(len) if len.unit != LengthUnit::Percent => resolve_absolute(len),
             Some(len) => container_width.map(|cw| cw * (len.number as f32) / 100.0),
             None => None,
         }
@@ -154,48 +257,89 @@ impl SvgImageData {
     pub fn resolved_height(&self, container_height: Option<f32>) -> Option<f32> {
         use svgtypes::LengthUnit;
         match self.intrinsic_dimensions.height {
-            Some(len) if len.unit != LengthUnit::Percent => Some(self.tree.size().height()),
+            Some(len) if len.unit != LengthUnit::Percent => resolve_absolute(len),
             Some(len) => container_height.map(|ch| ch * (len.number as f32) / 100.0),
             None => None,
         }
     }
 
     /// The intrinsic aspect ratio of the SVG: the ratio of its declared
-    /// `width`/`height` when both are absolute lengths, otherwise the
-    /// `viewBox` ratio, otherwise the ratio of the resolved
-    /// [`usvg::Tree::size`] (which is always non-zero).
-    pub fn aspect_ratio(&self) -> f32 {
+    /// `width`/`height` when both are (positive) absolute lengths, otherwise
+    /// the `viewBox` ratio. An SVG with neither has no intrinsic aspect ratio:
+    /// in particular the resolved [`usvg::Tree::size`] must not supply one, as
+    /// it is a rendering fallback rather than an intrinsic dimension.
+    pub fn aspect_ratio(&self) -> Option<f32> {
         match (self.intrinsic_width(), self.intrinsic_height()) {
-            (Some(w), Some(h)) => w / h,
-            _ => self.viewbox_aspect_ratio().unwrap_or_else(|| {
-                let size = self.tree.size();
-                size.width() / size.height()
-            }),
+            (Some(w), Some(h)) => (w > 0.0 && h > 0.0).then(|| w / h),
+            _ => self.viewbox_aspect_ratio(),
         }
     }
 
-    /// The intrinsic dimensions of the SVG resolved per CSS replaced element
-    /// sizing: a missing dimension is computed from the declared one and the
-    /// intrinsic aspect ratio; if neither is declared, the resolved
-    /// [`usvg::Tree::size`] is used as a fallback.
+    /// Whether rendering of the SVG content is disabled per the SVG spec: the
+    /// root declared a zero/negative `width` or `height`, or a `viewBox` with
+    /// a zero width or height. The element still generates a (potentially
+    /// CSS-sized) box; only its content is not painted.
+    pub fn rendering_disabled(&self) -> bool {
+        self.intrinsic_dimensions.degenerate_view_box
+            || self
+                .intrinsic_dimensions
+                .width
+                .is_some_and(|len| len.number <= 0.0)
+            || self
+                .intrinsic_dimensions
+                .height
+                .is_some_and(|len| len.number <= 0.0)
+    }
+
+    /// The intrinsic dimensions of the SVG resolved per the CSS default
+    /// sizing algorithm with no specified size
+    /// (https://drafts.csswg.org/css-images/#default-sizing): a missing
+    /// dimension is computed from the declared one and the intrinsic aspect
+    /// ratio, falling back to the 300x150 default object size.
     pub fn intrinsic_size(&self) -> (f32, f32) {
-        let aspect_ratio = self.aspect_ratio();
+        self.concrete_object_size((300.0, 150.0))
+    }
+
+    /// The concrete object size of the SVG per the CSS default sizing
+    /// algorithm (https://drafts.csswg.org/css-images/#default-sizing) with no
+    /// specified size: a missing dimension is computed from the declared one
+    /// and the intrinsic aspect ratio, falling back to the given default
+    /// object size.
+    pub fn concrete_object_size(&self, default_object_size: (f32, f32)) -> (f32, f32) {
+        let (default_width, default_height) = default_object_size;
+        let ratio = self.aspect_ratio();
         match (self.intrinsic_width(), self.intrinsic_height()) {
             (Some(w), Some(h)) => (w, h),
-            (Some(w), None) => (w, w / aspect_ratio),
-            (None, Some(h)) => (h * aspect_ratio, h),
-            (None, None) => {
-                // No intrinsic dimensions. If there is an intrinsic aspect ratio, apply
-                // the CSS default sizing algorithm: contain within the default object
-                // size of 300x150. Otherwise fall back to the resolved tree size.
-                if self.viewbox_aspect_ratio().is_some() {
-                    let scale = (300.0 / aspect_ratio).min(150.0);
-                    (scale * aspect_ratio, scale)
-                } else {
-                    let size = self.tree.size();
-                    (size.width(), size.height())
+            (Some(w), None) => (w, ratio.map(|r| w / r).unwrap_or(default_height)),
+            (None, Some(h)) => (ratio.map(|r| h * r).unwrap_or(default_width), h),
+            (None, None) => match ratio {
+                Some(ratio) => {
+                    let scale = (default_width / ratio).min(default_height);
+                    (scale * ratio, scale)
                 }
-            }
+                None => (default_width, default_height),
+            },
         }
     }
+}
+
+/// Resolve an absolute (non-percentage) SVG length to CSS px, using the same
+/// unit factors as usvg with default options (font-size 16px). Negative
+/// lengths clamp to zero: browsers treat a negative root `width`/`height` as a
+/// zero intrinsic dimension. Percentages resolve to `None` as they have no
+/// context-free value.
+fn resolve_absolute(len: svgtypes::Length) -> Option<f32> {
+    use svgtypes::LengthUnit;
+    let px_per_unit = match len.unit {
+        LengthUnit::None | LengthUnit::Px => 1.0,
+        LengthUnit::Em => 16.0,
+        LengthUnit::Ex => 8.0,
+        LengthUnit::In => 96.0,
+        LengthUnit::Cm => 96.0 / 2.54,
+        LengthUnit::Mm => 96.0 / 25.4,
+        LengthUnit::Pt => 96.0 / 72.0,
+        LengthUnit::Pc => 16.0,
+        LengthUnit::Percent => return None,
+    };
+    Some((len.number as f32 * px_per_unit).max(0.0))
 }
