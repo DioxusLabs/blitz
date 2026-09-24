@@ -8,6 +8,7 @@ use crate::node::TextBrush;
 
 // Module of type aliases so we can refer to stylo types with nicer names
 pub(crate) mod stylo {
+    pub(crate) use style::computed_values::direction::T as Direction;
     pub(crate) use style::computed_values::font_variant_caps::T as FontVariantCaps;
     pub(crate) use style::computed_values::font_variant_position::T as FontVariantPosition;
     pub(crate) use style::computed_values::text_wrap_mode::T as TextWrapMode;
@@ -30,6 +31,7 @@ pub(crate) mod stylo {
 }
 
 pub(crate) mod parley {
+    pub(crate) use parley::BaseDirection;
     pub(crate) use parley::FontFeature;
     pub(crate) use parley::FontVariation;
     pub(crate) use parley::fontique::QueryFamily;
@@ -276,6 +278,13 @@ pub(crate) fn font_features(font_styles: &stylo::Font) -> Vec<parley::FontFeatur
     features.dedup_by_key(|feature| feature.tag);
 
     features
+}
+
+pub(crate) fn base_direction(input: stylo::Direction) -> parley::BaseDirection {
+    match input {
+        stylo::Direction::Ltr => parley::BaseDirection::Ltr,
+        stylo::Direction::Rtl => parley::BaseDirection::Rtl,
+    }
 }
 
 pub(crate) fn text_wrap_mode(input: stylo::TextWrapMode) -> parley::TextWrapMode {
