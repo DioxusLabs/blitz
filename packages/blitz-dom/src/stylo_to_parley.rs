@@ -18,6 +18,7 @@ pub(crate) mod stylo {
     pub(crate) use style::properties::style_structs::Font;
     pub(crate) use style::values::computed::AlignmentBaseline;
     pub(crate) use style::values::computed::BaselineShift;
+    pub(crate) use style::values::computed::LineBreak;
     pub(crate) use style::values::computed::OverflowWrap;
     pub(crate) use style::values::computed::WordBreak;
     pub(crate) use style::values::computed::font::FontFeatureSettings;
@@ -455,6 +456,13 @@ pub(crate) fn style(
         stylo::WordBreak::BreakAll => parley::WordBreak::BreakAll,
         stylo::WordBreak::KeepAll => parley::WordBreak::KeepAll,
     };
+    let line_break = match itext_styles.line_break {
+        stylo::LineBreak::Auto => parley::LineBreak::Auto,
+        stylo::LineBreak::Loose => parley::LineBreak::Loose,
+        stylo::LineBreak::Normal => parley::LineBreak::Normal,
+        stylo::LineBreak::Strict => parley::LineBreak::Strict,
+        stylo::LineBreak::Anywhere => parley::LineBreak::Anywhere,
+    };
     let overflow_wrap = match itext_styles.overflow_wrap {
         stylo::OverflowWrap::Normal => parley::OverflowWrap::Normal,
         stylo::OverflowWrap::BreakWord => parley::OverflowWrap::BreakWord,
@@ -480,6 +488,7 @@ pub(crate) fn style(
         white_space_collapse: white_space_collapse(itext_styles.white_space_collapse),
         overflow_wrap,
         word_break,
+        line_break,
 
         // Contains NodeId
         brush: TextBrush::from_id(span_id),
