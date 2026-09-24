@@ -32,7 +32,6 @@ fn layout_doc(html: &str) -> HtmlDocument {
 }
 
 #[test]
-#[ignore = "Need to find better fix for this issue"]
 fn negative_margin_bottom_pulls_up_sibling() {
     let doc = layout_doc(
         r#"<html><body style="margin:0">
@@ -53,7 +52,6 @@ fn negative_margin_bottom_pulls_up_sibling() {
 }
 
 #[test]
-#[ignore = "Need to find better fix for this issue"]
 fn hn_comhead_structure() {
     // Mimics HN: td > [div(inline content, margin-bottom:-10px), br, div.comment]
     let doc = layout_doc(
@@ -78,7 +76,6 @@ fn hn_comhead_structure() {
 }
 
 #[test]
-#[ignore = "Need to find better fix for this issue"]
 fn br_with_trailing_whitespace_is_single_line() {
     let doc = layout_doc(
         "<html><body style=\"margin:0; font-size:12px;\">\

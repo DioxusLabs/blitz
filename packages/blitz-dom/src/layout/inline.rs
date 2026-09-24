@@ -1,5 +1,5 @@
 use blitz_traits::node_id::NodeId;
-use parley::{AlignmentOptions, IndentOptions};
+use parley::{AlignmentOptions, BreakReason, IndentOptions};
 use style::values::specified::box_::DisplayOutside;
 use style::values::{computed::CSSPixelLength, generics::text::GenericTextIndent};
 use taffy::{
@@ -634,22 +634,24 @@ impl BaseDocument {
             },
         );
 
-        #[allow(unused_mut)]
         let mut height = inline_layout.layout.height();
 
-        // HACK. TODO: fix in Parley.
-        //
-        // A forced line break (e.g. `<br>` or a preserved newline) at the end of the
-        // inline content ends the final line box but must not generate an extra empty
-        // line box after it. Parley produces a trailing empty line in this case
-        // (text-editor semantics), so we exclude that line from the measured height.
-        // if inline_layout.text.ends_with('\n') {
-        //     if let Some(last_line) = inline_layout.layout.lines().last() {
-        //         if last_line.items().next().is_none() {
-        //             height -= last_line.metrics().line_height;
-        //         }
-        //     }
-        // }
+        // A forced line break (e.g. `<br>` or a preserved newline) at the end of the inline
+        // content ends the final line box without starting a new one. Parley still emits an
+        // empty line after it (so that editors have a line to place the cursor on), so that
+        // line is excluded from the measured height.
+        let line_count = inline_layout.layout.len();
+        if line_count >= 2
+            && let (Some(prev_line), Some(last_line)) = (
+                inline_layout.layout.get(line_count - 2),
+                inline_layout.layout.get(line_count - 1),
+            )
+            && prev_line.break_reason() == BreakReason::Explicit
+            && last_line.text_range().is_empty()
+            && last_line.items().next().is_none()
+        {
+            height -= last_line.metrics().line_height;
+        }
 
         #[cfg(feature = "floats")]
         {
