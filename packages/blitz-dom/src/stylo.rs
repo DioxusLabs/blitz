@@ -987,25 +987,20 @@ impl<'a> TElement for BlitzNode<'a> {
             });
 
         // https://html.spec.whatwg.org/multipage/#the-lang-and-xml:lang-attributes
-        let lang_attr = |ns: Namespace| {
-            elem.attrs()
-                .iter()
-                .find(|attr| attr.name.ns == ns && attr.name.local == local_name!("lang"))
-        };
-        let lang = lang_attr(ns!(xml)).or_else(|| {
-            (elem.name.ns == ns!(html) || elem.name.ns == ns!(svg))
-                .then(|| lang_attr(ns!()))
-                .flatten()
-        });
-        if let Some(lang) = lang {
-            push_style(PropertyDeclaration::XLang(XLang(Atom::from(
-                lang.value.as_str(),
-            ))));
-        }
+        let accepts_lang = elem.name.ns == ns!(html) || elem.name.ns == ns!(svg);
+        let mut lang = None;
 
         for attr in elem.attrs() {
             let name = &attr.name.local;
             let value = attr.value.as_str();
+
+            if *name == local_name!("lang") {
+                if attr.name.ns == ns!(xml) {
+                    lang = Some(value);
+                } else if attr.name.ns == ns!() && accepts_lang {
+                    lang = lang.or(Some(value));
+                }
+            }
 
             if *name == local_name!("align") {
                 use style::values::specified::TextAlign;
@@ -1197,6 +1192,10 @@ impl<'a> TElement for BlitzNode<'a> {
                 use style::values::specified::Display;
                 push_style(PropertyDeclaration::Display(Display::None));
             }
+        }
+
+        if let Some(lang) = lang {
+            push_style(PropertyDeclaration::XLang(XLang(Atom::from(lang))));
         }
     }
 
