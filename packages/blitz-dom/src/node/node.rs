@@ -28,6 +28,8 @@ use style::shared_lock::SharedRwLock;
 use style::stylesheets::UrlExtraData;
 use style::values::computed::CSSPixelLength;
 use style::values::computed::Display as StyloDisplay;
+use style::values::computed::Rotate;
+use style::values::generics::transform::{Scale, Translate};
 use style::values::specified::box_::{DisplayInside, DisplayOutside};
 use style_dom::ElementState;
 use style_traits::values::ToCss;
@@ -1321,7 +1323,12 @@ impl Node {
             return true;
         }
 
-        if self.transform().is_some() {
+        let box_style = style.get_box();
+        if !box_style.transform.0.is_empty()
+            || !matches!(box_style.rotate, Rotate::None)
+            || !matches!(box_style.scale, Scale::None)
+            || !matches!(box_style.translate, Translate::None)
+        {
             return true;
         }
 
