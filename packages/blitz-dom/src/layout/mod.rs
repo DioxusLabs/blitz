@@ -176,7 +176,7 @@ impl BaseDocument {
                         .attr(local_name!("cols"))
                         .and_then(|val| val.parse::<f32>().ok());
 
-                    return compute_leaf_layout(
+                    let output = compute_leaf_layout(
                         inputs,
                         &node.layout_style(),
                         resolve_calc_value,
@@ -187,6 +187,32 @@ impl BaseDocument {
                             height: resolved_line_height.unwrap_or(16.0) * rows,
                         },
                     );
+                    if inputs.run_mode == RunMode::PerformLayout {
+                        let pb = {
+                            let style = node.layout_style();
+                            style
+                                .padding()
+                                .resolve_or_zero(inputs.parent_size.width, resolve_calc_value)
+                                + style
+                                    .border()
+                                    .resolve_or_zero(inputs.parent_size.width, resolve_calc_value)
+                        };
+                        let content_width = (output.size.width - pb.horizontal_axis_sum()).max(0.0);
+                        let scale = self.viewport.scale();
+                        let node = &mut self.nodes[dom_node_id(node_id)];
+                        if let Some(input) = node
+                            .data
+                            .downcast_element_mut()
+                            .and_then(|el| el.text_input_data_mut())
+                        {
+                            input.editor.set_width(Some(content_width * scale));
+                            input.editor.refresh_layout(
+                                &mut self.font_ctx.lock().unwrap(),
+                                &mut self.layout_ctx,
+                            );
+                        }
+                    }
+                    return output;
                 }
 
                 if *element_data.name.local == *"input" {
