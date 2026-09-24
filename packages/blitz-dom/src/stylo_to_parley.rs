@@ -8,9 +8,11 @@ use crate::node::TextBrush;
 
 // Module of type aliases so we can refer to stylo types with nicer names
 pub(crate) mod stylo {
+    pub(crate) use style::computed_values::direction::T as Direction;
     pub(crate) use style::computed_values::font_variant_caps::T as FontVariantCaps;
     pub(crate) use style::computed_values::font_variant_position::T as FontVariantPosition;
     pub(crate) use style::computed_values::text_wrap_mode::T as TextWrapMode;
+    pub(crate) use style::computed_values::unicode_bidi::T as UnicodeBidi;
     pub(crate) use style::computed_values::white_space_collapse::T as WhiteSpaceCollapse;
     pub(crate) use style::properties::ComputedValues;
     pub(crate) use style::properties::style_structs::Font;
@@ -30,6 +32,7 @@ pub(crate) mod stylo {
 }
 
 pub(crate) mod parley {
+    pub(crate) use parley::BaseDirection;
     pub(crate) use parley::FontFeature;
     pub(crate) use parley::FontVariation;
     pub(crate) use parley::fontique::QueryFamily;
@@ -276,6 +279,19 @@ pub(crate) fn font_features(font_styles: &stylo::Font) -> Vec<parley::FontFeatur
     features.dedup_by_key(|feature| feature.tag);
 
     features
+}
+
+pub(crate) fn base_direction(
+    direction: stylo::Direction,
+    unicode_bidi: stylo::UnicodeBidi,
+) -> parley::BaseDirection {
+    if unicode_bidi == stylo::UnicodeBidi::Plaintext {
+        return parley::BaseDirection::Auto;
+    }
+    match direction {
+        stylo::Direction::Ltr => parley::BaseDirection::Ltr,
+        stylo::Direction::Rtl => parley::BaseDirection::Rtl,
+    }
 }
 
 pub(crate) fn text_wrap_mode(input: stylo::TextWrapMode) -> parley::TextWrapMode {
