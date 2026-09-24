@@ -58,6 +58,25 @@ fn xml_lang_takes_precedence_over_lang() {
     assert_eq!(lang_of(&harness, "#p"), "ja");
 }
 
+/// Precedence does not depend on attribute order.
+#[test]
+fn xml_lang_takes_precedence_over_a_later_lang() {
+    let mut harness = page("", "<p id=p>text</p>");
+    let p = harness.node("#p");
+    harness.base_mut().mutate().set_attribute(
+        p,
+        QualName::new(None, ns!(xml), local_name!("lang")),
+        "ja",
+    );
+    harness.base_mut().mutate().set_attribute(
+        p,
+        QualName::new(None, ns!(), local_name!("lang")),
+        "en",
+    );
+    harness.pump();
+    assert_eq!(lang_of(&harness, "#p"), "ja");
+}
+
 #[test]
 fn changing_the_attribute_at_runtime_restyles_descendants() {
     let mut harness = page("lang=en", "<div id=d><p id=p>text</p></div>");
