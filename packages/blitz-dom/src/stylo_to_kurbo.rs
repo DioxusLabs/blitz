@@ -104,15 +104,15 @@ pub fn resolve_2d_transform(
     let mut resolved = Affine::IDENTITY;
 
     if let Some(translation) = translate {
-        resolved = resolved.then_translate(translation)
+        resolved *= Affine::translate(translation)
     }
 
     if let Some(rotation) = rotate {
-        resolved = resolved.then_rotate(rotation)
+        resolved *= Affine::rotate(rotation)
     }
 
     if let Some(scale_transform) = scale_transform {
-        resolved = resolved.then_scale_non_uniform(scale_transform.x, scale_transform.y)
+        resolved *= Affine::scale_non_uniform(scale_transform.x, scale_transform.y)
     }
 
     if let Some(transform) = transform {
