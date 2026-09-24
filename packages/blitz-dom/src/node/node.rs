@@ -18,6 +18,7 @@ use std::fmt::Write;
 use std::ops::Deref;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use style::computed_values::white_space_collapse::T as WhiteSpaceCollapse;
 use style::invalidation::element::restyle_hints::RestyleHint;
 use style::properties::ComputedValues;
 use style::properties::generated::longhands::position::computed_value::T as Position;
@@ -504,6 +505,29 @@ impl Node {
         match &self.data {
             NodeData::Text(data) => data.content.chars().all(|c| c.is_ascii_whitespace()),
             _ => false,
+        }
+    }
+
+    /// Whether this is an empty or whitespace-only text node whose whitespace may be collapsed
+    /// away under the `white-space-collapse` it inherits from its parent.
+    pub fn is_collapsible_whitespace_node(&self) -> bool {
+        let NodeData::Text(data) = &self.data else {
+            return false;
+        };
+        if data.content.is_empty() {
+            return true;
+        }
+        if !data.content.chars().all(|c| c.is_ascii_whitespace()) {
+            return false;
+        }
+        let white_space_collapse = self
+            .parent
+            .and_then(|parent_id| self.with(parent_id).primary_styles())
+            .map(|style| style.clone_white_space_collapse());
+        match white_space_collapse {
+            Some(WhiteSpaceCollapse::Preserve | WhiteSpaceCollapse::BreakSpaces) => false,
+            Some(WhiteSpaceCollapse::PreserveBreaks) => !data.content.contains('\n'),
+            Some(WhiteSpaceCollapse::Collapse) | None => true,
         }
     }
 

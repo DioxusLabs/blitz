@@ -96,7 +96,7 @@ impl LayoutChildren {
         fn block_is_only_whitespace(doc: &BaseDocument, node_id: NodeId) -> bool {
             for child_id in doc.nodes[node_id].children.iter().copied() {
                 let child = &doc.nodes[child_id];
-                if !child.is_whitespace_node() {
+                if !child.is_collapsible_whitespace_node() {
                     return false;
                 }
             }
@@ -267,7 +267,7 @@ fn push_hoisted_children_and_pseudos(
     let children = std::mem::take(&mut doc.nodes[container_node_id].children);
     for child_id in children.iter().copied() {
         let child = &doc.nodes[child_id];
-        if child.data.kind() == NodeKind::Comment || child.is_whitespace_node() {
+        if child.data.kind() == NodeKind::Comment || child.is_collapsible_whitespace_node() {
             continue;
         }
         push_hoisted_child(doc, child_id, out, wrap);
@@ -444,8 +444,8 @@ fn classify_flow_children(
                 .unwrap_or(PositionProperty::Static);
             let float = style.map(|s| s.clone_float()).unwrap_or(Float::None);
 
-            // Ignore nodes that are entirely whitespace
-            if child.is_whitespace_node() {
+            // Ignore nodes whose whitespace is entirely collapsed away
+            if child.is_collapsible_whitespace_node() {
                 continue;
             }
 
