@@ -10,7 +10,7 @@ use crate::StyleThreading;
 use crate::layout::damage::compute_layout_damage;
 use crate::node::Node;
 use crate::node::NodeData;
-use markup5ever::{LocalName, LocalNameStaticSet, Namespace, NamespaceStaticSet, local_name};
+use markup5ever::{LocalName, LocalNameStaticSet, Namespace, NamespaceStaticSet, local_name, ns};
 use selectors::bloom::BLOOM_HASH_MASK;
 use selectors::{
     Element, OpaqueElement,
@@ -36,7 +36,7 @@ use style::selector_parser::RestyleDamage;
 use style::stylesheets::layer_rule::LayerOrder;
 use style::stylesheets::scope_rule::ImplicitScopeRoot;
 use style::values::AtomString;
-use style::values::specified::NoCalcPercentage;
+use style::values::specified::{NoCalcPercentage, XLang};
 use style::{
     Atom,
     context::{
@@ -985,6 +985,23 @@ impl<'a> TElement for BlitzNode<'a> {
             && elem.attrs().iter().any(|attr| {
                 attr.name.local == local_name!("type") && attr.value.eq_ignore_ascii_case("image")
             });
+
+        // https://html.spec.whatwg.org/multipage/#the-lang-and-xml:lang-attributes
+        let lang_attr = |ns: Namespace| {
+            elem.attrs()
+                .iter()
+                .find(|attr| attr.name.ns == ns && attr.name.local == local_name!("lang"))
+        };
+        let lang = lang_attr(ns!(xml)).or_else(|| {
+            (elem.name.ns == ns!(html) || elem.name.ns == ns!(svg))
+                .then(|| lang_attr(ns!()))
+                .flatten()
+        });
+        if let Some(lang) = lang {
+            push_style(PropertyDeclaration::XLang(XLang(Atom::from(
+                lang.value.as_str(),
+            ))));
+        }
 
         for attr in elem.attrs() {
             let name = &attr.name.local;

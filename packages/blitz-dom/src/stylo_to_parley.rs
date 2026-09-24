@@ -400,7 +400,7 @@ pub(crate) fn style(
         font_weight,
         font_variations: parley::FontVariations::List(Cow::Owned(font_variations)),
         font_features: parley::FontFeatures::List(Cow::Owned(font_features)),
-        locale: Default::default(),
+        locale: parley::Language::parse(&font_styles._x_lang.0).ok(),
         line_height,
         word_spacing,
         letter_spacing,
