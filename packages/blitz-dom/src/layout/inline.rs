@@ -1,7 +1,10 @@
 use blitz_traits::node_id::NodeId;
 use parley::{AlignmentOptions, BreakReason, IndentOptions};
-use style::values::specified::box_::DisplayOutside;
-use style::values::{computed::CSSPixelLength, generics::text::GenericTextIndent};
+use style::values::specified::box_::{DisplayInside, DisplayOutside};
+use style::values::{
+    computed::{CSSPixelLength, Contain},
+    generics::text::GenericTextIndent,
+};
 use taffy::{
     AvailableSpace, AxisStaticEdge, AxisStaticPosition, BlockContext, BlockFormattingContext,
     BoxSizing, CollapsibleMarginSet, CoreStyle as _, Direction, LayoutInput, LayoutOutput,
@@ -199,7 +202,7 @@ impl BaseDocument {
         // || matches!(node_size.height, Some(h) if h > 0.0)
         // || matches!(node_min_size.height, Some(h) if h > 0.0)
         // || !inline_layout.text.is_empty();
-        // || !inline_layout.layout.inline_boxes().is_empty();
+        // || inline_layout.layout.inline_boxes().len() > 0;
 
         // Resolve node's preferred/min/max sizes (width/heights) against the available space (percentages resolve to pixel values)
         // For ContentSize mode, we pretend that the node has no size styles as these should be ignored.
@@ -238,7 +241,7 @@ impl BaseDocument {
         // Short circuit if inline context contains no text or inline boxes
         if !has_styles_preventing_being_collapsed_through
             && inline_layout.text.is_empty()
-            && inline_layout.layout.inline_boxes().is_empty()
+            && inline_layout.layout.inline_boxes().len() == 0
         {
             // Put layout back
             self.nodes[node_id]
@@ -309,21 +312,61 @@ impl BaseDocument {
             let is_floated = false;
 
             let is_out_of_flow = style.position().is_out_of_flow();
+            // The baseline of an inline-block is the baseline of its last in-flow line box,
+            // unless it has no line boxes or it is a block-axis scroll container, in which
+            // case it is the bottom margin edge (CSS 2 §10.8.1, css-align-3 §9.1
+            // `baseline-source: auto`; `overflow: clip` is not a scroll container). Other
+            // atomic inlines (flex, grid, table) export a baseline regardless of `overflow`,
+            // clamped to their border box if they are scroll containers (css-align-3 §9.1).
+            // A layout-contained box is treated as having no baseline (css-contain-1 §3.3).
+            let overflow = style.overflow();
+            let box_style = style.style.get_box();
+            let is_flow = matches!(
+                box_style.display.inside(),
+                DisplayInside::Flow | DisplayInside::FlowRoot
+            );
+            let is_scroll_container = !matches!(overflow.y, Overflow::Visible | Overflow::Clip);
+            let is_block_axis_scroll_container = is_flow && is_scroll_container;
+            let contain_layout = box_style.clone_contain().contains(Contain::LAYOUT);
+            let exports_baseline = !is_block_axis_scroll_container && !contain_layout;
             drop(style);
 
             if is_out_of_flow || is_floated {
                 ibox.width = 0.0;
                 ibox.height = 0.0;
+                ibox.baseline = None;
             } else {
                 let output = self.compute_child_layout(taffy::NodeId::from(ibox.id), child_inputs);
                 ibox.width = (margin.left + margin.right + output.size.width) * scale;
-                // Vertical margins adjust the space the box reserves in the line, but the
-                // reserved space cannot be negative.
+                ibox.baseline = if exports_baseline {
+                    output
+                        .baselines
+                        .last
+                        .or(output.baselines.first)
+                        .map(|baseline| {
+                            let baseline = if is_scroll_container {
+                                baseline.clamp(0.0, output.size.height)
+                            } else {
+                                baseline
+                            };
+                            (margin.top + baseline) * scale
+                        })
+                } else {
+                    None
+                };
+                // Vertical margins adjust the space the box reserves in the line. A box with a
+                // baseline splits that space into ascent (`margin.top + baseline`) and descent
+                // (`margin.bottom + height - baseline`), either of which may be negative. A box
+                // without a baseline sits on the baseline and cannot reserve negative space.
                 // Kept finite: huge author lengths can sum to infinity, which is taller than
                 // the line breaker's `f32::MAX` height limit, and it then yields
                 // `MaxHeightExceeded` for this box forever without advancing.
-                ibox.height = ((margin.top + margin.bottom + output.size.height).max(0.0) * scale)
-                    .min(f32::MAX);
+                let margin_box_height = margin.top + margin.bottom + output.size.height;
+                ibox.height = if ibox.baseline.is_some() {
+                    (margin_box_height * scale).min(f32::MAX)
+                } else {
+                    (margin_box_height.max(0.0) * scale).min(f32::MAX)
+                };
             }
         }
 
@@ -626,7 +669,13 @@ impl BaseDocument {
                         // dbg!(&layout.size);
                         // dbg!(&layout.location);
 
-                        state.append_inline_box_to_line(box_break_data.advance, 0.0, 0.0, true);
+                        // Floats are out-of-flow and must not contribute to the line's height.
+                        state.append_inline_box_to_line(
+                            box_break_data.advance,
+                            f32::NEG_INFINITY,
+                            f32::NEG_INFINITY,
+                            true,
+                        );
 
                         // if float.is_floated() {
                         //     println!("INLINE FLOATED BOX ({}) {:?}", ibox.id, float);
@@ -653,7 +702,17 @@ impl BaseDocument {
             },
         );
 
-        let mut height = inline_layout.layout.height();
+        // Parley lays out empty text as a single strut-height line (text-editor semantics),
+        // but a line box containing no text, inline boxes or other in-flow content is a
+        // zero-height line box in CSS (CSS2 §9.4.2).
+        let has_inline_content =
+            !inline_layout.text.is_empty() || inline_layout.layout.inline_boxes().len() > 0;
+
+        let mut height = if has_inline_content {
+            inline_layout.layout.height()
+        } else {
+            0.0
+        };
 
         // A forced line break (e.g. `<br>` or a preserved newline) at the end of the inline
         // content ends the final line box without starting a new one. Parley still emits an
@@ -835,13 +894,18 @@ impl BaseDocument {
                         layout.scrollable_overflow_rect = output.scrollable_overflow_rect;
                         layout.location.x =
                             (ibox.x / scale) + margin.left + container_pb.left + inset_offset.x;
-                        // A negative `margin-top` shrinks the space the box reserves in the
+                        // A box with a baseline is positioned by it, so its border box always
+                        // sits `margin.top` below the margin box (`ibox.y`). Without a baseline
+                        // a negative `margin-top` shrinks the space the box reserves in the
                         // line but does not move the box itself, which stays anchored to the
                         // bottom of the reserved space.
-                        layout.location.y = (ibox.y / scale)
-                            + margin.top.max(0.0)
-                            + container_pb.top
-                            + inset_offset.y;
+                        let margin_top = if ibox.baseline.is_some() {
+                            margin.top
+                        } else {
+                            margin.top.max(0.0)
+                        };
+                        layout.location.y =
+                            (ibox.y / scale) + margin_top + container_pb.top + inset_offset.y;
                         layout.padding = padding; //.map(|p| p / scale);
                         layout.border = border; //.map(|p| p / scale);
 
@@ -863,11 +927,14 @@ impl BaseDocument {
         // println!("known_dimensions: w: {:?} h: {:?}", inputs.known_dimensions.width, inputs.known_dimensions.height);
         // println!("\n");
 
-        let first_baseline = inline_layout
-            .layout
-            .lines()
-            .next()
-            .map(|line| (line.metrics().baseline / scale) + container_pb.top);
+        let line_baseline =
+            |line: parley::Line<'_, _>| (line.metrics().baseline / scale) + container_pb.top;
+        let first_baseline = has_inline_content
+            .then(|| inline_layout.layout.lines().next().map(line_baseline))
+            .flatten();
+        let last_baseline = has_inline_content
+            .then(|| inline_layout.layout.lines().last().map(line_baseline))
+            .flatten();
 
         // Put layout back
         self.nodes[node_id]
@@ -897,7 +964,10 @@ impl BaseDocument {
                     bottom: content_extent.height,
                 }
             },
-            baselines: taffy::Baselines::from_first(first_baseline),
+            baselines: taffy::Baselines {
+                first: first_baseline,
+                last: last_baseline,
+            },
             top_margin: CollapsibleMarginSet::ZERO,
             bottom_margin: CollapsibleMarginSet::ZERO,
             margins_can_collapse_through: !has_styles_preventing_being_collapsed_through

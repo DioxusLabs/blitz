@@ -64,7 +64,7 @@ fn out_of_flow_placeholder_retains_its_text_offset() {
     let text = inline(&doc, "#test");
     assert_eq!(text.text, "unbroken");
     assert_eq!(text.layout.inline_boxes().len(), 1);
-    assert_eq!(text.layout.inline_boxes()[0].index, 2);
+    assert_eq!(text.layout.inline_boxes().next().unwrap().index, 2);
     assert_eq!(text.layout.len(), 1);
 }
 
