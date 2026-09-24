@@ -153,10 +153,13 @@ impl FontMetricsProvider for BlitzFontMetricsProvider {
             font
         }
 
+        /// Scales the advance the same way as Parley's shaped glyph advances (font units × size / upem)
+        /// rather than with skrifa's FreeType-compatible fixed-point scale, so that `ch`/`ic`
+        /// lengths exactly match the width of the corresponding laid-out text.
         fn advance_of(
             query: &mut Query,
             ch: char,
-            font_size: Size,
+            font_size: f32,
             variations: &[FontVariation],
         ) -> Option<f32> {
             let font = find_font_for(query, ch)?;
@@ -167,10 +170,15 @@ impl FontMetricsProvider for BlitzFontMetricsProvider {
                     .map(|v| (skrifa::Tag::from_be_bytes(v.tag.to_bytes()), v.value)),
             );
             let location_ref = LocationRef::from(&location);
-            let glyph_metrics = GlyphMetrics::new(&font_ref, font_size, location_ref);
+            let upem = Metrics::new(&font_ref, Size::unscaled(), location_ref).units_per_em;
+            if upem == 0 {
+                return None;
+            }
+            let glyph_metrics = GlyphMetrics::new(&font_ref, Size::unscaled(), location_ref);
             let char_map = Charmap::new(&font_ref);
             let glyph_id = char_map.map(ch)?;
-            glyph_metrics.advance_width(glyph_id)
+            let advance = glyph_metrics.advance_width(glyph_id)?;
+            Some(advance * (font_size / upem as f32))
         }
 
         fn metrics_of(
@@ -191,11 +199,11 @@ impl FontMetricsProvider for BlitzFontMetricsProvider {
             Some((metrics.ascent, metrics.x_height, metrics.cap_height))
         }
 
-        let font_size = Size::new(font_size.px());
-        let zero_advance = advance_of(&mut query, '0', font_size, &variations);
-        let ic_advance = advance_of(&mut query, '\u{6C34}', font_size, &variations);
+        let zero_advance = advance_of(&mut query, '0', font_size.px(), &variations);
+        let ic_advance = advance_of(&mut query, '\u{6C34}', font_size.px(), &variations);
         let (ascent, x_height, cap_height) =
-            metrics_of(&mut query, ' ', font_size, &variations).unwrap_or((0.0, None, None));
+            metrics_of(&mut query, ' ', Size::new(font_size.px()), &variations)
+                .unwrap_or((0.0, None, None));
 
         FontMetrics {
             ascent: CSSPixelLength::new(ascent),
