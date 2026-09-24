@@ -10,11 +10,15 @@ use std::fs;
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
+use std::time::Duration;
 use url::Url;
 
 use super::fuzzy::{FuzzySpec, fuzzy_buffer_diff, parse_fuzzy_metas, tolerance_for_reference};
+use blitz_vibey_script::ScriptDocument;
+
 use super::{
-    document_has_scripts, parse_and_resolve_document, pump_net_provider, run_document_scripts,
+    document_has_scripts, parse_and_resolve_document, pump_net_provider, pump_timers,
+    run_document_scripts,
 };
 use crate::{BufferKind, HEIGHT, SCALE, SubtestCounts, TestFlags, ThreadCtx, WIDTH};
 
@@ -221,6 +225,7 @@ fn render_html_to_buffer(
         // to render correctly: upgrade it to a `ScriptDocument` (without
         // reparsing) and execute its scripts before rendering.
         let mut script_document = run_document_scripts(ctx, document);
+        wait_for_screenshot_ready(&mut script_document);
         for error in script_document.take_js_errors() {
             warn!("{relative_path}: {error}");
         }
@@ -234,6 +239,50 @@ fn render_html_to_buffer(
     } else {
         render_document_to_buffer(ctx, buffer_kind, out_path, &mut document);
     }
+}
+
+/// Upper bound on how long to run JS timers while waiting for a reftest to be
+/// ready for its screenshot
+const REFTEST_TIMER_BUDGET: Duration = Duration::from_secs(1);
+
+/// Duration of an animation frame (`requestAnimationFrame` callbacks are
+/// scheduled this far in the future)
+const FRAME: Duration = Duration::from_millis(16);
+
+/// Run JS timers until the document is ready to be screenshotted, mirroring
+/// wptrunner's `test-wait.js`: wait two animation frames after load, and if the
+/// root element has the `reftest-wait` class, until that class is removed (and
+/// then another two frames). Styles are resolved between timer callbacks, as a
+/// browser would between frames.
+fn wait_for_screenshot_ready(document: &mut ScriptDocument) {
+    let mut settle_start = document.clock_now();
+    let mut waiting = false;
+    pump_timers(document, REFTEST_TIMER_BUDGET, |doc| {
+        let now = doc.clock_now();
+        {
+            let mut inner = doc.inner_mut();
+            inner.resolve(0.0);
+            if has_reftest_wait(&inner) {
+                waiting = true;
+                return None;
+            }
+        }
+        if waiting {
+            waiting = false;
+            settle_start = now;
+        }
+        let settle_deadline = settle_start + FRAME * 2;
+        doc.next_timer_deadline()
+            .is_none_or(|deadline| deadline > settle_deadline)
+            .then_some(())
+    });
+}
+
+fn has_reftest_wait(document: &BaseDocument) -> bool {
+    document
+        .try_root_element()
+        .and_then(|root| root.attr(blitz_dom::local_name!("class")))
+        .is_some_and(|class| class.split_ascii_whitespace().any(|c| c == "reftest-wait"))
 }
 
 fn render_document_to_buffer(
