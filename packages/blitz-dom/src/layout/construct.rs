@@ -1138,7 +1138,13 @@ pub(crate) fn build_inline_layout_into(
 
     // Create a parley tree builder
     let mut builder = layout_ctx.tree_builder(font_ctx, scale, true, &parley_style);
-    if let Some(style) = root_node_style.as_deref() {
+    // `dir=auto` resolves the direction from the content, which Parley does by itself.
+    let has_dir_auto = root_node
+        .attr(local_name!("dir"))
+        .is_some_and(|dir| dir.eq_ignore_ascii_case("auto"));
+    if has_dir_auto {
+        builder.set_base_direction(parley::BaseDirection::Auto);
+    } else if let Some(style) = root_node_style.as_deref() {
         builder.set_base_direction(stylo_to_parley::base_direction(
             style.clone_direction(),
             style.clone_unicode_bidi(),
