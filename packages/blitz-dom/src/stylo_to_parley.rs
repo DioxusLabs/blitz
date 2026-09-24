@@ -12,6 +12,7 @@ pub(crate) mod stylo {
     pub(crate) use style::computed_values::font_variant_caps::T as FontVariantCaps;
     pub(crate) use style::computed_values::font_variant_position::T as FontVariantPosition;
     pub(crate) use style::computed_values::text_wrap_mode::T as TextWrapMode;
+    pub(crate) use style::computed_values::unicode_bidi::T as UnicodeBidi;
     pub(crate) use style::computed_values::white_space_collapse::T as WhiteSpaceCollapse;
     pub(crate) use style::properties::ComputedValues;
     pub(crate) use style::properties::style_structs::Font;
@@ -280,8 +281,14 @@ pub(crate) fn font_features(font_styles: &stylo::Font) -> Vec<parley::FontFeatur
     features
 }
 
-pub(crate) fn base_direction(input: stylo::Direction) -> parley::BaseDirection {
-    match input {
+pub(crate) fn base_direction(
+    direction: stylo::Direction,
+    unicode_bidi: stylo::UnicodeBidi,
+) -> parley::BaseDirection {
+    if unicode_bidi == stylo::UnicodeBidi::Plaintext {
+        return parley::BaseDirection::Auto;
+    }
+    match direction {
         stylo::Direction::Ltr => parley::BaseDirection::Ltr,
         stylo::Direction::Rtl => parley::BaseDirection::Rtl,
     }
