@@ -73,6 +73,10 @@ fn hover(doc: &mut HtmlDocument, x: f32, y: f32, expected: &str, incremental: bo
 
 /// Hovering `#ib` changes only its height: a RELAYOUT-only style change on
 /// an inline-block inside the anonymous block wrapping "text ... more".
+///
+/// The baseline-aligned inline-block's line also includes the strut's descent,
+/// which depends on the system font, so heights are asserted relative to the
+/// initial layout.
 const SIMPLE: &str = r#"<html><head><style>
     #ib { display:inline-block; width:50px; height:20px; }
     #ib:hover { height:60px; }
@@ -87,12 +91,13 @@ const SIMPLE: &str = r#"<html><head><style>
 fn inline_block_resize_inside_anonymous_block() {
     for incremental in [false, true] {
         let mut doc = make_doc(SIMPLE, incremental);
-        assert_eq!(y(&doc, "#blk"), 20.0, "incremental={incremental}");
-        assert_eq!(h(&doc, "#c"), 30.0, "incremental={incremental}");
+        let blk_y = y(&doc, "#blk");
+        assert!(blk_y >= 20.0, "incremental={incremental}");
+        assert_eq!(h(&doc, "#c"), blk_y + 10.0, "incremental={incremental}");
 
         hover(&mut doc, 60.0, 10.0, "#ib", incremental);
-        assert_eq!(y(&doc, "#blk"), 60.0, "incremental={incremental}");
-        assert_eq!(h(&doc, "#c"), 70.0, "incremental={incremental}");
+        assert_eq!(y(&doc, "#blk"), blk_y + 40.0, "incremental={incremental}");
+        assert_eq!(h(&doc, "#c"), blk_y + 50.0, "incremental={incremental}");
     }
 }
 
@@ -123,17 +128,18 @@ const NESTED: &str = r#"<html><head><style>
 fn inline_block_resize_inside_nested_anonymous_blocks() {
     for incremental in [false, true] {
         let mut doc = make_doc(NESTED, incremental);
-        // lead(10) + item(20 + 10) + trail(10)
-        assert_eq!(h(&doc, "#item"), 30.0, "incremental={incremental}");
-        assert_eq!(h(&doc, "#flex"), 30.0, "incremental={incremental}");
-        assert_eq!(y(&doc, "#blk"), 50.0, "incremental={incremental}");
-        assert_eq!(h(&doc, "#c"), 60.0, "incremental={incremental}");
+        // lead(10) + item(line + 10) + trail(10)
+        let item_h = h(&doc, "#item");
+        assert!(item_h >= 30.0, "incremental={incremental}");
+        assert_eq!(h(&doc, "#flex"), item_h, "incremental={incremental}");
+        assert_eq!(y(&doc, "#blk"), item_h + 20.0, "incremental={incremental}");
+        assert_eq!(h(&doc, "#c"), item_h + 30.0, "incremental={incremental}");
 
         hover(&mut doc, 60.0, 20.0, "#ib", incremental);
-        assert_eq!(h(&doc, "#item"), 70.0, "incremental={incremental}");
-        assert_eq!(h(&doc, "#flex"), 70.0, "incremental={incremental}");
-        assert_eq!(y(&doc, "#blk"), 90.0, "incremental={incremental}");
-        assert_eq!(h(&doc, "#c"), 100.0, "incremental={incremental}");
+        assert_eq!(h(&doc, "#item"), item_h + 40.0, "incremental={incremental}");
+        assert_eq!(h(&doc, "#flex"), item_h + 40.0, "incremental={incremental}");
+        assert_eq!(y(&doc, "#blk"), item_h + 60.0, "incremental={incremental}");
+        assert_eq!(h(&doc, "#c"), item_h + 70.0, "incremental={incremental}");
     }
 }
 
