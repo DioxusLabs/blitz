@@ -375,6 +375,11 @@ table[align="right"] {
     text-align: start;
 }
 
+td[nowrap],
+th[nowrap] {
+    white-space: nowrap;
+}
+
 
 /* border collapse rules */
 
