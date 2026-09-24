@@ -207,11 +207,40 @@ pub fn compute_replaced_layout(
         },
     };
 
+    // `stretch` fills the containing block (less margins) when its size is definite, and
+    // behaves as `auto` otherwise. The content size can't be negative.
+    // See https://drafts.csswg.org/css-sizing-4/#stretch-fit-sizing
+    let margin = style
+        .margin()
+        .resolve_or_zero(parent_size.width, &resolve_calc_value);
+    let stretch_size = Size {
+        width: parent_size
+            .width
+            .filter(|_| available_space.width.is_definite())
+            .map(|width| (width - margin.horizontal_axis_sum() - pb_sum.width).max(0.0)),
+        height: parent_size
+            .height
+            .filter(|_| available_space.height.is_definite())
+            .map(|height| (height - margin.vertical_axis_sum() - pb_sum.height).max(0.0)),
+    };
+
     // Resolve sizes
-    let style_size = style
-        .size()
+    let size_style = style.size();
+    let style_size = size_style
         .maybe_resolve(basis_for_max_and_preferred, &resolve_calc_value)
         .maybe_sub(box_sizing_adjustment);
+    let style_size = Size {
+        width: if size_style.width.is_stretch() {
+            stretch_size.width
+        } else {
+            style_size.width
+        },
+        height: if size_style.height.is_stretch() {
+            stretch_size.height
+        } else {
+            style_size.height
+        },
+    };
     let mut min_size = style
         .min_size()
         .maybe_resolve(parent_size, &resolve_calc_value)
