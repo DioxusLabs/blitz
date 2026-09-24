@@ -944,12 +944,21 @@ fn create_text_editor(doc: &mut BaseDocument, input_element_id: NodeId, is_multi
         .as_ref()
         .map(|s| stylo_to_parley::style(node.id, s))
         .unwrap_or_default();
+    let alignment = node
+        .primary_styles()
+        .map(|s| stylo_to_parley::text_align(s.clone_text_align()))
+        .unwrap_or(parley::layout::Alignment::Start);
 
+    let initial_text = if is_multiline {
+        node.text_content()
+    } else {
+        node.attr(local_name!("value")).unwrap_or("").to_string()
+    };
     let element = &mut node.data.downcast_element_mut().unwrap();
     if !matches!(element.special_data, SpecialElementData::TextInput(_)) {
         let mut text_input_data = TextInputData::new(is_multiline);
         let editor = &mut text_input_data.editor;
-        editor.set_text(element.attr(local_name!("value")).unwrap_or(""));
+        editor.set_text(&initial_text);
         element.special_data = SpecialElementData::TextInput(text_input_data);
     }
 
@@ -963,9 +972,24 @@ fn create_text_editor(doc: &mut BaseDocument, input_element_id: NodeId, is_multi
 
     let styles = editor.edit_styles();
     styles.retain(|_| false);
+    styles.insert(StyleProperty::FontFamily(parley_style.font_family));
     styles.insert(StyleProperty::FontSize(parley_style.font_size));
+    styles.insert(StyleProperty::FontWidth(parley_style.font_width));
+    styles.insert(StyleProperty::FontStyle(parley_style.font_style));
+    styles.insert(StyleProperty::FontWeight(parley_style.font_weight));
+    styles.insert(StyleProperty::FontVariations(parley_style.font_variations));
+    styles.insert(StyleProperty::FontFeatures(parley_style.font_features));
     styles.insert(StyleProperty::LineHeight(parley_style.line_height));
+    styles.insert(StyleProperty::WordSpacing(parley_style.word_spacing));
+    styles.insert(StyleProperty::LetterSpacing(parley_style.letter_spacing));
+    styles.insert(StyleProperty::WordBreak(parley_style.word_break));
+    styles.insert(StyleProperty::OverflowWrap(parley_style.overflow_wrap));
+    styles.insert(StyleProperty::TextWrapMode(parley_style.text_wrap_mode));
+    styles.insert(StyleProperty::WhiteSpaceCollapse(
+        parley_style.white_space_collapse,
+    ));
     styles.insert(StyleProperty::Brush(parley_style.brush));
+    editor.set_alignment(alignment);
 
     editor.refresh_layout(&mut doc.font_ctx.lock().unwrap(), &mut doc.layout_ctx);
 }

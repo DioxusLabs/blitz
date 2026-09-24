@@ -16,6 +16,7 @@ use taffy::{BlockItemStyle as _, Clear, Float, prelude::TaffyMaxContent};
 
 use super::resolve_calc_value;
 use crate::BaseDocument;
+use crate::stylo_to_parley;
 
 impl BaseDocument {
     pub(crate) fn compute_inline_layout(
@@ -623,22 +624,7 @@ impl BaseDocument {
 
         let alignment = self.nodes[node_id]
             .primary_styles()
-            .map(|s| {
-                use parley::layout::Alignment;
-                use style::values::specified::TextAlignKeyword;
-
-                match s.clone_text_align() {
-                    TextAlignKeyword::Start => Alignment::Start,
-                    TextAlignKeyword::Left => Alignment::Left,
-                    TextAlignKeyword::Right => Alignment::Right,
-                    TextAlignKeyword::Center => Alignment::Center,
-                    TextAlignKeyword::Justify => Alignment::Justify,
-                    TextAlignKeyword::End => Alignment::End,
-                    TextAlignKeyword::MozCenter => Alignment::Center,
-                    TextAlignKeyword::MozLeft => Alignment::Left,
-                    TextAlignKeyword::MozRight => Alignment::Right,
-                }
-            })
+            .map(|s| stylo_to_parley::text_align(s.clone_text_align()))
             .unwrap_or(parley::layout::Alignment::Start);
 
         inline_layout.layout.align(

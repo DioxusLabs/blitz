@@ -29,6 +29,7 @@ pub(crate) mod stylo {
     pub(crate) use style::values::computed::font::GenericFontFamily;
     pub(crate) use style::values::computed::font::LineHeight;
     pub(crate) use style::values::computed::font::SingleFontFamily;
+    pub(crate) use style::values::specified::TextAlignKeyword;
 }
 
 pub(crate) mod parley {
@@ -36,6 +37,7 @@ pub(crate) mod parley {
     pub(crate) use parley::FontFeature;
     pub(crate) use parley::FontVariation;
     pub(crate) use parley::fontique::QueryFamily;
+    pub(crate) use parley::layout::Alignment;
     pub(crate) use parley::setting::*;
     pub(crate) use parley::style::*;
 }
@@ -291,6 +293,20 @@ pub(crate) fn base_direction(
     match direction {
         stylo::Direction::Ltr => parley::BaseDirection::Ltr,
         stylo::Direction::Rtl => parley::BaseDirection::Rtl,
+    }
+}
+
+pub(crate) fn text_align(input: stylo::TextAlignKeyword) -> parley::Alignment {
+    match input {
+        stylo::TextAlignKeyword::Start => parley::Alignment::Start,
+        stylo::TextAlignKeyword::Left => parley::Alignment::Left,
+        stylo::TextAlignKeyword::Right => parley::Alignment::Right,
+        stylo::TextAlignKeyword::Center => parley::Alignment::Center,
+        stylo::TextAlignKeyword::Justify => parley::Alignment::Justify,
+        stylo::TextAlignKeyword::End => parley::Alignment::End,
+        stylo::TextAlignKeyword::MozCenter => parley::Alignment::Center,
+        stylo::TextAlignKeyword::MozLeft => parley::Alignment::Left,
+        stylo::TextAlignKeyword::MozRight => parley::Alignment::Right,
     }
 }
 
