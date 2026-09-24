@@ -402,10 +402,9 @@ pub(crate) fn style(
         stylo::WordBreak::KeepAll => parley::WordBreak::KeepAll,
     };
     let line_break = match itext_styles.line_break {
-        stylo::LineBreak::Auto => parley::LineBreak::Auto,
         stylo::LineBreak::Loose => parley::LineBreak::Loose,
         stylo::LineBreak::Normal => parley::LineBreak::Normal,
-        stylo::LineBreak::Strict => parley::LineBreak::Strict,
+        stylo::LineBreak::Auto | stylo::LineBreak::Strict => parley::LineBreak::Strict,
         stylo::LineBreak::Anywhere => parley::LineBreak::Anywhere,
     };
     let overflow_wrap = match itext_styles.overflow_wrap {
