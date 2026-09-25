@@ -87,7 +87,7 @@ impl HoistedPaintChild {
 }
 
 #[derive(Debug)]
-pub struct HoistedPaintChildren {
+pub struct StackingContext {
     pub children: Vec<HoistedPaintChild>,
     /// The number of hoisted point children with negative z_index
     pub negative_z_count: u32,
@@ -96,7 +96,7 @@ pub struct HoistedPaintChildren {
     content_area: Cell<(u64, Rect<f32>)>,
 }
 
-impl HoistedPaintChildren {
+impl StackingContext {
     fn new() -> Self {
         Self {
             children: Vec::new(),
@@ -188,7 +188,7 @@ impl BaseDocument {
     fn build_paint_tree_impl(
         &mut self,
         node_id: NodeId,
-        parent_stacking_context: Option<&mut HoistedPaintChildren>,
+        parent_stacking_context: Option<&mut StackingContext>,
     ) {
         {
             let node = &self.nodes[node_id];
@@ -220,7 +220,7 @@ impl BaseDocument {
                 return;
             }
         }
-        let mut new_stacking_context = HoistedPaintChildren::new();
+        let mut new_stacking_context = StackingContext::new();
         let stacking_context = &mut new_stacking_context;
 
         let Some(display) = self.nodes[node_id].display_style() else {

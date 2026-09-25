@@ -1,5 +1,5 @@
 use crate::Document;
-use crate::layout::paint_tree::{HoistedPaintChild, HoistedPaintChildren};
+use crate::layout::paint_tree::{HoistedPaintChild, StackingContext};
 use bitflags::bitflags;
 use blitz_traits::events::{
     BlitzPointerEvent, BlitzPointerId, DomEventData, HitResult, PointerCoords,
@@ -106,7 +106,7 @@ pub struct Node {
     pub anonymous_blocks: ThinVec<NodeId>,
     /// The same as layout_children, but sorted by z-index
     pub paint_children: RefCell<Option<ThinVec<NodeId>>>,
-    pub stacking_context: Option<Box<HoistedPaintChildren>>,
+    pub stacking_context: Option<Box<StackingContext>>,
     /// The hoisted entries this node's subtree pushed into the enclosing
     /// stacking context on its last (non-skipped) paint-tree build. Replayed
     /// when the subtree is skipped as clean. Empty for stacking-context roots.
