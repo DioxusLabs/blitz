@@ -92,8 +92,8 @@ pub struct StackingContext {
     /// The number of hoisted point children with negative z_index
     pub negative_z_count: u32,
     /// `(geometry generation, bounding box of the hoisted children)`, see
-    /// [`Self::content_area`].
-    content_area: Cell<(u64, Rect<f32>)>,
+    /// [`Self::hoisted_content_bbox`].
+    hoisted_content_bbox: Cell<(u64, Rect<f32>)>,
 }
 
 impl StackingContext {
@@ -101,16 +101,16 @@ impl StackingContext {
         Self {
             children: Vec::new(),
             negative_z_count: 0,
-            content_area: Cell::new((0, Rect::ZERO)),
+            hoisted_content_bbox: Cell::new((0, Rect::ZERO)),
         }
     }
 
     /// Bounding box (relative to the stacking-context root `sc_root_id`,
     /// unscrolled) of all hoisted children. Computed at most once per
     /// geometry generation.
-    pub fn content_area(&self, tree: &NodeTree, sc_root_id: NodeId) -> Rect<f32> {
+    pub fn hoisted_content_bbox(&self, tree: &NodeTree, sc_root_id: NodeId) -> Rect<f32> {
         let generation = tree.geometry_generation();
-        let (stamp, cached) = self.content_area.get();
+        let (stamp, cached) = self.hoisted_content_bbox.get();
         if stamp == generation {
             return cached;
         }
@@ -140,7 +140,7 @@ impl StackingContext {
                 area.bottom = area.bottom.max(pos.bottom);
             }
         }
-        self.content_area.set((generation, area));
+        self.hoisted_content_bbox.set((generation, area));
         area
     }
 

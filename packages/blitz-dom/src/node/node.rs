@@ -1381,11 +1381,11 @@ impl Node {
 
         let matches_hoisted_content = match &self.stacking_context {
             Some(sc) => {
-                let content_area = sc.content_area(self.tree(), self.id);
-                x >= content_area.left + self.scroll_offset().x as f32
-                    && x <= content_area.right + self.scroll_offset().x as f32
-                    && y >= content_area.top + self.scroll_offset().y as f32
-                    && y <= content_area.bottom + self.scroll_offset().y as f32
+                let hoisted_content_bbox = sc.hoisted_content_bbox(self.tree(), self.id);
+                x >= hoisted_content_bbox.left + self.scroll_offset().x as f32
+                    && x <= hoisted_content_bbox.right + self.scroll_offset().x as f32
+                    && y >= hoisted_content_bbox.top + self.scroll_offset().y as f32
+                    && y <= hoisted_content_bbox.bottom + self.scroll_offset().y as f32
             }
             None => false,
         };
