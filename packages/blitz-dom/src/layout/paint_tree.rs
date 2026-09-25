@@ -21,11 +21,6 @@ use style::values::computed::Float;
 use style::values::specified::box_::DisplayInside;
 use taffy::{Point, Rect};
 
-/// Whether hoisted geometry is memoised per geometry generation (`true`) or
-/// recomputed on every use (`false`). Kept as a switch so both strategies can
-/// be benchmarked from the same tree.
-pub const MEMOISE_GEOMETRY: bool = true;
-
 /// Offset of the hoisted child `child_id` from the border box of its
 /// stacking-context root `sc_root_id`, excluding the child's own
 /// `final_layout().location`: the sum of `location - scroll_offset` of every
@@ -75,9 +70,6 @@ impl HoistedPaintChild {
     /// (`sc_root_id`), excluding the child's own `final_layout().location`.
     /// Computed at most once per geometry generation.
     pub fn position(&self, tree: &NodeTree, sc_root_id: NodeId) -> Point<f32> {
-        if !MEMOISE_GEOMETRY {
-            return hoisted_child_position(tree, sc_root_id, self.node_id);
-        }
         let generation = tree.geometry_generation();
         let (stamp, cached) = self.position.get();
         if stamp == generation {
@@ -115,16 +107,12 @@ impl HoistedPaintChildren {
 
     /// Bounding box (relative to the stacking-context root `sc_root_id`,
     /// unscrolled) of all hoisted children. Computed at most once per
-    /// geometry generation. `None` when geometry is not memoised: callers
-    /// then test each hoisted child directly.
-    pub fn content_area(&self, tree: &NodeTree, sc_root_id: NodeId) -> Option<Rect<f32>> {
-        if !MEMOISE_GEOMETRY {
-            return None;
-        }
+    /// geometry generation.
+    pub fn content_area(&self, tree: &NodeTree, sc_root_id: NodeId) -> Rect<f32> {
         let generation = tree.geometry_generation();
         let (stamp, cached) = self.content_area.get();
         if stamp == generation {
-            return Some(cached);
+            return cached;
         }
 
         let child_rect = |child: &HoistedPaintChild| -> Rect<f32> {
@@ -153,7 +141,7 @@ impl HoistedPaintChildren {
             }
         }
         self.content_area.set((generation, area));
-        Some(area)
+        area
     }
 
     pub fn sort(&mut self) {

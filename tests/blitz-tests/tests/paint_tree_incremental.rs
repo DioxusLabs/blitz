@@ -3,7 +3,7 @@
 //! hoisted boxes' offsets from their stacking-context root are derived from
 //! the current layout (and scroll offsets) at use time.
 
-use blitz_dom::{DocumentConfig, MEMOISE_GEOMETRY, hoisted_child_position};
+use blitz_dom::{DocumentConfig, hoisted_child_position};
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::node_id::NodeId;
 use blitz_traits::shell::{ColorScheme, Viewport};
@@ -317,9 +317,6 @@ fn scroll_moves_hoisted_box_without_resolve() {
 /// Hoisted offsets are computed at most once per geometry generation.
 #[test]
 fn hoisted_position_is_memoised_per_generation() {
-    if !MEMOISE_GEOMETRY {
-        return;
-    }
     let mut doc = make_doc(SCROLL, true);
     let s = id(&doc, "#s");
     let b = id(&doc, "#b");

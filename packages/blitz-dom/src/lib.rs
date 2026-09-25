@@ -84,7 +84,7 @@ pub mod util;
 mod accessibility;
 
 pub use crate::layout::paint_tree::{
-    HoistedPaintChild, HoistedPaintChildren, MEMOISE_GEOMETRY, hoisted_child_position,
+    HoistedPaintChild, HoistedPaintChildren, hoisted_child_position,
 };
 pub use crate::layout::replaced::IntrinsicSizes;
 #[cfg(feature = "custom-widget")]

@@ -1380,17 +1380,13 @@ impl Node {
             || y > overflow_rect.bottom + self.scroll_offset().y as f32);
 
         let matches_hoisted_content = match &self.stacking_context {
-            Some(sc) => match sc.content_area(self.tree(), self.id) {
-                Some(content_area) => {
-                    x >= content_area.left + self.scroll_offset().x as f32
-                        && x <= content_area.right + self.scroll_offset().x as f32
-                        && y >= content_area.top + self.scroll_offset().y as f32
-                        && y <= content_area.bottom + self.scroll_offset().y as f32
-                }
-                // Geometry is not memoised: no cheap early-out, test each
-                // hoisted child directly.
-                None => !sc.children.is_empty(),
-            },
+            Some(sc) => {
+                let content_area = sc.content_area(self.tree(), self.id);
+                x >= content_area.left + self.scroll_offset().x as f32
+                    && x <= content_area.right + self.scroll_offset().x as f32
+                    && y >= content_area.top + self.scroll_offset().y as f32
+                    && y <= content_area.bottom + self.scroll_offset().y as f32
+            }
             None => false,
         };
 
