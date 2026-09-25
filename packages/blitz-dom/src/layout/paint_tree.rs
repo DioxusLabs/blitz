@@ -299,10 +299,10 @@ impl BaseDocument {
             // block is not its layout parent is owned by the containing block;
             // its layout parent neither visits nor lists it.
             let owned_here = |doc: &Self, child_id: NodeId| -> bool {
-                !matches!(
-                    doc.nodes[child_id].oof_containing_block.get(),
-                    Some(cb) if cb != node_id
-                )
+                doc.nodes[child_id]
+                    .oof_containing_block
+                    .get()
+                    .is_none_or(|cb| cb == node_id)
             };
             // Boxes hoisted to this node from further down the tree.
             let hoisted_past_parent: Vec<NodeId> = self.nodes[node_id]
