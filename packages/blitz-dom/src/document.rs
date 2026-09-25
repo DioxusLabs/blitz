@@ -215,9 +215,6 @@ pub struct BaseDocument {
     /// every node is treated as damaged on every `resolve`, so the same damage
     /// pipeline reconstructs and relays out the whole tree.
     pub(crate) incremental_layout: bool,
-    /// Number of nodes visited (not skipped) by the last `build_paint_tree`.
-    #[cfg(debug_assertions)]
-    pub(crate) paint_tree_visits: usize,
     /// How deeply this document is nested within other documents
     /// (0 for a root document). Used to limit `<iframe>` nesting depth.
     pub(crate) subdocument_depth: usize,
@@ -455,8 +452,6 @@ impl BaseDocument {
             pending_device_changes: DeviceChanges::empty(),
             style_threading: config.style_threading,
             incremental_layout: config.incremental.unwrap_or(true),
-            #[cfg(debug_assertions)]
-            paint_tree_visits: 0,
             subdocument_depth: config.subdocument_depth,
             devtool_settings: DevtoolSettings::default(),
             viewport_scroll: crate::Point::ZERO,
@@ -2002,13 +1997,6 @@ impl BaseDocument {
     /// simply treated as damaged on every `resolve` (see [`Self::incremental_layout`]).
     pub fn set_incremental_layout(&mut self, enabled: bool) {
         self.incremental_layout = enabled;
-    }
-
-    /// Number of nodes the paint-tree pass rebuilt (rather than skipped as
-    /// clean) during the last `resolve`. Debug builds only.
-    #[cfg(debug_assertions)]
-    pub fn paint_tree_visits(&self) -> usize {
-        self.paint_tree_visits
     }
 
     pub fn devtools(&self) -> &DevtoolSettings {

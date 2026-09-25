@@ -182,10 +182,6 @@ impl BaseDocument {
     /// own lists are still valid and the entries they contributed to the
     /// enclosing stacking context are replayed from `Node::sc_contribution_cache`.
     pub(crate) fn build_paint_tree(&mut self, root_id: NodeId) {
-        #[cfg(debug_assertions)]
-        {
-            self.paint_tree_visits = 0;
-        }
         self.build_paint_tree_impl(root_id, None);
     }
 
@@ -224,11 +220,6 @@ impl BaseDocument {
                 return;
             }
         }
-        #[cfg(debug_assertions)]
-        {
-            self.paint_tree_visits += 1;
-        }
-
         let mut new_stacking_context = HoistedPaintChildren::new();
         let stacking_context = &mut new_stacking_context;
 

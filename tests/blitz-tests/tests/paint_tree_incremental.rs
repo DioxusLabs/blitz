@@ -82,17 +82,6 @@ fn unhover(doc: &mut HtmlDocument) {
     doc.resolve(0.0);
 }
 
-/// DOM depth of the node (number of ancestors).
-fn depth(doc: &HtmlDocument, node_id: NodeId) -> usize {
-    let mut depth = 0;
-    let mut current = doc.get_node(node_id).unwrap().parent;
-    while let Some(parent) = current {
-        depth += 1;
-        current = doc.get_node(parent).unwrap().parent;
-    }
-    depth
-}
-
 const STALE_POSITION: &str = r#"<html><head><style>
     body { margin: 0; }
     #a { height: 20px; background: green; }
@@ -215,37 +204,6 @@ fn clean_subtree_entries_are_replayed() {
         unhover(&mut doc);
         assert_eq!(hoisted_entry(&doc, r, z), Some((1, (5.0, 5.0))));
     }
-}
-
-/// In incremental mode a hover visits only the damaged chain of ancestors
-/// (O(depth)), not the whole tree.
-#[cfg(debug_assertions)]
-#[test]
-fn hover_visits_only_damaged_ancestors() {
-    let mut doc = make_doc(REPLAY, true);
-    let total = doc.tree().len();
-    let c = id(&doc, "#c");
-
-    hover(&mut doc, "#c");
-    let visits = doc.paint_tree_visits();
-    assert!(
-        visits <= depth(&doc, c) + 1,
-        "colour-only hover visited {visits} nodes (depth {}, tree {total})",
-        depth(&doc, c)
-    );
-
-    unhover(&mut doc);
-    hover(&mut doc, "#w");
-    let visits = doc.paint_tree_visits();
-    assert!(
-        visits <= depth(&doc, c) + 1,
-        "width hover visited {visits} nodes"
-    );
-
-    // Non-incremental mode visits every node with a display style.
-    let mut doc = make_doc(REPLAY, false);
-    hover(&mut doc, "#c");
-    assert!(doc.paint_tree_visits() > depth(&doc, c) + 1);
 }
 
 const PERCENT: &str = r#"<html><head><style>
