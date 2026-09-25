@@ -34,12 +34,12 @@ fn abs_pos(doc: &HtmlDocument, node_id: NodeId) -> (f32, f32) {
     let node = doc.get_node(node_id).unwrap();
     let mut x = node.final_layout().location.x;
     let mut y = node.final_layout().location.y;
-    let mut current = node.layout_parent.get();
+    let mut current = node.containing_block();
     while let Some(parent_id) = current {
         let parent = doc.get_node(parent_id).unwrap();
         x += parent.final_layout().location.x - parent.scroll_offset().x as f32;
         y += parent.final_layout().location.y - parent.scroll_offset().y as f32;
-        current = parent.layout_parent.get();
+        current = parent.containing_block();
     }
     (x, y)
 }
@@ -458,5 +458,206 @@ fn hoisted_children_of_scrolled_sc_root_are_hit() {
 
         doc.resolve(0.0);
         assert_eq!(hit(&doc, 50.0, 20.0), b, "incremental={incremental}");
+    }
+}
+||||||| parent of 5ea0fe76 (Integrate Taffy out-of-flow hoisting into the single post-layout paint-tree pass)
+
+
+fn paint_children(doc: &HtmlDocument, node_id: NodeId) -> Vec<NodeId> {
+    doc.get_node(node_id)
+        .unwrap()
+        .paint_children
+        .borrow()
+        .iter()
+        .flatten()
+        .copied()
+        .collect()
+}
+
+const OOF_OWNERSHIP: &str = r#"<html><head><style>
+    body { margin: 0; }
+    #cb { position: relative; margin: 50px; width: 300px; height: 300px; }
+    #anc { padding: 20px; }
+    #anc:hover { transform: translateX(0px); }
+    #spacer { height: 30px; }
+    #spacer:hover { height: 90px; }
+    #fixed { position: fixed; top: 10px; left: 10px; width: 20px; height: 20px; }
+    #abs { position: absolute; width: 20px; height: 20px; }
+    #sib { position: relative; height: 10px; }
+</style></head><body>
+    <div id="cb"><div id="anc"><div id="spacer"></div><div id="abs"></div><div id="fixed"></div></div><div id="sib"></div></div>
+</body></html>"#;
+
+/// An out-of-flow box is painted (and hit-tested) by its containing block,
+/// not its DOM parent; when a hover makes the parent the containing block the
+/// box moves between the two paint lists in the same frame.
+#[test]
+fn oof_box_is_owned_by_containing_block() {
+    for incremental in [true, false] {
+        let mut doc = make_doc(OOF_OWNERSHIP, incremental);
+        let cb = id(&doc, "#cb");
+        let anc = id(&doc, "#anc");
+        let abs = id(&doc, "#abs");
+        let fixed = id(&doc, "#fixed");
+        let sib = id(&doc, "#sib");
+        let root = doc.get_node(fixed).unwrap().containing_block().unwrap();
+        assert_ne!(root, anc);
+
+        let msg = format!("incremental={incremental}");
+        assert!(!paint_children(&doc, anc).contains(&abs), "{msg}");
+        assert!(!paint_children(&doc, anc).contains(&fixed), "{msg}");
+        let cb_paint = paint_children(&doc, cb);
+        assert!(cb_paint.contains(&abs), "{msg}: abs owned by #cb");
+        assert!(
+            cb_paint.iter().position(|&n| n == abs) < cb_paint.iter().position(|&n| n == sib),
+            "{msg}: tree order among positioned boxes: {cb_paint:?}"
+        );
+        assert!(
+            paint_children(&doc, root).contains(&fixed),
+            "{msg}: fixed owned by root"
+        );
+        assert_eq!(abs_pos(&doc, fixed), (10.0, 10.0), "{msg}");
+        assert_eq!(hit(&doc, 20.0, 20.0), fixed, "{msg}");
+        let (ax, ay) = center(&doc, "#abs");
+        assert_eq!(hit(&doc, ax, ay), abs, "{msg}");
+
+        hover(&mut doc, "#anc");
+        assert_eq!(
+            doc.get_node(fixed).unwrap().containing_block(),
+            Some(anc),
+            "{msg}"
+        );
+        assert!(
+            paint_children(&doc, anc).contains(&fixed),
+            "{msg}: fixed moved to #anc"
+        );
+        assert!(
+            !paint_children(&doc, root).contains(&fixed),
+            "{msg}: removed from root"
+        );
+        assert!(
+            paint_children(&doc, anc).contains(&abs),
+            "{msg}: abs moved to #anc"
+        );
+        assert!(
+            !paint_children(&doc, cb).contains(&abs),
+            "{msg}: removed from #cb"
+        );
+        assert_eq!(abs_pos(&doc, fixed), (60.0, 60.0), "{msg}");
+        assert_eq!(hit(&doc, 70.0, 70.0), fixed, "{msg}");
+
+        unhover(&mut doc);
+        assert!(!paint_children(&doc, anc).contains(&fixed), "{msg}");
+        assert!(paint_children(&doc, root).contains(&fixed), "{msg}");
+        assert!(paint_children(&doc, cb).contains(&abs), "{msg}");
+        assert_eq!(hit(&doc, 20.0, 20.0), fixed, "{msg}");
+    }
+}
+
+const OOF_Z_INDEX: &str = r#"<html><head><style>
+    body { margin: 0; }
+    #cb { position: relative; z-index: 0; margin: 50px; width: 300px; height: 300px; }
+    #spacer { height: 30px; }
+    #spacer:hover { height: 90px; }
+    #abs { position: absolute; z-index: 1; width: 20px; height: 20px; }
+</style></head><body>
+    <div id="cb"><div id="anc"><div id="spacer"></div><div id="abs"></div></div></div>
+</body></html>"#;
+
+/// A z-indexed out-of-flow box at its static position is hoisted to the
+/// stacking context enclosing its containing block, and its derived offset
+/// follows the static position when in-flow content above it grows.
+#[test]
+fn z_indexed_oof_box_position_follows_static_position() {
+    for incremental in [true, false] {
+        let mut doc = make_doc(OOF_Z_INDEX, incremental);
+        let cb = id(&doc, "#cb");
+        let abs = id(&doc, "#abs");
+        let msg = format!("incremental={incremental}");
+
+        assert!(
+            doc.get_node(cb).unwrap().stacking_context.is_some(),
+            "{msg}"
+        );
+        assert_eq!(
+            hoisted_entry(&doc, cb, abs),
+            Some((1, (0.0, 30.0))),
+            "{msg}"
+        );
+        assert_eq!(abs_pos(&doc, abs), (50.0, 80.0), "{msg}");
+        assert_eq!(hit(&doc, 60.0, 90.0), abs, "{msg}");
+
+        hover(&mut doc, "#spacer");
+        assert_eq!(abs_pos(&doc, abs), (50.0, 140.0), "{msg}");
+        assert_eq!(
+            hoisted_entry(&doc, cb, abs),
+            Some((1, (0.0, 90.0))),
+            "{msg}"
+        );
+        assert_eq!(hit(&doc, 60.0, 150.0), abs, "{msg}");
+    }
+}
+
+const OOF_EFFECT: &str = r#"<html><head><style>
+    body { margin: 0; }
+    #cb { position: relative; margin: 50px; padding-top: 20px; width: 300px; height: 280px; }
+    #sp { height: 10px; }
+    #sp:hover { height: 30px; }
+    #fx { opacity: 0.5; margin: 0 20px; height: 100px; }
+    #c { height: 10px; background: red; }
+    #c:hover { background: blue; }
+    #abs { position: absolute; top: 100px; left: 100px; width: 20px; height: 20px; }
+</style></head><body>
+    <div id="cb"><div id="sp"></div><div id="fx"><div id="c"></div><div id="abs"></div></div></div>
+</body></html>"#;
+
+/// An out-of-flow box below an atomic paint-effect ancestor that is not its
+/// containing block is painted inside that ancestor's stacking context with a
+/// compensated offset (derived per frame), and exactly once across clean
+/// frames, frames rebuilding only the containing block, and full rebuilds.
+#[test]
+fn oof_box_under_effect_ancestor_paints_inside_it() {
+    for incremental in [true, false] {
+        let mut doc = make_doc(OOF_EFFECT, incremental);
+        let cb = id(&doc, "#cb");
+        let fx = id(&doc, "#fx");
+        let abs = id(&doc, "#abs");
+        let msg = format!("incremental={incremental}");
+
+        let check = |doc: &HtmlDocument, fx_y: f32| {
+            assert_eq!(
+                doc.get_node(fx).unwrap().final_layout().location.y,
+                fx_y,
+                "{msg}"
+            );
+            assert!(!paint_children(doc, cb).contains(&abs), "{msg}");
+            assert!(!paint_children(doc, fx).contains(&abs), "{msg}");
+            let sc = doc.get_node(fx).unwrap().stacking_context.as_ref().unwrap();
+            assert_eq!(
+                sc.children.iter().filter(|c| c.node_id == abs).count(),
+                1,
+                "{msg}: exactly one entry for #abs in #fx"
+            );
+            // #abs is at (100, 100) in #cb; #fx is at (20, fx_y) in #cb.
+            assert_eq!(
+                hoisted_entry(doc, fx, abs),
+                Some((0, (80.0, 100.0 - fx_y))),
+                "{msg}"
+            );
+            assert_eq!(abs_pos(doc, abs), (150.0, 150.0), "{msg}");
+            assert_eq!(hit(doc, 160.0, 160.0), abs, "{msg}");
+        };
+        check(&doc, 30.0);
+
+        // Colour-only change: nothing is rebuilt.
+        hover(&mut doc, "#c");
+        check(&doc, 30.0);
+        unhover(&mut doc);
+
+        // #sp grows: #cb (the containing block) is rebuilt, #fx is clean.
+        hover(&mut doc, "#sp");
+        check(&doc, 50.0);
+        unhover(&mut doc);
+        check(&doc, 30.0);
     }
 }

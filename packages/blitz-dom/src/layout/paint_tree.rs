@@ -11,6 +11,7 @@
 use blitz_traits::node_id::NodeId;
 use std::cell::Cell;
 use std::ops::Range;
+use thin_vec::ThinVec;
 
 use crate::layout::damage::ALL_DAMAGE;
 use crate::tree::NodeTree;
@@ -20,32 +21,57 @@ use style::selector_parser::RestyleDamage;
 use style::values::computed::Float;
 use style::values::specified::box_::DisplayInside;
 use taffy::{Point, Rect};
-use thin_vec::ThinVec;
 
 /// Offset of the hoisted child `child_id` from the border box of its
 /// stacking-context root `sc_root_id`, excluding the child's own
 /// `final_layout().location`: the sum of `location - scroll_offset` of every
-/// layout ancestor strictly between the two.
+/// box strictly between the two on the child's positioning chain.
 ///
-/// Walks `layout_parent`, which is set for every layout child by
-/// `resolve_layout_children` (anonymous blocks included).
+/// Walks `Node::containing_block` (the out-of-flow containing block for boxes
+/// hoisted by Taffy, otherwise `layout_parent`, which is set for every layout
+/// child by `resolve_layout_children`, anonymous blocks included). When the
+/// stacking-context root is not on that chain (an out-of-flow box painted
+/// inside an atomic paint-effect ancestor that is not its containing block)
+/// the offset is the difference of the two chains' document offsets.
 pub fn hoisted_child_position(tree: &NodeTree, sc_root_id: NodeId, child_id: NodeId) -> Point<f32> {
     let mut position = Point::ZERO;
-    let mut current = tree[child_id].layout_parent.get();
+    let mut current = tree[child_id].containing_block();
     while let Some(id) = current {
         if id == sc_root_id {
-            break;
+            return position;
         }
         let Some(node) = tree.get(id) else {
-            break;
+            return position;
         };
         let location = node.final_layout().location;
         let scroll_offset = *node.scroll_offset();
         position.x += location.x - scroll_offset.x as f32;
         position.y += location.y - scroll_offset.y as f32;
-        current = node.layout_parent.get();
+        current = node.containing_block();
     }
-    position
+    // `position` is the document offset of the child's containing block.
+    let root_offset = document_offset(tree, sc_root_id);
+    Point {
+        x: position.x - root_offset.x,
+        y: position.y - root_offset.y,
+    }
+}
+
+/// Sum of `location - scroll_offset` over `node_id` and its positioning ancestors.
+fn document_offset(tree: &NodeTree, node_id: NodeId) -> Point<f32> {
+    let mut offset = Point::ZERO;
+    let mut current = Some(node_id);
+    while let Some(id) = current {
+        let Some(node) = tree.get(id) else {
+            break;
+        };
+        let location = node.final_layout().location;
+        let scroll_offset = *node.scroll_offset();
+        offset.x += location.x - scroll_offset.x as f32;
+        offset.y += location.y - scroll_offset.y as f32;
+        current = node.containing_block();
+    }
+    offset
 }
 
 /// A child with a z_index that is hoisted up to it's containing Stacking Context for paint purposes
@@ -56,6 +82,10 @@ pub struct HoistedPaintChild {
     /// `(geometry generation, offset from the stacking-context root)`, see
     /// [`Self::position`]. Generation `0` is never current.
     position: Cell<(u64, Point<f32>)>,
+    /// For an out-of-flow box painted inside an atomic paint-effect ancestor
+    /// rather than under its containing block: that containing block, whose
+    /// visit pushed this entry and replaces it on its next visit.
+    owner: Option<NodeId>,
 }
 
 impl HoistedPaintChild {
@@ -64,6 +94,7 @@ impl HoistedPaintChild {
             node_id,
             z_index,
             position: Cell::new((0, Point::ZERO)),
+            owner: None,
         }
     }
 
@@ -262,10 +293,46 @@ impl BaseDocument {
             let is_flex_or_grid =
                 matches!(display.inside(), DisplayInside::Flex | DisplayInside::Grid);
 
+            // Out-of-flow boxes are laid out (and painted) relative to their
+            // containing block, as recorded by Taffy's out-of-flow pass in the
+            // containing block's `hoisted_children`. A box whose containing
+            // block is not its layout parent is owned by the containing block;
+            // its layout parent neither visits nor lists it.
+            let owned_here = |doc: &Self, child_id: NodeId| -> bool {
+                !matches!(
+                    doc.nodes[child_id].oof_containing_block.get(),
+                    Some(cb) if cb != node_id
+                )
+            };
+            // Boxes hoisted to this node from further down the tree.
+            let hoisted_past_parent: Vec<NodeId> = self.nodes[node_id]
+                .hoisted_children
+                .borrow()
+                .iter()
+                .copied()
+                .filter(|&id| {
+                    self.nodes
+                        .get(id)
+                        .is_some_and(|n| n.layout_parent.get() != Some(node_id))
+                })
+                .collect();
+
             for &child in children.iter() {
+                if !owned_here(self, child) {
+                    continue;
+                }
                 self.build_paint_tree_impl(
                     child,
                     match self.nodes[child].is_stacking_context_root(is_flex_or_grid) {
+                        true => None,
+                        false => Some(&mut entries),
+                    },
+                );
+            }
+            for &child in &hoisted_past_parent {
+                self.build_paint_tree_impl(
+                    child,
+                    match self.nodes[child].is_stacking_context_root(false) {
                         true => None,
                         false => Some(&mut entries),
                     },
@@ -278,9 +345,12 @@ impl BaseDocument {
                 .take()
                 .unwrap_or_default();
             paint_children.clear();
-            paint_children.reserve(children.len());
+            paint_children.reserve(children.len() + hoisted_past_parent.len());
 
             for &child_id in children.iter() {
+                if !owned_here(self, child_id) {
+                    continue;
+                }
                 let child = &self.nodes[child_id];
 
                 let Some(style) = child.primary_styles() else {
@@ -301,8 +371,20 @@ impl BaseDocument {
                 }
             }
 
-            paint_children
-                .sort_by_cached_key(|id| node_to_paint_order(&self.nodes[*id], is_flex_or_grid));
+            if hoisted_past_parent.is_empty() {
+                paint_children.sort_by_cached_key(|id| {
+                    node_to_paint_order(&self.nodes[*id], is_flex_or_grid)
+                });
+            } else {
+                self.attach_hoisted_past_parent(
+                    node_id,
+                    &children,
+                    &hoisted_past_parent,
+                    is_flex_or_grid,
+                    &mut paint_children,
+                    &mut entries,
+                );
+            }
 
             let node = &self.nodes[node_id];
             *node.paint_children.borrow_mut() = Some(paint_children);
@@ -318,6 +400,106 @@ impl BaseDocument {
             node.sc_contribution_cache.borrow_mut().clear();
             node.stacking_context = Some(Box::new(StackingContext::from_children(entries)));
         }
+    }
+
+    /// Place the out-of-flow boxes hoisted to `node_id` past their layout
+    /// parent into its paint lists, then sort `paint_children`.
+    ///
+    /// - z-indexed boxes go to the enclosing stacking context like any other
+    ///   z-indexed positioned child.
+    /// - A box with an atomic paint-effect ancestor (opacity, filter,
+    ///   clip-path, mask) between it and `node_id` is painted inside that
+    ///   ancestor's effect layers: it is pushed into the ancestor's stacking
+    ///   context tagged with `node_id` as owner, replacing the entries this
+    ///   node pushed there last time. Any change to such a box damages
+    ///   `node_id` (a DOM ancestor), so it is visited whenever they change.
+    /// - Otherwise it joins `paint_children` at its Appendix E position: same
+    ///   paint level as other positioned boxes, in tree order (after the
+    ///   layout child it descends from, before that child's next sibling).
+    fn attach_hoisted_past_parent(
+        &mut self,
+        node_id: NodeId,
+        children: &[NodeId],
+        hoisted: &[NodeId],
+        is_flex_or_grid: bool,
+        paint_children: &mut ThinVec<NodeId>,
+        entries: &mut ThinVec<HoistedPaintChild>,
+    ) {
+        let mut effect_roots: Vec<NodeId> = Vec::new();
+        for &child_id in hoisted {
+            let z_index = self.nodes[child_id].z_index();
+            if z_index != 0 {
+                entries.push(HoistedPaintChild::new(child_id, z_index));
+                continue;
+            }
+            if let Some(effect_root) = self.innermost_paint_effect_ancestor(child_id, node_id)
+                && self.nodes[effect_root].stacking_context.is_some()
+            {
+                if !effect_roots.contains(&effect_root) {
+                    effect_roots.push(effect_root);
+                    let sc = self.nodes[effect_root].stacking_context.as_mut().unwrap();
+                    sc.children.retain(|c| c.owner != Some(node_id));
+                }
+                let sc = self.nodes[effect_root].stacking_context.as_mut().unwrap();
+                let mut entry = HoistedPaintChild::new(child_id, 0);
+                entry.owner = Some(node_id);
+                sc.children.push(entry);
+                continue;
+            }
+            paint_children.push(child_id);
+        }
+        for effect_root in effect_roots {
+            self.nodes[effect_root]
+                .stacking_context
+                .as_mut()
+                .unwrap()
+                .sort();
+        }
+
+        // Tree-order rank: index of the layout child each box descends from;
+        // hoisted boxes sort after that child, in hoisting order.
+        let rank = |id: NodeId| -> (usize, usize) {
+            if let Some(index) = children.iter().position(|&c| c == id) {
+                return (index, 0);
+            }
+            let mut current = id;
+            while let Some(parent) = self.nodes[current].layout_parent.get() {
+                if parent == node_id {
+                    break;
+                }
+                current = parent;
+            }
+            let index = children
+                .iter()
+                .position(|&c| c == current)
+                .unwrap_or(children.len());
+            let hoist_index = hoisted.iter().position(|&h| h == id).unwrap_or(0);
+            (index, 1 + hoist_index)
+        };
+        paint_children.sort_by_cached_key(|id| {
+            (
+                node_to_paint_order(&self.nodes[*id], is_flex_or_grid),
+                rank(*id),
+            )
+        });
+    }
+
+    /// The innermost DOM ancestor of `node_id`, strictly below `cb_id`, that
+    /// applies an atomic paint effect (opacity, filter, clip-path, mask) to its
+    /// subtree.
+    fn innermost_paint_effect_ancestor(&self, node_id: NodeId, cb_id: NodeId) -> Option<NodeId> {
+        let mut ancestor = self.nodes[node_id].parent;
+        while let Some(ancestor_id) = ancestor {
+            if ancestor_id == cb_id {
+                return None;
+            }
+            let node = &self.nodes[ancestor_id];
+            if node.applies_atomic_paint_effect() {
+                return Some(ancestor_id);
+            }
+            ancestor = node.parent;
+        }
+        None
     }
 }
 

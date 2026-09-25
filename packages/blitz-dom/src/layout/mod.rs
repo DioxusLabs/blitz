@@ -14,10 +14,10 @@ use style::values::computed::CSSPixelLength;
 use style::values::computed::length_percentage::CalcLengthPercentage;
 use stylo_taffy::TaffyStyloStyle;
 use taffy::{
-    BlockContext, CoreStyle as _, FlexDirection, LayoutContainingBlock, LayoutPartialTree, NodeId,
-    ResolveOrZero, RoundTree, RunMode, TraversePartialTree, TraverseTree, compute_block_layout,
-    compute_cached_layout, compute_flexbox_layout, compute_grid_layout, compute_leaf_layout,
-    compute_oof_layout, prelude::*,
+    BlockContext, CoreStyle as _, DetailedLayoutInfo, FlexDirection, LayoutContainingBlock,
+    LayoutPartialTree, NodeId, ResolveOrZero, RoundTree, TraversePartialTree, TraverseTree,
+    compute_block_layout, compute_cached_layout, compute_flexbox_layout, compute_grid_layout,
+    compute_leaf_layout, compute_oof_layout, prelude::*,
 };
 
 pub(crate) mod construct;
@@ -81,34 +81,10 @@ impl BaseDocument {
     fn node_from_id_mut(&mut self, node_id: taffy::prelude::NodeId) -> &mut Node {
         &mut self.nodes[dom_node_id(node_id)]
     }
-
-    /// The out-of-flow (absolute/fixed) layout children of a node. Every node claims its own
-    /// out-of-flow children as their containing block (see `TaffyStyloStyle::is_containing_block`),
-    /// so this is exactly the set of boxes hoisted to the node.
-    fn out_of_flow_child_ids(&self, node_id: NodeId) -> impl Iterator<Item = NodeId> + '_ {
-        self.child_ids(node_id)
-            .filter(move |child| self.is_out_of_flow(*child))
-    }
 }
 
 impl BaseDocument {
-    /// Run the node's layout algorithm, then lay out the out-of-flow (absolute/fixed)
-    /// boxes for which it is the containing block. Must be called inside the layout
-    /// cache wrapper so that cache hits do not re-run the out-of-flow pass.
     fn compute_child_layout_internal(
-        &mut self,
-        node_id: NodeId,
-        inputs: taffy::tree::LayoutInput,
-        block_ctx: Option<&mut BlockContext<'_>>,
-    ) -> taffy::tree::LayoutOutput {
-        let mut output = self.dispatch_child_layout(node_id, inputs, block_ctx);
-        if inputs.run_mode == RunMode::PerformLayout {
-            compute_oof_layout(self, node_id, &mut output);
-        }
-        output
-    }
-
-    fn dispatch_child_layout(
         &mut self,
         node_id: NodeId,
         inputs: taffy::tree::LayoutInput,
@@ -188,7 +164,7 @@ impl BaseDocument {
                             height: resolved_line_height.unwrap_or(16.0) * rows,
                         },
                     );
-                    if inputs.run_mode == RunMode::PerformLayout {
+                    if inputs.run_mode == taffy::RunMode::PerformLayout {
                         let pb = {
                             let style = node.layout_style();
                             style
@@ -482,7 +458,11 @@ impl LayoutPartialTree for BaseDocument {
         inputs: taffy::LayoutInput,
     ) -> taffy::LayoutOutput {
         compute_cached_layout(self, node_id, inputs, |tree, node_id, inputs| {
-            tree.compute_child_layout_internal(node_id, inputs, None)
+            let mut output = tree.compute_child_layout_internal(node_id, inputs, None);
+            if inputs.run_mode == taffy::RunMode::PerformLayout {
+                compute_oof_layout(tree, node_id, &mut output);
+            }
+            output
         })
     }
 }
@@ -497,16 +477,39 @@ impl LayoutContainingBlock for BaseDocument {
         self.node_from_id(node_id).layout_style()
     }
 
-    // Hoisted children are derived from the layout children (see `out_of_flow_child_ids`)
-    // rather than recorded, so there is nothing to store here.
-    fn clear_hoisted_children(&mut self, _node_id: NodeId) {}
-    fn add_hoisted_children(&mut self, _node_id: NodeId, _hoisted: &[NodeId]) {}
+    fn clear_hoisted_children(&mut self, node_id: NodeId) {
+        let containing_block = dom_node_id(node_id);
+        let mut hoisted = self.node_from_id(node_id).hoisted_children.borrow_mut();
+        for &hoisted_id in hoisted.iter() {
+            // A box which has since been claimed by another containing block
+            // must keep pointing at that one.
+            if let Some(node) = self.nodes.get(hoisted_id) {
+                if node.oof_containing_block.get() == Some(containing_block) {
+                    node.oof_containing_block.set(None);
+                }
+            }
+        }
+        hoisted.clear();
+    }
 
-    fn get_detailed_layout_info(&self, node_id: NodeId) -> &taffy::DetailedLayoutInfo<Atom> {
+    fn add_hoisted_children(&mut self, node_id: NodeId, hoisted: &[NodeId]) {
+        let containing_block = dom_node_id(node_id);
+        let node = self.node_from_id(node_id);
+        node.hoisted_children
+            .borrow_mut()
+            .extend(hoisted.iter().copied().map(dom_node_id));
+        for &hoisted_id in hoisted {
+            self.node_from_id(hoisted_id)
+                .oof_containing_block
+                .set(Some(containing_block));
+        }
+    }
+
+    fn get_detailed_layout_info(&self, node_id: NodeId) -> &DetailedLayoutInfo<Atom> {
         self.node_from_id(node_id)
             .element_data()
             .map(|element| &element.detailed_layout_info)
-            .unwrap_or(&taffy::DetailedLayoutInfo::None)
+            .unwrap_or(&DetailedLayoutInfo::None)
     }
 }
 
@@ -568,7 +571,11 @@ impl taffy::LayoutBlockContainer for BaseDocument {
         block_ctx: Option<&mut BlockContext<'_>>,
     ) -> taffy::LayoutOutput {
         compute_cached_layout(self, node_id, inputs, |tree, node_id, inputs| {
-            tree.compute_child_layout_internal(node_id, inputs, block_ctx)
+            let mut output = tree.compute_child_layout_internal(node_id, inputs, block_ctx);
+            if inputs.run_mode == taffy::RunMode::PerformLayout {
+                compute_oof_layout(tree, node_id, &mut output);
+            }
+            output
         })
     }
 }
@@ -619,8 +626,7 @@ impl taffy::LayoutGridContainer for BaseDocument {
     ) {
         let node = self.node_from_id_mut(node_id);
         if let Some(element) = node.element_data_mut() {
-            element.detailed_layout_info =
-                taffy::DetailedLayoutInfo::Grid(Box::new(detailed_grid_info));
+            element.detailed_layout_info = DetailedLayoutInfo::Grid(Box::new(detailed_grid_info));
         }
     }
 }
@@ -639,11 +645,11 @@ impl RoundTree for BaseDocument {
     }
 
     fn hoisted_child_count(&self, node_id: NodeId) -> usize {
-        self.out_of_flow_child_ids(node_id).count()
+        self.node_from_id(node_id).hoisted_children.borrow().len()
     }
 
     fn get_hoisted_child_id(&self, node_id: NodeId, index: usize) -> NodeId {
-        self.out_of_flow_child_ids(node_id).nth(index).unwrap()
+        taffy_node_id(self.node_from_id(node_id).hoisted_children.borrow()[index])
     }
 }
 

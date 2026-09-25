@@ -201,16 +201,32 @@ impl BaseDocument {
 
         if let Some(ref children) = layout_children {
             for &child_id in children {
+                // Out-of-flow children are laid out relative to their containing
+                // block, not their DOM parent: they are visited (and their overflow
+                // accounted for) via the containing block's hoisted list below.
+                if self.nodes[child_id].is_out_of_flow() {
+                    continue;
+                }
                 let child_rect_in_self = self.resolve_transforms(child_id);
                 overflow = overflow.union(child_rect_in_self);
             }
         }
-        if let Some(before) = self.nodes[node_id].before() {
-            let child_rect_in_self = self.resolve_transforms(before);
+        let hoisted_children =
+            std::mem::take(&mut *self.nodes[node_id].hoisted_children.borrow_mut());
+        for &child_id in &hoisted_children {
+            if !self.nodes.contains_key(child_id) {
+                continue;
+            }
+            let child_rect_in_self = self.resolve_transforms(child_id);
             overflow = overflow.union(child_rect_in_self);
         }
-        if let Some(after) = self.nodes[node_id].after() {
-            let child_rect_in_self = self.resolve_transforms(after);
+        *self.nodes[node_id].hoisted_children.borrow_mut() = hoisted_children;
+        for pseudo in [self.nodes[node_id].before(), self.nodes[node_id].after()] {
+            let Some(pseudo) = pseudo else { continue };
+            if self.nodes[pseudo].is_out_of_flow() {
+                continue;
+            }
+            let child_rect_in_self = self.resolve_transforms(pseudo);
             overflow = overflow.union(child_rect_in_self);
         }
 
