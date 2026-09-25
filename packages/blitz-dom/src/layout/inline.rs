@@ -318,7 +318,11 @@ impl BaseDocument {
                 ibox.width = (margin.left + margin.right + output.size.width) * scale;
                 // Vertical margins adjust the space the box reserves in the line, but the
                 // reserved space cannot be negative.
-                ibox.height = (margin.top + margin.bottom + output.size.height).max(0.0) * scale;
+                // Kept finite: huge author lengths can sum to infinity, which is taller than
+                // the line breaker's `f32::MAX` height limit, and it then yields
+                // `MaxHeightExceeded` for this box forever without advancing.
+                ibox.height = ((margin.top + margin.bottom + output.size.height).max(0.0) * scale)
+                    .min(f32::MAX);
             }
         }
 
