@@ -20,6 +20,7 @@ use style::selector_parser::RestyleDamage;
 use style::values::computed::Float;
 use style::values::specified::box_::DisplayInside;
 use taffy::{Point, Rect};
+use thin_vec::ThinVec;
 
 /// Offset of the hoisted child `child_id` from the border box of its
 /// stacking-context root `sc_root_id`, excluding the child's own
@@ -88,7 +89,7 @@ impl HoistedPaintChild {
 
 #[derive(Debug)]
 pub struct StackingContext {
-    pub children: Vec<HoistedPaintChild>,
+    pub children: ThinVec<HoistedPaintChild>,
     /// The number of hoisted point children with negative z_index
     pub negative_z_count: u32,
     /// `(geometry generation, bounding box of the hoisted children)`, see
@@ -97,12 +98,15 @@ pub struct StackingContext {
 }
 
 impl StackingContext {
-    fn new() -> Self {
-        Self {
-            children: Vec::new(),
+    /// Build a sorted stacking context from the hoisted entries collected for it.
+    fn from_children(children: ThinVec<HoistedPaintChild>) -> Self {
+        let mut sc = Self {
+            children,
             negative_z_count: 0,
             hoisted_content_bbox: Cell::new((0, Rect::ZERO)),
-        }
+        };
+        sc.sort();
+        sc
     }
 
     /// Bounding box (relative to the stacking-context root `sc_root_id`,
@@ -185,10 +189,12 @@ impl BaseDocument {
         self.build_paint_tree_impl(root_id, None);
     }
 
+    /// `stacking_context` is the entry list of the nearest ancestor stacking
+    /// context, or `None` when `node_id` is itself a stacking-context root.
     fn build_paint_tree_impl(
         &mut self,
         node_id: NodeId,
-        parent_stacking_context: Option<&mut StackingContext>,
+        stacking_context: Option<&mut ThinVec<HoistedPaintChild>>,
     ) {
         {
             let node = &self.nodes[node_id];
@@ -203,8 +209,7 @@ impl BaseDocument {
             // parent (z-indexed flex/grid items), which does not damage the
             // node itself, so the role the caller resolved must match the one
             // this node was last built with.
-            let role_unchanged =
-                node.stacking_context.is_some() == parent_stacking_context.is_none();
+            let role_unchanged = node.stacking_context.is_some() == stacking_context.is_none();
             let clean = role_unchanged
                 && !node
                     .damage()
@@ -212,19 +217,33 @@ impl BaseDocument {
                     .contains(RestyleDamage::REBUILD_STACKING_CONTEXT)
                 && !node.is_anonymous();
             if clean {
-                if let Some(parent_stacking_context) = parent_stacking_context {
-                    parent_stacking_context
-                        .children
-                        .extend(node.sc_contribution_cache.borrow().iter().cloned());
+                if let Some(stacking_context) = stacking_context {
+                    stacking_context.extend(node.sc_contribution_cache.borrow().iter().cloned());
                 }
                 return;
             }
         }
-        let mut new_stacking_context = StackingContext::new();
-        let stacking_context = &mut new_stacking_context;
 
         let Some(display) = self.nodes[node_id].display_style() else {
             return;
+        };
+
+        // Entries hoisted out of this subtree are collected directly into the
+        // storage that will hold them afterwards: the node's own stacking
+        // context for a root, otherwise its contribution cache (from which
+        // they are copied into the enclosing stacking context below).
+        let mut entries = {
+            let node = &mut self.nodes[node_id];
+            let mut entries = match stacking_context {
+                None => node
+                    .stacking_context
+                    .take()
+                    .map(|sc| sc.children)
+                    .unwrap_or_default(),
+                Some(_) => std::mem::take(&mut *node.sc_contribution_cache.borrow_mut()),
+            };
+            entries.clear();
+            entries
         };
 
         let children = self.nodes[node_id].layout_children.borrow_mut().take();
@@ -237,7 +256,7 @@ impl BaseDocument {
                     child,
                     match self.nodes[child].is_stacking_context_root(is_flex_or_grid) {
                         true => None,
-                        false => Some(stacking_context),
+                        false => Some(&mut entries),
                     },
                 );
             }
@@ -265,9 +284,7 @@ impl BaseDocument {
                 // z-index applies to static flex/grid items too
                 // (css-flexbox-1 §painting, css-grid-1 §z-order).
                 if z_index != 0 && (position != Position::Static || is_flex_or_grid) {
-                    stacking_context
-                        .children
-                        .push(HoistedPaintChild::new(child_id, z_index))
+                    entries.push(HoistedPaintChild::new(child_id, z_index))
                 } else {
                     paint_children.push(child_id);
                 }
@@ -282,18 +299,13 @@ impl BaseDocument {
         }
 
         let node = &mut self.nodes[node_id];
-        if let Some(parent_stacking_context) = parent_stacking_context {
+        if let Some(stacking_context) = stacking_context {
             node.stacking_context = None;
-            let mut cache = node.sc_contribution_cache.borrow_mut();
-            cache.clear();
-            cache.extend(stacking_context.children.iter().cloned());
-            parent_stacking_context
-                .children
-                .append(&mut stacking_context.children);
+            stacking_context.extend(entries.iter().cloned());
+            *node.sc_contribution_cache.borrow_mut() = entries;
         } else {
             node.sc_contribution_cache.borrow_mut().clear();
-            stacking_context.sort();
-            node.stacking_context = Some(Box::new(new_stacking_context));
+            node.stacking_context = Some(Box::new(StackingContext::from_children(entries)));
         }
     }
 }
