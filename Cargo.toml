@@ -188,7 +188,7 @@ smol_str = "0.3"
 bitflags = "2.8.0"
 bytemuck = "1"
 rayon = "1"
-test-that = "0.5.2"
+test-that = "0.6.0"
 thread_local = "1"
 
 [profile.profile]
