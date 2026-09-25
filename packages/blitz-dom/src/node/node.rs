@@ -1,5 +1,5 @@
 use crate::Document;
-use crate::layout::damage::HoistedPaintChildren;
+use crate::layout::paint_tree::{HoistedPaintChild, StackingContext};
 use bitflags::bitflags;
 use blitz_traits::events::{
     BlitzPointerEvent, BlitzPointerId, DomEventData, HitResult, PointerCoords,
@@ -109,7 +109,11 @@ pub struct Node {
     pub anonymous_blocks: ThinVec<NodeId>,
     /// The same as layout_children, but sorted by z-index
     pub paint_children: RefCell<Option<ThinVec<NodeId>>>,
-    pub stacking_context: Option<Box<HoistedPaintChildren>>,
+    pub stacking_context: Option<Box<StackingContext>>,
+    /// The hoisted entries this node's subtree pushed into the enclosing
+    /// stacking context on its last (non-skipped) paint-tree build. Replayed
+    /// when the subtree is skipped as clean. Empty for stacking-context roots.
+    pub sc_contribution_cache: RefCell<ThinVec<HoistedPaintChild>>,
 
     // Flags
     pub flags: NodeFlags,
@@ -404,6 +408,7 @@ impl Node {
             anonymous_blocks: ThinVec::new(),
             paint_children: RefCell::new(None),
             stacking_context: None,
+            sc_contribution_cache: RefCell::new(ThinVec::new()),
 
             flags: NodeFlags::empty(),
             data,
@@ -1407,11 +1412,11 @@ impl Node {
 
         let matches_hoisted_content = match &self.stacking_context {
             Some(sc) => {
-                let content_area = sc.content_area;
-                x >= content_area.left + self.scroll_offset().x as f32
-                    && x <= content_area.right + self.scroll_offset().x as f32
-                    && y >= content_area.top + self.scroll_offset().y as f32
-                    && y <= content_area.bottom + self.scroll_offset().y as f32
+                let hoisted_content_bbox = sc.hoisted_content_bbox(self.tree(), self.id);
+                x >= hoisted_content_bbox.left + self.scroll_offset().x as f32
+                    && x <= hoisted_content_bbox.right + self.scroll_offset().x as f32
+                    && y >= hoisted_content_bbox.top + self.scroll_offset().y as f32
+                    && y <= hoisted_content_bbox.bottom + self.scroll_offset().y as f32
             }
             None => false,
         };
@@ -1453,8 +1458,9 @@ impl Node {
         if matches_hoisted_content {
             if let Some(hoisted) = &self.stacking_context {
                 for hoisted_child in hoisted.pos_z_hoisted_children().rev() {
-                    let x = x - hoisted_child.position.x;
-                    let y = y - hoisted_child.position.y;
+                    let pos = hoisted_child.position(self.tree(), self.id);
+                    let x = x - pos.x;
+                    let y = y - pos.y;
                     if let Some(hit) = self
                         .with(hoisted_child.node_id)
                         .hit_inner(x, y, scale, scrollbar)
@@ -1476,8 +1482,9 @@ impl Node {
         if matches_hoisted_content {
             if let Some(hoisted) = &self.stacking_context {
                 for hoisted_child in hoisted.neg_z_hoisted_children().rev() {
-                    let x = x - hoisted_child.position.x;
-                    let y = y - hoisted_child.position.y;
+                    let pos = hoisted_child.position(self.tree(), self.id);
+                    let x = x - pos.x;
+                    let y = y - pos.y;
                     if let Some(hit) = self
                         .with(hoisted_child.node_id)
                         .hit_inner(x, y, scale, scrollbar)

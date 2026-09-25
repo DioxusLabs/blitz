@@ -107,17 +107,20 @@ impl BaseDocument {
         self.flush_pending_style_images();
         timer.record_time("pconstruct");
 
-        // Merge stylo into taffy
-        self.flush_styles_to_layout(root_node_id);
-        timer.record_time("flush");
-
         // Next we resolve layout with the data resolved by stlist
         self.resolve_layout();
         timer.record_time("layout");
+        self.nodes.bump_geometry_generation();
 
         // Resolve transforms
         self.resolve_transforms(root_node_id);
         timer.record_time("transform");
+
+        // Build paint children / stacking contexts for damaged subtrees. Runs
+        // after layout and transforms so that stacking-context roots created by
+        // this frame's transforms are picked up, and before damage is cleared.
+        self.build_paint_tree(root_node_id);
+        timer.record_time("paint_tree");
 
         // Clear all damage and dirty flags, walking only subtrees which are
         // marked as (potentially) containing damage.

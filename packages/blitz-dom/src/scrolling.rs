@@ -333,6 +333,7 @@ impl BaseDocument {
                 }
 
                 let layout = *node.final_layout();
+                self.nodes.bump_geometry_generation();
                 let event = BlitzScrollEvent {
                     scroll_top: offset.y,
                     scroll_left: offset.x,

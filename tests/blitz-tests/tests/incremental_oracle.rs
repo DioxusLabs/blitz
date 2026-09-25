@@ -12,6 +12,11 @@
 //! node the `layout_children` lists are additionally compared positionally
 //! (length + each child's layout, recursing into anonymous children), which
 //! covers them without relying on stable ids.
+//!
+//! The paint tree is compared the same way: each node's `paint_children` as
+//! indices into its `layout_children`, and each stacking-context root's
+//! hoisted children as (layout path from the root, z-index) pairs. This is
+//! the main guard for the clean-subtree skip in `build_paint_tree`.
 
 use blitz_dom::{DocumentConfig, LocalName, QualName, ns};
 use blitz_html::{HtmlDocument, HtmlProvider};
@@ -100,9 +105,91 @@ fn assert_node_eq(
     );
 }
 
+/// Index of `child` in `parent`'s `layout_children`.
+fn layout_index(doc: &HtmlDocument, parent: NodeId, child: NodeId) -> usize {
+    doc.get_node(parent)
+        .unwrap()
+        .layout_children
+        .borrow()
+        .as_ref()
+        .and_then(|children| children.iter().position(|id| *id == child))
+        .unwrap_or_else(|| {
+            panic!(
+                "{} is not a layout child of {}",
+                describe(doc, child),
+                describe(doc, parent)
+            )
+        })
+}
+
+/// Layout-tree path (child indices) from `ancestor` down to `node`.
+fn layout_path(doc: &HtmlDocument, ancestor: NodeId, node: NodeId) -> Vec<usize> {
+    let mut path = Vec::new();
+    let mut current = node;
+    while current != ancestor {
+        let parent = doc
+            .get_node(current)
+            .unwrap()
+            .layout_parent
+            .get()
+            .unwrap_or_else(|| {
+                panic!(
+                    "{} is not a layout descendant of {}",
+                    describe(doc, node),
+                    describe(doc, ancestor)
+                )
+            });
+        path.push(layout_index(doc, parent, current));
+        current = parent;
+    }
+    path.reverse();
+    path
+}
+
+/// Hoisted stacking-context entries as (layout path, z-index) pairs.
+type HoistedEntries = Vec<(Vec<usize>, i32)>;
+
+/// Positional description of a node's paint tree: its `paint_children` as
+/// indices into `layout_children`, and (if it is a stacking-context root) its
+/// hoisted children as (layout path, z-index) pairs.
+fn paint_tree_of(doc: &HtmlDocument, node_id: NodeId) -> (Vec<usize>, Option<HoistedEntries>) {
+    let node = doc.get_node(node_id).unwrap();
+    let paint_children = node
+        .paint_children
+        .borrow()
+        .iter()
+        .flatten()
+        .map(|child| layout_index(doc, node_id, *child))
+        .collect();
+    let hoisted = node.stacking_context.as_ref().map(|sc| {
+        sc.children
+            .iter()
+            .map(|child| (layout_path(doc, node_id, child.node_id), child.z_index))
+            .collect()
+    });
+    (paint_children, hoisted)
+}
+
 /// Compare the layout trees (`layout_children`, which includes anonymous
-/// boxes) rooted at the two nodes positionally.
+/// boxes) rooted at the two nodes positionally, along with their paint trees.
 fn compare_layout_tree(
+    inc: &HtmlDocument,
+    inc_id: NodeId,
+    non: &HtmlDocument,
+    non_id: NodeId,
+    path: &str,
+    step: &str,
+) {
+    compare_layout_tree_inner(inc, inc_id, non, non_id, path, step);
+    assert_eq!(
+        paint_tree_of(inc, inc_id),
+        paint_tree_of(non, non_id),
+        "[{step}] paint tree mismatch at {path} ({})",
+        describe(inc, inc_id)
+    );
+}
+
+fn compare_layout_tree_inner(
     inc: &HtmlDocument,
     inc_id: NodeId,
     non: &HtmlDocument,
@@ -287,6 +374,12 @@ const FIXTURE: &str = r#"<html><head><style>
     #pseudo::before { content: "b"; display: inline-block; width: 15px; height: 15px; }
     #pseudo::after { content: "a"; display: block; height: 7px; }
     .contents { display: contents; }
+    #z1:hover { z-index: 5; }
+    #z2:hover { position: static; }
+    #sc:hover { opacity: 1; }
+    #fz:hover { z-index: 0; }
+    #c2:hover { background: blue; }
+    #abs:hover { top: 15px; }
 </style></head><body>
     <div id="block" style="width: 300px;">
         <div id="hover-target"></div>
@@ -305,6 +398,7 @@ const FIXTURE: &str = r#"<html><head><style>
         <div id="fa" style="width:10px; height:10px; order: 1"></div>
         <div id="fb" style="width:10px; height:10px;"></div>
         <div id="fc" style="width:10px; height:10px; order: -1"></div>
+        <div id="fz" style="width:10px; height:10px; z-index: 2"></div>
         flex text
     </div>
     <div id="grid" style="display:grid; grid-template-columns: 20px 20px; grid-auto-rows: 10px; width: 300px;">
@@ -315,6 +409,12 @@ const FIXTURE: &str = r#"<html><head><style>
     <div id="rel" style="position: relative; height: 30px;">
         <div id="abs" style="position: absolute; top: 5px; left: 7px; width: 11px; height: 13px;"></div>
         <div id="fixed" style="position: fixed; top: 100px; left: 100px; width: 20px; height: 20px;"></div>
+        <div id="neg" style="position: relative; z-index: -1; height: 4px;"></div>
+        <div id="sc" style="opacity: 0.5; height: 20px;">
+            <div id="deep"><div id="z1" style="position: relative; z-index: 1; height: 4px;"></div>
+                text <span id="zi" style="position: relative; z-index: 3;">inline</span></div>
+            <div id="z2" style="position: relative; z-index: 2; height: 4px;"></div>
+        </div>
     </div>
 </body></html>"#;
 
@@ -493,6 +593,92 @@ fn set_node_text_in_inline_root() {
         let text_node = doc.get_node(root).unwrap().children[0];
         doc.mutate()
             .set_node_text(text_node, "replaced leading text ");
+    });
+}
+
+/// Style changes which alter paint ownership (z-index, position, becoming
+/// or ceasing to be a stacking-context root) interleaved with changes which
+/// do not (colour, geometry) so that clean subtrees are replayed.
+#[test]
+fn paint_tree_z_index_and_stacking_contexts() {
+    let mut oracle = Oracle::new(FIXTURE);
+
+    // Hover-driven restyles produce the minimal damage for each property
+    // (style attribute mutations below rebuild the box), so these exercise
+    // the clean-subtree skip and replay.
+    for selector in ["#c2", "#z1", "#z2", "#sc", "#fz", "#abs", "#c2"] {
+        let (x, y) = center(&oracle.inc, selector);
+        oracle.step(&format!("hover {selector}"), |doc| {
+            assert!(doc.set_hover_to(x, y));
+        });
+        let target = id(&oracle.inc, selector);
+        let mut hovered = oracle.inc.get_hover_node_id();
+        while let Some(node_id) = hovered
+            && node_id != target
+        {
+            hovered = oracle.inc.get_node(node_id).unwrap().parent;
+        }
+        assert_eq!(hovered, Some(target), "hover {selector}");
+        oracle.step(&format!("unhover {selector}"), |doc| {
+            assert!(doc.set_hover_to(390.0, 390.0));
+        });
+    }
+
+    oracle.step("colour only", |doc| {
+        set_style(doc, "#c2", "height: 9px; background: blue;")
+    });
+    oracle.step("z-index change deep in sc", |doc| {
+        set_style(doc, "#z1", "position: relative; z-index: 5; height: 4px;")
+    });
+    oracle.step("z-index to zero", |doc| {
+        set_style(doc, "#z2", "position: relative; z-index: 0; height: 4px;")
+    });
+    oracle.step("z-index back", |doc| {
+        set_style(doc, "#z2", "position: relative; z-index: -2; height: 4px;")
+    });
+    oracle.step("sc stops being a stacking context root", |doc| {
+        set_style(doc, "#sc", "height: 20px;")
+    });
+    oracle.step("sibling geometry change while sc is clean", |doc| {
+        set_style(
+            doc,
+            "#abs",
+            "position: absolute; top: 15px; left: 7px; width: 11px; height: 13px;",
+        )
+    });
+    oracle.step("sc becomes a stacking context root again", |doc| {
+        set_style(doc, "#sc", "height: 20px; transform: translateX(1px);")
+    });
+    oracle.step("static position drops hoisting", |doc| {
+        set_style(doc, "#neg", "z-index: -1; height: 4px;")
+    });
+    oracle.step("flex item z-index removed", |doc| {
+        set_style(doc, "#fz", "width:10px; height:10px;")
+    });
+    oracle.step("flex item z-index and order", |doc| {
+        set_style(
+            doc,
+            "#fz",
+            "width:10px; height:10px; z-index: 1; order: -5;",
+        )
+    });
+    oracle.step("rel becomes a stacking context root", |doc| {
+        set_style(doc, "#rel", "position: relative; height: 30px; z-index: 0;")
+    });
+    oracle.step("append hoisted child into clean subtree", |doc| {
+        let parent = id(doc, "#deep");
+        let mut m = doc.mutate();
+        let child = m.create_element(qname("div"), Vec::new());
+        m.set_attribute(
+            child,
+            attr("style"),
+            "position: relative; z-index: 7; height: 2px;",
+        );
+        m.append_children(parent, &[child]);
+    });
+    oracle.step("remove hoisted child", |doc| {
+        let node = id(doc, "#z1");
+        doc.mutate().remove_node(node);
     });
 }
 
