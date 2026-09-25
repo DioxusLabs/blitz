@@ -15,9 +15,9 @@ use style::values::computed::length_percentage::CalcLengthPercentage;
 use stylo_taffy::TaffyStyloStyle;
 use taffy::{
     BlockContext, CoreStyle as _, DetailedLayoutInfo, FlexDirection, LayoutContainingBlock,
-    LayoutPartialTree, NodeId, ResolveOrZero, RoundTree, TraversePartialTree, TraverseTree,
-    compute_block_layout, compute_cached_layout, compute_flexbox_layout, compute_grid_layout,
-    compute_leaf_layout, compute_oof_layout, prelude::*,
+    LayoutPartialTree, NodeId, ResolveOrZero, RoundTree, RunMode, TraversePartialTree,
+    TraverseTree, compute_block_layout, compute_cached_layout, compute_flexbox_layout,
+    compute_grid_layout, compute_leaf_layout, compute_oof_layout, prelude::*,
 };
 
 pub(crate) mod construct;
@@ -84,7 +84,23 @@ impl BaseDocument {
 }
 
 impl BaseDocument {
+    /// Run the node's layout algorithm, then lay out the out-of-flow (absolute/fixed)
+    /// boxes for which it is the containing block. Must be called inside the layout
+    /// cache wrapper so that cache hits do not re-run the out-of-flow pass.
     fn compute_child_layout_internal(
+        &mut self,
+        node_id: NodeId,
+        inputs: taffy::tree::LayoutInput,
+        block_ctx: Option<&mut BlockContext<'_>>,
+    ) -> taffy::tree::LayoutOutput {
+        let mut output = self.dispatch_child_layout(node_id, inputs, block_ctx);
+        if inputs.run_mode == RunMode::PerformLayout {
+            compute_oof_layout(self, node_id, &mut output);
+        }
+        output
+    }
+
+    fn dispatch_child_layout(
         &mut self,
         node_id: NodeId,
         inputs: taffy::tree::LayoutInput,
@@ -164,7 +180,7 @@ impl BaseDocument {
                             height: resolved_line_height.unwrap_or(16.0) * rows,
                         },
                     );
-                    if inputs.run_mode == taffy::RunMode::PerformLayout {
+                    if inputs.run_mode == RunMode::PerformLayout {
                         let pb = {
                             let style = node.layout_style();
                             style
@@ -458,11 +474,7 @@ impl LayoutPartialTree for BaseDocument {
         inputs: taffy::LayoutInput,
     ) -> taffy::LayoutOutput {
         compute_cached_layout(self, node_id, inputs, |tree, node_id, inputs| {
-            let mut output = tree.compute_child_layout_internal(node_id, inputs, None);
-            if inputs.run_mode == taffy::RunMode::PerformLayout {
-                compute_oof_layout(tree, node_id, &mut output);
-            }
-            output
+            tree.compute_child_layout_internal(node_id, inputs, None)
         })
     }
 }
@@ -571,11 +583,7 @@ impl taffy::LayoutBlockContainer for BaseDocument {
         block_ctx: Option<&mut BlockContext<'_>>,
     ) -> taffy::LayoutOutput {
         compute_cached_layout(self, node_id, inputs, |tree, node_id, inputs| {
-            let mut output = tree.compute_child_layout_internal(node_id, inputs, block_ctx);
-            if inputs.run_mode == taffy::RunMode::PerformLayout {
-                compute_oof_layout(tree, node_id, &mut output);
-            }
-            output
+            tree.compute_child_layout_internal(node_id, inputs, block_ctx)
         })
     }
 }
