@@ -79,6 +79,16 @@ textarea {
     background-color: white;
 }
 
+input,
+select,
+button {
+    font-family: system-ui, sans-serif;
+}
+
+textarea {
+    font-family: monospace;
+}
+
 input:focus,
 textarea:focus {
     outline: 2px solid #4D90FE;
