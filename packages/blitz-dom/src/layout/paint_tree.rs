@@ -178,7 +178,7 @@ impl BaseDocument {
     /// (sorted by paint order) or, when they have a non-zero `z-index` and are
     /// positioned or flex/grid items, in the nearest ancestor stacking context.
     ///
-    /// Subtrees whose stored damage is at most `REPAINT` are skipped: their
+    /// Subtrees whose stored damage lacks `REBUILD_STACKING_CONTEXT` are skipped: their
     /// own lists are still valid and the entries they contributed to the
     /// enclosing stacking context are replayed from `Node::sc_contribution_cache`.
     pub(crate) fn build_paint_tree(&mut self, root_id: NodeId) {
@@ -193,8 +193,9 @@ impl BaseDocument {
         {
             let node = &self.nodes[node_id];
             // `propagate_damage_flags` stores the union of a node's own and
-            // its descendants' damage on the node, so `REPAINT`-only means
-            // that nothing in the subtree can have changed a paint list.
+            // its descendants' damage on the node, so the absence of
+            // `REBUILD_STACKING_CONTEXT` (which every heavier level implies)
+            // means nothing in the subtree can have changed a paint list.
             // Anonymous boxes are never skipped: damage marking walks the DOM
             // parent chain, which bypasses them.
             //
@@ -205,11 +206,10 @@ impl BaseDocument {
             let role_unchanged =
                 node.stacking_context.is_some() == parent_stacking_context.is_none();
             let clean = role_unchanged
-                && node
+                && !node
                     .damage()
                     .unwrap_or(ALL_DAMAGE)
-                    .difference(RestyleDamage::REPAINT)
-                    .is_empty()
+                    .contains(RestyleDamage::REBUILD_STACKING_CONTEXT)
                 && !node.is_anonymous();
             if clean {
                 if let Some(parent_stacking_context) = parent_stacking_context {
