@@ -48,6 +48,12 @@ impl CaseTransform {
             .unwrap_or(LanguageIdentifier::UNKNOWN);
         Self { kind, lang }
     }
+
+    /// Whether the language has case mappings for ASCII characters that differ from the
+    /// default ones (`i` ↔ `İ` and `ı` ↔ `I`).
+    fn has_turkic_casing(&self) -> bool {
+        matches!(self.lang.language.as_str(), "tr" | "az")
+    }
 }
 
 /// Language-specific case mapping rules don't apply if an explicit script subtag contradicts
@@ -101,6 +107,28 @@ impl TextTransformer {
         transform: &CaseTransform,
         builder: &TreeBuilder<'_, B>,
     ) -> &'a str {
+        if text.is_ascii() && !transform.has_turkic_casing() {
+            match transform.kind {
+                TextTransform::UPPERCASE => {
+                    return map_ascii(
+                        text,
+                        &mut self.output,
+                        u8::is_ascii_lowercase,
+                        str::make_ascii_uppercase,
+                    );
+                }
+                TextTransform::LOWERCASE => {
+                    return map_ascii(
+                        text,
+                        &mut self.output,
+                        u8::is_ascii_uppercase,
+                        str::make_ascii_lowercase,
+                    );
+                }
+                _ => {}
+            }
+        }
+
         let mut output = OutputSink::new(text, &mut self.output);
         match transform.kind {
             TextTransform::UPPERCASE => output.write(CASE_MAPPER.uppercase(text, &transform.lang)),
@@ -131,6 +159,23 @@ impl TextTransformer {
         }
         output.finish()
     }
+}
+
+/// Case maps ASCII `text`, borrowing it if no bytes need mapping and otherwise copying it into
+/// `buffer`.
+fn map_ascii<'a>(
+    text: &'a str,
+    buffer: &'a mut String,
+    needs_mapping: impl Fn(&u8) -> bool,
+    map: impl FnOnce(&mut str),
+) -> &'a str {
+    let Some(first) = text.bytes().position(|b| needs_mapping(&b)) else {
+        return text;
+    };
+    buffer.clear();
+    buffer.push_str(text);
+    map(&mut buffer[first..]);
+    buffer
 }
 
 /// Collects transformed text, borrowing the original text if it is unchanged and otherwise
@@ -408,6 +453,24 @@ mod tests {
                 builder.push_text(" ");
             }
         });
+    }
+
+    #[test]
+    fn ascii_fast_path_matches_icu() {
+        let ascii: String = (0..128u8).map(char::from).collect();
+        for lang in ["und", "en", "lt", "nl", "el", "tr", "az"] {
+            let locale = LanguageIdentifier::try_from_str(lang).unwrap();
+            assert_eq!(
+                transform(TextTransform::UPPERCASE, lang, &[&ascii]),
+                [CASE_MAPPER.uppercase_to_string(&ascii, &locale)],
+                "{lang}"
+            );
+            assert_eq!(
+                transform(TextTransform::LOWERCASE, lang, &[&ascii]),
+                [CASE_MAPPER.lowercase_to_string(&ascii, &locale)],
+                "{lang}"
+            );
+        }
     }
 
     #[test]
