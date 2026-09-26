@@ -191,6 +191,26 @@ impl BaseDocument {
         self.refresh_sticky_offsets();
     }
 
+    /// The insets of a registered sticky box as resolved by the last
+    /// [`update_sticky_offsets`](Self::update_sticky_offsets) (`None` for `auto`).
+    pub(crate) fn sticky_resolved_insets(
+        &self,
+        node_id: NodeId,
+    ) -> Option<taffy::Rect<Option<f32>>> {
+        let c = self
+            .sticky_nodes
+            .iter()
+            .find(|e| e.node == node_id)?
+            .constraints
+            .as_ref()?;
+        Some(taffy::Rect {
+            left: c.left,
+            right: c.right,
+            top: c.top,
+            bottom: c.bottom,
+        })
+    }
+
     /// Applies the current scroll positions: a few clamps per sticky box.
     pub fn refresh_sticky_offsets(&mut self) {
         if self.sticky_nodes.is_empty() {
@@ -291,13 +311,21 @@ impl BaseDocument {
         }
         sticky_ancestors.reverse();
 
-        // Scrollport size, for percentage insets.
+        // Percentage insets resolve against the scroll container's content box.
         let (port_w, port_h) = match container {
             Some(c) => {
                 let l = self.nodes[c].final_layout();
                 (
-                    l.size.width - l.border.left - l.border.right,
-                    l.size.height - l.border.top - l.border.bottom,
+                    l.size.width
+                        - l.border.left
+                        - l.border.right
+                        - l.padding.left
+                        - l.padding.right,
+                    l.size.height
+                        - l.border.top
+                        - l.border.bottom
+                        - l.padding.top
+                        - l.padding.bottom,
                 )
             }
             None => viewport_size,
