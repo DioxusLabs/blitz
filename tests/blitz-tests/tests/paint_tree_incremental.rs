@@ -661,3 +661,62 @@ fn oof_box_under_effect_ancestor_paints_inside_it() {
         check(&doc, 30.0);
     }
 }
+
+const FIXED_SCROLL: &str = r#"<html><head><style>
+    body { margin: 0; height: 2000px; }
+    #s { overflow: scroll; width: 200px; height: 100px; transform: translateX(0px); }
+    #tall { height: 1000px; }
+    #f0 { position: fixed; left: 10px; top: 10px; width: 20px; height: 20px; }
+    #f1 { position: fixed; left: 50px; top: 10px; width: 20px; height: 20px; z-index: 1; }
+    #g0 { position: fixed; left: 10px; top: 50px; width: 20px; height: 20px; }
+    #g1 { position: fixed; left: 50px; top: 50px; width: 20px; height: 20px; z-index: 1; }
+</style></head><body>
+    <div id="s"><div id="tall"></div><div id="f0"></div><div id="f1"></div></div>
+    <div id="g0"></div><div id="g1"></div>
+</body></html>"#;
+
+/// Fixed boxes stay put when their containing block (the viewport for `#g*`,
+/// the transformed scroller `#s` for `#f*`) scrolls, whether they are placed
+/// in `paint_children` (z-auto) or hoisted into the stacking context (z≠0).
+#[test]
+fn fixed_boxes_do_not_scroll_with_containing_block() {
+    for incremental in [false, true] {
+        let mut doc = make_doc(FIXED_SCROLL, incremental);
+        let s = id(&doc, "#s");
+        let (f0, f1, g0, g1) = (
+            id(&doc, "#f0"),
+            id(&doc, "#f1"),
+            id(&doc, "#g0"),
+            id(&doc, "#g1"),
+        );
+        assert_eq!(hit(&doc, 20.0, 20.0), f0);
+        assert_eq!(hit(&doc, 60.0, 20.0), f1);
+        assert_eq!(hit(&doc, 20.0, 60.0), g0);
+        assert_eq!(hit(&doc, 60.0, 60.0), g1);
+
+        doc.scroll_node_by(s, 0.0, -40.0, |_| {});
+        assert_eq!(doc.get_node(s).unwrap().scroll_offset().y, 40.0);
+        assert_eq!(
+            hit(&doc, 20.0, 20.0),
+            f0,
+            "z-auto fixed in scrolled CB ({incremental})"
+        );
+        assert_eq!(
+            hit(&doc, 60.0, 20.0),
+            f1,
+            "z-index fixed in scrolled CB ({incremental})"
+        );
+
+        doc.set_viewport_scroll(blitz_dom::Point { x: 0.0, y: 30.0 });
+        assert_eq!(
+            hit(&doc, 20.0, 60.0),
+            g0,
+            "z-auto fixed under viewport scroll ({incremental})"
+        );
+        assert_eq!(
+            hit(&doc, 60.0, 60.0),
+            g1,
+            "z-index fixed under viewport scroll ({incremental})"
+        );
+    }
+}

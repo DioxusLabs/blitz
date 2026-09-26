@@ -63,6 +63,7 @@ impl NodeTree {
         self.bump_geometry_generation();
     }
 
+||||||| parent of 0d181386 (Fixed-position boxes hoisted into a stacking context must not scroll with their containing block)
     /// See the `geometry_generation` field.
     pub fn geometry_generation(&self) -> u64 {
         self.geometry_generation.load(Ordering::Relaxed)

@@ -34,8 +34,26 @@ use taffy::{Point, Rect};
 /// inside an atomic paint-effect ancestor that is not its containing block)
 /// the offset is the difference of the two chains' document offsets.
 pub fn hoisted_child_position(tree: &NodeTree, sc_root_id: NodeId, child_id: NodeId) -> Point<f32> {
+    let child = &tree[child_id];
     let mut position = Point::ZERO;
-    let mut current = tree[child_id].containing_block();
+    let mut current = child.containing_block();
+
+    // A fixed-position box does not scroll with its containing block (or the
+    // viewport, when the containing block is the root element): cancel the
+    // scroll the walk below (or the stacking-context root itself) applies.
+    if child.taffy_position() == taffy::Position::Fixed
+        && let Some(cb) = current.and_then(|id| tree.get(id))
+    {
+        let scroll_offset = *cb.scroll_offset();
+        position.x += scroll_offset.x as f32;
+        position.y += scroll_offset.y as f32;
+        if cb.containing_block().is_none() {
+            let viewport_scroll = tree.viewport_scroll();
+            position.x += viewport_scroll.x as f32;
+            position.y += viewport_scroll.y as f32;
+        }
+    }
+
     while let Some(id) = current {
         if id == sc_root_id {
             return position;
