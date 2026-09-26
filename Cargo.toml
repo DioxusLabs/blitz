@@ -107,7 +107,7 @@ taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "4863877b9cab21645b
     "calc",
     "detailed_layout_info",
 ] }
-parley = { git = "https://github.com/linebender/parley", rev = "6a9444f402b2c8698cf0c28dcd7ea8b469688f16", default-features = false, features = ["std"] }
+parley = { git = "https://github.com/DioxusLabs/parley", rev = "2dc5dacd45b91d89f58bcf45a7551d339a2f4b7d", default-features = false, features = ["std"] }
 skrifa = { version = "0.44", default-features = false, features = [
     "std",
 ] } # Should match parley and vello versions
@@ -190,6 +190,13 @@ bytemuck = "1"
 rayon = "1"
 test-that = "0.5.2"
 thread_local = "1"
+
+# Unicode (ICU4X)
+icu_casemap = { version = "2.3", default-features = false, features = ["compiled_data"] }
+icu_locale_core = { version = "2.3", default-features = false }
+icu_properties = { version = "2.3", default-features = false, features = ["compiled_data"] }
+icu_segmenter = { version = "2.3", default-features = false, features = ["compiled_data"] }
+writeable = { version = "0.6", default-features = false }
 
 [profile.profile]
 inherits = "release"
