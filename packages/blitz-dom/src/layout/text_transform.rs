@@ -2,6 +2,8 @@
 //!
 //! <https://drafts.csswg.org/css-text/#text-transform-property>
 
+use std::fmt;
+
 use icu_casemap::options::{LeadingAdjustment, TitlecaseOptions, TrailingCase};
 use icu_casemap::{CaseMapper, CaseMapperBorrowed, TitlecaseMapper, TitlecaseMapperBorrowed};
 use icu_locale_core::LanguageIdentifier;
@@ -99,15 +101,10 @@ impl TextTransformer {
         transform: &CaseTransform,
         builder: &TreeBuilder<'_, B>,
     ) -> &'a str {
-        let output = &mut self.output;
-        output.clear();
+        let mut output = OutputSink::new(text, &mut self.output);
         match transform.kind {
-            TextTransform::UPPERCASE => {
-                write(output, CASE_MAPPER.uppercase(text, &transform.lang));
-            }
-            TextTransform::LOWERCASE => {
-                write(output, CASE_MAPPER.lowercase(text, &transform.lang));
-            }
+            TextTransform::UPPERCASE => output.write(CASE_MAPPER.uppercase(text, &transform.lang)),
+            TextTransform::LOWERCASE => output.write(CASE_MAPPER.lowercase(text, &transform.lang)),
             TextTransform::CAPITALIZE => {
                 let text_so_far = builder.text_so_far();
                 // Pending (collapsed) whitespace always ends the preceding word, so no
@@ -127,18 +124,65 @@ impl TextTransformer {
                     text,
                     &transform.lang,
                     &mut self.segmentation_buffer,
-                    output,
+                    &mut output,
                 );
             }
             _ => return text,
         }
-        output
+        output.finish()
     }
 }
 
-fn write(output: &mut String, writeable: impl Writeable) {
-    // Writing to a `String` is infallible.
-    let _ = writeable.write_to(output);
+/// Collects transformed text, borrowing the original text if it is unchanged and otherwise
+/// copying it into a reused buffer from the first difference onwards.
+struct OutputSink<'a> {
+    original: &'a str,
+    /// The length of the output so far if it is a prefix of `original`, or `None` if the output
+    /// has diverged and is in `buffer`.
+    unchanged_len: Option<usize>,
+    buffer: &'a mut String,
+}
+
+impl<'a> OutputSink<'a> {
+    fn new(original: &'a str, buffer: &'a mut String) -> Self {
+        Self {
+            original,
+            unchanged_len: Some(0),
+            buffer,
+        }
+    }
+
+    fn push_str(&mut self, s: &str) {
+        if let Some(len) = self.unchanged_len {
+            if self.original[len..].starts_with(s) {
+                self.unchanged_len = Some(len + s.len());
+                return;
+            }
+            self.buffer.clear();
+            self.buffer.push_str(&self.original[..len]);
+            self.unchanged_len = None;
+        }
+        self.buffer.push_str(s);
+    }
+
+    fn write(&mut self, writeable: impl Writeable) {
+        // Writing to an `OutputSink` is infallible.
+        let _ = writeable.write_to(self);
+    }
+
+    fn finish(self) -> &'a str {
+        match self.unchanged_len {
+            Some(len) => &self.original[..len],
+            None => self.buffer,
+        }
+    }
+}
+
+impl fmt::Write for OutputSink<'_> {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        self.push_str(s);
+        Ok(())
+    }
 }
 
 /// Writes `text` to `output`, titlecasing the first typographic letter unit of each word and
@@ -149,7 +193,7 @@ fn capitalize(
     text: &str,
     lang: &LanguageIdentifier,
     buffer: &mut String,
-    output: &mut String,
+    output: &mut OutputSink<'_>,
 ) {
     let mut options = TitlecaseOptions::default();
     options.leading_adjustment = Some(LeadingAdjustment::None);
@@ -180,10 +224,11 @@ fn capitalize(
             match part.find(is_typographic_letter_unit) {
                 Some(letter_start) if !first_letter_already_seen => {
                     output.push_str(&part[..letter_start]);
-                    write(
-                        output,
-                        TITLECASE_MAPPER.titlecase_segment(&part[letter_start..], lang, options),
-                    );
+                    output.write(TITLECASE_MAPPER.titlecase_segment(
+                        &part[letter_start..],
+                        lang,
+                        options,
+                    ));
                 }
                 _ => output.push_str(part),
             }
@@ -339,6 +384,30 @@ mod tests {
             transform(TextTransform::CAPITALIZE, "nl", &["ijsland"]),
             ["IJsland"]
         );
+    }
+
+    #[test]
+    fn unchanged_text_is_borrowed() {
+        let cases = [
+            (TextTransform::UPPERCASE, "ABC 123", true),
+            (TextTransform::UPPERCASE, "ABc", false),
+            (TextTransform::LOWERCASE, "abc 123", true),
+            (TextTransform::LOWERCASE, "abC", false),
+            (TextTransform::CAPITALIZE, "Hello World", true),
+            (TextTransform::CAPITALIZE, "Hello world", false),
+        ];
+        with_builder(|builder, transformer| {
+            for (kind, text, borrowed) in cases {
+                let transform = CaseTransform {
+                    kind,
+                    lang: LanguageIdentifier::UNKNOWN,
+                };
+                transformer.word_break(builder);
+                let output = transformer.transform(text, &transform, builder);
+                assert_eq!(output.as_ptr() == text.as_ptr(), borrowed, "{text:?}");
+                builder.push_text(" ");
+            }
+        });
     }
 
     #[test]
