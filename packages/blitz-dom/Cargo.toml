@@ -74,6 +74,7 @@ icu_casemap = { workspace = true }
 icu_locale_core = { workspace = true }
 icu_properties = { workspace = true }
 icu_segmenter = { workspace = true }
+writeable = { workspace = true }
 
 # Other dependencies
 slotmap = { workspace = true }
