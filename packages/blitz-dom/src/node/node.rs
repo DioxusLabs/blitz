@@ -1372,7 +1372,8 @@ impl Node {
     }
 
     /// Whether this node's styles apply an atomic paint effect (opacity, filter,
-    /// clip-path, mask) to its subtree.
+    /// clip-path, mask) to its subtree. Such effects apply to out-of-flow descendants
+    /// even when this node is not their containing block.
     pub(crate) fn applies_atomic_paint_effect(&self) -> bool {
         use style::values::computed::basic_shape::ClipPath;
         use style::values::generics::image::GenericImage;
