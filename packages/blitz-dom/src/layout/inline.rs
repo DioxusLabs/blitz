@@ -1,6 +1,6 @@
 use blitz_traits::node_id::NodeId;
 use parley::{AlignmentOptions, BreakReason, IndentOptions};
-use style::values::specified::box_::DisplayOutside;
+use style::values::specified::box_::{DisplayInside, DisplayOutside};
 use style::values::{computed::CSSPixelLength, generics::text::GenericTextIndent};
 use taffy::{
     AvailableSpace, AxisStaticEdge, AxisStaticPosition, BlockContext, BlockFormattingContext,
@@ -309,6 +309,8 @@ impl BaseDocument {
             let is_floated = false;
 
             let is_out_of_flow = style.position().is_out_of_flow();
+            let is_scroll_container = style.overflow().x.is_scroll_container()
+                || style.overflow().y.is_scroll_container();
             drop(style);
 
             if is_out_of_flow || is_floated {
@@ -324,6 +326,9 @@ impl BaseDocument {
                 // `MaxHeightExceeded` for this box forever without advancing.
                 ibox.height = ((margin.top + margin.bottom + output.size.height).max(0.0) * scale)
                     .min(f32::MAX);
+                ibox.baseline = self
+                    .inline_box_baseline(NodeId::from_u64(ibox.id), &output, is_scroll_container)
+                    .map(|baseline| (margin.top + baseline) * scale);
             }
         }
 
@@ -660,16 +665,24 @@ impl BaseDocument {
         // empty line after it (so that editors have a line to place the cursor on), so that
         // line is excluded from the measured height.
         let line_count = inline_layout.layout.len();
-        if line_count >= 2
+        let has_trailing_empty_line = if line_count >= 2
             && let (Some(prev_line), Some(last_line)) = (
                 inline_layout.layout.get(line_count - 2),
                 inline_layout.layout.get(line_count - 1),
-            )
-            && prev_line.break_reason() == BreakReason::Explicit
-            && last_line.text_range().is_empty()
-            && last_line.items().next().is_none()
-        {
-            height -= last_line.metrics().line_height;
+            ) {
+            prev_line.break_reason() == BreakReason::Explicit
+                && last_line.text_range().is_empty()
+                && last_line.items().next().is_none()
+        } else {
+            false
+        };
+        if has_trailing_empty_line {
+            height -= inline_layout
+                .layout
+                .get(line_count - 1)
+                .unwrap()
+                .metrics()
+                .line_height;
         }
 
         #[cfg(feature = "floats")]
@@ -863,11 +876,13 @@ impl BaseDocument {
         // println!("known_dimensions: w: {:?} h: {:?}", inputs.known_dimensions.width, inputs.known_dimensions.height);
         // println!("\n");
 
-        let first_baseline = inline_layout
+        let line_baseline =
+            |line: parley::Line<'_, _>| (line.metrics().baseline / scale) + container_pb.top;
+        let first_baseline = inline_layout.layout.lines().next().map(line_baseline);
+        let last_baseline = inline_layout
             .layout
-            .lines()
-            .next()
-            .map(|line| (line.metrics().baseline / scale) + container_pb.top);
+            .get(line_count.saturating_sub(1 + has_trailing_empty_line as usize))
+            .map(line_baseline);
 
         // Put layout back
         self.nodes[node_id]
@@ -897,7 +912,10 @@ impl BaseDocument {
                     bottom: content_extent.height,
                 }
             },
-            baselines: taffy::Baselines::from_first(first_baseline),
+            baselines: taffy::Baselines {
+                first: first_baseline,
+                last: last_baseline,
+            },
             top_margin: CollapsibleMarginSet::ZERO,
             bottom_margin: CollapsibleMarginSet::ZERO,
             margins_can_collapse_through: !has_styles_preventing_being_collapsed_through
@@ -910,6 +928,40 @@ impl BaseDocument {
                     x: oof_position_inset.left,
                     y: oof_position_inset.top,
                 },
+            }),
+        }
+    }
+
+    /// The baseline an atomic inline box exposes to its line, relative to its border-box top.
+    /// `None` means the baseline is synthesized from the box's bottom margin edge.
+    ///
+    /// See <https://drafts.csswg.org/css-align/#baseline-export>
+    fn inline_box_baseline(
+        &self,
+        node_id: NodeId,
+        output: &LayoutOutput,
+        is_scroll_container: bool,
+    ) -> Option<f32> {
+        let display = self.nodes[node_id].display_style()?;
+        match display.inside() {
+            // An inline-block uses the baseline of its last line box, except (for legacy
+            // reasons) when it is a scroll container.
+            DisplayInside::Flow | DisplayInside::FlowRoot => {
+                if is_scroll_container {
+                    None
+                } else {
+                    // TODO: Taffy's block layout only reports a first baseline.
+                    output.baselines.last.or(output.baselines.first)
+                }
+            }
+            // Flex, grid and table boxes use their first baseline, which for scroll
+            // containers is clamped to the border box.
+            _ => output.baselines.first.map(|baseline| {
+                if is_scroll_container {
+                    baseline.clamp(0.0, output.size.height)
+                } else {
+                    baseline
+                }
             }),
         }
     }
