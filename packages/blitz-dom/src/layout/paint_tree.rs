@@ -293,9 +293,11 @@ impl BaseDocument {
                     .is_none_or(|cb| cb == node_id)
             };
             // Boxes hoisted to this node from further down the tree, keyed by
-            // the layout child they descend from: they are visited and listed
-            // in tree order, directly after that child (CSS 2.1 Appendix E).
-            let hoisted_past_parent: Vec<(Option<NodeId>, NodeId)> = self.nodes[node_id]
+            // the index of the layout child they descend from: they are visited
+            // and listed in tree order, directly after that child (CSS 2.1
+            // Appendix E). Boxes whose layout-parent chain does not lead through
+            // a layout child of this node come after all of them.
+            let mut hoisted_past_parent: Vec<(usize, NodeId)> = self.nodes[node_id]
                 .hoisted_children
                 .borrow()
                 .iter()
@@ -305,8 +307,16 @@ impl BaseDocument {
                         .get(id)
                         .is_some_and(|n| n.layout_parent.get() != Some(node_id))
                 })
-                .map(|id| (self.layout_child_containing(node_id, id), id))
+                .map(|id| {
+                    let anchor = self
+                        .layout_child_containing(node_id, id)
+                        .and_then(|anchor| children.iter().position(|&c| c == anchor))
+                        .unwrap_or(children.len());
+                    (anchor, id)
+                })
                 .collect();
+            hoisted_past_parent.sort_by_key(|&(anchor, _)| anchor);
+            let mut next_hoisted = 0;
 
             let mut paint_children = self.nodes[node_id]
                 .paint_children
@@ -316,7 +326,7 @@ impl BaseDocument {
             paint_children.clear();
             paint_children.reserve(children.len() + hoisted_past_parent.len());
 
-            for &child_id in children.iter() {
+            for (index, &child_id) in children.iter().enumerate() {
                 if owned_here(self, child_id) {
                     self.build_paint_tree_impl(
                         child_id,
@@ -345,22 +355,15 @@ impl BaseDocument {
                     }
                 }
 
-                for &(anchor, hoisted_id) in &hoisted_past_parent {
-                    if anchor == Some(child_id) {
-                        self.attach_hoisted_past_parent(
-                            hoisted_id,
-                            &mut paint_children,
-                            &mut entries,
-                        );
-                    }
+                while let Some(&(anchor, hoisted_id)) = hoisted_past_parent.get(next_hoisted)
+                    && anchor == index
+                {
+                    self.attach_hoisted_past_parent(hoisted_id, &mut paint_children, &mut entries);
+                    next_hoisted += 1;
                 }
             }
-            // Boxes whose layout-parent chain does not lead through a layout
-            // child of this node paint after all of them.
-            for &(anchor, hoisted_id) in &hoisted_past_parent {
-                if anchor.is_none_or(|anchor| !children.contains(&anchor)) {
-                    self.attach_hoisted_past_parent(hoisted_id, &mut paint_children, &mut entries);
-                }
+            for &(_, hoisted_id) in &hoisted_past_parent[next_hoisted..] {
+                self.attach_hoisted_past_parent(hoisted_id, &mut paint_children, &mut entries);
             }
 
             paint_children
