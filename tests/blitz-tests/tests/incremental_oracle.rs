@@ -150,16 +150,17 @@ fn layout_path(doc: &HtmlDocument, ancestor: NodeId, node: NodeId) -> Vec<usize>
 type HoistedEntries = Vec<(Vec<usize>, i32)>;
 
 /// Positional description of a node's paint tree: its `paint_children` as
-/// indices into `layout_children`, and (if it is a stacking-context root) its
-/// hoisted children as (layout path, z-index) pairs.
-fn paint_tree_of(doc: &HtmlDocument, node_id: NodeId) -> (Vec<usize>, Option<HoistedEntries>) {
+/// layout paths (length 1 for direct children, longer for out-of-flow boxes
+/// owned by this node as their containing block), and (if it is a
+/// stacking-context root) its hoisted children as (layout path, z-index) pairs.
+fn paint_tree_of(doc: &HtmlDocument, node_id: NodeId) -> (Vec<Vec<usize>>, Option<HoistedEntries>) {
     let node = doc.get_node(node_id).unwrap();
     let paint_children = node
         .paint_children
         .borrow()
         .iter()
         .flatten()
-        .map(|child| layout_index(doc, node_id, *child))
+        .map(|child| layout_path(doc, node_id, *child))
         .collect();
     let hoisted = node.stacking_context.as_ref().map(|sc| {
         sc.children

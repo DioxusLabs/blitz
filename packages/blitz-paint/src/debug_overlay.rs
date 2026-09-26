@@ -58,15 +58,26 @@ pub(crate) fn render_debug_overlay(
 
     let mut abs_x = x;
     let mut abs_y = y;
-    while let Some(parent_id) = node.layout_parent.get() {
+    // A fixed box whose containing block is the root element does not scroll
+    // with it (nor with the viewport).
+    let mut fixed_to_viewport = false;
+    while let Some(parent_id) = node.containing_block() {
+        let child_is_fixed = node.taffy_position() == taffy::Position::Fixed;
         node = &dom.as_ref().tree()[parent_id];
+        fixed_to_viewport = child_is_fixed && node.containing_block().is_none();
         let taffy::Point { x, y } = node.final_layout().location;
-        abs_x += x - node.scroll_offset().x as f32;
-        abs_y += y - node.scroll_offset().y as f32;
+        abs_x += x;
+        abs_y += y;
+        if !fixed_to_viewport {
+            abs_x -= node.scroll_offset().x as f32;
+            abs_y -= node.scroll_offset().y as f32;
+        }
     }
 
-    abs_x -= viewport_scroll.x as f32;
-    abs_y -= viewport_scroll.y as f32;
+    if !fixed_to_viewport {
+        abs_x -= viewport_scroll.x as f32;
+        abs_y -= viewport_scroll.y as f32;
+    }
 
     // Note: initial_x/initial_y are already in physical (scaled) pixels so they must be added after scaling
     // the other values

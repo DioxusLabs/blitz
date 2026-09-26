@@ -11,6 +11,7 @@
 use blitz_traits::node_id::NodeId;
 use std::cell::Cell;
 use std::ops::Range;
+use thin_vec::ThinVec;
 
 use crate::layout::damage::ALL_DAMAGE;
 use crate::tree::NodeTree;
@@ -20,18 +21,34 @@ use style::selector_parser::RestyleDamage;
 use style::values::computed::Float;
 use style::values::specified::box_::DisplayInside;
 use taffy::{Point, Rect};
-use thin_vec::ThinVec;
 
 /// Offset of the hoisted child `child_id` from the border box of its
 /// stacking-context root `sc_root_id`, excluding the child's own
 /// `final_layout().location`: the sum of `location - scroll_offset` of every
-/// layout ancestor strictly between the two.
+/// box strictly between the two on the child's positioning chain.
 ///
-/// Walks `layout_parent`, which is set for every layout child by
-/// `resolve_layout_children` (anonymous blocks included).
+/// Walks `Node::containing_block` (the out-of-flow containing block for boxes
+/// hoisted by Taffy, otherwise `layout_parent`, which is set for every layout
+/// child by `resolve_layout_children`, anonymous blocks included).
 pub fn hoisted_child_position(tree: &NodeTree, sc_root_id: NodeId, child_id: NodeId) -> Point<f32> {
+    let child = &tree[child_id];
     let mut position = Point::ZERO;
-    let mut current = tree[child_id].layout_parent.get();
+    let mut current = child.containing_block();
+
+    // A fixed-position box whose containing block is the root element is
+    // positioned against the viewport and does not scroll with it: cancel the
+    // scroll the walk below (or the stacking-context root itself) applies.
+    // A fixed box contained by a transformed ancestor scrolls with it.
+    if child.taffy_position() == taffy::Position::Fixed
+        && let Some(cb) = current.and_then(|id| tree.get(id))
+        && cb.containing_block().is_none()
+    {
+        let scroll_offset = *cb.scroll_offset();
+        let viewport_scroll = tree.viewport_scroll();
+        position.x += scroll_offset.x as f32 + viewport_scroll.x as f32;
+        position.y += scroll_offset.y as f32 + viewport_scroll.y as f32;
+    }
+
     while let Some(id) = current {
         if id == sc_root_id {
             break;
@@ -43,7 +60,7 @@ pub fn hoisted_child_position(tree: &NodeTree, sc_root_id: NodeId, child_id: Nod
         let scroll_offset = *node.scroll_offset();
         position.x += location.x - scroll_offset.x as f32;
         position.y += location.y - scroll_offset.y as f32;
-        current = node.layout_parent.get();
+        current = node.containing_block();
     }
     position
 }
@@ -262,15 +279,42 @@ impl BaseDocument {
             let is_flex_or_grid =
                 matches!(display.inside(), DisplayInside::Flex | DisplayInside::Grid);
 
-            for &child in children.iter() {
-                self.build_paint_tree_impl(
-                    child,
-                    match self.nodes[child].is_stacking_context_root(is_flex_or_grid) {
-                        true => None,
-                        false => Some(&mut entries),
-                    },
-                );
-            }
+            // Out-of-flow boxes are laid out (and painted) relative to their
+            // containing block, as recorded by Taffy's out-of-flow pass in the
+            // containing block's `hoisted_children`. A box whose containing
+            // block is not its layout parent is owned by the containing block;
+            // its layout parent neither visits nor lists it.
+            let owned_here = |doc: &Self, child_id: NodeId| -> bool {
+                doc.nodes[child_id]
+                    .oof_containing_block
+                    .get()
+                    .is_none_or(|cb| cb == node_id)
+            };
+            // Boxes hoisted to this node from further down the tree, keyed by
+            // the index of the layout child they descend from: they are visited
+            // and listed in tree order, directly after that child (CSS 2.1
+            // Appendix E). Boxes whose layout-parent chain does not lead through
+            // a layout child of this node come after all of them.
+            let mut hoisted_past_parent: Vec<(usize, NodeId)> = self.nodes[node_id]
+                .hoisted_children
+                .borrow()
+                .iter()
+                .copied()
+                .filter(|&id| {
+                    self.nodes
+                        .get(id)
+                        .is_some_and(|n| n.layout_parent.get() != Some(node_id))
+                })
+                .map(|id| {
+                    let anchor = self
+                        .layout_child_containing(node_id, id)
+                        .and_then(|anchor| children.iter().position(|&c| c == anchor))
+                        .unwrap_or(children.len());
+                    (anchor, id)
+                })
+                .collect();
+            hoisted_past_parent.sort_by_key(|&(anchor, _)| anchor);
+            let mut next_hoisted = 0;
 
             let mut paint_children = self.nodes[node_id]
                 .paint_children
@@ -278,27 +322,39 @@ impl BaseDocument {
                 .take()
                 .unwrap_or_default();
             paint_children.clear();
-            paint_children.reserve(children.len());
+            paint_children.reserve(children.len() + hoisted_past_parent.len());
 
-            for &child_id in children.iter() {
-                let child = &self.nodes[child_id];
+            for (index, &child_id) in children.iter().enumerate() {
+                if owned_here(self, child_id) {
+                    let is_sc_root = self.nodes[child_id].is_stacking_context_root(is_flex_or_grid);
+                    self.build_paint_tree_impl(
+                        child_id,
+                        match is_sc_root {
+                            true => None,
+                            false => Some(&mut entries),
+                        },
+                    );
 
-                let Some(style) = child.primary_styles() else {
-                    paint_children.push(child_id);
-                    continue;
-                };
-
-                let position = style.clone_position();
-                let z_index = style.clone_z_index().integer_or(0);
-
-                // TODO: more complete hoisting detection
-                // z-index applies to static flex/grid items too
-                // (css-flexbox-1 §painting, css-grid-1 §z-order).
-                if z_index != 0 && (position != Position::Static || is_flex_or_grid) {
-                    entries.push(HoistedPaintChild::new(child_id, z_index))
-                } else {
-                    paint_children.push(child_id);
+                    // Only stacking contexts with a non-zero z-index are lifted
+                    // out of tree order into the enclosing stacking context's
+                    // z-sorted list (CSS 2.1 Appendix E).
+                    let z_index = self.nodes[child_id].z_index();
+                    if is_sc_root && z_index != 0 {
+                        entries.push(HoistedPaintChild::new(child_id, z_index))
+                    } else {
+                        paint_children.push(child_id);
+                    }
                 }
+
+                while let Some(&(anchor, hoisted_id)) = hoisted_past_parent.get(next_hoisted)
+                    && anchor == index
+                {
+                    self.attach_hoisted_past_parent(hoisted_id, &mut paint_children, &mut entries);
+                    next_hoisted += 1;
+                }
+            }
+            for &(_, hoisted_id) in &hoisted_past_parent[next_hoisted..] {
+                self.attach_hoisted_past_parent(hoisted_id, &mut paint_children, &mut entries);
             }
 
             paint_children
@@ -317,6 +373,46 @@ impl BaseDocument {
         } else {
             node.sc_contribution_cache.borrow_mut().clear();
             node.stacking_context = Some(Box::new(StackingContext::from_children(entries)));
+        }
+    }
+
+    /// The layout child of `node_id` whose subtree contains `id`, following
+    /// `layout_parent`.
+    fn layout_child_containing(&self, node_id: NodeId, id: NodeId) -> Option<NodeId> {
+        let mut current = id;
+        loop {
+            let parent = self.nodes.get(current)?.layout_parent.get()?;
+            if parent == node_id {
+                return Some(current);
+            }
+            current = parent;
+        }
+    }
+
+    /// Visit an out-of-flow box hoisted to its containing block past its
+    /// layout parent and place it in the paint lists: z-indexed boxes go to
+    /// the enclosing stacking context like any other z-indexed positioned
+    /// child, the rest join `paint_children` at the same paint level as other
+    /// positioned boxes (the caller's stable sort keeps tree order).
+    fn attach_hoisted_past_parent(
+        &mut self,
+        child_id: NodeId,
+        paint_children: &mut ThinVec<NodeId>,
+        entries: &mut ThinVec<HoistedPaintChild>,
+    ) {
+        self.build_paint_tree_impl(
+            child_id,
+            match self.nodes[child_id].is_stacking_context_root(false) {
+                true => None,
+                false => Some(entries),
+            },
+        );
+
+        let z_index = self.nodes[child_id].z_index();
+        if z_index != 0 {
+            entries.push(HoistedPaintChild::new(child_id, z_index));
+        } else {
+            paint_children.push(child_id);
         }
     }
 }
