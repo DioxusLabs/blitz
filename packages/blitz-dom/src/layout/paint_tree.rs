@@ -328,30 +328,23 @@ impl BaseDocument {
 
             for (index, &child_id) in children.iter().enumerate() {
                 if owned_here(self, child_id) {
+                    let is_sc_root = self.nodes[child_id].is_stacking_context_root(is_flex_or_grid);
                     self.build_paint_tree_impl(
                         child_id,
-                        match self.nodes[child_id].is_stacking_context_root(is_flex_or_grid) {
+                        match is_sc_root {
                             true => None,
                             false => Some(&mut entries),
                         },
                     );
 
-                    let child = &self.nodes[child_id];
-                    match child.primary_styles() {
-                        None => paint_children.push(child_id),
-                        Some(style) => {
-                            let position = style.clone_position();
-                            let z_index = style.clone_z_index().integer_or(0);
-
-                            // TODO: more complete hoisting detection
-                            // z-index applies to static flex/grid items too
-                            // (css-flexbox-1 §painting, css-grid-1 §z-order).
-                            if z_index != 0 && (position != Position::Static || is_flex_or_grid) {
-                                entries.push(HoistedPaintChild::new(child_id, z_index))
-                            } else {
-                                paint_children.push(child_id);
-                            }
-                        }
+                    // Only stacking contexts with a non-zero z-index are lifted
+                    // out of tree order into the enclosing stacking context's
+                    // z-sorted list (CSS 2.1 Appendix E).
+                    let z_index = self.nodes[child_id].z_index();
+                    if is_sc_root && z_index != 0 {
+                        entries.push(HoistedPaintChild::new(child_id, z_index))
+                    } else {
+                        paint_children.push(child_id);
                     }
                 }
 
