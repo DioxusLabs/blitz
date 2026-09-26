@@ -1,5 +1,5 @@
 use kurbo::{Arc, BezPath, Insets, PathEl, Point, Rect, Shape as _, Vec2};
-use std::{f64::consts::FRAC_PI_2, f64::consts::PI};
+use std::f64::consts::{FRAC_PI_2, FRAC_PI_4, PI};
 
 use super::non_uniform_radii::NonUniformRoundedRectRadii;
 use super::{Corner, CssBoxKind, Direction, Edge, add_insets, get_corner_insets};
@@ -614,6 +614,19 @@ impl BuildBezpath for BezPath {
 
 /// Get the start angle of the arc based on the border width and the radii
 fn start_angle(bt_width: f64, br_width: f64, radii: Vec2) -> f64 {
+    // A side with no width contributes nothing to the corner, so the split
+    // sits at the limit: the whole arc belongs to the other side. Handling
+    // this up front keeps the formula below from evaluating `inf / inf`
+    // (`bt_width == 0`) or `0 / 0` (both zero) and returning `NaN`, which would
+    // poison the corner arc and, since all four edges of a box are filled as
+    // one path, erase the entire border.
+    match (bt_width == 0.0, br_width == 0.0) {
+        (true, true) => return FRAC_PI_4,
+        (true, false) => return FRAC_PI_2,
+        (false, true) => return 0.0,
+        (false, false) => {}
+    }
+
     // slope of the border intersection split
     let w = bt_width / br_width;
     let x = radii.y / (w * radii.x);
@@ -745,6 +758,18 @@ mod tests {
                 "{edge:?}: no point reached the outer edge {expected}"
             );
         }
+    }
+
+    /// Regression test for DioxusLabs/blitz#837: a zero-width side (e.g.
+    /// `border: 1px solid; border-top-width: 0` with a `border-radius`) made
+    /// the closed form evaluate `inf / inf` and return `NaN`. The whole corner
+    /// arc then belongs to the side that does have a width.
+    #[test]
+    fn handles_zero_width_sides() {
+        let radii = Vec2 { x: 8.0, y: 8.0 };
+        assert_eq!(start_angle(0.0, 1.0, radii), FRAC_PI_2);
+        assert_eq!(start_angle(1.0, 0.0, radii), 0.0);
+        assert!(start_angle(0.0, 0.0, radii).is_finite());
     }
 
     #[test]

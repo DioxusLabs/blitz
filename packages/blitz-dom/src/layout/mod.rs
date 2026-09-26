@@ -661,6 +661,80 @@ impl RoundTree for BaseDocument {
     }
 }
 
+/// Round the computed layout to the device pixel grid, writing the result to
+/// each node's `final_layout`.
+///
+/// This is [`taffy::round_layout`] with the grid scaled by `scale` (the
+/// device pixel ratio): every edge is snapped to a multiple of `1 / scale`
+/// CSS pixels rather than to a whole CSS pixel. Stylo already snaps lengths
+/// to whole device pixels, so at a fractional scale a `1px` border arrives
+/// here as `1 / scale` CSS px (0.8 at 1.25x); rounding its two edges to whole
+/// CSS pixels independently can land them on the same value and collapse the
+/// border to nothing (DioxusLabs/blitz#837). Rounding to the device grid keeps
+/// it exactly one device pixel wide.
+///
+/// As in taffy, edges are rounded from their cumulative (viewport-relative)
+/// position, and widths/heights are the difference of two rounded edges, so
+/// that no gaps open up between adjacent boxes.
+pub(crate) fn round_layout(tree: &mut impl RoundTree, root: NodeId, scale: f32) {
+    fn round_inner(
+        tree: &mut impl RoundTree,
+        node_id: NodeId,
+        cumulative_x: f32,
+        cumulative_y: f32,
+        round: &impl Fn(f32) -> f32,
+    ) {
+        let u = tree.get_unrounded_layout(node_id);
+        let mut layout = u;
+
+        let cumulative_x = cumulative_x + u.location.x;
+        let cumulative_y = cumulative_y + u.location.y;
+
+        layout.location.x = round(u.location.x);
+        layout.location.y = round(u.location.y);
+        layout.size.width = round(cumulative_x + u.size.width) - round(cumulative_x);
+        layout.size.height = round(cumulative_y + u.size.height) - round(cumulative_y);
+        layout.scrollbar_size.width = round(u.scrollbar_size.width);
+        layout.scrollbar_size.height = round(u.scrollbar_size.height);
+        layout.border.left = round(cumulative_x + u.border.left) - round(cumulative_x);
+        layout.border.right = round(cumulative_x + u.size.width)
+            - round(cumulative_x + u.size.width - u.border.right);
+        layout.border.top = round(cumulative_y + u.border.top) - round(cumulative_y);
+        layout.border.bottom = round(cumulative_y + u.size.height)
+            - round(cumulative_y + u.size.height - u.border.bottom);
+        layout.padding.left = round(cumulative_x + u.padding.left) - round(cumulative_x);
+        layout.padding.right = round(cumulative_x + u.size.width)
+            - round(cumulative_x + u.size.width - u.padding.right);
+        layout.padding.top = round(cumulative_y + u.padding.top) - round(cumulative_y);
+        layout.padding.bottom = round(cumulative_y + u.size.height)
+            - round(cumulative_y + u.size.height - u.padding.bottom);
+        layout.scrollable_overflow_rect.left =
+            round(cumulative_x + u.scrollable_overflow_rect.left) - round(cumulative_x);
+        layout.scrollable_overflow_rect.right =
+            round(cumulative_x + u.scrollable_overflow_rect.right) - round(cumulative_x);
+        layout.scrollable_overflow_rect.top =
+            round(cumulative_y + u.scrollable_overflow_rect.top) - round(cumulative_y);
+        layout.scrollable_overflow_rect.bottom =
+            round(cumulative_y + u.scrollable_overflow_rect.bottom) - round(cumulative_y);
+
+        tree.set_final_layout(node_id, &layout);
+
+        for index in 0..tree.child_count(node_id) {
+            let child = tree.get_child_id(node_id, index);
+            round_inner(tree, child, cumulative_x, cumulative_y, round);
+        }
+    }
+
+    // Snap to whole device pixels. A scale of 1 is exactly taffy's rounding.
+    let scale = if scale.is_finite() && scale > 0.0 {
+        scale
+    } else {
+        1.0
+    };
+    let round = move |v: f32| (v * scale).round() / scale;
+    round_inner(tree, root, 0.0, 0.0, &round);
+}
+
 impl PrintTree for BaseDocument {
     fn get_debug_label(&self, node_id: NodeId) -> &'static str {
         let node = &self.node_from_id(node_id);
