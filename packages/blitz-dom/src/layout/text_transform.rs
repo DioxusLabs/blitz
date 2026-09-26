@@ -43,8 +43,31 @@ impl CaseTransform {
             return Self::NONE;
         }
         let lang = LanguageIdentifier::try_from_str(&style.get_font()._x_lang.0)
+            .map(casing_language)
             .unwrap_or(LanguageIdentifier::UNKNOWN);
         Self { kind, lang }
+    }
+}
+
+/// Language-specific case mapping rules don't apply if an explicit script subtag contradicts
+/// the language's script (e.g. `tr-Cyrl`).
+///
+/// <https://drafts.csswg.org/css-text-3/#script-tagging>
+fn casing_language(lang: LanguageIdentifier) -> LanguageIdentifier {
+    let Some(script) = lang.script else {
+        return lang;
+    };
+    // The languages with tailored case mappings in ICU4X.
+    let language_script = match lang.language.as_str() {
+        "az" | "lt" | "nl" | "tr" => "Latn",
+        "el" => "Grek",
+        "hy" => "Armn",
+        _ => return lang,
+    };
+    if script.as_str() == language_script {
+        lang
+    } else {
+        LanguageIdentifier::UNKNOWN
     }
 }
 
@@ -156,7 +179,7 @@ mod tests {
     fn transform(kind: TextTransform, lang: &str, texts: &[&str]) -> Vec<String> {
         let transform = CaseTransform {
             kind,
-            lang: LanguageIdentifier::try_from_str(lang).unwrap(),
+            lang: casing_language(LanguageIdentifier::try_from_str(lang).unwrap()),
         };
         with_builder(|builder, transformer| {
             texts
@@ -290,5 +313,13 @@ mod tests {
             ["abc"]
         );
         assert_eq!(transform(TextTransform::LOWERCASE, "tr", &["I"]), ["ı"]);
+        assert_eq!(
+            transform(TextTransform::LOWERCASE, "tr-Latn", &["I"]),
+            ["ı"]
+        );
+        assert_eq!(
+            transform(TextTransform::LOWERCASE, "tr-Cyrl", &["I"]),
+            ["i"]
+        );
     }
 }
