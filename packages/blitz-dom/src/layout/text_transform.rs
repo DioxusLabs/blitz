@@ -107,6 +107,10 @@ impl TextTransformer {
         transform: &CaseTransform,
         builder: &TreeBuilder<'_, B>,
     ) -> &'a str {
+        if transform.kind.is_empty() {
+            return text;
+        }
+
         if text.is_ascii() && !transform.has_turkic_casing() {
             match transform.kind {
                 TextTransform::UPPERCASE => {
