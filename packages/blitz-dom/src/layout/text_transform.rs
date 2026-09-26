@@ -101,14 +101,19 @@ impl TextTransformer {
             TextTransform::LOWERCASE => CASE_MAPPER.lowercase_to_string(text, &transform.lang),
             TextTransform::CAPITALIZE => {
                 let text_so_far = builder.text_so_far();
-                let preceding = &text_so_far.text[self.context_start..];
-                let start =
-                    ceil_char_boundary(preceding, preceding.len().saturating_sub(MAX_CONTEXT_LEN));
-                let mut context = Cow::Borrowed(&preceding[start..]);
-                if text_so_far.pending_whitespace {
-                    context.to_mut().push(' ');
-                }
-                Cow::Owned(capitalize(&context, text, &transform.lang))
+                // Pending (collapsed) whitespace always ends the preceding word, so no
+                // context is needed.
+                let context = if text_so_far.pending_whitespace {
+                    ""
+                } else {
+                    let preceding = &text_so_far.text[self.context_start..];
+                    let start = ceil_char_boundary(
+                        preceding,
+                        preceding.len().saturating_sub(MAX_CONTEXT_LEN),
+                    );
+                    &preceding[start..]
+                };
+                Cow::Owned(capitalize(context, text, &transform.lang))
             }
             _ => Cow::Borrowed(text),
         }
@@ -124,7 +129,11 @@ fn capitalize(context: &str, text: &str, lang: &LanguageIdentifier) -> String {
     options.trailing_case = Some(TrailingCase::Unchanged);
 
     let context_len = context.len();
-    let combined = [context, text].concat();
+    let combined = if context.is_empty() {
+        Cow::Borrowed(text)
+    } else {
+        Cow::Owned([context, text].concat())
+    };
 
     let mut output = String::with_capacity(text.len());
     let mut segment_start = 0;
@@ -284,6 +293,11 @@ mod tests {
     fn capitalize_after_collapsed_whitespace() {
         assert_eq!(capitalize(&["hello ", "world"]), ["Hello ", "World"]);
         assert_eq!(capitalize(&["hello\n", "world"]), ["Hello\n", "World"]);
+        assert_eq!(capitalize(&["hello ", "(world"]), ["Hello ", "(World"]);
+        assert_eq!(
+            capitalize(&["hello ", "\u{301}world"]),
+            ["Hello ", "\u{301}World"]
+        );
     }
 
     #[test]
