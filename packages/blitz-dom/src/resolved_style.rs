@@ -580,7 +580,25 @@ impl BaseDocument {
                             return format_px(used);
                         }
                     }
-                    // `static` and `sticky` boxes resolve to the computed value
+                    // A specified (non-`auto`) inset resolves to the sticking
+                    // threshold used by sticky positioning (percentages
+                    // resolved against the scrollport). An `auto` inset
+                    // resolves to the computed value.
+                    Position::Sticky => {
+                        if let Some(insets) = self.sticky_resolved_insets(node_id) {
+                            let inset = match property_name {
+                                "top" => insets.top,
+                                "bottom" => insets.bottom,
+                                "left" => insets.left,
+                                "right" => insets.right,
+                                _ => unreachable!(),
+                            };
+                            if let Some(value) = inset {
+                                return format_px(value);
+                            }
+                        }
+                    }
+                    // `static` boxes resolve to the computed value
                     _ => {}
                 }
             }
