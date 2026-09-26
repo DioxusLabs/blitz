@@ -85,7 +85,7 @@ pub(crate) struct TextTransformer {
 
 impl TextTransformer {
     /// Forces a word boundary (e.g. at an atomic inline or a forced line break).
-    pub(crate) fn word_break<B: Brush>(&mut self, builder: &mut TreeBuilder<'_, B>) {
+    pub(crate) fn word_break<B: Brush>(&mut self, builder: &TreeBuilder<'_, B>) {
         self.context_start = builder.text_so_far().text.len();
     }
 
@@ -94,7 +94,7 @@ impl TextTransformer {
         &self,
         text: &'a str,
         transform: &CaseTransform,
-        builder: &mut TreeBuilder<'_, B>,
+        builder: &TreeBuilder<'_, B>,
     ) -> Cow<'a, str> {
         match transform.kind {
             TextTransform::UPPERCASE => CASE_MAPPER.uppercase_to_string(text, &transform.lang),

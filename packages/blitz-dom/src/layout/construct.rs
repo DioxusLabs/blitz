@@ -1200,7 +1200,7 @@ pub(crate) fn build_inline_layout_into(
     };
     // The marker is a separate box, so words in the content don't continue from it.
     let mut text_transformer = TextTransformer::default();
-    text_transformer.word_break(&mut builder);
+    text_transformer.word_break(&builder);
 
     if let Some(before_id) = root_node.before() {
         build_inline_layout_recursive(
