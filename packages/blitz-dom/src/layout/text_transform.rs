@@ -2,8 +2,6 @@
 //!
 //! <https://drafts.csswg.org/css-text/#text-transform-property>
 
-use std::borrow::Cow;
-
 use icu_casemap::options::{LeadingAdjustment, TitlecaseOptions, TrailingCase};
 use icu_casemap::{CaseMapper, CaseMapperBorrowed, TitlecaseMapper, TitlecaseMapperBorrowed};
 use icu_locale_core::LanguageIdentifier;
@@ -13,6 +11,7 @@ use icu_segmenter::{WordSegmenter, WordSegmenterBorrowed, options::WordBreakInva
 use parley::{Brush, TreeBuilder};
 use style::properties::ComputedValues;
 use style::values::computed::TextTransform;
+use writeable::Writeable;
 
 const CASE_MAPPER: CaseMapperBorrowed<'static> = CaseMapper::new();
 const TITLECASE_MAPPER: TitlecaseMapperBorrowed<'static> = TitlecaseMapper::new();
@@ -81,6 +80,10 @@ fn casing_language(lang: LanguageIdentifier) -> LanguageIdentifier {
 pub(crate) struct TextTransformer {
     /// The offset in the builder's text of the last forced word boundary.
     context_start: usize,
+    /// Reused buffer for the context followed by the text to be capitalized.
+    segmentation_buffer: String,
+    /// Reused buffer for the transformed text.
+    output: String,
 }
 
 impl TextTransformer {
@@ -91,14 +94,20 @@ impl TextTransformer {
 
     /// Transforms the content of a text node that is about to be pushed to `builder`.
     pub(crate) fn transform<'a, B: Brush>(
-        &self,
+        &'a mut self,
         text: &'a str,
         transform: &CaseTransform,
         builder: &TreeBuilder<'_, B>,
-    ) -> Cow<'a, str> {
+    ) -> &'a str {
+        let output = &mut self.output;
+        output.clear();
         match transform.kind {
-            TextTransform::UPPERCASE => CASE_MAPPER.uppercase_to_string(text, &transform.lang),
-            TextTransform::LOWERCASE => CASE_MAPPER.lowercase_to_string(text, &transform.lang),
+            TextTransform::UPPERCASE => {
+                write(output, CASE_MAPPER.uppercase(text, &transform.lang));
+            }
+            TextTransform::LOWERCASE => {
+                write(output, CASE_MAPPER.lowercase(text, &transform.lang));
+            }
             TextTransform::CAPITALIZE => {
                 let text_so_far = builder.text_so_far();
                 // Pending (collapsed) whitespace always ends the preceding word, so no
@@ -113,31 +122,51 @@ impl TextTransformer {
                     );
                     &preceding[start..]
                 };
-                Cow::Owned(capitalize(context, text, &transform.lang))
+                capitalize(
+                    context,
+                    text,
+                    &transform.lang,
+                    &mut self.segmentation_buffer,
+                    output,
+                );
             }
-            _ => Cow::Borrowed(text),
+            _ => return text,
         }
+        output
     }
 }
 
-/// Titlecases the first typographic letter unit of each word in `text`, leaving other
-/// characters unchanged. `context` is the text preceding `text` in the same word segmentation
-/// context.
-fn capitalize(context: &str, text: &str, lang: &LanguageIdentifier) -> String {
+fn write(output: &mut String, writeable: impl Writeable) {
+    // Writing to a `String` is infallible.
+    let _ = writeable.write_to(output);
+}
+
+/// Writes `text` to `output`, titlecasing the first typographic letter unit of each word and
+/// leaving other characters unchanged. `context` is the text preceding `text` in the same word
+/// segmentation context. `buffer` is scratch space.
+fn capitalize(
+    context: &str,
+    text: &str,
+    lang: &LanguageIdentifier,
+    buffer: &mut String,
+    output: &mut String,
+) {
     let mut options = TitlecaseOptions::default();
     options.leading_adjustment = Some(LeadingAdjustment::None);
     options.trailing_case = Some(TrailingCase::Unchanged);
 
     let context_len = context.len();
     let combined = if context.is_empty() {
-        Cow::Borrowed(text)
+        text
     } else {
-        Cow::Owned([context, text].concat())
+        buffer.clear();
+        buffer.push_str(context);
+        buffer.push_str(text);
+        buffer
     };
 
-    let mut output = String::with_capacity(text.len());
     let mut segment_start = 0;
-    for segment_end in WORD_SEGMENTER.segment_str(&combined).skip(1) {
+    for segment_end in WORD_SEGMENTER.segment_str(combined).skip(1) {
         if segment_end > context_len {
             let part_start = segment_start.max(context_len);
             let part = &combined[part_start..segment_end];
@@ -151,19 +180,16 @@ fn capitalize(context: &str, text: &str, lang: &LanguageIdentifier) -> String {
             match part.find(is_typographic_letter_unit) {
                 Some(letter_start) if !first_letter_already_seen => {
                     output.push_str(&part[..letter_start]);
-                    output.push_str(&TITLECASE_MAPPER.titlecase_segment_to_string(
-                        &part[letter_start..],
-                        lang,
-                        options,
-                    ));
+                    write(
+                        output,
+                        TITLECASE_MAPPER.titlecase_segment(&part[letter_start..], lang, options),
+                    );
                 }
                 _ => output.push_str(part),
             }
         }
         segment_start = segment_end;
     }
-
-    output
 }
 
 /// <https://drafts.csswg.org/css-text/#typographic-letter-unit>
@@ -207,11 +233,11 @@ mod tests {
 
     fn push(
         builder: &mut TreeBuilder<'_, ()>,
-        transformer: &TextTransformer,
+        transformer: &mut TextTransformer,
         text: &str,
         transform: &CaseTransform,
     ) -> String {
-        let output = transformer.transform(text, transform, builder).into_owned();
+        let output = transformer.transform(text, transform, builder).to_owned();
         builder.push_text(&output);
         output
     }
