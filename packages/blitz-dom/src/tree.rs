@@ -38,6 +38,9 @@ pub struct NodeTree {
     /// paint child offsets) are memoised against it. Starts at 1 so that a
     /// stamp of 0 is never current.
     geometry_generation: AtomicU64,
+    /// Scroll offset of the viewport (the root element scrolls the viewport,
+    /// so its offset lives here rather than on the node).
+    viewport_scroll: crate::Point<f64>,
 }
 
 impl NodeTree {
@@ -45,7 +48,19 @@ impl NodeTree {
         Self {
             map: SlotMap::with_key(),
             geometry_generation: AtomicU64::new(1),
+            viewport_scroll: crate::Point::ZERO,
         }
+    }
+
+    pub fn viewport_scroll(&self) -> crate::Point<f64> {
+        self.viewport_scroll
+    }
+
+    /// Memoised paint geometry may depend on the viewport scroll, so this
+    /// bumps the geometry generation like any other scroll write.
+    pub(crate) fn set_viewport_scroll(&mut self, scroll: crate::Point<f64>) {
+        self.viewport_scroll = scroll;
+        self.bump_geometry_generation();
     }
 
     /// See the `geometry_generation` field.

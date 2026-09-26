@@ -292,8 +292,8 @@ impl BaseDocument {
     ) -> bool {
         match self.canonical_scroll_target(target) {
             ScrollTarget::Viewport => {
-                let initial = self.viewport_scroll;
-                self.viewport_scroll = offset;
+                let initial = self.viewport_scroll();
+                self.set_viewport_scroll(offset);
                 if offset == initial {
                     return false;
                 }
@@ -469,7 +469,7 @@ impl BaseDocument {
                     x: (content_width - window_width).max(0.0),
                     y: (content_height - window_height).max(0.0),
                 };
-                (self.viewport_scroll, max)
+                (self.viewport_scroll(), max)
             }
             ScrollTarget::Node(node_id) => {
                 let Some(node) = self.nodes.get(node_id) else {
@@ -637,14 +637,14 @@ impl BaseDocument {
         let viewport_width = self.viewport.window_size.0 as f64 / scale;
         let viewport_height = self.viewport.window_size.1 as f64 / scale;
         let x = Self::aligned_scroll_offset(
-            self.viewport_scroll.x,
+            self.viewport_scroll().x,
             viewport_width,
             target.x as f64,
             target_size.width as f64,
             horizontal,
         );
         let y = Self::aligned_scroll_offset(
-            self.viewport_scroll.y,
+            self.viewport_scroll().y,
             viewport_height,
             target.y as f64,
             target_size.height as f64,
