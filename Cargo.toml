@@ -191,6 +191,12 @@ rayon = "1"
 test-that = "0.5.2"
 thread_local = "1"
 
+# Unicode (ICU4X)
+icu_casemap = { version = "2.3", default-features = false, features = ["compiled_data"] }
+icu_locale_core = { version = "2.3", default-features = false }
+icu_properties = { version = "2.3", default-features = false, features = ["compiled_data"] }
+icu_segmenter = { version = "2.3", default-features = false, features = ["compiled_data"] }
+
 [profile.profile]
 inherits = "release"
 debug = true

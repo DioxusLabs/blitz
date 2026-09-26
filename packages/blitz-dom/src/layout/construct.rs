@@ -12,7 +12,7 @@ use style::{
     data::ElementData as StyloElementData,
     shared_lock::StylesheetGuards,
     values::{
-        computed::{Content, ContentItem, Display, Float, TextTransform},
+        computed::{Content, ContentItem, Display, Float},
         specified::box_::{DisplayInside, DisplayOutside},
     },
 };
@@ -36,6 +36,7 @@ use super::{
     list::{BULLET_FONT_FAMILY, collect_list_item_children},
     replaced::is_inline_box_element,
     table::build_table_context,
+    text_transform::{CaseTransform, TextTransformer},
 };
 
 const DUMMY_NAME: QualName = qual_name!("div", html);
@@ -1068,9 +1069,10 @@ pub(crate) fn build_inline_layout_into(
     }
 
     let text_transform = root_node_style
-        .as_ref()
-        .map(|s| s.clone_text_transform() & TextTransform::CASE_TRANSFORMS)
-        .unwrap_or(TextTransform::NONE);
+        .as_deref()
+        .map(|s| CaseTransform::from_style(s))
+        .unwrap_or(CaseTransform::NONE);
+    let mut text_transformer = TextTransformer::default();
 
     // Render position-inside list items
     if let Some(ListItemLayout {
@@ -1097,13 +1099,31 @@ pub(crate) fn build_inline_layout_into(
     };
 
     if let Some(before_id) = root_node.before() {
-        build_inline_layout_recursive(&mut builder, nodes, before_id, text_transform);
+        build_inline_layout_recursive(
+            &mut builder,
+            &mut text_transformer,
+            nodes,
+            before_id,
+            &text_transform,
+        );
     }
     for child_id in root_node.children.iter().copied() {
-        build_inline_layout_recursive(&mut builder, nodes, child_id, text_transform);
+        build_inline_layout_recursive(
+            &mut builder,
+            &mut text_transformer,
+            nodes,
+            child_id,
+            &text_transform,
+        );
     }
     if let Some(after_id) = root_node.after() {
-        build_inline_layout_recursive(&mut builder, nodes, after_id, text_transform);
+        build_inline_layout_recursive(
+            &mut builder,
+            &mut text_transformer,
+            nodes,
+            after_id,
+            &text_transform,
+        );
     }
 
     text_layout.text = builder.build_into(&mut text_layout.layout);
@@ -1111,9 +1131,10 @@ pub(crate) fn build_inline_layout_into(
 
     fn build_inline_layout_recursive(
         builder: &mut TreeBuilder<TextBrush>,
+        text_transformer: &mut TextTransformer,
         nodes: &crate::NodeTree,
         node_id: NodeId,
-        parent_text_transform: TextTransform,
+        parent_text_transform: &CaseTransform,
     ) {
         let node = &nodes[node_id];
 
@@ -1121,8 +1142,8 @@ pub(crate) fn build_inline_layout_into(
         let style = style.as_ref();
 
         let text_transform = style
-            .map(|s| s.clone_text_transform() & TextTransform::CASE_TRANSFORMS)
-            .unwrap_or(TextTransform::NONE);
+            .map(|s| CaseTransform::from_style(s))
+            .unwrap_or(CaseTransform::NONE);
 
         match &node.data {
             NodeData::Element(element_data) | NodeData::AnonymousBlock(element_data) => {
@@ -1170,7 +1191,13 @@ pub(crate) fn build_inline_layout_into(
                         );
                         for child_id in node.children.iter().copied() {
                             // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
-                            build_inline_layout_recursive(builder, nodes, child_id, text_transform);
+                            build_inline_layout_recursive(
+                                builder,
+                                text_transformer,
+                                nodes,
+                                child_id,
+                                &text_transform,
+                            );
                         }
                         builder.pop_style_span();
                     }
@@ -1178,6 +1205,9 @@ pub(crate) fn build_inline_layout_into(
                         let tag_name = &element_data.name.local;
 
                         if is_inline_box_element(tag_name) {
+                            if box_kind == InlineBoxKind::InFlow {
+                                text_transformer.word_break();
+                            }
                             builder.push_inline_box(InlineBox {
                                 id: node_id.as_u64(),
                                 kind: box_kind,
@@ -1202,6 +1232,7 @@ pub(crate) fn build_inline_layout_into(
                             ]);
                             builder.push_text("\n");
                             builder.pop_style_span();
+                            text_transformer.word_break();
                         } else {
                             // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
                             let style = node
@@ -1217,26 +1248,29 @@ pub(crate) fn build_inline_layout_into(
                             if let Some(before_id) = node.before() {
                                 build_inline_layout_recursive(
                                     builder,
+                                    text_transformer,
                                     nodes,
                                     before_id,
-                                    text_transform,
+                                    &text_transform,
                                 );
                             }
 
                             for child_id in node.children.iter().copied() {
                                 build_inline_layout_recursive(
                                     builder,
+                                    text_transformer,
                                     nodes,
                                     child_id,
-                                    text_transform,
+                                    &text_transform,
                                 );
                             }
                             if let Some(after_id) = node.after() {
                                 build_inline_layout_recursive(
                                     builder,
+                                    text_transformer,
                                     nodes,
                                     after_id,
-                                    text_transform,
+                                    &text_transform,
                                 );
                             }
 
@@ -1245,6 +1279,9 @@ pub(crate) fn build_inline_layout_into(
                     }
                     // Inline box
                     (_, _) => {
+                        if box_kind == InlineBoxKind::InFlow {
+                            text_transformer.word_break();
+                        }
                         builder.push_inline_box(InlineBox {
                             id: node_id.as_u64(),
                             kind: box_kind,
@@ -1266,18 +1303,8 @@ pub(crate) fn build_inline_layout_into(
                 // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
                 // dbg!(&data.content);
 
-                // TODO: optimize case transforms to be non-allocating
-                match parent_text_transform {
-                    TextTransform::UPPERCASE => {
-                        builder.push_text(&data.content.to_uppercase());
-                    }
-                    TextTransform::LOWERCASE => {
-                        builder.push_text(&data.content.to_lowercase());
-                    }
-                    _ => {
-                        builder.push_text(&data.content);
-                    }
-                }
+                let text = text_transformer.transform(&data.content, parent_text_transform);
+                builder.push_text(&text);
             }
             NodeData::Comment { .. } => {
                 // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
