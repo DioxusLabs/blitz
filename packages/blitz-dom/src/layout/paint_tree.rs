@@ -304,8 +304,10 @@ impl BaseDocument {
                     .get()
                     .is_none_or(|cb| cb == node_id)
             };
-            // Boxes hoisted to this node from further down the tree.
-            let hoisted_past_parent: Vec<NodeId> = self.nodes[node_id]
+            // Boxes hoisted to this node from further down the tree, keyed by
+            // the layout child they descend from: they are visited and listed
+            // in tree order, directly after that child (CSS 2.1 Appendix E).
+            let hoisted_past_parent: Vec<(Option<NodeId>, NodeId)> = self.nodes[node_id]
                 .hoisted_children
                 .borrow()
                 .iter()
@@ -315,29 +317,8 @@ impl BaseDocument {
                         .get(id)
                         .is_some_and(|n| n.layout_parent.get() != Some(node_id))
                 })
+                .map(|id| (self.layout_child_containing(node_id, id), id))
                 .collect();
-
-            for &child in children.iter() {
-                if !owned_here(self, child) {
-                    continue;
-                }
-                self.build_paint_tree_impl(
-                    child,
-                    match self.nodes[child].is_stacking_context_root(is_flex_or_grid) {
-                        true => None,
-                        false => Some(&mut entries),
-                    },
-                );
-            }
-            for &child in &hoisted_past_parent {
-                self.build_paint_tree_impl(
-                    child,
-                    match self.nodes[child].is_stacking_context_root(false) {
-                        true => None,
-                        false => Some(&mut entries),
-                    },
-                );
-            }
 
             let mut paint_children = self.nodes[node_id]
                 .paint_children
@@ -346,45 +327,72 @@ impl BaseDocument {
                 .unwrap_or_default();
             paint_children.clear();
             paint_children.reserve(children.len() + hoisted_past_parent.len());
+            let mut effect_roots: Vec<NodeId> = Vec::new();
 
             for &child_id in children.iter() {
-                if !owned_here(self, child_id) {
-                    continue;
+                if owned_here(self, child_id) {
+                    self.build_paint_tree_impl(
+                        child_id,
+                        match self.nodes[child_id].is_stacking_context_root(is_flex_or_grid) {
+                            true => None,
+                            false => Some(&mut entries),
+                        },
+                    );
+
+                    let child = &self.nodes[child_id];
+                    match child.primary_styles() {
+                        None => paint_children.push(child_id),
+                        Some(style) => {
+                            let position = style.clone_position();
+                            let z_index = style.clone_z_index().integer_or(0);
+
+                            // TODO: more complete hoisting detection
+                            // z-index applies to static flex/grid items too
+                            // (css-flexbox-1 §painting, css-grid-1 §z-order).
+                            if z_index != 0 && (position != Position::Static || is_flex_or_grid) {
+                                entries.push(HoistedPaintChild::new(child_id, z_index))
+                            } else {
+                                paint_children.push(child_id);
+                            }
+                        }
+                    }
                 }
-                let child = &self.nodes[child_id];
 
-                let Some(style) = child.primary_styles() else {
-                    paint_children.push(child_id);
-                    continue;
-                };
-
-                let position = style.clone_position();
-                let z_index = style.clone_z_index().integer_or(0);
-
-                // TODO: more complete hoisting detection
-                // z-index applies to static flex/grid items too
-                // (css-flexbox-1 §painting, css-grid-1 §z-order).
-                if z_index != 0 && (position != Position::Static || is_flex_or_grid) {
-                    entries.push(HoistedPaintChild::new(child_id, z_index))
-                } else {
-                    paint_children.push(child_id);
+                for &(anchor, hoisted_id) in &hoisted_past_parent {
+                    if anchor == Some(child_id) {
+                        self.attach_hoisted_past_parent(
+                            node_id,
+                            hoisted_id,
+                            &mut paint_children,
+                            &mut entries,
+                            &mut effect_roots,
+                        );
+                    }
                 }
             }
-
-            if hoisted_past_parent.is_empty() {
-                paint_children.sort_by_cached_key(|id| {
-                    node_to_paint_order(&self.nodes[*id], is_flex_or_grid)
-                });
-            } else {
-                self.attach_hoisted_past_parent(
-                    node_id,
-                    &children,
-                    &hoisted_past_parent,
-                    is_flex_or_grid,
-                    &mut paint_children,
-                    &mut entries,
-                );
+            // Boxes whose layout-parent chain does not lead through a layout
+            // child of this node paint after all of them.
+            for &(anchor, hoisted_id) in &hoisted_past_parent {
+                if anchor.is_none_or(|anchor| !children.contains(&anchor)) {
+                    self.attach_hoisted_past_parent(
+                        node_id,
+                        hoisted_id,
+                        &mut paint_children,
+                        &mut entries,
+                        &mut effect_roots,
+                    );
+                }
             }
+            for effect_root in effect_roots {
+                self.nodes[effect_root]
+                    .stacking_context
+                    .as_mut()
+                    .unwrap()
+                    .sort();
+            }
+
+            paint_children
+                .sort_by_cached_key(|id| node_to_paint_order(&self.nodes[*id], is_flex_or_grid));
 
             let node = &self.nodes[node_id];
             *node.paint_children.borrow_mut() = Some(paint_children);
@@ -402,8 +410,21 @@ impl BaseDocument {
         }
     }
 
-    /// Place the out-of-flow boxes hoisted to `node_id` past their layout
-    /// parent into its paint lists, then sort `paint_children`.
+    /// The layout child of `node_id` whose subtree contains `id`, following
+    /// `layout_parent`.
+    fn layout_child_containing(&self, node_id: NodeId, id: NodeId) -> Option<NodeId> {
+        let mut current = id;
+        loop {
+            let parent = self.nodes.get(current)?.layout_parent.get()?;
+            if parent == node_id {
+                return Some(current);
+            }
+            current = parent;
+        }
+    }
+
+    /// Visit an out-of-flow box hoisted to `node_id` past its layout parent
+    /// and place it in the paint lists.
     ///
     /// - z-indexed boxes go to the enclosing stacking context like any other
     ///   z-indexed positioned child.
@@ -411,77 +432,47 @@ impl BaseDocument {
     ///   clip-path, mask) between it and `node_id` is painted inside that
     ///   ancestor's effect layers: it is pushed into the ancestor's stacking
     ///   context tagged with `node_id` as owner, replacing the entries this
-    ///   node pushed there last time. Any change to such a box damages
+    ///   node pushed there last time (the root is recorded in `effect_roots`
+    ///   for the caller to re-sort). Any change to such a box damages
     ///   `node_id` (a DOM ancestor), so it is visited whenever they change.
-    /// - Otherwise it joins `paint_children` at its Appendix E position: same
-    ///   paint level as other positioned boxes, in tree order (after the
-    ///   layout child it descends from, before that child's next sibling).
+    /// - Otherwise it joins `paint_children`, at the same paint level as
+    ///   other positioned boxes; the caller's stable sort keeps tree order.
     fn attach_hoisted_past_parent(
         &mut self,
         node_id: NodeId,
-        children: &[NodeId],
-        hoisted: &[NodeId],
-        is_flex_or_grid: bool,
+        child_id: NodeId,
         paint_children: &mut ThinVec<NodeId>,
         entries: &mut ThinVec<HoistedPaintChild>,
+        effect_roots: &mut Vec<NodeId>,
     ) {
-        let mut effect_roots: Vec<NodeId> = Vec::new();
-        for &child_id in hoisted {
-            let z_index = self.nodes[child_id].z_index();
-            if z_index != 0 {
-                entries.push(HoistedPaintChild::new(child_id, z_index));
-                continue;
-            }
-            if let Some(effect_root) = self.innermost_paint_effect_ancestor(child_id, node_id)
-                && self.nodes[effect_root].stacking_context.is_some()
-            {
-                if !effect_roots.contains(&effect_root) {
-                    effect_roots.push(effect_root);
-                    let sc = self.nodes[effect_root].stacking_context.as_mut().unwrap();
-                    sc.children.retain(|c| c.owner != Some(node_id));
-                }
-                let sc = self.nodes[effect_root].stacking_context.as_mut().unwrap();
-                let mut entry = HoistedPaintChild::new(child_id, 0);
-                entry.owner = Some(node_id);
-                sc.children.push(entry);
-                continue;
-            }
-            paint_children.push(child_id);
-        }
-        for effect_root in effect_roots {
-            self.nodes[effect_root]
-                .stacking_context
-                .as_mut()
-                .unwrap()
-                .sort();
-        }
+        self.build_paint_tree_impl(
+            child_id,
+            match self.nodes[child_id].is_stacking_context_root(false) {
+                true => None,
+                false => Some(entries),
+            },
+        );
 
-        // Tree-order rank: index of the layout child each box descends from;
-        // hoisted boxes sort after that child, in hoisting order.
-        let rank = |id: NodeId| -> (usize, usize) {
-            if let Some(index) = children.iter().position(|&c| c == id) {
-                return (index, 0);
+        let z_index = self.nodes[child_id].z_index();
+        if z_index != 0 {
+            entries.push(HoistedPaintChild::new(child_id, z_index));
+            return;
+        }
+        if let Some(effect_root) = self.innermost_paint_effect_ancestor(child_id, node_id)
+            && self.nodes[effect_root].stacking_context.is_some()
+        {
+            if !effect_roots.contains(&effect_root) {
+                effect_roots.push(effect_root);
+                let sc = self.nodes[effect_root].stacking_context.as_mut().unwrap();
+                sc.children.retain(|c| c.owner != Some(node_id));
             }
-            let mut current = id;
-            while let Some(parent) = self.nodes[current].layout_parent.get() {
-                if parent == node_id {
-                    break;
-                }
-                current = parent;
-            }
-            let index = children
-                .iter()
-                .position(|&c| c == current)
-                .unwrap_or(children.len());
-            let hoist_index = hoisted.iter().position(|&h| h == id).unwrap_or(0);
-            (index, 1 + hoist_index)
-        };
-        paint_children.sort_by_cached_key(|id| {
-            (
-                node_to_paint_order(&self.nodes[*id], is_flex_or_grid),
-                rank(*id),
-            )
-        });
+            let sc = self.nodes[effect_root].stacking_context.as_mut().unwrap();
+            let mut entry = HoistedPaintChild::new(child_id, 0);
+            entry.owner = Some(node_id);
+            sc.children.push(entry);
+            return;
+        }
+        paint_children.push(child_id);
     }
 
     /// The innermost DOM ancestor of `node_id`, strictly below `cb_id`, that
