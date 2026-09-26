@@ -18,6 +18,7 @@ use std::fmt::Write;
 use std::ops::Deref;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use style::computed_values::isolation::T as Isolation;
 use style::computed_values::white_space_collapse::T as WhiteSpaceCollapse;
 use style::invalidation::element::restyle_hints::RestyleHint;
 use style::properties::ComputedValues;
@@ -1360,8 +1361,11 @@ impl Node {
             return true;
         }
 
+        if style.get_box().isolation == Isolation::Isolate {
+            return true;
+        }
+
         // TODO: mix-blend-mode
-        // TODO: isolation
         // TODO: contain
 
         false
