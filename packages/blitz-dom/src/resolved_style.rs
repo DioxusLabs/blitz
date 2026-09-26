@@ -580,7 +580,25 @@ impl BaseDocument {
                             return format_px(used);
                         }
                     }
-                    // `static` and `sticky` boxes resolve to the computed value
+                    // A specified (non-`auto`) inset resolves against the
+                    // content box of the scrollport the box sticks to. An
+                    // `auto` inset resolves to the computed value.
+                    Position::Sticky => {
+                        let (basis_width, basis_height) =
+                            self.sticky_scrollport_content_size(node_id);
+                        let pos_styles = styles.get_position();
+                        let (inset, basis) = match property_name {
+                            "top" => (&pos_styles.top, basis_height),
+                            "bottom" => (&pos_styles.bottom, basis_height),
+                            "left" => (&pos_styles.left, basis_width),
+                            "right" => (&pos_styles.right, basis_width),
+                            _ => unreachable!(),
+                        };
+                        if let Some(value) = resolve_inset(inset, basis) {
+                            return format_px(value);
+                        }
+                    }
+                    // `static` boxes resolve to the computed value
                     _ => {}
                 }
             }
@@ -634,6 +652,39 @@ impl BaseDocument {
             Ok(shorthand) => serialize_resolved_shorthand(styles, shorthand),
             Err(declaration_id) => styles.computed_value_to_string(declaration_id),
         }
+    }
+
+    /// Content-box size of the scrollport a `position: sticky` box sticks to:
+    /// that of its nearest scroll container ancestor, or else the viewport.
+    fn sticky_scrollport_content_size(&self, node_id: NodeId) -> (f32, f32) {
+        let root_id = self.try_root_element().map(|root| root.id);
+        let mut ancestor_id = self
+            .get_node(node_id)
+            .and_then(|node| node.containing_block());
+        while let Some(ancestor) = ancestor_id.and_then(|id| self.get_node(id)) {
+            // The root element's overflow applies to the viewport
+            if Some(ancestor.id) == root_id {
+                break;
+            }
+            let is_scroll_container = ancestor.primary_styles().is_some_and(|styles| {
+                styles.clone_overflow_x().is_scrollable()
+                    || styles.clone_overflow_y().is_scrollable()
+            });
+            if is_scroll_container {
+                let padding = ancestor.final_layout().padding;
+                return (
+                    ancestor.client_width() - padding.left - padding.right,
+                    ancestor.client_height() - padding.top - padding.bottom,
+                );
+            }
+            ancestor_id = ancestor.containing_block();
+        }
+        let viewport = self.viewport();
+        let scale = viewport.scale();
+        (
+            viewport.window_size.0 as f32 / scale,
+            viewport.window_size.1 as f32 / scale,
+        )
     }
 
     /// Whether the node's box is a flex or grid item, i.e. its nearest ancestor
