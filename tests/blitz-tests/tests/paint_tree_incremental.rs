@@ -460,8 +460,6 @@ fn hoisted_children_of_scrolled_sc_root_are_hit() {
         assert_eq!(hit(&doc, 50.0, 20.0), b, "incremental={incremental}");
     }
 }
-||||||| parent of 5ea0fe76 (Integrate Taffy out-of-flow hoisting into the single post-layout paint-tree pass)
-
 
 fn paint_children(doc: &HtmlDocument, node_id: NodeId) -> Vec<NodeId> {
     doc.get_node(node_id)
