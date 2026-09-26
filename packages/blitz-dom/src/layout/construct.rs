@@ -1070,7 +1070,6 @@ pub(crate) fn build_inline_layout_into(
         .as_deref()
         .map(|s| CaseTransform::from_style(s))
         .unwrap_or(CaseTransform::NONE);
-    let mut text_transformer = TextTransformer::default();
 
     // Render position-inside list items
     if let Some(ListItemLayout {
@@ -1095,6 +1094,9 @@ pub(crate) fn build_inline_layout_into(
             Marker::String(str) => builder.push_text(str),
         }
     };
+    // The marker is a separate box, so words in the content don't continue from it.
+    let mut text_transformer = TextTransformer::default();
+    text_transformer.word_break(&mut builder);
 
     if let Some(before_id) = root_node.before() {
         build_inline_layout_recursive(
@@ -1204,7 +1206,7 @@ pub(crate) fn build_inline_layout_into(
 
                         if is_inline_box_element(tag_name) {
                             if box_kind == InlineBoxKind::InFlow {
-                                text_transformer.word_break();
+                                text_transformer.word_break(builder);
                             }
                             builder.push_inline_box(InlineBox {
                                 id: node_id.as_u64(),
@@ -1230,7 +1232,7 @@ pub(crate) fn build_inline_layout_into(
                             ]);
                             builder.push_text("\n");
                             builder.pop_style_span();
-                            text_transformer.word_break();
+                            text_transformer.word_break(builder);
                         } else {
                             // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
                             let style = node
@@ -1278,7 +1280,7 @@ pub(crate) fn build_inline_layout_into(
                     // Inline box
                     (_, _) => {
                         if box_kind == InlineBoxKind::InFlow {
-                            text_transformer.word_break();
+                            text_transformer.word_break(builder);
                         }
                         builder.push_inline_box(InlineBox {
                             id: node_id.as_u64(),
@@ -1301,7 +1303,8 @@ pub(crate) fn build_inline_layout_into(
                 // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
                 // dbg!(&data.content);
 
-                let text = text_transformer.transform(&data.content, parent_text_transform);
+                let text =
+                    text_transformer.transform(&data.content, parent_text_transform, builder);
                 builder.push_text(&text);
             }
             NodeData::Comment { .. } => {

@@ -10,6 +10,7 @@ use icu_locale_core::LanguageIdentifier;
 use icu_properties::props::{GeneralCategory, GeneralCategoryGroup};
 use icu_properties::{CodePointMapData, CodePointMapDataBorrowed};
 use icu_segmenter::{WordSegmenter, WordSegmenterBorrowed, options::WordBreakInvariantOptions};
+use parley::{Brush, TreeBuilder};
 use style::properties::ComputedValues;
 use style::values::computed::TextTransform;
 
@@ -49,91 +50,88 @@ impl CaseTransform {
 
 /// Applies case transforms to the sequence of text nodes in an inline formatting context.
 ///
-/// `capitalize` operates on words, which may span multiple text nodes, so the (untransformed)
-/// text preceding the current text node is kept as context for word segmentation. Only
-/// look-behind is needed: whether a word boundary precedes a letter never depends on
-/// the text that follows it.
+/// `capitalize` operates on words, which may span multiple text nodes, so the text already
+/// pushed to the [`TreeBuilder`] is used as context for word segmentation. Only look-behind
+/// is needed: whether a word boundary precedes a letter never depends on the text that
+/// follows it.
 #[derive(Default)]
 pub(crate) struct TextTransformer {
-    context: String,
+    /// The offset in the builder's text of the last forced word boundary.
+    context_start: usize,
 }
 
 impl TextTransformer {
     /// Forces a word boundary (e.g. at an atomic inline or a forced line break).
-    pub(crate) fn word_break(&mut self) {
-        self.context.clear();
+    pub(crate) fn word_break<B: Brush>(&mut self, builder: &mut TreeBuilder<'_, B>) {
+        self.context_start = builder.text_so_far().text.len();
     }
 
-    /// Transforms the content of a text node. Must be called for every text node in the
-    /// inline formatting context (in order), including those that are not transformed.
-    pub(crate) fn transform<'a>(
-        &mut self,
+    /// Transforms the content of a text node that is about to be pushed to `builder`.
+    pub(crate) fn transform<'a, B: Brush>(
+        &self,
         text: &'a str,
         transform: &CaseTransform,
+        builder: &mut TreeBuilder<'_, B>,
     ) -> Cow<'a, str> {
-        let transformed = match transform.kind {
+        match transform.kind {
             TextTransform::UPPERCASE => CASE_MAPPER.uppercase_to_string(text, &transform.lang),
             TextTransform::LOWERCASE => CASE_MAPPER.lowercase_to_string(text, &transform.lang),
-            TextTransform::CAPITALIZE => Cow::Owned(self.capitalize(text, &transform.lang)),
-            _ => Cow::Borrowed(text),
-        };
-        self.push_context(text);
-        transformed
-    }
-
-    /// Titlecases the first typographic letter unit of each word, leaving other characters unchanged.
-    fn capitalize(&self, text: &str, lang: &LanguageIdentifier) -> String {
-        let mut options = TitlecaseOptions::default();
-        options.leading_adjustment = Some(LeadingAdjustment::None);
-        options.trailing_case = Some(TrailingCase::Unchanged);
-
-        let context_len = self.context.len();
-        let combined = [self.context.as_str(), text].concat();
-
-        let mut output = String::with_capacity(text.len());
-        let mut segment_start = 0;
-        for segment_end in WORD_SEGMENTER.segment_str(&combined).skip(1) {
-            if segment_end > context_len {
-                let part_start = segment_start.max(context_len);
-                let part = &combined[part_start..segment_end];
-
-                // A word that started in a previous text node has already had its first
-                // letter unit (if any) transformed (or not) as part of that text node.
-                let first_letter_already_seen = combined[segment_start..part_start]
-                    .chars()
-                    .any(is_typographic_letter_unit);
-
-                match part.find(is_typographic_letter_unit) {
-                    Some(letter_start) if !first_letter_already_seen => {
-                        output.push_str(&part[..letter_start]);
-                        output.push_str(&TITLECASE_MAPPER.titlecase_segment_to_string(
-                            &part[letter_start..],
-                            lang,
-                            options,
-                        ));
-                    }
-                    _ => output.push_str(part),
+            TextTransform::CAPITALIZE => {
+                let text_so_far = builder.text_so_far();
+                let preceding = &text_so_far.text[self.context_start..];
+                let start =
+                    ceil_char_boundary(preceding, preceding.len().saturating_sub(MAX_CONTEXT_LEN));
+                let mut context = Cow::Borrowed(&preceding[start..]);
+                if text_so_far.pending_whitespace {
+                    context.to_mut().push(' ');
                 }
+                Cow::Owned(capitalize(&context, text, &transform.lang))
             }
-            segment_start = segment_end;
-        }
-
-        output
-    }
-
-    fn push_context(&mut self, text: &str) {
-        if text.len() >= MAX_CONTEXT_LEN {
-            self.context.clear();
-            let start = ceil_char_boundary(text, text.len() - MAX_CONTEXT_LEN);
-            self.context.push_str(&text[start..]);
-        } else {
-            self.context.push_str(text);
-            if self.context.len() > MAX_CONTEXT_LEN {
-                let start = ceil_char_boundary(&self.context, self.context.len() - MAX_CONTEXT_LEN);
-                self.context.drain(..start);
-            }
+            _ => Cow::Borrowed(text),
         }
     }
+}
+
+/// Titlecases the first typographic letter unit of each word in `text`, leaving other
+/// characters unchanged. `context` is the text preceding `text` in the same word segmentation
+/// context.
+fn capitalize(context: &str, text: &str, lang: &LanguageIdentifier) -> String {
+    let mut options = TitlecaseOptions::default();
+    options.leading_adjustment = Some(LeadingAdjustment::None);
+    options.trailing_case = Some(TrailingCase::Unchanged);
+
+    let context_len = context.len();
+    let combined = [context, text].concat();
+
+    let mut output = String::with_capacity(text.len());
+    let mut segment_start = 0;
+    for segment_end in WORD_SEGMENTER.segment_str(&combined).skip(1) {
+        if segment_end > context_len {
+            let part_start = segment_start.max(context_len);
+            let part = &combined[part_start..segment_end];
+
+            // A word that started in a previous text node has already had its first
+            // letter unit (if any) transformed (or not) as part of that text node.
+            let first_letter_already_seen = combined[segment_start..part_start]
+                .chars()
+                .any(is_typographic_letter_unit);
+
+            match part.find(is_typographic_letter_unit) {
+                Some(letter_start) if !first_letter_already_seen => {
+                    output.push_str(&part[..letter_start]);
+                    output.push_str(&TITLECASE_MAPPER.titlecase_segment_to_string(
+                        &part[letter_start..],
+                        lang,
+                        options,
+                    ));
+                }
+                _ => output.push_str(part),
+            }
+        }
+        segment_start = segment_end;
+    }
+
+    output
 }
 
 /// <https://drafts.csswg.org/css-text/#typographic-letter-unit>
@@ -153,17 +151,37 @@ fn ceil_char_boundary(s: &str, mut index: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use parley::{FontContext, LayoutContext, TextStyle};
 
     fn transform(kind: TextTransform, lang: &str, texts: &[&str]) -> Vec<String> {
         let transform = CaseTransform {
             kind,
             lang: LanguageIdentifier::try_from_str(lang).unwrap(),
         };
-        let mut transformer = TextTransformer::default();
-        texts
-            .iter()
-            .map(|text| transformer.transform(text, &transform).into_owned())
-            .collect()
+        with_builder(|builder, transformer| {
+            texts
+                .iter()
+                .map(|text| push(builder, transformer, text, &transform))
+                .collect()
+        })
+    }
+
+    fn with_builder<R>(f: impl FnOnce(&mut TreeBuilder<'_, ()>, &mut TextTransformer) -> R) -> R {
+        let mut font_ctx = FontContext::new();
+        let mut layout_ctx = LayoutContext::new();
+        let mut builder = layout_ctx.tree_builder(&mut font_ctx, 1.0, true, &TextStyle::default());
+        f(&mut builder, &mut TextTransformer::default())
+    }
+
+    fn push(
+        builder: &mut TreeBuilder<'_, ()>,
+        transformer: &TextTransformer,
+        text: &str,
+        transform: &CaseTransform,
+    ) -> String {
+        let output = transformer.transform(text, transform, builder).into_owned();
+        builder.push_text(&output);
+        output
     }
 
     fn capitalize(texts: &[&str]) -> Vec<String> {
@@ -215,26 +233,34 @@ mod tests {
 
     #[test]
     fn capitalize_mid_word_text_node() {
-        let mut transformer = TextTransformer::default();
         let capitalize = CaseTransform {
             kind: TextTransform::CAPITALIZE,
             lang: LanguageIdentifier::UNKNOWN,
         };
-        assert_eq!(transformer.transform("a", &CaseTransform::NONE), "a");
-        assert_eq!(transformer.transform("b", &capitalize), "b");
-        assert_eq!(transformer.transform("c", &CaseTransform::NONE), "c");
+        with_builder(|builder, transformer| {
+            assert_eq!(push(builder, transformer, "a", &CaseTransform::NONE), "a");
+            assert_eq!(push(builder, transformer, "b", &capitalize), "b");
+            assert_eq!(push(builder, transformer, "c", &CaseTransform::NONE), "c");
+        });
     }
 
     #[test]
     fn capitalize_after_word_break() {
-        let mut transformer = TextTransformer::default();
         let capitalize = CaseTransform {
             kind: TextTransform::CAPITALIZE,
             lang: LanguageIdentifier::UNKNOWN,
         };
-        assert_eq!(transformer.transform("abc", &capitalize), "Abc");
-        transformer.word_break();
-        assert_eq!(transformer.transform("def", &capitalize), "Def");
+        with_builder(|builder, transformer| {
+            assert_eq!(push(builder, transformer, "abc", &capitalize), "Abc");
+            transformer.word_break(builder);
+            assert_eq!(push(builder, transformer, "def", &capitalize), "Def");
+        });
+    }
+
+    #[test]
+    fn capitalize_after_collapsed_whitespace() {
+        assert_eq!(capitalize(&["hello ", "world"]), ["Hello ", "World"]);
+        assert_eq!(capitalize(&["hello\n", "world"]), ["Hello\n", "World"]);
     }
 
     #[test]
