@@ -109,10 +109,17 @@ impl StackingContext {
         sc
     }
 
-    /// Bounding box (relative to the stacking-context root `sc_root_id`,
-    /// unscrolled) of all hoisted children. Computed at most once per
+    /// Bounding box (in CSS pixels relative to the stacking-context root
+    /// `sc_root_id`, unscrolled) of the scrollable overflow of all hoisted
+    /// children, including their transforms. `scale` is the device pixel
+    /// ratio `scrollable_overflow` is stored in. Computed at most once per
     /// geometry generation.
-    pub fn hoisted_content_bbox(&self, tree: &NodeTree, sc_root_id: NodeId) -> Rect<f32> {
+    pub fn hoisted_content_bbox(
+        &self,
+        tree: &NodeTree,
+        sc_root_id: NodeId,
+        scale: f64,
+    ) -> Rect<f32> {
         let generation = tree.geometry_generation();
         let (stamp, cached) = self.hoisted_content_bbox.get();
         if stamp == generation {
@@ -122,14 +129,18 @@ impl StackingContext {
         let child_rect = |child: &HoistedPaintChild| -> Rect<f32> {
             let node = &tree[child.node_id];
             let position = child.position(tree, sc_root_id);
-            let layout = node.final_layout();
-            let left = position.x + layout.location.x;
-            let top = position.y + layout.location.y;
+            let location = node.final_layout().location;
+            let mut overflow = *node.scrollable_overflow();
+            if let Some(transform) = node.transform().as_deref() {
+                overflow = transform.transform_rect_bbox(overflow);
+            }
+            let left = position.x + location.x;
+            let top = position.y + location.y;
             Rect {
-                left,
-                top,
-                right: left + layout.size.width,
-                bottom: top + layout.size.height,
+                left: left + (overflow.x0 / scale) as f32,
+                top: top + (overflow.y0 / scale) as f32,
+                right: left + (overflow.x1 / scale) as f32,
+                bottom: top + (overflow.y1 / scale) as f32,
             }
         };
 

@@ -404,3 +404,26 @@ fn reparent_from_flex_to_block_rebuilds_child() {
         assert_eq!(hit(&doc, 50.0, 50.0), inner, "incremental={incremental}");
     }
 }
+
+const HOISTED_OVERFLOW: &str = r#"<html><head><style>
+    body { margin: 0; }
+    #r { position: relative; z-index: 0; width: 100px; height: 100px; }
+    #b { position: relative; z-index: 1; width: 10px; height: 10px; }
+    #c { position: absolute; left: 150px; top: 150px; width: 20px; height: 20px; }
+    #t { position: relative; z-index: 1; width: 10px; height: 10px; transform: translate(150px, 250px); }
+</style></head><body>
+    <div id="r">
+        <div id="b"><div id="c"></div></div>
+        <div id="t"></div>
+    </div>
+</body></html>"#;
+
+/// A hoisted entry's descendants (and its transform) can extend past its
+/// border box; the stacking-context root's hoisted bounding box must cover
+/// them or the entry is never hit-tested there.
+#[test]
+fn hoisted_bbox_covers_overflow_and_transform() {
+    let doc = make_doc(HOISTED_OVERFLOW, true);
+    assert_eq!(hit(&doc, 160.0, 160.0), id(&doc, "#c"));
+    assert_eq!(hit(&doc, 155.0, 265.0), id(&doc, "#t"));
+}
