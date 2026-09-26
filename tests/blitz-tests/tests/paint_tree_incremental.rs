@@ -608,11 +608,12 @@ const FIXED_SCROLL: &str = r#"<html><head><style>
     <div id="g0"></div><div id="g1"></div>
 </body></html>"#;
 
-/// Fixed boxes stay put when their containing block (the viewport for `#g*`,
-/// the transformed scroller `#s` for `#f*`) scrolls, whether they are placed
-/// in `paint_children` (z-auto) or hoisted into the stacking context (z≠0).
+/// Fixed boxes contained by the viewport (`#g*`) stay put when it scrolls,
+/// while fixed boxes contained by a transformed scroller (`#f*`) scroll with
+/// it, whether they are placed in `paint_children` (z-auto) or hoisted into
+/// the stacking context (z≠0).
 #[test]
-fn fixed_boxes_do_not_scroll_with_containing_block() {
+fn fixed_boxes_scroll_only_with_a_non_viewport_containing_block() {
     for incremental in [false, true] {
         let mut doc = make_doc(FIXED_SCROLL, incremental);
         let s = id(&doc, "#s");
@@ -627,17 +628,28 @@ fn fixed_boxes_do_not_scroll_with_containing_block() {
         assert_eq!(hit(&doc, 20.0, 60.0), g0);
         assert_eq!(hit(&doc, 60.0, 60.0), g1);
 
-        doc.scroll_node_by(s, 0.0, -40.0, |_| {});
-        assert_eq!(doc.get_node(s).unwrap().scroll_offset().y, 40.0);
+        doc.scroll_node_by(s, 0.0, -20.0, |_| {});
+        assert_eq!(doc.get_node(s).unwrap().scroll_offset().y, 20.0);
+        let tall = id(&doc, "#tall");
         assert_eq!(
             hit(&doc, 20.0, 20.0),
-            f0,
-            "z-auto fixed in scrolled CB ({incremental})"
+            tall,
+            "z-auto fixed scrolled away with its CB ({incremental})"
         );
         assert_eq!(
             hit(&doc, 60.0, 20.0),
+            tall,
+            "z-index fixed scrolled away with its CB ({incremental})"
+        );
+        assert_eq!(
+            hit(&doc, 20.0, 5.0),
+            f0,
+            "z-auto fixed scrolled with its CB ({incremental})"
+        );
+        assert_eq!(
+            hit(&doc, 60.0, 5.0),
             f1,
-            "z-index fixed in scrolled CB ({incremental})"
+            "z-index fixed scrolled with its CB ({incremental})"
         );
 
         doc.set_viewport_scroll(blitz_dom::Point { x: 0.0, y: 30.0 });

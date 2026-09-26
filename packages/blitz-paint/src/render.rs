@@ -1008,18 +1008,15 @@ impl ElementCx<'_, '_> {
         // Regular children
         if let Some(children) = &*self.node.paint_children.borrow() {
             for child_id in children {
-                // Fixed-position children do not scroll with their containing block
-                // (their layout location is relative to its unscrolled border box),
-                // so cancel out the scroll offset applied to the transform above.
+                // Fixed-position children of the root element are positioned against
+                // the viewport and do not scroll with it, so cancel out the viewport
+                // scroll (applied in `paint_scene`). A fixed box contained by a
+                // transformed ancestor scrolls with it like any out-of-flow box.
                 let child = &self.context.dom.as_ref().tree()[*child_id];
-                let child_transform = if child.taffy_position() == taffy::Position::Fixed {
-                    // The root element's scroll is the viewport scroll (applied in
-                    // `paint_scene`), not the node's own scroll offset.
-                    let scroll = if Some(self.node.id) == self.context.root_element_id {
-                        self.context.dom.as_ref().viewport_scroll()
-                    } else {
-                        *self.node.scroll_offset()
-                    };
+                let child_transform = if child.taffy_position() == taffy::Position::Fixed
+                    && Some(self.node.id) == self.context.root_element_id
+                {
+                    let scroll = self.context.dom.as_ref().viewport_scroll();
                     parent_style_transform.pre_translate(kurbo::Vec2 {
                         x: scroll.x * self.scale,
                         y: scroll.y * self.scale,

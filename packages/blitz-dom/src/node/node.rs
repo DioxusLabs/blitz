@@ -1538,16 +1538,16 @@ impl Node {
                     child_x += content_box_offset.x;
                     child_y += content_box_offset.y;
                 }
-                // Fixed-position children do not scroll with their containing
-                // block, nor with the viewport when that is the root element
-                if child_position == taffy::Position::Fixed {
+                // Fixed-position children of the root element are positioned
+                // against the viewport and do not scroll with it. (A fixed box
+                // whose containing block is a transformed ancestor scrolls with
+                // that ancestor like any other out-of-flow box.)
+                if child_position == taffy::Position::Fixed && self.containing_block().is_none() {
                     child_x -= self.scroll_offset().x as f32;
                     child_y -= self.scroll_offset().y as f32;
-                    if self.containing_block().is_none() {
-                        let viewport_scroll = self.tree().viewport_scroll();
-                        child_x -= viewport_scroll.x as f32;
-                        child_y -= viewport_scroll.y as f32;
-                    }
+                    let viewport_scroll = self.tree().viewport_scroll();
+                    child_x -= viewport_scroll.x as f32;
+                    child_y -= viewport_scroll.y as f32;
                 }
             }
             if let Some(hit) = child.hit_inner(child_x, child_y, scale, scrollbar) {
