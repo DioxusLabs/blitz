@@ -427,3 +427,36 @@ fn hoisted_bbox_covers_overflow_and_transform() {
     assert_eq!(hit(&doc, 160.0, 160.0), id(&doc, "#c"));
     assert_eq!(hit(&doc, 155.0, 265.0), id(&doc, "#t"));
 }
+
+const SCROLLED_SC_ROOT: &str = r#"<html><head><style>
+    body { margin: 0; }
+    #s { overflow: auto; height: 50px; width: 200px; transform: translateX(0px); }
+    #spacer { height: 100px; }
+    #b { position: relative; z-index: 1; height: 20px; width: 100px; }
+    #tail { height: 200px; }
+</style></head><body>
+    <div id="s"><div id="spacer"></div><div id="b"></div><div id="tail"></div></div>
+</body></html>"#;
+
+/// The hoisted-content bbox is in the stacking-context root's unscrolled
+/// content coordinates, so it must be compared against the point *after* the
+/// root's scroll offset is applied: hoisted children of a scrolled root must
+/// stay hit-testable.
+#[test]
+fn hoisted_children_of_scrolled_sc_root_are_hit() {
+    for incremental in [true, false] {
+        let mut doc = make_doc(SCROLLED_SC_ROOT, incremental);
+        let s = id(&doc, "#s");
+        let b = id(&doc, "#b");
+        assert_eq!(hoisted_entry(&doc, s, b), Some((1, (0.0, 100.0))));
+        assert_ne!(hit(&doc, 50.0, 20.0), b);
+
+        doc.scroll_node_by(s, 0.0, -90.0, |_| {});
+        assert_eq!(doc.get_node(s).unwrap().scroll_offset().y, 90.0);
+        // B now spans y=10..30 within the 50px scroller.
+        assert_eq!(hit(&doc, 50.0, 20.0), b, "incremental={incremental}");
+
+        doc.resolve(0.0);
+        assert_eq!(hit(&doc, 50.0, 20.0), b, "incremental={incremental}");
+    }
+}

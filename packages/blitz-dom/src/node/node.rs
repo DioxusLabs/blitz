@@ -1412,11 +1412,10 @@ impl Node {
 
         let matches_hoisted_content = match &self.stacking_context {
             Some(sc) => {
-                let hoisted_content_bbox = sc.hoisted_content_bbox(self.tree(), self.id, scale);
-                x >= hoisted_content_bbox.left + self.scroll_offset().x as f32
-                    && x <= hoisted_content_bbox.right + self.scroll_offset().x as f32
-                    && y >= hoisted_content_bbox.top + self.scroll_offset().y as f32
-                    && y <= hoisted_content_bbox.bottom + self.scroll_offset().y as f32
+                // Both the point (after the scroll adjustment above) and the
+                // bbox are in this node's unscrolled content coordinates.
+                let bbox = sc.hoisted_content_bbox(self.tree(), self.id, scale);
+                x >= bbox.left && x <= bbox.right && y >= bbox.top && y <= bbox.bottom
             }
             None => false,
         };
