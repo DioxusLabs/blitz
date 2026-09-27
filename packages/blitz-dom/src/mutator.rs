@@ -1158,7 +1158,7 @@ impl<'doc> DocumentMutator<'doc> {
                     node.element_data_mut().unwrap().special_data =
                         SpecialElementData::Image(Box::new(cached_image.clone()));
                     node.clear_layout_cache();
-                    node.insert_damage(ALL_DAMAGE);
+                    node.insert_damage(RestyleDamage::RELAYOUT);
                     return;
                 }
 

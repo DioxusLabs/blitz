@@ -1421,9 +1421,12 @@ fn image_load() {
     const URL: &str = "https://example.com/a.png";
     let mut oracle = Oracle::new(&page(
         "",
-        &format!(r#"<div id="imh">text <img id="img" src="{URL}"> more text</div>"#),
+        &format!(
+            r#"<div id="imh">text <img id="img" src="{URL}"> more text</div>
+               <div><img id="img2" src="{URL}" style="display:block"></div>"#
+        ),
     ));
-    oracle.step("image loaded", |doc| {
+    let reconstructed = oracle.step("image loaded", |doc| {
         doc.load_resource(ResourceLoadResponse {
             request_id: usize::MAX,
             node_id: None,
@@ -1436,10 +1439,14 @@ fn image_load() {
             )),
         });
     });
-    assert_eq!(
-        layout_of(&oracle.inc, id(&oracle.inc, "#img")).unwrap().2,
-        20.0
-    );
+    assert_eq!(reconstructed, 0, "an image load only changes a leaf's size");
+    for selector in ["#img", "#img2"] {
+        assert_eq!(
+            layout_of(&oracle.inc, id(&oracle.inc, selector)).unwrap().2,
+            20.0,
+            "{selector}"
+        );
+    }
 }
 
 /// Hover/focus changes affecting only paint reconstruct no boxes.
