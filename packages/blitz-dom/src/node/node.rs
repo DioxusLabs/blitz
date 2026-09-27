@@ -478,6 +478,50 @@ impl Node {
         Some(self.primary_styles().as_ref()?.clone_display())
     }
 
+    /// Whether box construction passes through this node without ever
+    /// running `collect_layout_children` on it, so that construction damage
+    /// below it is consumed by the nearest ancestor which is collected: text
+    /// and comment nodes, `display: contents` and `display: none` elements,
+    /// non-replaced inline elements (which become Parley style spans inside
+    /// their inline formatting context, whatever their `position` or `float`)
+    /// and table-internal boxes other than cells (rows, row groups, columns).
+    ///
+    /// Over-approximates: a node which is only sometimes collected (an inline
+    /// element containing a block, a `display: none` child of a block
+    /// container) counts as transparent, which merely forwards the damage one
+    /// collector too far. Both the `display` the box was last constructed
+    /// with and the current one are consulted, so a node whose `display`
+    /// changed this frame is transparent if it was or will be.
+    pub(crate) fn is_construction_transparent(&self) -> bool {
+        let element_data = match &self.data {
+            NodeData::Element(element_data) => element_data,
+            NodeData::Text(_) | NodeData::Comment { .. } => return true,
+            NodeData::Document(_) | NodeData::AnonymousBlock(_) => return false,
+        };
+        let is_transparent_display = |display: StyloDisplay| {
+            if display.outside() == DisplayOutside::None {
+                return true;
+            }
+            match display.inside() {
+                DisplayInside::None
+                | DisplayInside::Contents
+                | DisplayInside::TableRow
+                | DisplayInside::TableRowGroup
+                | DisplayInside::TableHeaderGroup
+                | DisplayInside::TableFooterGroup
+                | DisplayInside::TableColumn
+                | DisplayInside::TableColumnGroup => true,
+                DisplayInside::Flow => {
+                    display.outside() == DisplayOutside::Inline
+                        && crate::layout::construct::is_inline_style_span(element_data)
+                }
+                _ => false,
+            }
+        };
+        is_transparent_display(element_data.display_constructed_as)
+            || self.display_style().is_some_and(is_transparent_display)
+    }
+
     pub fn is_or_contains_block(&self) -> bool {
         let style = self.primary_styles();
         let style = style.as_ref();

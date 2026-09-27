@@ -94,6 +94,17 @@ impl BaseDocument {
                 DisplayInside::Flex | DisplayInside::Grid
             );
         damage_from_children.remove(REORDER_CHILDREN);
+
+        // A child's box changed (`CONSTRUCT_BOX` is only forwarded by nodes
+        // whose own box changed, or which are construction-transparent and
+        // relay it), so this node's layout children must be re-collected: its
+        // classification of the child (inline vs block, needs wrapping, table
+        // cell placement, `order`, list marker index) may no longer hold.
+        if damage_from_children.contains(CONSTRUCT_BOX) {
+            damage_from_children.remove(CONSTRUCT_BOX);
+            damage_from_children.insert(CONSTRUCT_FC);
+        }
+        let own_box_changed = damage.contains(CONSTRUCT_BOX);
         damage |= damage_from_children;
 
         let node = &mut self.nodes[node_id];
@@ -101,16 +112,24 @@ impl BaseDocument {
         // Put children back
         node.children = children;
 
-        if damage.contains(CONSTRUCT_BOX) {
+        if damage.intersects(CONSTRUCT_BOX | CONSTRUCT_FC) {
             damage.insert(RestyleDamage::RELAYOUT);
         }
 
-        // Compute damage to propagate to parent
-        let mut damage_for_parent = damage; // & RestyleDamage::RELAYOUT;
-
-        // `resolve_layout_children` only descends into nodes carrying this bit
-        // (or construction damage of their own).
-        if damage.intersects(CONSTRUCT_BOX | CONSTRUCT_FC | CONSTRUCT_DESCENDENT) {
+        // Compute damage to propagate to parent. Construction damage stops at
+        // the collector: ancestors only need `CONSTRUCT_DESCENDENT` (so that
+        // `resolve_layout_children` descends to it) plus the `RELAYOUT` bits.
+        // Re-collecting this node's children does not change this node's own
+        // box, so the parent need not re-collect, unless this node's own box
+        // changed or this node is transparent to construction (never collected
+        // itself, so the parent stands in as the collector).
+        let mut damage_for_parent = damage - (CONSTRUCT_BOX | CONSTRUCT_FC);
+        if damage.intersects(CONSTRUCT_BOX | CONSTRUCT_FC) {
+            damage_for_parent.insert(CONSTRUCT_DESCENDENT);
+            if own_box_changed || node.is_construction_transparent() {
+                damage_for_parent.insert(CONSTRUCT_BOX);
+            }
+        } else if damage.contains(CONSTRUCT_DESCENDENT) {
             damage_for_parent.insert(CONSTRUCT_DESCENDENT);
         }
 
@@ -154,23 +173,6 @@ impl BaseDocument {
                 current = ancestor.layout_parent.get();
             }
         }
-
-        // let _is_fc_root = node
-        //     .primary_styles()
-        //     .map(|s| is_fc_root(&s))
-        //     .unwrap_or(false);
-
-        // if damage.contains(CONSTRUCT_BOX) {
-        //     // damage_for_parent.insert(CONSTRUCT_FC | CONSTRUCT_DESCENDENT);
-        //     damage_for_parent.insert(CONSTRUCT_BOX);
-        // }
-
-        // if damage.contains(CONSTRUCT_FC) {
-        //     damage_for_parent.insert(CONSTRUCT_DESCENDENT);
-        //     // if !is_fc_root {
-        //     damage_for_parent.insert(CONSTRUCT_FC);
-        //     // }
-        // }
 
         // Propagate damage to parent
         damage_for_parent
