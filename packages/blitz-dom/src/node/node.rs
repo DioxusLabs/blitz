@@ -1707,7 +1707,7 @@ impl Node {
                 return Some(node);
             }
             let id = node.layout_parent.get()?;
-            node = self.with(id);
+            node = self.tree().get(id)?;
         }
     }
 
