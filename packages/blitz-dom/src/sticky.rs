@@ -325,10 +325,11 @@ impl BaseDocument {
         let layout = node.final_layout();
         let boxless = is_boxless_table_part(node);
         let mut shift_targets = Vec::new();
-        let inline_root = node
-            .is_inline_span()
-            .then(|| node.inline_root_ancestor())
-            .flatten();
+        let inline_root = if node.is_inline_span() {
+            Some(node.inline_root_ancestor()?)
+        } else {
+            None
+        };
         let (own_x, own_y, width, height, margin) = if let Some(root) = inline_root {
             let rects = self.inline_fragment_rects_with_offsets(id, false)?;
             if rects.is_empty() {
@@ -384,7 +385,7 @@ impl BaseDocument {
             if a == root {
                 break;
             }
-            let anc = &self.nodes[a];
+            let anc = self.nodes.get(a)?;
             if let Some(s) = anc.primary_styles() {
                 let b = s.get_box();
                 let position = s.clone_position();
@@ -435,7 +436,8 @@ impl BaseDocument {
         let mut parent_x = x - own_x;
         let mut parent_y = y - own_y;
         while cb_id != root
-            && (is_boxless_table_part(&self.nodes[cb_id]) || self.nodes[cb_id].is_inline_span())
+            && (is_boxless_table_part(self.nodes.get(cb_id)?)
+                || self.nodes.get(cb_id)?.is_inline_span())
         {
             let Some(up) = self.layout_ancestor(cb_id) else {
                 break;
@@ -445,7 +447,7 @@ impl BaseDocument {
             parent_y -= l.location.y;
             cb_id = up;
         }
-        let parent = &self.nodes[cb_id];
+        let parent = self.nodes.get(cb_id)?;
         let mut cb_sticky_ancestors = 0;
         let mut cur = Some(cb_id);
         while let Some(a) = cur {
@@ -498,7 +500,7 @@ impl BaseDocument {
                     if c == cb_id || c == root {
                         break;
                     }
-                    let cn = &self.nodes[c];
+                    let cn = self.nodes.get(c)?;
                     let l = cn.final_layout();
                     origin_x -= l.location.x;
                     origin_y -= l.location.y;
@@ -508,7 +510,7 @@ impl BaseDocument {
                     if up == root {
                         break;
                     }
-                    if let Some(s) = self.nodes[up].primary_styles() {
+                    if let Some(s) = self.nodes.get(up)?.primary_styles() {
                         let b = s.get_box();
                         if scrolls(b.overflow_x) || scrolls(b.overflow_y) {
                             extra_scrollers.push(ExtraScroller {
@@ -564,7 +566,7 @@ impl BaseDocument {
     /// DOM parent for nodes that are not in the layout tree (boxless table
     /// parts).
     fn layout_ancestor(&self, id: NodeId) -> Option<NodeId> {
-        let node = &self.nodes[id];
+        let node = self.nodes.get(id)?;
         node.containing_block().or(node.parent)
     }
 
