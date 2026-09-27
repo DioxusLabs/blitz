@@ -1449,6 +1449,41 @@ fn image_load() {
     }
 }
 
+/// A table root's Taffy style is baked into its `TableContext` at
+/// construction, so a restyle of the table (`width`, `border-spacing`,
+/// inherited `border-spacing` changing when the table is moved out of an
+/// ancestor table) must reconstruct it, not just lay it out again.
+#[test]
+fn table_root_restyle() {
+    let mut oracle = Oracle::new(&page(
+        "#tw:hover { width: 200px; } #ts:hover { border-spacing: 10px; } #tc:hover { border-collapse: collapse; } #pad:hover td { padding: 0; }",
+        r#"<table id="tw"><tr><td>a</td><td>b</td></tr></table>
+           <table id="ts"><tr><td>a</td><td>b</td></tr></table>
+           <table id="tc"><tr><td style="border: 1px solid">a</td><td style="border: 1px solid">b</td></tr></table>
+           <div id="pad"><table><tr><td>c</td></tr></table></div>
+           <table id="outer"><tr><td><div id="g" style="display:grid; grid-template-columns: 20px"><div style="display:table">text</div></div></td></tr></table>"#,
+    ));
+    // The table and its collector (`<body>`).
+    for selector in ["#tw", "#ts", "#tc"] {
+        assert_eq!(oracle.hover(selector), 2, "hover {selector}");
+        oracle.unhover();
+    }
+    assert_eq!(
+        oracle.hover("#pad"),
+        0,
+        "cell padding is read at layout time"
+    );
+    oracle.unhover();
+    let reconstructed = oracle.step("grid moved out of the outer table", |doc| {
+        let grid = id(doc, "#g");
+        let body = id(doc, "body");
+        doc.mutate().append_children(body, &[grid]);
+    });
+    // The inner table's inherited `border-spacing` changed: it reconstructs
+    // along with its collector (the grid), the `<td>` it left and `<body>`.
+    assert_eq!(reconstructed, 4);
+}
+
 /// Hover/focus changes affecting only paint reconstruct no boxes.
 #[test]
 fn paint_only_state_changes_reconstruct_nothing() {

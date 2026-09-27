@@ -282,6 +282,12 @@ pub(crate) fn compute_layout_damage(old: &ComputedValues, new: &ComputedValues) 
             return true;
         }
 
+        // A table root's Taffy style (including `border-spacing` and
+        // `border-collapse`) is baked into its `TableContext` at construction.
+        if new_box.display.inside() == DisplayInside::Table {
+            return true;
+        }
+
         if new_box.display.outside() == DisplayOutside::Block
             && new_box.display.inside() == DisplayInside::Flow
         {
