@@ -15,10 +15,10 @@
 //!   a handful of clamps per sticky box ([`axis_offset`]) using the current
 //!   scroll offsets. No tree walk, no style access.
 //!
-//! The list of sticky boxes is maintained where styles are flushed to layout
-//! ([`BaseDocument::note_sticky`]), kept sorted by depth so an outer sticky
-//! box is always resolved before a nested one; entries of removed nodes are
-//! dropped at the next update.
+//! The list of sticky boxes is maintained by the damage pass
+//! ([`BaseDocument::note_sticky`], for every restyled or (re)inserted node),
+//! kept sorted by depth so an outer sticky box is always resolved before a
+//! nested one; entries of removed nodes are dropped at the next update.
 //!
 //! The shift is stored in [`LayoutData::sticky_offset`] and applied by
 //! painting, hit testing and CSSOM geometry. Covered: both axes, percentages
@@ -111,9 +111,9 @@ pub struct StickyEntry {
 }
 
 impl BaseDocument {
-    /// Registers or unregisters a node as `position: sticky`; called wherever
-    /// a node's styles are flushed to layout, so the list follows style
-    /// changes without any tree walk of its own.
+    /// Registers or unregisters a node as `position: sticky`; called by
+    /// `propagate_damage_flags` for every damaged node, so the list follows
+    /// style changes and (re)insertions without any tree walk of its own.
     pub(crate) fn note_sticky(&mut self, node_id: NodeId, is_sticky: bool) {
         // The flag mirrors registration, so the common case (no change) costs
         // one bit test and no search.
@@ -418,11 +418,13 @@ impl BaseDocument {
     }
 
     /// The node whose coordinate space `final_layout().location` is relative
-    /// to: the layout parent, falling back to the DOM parent for nodes that
-    /// are not in the layout tree (boxless table parts).
+    /// to: the containing block (the out-of-flow containing block for a box
+    /// hoisted by Taffy, otherwise the layout parent), falling back to the
+    /// DOM parent for nodes that are not in the layout tree (boxless table
+    /// parts).
     fn layout_ancestor(&self, id: NodeId) -> Option<NodeId> {
         let node = &self.nodes[id];
-        node.layout_parent.get().or(node.parent)
+        node.containing_block().or(node.parent)
     }
 
     /// The scroll-dependent part: the shift for the current scroll offsets.
