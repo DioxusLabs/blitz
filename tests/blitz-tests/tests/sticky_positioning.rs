@@ -137,6 +137,33 @@ fn scroll_into_view_uses_stuck_position() {
 }
 
 #[test]
+fn nested_sticky_table_parts_apply_each_offset_once() {
+    let mut h = Harness::from_html(
+        "<body style='margin:0'><div id=s style='height:100px;overflow:auto'><table style='width:200px;border-spacing:0'><thead id=g style='position:sticky;top:0'><tr id=r style='position:sticky;top:10px'><th id=t style='position:sticky;top:20px;height:60px;padding:0;vertical-align:top'><div id=child style='position:sticky;top:30px;height:10px'></div></th></tr></thead><tbody><tr><td style='height:500px;padding:0'></td></tr></tbody></table></div>",
+    );
+    scroll(&mut h, "#s", 100.0);
+    assert_eq!(
+        h.base().get_node(h.node("#s")).unwrap().scroll_offset().y,
+        100.0
+    );
+    assert_eq!(shift(&h, "#g"), 100.0);
+    assert_eq!(shift(&h, "#r"), 10.0);
+    assert_eq!(shift(&h, "#t"), 120.0);
+    let child = h.node("#child");
+    assert_eq!(h.base().get_client_bounding_rect(child).unwrap().y, 30.0);
+    set_style(&mut h, "#g", "position:static");
+    assert_eq!(shift(&h, "#t"), 120.0);
+    set_style(&mut h, "#r", "position:static");
+    assert_eq!(shift(&h, "#t"), 120.0);
+    set_style(
+        &mut h,
+        "#t",
+        "position:static;height:60px;padding:0;vertical-align:top",
+    );
+    assert_eq!(shift(&h, "#t"), 0.0);
+}
+
+#[test]
 fn resolve_after_dropping_sticky_during_smooth_scroll_does_not_panic() {
     let mut h = Harness::from_html(STICKY_HEADER);
     let t = h.node("#t");

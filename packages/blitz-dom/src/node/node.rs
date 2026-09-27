@@ -294,7 +294,11 @@ impl Node {
     /// Shift of a `position: sticky` box relative to its laid-out position.
     #[inline]
     pub fn sticky_offset(&self) -> crate::Point<f32> {
-        self.layout_data().sticky_offset
+        let data = self.layout_data();
+        crate::Point {
+            x: data.sticky_offset.x + data.inherited_sticky_offset.x,
+            y: data.sticky_offset.y + data.inherited_sticky_offset.y,
+        }
     }
 
     /// Where the box is drawn relative to its layout parent: the layout

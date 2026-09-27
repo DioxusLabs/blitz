@@ -83,6 +83,7 @@ pub struct StickyConstraints {
     /// Sticky ancestors between the box and the container, outermost first:
     /// their current shifts move this box's in-flow position.
     sticky_ancestors: Vec<NodeId>,
+    cb_sticky_ancestors: usize,
     /// In-flow border-box position and size in the container's space.
     x: f32,
     y: f32,
@@ -100,7 +101,7 @@ pub struct StickyConstraints {
     start_wins_y: bool,
     extra_scrollers: Vec<ExtraScroller>,
     /// A sticky row / row group: hand the shift down to the cells.
-    boxless: bool,
+    shift_targets: Vec<NodeId>,
 }
 
 /// Registry entry: depth keeps outer boxes before nested ones.
@@ -169,6 +170,9 @@ impl BaseDocument {
             viewport.window_size.1 as f32 / scale,
         );
         let mut entries = std::mem::take(&mut self.sticky_nodes);
+        for entry in &entries {
+            self.clear_sticky_offset(entry);
+        }
         // Drop nodes that left the document or have no box (`display: none`),
         // clearing their flag so a node moved back in (keyed lists) registers
         // again: the flag must mirror registration exactly.
@@ -234,6 +238,9 @@ impl BaseDocument {
         let viewport_scroll = (vs.x as f32, vs.y as f32);
 
         let mut entries = std::mem::take(&mut self.sticky_nodes);
+        for entry in &entries {
+            self.clear_sticky_offset(entry);
+        }
         entries.retain_mut(|entry| {
             let Some(node) = self.nodes.get_mut(entry.node) else {
                 return false;
@@ -258,10 +265,6 @@ impl BaseDocument {
             }
             true
         });
-        // Pass 1: clear (shifts handed down by boxless table parts accumulate).
-        for entry in &entries {
-            self.clear_sticky_offset(entry);
-        }
         // Pass 2: outer boxes first (sorted by depth), so a nested box reads
         // its ancestors' shifts already resolved.
         for entry in &entries {
@@ -272,8 +275,12 @@ impl BaseDocument {
             let ld = self.nodes[entry.node].layout_data_mut();
             ld.sticky_offset.x += x;
             ld.sticky_offset.y += y;
-            if c.boxless {
-                self.hand_down_shift(entry.node, x, y);
+            for target in &c.shift_targets {
+                if let Some(node) = self.nodes.get_mut(*target) {
+                    let offset = &mut node.layout_data_mut().inherited_sticky_offset;
+                    offset.x += x;
+                    offset.y += y;
+                }
             }
         }
         self.sticky_nodes = entries;
@@ -282,8 +289,13 @@ impl BaseDocument {
     fn clear_sticky_offset(&mut self, entry: &StickyEntry) {
         if let Some(node) = self.nodes.get_mut(entry.node) {
             node.layout_data_mut().sticky_offset = crate::Point { x: 0.0, y: 0.0 };
-            if entry.constraints.as_ref().is_some_and(|c| c.boxless) {
-                self.hand_down_shift(entry.node, f32::NAN, f32::NAN);
+        }
+        if let Some(c) = &entry.constraints {
+            for target in &c.shift_targets {
+                if let Some(node) = self.nodes.get_mut(*target) {
+                    node.layout_data_mut().inherited_sticky_offset =
+                        crate::Point { x: 0.0, y: 0.0 };
+                }
             }
         }
     }
@@ -301,6 +313,7 @@ impl BaseDocument {
         let parent_id = node.parent?;
         let layout = node.final_layout();
         let boxless = is_boxless_table_part(node);
+        let mut shift_targets = Vec::new();
         let (own_x, own_y, width, height, margin) = if !boxless {
             (
                 layout.location.x,
@@ -310,7 +323,7 @@ impl BaseDocument {
                 layout.margin,
             )
         } else {
-            let (x0, y0, x1, y1) = self.cells_extent(id)?;
+            let (x0, y0, x1, y1) = self.cells_extent(id, &mut shift_targets)?;
             (x0, y0, x1 - x0, y1 - y0, taffy::Rect::zero())
         };
 
@@ -323,8 +336,10 @@ impl BaseDocument {
         let mut y = own_y;
         let mut container: Option<NodeId> = None;
         let mut sticky_ancestors = Vec::new();
+        let mut child = id;
         let mut cur = self.layout_ancestor(id);
         while let Some(a) = cur {
+            self.skipped_sticky_ancestors(child, a, &mut sticky_ancestors);
             if a == root {
                 break;
             }
@@ -345,6 +360,7 @@ impl BaseDocument {
             let l = anc.final_layout();
             x += l.location.x;
             y += l.location.y;
+            child = a;
             cur = self.layout_ancestor(a);
         }
         sticky_ancestors.reverse();
@@ -384,6 +400,12 @@ impl BaseDocument {
             cb_id = up;
         }
         let parent = &self.nodes[cb_id];
+        let mut cb_sticky_ancestors = 0;
+        let mut cur = Some(cb_id);
+        while let Some(a) = cur {
+            cb_sticky_ancestors += usize::from(sticky_ancestors.contains(&a));
+            cur = self.nodes[a].parent;
+        }
         let pl = parent.final_layout();
         let mut cb = Rect {
             x0: parent_x + pl.border.left + pl.padding.left,
@@ -470,6 +492,7 @@ impl BaseDocument {
         Some(StickyConstraints {
             container,
             sticky_ancestors,
+            cb_sticky_ancestors,
             x,
             y,
             width,
@@ -483,7 +506,7 @@ impl BaseDocument {
             start_wins_x,
             start_wins_y,
             extra_scrollers,
-            boxless,
+            shift_targets,
         })
     }
 
@@ -497,6 +520,20 @@ impl BaseDocument {
         node.containing_block().or(node.parent)
     }
 
+    fn skipped_sticky_ancestors(&self, id: NodeId, parent: NodeId, ancestors: &mut Vec<NodeId>) {
+        let mut cur = self.nodes[id].parent;
+        while let Some(a) = cur {
+            let node = &self.nodes[a];
+            if a == parent || !is_boxless_table_part(node) {
+                break;
+            }
+            if node.flags.contains(crate::node::NodeFlags::IS_STICKY) {
+                ancestors.push(a);
+            }
+            cur = node.parent;
+        }
+    }
+
     /// The scroll-dependent part: the shift for the current scroll offsets.
     fn shift_for(
         &self,
@@ -508,11 +545,17 @@ impl BaseDocument {
         // position and the containing block alike.
         let mut dx = 0.0f32;
         let mut dy = 0.0f32;
-        for a in &c.sticky_ancestors {
+        let mut cb_dx = 0.0f32;
+        let mut cb_dy = 0.0f32;
+        for (index, a) in c.sticky_ancestors.iter().enumerate() {
             if let Some(n) = self.nodes.get(*a) {
-                let s = n.sticky_offset();
+                let s = n.layout_data().sticky_offset;
                 dx += s.x;
                 dy += s.y;
+                if index < c.cb_sticky_ancestors {
+                    cb_dx += s.x;
+                    cb_dy += s.y;
+                }
             }
         }
         let mut scrollport = match c.container {
@@ -530,10 +573,10 @@ impl BaseDocument {
             }
         }
         let cb = Rect {
-            x0: c.cb.x0 + dx,
-            y0: c.cb.y0 + dy,
-            x1: c.cb.x1 + dx,
-            y1: c.cb.y1 + dy,
+            x0: c.cb.x0 + cb_dx,
+            y0: c.cb.y0 + cb_dy,
+            x1: c.cb.x1 + cb_dx,
+            y1: c.cb.y1 + cb_dy,
         };
         (
             axis_offset(
@@ -571,7 +614,7 @@ impl BaseDocument {
 
     /// Border-box extent (x0, y0, x1, y1) of the cells under a boxless table
     /// part, in its table's coordinate space.
-    fn cells_extent(&self, id: NodeId) -> Option<(f32, f32, f32, f32)> {
+    fn cells_extent(&self, id: NodeId, cells: &mut Vec<NodeId>) -> Option<(f32, f32, f32, f32)> {
         let mut extent: Option<(f32, f32, f32, f32)> = None;
         let mut stack: Vec<NodeId> = self.nodes[id].children.iter().copied().collect();
         while let Some(c) = stack.pop() {
@@ -580,6 +623,7 @@ impl BaseDocument {
                 continue;
             }
             if !is_boxless_table_part(node) {
+                cells.push(c);
                 let l = node.final_layout();
                 let (x0, y0) = (l.location.x, l.location.y);
                 let (x1, y1) = (x0 + l.size.width, y0 + l.size.height);
@@ -592,29 +636,6 @@ impl BaseDocument {
             }
         }
         extent
-    }
-
-    /// Adds a boxless ancestor's shift to the cells that paint it (`NaN`
-    /// clears). Iterates by index to avoid allocating per child.
-    fn hand_down_shift(&mut self, id: NodeId, dx: f32, dy: f32) {
-        let count = self.nodes[id].children.len();
-        for i in 0..count {
-            let c = self.nodes[id].children[i];
-            if self.nodes[c].element_data().is_none() {
-                continue;
-            }
-            if !is_boxless_table_part(&self.nodes[c]) {
-                let ld = self.nodes[c].layout_data_mut();
-                if dx.is_nan() {
-                    ld.sticky_offset = crate::Point { x: 0.0, y: 0.0 };
-                } else {
-                    ld.sticky_offset.x += dx;
-                    ld.sticky_offset.y += dy;
-                }
-            } else {
-                self.hand_down_shift(c, dx, dy);
-            }
-        }
     }
 }
 
