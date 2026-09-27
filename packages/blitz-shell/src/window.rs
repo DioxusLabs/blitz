@@ -94,8 +94,9 @@ pub struct View<Rend: WindowRenderer> {
     /// The events stored here always have an empty `active_pointers` list to
     /// avoid a reference cycle.
     pub active_events: Arc<AtomicRefCell<Vec<BlitzPointerEvent>>>,
-    /// The clock frame times and input event timestamps are sampled from.
-    pub clock: SystemClock,
+    /// The clock frame times and input event timestamps are sampled from. Defaults to
+    /// [`SystemClock`]; replace it to drive the view on your own time.
+    pub clock: Box<dyn Clock>,
     pub is_visible: bool,
     pub safe_area_insets: PhysicalInsets<u32>,
 
@@ -211,7 +212,7 @@ impl<Rend: WindowRenderer> View<Rend> {
         Self {
             renderer: config.renderer,
             waker: None,
-            clock: SystemClock,
+            clock: Box::new(SystemClock),
             keyboard_modifiers: Default::default(),
             proxy: proxy.clone(),
             window: winit_window.clone(),

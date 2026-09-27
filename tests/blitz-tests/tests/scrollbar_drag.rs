@@ -3,8 +3,8 @@
 use blitz_dom::{DocumentConfig, EventDriver, NodeId, NoopEventHandler, ScrollBehavior};
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::events::{
-    BlitzPointerEvent, BlitzPointerId, MouseEventButton, MouseEventButtons, Point, PointerCoords,
-    PointerDetails, UiEvent,
+    BlitzPointerEvent, BlitzPointerId, BlitzWheelDelta, BlitzWheelEvent, MouseEventButton,
+    MouseEventButtons, Point, PointerCoords, PointerDetails, UiEvent,
 };
 use blitz_traits::shell::{ColorScheme, Viewport};
 use blitz_traits::time::Timestamp;
@@ -291,4 +291,72 @@ fn white_author_thumb_still_signals_hover_and_drag() {
         hovered, active,
         "a white author thumb must still visibly change while dragged"
     );
+}
+
+#[test]
+fn thumb_fades_out_on_frame_time() {
+    use std::time::Duration;
+
+    let mut doc = scroller_doc();
+    let scroller = doc.query_selector("#scroller").unwrap().unwrap();
+
+    // A programmatic scroll has no event time: the fade is timed from the next frame.
+    scroll_down(&mut doc, scroller, 50.0);
+    let t0 = Timestamp::ZERO + Duration::from_secs(10);
+    doc.resolve(t0);
+    assert_eq!(doc.scrollbar_opacity(scroller), 1.0);
+    assert!(doc.is_animating(), "a pending fade keeps frames coming");
+
+    // Still fully shown during the delay, whatever the wall clock says.
+    doc.resolve(t0 + Duration::from_millis(450));
+    assert_eq!(doc.scrollbar_opacity(scroller), 1.0);
+
+    // Half way through the 200ms fade after the 500ms delay.
+    doc.resolve(t0 + Duration::from_millis(600));
+    let opacity = doc.scrollbar_opacity(scroller);
+    assert!(
+        (opacity - 0.5).abs() < 0.01,
+        "expected opacity ~0.5 mid-fade, got {opacity}"
+    );
+
+    doc.resolve(t0 + Duration::from_millis(800));
+    assert_eq!(doc.scrollbar_opacity(scroller), 0.0);
+    assert!(
+        !doc.is_animating(),
+        "a finished fade stops requesting frames"
+    );
+}
+
+#[test]
+fn wheel_input_restarts_the_fade_from_the_event_time() {
+    use std::time::Duration;
+
+    let mut doc = scroller_doc();
+    let scroller = doc.query_selector("#scroller").unwrap().unwrap();
+    let t0 = Timestamp::ZERO + Duration::from_secs(10);
+
+    // A wheel event at t0 + 300ms while hovering the scroller.
+    {
+        let mut driver = EventDriver::new(&mut doc, NoopEventHandler);
+        let mut hover = pointer_event(50.0, 50.0, MouseEventButtons::None);
+        hover.timestamp = t0;
+        let coords = hover.coords;
+        driver.handle_ui_event(UiEvent::PointerMove(hover));
+        driver.handle_ui_event(UiEvent::Wheel(BlitzWheelEvent {
+            delta: BlitzWheelDelta::Pixels(0.0, -50.0),
+            coords,
+            buttons: MouseEventButtons::None,
+            mods: Default::default(),
+            element: Point::default(),
+            timestamp: t0 + Duration::from_millis(300),
+        }));
+    }
+
+    // The fade is timed from the event, not from the frame which paints it: at
+    // t0 + 1s the scrollbars are 700ms past the wheel, i.e. fully faded (a fade
+    // timed from the first frame at t0 + 700ms would still be fully shown).
+    doc.resolve(t0 + Duration::from_millis(700));
+    assert_eq!(doc.scrollbar_opacity(scroller), 1.0);
+    doc.resolve(t0 + Duration::from_secs(1));
+    assert_eq!(doc.scrollbar_opacity(scroller), 0.0);
 }

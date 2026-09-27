@@ -78,6 +78,9 @@ pub(crate) struct ScrollRequest {
     /// Whether to abort a smooth scroll in progress. Set for user-initiated scrolls, so that
     /// an animation does not fight the user's input for the rest of its duration.
     pub(crate) interrupt_animation: bool,
+    /// The time of the input event (or frame) which caused the scroll, if any. Times the
+    /// overlay scrollbars' fade-out; `None` times it from the next frame.
+    pub(crate) timestamp: Option<Timestamp>,
 }
 
 /// State driving a fling: the scroll which continues, decelerating, after a touch pan
@@ -181,7 +184,7 @@ impl BaseDocument {
             return end != current;
         }
 
-        let has_changed = self.write_scroll_offset(target, end, dispatch_event);
+        let has_changed = self.write_scroll_offset(target, end, request.timestamp, dispatch_event);
 
         // Transfer the delta the target could not consume to the next scroller in the chain.
         if request.overflow == ScrollOverflow::Chain {
@@ -297,6 +300,7 @@ impl BaseDocument {
         &mut self,
         target: ScrollTarget,
         offset: Point<f64>,
+        timestamp: Option<Timestamp>,
         dispatch_event: &mut dyn FnMut(DomEvent),
     ) -> bool {
         match self.canonical_scroll_target(target) {
@@ -353,7 +357,7 @@ impl BaseDocument {
                 };
                 dispatch_event(DomEvent::new(node_id, DomEventData::Scroll(event)));
 
-                self.show_scrollbars(node_id, None);
+                self.show_scrollbars(node_id, timestamp);
                 self.shell_provider.request_redraw();
                 true
             }
@@ -390,6 +394,7 @@ impl BaseDocument {
                 source: ScrollSource::User,
                 behavior: ScrollBehavior::Instant,
                 interrupt_animation: false,
+                timestamp: None,
             },
             &mut dispatch_event,
         )
@@ -409,16 +414,20 @@ impl BaseDocument {
                 source: ScrollSource::User,
                 behavior: ScrollBehavior::Instant,
                 interrupt_animation: false,
+                timestamp: None,
             },
             &mut |_| {},
         )
     }
 
+    /// Scroll by a user-facing delta, chaining unconsumed scroll to ancestors.
+    /// `timestamp` is the time of the input event (or frame) driving the scroll.
     pub(crate) fn scroll_chain_by(
         &mut self,
         anchor_node_id: Option<NodeId>,
         scroll_x: f64,
         scroll_y: f64,
+        timestamp: Timestamp,
         dispatch_event: &mut dyn FnMut(DomEvent),
     ) -> bool {
         self.scroll(
@@ -434,6 +443,7 @@ impl BaseDocument {
                 // A user-initiated scroll aborts any smooth scroll in progress, so that the
                 // two do not fight over the scroll offset for the rest of the animation.
                 interrupt_animation: true,
+                timestamp: Some(timestamp),
             },
             dispatch_event,
         )
@@ -584,6 +594,7 @@ impl BaseDocument {
                 source: ScrollSource::Programmatic,
                 behavior,
                 interrupt_animation: true,
+                timestamp: None,
             },
             &mut |_| {},
         );
@@ -741,7 +752,7 @@ impl BaseDocument {
                 let dx = fling_state.x_velocity * time_diff_ms;
                 let dy = fling_state.y_velocity * time_diff_ms;
 
-                self.scroll_chain_by(Some(fling_state.target), dx, dy, &mut |_| {});
+                self.scroll_chain_by(Some(fling_state.target), dx, dy, now, &mut |_| {});
                 if fling_state.x_velocity.abs() < 0.1 && fling_state.y_velocity.abs() < 0.1 {
                     self.scroll_animation = ScrollAnimationState::None;
                 }
@@ -766,7 +777,7 @@ impl BaseDocument {
                     y: scroll_to.start.y + (scroll_to.end.y - scroll_to.start.y) * eased,
                 };
                 // TODO: dispatch `scroll` events for programmatic scrolls.
-                self.write_scroll_offset(scroll_to.target, target, &mut |_| {});
+                self.write_scroll_offset(scroll_to.target, target, Some(now), &mut |_| {});
 
                 if progress >= 1.0 {
                     self.scroll_animation = ScrollAnimationState::None;

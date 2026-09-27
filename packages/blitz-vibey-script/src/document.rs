@@ -11,7 +11,7 @@ use blitz_dom::{
 };
 use blitz_html::{DocumentHtmlParser, HtmlProvider};
 use blitz_traits::events::{DomEvent, UiEvent};
-use blitz_traits::time::Timestamp;
+use blitz_traits::time::{Clock, Timestamp};
 use url::Url;
 use web_time::Instant;
 
@@ -114,6 +114,18 @@ impl ScriptDocument {
     /// [`poll`](blitz_traits::Document::poll), and therefore don't need wakeups.
     pub fn without_timer_thread(mut self) -> Self {
         self.timer_thread_enabled = false;
+        self
+    }
+
+    /// Drive the document's clock (JS timer deadlines, `performance.now()`,
+    /// `Event.timeStamp`, `Date`) from `clock` instead of the default
+    /// [`SystemClock`](blitz_traits::time::SystemClock).
+    ///
+    /// Embedders should pass the same clock they sample frame times and input
+    /// event timestamps from, so that script-observable time and the engine's
+    /// time agree.
+    pub fn with_clock(self, clock: impl Clock + 'static) -> Self {
+        self.runtime.ctx.state.borrow().clock.set_source(clock);
         self
     }
 

@@ -19,7 +19,11 @@ use web_time::{Duration, SystemTime, UNIX_EPOCH};
 /// deadline instead of sleeping until it, while preserving timer ordering.
 #[derive(Clone)]
 pub(crate) struct ScriptClock {
-    inner: Rc<RefCell<ClockMode>>,
+    inner: Rc<RefCell<ClockInner>>,
+}
+
+struct ClockInner {
+    mode: ClockMode,
     /// The document's time origin (`performance.timeOrigin`): the time the clock
     /// was created. `performance.now()` and `Event.timeStamp` are relative to it.
     origin: Timestamp,
@@ -41,14 +45,24 @@ impl ScriptClock {
     pub fn new(source: impl Clock + 'static) -> Self {
         let origin = source.now();
         Self {
-            inner: Rc::new(RefCell::new(ClockMode::Real(Box::new(source)))),
-            origin,
+            inner: Rc::new(RefCell::new(ClockInner {
+                mode: ClockMode::Real(Box::new(source)),
+                origin,
+            })),
         }
+    }
+
+    /// Replace the time source (and reset the time origin to its current time).
+    /// All clones of this clock observe the change.
+    pub fn set_source(&self, source: impl Clock + 'static) {
+        let mut inner = self.inner.borrow_mut();
+        inner.origin = source.now();
+        inner.mode = ClockMode::Real(Box::new(source));
     }
 
     /// The current time according to this clock
     pub fn now(&self) -> Timestamp {
-        match &*self.inner.borrow() {
+        match &self.inner.borrow().mode {
             ClockMode::Real(source) => source.now(),
             ClockMode::Virtual { now } => *now,
         }
@@ -56,29 +70,32 @@ impl ScriptClock {
 
     /// Time elapsed since the clock's origin
     pub fn elapsed(&self) -> Duration {
-        self.now().duration_since(self.origin)
+        self.now().duration_since(self.inner.borrow().origin)
     }
 
     /// `timestamp` as a `DOMHighResTimeStamp`: milliseconds since the document's
     /// time origin.
     pub fn high_res_millis(&self, timestamp: Timestamp) -> f64 {
-        timestamp.duration_since(self.origin).as_secs_f64() * 1000.0
+        timestamp
+            .duration_since(self.inner.borrow().origin)
+            .as_secs_f64()
+            * 1000.0
     }
 
     /// Switch to virtual mode. Time stops at the current instant and only
     /// advances via [`advance_to`](Self::advance_to).
     pub fn make_virtual(&self) {
-        let mut mode = self.inner.borrow_mut();
-        if let ClockMode::Real(source) = &*mode {
+        let mut inner = self.inner.borrow_mut();
+        if let ClockMode::Real(source) = &inner.mode {
             let now = source.now();
-            *mode = ClockMode::Virtual { now };
+            inner.mode = ClockMode::Virtual { now };
         }
     }
 
     /// Advance a virtual clock to `deadline` (never backwards).
     /// Does nothing in real mode.
     pub fn advance_to(&self, deadline: Timestamp) {
-        if let ClockMode::Virtual { now } = &mut *self.inner.borrow_mut()
+        if let ClockMode::Virtual { now } = &mut self.inner.borrow_mut().mode
             && deadline > *now
         {
             *now = deadline;

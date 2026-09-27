@@ -1808,7 +1808,16 @@ impl BaseDocument {
         (hit, scrollbar)
     }
 
+    /// Update hover state for a pointer at `(x, y)`, with no input event to attribute
+    /// the change to (e.g. re-resolving hover after a layout shift). Prefer
+    /// [`set_hover_to_at`](Self::set_hover_to_at) when handling a pointer event.
     pub fn set_hover_to(&mut self, x: f32, y: f32) -> bool {
+        self.set_hover_to_at(x, y, None)
+    }
+
+    /// Update hover state for a pointer event at `(x, y)` which occurred at
+    /// `timestamp` (if known)
+    pub fn set_hover_to_at(&mut self, x: f32, y: f32, timestamp: Option<Timestamp>) -> bool {
         // Record the pointer position in client (unscrolled) coordinates so
         // that `refresh_hover` can re-resolve hover state after layout or
         // scroll changes.
@@ -1833,7 +1842,7 @@ impl BaseDocument {
                 .into_iter()
                 .flatten()
             {
-                self.show_scrollbars(scrollbar.node_id, None);
+                self.show_scrollbars(scrollbar.node_id, timestamp);
             }
         }
         self.hovered_scrollbar = hovered_scrollbar;
