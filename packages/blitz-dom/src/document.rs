@@ -2498,11 +2498,19 @@ impl BaseDocument {
         &self,
         node_id: NodeId,
     ) -> Option<impl Iterator<Item = BoundingRect> + '_> {
+        self.inline_fragment_rects_with_offsets(node_id, true)
+    }
+
+    pub(crate) fn inline_fragment_rects_with_offsets(
+        &self,
+        node_id: NodeId,
+        apply_offsets: bool,
+    ) -> Option<impl Iterator<Item = BoundingRect> + '_> {
         let node = self.get_node(node_id)?;
 
         // Only non-atomic inline elements lack their own layout box: they are
         // flattened into the containing inline root's text layout as style spans.
-        let fragments = node.inline_fragment_boxes()?;
+        let fragments = node.inline_fragment_boxes(apply_offsets)?;
         let inline_root = node.inline_root_ancestor()?;
 
         // Fragment boxes are relative to the inline root's border box.

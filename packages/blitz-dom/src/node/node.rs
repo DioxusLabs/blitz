@@ -10,7 +10,7 @@ use euclid::{Point2D, Rect, Size2D};
 use keyboard_types::Modifiers;
 use kurbo::{Affine, Rect as KurboRect};
 use markup5ever::{LocalName, local_name};
-use parley::{BreakReason, Cluster, ClusterSide};
+use parley::{BreakReason, Cluster, ClusterSide, PositionedLayoutItem};
 use selectors::matching::ElementSelectorFlags;
 use std::cell::{Cell, RefCell};
 use std::fmt::Write;
@@ -62,6 +62,7 @@ bitflags! {
         const IS_INLINE_WITH_ONLY_BLOCK_CHILDREN = 0b00100000;
         /// Registered in the document's `position: sticky` list (`sticky.rs`).
         const IS_STICKY = 0b00001000;
+        const HAS_STICKY_INLINES = 0b00010000;
     }
 }
 
@@ -1650,13 +1651,9 @@ impl Node {
         if self.flags.is_inline_root() {
             let element_data = &self.element_data().unwrap();
             if let Some(ild) = element_data.inline_layout_data.as_ref() {
-                let layout = &ild.layout;
-                let scale = layout.scale();
                 let y = y - ild.block_offset;
 
-                if let Some((cluster, _side)) =
-                    Cluster::from_point_exact(layout, x * scale, y * scale)
-                {
+                if let Some((cluster, _side)) = self.text_cluster_at_point(x, y, true) {
                     let node_id = cluster.style().brush.id;
                     if let Some(text_node) = self.tree().get(node_id)
                         && !text_node.primary_styles().is_some_and(|style| {
@@ -1700,6 +1697,66 @@ impl Node {
         }
     }
 
+    pub(crate) fn is_inline_span(&self) -> bool {
+        self.is_element()
+            && !self.flags.is_inline_root()
+            && self.display_style().is_some_and(|display| {
+                display.outside() == DisplayOutside::Inline
+                    && display.inside() == DisplayInside::Flow
+            })
+    }
+
+    fn text_cluster_at_point(
+        &self,
+        x: f32,
+        y: f32,
+        exact: bool,
+    ) -> Option<(Cluster<'_, super::TextBrush>, ClusterSide)> {
+        let layout = &self.element_data()?.inline_layout_data.as_ref()?.layout;
+        let scale = layout.scale();
+        let (x, y) = (x * scale, y * scale);
+        if self.flags.contains(NodeFlags::HAS_STICKY_INLINES) {
+            let mut hit = None;
+            for line in layout.lines() {
+                for item in line.items() {
+                    let PositionedLayoutItem::GlyphRun(run) = item else {
+                        continue;
+                    };
+                    let id = run.style().brush.id;
+                    if id == self.id {
+                        continue;
+                    }
+                    let offset = self.with(id).sticky_offset();
+                    if offset.x == 0.0 && offset.y == 0.0 {
+                        continue;
+                    }
+                    let (px, py) = (x - offset.x * scale, y - offset.y * scale);
+                    if px >= run.offset()
+                        && px <= run.offset() + run.advance()
+                        && py >= line.metrics().block_min_coord
+                        && py <= line.metrics().block_max_coord
+                    {
+                        hit = Cluster::from_point_exact(layout, px, py);
+                    }
+                }
+            }
+            if hit.is_some() {
+                return hit;
+            }
+        }
+        let hit = if exact {
+            Cluster::from_point_exact(layout, x, y)
+        } else {
+            Cluster::from_point(layout, x, y)
+        }?;
+        let id = hit.0.style().brush.id;
+        let offset = self.with(id).sticky_offset();
+        if exact && id != self.id && (offset.x != 0.0 || offset.y != 0.0) {
+            return None;
+        }
+        Some(hit)
+    }
+
     /// Get the text byte offset at a given point, using coordinates already transformed
     /// to be relative to this inline root's content box.
     /// Returns Some(byte_offset) if the point hits text, None otherwise.
@@ -1708,14 +1765,11 @@ impl Node {
             return None;
         }
 
-        let element_data = self.element_data()?;
-        let inline_layout = element_data.inline_layout_data.as_ref()?;
-        let layout = &inline_layout.layout;
-        let scale = layout.scale();
+        let inline_layout = self.element_data()?.inline_layout_data.as_ref()?;
         let y = y - inline_layout.block_offset;
 
         // Use Parley's cluster hit testing (from_point is more forgiving than from_point_exact)
-        let (cluster, side) = Cluster::from_point(layout, x * scale, y * scale)?;
+        let (cluster, side) = self.text_cluster_at_point(x, y, false)?;
 
         // Determine byte offset based on which side of the cluster was clicked
         // For LTR text: left side = start of cluster, right side = end of cluster
@@ -1820,7 +1874,10 @@ impl Node {
     /// to the border box of its inline root.
     ///
     /// Returns `None` for nodes that have their own layout box.
-    pub fn inline_fragment_boxes(&self) -> Option<impl Iterator<Item = taffy::Rect<f32>> + '_> {
+    pub fn inline_fragment_boxes(
+        &self,
+        apply_offsets: bool,
+    ) -> Option<impl Iterator<Item = taffy::Rect<f32>> + '_> {
         use parley::PositionedLayoutItem;
 
         if !self.is_non_atomic_inline() {
@@ -1847,6 +1904,14 @@ impl Node {
                     Some(parent) => id = parent,
                     None => return false,
                 }
+            }
+        };
+
+        let offset = move |id: NodeId| -> crate::Point<f32> {
+            if apply_offsets && id != inline_root_id {
+                self.with(id).sticky_offset()
+            } else {
+                crate::Point { x: 0.0, y: 0.0 }
             }
         };
 
@@ -1883,23 +1948,25 @@ impl Node {
                         if !is_in_target(glyph_run.style().brush.id) {
                             continue;
                         }
-                        let x0 = glyph_run.offset();
+                        let shift = offset(glyph_run.style().brush.id);
+                        let x0 = glyph_run.offset() + shift.x * scale;
                         let x1 = x0 + glyph_run.advance();
                         // Use the line box's block extent rather than the
                         // run's font ascent/descent: fonts with small
                         // typographic metrics would otherwise produce rects
                         // that clip the rendered glyphs. This matches the
                         // geometry used for text selection highlights.
-                        let y0 = line_metrics.block_min_coord;
-                        let y1 = line_metrics.block_max_coord;
+                        let y0 = line_metrics.block_min_coord + shift.y * scale;
+                        let y1 = line_metrics.block_max_coord + shift.y * scale;
                         union(&mut line_rect, x0, y0, x1, y1);
                     }
                     PositionedLayoutItem::InlineBox(inline_box) => {
                         if !is_in_target(NodeId::from_u64(inline_box.id)) {
                             continue;
                         }
-                        let x0 = inline_box.x;
-                        let y0 = inline_box.y;
+                        let shift = offset(NodeId::from_u64(inline_box.id));
+                        let x0 = inline_box.x + shift.x * scale;
+                        let y0 = inline_box.y + shift.y * scale;
                         union(
                             &mut line_rect,
                             x0,
@@ -1930,7 +1997,7 @@ impl Node {
         // Non-atomic inlines have no layout box of their own: start from the first
         // fragment box (relative to the inline root's border box) and continue the
         // walk from the inline root.
-        if let Some(mut fragments) = self.inline_fragment_boxes() {
+        if let Some(mut fragments) = self.inline_fragment_boxes(true) {
             if let Some(first) = fragments.next() {
                 x += first.left;
                 y += first.top;

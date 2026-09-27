@@ -1,4 +1,7 @@
+use anyrender::render_to_buffer;
+use anyrender_vello_cpu::VelloCpuImageRenderer;
 use blitz_dom::{ScrollBehavior, ScrollLogicalPosition};
+use blitz_paint::paint_scene;
 use blitz_test_harness::Harness;
 use markup5ever::{QualName, local_name, ns};
 
@@ -161,6 +164,89 @@ fn nested_sticky_table_parts_apply_each_offset_once() {
         "position:static;height:60px;padding:0;vertical-align:top",
     );
     assert_eq!(shift(&h, "#t"), 0.0);
+}
+
+#[test]
+fn inline_sticky_moves_geometry_paint_hits_and_selection_together() {
+    let mut h = Harness::from_html(
+        "<body style='margin:0'><div id=s style='height:100px;overflow:hidden'><div id=p style='height:1000px;font-size:20px;line-height:24px'><span id=t style='position:sticky;top:0;background:red;text-decoration:underline'>sticky<b id=n style='background:red'>nested</b><span id=box style='display:inline-block;width:20px;height:20px;background:blue'></span></span></div></div></body>",
+    );
+    let t = h.node("#t");
+    let nested = h.node("#n");
+    let p = h.node("#p");
+    let before = h.base().node_client_rects(t);
+    assert!(!before.is_empty() && before[0].width > 40.0);
+    let hit_before = h.base().find_text_position(2.0, 12.0).unwrap();
+    h.base_mut().set_text_selection(p, 0, p, 6);
+    let before_paint = render_to_buffer::<VelloCpuImageRenderer, _>(
+        |scene| paint_scene(scene, &mut h.base_mut(), 1.0, 300, 100, 0, 0),
+        300,
+        100,
+    );
+    scroll(&mut h, "#s", 100.0);
+    let after = h.base().node_client_rects(t);
+    assert_eq!(after.len(), before.len());
+    for (before, after) in before.iter().zip(&after) {
+        assert_eq!(
+            (after.x, after.y, after.width, after.height),
+            (before.x, before.y, before.width, before.height)
+        );
+    }
+    assert_eq!(h.hit_node(2.0, 12.0), t);
+    assert_eq!(h.base().find_text_position(2.0, 12.0).unwrap(), hit_before);
+    assert_eq!(shift(&h, "#n"), 100.0);
+    assert_eq!(shift(&h, "#box"), 100.0);
+    let nested_rect = h.base().get_client_bounding_rect(nested).unwrap();
+    assert!(nested_rect.y >= 0.0 && nested_rect.y < 24.0);
+    let after_paint = render_to_buffer::<VelloCpuImageRenderer, _>(
+        |scene| paint_scene(scene, &mut h.base_mut(), 1.0, 300, 100, 0, 0),
+        300,
+        100,
+    );
+    assert!(
+        before_paint
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .any(|pixel| pixel[..3] == [255, 0, 0])
+    );
+    assert!(
+        before_paint == after_paint,
+        "sticky glyphs, decorations, backgrounds, selection, and atomic children must stay in place"
+    );
+    set_style(&mut h, "#t", "position:static");
+    assert_eq!(shift(&h, "#n"), 0.0);
+    assert_eq!(shift(&h, "#box"), 0.0);
+    assert!(h.base().get_client_bounding_rect(t).unwrap().y < 0.0);
+}
+
+#[test]
+fn nested_inline_stickies_use_fragment_origins_and_ancestor_offsets() {
+    let mut h = Harness::from_html(
+        "<body style='margin:0'><div id=s style='height:100px;overflow:auto'><div style='height:1000px;font-size:20px;line-height:24px'><span id=outer style='position:sticky;top:0'>outer <span id=inner style='position:sticky;top:10px'>inner</span></span> sibling</div></div></body>",
+    );
+    scroll(&mut h, "#s", 100.0);
+    let inner = h.node("#inner");
+    assert_eq!(shift(&h, "#outer"), 100.0);
+    assert_eq!(shift(&h, "#inner"), 110.0);
+    assert_eq!(h.base().get_client_bounding_rect(inner).unwrap().y, 10.0);
+}
+
+#[test]
+fn wrapped_inline_sticky_uses_its_in_flow_fragment_bounds() {
+    let mut h = Harness::from_html(
+        "<body style='margin:0'><div id=s style='height:100px;overflow:auto'><div style='height:1000px;width:100px;font-size:20px;line-height:24px'>prefix<br>prefix<br><span id=t style='position:sticky;top:0'>sticky text that wraps across several lines</span></div></div>",
+    );
+    let t = h.node("#t");
+    let before = h.base().node_client_rects(t);
+    assert!(before.len() > 1 && before[0].y > 0.0);
+    scroll(&mut h, "#s", 200.0);
+    let after = h.base().node_client_rects(t);
+    assert_eq!(after.len(), before.len());
+    assert_eq!(after[0].y, 0.0);
+    for (before_line, after_line) in before.iter().zip(after) {
+        assert_eq!(after_line.y, before_line.y - before[0].y);
+    }
 }
 
 #[test]
