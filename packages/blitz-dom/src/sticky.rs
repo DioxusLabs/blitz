@@ -185,8 +185,15 @@ impl BaseDocument {
             keep
         });
         for entry in entries.iter_mut() {
+            entry.depth = 0;
+            let mut parent = self.nodes[entry.node].parent;
+            while let Some(id) = parent {
+                entry.depth += 1;
+                parent = self.nodes[id].parent;
+            }
             entry.constraints = self.constraints_for(entry.node, root, viewport_size);
         }
+        entries.sort_by_key(|entry| entry.depth);
         self.sticky_nodes = entries;
         self.refresh_sticky_offsets();
     }
