@@ -1374,14 +1374,9 @@ fn inline_layout_baked_properties_via_hover() {
     }
 }
 
-/// Known bug: an inline-level box (inline-block, replaced element, or a block
-/// inside an inline) nested in an inline element is a layout child of the
-/// inline root, but `build_inline_layout_recursive` (run after
-/// `resolve_layout_children`) overwrites its `layout_parent` with the inline
-/// element. `resolve_layout_children` resets it on the next frame, so the
-/// value alternates between the two.
+/// A block pseudo-element on a span is an inline box nested in an inline
+/// element: its `layout_parent` is the inline root, not the span.
 #[test]
-#[ignore = "known bug: layout_parent of inline boxes nested in inline elements"]
 fn block_pseudo_element_on_span() {
     let mut oracle = Oracle::new(&page(
         r#".pa::after { content: "AA"; display: block; height: 3px; }"#,
@@ -1395,14 +1390,9 @@ fn block_pseudo_element_on_span() {
     });
 }
 
-/// Known bug: an inline-level box (inline-block, replaced element, or a block
-/// inside an inline) nested in an inline element is a layout child of the
-/// inline root, but `build_inline_layout_recursive` (run after
-/// `resolve_layout_children`) overwrites its `layout_parent` with the inline
-/// element. `resolve_layout_children` resets it on the next frame, so the
-/// value alternates between the two.
+/// An inline-block nested in an inline element is a layout child of the
+/// inline root, and its `layout_parent` stays the inline root across frames.
 #[test]
-#[ignore = "known bug: layout_parent of inline boxes nested in inline elements"]
 fn inline_block_nested_in_inline_element() {
     let mut oracle = Oracle::new(&page(
         "",
