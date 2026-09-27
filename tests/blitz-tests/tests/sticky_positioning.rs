@@ -260,8 +260,7 @@ fn fixed_ancestor_uses_viewport_insets_without_viewport_scroll() {
     h.base_mut()
         .set_viewport_scroll(blitz_dom::util::Point { x: 0.0, y: 200.0 });
     assert_eq!(shift(&h, "#t"), -380.0);
-    let page_y = 530.0 + h.base().viewport_scroll().y as f32;
-    assert_eq!(h.hit_node(10.0, page_y), t);
+    assert_eq!(h.base().element_from_point(10.0, 530.0), Some(t));
     assert_eq!(h.base().get_client_bounding_rect(t).unwrap().y, 520.0);
 }
 
