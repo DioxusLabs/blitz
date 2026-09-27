@@ -1202,7 +1202,6 @@ pub(crate) fn build_inline_layout_into(
         build_inline_layout_recursive(
             &mut builder,
             nodes,
-            inline_context_root_node_id,
             before_id,
             text_transform,
             &span_line_heights,
@@ -1212,7 +1211,6 @@ pub(crate) fn build_inline_layout_into(
         build_inline_layout_recursive(
             &mut builder,
             nodes,
-            inline_context_root_node_id,
             child_id,
             text_transform,
             &span_line_heights,
@@ -1222,7 +1220,6 @@ pub(crate) fn build_inline_layout_into(
         build_inline_layout_recursive(
             &mut builder,
             nodes,
-            inline_context_root_node_id,
             after_id,
             text_transform,
             &span_line_heights,
@@ -1235,15 +1232,11 @@ pub(crate) fn build_inline_layout_into(
     fn build_inline_layout_recursive(
         builder: &mut TreeBuilder<TextBrush>,
         nodes: &crate::NodeTree,
-        parent_id: NodeId,
         node_id: NodeId,
         parent_text_transform: TextTransform,
         span_line_heights: &HashMap<NodeId, f32>,
     ) {
         let node = &nodes[node_id];
-
-        // Set layout_parent for node.
-        node.layout_parent.set(Some(parent_id));
 
         let style = node.primary_styles();
         let style = style.as_ref();
@@ -1301,7 +1294,6 @@ pub(crate) fn build_inline_layout_into(
                             build_inline_layout_recursive(
                                 builder,
                                 nodes,
-                                parent_id,
                                 child_id,
                                 text_transform,
                                 span_line_heights,
@@ -1362,7 +1354,6 @@ pub(crate) fn build_inline_layout_into(
                                 build_inline_layout_recursive(
                                     builder,
                                     nodes,
-                                    node_id,
                                     before_id,
                                     text_transform,
                                     span_line_heights,
@@ -1373,7 +1364,6 @@ pub(crate) fn build_inline_layout_into(
                                 build_inline_layout_recursive(
                                     builder,
                                     nodes,
-                                    node_id,
                                     child_id,
                                     text_transform,
                                     span_line_heights,
@@ -1383,7 +1373,6 @@ pub(crate) fn build_inline_layout_into(
                                 build_inline_layout_recursive(
                                     builder,
                                     nodes,
-                                    node_id,
                                     after_id,
                                     text_transform,
                                     span_line_heights,
