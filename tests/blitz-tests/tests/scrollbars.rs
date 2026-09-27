@@ -9,6 +9,7 @@ use blitz_dom::{DocumentConfig, ScrollBehavior};
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_paint::paint_scene;
 use blitz_traits::shell::{ColorScheme, Viewport};
+use blitz_traits::time::Timestamp;
 use std::sync::Arc;
 
 const BLUE: [u8; 3] = [0, 0, 255];
@@ -29,7 +30,7 @@ fn pixel_in(html: &str, scroll: (f64, f64), x: usize, y: usize, scheme: ColorSch
             ..Default::default()
         },
     );
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
     let scroller = doc.query_selector("#scroller").unwrap().expect("#scroller");
     // Scroll through the scroll API, so the scroll registers as scrollbar activity like a real
     // user scroll.
@@ -94,7 +95,7 @@ fn stale_scroll_offset_alone_paints_no_thumb() {
             ..Default::default()
         },
     );
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
     let scroller = doc.query_selector("#scroller").unwrap().expect("#scroller");
     doc.get_node_mut(scroller).unwrap().scroll_offset_mut().y = 50.0;
     let buffer = render_to_buffer::<VelloCpuImageRenderer, _>(

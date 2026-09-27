@@ -1096,6 +1096,7 @@ dependencies = [
  "serde",
  "smol_str",
  "url",
+ "web-time",
 ]
 
 [[package]]

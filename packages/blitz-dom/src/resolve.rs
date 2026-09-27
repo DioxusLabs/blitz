@@ -1,5 +1,6 @@
 //! Resolve style and layout
 
+use blitz_traits::Timestamp;
 use blitz_traits::node_id::NodeId;
 use std::cell::RefCell;
 
@@ -34,8 +35,13 @@ use crate::{
 };
 
 impl BaseDocument {
-    /// Restyle the tree and then relayout it
-    pub fn resolve(&mut self, current_time_for_animations: f64) {
+    /// Advance the document to the frame at `now`, then restyle and relayout it.
+    ///
+    /// `now` is the frame time: CSS animations and transitions are advanced to it, so
+    /// that painting reads plain state and never samples a clock. Embedders must call
+    /// this before painting each frame, with `now` from a monotonic clock (see
+    /// [`Timestamp`]).
+    pub fn resolve(&mut self, now: Timestamp) {
         if TDocument::as_node(&self.root_node())
             .first_element_child()
             .is_none()
@@ -79,7 +85,7 @@ impl BaseDocument {
         self.flush_pending_device_changes();
 
         // we need to resolve stylist first since it will need to drive our layout bits
-        self.resolve_stylist(current_time_for_animations);
+        self.resolve_stylist(now);
         timer.record_time("style");
 
         // Non-incremental mode is "every node is damaged every frame": mark the
@@ -156,7 +162,7 @@ impl BaseDocument {
                 );
                 drop(sub_viewport);
 
-                sub_doc.resolve(current_time_for_animations);
+                sub_doc.resolve(now);
 
                 subdoc_is_animating |= sub_doc.is_animating();
             }

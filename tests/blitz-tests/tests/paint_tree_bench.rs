@@ -6,6 +6,7 @@ use anyrender::NullScenePainter;
 use blitz_dom::DocumentConfig;
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::shell::{ColorScheme, Viewport};
+use blitz_traits::time::Timestamp;
 use std::fmt::Write as _;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -25,8 +26,8 @@ fn make_doc(html: &str, incremental: bool) -> HtmlDocument {
         },
     );
     // Two frames: on `main` hoisted positions are one frame behind layout.
-    doc.resolve(0.0);
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
+    doc.resolve(Timestamp::ZERO);
     doc
 }
 
@@ -184,15 +185,15 @@ fn bench_page(name: &'static str, html: &str) -> Row {
         } else {
             doc.set_hover_to(WIDTH as f32 - 1.0, HEIGHT as f32 - 1.0);
         }
-        doc.resolve(0.0);
+        doc.resolve(Timestamp::ZERO);
     });
 
     let mut doc = make_doc(html, false);
     let full_frame = time_median(30, || {
         doc.set_hover_to(hx2 + 1.0, hy2 + 1.0);
-        doc.resolve(0.0);
+        doc.resolve(Timestamp::ZERO);
         doc.set_hover_to(WIDTH as f32 - 1.0, HEIGHT as f32 - 1.0);
-        doc.resolve(0.0);
+        doc.resolve(Timestamp::ZERO);
     }) / 2;
 
     Row {
@@ -230,7 +231,7 @@ fn resolve_phase_timings() {
     println!("nodes: {}", doc.tree().len());
     println!("--- non-incremental frames");
     for _ in 0..5 {
-        doc.resolve(0.0);
+        doc.resolve(Timestamp::ZERO);
     }
 
     let mut doc = make_doc(&html, true);
@@ -251,7 +252,7 @@ fn resolve_phase_timings() {
         } else {
             doc.set_hover_to(WIDTH as f32 - 1.0, HEIGHT as f32 - 1.0);
         }
-        doc.resolve(0.0);
+        doc.resolve(Timestamp::ZERO);
     }
 }
 
@@ -317,16 +318,16 @@ fn external_page_timings() {
         } else {
             doc.set_hover_to(WIDTH as f32 - 1.0, HEIGHT as f32 - 1.0);
         }
-        doc.resolve(0.0);
+        doc.resolve(Timestamp::ZERO);
     });
 
     println!("--- non-incremental frames");
     let mut doc = make_doc(&html, false);
     let full_frame = time_median(5, || {
         doc.set_hover_to(ax + 1.0, ay + 1.0);
-        doc.resolve(0.0);
+        doc.resolve(Timestamp::ZERO);
         doc.set_hover_to(WIDTH as f32 - 1.0, HEIGHT as f32 - 1.0);
-        doc.resolve(0.0);
+        doc.resolve(Timestamp::ZERO);
     }) / 2;
 
     println!(
