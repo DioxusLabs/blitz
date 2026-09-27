@@ -1484,6 +1484,40 @@ fn table_root_restyle() {
     assert_eq!(reconstructed, 4);
 }
 
+/// A cell placed directly in a row group (no `<tr>`) is a layout child of
+/// the table like any other cell; its content changes must reach it.
+#[test]
+fn cell_directly_in_row_group() {
+    // The parser would foster-parent a `<p>` out of the `<tbody>`.
+    let mut oracle = Oracle::new(&page(
+        "",
+        r#"<table><tbody id="tb"><tr><td>a</td></tr></tbody></table>"#,
+    ));
+    oracle.step("cell inserted into the row group", |doc| {
+        let cell = element(
+            doc,
+            "p",
+            &[("id", "c"), ("style", "display:table-cell")],
+            Some("c2"),
+        );
+        let tbody = id(doc, "#tb");
+        doc.mutate().append_children(tbody, &[cell]);
+    });
+    oracle.step("text edit in the cell", |doc| {
+        let text_node = first_text_child(doc, "#c");
+        doc.mutate().set_node_text(text_node, "a longer cell text");
+    });
+    oracle.step("cell becomes whitespace-only", |doc| {
+        let text_node = first_text_child(doc, "#c");
+        doc.mutate().set_node_text(text_node, " ");
+    });
+    oracle.step("cell gets a block", |doc| {
+        let blk = element(doc, "div", &[("style", "height:5px")], None);
+        let cell = id(doc, "#c");
+        doc.mutate().append_children(cell, &[blk]);
+    });
+}
+
 /// Hover/focus changes affecting only paint reconstruct no boxes.
 #[test]
 fn paint_only_state_changes_reconstruct_nothing() {
