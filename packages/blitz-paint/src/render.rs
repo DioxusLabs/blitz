@@ -113,6 +113,9 @@ pub struct BlitzDomPainter<'dom, 'a> {
     pub(crate) initial_y: f64,
     /// The id of the document's root element (cached to avoid re-resolving it for every element)
     pub(crate) root_element_id: Option<NodeId>,
+    /// The id of the element whose overflow is propagated to the viewport (the root element
+    /// or the `<body>`), which must therefore not clip its own overflow.
+    pub(crate) viewport_overflow_element_id: Option<NodeId>,
     /// Scrollbar hover/drag state, resolved once per scene like the root element
     #[cfg(feature = "scrollbars")]
     pub(crate) hovered_scrollbar: Option<blitz_dom::node::ScrollbarRef>,
@@ -147,6 +150,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
 
         let layer_manager = LayerManager::default();
         let root_element_id = dom.try_root_element().map(|el| el.id);
+        let viewport_overflow_element_id = dom.viewport_overflow_element();
 
         Self {
             dom,
@@ -156,6 +160,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             initial_x,
             initial_y,
             root_element_id,
+            viewport_overflow_element_id,
             #[cfg(feature = "scrollbars")]
             hovered_scrollbar: dom.hovered_scrollbar(),
             #[cfg(feature = "scrollbars")]
@@ -346,16 +351,18 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             .element_data()
             .and_then(|el| el.text_input_data())
             .is_some();
-        // The root element's overflow is propagated to the viewport (which is clipped by the
-        // window/surface bounds), so the root element must not clip its own overflow.
+        // The root element's (or, when the root's overflow is visible, the body's) overflow
+        // is propagated to the viewport (which is clipped by the window/surface bounds), so
+        // that element's used overflow is `visible`. Other clipping reasons (e.g. `contain: paint`)
+        // still apply to it.
         let is_root_element = self.root_element_id == Some(node_id);
-        let should_clip = !is_root_element
-            && (is_image
-                || is_sub_doc
-                || is_text_input
-                || contain_paint
-                || !matches!(overflow_x, Overflow::Visible)
+        let propagates_overflow_to_viewport =
+            is_root_element || self.viewport_overflow_element_id == Some(node_id);
+        let clips_overflow = !propagates_overflow_to_viewport
+            && (!matches!(overflow_x, Overflow::Visible)
                 || !matches!(overflow_y, Overflow::Visible));
+        let should_clip =
+            is_image || is_sub_doc || is_text_input || contain_paint || clips_overflow;
 
         // Apply padding/border offset to inline root
         let taffy::Layout {

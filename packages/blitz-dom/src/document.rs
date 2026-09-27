@@ -842,6 +842,45 @@ impl BaseDocument {
             .unwrap()
     }
 
+    /// The element whose `overflow` is propagated to the viewport, per the CSS overflow
+    /// propagation rules (css-overflow-3 §3.3). This is the root element, unless it is an
+    /// `<html>` element with `overflow: visible` in both axes and it has a `<body>` child
+    /// with a box, in which case the body's overflow is propagated instead. The used
+    /// overflow of the element returned is `visible`: it must not clip its own overflow.
+    pub fn viewport_overflow_element(&self) -> Option<NodeId> {
+        use style::values::computed::Overflow;
+
+        let root = self.try_root_element()?;
+        if !root.data.is_element_with_tag_name(&local_name!("html")) {
+            return Some(root.id);
+        }
+        let root_styles = root.primary_styles()?;
+        let root_overflow_visible = root_styles.clone_overflow_x() == Overflow::Visible
+            && root_styles.clone_overflow_y() == Overflow::Visible;
+        if !root_overflow_visible {
+            return Some(root.id);
+        }
+
+        // Only the first `<body>` child is a candidate; if it doesn't generate a box then
+        // nothing is propagated from the body.
+        let body = root
+            .children
+            .iter()
+            .copied()
+            .find(|&child_id| {
+                self.nodes[child_id]
+                    .data
+                    .is_element_with_tag_name(&local_name!("body"))
+            })
+            .filter(|&body_id| {
+                self.nodes[body_id].primary_styles().is_some_and(|styles| {
+                    let display = styles.clone_display();
+                    !display.is_none() && !display.is_contents()
+                })
+            });
+        Some(body.unwrap_or(root.id))
+    }
+
     pub fn create_node(&mut self, node_data: NodeData) -> NodeId {
         let tree_ptr = self.nodes.as_mut() as *mut NodeTree;
         let guard = self.guard.clone();
