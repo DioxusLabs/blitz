@@ -43,6 +43,7 @@ use style::values::computed::length::CSSPixelLength;
 use style::values::generics::position::Inset as GenericInset;
 
 use crate::BaseDocument;
+use crate::scrolling::ScrollTarget;
 
 /// A rectangle in the coordinate space of some ancestor's border box.
 #[derive(Clone, Copy, Debug)]
@@ -331,7 +332,9 @@ impl BaseDocument {
             if let Some(s) = anc.primary_styles() {
                 let b = s.get_box();
                 let position = s.clone_position();
-                if scrolls(b.overflow_x) || scrolls(b.overflow_y) || position == Position::Fixed {
+                if (scrolls(b.overflow_x) || scrolls(b.overflow_y) || position == Position::Fixed)
+                    && self.canonical_scroll_target(ScrollTarget::Node(a)) != ScrollTarget::Viewport
+                {
                     container = Some(a);
                     break;
                 }
@@ -388,7 +391,11 @@ impl BaseDocument {
             x1: parent_x + pl.size.width - pl.border.right - pl.padding.right,
             y1: parent_y + pl.size.height - pl.border.bottom - pl.padding.bottom,
         };
-        if container == Some(cb_id) {
+        if container == Some(cb_id)
+            || (container.is_none()
+                && self.canonical_scroll_target(ScrollTarget::Node(cb_id))
+                    == ScrollTarget::Viewport)
+        {
             // The scroll container's content box is the whole scrollable area.
             cb.x1 = cb
                 .x1

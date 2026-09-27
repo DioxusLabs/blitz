@@ -271,7 +271,7 @@ impl BaseDocument {
 
     /// Resolve a scroll target to the scroller which actually moves: the root element scrolls
     /// the viewport, per the CSS overflow propagation rules.
-    fn canonical_scroll_target(&self, target: ScrollTarget) -> ScrollTarget {
+    pub(crate) fn canonical_scroll_target(&self, target: ScrollTarget) -> ScrollTarget {
         match target {
             ScrollTarget::Node(node_id)
                 if self.try_root_element().is_some_and(|el| el.id == node_id) =>
