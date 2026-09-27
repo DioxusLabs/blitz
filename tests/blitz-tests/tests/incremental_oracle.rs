@@ -1167,6 +1167,20 @@ fn pseudo_elements_appear_disappear_change() {
             set_attr(doc, "#ps", "class", class)
         });
     }
+    oracle.step("span class pb again", |doc| {
+        set_attr(doc, "#ps", "class", "pb")
+    });
+    // Re-collecting the paragraph flushes the span's existing pseudo without
+    // damaging it: only the paragraph reconstructs, and no damage is left
+    // behind on the pseudo (checked by `assert_no_damage`).
+    let reconstructed = oracle.step("text edit next to span with pseudo", |doc| {
+        let text_node = first_text_child(doc, "#pp");
+        doc.mutate().set_node_text(text_node, "edited ");
+    });
+    assert_eq!(
+        reconstructed, 1,
+        "text edit in a paragraph with a pseudo-bearing span"
+    );
     for class in ["pb", "pb pa", "pc", "pc pa", ""] {
         oracle.step(&format!("block class {class:?}"), |doc| {
             set_attr(doc, "#pd", "class", class)
