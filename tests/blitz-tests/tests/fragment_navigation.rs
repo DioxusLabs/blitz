@@ -3,6 +3,7 @@
 
 use blitz_dom::{Document, DocumentConfig, FontContext, ScrollBehavior, ScrollLogicalPosition};
 use blitz_html::{HtmlDocument, HtmlProvider};
+use blitz_traits::time::Timestamp;
 use blitz_traits::{
     events::{
         BlitzPointerEvent, BlitzPointerId, BlitzWheelDelta, BlitzWheelEvent, MouseEventButton,
@@ -11,7 +12,7 @@ use blitz_traits::{
     shell::{ColorScheme, Viewport},
 };
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 fn layout_doc(html: &str) -> HtmlDocument {
     let mut doc = HtmlDocument::from_html(
@@ -24,19 +25,19 @@ fn layout_doc(html: &str) -> HtmlDocument {
             ..Default::default()
         },
     );
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
     doc
 }
 
-/// Drive `resolve` repeatedly (advancing the wall-clock-based scroll animation)
-/// until the document reports it is no longer animating, or a timeout elapses.
+/// Drive `resolve` with synthetic frames (advancing the frame clock by 16ms each) until
+/// the document reports it is no longer animating, or too much virtual time elapses.
 fn drive_until_settled(doc: &mut HtmlDocument) {
-    let start = Instant::now();
+    let mut now = Timestamp::ZERO;
     while doc.is_animating() {
-        std::thread::sleep(Duration::from_millis(8));
-        doc.resolve(0.0);
+        now += Duration::from_millis(16);
+        doc.resolve(now);
         assert!(
-            start.elapsed() < Duration::from_secs(5),
+            now < Timestamp::from_secs_f64(5.0),
             "scroll animation did not settle within 5s"
         );
     }
@@ -60,6 +61,7 @@ fn pointer_event(x: f32, y: f32) -> BlitzPointerEvent {
         details: PointerDetails::default(),
         element: Point::default(),
         active_pointers: Default::default(),
+        timestamp: Timestamp::ZERO,
     }
 }
 
@@ -80,6 +82,7 @@ fn wheel_at(doc: &mut HtmlDocument, x: f32, y: f32, delta_x: f64, delta_y: f64) 
         buttons: MouseEventButtons::empty(),
         mods: Default::default(),
         element: Point::default(),
+        timestamp: Timestamp::ZERO,
     }));
 }
 
@@ -366,8 +369,7 @@ fn wheel_scroll_cancels_smooth_scroll() {
     wheel_at(&mut doc, 5.0, 5.0, 0.0, -20.0);
     assert_eq!(doc.get_node(scroller).unwrap().scroll_offset().y, 20.0);
 
-    std::thread::sleep(Duration::from_millis(50));
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO + Duration::from_millis(50));
     assert_eq!(doc.get_node(scroller).unwrap().scroll_offset().y, 20.0);
 }
 

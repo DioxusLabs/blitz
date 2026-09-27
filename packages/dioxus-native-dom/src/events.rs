@@ -6,6 +6,7 @@ use blitz_traits::events::{
     BlitzKeyEvent, BlitzPointerEvent, BlitzPointerId, BlitzScrollEvent, BlitzWheelDelta,
     BlitzWheelEvent, MouseEventButton,
 };
+use blitz_traits::time::Timestamp;
 use dioxus_html::{
     AnimationData, CancelData, ClipboardData, CompositionData, DragData, FocusData, FormData,
     FormValue, HasFileData, HasFocusData, HasFormData, HasKeyboardData, HasMouseData,
@@ -647,9 +648,16 @@ impl InteractionLocation for NativeWheelData {
     }
 }
 
-pub fn synthetic_click_event(node: &Node, modifiers: Modifiers) -> Box<dyn Any> {
+/// Create the Dioxus event data for a synthetic click on `node`, stamped with
+/// `timestamp` (the time of the input event it is synthesized from, or the current
+/// frame time if there is none)
+pub fn synthetic_click_event(
+    node: &Node,
+    modifiers: Modifiers,
+    timestamp: Timestamp,
+) -> Box<dyn Any> {
     Box::new(NativePointerData(
-        node.synthetic_click_event_data(modifiers),
+        node.synthetic_click_event_data(modifiers, timestamp),
     ))
 }
 
@@ -678,6 +686,7 @@ mod tests {
             details: PointerDetails::default(),
             element: Point::default(),
             active_pointers: Default::default(),
+            timestamp: Timestamp::ZERO,
         }
     }
 

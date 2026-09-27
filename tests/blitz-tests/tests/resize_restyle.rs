@@ -5,6 +5,7 @@
 use blitz_dom::DocumentConfig;
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::shell::{ColorScheme, Viewport};
+use blitz_traits::time::Timestamp;
 use std::sync::Arc;
 
 const HTML: &str = r#"<!DOCTYPE html>
@@ -46,12 +47,12 @@ fn style_ptr(doc: &HtmlDocument, selector: &str) -> *const () {
 #[test]
 fn viewport_units_update_after_resize() {
     let mut doc = make_doc(800, 600);
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
 
     assert_eq!(used_width(&doc, "#vw"), 400.0);
 
     doc.viewport_mut().window_size = (700, 600);
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
 
     assert_eq!(used_width(&doc, "#vw"), 350.0);
 }
@@ -59,17 +60,17 @@ fn viewport_units_update_after_resize() {
 #[test]
 fn media_query_flip_updates_styles_after_resize() {
     let mut doc = make_doc(800, 600);
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
 
     assert_eq!(used_width(&doc, "#mq"), 10.0);
 
     doc.viewport_mut().window_size = (900, 600);
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
 
     assert_eq!(used_width(&doc, "#mq"), 30.0);
 
     doc.viewport_mut().window_size = (800, 600);
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
 
     assert_eq!(used_width(&doc, "#mq"), 10.0);
 }
@@ -77,14 +78,14 @@ fn media_query_flip_updates_styles_after_resize() {
 #[test]
 fn resize_does_not_restyle_viewport_independent_elements() {
     let mut doc = make_doc(800, 600);
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
 
     let static_style = style_ptr(&doc, "#static");
     let vw_style = style_ptr(&doc, "#vw");
 
     // Resize without crossing the media query breakpoint.
     doc.viewport_mut().window_size = (820, 600);
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
 
     // The viewport-unit-using element was restyled...
     assert_eq!(used_width(&doc, "#vw"), 410.0);

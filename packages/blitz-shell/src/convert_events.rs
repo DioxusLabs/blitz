@@ -2,6 +2,7 @@ use blitz_traits::events::{
     BlitzImeEvent, BlitzKeyEvent, BlitzPointerId, KeyState, PointerDetails,
 };
 use blitz_traits::shell::ColorScheme;
+use blitz_traits::time::Timestamp;
 use keyboard_types::{Code, Key, Location, Modifiers};
 use winit::event::KeyEvent as WinitKeyEvent;
 use winit::event::{ButtonSource, ElementState};
@@ -52,8 +53,10 @@ pub(crate) fn winit_ime_to_blitz(event: Ime) -> BlitzImeEvent {
 pub(crate) fn winit_key_event_to_blitz(
     event: &WinitKeyEvent,
     mods: WinitModifiers,
+    timestamp: Timestamp,
 ) -> BlitzKeyEvent {
     BlitzKeyEvent {
+        timestamp,
         key: winit_key_to_kbt_key(&event.logical_key),
         code: winit_physical_key_to_kbt_code(&event.physical_key),
         modifiers: winit_modifiers_to_kbt_modifiers(mods),

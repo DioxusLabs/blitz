@@ -13,6 +13,7 @@ use blitz_traits::events::{
     MouseEventButtons, PointerCoords, PointerDetails, UiEvent,
 };
 use blitz_traits::shell::Viewport;
+use blitz_traits::time::{Clock, SystemClock, Timestamp};
 use winit::dpi::{LogicalPosition, PhysicalInsets, PhysicalPosition};
 use winit::keyboard::PhysicalKey;
 
@@ -20,7 +21,6 @@ use atomic_refcell::AtomicRefCell;
 use std::any::Any;
 use std::sync::Arc;
 use std::task::Waker;
-use web_time::Instant;
 use winit::event::{ButtonSource, ElementState, MouseButton};
 use winit::event_loop::ActiveEventLoop;
 use winit::window::{Theme, WindowAttributes, WindowId};
@@ -94,7 +94,8 @@ pub struct View<Rend: WindowRenderer> {
     /// The events stored here always have an empty `active_pointers` list to
     /// avoid a reference cycle.
     pub active_events: Arc<AtomicRefCell<Vec<BlitzPointerEvent>>>,
-    pub animation_timer: Option<Instant>,
+    /// The clock frame times and input event timestamps are sampled from.
+    pub clock: SystemClock,
     pub is_visible: bool,
     pub safe_area_insets: PhysicalInsets<u32>,
 
@@ -210,7 +211,7 @@ impl<Rend: WindowRenderer> View<Rend> {
         Self {
             renderer: config.renderer,
             waker: None,
-            animation_timer: None,
+            clock: SystemClock,
             keyboard_modifiers: Default::default(),
             proxy: proxy.clone(),
             window: winit_window.clone(),
@@ -277,14 +278,9 @@ impl<Rend: WindowRenderer> View<Rend> {
             .unwrap()
     }
 
-    pub fn current_animation_time(&mut self) -> f64 {
-        match &self.animation_timer {
-            Some(start) => Instant::now().duration_since(*start).as_secs_f64(),
-            None => {
-                self.animation_timer = Some(Instant::now());
-                0.0
-            }
-        }
+    /// The current time on the view's clock.
+    pub fn current_time(&self) -> Timestamp {
+        self.clock.now()
     }
 }
 
@@ -295,11 +291,11 @@ impl<Rend: WindowRenderer> View<Rend> {
     /// in response.
     pub fn resume(&mut self) {
         let window_id = self.window_id();
-        let animation_time = self.current_animation_time();
+        let now = self.current_time();
 
         let (width, height) = {
             let mut inner = self.doc.inner_mut();
-            inner.resolve(animation_time);
+            inner.resolve(now);
             inner.viewport().window_size
         };
 
@@ -329,9 +325,9 @@ impl<Rend: WindowRenderer> View<Rend> {
         // arrived while the renderer was Pending were no-ops on the renderer
         // (its `set_size` only matches Active), so the surface created during
         // resume could be at a stale size by the time we get here.
-        let animation_time = self.current_animation_time();
+        let now = self.current_time();
         let mut inner = self.doc.inner_mut();
-        inner.resolve(animation_time);
+        inner.resolve(now);
         let (width, height) = inner.viewport().window_size;
         let scale = inner.viewport().scale_f64();
         let insets = self.safe_area_insets;
@@ -400,11 +396,11 @@ impl<Rend: WindowRenderer> View<Rend> {
     pub fn redraw(&mut self) {
         #[cfg(target_os = "ios")]
         self.ios_request_redraw.set(false);
-        let animation_time = self.current_animation_time();
+        let now = self.current_time();
         let is_visible = self.is_visible;
 
         let mut inner = self.doc.inner_mut();
-        inner.resolve(animation_time);
+        inner.resolve(now);
 
         // Unregister resources (e.g. textures) from dropped custom widget nodes
         #[cfg(feature = "custom-widget")]
@@ -588,6 +584,10 @@ impl<Rend: WindowRenderer> View<Rend> {
         self.accessibility
             .process_window_event(&*self.window, &event);
 
+        // winit doesn't report when an event happened, so stamp it with the time it
+        // was received.
+        let now = self.current_time();
+
         match event {
             WindowEvent::Destroyed => {}
             WindowEvent::ActivationTokenDone { .. } => {},
@@ -688,7 +688,7 @@ impl<Rend: WindowRenderer> View<Rend> {
                 }
 
                 // Unmodified keypresses
-                let key_event_data = winit_key_event_to_blitz(&event, self.keyboard_modifiers.state());
+                let key_event_data = winit_key_event_to_blitz(&event, self.keyboard_modifiers.state(), now);
                 let event = if event.state.is_pressed() {
                     UiEvent::KeyDown(key_event_data)
                 } else {
@@ -726,6 +726,7 @@ impl<Rend: WindowRenderer> View<Rend> {
                         details: PointerDetails::default(),
                         element: Default::default(),
                         active_pointers: Arc::clone(&self.active_events),
+                        timestamp: now,
                     };
 
                     self.doc.handle_ui_event(UiEvent::PointerCancel(event));
@@ -745,6 +746,7 @@ impl<Rend: WindowRenderer> View<Rend> {
                     details: pointer_source_to_blitz_details(&source),
                     element: Default::default(),
                     active_pointers: Arc::clone(&self.active_events),
+                    timestamp: now,
                 };
                 // Keep multi-touch positions current (no-op for non-active pointers).
                 if id != BlitzPointerId::Mouse {
@@ -784,6 +786,7 @@ impl<Rend: WindowRenderer> View<Rend> {
                     details: PointerDetails::default(),
                     element: Default::default(),
                     active_pointers: Arc::clone(&self.active_events),
+                    timestamp: now,
                 };
 
                 // Maintain the list of active (pressed) non-mouse pointers. A
@@ -809,6 +812,7 @@ impl<Rend: WindowRenderer> View<Rend> {
                         details: PointerDetails::default(),
                         element: Default::default(),
                         active_pointers: Arc::clone(&self.active_events),
+                        timestamp: now,
                     };
                     self.doc.handle_ui_event(UiEvent::PointerMove(event));
                 }
@@ -843,7 +847,8 @@ impl<Rend: WindowRenderer> View<Rend> {
                     coords: self.pointer_coords(self.pointer_pos),
                     buttons: self.buttons,
                     mods: winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state()),
-                    element: Default::default()
+                    element: Default::default(),
+                    timestamp: now,
                 };
 
                 self.doc.handle_ui_event(UiEvent::Wheel(event));

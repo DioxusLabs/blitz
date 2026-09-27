@@ -80,7 +80,7 @@ fn get_resolved_property_value(
     let mut doc = ctx.doc.borrow_mut();
     // Resolved values of layout-dependent properties are used values, so make
     // sure style and layout are up to date before reading.
-    doc.resolve(0.0);
+    doc.resolve(ctx.now());
     let value = doc.resolved_style_value(node_id, &name);
     Ok(js_str(&value))
 }

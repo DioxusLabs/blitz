@@ -9,6 +9,7 @@ use keyboard_types::{Code, Key, Location, Modifiers};
 use smol_str::SmolStr;
 
 use crate::NodeId;
+use crate::time::Timestamp;
 
 #[derive(Default)]
 pub struct EventState {
@@ -309,6 +310,50 @@ impl DomEventData {
         }
     }
 
+    /// When the input which caused this event happened, for events which
+    /// originate from timestamped input (pointer, wheel and keyboard events).
+    pub fn timestamp(&self) -> Option<Timestamp> {
+        match self {
+            Self::PointerMove(event)
+            | Self::PointerDown(event)
+            | Self::PointerUp(event)
+            | Self::PointerCancel(event)
+            | Self::PointerEnter(event)
+            | Self::PointerLeave(event)
+            | Self::PointerOver(event)
+            | Self::PointerOut(event)
+            | Self::MouseMove(event)
+            | Self::MouseDown(event)
+            | Self::MouseUp(event)
+            | Self::MouseEnter(event)
+            | Self::MouseLeave(event)
+            | Self::MouseOver(event)
+            | Self::MouseOut(event)
+            | Self::TouchStart(event)
+            | Self::TouchMove(event)
+            | Self::TouchEnd(event)
+            | Self::TouchCancel(event)
+            | Self::Click(event)
+            | Self::ContextMenu(event)
+            | Self::DoubleClick(event) => Some(event.timestamp),
+
+            Self::Wheel(event) => Some(event.timestamp),
+
+            Self::KeyPress(event) | Self::KeyDown(event) | Self::KeyUp(event) => {
+                Some(event.timestamp)
+            }
+
+            Self::Scroll(_)
+            | Self::Input(_)
+            | Self::Ime(_)
+            | Self::Focus(_)
+            | Self::Blur(_)
+            | Self::FocusIn(_)
+            | Self::FocusOut(_)
+            | Self::AppleStandardKeybinding(_) => None,
+        }
+    }
+
     pub fn kind(&self) -> DomEventKind {
         match self {
             Self::PointerMove { .. } => DomEventKind::PointerMove,
@@ -504,6 +549,8 @@ pub struct BlitzPointerEvent {
     pub mods: Modifiers,
     pub details: PointerDetails,
     pub element: Point<f32>,
+    /// When the event occurred, on the same clock as the frame time passed to `resolve`.
+    pub timestamp: Timestamp,
     /// All pointers that are currently active (pressed) on the surface, including
     /// the one that triggered this event.
     ///
@@ -579,6 +626,8 @@ pub struct BlitzWheelEvent {
     pub buttons: MouseEventButtons,
     pub mods: Modifiers,
     pub element: Point<f32>,
+    /// When the event occurred, on the same clock as the frame time passed to `resolve`.
+    pub timestamp: Timestamp,
 }
 
 impl BlitzWheelEvent {
@@ -721,6 +770,8 @@ pub struct BlitzKeyEvent {
     pub is_composing: bool,
     pub state: KeyState,
     pub text: Option<SmolStr>,
+    /// When the event occurred, on the same clock as the frame time passed to `resolve`.
+    pub timestamp: Timestamp,
 }
 
 #[derive(Clone, Debug)]

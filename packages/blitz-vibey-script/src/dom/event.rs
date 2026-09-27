@@ -3,6 +3,7 @@
 use std::cell::Cell;
 
 use blitz_traits::events::{BlitzKeyEvent, BlitzPointerEvent, BlitzWheelDelta, DomEventData};
+use blitz_traits::time::Timestamp;
 use boa_engine::object::JsObject;
 use boa_engine::value::JsValue;
 use boa_engine::{Context, Finalize, JsData, JsResult, Trace};
@@ -97,7 +98,8 @@ fn default_prevented(this: &JsValue, _: &[JsValue], _: &mut Context) -> JsResult
     ))
 }
 
-/// Create a JS event object with the standard `Event` fields
+/// Create a JS event object with the standard `Event` fields, stamped with the
+/// current time on the document's clock
 pub(crate) fn create_event(
     ctx: &DomCtx,
     event_type: &str,
@@ -106,7 +108,31 @@ pub(crate) fn create_event(
     target: &JsValue,
     context: &mut Context,
 ) -> JsObject {
-    let proto = ctx.state.borrow().protos().event.clone();
+    let timestamp = ctx.state.borrow().clock.now();
+    create_event_at(
+        ctx, event_type, bubbles, cancelable, target, timestamp, context,
+    )
+}
+
+/// Create a JS event object with the standard `Event` fields. `timestamp` is
+/// when the event occurred and is exposed as `timeStamp`.
+#[allow(clippy::too_many_arguments)]
+fn create_event_at(
+    ctx: &DomCtx,
+    event_type: &str,
+    bubbles: bool,
+    cancelable: bool,
+    target: &JsValue,
+    timestamp: Timestamp,
+    context: &mut Context,
+) -> JsObject {
+    let (proto, time_stamp) = {
+        let state = ctx.state.borrow();
+        (
+            state.protos().event.clone(),
+            state.clock.high_res_millis(timestamp),
+        )
+    };
     let event = JsObject::from_proto_and_data(Some(proto), EventRef::default());
     define_value(&event, "type", js_str(event_type), context);
     define_value(&event, "target", target.clone(), context);
@@ -117,11 +143,7 @@ pub(crate) fn create_event(
     define_value(&event, "composed", JsValue::from(false), context);
     define_value(&event, "isTrusted", JsValue::from(true), context);
     define_value(&event, "eventPhase", JsValue::from(2), context);
-    let timestamp = web_time::SystemTime::now()
-        .duration_since(web_time::UNIX_EPOCH)
-        .map(|duration| duration.as_secs_f64() * 1000.0)
-        .unwrap_or(0.0);
-    define_value(&event, "timeStamp", JsValue::from(timestamp), context);
+    define_value(&event, "timeStamp", JsValue::from(time_stamp), context);
     event
 }
 
@@ -238,7 +260,18 @@ pub(crate) fn create_event_for_dom_event(
     target: &JsValue,
     context: &mut Context,
 ) -> JsObject {
-    let event = create_event(ctx, data.name(), bubbles, cancelable, target, context);
+    let event = match data.timestamp() {
+        Some(timestamp) => create_event_at(
+            ctx,
+            data.name(),
+            bubbles,
+            cancelable,
+            target,
+            timestamp,
+            context,
+        ),
+        None => create_event(ctx, data.name(), bubbles, cancelable, target, context),
+    };
 
     match data {
         DomEventData::PointerMove(pointer)

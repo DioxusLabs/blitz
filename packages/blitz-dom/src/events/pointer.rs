@@ -1,16 +1,15 @@
 use blitz_traits::node_id::NodeId;
 use std::collections::VecDeque;
-
-use web_time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use blitz_traits::{
+    Timestamp,
     events::{
         BlitzInputEvent, BlitzPointerEvent, BlitzPointerId, BlitzWheelDelta, BlitzWheelEvent,
         DomEvent, DomEventData, MouseEventButton, MouseEventButtons,
     },
     navigation::NavigationOptions,
 };
-use keyboard_types::Modifiers;
 use markup5ever::local_name;
 use style::values::computed::{Overflow, TouchAction, UserSelect};
 use style_dom::ElementState;
@@ -38,10 +37,18 @@ pub(crate) struct PanState {
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct PanSample {
-    pub(crate) time: u64,
+    pub(crate) time: Timestamp,
     pub(crate) dx: f32,
     pub(crate) dy: f32,
 }
+
+/// Only pointer movement within this long before a touch is released contributes to the
+/// velocity of the resulting fling.
+const FLING_SAMPLE_WINDOW: Duration = Duration::from_millis(100);
+
+/// Two clicks within this long of each other (and close enough together) count as a
+/// double click.
+const MULTI_CLICK_INTERVAL: Duration = Duration::from_millis(500);
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct ScrollbarDragState {
@@ -70,7 +77,7 @@ impl DragMode {
 }
 
 impl PanState {
-    fn update(&mut self, time_ms: u64, screen_x: f32, screen_y: f32) -> (f64, f64) {
+    fn update(&mut self, time: Timestamp, screen_x: f32, screen_y: f32) -> (f64, f64) {
         // Constrain panning to the axes permitted by the `touch-action` property. Positions are
         // still tracked on both axes so that deltas remain correct after a disallowed movement.
         let dx = if self.allow_x {
@@ -87,17 +94,16 @@ impl PanState {
         self.last_y = screen_y;
 
         self.samples.push_back(PanSample {
-            time: time_ms,
+            time,
             // TODO: account for scroll delta not applied due to clamping
             dx: dx as f32,
             dy: dy as f32,
         });
 
-        // Remove samples older than 100ms
-        if self.samples.len() > 50 && time_ms - self.samples.front().unwrap().time > 100 {
-            let idx = self
-                .samples
-                .partition_point(|sample| time_ms - sample.time > 100);
+        // Remove samples older than the fling window
+        let is_stale = |sample: &PanSample| time.duration_since(sample.time) > FLING_SAMPLE_WINDOW;
+        if self.samples.len() > 50 && is_stale(self.samples.front().unwrap()) {
+            let idx = self.samples.partition_point(is_stale);
             // FIXME: use truncate_front once stable
             for _ in 0..idx {
                 self.samples.pop_front();
@@ -107,18 +113,19 @@ impl PanState {
         (dx, dy)
     }
 
-    fn generate_fling(&self, time_ms: u64) -> Option<FlingState> {
+    fn generate_fling(&self, time: Timestamp) -> Option<FlingState> {
         // Generate "fling"
         if let Some(last_sample) = self.samples.back()
-            && time_ms - last_sample.time < 100
+            && time.duration_since(last_sample.time) < FLING_SAMPLE_WINDOW
         {
             let idx = self
                 .samples
-                .partition_point(|sample| time_ms - sample.time > 100);
+                .partition_point(|sample| time.duration_since(sample.time) > FLING_SAMPLE_WINDOW);
 
-            // Compute pan_time. Will always be <= 100ms as we ignore samples older than that.
+            // Compute pan_time (in ms). Will always be <= the fling window as we ignore
+            // samples older than that.
             let pan_start_time = self.samples[idx].time;
-            let pan_time = (time_ms - pan_start_time) as f32;
+            let pan_time = time.duration_since(pan_start_time).as_secs_f32() * 1000.0;
 
             // Avoid division by 0
             if pan_time > 0.0 {
@@ -144,7 +151,7 @@ impl PanState {
 
                 return Some(FlingState {
                     target: self.target,
-                    last_seen_time: time_ms as f64,
+                    last_seen_time: time,
                     x_velocity: x_velocity as f64 * 2.0,
                     y_velocity: y_velocity as f64 * 2.0,
                 });
@@ -264,13 +271,8 @@ pub(crate) fn handle_pointermove<F: FnMut(DomEvent)>(
     }
 
     if let DragMode::Panning(state) = &mut doc.drag_mode {
-        let time_ms = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as u64;
-
         let target = state.target;
-        let (dx, dy) = state.update(time_ms, event.screen_x(), event.screen_y());
+        let (dx, dy) = state.update(event.timestamp, event.screen_x(), event.screen_y());
 
         let has_changed = doc.scroll_chain_by(Some(target), dx, dy, &mut dispatch_event);
         return has_changed;
@@ -383,19 +385,20 @@ pub(crate) fn handle_pointermove<F: FnMut(DomEvent)>(
 pub(crate) fn handle_pointerdown(
     doc: &mut BaseDocument,
     _target: NodeId,
-    x: f32,
-    y: f32,
-    button: MouseEventButton,
-    mods: Modifiers,
+    event: &BlitzPointerEvent,
     dispatch_event: &mut dyn FnMut(DomEvent),
 ) {
+    let x = event.page_x();
+    let y = event.page_y();
+    let button = event.button;
+    let mods = event.mods;
+
     // Compute click count using the previous mousedown position (before updating)
     // This handles both double-click detection and text input word/line selection
     // TODO: For text inputs, only increment click count if click maps to the same/similar caret position
     doc.click_count = if doc
         .last_mousedown_time
-        .map(|t| t.elapsed() < Duration::from_millis(500))
-        .unwrap_or(false)
+        .is_some_and(|t| event.timestamp.duration_since(t) < MULTI_CLICK_INTERVAL)
         && (doc.mousedown_position.x - x).abs() <= 2.0
         && (doc.mousedown_position.y - y).abs() <= 2.0
     {
@@ -405,7 +408,7 @@ pub(crate) fn handle_pointerdown(
     };
 
     // Update mousedown tracking for next click and selection drag detection
-    doc.last_mousedown_time = Some(Instant::now());
+    doc.last_mousedown_time = Some(event.timestamp);
     doc.mousedown_position = taffy::Point { x, y };
     doc.drag_mode = DragMode::None;
     doc.scroll_animation = ScrollAnimationState::None;
@@ -581,17 +584,12 @@ pub(crate) fn handle_pointerup<F: FnMut(DomEvent)>(
     // Repaint so a dragged scrollbar thumb drops its active styling, and
     // restart its fade-out delay now that the drag no longer holds it shown
     if let DragMode::ScrollbarDrag(state) = &drag_mode {
-        doc.show_scrollbars(state.scrollbar.node_id);
+        doc.show_scrollbars(state.scrollbar.node_id, Some(event.timestamp));
         doc.shell_provider.request_redraw();
     }
 
-    let time_ms = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_millis() as u64;
-
     if let DragMode::Panning(state) = &drag_mode {
-        if let Some(fling) = state.generate_fling(time_ms) {
+        if let Some(fling) = state.generate_fling(event.timestamp) {
             doc.scroll_animation = ScrollAnimationState::Fling(fling);
             doc.shell_provider.request_redraw();
         }
@@ -727,7 +725,8 @@ pub(crate) fn handle_click(
                     {
                         // Apply default click event action for target node
                         let target_node = doc.get_node_mut(target_node_id).unwrap();
-                        let syn_event = target_node.synthetic_click_event_data(event.mods);
+                        let syn_event =
+                            target_node.synthetic_click_event_data(event.mods, event.timestamp);
                         handle_click(doc, target_node_id, &syn_event, dispatch_event);
                         break 'matched true;
                     }

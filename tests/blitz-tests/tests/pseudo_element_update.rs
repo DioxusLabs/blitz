@@ -10,6 +10,7 @@
 use blitz_dom::DocumentConfig;
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::shell::{ColorScheme, Viewport};
+use blitz_traits::time::Timestamp;
 use std::sync::Arc;
 
 const HTML: &str = r#"<!DOCTYPE html>
@@ -41,12 +42,12 @@ fn after_pseudo_styles_after_hover(incremental: bool) -> (f32, f32) {
         },
     );
     doc.set_incremental_layout(incremental);
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
 
     // Hover over the .arrow element and run the transition to completion
     doc.set_hover_to(50.0, 50.0);
     for i in 0..=10 {
-        doc.resolve(i as f64 * 0.05);
+        doc.resolve(Timestamp::from_secs_f64(i as f64 * 0.05));
     }
 
     let arrow_id = doc.query_selector(".arrow").unwrap().unwrap();

@@ -1,10 +1,12 @@
 //! Scrolling: user-initiated (interactive) and programmatic scrolling of nodes and the
 //! viewport, and the scroll animations (smooth scrolls and flings) which drive them.
 
+use std::time::Duration;
+
+use blitz_traits::Timestamp;
 use blitz_traits::events::{BlitzScrollEvent, DomEvent, DomEventData};
 use blitz_traits::node_id::NodeId;
 use style::values::computed::Overflow;
-use web_time::{SystemTime, UNIX_EPOCH};
 
 use crate::BaseDocument;
 use crate::util::Point;
@@ -78,10 +80,15 @@ pub(crate) struct ScrollRequest {
     pub(crate) interrupt_animation: bool,
 }
 
+/// State driving a fling: the scroll which continues, decelerating, after a touch pan
+/// is released with some velocity.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct FlingState {
     pub(crate) target: NodeId,
-    pub(crate) last_seen_time: f64,
+    /// The time the fling was last advanced to: the release time of the pan which started
+    /// it, then the time of each frame which has integrated it.
+    pub(crate) last_seen_time: Timestamp,
+    /// Velocity in CSS pixels per millisecond.
     pub(crate) x_velocity: f64,
     pub(crate) y_velocity: f64,
 }
@@ -96,10 +103,12 @@ pub(crate) struct ScrollToState {
     pub(crate) start: Point<f64>,
     /// The scroll offset to animate towards.
     pub(crate) end: Point<f64>,
-    /// Time (in milliseconds since the Unix epoch) at which the animation started.
-    pub(crate) start_time: f64,
-    /// Total duration of the animation in milliseconds.
-    pub(crate) duration: f64,
+    /// The frame time at which the animation started. `None` until the first frame
+    /// which advances the animation: a scroll started outside a frame (from script, or
+    /// while handling an input event) begins on the next frame.
+    pub(crate) start_time: Option<Timestamp>,
+    /// Total duration of the animation.
+    pub(crate) duration: Duration,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -344,7 +353,7 @@ impl BaseDocument {
                 };
                 dispatch_event(DomEvent::new(node_id, DomEventData::Scroll(event)));
 
-                self.show_scrollbars(node_id);
+                self.show_scrollbars(node_id, None);
                 self.shell_provider.request_redraw();
                 true
             }
@@ -430,8 +439,8 @@ impl BaseDocument {
         )
     }
 
-    /// Duration (in milliseconds) of an animated scroll.
-    const SMOOTH_SCROLL_DURATION_MS: f64 = 300.0;
+    /// Duration of an animated scroll.
+    const SMOOTH_SCROLL_DURATION: Duration = Duration::from_millis(300);
 
     /// Returns the current scroll offset and the maximum scroll offset (the minimum is
     /// always `0`) for the given scroll target. `include_hidden` controls whether
@@ -512,17 +521,12 @@ impl BaseDocument {
     fn start_scroll_animation(&mut self, target: ScrollTarget, end: Point<f64>) {
         let start = self.scroll_state(target, true).0;
 
-        let start_time = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as u64 as f64;
-
         self.scroll_animation = ScrollAnimationState::ScrollTo(ScrollToState {
             target,
             start,
             end,
-            start_time,
-            duration: Self::SMOOTH_SCROLL_DURATION_MS,
+            start_time: None,
+            duration: Self::SMOOTH_SCROLL_DURATION,
         });
 
         // Ensure the frame loop runs so the animation is driven to completion.
@@ -719,22 +723,19 @@ impl BaseDocument {
         self.scroll_to_fragment_with_behavior(fragment, ScrollBehavior::Smooth)
     }
 
-    pub fn resolve_scroll_animation(&mut self) {
+    /// Advance the scroll animation in progress (if any) to the frame time `now`.
+    pub fn resolve_scroll_animation(&mut self, now: Timestamp) {
         match &mut self.scroll_animation {
             ScrollAnimationState::Fling(fling_state) => {
-                let time_ms = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap()
-                    .as_millis() as u64 as f64;
-
-                let time_diff_ms = time_ms - fling_state.last_seen_time;
+                let time_diff_ms =
+                    now.duration_since(fling_state.last_seen_time).as_secs_f64() * 1000.0;
 
                 // 0.95 @ 60fps normalized to actual frame times
-                let deceleration = 1.0 - ((0.05 / 16.66666) * time_diff_ms);
+                let deceleration = 0.95f64.powf(time_diff_ms / 16.66666);
 
                 fling_state.x_velocity *= deceleration;
                 fling_state.y_velocity *= deceleration;
-                fling_state.last_seen_time = time_ms;
+                fling_state.last_seen_time = now;
                 let fling_state = fling_state.clone();
 
                 let dx = fling_state.x_velocity * time_diff_ms;
@@ -746,17 +747,16 @@ impl BaseDocument {
                 }
             }
             ScrollAnimationState::ScrollTo(scroll_to) => {
+                let start_time = *scroll_to.start_time.get_or_insert(now);
                 let scroll_to = scroll_to.clone();
-                let time_ms = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap()
-                    .as_millis() as u64 as f64;
 
                 // Normalised progress through the animation, clamped to [0, 1].
-                let progress = if scroll_to.duration <= 0.0 {
+                let progress = if scroll_to.duration.is_zero() {
                     1.0
                 } else {
-                    ((time_ms - scroll_to.start_time) / scroll_to.duration).clamp(0.0, 1.0)
+                    (now.duration_since(start_time).as_secs_f64()
+                        / scroll_to.duration.as_secs_f64())
+                    .clamp(0.0, 1.0)
                 };
                 let eased = ease_in_out_cubic(progress);
 

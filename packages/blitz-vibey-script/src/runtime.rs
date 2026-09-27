@@ -8,6 +8,7 @@ use std::rc::Rc;
 
 use blitz_dom::{BaseDocument, NodeId};
 use blitz_traits::events::{DomEvent, DomEventData, EventState};
+use blitz_traits::time::Timestamp;
 use boa_engine::builtins::promise::PromiseState;
 use boa_engine::module::{Module, ModuleLoader, ModuleRequest, Referrer};
 use boa_engine::object::{JsObject, ObjectInitializer};
@@ -20,7 +21,7 @@ use boa_engine::{Finalize, Trace};
 use boa_runtime::Console;
 use boa_runtime::console::{ConsoleState, Logger};
 use url::Url;
-use web_time::{Duration, Instant};
+use web_time::Duration;
 
 use crate::dom::event::{EventRef, create_event, create_event_for_dom_event};
 use crate::dom::{
@@ -1505,7 +1506,7 @@ impl ScriptRuntime {
     }
 
     /// The deadline of the soonest pending timer (if any)
-    pub fn next_timer_deadline(&self) -> Option<Instant> {
+    pub fn next_timer_deadline(&self) -> Option<Timestamp> {
         self.ctx.state.borrow().timers.next_deadline()
     }
 
@@ -2152,7 +2153,7 @@ fn window_scroll_to(_: &JsValue, args: &[JsValue], context: &mut Context) -> JsR
     let parsed = crate::dom::element::parse_scroll_to_args(args, context)?;
     let ctx = dom_ctx(context)?;
     let mut doc = ctx.doc.borrow_mut();
-    doc.resolve(0.0);
+    doc.resolve(ctx.now());
     let Some(root_id) = doc.try_root_element().map(|root| root.id) else {
         return Ok(JsValue::undefined());
     };
@@ -2170,7 +2171,7 @@ fn window_scroll_by(_: &JsValue, args: &[JsValue], context: &mut Context) -> JsR
     let parsed = crate::dom::element::parse_scroll_to_args(args, context)?;
     let ctx = dom_ctx(context)?;
     let mut doc = ctx.doc.borrow_mut();
-    doc.resolve(0.0);
+    doc.resolve(ctx.now());
     let Some(root_id) = doc.try_root_element().map(|root| root.id) else {
         return Ok(JsValue::undefined());
     };

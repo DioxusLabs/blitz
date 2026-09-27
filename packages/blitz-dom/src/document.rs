@@ -6,6 +6,7 @@ use crate::mutator::ViewportMut;
 use crate::net::{
     Resource, ResourceHandler, ResourceLoadResponse, StylesheetHandler, StylesheetLoader,
 };
+use crate::node::scrollbar::ScrollbarFade;
 use crate::node::{ImageData, NodeFlags, RasterImageData, SpecialElementData, Status, TextBrush};
 use crate::scrolling::ScrollAnimationState;
 use crate::selection::TextSelection;
@@ -19,6 +20,7 @@ use crate::{
     EventDriver, HtmlParserProvider, Node, NodeData, NoopEventHandler, StyleThreading,
     TextNodeData,
 };
+use blitz_traits::Timestamp;
 use blitz_traits::devtools::DevtoolSettings;
 use blitz_traits::events::{DomEvent, HitResult, UiEvent};
 use blitz_traits::navigation::{DummyNavigationProvider, NavigationProvider};
@@ -68,7 +70,6 @@ use style::{
 use style_dom::ElementState;
 use thin_vec::ThinVec;
 use url::Url;
-use web_time::Instant;
 
 #[cfg(feature = "parallel-construct")]
 use thread_local::ThreadLocal;
@@ -267,8 +268,8 @@ pub struct BaseDocument {
     pub(crate) active_node_id: Option<NodeId>,
     /// The node which recieved a mousedown event (if any)
     pub(crate) mousedown_node_id: Option<NodeId>,
-    /// The last time a mousedown was made (for double-click detection)
-    pub(crate) last_mousedown_time: Option<Instant>,
+    /// The timestamp of the last mousedown event (for double-click detection)
+    pub(crate) last_mousedown_time: Option<Timestamp>,
     /// The position where mousedown occurred (for selection drags and double-click detection)
     pub(crate) mousedown_position: taffy::Point<f32>,
     /// How many clicks have been made in quick succession
@@ -277,9 +278,9 @@ pub struct BaseDocument {
     pub(crate) drag_mode: DragMode,
     /// The scrollbar thumb currently under the pointer, if any
     pub(crate) hovered_scrollbar: Option<crate::node::ScrollbarRef>,
-    /// When each scroll container's overlay scrollbars were last shown
-    /// (scrolled, or the pointer left the thumb); drives their fade-out
-    pub(crate) scrollbar_activity: HashMap<NodeId, Instant>,
+    /// The fade-out state of each scroll container whose overlay scrollbars are
+    /// showing (it was scrolled, or the pointer left the thumb)
+    pub(crate) scrollbar_activity: HashMap<NodeId, ScrollbarFade>,
     /// Whether and what kind of scroll animation is currently in progress
     pub(crate) scroll_animation: ScrollAnimationState,
 
@@ -1749,10 +1750,10 @@ impl BaseDocument {
         }
     }
 
-    /// The current opacity of `node_id`'s overlay scrollbars. They show at
-    /// full opacity on scroll and fade out after a delay (Chromium's overlay
-    /// timings); the pointer resting on a thumb, or dragging it, holds them
-    /// visible.
+    /// The opacity of `node_id`'s overlay scrollbars as of the last [`resolve`]
+    /// (BaseDocument::resolve). They show at full opacity on scroll and fade
+    /// out after a delay (Chromium's overlay timings); the pointer resting on
+    /// a thumb, or dragging it, holds them visible.
     pub fn scrollbar_opacity(&self, node_id: NodeId) -> f32 {
         let interacting = |scrollbar: &crate::node::ScrollbarRef| scrollbar.node_id == node_id;
         if self.hovered_scrollbar.as_ref().is_some_and(interacting)
@@ -1763,26 +1764,25 @@ impl BaseDocument {
         {
             return 1.0;
         }
-        self.scrollbar_activity.get(&node_id).map_or(0.0, |last| {
-            crate::node::scrollbar::opacity_at(last.elapsed())
-        })
+        self.scrollbar_activity
+            .get(&node_id)
+            .map_or(0.0, ScrollbarFade::opacity)
     }
 
     /// Show `node_id`'s overlay scrollbars at full opacity and restart their
-    /// fade-out delay.
-    pub(crate) fn show_scrollbars(&mut self, node_id: NodeId) {
+    /// fade-out delay, timed from the input event at `timestamp`, or from the
+    /// next frame if there is no event (e.g. a programmatic scroll).
+    pub(crate) fn show_scrollbars(&mut self, node_id: NodeId, timestamp: Option<Timestamp>) {
         if cfg!(feature = "scrollbars") {
-            self.scrollbar_activity.insert(node_id, Instant::now());
+            self.scrollbar_activity
+                .insert(node_id, ScrollbarFade::shown(timestamp));
         }
     }
 
     /// Whether any overlay scrollbars are awaiting or animating their
     /// fade-out (so frames must keep rendering until they finish).
     fn scrollbars_animating(&self) -> bool {
-        use crate::node::scrollbar::{FADE_DELAY, FADE_DURATION};
-        self.scrollbar_activity
-            .values()
-            .any(|last| last.elapsed() < FADE_DELAY + FADE_DURATION)
+        !self.scrollbar_activity.is_empty()
     }
 
     /// [`hit`](Self::hit), also resolving the innermost overlay scrollbar
@@ -1833,7 +1833,7 @@ impl BaseDocument {
                 .into_iter()
                 .flatten()
             {
-                self.show_scrollbars(scrollbar.node_id);
+                self.show_scrollbars(scrollbar.node_id, None);
             }
         }
         self.hovered_scrollbar = hovered_scrollbar;
@@ -2793,7 +2793,7 @@ mod zoom_tests {
             shell_provider: Some(shell_provider.clone() as _),
             ..Default::default()
         });
-        doc.resolve(0.0);
+        doc.resolve(Timestamp::ZERO);
 
         let base = shell_provider.redraw_count.load(Ordering::SeqCst);
         doc.zoom_by(0.5);
@@ -2840,7 +2840,7 @@ mod hover_state_tests {
         mutator.append_children(root_id, &[html]);
         drop(mutator);
 
-        doc.resolve(0.0);
+        doc.resolve(Timestamp::ZERO);
         (doc, container)
     }
 
@@ -2932,7 +2932,7 @@ mod hover_invalidation_tests {
         mutator.append_children(root_id, &[html]);
         drop(mutator);
 
-        doc.resolve(0.0);
+        doc.resolve(Timestamp::ZERO);
         (doc, div, span)
     }
 
@@ -2963,7 +2963,7 @@ mod hover_invalidation_tests {
         // Hover the div
         doc.set_hover_to(10.0, 10.0);
         assert!(doc.nodes[div].is_hovered());
-        doc.resolve(0.0);
+        doc.resolve(Timestamp::ZERO);
         let hovered_bg = bg_color(&doc, div);
         let hovered_color = text_color(&doc, span);
         assert_ne!(initial_bg, hovered_bg, "hover should change div background");
@@ -2975,7 +2975,7 @@ mod hover_invalidation_tests {
         // Move the pointer off the div (below it, over the body)
         doc.set_hover_to(10.0, 200.0);
         assert!(!doc.nodes[div].is_hovered());
-        doc.resolve(0.0);
+        doc.resolve(Timestamp::ZERO);
         assert_eq!(
             bg_color(&doc, div),
             initial_bg,
@@ -3036,12 +3036,12 @@ mod hover_invalidation_tests {
         mutator.append_children(root_id, &[html]);
         drop(mutator);
 
-        doc.resolve(0.0);
+        doc.resolve(Timestamp::ZERO);
         let initial_color = text_color(&doc, span);
 
         doc.set_hover_to(10.0, 10.0);
         assert!(doc.nodes[a].is_hovered());
-        doc.resolve(0.0);
+        doc.resolve(Timestamp::ZERO);
         let hovered_color = text_color(&doc, span);
         assert_ne!(
             initial_color, hovered_color,
@@ -3050,7 +3050,7 @@ mod hover_invalidation_tests {
 
         doc.set_hover_to(10.0, 200.0);
         assert!(!doc.nodes[a].is_hovered());
-        doc.resolve(0.0);
+        doc.resolve(Timestamp::ZERO);
         assert_eq!(
             text_color(&doc, span),
             initial_color,
@@ -3092,7 +3092,7 @@ mod hover_invalidation_tests {
         mutator.append_children(root_id, &[html]);
         drop(mutator);
 
-        doc.resolve(0.0);
+        doc.resolve(Timestamp::ZERO);
         let initial_input_color = text_color(&doc, input);
         let initial_label_color = text_color(&doc, label);
 
@@ -3103,7 +3103,7 @@ mod hover_invalidation_tests {
             }
             node.mark_ancestors_dirty();
         });
-        doc.resolve(0.0);
+        doc.resolve(Timestamp::ZERO);
         assert_ne!(
             text_color(&doc, input),
             initial_input_color,
@@ -3122,7 +3122,7 @@ mod hover_invalidation_tests {
             }
             node.mark_ancestors_dirty();
         });
-        doc.resolve(0.0);
+        doc.resolve(Timestamp::ZERO);
         assert_eq!(
             text_color(&doc, input),
             initial_input_color,
@@ -3168,13 +3168,13 @@ mod hover_invalidation_tests {
         mutator.append_children(root_id, &[html]);
         drop(mutator);
 
-        doc.resolve(0.0);
+        doc.resolve(Timestamp::ZERO);
         let before = doc.nodes[div].before().expect("::before node should exist");
         let initial_color = text_color(&doc, before);
 
         doc.set_hover_to(10.0, 10.0);
         assert!(doc.nodes[div].is_hovered());
-        doc.resolve(0.0);
+        doc.resolve(Timestamp::ZERO);
         assert_ne!(
             text_color(&doc, before),
             initial_color,
@@ -3183,7 +3183,7 @@ mod hover_invalidation_tests {
 
         doc.set_hover_to(10.0, 200.0);
         assert!(!doc.nodes[div].is_hovered());
-        doc.resolve(0.0);
+        doc.resolve(Timestamp::ZERO);
         assert_eq!(
             text_color(&doc, before),
             initial_color,
@@ -3230,7 +3230,7 @@ mod hover_invalidation_tests {
                 .map(|img| img.url.as_str().to_string())
         };
 
-        doc.resolve(0.0);
+        doc.resolve(Timestamp::ZERO);
         assert_eq!(
             background_image_url(&doc, div).as_deref(),
             Some("https://example.com/a.png"),
@@ -3239,7 +3239,7 @@ mod hover_invalidation_tests {
 
         doc.set_hover_to(10.0, 10.0);
         assert!(doc.nodes[div].is_hovered());
-        doc.resolve(0.0);
+        doc.resolve(Timestamp::ZERO);
         assert_eq!(
             background_image_url(&doc, div).as_deref(),
             Some("https://example.com/b.png"),
@@ -3248,7 +3248,7 @@ mod hover_invalidation_tests {
 
         doc.set_hover_to(10.0, 200.0);
         assert!(!doc.nodes[div].is_hovered());
-        doc.resolve(0.0);
+        doc.resolve(Timestamp::ZERO);
         assert_eq!(
             background_image_url(&doc, div).as_deref(),
             Some("https://example.com/a.png"),

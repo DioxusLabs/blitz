@@ -7,6 +7,7 @@ use blitz_html::HtmlDocument;
 use blitz_net::Provider;
 use blitz_paint::paint_scene;
 use blitz_traits::shell::{ColorScheme, Viewport};
+use blitz_traits::time::Timestamp;
 use peniko::Fill;
 use peniko::kurbo::Rect;
 use reqwest::Url;
@@ -86,7 +87,7 @@ async fn main() {
     timer.time("Parsed document");
 
     loop {
-        document.resolve(0.0);
+        document.resolve(Timestamp::ZERO);
         if net.is_empty() {
             break;
         }
@@ -95,7 +96,7 @@ async fn main() {
     timer.time("Fetched assets");
 
     // Compute style, layout, etc for HtmlDocument
-    document.as_mut().resolve(0.0);
+    document.as_mut().resolve(Timestamp::ZERO);
 
     timer.time("Resolved styles and layout");
 

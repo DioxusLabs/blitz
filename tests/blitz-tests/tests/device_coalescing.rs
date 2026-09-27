@@ -5,6 +5,7 @@
 use blitz_dom::DocumentConfig;
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::shell::{ColorScheme, Viewport};
+use blitz_traits::time::Timestamp;
 use std::sync::Arc;
 
 const HTML: &str = r#"<!DOCTYPE html>
@@ -46,13 +47,13 @@ fn style_ptr(doc: &HtmlDocument, selector: &str) -> *const () {
 #[test]
 fn multiple_resizes_between_resolves_apply_latest_size() {
     let mut doc = make_doc(800, 600);
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
 
     // Several resizes before the next resolve: only the latest matters.
     doc.viewport_mut().window_size = (900, 600);
     doc.viewport_mut().window_size = (1000, 700);
     doc.viewport_mut().window_size = (700, 500);
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
 
     assert_eq!(used_width(&doc, "#vw"), 350.0);
     // 700px is below the 850px breakpoint, so #mq must have its narrow width
@@ -63,14 +64,14 @@ fn multiple_resizes_between_resolves_apply_latest_size() {
 #[test]
 fn resize_and_zoom_coalesce() {
     let mut doc = make_doc(800, 600);
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
 
     {
         let mut viewport = doc.viewport_mut();
         viewport.window_size = (800, 600);
         *viewport.zoom_mut() = 2.0;
     }
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
 
     // CSS viewport is 400x300; 50vw = 200 CSS px.
     assert_eq!(used_width(&doc, "#vw"), 200.0);
@@ -80,7 +81,7 @@ fn resize_and_zoom_coalesce() {
 #[test]
 fn stylist_device_read_flushes_pending_changes() {
     let mut doc = make_doc(800, 600);
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
 
     doc.viewport_mut().window_size = (700, 500);
 
@@ -94,12 +95,12 @@ fn stylist_device_read_flushes_pending_changes() {
 #[test]
 fn color_scheme_change_recascades_styles() {
     let mut doc = make_doc(800, 600);
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
 
     let static_style = style_ptr(&doc, "#static");
 
     doc.viewport_mut().color_scheme = ColorScheme::Dark;
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
 
     // Color-scheme-dependent values (light-dark(), system colors) resolve at
     // cascade time without necessarily flipping a media query, so a

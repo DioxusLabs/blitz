@@ -9,6 +9,7 @@
 
 use blitz_dom::{Document, DocumentConfig, NodeId};
 use blitz_html::{HtmlDocument, HtmlProvider};
+use blitz_traits::time::Timestamp;
 use blitz_traits::{
     events::{
         BlitzPointerEvent, BlitzPointerId, MouseEventButton, MouseEventButtons, Point,
@@ -35,7 +36,7 @@ fn make_doc() -> HtmlDocument {
             ..Default::default()
         },
     );
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
     doc
 }
 
@@ -57,6 +58,7 @@ fn pointer_event(x: f32, y: f32, buttons: MouseEventButtons) -> BlitzPointerEven
         details: PointerDetails::default(),
         element: Point::default(),
         active_pointers: Default::default(),
+        timestamp: Timestamp::ZERO,
     }
 }
 

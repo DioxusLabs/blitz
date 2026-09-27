@@ -2,6 +2,7 @@
 
 use blitz_dom::{Document, DocumentConfig};
 use blitz_traits::events::DomEvent;
+use blitz_traits::time::Timestamp;
 use blitz_vibey_script::ScriptDocument;
 use keyboard_types::Modifiers;
 
@@ -176,6 +177,8 @@ fn click_event_listeners() {
         "#,
     );
 
+    let now = doc.clock_now();
+
     let click_event = {
         let inner = doc.inner();
         let btn_id = inner.query_selector("#btn").unwrap().unwrap();
@@ -184,7 +187,7 @@ fn click_event_listeners() {
             inner
                 .get_node(btn_id)
                 .unwrap()
-                .synthetic_click_event(Modifiers::empty()),
+                .synthetic_click_event(Modifiers::empty(), now),
         )
     };
     doc.dispatch_dom_event(click_event.clone());
@@ -223,6 +226,8 @@ fn click_events_bubble_and_stop_propagation() {
         "#,
     );
 
+    let now = doc.clock_now();
+
     let click_event = {
         let inner = doc.inner();
         let btn_id = inner.query_selector("#inner").unwrap().unwrap();
@@ -231,7 +236,7 @@ fn click_events_bubble_and_stop_propagation() {
             inner
                 .get_node(btn_id)
                 .unwrap()
-                .synthetic_click_event(Modifiers::empty()),
+                .synthetic_click_event(Modifiers::empty(), now),
         )
     };
     doc.dispatch_dom_event(click_event);
@@ -342,7 +347,9 @@ fn checkbox_click_fires_input_and_change_events() {
 
     // Resolve style/layout: this constructs the checkbox's internal state
     // (as would happen before rendering in a windowed application)
-    doc.inner_mut().resolve(0.0);
+    doc.inner_mut().resolve(Timestamp::ZERO);
+
+    let now = doc.clock_now();
 
     let click_event = {
         let inner = doc.inner();
@@ -352,7 +359,7 @@ fn checkbox_click_fires_input_and_change_events() {
             inner
                 .get_node(check_id)
                 .unwrap()
-                .synthetic_click_event(Modifiers::empty()),
+                .synthetic_click_event(Modifiers::empty(), now),
         )
     };
     doc.dispatch_dom_event(click_event);
@@ -395,6 +402,8 @@ fn on_event_idl_properties_are_dispatched() {
         "#,
     );
 
+    let now = doc.clock_now();
+
     let click_event = {
         let inner = doc.inner();
         let btn_id = inner.query_selector("#btn").unwrap().unwrap();
@@ -403,7 +412,7 @@ fn on_event_idl_properties_are_dispatched() {
             inner
                 .get_node(btn_id)
                 .unwrap()
-                .synthetic_click_event(Modifiers::empty()),
+                .synthetic_click_event(Modifiers::empty(), now),
         )
     };
     doc.dispatch_dom_event(click_event);
@@ -472,6 +481,7 @@ fn event_get_modifier_state() {
         </body></html>
         "#,
     );
+    let now = doc.clock_now();
     let click_event = {
         let inner = doc.inner();
         let btn_id = inner.query_selector("#btn").unwrap().unwrap();
@@ -480,7 +490,7 @@ fn event_get_modifier_state() {
             inner
                 .get_node(btn_id)
                 .unwrap()
-                .synthetic_click_event(Modifiers::SHIFT),
+                .synthetic_click_event(Modifiers::SHIFT, now),
         )
     };
     doc.dispatch_dom_event(click_event);

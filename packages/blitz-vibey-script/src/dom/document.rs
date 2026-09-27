@@ -312,7 +312,7 @@ fn element_from_point(
     let element_id = {
         let mut doc = ctx.doc.borrow_mut();
         // Hit testing consults layout, so make sure it is up to date
-        doc.resolve(0.0);
+        doc.resolve(ctx.now());
         doc.element_from_point(x, y)
     };
     Ok(node_or_null(&ctx, element_id, context))
@@ -329,7 +329,7 @@ fn elements_from_point(
 
     let element_ids: Vec<NodeId> = {
         let mut doc = ctx.doc.borrow_mut();
-        doc.resolve(0.0);
+        doc.resolve(ctx.now());
         doc.elements_from_point(x, y)
     };
 

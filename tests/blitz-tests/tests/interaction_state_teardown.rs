@@ -15,6 +15,7 @@
 
 use blitz_dom::{Document, DocumentConfig, NodeId};
 use blitz_html::{HtmlDocument, HtmlProvider};
+use blitz_traits::time::Timestamp;
 use blitz_traits::{
     events::{
         BlitzPointerEvent, BlitzPointerId, MouseEventButton, MouseEventButtons, Point,
@@ -44,7 +45,7 @@ fn make_doc(html: &str, shell: Option<Arc<RecordingShell>>) -> HtmlDocument {
             ..Default::default()
         },
     );
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
     doc
 }
 
@@ -70,6 +71,7 @@ fn pointer_event(x: f32, y: f32, buttons: MouseEventButtons) -> BlitzPointerEven
         details: PointerDetails::default(),
         element: Point::default(),
         active_pointers: Default::default(),
+        timestamp: Timestamp::ZERO,
     }
 }
 
@@ -99,7 +101,7 @@ fn hover_bridges_to_surviving_ancestor_without_a_gap() {
 
     // The next resolve re-resolves hover against the (cached) pointer
     // position, confirming the bridge value in this geometry.
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
     assert_eq!(doc.get_hover_node_id(), Some(container));
     assert!(doc.get_node(container).unwrap().is_hovered());
 
@@ -139,7 +141,7 @@ fn hover_bridge_is_corrected_by_coordinate_reresolution() {
 
     // ...but the next resolve re-resolves from the pointer position, which
     // is not over the container, and unhoveres it.
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
     assert_ne!(doc.get_hover_node_id(), Some(container));
     assert!(
         !doc.get_node(container).unwrap().is_hovered(),
@@ -174,7 +176,7 @@ fn active_state_bridges_mid_press_and_clears_on_release() {
     // Releasing the button clears :active from the surviving chain: this
     // only works because the chain was bridged rather than nulled
     // (`unactive_node` no-ops on a cleared id).
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
     doc.handle_ui_event(UiEvent::PointerUp(pointer_event(
         50.0,
         50.0,

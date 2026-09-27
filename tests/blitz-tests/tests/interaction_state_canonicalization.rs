@@ -11,6 +11,7 @@
 
 use blitz_dom::{Document, DocumentConfig, NodeId};
 use blitz_html::{HtmlDocument, HtmlProvider};
+use blitz_traits::time::Timestamp;
 use blitz_traits::{
     events::{
         BlitzPointerEvent, BlitzPointerId, MouseEventButton, MouseEventButtons, Point,
@@ -29,7 +30,7 @@ fn make_doc(html: &str) -> HtmlDocument {
             ..Default::default()
         },
     );
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
     doc
 }
 
@@ -55,6 +56,7 @@ fn pointer_event(x: f32, y: f32, buttons: MouseEventButtons) -> BlitzPointerEven
         details: PointerDetails::default(),
         element: Point::default(),
         active_pointers: Default::default(),
+        timestamp: Timestamp::ZERO,
     }
 }
 
@@ -112,8 +114,8 @@ fn hover_survives_box_tree_reconstruction() {
     // Force full reconstruction on every resolve: all anonymous blocks are
     // deallocated and recreated with new ids.
     doc.set_incremental_layout(false);
-    doc.resolve(0.0);
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
+    doc.resolve(Timestamp::ZERO);
 
     // The canonical hover target is a real DOM node, so it survives.
     assert_eq!(doc.get_hover_node_id(), Some(hover_id));
@@ -135,7 +137,7 @@ fn mousedown_over_anonymous_block_survives_box_tree_reconstruction() {
 
     // Reconstruct while the button is held.
     doc.set_incremental_layout(false);
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
     assert_eq!(doc.get_mousedown_node_id(), Some(container_id));
 
     // Continuing the drag must not panic on a stale id.
@@ -160,7 +162,7 @@ fn active_state_over_anonymous_block_survives_box_tree_reconstruction() {
     doc.active_node();
 
     doc.set_incremental_layout(false);
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
 
     // Must not panic with "invalid SlotMap key used"
     doc.unactive_node();
@@ -186,6 +188,6 @@ fn hover_is_refreshed_after_layout_shift() {
     // Remove #a: #b moves up underneath the (stationary) pointer. Hover must
     // be re-resolved during resolve() without any new pointer event.
     doc.mutate().remove_and_drop_node(a_id);
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
     assert_eq!(doc.get_hover_node_id(), Some(b_id));
 }

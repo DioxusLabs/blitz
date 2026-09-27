@@ -7,6 +7,7 @@ use blitz_traits::events::{
     PointerDetails, UiEvent,
 };
 use blitz_traits::shell::{ColorScheme, Viewport};
+use blitz_traits::time::Timestamp;
 
 use std::sync::Arc;
 
@@ -28,6 +29,7 @@ fn pointer_event(x: f32, y: f32, buttons: MouseEventButtons) -> BlitzPointerEven
         details: PointerDetails::default(),
         element: Point::default(),
         active_pointers: Default::default(),
+        timestamp: Timestamp::ZERO,
     }
 }
 
@@ -63,7 +65,7 @@ fn scroller_doc() -> HtmlDocument {
             ..Default::default()
         },
     );
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
     doc
 }
 
@@ -256,7 +258,7 @@ fn white_author_thumb_still_signals_hover_and_drag() {
             ..Default::default()
         },
     );
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
     let scroller = doc.query_selector("#scroller").unwrap().unwrap();
     scroll_down(&mut doc, scroller, 50.0);
 

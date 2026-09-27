@@ -1,6 +1,7 @@
 //! End-to-end test: run the vendored Preact TodoMVC example (examples/preact)
 //! headlessly and interact with it.
 
+use blitz_traits::time::Timestamp;
 use std::path::PathBuf;
 
 use blitz_dom::{Document, DocumentConfig, NodeId};
@@ -37,7 +38,7 @@ fn load_todomvc() -> ScriptDocument {
 /// editors, checkbox state, ...) as would happen before rendering each frame
 /// in a windowed application.
 fn resolve(doc: &mut ScriptDocument) {
-    doc.inner_mut().resolve(0.0);
+    doc.inner_mut().resolve(Timestamp::ZERO);
 }
 
 fn query(doc: &ScriptDocument, selector: &str) -> Option<NodeId> {
@@ -62,11 +63,13 @@ fn enter_key() -> BlitzKeyEvent {
         is_composing: false,
         state: KeyState::Pressed,
         text: None,
+        timestamp: Timestamp::ZERO,
     }
 }
 
 fn click(doc: &mut ScriptDocument, selector: &str) {
     resolve(doc);
+    let now = doc.clock_now();
     let event = {
         let inner = doc.inner();
         let node_id = inner
@@ -78,7 +81,7 @@ fn click(doc: &mut ScriptDocument, selector: &str) {
             inner
                 .get_node(node_id)
                 .unwrap()
-                .synthetic_click_event(Modifiers::empty()),
+                .synthetic_click_event(Modifiers::empty(), now),
         )
     };
     doc.dispatch_dom_event(event);

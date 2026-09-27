@@ -2,10 +2,12 @@
 //! [`Node`]. Geometry is shared between painting (blitz-paint) and thumb
 //! hit-testing so the two cannot drift.
 
+use std::time::Duration;
+
+use blitz_traits::Timestamp;
 use blitz_traits::node_id::NodeId;
 use kurbo::Rect as KurboRect;
 use taffy::AbsoluteAxis;
-use web_time::Duration;
 
 use super::Node;
 
@@ -22,6 +24,44 @@ pub(crate) fn opacity_at(elapsed: Duration) -> f32 {
     match elapsed.checked_sub(FADE_DELAY) {
         None => 1.0,
         Some(fading) => 1.0 - (fading.as_secs_f32() / FADE_DURATION.as_secs_f32()).min(1.0),
+    }
+}
+
+/// The fade-out state of one scroll container's overlay scrollbars.
+///
+/// Time enters only through [`advance`](Self::advance), called with each frame's time;
+/// the [`opacity`](Self::opacity) it resolves is what gets painted. Activity is
+/// recorded either with the timestamp of the input event which caused it, or (for
+/// activity with no event, such as a programmatic scroll) as pending, in which case
+/// the fade is timed from the next frame.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct ScrollbarFade {
+    shown_at: Option<Timestamp>,
+    opacity: f32,
+}
+
+impl ScrollbarFade {
+    /// Scrollbars shown at full opacity by activity at `shown_at`, or by activity
+    /// which is timed from the next frame if `None`.
+    pub(crate) fn shown(shown_at: Option<Timestamp>) -> Self {
+        Self {
+            shown_at,
+            opacity: 1.0,
+        }
+    }
+
+    /// The opacity resolved by the most recent frame.
+    pub(crate) fn opacity(&self) -> f32 {
+        self.opacity
+    }
+
+    /// Resolve the opacity for the frame at `now`. Returns `false` once the fade has
+    /// completed (the scrollbars are hidden, and the entry can be dropped).
+    pub(crate) fn advance(&mut self, now: Timestamp) -> bool {
+        let shown_at = *self.shown_at.get_or_insert(now);
+        let elapsed = now.duration_since(shown_at);
+        self.opacity = opacity_at(elapsed);
+        elapsed < FADE_DELAY + FADE_DURATION
     }
 }
 

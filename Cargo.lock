@@ -933,7 +933,6 @@ dependencies = [
  "tracing",
  "url",
  "usvg",
- "web-time",
  "wuff",
 ]
 
@@ -1096,6 +1095,7 @@ dependencies = [
  "serde",
  "smol_str",
  "url",
+ "web-time",
 ]
 
 [[package]]

@@ -15,6 +15,7 @@
 
 use blitz_dom::{Document, DocumentConfig};
 use blitz_html::{HtmlDocument, HtmlProvider};
+use blitz_traits::time::Timestamp;
 use blitz_traits::{
     events::{
         BlitzPointerEvent, BlitzPointerId, MouseEventButton, MouseEventButtons, Point,
@@ -43,6 +44,7 @@ fn pointer_event(x: f32, y: f32, buttons: MouseEventButtons) -> BlitzPointerEven
         details: PointerDetails::default(),
         element: Point::default(),
         active_pointers: Default::default(),
+        timestamp: Timestamp::ZERO,
     }
 }
 
@@ -64,7 +66,7 @@ fn make_doc() -> HtmlDocument {
             ..Default::default()
         },
     );
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
     doc
 }
 
@@ -100,7 +102,7 @@ fn remove_pseudo(doc: &mut HtmlDocument) {
     let target_id = doc.query_selector("#target").unwrap().unwrap();
     let class_name = QualName::new(None, ns!(), local_name!("class"));
     doc.mutate().clear_attribute(target_id, class_name);
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
 }
 
 #[test]
@@ -168,7 +170,7 @@ fn hover_state_is_reresolved_when_hovered_element_is_removed() {
     let hover_id = hover_pseudo_region(&mut doc);
 
     doc.mutate().remove_and_drop_node(hover_id);
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
     assert!(doc.get_node(hover_id).is_none());
 
     // The stale id must be gone, and hover must have been re-resolved against
@@ -189,7 +191,7 @@ fn focus_state_is_cleared_when_focused_node_is_dropped() {
     let target_id = doc.query_selector("#target").unwrap().unwrap();
     doc.set_focus_to(target_id);
     doc.mutate().remove_and_drop_node(target_id);
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
 
     // Must not panic with "invalid SlotMap key used"
     doc.clear_focus();
