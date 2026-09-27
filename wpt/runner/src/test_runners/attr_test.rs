@@ -1,4 +1,3 @@
-use blitz_traits::time::Timestamp;
 use std::time::Duration;
 
 use blitz_dom::{BaseDocument, Document as _, Node};
@@ -52,9 +51,10 @@ pub fn process_attr_test(
 
         // Scripts may have mutated the DOM: re-resolve and load any
         // newly-requested resources
+        let now = script_document.clock_now();
         let mut doc = script_document.inner_mut();
-        doc.resolve(Timestamp::ZERO);
-        pump_net_provider(ctx, &mut doc);
+        doc.resolve(now);
+        pump_net_provider(ctx, &mut doc, now);
 
         return match harness_results {
             Some((harness_status, results)) if !results.is_empty() => {
