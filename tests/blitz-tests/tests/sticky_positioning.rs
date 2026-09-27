@@ -81,6 +81,21 @@ fn scroll_after_dropping_sticky_before_resolve_does_not_panic() {
 }
 
 #[test]
+fn reparented_stickies_resolve_ancestors_first() {
+    let mut h = Harness::from_html(
+        "<body style='margin:0'><div id=inner style='position:sticky;top:0;height:20px'></div><div style='height:2000px'><div style='height:1000px'><div id=outer style='position:sticky;top:0;height:300px'></div></div></div>",
+    );
+    let inner = h.node("#inner");
+    let outer = h.node("#outer");
+    h.base_mut().mutate().append_children(outer, &[inner]);
+    h.pump();
+    h.base_mut()
+        .set_viewport_scroll(blitz_dom::util::Point { x: 0.0, y: 100.0 });
+    assert_eq!(shift(&h, "#outer"), 100.0);
+    assert_eq!(shift(&h, "#inner"), 0.0);
+}
+
+#[test]
 fn resolve_after_dropping_sticky_during_smooth_scroll_does_not_panic() {
     let mut h = Harness::from_html(STICKY_HEADER);
     let t = h.node("#t");
