@@ -252,6 +252,7 @@ fn resolve_phase_timings() {
             doc.set_hover_to(WIDTH as f32 - 1.0, HEIGHT as f32 - 1.0);
         }
         doc.resolve(0.0);
+        println!("reconstructed nodes: {}", doc.reconstructed_node_count());
     }
 }
 
@@ -319,6 +320,7 @@ fn external_page_timings() {
         }
         doc.resolve(0.0);
     });
+    println!("reconstructed nodes: {}", doc.reconstructed_node_count());
 
     println!("--- non-incremental frames");
     let mut doc = make_doc(&html, false);
