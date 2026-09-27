@@ -249,9 +249,41 @@ impl BaseDocument {
     /// Ensure that the layout_children field is populated for all nodes
     pub fn resolve_layout_children(&mut self) {
         self.reconstructed_node_count = 0;
-        resolve_layout_children_recursive(self, self.root_node().id);
+        let mut dropped_layout_children = Vec::new();
+        resolve_layout_children_recursive(self, self.root_node().id, &mut dropped_layout_children);
 
-        fn resolve_layout_children_recursive(doc: &mut BaseDocument, node_id: NodeId) {
+        // A former layout child which no container lists any more (it became
+        // `display: contents` or `display: none`, stopped being block-level
+        // inside an inline formatting context, or sits below a container which
+        // no longer generates boxes) is not visited by construction again, so
+        // its box state would otherwise outlive its box. A child re-collected
+        // by another container this frame has had its `layout_parent` pointed
+        // at that container.
+        for node_id in dropped_layout_children {
+            let Some(node) = self.nodes.get(node_id) else {
+                continue;
+            };
+            let still_collected = node
+                .layout_parent
+                .get()
+                .and_then(|parent_id| self.nodes.get(parent_id))
+                .is_some_and(|parent| {
+                    parent
+                        .layout_children
+                        .borrow()
+                        .as_ref()
+                        .is_some_and(|children| children.contains(&node_id))
+                });
+            if !still_collected {
+                self.tear_down_box_state(node_id);
+            }
+        }
+
+        fn resolve_layout_children_recursive(
+            doc: &mut BaseDocument,
+            node_id: NodeId,
+            dropped_layout_children: &mut Vec<NodeId>,
+        ) {
             // Anonymous blocks and pseudo-elements can be removed from the slab
             // between render passes. Bail out rather than panicking on a stale key.
             if doc.nodes.get(node_id).is_none() {
@@ -320,6 +352,11 @@ impl BaseDocument {
                 // anonymous block per reconstruction.
                 let old_anonymous_blocks = std::mem::take(&mut doc.nodes[node_id].anonymous_blocks);
                 for anon_id in old_anonymous_blocks {
+                    collect_children_of_freed_anonymous_block(
+                        doc,
+                        anon_id,
+                        dropped_layout_children,
+                    );
                     doc.deallocate_anonymous_block(anon_id);
                 }
 
@@ -328,9 +365,38 @@ impl BaseDocument {
                 let layout_children = collected.children;
                 doc.nodes[node_id].anonymous_blocks = collected.anonymous_blocks;
 
+                // Former layout children (including those of the freed
+                // anonymous blocks) which are not collected again are torn
+                // down at the end of the pass.
+                if let Some(old_layout_children) =
+                    doc.nodes[node_id].layout_children.borrow_mut().take()
+                {
+                    dropped_layout_children.extend(
+                        old_layout_children
+                            .iter()
+                            .copied()
+                            .filter(|child_id| !layout_children.contains(child_id)),
+                    );
+                }
+
                 // Recurse into newly collected layout children
                 for child_id in layout_children.iter().copied() {
-                    resolve_layout_children_recursive(doc, child_id);
+                    // A child which has never been constructed, or was last
+                    // constructed under a different `display` (it was not a
+                    // layout child then, e.g. a table row whose table became
+                    // a block), has no box tree matching its current role and
+                    // is treated like a new node.
+                    {
+                        let child = &doc.nodes[child_id];
+                        let needs_construction = child.layout_children.borrow().is_none()
+                            || child
+                                .display_style()
+                                .is_some_and(|display| display != *child.display_constructed_as());
+                        if needs_construction {
+                            doc.nodes[child_id].insert_damage(ALL_DAMAGE);
+                        }
+                    }
+                    resolve_layout_children_recursive(doc, child_id, dropped_layout_children);
                     doc.nodes[child_id].layout_parent.set(Some(node_id));
                     if let Some(mut data) = doc.nodes[child_id]
                         .try_stylo_element_data_mut()
@@ -356,7 +422,7 @@ impl BaseDocument {
                         if !doc.nodes.contains_key(child_id) {
                             continue;
                         }
-                        resolve_layout_children_recursive(doc, child_id);
+                        resolve_layout_children_recursive(doc, child_id, dropped_layout_children);
                         doc.nodes[child_id].layout_parent.set(Some(node_id));
                     }
 
@@ -385,6 +451,65 @@ impl BaseDocument {
                     assert_no_construct_damage(doc, child_id);
                 }
             }
+        }
+
+        fn collect_children_of_freed_anonymous_block(
+            doc: &BaseDocument,
+            anon_id: NodeId,
+            dropped_layout_children: &mut Vec<NodeId>,
+        ) {
+            let Some(anon) = doc.nodes.get(anon_id) else {
+                return;
+            };
+            for child_id in anon.layout_children.borrow().iter().flatten().copied() {
+                if doc
+                    .nodes
+                    .get(child_id)
+                    .is_some_and(|child| child.is_anonymous())
+                {
+                    collect_children_of_freed_anonymous_block(
+                        doc,
+                        child_id,
+                        dropped_layout_children,
+                    );
+                } else {
+                    dropped_layout_children.push(child_id);
+                }
+            }
+        }
+    }
+
+    /// Clear the box state of a node which no longer generates a box, and of
+    /// the layout children it still owns (those re-collected by another
+    /// container this frame point at that container instead). The inverse of
+    /// the reconstruct branch of [`Self::resolve_layout_children`]: frees the
+    /// node's anonymous blocks and drops its layout, paint and inline data.
+    fn tear_down_box_state(&mut self, node_id: NodeId) {
+        let Some(layout_children) = self.nodes[node_id].layout_children.borrow_mut().take() else {
+            return;
+        };
+        for child_id in layout_children {
+            let owned = self
+                .nodes
+                .get(child_id)
+                .is_some_and(|child| child.layout_parent.get() == Some(node_id));
+            if owned {
+                self.tear_down_box_state(child_id);
+            }
+        }
+        let anonymous_blocks = std::mem::take(&mut self.nodes[node_id].anonymous_blocks);
+        for anon_id in anonymous_blocks {
+            self.deallocate_anonymous_block(anon_id);
+        }
+        let node = &mut self.nodes[node_id];
+        node.paint_children.borrow_mut().take();
+        node.hoisted_children.borrow_mut().clear();
+        node.stacking_context = None;
+        node.sc_contribution_cache.borrow_mut().clear();
+        node.flags.reset_construction_flags();
+        node.invalidate_layout_cache();
+        if let Some(element_data) = node.element_data_mut() {
+            element_data.take_inline_layout();
         }
     }
 

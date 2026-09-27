@@ -307,7 +307,7 @@ fn resolve_line_height(font_ctx: &mut FontContext, style: &ComputedValues, scale
 
 /// Whether an inline-level element is laid out as a Parley style span (as opposed
 /// to an atomic inline box) within an inline formatting context.
-fn is_inline_style_span(element_data: &ElementData) -> bool {
+pub(crate) fn is_inline_style_span(element_data: &ElementData) -> bool {
     let tag_name = &element_data.name.local;
     !(is_replaced_element(tag_name)
         || *tag_name == local_name!("input")
@@ -864,16 +864,24 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: NodeId) {
                 (None, None) => {}
             }
 
-            let mut node_styles = doc.nodes[pe_node_id]
-                .try_stylo_element_data_mut()
-                .and_then(|s| s.get_mut());
-            let node_styles = &mut node_styles.as_mut().unwrap();
-            node_styles.damage.insert(ALL_DAMAGE);
-            let primary_styles = &mut node_styles.styles.primary;
-
-            if !std::ptr::eq(&**primary_styles.as_ref().unwrap(), &*pe_style) {
-                *primary_styles = Some(pe_style);
-                node_styles.set_restyled();
+            // Style changes are normally diffed into damage by
+            // `sync_pseudo_element_styles` during the style traversal; a
+            // style which reaches construction unsynced is treated as new.
+            let style_changed = {
+                let mut node_styles = doc.nodes[pe_node_id]
+                    .try_stylo_element_data_mut()
+                    .and_then(|s| s.get_mut());
+                let node_styles = &mut node_styles.as_mut().unwrap();
+                let primary_styles = &mut node_styles.styles.primary;
+                let changed = !std::ptr::eq(&**primary_styles.as_ref().unwrap(), &*pe_style);
+                if changed {
+                    *primary_styles = Some(pe_style);
+                    node_styles.set_restyled();
+                }
+                changed
+            };
+            if style_changed {
+                doc.nodes[pe_node_id].insert_damage(ALL_DAMAGE);
                 doc.pending_style_image_nodes.push(pe_node_id);
             }
         }
@@ -1027,7 +1035,7 @@ pub(crate) fn find_inline_layout_embedded_boxes(
     fn flush_inline_pseudos_recursive(doc: &mut BaseDocument, node_id: NodeId) {
         doc.iter_children_mut(node_id, |child_id, doc| {
             flush_pseudo_elements(doc, child_id);
-            let display = doc.nodes[node_id]
+            let display = doc.nodes[child_id]
                 .display_style()
                 .unwrap_or(Display::inline());
             let do_recurse = match (display.outside(), display.inside()) {

@@ -1,7 +1,6 @@
 use crate::NodeTree;
 use crate::events::{DragMode, handle_dom_event};
 use crate::layout::construct::ConstructionTask;
-use crate::layout::damage::ALL_DAMAGE;
 use crate::mutator::ViewportMut;
 use crate::net::{
     Resource, ResourceHandler, ResourceLoadResponse, StylesheetHandler, StylesheetLoader,
@@ -50,7 +49,7 @@ use style::invalidation::element::restyle_hints::RestyleHint;
 use style::media_queries::MediaType;
 use style::properties::ComputedValues;
 use style::properties::style_structs::Font;
-use style::selector_parser::ServoElementSnapshot;
+use style::selector_parser::{RestyleDamage, ServoElementSnapshot};
 use style::servo_arc::Arc as ServoArc;
 use style::values::GenericAtomIdent;
 use style::values::computed::UserSelect;
@@ -1390,9 +1389,10 @@ impl BaseDocument {
                     node.element_data_mut().unwrap().special_data =
                         SpecialElementData::Image(Box::new(image.clone()));
 
-                    // Clear layout cache
+                    // `<img>` is a replaced leaf whether or not an image has
+                    // loaded; only its intrinsic size changed.
                     node.clear_layout_cache();
-                    node.insert_damage(ALL_DAMAGE);
+                    node.insert_damage(RestyleDamage::RELAYOUT);
                 }
                 ImageType::Background(idx) | ImageType::Mask(idx) => {
                     let layer_image = node.element_data_mut().and_then(|el| {

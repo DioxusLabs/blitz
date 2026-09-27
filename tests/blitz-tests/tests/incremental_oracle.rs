@@ -30,6 +30,7 @@ use blitz_dom::{DocumentConfig, LocalName, QualName, ns};
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::node_id::NodeId;
 use blitz_traits::shell::{ColorScheme, Viewport};
+use std::collections::HashSet;
 use std::sync::Arc;
 
 fn qname(local: &str) -> QualName {
@@ -309,7 +310,10 @@ fn compare_dom_tree(
 /// Walk DOM children, layout children (anonymous boxes) and pseudo-elements,
 /// asserting that no node retains damage after a resolve.
 fn assert_no_damage(doc: &HtmlDocument, step: &str) {
-    fn walk(doc: &HtmlDocument, node_id: NodeId, step: &str) {
+    fn walk(doc: &HtmlDocument, node_id: NodeId, step: &str, visited: &mut HashSet<NodeId>) {
+        if !visited.insert(node_id) {
+            return;
+        }
         let node = doc.get_node(node_id).unwrap();
         if let Some(damage) = node.damage() {
             assert!(
@@ -324,21 +328,21 @@ fn assert_no_damage(doc: &HtmlDocument, step: &str) {
             describe(doc, node_id)
         );
         for child in node.children.iter() {
-            walk(doc, *child, step);
+            walk(doc, *child, step, visited);
         }
         if let Some(children) = node.layout_children.borrow().as_ref() {
             for child in children.iter() {
-                walk(doc, *child, step);
+                walk(doc, *child, step, visited);
             }
         }
         if let Some(before) = node.before() {
-            walk(doc, before, step);
+            walk(doc, before, step, visited);
         }
         if let Some(after) = node.after() {
-            walk(doc, after, step);
+            walk(doc, after, step, visited);
         }
     }
-    walk(doc, doc.root_node().id, step);
+    walk(doc, doc.root_node().id, step, &mut HashSet::new());
 }
 
 struct Oracle {
@@ -555,10 +559,10 @@ fn restyle_via_hover() {
 fn style_attribute_width_display_order() {
     let mut oracle = Oracle::new(FIXTURE);
 
-    // Upper bounds on reconstructed nodes: construction damage currently
-    // propagates to every ancestor, so these count the whole ancestor chain.
+    // Setting the `style` attribute puts construction damage on the node, so
+    // the node and its collector (`<body>`) reconstruct, and nothing else.
     let reconstructed = oracle.step("width", |doc| set_style(doc, "#block", "width: 200px;"));
-    assert!(reconstructed <= 3, "width: {reconstructed}");
+    assert_eq!(reconstructed, 2, "width");
 
     for display in ["inline", "none", "flex", "block", "inline", "block"] {
         oracle.step(&format!("nested-block display:{display}"), |doc| {
@@ -692,7 +696,9 @@ fn set_node_text_in_inline_root() {
             let text_node = doc.get_node(span).unwrap().children[0];
             doc.mutate().set_node_text(text_node, text);
         });
-        assert!(reconstructed <= 6, "set_node_text: {reconstructed}");
+        // The inline root (and the two anonymous blocks it re-creates), and
+        // nothing above it.
+        assert_eq!(reconstructed, 3, "set_node_text");
     }
 
     oracle.step("set_node_text on bare inline text", |doc| {
@@ -736,7 +742,8 @@ fn paint_tree_z_index_and_stacking_contexts() {
     let reconstructed = oracle.step("colour only", |doc| {
         set_style(doc, "#c2", "height: 9px; background: blue;")
     });
-    assert!(reconstructed <= 4, "colour only: {reconstructed}");
+    // `#c2` and its collector (`#block`, through the `display:contents` parent).
+    assert_eq!(reconstructed, 2, "colour only");
     oracle.step("z-index change deep in sc", |doc| {
         set_style(doc, "#z1", "position: relative; z-index: 5; height: 4px;")
     });
@@ -860,10 +867,111 @@ fn text_edit_under_nested_spans() {
         "",
         "short",
     ] {
-        oracle.step(&format!("set text {text:?}"), |doc| {
+        let reconstructed = oracle.step(&format!("set text {text:?}"), |doc| {
             let text_node = first_text_child(doc, "#i");
             doc.mutate().set_node_text(text_node, text);
         });
+        assert_eq!(reconstructed, 1, "only the inline root re-collects");
+    }
+}
+
+/// Construction damage stops at the nearest collector: mutations deep in a
+/// nested tree reconstruct the mutated node's container and nothing above it.
+#[test]
+fn reconstruction_is_local() {
+    let depth = 30;
+    let mut body = String::new();
+    for level in 0..depth {
+        body.push_str(&format!(r#"<div id="l{level}" style="padding-left:1px">"#));
+    }
+    body.push_str(r#"<p id="deep">deep <b><i id="di">text</i></b> tail</p><div id="leafhost" style="height:4px"></div>"#);
+    for _ in 0..depth {
+        body.push_str("</div>");
+    }
+    body.push_str(
+        r#"<div id="flex" style="display:flex"><div id="fa">a</div><div class="x" id="fb">b</div></div>"#,
+    );
+    let mut oracle = Oracle::new(&page(
+        "#flex:hover .x { order: -1; } #l5:hover { color: red; }",
+        &body,
+    ));
+
+    let reconstructed = oracle.step("deep text edit", |doc| {
+        let text_node = first_text_child(doc, "#di");
+        doc.mutate()
+            .set_node_text(text_node, "a much longer text which wraps");
+    });
+    assert_eq!(reconstructed, 1, "deep text edit: the inline root only");
+
+    let reconstructed = oracle.step("block inserted at depth 10", |doc| {
+        let blk = element(doc, "div", &[("id", "blk"), ("style", "height:5px")], None);
+        let parent = id(doc, "#l10");
+        doc.mutate().append_children(parent, &[blk]);
+    });
+    assert_eq!(
+        reconstructed, 2,
+        "block insertion: the new block and its container"
+    );
+
+    let reconstructed = oracle.step("block removed at depth 10", |doc| remove(doc, "#blk"));
+    assert_eq!(reconstructed, 1, "block removal: the container only");
+
+    let reconstructed = oracle.step("block inserted into deep paragraph", |doc| {
+        let blk = element(doc, "div", &[("id", "pblk"), ("style", "height:5px")], None);
+        let parent = id(doc, "#deep");
+        doc.mutate().append_children(parent, &[blk]);
+    });
+    // The paragraph, its new child and the anonymous block wrapping the
+    // paragraph's inline content.
+    assert_eq!(reconstructed, 3, "block insertion into a paragraph");
+
+    assert_eq!(oracle.hover("#l5"), 0, "colour-only hover");
+    assert_eq!(oracle.unhover(), 0, "colour-only unhover");
+
+    assert_eq!(
+        oracle.hover("#flex"),
+        1,
+        "order change: the flex container only"
+    );
+    assert_eq!(
+        layout_child_ids(&oracle.inc, "#flex")[0],
+        Some("fb".to_string())
+    );
+    assert_eq!(oracle.unhover(), 1);
+}
+
+/// `display` toggled through every box-generating role on a block-level
+/// element and on an inline one, each holding both inline and block content.
+#[test]
+fn display_toggles_on_block_and_span() {
+    let mut oracle = Oracle::new(&page(
+        "",
+        r#"<div id="host">lead <div id="d">d text <b>bold</b><div style="height:3px"></div> tail</div> mid
+           <span id="s">s text <i>it</i> <div style="height:2px"></div> end</span> trail</div>"#,
+    ));
+    let displays = [
+        "inline",
+        "block",
+        "contents",
+        "none",
+        "table",
+        "inline-block",
+        "table-row",
+        "flex",
+        "table-cell",
+        "contents",
+        "table",
+        "none",
+        "inline",
+        "grid",
+        "block",
+    ];
+    for selector in ["#d", "#s"] {
+        for display in displays {
+            oracle.step(&format!("{selector} display:{display}"), |doc| {
+                set_style(doc, selector, &format!("display: {display}"))
+            });
+        }
     }
 }
 
@@ -891,15 +999,13 @@ fn block_inserted_into_inline_span() {
     oracle.step("remove one of two blocks", |doc| remove(doc, "#blk"));
 }
 
-/// Known bug: a node which stops generating a box of its own (becomes
-/// `display:contents`, or an inline element which no longer contains a block
-/// and folds back into its parent's inline formatting context) is never
-/// visited by `resolve_layout_children` again, so it keeps its stale
-/// `layout_children` / `paint_children`. Those still list boxes that now
-/// belong to another container (tripping `assert_layout_parents_consistent`
-/// in debug builds) or that have been removed from the document.
+/// A node which stops generating a box of its own (becomes `display:contents`,
+/// or an inline element which no longer contains a block and folds back into
+/// its parent's inline formatting context) is never visited by
+/// `resolve_layout_children` again; its `layout_children` / `paint_children`
+/// must be torn down rather than keep listing boxes which now belong to
+/// another container or have been removed from the document.
 #[test]
-#[ignore = "known bug: stale layout_children on nodes which stop generating a box"]
 fn block_removed_from_inline_span() {
     let mut oracle = Oracle::new(&page(
         "",
@@ -950,15 +1056,13 @@ fn display_contents_children_mutated() {
     });
 }
 
-/// Known bug: a node which stops generating a box of its own (becomes
-/// `display:contents`, or an inline element which no longer contains a block
-/// and folds back into its parent's inline formatting context) is never
-/// visited by `resolve_layout_children` again, so it keeps its stale
-/// `layout_children` / `paint_children`. Those still list boxes that now
-/// belong to another container (tripping `assert_layout_parents_consistent`
-/// in debug builds) or that have been removed from the document.
+/// A node which stops generating a box of its own (becomes `display:contents`,
+/// or an inline element which no longer contains a block and folds back into
+/// its parent's inline formatting context) is never visited by
+/// `resolve_layout_children` again; its `layout_children` / `paint_children`
+/// must be torn down rather than keep listing boxes which now belong to
+/// another container or have been removed from the document.
 #[test]
-#[ignore = "known bug: stale layout_children on nodes which stop generating a box"]
 fn display_contents_toggle_and_children() {
     let mut oracle = Oracle::new(&page(
         "#outer:hover #dc2 { display: contents; }",
@@ -1063,6 +1167,20 @@ fn pseudo_elements_appear_disappear_change() {
             set_attr(doc, "#ps", "class", class)
         });
     }
+    oracle.step("span class pb again", |doc| {
+        set_attr(doc, "#ps", "class", "pb")
+    });
+    // Re-collecting the paragraph flushes the span's existing pseudo without
+    // damaging it: only the paragraph reconstructs, and no damage is left
+    // behind on the pseudo (checked by `assert_no_damage`).
+    let reconstructed = oracle.step("text edit next to span with pseudo", |doc| {
+        let text_node = first_text_child(doc, "#pp");
+        doc.mutate().set_node_text(text_node, "edited ");
+    });
+    assert_eq!(
+        reconstructed, 1,
+        "text edit in a paragraph with a pseudo-bearing span"
+    );
     for class in ["pb", "pb pa", "pc", "pc pa", ""] {
         oracle.step(&format!("block class {class:?}"), |doc| {
             set_attr(doc, "#pd", "class", class)
@@ -1132,7 +1250,13 @@ fn order_change_next_to_and_inside_anonymous_blocks() {
     ));
     let initial = layout_child_ids(&oracle.inc, "#of");
     assert_eq!(initial.first(), Some(&Some("oa".to_string())));
-    oracle.hover("#of");
+    // The flex container re-sorts, re-creating the anonymous block around its
+    // bare text; nothing above it is touched.
+    assert_eq!(
+        oracle.hover("#of"),
+        2,
+        "flex container and its anonymous block"
+    );
     for doc in [&oracle.inc, &oracle.non] {
         assert_eq!(
             layout_child_ids(doc, "#of").first(),
@@ -1144,7 +1268,11 @@ fn order_change_next_to_and_inside_anonymous_blocks() {
     oracle.unhover();
     assert_eq!(layout_child_ids(&oracle.inc, "#of"), initial);
 
-    oracle.hover("#wrap");
+    assert_eq!(
+        oracle.hover("#wrap"),
+        1,
+        "only the inline-flex container re-sorts"
+    );
     for doc in [&oracle.inc, &oracle.non] {
         assert_eq!(
             layout_child_ids(doc, "#if"),
@@ -1178,15 +1306,13 @@ fn move_nodes_between_span_and_div() {
     });
 }
 
-/// Known bug: a node which stops generating a box of its own (becomes
-/// `display:contents`, or an inline element which no longer contains a block
-/// and folds back into its parent's inline formatting context) is never
-/// visited by `resolve_layout_children` again, so it keeps its stale
-/// `layout_children` / `paint_children`. Those still list boxes that now
-/// belong to another container (tripping `assert_layout_parents_consistent`
-/// in debug builds) or that have been removed from the document.
+/// A node which stops generating a box of its own (becomes `display:contents`,
+/// or an inline element which no longer contains a block and folds back into
+/// its parent's inline formatting context) is never visited by
+/// `resolve_layout_children` again; its `layout_children` / `paint_children`
+/// must be torn down rather than keep listing boxes which now belong to
+/// another container or have been removed from the document.
 #[test]
-#[ignore = "known bug: stale layout_children on nodes which stop generating a box"]
 fn move_block_out_of_span() {
     let mut oracle = Oracle::new(&page(
         "",
@@ -1295,9 +1421,12 @@ fn image_load() {
     const URL: &str = "https://example.com/a.png";
     let mut oracle = Oracle::new(&page(
         "",
-        &format!(r#"<div id="imh">text <img id="img" src="{URL}"> more text</div>"#),
+        &format!(
+            r#"<div id="imh">text <img id="img" src="{URL}"> more text</div>
+               <div><img id="img2" src="{URL}" style="display:block"></div>"#
+        ),
     ));
-    oracle.step("image loaded", |doc| {
+    let reconstructed = oracle.step("image loaded", |doc| {
         doc.load_resource(ResourceLoadResponse {
             request_id: usize::MAX,
             node_id: None,
@@ -1310,10 +1439,127 @@ fn image_load() {
             )),
         });
     });
+    assert_eq!(reconstructed, 0, "an image load only changes a leaf's size");
+    for selector in ["#img", "#img2"] {
+        assert_eq!(
+            layout_of(&oracle.inc, id(&oracle.inc, selector)).unwrap().2,
+            20.0,
+            "{selector}"
+        );
+    }
+}
+
+/// A table root's Taffy style is baked into its `TableContext` at
+/// construction, so a restyle of the table (`width`, `border-spacing`,
+/// inherited `border-spacing` changing when the table is moved out of an
+/// ancestor table) must reconstruct it, not just lay it out again.
+#[test]
+fn table_root_restyle() {
+    let mut oracle = Oracle::new(&page(
+        "#tw:hover { width: 200px; } #ts:hover { border-spacing: 10px; } #tc:hover { border-collapse: collapse; } #pad:hover td { padding: 0; }",
+        r#"<table id="tw"><tr><td>a</td><td>b</td></tr></table>
+           <table id="ts"><tr><td>a</td><td>b</td></tr></table>
+           <table id="tc"><tr><td style="border: 1px solid">a</td><td style="border: 1px solid">b</td></tr></table>
+           <div id="pad"><table><tr><td>c</td></tr></table></div>
+           <table id="outer"><tr><td><div id="g" style="display:grid; grid-template-columns: 20px"><div style="display:table">text</div></div></td></tr></table>"#,
+    ));
+    // The table and its collector (`<body>`).
+    for selector in ["#tw", "#ts", "#tc"] {
+        assert_eq!(oracle.hover(selector), 2, "hover {selector}");
+        oracle.unhover();
+    }
     assert_eq!(
-        layout_of(&oracle.inc, id(&oracle.inc, "#img")).unwrap().2,
-        20.0
+        oracle.hover("#pad"),
+        0,
+        "cell padding is read at layout time"
     );
+    oracle.unhover();
+    let reconstructed = oracle.step("grid moved out of the outer table", |doc| {
+        let grid = id(doc, "#g");
+        let body = id(doc, "body");
+        doc.mutate().append_children(body, &[grid]);
+    });
+    // The inner table's inherited `border-spacing` changed: it reconstructs
+    // along with its collector (the grid), the `<td>` it left and `<body>`.
+    assert_eq!(reconstructed, 4);
+}
+
+/// A cell placed directly in a row group (no `<tr>`) is a layout child of
+/// the table like any other cell; its content changes must reach it.
+#[test]
+fn cell_directly_in_row_group() {
+    // The parser would foster-parent a `<p>` out of the `<tbody>`.
+    let mut oracle = Oracle::new(&page(
+        "",
+        r#"<table><tbody id="tb"><tr><td>a</td></tr></tbody></table>"#,
+    ));
+    oracle.step("cell inserted into the row group", |doc| {
+        let cell = element(
+            doc,
+            "p",
+            &[("id", "c"), ("style", "display:table-cell")],
+            Some("c2"),
+        );
+        let tbody = id(doc, "#tb");
+        doc.mutate().append_children(tbody, &[cell]);
+    });
+    oracle.step("text edit in the cell", |doc| {
+        let text_node = first_text_child(doc, "#c");
+        doc.mutate().set_node_text(text_node, "a longer cell text");
+    });
+    oracle.step("cell becomes whitespace-only", |doc| {
+        let text_node = first_text_child(doc, "#c");
+        doc.mutate().set_node_text(text_node, " ");
+    });
+    oracle.step("cell gets a block", |doc| {
+        let blk = element(doc, "div", &[("style", "height:5px")], None);
+        let cell = id(doc, "#c");
+        doc.mutate().append_children(cell, &[blk]);
+    });
+}
+
+/// A list item's marker is assigned by the container which collects it; a
+/// container further up must not renumber the nested list items it does
+/// not collect, or the marker would depend on which container was
+/// reconstructed last.
+#[test]
+fn nested_list_items_renumbered_by_outer_container() {
+    // `<li>` nested directly in `<li>` cannot be parsed, so build it.
+    let mut oracle = Oracle::new(&page("", r#"<ol><li id="one">one</li></ol>"#));
+    oracle.step("nest two list items", |doc| {
+        let inner = element(doc, "li", &[("id", "in")], Some("three"));
+        let mid = element(doc, "li", &[("id", "m")], Some("two"));
+        doc.mutate().append_children(mid, &[inner]);
+        let one = id(doc, "#one");
+        doc.mutate().append_children(one, &[mid]);
+    });
+    oracle.step("restyle the outer item", |doc| {
+        set_style(doc, "#one", "color: red")
+    });
+    oracle.step("edit the outer item's text", |doc| {
+        let text_node = first_text_child(doc, "#one");
+        doc.mutate().set_node_text(text_node, "first");
+    });
+}
+
+/// Pseudo-elements of an element nested in an inline span are flushed when
+/// the inline root is collected, like those of the span itself.
+#[test]
+fn pseudo_on_element_nested_in_inline_span() {
+    let mut oracle = Oracle::new(&page(
+        ".x::before { content: '!!'; } .x::after { content: '??'; }",
+        r#"<p>a <span><b id="b" class="x">t</b></span> b</p>
+           <p>a <span style="display:inline-block"><b id="ib" class="x">t</b></span> b</p>"#,
+    ));
+    for selector in ["#b", "#ib"] {
+        let node = oracle.inc.get_node(id(&oracle.inc, selector)).unwrap();
+        assert!(node.before().is_some(), "{selector} has no ::before");
+        assert!(node.after().is_some(), "{selector} has no ::after");
+    }
+    oracle.step("pseudos removed", |doc| set_attr(doc, "#b", "class", ""));
+    oracle.step("pseudos added back", |doc| {
+        set_attr(doc, "#b", "class", "x")
+    });
 }
 
 /// Hover/focus changes affecting only paint reconstruct no boxes.
@@ -1407,12 +1653,11 @@ fn inline_block_nested_in_inline_element() {
     });
 }
 
-/// Known bug: stale `layout_children` on nodes which stop generating a box
-/// (see `block_removed_from_inline_span`), here for the descendants of a node
-/// which becomes `display:none`: the removed node is still listed by its
-/// (now box-less) former container.
+/// Teardown of nodes which stop generating a box (see
+/// `block_removed_from_inline_span`), here for the descendants of a node
+/// which becomes `display:none`: the removed node must not still be listed
+/// by its (now box-less) former container.
 #[test]
-#[ignore = "known bug: stale layout_children on nodes which stop generating a box"]
 fn remove_from_display_none_subtree() {
     let mut oracle = Oracle::new(&page(
         "",
@@ -1422,13 +1667,12 @@ fn remove_from_display_none_subtree() {
     oracle.step("remove from hidden subtree", |doc| remove(doc, "#d"));
 }
 
-/// Known bug: stale `layout_children` on nodes which stop generating a box
-/// (see `block_removed_from_inline_span`), here for a `display:none` child
-/// skipped by its mixed inline/block container: it keeps its old
-/// construction flags, and moving it (which does not damage the moved node
-/// itself) into a container which does list it exposes them.
+/// Teardown of nodes which stop generating a box (see
+/// `block_removed_from_inline_span`), here for a `display:none` child skipped
+/// by its mixed inline/block container: its old construction flags must be
+/// reset, and moving it (which does not damage the moved node itself) into a
+/// container which does list it must not expose them.
 #[test]
-#[ignore = "known bug: stale layout_children on nodes which stop generating a box"]
 fn move_display_none_node() {
     let mut oracle = Oracle::new(&page(
         "",
@@ -1443,12 +1687,11 @@ fn move_display_none_node() {
     });
 }
 
-/// Known bug: table-internal elements are constructed by their table root
+/// Table-internal elements are constructed by their table root
 /// (`build_table_context`), not as boxes of their own. When the table changes
-/// `display` only the table itself is damaged, so its row groups / rows start
-/// (or stop) generating boxes without being reconstructed.
+/// `display` only the table itself is damaged, yet its row groups / rows start
+/// (or stop) generating boxes and must be constructed (or torn down).
 #[test]
-#[ignore = "known bug: table parts are not reconstructed when their table changes display"]
 fn table_display_change() {
     let mut oracle = Oracle::new(&page(
         "",
@@ -1461,6 +1704,40 @@ fn table_display_change() {
     oracle.step("block to table", |doc| {
         set_style(doc, "#d", "display: table")
     });
+}
+
+/// An inline-block wrapped in an anonymous block becomes `display:contents`:
+/// the anonymous block is freed when its container re-collects, so the
+/// inline-block's box state must be torn down even though no surviving
+/// container ever listed it.
+#[test]
+fn inline_block_in_anonymous_block_becomes_contents() {
+    let mut oracle = Oracle::new(&page(
+        "",
+        r#"<span><p></p>text<span id="t" style="display:inline-block">it<div style="display:table-row-group">text</div></span></span>"#,
+    ));
+    oracle.step("to contents", |doc| {
+        set_style(doc, "#t", "display: contents")
+    });
+    oracle.step("back to inline-block", |doc| {
+        set_style(doc, "#t", "display: inline-block")
+    });
+}
+
+/// Known bug (found by `fuzz_restricted`, seed index 67, corpus 3; not a
+/// construction issue): when an ancestor becomes a flex container, a nested
+/// paragraph is measured under new constraints (which re-break its Parley
+/// layout) but its final layout hits the Taffy cache from the previous frame,
+/// so the lines stay broken at the measurement width. Clearing the inline
+/// roots' Taffy caches before layout makes the scenario pass.
+#[test]
+#[ignore = "known bug: inline root final-layout cache hit after a measure pass re-broke its lines"]
+fn nested_flex_ancestor_becomes_flex() {
+    let mut oracle = Oracle::new(&page(
+        "",
+        r#"<div id="o"><div style="display:flex"><div><p>para <span style="display:inline-block; width:20px; height:5px"></span> tail</p></div></div></div>"#,
+    ));
+    oracle.step("outer to flex", |doc| set_style(doc, "#o", "display: flex"));
 }
 
 // ---------------------------------------------------------------------------
@@ -1520,10 +1797,13 @@ const WORDS: [&str; 8] = [
 
 /// Block-level tags: in restricted mode only these are inserted, moved,
 /// positioned or have their `display` toggled, so that no inline element
-/// ever gains or loses a box of its own (see the known bugs above).
+/// ever gains or loses a box of its own.
 const BLOCK_TAGS: [&str; 5] = ["div", "p", "section", "li", "ol"];
 /// Tags which may receive inserted/moved children.
 const CONTAINER_TAGS: [&str; 5] = ["body", "div", "section", "li", "td"];
+/// Table-internal containers (unrestricted mode only): rows are inserted
+/// into these, cells into rows.
+const TABLE_CONTAINER_TAGS: [&str; 3] = ["table", "tbody", "tr"];
 
 /// Child-index path from `<body>`.
 type Path = Vec<usize>;
@@ -1545,6 +1825,7 @@ enum FuzzOp {
     },
     Display(Path, &'static str),
     Class(Path, &'static str),
+    Colspan(Path, &'static str),
 }
 
 fn body_id(doc: &HtmlDocument) -> NodeId {
@@ -1621,7 +1902,9 @@ fn choose_op(doc: &HtmlDocument, rng: &mut Rng, restricted: bool) -> Option<Fuzz
         .iter()
         .filter(|(_, _, tag)| {
             CONTAINER_TAGS.contains(&tag.as_str())
-                || (!restricted && ["span", "b", "i", "p"].contains(&tag.as_str()))
+                || (!restricted
+                    && (["span", "b", "i", "p"].contains(&tag.as_str())
+                        || TABLE_CONTAINER_TAGS.contains(&tag.as_str())))
         })
         .map(|(path, node, _)| (path.clone(), *node))
         .collect();
@@ -1637,7 +1920,7 @@ fn choose_op(doc: &HtmlDocument, rng: &mut Rng, restricted: bool) -> Option<Fuzz
         }
     };
 
-    match rng.below(6) {
+    match rng.below(if restricted { 6 } else { 7 }) {
         0 => {
             let texts: Vec<&Path> = nodes
                 .iter()
@@ -1649,10 +1932,15 @@ fn choose_op(doc: &HtmlDocument, rng: &mut Rng, restricted: bool) -> Option<Fuzz
         }
         1 => {
             let (parent, parent_id) = containers[rng.below(containers.len())].clone();
+            let parent_tag = tag_of(doc, parent_id).unwrap_or_default();
             let tags: &[&'static str] = if restricted {
                 &["div", "p"]
+            } else if parent_tag == "tr" {
+                &["td"]
+            } else if parent_tag == "table" || parent_tag == "tbody" {
+                &["tr", "tbody"]
             } else {
-                &["div", "span", "b", "p", "li"]
+                &["div", "span", "b", "p", "li", "table"]
             };
             Some(FuzzOp::Insert {
                 parent,
@@ -1698,7 +1986,18 @@ fn choose_op(doc: &HtmlDocument, rng: &mut Rng, restricted: bool) -> Option<Fuzz
                 elements.get(rng.below(elements.len().max(1)))?.clone()
             };
             let values: &[&'static str] = if !restricted {
-                &["inline", "block", "contents", "none", "flex"]
+                &[
+                    "inline",
+                    "block",
+                    "contents",
+                    "none",
+                    "flex",
+                    "grid",
+                    "inline-block",
+                    "table",
+                    "table-row",
+                    "table-cell",
+                ]
             } else if tag == "div"
                 && doc
                     .get_node(node_id)
@@ -1713,7 +2012,7 @@ fn choose_op(doc: &HtmlDocument, rng: &mut Rng, restricted: bool) -> Option<Fuzz
             };
             Some(FuzzOp::Display(path, rng.pick(values).unwrap()))
         }
-        _ => {
+        5 => {
             let (path, _, tag) = elements.get(rng.below(elements.len().max(1)))?.clone();
             let classes: &[&'static str] = if restricted && !is_block(&tag) {
                 &["", "o", "fs", "lh", "o lh"]
@@ -1721,6 +2020,18 @@ fn choose_op(doc: &HtmlDocument, rng: &mut Rng, restricted: bool) -> Option<Fuzz
                 &["", "o", "fs", "lh", "pos", "o lh", "fs pos"]
             };
             Some(FuzzOp::Class(path, rng.pick(classes).unwrap()))
+        }
+        _ => {
+            let cells: Vec<&Path> = elements
+                .iter()
+                .filter(|(_, _, tag)| tag == "td")
+                .map(|(path, _, _)| path)
+                .collect();
+            let path = cells.get(rng.below(cells.len().max(1)))?;
+            Some(FuzzOp::Colspan(
+                (*path).clone(),
+                rng.pick(&["1", "2", "3"]).unwrap(),
+            ))
         }
     }
 }
@@ -1775,12 +2086,17 @@ fn apply_op(doc: &mut HtmlDocument, op: &FuzzOp) {
             let node = node_at(doc, path);
             doc.mutate().set_attribute(node, attr("class"), class);
         }
+        FuzzOp::Colspan(path, colspan) => {
+            let node = node_at(doc, path);
+            doc.mutate().set_attribute(node, attr("colspan"), colspan);
+        }
     }
 }
 
 fn run_fuzzer(seeds: &[u64], steps: usize, restricted: bool) {
     for (corpus_index, body) in FUZZ_CORPUS.iter().enumerate() {
         for &seed in seeds {
+            let seed_index = seed / 0x9e37_79b9;
             let seed = seed ^ ((corpus_index as u64 + 1) << 32);
             let mut rng = Rng(seed);
             let mut log: Vec<FuzzOp> = Vec::new();
@@ -1798,7 +2114,7 @@ fn run_fuzzer(seeds: &[u64], steps: usize, restricted: bool) {
             }));
             if let Err(panic) = result {
                 eprintln!(
-                    "fuzzer failed: corpus {corpus_index}, seed {seed:#x}, restricted={restricted}"
+                    "fuzzer failed: corpus {corpus_index}, seed {seed:#x} (FUZZ_SEED={seed_index}), restricted={restricted}"
                 );
                 for (i, op) in log.iter().enumerate() {
                     eprintln!("  {i}: {op:?}");
@@ -1809,25 +2125,33 @@ fn run_fuzzer(seeds: &[u64], steps: usize, restricted: bool) {
     }
 }
 
-/// Random mutations restricted so as not to hit the known bugs above.
+/// Seeds and step count from the environment: `FUZZ_SEEDS=n` runs seed
+/// indices `1..=n`, `FUZZ_SEED=i` a single index (as reported by a failure),
+/// `FUZZ_STEPS` the number of mutations per seed.
+fn fuzz_config(default_seeds: &[u64], default_steps: usize) -> (Vec<u64>, usize) {
+    let seed = |i: u64| i * 0x9e37_79b9;
+    let seeds = if let Ok(i) = std::env::var("FUZZ_SEED") {
+        vec![seed(i.parse().unwrap())]
+    } else if let Ok(n) = std::env::var("FUZZ_SEEDS") {
+        (1..=n.parse::<u64>().unwrap()).map(seed).collect()
+    } else {
+        default_seeds.to_vec()
+    };
+    let steps = std::env::var("FUZZ_STEPS").map_or(default_steps, |n| n.parse().unwrap());
+    (seeds, steps)
+}
+
+/// Random mutations restricted to block-level structural changes.
 #[test]
 fn fuzz_restricted() {
-    let seeds: Vec<u64> = std::env::var("FUZZ_SEEDS")
-        .ok()
-        .map(|n| {
-            (1..=n.parse::<u64>().unwrap())
-                .map(|i| i * 0x9e37_79b9)
-                .collect()
-        })
-        .unwrap_or_else(|| vec![0x9e37_79b9, 0x2545_f491]);
-    let steps = std::env::var("FUZZ_STEPS").map_or(30, |n| n.parse().unwrap());
+    let (seeds, steps) = fuzz_config(&[0x9e37_79b9, 0x2545_f491], 30);
     run_fuzzer(&seeds, steps, true);
 }
 
 /// Unrestricted random mutations (inline elements gaining/losing boxes,
 /// `display:contents`, nested inline boxes).
 #[test]
-#[ignore = "known bugs: see the ignored scenarios above"]
 fn fuzz_unrestricted() {
-    run_fuzzer(&[0x9e37_79b9, 0x2545_f491], 30, false);
+    let (seeds, steps) = fuzz_config(&[0x9e37_79b9, 0x2545_f491], 30);
+    run_fuzzer(&seeds, steps, false);
 }

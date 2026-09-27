@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use std::mem;
 use std::ops::{Deref, DerefMut};
 
-use crate::layout::damage::ALL_DAMAGE;
+use crate::layout::damage::{ALL_DAMAGE, CONSTRUCT_FC};
 use crate::net::{ImageHandler, ResourceHandler, StylesheetHandler};
 use crate::node::{CanvasData, NodeFlags, SpecialElementData};
 use crate::stylo_device::DeviceChanges;
@@ -14,6 +14,7 @@ use crate::{
 use blitz_traits::shell::Viewport;
 use style::Atom;
 use style::invalidation::element::restyle_hints::RestyleHint;
+use style::selector_parser::RestyleDamage;
 use style::stylesheets::OriginSet;
 use thin_vec::ThinVec;
 
@@ -42,6 +43,14 @@ enum SpecialOp {
     #[cfg(feature = "custom-widget")]
     UnloadCustomWidget(NodeId),
 }
+
+/// Damage for a node whose DOM children changed but whose own box did not:
+/// re-collect its layout children and lay out again. Construction damage
+/// propagates from here to the nearest collector (`propagate_damage_flags`),
+/// which matters when the parent is transparent to construction (an inline
+/// span, `display: contents`) or when the change alters what the parent is
+/// (an inline span gaining or losing a block child).
+const CHILDREN_CHANGED: RestyleDamage = CONSTRUCT_FC.union(RestyleDamage::RELAYOUT);
 
 pub struct DocumentMutator<'doc> {
     /// Document is public as an escape hatch, but users of this API should ideally avoid using it
@@ -216,11 +225,11 @@ impl DocumentMutator<'_> {
             node.mark_ancestors_dirty();
             let parent_id = node.parent;
 
-            // Also insert damage on the parent element, since text content changes
-            // affect the parent's layout (text may wrap differently, change size, etc.)
+            // The parent's inline content changed: it (or, for a transparent
+            // parent, its collector) must re-collect and lay out again.
             if let Some(parent_id) = parent_id {
                 let parent = &mut self.doc.nodes[parent_id];
-                parent.insert_damage(ALL_DAMAGE);
+                parent.insert_damage(CHILDREN_CHANGED);
             }
 
             self.maybe_record_node(parent_id);
@@ -543,7 +552,7 @@ impl DocumentMutator<'_> {
         if let Some(parent_id) = node.parent.take() {
             self.mutations_occurred |= node_is_in_document;
             let parent = &mut self.doc.nodes[parent_id];
-            parent.insert_damage(ALL_DAMAGE);
+            parent.insert_damage(CHILDREN_CHANGED);
             // Mark ancestors dirty so the style traversal visits this subtree.
             parent.mark_ancestors_dirty();
             parent.children.retain(|id| *id != node_id);
@@ -571,7 +580,7 @@ impl DocumentMutator<'_> {
         // Update child_idx values
         if let Some(parent_id) = node.as_ref().and_then(|node| node.parent) {
             let parent = &mut self.doc.nodes[parent_id];
-            parent.insert_damage(ALL_DAMAGE);
+            parent.insert_damage(CHILDREN_CHANGED);
             let parent_is_in_doc = parent.flags.is_in_document();
 
             // TODO: make this fine grained / conditional based on ElementSelectorFlags
@@ -677,7 +686,7 @@ impl DocumentMutator<'_> {
             };
 
             let old_parent = &mut self.doc.nodes[old_parent_id];
-            old_parent.insert_damage(ALL_DAMAGE);
+            old_parent.insert_damage(CHILDREN_CHANGED);
 
             // TODO: make this fine grained / conditional based on ElementSelectorFlags
             if child_was_in_doc {
@@ -696,7 +705,7 @@ impl DocumentMutator<'_> {
         }
 
         let new_parent = &mut self.doc.nodes[parent_id];
-        new_parent.insert_damage(ALL_DAMAGE);
+        new_parent.insert_damage(CHILDREN_CHANGED);
 
         // TODO: make this fine grained / conditional based on ElementSelectorFlags
         if new_parent_is_in_document {
@@ -1149,7 +1158,7 @@ impl<'doc> DocumentMutator<'doc> {
                     node.element_data_mut().unwrap().special_data =
                         SpecialElementData::Image(Box::new(cached_image.clone()));
                     node.clear_layout_cache();
-                    node.insert_damage(ALL_DAMAGE);
+                    node.insert_damage(RestyleDamage::RELAYOUT);
                     return;
                 }
 
