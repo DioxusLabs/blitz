@@ -908,25 +908,22 @@ fn reconstruction_is_local() {
         let parent = id(doc, "#l10");
         doc.mutate().append_children(parent, &[blk]);
     });
-    // The new block, its container and (as the mutator damages the parent's
-    // own box) the container's container.
-    assert!(reconstructed <= 3, "block insertion: {reconstructed}");
+    assert_eq!(
+        reconstructed, 2,
+        "block insertion: the new block and its container"
+    );
 
     let reconstructed = oracle.step("block removed at depth 10", |doc| remove(doc, "#blk"));
-    assert!(reconstructed <= 2, "block removal: {reconstructed}");
+    assert_eq!(reconstructed, 1, "block removal: the container only");
 
     let reconstructed = oracle.step("block inserted into deep paragraph", |doc| {
         let blk = element(doc, "div", &[("id", "pblk"), ("style", "height:5px")], None);
         let parent = id(doc, "#deep");
         doc.mutate().append_children(parent, &[blk]);
     });
-    // The paragraph, its new child, the anonymous block wrapping the
-    // paragraph's inline content and (as the mutator damages the parent's
-    // own box) the paragraph's container.
-    assert!(
-        reconstructed <= 4,
-        "block insertion into a paragraph: {reconstructed}"
-    );
+    // The paragraph, its new child and the anonymous block wrapping the
+    // paragraph's inline content.
+    assert_eq!(reconstructed, 3, "block insertion into a paragraph");
 
     assert_eq!(oracle.hover("#l5"), 0, "colour-only hover");
     assert_eq!(oracle.unhover(), 0, "colour-only unhover");
