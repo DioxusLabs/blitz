@@ -11,7 +11,7 @@ use html_escape::encode_quoted_attribute_to_string;
 use keyboard_types::Modifiers;
 use kurbo::{Affine, Rect as KurboRect};
 use markup5ever::{LocalName, local_name};
-use parley::{BreakReason, Cluster, ClusterSide};
+use parley::{BreakReason, Cluster, ClusterSide, PositionedLayoutItem};
 use selectors::matching::ElementSelectorFlags;
 use std::cell::{Cell, RefCell};
 use std::fmt::Write;
@@ -64,6 +64,7 @@ bitflags! {
         const IS_IN_DOCUMENT = 0b00000100;
         /// Registered in the document's `position: sticky` list (`sticky.rs`).
         const IS_STICKY = 0b00001000;
+        const HAS_STICKY_INLINES = 0b00010000;
     }
 }
 
@@ -294,7 +295,11 @@ impl Node {
     /// Shift of a `position: sticky` box relative to its laid-out position.
     #[inline]
     pub fn sticky_offset(&self) -> crate::Point<f32> {
-        self.layout_data().sticky_offset
+        let data = self.layout_data();
+        crate::Point {
+            x: data.sticky_offset.x + data.inherited_sticky_offset.x,
+            y: data.sticky_offset.y + data.inherited_sticky_offset.y,
+        }
     }
 
     /// Where the box is drawn relative to its layout parent: the layout
@@ -1049,6 +1054,20 @@ impl Node {
         matches!(self.data, NodeData::Element { .. })
     }
 
+    pub fn is_fixed_to_viewport(&self) -> bool {
+        self.taffy_position() == taffy::Position::Fixed
+            && self.containing_block().is_some_and(|cb| {
+                let cb = self.with(cb);
+                cb.parent
+                    .is_some_and(|parent| matches!(self.with(parent).data, NodeData::Document(_)))
+                    && !cb.primary_styles().is_some_and(|style| {
+                        stylo_taffy::convert::establishes_fixed_containing_block_for_element(
+                            &style, true,
+                        )
+                    })
+            })
+    }
+
     pub fn is_anonymous(&self) -> bool {
         matches!(self.data, NodeData::AnonymousBlock { .. })
     }
@@ -1575,7 +1594,7 @@ impl Node {
                 // against the viewport and do not scroll with it. (A fixed box
                 // whose containing block is a transformed ancestor scrolls with
                 // that ancestor like any other out-of-flow box.)
-                if child_position == taffy::Position::Fixed && self.containing_block().is_none() {
+                if child.is_fixed_to_viewport() {
                     child_x -= self.scroll_offset().x as f32;
                     child_y -= self.scroll_offset().y as f32;
                     let viewport_scroll = self.tree().viewport_scroll();
@@ -1607,27 +1626,19 @@ impl Node {
 
         // Inline children
         if self.flags.is_inline_root() {
-            let element_data = &self.element_data().unwrap();
-            if let Some(ild) = element_data.inline_layout_data.as_ref() {
-                let layout = &ild.layout;
-                let scale = layout.scale();
-
-                if let Some((cluster, _side)) =
-                    Cluster::from_point_exact(layout, x * scale, y * scale)
-                {
-                    let node_id = cluster.style().brush.id;
-                    let text_pointer_events_none = self
-                        .with(node_id)
-                        .primary_styles()
-                        .is_some_and(|style| style.clone_pointer_events() == PointerEvents::None);
-                    if !text_pointer_events_none {
-                        return Some(HitResult {
-                            node_id,
-                            x,
-                            y,
-                            is_text: true,
-                        });
-                    }
+            if let Some((cluster, _side)) = self.text_cluster_at_point(x, y, true) {
+                let node_id = cluster.style().brush.id;
+                let text_pointer_events_none = self
+                    .with(node_id)
+                    .primary_styles()
+                    .is_some_and(|style| style.clone_pointer_events() == PointerEvents::None);
+                if !text_pointer_events_none {
+                    return Some(HitResult {
+                        node_id,
+                        x,
+                        y,
+                        is_text: true,
+                    });
                 }
             }
         }
@@ -1654,8 +1665,68 @@ impl Node {
                 return Some(node);
             }
             let id = node.layout_parent.get()?;
-            node = self.with(id);
+            node = self.tree().get(id)?;
         }
+    }
+
+    pub(crate) fn is_inline_span(&self) -> bool {
+        self.is_element()
+            && !self.flags.is_inline_root()
+            && self.display_style().is_some_and(|display| {
+                display.outside() == DisplayOutside::Inline
+                    && display.inside() == DisplayInside::Flow
+            })
+    }
+
+    fn text_cluster_at_point(
+        &self,
+        x: f32,
+        y: f32,
+        exact: bool,
+    ) -> Option<(Cluster<'_, super::TextBrush>, ClusterSide)> {
+        let layout = &self.element_data()?.inline_layout_data.as_ref()?.layout;
+        let scale = layout.scale();
+        let (x, y) = (x * scale, y * scale);
+        if self.flags.contains(NodeFlags::HAS_STICKY_INLINES) {
+            let mut hit = None;
+            for line in layout.lines() {
+                for item in line.items() {
+                    let PositionedLayoutItem::GlyphRun(run) = item else {
+                        continue;
+                    };
+                    let id = run.style().brush.id;
+                    if id == self.id {
+                        continue;
+                    }
+                    let offset = self.with(id).sticky_offset();
+                    if offset.x == 0.0 && offset.y == 0.0 {
+                        continue;
+                    }
+                    let (px, py) = (x - offset.x * scale, y - offset.y * scale);
+                    if px >= run.offset()
+                        && px <= run.offset() + run.advance()
+                        && py >= line.metrics().block_min_coord
+                        && py <= line.metrics().block_max_coord
+                    {
+                        hit = Cluster::from_point_exact(layout, px, py);
+                    }
+                }
+            }
+            if hit.is_some() {
+                return hit;
+            }
+        }
+        let hit = if exact {
+            Cluster::from_point_exact(layout, x, y)
+        } else {
+            Cluster::from_point(layout, x, y)
+        }?;
+        let id = hit.0.style().brush.id;
+        let offset = self.with(id).sticky_offset();
+        if exact && id != self.id && (offset.x != 0.0 || offset.y != 0.0) {
+            return None;
+        }
+        Some(hit)
     }
 
     /// Get the text byte offset at a given point, using coordinates already transformed
@@ -1666,13 +1737,8 @@ impl Node {
             return None;
         }
 
-        let element_data = self.element_data()?;
-        let inline_layout = element_data.inline_layout_data.as_ref()?;
-        let layout = &inline_layout.layout;
-        let scale = layout.scale();
-
         // Use Parley's cluster hit testing (from_point is more forgiving than from_point_exact)
-        let (cluster, side) = Cluster::from_point(layout, x * scale, y * scale)?;
+        let (cluster, side) = self.text_cluster_at_point(x, y, false)?;
 
         // Determine byte offset based on which side of the cluster was clicked
         // For LTR text: left side = start of cluster, right side = end of cluster
@@ -1706,22 +1772,20 @@ impl Node {
             .or_else(|| self.layout_parent.get())
     }
 
-    /// Document-relative coordinates without sticky shifts: the in-flow
-    /// position, which `scrollIntoView` targets.
-    pub fn in_flow_absolute_position(&self, x: f32, y: f32) -> crate::util::Point<f32> {
-        let x = x + self.final_layout().location.x - self.scroll_offset().x as f32;
-        let y = y + self.final_layout().location.y - self.scroll_offset().y as f32;
-        self.containing_block()
-            .map(|i| self.with(i).in_flow_absolute_position(x, y))
-            .unwrap_or(crate::util::Point { x, y })
-    }
-
     /// Computes the Document-relative coordinates of the `Node`
     pub fn absolute_position(&self, x: f32, y: f32) -> crate::util::Point<f32> {
         // Where the box is drawn: sticky shifts included (caret, selection, CSSOM).
         let visual = self.visual_location();
         let x = x + visual.x - self.scroll_offset().x as f32;
         let y = y + visual.y - self.scroll_offset().y as f32;
+
+        if self.is_fixed_to_viewport() {
+            let scroll = self.tree().viewport_scroll();
+            return crate::Point {
+                x: x + scroll.x as f32,
+                y: y + scroll.y as f32,
+            };
+        }
 
         // Recurse up the positioning hierarchy
         self.containing_block()
@@ -1735,6 +1799,14 @@ impl Node {
         let visual = self.unrounded_visual_location();
         let x = x + visual.x - self.scroll_offset().x as f32;
         let y = y + visual.y - self.scroll_offset().y as f32;
+
+        if self.is_fixed_to_viewport() {
+            let scroll = self.tree().viewport_scroll();
+            return crate::Point {
+                x: x + scroll.x as f32,
+                y: y + scroll.y as f32,
+            };
+        }
 
         self.containing_block()
             .map(|i| self.with(i).unrounded_absolute_position(x, y))

@@ -271,7 +271,7 @@ impl BaseDocument {
 
     /// Resolve a scroll target to the scroller which actually moves: the root element scrolls
     /// the viewport, per the CSS overflow propagation rules.
-    fn canonical_scroll_target(&self, target: ScrollTarget) -> ScrollTarget {
+    pub(crate) fn canonical_scroll_target(&self, target: ScrollTarget) -> ScrollTarget {
         match target {
             ScrollTarget::Node(node_id)
                 if self.try_root_element().is_some_and(|el| el.id == node_id) =>
@@ -631,11 +631,29 @@ impl BaseDocument {
         let Some(node) = self.nodes.get(node_id) else {
             return;
         };
-        let target = node.in_flow_absolute_position(
-            node.scroll_offset().x as f32,
-            node.scroll_offset().y as f32,
-        );
-        let target_size = node.final_layout().size;
+        let (target, target_size) = if node.is_inline_span() {
+            let Some(rect) = self.get_client_bounding_rect(node_id) else {
+                return;
+            };
+            (
+                Point {
+                    x: (rect.x + self.viewport_scroll().x) as f32,
+                    y: (rect.y + self.viewport_scroll().y) as f32,
+                },
+                taffy::Size {
+                    width: rect.width as f32,
+                    height: rect.height as f32,
+                },
+            )
+        } else {
+            (
+                node.absolute_position(
+                    node.scroll_offset().x as f32,
+                    node.scroll_offset().y as f32,
+                ),
+                node.final_layout().size,
+            )
+        };
         let Some(root_id) = self.try_root_element().map(|root| root.id) else {
             return;
         };

@@ -55,7 +55,6 @@ use style::servo_arc::Arc as ServoArc;
 use style::values::GenericAtomIdent;
 use style::values::computed::UserSelect;
 use style::values::computed::ui::CursorKind;
-use style::values::specified::box_::{DisplayInside, DisplayOutside};
 use style::{
     device::Device,
     dom::{TDocument, TNode},
@@ -1544,9 +1543,11 @@ impl BaseDocument {
         cb(&mut self.nodes[node_id]);
     }
 
-    // Takes (x, y) co-ordinates (relative to the )
+    /// Hit-test viewport-relative coordinates.
     pub fn hit(&self, x: f32, y: f32) -> Option<HitResult> {
-        self.hit_with_scrollbar(x, y).0
+        let scroll = self.viewport_scroll();
+        self.hit_with_scrollbar(x + scroll.x as f32, y + scroll.y as f32)
+            .0
     }
 
     /// The topmost element at viewport coordinates (x, y), or `None` if the point
@@ -2280,18 +2281,21 @@ impl BaseDocument {
     /// the containing inline root's text layout. Returns `None` for nodes that have
     /// their own layout box (which should use `get_client_bounding_rect` instead).
     pub fn inline_fragment_rects(&self, node_id: NodeId) -> Option<Vec<BoundingRect>> {
+        self.inline_fragment_rects_with_offsets(node_id, true)
+    }
+
+    pub(crate) fn inline_fragment_rects_with_offsets(
+        &self,
+        node_id: NodeId,
+        apply_offsets: bool,
+    ) -> Option<Vec<BoundingRect>> {
         use parley::PositionedLayoutItem;
 
         let node = self.get_node(node_id)?;
 
         // Only non-atomic inline elements lack their own layout box: they are
         // flattened into the containing inline root's text layout as style spans.
-        if !node.is_element() || node.flags.is_inline_root() {
-            return None;
-        }
-        let display = node.primary_styles()?.clone_display();
-        if !(display.outside() == DisplayOutside::Inline && display.inside() == DisplayInside::Flow)
-        {
+        if !node.is_inline_span() {
             return None;
         }
 
@@ -2299,6 +2303,13 @@ impl BaseDocument {
         let inline_layout = inline_root.element_data()?.inline_layout_data.as_ref()?;
         let layout = &inline_layout.layout;
         let scale = layout.scale() as f64;
+        let offset = |id| {
+            if apply_offsets && id != inline_root.id {
+                self.nodes[id].sticky_offset()
+            } else {
+                crate::Point { x: 0.0, y: 0.0 }
+            }
+        };
 
         // Walk up the DOM parent chain from `id` to check whether it is (or is
         // inside) the target node, stopping at the inline root.
@@ -2347,23 +2358,25 @@ impl BaseDocument {
                         if !is_in_target(glyph_run.style().brush.id) {
                             continue;
                         }
-                        let x0 = glyph_run.offset() as f64;
+                        let shift = offset(glyph_run.style().brush.id);
+                        let x0 = glyph_run.offset() as f64 + shift.x as f64 * scale;
                         let x1 = x0 + glyph_run.advance() as f64;
                         // Use the line box's block extent rather than the
                         // run's font ascent/descent: fonts with small
                         // typographic metrics would otherwise produce rects
                         // that clip the rendered glyphs. This matches the
                         // geometry used for text selection highlights.
-                        let y0 = line_metrics.block_min_coord as f64;
-                        let y1 = line_metrics.block_max_coord as f64;
+                        let y0 = line_metrics.block_min_coord as f64 + shift.y as f64 * scale;
+                        let y1 = line_metrics.block_max_coord as f64 + shift.y as f64 * scale;
                         add(x0, y0, x1, y1);
                     }
                     PositionedLayoutItem::InlineBox(inline_box) => {
                         if !is_in_target(NodeId::from_u64(inline_box.id)) {
                             continue;
                         }
-                        let x0 = inline_box.x as f64;
-                        let y0 = inline_box.y as f64;
+                        let shift = offset(NodeId::from_u64(inline_box.id));
+                        let x0 = inline_box.x as f64 + shift.x as f64 * scale;
+                        let y0 = inline_box.y as f64 + shift.y as f64 * scale;
                         add(
                             x0,
                             y0,
@@ -2478,11 +2491,11 @@ impl BaseDocument {
 
     // Text selection methods
 
-    /// Find the text position (inline_root_id, byte_offset) at a given point.
+    /// Find the text position (inline_root_id, byte_offset) at a document-relative point.
     /// Uses hit() for proper coordinate transformation, then finds the inline root
     /// and byte offset.
     pub fn find_text_position(&self, x: f32, y: f32) -> Option<(NodeId, usize)> {
-        let hit = self.hit(x, y)?;
+        let hit = self.hit_with_scrollbar(x, y).0?;
         let hit_node = self.get_node(hit.node_id)?;
         let inline_root = hit_node.inline_root_ancestor()?;
         let byte_offset = inline_root.text_offset_at_point(hit.x, hit.y)?;

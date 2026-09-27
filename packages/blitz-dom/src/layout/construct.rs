@@ -822,6 +822,10 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: NodeId) {
             node.set_pe_by_index(idx, Some(new_node_id));
             node.insert_damage(ALL_DAMAGE);
 
+            doc.note_sticky(
+                new_node_id,
+                pe_style.clone_position() == PositionProperty::Sticky,
+            );
             doc.pending_style_image_nodes.push(new_node_id);
         }
 

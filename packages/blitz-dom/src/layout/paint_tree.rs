@@ -39,9 +39,8 @@ pub fn hoisted_child_position(tree: &NodeTree, sc_root_id: NodeId, child_id: Nod
     // positioned against the viewport and does not scroll with it: cancel the
     // scroll the walk below (or the stacking-context root itself) applies.
     // A fixed box contained by a transformed ancestor scrolls with it.
-    if child.taffy_position() == taffy::Position::Fixed
+    if child.is_fixed_to_viewport()
         && let Some(cb) = current.and_then(|id| tree.get(id))
-        && cb.containing_block().is_none()
     {
         let scroll_offset = *cb.scroll_offset();
         let viewport_scroll = tree.viewport_scroll();

@@ -840,6 +840,7 @@ impl ElementCx<'_, '_> {
                 self.context.dom,
                 transform,
                 self.node.id,
+                self.scale,
             );
 
             // Render text selection highlight (if any) using cached selection ranges
@@ -850,6 +851,8 @@ impl ElementCx<'_, '_> {
                     transform,
                     sel_start,
                     sel_end,
+                    self.context.dom,
+                    self.node.id,
                 );
             }
 
@@ -1013,9 +1016,7 @@ impl ElementCx<'_, '_> {
                 // scroll (applied in `paint_scene`). A fixed box contained by a
                 // transformed ancestor scrolls with it like any out-of-flow box.
                 let child = &self.context.dom.as_ref().tree()[*child_id];
-                let child_transform = if child.taffy_position() == taffy::Position::Fixed
-                    && Some(self.node.id) == self.context.root_element_id
-                {
+                let child_transform = if child.is_fixed_to_viewport() {
                     let scroll = self.context.dom.as_ref().viewport_scroll();
                     parent_style_transform.pre_translate(kurbo::Vec2 {
                         x: scroll.x * self.scale,
