@@ -102,6 +102,7 @@ pub struct StickyConstraints {
     extra_scrollers: Vec<ExtraScroller>,
     /// A sticky row / row group: hand the shift down to the cells.
     shift_targets: Vec<NodeId>,
+    inline_root: Option<NodeId>,
 }
 
 /// Registry entry: depth keeps outer boxes before nested ones.
@@ -257,6 +258,7 @@ impl BaseDocument {
                         .is_some_and(|node| node.flags.is_in_document())
                 };
                 if !c.container.is_none_or(is_live)
+                    || !c.inline_root.is_none_or(is_live)
                     || !c.sticky_ancestors.iter().copied().all(is_live)
                     || !c.extra_scrollers.iter().all(|extra| is_live(extra.node))
                 {
@@ -275,6 +277,11 @@ impl BaseDocument {
             let ld = self.nodes[entry.node].layout_data_mut();
             ld.sticky_offset.x += x;
             ld.sticky_offset.y += y;
+            if let Some(root) = c.inline_root {
+                self.nodes[root]
+                    .flags
+                    .insert(crate::node::NodeFlags::HAS_STICKY_INLINES);
+            }
             for target in &c.shift_targets {
                 if let Some(node) = self.nodes.get_mut(*target) {
                     let offset = &mut node.layout_data_mut().inherited_sticky_offset;
@@ -291,6 +298,10 @@ impl BaseDocument {
             node.layout_data_mut().sticky_offset = crate::Point { x: 0.0, y: 0.0 };
         }
         if let Some(c) = &entry.constraints {
+            if let Some(root) = c.inline_root.and_then(|id| self.nodes.get_mut(id)) {
+                root.flags
+                    .remove(crate::node::NodeFlags::HAS_STICKY_INLINES);
+            }
             for target in &c.shift_targets {
                 if let Some(node) = self.nodes.get_mut(*target) {
                     node.layout_data_mut().inherited_sticky_offset =
@@ -314,7 +325,36 @@ impl BaseDocument {
         let layout = node.final_layout();
         let boxless = is_boxless_table_part(node);
         let mut shift_targets = Vec::new();
-        let (own_x, own_y, width, height, margin) = if !boxless {
+        let inline_root = node
+            .is_inline_span()
+            .then(|| node.inline_root_ancestor())
+            .flatten();
+        let (own_x, own_y, width, height, margin) = if let Some(root) = inline_root {
+            let rects = self.inline_fragment_rects_with_offsets(id, false)?;
+            if rects.is_empty() {
+                return None;
+            }
+            let x0 = rects.iter().map(|r| r.x).fold(f64::INFINITY, f64::min);
+            let y0 = rects.iter().map(|r| r.y).fold(f64::INFINITY, f64::min);
+            let x1 = rects
+                .iter()
+                .map(|r| r.x + r.width)
+                .fold(f64::NEG_INFINITY, f64::max);
+            let y1 = rects
+                .iter()
+                .map(|r| r.y + r.height)
+                .fold(f64::NEG_INFINITY, f64::max);
+            let origin = root.unrounded_absolute_position(0.0, 0.0);
+            let scroll = self.viewport_scroll();
+            self.inline_shift_targets(id, &mut shift_targets);
+            (
+                (x0 + scroll.x) as f32 - origin.x,
+                (y0 + scroll.y) as f32 - origin.y,
+                (x1 - x0) as f32,
+                (y1 - y0) as f32,
+                taffy::Rect::zero(),
+            )
+        } else if !boxless {
             (
                 layout.location.x,
                 layout.location.y,
@@ -390,7 +430,9 @@ impl BaseDocument {
         let mut cb_id = self.layout_ancestor(id).unwrap_or(parent_id);
         let mut parent_x = x - own_x;
         let mut parent_y = y - own_y;
-        while cb_id != root && is_boxless_table_part(&self.nodes[cb_id]) {
+        while cb_id != root
+            && (is_boxless_table_part(&self.nodes[cb_id]) || self.nodes[cb_id].is_inline_span())
+        {
             let Some(up) = self.layout_ancestor(cb_id) else {
                 break;
             };
@@ -507,6 +549,7 @@ impl BaseDocument {
             start_wins_y,
             extra_scrollers,
             shift_targets,
+            inline_root: inline_root.map(|node| node.id),
         })
     }
 
@@ -524,13 +567,36 @@ impl BaseDocument {
         let mut cur = self.nodes[id].parent;
         while let Some(a) = cur {
             let node = &self.nodes[a];
-            if a == parent || !is_boxless_table_part(node) {
+            if a == parent || !(is_boxless_table_part(node) || node.is_inline_span()) {
                 break;
             }
             if node.flags.contains(crate::node::NodeFlags::IS_STICKY) {
                 ancestors.push(a);
             }
             cur = node.parent;
+        }
+    }
+
+    fn inline_shift_targets(&self, id: NodeId, targets: &mut Vec<NodeId>) {
+        let mut stack = vec![id];
+        while let Some(parent) = stack.pop() {
+            let node = &self.nodes[parent];
+            for child in node
+                .children
+                .iter()
+                .copied()
+                .chain(node.before())
+                .chain(node.after())
+            {
+                let node = &self.nodes[child];
+                if node.element_data().is_none() || node.taffy_position().is_out_of_flow() {
+                    continue;
+                }
+                targets.push(child);
+                if node.is_inline_span() {
+                    stack.push(child);
+                }
+            }
         }
     }
 

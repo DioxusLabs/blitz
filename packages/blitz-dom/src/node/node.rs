@@ -11,7 +11,7 @@ use html_escape::encode_quoted_attribute_to_string;
 use keyboard_types::Modifiers;
 use kurbo::{Affine, Rect as KurboRect};
 use markup5ever::{LocalName, local_name};
-use parley::{BreakReason, Cluster, ClusterSide};
+use parley::{BreakReason, Cluster, ClusterSide, PositionedLayoutItem};
 use selectors::matching::ElementSelectorFlags;
 use std::cell::{Cell, RefCell};
 use std::fmt::Write;
@@ -64,6 +64,7 @@ bitflags! {
         const IS_IN_DOCUMENT = 0b00000100;
         /// Registered in the document's `position: sticky` list (`sticky.rs`).
         const IS_STICKY = 0b00001000;
+        const HAS_STICKY_INLINES = 0b00010000;
     }
 }
 
@@ -1611,27 +1612,19 @@ impl Node {
 
         // Inline children
         if self.flags.is_inline_root() {
-            let element_data = &self.element_data().unwrap();
-            if let Some(ild) = element_data.inline_layout_data.as_ref() {
-                let layout = &ild.layout;
-                let scale = layout.scale();
-
-                if let Some((cluster, _side)) =
-                    Cluster::from_point_exact(layout, x * scale, y * scale)
-                {
-                    let node_id = cluster.style().brush.id;
-                    let text_pointer_events_none = self
-                        .with(node_id)
-                        .primary_styles()
-                        .is_some_and(|style| style.clone_pointer_events() == PointerEvents::None);
-                    if !text_pointer_events_none {
-                        return Some(HitResult {
-                            node_id,
-                            x,
-                            y,
-                            is_text: true,
-                        });
-                    }
+            if let Some((cluster, _side)) = self.text_cluster_at_point(x, y, true) {
+                let node_id = cluster.style().brush.id;
+                let text_pointer_events_none = self
+                    .with(node_id)
+                    .primary_styles()
+                    .is_some_and(|style| style.clone_pointer_events() == PointerEvents::None);
+                if !text_pointer_events_none {
+                    return Some(HitResult {
+                        node_id,
+                        x,
+                        y,
+                        is_text: true,
+                    });
                 }
             }
         }
@@ -1662,6 +1655,66 @@ impl Node {
         }
     }
 
+    pub(crate) fn is_inline_span(&self) -> bool {
+        self.is_element()
+            && !self.flags.is_inline_root()
+            && self.display_style().is_some_and(|display| {
+                display.outside() == DisplayOutside::Inline
+                    && display.inside() == DisplayInside::Flow
+            })
+    }
+
+    fn text_cluster_at_point(
+        &self,
+        x: f32,
+        y: f32,
+        exact: bool,
+    ) -> Option<(Cluster<'_, super::TextBrush>, ClusterSide)> {
+        let layout = &self.element_data()?.inline_layout_data.as_ref()?.layout;
+        let scale = layout.scale();
+        let (x, y) = (x * scale, y * scale);
+        if self.flags.contains(NodeFlags::HAS_STICKY_INLINES) {
+            let mut hit = None;
+            for line in layout.lines() {
+                for item in line.items() {
+                    let PositionedLayoutItem::GlyphRun(run) = item else {
+                        continue;
+                    };
+                    let id = run.style().brush.id;
+                    if id == self.id {
+                        continue;
+                    }
+                    let offset = self.with(id).sticky_offset();
+                    if offset.x == 0.0 && offset.y == 0.0 {
+                        continue;
+                    }
+                    let (px, py) = (x - offset.x * scale, y - offset.y * scale);
+                    if px >= run.offset()
+                        && px <= run.offset() + run.advance()
+                        && py >= line.metrics().block_min_coord
+                        && py <= line.metrics().block_max_coord
+                    {
+                        hit = Cluster::from_point_exact(layout, px, py);
+                    }
+                }
+            }
+            if hit.is_some() {
+                return hit;
+            }
+        }
+        let hit = if exact {
+            Cluster::from_point_exact(layout, x, y)
+        } else {
+            Cluster::from_point(layout, x, y)
+        }?;
+        let id = hit.0.style().brush.id;
+        let offset = self.with(id).sticky_offset();
+        if exact && id != self.id && (offset.x != 0.0 || offset.y != 0.0) {
+            return None;
+        }
+        Some(hit)
+    }
+
     /// Get the text byte offset at a given point, using coordinates already transformed
     /// to be relative to this inline root's content box.
     /// Returns Some(byte_offset) if the point hits text, None otherwise.
@@ -1670,13 +1723,8 @@ impl Node {
             return None;
         }
 
-        let element_data = self.element_data()?;
-        let inline_layout = element_data.inline_layout_data.as_ref()?;
-        let layout = &inline_layout.layout;
-        let scale = layout.scale();
-
         // Use Parley's cluster hit testing (from_point is more forgiving than from_point_exact)
-        let (cluster, side) = Cluster::from_point(layout, x * scale, y * scale)?;
+        let (cluster, side) = self.text_cluster_at_point(x, y, false)?;
 
         // Determine byte offset based on which side of the cluster was clicked
         // For LTR text: left side = start of cluster, right side = end of cluster

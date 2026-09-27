@@ -28,6 +28,7 @@ pub(crate) fn draw_inline_backgrounds<'a>(
     doc: &BaseDocument,
     transform: Affine,
     inline_root_id: NodeId,
+    scale: f64,
 ) {
     for line in lines {
         for item in line.items() {
@@ -61,6 +62,7 @@ pub(crate) fn draw_inline_backgrounds<'a>(
             let y0 = baseline - metrics.ascent as f64;
             let y1 = baseline + metrics.descent as f64;
             let rect = Rect::new(x, y0, x + w, y1);
+            let transform = inline_transform(doc, node_id, inline_root_id, transform, scale);
 
             scene.fill(Fill::NonZero, transform, bg_color, None, &rect);
         }
@@ -225,6 +227,7 @@ struct DecorationRunGeometry {
 /// paint a single line spanning the box rather than one segment per run.
 struct LineDecoration {
     node_id: NodeId,
+    sticky_offset: (f32, f32),
     deco: ResolvedDecoration,
     min_x: f64,
     max_x: f64,
@@ -395,6 +398,11 @@ fn flush_line_decorations(
     // Draw innermost boxes first so ancestors' decorations paint on top, matching the
     // per-run drawing order this replaced (`stack.iter().rev()`).
     for acc in deco_boxes.iter().rev() {
+        let transform = transform
+            * Affine::translate((
+                acc.sticky_offset.0 as f64 * scale,
+                acc.sticky_offset.1 as f64 * scale,
+            ));
         let deco = &acc.deco;
         // Prefer the decorating box's own font; fall back to the first run it covers.
         let Some(geom) = acc.own.as_ref().or(acc.first.as_ref()) else {
@@ -630,7 +638,7 @@ pub(crate) fn stroke_text<'a>(
                     Fill::NonZero,
                     &anyrender::Paint::from(text_color),
                     1.0, // alpha
-                    transform,
+                    inline_transform(doc, style.brush.id, inline_root_id, transform, scale),
                     glyph_xform,
                     glyph_run.positioned_glyphs().map(|glyph| anyrender::Glyph {
                         id: glyph.id as _,
@@ -655,6 +663,12 @@ pub(crate) fn stroke_text<'a>(
                     css_font_size,
                 };
                 let run_node_id = style.brush.id;
+                let sticky_offset = if run_node_id == inline_root_id {
+                    (0.0, 0.0)
+                } else {
+                    let offset = doc.get_node(run_node_id).unwrap().sticky_offset();
+                    (offset.x, offset.y)
+                };
                 let run_x0 = glyph_run.offset() as f64;
                 let run_x1 = run_x0 + glyph_run.advance() as f64;
 
@@ -662,11 +676,14 @@ pub(crate) fn stroke_text<'a>(
                     if entry.decoration.is_none() {
                         continue;
                     }
-                    let idx = match deco_boxes.iter().position(|d| d.node_id == entry.node_id) {
+                    let idx = match deco_boxes.iter().position(|d| {
+                        d.node_id == entry.node_id && d.sticky_offset == sticky_offset
+                    }) {
                         Some(idx) => idx,
                         None => {
                             deco_boxes.push(LineDecoration {
                                 node_id: entry.node_id,
+                                sticky_offset,
                                 deco: entry.decoration.clone().unwrap(),
                                 min_x: f64::INFINITY,
                                 max_x: f64::NEG_INFINITY,
@@ -703,13 +720,56 @@ pub(crate) fn draw_text_selection(
     transform: Affine,
     selection_start: usize,
     selection_end: usize,
+    doc: &BaseDocument,
+    inline_root_id: NodeId,
 ) {
     let anchor = Cursor::from_byte_index(layout, selection_start, Affinity::Downstream);
     let focus = Cursor::from_byte_index(layout, selection_end, Affinity::Downstream);
     let selection = Selection::new(anchor, focus);
 
-    selection.geometry_with(layout, |rect, _line_idx| {
+    selection.geometry_with(layout, |rect, line_idx| {
         let rect = kurbo::Rect::new(rect.x0, rect.y0, rect.x1, rect.y1);
-        scene.fill(Fill::NonZero, transform, SELECTION_COLOR, None, &rect);
+        if !doc
+            .get_node(inline_root_id)
+            .unwrap()
+            .flags
+            .contains(blitz_dom::node::NodeFlags::HAS_STICKY_INLINES)
+        {
+            scene.fill(Fill::NonZero, transform, SELECTION_COLOR, None, &rect);
+            return;
+        }
+        let Some(line) = layout.get(line_idx) else {
+            return;
+        };
+        for item in line.items() {
+            let (id, x0, x1) = match item {
+                PositionedLayoutItem::GlyphRun(run) => (
+                    run.style().brush.id,
+                    run.offset(),
+                    run.offset() + run.advance(),
+                ),
+                PositionedLayoutItem::InlineBox(b) => (NodeId::from_u64(b.id), b.x, b.x + b.width),
+            };
+            let fragment = rect.intersect(kurbo::Rect::new(x0 as f64, rect.y0, x1 as f64, rect.y1));
+            if fragment.width() > 0.0 {
+                let transform =
+                    inline_transform(doc, id, inline_root_id, transform, layout.scale() as f64);
+                scene.fill(Fill::NonZero, transform, SELECTION_COLOR, None, &fragment);
+            }
+        }
     });
+}
+
+fn inline_transform(
+    doc: &BaseDocument,
+    id: NodeId,
+    root: NodeId,
+    transform: Affine,
+    scale: f64,
+) -> Affine {
+    if id == root {
+        return transform;
+    }
+    let offset = doc.get_node(id).unwrap().sticky_offset();
+    transform * Affine::translate((offset.x as f64 * scale, offset.y as f64 * scale))
 }
