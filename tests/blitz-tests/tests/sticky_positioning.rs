@@ -50,6 +50,24 @@ fn sticky_row_style_removal_clears_cells() {
 }
 
 #[test]
+fn newly_created_sticky_pseudo_is_registered() {
+    for pseudo in ["before", "after"] {
+        let mut h = Harness::from_html(&format!(
+            "<style>#host::{pseudo} {{content:'X';display:block;position:sticky;top:0;height:20px}}</style><body style='margin:0'><div id=s style='height:100px;overflow:auto'><div id=host style='height:500px'></div></div>"
+        ));
+        let host = h.base().get_node(h.node("#host")).unwrap();
+        let id = if pseudo == "before" {
+            host.before()
+        } else {
+            host.after()
+        }
+        .unwrap();
+        scroll(&mut h, "#s", 100.0);
+        assert_eq!(h.base().get_node(id).unwrap().sticky_offset().y, 100.0);
+    }
+}
+
+#[test]
 fn scroll_after_dropping_sticky_before_resolve_does_not_panic() {
     let mut h = Harness::from_html(STICKY_HEADER);
     let t = h.node("#t");
