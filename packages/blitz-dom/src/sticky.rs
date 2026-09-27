@@ -225,7 +225,30 @@ impl BaseDocument {
         let vs = self.viewport_scroll();
         let viewport_scroll = (vs.x as f32, vs.y as f32);
 
-        let entries = std::mem::take(&mut self.sticky_nodes);
+        let mut entries = std::mem::take(&mut self.sticky_nodes);
+        entries.retain_mut(|entry| {
+            let Some(node) = self.nodes.get_mut(entry.node) else {
+                return false;
+            };
+            if !node.flags.is_in_document() {
+                node.flags.set(crate::node::NodeFlags::IS_STICKY, false);
+                return false;
+            }
+            if let Some(c) = &entry.constraints {
+                let is_live = |id| {
+                    self.nodes
+                        .get(id)
+                        .is_some_and(|node| node.flags.is_in_document())
+                };
+                if !c.container.is_none_or(is_live)
+                    || !c.sticky_ancestors.iter().copied().all(is_live)
+                    || !c.extra_scrollers.iter().all(|extra| is_live(extra.node))
+                {
+                    entry.constraints = None;
+                }
+            }
+            true
+        });
         // Pass 1: clear (shifts handed down by boxless table parts accumulate).
         for entry in &entries {
             if let Some(n) = self.nodes.get_mut(entry.node) {
