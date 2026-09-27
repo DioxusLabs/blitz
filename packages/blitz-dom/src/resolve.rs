@@ -37,10 +37,12 @@ use crate::{
 impl BaseDocument {
     /// Advance the document to the frame at `now`, then restyle and relayout it.
     ///
-    /// `now` is the frame time: CSS animations and transitions, smooth scrolls and flings
-    /// are advanced to it, so that painting reads plain state and never samples a clock.
-    /// Embedders must call this before painting each frame, with `now` from the same
-    /// monotonic clock which timestamps their input events (see [`Timestamp`]).
+    /// This is the only place time enters the document: everything which evolves over
+    /// time (CSS animations and transitions, smooth scrolls and flings, overlay scrollbar
+    /// fade-out) is resolved here for the frame at `now`, so that painting reads plain
+    /// state and never samples a clock. Embedders must call this before painting each
+    /// frame, with `now` from the same monotonic clock which timestamps their input
+    /// events (see [`Timestamp`]).
     pub fn resolve(&mut self, now: Timestamp) {
         if TDocument::as_node(&self.root_node())
             .first_element_child()
@@ -69,13 +71,9 @@ impl BaseDocument {
 
         self.resolve_scroll_animation(now);
 
-        // Drop scrollbar-activity entries whose fade-out has finished (also
-        // sheds entries for removed nodes).
-        {
-            use crate::node::scrollbar::{FADE_DELAY, FADE_DURATION};
-            self.scrollbar_activity
-                .retain(|_, last| last.elapsed() < FADE_DELAY + FADE_DURATION);
-        }
+        // Resolve overlay scrollbar opacities for this frame, dropping entries whose
+        // fade-out has finished (which also sheds entries for removed nodes).
+        self.scrollbar_activity.retain(|_, fade| fade.advance(now));
 
         let root_node_id = self.root_element().id;
         debug_timer!(timer, feature = "log-phase-times");

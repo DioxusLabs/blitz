@@ -31,13 +31,9 @@ fn layout_doc(html: &str) -> HtmlDocument {
 
 /// Drive `resolve` with synthetic frames (advancing the frame clock by 16ms each) until
 /// the document reports it is no longer animating, or too much virtual time elapses.
-///
-/// The frames are also paced on the wall clock, since the overlay scrollbars' fade-out
-/// (which keeps `is_animating()` true while it runs) is still timed on the wall clock.
 fn drive_until_settled(doc: &mut HtmlDocument) {
     let mut now = Timestamp::ZERO;
     while doc.is_animating() {
-        std::thread::sleep(Duration::from_millis(8));
         now += Duration::from_millis(16);
         doc.resolve(now);
         assert!(
