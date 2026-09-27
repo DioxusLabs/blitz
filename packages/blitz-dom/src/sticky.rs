@@ -28,8 +28,7 @@
 //! the box's own transform), table parts (a sticky cell is constrained by the
 //! table; a sticky row/row group is measured from its cells and its shift
 //! handed down to them), the scrollport intersection of scrollers between the
-//! box and its containing block, and `position: fixed` ancestors (a scroller
-//! that never scrolls).
+//! box and its containing block, and viewport-fixed coordinate spaces.
 //!
 //! [`LayoutData::sticky_offset`]: crate::node::LayoutData::sticky_offset
 
@@ -78,8 +77,9 @@ struct ExtraScroller {
 /// Everything about one sticky box that does not depend on scroll positions.
 #[derive(Clone, Debug)]
 pub struct StickyConstraints {
-    /// Nearest scroll container (or fixed ancestor); `None` = the viewport.
+    /// Nearest scroll container; `None` = the viewport.
     container: Option<NodeId>,
+    viewport_fixed: bool,
     /// Sticky ancestors between the box and the container, outermost first:
     /// their current shifts move this box's in-flow position.
     sticky_ancestors: Vec<NodeId>,
@@ -369,12 +369,13 @@ impl BaseDocument {
 
         // Walk up the *layout* parent chain (locations are relative to it: an
         // inline-level box's layout parent is the inline root, not its span)
-        // to the nearest scroll container (or fixed ancestor), noting sticky
+        // to the nearest scroll container, noting sticky
         // ancestors on the way; positions stay in-flow here — the ancestors'
         // shifts are applied at refresh time.
         let mut x = own_x;
         let mut y = own_y;
         let mut container: Option<NodeId> = None;
+        let mut viewport_fixed = false;
         let mut sticky_ancestors = Vec::new();
         let mut child = id;
         let mut cur = self.layout_ancestor(id);
@@ -387,11 +388,14 @@ impl BaseDocument {
             if let Some(s) = anc.primary_styles() {
                 let b = s.get_box();
                 let position = s.clone_position();
-                if (scrolls(b.overflow_x) || scrolls(b.overflow_y) || position == Position::Fixed)
+                if (scrolls(b.overflow_x) || scrolls(b.overflow_y))
                     && self.canonical_scroll_target(ScrollTarget::Node(a)) != ScrollTarget::Viewport
                 {
                     container = Some(a);
                     break;
+                }
+                if anc.is_fixed_to_viewport() {
+                    viewport_fixed = true;
                 }
                 if position == Position::Sticky {
                     sticky_ancestors.push(a);
@@ -533,6 +537,7 @@ impl BaseDocument {
         let (start_wins_x, start_wins_y) = overconstraint_winners(writing_mode, direction);
         Some(StickyConstraints {
             container,
+            viewport_fixed,
             sticky_ancestors,
             cb_sticky_ancestors,
             x,
@@ -607,6 +612,11 @@ impl BaseDocument {
         viewport_size: (f32, f32),
         viewport_scroll: (f32, f32),
     ) -> (f32, f32) {
+        let viewport_scroll = if c.viewport_fixed {
+            (0.0, 0.0)
+        } else {
+            viewport_scroll
+        };
         // Ancestors' shifts (already resolved, outer first) move the in-flow
         // position and the containing block alike.
         let mut dx = 0.0f32;

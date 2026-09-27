@@ -2394,6 +2394,12 @@ impl BaseDocument {
             let visual = node.unrounded_visual_location();
             pos.x += visual.x - node.scroll_offset().x as f32;
             pos.y += visual.y - node.scroll_offset().y as f32;
+            if node.is_fixed_to_viewport() {
+                let scroll = self.viewport_scroll();
+                pos.x += scroll.x as f32;
+                pos.y += scroll.y as f32;
+                break;
+            }
             current = node.containing_block();
         }
         (pos, *self.nodes[node_id].unrounded_layout())

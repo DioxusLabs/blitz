@@ -532,6 +532,12 @@ impl BaseDocument {
             pos.x += visual.x - node.scroll_offset().x as f32;
             pos.y += visual.y - node.scroll_offset().y as f32;
             has_vertical |= node.layout_data().writing_mode.is_vertical();
+            if node.is_fixed_to_viewport() {
+                let scroll = self.viewport_scroll();
+                pos.x += scroll.x as f32;
+                pos.y += scroll.y as f32;
+                break;
+            }
             current = node.containing_block();
         }
         if !has_vertical {

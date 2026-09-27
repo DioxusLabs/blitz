@@ -250,6 +250,40 @@ fn wrapped_inline_sticky_uses_its_in_flow_fragment_bounds() {
 }
 
 #[test]
+fn fixed_ancestor_uses_viewport_insets_without_viewport_scroll() {
+    let mut h = Harness::from_html(
+        "<body style='margin:0'><div id=f style='position:fixed;top:100px;height:1000px;width:200px'><div style='height:800px'></div><div id=t style='position:sticky;bottom:10%;height:20px;background:red'></div></div><div style='height:2000px'></div></body>",
+    );
+    let t = h.node("#t");
+    assert_eq!(h.base().get_client_bounding_rect(t).unwrap().y, 520.0);
+    assert_eq!(shift(&h, "#t"), -380.0);
+    h.base_mut()
+        .set_viewport_scroll(blitz_dom::util::Point { x: 0.0, y: 200.0 });
+    assert_eq!(shift(&h, "#t"), -380.0);
+    let page_y = 530.0 + h.base().viewport_scroll().y as f32;
+    assert_eq!(h.hit_node(10.0, page_y), t);
+    assert_eq!(h.base().get_client_bounding_rect(t).unwrap().y, 520.0);
+}
+
+#[test]
+fn fixed_scroll_container_still_uses_its_own_scrollport() {
+    let mut h = Harness::from_html(
+        "<body style='margin:0'><div id=f style='position:fixed;top:100px;height:100px;width:200px;overflow:auto'><div id=t style='position:sticky;top:10%;height:20px'></div><div style='height:1000px'></div></div></body>",
+    );
+    scroll(&mut h, "#f", 100.0);
+    assert_eq!(shift(&h, "#t"), 110.0);
+}
+
+#[test]
+fn fixed_to_transformed_ancestor_tracks_the_real_scroller() {
+    let mut h = Harness::from_html(
+        "<body style='margin:0'><div id=s style='height:100px;overflow:auto'><div style='transform:translateX(0);height:1000px'><div style='position:fixed;top:0;width:200px;height:500px'><div id=t style='position:sticky;top:0;height:20px'></div></div></div></div></body>",
+    );
+    scroll(&mut h, "#s", 100.0);
+    assert_eq!(shift(&h, "#t"), 100.0);
+}
+
+#[test]
 fn resolve_after_dropping_sticky_during_smooth_scroll_does_not_panic() {
     let mut h = Harness::from_html(STICKY_HEADER);
     let t = h.node("#t");
