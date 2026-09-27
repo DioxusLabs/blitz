@@ -112,6 +112,12 @@ impl BaseDocument {
         timer.record_time("layout");
         self.nodes.bump_geometry_generation();
 
+        // Sticky shifts are part of this frame's geometry: resolve them before
+        // anything is memoised against the new generation (hoisted-child
+        // positions, the hit test in `refresh_hover`).
+        self.update_sticky_offsets();
+        timer.record_time("sticky");
+
         // Resolve transforms
         self.resolve_transforms(root_node_id);
         timer.record_time("transform");
@@ -163,9 +169,6 @@ impl BaseDocument {
         }
         self.subdoc_is_animating = subdoc_is_animating;
         timer.record_time("subdocs");
-
-        self.update_sticky_offsets();
-        timer.record_time("sticky");
 
         timer.print_times(&format!("Resolve({}): ", self.id()));
     }
