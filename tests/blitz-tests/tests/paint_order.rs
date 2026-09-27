@@ -76,3 +76,20 @@ fn earlier_abspos_stays_below_static_when_later_in_tree_order_is_static() {
         "positioned content paints above in-flow content regardless of tree order"
     );
 }
+
+#[test]
+fn abspos_hoisted_from_inline_block_in_span_paints_in_tree_order() {
+    // The abspos is hoisted past its layout parent (an inline-block nested in
+    // a span) to the positioned inline root, and must still paint before the
+    // later positioned inline-block.
+    let px = center_pixel(
+        r#"<html><body style="margin:0">
+            <div style="position:relative; width:100px; height:100px; font-size:0;"><span><span style="display:inline-block"><div style="position:absolute; left:0; top:0; width:100px; height:100px; background:#ff0000;"></div></span></span><span style="display:inline-block; position:relative; vertical-align:top; width:100px; height:100px; background:#0000ff;"></span></div>
+        </body></html>"#,
+    );
+    assert_eq!(
+        px,
+        [0, 0, 255],
+        "later positioned inline-block must paint above the earlier hoisted abspos"
+    );
+}
