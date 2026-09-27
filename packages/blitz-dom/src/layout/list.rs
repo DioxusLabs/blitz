@@ -14,6 +14,10 @@ use crate::{
 
 pub(super) const BULLET_FONT_FAMILY: &str = "Bullet, monospace, sans-serif";
 
+/// Assign markers to the container's list-item children. Only direct children
+/// are numbered: a nested list item is numbered by the container which
+/// collects it, so that its marker does not depend on which of its ancestors
+/// was reconstructed last.
 pub(super) fn collect_list_item_children(
     doc: &mut BaseDocument,
     index: &mut usize,
@@ -29,7 +33,6 @@ pub(super) fn collect_list_item_children(
             let node = &mut doc.nodes[child];
             node.element_data_mut().unwrap().list_item_data = Some(Box::new(layout));
             *index += 1;
-            collect_list_item_children(doc, index, reversed, child);
         } else {
             // Unset marker in case it was previously set
             let node = &mut doc.nodes[child];

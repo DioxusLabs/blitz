@@ -1518,6 +1518,30 @@ fn cell_directly_in_row_group() {
     });
 }
 
+/// A list item's marker is assigned by the container which collects it; a
+/// container further up must not renumber the nested list items it does
+/// not collect, or the marker would depend on which container was
+/// reconstructed last.
+#[test]
+fn nested_list_items_renumbered_by_outer_container() {
+    // `<li>` nested directly in `<li>` cannot be parsed, so build it.
+    let mut oracle = Oracle::new(&page("", r#"<ol><li id="one">one</li></ol>"#));
+    oracle.step("nest two list items", |doc| {
+        let inner = element(doc, "li", &[("id", "in")], Some("three"));
+        let mid = element(doc, "li", &[("id", "m")], Some("two"));
+        doc.mutate().append_children(mid, &[inner]);
+        let one = id(doc, "#one");
+        doc.mutate().append_children(one, &[mid]);
+    });
+    oracle.step("restyle the outer item", |doc| {
+        set_style(doc, "#one", "color: red")
+    });
+    oracle.step("edit the outer item's text", |doc| {
+        let text_node = first_text_child(doc, "#one");
+        doc.mutate().set_node_text(text_node, "first");
+    });
+}
+
 /// Hover/focus changes affecting only paint reconstruct no boxes.
 #[test]
 fn paint_only_state_changes_reconstruct_nothing() {
