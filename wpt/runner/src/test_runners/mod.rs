@@ -122,9 +122,12 @@ pub fn run_document_scripts(ctx: &ThreadCtx, document: BaseDocument) -> ScriptDo
     // The runner drives timers manually via `pump_timers`, so the background
     // timer wakeup thread is unnecessary. Timers run on virtual time: there is
     // no external event source, so `pump_timers` fast-forwards the clock to
-    // each timer deadline instead of sleeping until it.
+    // each timer deadline instead of sleeping until it. Virtual time starts at
+    // `Timestamp::ZERO`, the time the document was resolved at before scripts
+    // ran, so that frame time and script time share one domain.
     let mut script_document = ScriptDocument::from_base_document(document)
         .without_timer_thread()
+        .with_clock(Timestamp::ZERO)
         .with_virtual_time()
         .with_fetcher(WptScriptFetcher::new(ctx.wpt_dir.clone()));
     script_document.execute_scripts();
@@ -377,19 +380,19 @@ fn parse_and_resolve_document(
 
     document.as_mut().set_viewport(ctx.viewport.clone());
     document.as_mut().resolve(Timestamp::ZERO);
-    pump_net_provider(ctx, document.as_mut());
+    pump_net_provider(ctx, document.as_mut(), Timestamp::ZERO);
 
     document.into()
 }
 
 /// Load pending resources (stylesheets, images, fonts), re-resolving the document
-/// as they arrive. Loops because loading a resource may result in further
-/// resources being requested.
-pub fn pump_net_provider(ctx: &ThreadCtx, document: &mut BaseDocument) {
+/// (at frame time `now`) as they arrive. Loops because loading a resource may
+/// result in further resources being requested.
+pub fn pump_net_provider(ctx: &ThreadCtx, document: &mut BaseDocument, now: Timestamp) {
     let start = Instant::now();
     while ctx.net_provider.pending_item_count() > 0 {
         ctx.net_provider.for_each(|_| {});
-        document.resolve(Timestamp::ZERO);
+        document.resolve(now);
         if Instant::now().duration_since(start).as_millis() > 500 {
             ctx.net_provider.log_pending_items();
             panic!(
@@ -399,7 +402,7 @@ pub fn pump_net_provider(ctx: &ThreadCtx, document: &mut BaseDocument) {
         }
     }
 
-    document.resolve(Timestamp::ZERO);
+    document.resolve(now);
 }
 
 #[cfg(test)]

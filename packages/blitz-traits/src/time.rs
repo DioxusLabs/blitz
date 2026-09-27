@@ -107,6 +107,14 @@ pub trait Clock {
     fn now(&self) -> Timestamp;
 }
 
+/// A stopped clock: always reads this timestamp. Useful as the starting point for a
+/// virtual clock which is advanced manually.
+impl Clock for Timestamp {
+    fn now(&self) -> Timestamp {
+        *self
+    }
+}
+
 /// The system's monotonic clock, as a [`Clock`].
 ///
 /// Its origin is fixed on first use and shared by the whole process, so timestamps
