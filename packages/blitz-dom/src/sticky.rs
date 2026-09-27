@@ -697,22 +697,29 @@ struct Axis {
 /// Positions the box inside the inset edges of the scrollport, then keeps its
 /// margin box inside its containing block. Returns the shift to apply.
 ///
-/// Spec order (CSS Positioned Layout 3, §3.5): the end inset is applied first,
-/// then the start inset, so when the box is taller than the space between
-/// them the start inset wins (or the reverse in modes where the end wins).
+/// The logical end inset is reduced until the sticky view rectangle can fit
+/// the border box. Auto insets size the rectangle but do not shift the box.
 fn axis_offset(a: Axis, port_start: f32, port_end: f32, cb_start: f32, cb_end: f32) -> f32 {
+    let mut start_inset = a.start_inset.unwrap_or(0.0);
+    let mut end_inset = a.end_inset.unwrap_or(0.0);
+    let deficit = (a.size - (port_end - port_start - start_inset - end_inset)).max(0.0);
+    if a.start_wins {
+        end_inset -= deficit;
+    } else {
+        start_inset -= deficit;
+    }
     let mut position = a.pos;
     let apply_start = |position: &mut f32| {
-        if let Some(inset) = a.start_inset {
-            let limit = port_start + inset;
+        if a.start_inset.is_some() {
+            let limit = port_start + start_inset;
             if *position < limit {
                 *position = limit;
             }
         }
     };
     let apply_end = |position: &mut f32| {
-        if let Some(inset) = a.end_inset {
-            let limit = port_end - inset - a.size;
+        if a.end_inset.is_some() {
+            let limit = port_end - end_inset - a.size;
             if *position > limit {
                 *position = limit;
             }
@@ -876,5 +883,16 @@ mod tests {
             axis_offset(axis(100.0, 20.0, None, None), 500.0, 1100.0, 0.0, 400.0),
             0.0
         );
+    }
+
+    #[test]
+    fn oversized_box_reduces_only_the_logical_end_inset() {
+        let a = axis(200.0, 200.0, None, Some(0.0));
+        assert_eq!(axis_offset(a, 150.0, 250.0, 0.0, 1000.0), -50.0);
+        let a = Axis {
+            start_wins: false,
+            ..axis(100.0, 200.0, Some(0.0), None)
+        };
+        assert_eq!(axis_offset(a, 250.0, 350.0, 0.0, 1000.0), 50.0);
     }
 }

@@ -109,6 +109,15 @@ fn root_overflow_uses_viewport_scroll_and_percentage_basis() {
 }
 
 #[test]
+fn oversized_bottom_only_reduces_effective_end_inset() {
+    let mut h = Harness::from_html(
+        "<body style='margin:0'><div id=s style='height:100px;overflow:auto'><div style='height:1000px'><div style='height:200px'></div><div id=t style='position:sticky;bottom:0;height:200px'></div></div></div>",
+    );
+    scroll(&mut h, "#s", 150.0);
+    assert_eq!(shift(&h, "#t"), -50.0);
+}
+
+#[test]
 fn resolve_after_dropping_sticky_during_smooth_scroll_does_not_panic() {
     let mut h = Harness::from_html(STICKY_HEADER);
     let t = h.node("#t");
