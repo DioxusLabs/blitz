@@ -296,7 +296,7 @@ pub(crate) fn handle_pointermove<F: FnMut(DomEvent)>(
         return has_changed;
     }
 
-    let Some(hit) = doc.hit(x, y) else {
+    let Some(hit) = doc.hit_with_scrollbar(x, y).0 else {
         return changed;
     };
 
@@ -410,7 +410,7 @@ pub(crate) fn handle_pointerdown(
     doc.drag_mode = DragMode::None;
     doc.scroll_animation = ScrollAnimationState::None;
 
-    let Some(hit) = doc.hit(x, y) else {
+    let Some(hit) = doc.hit_with_scrollbar(x, y).0 else {
         // Clear text selection when clicking outside any element
         doc.clear_text_selection();
         return;

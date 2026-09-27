@@ -1543,9 +1543,11 @@ impl BaseDocument {
         cb(&mut self.nodes[node_id]);
     }
 
-    // Takes (x, y) co-ordinates (relative to the )
+    /// Hit-test viewport-relative coordinates.
     pub fn hit(&self, x: f32, y: f32) -> Option<HitResult> {
-        self.hit_with_scrollbar(x, y).0
+        let scroll = self.viewport_scroll();
+        self.hit_with_scrollbar(x + scroll.x as f32, y + scroll.y as f32)
+            .0
     }
 
     /// The topmost element at viewport coordinates (x, y), or `None` if the point
@@ -2489,11 +2491,11 @@ impl BaseDocument {
 
     // Text selection methods
 
-    /// Find the text position (inline_root_id, byte_offset) at a given point.
+    /// Find the text position (inline_root_id, byte_offset) at a document-relative point.
     /// Uses hit() for proper coordinate transformation, then finds the inline root
     /// and byte offset.
     pub fn find_text_position(&self, x: f32, y: f32) -> Option<(NodeId, usize)> {
-        let hit = self.hit(x, y)?;
+        let hit = self.hit_with_scrollbar(x, y).0?;
         let hit_node = self.get_node(hit.node_id)?;
         let inline_root = hit_node.inline_root_ancestor()?;
         let byte_offset = inline_root.text_offset_at_point(hit.x, hit.y)?;
