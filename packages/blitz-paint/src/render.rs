@@ -863,17 +863,29 @@ impl ElementCx<'_, '_> {
                 self.scale,
                 self.node.id,
                 &mut draw_text_context,
-                text_layout.overflow.as_deref().map(|overflow| {
-                    // Horizontal scroll of the clipping box (the parent for an anonymous root).
-                    let scroller = if self.node.is_anonymous() {
+                text_layout.overflow.as_deref().and_then(|overflow| {
+                    // The clipping box (the parent for an anonymous root): its
+                    // horizontal scroll moves the cut.
+                    let block = if self.node.is_anonymous() {
                         self.node.parent.and_then(|p| self.context.dom.get_node(p))
                     } else {
                         Some(self.node)
                     };
-                    let scroll_x = scroller
+                    // A focused editing host is being edited: treat `ellipsis`
+                    // as `clip` (css-overflow §5.2, "user interaction with
+                    // ellipsis") so the marker never hides the caret's text.
+                    let editing = block.is_some_and(|b| {
+                        self.context.dom.get_focussed_node_id() == Some(b.id)
+                            && b.attr(local_name!("contenteditable"))
+                                .is_some_and(|v| !v.eq_ignore_ascii_case("false"))
+                    });
+                    if editing {
+                        return None;
+                    }
+                    let scroll_x = block
                         .map(|n| (n.scroll_offset().x * self.scale) as f32)
                         .unwrap_or(0.0);
-                    (overflow, scroll_x)
+                    Some((overflow, scroll_x))
                 }),
             );
         }
