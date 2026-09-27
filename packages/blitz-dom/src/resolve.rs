@@ -262,9 +262,10 @@ impl BaseDocument {
             // when their Stylo data is first initialised; text nodes and
             // unstyled elements below `display:none` are never collected), so
             // a missing damage slot means "no damage". The exception is the
-            // Document node, which has no Stylo data: its only box-generating
-            // child is the root element, so it mirrors that element's
-            // construction damage (and is always constructed the first time).
+            // Document node, which may have no Stylo data: its only
+            // box-generating child is the root element, so it then mirrors
+            // that element's construction damage (and is always constructed
+            // the first time).
             let mut damage = match doc.nodes[node_id].damage() {
                 Some(damage) => damage,
                 None if matches!(doc.nodes[node_id].data, NodeData::Document(_)) => {
@@ -280,9 +281,33 @@ impl BaseDocument {
                 }
                 None => RestyleDamage::empty(),
             };
+            // `propagate_damage_flags` starts at the root element, so it never
+            // forwards `CONSTRUCT_DESCENDENT` to the Document node.
+            if matches!(doc.nodes[node_id].data, NodeData::Document(_))
+                && doc.root_element().damage().is_some_and(|root_damage| {
+                    root_damage.intersects(CONSTRUCT_BOX | CONSTRUCT_FC | CONSTRUCT_DESCENDENT)
+                })
+            {
+                damage.insert(CONSTRUCT_DESCENDENT);
+            }
             let _flags = doc.nodes[node_id].flags;
 
-            if damage.intersects(CONSTRUCT_FC | CONSTRUCT_BOX) {
+            // `propagate_damage_flags` puts `CONSTRUCT_DESCENDENT` on every
+            // ancestor of a node with construction damage, so a subtree
+            // without it has nothing to construct. Anonymous boxes are never
+            // skipped: damage marking walks the DOM parent chain, which
+            // bypasses them.
+            let reconstruct = damage.intersects(CONSTRUCT_FC | CONSTRUCT_BOX);
+            if !reconstruct
+                && !damage.contains(CONSTRUCT_DESCENDENT)
+                && !doc.nodes[node_id].is_anonymous()
+            {
+                #[cfg(debug_assertions)]
+                assert_no_construct_damage(doc, node_id);
+                return;
+            }
+
+            if reconstruct {
                 //} || flags.contains(NodeFlags::IS_INLINE_ROOT) {
                 doc.reconstructed_node_count += 1;
 
@@ -340,6 +365,23 @@ impl BaseDocument {
             }
 
             doc.nodes[node_id].set_damage(damage);
+        }
+
+        #[cfg(debug_assertions)]
+        fn assert_no_construct_damage(doc: &BaseDocument, node_id: NodeId) {
+            let Some(node) = doc.nodes.get(node_id) else {
+                return;
+            };
+            let damage = node.damage().unwrap_or(RestyleDamage::empty());
+            assert!(
+                !damage.intersects(CONSTRUCT_BOX | CONSTRUCT_FC | CONSTRUCT_DESCENDENT),
+                "{node_id:?} has construction damage {damage:?} in a subtree skipped by resolve_layout_children"
+            );
+            if let Some(layout_children) = node.layout_children.borrow().as_ref() {
+                for &child_id in layout_children.iter() {
+                    assert_no_construct_damage(doc, child_id);
+                }
+            }
         }
     }
 

@@ -108,6 +108,12 @@ impl BaseDocument {
         // Compute damage to propagate to parent
         let mut damage_for_parent = damage; // & RestyleDamage::RELAYOUT;
 
+        // `resolve_layout_children` only descends into nodes carrying this bit
+        // (or construction damage of their own).
+        if damage.intersects(CONSTRUCT_BOX | CONSTRUCT_FC | CONSTRUCT_DESCENDENT) {
+            damage_for_parent.insert(CONSTRUCT_DESCENDENT);
+        }
+
         if reorder {
             damage.insert(CONSTRUCT_BOX);
             damage_for_parent.insert(CONSTRUCT_DESCENDENT);
