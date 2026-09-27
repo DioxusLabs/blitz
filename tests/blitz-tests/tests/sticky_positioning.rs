@@ -1,4 +1,4 @@
-use blitz_dom::ScrollBehavior;
+use blitz_dom::{ScrollBehavior, ScrollLogicalPosition};
 use blitz_test_harness::Harness;
 use markup5ever::{QualName, local_name, ns};
 
@@ -115,6 +115,25 @@ fn oversized_bottom_only_reduces_effective_end_inset() {
     );
     scroll(&mut h, "#s", 150.0);
     assert_eq!(shift(&h, "#t"), -50.0);
+}
+
+#[test]
+fn scroll_into_view_uses_stuck_position() {
+    let mut h = Harness::from_html(
+        "<body style='margin:0'><div id=t style='position:sticky;top:0;height:20px'><div id=child style='height:10px'></div></div><div style='height:2000px'></div></body>",
+    );
+    for selector in ["#t", "#child"] {
+        h.base_mut()
+            .set_viewport_scroll(blitz_dom::util::Point { x: 0.0, y: 300.0 });
+        let target = h.node(selector);
+        h.base_mut().scroll_into_view(
+            target,
+            ScrollBehavior::Instant,
+            ScrollLogicalPosition::Nearest,
+            ScrollLogicalPosition::Nearest,
+        );
+        assert_eq!(h.base().viewport_scroll().y, 300.0);
+    }
 }
 
 #[test]

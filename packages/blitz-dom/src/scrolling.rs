@@ -631,7 +631,7 @@ impl BaseDocument {
         let Some(node) = self.nodes.get(node_id) else {
             return;
         };
-        let target = node.in_flow_absolute_position(
+        let target = node.absolute_position(
             node.scroll_offset().x as f32,
             node.scroll_offset().y as f32,
         );

@@ -1706,16 +1706,6 @@ impl Node {
             .or_else(|| self.layout_parent.get())
     }
 
-    /// Document-relative coordinates without sticky shifts: the in-flow
-    /// position, which `scrollIntoView` targets.
-    pub fn in_flow_absolute_position(&self, x: f32, y: f32) -> crate::util::Point<f32> {
-        let x = x + self.final_layout().location.x - self.scroll_offset().x as f32;
-        let y = y + self.final_layout().location.y - self.scroll_offset().y as f32;
-        self.containing_block()
-            .map(|i| self.with(i).in_flow_absolute_position(x, y))
-            .unwrap_or(crate::util::Point { x, y })
-    }
-
     /// Computes the Document-relative coordinates of the `Node`
     pub fn absolute_position(&self, x: f32, y: f32) -> crate::util::Point<f32> {
         // Where the box is drawn: sticky shifts included (caret, selection, CSSOM).
