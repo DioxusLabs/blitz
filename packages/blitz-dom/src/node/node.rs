@@ -1054,6 +1054,18 @@ impl Node {
         matches!(self.data, NodeData::Element { .. })
     }
 
+    pub fn is_fixed_to_viewport(&self) -> bool {
+        self.taffy_position() == taffy::Position::Fixed
+            && self.containing_block().is_some_and(|cb| {
+                let cb = self.with(cb);
+                cb.parent
+                    .is_some_and(|parent| matches!(self.with(parent).data, NodeData::Document(_)))
+                    && !cb.primary_styles().is_some_and(|style| {
+                        stylo_taffy::convert::establishes_fixed_containing_block(&style)
+                    })
+            })
+    }
+
     pub fn is_anonymous(&self) -> bool {
         matches!(self.data, NodeData::AnonymousBlock { .. })
     }
@@ -1580,7 +1592,7 @@ impl Node {
                 // against the viewport and do not scroll with it. (A fixed box
                 // whose containing block is a transformed ancestor scrolls with
                 // that ancestor like any other out-of-flow box.)
-                if child_position == taffy::Position::Fixed && self.containing_block().is_none() {
+                if child.is_fixed_to_viewport() {
                     child_x -= self.scroll_offset().x as f32;
                     child_y -= self.scroll_offset().y as f32;
                     let viewport_scroll = self.tree().viewport_scroll();
@@ -1765,6 +1777,14 @@ impl Node {
         let x = x + visual.x - self.scroll_offset().x as f32;
         let y = y + visual.y - self.scroll_offset().y as f32;
 
+        if self.is_fixed_to_viewport() {
+            let scroll = self.tree().viewport_scroll();
+            return crate::Point {
+                x: x + scroll.x as f32,
+                y: y + scroll.y as f32,
+            };
+        }
+
         // Recurse up the positioning hierarchy
         self.containing_block()
             .map(|i| self.with(i).absolute_position(x, y))
@@ -1777,6 +1797,14 @@ impl Node {
         let visual = self.unrounded_visual_location();
         let x = x + visual.x - self.scroll_offset().x as f32;
         let y = y + visual.y - self.scroll_offset().y as f32;
+
+        if self.is_fixed_to_viewport() {
+            let scroll = self.tree().viewport_scroll();
+            return crate::Point {
+                x: x + scroll.x as f32,
+                y: y + scroll.y as f32,
+            };
+        }
 
         self.containing_block()
             .map(|i| self.with(i).unrounded_absolute_position(x, y))
