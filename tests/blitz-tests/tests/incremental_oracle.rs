@@ -1542,6 +1542,26 @@ fn nested_list_items_renumbered_by_outer_container() {
     });
 }
 
+/// Pseudo-elements of an element nested in an inline span are flushed when
+/// the inline root is collected, like those of the span itself.
+#[test]
+fn pseudo_on_element_nested_in_inline_span() {
+    let mut oracle = Oracle::new(&page(
+        ".x::before { content: '!!'; } .x::after { content: '??'; }",
+        r#"<p>a <span><b id="b" class="x">t</b></span> b</p>
+           <p>a <span style="display:inline-block"><b id="ib" class="x">t</b></span> b</p>"#,
+    ));
+    for selector in ["#b", "#ib"] {
+        let node = oracle.inc.get_node(id(&oracle.inc, selector)).unwrap();
+        assert!(node.before().is_some(), "{selector} has no ::before");
+        assert!(node.after().is_some(), "{selector} has no ::after");
+    }
+    oracle.step("pseudos removed", |doc| set_attr(doc, "#b", "class", ""));
+    oracle.step("pseudos added back", |doc| {
+        set_attr(doc, "#b", "class", "x")
+    });
+}
+
 /// Hover/focus changes affecting only paint reconstruct no boxes.
 #[test]
 fn paint_only_state_changes_reconstruct_nothing() {
