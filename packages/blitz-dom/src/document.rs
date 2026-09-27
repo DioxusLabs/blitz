@@ -213,6 +213,8 @@ pub struct BaseDocument {
     /// every node is treated as damaged on every `resolve`, so the same damage
     /// pipeline reconstructs and relays out the whole tree.
     pub(crate) incremental_layout: bool,
+    /// Number of nodes reconstructed by the last `resolve_layout_children`.
+    pub(crate) reconstructed_node_count: usize,
     /// How deeply this document is nested within other documents
     /// (0 for a root document). Used to limit `<iframe>` nesting depth.
     pub(crate) subdocument_depth: usize,
@@ -450,6 +452,7 @@ impl BaseDocument {
             pending_device_changes: DeviceChanges::empty(),
             style_threading: config.style_threading,
             incremental_layout: config.incremental.unwrap_or(true),
+            reconstructed_node_count: 0,
             subdocument_depth: config.subdocument_depth,
             devtool_settings: DevtoolSettings::default(),
             url: base_url,
