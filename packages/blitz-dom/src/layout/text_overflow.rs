@@ -54,9 +54,14 @@ impl Marker {
             if let PositionedLayoutItem::GlyphRun(run) = item {
                 let glyphs = run.positioned_glyphs().map(|g| (g.id, g.x)).collect();
                 runs.push(MarkerRun {
-                    font: run.run().font().clone(),
+                    font: run.run().font().font.clone(),
                     font_size: run.run().font_size(),
-                    normalized_coords: run.run().normalized_coords().to_vec(),
+                    normalized_coords: run
+                        .run()
+                        .normalized_coords()
+                        .iter()
+                        .map(|c| c.to_bits())
+                        .collect(),
                     glyphs,
                 });
             }
@@ -73,7 +78,7 @@ impl Marker {
 #[derive(Clone, Debug)]
 pub struct TruncatedLine {
     pub line_index: usize,
-    /// Where the line's content ends (`offset + advance`, trailing whitespace
+    /// Where the line's content ends (`offset + advance`, hanging whitespace
     /// excluded), in layout units: `text-indent` shifts it.
     pub end: f32,
     /// The line's baseline — the block's, not a run's (`vertical-align`).
@@ -138,7 +143,7 @@ pub fn compute(
     let mut lines = Vec::new();
     for (index, line) in layout.lines().enumerate() {
         let metrics = line.metrics();
-        let end = metrics.offset + metrics.advance - metrics.trailing_whitespace;
+        let end = metrics.offset + metrics.advance - metrics.hanging_advance;
         if end <= max_width + 0.5 {
             continue;
         }
