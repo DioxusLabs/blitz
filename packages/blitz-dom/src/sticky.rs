@@ -130,7 +130,8 @@ impl BaseDocument {
         match (index, is_sticky) {
             (Some(_), true) | (None, false) => {}
             (Some(i), false) => {
-                self.sticky_nodes.remove(i);
+                let entry = self.sticky_nodes.remove(i);
+                self.clear_sticky_offset(&entry);
             }
             (None, true) => {
                 let mut depth = 0;
@@ -169,11 +170,9 @@ impl BaseDocument {
         let mut entries = std::mem::take(&mut self.sticky_nodes);
         // Drop nodes that left the document or have no box (`display: none`),
         // clearing their flag so a node moved back in (keyed lists) registers
-        // again: the flag must mirror registration exactly. The split borrow
-        // lets the flag be cleared inside `retain`, without a scratch Vec.
-        let nodes = &mut self.nodes;
+        // again: the flag must mirror registration exactly.
         entries.retain(|e| {
-            let Some(n) = nodes.get_mut(e.node) else {
+            let Some(n) = self.nodes.get_mut(e.node) else {
                 return false;
             };
             let keep = n.flags.is_in_document()
@@ -181,6 +180,7 @@ impl BaseDocument {
                 && n.display_style().is_some_and(|d| !d.is_none());
             if !keep {
                 n.flags.set(crate::node::NodeFlags::IS_STICKY, false);
+                self.clear_sticky_offset(e);
             }
             keep
         });
@@ -232,6 +232,7 @@ impl BaseDocument {
             };
             if !node.flags.is_in_document() {
                 node.flags.set(crate::node::NodeFlags::IS_STICKY, false);
+                self.clear_sticky_offset(entry);
                 return false;
             }
             if let Some(c) = &entry.constraints {
@@ -251,12 +252,7 @@ impl BaseDocument {
         });
         // Pass 1: clear (shifts handed down by boxless table parts accumulate).
         for entry in &entries {
-            if let Some(n) = self.nodes.get_mut(entry.node) {
-                n.layout_data_mut().sticky_offset = crate::Point { x: 0.0, y: 0.0 };
-            }
-            if entry.constraints.as_ref().is_some_and(|c| c.boxless) {
-                self.hand_down_shift(entry.node, f32::NAN, f32::NAN);
-            }
+            self.clear_sticky_offset(entry);
         }
         // Pass 2: outer boxes first (sorted by depth), so a nested box reads
         // its ancestors' shifts already resolved.
@@ -273,6 +269,15 @@ impl BaseDocument {
             }
         }
         self.sticky_nodes = entries;
+    }
+
+    fn clear_sticky_offset(&mut self, entry: &StickyEntry) {
+        if let Some(node) = self.nodes.get_mut(entry.node) {
+            node.layout_data_mut().sticky_offset = crate::Point { x: 0.0, y: 0.0 };
+            if entry.constraints.as_ref().is_some_and(|c| c.boxless) {
+                self.hand_down_shift(entry.node, f32::NAN, f32::NAN);
+            }
+        }
     }
 
     /// The layout-invariant part: where the box and its containing block sit

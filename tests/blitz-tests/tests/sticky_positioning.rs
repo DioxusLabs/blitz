@@ -1,7 +1,53 @@
 use blitz_dom::ScrollBehavior;
 use blitz_test_harness::Harness;
+use markup5ever::{QualName, local_name, ns};
+
+fn set_style(h: &mut Harness, selector: &str, value: &str) {
+    let id = h.node(selector);
+    h.base_mut().mutate().set_attribute(
+        id,
+        QualName::new(None, ns!(), local_name!("style")),
+        value,
+    );
+    h.pump();
+}
+
+fn scroll(h: &mut Harness, selector: &str, y: f64) {
+    let id = h.node(selector);
+    h.base_mut().scroll_to(id, 0.0, y, ScrollBehavior::Instant);
+}
+
+fn shift(h: &Harness, selector: &str) -> f32 {
+    h.base()
+        .get_node(h.node(selector))
+        .unwrap()
+        .sticky_offset()
+        .y
+}
 
 const STICKY_HEADER: &str = "<body style='margin:0'><div id=t style='position:sticky;top:0;height:20px'></div><div style='height:2000px'></div></body>";
+
+#[test]
+fn removing_sticky_clears_offset() {
+    let mut h = Harness::from_html(
+        "<body style='margin:0'><div id=s style='overflow:auto;height:100px'><div style='height:100px'></div><div id=t style='position:sticky;top:0;height:20px'></div><div style='height:500px'></div></div>",
+    );
+    scroll(&mut h, "#s", 150.0);
+    assert_eq!(shift(&h, "#t"), 50.0);
+    set_style(&mut h, "#t", "position:static;height:20px");
+    assert_eq!(shift(&h, "#t"), 0.0);
+}
+
+#[test]
+fn sticky_row_style_removal_clears_cells() {
+    let mut h = Harness::from_html(
+        "<body style='margin:0'><div id=s style='height:100px;overflow:auto'><table style='border-spacing:0'><tbody><tr id=r style='position:sticky;top:0'><td id=t style='height:20px;padding:0'>X</td></tr><tr><td style='height:500px;padding:0'></td></tr></tbody></table></div>",
+    );
+    scroll(&mut h, "#s", 100.0);
+    assert_eq!(shift(&h, "#t"), 100.0);
+    set_style(&mut h, "#r", "position:static");
+    assert_eq!(shift(&h, "#t"), 0.0);
+}
 
 #[test]
 fn scroll_after_dropping_sticky_before_resolve_does_not_panic() {
