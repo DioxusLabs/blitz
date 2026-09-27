@@ -8,6 +8,7 @@ use kurbo::{Affine, Rect};
 use parley::LayoutContext;
 use selectors::Element as _;
 use style::dom::TDocument;
+use style::selector_parser::RestyleDamage;
 
 #[cfg(feature = "parallel-construct")]
 use rayon::prelude::*;
@@ -21,7 +22,7 @@ thread_local! {
 use taffy::AvailableSpace;
 
 use crate::{
-    BaseDocument,
+    BaseDocument, NodeData,
     layout::{
         construct::{
             ConstructionTask, ConstructionTaskData, ConstructionTaskResult,
@@ -247,6 +248,7 @@ impl BaseDocument {
 
     /// Ensure that the layout_children field is populated for all nodes
     pub fn resolve_layout_children(&mut self) {
+        self.reconstructed_node_count = 0;
         resolve_layout_children_recursive(self, self.root_node().id);
 
         fn resolve_layout_children_recursive(doc: &mut BaseDocument, node_id: NodeId) {
@@ -256,11 +258,33 @@ impl BaseDocument {
                 return;
             }
 
-            let mut damage = doc.nodes[node_id].damage().unwrap_or(ALL_DAMAGE);
+            // Every layout child is styled (elements are given `ALL_DAMAGE`
+            // when their Stylo data is first initialised; text nodes and
+            // unstyled elements below `display:none` are never collected), so
+            // a missing damage slot means "no damage". The exception is the
+            // Document node, which has no Stylo data: its only box-generating
+            // child is the root element, so it mirrors that element's
+            // construction damage (and is always constructed the first time).
+            let mut damage = match doc.nodes[node_id].damage() {
+                Some(damage) => damage,
+                None if matches!(doc.nodes[node_id].data, NodeData::Document(_)) => {
+                    if doc.nodes[node_id].layout_children.borrow().is_none() {
+                        ALL_DAMAGE
+                    } else {
+                        let root_element_id = doc.root_element().id;
+                        doc.nodes[root_element_id]
+                            .damage()
+                            .unwrap_or(ALL_DAMAGE)
+                            .intersection(CONSTRUCT_BOX | CONSTRUCT_FC | CONSTRUCT_DESCENDENT)
+                    }
+                }
+                None => RestyleDamage::empty(),
+            };
             let _flags = doc.nodes[node_id].flags;
 
             if damage.intersects(CONSTRUCT_FC | CONSTRUCT_BOX) {
                 //} || flags.contains(NodeFlags::IS_INLINE_ROOT) {
+                doc.reconstructed_node_count += 1;
 
                 // Deallocate the anonymous blocks created for this node in the
                 // previous construction round. They live only in the slab, so
@@ -319,11 +343,17 @@ impl BaseDocument {
         }
     }
 
+    /// Number of nodes whose layout children were (re)constructed by the most
+    /// recent [`Self::resolve_layout_children`].
+    pub fn reconstructed_node_count(&self) -> usize {
+        self.reconstructed_node_count
+    }
+
     /// Every layout child must point back at its container via
     /// `layout_parent`, which `propagate_damage_flags` relies on to reach
     /// anonymous boxes.
-    #[cfg(debug_assertions)]
-    fn assert_layout_parents_consistent(&self) {
+    #[doc(hidden)]
+    pub fn assert_layout_parents_consistent(&self) {
         for (parent_id, node) in self.nodes.iter() {
             if !node.flags.contains(NodeFlags::IS_IN_DOCUMENT) {
                 continue;
@@ -335,7 +365,7 @@ impl BaseDocument {
                 let Some(child) = self.nodes.get(child_id) else {
                     panic!("layout child {child_id:?} of {parent_id:?} is not in the slab");
                 };
-                debug_assert_eq!(
+                assert_eq!(
                     child.layout_parent.get(),
                     Some(parent_id),
                     "layout_parent of {child_id:?} does not point at its layout container {parent_id:?}"
