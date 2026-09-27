@@ -96,6 +96,19 @@ fn reparented_stickies_resolve_ancestors_first() {
 }
 
 #[test]
+fn root_overflow_uses_viewport_scroll_and_percentage_basis() {
+    let mut h = Harness::from_html(
+        "<html style='overflow:auto'><body style='margin:0'><div id=t style='position:sticky;top:10%;height:20px'></div><div style='height:2000px'></div></body></html>",
+    );
+    let root = h.base().root_element().id;
+    h.base_mut()
+        .scroll_to(root, 0.0, 100.0, ScrollBehavior::Instant);
+    assert_eq!(shift(&h, "#t"), 160.0);
+    let t = h.node("#t");
+    assert_eq!(h.base().get_client_bounding_rect(t).unwrap().y, 60.0);
+}
+
+#[test]
 fn resolve_after_dropping_sticky_during_smooth_scroll_does_not_panic() {
     let mut h = Harness::from_html(STICKY_HEADER);
     let t = h.node("#t");
