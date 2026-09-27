@@ -3,8 +3,9 @@
 //! Run with: `cargo test -p blitz-tests --release --test paint_tree_bench -- --ignored --nocapture`
 
 use anyrender::NullScenePainter;
-use blitz_dom::DocumentConfig;
+use blitz_dom::{DocumentConfig, LocalName, QualName, ns};
 use blitz_html::{HtmlDocument, HtmlProvider};
+use blitz_traits::node_id::NodeId;
 use blitz_traits::shell::{ColorScheme, Viewport};
 use std::fmt::Write as _;
 use std::sync::Arc;
@@ -220,6 +221,110 @@ fn large_page() -> String {
     page("", &body)
 }
 
+fn dom_depth(doc: &HtmlDocument, mut id: NodeId) -> usize {
+    let mut depth = 0;
+    while let Some(parent) = doc.get_node(id).unwrap().parent {
+        id = parent;
+        depth += 1;
+    }
+    depth
+}
+
+/// The deepest `<p>` (or, failing that, `<span>`) with a direct text child,
+/// as (text node, element).
+fn deepest_text(doc: &HtmlDocument) -> (NodeId, NodeId) {
+    for selector in ["p", "span"] {
+        let best = doc
+            .query_selector_all(selector)
+            .unwrap()
+            .into_iter()
+            .filter_map(|id| {
+                let node = doc.get_node(id).unwrap();
+                let text = node
+                    .children
+                    .iter()
+                    .copied()
+                    .find(|c| doc.get_node(*c).unwrap().text_data().is_some())?;
+                // Inline spans are not Taffy nodes and have no layout of their own.
+                let laid_out = selector == "span" || node.final_layout().size.height > 0.0;
+                laid_out.then_some((dom_depth(doc, id), text, id))
+            })
+            .max_by_key(|(depth, _, _)| *depth);
+        if let Some((_, text, id)) = best {
+            return (text, id);
+        }
+    }
+    panic!("no text found");
+}
+
+/// Ancestor of `id` at DOM depth `depth` (or the shallowest available).
+fn ancestor_at_depth(doc: &HtmlDocument, mut id: NodeId, depth: usize) -> NodeId {
+    while dom_depth(doc, id) > depth {
+        id = doc.get_node(id).unwrap().parent.unwrap();
+    }
+    id
+}
+
+/// Incremental frames after DOM mutations: a text edit in the deepest
+/// paragraph and a block inserted/removed at DOM depth ~10 above it. Phase
+/// timings print from `resolve` with `--features blitz-dom/log-phase-times`.
+fn mutation_frames(doc: &mut HtmlDocument) {
+    let (text_node, paragraph) = deepest_text(doc);
+    println!(
+        "--- incremental frames: text edit in <{}> at depth {}",
+        doc.get_node(paragraph)
+            .unwrap()
+            .element_data()
+            .unwrap()
+            .name
+            .local,
+        dom_depth(doc, paragraph)
+    );
+    for i in 0..4 {
+        let text = if i % 2 == 0 {
+            "edited text which is a little longer than before"
+        } else {
+            "short"
+        };
+        doc.mutate().set_node_text(text_node, text);
+        doc.resolve(0.0);
+        println!("reconstructed nodes: {}", doc.reconstructed_node_count());
+    }
+
+    let container = ancestor_at_depth(doc, paragraph, 10);
+    println!(
+        "--- incremental frames: block inserted/removed in <{}> at depth {}",
+        doc.get_node(container)
+            .unwrap()
+            .element_data()
+            .unwrap()
+            .name
+            .local,
+        dom_depth(doc, container)
+    );
+    for _ in 0..2 {
+        let block = {
+            let mut m = doc.mutate();
+            let block = m.create_element(
+                QualName::new(None, ns!(html), LocalName::from("div")),
+                Vec::new(),
+            );
+            m.set_attribute(
+                block,
+                QualName::new(None, ns!(), LocalName::from("style")),
+                "height: 5px; background: red",
+            );
+            m.append_children(container, &[block]);
+            block
+        };
+        doc.resolve(0.0);
+        println!("reconstructed nodes: {}", doc.reconstructed_node_count());
+        doc.mutate().remove_node(block);
+        doc.resolve(0.0);
+        println!("reconstructed nodes: {}", doc.reconstructed_node_count());
+    }
+}
+
 /// Prints per-phase resolve timings (needs `--features blitz-dom/log-phase-times`)
 /// for full non-incremental frames and for hover-only incremental frames.
 #[test]
@@ -254,6 +359,7 @@ fn resolve_phase_timings() {
         doc.resolve(0.0);
         println!("reconstructed nodes: {}", doc.reconstructed_node_count());
     }
+    mutation_frames(&mut doc);
 }
 
 /// Same measurements on a real-world page (stylesheets must be inlined):
@@ -321,6 +427,7 @@ fn external_page_timings() {
         doc.resolve(0.0);
     });
     println!("reconstructed nodes: {}", doc.reconstructed_node_count());
+    mutation_frames(&mut doc);
 
     println!("--- non-incremental frames");
     let mut doc = make_doc(&html, false);
