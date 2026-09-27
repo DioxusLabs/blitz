@@ -1061,7 +1061,9 @@ impl Node {
                 cb.parent
                     .is_some_and(|parent| matches!(self.with(parent).data, NodeData::Document(_)))
                     && !cb.primary_styles().is_some_and(|style| {
-                        stylo_taffy::convert::establishes_fixed_containing_block(&style)
+                        stylo_taffy::convert::establishes_fixed_containing_block_for_element(
+                            &style, true,
+                        )
                     })
             })
     }

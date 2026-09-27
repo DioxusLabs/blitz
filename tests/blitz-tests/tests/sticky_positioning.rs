@@ -265,6 +265,27 @@ fn fixed_ancestor_uses_viewport_insets_without_viewport_scroll() {
 }
 
 #[test]
+fn root_filter_hints_preserve_viewport_fixed_sticky_coordinates() {
+    for property in ["filter", "backdrop-filter", "transform"] {
+        let mut h = Harness::from_html(&format!(
+            "<style>html{{will-change:{property}}}</style><body style='margin:0'><div id=f style='position:fixed;top:100px;width:200px;height:1000px'><div id=t style='position:sticky;top:0;height:20px'></div></div><div style='height:2000px'></div></body>"
+        ));
+        let f = h.node("#f");
+        let t = h.node("#t");
+        let viewport_fixed = property != "transform";
+        assert_eq!(
+            h.base().get_node(f).unwrap().is_fixed_to_viewport(),
+            viewport_fixed
+        );
+        h.base_mut()
+            .set_viewport_scroll(blitz_dom::Point { x: 0.0, y: 50.0 });
+        let y = if viewport_fixed { 100.0 } else { 50.0 };
+        assert_eq!(h.base().get_client_bounding_rect(t).unwrap().y, y);
+        assert_eq!(h.base().element_from_point(10.0, y as f32 + 10.0), Some(t));
+    }
+}
+
+#[test]
 fn fixed_scroll_container_still_uses_its_own_scrollport() {
     let mut h = Harness::from_html(
         "<body style='margin:0'><div id=f style='position:fixed;top:100px;height:100px;width:200px;overflow:auto'><div id=t style='position:sticky;top:10%;height:20px'></div><div style='height:1000px'></div></div></body>",
