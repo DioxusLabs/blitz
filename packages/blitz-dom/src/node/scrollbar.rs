@@ -5,24 +5,22 @@
 use blitz_traits::node_id::NodeId;
 use kurbo::Rect as KurboRect;
 use taffy::AbsoluteAxis;
-use web_time::Duration;
 
 use super::Node;
 
-/// How long overlay scrollbars stay fully opaque after their last activity
-/// (a scroll, or the pointer leaving the thumb), and how long the fade-out
-/// takes. Chromium's overlay values.
-pub(crate) const FADE_DELAY: Duration = Duration::from_millis(500);
-pub(crate) const FADE_DURATION: Duration = Duration::from_millis(200);
+/// How long (in seconds) overlay scrollbars stay fully opaque after their
+/// last activity (a scroll, or the pointer leaving the thumb), and how long
+/// the fade-out takes. Chromium's overlay values.
+pub(crate) const FADE_DELAY: f64 = 0.5;
+pub(crate) const FADE_DURATION: f64 = 0.2;
 
-/// Overlay scrollbar opacity as a function of time since the scroll
-/// container's last scrollbar activity: fully opaque through the fade
-/// delay, then fading linearly to hidden.
-pub(crate) fn opacity_at(elapsed: Duration) -> f32 {
-    match elapsed.checked_sub(FADE_DELAY) {
-        None => 1.0,
-        Some(fading) => 1.0 - (fading.as_secs_f32() / FADE_DURATION.as_secs_f32()).min(1.0),
-    }
+/// Overlay scrollbar opacity as a function of the time (in seconds, on the
+/// document's animation clock) since the scroll container's last scrollbar
+/// activity: fully opaque through the fade delay, then fading linearly to
+/// hidden.
+pub(crate) fn opacity_at(elapsed: f64) -> f32 {
+    let remaining = FADE_DELAY + FADE_DURATION - elapsed;
+    (remaining / FADE_DURATION).clamp(0.0, 1.0) as f32
 }
 
 /// A specific scrollbar: one axis of one scroll container.
@@ -227,11 +225,11 @@ mod tests {
 
     #[test]
     fn opacity_holds_through_the_fade_delay_then_fades_out() {
-        assert_eq!(opacity_at(Duration::ZERO), 1.0);
+        assert_eq!(opacity_at(0.0), 1.0);
         assert_eq!(opacity_at(FADE_DELAY), 1.0);
-        let mid_fade = opacity_at(FADE_DELAY + FADE_DURATION / 2);
+        let mid_fade = opacity_at(FADE_DELAY + FADE_DURATION / 2.0);
         assert!((mid_fade - 0.5).abs() < 0.01, "got {mid_fade}");
         assert_eq!(opacity_at(FADE_DELAY + FADE_DURATION), 0.0);
-        assert_eq!(opacity_at(Duration::from_secs(3600)), 0.0);
+        assert_eq!(opacity_at(3600.0), 0.0);
     }
 }

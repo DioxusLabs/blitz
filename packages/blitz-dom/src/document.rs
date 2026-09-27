@@ -216,6 +216,11 @@ pub struct BaseDocument {
     /// How deeply this document is nested within other documents
     /// (0 for a root document). Used to limit `<iframe>` nesting depth.
     pub(crate) subdocument_depth: usize,
+    /// The animation clock (`current_time_for_animations`, in seconds) passed
+    /// to the most recent [`resolve`](Self::resolve). Time-driven UI state that
+    /// isn't a CSS animation (overlay scrollbar fade-out) reads this rather than
+    /// the system clock, so the embedder drives all animation time.
+    pub(crate) animation_time: f64,
 
     // Events
     pub(crate) tx: Sender<DocumentEvent>,
@@ -277,9 +282,11 @@ pub struct BaseDocument {
     pub(crate) drag_mode: DragMode,
     /// The scrollbar thumb currently under the pointer, if any
     pub(crate) hovered_scrollbar: Option<crate::node::ScrollbarRef>,
-    /// When each scroll container's overlay scrollbars were last shown
-    /// (scrolled, or the pointer left the thumb); drives their fade-out
-    pub(crate) scrollbar_activity: HashMap<NodeId, Instant>,
+    /// When (in animation time) each scroll container's overlay scrollbars
+    /// were last shown (scrolled, or the pointer left the thumb); drives
+    /// their fade-out. `None` marks activity since the last `resolve`, which
+    /// stamps it with the next frame's time.
+    pub(crate) scrollbar_activity: HashMap<NodeId, Option<f64>>,
     /// Whether and what kind of scroll animation is currently in progress
     pub(crate) scroll_animation: ScrollAnimationState,
 
@@ -451,6 +458,7 @@ impl BaseDocument {
             style_threading: config.style_threading,
             incremental_layout: config.incremental.unwrap_or(true),
             subdocument_depth: config.subdocument_depth,
+            animation_time: 0.0,
             devtool_settings: DevtoolSettings::default(),
             url: base_url,
             ua_stylesheets: HashMap::new(),
@@ -1763,26 +1771,48 @@ impl BaseDocument {
         {
             return 1.0;
         }
-        self.scrollbar_activity.get(&node_id).map_or(0.0, |last| {
-            crate::node::scrollbar::opacity_at(last.elapsed())
-        })
+        self.scrollbar_activity
+            .get(&node_id)
+            .map_or(0.0, |last| self.scrollbar_opacity_since(*last))
+    }
+
+    /// Opacity of overlay scrollbars last shown at `last` (animation time),
+    /// as of the most recent `resolve`.
+    fn scrollbar_opacity_since(&self, last: Option<f64>) -> f32 {
+        match last {
+            None => 1.0,
+            Some(last) => crate::node::scrollbar::opacity_at(self.animation_time - last),
+        }
     }
 
     /// Show `node_id`'s overlay scrollbars at full opacity and restart their
     /// fade-out delay.
     pub(crate) fn show_scrollbars(&mut self, node_id: NodeId) {
         if cfg!(feature = "scrollbars") {
-            self.scrollbar_activity.insert(node_id, Instant::now());
+            self.scrollbar_activity.insert(node_id, None);
         }
+    }
+
+    /// Advance overlay scrollbar fade-outs to `now` (animation time): stamp
+    /// activity recorded since the last frame and drop containers whose
+    /// fade-out has finished (also shedding entries for removed nodes).
+    pub(crate) fn resolve_scrollbar_activity(&mut self, now: f64) {
+        self.animation_time = now;
+        self.scrollbar_activity.retain(|_, last| match last {
+            None => {
+                *last = Some(now);
+                true
+            }
+            Some(last) => crate::node::scrollbar::opacity_at(now - *last) > 0.0,
+        });
     }
 
     /// Whether any overlay scrollbars are awaiting or animating their
     /// fade-out (so frames must keep rendering until they finish).
     fn scrollbars_animating(&self) -> bool {
-        use crate::node::scrollbar::{FADE_DELAY, FADE_DURATION};
         self.scrollbar_activity
             .values()
-            .any(|last| last.elapsed() < FADE_DELAY + FADE_DURATION)
+            .any(|last| self.scrollbar_opacity_since(*last) > 0.0)
     }
 
     /// [`hit`](Self::hit), also resolving the innermost overlay scrollbar

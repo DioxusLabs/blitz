@@ -166,6 +166,60 @@ fn pointer_hover_does_not_summon_hidden_scrollbars() {
 }
 
 #[test]
+fn thumb_fades_out_on_the_animation_clock() {
+    use anyrender::render_to_buffer;
+    use anyrender_vello_cpu::VelloCpuImageRenderer;
+    use blitz_paint::paint_scene;
+
+    fn thumb_alpha(doc: &mut HtmlDocument) -> u8 {
+        let buffer = render_to_buffer::<VelloCpuImageRenderer, _>(
+            |scene| paint_scene(scene, doc.as_mut(), 1.0, 100, 100, 0, 0),
+            100,
+            100,
+        );
+        buffer[(8 * 100 + 95) * 4 + 3]
+    }
+
+    let mut doc = scroller_doc();
+    let scroller = doc.query_selector("#scroller").unwrap().unwrap();
+
+    // The scroll shows the thumb; the next resolve stamps that activity
+    // with its animation time (t=1.0). Fade-out is driven purely by the
+    // time passed to `resolve`, never by the wall clock.
+    scroll_down(&mut doc, scroller, 50.0);
+    let shown = thumb_alpha(&mut doc);
+    assert!(shown > 0, "thumb must be visible right after scrolling");
+
+    doc.resolve(1.0);
+    assert_eq!(thumb_alpha(&mut doc), shown);
+
+    doc.resolve(1.5);
+    assert_eq!(
+        thumb_alpha(&mut doc),
+        shown,
+        "opaque through the fade delay"
+    );
+
+    doc.resolve(1.6);
+    let fading = thumb_alpha(&mut doc);
+    assert!(
+        fading > 0 && fading < shown,
+        "thumb must be part-way through its fade, got alpha {fading} (shown {shown})"
+    );
+
+    doc.resolve(1.7);
+    assert_eq!(
+        thumb_alpha(&mut doc),
+        0,
+        "thumb must be gone after the fade"
+    );
+
+    // Scrolling again brings it straight back at full opacity.
+    scroll_down(&mut doc, scroller, 10.0);
+    assert_eq!(thumb_alpha(&mut doc), shown);
+}
+
+#[test]
 fn thumb_brightens_on_hover_and_drag() {
     use anyrender::render_to_buffer;
     use anyrender_vello_cpu::VelloCpuImageRenderer;

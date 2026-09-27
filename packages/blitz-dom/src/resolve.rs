@@ -62,14 +62,7 @@ impl BaseDocument {
         }
 
         self.resolve_scroll_animation();
-
-        // Drop scrollbar-activity entries whose fade-out has finished (also
-        // sheds entries for removed nodes).
-        {
-            use crate::node::scrollbar::{FADE_DELAY, FADE_DURATION};
-            self.scrollbar_activity
-                .retain(|_, last| last.elapsed() < FADE_DELAY + FADE_DURATION);
-        }
+        self.resolve_scrollbar_activity(current_time_for_animations);
 
         let root_node_id = self.root_element().id;
         debug_timer!(timer, feature = "log-phase-times");
