@@ -261,33 +261,36 @@ impl BaseDocument {
             // Every layout child is styled (elements are given `ALL_DAMAGE`
             // when their Stylo data is first initialised; text nodes and
             // unstyled elements below `display:none` are never collected), so
-            // a missing damage slot means "no damage". The exception is the
-            // Document node, which may have no Stylo data: its only
-            // box-generating child is the root element, so it then mirrors
-            // that element's construction damage (and is always constructed
-            // the first time).
+            // a missing damage slot means "no damage".
+            //
+            // The Document node is special: `propagate_damage_flags` starts at
+            // the root element, so nothing reaches it from below, and it may
+            // have no Stylo data at all. Its only box-generating child is the
+            // root element, so without data it mirrors that element's
+            // construction damage (and is always constructed the first time),
+            // and in any case it is descended into whenever the root element
+            // has construction damage.
+            let is_document = matches!(doc.nodes[node_id].data, NodeData::Document(_));
+            let root_element_construct_damage = if is_document {
+                doc.root_element()
+                    .damage()
+                    .unwrap_or(ALL_DAMAGE)
+                    .intersection(CONSTRUCT_BOX | CONSTRUCT_FC | CONSTRUCT_DESCENDENT)
+            } else {
+                RestyleDamage::empty()
+            };
             let mut damage = match doc.nodes[node_id].damage() {
                 Some(damage) => damage,
-                None if matches!(doc.nodes[node_id].data, NodeData::Document(_)) => {
+                None if is_document => {
                     if doc.nodes[node_id].layout_children.borrow().is_none() {
                         ALL_DAMAGE
                     } else {
-                        let root_element_id = doc.root_element().id;
-                        doc.nodes[root_element_id]
-                            .damage()
-                            .unwrap_or(ALL_DAMAGE)
-                            .intersection(CONSTRUCT_BOX | CONSTRUCT_FC | CONSTRUCT_DESCENDENT)
+                        root_element_construct_damage
                     }
                 }
                 None => RestyleDamage::empty(),
             };
-            // `propagate_damage_flags` starts at the root element, so it never
-            // forwards `CONSTRUCT_DESCENDENT` to the Document node.
-            if matches!(doc.nodes[node_id].data, NodeData::Document(_))
-                && doc.root_element().damage().is_some_and(|root_damage| {
-                    root_damage.intersects(CONSTRUCT_BOX | CONSTRUCT_FC | CONSTRUCT_DESCENDENT)
-                })
-            {
+            if !root_element_construct_damage.is_empty() {
                 damage.insert(CONSTRUCT_DESCENDENT);
             }
             let _flags = doc.nodes[node_id].flags;
