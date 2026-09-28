@@ -716,8 +716,9 @@ impl BaseDocument {
         // A forced line break (e.g. `<br>` or a preserved newline) at the end of the inline
         // content ends the final line box without starting a new one. Parley still emits an
         // empty line after it (so that editors have a line to place the cursor on), so that
-        // line is excluded from the measured height.
+        // line is excluded from the measured height (and from the last baseline).
         let line_count = inline_layout.layout.len();
+        let mut trailing_empty_line = None;
         if line_count >= 2
             && let (Some(prev_line), Some(last_line)) = (
                 inline_layout.layout.get(line_count - 2),
@@ -728,6 +729,7 @@ impl BaseDocument {
             && last_line.items().next().is_none()
         {
             height -= last_line.metrics().line_height;
+            trailing_empty_line = Some(line_count - 1);
         }
 
         #[cfg(feature = "floats")]
@@ -931,9 +933,11 @@ impl BaseDocument {
         let first_baseline = has_inline_content
             .then(|| inline_layout.layout.lines().next().map(line_baseline))
             .flatten();
+        let last_line_index = trailing_empty_line.unwrap_or(line_count).checked_sub(1);
         let last_baseline = has_inline_content
-            .then(|| inline_layout.layout.lines().last().map(line_baseline))
-            .flatten();
+            .then(|| last_line_index.and_then(|i| inline_layout.layout.get(i)))
+            .flatten()
+            .map(line_baseline);
 
         // Put layout back
         self.nodes[node_id]
