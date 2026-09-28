@@ -207,15 +207,13 @@ impl<T: Deref<Target = ComputedValues>> taffy::BlockContainerStyle for TaffyStyl
     #[inline]
     fn align_content(&self) -> Option<taffy::AlignContent> {
         let display = self.style.clone_display();
-        convert::content_alignment(self.style.get_position().align_content, display).or_else(
-            || {
-                if display.inside() == stylo::DisplayInside::TableCell {
-                    convert::table_cell_vertical_align(&self.style)
-                } else {
-                    None
-                }
-            },
-        )
+        convert::content_alignment(self.style.get_position().align_content, display).or_else(|| {
+            if display.inside() == stylo::DisplayInside::TableCell {
+                convert::table_cell_vertical_align(&self.style)
+            } else {
+                None
+            }
+        })
     }
 
     // `normal` (`None`) selects the default block layout rules, which differ from `stretch` for

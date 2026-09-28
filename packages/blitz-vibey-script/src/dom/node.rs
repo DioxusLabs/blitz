@@ -209,7 +209,11 @@ fn owner_document(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsRes
 
 // === Text content ===
 
-pub(crate) fn text_content(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+pub(crate) fn text_content(
+    this: &JsValue,
+    _: &[JsValue],
+    context: &mut Context,
+) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
     let node_id = this_node_id(this)?;
     let doc = ctx.doc.borrow();
