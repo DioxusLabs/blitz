@@ -215,6 +215,14 @@ impl<T: Deref<Target = ComputedValues>> taffy::BlockContainerStyle for TaffyStyl
             self.style.clone_display(),
         )
     }
+
+    #[inline]
+    fn justify_items(&self) -> Option<taffy::AlignItems> {
+        convert::item_alignment(
+            (self.style.get_position().justify_items.computed.0).0,
+            self.style.clone_direction() == stylo::Direction::Rtl,
+        )
+    }
 }
 
 // BlockItemStyle impl
@@ -223,6 +231,32 @@ impl<T: Deref<Target = ComputedValues>> taffy::BlockItemStyle for TaffyStyloStyl
     #[inline]
     fn is_table(&self) -> bool {
         convert::is_table(self.style.clone_display())
+    }
+
+    // For the static position of an out-of-flow child, `auto` (`None`) takes the container's
+    // `justify-items` while an explicit `normal` behaves as `start`
+    // (<https://www.w3.org/TR/css-align-3/#align-abspos>).
+
+    #[inline]
+    fn align_self(&self) -> Option<taffy::AlignSelf> {
+        let align_self = self.style.get_position().align_self.0;
+        if align_self.value() == stylo::AlignFlags::NORMAL {
+            return Some(taffy::AlignItems::START);
+        }
+        convert::oof_item_alignment(align_self, false, false)
+    }
+
+    #[inline]
+    fn justify_self(&self) -> Option<taffy::AlignSelf> {
+        let justify_self = self.style.get_position().justify_self.0;
+        if justify_self.value() == stylo::AlignFlags::NORMAL {
+            return Some(taffy::AlignItems::START);
+        }
+        convert::oof_item_alignment(
+            justify_self,
+            true,
+            self.style.clone_direction() == stylo::Direction::Rtl,
+        )
     }
 
     #[cfg(feature = "floats")]
@@ -628,6 +662,25 @@ impl<T: Deref<Target = ComputedValues>> taffy::GridItemStyle for TaffyStyloStyle
 }
 
 impl<T: Deref<Target = ComputedValues>> taffy::OofItemStyle for TaffyStyloStyle<T> {
+    #[inline]
+    fn align_self(&self) -> Option<taffy::AlignSelf> {
+        convert::oof_item_alignment(self.style.get_position().align_self.0, false, false)
+    }
+
+    #[inline]
+    fn justify_self(&self) -> Option<taffy::AlignSelf> {
+        convert::oof_item_alignment(
+            self.style.get_position().justify_self.0,
+            true,
+            self.style.clone_direction() == stylo::Direction::Rtl,
+        )
+    }
+
+    #[inline]
+    fn is_table(&self) -> bool {
+        convert::is_table(self.style.clone_display())
+    }
+
     #[inline]
     fn grid_row(&self) -> taffy::Line<taffy::GridPlacement<Atom>> {
         let position_styles = self.style.get_position();
