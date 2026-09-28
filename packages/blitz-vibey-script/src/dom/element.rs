@@ -94,6 +94,14 @@ pub(crate) fn init_element_proto(proto: &JsObject, context: &mut Context) {
         context,
     );
     define_accessor(proto, "outerHTML", Some(get_outer_html), None, context);
+    // Approximated with `textContent` semantics (no rendered-text processing)
+    define_accessor(
+        proto,
+        "innerText",
+        Some(super::node::text_content),
+        Some(super::node::set_text_content),
+        context,
+    );
     define_accessor(proto, "content", Some(get_content), None, context);
     define_accessor(proto, "children", Some(children), None, context);
     define_accessor(

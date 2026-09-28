@@ -26,6 +26,9 @@ pub struct TextLayout {
     pub text: String,
     pub content_widths: Option<ContentWidths>,
     pub layout: parley::layout::Layout<TextBrush>,
+    /// Block-axis offset (in CSS px) of the line boxes from the top of the container's content
+    /// box, as applied by `align-content`.
+    pub block_offset: f32,
 }
 
 impl TextLayout {
