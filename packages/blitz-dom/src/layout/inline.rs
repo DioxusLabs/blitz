@@ -564,6 +564,17 @@ impl BaseDocument {
         {
             const MAX_LINE_RETRIES: u32 = 8;
 
+            // Floats are out-of-flow and must not contribute to the line's height. Parley records
+            // whether the line exceeds its max height when content is appended, so append with no
+            // height limit: saved states must never carry an "exceeded" flag that a later change
+            // to the limit cannot clear.
+            fn append_float_to_line(state: &mut parley::BreakerState, advance: f32) {
+                let max_height = state.line_max_height();
+                state.set_line_max_height(f32::INFINITY);
+                state.append_inline_box_to_line(advance, f32::NEG_INFINITY, f32::NEG_INFINITY);
+                state.set_line_max_height(max_height);
+            }
+
             // Floats encountered mid-line that cannot be placed alongside the line's existing
             // content: their placement is deferred until the line is committed, and they are
             // placed below it.
@@ -712,6 +723,10 @@ impl BaseDocument {
                                 (current_slot.height * scale).max(data.line_height),
                             );
                         } else {
+                            // Parley only re-evaluates whether the max height is exceeded when
+                            // content is appended, so revert to the start of the line rather than
+                            // raising the limit in place.
+                            breaker.revert_to(saved_state.clone());
                             breaker.state_mut().set_line_max_height(f32::INFINITY);
                         }
                         continue;
@@ -748,12 +763,7 @@ impl BaseDocument {
                         // Skip floats already handled for this line (re-yielded after the line
                         // was reverted and re-laid out)
                         if line_deferred_ids.contains(&node_id) {
-                            let state = breaker.state_mut();
-                            state.append_inline_box_to_line(
-                                box_break_data.advance,
-                                f32::NEG_INFINITY,
-                                f32::NEG_INFINITY,
-                            );
+                            append_float_to_line(breaker.state_mut(), box_break_data.advance);
                             saved_state = breaker.state().clone();
                             continue;
                         }
@@ -810,13 +820,7 @@ impl BaseDocument {
                             });
                         }
 
-                        let state = breaker.state_mut();
-                        // Floats are out-of-flow and must not contribute to the line's height.
-                        state.append_inline_box_to_line(
-                            box_break_data.advance,
-                            f32::NEG_INFINITY,
-                            f32::NEG_INFINITY,
-                        );
+                        append_float_to_line(breaker.state_mut(), box_break_data.advance);
 
                         // Re-save state so that a line retry does not re-place this float
                         saved_state = breaker.state().clone();
