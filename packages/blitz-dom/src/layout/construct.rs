@@ -34,7 +34,7 @@ use crate::{
 use super::{
     damage::ALL_DAMAGE,
     list::{BULLET_FONT_FAMILY, collect_list_item_children},
-    replaced::is_replaced_element,
+    replaced::is_inline_box_element,
     table::build_table_context,
 };
 
@@ -1004,11 +1004,7 @@ pub(crate) fn find_inline_layout_embedded_boxes(
                     (DisplayOutside::Inline, DisplayInside::Flow) => {
                         let tag_name = &element_data.name.local;
 
-                        if is_replaced_element(tag_name)
-                            || *tag_name == local_name!("input")
-                            || *tag_name == local_name!("textarea")
-                            || *tag_name == local_name!("button")
-                        {
+                        if is_inline_box_element(tag_name) {
                             layout_children.push(node_id);
                         } else if *tag_name == local_name!("br") {
                             node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
@@ -1181,11 +1177,7 @@ pub(crate) fn build_inline_layout_into(
                     (DisplayOutside::Inline, DisplayInside::Flow) => {
                         let tag_name = &element_data.name.local;
 
-                        if is_replaced_element(tag_name)
-                            || *tag_name == local_name!("input")
-                            || *tag_name == local_name!("textarea")
-                            || *tag_name == local_name!("button")
-                        {
+                        if is_inline_box_element(tag_name) {
                             builder.push_inline_box(InlineBox {
                                 id: node_id.as_u64(),
                                 kind: box_kind,

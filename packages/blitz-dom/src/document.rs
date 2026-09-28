@@ -2260,6 +2260,72 @@ impl BaseDocument {
         })
     }
 
+    /// CSSOM View's `offsetLeft`/`offsetTop`/`offsetWidth`/`offsetHeight` as a single rect:
+    /// the node's border box, positioned relative to the padding edge of its `offsetParent`
+    /// (or to the initial containing block when the `offsetParent` is a non-positioned
+    /// `body`, or there is none).
+    ///
+    /// Nodes with their own layout box use that box directly. Non-atomic inline elements
+    /// have no layout box: they use the bounding box of their per-line-box fragments, and
+    /// their `offsetParent` is resolved from the containing inline root.
+    pub fn offset_rect(&self, node_id: NodeId) -> Option<BoundingRect> {
+        let node = self.get_node(node_id)?;
+
+        // Nodes with their own layout box: use it directly
+        let Some(rects) = self.inline_fragment_rects(node_id) else {
+            let pos = node.offset_top_left();
+            let size = node.final_layout().size;
+            return Some(BoundingRect {
+                x: pos.x as f64,
+                y: pos.y as f64,
+                width: size.width as f64,
+                height: size.height as f64,
+            });
+        };
+        if rects.is_empty() {
+            return None;
+        }
+
+        // Union the per-line-box fragments into a single bounding box
+        let x0 = rects.iter().map(|r| r.x).fold(f64::INFINITY, f64::min);
+        let y0 = rects.iter().map(|r| r.y).fold(f64::INFINITY, f64::min);
+        let x1 = rects
+            .iter()
+            .map(|r| r.x + r.width)
+            .fold(f64::NEG_INFINITY, f64::max);
+        let y1 = rects
+            .iter()
+            .map(|r| r.y + r.height)
+            .fold(f64::NEG_INFINITY, f64::max);
+
+        // Fragment rects are viewport-relative; convert to document-relative
+        let scroll = self.viewport_scroll();
+        let mut x = x0 + scroll.x;
+        let mut y = y0 + scroll.y;
+
+        // Resolve the offsetParent from the inline root (the root itself if it is positioned)
+        let inline_root = node.inline_root_ancestor()?;
+        let offset_parent = if inline_root.is_offset_parent() {
+            Some(inline_root)
+        } else {
+            inline_root.offset_parent()
+        };
+        // Make the position relative to the offsetParent's padding edge
+        if let Some(parent) = offset_parent.filter(|parent| !parent.is_static_body()) {
+            let parent_pos = parent.unrounded_absolute_position(0.0, 0.0);
+            let border = parent.unrounded_layout().border;
+            x -= (parent_pos.x + border.left) as f64;
+            y -= (parent_pos.y + border.top) as f64;
+        }
+
+        Some(BoundingRect {
+            x,
+            y,
+            width: x1 - x0,
+            height: y1 - y0,
+        })
+    }
+
     /// Computes the sizes and positions of the `Node`'s box fragments relative to the
     /// viewport (CSSOM `getClientRects()` semantics). Nodes with their own layout box
     /// return a single rect. Non-atomic inline elements (which are laid out as style
@@ -2281,7 +2347,10 @@ impl BaseDocument {
 
         // Only non-atomic inline elements lack their own layout box: they are
         // flattened into the containing inline root's text layout as style spans.
-        if !node.is_element() || node.flags.is_inline_root() {
+        let element = node.element_data()?;
+        if node.flags.is_inline_root()
+            || crate::layout::replaced::is_inline_box_element(&element.name.local)
+        {
             return None;
         }
         let display = node.primary_styles()?.clone_display();
