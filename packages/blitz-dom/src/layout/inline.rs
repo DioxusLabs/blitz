@@ -674,7 +674,6 @@ impl BaseDocument {
                             box_break_data.advance,
                             f32::NEG_INFINITY,
                             f32::NEG_INFINITY,
-                            true,
                         );
 
                         // if float.is_floated() {
