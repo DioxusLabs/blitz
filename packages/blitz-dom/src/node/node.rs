@@ -1261,7 +1261,9 @@ impl Node {
             && !self
                 .parent
                 .map(|parent_id| self.with(parent_id))
-                .is_some_and(|parent| parent.before() == Some(self.id) || parent.after() == Some(self.id))
+                .is_some_and(|parent| {
+                    parent.before() == Some(self.id) || parent.after() == Some(self.id)
+                })
     }
 
     /// Whether `justify-self: auto` on this node behaves as `normal` rather than taking the
@@ -1276,7 +1278,10 @@ impl Node {
         self.parent
             .map(|parent_id| self.with(parent_id))
             .is_some_and(|parent| parent.is_non_atomic_inline())
-            && !matches!(self.taffy_position(), taffy::Position::Absolute | taffy::Position::Fixed)
+            && !matches!(
+                self.taffy_position(),
+                taffy::Position::Absolute | taffy::Position::Fixed
+            )
     }
 
     /// The node's `display` as a [`taffy::Display`]. Returns [`taffy::Display::Block`]

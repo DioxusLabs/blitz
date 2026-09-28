@@ -427,7 +427,9 @@ pub fn content_alignment(
     }?;
     let is_block_container = matches!(
         display.inside(),
-        stylo::DisplayInside::Flow | stylo::DisplayInside::FlowRoot | stylo::DisplayInside::TableCell
+        stylo::DisplayInside::Flow
+            | stylo::DisplayInside::FlowRoot
+            | stylo::DisplayInside::TableCell
     );
     let safe = primary.flags().contains(stylo::AlignFlags::SAFE)
         || (is_block_container && !primary.flags().contains(stylo::AlignFlags::UNSAFE));
