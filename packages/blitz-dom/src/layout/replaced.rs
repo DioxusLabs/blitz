@@ -16,9 +16,8 @@ pub(crate) fn is_replaced_element(tag_name: &LocalName) -> bool {
         || *tag_name == local_name!("iframe")
 }
 
-/// Form controls that are laid out as leaf boxes with an intrinsic size (rather than as block
-/// containers) and are therefore "compressible replaced elements" for sizing purposes
-/// (<https://drafts.csswg.org/css-sizing-3/#min-content-zero>)
+/// Form control widgets that are laid out as leaf boxes with an intrinsic size (rather than as
+/// block containers)
 pub(crate) fn is_leaf_form_control(tag_name: &LocalName) -> bool {
     *tag_name == local_name!("input") || *tag_name == local_name!("textarea")
 }

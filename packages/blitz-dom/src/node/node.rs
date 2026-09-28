@@ -1115,10 +1115,10 @@ impl Node {
 
         let mut flags = stylo_taffy::StyleFlags::empty();
         if let Some(el) = self.data.downcast_element() {
-            if crate::layout::replaced::is_replaced_element(&el.name.local)
-                || crate::layout::replaced::is_leaf_form_control(&el.name.local)
-            {
+            if crate::layout::replaced::is_replaced_element(&el.name.local) {
                 flags |= stylo_taffy::StyleFlags::IS_REPLACED;
+            } else if crate::layout::replaced::is_leaf_form_control(&el.name.local) {
+                flags |= stylo_taffy::StyleFlags::IS_WIDGET;
             }
         }
         if self.justify_self_auto_is_normal() {

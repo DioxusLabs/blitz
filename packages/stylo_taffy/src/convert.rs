@@ -454,43 +454,6 @@ pub fn content_alignment(
     Some(align)
 }
 
-/// Whether `height` on this box acts as a minimum height rather than a fixed size: a table
-/// row grows to fit the tallest cell contents and every cell in the row is stretched to the
-/// row's height (<https://drafts.csswg.org/css-tables-3/#computing-the-table-height>)
-#[inline]
-fn height_is_minimum(style: &stylo::ComputedValues) -> bool {
-    style.clone_display().inside() == stylo::DisplayInside::TableCell
-        && dimension(&style.get_position().height).tag() == CompactLength::LENGTH_TAG
-}
-
-/// Convert the `width` and `height` properties
-#[inline]
-pub fn size(style: &stylo::ComputedValues) -> taffy::Size<taffy::Dimension> {
-    let pos = style.get_position();
-    taffy::Size {
-        width: dimension(&pos.width),
-        height: if height_is_minimum(style) {
-            taffy::Dimension::AUTO
-        } else {
-            dimension(&pos.height)
-        },
-    }
-}
-
-/// Convert the `min-width` and `min-height` properties
-#[inline]
-pub fn min_size_rect(style: &stylo::ComputedValues) -> taffy::Size<taffy::LengthPercentageAuto> {
-    let pos = style.get_position();
-    let mut min_height = min_size(&pos.min_height);
-    if min_height.is_auto() && height_is_minimum(style) {
-        min_height = length(dimension(&pos.height).value());
-    }
-    taffy::Size {
-        width: min_size(&pos.min_width),
-        height: min_height,
-    }
-}
-
 /// The `align-content` value that a table cell's `vertical-align` is equivalent to when the
 /// cell's own `align-content` is `normal`: `top`, `middle` and `bottom` behave as
 /// `safe start`, `safe center` and `safe end` respectively
@@ -965,8 +928,14 @@ pub fn to_taffy_style(style: &stylo::ComputedValues) -> taffy::Style<Atom> {
         #[cfg(feature = "floats")]
         clear: self::clear(style.clone_clear()),
 
-        size: self::size(style),
-        min_size: self::min_size_rect(style),
+        size: taffy::Size {
+            width: self::dimension(&pos.width),
+            height: self::dimension(&pos.height),
+        },
+        min_size: taffy::Size {
+            width: self::min_size(&pos.min_width),
+            height: self::min_size(&pos.min_height),
+        },
         max_size: taffy::Size {
             width: self::max_size(&pos.max_width),
             height: self::max_size(&pos.max_height),

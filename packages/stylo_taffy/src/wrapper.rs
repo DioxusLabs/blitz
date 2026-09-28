@@ -24,6 +24,11 @@ bitflags! {
         /// parent's `justify-items`: anonymous block boxes, and block-level boxes whose parent
         /// is an inline box (<https://www.w3.org/TR/css-align-3/#justify-self-property>)
         const JUSTIFY_SELF_AUTO_IS_NORMAL = 1 << 1;
+        /// Whether the node is a form control widget laid out as a leaf box with an intrinsic
+        /// size (e.g. `<input>`). Like replaced elements, block-level widgets treat
+        /// `justify-self: normal` as `start` (<https://www.w3.org/TR/css-align-3/#justify-block>),
+        /// but unlike them they stretch between insets when absolutely positioned.
+        const IS_WIDGET = 1 << 2;
     }
 }
 
@@ -128,12 +133,20 @@ impl<T: Deref<Target = ComputedValues>> taffy::CoreStyle for TaffyStyloStyle<T> 
 
     #[inline]
     fn size(&self) -> taffy::Size<taffy::Dimension> {
-        convert::size(&self.style)
+        let position_styles = self.style.get_position();
+        taffy::Size {
+            width: convert::dimension(&position_styles.width),
+            height: convert::dimension(&position_styles.height),
+        }
     }
 
     #[inline]
     fn min_size(&self) -> taffy::Size<taffy::LengthPercentageAuto> {
-        convert::min_size_rect(&self.style)
+        let position_styles = self.style.get_position();
+        taffy::Size {
+            width: convert::min_size(&position_styles.min_width),
+            height: convert::min_size(&position_styles.min_height),
+        }
     }
 
     #[inline]
@@ -235,13 +248,16 @@ impl<T: Deref<Target = ComputedValues>> taffy::BlockContainerStyle for TaffyStyl
 impl<T: Deref<Target = ComputedValues>> TaffyStyloStyle<T> {
     /// The value passed to Taffy for a block item's `normal` self-alignment. `auto` (`None`)
     /// takes the container's `justify-items`/`align-items`, while an explicit `normal` is passed
-    /// through as `stretch` for non-replaced boxes and as `start` for replaced boxes: for in-flow
+    /// through as `stretch` for non-replaced boxes and as `start` for replaced boxes and widgets: for in-flow
     /// block-level boxes these select the default block layout rules
     /// (<https://www.w3.org/TR/css-align-3/#justify-block>), and for the static position of an
     /// out-of-flow child both behave as `start` (<https://www.w3.org/TR/css-align-3/#align-abspos>).
     #[inline]
     fn block_item_normal_alignment(&self) -> Option<taffy::AlignSelf> {
-        if self.flags.contains(StyleFlags::IS_REPLACED) {
+        if self
+            .flags
+            .intersects(StyleFlags::IS_REPLACED | StyleFlags::IS_WIDGET)
+        {
             Some(taffy::AlignItems::START)
         } else {
             Some(taffy::AlignItems::STRETCH)
