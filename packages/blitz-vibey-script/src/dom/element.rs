@@ -940,26 +940,37 @@ fn layout_value(
     Ok(JsValue::from(value as f64))
 }
 
+/// `offsetLeft`/`offsetTop`/`offsetWidth`/`offsetHeight`: the node's border box
+/// relative to the padding edge of its `offsetParent` (blitz-dom's `offset_rect`
+/// implements the offsetParent resolution and the fragment bounding box of
+/// non-atomic inline elements)
+fn offset_value(
+    this: &JsValue,
+    context: &mut Context,
+    f: impl FnOnce(&blitz_dom::BoundingRect) -> f64,
+) -> JsResult<JsValue> {
+    let ctx = dom_ctx(context)?;
+    let node_id = this_node_id(this)?;
+    let mut doc = ctx.doc.borrow_mut();
+    doc.resolve(0.0);
+    let value = doc.offset_rect(node_id).map(|rect| f(&rect)).unwrap_or(0.0);
+    Ok(JsValue::from(value.round()))
+}
+
 fn offset_width(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    layout_value(this, context, |node| node.final_layout().size.width.round())
+    offset_value(this, context, |rect| rect.width)
 }
 
 fn offset_height(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    layout_value(this, context, |node| {
-        node.final_layout().size.height.round()
-    })
+    offset_value(this, context, |rect| rect.height)
 }
 
-// `offsetLeft`/`offsetTop`: the position of the element's border edge relative
-// to the padding edge of its `offsetParent` (blitz-dom's `offset_top_left`
-// implements the offsetParent resolution)
-
 fn offset_left(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    layout_value(this, context, |node| node.offset_top_left().x.round())
+    offset_value(this, context, |rect| rect.x)
 }
 
 fn offset_top(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    layout_value(this, context, |node| node.offset_top_left().y.round())
+    offset_value(this, context, |rect| rect.y)
 }
 
 /// `clientWidth`/`clientHeight`. For the root element (in no-quirks mode, which

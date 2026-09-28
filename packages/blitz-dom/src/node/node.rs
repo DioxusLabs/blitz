@@ -1697,7 +1697,7 @@ impl Node {
 
     /// Whether this node can act as an [`offset_parent`](Self::offset_parent): a positioned
     /// element, or one of the elements that always qualify (`body`, `td`, `th`).
-    fn is_offset_parent(&self) -> bool {
+    pub(crate) fn is_offset_parent(&self) -> bool {
         let Some(styles) = self.primary_styles() else {
             return false;
         };
@@ -1712,7 +1712,7 @@ impl Node {
     /// Whether this node is a non-positioned `body` element. When such an element is the
     /// `offsetParent`, `offsetLeft`/`offsetTop` are measured from the initial containing
     /// block origin rather than from the `body`'s padding edge.
-    fn is_static_body(&self) -> bool {
+    pub(crate) fn is_static_body(&self) -> bool {
         self.data.is_element_with_tag_name(&local_name!("body"))
             && self
                 .primary_styles()
