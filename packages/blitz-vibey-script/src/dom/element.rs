@@ -538,9 +538,19 @@ fn set_checked(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsRes
     Ok(JsValue::undefined())
 }
 
+/// `HTMLStyleElement.disabled` / `HTMLLinkElement.disabled` control the
+/// disabled flag of the element's associated stylesheet rather than (only) a
+/// content attribute.
+fn is_stylesheet_owner_tag(tag: &LocalName) -> bool {
+    matches!(&**tag, "style" | "link")
+}
+
 fn get_disabled(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
     let node_id = this_node_id(this)?;
+    if element_local_name(&ctx, node_id).is_some_and(|tag| is_stylesheet_owner_tag(&tag)) {
+        return Ok(JsValue::from(ctx.doc.borrow().stylesheet_disabled(node_id)));
+    }
     Ok(JsValue::from(
         read_attr(&ctx, node_id, "disabled").is_some(),
     ))
@@ -550,6 +560,16 @@ fn set_disabled(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsRe
     let ctx = dom_ctx(context)?;
     let node_id = this_node_id(this)?;
     let disabled = args.first().map(JsValue::to_boolean).unwrap_or(false);
+    if let Some(tag) = element_local_name(&ctx, node_id) {
+        if is_stylesheet_owner_tag(&tag) {
+            ctx.doc
+                .borrow_mut()
+                .set_stylesheet_disabled(node_id, disabled);
+            if &*tag == "style" {
+                return Ok(JsValue::undefined());
+            }
+        }
+    }
     if disabled {
         write_attr(&ctx, node_id, "disabled", "");
     } else {
