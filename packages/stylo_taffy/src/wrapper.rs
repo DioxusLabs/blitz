@@ -20,6 +20,10 @@ bitflags! {
     pub struct StyleFlags: u8 {
         /// Whether the node is a replaced element (e.g. an image or form control)
         const IS_REPLACED = 1 << 0;
+        /// Whether `justify-self: auto` on the node behaves as `normal` rather than taking the
+        /// parent's `justify-items`: anonymous block boxes, and block-level boxes whose parent
+        /// is an inline box (<https://www.w3.org/TR/css-align-3/#justify-self-property>)
+        const JUSTIFY_SELF_AUTO_IS_NORMAL = 1 << 1;
     }
 }
 
@@ -124,20 +128,12 @@ impl<T: Deref<Target = ComputedValues>> taffy::CoreStyle for TaffyStyloStyle<T> 
 
     #[inline]
     fn size(&self) -> taffy::Size<taffy::Dimension> {
-        let position_styles = self.style.get_position();
-        taffy::Size {
-            width: convert::dimension(&position_styles.width),
-            height: convert::dimension(&position_styles.height),
-        }
+        convert::size(&self.style)
     }
 
     #[inline]
     fn min_size(&self) -> taffy::Size<taffy::LengthPercentageAuto> {
-        let position_styles = self.style.get_position();
-        taffy::Size {
-            width: convert::min_size(&position_styles.min_width),
-            height: convert::min_size(&position_styles.min_height),
-        }
+        convert::min_size_rect(&self.style)
     }
 
     #[inline]
@@ -210,18 +206,48 @@ impl<T: Deref<Target = ComputedValues>> taffy::BlockContainerStyle for TaffyStyl
 
     #[inline]
     fn align_content(&self) -> Option<taffy::AlignContent> {
-        convert::content_alignment(
-            self.style.get_position().align_content,
-            self.style.clone_display(),
+        let display = self.style.clone_display();
+        convert::content_alignment(self.style.get_position().align_content, display).or_else(
+            || {
+                if display.inside() == stylo::DisplayInside::TableCell {
+                    convert::table_cell_vertical_align(&self.style)
+                } else {
+                    None
+                }
+            },
         )
     }
 
+    // `normal` (`None`) selects the default block layout rules, which differ from `stretch` for
+    // replaced boxes (<https://www.w3.org/TR/css-align-3/#justify-block>)
     #[inline]
     fn justify_items(&self) -> Option<taffy::AlignItems> {
+        let justify_items = (self.style.get_position().justify_items.computed.0).0;
+        if justify_items.value() == stylo::AlignFlags::NORMAL {
+            return None;
+        }
         convert::item_alignment(
-            (self.style.get_position().justify_items.computed.0).0,
+            justify_items,
             self.style.clone_direction() == stylo::Direction::Rtl,
         )
+    }
+}
+
+#[cfg(feature = "block")]
+impl<T: Deref<Target = ComputedValues>> TaffyStyloStyle<T> {
+    /// The value passed to Taffy for a block item's `normal` self-alignment. `auto` (`None`)
+    /// takes the container's `justify-items`/`align-items`, while an explicit `normal` is passed
+    /// through as `stretch` for non-replaced boxes and as `start` for replaced boxes: for in-flow
+    /// block-level boxes these select the default block layout rules
+    /// (<https://www.w3.org/TR/css-align-3/#justify-block>), and for the static position of an
+    /// out-of-flow child both behave as `start` (<https://www.w3.org/TR/css-align-3/#align-abspos>).
+    #[inline]
+    fn block_item_normal_alignment(&self) -> Option<taffy::AlignSelf> {
+        if self.flags.contains(StyleFlags::IS_REPLACED) {
+            Some(taffy::AlignItems::START)
+        } else {
+            Some(taffy::AlignItems::STRETCH)
+        }
     }
 }
 
@@ -233,15 +259,11 @@ impl<T: Deref<Target = ComputedValues>> taffy::BlockItemStyle for TaffyStyloStyl
         convert::is_table(self.style.clone_display())
     }
 
-    // For the static position of an out-of-flow child, `auto` (`None`) takes the container's
-    // `justify-items` while an explicit `normal` behaves as `start`
-    // (<https://www.w3.org/TR/css-align-3/#align-abspos>).
-
     #[inline]
     fn align_self(&self) -> Option<taffy::AlignSelf> {
         let align_self = self.style.get_position().align_self.0;
         if align_self.value() == stylo::AlignFlags::NORMAL {
-            return Some(taffy::AlignItems::START);
+            return self.block_item_normal_alignment();
         }
         convert::oof_item_alignment(align_self, false, false)
     }
@@ -249,14 +271,22 @@ impl<T: Deref<Target = ComputedValues>> taffy::BlockItemStyle for TaffyStyloStyl
     #[inline]
     fn justify_self(&self) -> Option<taffy::AlignSelf> {
         let justify_self = self.style.get_position().justify_self.0;
-        if justify_self.value() == stylo::AlignFlags::NORMAL {
-            return Some(taffy::AlignItems::START);
+        if justify_self.value() == stylo::AlignFlags::NORMAL
+            || (justify_self.value() == stylo::AlignFlags::AUTO
+                && self.flags.contains(StyleFlags::JUSTIFY_SELF_AUTO_IS_NORMAL))
+        {
+            return self.block_item_normal_alignment();
         }
         convert::oof_item_alignment(
             justify_self,
             true,
             self.style.clone_direction() == stylo::Direction::Rtl,
         )
+    }
+
+    #[inline]
+    fn item_align_content(&self) -> Option<taffy::AlignContent> {
+        taffy::BlockContainerStyle::align_content(self)
     }
 
     #[cfg(feature = "floats")]
