@@ -325,6 +325,7 @@ pub(crate) fn compute_layout_damage(old: &ComputedValues, new: &ComputedValues) 
             && (old_text.white_space_collapse != new_text.white_space_collapse
                 || old_text.text_transform != new_text.text_transform
                 || old_text.word_break != new_text.word_break
+                || old_text.line_break != new_text.line_break
                 || old_text.overflow_wrap != new_text.overflow_wrap
                 || old_text.letter_spacing != new_text.letter_spacing
                 || old_text.word_spacing != new_text.word_spacing
