@@ -2753,7 +2753,7 @@ pub struct BoundingRect {
 /// Snap a CSSOM geometry value to a 1/64px grid (the precision of Blink's `LayoutUnit`).
 /// Layout values are accumulated in `f32`, so e.g. seven `55/7`-wide flex items would
 /// otherwise end at `55.0000005` and appear to overflow their 55px container.
-fn snap_to_layout_unit(value: f64) -> f64 {
+pub(crate) fn snap_to_layout_unit(value: f64) -> f64 {
     (value * 64.0).round() / 64.0
 }
 

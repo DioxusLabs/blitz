@@ -1251,7 +1251,13 @@ fn scroll_into_view(this: &JsValue, args: &[JsValue], context: &mut Context) -> 
 }
 
 /// Build a `DOMRect`-shaped object
-fn make_rect_object(context: &mut Context, x: f64, y: f64, width: f64, height: f64) -> JsObject {
+pub(crate) fn make_rect_object(
+    context: &mut Context,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+) -> JsObject {
     ObjectInitializer::new(context)
         .property(js_string!("x"), x, PropAttribute::all())
         .property(js_string!("y"), y, PropAttribute::all())

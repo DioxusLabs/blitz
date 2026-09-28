@@ -1323,6 +1323,9 @@
         exposeGlobal("MessageChannel", MessageChannel);
     }
 
+    // Internal: lets other bootstrap scripts (e.g. `Range`) build `DOMRectList`s
+    exposeGlobal("__blitz_make_rect_list", makeRectList);
+
     // `Element.getBoundingClientRect()` / `getClientRects()`: wrap the plain
     // rect objects produced by the natives in `DOMRect` / `DOMRectList`
     if (document.documentElement) {

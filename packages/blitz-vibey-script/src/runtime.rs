@@ -32,6 +32,9 @@ use crate::state::{DomCtx, Listener, ReadyState};
 /// Geometry Interfaces (DOMPoint, DOMRect, DOMQuad, DOMMatrix), defined in JS
 const GEOMETRY_JS: &str = include_str!("geometry.js");
 
+/// The DOM `Range` interface, defined in JS
+const RANGE_JS: &str = include_str!("range.js");
+
 /// JS bootstrap for APIs that are easiest to define in JS
 const BOOTSTRAP_JS: &str = r#"
 (function () {
@@ -1397,6 +1400,12 @@ impl ScriptRuntime {
         // `getComputedStyle`
         register_global_fn(&mut context, "getComputedStyle", 1, get_computed_style);
         register_global_fn(&mut context, "__blitz_parse_transform", 1, parse_transform);
+        register_global_fn(
+            &mut context,
+            "__blitz_range_client_rects",
+            4,
+            range_client_rects,
+        );
 
         // CSSOM stylesheet natives (`__blitz_sheet_*`), used by the bootstrap's
         // `CSSStyleSheet` / `CSSRule` implementation
@@ -1442,6 +1451,7 @@ impl ScriptRuntime {
         // Small JS bootstrap for APIs that are easiest to define in JS
         runtime.eval_internal(BOOTSTRAP_JS, "<blitz-bootstrap>");
         runtime.eval_internal(GEOMETRY_JS, "<blitz-geometry>");
+        runtime.eval_internal(RANGE_JS, "<blitz-range>");
 
         runtime
     }
@@ -2190,6 +2200,35 @@ fn css_property_supported(
 ) -> JsResult<JsValue> {
     let name = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
     Ok(JsValue::from(blitz_dom::css_property_is_supported(&name)))
+}
+
+/// `__blitz_range_client_rects(startContainer, startOffset, endContainer, endOffset)`:
+/// the client rects of a DOM range, as an array of plain `{x, y, width, height}` objects
+fn range_client_rects(_: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    let ctx = dom_ctx(context)?;
+    let arg = |index: usize| args.get(index).cloned().unwrap_or_default();
+    let (Some(start_node), Some(end_node)) = (node_id_of_value(&arg(0)), node_id_of_value(&arg(2)))
+    else {
+        return Err(JsNativeError::typ()
+            .with_message("range boundary is not a DOM node")
+            .into());
+    };
+    let start_offset = arg(1).to_u32(context)? as usize;
+    let end_offset = arg(3).to_u32(context)? as usize;
+
+    ctx.doc.borrow_mut().resolve(0.0);
+    let rects = ctx
+        .doc
+        .borrow()
+        .range_client_rects((start_node, start_offset), (end_node, end_offset));
+    let rect_objects: Vec<JsValue> = rects
+        .into_iter()
+        .map(|rect| {
+            crate::dom::element::make_rect_object(context, rect.x, rect.y, rect.width, rect.height)
+                .into()
+        })
+        .collect();
+    Ok(boa_engine::object::builtins::JsArray::from_iter(rect_objects, context).into())
 }
 
 /// `__blitz_parse_transform(string)`: parse a CSS `<transform-list>` into a

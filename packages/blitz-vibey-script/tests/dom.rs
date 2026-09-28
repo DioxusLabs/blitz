@@ -784,3 +784,95 @@ fn uncaught_errors_fire_window_error_event() {
         "{out}"
     );
 }
+
+#[test]
+fn range_boundaries_and_comparison() {
+    let doc = doc_from_html(
+        r#"
+        <html><body>
+            <p id="p">Hello <b id="b">bold</b> world</p>
+            <div id="out"></div>
+            <script>
+                const p = document.getElementById("p");
+                const b = document.getElementById("b");
+                const results = [];
+                const range = document.createRange();
+                results.push(range.startContainer === document && range.collapsed);
+
+                range.selectNodeContents(p);
+                results.push(range.startOffset === 0 && range.endOffset === 3);
+                results.push(range.toString() === "Hello bold world");
+
+                range.setStart(p.firstChild, 2);
+                range.setEnd(b.firstChild, 2);
+                results.push(range.toString() === "llo bo");
+                results.push(range.commonAncestorContainer === p);
+                results.push(range.intersectsNode(b) && range.isPointInRange(b, 0));
+
+                // Setting the start after the end collapses the range
+                range.setStart(p.lastChild, 1);
+                results.push(range.collapsed && range.endContainer === p.lastChild);
+
+                const other = document.createRange();
+                other.selectNode(b);
+                results.push(other.startContainer === p && other.startOffset === 1 && other.endOffset === 2);
+                results.push(range.compareBoundaryPoints(Range.START_TO_START, other) === 1);
+
+                let threw = false;
+                try { range.setStart(b.firstChild, 10); } catch (e) { threw = e.name === "IndexSizeError"; }
+                results.push(threw);
+
+                document.getElementById("out").textContent = results.join(",");
+            </script>
+        </body></html>
+        "#,
+    );
+    let results = text_of_selector(&doc, "#out");
+    assert!(!results.contains("false"), "{results}");
+}
+
+#[test]
+fn range_client_rects() {
+    let mut doc = doc_from_html(
+        r#"
+        <html><body style="margin: 0">
+            <div id="box" style="width: 400px; font: 20px/30px monospace">abc <span id="s">def</span></div>
+            <div id="out"></div>
+        </body></html>
+        "#,
+    );
+    doc.inner_mut().resolve(0.0);
+    doc.eval(
+        r#"
+        const box = document.getElementById("box");
+        const results = [];
+
+        const all = document.createRange();
+        all.selectNodeContents(box);
+        const rect = all.getBoundingClientRect();
+        results.push(rect.left === 0 && rect.top === 0 && rect.height === 30);
+        results.push(rect.width > 0 && rect.width < 400);
+
+        // A sub-range of the first text node is narrower than the whole contents
+        const part = document.createRange();
+        part.setStart(box.firstChild, 1);
+        part.setEnd(box.firstChild, 2);
+        const partRect = part.getBoundingClientRect();
+        results.push(partRect.left > 0 && partRect.right < rect.right && partRect.width > 0);
+
+        // The span is contained, so it contributes its own client rect
+        results.push(all.getClientRects().length >= 2);
+
+        const collapsed = document.createRange();
+        collapsed.setStart(box.firstChild, 0);
+        results.push(collapsed.getBoundingClientRect().width === 0);
+
+        document.getElementById("out").textContent = results.join(",");
+        "#,
+    );
+    let results = text_of_selector(&doc, "#out");
+    assert!(
+        !results.contains("false") && !results.is_empty(),
+        "{results}"
+    );
+}
