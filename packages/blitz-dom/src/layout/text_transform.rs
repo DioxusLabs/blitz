@@ -97,7 +97,7 @@ pub(crate) struct TextTransformer {
 impl TextTransformer {
     /// Forces a word boundary (e.g. at an atomic inline or a forced line break).
     pub(crate) fn word_break<B: Brush>(&mut self, builder: &TreeBuilder<'_, B>) {
-        self.context_start = builder.text_so_far().text.len();
+        self.context_start = builder.text().len();
     }
 
     /// Transforms the content of a text node that is about to be pushed to `builder`.
@@ -138,13 +138,12 @@ impl TextTransformer {
             TextTransform::UPPERCASE => output.write(CASE_MAPPER.uppercase(text, &transform.lang)),
             TextTransform::LOWERCASE => output.write(CASE_MAPPER.lowercase(text, &transform.lang)),
             TextTransform::CAPITALIZE => {
-                let text_so_far = builder.text_so_far();
                 // Pending (collapsed) whitespace always ends the preceding word, so no
                 // context is needed.
-                let context = if text_so_far.pending_whitespace {
+                let context = if builder.has_pending_whitespace() {
                     ""
                 } else {
-                    let preceding = &text_so_far.text[self.context_start..];
+                    let preceding = &builder.text()[self.context_start..];
                     let start = ceil_char_boundary(
                         preceding,
                         preceding.len().saturating_sub(MAX_CONTEXT_LEN),

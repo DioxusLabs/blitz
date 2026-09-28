@@ -3270,7 +3270,7 @@ dependencies = [
 [[package]]
 name = "fontique"
 version = "0.11.0"
-source = "git+https://github.com/DioxusLabs/parley?rev=b8f5779ed5f5363bf5b74a8060198780429ef892#b8f5779ed5f5363bf5b74a8060198780429ef892"
+source = "git+https://github.com/DioxusLabs/parley?rev=3c979972152dbe01ec7c905fe4f16f1e9628f0d1#3c979972152dbe01ec7c905fe4f16f1e9628f0d1"
 dependencies = [
  "hashbrown 0.17.1",
  "linebender_resource_handle",
@@ -6000,7 +6000,7 @@ dependencies = [
 [[package]]
 name = "parlance"
 version = "0.1.0"
-source = "git+https://github.com/DioxusLabs/parley?rev=b8f5779ed5f5363bf5b74a8060198780429ef892#b8f5779ed5f5363bf5b74a8060198780429ef892"
+source = "git+https://github.com/DioxusLabs/parley?rev=3c979972152dbe01ec7c905fe4f16f1e9628f0d1#3c979972152dbe01ec7c905fe4f16f1e9628f0d1"
 dependencies = [
  "bytemuck",
 ]
@@ -6008,7 +6008,7 @@ dependencies = [
 [[package]]
 name = "parley"
 version = "0.11.0"
-source = "git+https://github.com/DioxusLabs/parley?rev=b8f5779ed5f5363bf5b74a8060198780429ef892#b8f5779ed5f5363bf5b74a8060198780429ef892"
+source = "git+https://github.com/DioxusLabs/parley?rev=3c979972152dbe01ec7c905fe4f16f1e9628f0d1#3c979972152dbe01ec7c905fe4f16f1e9628f0d1"
 dependencies = [
  "fontique",
  "hashbrown 0.17.1",
@@ -6021,7 +6021,7 @@ dependencies = [
 [[package]]
 name = "parley_data"
 version = "0.11.0"
-source = "git+https://github.com/DioxusLabs/parley?rev=b8f5779ed5f5363bf5b74a8060198780429ef892#b8f5779ed5f5363bf5b74a8060198780429ef892"
+source = "git+https://github.com/DioxusLabs/parley?rev=3c979972152dbe01ec7c905fe4f16f1e9628f0d1#3c979972152dbe01ec7c905fe4f16f1e9628f0d1"
 dependencies = [
  "icu_collections",
  "icu_properties",
@@ -6030,12 +6030,12 @@ dependencies = [
 [[package]]
 name = "parley_emoji"
 version = "0.11.0"
-source = "git+https://github.com/DioxusLabs/parley?rev=b8f5779ed5f5363bf5b74a8060198780429ef892#b8f5779ed5f5363bf5b74a8060198780429ef892"
+source = "git+https://github.com/DioxusLabs/parley?rev=3c979972152dbe01ec7c905fe4f16f1e9628f0d1#3c979972152dbe01ec7c905fe4f16f1e9628f0d1"
 
 [[package]]
 name = "parley_engine"
 version = "0.11.0"
-source = "git+https://github.com/DioxusLabs/parley?rev=b8f5779ed5f5363bf5b74a8060198780429ef892#b8f5779ed5f5363bf5b74a8060198780429ef892"
+source = "git+https://github.com/DioxusLabs/parley?rev=3c979972152dbe01ec7c905fe4f16f1e9628f0d1#3c979972152dbe01ec7c905fe4f16f1e9628f0d1"
 dependencies = [
  "fontique",
  "harfrust",
