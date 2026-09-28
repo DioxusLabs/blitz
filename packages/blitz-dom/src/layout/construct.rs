@@ -1101,28 +1101,13 @@ pub(crate) fn build_inline_layout_into(
     };
 
     if let Some(before_id) = root_node.before() {
-        build_inline_layout_recursive(
-            &mut builder,
-            nodes,
-            before_id,
-            text_transform,
-        );
+        build_inline_layout_recursive(&mut builder, nodes, before_id, text_transform);
     }
     for child_id in root_node.children.iter().copied() {
-        build_inline_layout_recursive(
-            &mut builder,
-            nodes,
-            child_id,
-            text_transform,
-        );
+        build_inline_layout_recursive(&mut builder, nodes, child_id, text_transform);
     }
     if let Some(after_id) = root_node.after() {
-        build_inline_layout_recursive(
-            &mut builder,
-            nodes,
-            after_id,
-            text_transform,
-        );
+        build_inline_layout_recursive(&mut builder, nodes, after_id, text_transform);
     }
 
     text_layout.text = builder.build_into(&mut text_layout.layout);
@@ -1189,12 +1174,7 @@ pub(crate) fn build_inline_layout_into(
                         );
                         for child_id in node.children.iter().copied() {
                             // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
-                            build_inline_layout_recursive(
-                                builder,
-                                nodes,
-                                child_id,
-                                text_transform,
-                            );
+                            build_inline_layout_recursive(builder, nodes, child_id, text_transform);
                         }
                         builder.pop_style_span();
                     }
