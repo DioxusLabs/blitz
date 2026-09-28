@@ -2271,6 +2271,7 @@ impl BaseDocument {
     pub fn offset_rect(&self, node_id: NodeId) -> Option<BoundingRect> {
         let node = self.get_node(node_id)?;
 
+        // Nodes with their own layout box: use it directly
         let Some(rects) = self.inline_fragment_rects(node_id) else {
             let pos = node.offset_top_left();
             let size = node.final_layout().size;
@@ -2285,6 +2286,7 @@ impl BaseDocument {
             return None;
         }
 
+        // Union the per-line-box fragments into a single bounding box
         let x0 = rects.iter().map(|r| r.x).fold(f64::INFINITY, f64::min);
         let y0 = rects.iter().map(|r| r.y).fold(f64::INFINITY, f64::min);
         let x1 = rects
@@ -2301,12 +2303,14 @@ impl BaseDocument {
         let mut x = x0 + scroll.x;
         let mut y = y0 + scroll.y;
 
+        // Resolve the offsetParent from the inline root (the root itself if it is positioned)
         let inline_root = node.inline_root_ancestor()?;
         let offset_parent = if inline_root.is_offset_parent() {
             Some(inline_root)
         } else {
             inline_root.offset_parent()
         };
+        // Make the position relative to the offsetParent's padding edge
         if let Some(parent) = offset_parent.filter(|parent| !parent.is_static_body()) {
             let parent_pos = parent.unrounded_absolute_position(0.0, 0.0);
             let border = parent.unrounded_layout().border;
