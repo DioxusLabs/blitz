@@ -41,10 +41,13 @@ jobs:
       # runners extract to the wrong place and "restore" 0 packages. Including the runner
       # label in `version` (the only user-controlled part of the cache key) keeps the
       # cache entries separate per runner image.
-      - name: Install Fontconfig
+      # fonts-tlwg-loma-otf provides a Thai font; some WPT reftests (e.g.
+      # css/css-text/i18n/css3-text-line-break-opclns-201.html) depend on Thai glyphs
+      # rendering at a realistic width rather than as a narrow .notdef box.
+      - name: Install Fontconfig and fonts
         uses: awalsh128/cache-apt-pkgs-action@latest
         with:
-          packages: libfontconfig1-dev
+          packages: libfontconfig1-dev fonts-tlwg-loma-otf
           version: 1.0-warp-ubuntu-latest-arm64-16x
       - name: Clone WPT tests
         run: git clone --depth 1 --revision "$WPT_COMMIT" https://github.com/web-platform-tests/wpt ./wpt/tests
