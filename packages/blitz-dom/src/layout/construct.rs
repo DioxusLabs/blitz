@@ -821,7 +821,18 @@ fn collect_complex_layout_children(
             .display_style()
             .unwrap_or(Display::inline());
         let display_inside = child_display.inside();
-        let display_outside = if contains_block {
+
+        // Floats participate in the inline formatting context of the surrounding inline
+        // content (their blockified display does not interrupt it), so they are treated
+        // as inline-level for the purposes of anonymous box generation.
+        let is_floated = doc.nodes[child_id]
+            .primary_styles()
+            .map(|s| s.clone_float().is_floating())
+            .unwrap_or(false);
+
+        let display_outside = if is_floated {
+            DisplayOutside::Inline
+        } else if contains_block {
             DisplayOutside::Block
         } else {
             child_display.outside()
