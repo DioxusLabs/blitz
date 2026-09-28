@@ -2347,7 +2347,10 @@ impl BaseDocument {
 
         // Only non-atomic inline elements lack their own layout box: they are
         // flattened into the containing inline root's text layout as style spans.
-        if !node.is_element() || node.flags.is_inline_root() {
+        let element = node.element_data()?;
+        if node.flags.is_inline_root()
+            || crate::layout::replaced::is_inline_box_element(&element.name.local)
+        {
             return None;
         }
         let display = node.primary_styles()?.clone_display();

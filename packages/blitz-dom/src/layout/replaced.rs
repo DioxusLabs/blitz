@@ -423,3 +423,12 @@ pub fn compute_replaced_layout(
 
     LayoutOutput::from_sizes(size + pb_sum, overflow_rect_for(size))
 }
+
+/// Inline-level elements that are laid out as atomic inline boxes (with their own
+/// layout box) rather than being flattened into the surrounding text layout.
+pub(crate) fn is_inline_box_element(tag_name: &LocalName) -> bool {
+    is_replaced_element(tag_name)
+        || *tag_name == local_name!("input")
+        || *tag_name == local_name!("textarea")
+        || *tag_name == local_name!("button")
+}
