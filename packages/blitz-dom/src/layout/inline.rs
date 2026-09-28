@@ -569,6 +569,7 @@ impl BaseDocument {
                 margin: taffy::Rect<f32>,
                 direction: taffy::FloatDirection,
                 clear: Clear,
+                oof_candidates: OofCandidates,
             }
             let mut pending_floats: Vec<PendingFloat> = Vec::new();
 
@@ -605,11 +606,20 @@ impl BaseDocument {
                                     min_y,
                                     float.direction,
                                     float.clear,
+                                    false,
                                 );
+                                let location = taffy::Point {
+                                    x: pos.x + float.margin.left + container_pb.left,
+                                    y: pos.y + float.margin.top + container_pb.top,
+                                };
                                 let layout = self.nodes[float.node_id].unrounded_layout_mut();
                                 layout.size = float.size;
-                                layout.location.x = pos.x + float.margin.left + container_pb.left;
-                                layout.location.y = pos.y + float.margin.top + container_pb.top;
+                                layout.location = location;
+                                let mut float_oof = float.oof_candidates;
+                                if !float_oof.is_empty() {
+                                    float_oof.translate(location);
+                                    oof_candidates.append(&mut float_oof);
+                                }
                             }
                             has_active_floats = true;
                         }
@@ -684,8 +694,14 @@ impl BaseDocument {
                                 margin,
                                 direction,
                                 clear,
+                                oof_candidates: std::mem::take(&mut output.oof_candidates),
                             });
-                            state.append_inline_box_to_line(box_break_data.advance, 0.0);
+                            // Floats are out-of-flow and must not contribute to the line's height.
+                            state.append_inline_box_to_line(
+                                box_break_data.advance,
+                                f32::NEG_INFINITY,
+                                f32::NEG_INFINITY,
+                            );
                             continue;
                         }
 
