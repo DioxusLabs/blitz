@@ -75,6 +75,16 @@ impl BaseDocument {
         for child in children.iter() {
             damage_from_children |= self.propagate_damage_flags(*child);
         }
+        // Composed tree too: a shadow root has no style data of its own, so
+        // damage in a shadow tree must reach the host through the root's
+        // children.
+        if let Some(root) = self.nodes[node_id].shadow_root {
+            let shadow_children = std::mem::take(&mut self.nodes[root].children);
+            for child in shadow_children.iter() {
+                damage_from_children |= self.propagate_damage_flags(*child);
+            }
+            self.nodes[root].children = shadow_children;
+        }
         if let Some(before_id) = self.nodes[node_id].before() {
             damage_from_children |= self.propagate_damage_flags(before_id);
         }
