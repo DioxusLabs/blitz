@@ -18,9 +18,12 @@ use parley::YieldData;
 #[cfg(feature = "floats")]
 use taffy::{BlockItemStyle as _, Clear, Float, prelude::TaffyMaxContent};
 
+use super::replaced::is_replaced_element;
 use super::resolve_calc_value;
-use crate::BaseDocument;
 use crate::stylo_to_parley;
+use crate::{BaseDocument, dom_node_id};
+use markup5ever::local_name;
+use taffy::compute_oof_layout_for_area;
 
 impl BaseDocument {
     pub(crate) fn compute_inline_layout(
@@ -987,4 +990,228 @@ impl BaseDocument {
 #[inline(always)]
 fn f32_max(a: f32, b: f32) -> f32 {
     a.max(b)
+}
+
+impl BaseDocument {
+    /// Lay out the out-of-flow candidates bubbled out of the inline root `node_id` whose
+    /// CSS containing block is a positioned non-atomic inline descendant of the root.
+    ///
+    /// Such inlines are laid out as style spans within the root's text layout and have no
+    /// layout node of their own, so Taffy's out-of-flow pass (which walks layout nodes)
+    /// would otherwise skip past them to a further ancestor. Each candidate is positioned
+    /// against the bounding box of its containing inline's line fragments (CSS 2.1 §10.1),
+    /// with the inline root as the geometry owner. Returns the ids of the claimed boxes,
+    /// which must be recorded as hoisted children of the root; the unclaimed remainder is
+    /// left in `output.oof_candidates` to bubble further up the tree.
+    pub(crate) fn claim_inline_containing_block_candidates(
+        &mut self,
+        node_id: taffy::NodeId,
+        inputs: LayoutInput,
+        output: &mut LayoutOutput,
+    ) -> Vec<taffy::NodeId> {
+        if output.oof_candidates.is_empty() {
+            return Vec::new();
+        }
+        let root_id = dom_node_id(node_id);
+
+        // Group candidates by containing inline, preserving document order
+        let candidates = output.oof_candidates.take();
+        let mut groups: Vec<(NodeId, OofCandidates)> = Vec::new();
+        for candidate in candidates.iter() {
+            let cb = self.inline_containing_block_for(
+                root_id,
+                dom_node_id(candidate.node),
+                candidate.position,
+            );
+            match cb {
+                Some(cb_id) => match groups.iter_mut().find(|(id, _)| *id == cb_id) {
+                    Some((_, group)) => group.push(*candidate),
+                    None => {
+                        let mut group = OofCandidates::new();
+                        group.push(*candidate);
+                        groups.push((cb_id, group));
+                    }
+                },
+                None => output.oof_candidates.push(*candidate),
+            }
+        }
+        if groups.is_empty() {
+            return Vec::new();
+        }
+
+        let style = self.nodes[root_id].layout_style();
+        let container_pb = style
+            .padding()
+            .resolve_or_zero(inputs.parent_size.width, resolve_calc_value)
+            + style
+                .border()
+                .resolve_or_zero(inputs.parent_size.width, resolve_calc_value);
+        drop(style);
+
+        let mut hoisted = Vec::new();
+        for (cb_id, mut group) in groups {
+            let Some(area) = self.inline_fragment_area(root_id, cb_id, container_pb) else {
+                // An inline with no fragments establishes no usable containing block
+                output.oof_candidates.append(&mut group);
+                continue;
+            };
+            let (direction, claims) = {
+                let style = self.nodes[cb_id].layout_style();
+                (style.direction(), style.is_containing_block())
+            };
+            let mut result =
+                compute_oof_layout_for_area(self, node_id, group, area, direction, claims);
+            hoisted.extend(result.hoisted);
+            output.oof_candidates.append(&mut result.unclaimed);
+            output.scrollable_overflow_rect = output
+                .scrollable_overflow_rect
+                .union(result.scrollable_overflow_rect);
+        }
+        hoisted
+    }
+
+    /// The nearest ancestor of `node` (below the inline root `root_id`) which is a
+    /// positioned non-atomic inline element, if that is the node's containing block for
+    /// `position`. Returns `None` if a layout node between them would claim it, or if the
+    /// ancestor chain does not lead through the root (e.g. the root is an anonymous block
+    /// wrapping content split out of a positioned inline).
+    fn inline_containing_block_for(
+        &self,
+        root_id: NodeId,
+        node: NodeId,
+        position: taffy::Position,
+    ) -> Option<NodeId> {
+        let root = &self.nodes[root_id];
+        let root_parent = root.is_anonymous().then_some(root.parent).flatten();
+
+        let mut found = None;
+        let mut current = self.nodes[node].parent;
+        while let Some(id) = current {
+            if id == root_id || Some(id) == root_parent {
+                return found;
+            }
+            let ancestor = &self.nodes[id];
+            if found.is_none() && self.is_non_atomic_inline(ancestor) {
+                let claims = ancestor.layout_style().is_containing_block();
+                if claims.for_position(position) {
+                    found = Some(id);
+                }
+            }
+            current = ancestor.parent;
+        }
+        None
+    }
+
+    /// Whether `node` is laid out as a style span within an inline root's text layout
+    /// (rather than as a layout node of its own)
+    fn is_non_atomic_inline(&self, node: &crate::node::Node) -> bool {
+        let Some(element) = node.element_data() else {
+            return false;
+        };
+        if node.flags.is_inline_root() || node.is_anonymous() {
+            return false;
+        }
+        let tag = &element.name.local;
+        if is_replaced_element(tag)
+            || *tag == local_name!("input")
+            || *tag == local_name!("textarea")
+            || *tag == local_name!("button")
+        {
+            return false;
+        }
+        node.display_style().is_some_and(|display| {
+            display.outside() == DisplayOutside::Inline && display.inside() == DisplayInside::Flow
+        })
+    }
+
+    /// The bounding box of the line fragments of the non-atomic inline `inline_id` within
+    /// the text layout of the inline root `root_id`, relative to the root's border box.
+    /// `None` if the inline generated no fragments.
+    fn inline_fragment_area(
+        &self,
+        root_id: NodeId,
+        inline_id: NodeId,
+        container_pb: taffy::Rect<f32>,
+    ) -> Option<OofPositioningArea> {
+        use parley::PositionedLayoutItem;
+
+        let inline_layout = self.nodes[root_id]
+            .element_data()?
+            .inline_layout_data
+            .as_ref()?;
+        let layout = &inline_layout.layout;
+        let scale = layout.scale();
+
+        let is_in_target = |mut id: NodeId| -> bool {
+            loop {
+                if id == inline_id {
+                    return true;
+                }
+                if id == root_id {
+                    return false;
+                }
+                match self.nodes.get(id).and_then(|n| n.parent) {
+                    Some(parent) => id = parent,
+                    None => return false,
+                }
+            }
+        };
+
+        let mut bounds: Option<taffy::Rect<f32>> = None;
+        let mut add = |left: f32, top: f32, right: f32, bottom: f32| {
+            let rect = taffy::Rect {
+                left,
+                right,
+                top,
+                bottom,
+            };
+            bounds = Some(match bounds {
+                Some(existing) => existing.union(rect),
+                None => rect,
+            });
+        };
+
+        for line in layout.lines() {
+            let line_metrics = line.metrics();
+            for item in line.items() {
+                match item {
+                    PositionedLayoutItem::GlyphRun(glyph_run) => {
+                        if !is_in_target(glyph_run.style().brush.id) {
+                            continue;
+                        }
+                        let x0 = glyph_run.offset();
+                        add(
+                            x0,
+                            line_metrics.block_min_coord,
+                            x0 + glyph_run.advance(),
+                            line_metrics.block_max_coord,
+                        );
+                    }
+                    PositionedLayoutItem::InlineBox(inline_box) => {
+                        if !is_in_target(NodeId::from_u64(inline_box.id)) {
+                            continue;
+                        }
+                        add(
+                            inline_box.x,
+                            inline_box.y,
+                            inline_box.x + inline_box.width,
+                            inline_box.y + inline_box.height,
+                        );
+                    }
+                }
+            }
+        }
+
+        let bounds = bounds?;
+        Some(OofPositioningArea {
+            size: Size {
+                width: (bounds.right - bounds.left) / scale,
+                height: (bounds.bottom - bounds.top) / scale,
+            },
+            offset: Point {
+                x: bounds.left / scale + container_pb.left,
+                y: bounds.top / scale + container_pb.top,
+            },
+        })
+    }
 }

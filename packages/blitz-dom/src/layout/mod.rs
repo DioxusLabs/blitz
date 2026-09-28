@@ -95,7 +95,19 @@ impl BaseDocument {
     ) -> taffy::tree::LayoutOutput {
         let mut output = self.dispatch_child_layout(node_id, inputs, block_ctx);
         if inputs.run_mode == RunMode::PerformLayout {
+            // Boxes whose containing block is a positioned non-atomic inline
+            // descendant of this inline root are laid out here (the inline has
+            // no layout node of its own) and hoisted to the root, which owns
+            // their geometry.
+            let inline_hoisted = if self.nodes[dom_node_id(node_id)].flags.is_inline_root() {
+                self.claim_inline_containing_block_candidates(node_id, inputs, &mut output)
+            } else {
+                Vec::new()
+            };
             compute_oof_layout(self, node_id, &mut output);
+            if !inline_hoisted.is_empty() {
+                self.add_hoisted_children(node_id, &inline_hoisted);
+            }
         }
         output
     }
