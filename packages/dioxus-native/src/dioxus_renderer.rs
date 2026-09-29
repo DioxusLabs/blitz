@@ -14,7 +14,7 @@ cfg_if::cfg_if! {
         };
     } else if #[cfg(feature = "vello-cpu-base")] {
         use anyrender_vello_cpu::VelloCpuWindowRenderer as InnerRenderer;
-    } else if #[cfg(feature = "skia")] {
+    } else if #[cfg(any(feature = "skia", feature = "skia-graphite"))] {
         use anyrender_skia::SkiaWindowRenderer as InnerRenderer;
     } else if #[cfg(feature = "skia-raster-base")] {
         use anyrender_skia::raster::SkiaRasterWindowRenderer as InnerRenderer;
