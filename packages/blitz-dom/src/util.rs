@@ -182,6 +182,13 @@ mod svg_tests {
     use super::parse_svg_image;
 
     #[test]
+    fn svg_without_xmlns_parses() {
+        let src = br#"<svg viewBox="0 0 24 24"><path d="M0 0h24v24H0z"/></svg>"#;
+        let svg = parse_svg_image(src).unwrap();
+        assert!(!svg.tree.root().children().is_empty());
+    }
+
+    #[test]
     fn missing_height_is_computed_from_width_and_viewbox_ratio() {
         let src = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="200"><rect width="100%" height="100%" fill="green"/></svg>"#;
         let svg = parse_svg_image(src).unwrap();
