@@ -1713,7 +1713,7 @@ impl BaseDocument {
         );
         let active_node_id = Some(hover_node_id);
 
-        let node_path = self.maybe_node_layout_ancestors(active_node_id);
+        let node_path = self.maybe_node_element_ancestors(active_node_id);
         for &id in node_path.iter() {
             self.snapshot_node_and(id, ElementState::ACTIVE, |node| node.active());
         }
@@ -1728,7 +1728,7 @@ impl BaseDocument {
             return false;
         };
 
-        let node_path = self.maybe_node_layout_ancestors(Some(active_node_id));
+        let node_path = self.maybe_node_element_ancestors(Some(active_node_id));
         for &id in node_path.iter() {
             self.snapshot_node_and(id, ElementState::ACTIVE, |node| node.unactive());
         }
@@ -1862,8 +1862,8 @@ impl BaseDocument {
             return scrollbar_changed;
         }
 
-        let old_node_path = self.maybe_node_layout_ancestors(self.hover_node_id);
-        let new_node_path = self.maybe_node_layout_ancestors(hover_node_id);
+        let old_node_path = self.maybe_node_element_ancestors(self.hover_node_id);
+        let new_node_path = self.maybe_node_element_ancestors(hover_node_id);
         let same_count = old_node_path
             .iter()
             .zip(&new_node_path)
@@ -1897,7 +1897,7 @@ impl BaseDocument {
             return false;
         };
 
-        let old_node_path = self.maybe_node_layout_ancestors(Some(hover_node_id));
+        let old_node_path = self.maybe_node_element_ancestors(Some(hover_node_id));
         for &id in old_node_path.iter() {
             self.snapshot_node_and(id, ElementState::HOVER, |node| node.unhover());
         }

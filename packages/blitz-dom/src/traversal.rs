@@ -281,20 +281,26 @@ impl BaseDocument {
         }
     }
 
-    pub fn node_layout_ancestors(&self, node_id: NodeId) -> Vec<NodeId> {
+    /// `node_id` and its ancestor elements in the DOM, root first. These are
+    /// the elements that match `:hover`/`:active` when `node_id` does.
+    pub fn node_element_ancestors(&self, node_id: NodeId) -> Vec<NodeId> {
         let mut ancestors = Vec::with_capacity(12);
         let mut maybe_id = Some(node_id);
         while let Some(id) = maybe_id {
+            let node = &self.nodes[id];
+            if !node.is_element() {
+                break;
+            }
             ancestors.push(id);
-            maybe_id = self.nodes[id].layout_parent.get();
+            maybe_id = node.parent;
         }
         ancestors.reverse();
         ancestors
     }
 
-    pub fn maybe_node_layout_ancestors(&self, node_id: Option<NodeId>) -> Vec<NodeId> {
+    pub fn maybe_node_element_ancestors(&self, node_id: Option<NodeId>) -> Vec<NodeId> {
         node_id
-            .map(|id| self.node_layout_ancestors(id))
+            .map(|id| self.node_element_ancestors(id))
             .unwrap_or_default()
     }
 
