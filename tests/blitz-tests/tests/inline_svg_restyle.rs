@@ -71,4 +71,3 @@ fn inline_svg_current_color_follows_class_change() {
     doc.resolve(0.0);
     assert_eq!(icon_fill(&doc), Some((0, 128, 0)));
 }
-
