@@ -460,14 +460,7 @@ fn collect_layout_children_with_wrap(
 
         #[cfg(feature = "svg")]
         if matches!(tag_name, "svg") {
-            let mut outer_html = doc.get_node(container_node_id).unwrap().outer_html();
-
-            // HACK: usvg fails to parse SVGs that don't have the SVG xmlns set. So inject it
-            // if the generated source doesn't have it.
-            if !outer_html.contains("xmlns") {
-                outer_html =
-                    outer_html.replace("<svg", "<svg xmlns=\"http://www.w3.org/2000/svg\"");
-            }
+            let outer_html = doc.get_node(container_node_id).unwrap().outer_html();
 
             // Remove contruction damage from subtree
             doc.iter_subtree_mut(container_node_id, |id: NodeId, doc: &mut BaseDocument| {
