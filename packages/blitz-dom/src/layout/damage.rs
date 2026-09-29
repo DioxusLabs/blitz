@@ -1,4 +1,6 @@
 use blitz_traits::node_id::NodeId;
+#[cfg(feature = "svg")]
+use markup5ever::local_name;
 
 use crate::net::ResourceHandler;
 use crate::node::NodeFlags;
@@ -120,6 +122,14 @@ impl BaseDocument {
             node.invalidate_layout_cache();
             invalidate_anonymous_ancestors = true;
             damage.remove(ONLY_RELAYOUT);
+        }
+
+        // An inline `<svg>` is rendered from a snapshot of its subtree (with
+        // `currentColor` resolved) taken during box construction, so it must be
+        // rebuilt whenever the style of the `<svg>` or any descendant changes.
+        #[cfg(feature = "svg")]
+        if !damage.is_empty() && node.data.is_element_with_tag_name(&local_name!("svg")) {
+            damage.insert(CONSTRUCT_BOX);
         }
 
         // Store damage for current node
