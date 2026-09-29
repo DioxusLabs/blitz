@@ -1713,7 +1713,7 @@ impl BaseDocument {
         );
         let active_node_id = Some(hover_node_id);
 
-        let node_path = self.maybe_node_layout_ancestors(active_node_id);
+        let node_path = self.maybe_node_element_ancestors(active_node_id);
         for &id in node_path.iter() {
             self.snapshot_node_and(id, ElementState::ACTIVE, |node| node.active());
         }
@@ -1728,7 +1728,7 @@ impl BaseDocument {
             return false;
         };
 
-        let node_path = self.maybe_node_layout_ancestors(Some(active_node_id));
+        let node_path = self.maybe_node_element_ancestors(Some(active_node_id));
         for &id in node_path.iter() {
             self.snapshot_node_and(id, ElementState::ACTIVE, |node| node.unactive());
         }
@@ -1862,8 +1862,8 @@ impl BaseDocument {
             return scrollbar_changed;
         }
 
-        let old_node_path = self.maybe_node_layout_ancestors(self.hover_node_id);
-        let new_node_path = self.maybe_node_layout_ancestors(hover_node_id);
+        let old_node_path = self.maybe_node_element_ancestors(self.hover_node_id);
+        let new_node_path = self.maybe_node_element_ancestors(hover_node_id);
         let same_count = old_node_path
             .iter()
             .zip(&new_node_path)
@@ -1897,7 +1897,7 @@ impl BaseDocument {
             return false;
         };
 
-        let old_node_path = self.maybe_node_layout_ancestors(Some(hover_node_id));
+        let old_node_path = self.maybe_node_element_ancestors(Some(hover_node_id));
         for &id in old_node_path.iter() {
             self.snapshot_node_and(id, ElementState::HOVER, |node| node.unhover());
         }
@@ -2962,6 +2962,102 @@ mod hover_state_tests {
         assert!(!doc.hover_node_is_text);
         assert_eq!(doc.get_hover_node_id(), Some(container));
         assert_eq!(doc.get_cursor(), Some(CursorIcon::Default));
+    }
+
+    /// Build `<html><body style="display:block;margin:0">` + `build(body)` and resolve it.
+    fn make_doc_with(
+        build: impl FnOnce(&mut crate::DocumentMutator, NodeId) -> Vec<NodeId>,
+    ) -> (BaseDocument, Vec<NodeId>) {
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
+            ..Default::default()
+        });
+        let root_id = doc.root_node().id;
+        let mut mutator = doc.mutate();
+        let html = mutator.create_element(qual_name!("html"), vec![]);
+        let body = mutator.create_element(
+            qual_name!("body"),
+            vec![Attribute {
+                name: qual_name!("style"),
+                value: "display:block;margin:0".to_string(),
+            }],
+        );
+        let ids = build(&mut mutator, body);
+        mutator.append_children(html, &[body]);
+        mutator.append_children(root_id, &[html]);
+        drop(mutator);
+        doc.resolve(0.0);
+        (doc, ids)
+    }
+
+    fn style(value: &str) -> Vec<Attribute> {
+        vec![Attribute {
+            name: qual_name!("style"),
+            value: value.to_string(),
+        }]
+    }
+
+    /// A `display:contents` element has no box, but still matches `:hover`
+    /// when one of its descendants is hovered.
+    #[test]
+    fn hover_propagates_to_display_contents_ancestor() {
+        let (mut doc, ids) = make_doc_with(|mutator, body| {
+            let wrapper = mutator.create_element(qual_name!("div"), style("display:contents"));
+            let inner =
+                mutator.create_element(qual_name!("div"), style("display:block;height:50px"));
+            mutator.append_children(wrapper, &[inner]);
+            mutator.append_children(body, &[wrapper]);
+            vec![wrapper, inner]
+        });
+        let (wrapper, inner) = (ids[0], ids[1]);
+
+        doc.set_hover_to(10.0, 10.0);
+        assert_eq!(doc.get_hover_node_id(), Some(inner));
+        assert!(doc.nodes[inner].is_hovered());
+        assert!(doc.nodes[wrapper].is_hovered());
+
+        doc.set_hover_to(10.0, 200.0);
+        assert!(!doc.nodes[inner].is_hovered());
+        assert!(!doc.nodes[wrapper].is_hovered());
+    }
+
+    /// An atomic inline box's layout parent is its inline root, but the inline
+    /// elements between them must still match `:hover` and `:active`.
+    #[test]
+    fn hover_and_active_propagate_to_inline_ancestors_of_inline_box() {
+        let (mut doc, ids) = make_doc_with(|mutator, body| {
+            let p = mutator.create_element(qual_name!("p"), style("margin:0"));
+            let a = mutator.create_element(qual_name!("a"), vec![]);
+            let icon = mutator.create_element(
+                qual_name!("span"),
+                style("display:inline-block;width:30px;height:30px"),
+            );
+            mutator.append_children(a, &[icon]);
+            mutator.append_children(p, &[a]);
+            mutator.append_children(body, &[p]);
+            vec![p, a, icon]
+        });
+        let (p, a, icon) = (ids[0], ids[1], ids[2]);
+
+        doc.set_hover_to(10.0, 10.0);
+        assert_eq!(doc.get_hover_node_id(), Some(icon));
+        for id in [p, a, icon] {
+            assert!(doc.nodes[id].is_hovered());
+        }
+
+        doc.active_node();
+        for id in [p, a, icon] {
+            assert!(doc.nodes[id].is_active());
+        }
+        doc.unactive_node();
+        for id in [p, a, icon] {
+            assert!(!doc.nodes[id].is_active());
+        }
+
+        doc.set_hover_to(10.0, 200.0);
+        for id in [p, a, icon] {
+            assert!(!doc.nodes[id].is_hovered());
+        }
     }
 }
 
