@@ -6,11 +6,11 @@ use style::values::{
     generics::text::GenericTextIndent,
 };
 use taffy::{
-    AvailableSpace, AxisStaticPosition, BlockContainerStyle as _, BlockContext,
-    BlockFormattingContext, BoxSizing, CollapsibleMarginSet, CoreStyle as _, Direction,
-    LayoutInput, LayoutOutput, LayoutPartialTree as _, MaybeMath as _, MaybeResolve as _,
-    OofCandidate, OofCandidates, OofItemStyle, OofPositioningArea, Overflow, Point, RequestedAxis,
-    ResolveOrZero as _, RunMode, Size, SizingMode,
+    AvailableSpace, AxisStaticPosition, BlockContainerStyle, BlockContext, BlockFormattingContext,
+    BoxSizing, CollapsibleMarginSet, CoreStyle as _, Direction, LayoutInput, LayoutOutput,
+    LayoutPartialTree as _, MaybeMath as _, MaybeResolve as _, OofCandidate, OofCandidates,
+    OofItemStyle, OofPositioningArea, Overflow, Point, RequestedAxis, ResolveOrZero as _, RunMode,
+    Size, SizingMode,
 };
 
 #[cfg(feature = "floats")]
@@ -785,9 +785,7 @@ impl BaseDocument {
         // `align-content` aligns the line boxes (as a single unit) within the content box in
         // the block axis. Floats are positioned relative to the formatting context and are not
         // moved. The offset is stored on the text layout for painting and hit-testing.
-        let block_offset = self.nodes[node_id]
-            .layout_style()
-            .align_content()
+        let block_offset = BlockContainerStyle::align_content(&self.nodes[node_id].layout_style())
             .map(|align_content| {
                 let free_space = final_size.height
                     - content_box_inset.vertical_axis_sum()
