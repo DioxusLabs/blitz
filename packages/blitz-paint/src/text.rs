@@ -1,10 +1,12 @@
 use anyrender::PaintScene;
+use anyrender::filters::{Filter, FilterEffect};
 use blitz_dom::CopyStyleGetters;
 use blitz_dom::{BaseDocument, NodeId, node::TextBrush, util::ToColorColor};
-use kurbo::{Affine, BezPath, Cap, Circle, Rect, Stroke};
-use parley::{Affinity, Cursor, Layout, Line, PositionedLayoutItem, Selection};
-use peniko::Fill;
+use kurbo::{Affine, BezPath, Cap, Circle, Rect, Stroke, Vec2};
+use parley::{Affinity, Cursor, GlyphRun, Layout, Line, PositionedLayoutItem, Selection};
+use peniko::{Fill, Mix};
 use std::collections::HashMap;
+use std::sync::Arc;
 use style::properties::generated::longhands::text_decoration_style::computed_value::T as TextDecorationStyle;
 use style::values::computed::{
     Length, LengthPercentage, TextDecorationLength, TextDecorationLine, TextUnderlinePosition,
@@ -151,15 +153,39 @@ struct DecorationStackEntry {
     fill_color: Color,
     /// The decoration this node introduces as a decorating box, if any.
     decoration: Option<ResolvedDecoration>,
+    /// This node's (inherited) `text-shadow` list, or `None` for `text-shadow: none`.
+    /// Shared (via `Arc`) with the per-run records and decorating boxes so that
+    /// consecutive runs with the same shadow can be batched by pointer equality.
+    text_shadows: Option<Arc<[ResolvedTextShadow]>>,
+}
+
+/// One `text-shadow` layer with all lengths resolved to device pixels.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct ResolvedTextShadow {
+    offset: Vec2,
+    /// Gaussian standard deviation (half the CSS blur radius); `0.0` for a sharp shadow.
+    std_dev: f64,
+    color: Color,
+}
+
+impl ResolvedTextShadow {
+    fn is_blurred(&self) -> bool {
+        self.std_dev > 0.0
+    }
 }
 
 /// Resolve the cached style values for a single node into a [`DecorationStackEntry`].
-fn resolve_decoration_entry(doc: &BaseDocument, node_id: NodeId) -> DecorationStackEntry {
+fn resolve_decoration_entry(
+    doc: &BaseDocument,
+    node_id: NodeId,
+    parent: Option<&DecorationStackEntry>,
+) -> DecorationStackEntry {
     let Some(styles) = doc.get_node(node_id).and_then(|node| node.primary_styles()) else {
         return DecorationStackEntry {
             node_id,
             fill_color: Color::BLACK,
             decoration: None,
+            text_shadows: None,
         };
     };
 
@@ -170,6 +196,37 @@ fn resolve_decoration_entry(doc: &BaseDocument, node_id: NodeId) -> DecorationSt
         ._webkit_text_fill_color
         .resolve_to_absolute(&itext.color)
         .as_srgb_color();
+
+    // `text-shadow` inherits, so the run's innermost node carries the effective list.
+    // Lengths are in CSS pixels; glyph runs are laid out in device pixels, so scale here.
+    let scale = doc.viewport().scale_f64();
+    let text_shadows = (!itext.text_shadow.0.is_empty()).then(|| {
+        itext
+            .text_shadow
+            .0
+            .iter()
+            .map(|shadow| ResolvedTextShadow {
+                offset: Vec2::new(
+                    shadow.horizontal.px() as f64 * scale,
+                    shadow.vertical.px() as f64 * scale,
+                ),
+                // CSS specifies the blur as a radius approximating a Gaussian with a
+                // standard deviation of half that radius.
+                std_dev: shadow.blur.px() as f64 * scale / 2.0,
+                color: shadow
+                    .color
+                    .resolve_to_absolute(&itext.color)
+                    .as_srgb_color(),
+            })
+            .collect::<Arc<[_]>>()
+    });
+    // `text-shadow` is usually inherited unchanged, so share the parent's list: the shadow
+    // painter batches runs by `Arc` identity, and this keeps e.g. `<b>`/`<i>` children of
+    // a shadowed span in the same batch as their parent's text.
+    let text_shadows = match (text_shadows, parent.and_then(|p| p.text_shadows.as_ref())) {
+        (Some(own), Some(inherited)) if *own == **inherited => Some(inherited.clone()),
+        (own, _) => own,
+    };
 
     let drawn_lines = TextDecorationLine::UNDERLINE
         | TextDecorationLine::OVERLINE
@@ -207,6 +264,7 @@ fn resolve_decoration_entry(doc: &BaseDocument, node_id: NodeId) -> DecorationSt
         node_id,
         fill_color,
         decoration,
+        text_shadows,
     }
 }
 
@@ -244,6 +302,15 @@ struct LineDecoration {
     /// Geometry from the first run the box covers (fallback when it has no own text on
     /// this line, e.g. it only wraps differently-sized descendants).
     first: Option<DecorationRunGeometry>,
+    /// The decorating box's own `text-shadow`, which also applies to its decorations.
+    shadows: Option<Arc<[ResolvedTextShadow]>>,
+}
+
+/// Per glyph run values recorded while walking a line, so the line can be painted in
+/// passes (shadows beneath, then glyphs) without re-resolving styles.
+struct RunRecord {
+    fill_color: Color,
+    shadows: Option<Arc<[ResolvedTextShadow]>>,
 }
 
 /// Reusable scratch storage for drawing text across all inline formatting contexts in a
@@ -253,6 +320,7 @@ pub(crate) struct DrawTextContext {
     stack: Vec<DecorationStackEntry>,
     path_scratch: Vec<NodeId>,
     deco_boxes: Vec<LineDecoration>,
+    run_records: Vec<RunRecord>,
     win_ascent_ratios: WinAscentCache,
 }
 
@@ -402,6 +470,10 @@ pub(crate) struct TextPaintOptions {
 }
 
 /// Paint the decorations accumulated for one line, one line per decorating box.
+///
+/// When `shadow` is set, the decorations are drawn as that text shadow: offset and in the
+/// shadow colour, and only for boxes whose `text-shadow` list is `shadow_list`.
+#[allow(clippy::too_many_arguments)]
 fn flush_line_decorations(
     scene: &mut impl PaintScene,
     transform: Affine,
@@ -410,14 +482,32 @@ fn flush_line_decorations(
     win_ascent_ratios: &mut WinAscentCache,
     inline_root_id: NodeId,
     line_baseline: f32,
+    shadow: Option<(&ResolvedTextShadow, &Arc<[ResolvedTextShadow]>)>,
 ) {
     let TextPaintOptions {
         scale,
         brush_override,
     } = options;
+    let (transform, brush_override) = match shadow {
+        Some((shadow, _)) => (
+            transform * Affine::translate(shadow.offset),
+            Some(shadow.color),
+        ),
+        None => (transform, brush_override),
+    };
     // Draw innermost boxes first so ancestors' decorations paint on top, matching the
     // per-run drawing order this replaced (`stack.iter().rev()`).
     for acc in deco_boxes.iter().rev() {
+        if let Some((_, shadow_list)) = shadow {
+            let same_list = acc
+                .shadows
+                .as_ref()
+                .is_some_and(|list| Arc::ptr_eq(list, shadow_list));
+            if !same_list {
+                continue;
+            }
+        }
+
         let deco = &acc.deco;
         // Prefer the decorating box's own font; fall back to the first run it covers.
         let geom = match (&acc.own, &acc.first) {
@@ -594,11 +684,13 @@ pub(crate) fn stroke_text<'a>(
         stack,
         path_scratch,
         deco_boxes,
+        run_records,
         win_ascent_ratios,
     } = context;
     stack.clear();
     path_scratch.clear();
     deco_boxes.clear();
+    run_records.clear();
 
     // Persistent stack mirroring the ancestor path (inline root -> current run's
     // node) as we walk the runs. The `text-decoration-*` properties are *not*
@@ -613,129 +705,142 @@ pub(crate) fn stroke_text<'a>(
         // draws one decoration per box rather than one stepped segment per differently-sized
         // run. Clearing preserves the allocation for the next line and inline context.
         deco_boxes.clear();
+        run_records.clear();
+        let mut line_has_shadows = false;
 
+        // Pass 1: resolve styles for every glyph run on the line (recording the values
+        // needed to paint it) and accumulate decorations. Painting is deferred so text
+        // shadows can be drawn beneath *all* of the line's text and decorations.
         for item in line.items() {
-            if let PositionedLayoutItem::GlyphRun(glyph_run) = item {
-                let run = glyph_run.run();
-                let font = run.font();
-                let font_size = run.font_size();
-                let metrics = run.font_metrics();
-                let style = glyph_run.style();
-                let synthesis = run.synthesis();
-                let glyph_xform = synthesis
-                    .skew()
-                    .map(|angle| Affine::skew(angle.to_radians().tan() as f64, 0.0));
+            let PositionedLayoutItem::GlyphRun(glyph_run) = item else {
+                continue;
+            };
+            let run = glyph_run.run();
+            let font = run.font();
+            let font_size = run.font_size();
+            let metrics = run.font_metrics();
+            let style = glyph_run.style();
 
-                let css_font_size = font_size as f64 / scale;
+            let css_font_size = font_size as f64 / scale;
 
-                // Reconcile the stack with this run's ancestor path. Build the path
-                // (inline root -> run node), keep the shared prefix already on the stack,
-                // pop the rest, and resolve styles only for the newly-descended nodes.
-                path_scratch.clear();
-                let mut walk_id = Some(style.brush.id);
-                while let Some(node_id) = walk_id {
-                    path_scratch.push(node_id);
-                    if node_id == inline_root_id {
-                        break;
+            // Reconcile the stack with this run's ancestor path. Build the path
+            // (inline root -> run node), keep the shared prefix already on the stack,
+            // pop the rest, and resolve styles only for the newly-descended nodes.
+            path_scratch.clear();
+            let mut walk_id = Some(style.brush.id);
+            while let Some(node_id) = walk_id {
+                path_scratch.push(node_id);
+                if node_id == inline_root_id {
+                    break;
+                }
+                walk_id = doc.get_node(node_id).and_then(|node| node.parent);
+            }
+            path_scratch.reverse();
+
+            let shared = stack
+                .iter()
+                .zip(path_scratch.iter())
+                .take_while(|(entry, node_id)| entry.node_id == **node_id)
+                .count();
+            stack.truncate(shared);
+            for &node_id in &path_scratch[shared..] {
+                let entry = resolve_decoration_entry(doc, node_id, stack.last());
+                stack.push(entry);
+            }
+
+            // The glyph colour and `text-shadow` come from the run's own node (the stack
+            // top): both inherit, so the innermost inline element already carries the
+            // right values. Shadows are not part of a `background-clip: text` mask, so
+            // they are dropped when the brush is overridden.
+            let (fill_color, shadows) = stack
+                .last()
+                .map(|e| (e.fill_color, e.text_shadows.clone()))
+                .unwrap_or((Color::BLACK, None));
+            let fill_color = brush_override.unwrap_or(fill_color);
+            let shadows = shadows.filter(|_| brush_override.is_none());
+            line_has_shadows |= shadows.is_some();
+            run_records.push(RunRecord {
+                fill_color,
+                shadows,
+            });
+
+            // Accumulate this run's contribution to each decorating box on its ancestor
+            // path. The decoration is drawn once per box after the whole line has been
+            // walked (see `flush_line_decorations`), so mixed font sizes within a box
+            // produce a single straight line rather than one stepped segment per run.
+            let geometry = DecorationRunGeometry {
+                baseline: glyph_run.baseline(),
+                ascent: metrics.ascent,
+                descent: metrics.descent,
+                underline_offset: metrics.underline_offset,
+                underline_size: metrics.underline_size,
+                strikethrough_size: metrics.strikethrough_size,
+                font: font.clone(),
+                font_size,
+                css_font_size,
+            };
+            let run_node_id = style.brush.id;
+            let run_x0 = glyph_run.offset() as f64;
+            let run_x1 = run_x0 + glyph_run.advance() as f64;
+
+            for entry in stack.iter() {
+                if entry.decoration.is_none() {
+                    continue;
+                }
+                let idx = match deco_boxes.iter().position(|d| d.node_id == entry.node_id) {
+                    Some(idx) => idx,
+                    None => {
+                        let shadows = entry
+                            .text_shadows
+                            .clone()
+                            .filter(|_| brush_override.is_none());
+                        line_has_shadows |= shadows.is_some();
+                        deco_boxes.push(LineDecoration {
+                            node_id: entry.node_id,
+                            deco: entry.decoration.clone().unwrap(),
+                            min_x: f64::INFINITY,
+                            max_x: f64::NEG_INFINITY,
+                            own: None,
+                            first: None,
+                            shadows,
+                        });
+                        deco_boxes.len() - 1
                     }
-                    walk_id = doc.get_node(node_id).and_then(|node| node.parent);
-                }
-                path_scratch.reverse();
-
-                let shared = stack
-                    .iter()
-                    .zip(path_scratch.iter())
-                    .take_while(|(entry, node_id)| entry.node_id == **node_id)
-                    .count();
-                stack.truncate(shared);
-                for &node_id in &path_scratch[shared..] {
-                    stack.push(resolve_decoration_entry(doc, node_id));
-                }
-
-                let fill_color = brush_override
-                    .unwrap_or_else(|| stack.last().map(|e| e.fill_color).unwrap_or(Color::BLACK));
-
-                let embolden = if FONT_EMBOLDEN_ENABLED {
-                    font_embolden(font_size as f64, fill_color, transform)
-                } else {
-                    kurbo::Vec2::default()
                 };
-
-                let normalized_coords: &[i16] = bytemuck::cast_slice(run.normalized_coords());
-                // Zero-size text is invisible, but hinting can give its glyphs ink. Fully
-                // transparent text is skipped too: backends draw color (emoji) glyphs opaque.
-                if font_size > 0.0 && fill_color.components[3] > 0.0 {
-                    scene.draw_glyphs(
-                        font,
-                        font_size,
-                        !FONT_EMBOLDEN_ENABLED, // hint
-                        normalized_coords,
-                        embolden,
-                        Fill::NonZero,
-                        &anyrender::Paint::from(fill_color),
-                        1.0, // alpha
-                        transform,
-                        glyph_xform,
-                        glyph_run.positioned_glyphs().map(|glyph| anyrender::Glyph {
-                            id: glyph.id as _,
-                            x: glyph.x,
-                            y: glyph.y,
-                        }),
-                    );
+                let acc = &mut deco_boxes[idx];
+                acc.min_x = acc.min_x.min(run_x0);
+                acc.max_x = acc.max_x.max(run_x1);
+                if acc.first.is_none() {
+                    acc.first = Some(geometry.clone());
                 }
-
-                // Accumulate this run's contribution to each decorating box on its ancestor
-                // path. The decoration is drawn once per box after the whole line has been
-                // walked (see `flush_line_decorations`), so mixed font sizes within a box
-                // produce a single straight line rather than one stepped segment per run.
-                let geometry = DecorationRunGeometry {
-                    baseline: glyph_run.baseline(),
-                    ascent: metrics.ascent,
-                    descent: metrics.descent,
-                    underline_offset: metrics.underline_offset,
-                    underline_size: metrics.underline_size,
-                    strikethrough_size: metrics.strikethrough_size,
-                    font: font.clone(),
-                    font_size,
-                    css_font_size,
-                };
-                let run_node_id = style.brush.id;
-                let run_x0 = glyph_run.offset() as f64;
-                let run_x1 = run_x0 + glyph_run.advance() as f64;
-
-                for entry in stack.iter() {
-                    if entry.decoration.is_none() {
-                        continue;
-                    }
-                    let idx = match deco_boxes.iter().position(|d| d.node_id == entry.node_id) {
-                        Some(idx) => idx,
-                        None => {
-                            deco_boxes.push(LineDecoration {
-                                node_id: entry.node_id,
-                                deco: entry.decoration.clone().unwrap(),
-                                min_x: f64::INFINITY,
-                                max_x: f64::NEG_INFINITY,
-                                own: None,
-                                first: None,
-                            });
-                            deco_boxes.len() - 1
-                        }
-                    };
-                    let acc = &mut deco_boxes[idx];
-                    acc.min_x = acc.min_x.min(run_x0);
-                    acc.max_x = acc.max_x.max(run_x1);
-                    if acc.first.is_none() {
-                        acc.first = Some(geometry.clone());
-                    }
-                    // A run whose innermost node is the box itself is the box's own text, so
-                    // its font is the one Firefox positions and sizes the decoration with.
-                    if entry.node_id == run_node_id {
-                        acc.own = Some(geometry.clone());
-                    }
+                // A run whose innermost node is the box itself is the box's own text, so
+                // its font is the one Firefox positions and sizes the decoration with.
+                if entry.node_id == run_node_id {
+                    acc.own = Some(geometry.clone());
                 }
             }
         }
 
+        // Pass 2: text shadows, beneath all of the line's text and decorations.
+        if line_has_shadows {
+            draw_line_text_shadows(
+                scene,
+                &line,
+                run_records,
+                deco_boxes,
+                win_ascent_ratios,
+                transform,
+                options,
+                inline_root_id,
+            );
+        }
+
+        // Pass 3: the glyphs themselves.
+        for (glyph_run, record) in glyph_runs(&line).zip(run_records.iter()) {
+            draw_glyph_run(scene, &glyph_run, record.fill_color, transform);
+        }
+
+        // Pass 4: decorations, on top of the glyphs.
         flush_line_decorations(
             scene,
             transform,
@@ -744,8 +849,183 @@ pub(crate) fn stroke_text<'a>(
             win_ascent_ratios,
             inline_root_id,
             line.metrics().baseline,
+            None,
         );
     }
+}
+
+/// The glyph runs of a line, in order (matching the order of the recorded `RunRecord`s).
+fn glyph_runs<'a, 'b>(
+    line: &'b Line<'a, TextBrush>,
+) -> impl Iterator<Item = GlyphRun<'a, TextBrush>> + 'b {
+    line.items().filter_map(|item| match item {
+        PositionedLayoutItem::GlyphRun(glyph_run) => Some(glyph_run),
+        PositionedLayoutItem::InlineBox(_) => None,
+    })
+}
+
+/// Paint the `text-shadow`s of one line.
+///
+/// Like Blink and Gecko, a shadow is painted by drawing the text again, offset and in the
+/// shadow colour, beneath the real text; the shadows in a list are drawn last-to-first so
+/// the first one ends up on top. An unblurred shadow is just an extra glyph draw. A
+/// blurred one needs a blur filter layer, which is the expensive part, so consecutive runs
+/// that share the same `text-shadow` list (by `Arc` identity: a paragraph's runs normally
+/// all inherit one list) are batched into a single layer per shadow.
+#[allow(clippy::too_many_arguments)]
+fn draw_line_text_shadows(
+    scene: &mut impl PaintScene,
+    line: &Line<'_, TextBrush>,
+    run_records: &[RunRecord],
+    deco_boxes: &[LineDecoration],
+    win_ascent_ratios: &mut WinAscentCache,
+    transform: Affine,
+    options: TextPaintOptions,
+    inline_root_id: NodeId,
+) {
+    let line_metrics = line.metrics();
+    let line_baseline = line_metrics.baseline;
+
+    let mut runs = glyph_runs(line).zip(run_records.iter()).peekable();
+    while let Some((first_run, first_record)) = runs.next() {
+        let Some(shadow_list) = &first_record.shadows else {
+            continue;
+        };
+
+        // Gather the batch: this run plus following runs with the same shadow list.
+        let mut batch = vec![first_run];
+        while let Some((run, _)) = runs.next_if(|(_, record)| {
+            record
+                .shadows
+                .as_ref()
+                .is_some_and(|list| Arc::ptr_eq(list, shadow_list))
+        }) {
+            batch.push(run);
+        }
+
+        // Decorations of boxes with this same shadow list are shadowed along with the
+        // glyphs. Their extent bounds the blur layer's clip together with the runs.
+        let batch_bounds = {
+            let mut bounds: Option<Rect> = None;
+            for run in &batch {
+                let rect = glyph_run_rect(run);
+                bounds = Some(bounds.map_or(rect, |b| b.union(rect)));
+            }
+            for acc in deco_boxes {
+                let same = acc
+                    .shadows
+                    .as_ref()
+                    .is_some_and(|list| Arc::ptr_eq(list, shadow_list));
+                if same && acc.max_x > acc.min_x {
+                    let rect = Rect::new(
+                        acc.min_x,
+                        line_metrics.block_min_coord as f64,
+                        acc.max_x,
+                        line_metrics.block_max_coord as f64,
+                    );
+                    bounds = Some(bounds.map_or(rect, |b| b.union(rect)));
+                }
+            }
+            bounds.unwrap_or(Rect::ZERO)
+        };
+
+        for shadow in shadow_list.iter().rev() {
+            if shadow.color.components[3] <= 0.0 {
+                continue;
+            }
+            if shadow.is_blurred() {
+                let filter = Arc::new(Filter::single(FilterEffect::blur(shadow.std_dev as f32)));
+                // Layer clip: the shadowed content's bounds, offset, plus room for the blur.
+                let margin = 3.0 * shadow.std_dev;
+                let clip = (batch_bounds + shadow.offset).inflate(margin, margin);
+                scene.push_layer(
+                    Fill::NonZero,
+                    Mix::Normal,
+                    1.0,
+                    transform,
+                    &clip,
+                    Some(filter),
+                    None,
+                );
+            }
+
+            let shadow_transform = transform * Affine::translate(shadow.offset);
+            for run in &batch {
+                draw_glyph_run(scene, run, shadow.color, shadow_transform);
+            }
+            flush_line_decorations(
+                scene,
+                transform,
+                options,
+                deco_boxes,
+                win_ascent_ratios,
+                inline_root_id,
+                line_baseline,
+                Some((shadow, shadow_list)),
+            );
+
+            if shadow.is_blurred() {
+                scene.pop_layer();
+            }
+        }
+    }
+}
+
+/// Draw a glyph run's glyphs in a single colour.
+fn draw_glyph_run(
+    scene: &mut impl PaintScene,
+    glyph_run: &GlyphRun<'_, TextBrush>,
+    color: Color,
+    transform: Affine,
+) {
+    let run = glyph_run.run();
+    let font_size = run.font_size();
+    // Zero-size text is invisible, but hinting can give its glyphs ink. Fully
+    // transparent text is skipped too: backends draw color (emoji) glyphs opaque.
+    if font_size <= 0.0 || color.components[3] <= 0.0 {
+        return;
+    }
+    let glyph_xform = run
+        .synthesis()
+        .skew()
+        .map(|angle| Affine::skew(angle.to_radians().tan() as f64, 0.0));
+
+    let embolden = if FONT_EMBOLDEN_ENABLED {
+        font_embolden(font_size as f64, color, transform)
+    } else {
+        kurbo::Vec2::default()
+    };
+
+    let normalized_coords: &[i16] = bytemuck::cast_slice(run.normalized_coords());
+    scene.draw_glyphs(
+        run.font(),
+        font_size,
+        !FONT_EMBOLDEN_ENABLED, // hint
+        normalized_coords,
+        embolden,
+        Fill::NonZero,
+        &anyrender::Paint::from(color),
+        1.0, // alpha
+        transform,
+        glyph_xform,
+        glyph_run.positioned_glyphs().map(|glyph| anyrender::Glyph {
+            id: glyph.id as _,
+            x: glyph.x,
+            y: glyph.y,
+        }),
+    );
+}
+
+/// The layout-space box covered by a glyph run: its advance horizontally and the font's
+/// ascent/descent vertically.
+fn glyph_run_rect(glyph_run: &GlyphRun<'_, TextBrush>) -> Rect {
+    let metrics = glyph_run.run().font_metrics();
+    let x0 = glyph_run.offset() as f64;
+    let x1 = x0 + glyph_run.advance() as f64;
+    let baseline = glyph_run.baseline() as f64;
+    let y0 = baseline - metrics.ascent as f64;
+    let y1 = baseline + metrics.descent as f64;
+    Rect::new(x0.min(x1), y0.min(y1), x0.max(x1), y0.max(y1))
 }
 
 /// Draw selection highlight rectangles for the given byte range in a layout.
