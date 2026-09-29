@@ -299,7 +299,7 @@ impl<T: Deref<Target = ComputedValues>> taffy::BlockItemStyle for TaffyStyloStyl
     }
 
     #[inline]
-    fn item_align_content(&self) -> Option<taffy::AlignContent> {
+    fn align_content(&self) -> Option<taffy::AlignContent> {
         taffy::BlockContainerStyle::align_content(self)
     }
 
