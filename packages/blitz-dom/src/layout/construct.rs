@@ -460,7 +460,7 @@ fn collect_layout_children_with_wrap(
 
         #[cfg(feature = "svg")]
         if matches!(tag_name, "svg") {
-            let outer_html = doc.get_node(container_node_id).unwrap().outer_html();
+            let outer_html = doc.get_node(container_node_id).unwrap().svg_source();
 
             // Remove contruction damage from subtree
             doc.iter_subtree_mut(container_node_id, |id: NodeId, doc: &mut BaseDocument| {

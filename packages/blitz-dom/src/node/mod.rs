@@ -6,6 +6,7 @@ mod custom_widget;
 mod element;
 mod node;
 pub(crate) mod scrollbar;
+mod serialize;
 mod stylo_data;
 #[cfg(feature = "svg")]
 mod svg;
