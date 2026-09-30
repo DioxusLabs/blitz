@@ -62,7 +62,7 @@ pub(crate) fn query_font_family(input: &stylo::SingleFontFamily) -> parley::Quer
     match input {
         stylo::SingleFontFamily::FamilyName(name) => {
             'ret: {
-                let name = &*name.name;
+                let name = name.name.as_str();
 
                 // Legacy web compatibility
                 #[cfg(target_vendor = "apple")]
@@ -425,7 +425,7 @@ pub(crate) fn style(
         .map(|family| match family {
             stylo::SingleFontFamily::FamilyName(name) => {
                 'ret: {
-                    let name = &*name.name;
+                    let name = name.name.as_str();
 
                     // Legacy web compatibility
                     #[cfg(target_vendor = "apple")]

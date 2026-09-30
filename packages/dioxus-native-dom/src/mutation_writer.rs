@@ -245,7 +245,7 @@ impl WriteMutations for MutationWriter<'_> {
         // Set/unset custom widget for <object data>
         if local_name == "data" {
             let element_name = self.docm.element_name(node_id).unwrap();
-            if &*element_name.local == "object" {
+            if element_name.local.as_str() == "object" {
                 match value {
                     AttributeValue::Any(value) => {
                         if let Some(value) = value
