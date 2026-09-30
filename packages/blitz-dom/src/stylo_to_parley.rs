@@ -34,6 +34,7 @@ pub(crate) mod stylo {
     pub(crate) use style::values::computed::font::SingleFontFamily;
     pub(crate) use style::values::generics::box_::BaselineShiftKeyword;
     pub(crate) use style::values::specified::TextAlignKeyword;
+    pub(crate) use style::values::specified::TextAlignLast;
 }
 
 pub(crate) mod parley {
@@ -311,6 +312,19 @@ pub(crate) fn text_align(input: stylo::TextAlignKeyword) -> parley::Alignment {
         stylo::TextAlignKeyword::MozCenter => parley::Alignment::Center,
         stylo::TextAlignKeyword::MozLeft => parley::Alignment::Left,
         stylo::TextAlignKeyword::MozRight => parley::Alignment::Right,
+    }
+}
+
+/// Returns `None` for `text-align-last: auto`
+pub(crate) fn text_align_last(input: stylo::TextAlignLast) -> Option<parley::Alignment> {
+    match input {
+        stylo::TextAlignLast::Auto => None,
+        stylo::TextAlignLast::Start => Some(parley::Alignment::Start),
+        stylo::TextAlignLast::End => Some(parley::Alignment::End),
+        stylo::TextAlignLast::Left => Some(parley::Alignment::Left),
+        stylo::TextAlignLast::Right => Some(parley::Alignment::Right),
+        stylo::TextAlignLast::Center => Some(parley::Alignment::Center),
+        stylo::TextAlignLast::Justify => Some(parley::Alignment::Justify),
     }
 }
 
