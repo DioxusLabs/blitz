@@ -46,6 +46,10 @@ pub(crate) mod stylo {
 
     #[cfg(feature = "block")]
     pub(crate) use style::values::computed::text::TextAlign;
+    #[cfg(feature = "block")]
+    pub(crate) use style::values::computed::{AlignmentBaseline, BaselineShift};
+    #[cfg(feature = "block")]
+    pub(crate) use style::values::generics::box_::BaselineShiftKeyword;
     #[cfg(feature = "grid")]
     pub(crate) use style::{
         computed_values::grid_auto_flow::T as GridAutoFlow,
@@ -423,13 +427,41 @@ pub fn content_alignment(
     }?;
     let is_block_container = matches!(
         display.inside(),
-        stylo::DisplayInside::Flow | stylo::DisplayInside::FlowRoot
+        stylo::DisplayInside::Flow
+            | stylo::DisplayInside::FlowRoot
+            | stylo::DisplayInside::TableCell
     );
     let safe = primary.flags().contains(stylo::AlignFlags::SAFE)
         || (is_block_container && !primary.flags().contains(stylo::AlignFlags::UNSAFE));
     if safe {
         align.safety = taffy::AlignmentSafety::Safe;
     }
+    Some(align)
+}
+
+/// The `align-content` value that a table cell's `vertical-align` is equivalent to when the
+/// cell's own `align-content` is `normal`: `top`, `middle` and `bottom` behave as
+/// `safe start`, `safe center` and `safe end` respectively
+/// (<https://drafts.csswg.org/css-align-3/#distribution-block>). Baseline alignment is left
+/// to the table's row layout.
+#[cfg(feature = "block")]
+#[inline]
+pub fn table_cell_vertical_align(style: &stylo::ComputedValues) -> Option<taffy::AlignContent> {
+    let box_styles = style.get_box();
+    let mut align = match (
+        box_styles.clone_alignment_baseline(),
+        box_styles.clone_baseline_shift(),
+    ) {
+        (_, stylo::BaselineShift::Keyword(stylo::BaselineShiftKeyword::Top)) => {
+            taffy::AlignContent::START
+        }
+        (_, stylo::BaselineShift::Keyword(stylo::BaselineShiftKeyword::Bottom)) => {
+            taffy::AlignContent::END
+        }
+        (stylo::AlignmentBaseline::Middle, _) => taffy::AlignContent::CENTER,
+        _ => return None,
+    };
+    align.safety = taffy::AlignmentSafety::Safe;
     Some(align)
 }
 
@@ -500,6 +532,44 @@ pub fn item_alignment(input: stylo::AlignFlags, is_horiz_rtl: bool) -> Option<ta
     }?;
     if input.flags().contains(stylo::AlignFlags::SAFE) {
         align.safety = taffy::AlignmentSafety::Safe;
+    } else if input.flags().contains(stylo::AlignFlags::UNSAFE) {
+        align.safety = taffy::AlignmentSafety::Unsafe;
+    }
+    Some(align)
+}
+
+/// Convert the `align-self`/`justify-self` value of an absolutely positioned box. Unlike
+/// [`item_alignment`], `normal` maps to `None` as it has out-of-flow specific behaviour
+/// (<https://www.w3.org/TR/css-align-3/#align-abspos>).
+///
+/// `is_inline_axis` is whether the property aligns the box in its inline (horizontal) axis.
+/// The physical `left`/`right` keywords behave as `start` in the block axis.
+///
+/// `is_item_rtl` is whether the box's own `direction` is `rtl`. Taffy resolves alignment
+/// relative to the *containing block's* direction, which is not known here, so the physical
+/// `left`/`right` keywords are expressed in terms of the box's own direction as
+/// `self-start`/`self-end` (which Taffy resolves against the containing block's direction).
+#[inline]
+pub fn oof_item_alignment(
+    input: stylo::AlignFlags,
+    is_inline_axis: bool,
+    is_item_rtl: bool,
+) -> Option<taffy::AlignItems> {
+    let mut align = match input.value() {
+        stylo::AlignFlags::AUTO | stylo::AlignFlags::NORMAL => return None,
+        stylo::AlignFlags::LEFT | stylo::AlignFlags::RIGHT if !is_inline_axis => {
+            taffy::AlignItems::START
+        }
+        stylo::AlignFlags::LEFT if is_item_rtl => taffy::AlignItems::SELF_END,
+        stylo::AlignFlags::LEFT => taffy::AlignItems::SELF_START,
+        stylo::AlignFlags::RIGHT if is_item_rtl => taffy::AlignItems::SELF_START,
+        stylo::AlignFlags::RIGHT => taffy::AlignItems::SELF_END,
+        _ => return item_alignment(input, is_item_rtl),
+    };
+    if input.flags().contains(stylo::AlignFlags::SAFE) {
+        align.safety = taffy::AlignmentSafety::Safe;
+    } else if input.flags().contains(stylo::AlignFlags::UNSAFE) {
+        align.safety = taffy::AlignmentSafety::Unsafe;
     }
     Some(align)
 }

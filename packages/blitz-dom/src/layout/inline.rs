@@ -6,11 +6,11 @@ use style::values::{
     generics::text::GenericTextIndent,
 };
 use taffy::{
-    AvailableSpace, AxisStaticEdge, AxisStaticPosition, BlockContext, BlockFormattingContext,
+    AvailableSpace, AxisStaticPosition, BlockContainerStyle, BlockContext, BlockFormattingContext,
     BoxSizing, CollapsibleMarginSet, CoreStyle as _, Direction, LayoutInput, LayoutOutput,
     LayoutPartialTree as _, MaybeMath as _, MaybeResolve as _, OofCandidate, OofCandidates,
-    OofPositioningArea, Overflow, Point, RequestedAxis, ResolveOrZero as _, RunMode, Size,
-    SizingMode,
+    OofItemStyle, OofPositioningArea, Overflow, Point, RequestedAxis, ResolveOrZero as _, RunMode,
+    Size, SizingMode,
 };
 
 #[cfg(feature = "floats")]
@@ -518,8 +518,10 @@ impl BaseDocument {
 
         // Create sub-context to account for the inline layout's padding/border
         #[cfg(feature = "floats")]
+        let outer_block_ctx = block_ctx;
+        #[cfg(feature = "floats")]
         let mut block_ctx =
-            block_ctx.sub_context(container_pb.top, [container_pb.left, container_pb.right]);
+            outer_block_ctx.sub_context(container_pb.top, [container_pb.left, container_pb.right]);
         // block_ctx.apply_content_box_inset([container_pb.left, container_pb.right]);
 
         if inputs.run_mode == taffy::RunMode::ComputeSize
@@ -689,6 +691,15 @@ impl BaseDocument {
             breaker.finish();
         }
 
+        // Propagate the height consumed by floats placed within this container to the
+        // enclosing block context (so that the BFC root can contain them)
+        #[cfg(feature = "floats")]
+        let float_height_contribution = block_ctx.floated_content_height_contribution();
+        #[cfg(feature = "floats")]
+        outer_block_ctx.add_child_floated_content_height_contribution(
+            container_pb.top + float_height_contribution,
+        );
+
         let alignment = self.nodes[node_id]
             .primary_styles()
             .map(|s| stylo_to_parley::text_align(s.clone_text_align()))
@@ -735,7 +746,7 @@ impl BaseDocument {
         #[cfg(feature = "floats")]
         {
             if is_bfc_root {
-                height = height.max(block_ctx.floated_content_height_contribution() * scale)
+                height = height.max(float_height_contribution * scale)
             };
         }
 
@@ -771,6 +782,20 @@ impl BaseDocument {
 
         let container_direction = self.nodes[node_id].layout_style().direction();
 
+        // `align-content` aligns the line boxes (as a single unit) within the content box in
+        // the block axis. Floats are positioned relative to the formatting context and are not
+        // moved. The offset is stored on the text layout for painting and hit-testing.
+        let block_offset = BlockContainerStyle::align_content(&self.nodes[node_id].layout_style())
+            .map(|align_content| {
+                let free_space = final_size.height
+                    - content_box_inset.vertical_axis_sum()
+                    - measured_size.height;
+                taffy::compute_block_align_content_offset(align_content, free_space)
+            })
+            .unwrap_or(0.0);
+        inline_layout.block_offset = block_offset;
+        let line_box_top = container_pb.top + block_offset;
+
         // Store sizes and positions of inline boxes
         let mut ibox_order: u32 = 0;
         for line in inline_layout.layout.lines() {
@@ -797,6 +822,9 @@ impl BaseDocument {
 
                     let position = style.position();
                     let is_absolute = position.is_out_of_flow();
+                    let item_direction = style.direction();
+                    let justify_self = OofItemStyle::justify_self(&style);
+                    let align_self = OofItemStyle::align_self(&style);
 
                     // The static position of an absolutely positioned box depends on the
                     // display its hypothetical box would have had (the display specified
@@ -827,21 +855,36 @@ impl BaseDocument {
                     drop(style);
 
                     if is_absolute {
-                        // Inline-level boxes are placed at the top of the line box they would
-                        // have occupied (`ibox.y` is the baseline as out-of-flow boxes are
-                        // zero-sized), and block-level boxes below it.
+                        // The static-position rectangle
+                        // (https://www.w3.org/TR/css-position-3/#staticpos-rect):
+                        // - An inline-level box's rectangle is zero-width at its position
+                        //   within the line (`ibox.y` is the baseline as out-of-flow boxes are
+                        //   zero-sized) and spans the line box in the block axis.
+                        // - A block-level box's rectangle spans the containing block's content
+                        //   box in the inline axis and is zero-height below the line box.
                         let line_metrics = line.metrics();
-                        let static_position = taffy::Point {
-                            x: if is_inline_level {
-                                (ibox.x / scale) + container_pb.left
-                            } else {
-                                container_pb.left
-                            },
-                            y: if is_inline_level {
-                                (line_metrics.block_min_coord / scale) + container_pb.top
-                            } else {
-                                (line_metrics.block_max_coord / scale) + container_pb.top
-                            },
+                        let line_top = (line_metrics.block_min_coord / scale) + line_box_top;
+                        let line_bottom = (line_metrics.block_max_coord / scale) + line_box_top;
+                        let (inline_area, block_area) = if is_inline_level {
+                            let x = (ibox.x / scale) + container_pb.left;
+                            (
+                                taffy::Line { start: x, end: x },
+                                taffy::Line {
+                                    start: line_top,
+                                    end: line_bottom,
+                                },
+                            )
+                        } else {
+                            (
+                                taffy::Line {
+                                    start: container_pb.left,
+                                    end: final_size.width - container_pb.right,
+                                },
+                                taffy::Line {
+                                    start: line_bottom,
+                                    end: line_bottom,
+                                },
+                            )
                         };
 
                         oof_candidates.push(OofCandidate {
@@ -849,17 +892,19 @@ impl BaseDocument {
                             order,
                             position,
                             static_position: taffy::Point {
-                                x: AxisStaticPosition::from_edge(
-                                    static_position.x,
-                                    if container_direction == Direction::Rtl && is_inline_level {
-                                        AxisStaticEdge::End
-                                    } else {
-                                        AxisStaticEdge::Start
-                                    },
+                                x: AxisStaticPosition::from_alignment(
+                                    justify_self,
+                                    inline_area,
+                                    item_direction,
+                                    container_direction,
+                                    true,
                                 ),
-                                y: AxisStaticPosition::from_edge(
-                                    static_position.y,
-                                    AxisStaticEdge::Start,
+                                y: AxisStaticPosition::from_alignment(
+                                    align_self,
+                                    block_area,
+                                    item_direction,
+                                    container_direction,
+                                    false,
                                 ),
                             },
                         });
@@ -906,7 +951,7 @@ impl BaseDocument {
                             margin.top.max(0.0)
                         };
                         layout.location.y =
-                            (ibox.y / scale) + margin_top + container_pb.top + inset_offset.y;
+                            (ibox.y / scale) + margin_top + line_box_top + inset_offset.y;
                         layout.padding = padding; //.map(|p| p / scale);
                         layout.border = border; //.map(|p| p / scale);
 
@@ -929,7 +974,7 @@ impl BaseDocument {
         // println!("\n");
 
         let line_baseline =
-            |line: parley::Line<'_, _>| (line.metrics().baseline / scale) + container_pb.top;
+            |line: parley::Line<'_, _>| (line.metrics().baseline / scale) + line_box_top;
         let first_baseline = has_inline_content
             .then(|| inline_layout.layout.lines().next().map(line_baseline))
             .flatten();
@@ -964,7 +1009,7 @@ impl BaseDocument {
                     left: 0.0,
                     right: content_extent.width,
                     top: 0.0,
-                    bottom: content_extent.height,
+                    bottom: content_extent.height + block_offset.max(0.0),
                 }
             },
             baselines: taffy::Baselines {
