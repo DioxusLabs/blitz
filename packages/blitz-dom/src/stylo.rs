@@ -994,6 +994,34 @@ impl<'a> TElement for BlitzNode<'a> {
             let name = &attr.name.local;
             let value = attr.value.as_str();
 
+            if elem.name.ns == ns!(svg) && attr.name.ns == ns!() && name.as_str() == "clip-rule" {
+                use style::properties::{
+                    LonghandId, PropertyId, SourcePropertyDeclaration, parse_one_declaration_into,
+                };
+                use style::stylesheets::{CssRuleType, Origin, UrlExtraData};
+                use style_traits::ParsingMode;
+
+                let url_data = UrlExtraData::from(url::Url::parse("about:blank").unwrap());
+                let mut declarations = SourcePropertyDeclaration::default();
+                if parse_one_declaration_into(
+                    &mut declarations,
+                    PropertyId::NonCustom(LonghandId::ClipRule.into()),
+                    value,
+                    Origin::Author,
+                    &url_data,
+                    None,
+                    ParsingMode::DEFAULT,
+                    QuirksMode::NoQuirks,
+                    CssRuleType::Style,
+                )
+                .is_ok()
+                {
+                    for declaration in declarations.drain().declarations {
+                        push_style(declaration);
+                    }
+                }
+            }
+
             if *name == local_name!("lang") {
                 if attr.name.ns == ns!(xml) {
                     lang = Some(value);

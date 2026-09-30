@@ -298,6 +298,26 @@ rustc-hash = { workspace = true }
 # anyrender_svg = { path = "../anyrender/crates/anyrender_svg" }
 # wgpu_context = { path = "../anyrender/crates/wgpu_context" }
 
+[patch.crates-io]
+# clip-rule support pending crate releases.
+stylo = { git = "https://github.com/DioxusLabs/stylo", rev = "bdc4fe715acdc34db94741f481b4550225ffe5ae" }
+stylo_traits = { git = "https://github.com/DioxusLabs/stylo", rev = "bdc4fe715acdc34db94741f481b4550225ffe5ae" }
+stylo_atoms = { git = "https://github.com/DioxusLabs/stylo", rev = "bdc4fe715acdc34db94741f481b4550225ffe5ae" }
+stylo_dom = { git = "https://github.com/DioxusLabs/stylo", rev = "bdc4fe715acdc34db94741f481b4550225ffe5ae" }
+stylo_malloc_size_of = { git = "https://github.com/DioxusLabs/stylo", rev = "bdc4fe715acdc34db94741f481b4550225ffe5ae" }
+stylo_static_prefs = { git = "https://github.com/DioxusLabs/stylo", rev = "bdc4fe715acdc34db94741f481b4550225ffe5ae" }
+selectors = { git = "https://github.com/DioxusLabs/stylo", rev = "bdc4fe715acdc34db94741f481b4550225ffe5ae" }
+servo_arc = { git = "https://github.com/DioxusLabs/stylo", rev = "bdc4fe715acdc34db94741f481b4550225ffe5ae" }
+to_shmem = { git = "https://github.com/DioxusLabs/stylo", rev = "bdc4fe715acdc34db94741f481b4550225ffe5ae" }
+anyrender = { git = "https://github.com/DioxusLabs/anyrender", rev = "11c49f55810609e6e5ec33df25bd71c3c1d7c88f" }
+anyrender_serialize = { git = "https://github.com/DioxusLabs/anyrender", rev = "11c49f55810609e6e5ec33df25bd71c3c1d7c88f" }
+anyrender_skia = { git = "https://github.com/DioxusLabs/anyrender", rev = "11c49f55810609e6e5ec33df25bd71c3c1d7c88f" }
+anyrender_vello = { git = "https://github.com/DioxusLabs/anyrender", rev = "11c49f55810609e6e5ec33df25bd71c3c1d7c88f" }
+anyrender_vello_cpu = { git = "https://github.com/DioxusLabs/anyrender", rev = "11c49f55810609e6e5ec33df25bd71c3c1d7c88f" }
+anyrender_vello_hybrid = { git = "https://github.com/DioxusLabs/anyrender", rev = "11c49f55810609e6e5ec33df25bd71c3c1d7c88f" }
+anyrender_svg = { git = "https://github.com/DioxusLabs/anyrender", rev = "11c49f55810609e6e5ec33df25bd71c3c1d7c88f" }
+wgpu_context = { git = "https://github.com/DioxusLabs/anyrender", rev = "11c49f55810609e6e5ec33df25bd71c3c1d7c88f" }
+
 # vello = { path = "../vello/vello" }
 # vello_cpu = { path = "../vello/sparse_strips/vello_cpu" }
 # vello_hybrid = { path = "../vello/sparse_strips/vello_hybrid" }

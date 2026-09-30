@@ -454,7 +454,8 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         let clip_path_shape = cx.clip_path_shape();
         let has_clip_path = clip_path_shape.is_some();
         let default_clip = cx.frame.border_box_path();
-        let mut clip_path_for_layer = clip_path_shape.unwrap_or(default_clip);
+        let (clip_path_fill, mut clip_path_for_layer) =
+            clip_path_shape.unwrap_or((Fill::NonZero, default_clip));
         clip_path_for_layer.apply_affine(Affine::scale(self.scale));
 
         // CSS 2 `clip` property (absolutely positioned elements only). Applies to the whole of
@@ -466,6 +467,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         let css_clip_layer_pushed = self.layer_manager.maybe_push_layer(
             scene,
             css_clip_rect.is_some(),
+            Fill::NonZero,
             1.0,
             cx.transform,
             &css_clip_rect.unwrap_or(Rect::ZERO),
@@ -480,6 +482,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         self.layer_manager.maybe_with_layer(
             scene,
             has_clip_path,
+            clip_path_fill,
             1.0,
             cx.transform,
             &clip_path_for_layer,
@@ -520,6 +523,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                 self.layer_manager.maybe_with_layer(
                     scene,
                     has_opacity || filter.is_some() || backdrop_filter.is_some(),
+                    Fill::NonZero,
                     opacity,
                     cx.transform,
                     &effect_layer_clip,
@@ -544,6 +548,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                         self.layer_manager.maybe_with_layer(
                             scene,
                             should_clip,
+                            Fill::NonZero,
                             1.0, // opacity
                             cx.transform,
                             clip,

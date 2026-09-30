@@ -1,11 +1,12 @@
 use super::ElementCx;
 use kurbo::{BezPath, Circle, Ellipse, Point, Rect, Shape, SvgArc, Vec2};
+use peniko::Fill;
 use style::values::computed::basic_shape::{BasicShape, ClipPath};
 use style::values::computed::{Angle, CSSPixelLength, LengthPercentage};
 use style::values::generics::basic_shape::{
     ArcSize, ArcSweep, AxisEndPoint, AxisPosition, CommandEndPoint, ControlPoint, ControlReference,
-    GenericBasicShape, GenericPathOrShapeFunction, GenericShapeCommand, GenericShapeRadius,
-    ShapeBox, ShapeGeometryBox,
+    FillRule, GenericBasicShape, GenericPathOrShapeFunction, GenericShapeCommand,
+    GenericShapeRadius, ShapeBox, ShapeGeometryBox,
 };
 use style::values::generics::position::{GenericPosition, GenericPositionOrAuto};
 
@@ -43,7 +44,7 @@ impl ElementCx<'_, '_> {
 
     /// Compute the clip-path BezPath (if any) for this element.
     /// Returns `None` if clip-path is `none` or unsupported.
-    pub(super) fn clip_path_shape(&self) -> Option<BezPath> {
+    pub(super) fn clip_path_shape(&self) -> Option<(Fill, BezPath)> {
         let clip_path = self.style.clone_clip_path();
         match clip_path {
             ClipPath::None => None,
@@ -53,11 +54,26 @@ impl ElementCx<'_, '_> {
             }
             ClipPath::Shape(basic_shape, geometry_box) => {
                 let reference_box = self.resolve_geometry_box(&geometry_box);
+                let fill = match &*basic_shape {
+                    GenericBasicShape::Polygon(polygon) => polygon.fill,
+                    GenericBasicShape::PathOrShape(GenericPathOrShapeFunction::Path(path)) => {
+                        path.fill
+                    }
+                    GenericBasicShape::PathOrShape(GenericPathOrShapeFunction::Shape(shape)) => {
+                        shape.fill
+                    }
+                    _ => FillRule::Nonzero,
+                };
+                let fill = match fill {
+                    FillRule::Nonzero => Fill::NonZero,
+                    FillRule::Evenodd => Fill::EvenOdd,
+                };
                 self.basic_shape_to_path(&basic_shape, reference_box)
+                    .map(|path| (fill, path))
             }
             ClipPath::Box(geometry_box) => {
                 let reference_box = self.resolve_geometry_box(&geometry_box);
-                Some(Rect::from(reference_box).into_path(0.1))
+                Some((Fill::NonZero, Rect::from(reference_box).into_path(0.1)))
             }
         }
     }
@@ -128,7 +144,6 @@ impl ElementCx<'_, '_> {
             }
             GenericBasicShape::Polygon(polygon) => {
                 let mut path = BezPath::new();
-                let _fill = &polygon.fill;
                 let coords = &polygon.coordinates;
 
                 if coords.is_empty() {

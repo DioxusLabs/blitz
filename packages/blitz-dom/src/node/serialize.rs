@@ -1,7 +1,7 @@
 //! Serialization of nodes to HTML, and of inline `<svg>` subtrees to SVG source for usvg.
 
 use html_escape::{encode_quoted_attribute_to_string, encode_text_to_string};
-use markup5ever::{QualName, ns};
+use markup5ever::{QualName, local_name, ns};
 use style_traits::values::ToCss;
 
 use super::{Node, NodeData};
@@ -15,8 +15,8 @@ enum OutputStyle {
 #[derive(Clone, Copy)]
 struct SerializeOpts {
     style: OutputStyle,
-    /// Replace `currentColor` in attribute values with the element's computed `color`
-    resolve_current_color: bool,
+    /// Resolve `currentColor` and clipping rules against the element's computed styles
+    resolve_computed_styles: bool,
     /// Declare the `xlink` prefix on the root element so that the output is well-formed XML
     declare_xlink_ns: bool,
 }
@@ -25,7 +25,7 @@ impl SerializeOpts {
     const fn html(style: OutputStyle) -> Self {
         Self {
             style,
-            resolve_current_color: false,
+            resolve_computed_styles: false,
             declare_xlink_ns: false,
         }
     }
@@ -100,13 +100,13 @@ impl Node {
     }
 
     /// Serializes this `<svg>` subtree as a standalone SVG document for usvg, with
-    /// `currentColor` resolved against each element's computed `color`.
+    /// `currentColor` and `clip-rule` resolved against each element's computed styles.
     #[cfg(feature = "svg")]
     pub(crate) fn svg_source(&self) -> String {
         let mut output = String::new();
         let opts = SerializeOpts {
             style: OutputStyle::Normal,
-            resolve_current_color: true,
+            resolve_computed_styles: true,
             declare_xlink_ns: true,
         };
         self.write_outer_html_in_style(&mut output, opts, 0);
@@ -118,7 +118,7 @@ impl Node {
         let style = opts.style;
         let has_children = !self.children.is_empty();
         let current_color = opts
-            .resolve_current_color
+            .resolve_computed_styles
             .then(|| self.primary_styles())
             .flatten()
             .map(|style| style.clone_color())
@@ -162,6 +162,10 @@ impl Node {
                 }
             }
             NodeData::Element(data) => {
+                let clip_rule = (opts.resolve_computed_styles && data.name.ns == ns!(svg))
+                    .then(|| self.primary_styles())
+                    .flatten()
+                    .map(|style| style.get_inherited_svg().clip_rule.to_css_string());
                 if matches!(style, OutputStyle::Pretty) {
                     for _ in 0..nesting {
                         writer.push_str(INDENT);
@@ -192,7 +196,21 @@ impl Node {
                     } else {
                         encode_quoted_attribute_to_string(&attr.value, writer);
                     }
+                    if attr.name.local == local_name!("style") {
+                        if let Some(rule) = &clip_rule {
+                            writer.push_str(";clip-rule:");
+                            writer.push_str(rule);
+                            writer.push_str("!important");
+                        }
+                    }
                     writer.push('"');
+                }
+                if let Some(rule) = &clip_rule {
+                    if data.attr(local_name!("style")).is_none() {
+                        writer.push_str(" style=\"clip-rule:");
+                        writer.push_str(rule);
+                        writer.push_str("!important\"");
+                    }
                 }
                 if !has_children {
                     writer.push_str(" /");

@@ -154,6 +154,7 @@ impl ElementCx<'_, '_> {
             self.context.layer_manager.maybe_with_layer(
                 scene,
                 true,
+                Fill::NonZero,
                 1.0,
                 self.transform,
                 &background_clip_path,

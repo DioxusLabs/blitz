@@ -1,6 +1,6 @@
 use anyrender::{Filter, PaintScene};
 use kurbo::{Affine, Shape};
-use peniko::Mix;
+use peniko::{Fill, Mix};
 use std::{cell::Cell, sync::Arc};
 
 const LAYER_LIMIT: u32 = 1024;
@@ -21,6 +21,7 @@ impl LayerManager {
         &self,
         scene: &mut S,
         condition: bool,
+        fill: Fill,
         opacity: f32,
         transform: Affine,
         shape: &impl Shape,
@@ -31,6 +32,7 @@ impl LayerManager {
         let layer_used = self.maybe_push_layer(
             scene,
             condition,
+            fill,
             opacity,
             transform,
             shape,
@@ -46,6 +48,7 @@ impl LayerManager {
         &self,
         scene: &mut impl PaintScene,
         condition: bool,
+        fill: Fill,
         opacity: f32,
         transform: Affine,
         shape: &impl Shape,
@@ -65,9 +68,10 @@ impl LayerManager {
 
         // Actually push the layer
         if opacity == 1.0 && filter.is_none() && backdrop_filter.is_none() {
-            scene.push_clip_layer(transform, shape);
+            scene.push_clip_layer(fill, transform, shape);
         } else {
             scene.push_layer(
+                fill,
                 Mix::Normal,
                 opacity,
                 transform,
