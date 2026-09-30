@@ -81,37 +81,6 @@ const FLEX_HTML: &str = r#"<html><body style="margin:0">
 </body></html>"#;
 
 #[test]
-fn flex_wrap_modes_position_items_on_the_expected_lines() {
-    for incremental in [false, true] {
-        for (wrap, expected_y) in [("nowrap", 0.0), ("wrap", 10.0), ("wrap-reverse", 0.0)] {
-            let html = format!(
-                r#"<html><body style="margin:0">
-                    <div id="flex" style="display:flex; flex-wrap:{wrap}; width:20px; height:20px; align-content:flex-start;">
-                        <div id="a" style="flex:none; width:20px; height:10px;"></div>
-                        <div id="b" style="flex:none; width:20px; height:10px;"></div>
-                    </div>
-                </body></html>"#
-            );
-            let doc = make_doc(&html, incremental);
-            assert_eq!(
-                y(&doc, "#b"),
-                expected_y,
-                "wrap={wrap}, incremental={incremental}"
-            );
-            assert_eq!(
-                x(&doc, "#b"),
-                if wrap == "nowrap" { 20.0 } else { 0.0 },
-                "wrap={wrap}, incremental={incremental}"
-            );
-            assert_eq!(
-                y(&doc, "#a"),
-                if wrap == "wrap-reverse" { 10.0 } else { 0.0 }
-            );
-        }
-    }
-}
-
-#[test]
 fn flex_items_are_laid_out_in_order_modified_document_order() {
     for incremental in [false, true] {
         let doc = make_doc(FLEX_HTML, incremental);

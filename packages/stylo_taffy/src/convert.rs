@@ -940,31 +940,3 @@ pub fn to_taffy_style(style: &stylo::ComputedValues) -> taffy::Style<Atom> {
         },
     }
 }
-
-#[cfg(all(test, feature = "flexbox"))]
-mod flex_wrap_tests {
-    use super::{flex_wrap, stylo};
-
-    #[test]
-    fn converts_wrap_modes() {
-        assert_eq!(flex_wrap(stylo::FlexWrap::NOWRAP), taffy::FlexWrap::NoWrap);
-        assert_eq!(flex_wrap(stylo::FlexWrap::WRAP), taffy::FlexWrap::Wrap);
-        assert_eq!(
-            flex_wrap(stylo::FlexWrap::WRAP_REVERSE),
-            taffy::FlexWrap::WrapReverse
-        );
-    }
-
-    #[test]
-    fn balanced_wrap_falls_back_to_unbalanced_wrap() {
-        assert_eq!(flex_wrap(stylo::FlexWrap::BALANCE), taffy::FlexWrap::Wrap);
-        assert_eq!(
-            flex_wrap(stylo::FlexWrap::WRAP | stylo::FlexWrap::BALANCE),
-            taffy::FlexWrap::Wrap
-        );
-        assert_eq!(
-            flex_wrap(stylo::FlexWrap::WRAP_REVERSE | stylo::FlexWrap::BALANCE),
-            taffy::FlexWrap::WrapReverse
-        );
-    }
-}

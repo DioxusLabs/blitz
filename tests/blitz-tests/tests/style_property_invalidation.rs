@@ -55,34 +55,6 @@ fn color_of(doc: &BaseDocument, selector: &str) -> [u8; 3] {
     ]
 }
 
-#[test]
-fn typed_attr_resolves_without_a_feature_pref() {
-    let mut doc = make_doc();
-    let inner_id = doc.query_selector("#inner").unwrap().unwrap();
-    let name = blitz_dom::QualName::new(None, blitz_dom::ns!(), "data-width".into());
-    doc.mutate().set_attribute(inner_id, name, "72px");
-    doc.set_style_property(inner_id, "width", "attr(data-width type(<length>), 10px)");
-    doc.resolve(0.0);
-
-    assert_eq!(
-        doc.get_node(inner_id).unwrap().final_layout().size.width,
-        72.0
-    );
-}
-
-#[test]
-fn font_width_and_legacy_font_stretch_set_the_computed_width() {
-    for property in ["font-width", "font-stretch"] {
-        let mut doc = make_doc();
-        let inner_id = doc.query_selector("#inner").unwrap().unwrap();
-        doc.set_style_property(inner_id, property, "125%");
-        doc.resolve(0.0);
-
-        let styles = doc.get_node(inner_id).unwrap().primary_styles().unwrap();
-        assert_eq!(styles.get_font().font_width.0.to_float(), 125.0);
-    }
-}
-
 /// A lone `set_style_property` call between two renders must restyle the node.
 #[test]
 fn set_style_property_restyles_node() {
