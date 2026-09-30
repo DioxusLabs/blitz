@@ -548,10 +548,12 @@ pub fn flex_direction(input: stylo::FlexDirection) -> taffy::FlexDirection {
 #[inline]
 #[cfg(feature = "flexbox")]
 pub fn flex_wrap(input: stylo::FlexWrap) -> taffy::FlexWrap {
-    match input {
-        stylo::FlexWrap::Wrap => taffy::FlexWrap::Wrap,
-        stylo::FlexWrap::WrapReverse => taffy::FlexWrap::WrapReverse,
-        stylo::FlexWrap::Nowrap => taffy::FlexWrap::NoWrap,
+    if input.contains(stylo::FlexWrap::WRAP_REVERSE) {
+        taffy::FlexWrap::WrapReverse
+    } else if input.intersects(stylo::FlexWrap::WRAP | stylo::FlexWrap::BALANCE) {
+        taffy::FlexWrap::Wrap
+    } else {
+        taffy::FlexWrap::NoWrap
     }
 }
 

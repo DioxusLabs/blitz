@@ -22,13 +22,13 @@ pub(crate) mod stylo {
     pub(crate) use style::values::computed::OverflowWrap;
     pub(crate) use style::values::computed::WordBreak;
     pub(crate) use style::values::computed::font::FontFeatureSettings;
-    pub(crate) use style::values::computed::font::FontStretch;
     pub(crate) use style::values::computed::font::FontStyle;
     pub(crate) use style::values::computed::font::FontVariantEastAsian;
     pub(crate) use style::values::computed::font::FontVariantLigatures;
     pub(crate) use style::values::computed::font::FontVariantNumeric;
     pub(crate) use style::values::computed::font::FontVariationSettings;
     pub(crate) use style::values::computed::font::FontWeight;
+    pub(crate) use style::values::computed::font::FontWidth;
     pub(crate) use style::values::computed::font::GenericFontFamily;
     pub(crate) use style::values::computed::font::LineHeight;
     pub(crate) use style::values::computed::font::SingleFontFamily;
@@ -62,7 +62,7 @@ pub(crate) fn query_font_family(input: &stylo::SingleFontFamily) -> parley::Quer
     match input {
         stylo::SingleFontFamily::FamilyName(name) => {
             'ret: {
-                let name = name.name.as_ref();
+                let name = name.name.as_str();
 
                 // Legacy web compatibility
                 #[cfg(target_vendor = "apple")]
@@ -87,7 +87,7 @@ pub(crate) fn font_weight(input: stylo::FontWeight) -> parley::FontWeight {
     parley::FontWeight::new(input.value())
 }
 
-pub(crate) fn font_width(input: stylo::FontStretch) -> parley::FontWidth {
+pub(crate) fn font_width(input: stylo::FontWidth) -> parley::FontWidth {
     parley::FontWidth::from_percentage(input.0.to_float())
 }
 
@@ -412,7 +412,7 @@ pub(crate) fn style(
     // Convert Bold/Italic
     let font_weight = self::font_weight(font_styles.font_weight);
     let font_style = self::font_style(font_styles.font_style);
-    let font_width = self::font_width(font_styles.font_stretch);
+    let font_width = self::font_width(font_styles.font_width);
     let font_variations = self::font_variations(&font_styles.font_variation_settings);
     let font_features = self::font_features(font_styles);
 
@@ -425,7 +425,7 @@ pub(crate) fn style(
         .map(|family| match family {
             stylo::SingleFontFamily::FamilyName(name) => {
                 'ret: {
-                    let name = name.name.as_ref();
+                    let name = name.name.as_str();
 
                     // Legacy web compatibility
                     #[cfg(target_vendor = "apple")]
