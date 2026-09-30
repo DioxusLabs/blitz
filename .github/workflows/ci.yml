@@ -25,7 +25,7 @@ jobs:
   # version. Building is likely sufficient as runtime errors varying between rust versions is very unlikely.
   build-msrv:
     name: "MSRV Build [Rust 1.91]"
-    runs-on: ubuntu-latest
+    runs-on: warp-ubuntu-latest-arm64-4x
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
@@ -37,7 +37,7 @@ jobs:
 
   build-features-default:
     name: "Build [default features]"
-    runs-on: ubuntu-latest
+    runs-on: warp-ubuntu-latest-arm64-4x
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -47,7 +47,7 @@ jobs:
 
   test-features-default:
     name: "Test [default features]"
-    runs-on: ubuntu-latest
+    runs-on: warp-ubuntu-latest-arm64-4x
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -57,7 +57,7 @@ jobs:
 
   build-counter:
     name: "Build counter example"
-    runs-on: ubuntu-latest
+    runs-on: warp-ubuntu-latest-arm64-4x
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -69,7 +69,7 @@ jobs:
   # members with a [lib] crate-type = ["cdylib"] target for wasm.
   build-wasm-examples:
     name: "Build wasm examples"
-    runs-on: ubuntu-latest
+    runs-on: warp-ubuntu-latest-arm64-4x
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
@@ -135,7 +135,7 @@ jobs:
           - {
               name: windows,
               target: x86_64-pc-windows-msvc,
-              os: windows-latest,
+              os: warp-windows-2025-x64-4x,
               cross: false,
               command: "test",
               args: "--all --tests",
