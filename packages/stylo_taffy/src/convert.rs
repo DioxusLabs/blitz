@@ -62,15 +62,17 @@ use taffy::CompactLength;
 use taffy::style_helpers::*;
 
 #[inline]
-#[cfg(feature = "grid")]
+#[cfg(any(feature = "flexbox", feature = "grid"))]
 pub(crate) fn saturating_i16(input: i32) -> i16 {
     input.clamp(i16::MIN as i32, i16::MAX as i32) as i16
 }
 
 #[inline]
 #[cfg(any(feature = "flexbox", feature = "grid"))]
-pub(crate) fn saturating_u16<T: Ord + From<u16> + TryInto<u16>>(input: T) -> u16 {
-    input.max(u16::MIN.into()).try_into().unwrap_or(u16::MAX)
+/// Clamps unsigned counts to the nonnegative i16 range.
+pub(crate) fn saturating_u16<T: Ord + From<u16> + TryInto<i32>>(input: T) -> u16 {
+    let input = input.max(u16::MIN.into()).try_into().unwrap_or(i32::MAX);
+    saturating_i16(input) as u16
 }
 
 #[inline]
