@@ -14,7 +14,6 @@ env:
   RUSTDOCFLAGS: "-D warnings"
   CARGO_REGISTRIES_CRATES_IO_PROTOCOL: "sparse"
   WPT_DIR: "./wpt/tests"
-  WPT_COMMIT: "375cf2548a7c0952c54e141d1eb4e6fc4fe59e41"
 
 permissions:
   contents: read
@@ -50,7 +49,7 @@ jobs:
           packages: libfontconfig1-dev fonts-tlwg-loma-otf
           version: 1.0-warp-ubuntu-latest-arm64-16x
       - name: Clone WPT tests
-        run: git clone --depth 1 --revision "$WPT_COMMIT" https://github.com/web-platform-tests/wpt ./wpt/tests
+        run: git clone --depth 1 --revision "$(cat ./wpt/WPT_COMMIT)" https://github.com/web-platform-tests/wpt ./wpt/tests
       - name: Build WPT runner
         run: cargo build -rp wpt
       - name: Run WPT tests

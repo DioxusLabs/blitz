@@ -22,7 +22,7 @@ jobs:
         id: upstream
         run: |
           set -euo pipefail
-          current=$(sed -nE 's/^  WPT_COMMIT: "([0-9a-f]{40})"$/\1/p' .github/workflows/wpt.yml)
+          current=$(grep -oE '^[0-9a-f]{40}$' wpt/WPT_COMMIT)
           latest=$(git ls-remote https://github.com/web-platform-tests/wpt refs/heads/master | cut -f1)
           [ -n "$current" ] && [ -n "$latest" ]
           echo "current=$current" >> "$GITHUB_OUTPUT"
@@ -33,9 +33,9 @@ jobs:
       - name: Update WPT_COMMIT
         if: steps.upstream.outputs.current != steps.upstream.outputs.latest
         run: |
-          sed -i "s/${{ steps.upstream.outputs.current }}/${{ steps.upstream.outputs.latest }}/" .github/workflows/wpt.yml
-          # Fail loudly if the substitution did not take effect.
-          ! git diff --quiet -- .github/workflows/wpt.yml
+          echo "${{ steps.upstream.outputs.latest }}" > wpt/WPT_COMMIT
+          # Fail loudly if the update did not take effect.
+          ! git diff --quiet -- wpt/WPT_COMMIT
 
       - name: Open pull request
         if: steps.upstream.outputs.current != steps.upstream.outputs.latest
@@ -58,7 +58,7 @@ jobs:
             --base main \
             --head "$BRANCH" \
             --title "$TITLE" \
-            --body "Automated weekly bump of \`WPT_COMMIT\` in \`.github/workflows/wpt.yml\`.
+            --body "Automated weekly bump of the pinned WPT revision in \`wpt/WPT_COMMIT\`.
 
           \`${{ steps.upstream.outputs.current }}\` → \`${{ steps.upstream.outputs.latest }}\`
 
