@@ -500,13 +500,7 @@ impl<T: Deref<Target = ComputedValues>> taffy::GridContainerStyle for TaffyStylo
     fn grid_template_areas(&self) -> Option<Self::GridTemplateAreas<'_>> {
         match &self.style.get_position().grid_template_areas {
             GridTemplateAreas::Areas(areas) => {
-                Some(areas.0.areas.iter().map(|area| taffy::GridTemplateArea {
-                    name: area.name.clone(),
-                    row_start: area.rows.start as u16,
-                    row_end: area.rows.end as u16,
-                    column_start: area.columns.start as u16,
-                    column_end: area.columns.end as u16,
-                }))
+                Some(areas.0.areas.iter().map(convert::grid_template_area))
             }
             GridTemplateAreas::None => None,
         }
@@ -514,14 +508,14 @@ impl<T: Deref<Target = ComputedValues>> taffy::GridContainerStyle for TaffyStylo
 
     fn grid_template_area_row_count(&self) -> u16 {
         match &self.style.get_position().grid_template_areas {
-            GridTemplateAreas::Areas(areas) => areas.0.strings.len() as u16,
+            GridTemplateAreas::Areas(areas) => convert::saturating_u16(areas.0.strings.len()),
             GridTemplateAreas::None => 0,
         }
     }
 
     fn grid_template_area_column_count(&self) -> u16 {
         match &self.style.get_position().grid_template_areas {
-            GridTemplateAreas::Areas(areas) => areas.0.width as u16,
+            GridTemplateAreas::Areas(areas) => convert::saturating_u16(areas.0.width),
             GridTemplateAreas::None => 0,
         }
     }
