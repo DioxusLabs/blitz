@@ -548,13 +548,25 @@ pub fn flex_direction(input: stylo::FlexDirection) -> taffy::FlexDirection {
 #[inline]
 #[cfg(feature = "flexbox")]
 pub fn flex_wrap(input: stylo::FlexWrap) -> taffy::FlexWrap {
-    if input.contains(stylo::FlexWrap::WRAP_REVERSE) {
+    if input.contains(stylo::FlexWrap::BALANCE) {
+        if input.contains(stylo::FlexWrap::WRAP_REVERSE) {
+            taffy::FlexWrap::BalanceReverse
+        } else {
+            taffy::FlexWrap::Balance
+        }
+    } else if input.contains(stylo::FlexWrap::WRAP_REVERSE) {
         taffy::FlexWrap::WrapReverse
-    } else if input.intersects(stylo::FlexWrap::WRAP | stylo::FlexWrap::BALANCE) {
+    } else if input.contains(stylo::FlexWrap::WRAP) {
         taffy::FlexWrap::Wrap
     } else {
         taffy::FlexWrap::NoWrap
     }
+}
+
+#[inline]
+#[cfg(feature = "flexbox")]
+pub fn flex_line_count(input: i32) -> u16 {
+    input.clamp(1, u16::MAX as i32) as u16
 }
 
 #[inline]
@@ -893,6 +905,8 @@ pub fn to_taffy_style(style: &stylo::ComputedValues) -> taffy::Style<Atom> {
         flex_direction: self::flex_direction(pos.flex_direction),
         #[cfg(feature = "flexbox")]
         flex_wrap: self::flex_wrap(pos.flex_wrap),
+        #[cfg(feature = "flexbox")]
+        flex_line_count: self::flex_line_count(pos.flex_line_count),
         #[cfg(feature = "flexbox")]
         flex_grow: pos.flex_grow.0,
         #[cfg(feature = "flexbox")]

@@ -252,6 +252,11 @@ impl<T: Deref<Target = ComputedValues>> taffy::FlexboxContainerStyle for TaffySt
     }
 
     #[inline]
+    fn flex_line_count(&self) -> u16 {
+        convert::flex_line_count(self.style.get_position().flex_line_count)
+    }
+
+    #[inline]
     fn gap(&self) -> taffy::Size<taffy::LengthPercentage> {
         let position_styles = self.style.get_position();
         taffy::Size {

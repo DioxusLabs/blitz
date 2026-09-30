@@ -21,6 +21,6 @@ style_atoms = { workspace = true }
 default = ["std", "block", "flexbox", "grid"]
 std = ["taffy/std"]
 block = ["taffy/block_layout"]
-flexbox = ["taffy/flexbox"]
+flexbox = ["taffy/flexbox", "taffy/flexbox_balance"]
 grid = ["taffy/grid"]
 floats = ["taffy/float_layout"]
