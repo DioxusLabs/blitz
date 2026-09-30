@@ -7,10 +7,10 @@ use style::values::{
 };
 use taffy::{
     AvailableSpace, AxisStaticEdge, AxisStaticPosition, BlockContext, BlockFormattingContext,
-    BoxSizing, CollapsibleMarginSet, CoreStyle as _, Direction, LayoutInput, LayoutOutput,
-    LayoutPartialTree as _, MaybeMath as _, MaybeResolve as _, OofCandidate, OofCandidates,
-    OofPositioningArea, Overflow, Point, RequestedAxis, ResolveOrZero as _, RunMode, Size,
-    SizingMode,
+    BoxSizing, CollapsibleMarginSet, CompactLength, CoreStyle as _, Direction, LayoutInput,
+    LayoutOutput, LayoutPartialTree as _, MaybeMath as _, MaybeResolve as _, OofCandidate,
+    OofCandidates, OofPositioningArea, Overflow, Point, RequestedAxis, ResolveOrZero as _, RunMode,
+    Size, SizingMode,
 };
 
 #[cfg(feature = "floats")]
@@ -21,6 +21,50 @@ use taffy::{BlockItemStyle as _, Clear, Float, prelude::TaffyMaxContent};
 use super::resolve_calc_value;
 use crate::BaseDocument;
 use crate::stylo_to_parley;
+
+/// Layout inputs for an atomic inline box, with any sizing keyword on its `width` style
+/// (`min-content`, `max-content`, `fit-content`, `fit-content(...)`, `stretch`) resolved
+/// into the available space or known width the box is measured with.
+fn inline_box_inputs(
+    width_style: taffy::Dimension,
+    margin: taffy::Rect<f32>,
+    child_inputs: LayoutInput,
+) -> LayoutInput {
+    let stretch_width = child_inputs
+        .available_space
+        .width
+        .into_option()
+        .map(|width| (width - margin.horizontal_axis_sum()).max(0.0));
+    let percent_basis = child_inputs.parent_size.width;
+
+    let mut inputs = child_inputs;
+    match width_style.tag() {
+        CompactLength::MIN_CONTENT_TAG => inputs.available_space.width = AvailableSpace::MinContent,
+        CompactLength::MAX_CONTENT_TAG => inputs.available_space.width = AvailableSpace::MaxContent,
+        CompactLength::FIT_CONTENT_PX_TAG => {
+            inputs.available_space.width = AvailableSpace::Definite(width_style.value())
+        }
+        CompactLength::FIT_CONTENT_PERCENT_TAG => {
+            if let Some(basis) = percent_basis {
+                inputs.available_space.width =
+                    AvailableSpace::Definite(basis * width_style.value());
+            }
+        }
+        CompactLength::FIT_CONTENT_KEYWORD_TAG => {
+            if let Some(width) = stretch_width {
+                inputs.available_space.width = AvailableSpace::Definite(width);
+            }
+        }
+        CompactLength::STRETCH_TAG => {
+            if let Some(width) = stretch_width {
+                inputs.known_dimensions.width = Some(width);
+                inputs.available_space.width = AvailableSpace::Definite(width);
+            }
+        }
+        _ => {}
+    }
+    inputs
+}
 
 impl BaseDocument {
     pub(crate) fn compute_inline_layout(
@@ -329,6 +373,7 @@ impl BaseDocument {
             let is_block_axis_scroll_container = is_flow && is_scroll_container;
             let contain_layout = box_style.clone_contain().contains(Contain::LAYOUT);
             let exports_baseline = !is_block_axis_scroll_container && !contain_layout;
+            let box_inputs = inline_box_inputs(style.size().width, margin, child_inputs);
             drop(style);
 
             if is_out_of_flow || is_floated {
@@ -336,7 +381,7 @@ impl BaseDocument {
                 ibox.height = 0.0;
                 ibox.baseline = None;
             } else {
-                let output = self.compute_child_layout(taffy::NodeId::from(ibox.id), child_inputs);
+                let output = self.compute_child_layout(taffy::NodeId::from(ibox.id), box_inputs);
                 ibox.width = (margin.left + margin.right + output.size.width) * scale;
                 ibox.baseline = if exports_baseline {
                     output
@@ -824,6 +869,7 @@ impl BaseDocument {
                             .bottom
                             .maybe_resolve(container_content_size.height, resolve_calc_value),
                     };
+                    let box_inputs = inline_box_inputs(style.size().width, margin, child_inputs);
                     drop(style);
 
                     if is_absolute {
@@ -872,7 +918,7 @@ impl BaseDocument {
                         // cache). The size cannot be recovered from `ibox` dimensions as the
                         // space reserved in the line is clamped to be non-negative.
                         let mut output =
-                            self.compute_child_layout(taffy::NodeId::from(ibox.id), child_inputs);
+                            self.compute_child_layout(taffy::NodeId::from(ibox.id), box_inputs);
                         let size = output.size;
                         let node = &mut self.nodes[NodeId::from_u64(ibox.id)];
 
