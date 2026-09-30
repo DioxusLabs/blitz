@@ -24,11 +24,11 @@ where
     loop {
         let node = inner.get_node(cur_id)?;
         if let Some(el) = node.element_data() {
-            if el.name.local.as_ref() == "a" {
+            if &*el.name.local == "a" {
                 return el
                     .attrs()
                     .iter()
-                    .find(|a| a.name.local.as_ref() == "href")
+                    .find(|a| &*a.name.local == "href")
                     .map(|a| a.value.clone());
             }
         }

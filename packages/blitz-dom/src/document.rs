@@ -398,7 +398,6 @@ impl BaseDocument {
         style_config::set_pref!("layout.unimplemented", true);
         style_config::set_pref!("layout.columns.enabled", true);
         style_config::set_pref!("layout.css.basic-shape-shape.enabled", true);
-        style_config::set_pref!("layout.css.attr.enabled", true);
         style_config::set_pref!("layout.css.tree-counting-functions.enabled", true);
         style_config::set_pref!("layout.css.progress-function.enabled", true);
         style_config::set_pref!("layout.variable_fonts.enabled", true);
@@ -2189,7 +2188,9 @@ impl BaseDocument {
         // Return text cursor for text nodes
         if self.hover_node_is_text {
             return Some(match user_select {
-                UserSelect::Text | UserSelect::All | UserSelect::Auto => CursorIcon::Text,
+                UserSelect::Text | UserSelect::All | UserSelect::Auto | UserSelect::Contain => {
+                    CursorIcon::Text
+                }
                 UserSelect::None => CursorIcon::Default,
             });
         }

@@ -548,10 +548,12 @@ pub fn flex_direction(input: stylo::FlexDirection) -> taffy::FlexDirection {
 #[inline]
 #[cfg(feature = "flexbox")]
 pub fn flex_wrap(input: stylo::FlexWrap) -> taffy::FlexWrap {
-    match input {
-        stylo::FlexWrap::Wrap => taffy::FlexWrap::Wrap,
-        stylo::FlexWrap::WrapReverse => taffy::FlexWrap::WrapReverse,
-        stylo::FlexWrap::Nowrap => taffy::FlexWrap::NoWrap,
+    if input.contains(stylo::FlexWrap::WRAP_REVERSE) {
+        taffy::FlexWrap::WrapReverse
+    } else if input.intersects(stylo::FlexWrap::WRAP | stylo::FlexWrap::BALANCE) {
+        taffy::FlexWrap::Wrap
+    } else {
+        taffy::FlexWrap::NoWrap
     }
 }
 
@@ -936,5 +938,33 @@ pub fn to_taffy_style(style: &stylo::ComputedValues) -> taffy::Style<Atom> {
             start: self::grid_line(&pos.grid_column_start),
             end: self::grid_line(&pos.grid_column_end),
         },
+    }
+}
+
+#[cfg(all(test, feature = "flexbox"))]
+mod flex_wrap_tests {
+    use super::{flex_wrap, stylo};
+
+    #[test]
+    fn converts_wrap_modes() {
+        assert_eq!(flex_wrap(stylo::FlexWrap::NOWRAP), taffy::FlexWrap::NoWrap);
+        assert_eq!(flex_wrap(stylo::FlexWrap::WRAP), taffy::FlexWrap::Wrap);
+        assert_eq!(
+            flex_wrap(stylo::FlexWrap::WRAP_REVERSE),
+            taffy::FlexWrap::WrapReverse
+        );
+    }
+
+    #[test]
+    fn balanced_wrap_falls_back_to_unbalanced_wrap() {
+        assert_eq!(flex_wrap(stylo::FlexWrap::BALANCE), taffy::FlexWrap::Wrap);
+        assert_eq!(
+            flex_wrap(stylo::FlexWrap::WRAP | stylo::FlexWrap::BALANCE),
+            taffy::FlexWrap::Wrap
+        );
+        assert_eq!(
+            flex_wrap(stylo::FlexWrap::WRAP_REVERSE | stylo::FlexWrap::BALANCE),
+            taffy::FlexWrap::WrapReverse
+        );
     }
 }

@@ -5,7 +5,7 @@
 //! layout-dependent properties (`width`/`height`, grid track sizes) it is the
 //! *used* value, computed from the most recent layout.
 
-use cssparser::{Parser, ParserInput};
+use cssparser::Parser;
 use selectors::matching::QuirksMode;
 use style::computed_values::box_sizing::T as BoxSizing;
 use style::computed_values::position::T as Position;
@@ -126,8 +126,7 @@ pub fn parse_transform_matrix(value: &str) -> Option<([f64; 16], bool)> {
         None,
         Default::default(),
     );
-    let mut input = ParserInput::new(value);
-    let mut parser = Parser::new(&mut input);
+    let mut parser = Parser::new(value);
     let transform = parser
         .parse_entirely(|t| transform::parse(&context, t))
         .ok()?;
@@ -291,8 +290,7 @@ impl BaseDocument {
     /// used by the CSSOM `CSS.supports(conditionText)` API. Returns `false`
     /// for unparseable conditions.
     pub fn css_supports_condition(&self, condition: &str) -> bool {
-        let mut input = ParserInput::new(condition);
-        let mut parser = Parser::new(&mut input);
+        let mut parser = Parser::new(condition);
         let Ok(condition) = parser.parse_entirely(parse_condition_or_declaration) else {
             return false;
         };

@@ -27,7 +27,7 @@ fn query_for_font_styles<'a>(
         .map(stylo_to_parley::query_font_family);
     query.set_families(families);
     query.set_attributes(Attributes {
-        width: stylo_to_parley::font_width(font_styles.font_stretch),
+        width: stylo_to_parley::font_width(font_styles.font_width),
         weight: stylo_to_parley::font_weight(font_styles.font_weight),
         style: stylo_to_parley::font_style(font_styles.font_style),
     });

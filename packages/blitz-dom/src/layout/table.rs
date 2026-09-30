@@ -5,10 +5,13 @@ use atomic_refcell::AtomicRefCell;
 use markup5ever::local_name;
 use style::properties::style_structs::Border;
 use style::servo_arc::Arc as ServoArc;
+use style::typed_om::NumericBaseType;
+use style::values::computed::calc::CalcPercentageLeaf;
 use style::values::computed::length_percentage::{
     CalcLengthPercentage, CalcNode, ComputedLeaf, Unpacked as UnpackedLengthPercentage,
 };
-use style::values::computed::{Length, LengthPercentage, Percentage};
+use style::values::computed::{Length, LengthPercentage};
+use style::values::generics::Optional;
 use style::values::specified::box_::{DisplayInside, DisplayOutside};
 use style::{
     Atom, computed_values::border_collapse::T as BorderCollapse,
@@ -132,7 +135,10 @@ fn percent_plus_length(
 ) -> TrackSizingFunction {
     let node = CalcNode::Sum(
         vec![
-            CalcNode::Leaf(ComputedLeaf::Percentage(Percentage(percent))),
+            CalcNode::Leaf(ComputedLeaf::Percentage(CalcPercentageLeaf::new(
+                percent,
+                Optional::Some(NumericBaseType::Length),
+            ))),
             CalcNode::Leaf(ComputedLeaf::Length(Length::new(length))),
         ]
         .into(),

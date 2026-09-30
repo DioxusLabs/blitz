@@ -38,7 +38,7 @@ fn write_attr_name(name: &QualName, writer: &mut String) {
     match name.ns {
         ns!() | ns!(html) => {}
         ns!(xml) => writer.push_str("xml:"),
-        ns!(xmlns) if name.local.as_ref() == "xmlns" => {}
+        ns!(xmlns) if &*name.local == "xmlns" => {}
         ns!(xmlns) => writer.push_str("xmlns:"),
         ns!(xlink) => writer.push_str("xlink:"),
         _ => {
@@ -52,8 +52,7 @@ fn write_attr_name(name: &QualName, writer: &mut String) {
 }
 
 fn is_xlink_ns_decl(name: &QualName) -> bool {
-    (name.ns == ns!(xmlns) && name.local.as_ref() == "xlink")
-        || name.local.as_ref() == "xmlns:xlink"
+    (name.ns == ns!(xmlns) && &*name.local == "xlink") || &*name.local == "xmlns:xlink"
 }
 
 impl Node {
