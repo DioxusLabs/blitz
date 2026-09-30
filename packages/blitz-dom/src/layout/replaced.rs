@@ -175,7 +175,15 @@ pub fn compute_replaced_layout(
         },
         (None, None) => match intrinsic_ratio {
             Some(ratio) => {
-                if let AvailableSpace::Definite(available_width) = available_space.width {
+                // Under a max-content constraint the element is sized against its
+                // containing block, like CSS2 §10.3.2 sizes an auto-width replaced element
+                // with only a ratio.
+                let stretch_width = match available_space.width {
+                    AvailableSpace::Definite(available_width) => Some(available_width),
+                    AvailableSpace::MaxContent => parent_size.width,
+                    AvailableSpace::MinContent => None,
+                };
+                if let Some(available_width) = stretch_width {
                     Size {
                         width: available_width,
                         height: available_width / ratio,
