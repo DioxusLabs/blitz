@@ -548,13 +548,25 @@ pub fn flex_direction(input: stylo::FlexDirection) -> taffy::FlexDirection {
 #[inline]
 #[cfg(feature = "flexbox")]
 pub fn flex_wrap(input: stylo::FlexWrap) -> taffy::FlexWrap {
-    if input.contains(stylo::FlexWrap::WRAP_REVERSE) {
+    if input.contains(stylo::FlexWrap::BALANCE) {
+        if input.contains(stylo::FlexWrap::WRAP_REVERSE) {
+            taffy::FlexWrap::BalanceReverse
+        } else {
+            taffy::FlexWrap::Balance
+        }
+    } else if input.contains(stylo::FlexWrap::WRAP_REVERSE) {
         taffy::FlexWrap::WrapReverse
-    } else if input.intersects(stylo::FlexWrap::WRAP | stylo::FlexWrap::BALANCE) {
+    } else if input.contains(stylo::FlexWrap::WRAP) {
         taffy::FlexWrap::Wrap
     } else {
         taffy::FlexWrap::NoWrap
     }
+}
+
+#[inline]
+#[cfg(feature = "flexbox")]
+pub fn flex_line_count(input: i32) -> u16 {
+    input.clamp(1, u16::MAX as i32) as u16
 }
 
 #[inline]
@@ -894,6 +906,8 @@ pub fn to_taffy_style(style: &stylo::ComputedValues) -> taffy::Style<Atom> {
         #[cfg(feature = "flexbox")]
         flex_wrap: self::flex_wrap(pos.flex_wrap),
         #[cfg(feature = "flexbox")]
+        flex_line_count: self::flex_line_count(pos.flex_line_count),
+        #[cfg(feature = "flexbox")]
         flex_grow: pos.flex_grow.0,
         #[cfg(feature = "flexbox")]
         flex_shrink: pos.flex_shrink.0,
@@ -938,5 +952,44 @@ pub fn to_taffy_style(style: &stylo::ComputedValues) -> taffy::Style<Atom> {
             start: self::grid_line(&pos.grid_column_start),
             end: self::grid_line(&pos.grid_column_end),
         },
+    }
+}
+
+#[cfg(all(test, feature = "flexbox"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn converts_flex_wrap_flags() {
+        for (input, expected) in [
+            (stylo::FlexWrap::NOWRAP, taffy::FlexWrap::NoWrap),
+            (stylo::FlexWrap::WRAP, taffy::FlexWrap::Wrap),
+            (stylo::FlexWrap::WRAP_REVERSE, taffy::FlexWrap::WrapReverse),
+            (stylo::FlexWrap::BALANCE, taffy::FlexWrap::Balance),
+            (
+                stylo::FlexWrap::WRAP | stylo::FlexWrap::BALANCE,
+                taffy::FlexWrap::Balance,
+            ),
+            (
+                stylo::FlexWrap::WRAP_REVERSE | stylo::FlexWrap::BALANCE,
+                taffy::FlexWrap::BalanceReverse,
+            ),
+        ] {
+            assert_eq!(flex_wrap(input), expected);
+        }
+    }
+
+    #[test]
+    fn clamps_flex_line_count_to_taffys_range() {
+        for (input, expected) in [
+            (1, 1),
+            (4, 4),
+            (u16::MAX as i32, u16::MAX),
+            (u16::MAX as i32 + 1, u16::MAX),
+            (i32::MAX, u16::MAX),
+            (0, 1),
+        ] {
+            assert_eq!(flex_line_count(input), expected);
+        }
     }
 }

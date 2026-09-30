@@ -101,6 +101,7 @@ dioxus-core-macro = { version = "0.7.3" }
 taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "fb461a7826e49f488f31220744bf12227ffb580e", default-features = false, features = [
     "std",
     "flexbox",
+    "flexbox_balance",
     "grid",
     "block_layout",
     "content_size",
