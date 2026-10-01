@@ -21,7 +21,8 @@ impl ElementCx<'_, '_> {
             .resolve_to_absolute(&current_color)
             .as_srgb_color();
         let bg_is_opaque = bg_color.components[3] >= 1.0;
-        let needs_clip = opacity < 1.0 || !bg_is_opaque;
+        // An opaque background covers the part of the shadow that is under the box
+        let needs_clip = opacity < 1.0 || !bg_is_opaque || self.background_is_painted_on_canvas();
 
         let max_shadow_rect = box_shadow.iter().fold(Rect::ZERO, |prev, shadow| {
             let x = shadow.base.horizontal.px() as f64 * self.scale;
