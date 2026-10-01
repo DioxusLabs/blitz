@@ -864,6 +864,9 @@ fn create_text_editor(doc: &mut BaseDocument, input_element_id: NodeId, is_multi
         .primary_styles()
         .map(|s| stylo_to_parley::text_align(s.clone_text_align()))
         .unwrap_or(parley::layout::Alignment::Start);
+    let last_line_alignment = node
+        .primary_styles()
+        .and_then(|s| stylo_to_parley::text_align_last(s.clone_text_align_last()));
     let base_direction = node
         .primary_styles()
         .map(|s| stylo_to_parley::base_direction(s.clone_direction(), s.clone_unicode_bidi()))
@@ -910,6 +913,10 @@ fn create_text_editor(doc: &mut BaseDocument, input_element_id: NodeId, is_multi
     ));
     styles.insert(StyleProperty::Brush(parley_style.brush));
     editor.set_alignment(alignment);
+    editor.set_alignment_options(parley::AlignmentOptions {
+        last_line_alignment,
+        ..Default::default()
+    });
     editor.set_base_direction(base_direction);
 
     editor.refresh_layout(&mut doc.font_ctx.lock().unwrap(), &mut doc.layout_ctx);
