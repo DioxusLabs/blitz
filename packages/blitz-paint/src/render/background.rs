@@ -1,7 +1,8 @@
-use super::{ElementCx, PhysicalTracks, to_image_quality, to_peniko_image};
+use super::{ElementCx, to_image_quality, to_peniko_image};
 use crate::color::{Color, ToColorColor};
 use crate::gradient::to_peniko_gradient;
 use anyrender::PaintScene;
+use blitz_dom::NodeId;
 use blitz_dom::node::{ImageData, ImageResourceData, SpecialElementData};
 use kurbo::{self, Affine, BezPath, Point, Rect, Shape, Size, Vec2};
 use peniko::{self, Fill};
@@ -219,68 +220,60 @@ impl ElementCx<'_, '_> {
         }
     }
 
+    /// Paint the backgrounds of the table's column groups, columns, row groups and rows
+    /// (in that order, bottom to top: CSS 2.1 §17.5.1).
+    ///
+    /// These backgrounds are only visible behind the table's cells (not in the
+    /// `border-spacing` between them), so they are painted cell by cell.
     pub(super) fn draw_table_row_backgrounds(&self, scene: &mut impl PaintScene) {
         let SpecialElementData::TableRoot(table) = &self.element.special_data else {
             return;
         };
-        let Some(grid_info) = &mut *table.computed_grid_info.borrow_mut() else {
-            return;
+
+        let background_color = |node_id: NodeId| -> Option<Color> {
+            let node = self.context.dom.get_node(node_id)?;
+            let style = node.primary_styles()?;
+            let current_color = style.clone_color();
+            let color = style
+                .get_background()
+                .background_color
+                .resolve_to_absolute(&current_color)
+                .as_srgb_color();
+            (color != Color::TRANSPARENT).then_some(color)
         };
+        let has_background = |node_id: NodeId| background_color(node_id).is_some();
+        if !(table.rows.iter().any(|row| has_background(row.node_id))
+            || table.columns.iter().any(|col| has_background(col.node_id))
+            || table.row_groups.iter().any(|g| has_background(g.node_id))
+            || table
+                .column_groups
+                .iter()
+                .any(|g| has_background(g.node_id)))
+        {
+            return;
+        }
 
-        let cols = PhysicalTracks::from_tracks(&grid_info.columns);
-        let inner_width = cols.span() as f64;
-
-        let rows = PhysicalTracks::from_tracks(&grid_info.rows);
-        let row_origin = rows.origin();
-        let inner_height = rows.span() as f64;
-
-        // Column backgrounds are painted beneath row backgrounds. Track positions are
-        // in logical order, matching the order in which columns were collected.
-        for (column, col_position) in table.columns.iter().zip(&grid_info.columns.positions) {
-            let col_node = &self.context.dom.get_node(column.node_id).unwrap();
-            let Some(style) = col_node.primary_styles() else {
+        for cell in &table.cells {
+            let Some(cell_node) = self.context.dom.get_node(cell.node_id) else {
                 continue;
             };
-
-            let y = row_origin as f64;
+            let layout = cell_node.final_layout();
             let shape = Rect::new(
-                col_position.start as f64,
-                y,
-                col_position.end as f64,
-                y + inner_height,
+                layout.location.x as f64,
+                layout.location.y as f64,
+                (layout.location.x + layout.size.width) as f64,
+                (layout.location.y + layout.size.height) as f64,
             )
             .scale_from_origin(self.scale);
 
-            let current_color = style.clone_color();
-            let background_color = &style.get_background().background_color;
-            let bg_color = background_color
-                .resolve_to_absolute(&current_color)
-                .as_srgb_color();
-
-            if bg_color != Color::TRANSPARENT {
-                scene.fill(Fill::NonZero, self.transform, bg_color, None, &shape);
-            }
-        }
-
-        for (row, row_position) in table.rows.iter().zip(rows.iter()) {
-            let row_node = &self.context.dom.get_node(row.node_id).unwrap();
-            let Some(style) = row_node.primary_styles() else {
-                continue;
-            };
-
-            let y = (row_position.start - row_origin) as f64;
-            let height = (row_position.end - row_position.start) as f64;
-            let shape = Rect::new(0.0, y, inner_width, y + height).scale_from_origin(self.scale);
-
-            let current_color = style.clone_color();
-            let background_color = &style.get_background().background_color;
-            let bg_color = background_color
-                .resolve_to_absolute(&current_color)
-                .as_srgb_color();
-
-            if bg_color != Color::TRANSPARENT {
-                // Fill the color
-                scene.fill(Fill::NonZero, self.transform, bg_color, None, &shape);
+            let layers = [
+                table.column_group_of(cell.column),
+                table.columns.get(cell.column as usize).map(|c| c.node_id),
+                table.row_group_of(cell.row),
+                table.rows.get(cell.row as usize).map(|r| r.node_id),
+            ];
+            for color in layers.into_iter().flatten().filter_map(background_color) {
+                scene.fill(Fill::NonZero, self.transform, color, None, &shape);
             }
         }
     }
