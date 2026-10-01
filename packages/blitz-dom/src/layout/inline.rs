@@ -734,15 +734,21 @@ impl BaseDocument {
             breaker.finish();
         }
 
-        let alignment = self.nodes[node_id]
+        let (alignment, last_line_alignment) = self.nodes[node_id]
             .primary_styles()
-            .map(|s| stylo_to_parley::text_align(s.clone_text_align()))
-            .unwrap_or(parley::layout::Alignment::Start);
+            .map(|s| {
+                (
+                    stylo_to_parley::text_align(s.clone_text_align()),
+                    stylo_to_parley::text_align_last(s.clone_text_align_last()),
+                )
+            })
+            .unwrap_or((parley::layout::Alignment::Start, None));
 
         inline_layout.layout.align(
             alignment,
             AlignmentOptions {
                 align_when_overflowing: false,
+                last_line_alignment,
             },
         );
 
