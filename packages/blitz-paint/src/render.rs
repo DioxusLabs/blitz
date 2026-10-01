@@ -961,7 +961,13 @@ impl ElementCx<'_, '_> {
                 Marker::Char(_) => 8.0,
                 Marker::String(_) => 0.0,
             };
-            let x_offset = -(layout.full_width() / layout.scale() + x_padding);
+            // Outside markers are placed outside the list item's border box
+            // (`pos` is the origin of its content box)
+            let item_layout = self.node.final_layout();
+            let x_offset = -(layout.full_width() / layout.scale()
+                + x_padding
+                + item_layout.padding.left
+                + item_layout.border.left);
 
             // Align the marker with the baseline of the first line of text in the list item
             let y_offset = if let Some(first_text_line) = &self
