@@ -7,6 +7,7 @@ use blitz_dom::node::{ImageData, ImageResourceData, SpecialElementData};
 use kurbo::{self, Affine, BezPath, Point, Rect, Shape, Size, Vec2};
 use peniko::{self, Fill};
 use style::{
+    computed_values::border_collapse::T as BorderCollapse,
     properties::{
         generated::longhands::{
             background_attachment::single_value::computed_value::T as StyloBackgroundAttachment,
@@ -223,8 +224,9 @@ impl ElementCx<'_, '_> {
     /// Paint the backgrounds of the table's column groups, columns, row groups and rows
     /// (in that order, bottom to top: CSS 2.1 §17.5.1).
     ///
-    /// These backgrounds are only visible behind the table's cells (not in the
-    /// `border-spacing` between them), so they are painted cell by cell.
+    /// These backgrounds are only painted behind the table's cells (not in the
+    /// `border-spacing` between them, nor where a row has no cell), so they are
+    /// painted cell by cell.
     pub(super) fn draw_table_row_backgrounds(&self, scene: &mut impl PaintScene) {
         let SpecialElementData::TableRoot(table) = &self.element.special_data else {
             return;
@@ -241,39 +243,89 @@ impl ElementCx<'_, '_> {
                 .as_srgb_color();
             (color != Color::TRANSPARENT).then_some(color)
         };
-        let has_background = |node_id: NodeId| background_color(node_id).is_some();
-        if !(table.rows.iter().any(|row| has_background(row.node_id))
-            || table.columns.iter().any(|col| has_background(col.node_id))
-            || table.row_groups.iter().any(|g| has_background(g.node_id))
-            || table
-                .column_groups
-                .iter()
-                .any(|g| has_background(g.node_id)))
-        {
+
+        // Resolve the (group, track) background colors once per track rather than once per cell
+        let column_colors: Vec<[Option<Color>; 2]> = table
+            .columns
+            .iter()
+            .map(|col| {
+                [
+                    col.group.and_then(background_color),
+                    background_color(col.node_id),
+                ]
+            })
+            .collect();
+        let row_colors: Vec<[Option<Color>; 2]> = table
+            .rows
+            .iter()
+            .map(|row| {
+                [
+                    row.group.and_then(background_color),
+                    background_color(row.node_id),
+                ]
+            })
+            .collect();
+        let has_color =
+            |colors: &[[Option<Color>; 2]]| colors.iter().flatten().any(Option::is_some);
+        if !has_color(&column_colors) && !has_color(&row_colors) {
             return;
         }
 
-        for cell in &table.cells {
-            let Some(cell_node) = self.context.dom.get_node(cell.node_id) else {
-                continue;
-            };
-            let layout = cell_node.final_layout();
-            let shape = Rect::new(
+        let cell_rect = |cell_id: NodeId| -> Option<Rect> {
+            let layout = self.context.dom.get_node(cell_id)?.final_layout();
+            Some(Rect::new(
                 layout.location.x as f64,
                 layout.location.y as f64,
                 (layout.location.x + layout.size.width) as f64,
                 (layout.location.y + layout.size.height) as f64,
-            )
-            .scale_from_origin(self.scale);
+            ))
+        };
 
-            let layers = [
-                table.column_group_of(cell.column),
-                table.columns.get(cell.column as usize).map(|c| c.node_id),
-                table.row_group_of(cell.row),
-                table.rows.get(cell.row as usize).map(|r| r.node_id),
-            ];
-            for color in layers.into_iter().flatten().filter_map(background_color) {
-                scene.fill(Fill::NonZero, self.transform, color, None, &shape);
+        // In the collapsed borders model the borders are laid out as gutters between the
+        // cells, but a cell's border box (and so its background) extends to the middle of
+        // the borders around it. The gutter is split on a whole pixel so that the
+        // backgrounds of adjacent cells tile exactly.
+        let collapsed = table.border_collapse == BorderCollapse::Collapse;
+        let (gutter, bounds) = if collapsed {
+            let gap = table.style.gap.map(|gap| gap.into_raw().value() as f64);
+            let bounds = table
+                .cells
+                .iter()
+                .filter_map(|cell| cell_rect(cell.node_id))
+                .reduce(|a, b| a.union(b));
+            (Size::new(gap.width, gap.height), bounds)
+        } else {
+            (Size::ZERO, None)
+        };
+        let before = Size::new((gutter.width / 2.0).ceil(), (gutter.height / 2.0).ceil());
+        let after = gutter - before;
+
+        for cell in &table.cells {
+            let no_colors = [None, None];
+            let column = column_colors
+                .get(cell.column as usize)
+                .unwrap_or(&no_colors);
+            let row = row_colors.get(cell.row as usize).unwrap_or(&no_colors);
+            let mut colors = column.iter().chain(row).flatten().peekable();
+            if colors.peek().is_none() {
+                continue;
+            }
+            let Some(mut rect) = cell_rect(cell.node_id) else {
+                continue;
+            };
+            if let Some(bounds) = bounds {
+                rect = Rect::new(
+                    rect.x0 - before.width,
+                    rect.y0 - before.height,
+                    rect.x1 + after.width,
+                    rect.y1 + after.height,
+                )
+                .intersect(bounds);
+            }
+
+            let shape = rect.scale_from_origin(self.scale);
+            for color in colors {
+                scene.fill(Fill::NonZero, self.transform, *color, None, &shape);
             }
         }
     }

@@ -41,9 +41,7 @@ pub struct TableContext {
     /// table itself). They take no part in the table grid.
     pub oof_children: Vec<(NodeId, taffy::Position)>,
     pub rows: Vec<TableRow>,
-    pub row_groups: Vec<TableTrackGroup>,
     pub columns: Vec<TableColumn>,
-    pub column_groups: Vec<TableTrackGroup>,
     pub computed_grid_info: AtomicRefCell<Option<DetailedGridInfo<Atom>>>,
     pub border_style: Option<ServoArc<Border>>,
     pub border_collapse: BorderCollapse,
@@ -51,18 +49,6 @@ pub struct TableContext {
     /// Taffy stores calc values as raw pointers, so these must outlive the `style`.
     #[allow(dead_code)]
     calc_values: Vec<LengthPercentage>,
-}
-
-impl TableContext {
-    /// The row group (if any) containing the row with index `row`
-    pub fn row_group_of(&self, row: u16) -> Option<NodeId> {
-        TableTrackGroup::containing(&self.row_groups, row)
-    }
-
-    /// The column group (if any) containing the column with index `column`
-    pub fn column_group_of(&self, column: u16) -> Option<NodeId> {
-        TableTrackGroup::containing(&self.column_groups, column)
-    }
 }
 
 // #[derive(Debug, Clone, Eq, PartialEq)]
@@ -127,29 +113,16 @@ impl ColumnCursor {
 #[derive(Debug, Clone)]
 pub struct TableColumn {
     pub node_id: NodeId,
-}
-
-/// A row group or column group, along with the range of rows (indices into
-/// `TableContext::rows`) or columns that it contains.
-#[derive(Debug, Clone)]
-pub struct TableTrackGroup {
-    pub node_id: NodeId,
-    pub tracks: Range<u16>,
-}
-
-impl TableTrackGroup {
-    fn containing(groups: &[TableTrackGroup], track: u16) -> Option<NodeId> {
-        groups
-            .iter()
-            .find(|group| group.tracks.contains(&track))
-            .map(|group| group.node_id)
-    }
+    /// The column group (if any) that contains the column
+    pub group: Option<NodeId>,
 }
 
 #[derive(Debug, Clone)]
 pub struct TableRow {
     // kind: TableItemKind,
     pub node_id: NodeId,
+    /// The row group (if any) that contains the row
+    pub group: Option<NodeId>,
     /// The row's specified `height`, if it is a length
     pub height: Option<f32>,
 }
@@ -204,7 +177,6 @@ pub(crate) fn build_table_context(
     let mut cells: Vec<TableCell> = Vec::new();
     let mut oof_children: Vec<(NodeId, taffy::Position)> = Vec::new();
     let mut rows: Vec<TableRow> = Vec::new();
-    let mut row_groups: Vec<TableTrackGroup> = Vec::new();
     let mut row = 0u16;
     let mut cursor = ColumnCursor::default();
 
@@ -239,16 +211,9 @@ pub(crate) fn build_table_context(
     drop(stylo_styles);
 
     let mut columns: Vec<TableColumn> = Vec::new();
-    let mut column_groups: Vec<TableTrackGroup> = Vec::new();
     let mut column_sizes: Vec<taffy::TrackSizingFunction> = Vec::new();
     for child_id in children.iter().copied() {
-        collect_columns(
-            doc,
-            child_id,
-            &mut columns,
-            &mut column_groups,
-            &mut column_sizes,
-        );
+        collect_columns(doc, child_id, &mut columns, &mut column_sizes);
     }
     // Percentage column widths only take effect in the fixed table layout algorithm
     if !is_fixed {
@@ -288,7 +253,6 @@ pub(crate) fn build_table_context(
                 &mut cells,
                 &mut oof_children,
                 &mut rows,
-                &mut row_groups,
                 &mut column_sizes,
                 &mut first_cell_border,
                 &mut percent_columns,
@@ -419,9 +383,7 @@ pub(crate) fn build_table_context(
             cells,
             oof_children,
             rows,
-            row_groups,
             columns,
-            column_groups,
             computed_grid_info: AtomicRefCell::new(None),
             border_collapse,
             border_style: first_cell_border,
@@ -438,7 +400,6 @@ fn collect_columns(
     doc: &mut BaseDocument,
     node_id: NodeId,
     columns: &mut Vec<TableColumn>,
-    column_groups: &mut Vec<TableTrackGroup>,
     column_sizes: &mut Vec<TrackSizingFunction>,
 ) {
     let node = &doc.nodes[node_id];
@@ -451,16 +412,15 @@ fn collect_columns(
 
     match display.inside() {
         DisplayInside::TableColumnGroup => {
-            let first_column = columns.len() as u16;
+            let first_column = columns.len();
             let children = std::mem::take(&mut doc.nodes[node_id].children);
             for child_id in children.iter().copied() {
-                collect_columns(doc, child_id, columns, column_groups, column_sizes);
+                collect_columns(doc, child_id, columns, column_sizes);
             }
             doc.nodes[node_id].children = children;
-            column_groups.push(TableTrackGroup {
-                node_id,
-                tracks: first_column..columns.len() as u16,
-            });
+            for column in &mut columns[first_column..] {
+                column.group.get_or_insert(node_id);
+            }
         }
         DisplayInside::TableColumn => {
             let style = stylo_taffy::to_taffy_style(&node.primary_styles().unwrap());
@@ -497,7 +457,10 @@ fn collect_columns(
                 _ => column,
             };
             for _ in 0..span {
-                columns.push(TableColumn { node_id });
+                columns.push(TableColumn {
+                    node_id,
+                    group: None,
+                });
                 column_sizes.push(column);
             }
         }
@@ -516,7 +479,6 @@ fn collect_table_cells(
     cells: &mut Vec<TableCell>,
     oof_children: &mut Vec<(NodeId, taffy::Position)>,
     rows: &mut Vec<TableRow>,
-    row_groups: &mut Vec<TableTrackGroup>,
     columns: &mut Vec<TrackSizingFunction>,
     first_cell_border: &mut Option<ServoArc<Border>>,
     percent_columns: &mut Vec<(u16, f32, f32)>,
@@ -551,7 +513,7 @@ fn collect_table_cells(
         | DisplayInside::TableHeaderGroup
         | DisplayInside::TableFooterGroup
         | DisplayInside::Contents => {
-            let first_row = rows.len() as u16;
+            let first_row = rows.len();
             let children = std::mem::take(&mut doc.nodes[node_id].children);
             for child_id in children.iter().copied() {
                 doc.nodes[child_id]
@@ -566,7 +528,6 @@ fn collect_table_cells(
                     cells,
                     oof_children,
                     rows,
-                    row_groups,
                     columns,
                     first_cell_border,
                     percent_columns,
@@ -574,10 +535,9 @@ fn collect_table_cells(
             }
             doc.nodes[node_id].children = children;
             if display.inside() != DisplayInside::Contents {
-                row_groups.push(TableTrackGroup {
-                    node_id,
-                    tracks: first_row..rows.len() as u16,
-                });
+                for row in &mut rows[first_row..] {
+                    row.group.get_or_insert(node_id);
+                }
             }
         }
         DisplayInside::TableRow => {
@@ -589,7 +549,11 @@ fn collect_table_cells(
                 let height = stylo_taffy::convert::dimension(&style.clone_height());
                 (height.tag() == taffy::CompactLength::LENGTH_TAG).then(|| height.value())
             });
-            rows.push(TableRow { node_id, height });
+            rows.push(TableRow {
+                node_id,
+                group: None,
+                height,
+            });
 
             let children = std::mem::take(&mut doc.nodes[node_id].children);
             for child_id in children.iter().copied() {
@@ -603,7 +567,6 @@ fn collect_table_cells(
                     cells,
                     oof_children,
                     rows,
-                    row_groups,
                     columns,
                     first_cell_border,
                     percent_columns,
