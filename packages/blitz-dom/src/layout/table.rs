@@ -115,7 +115,8 @@ pub struct TableColumn {
 pub struct TableRow {
     // kind: TableItemKind,
     pub node_id: NodeId,
-    pub height: f32,
+    /// The row's specified `height`, if it is a length
+    pub height: Option<f32>,
 }
 
 /// The used width of one border side: border widths are not adjusted for
@@ -305,7 +306,16 @@ pub(crate) fn build_table_context(
     }
 
     style.grid_template_columns = column_sizes.into_iter().map(|dim| dim.into()).collect();
-    style.grid_template_rows = vec![style_helpers::auto(); row as usize];
+    // A row's `height` is a minimum: the row grows to fit the content of its cells.
+    style.grid_template_rows = rows
+        .iter()
+        .map(|row| match row.height {
+            Some(height) => {
+                style_helpers::minmax(style_helpers::length(height), style_helpers::auto())
+            }
+            None => style_helpers::auto(),
+        })
+        .collect();
 
     style.gap = match border_collapse {
         BorderCollapse::Separate => {
@@ -514,10 +524,11 @@ fn collect_table_cells(
             *row += 1;
             cursor.start_row();
 
-            rows.push(TableRow {
-                node_id,
-                height: 0.0,
+            let height = node.primary_styles().and_then(|style| {
+                let height = stylo_taffy::convert::dimension(&style.clone_height());
+                (height.tag() == taffy::CompactLength::LENGTH_TAG).then(|| height.value())
             });
+            rows.push(TableRow { node_id, height });
 
             let children = std::mem::take(&mut doc.nodes[node_id].children);
             for child_id in children.iter().copied() {
