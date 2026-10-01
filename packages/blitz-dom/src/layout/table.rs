@@ -60,7 +60,11 @@ pub struct TableContext {
 #[derive(Debug, Clone)]
 pub struct TableCell {
     // kind: TableItemKind,
-    node_id: NodeId,
+    pub node_id: NodeId,
+    /// Index (into `TableContext::rows`) of the row the cell originates in
+    pub row: u16,
+    /// Index of the column the cell originates in
+    pub column: u16,
     style: taffy::Style<Atom>,
 }
 
@@ -109,12 +113,16 @@ impl ColumnCursor {
 #[derive(Debug, Clone)]
 pub struct TableColumn {
     pub node_id: NodeId,
+    /// The column group (if any) that contains the column
+    pub group: Option<NodeId>,
 }
 
 #[derive(Debug, Clone)]
 pub struct TableRow {
     // kind: TableItemKind,
     pub node_id: NodeId,
+    /// The row group (if any) that contains the row
+    pub group: Option<NodeId>,
     /// The row's specified `height`, if it is a length
     pub height: Option<f32>,
 }
@@ -404,11 +412,15 @@ fn collect_columns(
 
     match display.inside() {
         DisplayInside::TableColumnGroup => {
+            let first_column = columns.len();
             let children = std::mem::take(&mut doc.nodes[node_id].children);
             for child_id in children.iter().copied() {
                 collect_columns(doc, child_id, columns, column_sizes);
             }
             doc.nodes[node_id].children = children;
+            for column in &mut columns[first_column..] {
+                column.group.get_or_insert(node_id);
+            }
         }
         DisplayInside::TableColumn => {
             let style = stylo_taffy::to_taffy_style(&node.primary_styles().unwrap());
@@ -445,7 +457,10 @@ fn collect_columns(
                 _ => column,
             };
             for _ in 0..span {
-                columns.push(TableColumn { node_id });
+                columns.push(TableColumn {
+                    node_id,
+                    group: None,
+                });
                 column_sizes.push(column);
             }
         }
@@ -498,6 +513,7 @@ fn collect_table_cells(
         | DisplayInside::TableHeaderGroup
         | DisplayInside::TableFooterGroup
         | DisplayInside::Contents => {
+            let first_row = rows.len();
             let children = std::mem::take(&mut doc.nodes[node_id].children);
             for child_id in children.iter().copied() {
                 doc.nodes[child_id]
@@ -518,6 +534,11 @@ fn collect_table_cells(
                 );
             }
             doc.nodes[node_id].children = children;
+            if display.inside() != DisplayInside::Contents {
+                for row in &mut rows[first_row..] {
+                    row.group.get_or_insert(node_id);
+                }
+            }
         }
         DisplayInside::TableRow => {
             node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
@@ -528,7 +549,11 @@ fn collect_table_cells(
                 let height = stylo_taffy::convert::dimension(&style.clone_height());
                 (height.tag() == taffy::CompactLength::LENGTH_TAG).then(|| height.value())
             });
-            rows.push(TableRow { node_id, height });
+            rows.push(TableRow {
+                node_id,
+                group: None,
+                height,
+            });
 
             let children = std::mem::take(&mut doc.nodes[node_id].children);
             for child_id in children.iter().copied() {
@@ -649,7 +674,12 @@ fn collect_table_cells(
                 end: style_helpers::span(rowspan),
             };
             style.size.width = style_helpers::auto();
-            cells.push(TableCell { node_id, style });
+            cells.push(TableCell {
+                node_id,
+                row: row.saturating_sub(1),
+                column: col,
+                style,
+            });
 
             cursor.place(colspan, rowspan);
         }
