@@ -37,6 +37,9 @@ pub struct TableTreeWrapper<'doc> {
 pub struct TableContext {
     pub style: taffy::Style<Atom>,
     pub cells: Vec<TableCell>,
+    /// Absolutely positioned descendants of the table's row groups and rows (and of the
+    /// table itself). They take no part in the table grid.
+    pub oof_children: Vec<(NodeId, taffy::Position)>,
     pub rows: Vec<TableRow>,
     pub columns: Vec<TableColumn>,
     pub computed_grid_info: AtomicRefCell<Option<DetailedGridInfo<Atom>>>,
@@ -163,6 +166,7 @@ pub(crate) fn build_table_context(
     table_root_node_id: NodeId,
 ) -> (TableContext, Vec<NodeId>) {
     let mut cells: Vec<TableCell> = Vec::new();
+    let mut oof_children: Vec<(NodeId, taffy::Position)> = Vec::new();
     let mut rows: Vec<TableRow> = Vec::new();
     let mut row = 0u16;
     let mut cursor = ColumnCursor::default();
@@ -238,6 +242,7 @@ pub(crate) fn build_table_context(
                 &mut row,
                 &mut cursor,
                 &mut cells,
+                &mut oof_children,
                 &mut rows,
                 &mut column_sizes,
                 &mut first_cell_border,
@@ -346,7 +351,11 @@ pub(crate) fn build_table_context(
         };
     }
 
-    let layout_children = cells.iter().map(|cell| cell.node_id).collect();
+    let layout_children = cells
+        .iter()
+        .map(|cell| cell.node_id)
+        .chain(oof_children.iter().map(|(node_id, _)| *node_id))
+        .collect();
     let root_node = &mut doc.nodes[table_root_node_id];
     root_node.children = children;
 
@@ -354,6 +363,7 @@ pub(crate) fn build_table_context(
         TableContext {
             style,
             cells,
+            oof_children,
             rows,
             columns,
             computed_grid_info: AtomicRefCell::new(None),
@@ -442,6 +452,7 @@ fn collect_table_cells(
     row: &mut u16,
     cursor: &mut ColumnCursor,
     cells: &mut Vec<TableCell>,
+    oof_children: &mut Vec<(NodeId, taffy::Position)>,
     rows: &mut Vec<TableRow>,
     columns: &mut Vec<TrackSizingFunction>,
     first_cell_border: &mut Option<ServoArc<Border>>,
@@ -464,6 +475,14 @@ fn collect_table_cells(
         return;
     }
 
+    // Absolutely positioned boxes are out-of-flow: they are laid out by their containing
+    // block rather than as part of the table grid.
+    let position = node.primary_styles().unwrap().clone_position();
+    if position.is_absolutely_positioned() {
+        oof_children.push((node_id, stylo_taffy::convert::position(position)));
+        return;
+    }
+
     match display.inside() {
         DisplayInside::TableRowGroup
         | DisplayInside::TableHeaderGroup
@@ -481,6 +500,7 @@ fn collect_table_cells(
                     row,
                     cursor,
                     cells,
+                    oof_children,
                     rows,
                     columns,
                     first_cell_border,
@@ -509,6 +529,7 @@ fn collect_table_cells(
                     row,
                     cursor,
                     cells,
+                    oof_children,
                     rows,
                     columns,
                     first_cell_border,
