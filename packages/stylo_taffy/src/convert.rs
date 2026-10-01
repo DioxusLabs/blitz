@@ -514,6 +514,44 @@ pub fn item_alignment(input: stylo::AlignFlags, is_horiz_rtl: bool) -> Option<ta
     }?;
     if input.flags().contains(stylo::AlignFlags::SAFE) {
         align.safety = taffy::AlignmentSafety::Safe;
+    } else if input.flags().contains(stylo::AlignFlags::UNSAFE) {
+        align.safety = taffy::AlignmentSafety::Unsafe;
+    }
+    Some(align)
+}
+
+/// Convert the `align-self`/`justify-self` value of an absolutely positioned box. Unlike
+/// [`item_alignment`], `normal` maps to `None` as it has out-of-flow specific behaviour
+/// (<https://www.w3.org/TR/css-align-3/#align-abspos>).
+///
+/// `is_inline_axis` is whether the property aligns the box in its inline (horizontal) axis.
+/// The physical `left`/`right` keywords behave as `start` in the block axis.
+///
+/// `is_item_rtl` is whether the box's own `direction` is `rtl`. Taffy resolves alignment
+/// relative to the *containing block's* direction, which is not known here, so the physical
+/// `left`/`right` keywords are expressed in terms of the box's own direction as
+/// `self-start`/`self-end` (which Taffy resolves against the containing block's direction).
+#[inline]
+pub fn oof_item_alignment(
+    input: stylo::AlignFlags,
+    is_inline_axis: bool,
+    is_item_rtl: bool,
+) -> Option<taffy::AlignItems> {
+    let mut align = match input.value() {
+        stylo::AlignFlags::AUTO | stylo::AlignFlags::NORMAL => return None,
+        stylo::AlignFlags::LEFT | stylo::AlignFlags::RIGHT if !is_inline_axis => {
+            taffy::AlignItems::START
+        }
+        stylo::AlignFlags::LEFT if is_item_rtl => taffy::AlignItems::SELF_END,
+        stylo::AlignFlags::LEFT => taffy::AlignItems::SELF_START,
+        stylo::AlignFlags::RIGHT if is_item_rtl => taffy::AlignItems::SELF_START,
+        stylo::AlignFlags::RIGHT => taffy::AlignItems::SELF_END,
+        _ => return item_alignment(input, is_item_rtl),
+    };
+    if input.flags().contains(stylo::AlignFlags::SAFE) {
+        align.safety = taffy::AlignmentSafety::Safe;
+    } else if input.flags().contains(stylo::AlignFlags::UNSAFE) {
+        align.safety = taffy::AlignmentSafety::Unsafe;
     }
     Some(align)
 }
