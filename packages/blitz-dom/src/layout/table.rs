@@ -589,6 +589,12 @@ fn collect_table_cells(
             let mut style = stylo_taffy::to_taffy_style(stylo_style);
             let col = cursor.next_free();
 
+            // In the collapsed borders model the borders are laid out as gutters between
+            // the cells (see the table's `gap`) rather than as part of the cells
+            if border_collapse == BorderCollapse::Collapse {
+                style.border = taffy::Rect::ZERO.map(style_helpers::length);
+            }
+
             if first_cell_border.is_none() {
                 *first_cell_border = Some(stylo_style.clone_border());
             }
@@ -649,12 +655,6 @@ fn collect_table_cells(
                     columns.resize(col as usize, style_helpers::auto());
                     columns.push(column);
                 }
-            }
-
-            // Zero-out cell borders is BorderCollapse is Collapse
-            // Borders are handled at the table level in this mode
-            if border_collapse == BorderCollapse::Collapse {
-                style.border = taffy::Rect::ZERO.map(style_helpers::length);
             }
 
             // The margin properties do not apply to table-internal elements
