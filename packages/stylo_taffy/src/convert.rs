@@ -62,6 +62,20 @@ use taffy::CompactLength;
 use taffy::style_helpers::*;
 
 #[inline]
+#[cfg(any(feature = "flexbox", feature = "grid"))]
+pub(crate) fn saturating_i16(input: i32) -> i16 {
+    input.clamp(i16::MIN as i32, i16::MAX as i32) as i16
+}
+
+#[inline]
+#[cfg(any(feature = "flexbox", feature = "grid"))]
+/// Clamps unsigned counts to the nonnegative i16 range.
+pub(crate) fn saturating_u16<T: Ord + From<u16> + TryInto<i32>>(input: T) -> u16 {
+    let input = input.max(u16::MIN.into()).try_into().unwrap_or(i32::MAX);
+    saturating_i16(input) as u16
+}
+
+#[inline]
 pub fn length_percentage(val: &stylo::LengthPercentage) -> taffy::LengthPercentage {
     match val.unpack() {
         stylo::UnpackedLengthPercentage::Calc(calc_ptr) => {
@@ -548,11 +562,25 @@ pub fn flex_direction(input: stylo::FlexDirection) -> taffy::FlexDirection {
 #[inline]
 #[cfg(feature = "flexbox")]
 pub fn flex_wrap(input: stylo::FlexWrap) -> taffy::FlexWrap {
-    match input {
-        stylo::FlexWrap::Wrap => taffy::FlexWrap::Wrap,
-        stylo::FlexWrap::WrapReverse => taffy::FlexWrap::WrapReverse,
-        stylo::FlexWrap::Nowrap => taffy::FlexWrap::NoWrap,
+    if input.contains(stylo::FlexWrap::BALANCE) {
+        if input.contains(stylo::FlexWrap::WRAP_REVERSE) {
+            taffy::FlexWrap::BalanceReverse
+        } else {
+            taffy::FlexWrap::Balance
+        }
+    } else if input.contains(stylo::FlexWrap::WRAP_REVERSE) {
+        taffy::FlexWrap::WrapReverse
+    } else if input.contains(stylo::FlexWrap::WRAP) {
+        taffy::FlexWrap::Wrap
+    } else {
+        taffy::FlexWrap::NoWrap
     }
+}
+
+#[inline]
+#[cfg(feature = "flexbox")]
+pub fn flex_line_count(input: i32) -> u16 {
+    saturating_u16(input).max(1)
 }
 
 #[inline]
@@ -606,17 +634,14 @@ pub fn grid_line(input: &stylo::GridLine) -> taffy::GridPlacement<Atom> {
         taffy::GridPlacement::Auto
     } else if input.is_span {
         if input.ident.0 != stylo::atom!("") {
-            taffy::GridPlacement::NamedSpan(
-                input.ident.0.clone(),
-                input.line_num.try_into().unwrap(),
-            )
+            taffy::GridPlacement::NamedSpan(input.ident.0.clone(), saturating_u16(input.line_num))
         } else {
-            taffy::GridPlacement::Span(input.line_num as u16)
+            taffy::GridPlacement::Span(saturating_u16(input.line_num))
         }
     } else if input.ident.0 != stylo::atom!("") {
-        taffy::GridPlacement::NamedLine(input.ident.0.clone(), input.line_num as i16)
+        taffy::GridPlacement::NamedLine(input.ident.0.clone(), saturating_i16(input.line_num))
     } else if input.line_num != 0 {
-        taffy::style_helpers::line(input.line_num as i16)
+        taffy::style_helpers::line(saturating_i16(input.line_num))
     } else {
         taffy::GridPlacement::Auto
     }
@@ -683,10 +708,10 @@ pub fn grid_template_line_names(
 pub fn grid_template_area(input: &stylo::NamedArea) -> taffy::GridTemplateArea<Atom> {
     taffy::GridTemplateArea {
         name: input.name.clone(),
-        row_start: input.rows.start as u16,
-        row_end: input.rows.end as u16,
-        column_start: input.columns.start as u16,
-        column_end: input.columns.end as u16,
+        row_start: saturating_u16(input.rows.start),
+        row_end: saturating_u16(input.rows.end),
+        column_start: saturating_u16(input.columns.start),
+        column_end: saturating_u16(input.columns.end),
     }
 }
 
@@ -701,8 +726,8 @@ fn grid_template_areas(input: &stylo::GridTemplateAreas) -> Option<taffy::GridTe
                 areas: crate::wrapper::GridAreaWrapper(&template.areas)
                     .into_iter()
                     .collect(),
-                row_count: template.strings.len() as u16,
-                column_count: template.width as u16,
+                row_count: saturating_u16(template.strings.len()),
+                column_count: saturating_u16(template.width),
             })
         }
     }
@@ -718,7 +743,7 @@ pub fn grid_auto_tracks(input: &stylo::ImplicitGridTracks) -> Vec<taffy::TrackSi
 #[cfg(feature = "grid")]
 pub fn track_repeat(input: stylo::RepeatCount<i32>) -> taffy::RepetitionCount {
     match input {
-        stylo::RepeatCount::Number(val) => taffy::RepetitionCount::Count(val.try_into().unwrap()),
+        stylo::RepeatCount::Number(val) => taffy::RepetitionCount::Count(saturating_u16(val)),
         stylo::RepeatCount::AutoFill => taffy::RepetitionCount::AutoFill,
         stylo::RepeatCount::AutoFit => taffy::RepetitionCount::AutoFit,
     }
@@ -891,6 +916,8 @@ pub fn to_taffy_style(style: &stylo::ComputedValues) -> taffy::Style<Atom> {
         flex_direction: self::flex_direction(pos.flex_direction),
         #[cfg(feature = "flexbox")]
         flex_wrap: self::flex_wrap(pos.flex_wrap),
+        #[cfg(feature = "flexbox")]
+        flex_line_count: self::flex_line_count(pos.flex_line_count),
         #[cfg(feature = "flexbox")]
         flex_grow: pos.flex_grow.0,
         #[cfg(feature = "flexbox")]

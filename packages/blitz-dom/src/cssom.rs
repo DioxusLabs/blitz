@@ -7,7 +7,7 @@
 //! style rules, `@keyframes`, ...). An empty path denotes the stylesheet's own
 //! top-level rule list.
 
-use cssparser::{Parser, ParserInput};
+use cssparser::Parser;
 use selectors::matching::QuirksMode;
 use selectors::parser::{ParseRelative, SelectorList};
 use style::font_face::FontFaceRule;
@@ -759,8 +759,7 @@ impl BaseDocument {
                     None,
                     Default::default(),
                 );
-                let mut input = ParserInput::new(value);
-                let mut parser = Parser::new(&mut input);
+                let mut parser = Parser::new(value);
                 let mut guard = lock.write();
                 let descriptors = &mut font_face.write_with(&mut guard).descriptors;
                 if descriptors.set(id, &context, &mut parser).is_err() {
@@ -881,8 +880,7 @@ impl BaseDocument {
                 url_data: &contents.url_data,
                 for_supports_rule: false,
             };
-            let mut input = ParserInput::new(selectors);
-            let mut parser = Parser::new(&mut input);
+            let mut parser = Parser::new(selectors);
             let Ok(new_selectors) =
                 SelectorList::parse(&selector_parser, &mut parser, parse_relative)
             else {

@@ -30,7 +30,7 @@ use crate::{
         },
         damage::{ALL_DAMAGE, CONSTRUCT_BOX, CONSTRUCT_DESCENDENT, CONSTRUCT_FC},
     },
-    node::{NodeFlags, TextBrush},
+    node::TextBrush,
 };
 
 impl BaseDocument {
@@ -324,6 +324,8 @@ impl BaseDocument {
     /// anonymous boxes.
     #[cfg(debug_assertions)]
     fn assert_layout_parents_consistent(&self) {
+        use crate::node::NodeFlags;
+
         for (parent_id, node) in self.nodes.iter() {
             if !node.flags.contains(NodeFlags::IS_IN_DOCUMENT) {
                 continue;

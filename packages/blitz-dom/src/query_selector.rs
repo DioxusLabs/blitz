@@ -59,10 +59,7 @@ impl BaseDocument {
     ///   - Err(_) if parsing the selector fails
     ///   - Ok(None) if nothing matches
     ///   - Ok(Some(node_id)) with the first node ID that matches if one is found
-    pub fn query_selector<'input>(
-        &self,
-        selector: &'input str,
-    ) -> Result<Option<NodeId>, ParseError<'input>> {
+    pub fn query_selector(&self, selector: &str) -> Result<Option<NodeId>, ParseError> {
         self.query_selector_in(self.root_node_id, selector)
     }
 
@@ -76,11 +73,11 @@ impl BaseDocument {
     ///   - `Err(_)` if parsing the selector fails
     ///   - `Ok(None)` if nothing matches
     ///   - `Ok(Some(node_id))` with the first matching descendant ID otherwise
-    pub fn query_selector_in<'input>(
+    pub fn query_selector_in(
         &self,
         scope: NodeId,
-        selector: &'input str,
-    ) -> Result<Option<NodeId>, ParseError<'input>> {
+        selector: &str,
+    ) -> Result<Option<NodeId>, ParseError> {
         let selector_list = self.try_parse_selector_list(selector)?;
         Ok(self.query_selector_in_raw(scope, &selector_list))
     }
@@ -121,10 +118,7 @@ impl BaseDocument {
     /// Returns:
     ///   - `Err(_)` if parsing the selector fails
     ///   - `Ok(SmallVec<usize>)` with all matching nodes otherwise
-    pub fn query_selector_all<'input>(
-        &self,
-        selector: &'input str,
-    ) -> Result<SmallVec<[NodeId; 32]>, ParseError<'input>> {
+    pub fn query_selector_all(&self, selector: &str) -> Result<SmallVec<[NodeId; 32]>, ParseError> {
         self.query_selector_all_in(self.root_node_id, selector)
     }
 
@@ -137,11 +131,11 @@ impl BaseDocument {
     /// Returns:
     ///   - `Err(_)` if parsing the selector fails
     ///   - `Ok(_)` with all matching descendant IDs otherwise
-    pub fn query_selector_all_in<'input>(
+    pub fn query_selector_all_in(
         &self,
         scope: NodeId,
-        selector: &'input str,
-    ) -> Result<SmallVec<[NodeId; 32]>, ParseError<'input>> {
+        selector: &str,
+    ) -> Result<SmallVec<[NodeId; 32]>, ParseError> {
         let selector_list = self.try_parse_selector_list(selector)?;
         Ok(self.query_selector_all_in_raw(scope, &selector_list))
     }
@@ -193,11 +187,7 @@ impl BaseDocument {
     /// specified as a string.
     ///
     /// Non-element nodes never match.
-    pub fn matches_selector<'input>(
-        &self,
-        node_id: NodeId,
-        selector: &'input str,
-    ) -> Result<bool, ParseError<'input>> {
+    pub fn matches_selector(&self, node_id: NodeId, selector: &str) -> Result<bool, ParseError> {
         let selector_list = self.try_parse_selector_list(selector)?;
         Ok(self.nodes[node_id].matches_selector_raw(&selector_list))
     }
@@ -206,19 +196,15 @@ impl BaseDocument {
     /// `node_id`.
     ///
     /// Non-element nodes never match and return `None`.
-    pub fn closest<'input>(
-        &self,
-        node_id: NodeId,
-        selector: &'input str,
-    ) -> Result<Option<NodeId>, ParseError<'input>> {
+    pub fn closest(&self, node_id: NodeId, selector: &str) -> Result<Option<NodeId>, ParseError> {
         let selector_list = self.try_parse_selector_list(selector)?;
         Ok(self.nodes[node_id].closest_raw(&selector_list))
     }
 
-    pub fn try_parse_selector_list<'input>(
+    pub fn try_parse_selector_list(
         &self,
-        input: &'input str,
-    ) -> Result<SelectorList<SelectorImpl>, ParseError<'input>> {
+        input: &str,
+    ) -> Result<SelectorList<SelectorImpl>, ParseError> {
         let url_extra_data = self.url.url_extra_data();
         SelectorParser::parse_author_origin_no_namespace(input, &url_extra_data)
     }

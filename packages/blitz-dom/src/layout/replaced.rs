@@ -175,10 +175,18 @@ pub fn compute_replaced_layout(
         },
         (None, None) => match intrinsic_ratio {
             Some(ratio) => {
-                if let AvailableSpace::Definite(available_width) = available_space.width {
+                // A ratio-only replaced element stretches to fit the width it is laid out
+                // in: the available width if definite, else (under a max-content constraint)
+                // its containing block, per CSS2 §10.3.2.
+                let stretch_fit_width = match available_space.width {
+                    AvailableSpace::Definite(width) => Some(width),
+                    AvailableSpace::MaxContent => parent_size.width,
+                    AvailableSpace::MinContent => None,
+                };
+                if let Some(width) = stretch_fit_width {
                     Size {
-                        width: available_width,
-                        height: available_width / ratio,
+                        width,
+                        height: width / ratio,
                     }
                 } else {
                     // Contain within the default object size
@@ -422,4 +430,13 @@ pub fn compute_replaced_layout(
     };
 
     LayoutOutput::from_sizes(size + pb_sum, overflow_rect_for(size))
+}
+
+/// Inline-level elements that are laid out as atomic inline boxes (with their own
+/// layout box) rather than being flattened into the surrounding text layout.
+pub(crate) fn is_inline_box_element(tag_name: &LocalName) -> bool {
+    is_replaced_element(tag_name)
+        || *tag_name == local_name!("input")
+        || *tag_name == local_name!("textarea")
+        || *tag_name == local_name!("button")
 }

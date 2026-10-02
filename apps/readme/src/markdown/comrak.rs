@@ -12,7 +12,6 @@ pub(crate) fn markdown_to_html(contents: String) -> String {
         &Options {
             extension: options::Extension {
                 strikethrough: true,
-                tagfilter: false,
                 table: true,
                 autolink: true,
                 tasklist: true,

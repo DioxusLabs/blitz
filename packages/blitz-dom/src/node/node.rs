@@ -7,7 +7,6 @@ use blitz_traits::events::{
 use blitz_traits::node_id::NodeId;
 use blitz_traits::shell::ShellProvider;
 use euclid::{Point2D, Rect, Size2D};
-use html_escape::encode_quoted_attribute_to_string;
 use keyboard_types::Modifiers;
 use kurbo::{Affine, Rect as KurboRect};
 use markup5ever::{LocalName, local_name};
@@ -39,12 +38,6 @@ use thin_vec::ThinVec;
 
 use super::stylo_data::{ComputedStyleRef, StyloData};
 use super::{Attribute, DocumentData, ElementData, LayoutData};
-
-#[derive(Clone, Copy)]
-enum OutputStyle {
-    Normal,
-    Pretty,
-}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DisplayOuter {
@@ -1095,125 +1088,6 @@ impl Node {
         s
     }
 
-    /// Renders the HTML of this node and all its children as a `String` without extra whitespace.
-    ///
-    /// Example output:
-    ///
-    /// ```text
-    /// <html><head /><body><main id="main"><div class="arbitrary-class" /></main></body></html>
-    /// ```
-    pub fn outer_html(&self) -> String {
-        let mut output = String::new();
-        self.write_outer_html(&mut output);
-        output
-    }
-
-    /// Renders the HTML of this node and all its children as a `String` with whitespace for human
-    /// readability.
-    ///
-    /// Example output:
-    ///
-    /// ```text
-    /// <html>
-    ///   <head />
-    ///   <body>
-    ///     <main id="main">
-    ///       <div class="arbitrary-class" />
-    ///     </main>
-    ///   </body>
-    /// </html>
-    /// ```
-    pub fn outer_html_pretty(&self) -> String {
-        let mut output = String::new();
-        self.write_outer_html_pretty(&mut output);
-        output
-    }
-
-    pub fn write_outer_html(&self, writer: &mut String) {
-        self.write_outer_html_in_style(writer, OutputStyle::Normal, 0);
-    }
-
-    pub fn write_outer_html_pretty(&self, writer: &mut String) {
-        self.write_outer_html_in_style(writer, OutputStyle::Pretty, 0);
-    }
-
-    fn write_outer_html_in_style(&self, writer: &mut String, style: OutputStyle, nesting: usize) {
-        const INDENT: &str = "  ";
-        let has_children = !self.children.is_empty();
-        let current_color = self
-            .primary_styles()
-            .map(|style| style.clone_color())
-            .map(|color| color.to_css_string());
-
-        match &self.data {
-            NodeData::Document(_) => {}
-            NodeData::Comment { .. } => {}
-            NodeData::AnonymousBlock(_) => {}
-            // NodeData::Doctype { name, .. } => write!(s, "DOCTYPE {name}"),
-            NodeData::Text(data) => {
-                if matches!(style, OutputStyle::Pretty) {
-                    for _ in 0..nesting {
-                        writer.push_str(INDENT);
-                    }
-                }
-                writer.push_str(data.content.as_str());
-                if matches!(style, OutputStyle::Pretty) {
-                    writer.push('\n');
-                }
-            }
-            NodeData::Element(data) => {
-                if matches!(style, OutputStyle::Pretty) {
-                    for _ in 0..nesting {
-                        writer.push_str(INDENT);
-                    }
-                }
-                writer.push('<');
-                writer.push_str(&data.name.local);
-
-                for attr in data.attrs() {
-                    writer.push(' ');
-                    writer.push_str(&attr.name.local);
-                    writer.push_str("=\"");
-                    #[allow(clippy::unnecessary_unwrap)] // Convert to if-let chain once stabilised
-                    if current_color.is_some() && attr.value.contains("currentColor") {
-                        let value = attr
-                            .value
-                            .replace("currentColor", current_color.as_ref().unwrap());
-                        encode_quoted_attribute_to_string(&value, writer);
-                    } else {
-                        encode_quoted_attribute_to_string(&attr.value, writer);
-                    }
-                    writer.push('"');
-                }
-                if !has_children {
-                    writer.push_str(" /");
-                }
-                writer.push('>');
-                if matches!(style, OutputStyle::Pretty) {
-                    writer.push('\n');
-                }
-
-                if has_children {
-                    for &child_id in &self.children {
-                        self.tree()[child_id].write_outer_html_in_style(writer, style, nesting + 1);
-                    }
-
-                    if matches!(style, OutputStyle::Pretty) {
-                        for _ in 0..nesting {
-                            writer.push_str(INDENT);
-                        }
-                    }
-                    writer.push_str("</");
-                    writer.push_str(&data.name.local);
-                    writer.push('>');
-                    if matches!(style, OutputStyle::Pretty) {
-                        writer.push('\n');
-                    }
-                }
-            }
-        }
-    }
-
     pub fn attrs(&self) -> Option<&[Attribute]> {
         Some(&self.element_data()?.attrs)
     }
@@ -1697,7 +1571,7 @@ impl Node {
 
     /// Whether this node can act as an [`offset_parent`](Self::offset_parent): a positioned
     /// element, or one of the elements that always qualify (`body`, `td`, `th`).
-    fn is_offset_parent(&self) -> bool {
+    pub(crate) fn is_offset_parent(&self) -> bool {
         let Some(styles) = self.primary_styles() else {
             return false;
         };
@@ -1712,7 +1586,7 @@ impl Node {
     /// Whether this node is a non-positioned `body` element. When such an element is the
     /// `offsetParent`, `offsetLeft`/`offsetTop` are measured from the initial containing
     /// block origin rather than from the `body`'s padding edge.
-    fn is_static_body(&self) -> bool {
+    pub(crate) fn is_static_body(&self) -> bool {
         self.data.is_element_with_tag_name(&local_name!("body"))
             && self
                 .primary_styles()

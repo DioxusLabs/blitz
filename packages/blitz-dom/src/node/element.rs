@@ -1,5 +1,5 @@
 use blitz_traits::node_id::NodeId;
-use cssparser::ParserInput;
+use cssparser::Parser;
 use kurbo::{Affine, Rect as KurboRect};
 use linebender_resource_handle::Blob;
 use markup5ever::{LocalName, QualName, local_name};
@@ -696,8 +696,7 @@ impl ElementData {
             return false;
         };
         let mut source_property_declaration = SourcePropertyDeclaration::default();
-        let mut input = ParserInput::new(value);
-        let mut parser = style::values::Parser::new(&mut input);
+        let mut parser = Parser::new(value);
         let Ok(_) = PropertyDeclaration::parse_into(
             &mut source_property_declaration,
             property_id,

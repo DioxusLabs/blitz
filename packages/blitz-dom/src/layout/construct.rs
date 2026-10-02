@@ -1,6 +1,5 @@
 use blitz_traits::node_id::NodeId;
 use core::str;
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use markup5ever::{QualName, local_name, ns};
@@ -11,10 +10,9 @@ use parley::{
 use style::{
     computed_values::position::T as PositionProperty,
     data::ElementData as StyloElementData,
-    properties::ComputedValues,
     shared_lock::StylesheetGuards,
     values::{
-        computed::{Content, ContentItem, Display, Float, TextTransform, font::LineHeight},
+        computed::{Content, ContentItem, Display, Float, TextTransform},
         specified::box_::{DisplayInside, DisplayOutside},
     },
 };
@@ -22,7 +20,6 @@ use thin_vec::ThinVec;
 
 use crate::{
     BaseDocument, ElementData, Node, NodeData,
-    font_metrics::normal_line_height,
     layout::damage::{
         CONSTRUCT_BOX, CONSTRUCT_DESCENDENT, CONSTRUCT_FC, sort_layout_children_by_order,
     },
@@ -37,7 +34,7 @@ use crate::{
 use super::{
     damage::ALL_DAMAGE,
     list::{BULLET_FONT_FAMILY, collect_list_item_children},
-    replaced::is_replaced_element,
+    replaced::is_inline_box_element,
     table::build_table_context,
 };
 
@@ -291,80 +288,6 @@ fn push_non_whitespace_children_and_pseudos(layout_children: &mut ThinVec<NodeId
     }
 }
 
-/// Resolve the used `line-height` (in CSS px) of an element. `normal` is resolved
-/// from the metrics of the element's first available font.
-fn resolve_line_height(font_ctx: &mut FontContext, style: &ComputedValues, scale: f32) -> f32 {
-    let font = style.get_font();
-    let font_size = font.font_size.used_size.0.px();
-    match font.line_height {
-        LineHeight::Normal => {
-            normal_line_height(font_ctx, font, font_size, scale).unwrap_or(font_size * 1.2)
-        }
-        LineHeight::Number(num) => font_size * num.0,
-        LineHeight::Length(value) => value.0.px(),
-    }
-}
-
-/// Whether an inline-level element is laid out as a Parley style span (as opposed
-/// to an atomic inline box) within an inline formatting context.
-fn is_inline_style_span(element_data: &ElementData) -> bool {
-    let tag_name = &element_data.name.local;
-    !(is_replaced_element(tag_name)
-        || *tag_name == local_name!("input")
-        || *tag_name == local_name!("textarea")
-        || *tag_name == local_name!("button")
-        || *tag_name == local_name!("br"))
-}
-
-/// Iterate a node's `::before` pseudo, children and `::after` pseudo, in tree order.
-fn children_and_pseudos(node: &Node) -> impl Iterator<Item = NodeId> + '_ {
-    node.before()
-        .into_iter()
-        .chain(node.children.iter().copied())
-        .chain(node.after())
-}
-
-/// Pre-compute the used line-height of every inline style span within an inline
-/// formatting context, floored by the line-height of the inline context's root.
-/// See https://www.w3.org/TR/CSS21/visudet.html#line-height
-///
-/// This has to happen before the Parley `TreeBuilder` is created as the builder
-/// holds a mutable borrow of the `FontContext`.
-fn collect_span_line_heights(
-    nodes: &crate::NodeTree,
-    font_ctx: &mut FontContext,
-    node_id: NodeId,
-    root_line_height: f32,
-    scale: f32,
-    out: &mut HashMap<NodeId, f32>,
-) {
-    let node = &nodes[node_id];
-    let (NodeData::Element(element_data) | NodeData::AnonymousBlock(element_data)) = &node.data
-    else {
-        return;
-    };
-
-    let display = node.display_style().unwrap_or(Display::inline());
-    match (display.outside(), display.inside()) {
-        (DisplayOutside::None, DisplayInside::Contents) => {
-            for child_id in node.children.iter().copied() {
-                collect_span_line_heights(nodes, font_ctx, child_id, root_line_height, scale, out);
-            }
-        }
-        (DisplayOutside::Inline, DisplayInside::Flow) if is_inline_style_span(element_data) => {
-            if let Some(style) = node.primary_styles() {
-                let line_height =
-                    resolve_line_height(font_ctx, &style, scale).max(root_line_height);
-                out.insert(node_id, line_height);
-            }
-            for child_id in children_and_pseudos(node) {
-                collect_span_line_heights(nodes, font_ctx, child_id, root_line_height, scale, out);
-            }
-        }
-        _ => {}
-    }
-}
-
 /// Result of classifying the in-flow children of a flow container as
 /// all-block, all-inline and/or all-out-of-flow.
 struct FlowClassification {
@@ -537,14 +460,7 @@ fn collect_layout_children_with_wrap(
 
         #[cfg(feature = "svg")]
         if matches!(tag_name, "svg") {
-            let mut outer_html = doc.get_node(container_node_id).unwrap().outer_html();
-
-            // HACK: usvg fails to parse SVGs that don't have the SVG xmlns set. So inject it
-            // if the generated source doesn't have it.
-            if !outer_html.contains("xmlns") {
-                outer_html =
-                    outer_html.replace("<svg", "<svg xmlns=\"http://www.w3.org/2000/svg\"");
-            }
+            let outer_html = doc.get_node(container_node_id).unwrap().svg_source();
 
             // Remove contruction damage from subtree
             doc.iter_subtree_mut(container_node_id, |id: NodeId, doc: &mut BaseDocument| {
@@ -948,6 +864,10 @@ fn create_text_editor(doc: &mut BaseDocument, input_element_id: NodeId, is_multi
         .primary_styles()
         .map(|s| stylo_to_parley::text_align(s.clone_text_align()))
         .unwrap_or(parley::layout::Alignment::Start);
+    let base_direction = node
+        .primary_styles()
+        .map(|s| stylo_to_parley::base_direction(s.clone_direction(), s.clone_unicode_bidi()))
+        .unwrap_or(parley::BaseDirection::Auto);
 
     let initial_text = if is_multiline {
         node.text_content()
@@ -990,6 +910,7 @@ fn create_text_editor(doc: &mut BaseDocument, input_element_id: NodeId, is_multi
     ));
     styles.insert(StyleProperty::Brush(parley_style.brush));
     editor.set_alignment(alignment);
+    editor.set_base_direction(base_direction);
 
     editor.refresh_layout(&mut doc.font_ctx.lock().unwrap(), &mut doc.layout_ctx);
 }
@@ -1081,11 +1002,7 @@ pub(crate) fn find_inline_layout_embedded_boxes(
                     (DisplayOutside::Inline, DisplayInside::Flow) => {
                         let tag_name = &element_data.name.local;
 
-                        if is_replaced_element(tag_name)
-                            || *tag_name == local_name!("input")
-                            || *tag_name == local_name!("textarea")
-                            || *tag_name == local_name!("button")
-                        {
+                        if is_inline_box_element(tag_name) {
                             layout_children.push(node_id);
                         } else if *tag_name == local_name!("br") {
                             node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
@@ -1131,34 +1048,13 @@ pub(crate) fn build_inline_layout_into(
             .and_then(|parent_id| nodes[parent_id].primary_styles())
     });
 
-    let mut parley_style = root_node_style
+    let parley_style = root_node_style
         .as_ref()
         .map(|s| stylo_to_parley::style(inline_context_root_node_id, s))
         .unwrap_or_else(|| parley::TextStyle {
             white_space_collapse: WhiteSpaceCollapse::Collapse,
             ..Default::default()
         });
-
-    // The line-height of the inline context's root (the "strut"). `normal` is resolved
-    // against the root's first available font rather than per-run by Parley, so that
-    // fallback fonts don't change the line height.
-    let root_line_height = root_node_style
-        .as_deref()
-        .map(|s| resolve_line_height(font_ctx, s, scale))
-        .unwrap_or(parley_style.font_size * 1.2);
-    parley_style.line_height = parley::LineHeight::Absolute(root_line_height);
-
-    let mut span_line_heights = HashMap::new();
-    for child_id in children_and_pseudos(root_node) {
-        collect_span_line_heights(
-            nodes,
-            font_ctx,
-            child_id,
-            root_line_height,
-            scale,
-            &mut span_line_heights,
-        );
-    }
 
     // Create a parley tree builder
     let mut builder = layout_ctx.tree_builder(font_ctx, scale, true, &parley_style);
@@ -1199,31 +1095,13 @@ pub(crate) fn build_inline_layout_into(
     };
 
     if let Some(before_id) = root_node.before() {
-        build_inline_layout_recursive(
-            &mut builder,
-            nodes,
-            before_id,
-            text_transform,
-            &span_line_heights,
-        );
+        build_inline_layout_recursive(&mut builder, nodes, before_id, text_transform);
     }
     for child_id in root_node.children.iter().copied() {
-        build_inline_layout_recursive(
-            &mut builder,
-            nodes,
-            child_id,
-            text_transform,
-            &span_line_heights,
-        );
+        build_inline_layout_recursive(&mut builder, nodes, child_id, text_transform);
     }
     if let Some(after_id) = root_node.after() {
-        build_inline_layout_recursive(
-            &mut builder,
-            nodes,
-            after_id,
-            text_transform,
-            &span_line_heights,
-        );
+        build_inline_layout_recursive(&mut builder, nodes, after_id, text_transform);
     }
 
     text_layout.text = builder.build_into(&mut text_layout.layout);
@@ -1234,7 +1112,6 @@ pub(crate) fn build_inline_layout_into(
         nodes: &crate::NodeTree,
         node_id: NodeId,
         parent_text_transform: TextTransform,
-        span_line_heights: &HashMap<NodeId, f32>,
     ) {
         let node = &nodes[node_id];
 
@@ -1291,24 +1168,14 @@ pub(crate) fn build_inline_layout_into(
                         );
                         for child_id in node.children.iter().copied() {
                             // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
-                            build_inline_layout_recursive(
-                                builder,
-                                nodes,
-                                child_id,
-                                text_transform,
-                                span_line_heights,
-                            );
+                            build_inline_layout_recursive(builder, nodes, child_id, text_transform);
                         }
                         builder.pop_style_span();
                     }
                     (DisplayOutside::Inline, DisplayInside::Flow) => {
                         let tag_name = &element_data.name.local;
 
-                        if is_replaced_element(tag_name)
-                            || *tag_name == local_name!("input")
-                            || *tag_name == local_name!("textarea")
-                            || *tag_name == local_name!("button")
-                        {
+                        if is_inline_box_element(tag_name) {
                             builder.push_inline_box(InlineBox {
                                 id: node_id.as_u64(),
                                 kind: box_kind,
@@ -1318,6 +1185,10 @@ pub(crate) fn build_inline_layout_into(
                                 width: 0.0,
                                 height: 0.0,
                                 baseline: None,
+                                vertical_align: node
+                                    .primary_styles()
+                                    .map(|s| stylo_to_parley::vertical_align(&s))
+                                    .unwrap_or_default(),
                             });
                         } else if *tag_name == local_name!("br") {
                             // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
@@ -1331,22 +1202,13 @@ pub(crate) fn build_inline_layout_into(
                             builder.pop_style_span();
                         } else {
                             // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
-                            let mut style = node
+                            let style = node
                                 .primary_styles()
                                 .map(|s| stylo_to_parley::style(node.id, &s))
                                 .unwrap_or_else(|| parley::TextStyle {
                                     white_space_collapse: WhiteSpaceCollapse::Collapse,
                                     ..Default::default()
                                 });
-
-                            // Floor the line-height of the span by the line-height of the inline context
-                            // See https://www.w3.org/TR/CSS21/visudet.html#line-height
-                            if let Some(line_height) = span_line_heights.get(&node_id) {
-                                style.line_height = parley::LineHeight::Absolute(*line_height);
-                            }
-
-                            // dbg!(node_id);
-                            // dbg!(&style);
 
                             builder.push_style_span(style);
 
@@ -1356,7 +1218,6 @@ pub(crate) fn build_inline_layout_into(
                                     nodes,
                                     before_id,
                                     text_transform,
-                                    span_line_heights,
                                 );
                             }
 
@@ -1366,7 +1227,6 @@ pub(crate) fn build_inline_layout_into(
                                     nodes,
                                     child_id,
                                     text_transform,
-                                    span_line_heights,
                                 );
                             }
                             if let Some(after_id) = node.after() {
@@ -1375,7 +1235,6 @@ pub(crate) fn build_inline_layout_into(
                                     nodes,
                                     after_id,
                                     text_transform,
-                                    span_line_heights,
                                 );
                             }
 
@@ -1393,6 +1252,10 @@ pub(crate) fn build_inline_layout_into(
                             width: 0.0,
                             height: 0.0,
                             baseline: None,
+                            vertical_align: node
+                                .primary_styles()
+                                .map(|s| stylo_to_parley::vertical_align(&s))
+                                .unwrap_or_default(),
                         });
                     }
                 };

@@ -16,20 +16,25 @@ pub(crate) mod stylo {
     pub(crate) use style::computed_values::white_space_collapse::T as WhiteSpaceCollapse;
     pub(crate) use style::properties::ComputedValues;
     pub(crate) use style::properties::style_structs::Font;
+    pub(crate) use style::values::computed::AlignmentBaseline;
+    pub(crate) use style::values::computed::BaselineShift;
+    pub(crate) use style::values::computed::LineBreak;
     pub(crate) use style::values::computed::OverflowWrap;
     pub(crate) use style::values::computed::WordBreak;
     pub(crate) use style::values::computed::font::FontFeatureSettings;
-    pub(crate) use style::values::computed::font::FontStretch;
     pub(crate) use style::values::computed::font::FontStyle;
     pub(crate) use style::values::computed::font::FontVariantEastAsian;
     pub(crate) use style::values::computed::font::FontVariantLigatures;
     pub(crate) use style::values::computed::font::FontVariantNumeric;
     pub(crate) use style::values::computed::font::FontVariationSettings;
     pub(crate) use style::values::computed::font::FontWeight;
+    pub(crate) use style::values::computed::font::FontWidth;
     pub(crate) use style::values::computed::font::GenericFontFamily;
     pub(crate) use style::values::computed::font::LineHeight;
     pub(crate) use style::values::computed::font::SingleFontFamily;
+    pub(crate) use style::values::generics::box_::BaselineShiftKeyword;
     pub(crate) use style::values::specified::TextAlignKeyword;
+    pub(crate) use style::values::specified::TextAlignLast;
 }
 
 pub(crate) mod parley {
@@ -58,7 +63,7 @@ pub(crate) fn query_font_family(input: &stylo::SingleFontFamily) -> parley::Quer
     match input {
         stylo::SingleFontFamily::FamilyName(name) => {
             'ret: {
-                let name = name.name.as_ref();
+                let name = name.name.as_str();
 
                 // Legacy web compatibility
                 #[cfg(target_vendor = "apple")]
@@ -83,7 +88,7 @@ pub(crate) fn font_weight(input: stylo::FontWeight) -> parley::FontWeight {
     parley::FontWeight::new(input.value())
 }
 
-pub(crate) fn font_width(input: stylo::FontStretch) -> parley::FontWidth {
+pub(crate) fn font_width(input: stylo::FontWidth) -> parley::FontWidth {
     parley::FontWidth::from_percentage(input.0.to_float())
 }
 
@@ -310,6 +315,19 @@ pub(crate) fn text_align(input: stylo::TextAlignKeyword) -> parley::Alignment {
     }
 }
 
+/// Returns `None` for `text-align-last: auto`
+pub(crate) fn text_align_last(input: stylo::TextAlignLast) -> Option<parley::Alignment> {
+    match input {
+        stylo::TextAlignLast::Auto => None,
+        stylo::TextAlignLast::Start => Some(parley::Alignment::Start),
+        stylo::TextAlignLast::End => Some(parley::Alignment::End),
+        stylo::TextAlignLast::Left => Some(parley::Alignment::Left),
+        stylo::TextAlignLast::Right => Some(parley::Alignment::Right),
+        stylo::TextAlignLast::Center => Some(parley::Alignment::Center),
+        stylo::TextAlignLast::Justify => Some(parley::Alignment::Justify),
+    }
+}
+
 pub(crate) fn text_wrap_mode(input: stylo::TextWrapMode) -> parley::TextWrapMode {
     match input {
         stylo::TextWrapMode::Wrap => parley::TextWrapMode::Wrap,
@@ -327,6 +345,57 @@ pub(crate) fn white_space_collapse(input: stylo::WhiteSpaceCollapse) -> parley::
     }
 }
 
+/// Map the css-inline-3 `alignment-baseline` and `baseline-shift` longhands (which Stylo
+/// stores in place of the `vertical-align` shorthand) to Parley's `VerticalAlign`.
+///
+/// Percentages are resolved against the element's own `line-height`.
+pub(crate) fn vertical_align(style: &stylo::ComputedValues) -> parley::VerticalAlign {
+    let box_styles = style.get_box();
+    let alignment = match box_styles.clone_alignment_baseline() {
+        stylo::AlignmentBaseline::Baseline => parley::AlignmentBaseline::Baseline,
+        stylo::AlignmentBaseline::TextTop => parley::AlignmentBaseline::TextTop,
+        stylo::AlignmentBaseline::TextBottom => parley::AlignmentBaseline::TextBottom,
+        stylo::AlignmentBaseline::Middle => parley::AlignmentBaseline::Middle,
+    };
+    let shift = match box_styles.clone_baseline_shift() {
+        stylo::BaselineShift::Keyword(stylo::BaselineShiftKeyword::Sub) => {
+            parley::BaselineShift::Sub
+        }
+        stylo::BaselineShift::Keyword(stylo::BaselineShiftKeyword::Super) => {
+            parley::BaselineShift::Super
+        }
+        stylo::BaselineShift::Keyword(stylo::BaselineShiftKeyword::Top) => {
+            parley::BaselineShift::Top
+        }
+        stylo::BaselineShift::Keyword(stylo::BaselineShiftKeyword::Bottom) => {
+            parley::BaselineShift::Bottom
+        }
+        // TODO: `center` (align the aligned subtree's centre with the line box's centre) is not
+        // representable in Parley yet. Approximate it with `middle`.
+        stylo::BaselineShift::Keyword(stylo::BaselineShiftKeyword::Center) => {
+            return parley::VerticalAlign::MIDDLE;
+        }
+        stylo::BaselineShift::Length(lp) => {
+            let shift = if lp.has_percentage() {
+                let font_styles = style.get_font();
+                let font_size = font_styles.font_size.used_size.0.px();
+                let line_height = match font_styles.line_height {
+                    // TODO: `normal` resolves against the first available font's metrics, which
+                    // aren't available here; 1.2 is the usual approximation.
+                    stylo::LineHeight::Normal => font_size * 1.2,
+                    stylo::LineHeight::Number(num) => font_size * num.0,
+                    stylo::LineHeight::Length(value) => value.0.px(),
+                };
+                lp.resolve(Length::new(line_height)).px()
+            } else {
+                lp.resolve(Length::new(0.0)).px()
+            };
+            parley::BaselineShift::Length(shift)
+        }
+    };
+    parley::VerticalAlign::new(alignment, shift)
+}
+
 pub(crate) fn style(
     span_id: NodeId,
     style: &stylo::ComputedValues,
@@ -337,10 +406,11 @@ pub(crate) fn style(
     // Convert font size and line height
     let font_size = font_styles.font_size.used_size.0.px();
     let line_height = match font_styles.line_height {
-        stylo::LineHeight::Normal => parley::LineHeight::MetricsRelative(1.0),
+        stylo::LineHeight::Normal => parley::LineHeight::NORMAL,
         stylo::LineHeight::Number(num) => parley::LineHeight::FontSizeRelative(num.0),
         stylo::LineHeight::Length(value) => parley::LineHeight::Absolute(value.0.px()),
     };
+    let vertical_align = self::vertical_align(style);
 
     let letter_spacing = itext_styles
         .letter_spacing
@@ -356,7 +426,7 @@ pub(crate) fn style(
     // Convert Bold/Italic
     let font_weight = self::font_weight(font_styles.font_weight);
     let font_style = self::font_style(font_styles.font_style);
-    let font_width = self::font_width(font_styles.font_stretch);
+    let font_width = self::font_width(font_styles.font_width);
     let font_variations = self::font_variations(&font_styles.font_variation_settings);
     let font_features = self::font_features(font_styles);
 
@@ -369,7 +439,7 @@ pub(crate) fn style(
         .map(|family| match family {
             stylo::SingleFontFamily::FamilyName(name) => {
                 'ret: {
-                    let name = name.name.as_ref();
+                    let name = name.name.as_str();
 
                     // Legacy web compatibility
                     #[cfg(target_vendor = "apple")]
@@ -400,6 +470,12 @@ pub(crate) fn style(
         stylo::WordBreak::BreakAll => parley::WordBreak::BreakAll,
         stylo::WordBreak::KeepAll => parley::WordBreak::KeepAll,
     };
+    let line_break = match itext_styles.line_break {
+        stylo::LineBreak::Loose => parley::LineBreak::Loose,
+        stylo::LineBreak::Normal => parley::LineBreak::Normal,
+        stylo::LineBreak::Auto | stylo::LineBreak::Strict => parley::LineBreak::Strict,
+        stylo::LineBreak::Anywhere => parley::LineBreak::Anywhere,
+    };
     let overflow_wrap = match itext_styles.overflow_wrap {
         stylo::OverflowWrap::Normal => parley::OverflowWrap::Normal,
         stylo::OverflowWrap::BreakWord => parley::OverflowWrap::BreakWord,
@@ -418,12 +494,14 @@ pub(crate) fn style(
         font_features: parley::FontFeatures::List(Cow::Owned(font_features)),
         locale: parley::Language::parse(&font_styles._x_lang.0).ok(),
         line_height,
+        vertical_align,
         word_spacing,
         letter_spacing,
         text_wrap_mode,
         white_space_collapse: white_space_collapse(itext_styles.white_space_collapse),
         overflow_wrap,
         word_break,
+        line_break,
 
         // Contains NodeId
         brush: TextBrush::from_id(span_id),

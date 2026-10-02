@@ -51,7 +51,7 @@ use style::{
     shared_lock::{Locked, SharedRwLock, StylesheetGuards},
     stylist::RuleInclusion,
     thread_state::ThreadState,
-    traversal::{DomTraversal, PerLevelTraversalData, resolve_style},
+    traversal::{DomTraversal, resolve_style},
     traversal_flags::TraversalFlags,
     values::{AtomIdent, GenericAtomIdent},
 };
@@ -1325,7 +1325,6 @@ impl<'a> RecalcStyle<'a> {
 impl<'dom> DomTraversal<BlitzNode<'dom>> for RecalcStyle<'_> {
     fn process_preorder<F: FnMut(BlitzNode<'dom>)>(
         &self,
-        traversal_data: &PerLevelTraversalData,
         context: &mut StyleContext<BlitzNode<'dom>>,
         node: BlitzNode<'dom>,
         note_child: F,
@@ -1333,7 +1332,7 @@ impl<'dom> DomTraversal<BlitzNode<'dom>> for RecalcStyle<'_> {
         if let Some(el) = node.as_element() {
             // let mut data = el.mutate_data().unwrap();
             let mut data = unsafe { el.ensure_data() };
-            recalc_style_at(self, traversal_data, context, el, &mut data, note_child);
+            recalc_style_at(self, context, el, &mut data, note_child);
 
             sync_pseudo_element_styles(el, &data, &self.nodes_needing_style_image_flush);
 

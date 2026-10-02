@@ -58,18 +58,18 @@ browser-persistence = { path = "./apps/browser/persistence" }
 blitz-test-harness = { path = "./packages/blitz-test-harness" }
 
 # Servo dependencies
-style = { version = "0.21.0", package = "stylo" }
-style_traits = { version = "0.21.0", package = "stylo_traits" }
-style_atoms = { version = "0.21.0", package = "stylo_atoms" }
-style_config = { version = "0.21.0", package = "stylo_static_prefs" }
-style_dom = { version = "0.21.0", package = "stylo_dom" }
-selectors = { version = "0.40.0", package = "selectors" }
-cssparser = { version = "0.37.0" }
+style = { version = "0.22.0", package = "stylo" }
+style_traits = { version = "0.22.0", package = "stylo_traits" }
+style_atoms = { version = "0.22.0", package = "stylo_atoms" }
+style_config = { version = "0.22.0", package = "stylo_static_prefs" }
+style_dom = { version = "0.22.0", package = "stylo_dom" }
+selectors = { version = "0.41.0", package = "selectors" }
+cssparser = { version = "0.38.0" }
 
 # HTML5ever dependencies
-markup5ever = "0.39.0" # needs to match stylo web_atoms version
-html5ever = "0.39.0"   # needs to match stylo web_atoms version
-xml5ever = "0.39.0"    # needs to match stylo web_atoms version
+markup5ever = "0.40.0" # needs to match stylo web_atoms version
+html5ever = "0.40.1"   # needs to match stylo web_atoms version
+xml5ever = "0.40.0"    # needs to match stylo web_atoms version
 
 # Other Servo dependencies
 euclid = "0.22"
@@ -98,16 +98,17 @@ dioxus-cli-config = { version = "0.7.3" }
 dioxus-core-macro = { version = "0.7.3" }
 
 # Taffy + Parley + Fontations
-taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "4863877b9cab21645b160d7f247901f90214fe27", default-features = false, features = [
+taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "fb461a7826e49f488f31220744bf12227ffb580e", default-features = false, features = [
     "std",
     "flexbox",
+    "flexbox_balance",
     "grid",
     "block_layout",
     "content_size",
     "calc",
     "detailed_layout_info",
 ] }
-parley = { git = "https://github.com/linebender/parley", rev = "6a9444f402b2c8698cf0c28dcd7ea8b469688f16", default-features = false, features = ["std"] }
+parley = { git = "https://github.com/linebender/parley", rev = "718dcb721941fd8e72128833122d31f5a4e80504", default-features = false, features = ["std"] }
 skrifa = { version = "0.44", default-features = false, features = [
     "std",
 ] } # Should match parley and vello versions
