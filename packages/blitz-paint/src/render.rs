@@ -919,20 +919,12 @@ impl ElementCx<'_, '_> {
 
             // Render inline element backgrounds (e.g. `<span style="background: ...">`)
             // behind the text and selection highlight.
-            let text_overflow_cuts = self.text_overflow_cuts();
-            let text_overflow = text_layout
-                .overflow
-                .as_deref()
-                .filter(|_| !text_overflow_cuts.is_empty())
-                .map(|overflow| (overflow, text_overflow_cuts.as_slice()));
-
             crate::text::draw_inline_backgrounds(
                 scene,
                 text_layout.layout.lines(),
                 self.context.dom,
                 transform,
                 self.node.id,
-                text_overflow.map(|(_, cuts)| cuts),
             );
 
             // Render text selection highlight (if any) using cached selection ranges
@@ -946,7 +938,15 @@ impl ElementCx<'_, '_> {
                 );
             }
 
-            // Render text
+            // Render text, cut where `text-overflow` truncates a line. Inline
+            // backgrounds above are deliberately not cut: as in Chrome, they
+            // run on underneath the marker.
+            let text_overflow_cuts = self.text_overflow_cuts();
+            let text_overflow = text_layout
+                .overflow
+                .as_deref()
+                .filter(|_| !text_overflow_cuts.is_empty())
+                .map(|overflow| (overflow, text_overflow_cuts.as_slice()));
             let mut draw_text_context = self.context.draw_text_context.borrow_mut();
             crate::text::stroke_text(
                 scene,

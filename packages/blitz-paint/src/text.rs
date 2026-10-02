@@ -29,10 +29,8 @@ pub(crate) fn draw_inline_backgrounds<'a>(
     doc: &BaseDocument,
     transform: Affine,
     inline_root_id: NodeId,
-    text_overflow_cuts: Option<&[(usize, Cut)]>,
 ) {
-    for (line_index, line) in lines.enumerate() {
-        let cut = text_overflow_cuts.and_then(|cuts| cut_for_line(cuts, line_index));
+    for line in lines {
         for item in line.items() {
             let PositionedLayoutItem::GlyphRun(glyph_run) = item else {
                 continue;
@@ -59,18 +57,11 @@ pub(crate) fn draw_inline_backgrounds<'a>(
 
             let metrics = glyph_run.run().font_metrics();
             let x = glyph_run.offset() as f64;
-            let mut x1 = x + glyph_run.advance() as f64;
-            // `text-overflow`: the background stops where the text does.
-            if let Some(cut) = cut {
-                x1 = x1.min(cut.cut_x as f64);
-                if x1 <= x {
-                    continue;
-                }
-            }
+            let w = glyph_run.advance() as f64;
             let baseline = glyph_run.baseline() as f64;
             let y0 = baseline - metrics.ascent as f64;
             let y1 = baseline + metrics.descent as f64;
-            let rect = Rect::new(x, y0, x1, y1);
+            let rect = Rect::new(x, y0, x + w, y1);
 
             scene.fill(Fill::NonZero, transform, bg_color, None, &rect);
         }
