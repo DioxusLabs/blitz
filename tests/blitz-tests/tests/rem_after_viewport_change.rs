@@ -10,6 +10,7 @@
 use blitz_dom::DocumentConfig;
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::shell::{ColorScheme, Viewport};
+use blitz_traits::time::Timestamp;
 use std::sync::Arc;
 
 const HTML: &str = r#"<!DOCTYPE html>
@@ -49,7 +50,7 @@ fn box_size(doc: &HtmlDocument) -> (f32, f32) {
 #[test]
 fn rem_units_stable_across_viewport_resize() {
     let mut doc = make_doc(800, 600);
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
 
     assert_eq!(h1_font_size(&doc), 32.0);
     assert_eq!(box_size(&doc), (200.0, 50.0));
@@ -57,7 +58,7 @@ fn rem_units_stable_across_viewport_resize() {
     // Simulate a window resize (the winit resize path goes through viewport_mut,
     // which rebuilds the stylist device on drop).
     doc.viewport_mut().window_size = (900, 600);
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
 
     assert_eq!(h1_font_size(&doc), 32.0);
     assert_eq!(box_size(&doc), (200.0, 50.0));
@@ -66,11 +67,11 @@ fn rem_units_stable_across_viewport_resize() {
 #[test]
 fn rem_units_stable_across_scale_change() {
     let mut doc = make_doc(800, 600);
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
 
     // Simulate a hidpi scale factor change
     doc.viewport_mut().set_hidpi_scale(2.0);
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
 
     assert_eq!(h1_font_size(&doc), 32.0);
     assert_eq!(box_size(&doc), (200.0, 50.0));

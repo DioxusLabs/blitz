@@ -1,3 +1,4 @@
+use blitz_traits::time::Timestamp;
 use std::time::Duration;
 
 use blitz_dom::{BaseDocument, Document as _, Node};
@@ -52,7 +53,7 @@ pub fn process_attr_test(
         // Scripts may have mutated the DOM: re-resolve and load any
         // newly-requested resources
         let mut doc = script_document.inner_mut();
-        doc.resolve(0.0);
+        doc.resolve(Timestamp::ZERO);
         pump_net_provider(ctx, &mut doc);
 
         return match harness_results {

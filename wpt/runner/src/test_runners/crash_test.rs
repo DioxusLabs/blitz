@@ -1,3 +1,4 @@
+use blitz_traits::time::Timestamp;
 use std::time::Duration;
 
 use anyrender::{ImageRenderer as _, PaintScene as _};
@@ -31,7 +32,7 @@ pub fn process_crash_test(
         // Run JS timers due within a short budget, re-resolving in between
         // (crashes are often triggered by post-load DOM/style mutation)
         pump_timers(&mut script_document, TIMER_BUDGET, |doc| {
-            doc.inner_mut().resolve(0.0);
+            doc.inner_mut().resolve(Timestamp::ZERO);
             None::<()>
         });
 
@@ -40,7 +41,7 @@ pub fn process_crash_test(
         let _ = script_document.take_js_errors();
 
         let mut doc = script_document.inner_mut();
-        doc.resolve(0.0);
+        doc.resolve(Timestamp::ZERO);
         pump_net_provider(ctx, &mut doc);
         render_to_buffer(ctx, &mut doc);
     } else {

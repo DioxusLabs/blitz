@@ -1,3 +1,4 @@
+use blitz_traits::time::Timestamp;
 use std::collections::HashMap;
 use std::sync::LazyLock;
 use std::time::Duration;
@@ -375,7 +376,7 @@ fn parse_and_resolve_document(
     };
 
     document.as_mut().set_viewport(ctx.viewport.clone());
-    document.as_mut().resolve(0.0);
+    document.as_mut().resolve(Timestamp::ZERO);
     pump_net_provider(ctx, document.as_mut());
 
     document.into()
@@ -388,7 +389,7 @@ pub fn pump_net_provider(ctx: &ThreadCtx, document: &mut BaseDocument) {
     let start = Instant::now();
     while ctx.net_provider.pending_item_count() > 0 {
         ctx.net_provider.for_each(|_| {});
-        document.resolve(0.0);
+        document.resolve(Timestamp::ZERO);
         if Instant::now().duration_since(start).as_millis() > 500 {
             ctx.net_provider.log_pending_items();
             panic!(
@@ -398,7 +399,7 @@ pub fn pump_net_provider(ctx: &ThreadCtx, document: &mut BaseDocument) {
         }
     }
 
-    document.resolve(0.0);
+    document.resolve(Timestamp::ZERO);
 }
 
 #[cfg(test)]

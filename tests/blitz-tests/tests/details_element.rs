@@ -4,6 +4,7 @@
 
 use blitz_dom::{Document, DocumentConfig, NodeId};
 use blitz_html::{HtmlDocument, HtmlProvider};
+use blitz_traits::time::Timestamp;
 use blitz_traits::{
     events::{
         BlitzPointerEvent, BlitzPointerId, MouseEventButton, MouseEventButtons, Point,
@@ -32,7 +33,7 @@ fn doc_scaled(html: &str, scale: f32) -> HtmlDocument {
             ..Default::default()
         },
     );
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
     doc
 }
 
@@ -65,7 +66,7 @@ fn click(doc: &mut HtmlDocument, x: f32, y: f32) {
     let event = pointer_event(x, y);
     doc.handle_ui_event(UiEvent::PointerDown(event.clone()));
     doc.handle_ui_event(UiEvent::PointerUp(event));
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
 }
 
 fn is_open(doc: &HtmlDocument, selector: &str) -> bool {

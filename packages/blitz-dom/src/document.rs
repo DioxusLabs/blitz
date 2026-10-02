@@ -2843,6 +2843,7 @@ impl AsMut<BaseDocument> for BaseDocument {
 #[cfg(test)]
 mod zoom_tests {
     use super::*;
+    use blitz_traits::Timestamp;
     use blitz_traits::shell::ColorScheme;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -2864,7 +2865,7 @@ mod zoom_tests {
             shell_provider: Some(shell_provider.clone() as _),
             ..Default::default()
         });
-        doc.resolve(0.0);
+        doc.resolve(Timestamp::ZERO);
 
         let base = shell_provider.redraw_count.load(Ordering::SeqCst);
         doc.zoom_by(0.5);
@@ -2880,6 +2881,7 @@ mod zoom_tests {
 mod hover_state_tests {
     use super::*;
     use crate::{Attribute, qual_name};
+    use blitz_traits::Timestamp;
     use blitz_traits::shell::ColorScheme;
 
     /// Build `<html><body style="margin:0"><div style="width:300px">some text
@@ -2911,7 +2913,7 @@ mod hover_state_tests {
         mutator.append_children(root_id, &[html]);
         drop(mutator);
 
-        doc.resolve(0.0);
+        doc.resolve(Timestamp::ZERO);
         (doc, container)
     }
 
@@ -2971,6 +2973,7 @@ mod hover_state_tests {
 mod hover_invalidation_tests {
     use super::*;
     use crate::{Attribute, QualName, qual_name};
+    use blitz_traits::Timestamp;
     use blitz_traits::shell::ColorScheme;
 
     /// Build `<html><body style="margin:0"><div style="width:300px;height:100px">
@@ -3003,7 +3006,7 @@ mod hover_invalidation_tests {
         mutator.append_children(root_id, &[html]);
         drop(mutator);
 
-        doc.resolve(0.0);
+        doc.resolve(Timestamp::ZERO);
         (doc, div, span)
     }
 
@@ -3034,7 +3037,7 @@ mod hover_invalidation_tests {
         // Hover the div
         doc.set_hover_to(10.0, 10.0);
         assert!(doc.nodes[div].is_hovered());
-        doc.resolve(0.0);
+        doc.resolve(Timestamp::ZERO);
         let hovered_bg = bg_color(&doc, div);
         let hovered_color = text_color(&doc, span);
         assert_ne!(initial_bg, hovered_bg, "hover should change div background");
@@ -3046,7 +3049,7 @@ mod hover_invalidation_tests {
         // Move the pointer off the div (below it, over the body)
         doc.set_hover_to(10.0, 200.0);
         assert!(!doc.nodes[div].is_hovered());
-        doc.resolve(0.0);
+        doc.resolve(Timestamp::ZERO);
         assert_eq!(
             bg_color(&doc, div),
             initial_bg,
@@ -3107,12 +3110,12 @@ mod hover_invalidation_tests {
         mutator.append_children(root_id, &[html]);
         drop(mutator);
 
-        doc.resolve(0.0);
+        doc.resolve(Timestamp::ZERO);
         let initial_color = text_color(&doc, span);
 
         doc.set_hover_to(10.0, 10.0);
         assert!(doc.nodes[a].is_hovered());
-        doc.resolve(0.0);
+        doc.resolve(Timestamp::ZERO);
         let hovered_color = text_color(&doc, span);
         assert_ne!(
             initial_color, hovered_color,
@@ -3121,7 +3124,7 @@ mod hover_invalidation_tests {
 
         doc.set_hover_to(10.0, 200.0);
         assert!(!doc.nodes[a].is_hovered());
-        doc.resolve(0.0);
+        doc.resolve(Timestamp::ZERO);
         assert_eq!(
             text_color(&doc, span),
             initial_color,
@@ -3163,7 +3166,7 @@ mod hover_invalidation_tests {
         mutator.append_children(root_id, &[html]);
         drop(mutator);
 
-        doc.resolve(0.0);
+        doc.resolve(Timestamp::ZERO);
         let initial_input_color = text_color(&doc, input);
         let initial_label_color = text_color(&doc, label);
 
@@ -3174,7 +3177,7 @@ mod hover_invalidation_tests {
             }
             node.mark_ancestors_dirty();
         });
-        doc.resolve(0.0);
+        doc.resolve(Timestamp::ZERO);
         assert_ne!(
             text_color(&doc, input),
             initial_input_color,
@@ -3193,7 +3196,7 @@ mod hover_invalidation_tests {
             }
             node.mark_ancestors_dirty();
         });
-        doc.resolve(0.0);
+        doc.resolve(Timestamp::ZERO);
         assert_eq!(
             text_color(&doc, input),
             initial_input_color,
@@ -3239,13 +3242,13 @@ mod hover_invalidation_tests {
         mutator.append_children(root_id, &[html]);
         drop(mutator);
 
-        doc.resolve(0.0);
+        doc.resolve(Timestamp::ZERO);
         let before = doc.nodes[div].before().expect("::before node should exist");
         let initial_color = text_color(&doc, before);
 
         doc.set_hover_to(10.0, 10.0);
         assert!(doc.nodes[div].is_hovered());
-        doc.resolve(0.0);
+        doc.resolve(Timestamp::ZERO);
         assert_ne!(
             text_color(&doc, before),
             initial_color,
@@ -3254,7 +3257,7 @@ mod hover_invalidation_tests {
 
         doc.set_hover_to(10.0, 200.0);
         assert!(!doc.nodes[div].is_hovered());
-        doc.resolve(0.0);
+        doc.resolve(Timestamp::ZERO);
         assert_eq!(
             text_color(&doc, before),
             initial_color,
@@ -3301,7 +3304,7 @@ mod hover_invalidation_tests {
                 .map(|img| img.url.as_str().to_string())
         };
 
-        doc.resolve(0.0);
+        doc.resolve(Timestamp::ZERO);
         assert_eq!(
             background_image_url(&doc, div).as_deref(),
             Some("https://example.com/a.png"),
@@ -3310,7 +3313,7 @@ mod hover_invalidation_tests {
 
         doc.set_hover_to(10.0, 10.0);
         assert!(doc.nodes[div].is_hovered());
-        doc.resolve(0.0);
+        doc.resolve(Timestamp::ZERO);
         assert_eq!(
             background_image_url(&doc, div).as_deref(),
             Some("https://example.com/b.png"),
@@ -3319,7 +3322,7 @@ mod hover_invalidation_tests {
 
         doc.set_hover_to(10.0, 200.0);
         assert!(!doc.nodes[div].is_hovered());
-        doc.resolve(0.0);
+        doc.resolve(Timestamp::ZERO);
         assert_eq!(
             background_image_url(&doc, div).as_deref(),
             Some("https://example.com/a.png"),

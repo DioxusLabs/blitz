@@ -10,6 +10,7 @@ use accesskit::{NodeId, Role};
 use blitz_dom::DocumentConfig;
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::shell::{ColorScheme, Viewport};
+use blitz_traits::time::Timestamp;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -23,7 +24,7 @@ fn unknown_tags(html: &str) -> Vec<String> {
             ..Default::default()
         },
     );
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
 
     let mut tags: Vec<String> = doc
         .build_accessibility_tree()
@@ -47,7 +48,7 @@ fn assert_role(html: &str, element_id: &str, expected: Role) {
             ..Default::default()
         },
     );
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
 
     let node_id = doc
         .get_element_by_id(element_id)

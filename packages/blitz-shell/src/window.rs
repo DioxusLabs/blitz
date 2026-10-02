@@ -13,6 +13,7 @@ use blitz_traits::events::{
     MouseEventButtons, PointerCoords, PointerDetails, UiEvent,
 };
 use blitz_traits::shell::Viewport;
+use blitz_traits::time::{Clock, SystemClock, Timestamp};
 use winit::dpi::{LogicalPosition, PhysicalInsets, PhysicalPosition};
 use winit::keyboard::PhysicalKey;
 
@@ -20,7 +21,6 @@ use atomic_refcell::AtomicRefCell;
 use std::any::Any;
 use std::sync::Arc;
 use std::task::Waker;
-use web_time::Instant;
 use winit::event::{ButtonSource, ElementState, MouseButton};
 use winit::event_loop::ActiveEventLoop;
 use winit::window::{Theme, WindowAttributes, WindowId};
@@ -94,7 +94,9 @@ pub struct View<Rend: WindowRenderer> {
     /// The events stored here always have an empty `active_pointers` list to
     /// avoid a reference cycle.
     pub active_events: Arc<AtomicRefCell<Vec<BlitzPointerEvent>>>,
-    pub animation_timer: Option<Instant>,
+    /// The clock frame times are sampled from. Defaults to [`SystemClock`]; replace it
+    /// to drive the view on your own time.
+    pub clock: Box<dyn Clock>,
     pub is_visible: bool,
     pub safe_area_insets: PhysicalInsets<u32>,
 
@@ -210,7 +212,7 @@ impl<Rend: WindowRenderer> View<Rend> {
         Self {
             renderer: config.renderer,
             waker: None,
-            animation_timer: None,
+            clock: Box::new(SystemClock),
             keyboard_modifiers: Default::default(),
             proxy: proxy.clone(),
             window: winit_window.clone(),
@@ -277,14 +279,9 @@ impl<Rend: WindowRenderer> View<Rend> {
             .unwrap()
     }
 
-    pub fn current_animation_time(&mut self) -> f64 {
-        match &self.animation_timer {
-            Some(start) => Instant::now().duration_since(*start).as_secs_f64(),
-            None => {
-                self.animation_timer = Some(Instant::now());
-                0.0
-            }
-        }
+    /// The current time on the view's clock.
+    pub fn current_time(&self) -> Timestamp {
+        self.clock.now()
     }
 }
 
@@ -295,11 +292,11 @@ impl<Rend: WindowRenderer> View<Rend> {
     /// in response.
     pub fn resume(&mut self) {
         let window_id = self.window_id();
-        let animation_time = self.current_animation_time();
+        let now = self.current_time();
 
         let (width, height) = {
             let mut inner = self.doc.inner_mut();
-            inner.resolve(animation_time);
+            inner.resolve(now);
             inner.viewport().window_size
         };
 
@@ -329,9 +326,9 @@ impl<Rend: WindowRenderer> View<Rend> {
         // arrived while the renderer was Pending were no-ops on the renderer
         // (its `set_size` only matches Active), so the surface created during
         // resume could be at a stale size by the time we get here.
-        let animation_time = self.current_animation_time();
+        let now = self.current_time();
         let mut inner = self.doc.inner_mut();
-        inner.resolve(animation_time);
+        inner.resolve(now);
         let (width, height) = inner.viewport().window_size;
         let scale = inner.viewport().scale_f64();
         let insets = self.safe_area_insets;
@@ -400,11 +397,11 @@ impl<Rend: WindowRenderer> View<Rend> {
     pub fn redraw(&mut self) {
         #[cfg(target_os = "ios")]
         self.ios_request_redraw.set(false);
-        let animation_time = self.current_animation_time();
+        let now = self.current_time();
         let is_visible = self.is_visible;
 
         let mut inner = self.doc.inner_mut();
-        inner.resolve(animation_time);
+        inner.resolve(now);
 
         // Unregister resources (e.g. textures) from dropped custom widget nodes
         #[cfg(feature = "custom-widget")]
