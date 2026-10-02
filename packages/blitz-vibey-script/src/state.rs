@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use blitz_dom::{BaseDocument, NodeId};
+use blitz_traits::time::Timestamp;
 use boa_engine::object::JsObject;
 use boa_engine::{Finalize, JsData, Trace};
 use url::Url;
@@ -142,5 +143,11 @@ impl DomCtx {
             doc,
             state: Rc::new(RefCell::new(RuntimeState::default())),
         }
+    }
+
+    /// The current time on the document's clock: the time to resolve the
+    /// document at when script forces a synchronous style/layout flush.
+    pub fn now(&self) -> Timestamp {
+        self.state.borrow().clock.now()
     }
 }
