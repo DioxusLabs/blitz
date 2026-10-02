@@ -8,6 +8,7 @@ impl BaseDocument {
         let mut window = AccessKitNode::new(Role::Window);
         let mut hidden_nodes = std::collections::HashSet::new();
         let mut labelled_by_nodes = Vec::new();
+        let mut described_by_nodes = Vec::new();
 
         self.visit(|node_id, node| {
             if node.is_hidden_from_accessibility_tree()
@@ -28,6 +29,9 @@ impl BaseDocument {
 
             if node.attr(local_name!("aria-labelledby")).is_some() {
                 labelled_by_nodes.push(node_id);
+            }
+            if node.attr(local_name!("aria-describedby")).is_some() {
+                described_by_nodes.push(node_id);
             }
             nodes.insert(node_id, (id, builder));
         });
@@ -60,6 +64,21 @@ impl BaseDocument {
                 builder.set_label(label.text.as_str());
             }
             nodes.insert(node_id, (id, builder));
+        }
+
+        for node_id in described_by_nodes {
+            let Some(id_refs) = self.nodes[node_id].attr(local_name!("aria-describedby")) else {
+                continue;
+            };
+            let Some((_, builder)) = nodes.get_mut(&node_id) else {
+                continue;
+            };
+            for target in id_refs
+                .split_ascii_whitespace()
+                .filter_map(|dom_id| self.nodes_to_id.get(dom_id)?.first().copied())
+            {
+                builder.push_described_by(NodeId(target.as_u64()));
+            }
         }
 
         let mut nodes: Vec<_> = nodes
@@ -123,6 +142,9 @@ impl BaseDocument {
 
             if let Some(aria_label) = element_data.attr(local_name!("aria-label")) {
                 builder.set_label(aria_label);
+            }
+            if let Some(aria_description) = element_data.attr(local_name!("aria-description")) {
+                builder.set_description(aria_description);
             }
             if let Some(aria_level) = element_data.attr(local_name!("aria-level"))
                 && let Ok(aria_level) = aria_level.parse::<usize>()
