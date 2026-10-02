@@ -870,14 +870,28 @@ impl ElementCx<'_, '_> {
             };
             let transform = transform * Affine::translate((fragment.x0 as f64, fragment.y0 as f64));
             let mut cx = self.context.element_cx(node, layout, transform, None);
-            // A side that is on another line is cut off square
-            if !fragment.has_left_side {
-                cx.frame.border_radii.top_left = Vec2::ZERO;
-                cx.frame.border_radii.bottom_left = Vec2::ZERO;
-            }
-            if !fragment.has_right_side {
-                cx.frame.border_radii.top_right = Vec2::ZERO;
-                cx.frame.border_radii.bottom_right = Vec2::ZERO;
+            // A side that is on another line is cut off square, and does not limit the radii
+            // of the corners of the other side.
+            if !(fragment.has_left_side && fragment.has_right_side) {
+                let mut radii = match node.primary_styles() {
+                    Some(styles) => resolve_border_radii(&styles, &layout, self.scale),
+                    None => cx.frame.border_radii,
+                };
+                if !fragment.has_left_side {
+                    radii.top_left = Vec2::ZERO;
+                    radii.bottom_left = Vec2::ZERO;
+                }
+                if !fragment.has_right_side {
+                    radii.top_right = Vec2::ZERO;
+                    radii.bottom_right = Vec2::ZERO;
+                }
+                cx.frame = CssBox::new(
+                    cx.frame.border_box,
+                    cx.frame.border_width,
+                    cx.frame.padding_width,
+                    cx.frame.outline_width,
+                    radii,
+                );
             }
 
             cx.draw_background(scene);
@@ -1276,6 +1290,31 @@ fn insets_from_taffy_rect(input: taffy::Rect<f64>) -> Insets {
     }
 }
 
+/// Resolve the border radii of a box of the given size (before they are reduced so as not to
+/// overlap)
+fn resolve_border_radii(
+    style: &ComputedValues,
+    layout: &Layout,
+    scale: f64,
+) -> NonUniformRoundedRectRadii {
+    // Resolve the radii to a length. need to downscale since the radii are in document pixels
+    let resolve_w = CSSPixelLength::new(layout.size.width);
+    let resolve_h = CSSPixelLength::new(layout.size.height);
+    let resolve_radii = |radius: &BorderCornerRadius| -> Vec2 {
+        Vec2 {
+            x: scale * radius.0.width.0.resolve(resolve_w).px() as f64,
+            y: scale * radius.0.height.0.resolve(resolve_h).px() as f64,
+        }
+    };
+    let s_border = style.get_border();
+    NonUniformRoundedRectRadii {
+        top_left: resolve_radii(&s_border.border_top_left_radius),
+        top_right: resolve_radii(&s_border.border_top_right_radius),
+        bottom_right: resolve_radii(&s_border.border_bottom_right_radius),
+        bottom_left: resolve_radii(&s_border.border_bottom_left_radius),
+    }
+}
+
 /// Convert Stylo and Taffy types into Kurbo types
 fn create_css_rect(style: &ComputedValues, layout: &Layout, scale: f64) -> CssBox {
     // Resolve and rescale
@@ -1287,22 +1326,7 @@ fn create_css_rect(style: &ComputedValues, layout: &Layout, scale: f64) -> CssBo
     let padding = insets_from_taffy_rect(layout.padding.map(|p| p as f64 * scale));
     let outline_width = style.get_outline().outline_width.0.to_f64_px() * scale;
 
-    // Resolve the radii to a length. need to downscale since the radii are in document pixels
-    let resolve_w = CSSPixelLength::new(width as _);
-    let resolve_h = CSSPixelLength::new(height as _);
-    let resolve_radii = |radius: &BorderCornerRadius| -> Vec2 {
-        Vec2 {
-            x: scale * radius.0.width.0.resolve(resolve_w).px() as f64,
-            y: scale * radius.0.height.0.resolve(resolve_h).px() as f64,
-        }
-    };
-    let s_border = style.get_border();
-    let border_radii = NonUniformRoundedRectRadii {
-        top_left: resolve_radii(&s_border.border_top_left_radius),
-        top_right: resolve_radii(&s_border.border_top_right_radius),
-        bottom_right: resolve_radii(&s_border.border_bottom_right_radius),
-        bottom_left: resolve_radii(&s_border.border_bottom_left_radius),
-    };
+    let border_radii = resolve_border_radii(style, layout, scale);
 
     CssBox::new(border_box, border, padding, outline_width, border_radii)
 }

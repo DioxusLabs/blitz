@@ -27,6 +27,9 @@ impl InlineSpanBox {
     pub(crate) fn resolve(node: &Node, percent_basis: Option<f32>) -> Option<Self> {
         node.primary_styles()?;
         let style = node.layout_style();
+        // Unlike a size, a percentage margin or padding with no basis behaves as zero, even
+        // within a `calc()`.
+        let percent_basis = Some(percent_basis.unwrap_or(0.0));
         Some(Self {
             margin: style
                 .margin()
@@ -111,14 +114,24 @@ impl BaseDocument {
         &'a self,
         inline_root: &'a Node,
     ) -> impl Iterator<Item = InlineSpanFragment> + 'a {
-        let layout = inline_root
+        let text_layout = inline_root
             .element_data()
-            .and_then(|element| element.inline_layout_data.as_ref())
-            .map(|text_layout| &text_layout.layout);
+            .and_then(|element| element.inline_layout_data.as_ref());
         let percent_basis = Self::inline_percent_basis(inline_root);
-        layout.into_iter().flat_map(move |layout| {
+        text_layout.into_iter().flat_map(move |text_layout| {
+            let layout = &text_layout.layout;
             let scale = layout.scale();
-            let root_is_rtl = layout.is_rtl();
+            // An inline root with no content generates no line boxes (see
+            // `compute_inline_layout`): the (empty) inline elements in it have no height.
+            let has_line_boxes = !text_layout.text.is_empty()
+                || layout.inline_boxes().len() > 0
+                || layout.lines().any(|line| {
+                    line.span_fragments().any(|fragment| {
+                        let node_id = layout.styles()[fragment.style_index as usize].brush.id;
+                        self.get_node(node_id)
+                            .is_some_and(InlineSpanBox::has_inline_edges)
+                    })
+                });
             layout
                 .lines()
                 .enumerate()
@@ -130,13 +143,13 @@ impl BaseDocument {
                         }
                         let node = self.get_node(node_id)?;
                         let span_box = InlineSpanBox::resolve(node, Some(percent_basis))?;
+                        let mut fragment = fragment;
+                        if !has_line_boxes {
+                            (fragment.baseline, fragment.ascent, fragment.descent) =
+                                (0.0, 0.0, 0.0);
+                        }
                         Some(span_fragment(
-                            node_id,
-                            line_index,
-                            &fragment,
-                            &span_box,
-                            scale,
-                            root_is_rtl,
+                            node_id, line_index, &fragment, &span_box, scale,
                         ))
                     })
                 })
@@ -150,21 +163,12 @@ fn span_fragment(
     fragment: &SpanFragment,
     span_box: &InlineSpanBox,
     scale: f32,
-    root_is_rtl: bool,
 ) -> InlineSpanFragment {
     let mut margin = span_box.margin.map(|v| v * scale);
     let mut border = span_box.border.map(|v| v * scale);
     let mut padding = span_box.padding.map(|v| v * scale);
 
-    // The edges were given to Parley using the direction of the inline root, but Parley puts
-    // them where the direction of the adjacent text says. Where the two disagree, the space
-    // that was reserved for the left side is on the right and vice versa.
-    if fragment.is_rtl != root_is_rtl {
-        for rect in [&mut margin, &mut border, &mut padding] {
-            core::mem::swap(&mut rect.left, &mut rect.right);
-        }
-    }
-
+    // Parley places the edges in visual order, in the direction of the inline root.
     let (has_left_side, has_right_side) = if fragment.is_rtl {
         (fragment.has_end_edge, fragment.has_start_edge)
     } else {

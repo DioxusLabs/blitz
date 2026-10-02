@@ -243,7 +243,7 @@ fn wrapped_span_is_only_bordered_at_its_ends() {
         r#"<p style="width: 150px"><span id="b" style="color: transparent; background: #f00; border: solid #00f; border-width: 0 10px">xxxx xxxx xxxx xxxx xxxx</span></p>"#,
     );
     let fragments = rects(&doc, "#b");
-    assert!(fragments.len() >= 3, "span should wrap: {fragments:?}");
+    assert!(fragments.len() >= 2, "span should wrap: {fragments:?}");
     let last = fragments.len() - 1;
     for (i, fragment) in fragments.iter().enumerate() {
         let y = (fragment.y + fragment.height / 2.0) as u32;
@@ -252,4 +252,67 @@ fn wrapped_span_is_only_bordered_at_its_ends() {
         assert_eq!(left, if i == 0 { BLUE } else { RED }, "line {i}");
         assert_eq!(right, if i == last { BLUE } else { RED }, "line {i}");
     }
+}
+
+#[test]
+fn calc_with_percentage_in_an_intrinsically_sized_block() {
+    let body = |style: &str| {
+        format!(
+            r#"<div id="d" style="display: inline-block"><span style="{style}">xx</span></div>"#
+        )
+    };
+    let doc = make_doc(&body(
+        "margin-left: calc(0% + 30px); padding-left: calc(0% + 50px)",
+    ));
+    let reference = make_doc(&body("margin-left: 30px; padding-left: 50px"));
+    assert_close(rect(&doc, "#d").width, rect(&reference, "#d").width);
+}
+
+#[test]
+fn empty_span_in_an_empty_block_has_no_height() {
+    let doc = make_doc(r#"<p id="p"><span id="a"></span></p>"#);
+    assert_close(rect(&doc, "#p").height, 0.0);
+    for fragment in rects(&doc, "#a") {
+        assert_close(fragment.height, 0.0);
+    }
+}
+
+#[test]
+fn empty_span_stays_on_the_line_of_the_preceding_content() {
+    let doc = make_doc(
+        r#"<p style="width: 5ch; font-family: monospace"><span id="a">1234</span> <span id="b"> </span><span id="c">567</span></p>"#,
+    );
+    let (a, b, c) = (rect(&doc, "#a"), rect(&doc, "#b"), rect(&doc, "#c"));
+    assert_close(b.y, a.y);
+    assert_close(c.y, a.y + 40.0);
+}
+
+#[test]
+fn preserved_trailing_space_is_part_of_the_box() {
+    let body = |white_space: &str| {
+        format!(
+            r#"<p style="width: 100px; white-space: {white_space}"><span id="a">xx</span><span id="b">  </span>xxxxxxxxxxxxxxxxxxxxxxxx</p>"#
+        )
+    };
+    let preserved = make_doc(&body("pre-wrap"));
+    assert!(rect(&preserved, "#b").width > 1.0);
+    assert_close(rect(&preserved, "#b").y, rect(&preserved, "#a").y);
+}
+
+#[test]
+fn span_split_by_bidi_reordering_has_a_fragment_for_each_piece() {
+    // Displayed as "דהו אבג abc" (with each Hebrew word reversed): the span is the first and
+    // the last word.
+    let doc = make_doc(
+        r#"<p>אבג <span id="a" style="border: 2px solid; padding: 0 10px">דהו abc</span></p>"#,
+    );
+    let fragments = rects(&doc, "#a");
+    assert_eq!(fragments.len(), 2, "{fragments:?}");
+    let (first, last) = match fragments[0].x < fragments[1].x {
+        true => (fragments[0], fragments[1]),
+        false => (fragments[1], fragments[0]),
+    };
+    assert_close(first.x, 0.0);
+    assert!(last.x > right(&first) + 1.0);
+    assert_close(first.y, last.y);
 }

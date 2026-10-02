@@ -627,9 +627,21 @@ impl BaseDocument {
         let Some(node) = self.nodes.get(node_id) else {
             return;
         };
-        let target =
+        let mut target =
             node.absolute_position(node.scroll_offset().x as f32, node.scroll_offset().y as f32);
-        let target_size = node.final_layout().size;
+        let mut target_size = node.final_layout().size;
+        // Non-atomic inline elements have no layout box: use the bounding box of their
+        // fragments (which is relative to the viewport).
+        if self.inline_fragment_rects(node_id).is_some() {
+            let Some(rect) = self.get_client_bounding_rect(node_id) else {
+                return;
+            };
+            let scroll = self.viewport_scroll();
+            target.x = (rect.x + scroll.x) as f32;
+            target.y = (rect.y + scroll.y) as f32;
+            target_size.width = rect.width as f32;
+            target_size.height = rect.height as f32;
+        }
         let Some(root_id) = self.try_root_element().map(|root| root.id) else {
             return;
         };
