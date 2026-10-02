@@ -28,7 +28,7 @@ pub struct TextLayout {
     pub layout: parley::layout::Layout<TextBrush>,
     /// Lines truncated by `text-overflow`, computed after layout
     /// (`layout::text_overflow`), consumed by the painter.
-    pub overflow: Option<Box<crate::text_overflow::TextOverflowLayout>>,
+    pub overflow: Option<Box<crate::text_overflow::TextOverflowLayout<TextBrush>>>,
 }
 
 impl TextLayout {

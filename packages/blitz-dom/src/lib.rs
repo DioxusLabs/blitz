@@ -54,7 +54,7 @@ mod layout;
 /// `text-overflow` data computed after layout and consumed by painters.
 pub mod text_overflow {
     pub use crate::layout::text_overflow::{
-        Cut, Marker, MarkerRun, TextOverflowLayout, TruncatedLine, compute, resolve, side_for,
+        Cut, Marker, MarkerRun, TextOverflowLayout, TruncatedLine, overflowing_lines, resolve,
     };
 }
 mod mutator;
