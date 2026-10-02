@@ -48,7 +48,7 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
         let mut doc = self.doc.inner_mut();
 
         let prev_hover_node_id = doc.hover_node_id;
-        let changed = doc.set_hover_to(event.page_x(), event.page_y());
+        let changed = doc.set_hover_to_at(event.page_x(), event.page_y(), Some(event.timestamp));
         let hover_node_id = doc.hover_node_id;
 
         drop(doc);

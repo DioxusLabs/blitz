@@ -220,7 +220,7 @@ pub(crate) fn handle_pointermove<F: FnMut(DomEvent)>(
     let y = event.page_y();
     let buttons = event.buttons;
 
-    let mut changed = doc.set_hover_to(x, y);
+    let mut changed = doc.set_hover_to_at(x, y, Some(event.timestamp));
 
     // Check if we've moved enough to be considered a selection drag (2px threshold)
     if buttons != MouseEventButtons::None && doc.drag_mode == DragMode::None {
@@ -274,7 +274,8 @@ pub(crate) fn handle_pointermove<F: FnMut(DomEvent)>(
         let target = state.target;
         let (dx, dy) = state.update(event.timestamp, event.screen_x(), event.screen_y());
 
-        let has_changed = doc.scroll_chain_by(Some(target), dx, dy, &mut dispatch_event);
+        let has_changed =
+            doc.scroll_chain_by(Some(target), dx, dy, event.timestamp, &mut dispatch_event);
         return has_changed;
     }
 
@@ -294,7 +295,8 @@ pub(crate) fn handle_pointermove<F: FnMut(DomEvent)>(
             AbsoluteAxis::Horizontal => (-delta_px * ratio, 0.0),
             AbsoluteAxis::Vertical => (0.0, -delta_px * ratio),
         };
-        let has_changed = doc.scroll_chain_by(Some(node_id), dx, dy, &mut dispatch_event);
+        let has_changed =
+            doc.scroll_chain_by(Some(node_id), dx, dy, event.timestamp, &mut dispatch_event);
         return has_changed;
     }
 
@@ -584,7 +586,7 @@ pub(crate) fn handle_pointerup<F: FnMut(DomEvent)>(
     // Repaint so a dragged scrollbar thumb drops its active styling, and
     // restart its fade-out delay now that the drag no longer holds it shown
     if let DragMode::ScrollbarDrag(state) = &drag_mode {
-        doc.show_scrollbars(state.scrollbar.node_id);
+        doc.show_scrollbars(state.scrollbar.node_id, Some(event.timestamp));
         doc.shell_provider.request_redraw();
     }
 
@@ -840,6 +842,7 @@ pub(crate) fn handle_wheel<F: FnMut(DomEvent)>(
         doc.get_hover_node_id(),
         scroll_x,
         scroll_y,
+        event.timestamp,
         &mut dispatch_event,
     );
     if has_changed {
