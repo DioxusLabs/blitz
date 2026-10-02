@@ -8,6 +8,7 @@ impl BaseDocument {
         let mut window = AccessKitNode::new(Role::Window);
         let mut hidden_nodes = std::collections::HashSet::new();
         let mut labelled_by_nodes = std::collections::HashMap::new();
+        let mut described_by_nodes = std::collections::HashMap::new();
         let mut nodes_by_dom_id = std::collections::HashMap::new();
 
         self.visit(|node_id, node| {
@@ -29,6 +30,7 @@ impl BaseDocument {
                 node,
                 parent,
                 &mut labelled_by_nodes,
+                &mut described_by_nodes,
                 &mut nodes_by_dom_id,
             );
 
@@ -52,6 +54,17 @@ impl BaseDocument {
             }
         }
 
+        for (node_id, node) in nodes.iter_mut() {
+            let Some(described_by) = described_by_nodes.get(node_id) else {
+                continue;
+            };
+            for dom_id in described_by.split(|c: char| c.is_whitespace()) {
+                if let Some(described_by_node_id) = nodes_by_dom_id.get(dom_id) {
+                    node.push_described_by(*described_by_node_id);
+                }
+            }
+        }
+
         let tree = TreeInfo::new(NodeId(u64::MAX));
         TreeUpdate {
             tree_id: TreeId::ROOT,
@@ -66,6 +79,7 @@ impl BaseDocument {
         node: &BlitzDomNode,
         parent: &mut AccessKitNode,
         labelled_by_nodes: &mut std::collections::HashMap<NodeId, String>,
+        described_by_nodes: &mut std::collections::HashMap<NodeId, String>,
         nodes_by_dom_id: &mut std::collections::HashMap<String, NodeId>,
     ) -> (NodeId, AccessKitNode) {
         let id = NodeId(node.id.as_u64());
@@ -97,6 +111,12 @@ impl BaseDocument {
             }
             if let Some(aria_labelled_by) = element_data.attr(local_name!("aria-labelledby")) {
                 labelled_by_nodes.insert(id, aria_labelled_by.to_string());
+            }
+            if let Some(aria_description) = element_data.attr(local_name!("aria-description")) {
+                builder.set_description(aria_description);
+            }
+            if let Some(aria_described_by) = element_data.attr(local_name!("aria-describedby")) {
+                described_by_nodes.insert(id, aria_described_by.to_string());
             }
             if let Some(dom_id) = element_data.attr(local_name!("id")) {
                 nodes_by_dom_id.insert(dom_id.to_string(), id);
