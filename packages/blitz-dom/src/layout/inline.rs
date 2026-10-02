@@ -18,8 +18,10 @@ use parley::YieldData;
 #[cfg(feature = "floats")]
 use taffy::{BlockItemStyle as _, Clear, Float, prelude::TaffyMaxContent};
 
+use super::inline_span::InlineSpanBox;
 use super::resolve_calc_value;
 use crate::BaseDocument;
+use crate::node::TextBrush;
 use crate::stylo_to_parley;
 
 /// Layout inputs for an atomic inline box, with any sizing keyword on its `width` style
@@ -67,6 +69,21 @@ fn inline_box_inputs(
 }
 
 impl BaseDocument {
+    /// Whether any non-atomic inline element in the layout has a margin, border or padding
+    /// in the inline axis, which makes the line it is on non-empty even if it has no content.
+    fn has_span_with_inline_edges(&self, layout: &mut parley::Layout<TextBrush>) -> bool {
+        // The current size of the edges can't be used: a percentage may have been resolved
+        // to zero when computing an intrinsic size.
+        let style_indices: Vec<u16> = layout
+            .span_edges_mut()
+            .map(|edges| edges.style_index)
+            .collect();
+        style_indices.into_iter().any(|style_index| {
+            let span_node_id = layout.styles()[style_index as usize].brush.id;
+            InlineSpanBox::has_inline_edges(&self.nodes[span_node_id])
+        })
+    }
+
     pub(crate) fn compute_inline_layout(
         &mut self,
         node_id: NodeId,
@@ -282,11 +299,14 @@ impl BaseDocument {
 
         drop(style);
 
-        // Short circuit if inline context contains no text or inline boxes
-        if !has_styles_preventing_being_collapsed_through
-            && inline_layout.text.is_empty()
-            && inline_layout.layout.inline_boxes().len() == 0
-        {
+        // An inline context containing no text or inline boxes generates no line boxes,
+        // unless it contains an (empty) inline element that takes up space (CSS2 §9.4.2).
+        let has_inline_content = !inline_layout.text.is_empty()
+            || inline_layout.layout.inline_boxes().len() > 0
+            || self.has_span_with_inline_edges(&mut inline_layout.layout);
+
+        // Short circuit if inline context has no content
+        if !has_styles_preventing_being_collapsed_through && !has_inline_content {
             // Put layout back
             self.nodes[node_id]
                 .data
@@ -413,6 +433,25 @@ impl BaseDocument {
                     (margin_box_height.max(0.0) * scale).min(f32::MAX)
                 };
             }
+        }
+
+        // Update the edges (margin + border + padding) of non-atomic inline elements
+        let root_is_rtl = inline_layout.layout.is_rtl();
+        let span_nodes: Vec<NodeId> = inline_layout
+            .layout
+            .span_edges_mut()
+            .map(|edges| edges.style_index)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .map(|style_index| inline_layout.layout.styles()[style_index as usize].brush.id)
+            .collect();
+        for (edges, span_node_id) in inline_layout.layout.span_edges_mut().zip(span_nodes) {
+            let (inline_start, inline_end) =
+                InlineSpanBox::resolve(&self.nodes[span_node_id], child_inputs.parent_size.width)
+                    .map(|span_box| span_box.inline_edges(root_is_rtl))
+                    .unwrap_or_default();
+            *edges.inline_start = inline_start * scale;
+            *edges.inline_end = inline_end * scale;
         }
 
         // TODO: Resolve against style widths as well as known dimensions
@@ -755,9 +794,6 @@ impl BaseDocument {
         // Parley lays out empty text as a single strut-height line (text-editor semantics),
         // but a line box containing no text, inline boxes or other in-flow content is a
         // zero-height line box in CSS (CSS2 §9.4.2).
-        let has_inline_content =
-            !inline_layout.text.is_empty() || inline_layout.layout.inline_boxes().len() > 0;
-
         let mut height = if has_inline_content {
             inline_layout.layout.height()
         } else {

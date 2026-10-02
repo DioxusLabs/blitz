@@ -837,6 +837,54 @@ impl ElementCx<'_, '_> {
         }
     }
 
+    /// Draw the backgrounds and borders of the non-atomic inline elements in this inline
+    /// root's text layout: one box per element per line it is on.
+    ///
+    /// The inline root's own background and border are painted as a normal block box.
+    fn draw_inline_span_boxes(&self, scene: &mut impl PaintScene, transform: Affine) {
+        let dom = self.context.dom;
+        for fragment in dom.inline_span_fragments(self.node) {
+            let Some(node) = dom.get_node(fragment.node_id) else {
+                continue;
+            };
+            let Some(styles) = node.primary_styles() else {
+                continue;
+            };
+            if node.element_data().is_none()
+                || styles.get_inherited_box().visibility != StyloVisibility::Visible
+            {
+                continue;
+            }
+            drop(styles);
+
+            // Fragments are in scaled coordinates
+            let unscale = |value: f32| (value as f64 / self.scale) as f32;
+            let layout = Layout {
+                size: taffy::Size {
+                    width: unscale(fragment.x1 - fragment.x0),
+                    height: unscale(fragment.y1 - fragment.y0),
+                },
+                border: fragment.border.map(unscale),
+                padding: fragment.padding.map(unscale),
+                ..Layout::default()
+            };
+            let transform = transform * Affine::translate((fragment.x0 as f64, fragment.y0 as f64));
+            let mut cx = self.context.element_cx(node, layout, transform, None);
+            // A side that is on another line is cut off square
+            if !fragment.has_left_side {
+                cx.frame.border_radii.top_left = Vec2::ZERO;
+                cx.frame.border_radii.bottom_left = Vec2::ZERO;
+            }
+            if !fragment.has_right_side {
+                cx.frame.border_radii.top_right = Vec2::ZERO;
+                cx.frame.border_radii.bottom_right = Vec2::ZERO;
+            }
+
+            cx.draw_background(scene);
+            cx.draw_border(scene);
+        }
+    }
+
     fn draw_inline_layout(&self, scene: &mut impl PaintScene, pos: Point) {
         if self.node.flags.is_inline_root() {
             let text_layout = self.element
@@ -849,15 +897,9 @@ impl ElementCx<'_, '_> {
             let transform =
                 self.transform * Affine::translate((pos.x * self.scale, pos.y * self.scale));
 
-            // Render inline element backgrounds (e.g. `<span style="background: ...">`)
-            // behind the text and selection highlight.
-            crate::text::draw_inline_backgrounds(
-                scene,
-                text_layout.layout.lines(),
-                self.context.dom,
-                transform,
-                self.node.id,
-            );
+            // Render the backgrounds and borders of non-atomic inline elements (e.g.
+            // `<span style="background: ...">`) behind the text and selection highlight.
+            self.draw_inline_span_boxes(scene, transform);
 
             // Render text selection highlight (if any) using cached selection ranges
             if let Some(&(sel_start, sel_end)) = self.context.selection_ranges.get(&self.node.id) {
