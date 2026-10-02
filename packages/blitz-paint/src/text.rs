@@ -123,7 +123,7 @@ fn draw_text_overflow_marker(
             glyph_xform,
             run.glyphs.iter().map(|(id, x)| anyrender::Glyph {
                 id: *id as _,
-                x: cut.cut_x + x,
+                x: cut.marker_x + x,
                 y: baseline,
             }),
         );
@@ -710,14 +710,15 @@ pub(crate) fn stroke_text<'a>(
                     transform,
                     glyph_xform,
                     {
-                        // Truncated line: keep the glyphs that end before the cut. This
+                        // Truncated line: keep the glyphs on the kept side of the cut. This
                         // compares the pen position rather than `glyph.x` so that a
                         // glyph's own offset (e.g. a combining mark) cannot move it
                         // across the cut independently of its cluster.
                         let mut pen = glyph_run.offset();
                         glyph_run.positioned_glyphs().filter_map(move |glyph| {
+                            let start = pen;
                             pen += glyph.advance;
-                            if cut.is_some_and(|cut| cut.hides(pen)) {
+                            if cut.is_some_and(|cut| cut.hides(start, pen)) {
                                 return None;
                             }
                             Some(anyrender::Glyph {
@@ -745,15 +746,15 @@ pub(crate) fn stroke_text<'a>(
                     css_font_size,
                 };
                 let run_node_id = style.brush.id;
-                let run_x0 = glyph_run.offset() as f64;
+                let mut run_x0 = glyph_run.offset() as f64;
                 let mut run_x1 = run_x0 + glyph_run.advance() as f64;
-                // On a truncated line, decorations stop before the marker (the
-                // marker itself is undecorated, as in Chrome).
+                // On a truncated line, decorations stop at the cut (the marker
+                // itself is undecorated, as in Chrome).
                 if let Some(cut) = cut {
-                    run_x1 = run_x1.min(cut.cut_x as f64);
-                    if run_x1 <= run_x0 {
+                    let Some((x0, x1)) = cut.clamp(run_x0 as f32, run_x1 as f32) else {
                         continue;
-                    }
+                    };
+                    (run_x0, run_x1) = (x0 as f64, x1 as f64);
                 }
 
                 for entry in stack.iter() {

@@ -896,7 +896,7 @@ impl ElementCx<'_, '_> {
             for item in line.items() {
                 if let PositionedLayoutItem::InlineBox(ibox) = item
                     && ibox.kind == InlineBoxKind::InFlow
-                    && cut.hides(ibox.x + ibox.width)
+                    && cut.hides(ibox.x, ibox.x + ibox.width)
                 {
                     hidden.push(NodeId::from_u64(ibox.id));
                 }
