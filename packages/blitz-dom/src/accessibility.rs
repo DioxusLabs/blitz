@@ -100,7 +100,6 @@ impl BaseDocument {
                 .unwrap_or(Role::Unknown);
 
             builder.set_role(role);
-            builder.set_html_tag(name);
 
             // https://www.w3.org/TR/wai-aria-1.2/#tree_exclusion
             if element_data.attr(local_name!("aria-hidden")) == Some("true") {
@@ -119,6 +118,17 @@ impl BaseDocument {
             if let Some(aria_described_by) = element_data.attr(local_name!("aria-describedby")) {
                 described_by_nodes.insert(id, aria_described_by.to_string());
             }
+            if let Some(aria_level) = element_data.attr(local_name!("aria-level"))
+                && let Ok(aria_level) = aria_level.parse::<usize>()
+            {
+                // Accesskit levels are 0-based, while ARIA levels are 1-based
+                // See https://docs.rs/accesskit/latest/accesskit/struct.Node.html#method.level
+                builder.set_level(aria_level - 1);
+            } else if let Some(default_level) = default_level_for_tag(&name) {
+                builder.set_level(default_level);
+            }
+
+            builder.set_html_tag(name);
         } else if node.is_text_node() {
             builder.set_role(Role::TextRun);
             builder.set_value(node.text_content());
@@ -206,6 +216,20 @@ fn role_from_name(name: &str) -> Option<Role> {
         "main" => Some(Role::Main),
         "navigation" => Some(Role::Navigation),
         "search" => Some(Role::Search),
+        _ => None,
+    }
+}
+
+fn default_level_for_tag(name: &str) -> Option<usize> {
+    // Accesskit levels are 0-based, while ARIA levels are 1-based
+    // See https://docs.rs/accesskit/latest/accesskit/struct.Node.html#method.level
+    match name {
+        "h1" => Some(0),
+        "h2" => Some(1),
+        "h3" => Some(2),
+        "h4" => Some(3),
+        "h5" => Some(4),
+        "h6" => Some(5),
         _ => None,
     }
 }
