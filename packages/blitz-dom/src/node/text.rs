@@ -3,6 +3,7 @@ use blitz_traits::{
     node_id::NodeId,
     shell::ShellProvider,
 };
+use color::{AlphaColor, Srgb};
 use keyboard_types::{Key, Modifiers};
 use parley::{ContentWidths, FontContext, LayoutContext};
 
@@ -54,9 +55,22 @@ pub enum GeneratedTextInputEvent {
     Submit,
 }
 
+/// Laid out `placeholder` text, shown while a field is empty.
+///
+/// The colour is carried here rather than looked up from the originating
+/// element at paint time, because it comes from the `::placeholder`
+/// pseudo-element rather than from the input's own style.
+pub struct Placeholder {
+    pub layout: Box<parley::Layout<TextBrush>>,
+    pub color: AlphaColor<Srgb>,
+}
+
 pub struct TextInputData {
     /// A parley TextEditor instance
     pub editor: Box<parley::PlainEditor<TextBrush>>,
+    /// Shown while the editor is empty. It is not editable and never part of
+    /// the value, so it is a plain layout rather than a second editor.
+    pub placeholder: Option<Placeholder>,
     /// Whether the input is a singleline or multiline input
     pub is_multiline: bool,
     /// The scroll offset of the text content within the input, in CSS (unscaled) pixels.
@@ -79,9 +93,15 @@ impl TextInputData {
         let editor = Box::new(parley::PlainEditor::new(16.0));
         Self {
             editor,
+            placeholder: None,
             is_multiline,
             scroll_offset: 0.0,
         }
+    }
+
+    /// Whether the placeholder should be painted in place of the value.
+    pub fn shows_placeholder(&self) -> bool {
+        self.placeholder.is_some() && self.editor.text().chars().next().is_none()
     }
 
     pub fn set_text(
