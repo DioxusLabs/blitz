@@ -1,14 +1,13 @@
 use super::ElementCx;
 use crate::color::{Color, ToColorColor as _};
-use anyrender::PaintScene;
-use kurbo::{Rect, Shape as _, Vec2};
-use peniko::Fill;
+use anyrender::{BoxShadowKind, NonUniformRoundedRect, PaintScene};
+use kurbo::Vec2;
+use style::values::computed::BoxShadow;
 
 impl ElementCx<'_, '_> {
     pub(super) fn draw_outset_box_shadow(&self, scene: &mut impl PaintScene) {
         let box_shadow = &self.style.get_effects().box_shadow.0;
-        let has_outset_shadow = box_shadow.iter().any(|s| !s.inset);
-        if !has_outset_shadow {
+        if !box_shadow.iter().any(|s| !s.inset) {
             return;
         }
 
@@ -20,127 +19,67 @@ impl ElementCx<'_, '_> {
             .background_color
             .resolve_to_absolute(&current_color)
             .as_srgb_color();
+        // Only paint the shadow outside of the border box if it could otherwise be seen
+        // through the element
         let bg_is_opaque = bg_color.components[3] >= 1.0;
-        let needs_clip = opacity < 1.0 || !bg_is_opaque;
+        let clip_to_box = opacity < 1.0 || !bg_is_opaque;
 
-        let max_shadow_rect = box_shadow.iter().fold(Rect::ZERO, |prev, shadow| {
-            let x = shadow.base.horizontal.px() as f64 * self.scale;
-            let y = shadow.base.vertical.px() as f64 * self.scale;
-            let blur = shadow.base.blur.px() as f64 * self.scale;
-            let spread = shadow.spread.px() as f64 * self.scale;
-            let offset = spread + blur * 2.5;
-
-            let rect = self.frame.border_box.inflate(offset, offset) + Vec2::new(x, y);
-
-            prev.union(rect)
-        });
-
+        let border_box = self.frame.border_box_shape();
         for shadow in box_shadow.iter().filter(|s| !s.inset).rev() {
-            let shadow_color = shadow
-                .base
-                .color
-                .resolve_to_absolute(&current_color)
-                .as_srgb_color();
-
-            let alpha = shadow_color.components[3];
-            if alpha == 0.0 {
-                continue;
-            }
-
-            let offset = Vec2 {
-                x: shadow.base.horizontal.px() as f64 * self.scale,
-                y: shadow.base.vertical.px() as f64 * self.scale,
-            };
-            let spread = shadow.spread.px() as f64 * self.scale;
-            let blur = shadow.base.blur.px() as f64;
-
-            // Without blur or spread the shadow is exactly the element's shape,
-            // so fill the border box path directly (preserving individual radii)
-            if blur == 0.0 && spread == 0.0 {
-                self.context.layer_manager.maybe_with_layer(
-                    scene,
-                    needs_clip,
-                    1.0,
-                    self.transform,
-                    &self.frame.shadow_clip(max_shadow_rect),
-                    None,
-                    None,
-                    |scene| {
-                        scene.fill(
-                            Fill::NonZero,
-                            self.transform.pre_translate(offset),
-                            shadow_color,
-                            None,
-                            &self.frame.border_box_shape(),
-                        );
-                    },
-                );
-                continue;
-            }
-
-            // TODO draw shadows with matching individual radii instead of averaging
-            let radius = self.frame.border_radii.average();
-            let rect = self.frame.border_box.inflate(spread, spread) + offset;
-
-            // Only paint the shadow outside of the border box if it could otherwise be seen
-            // through the element
-            let shape = if needs_clip {
-                self.frame.shadow_clip(max_shadow_rect)
-            } else {
-                max_shadow_rect.to_path(0.1)
-            };
-
-            scene.draw_box_shadow(
-                self.transform,
-                &shape,
-                rect,
-                shadow_color,
-                radius,
-                blur,
-                false,
+            self.draw_box_shadow(
+                scene,
+                shadow,
+                &border_box,
+                BoxShadowKind::Outset { clip_to_box },
             );
         }
     }
 
     pub(super) fn draw_inset_box_shadow(&self, scene: &mut impl PaintScene) {
-        let current_color = self.style.clone_color();
         let box_shadow = &self.style.get_effects().box_shadow.0;
-        let has_inset_shadow = box_shadow.iter().any(|s| s.inset);
-        if !has_inset_shadow {
+        if !box_shadow.iter().any(|s| s.inset) {
             return;
         }
 
         let padding_box = self.frame.padding_box_shape();
-
-        for shadow in box_shadow.iter().filter(|s| s.inset) {
-            let shadow_color = shadow
-                .base
-                .color
-                .resolve_to_absolute(&current_color)
-                .as_srgb_color();
-            if shadow_color == Color::TRANSPARENT {
-                return;
-            }
-
-            // TODO draw shadows with matching individual radii instead of averaging
-            let radius = self.frame.border_radii.average();
-            let offset = Vec2 {
-                x: shadow.base.horizontal.px() as f64,
-                y: shadow.base.vertical.px() as f64,
-            };
-
-            // The unshadowed area is the padding box shrunk by the spread radius
-            let spread = shadow.spread.px() as f64 * self.scale;
-            let hole = self.frame.padding_box.inflate(-spread, -spread) + offset;
-            scene.draw_box_shadow(
-                self.transform,
-                &padding_box,
-                hole,
-                shadow_color,
-                radius,
-                shadow.base.blur.px() as f64 * self.scale,
-                true,
-            );
+        for shadow in box_shadow.iter().filter(|s| s.inset).rev() {
+            self.draw_box_shadow(scene, shadow, &padding_box, BoxShadowKind::Inset);
         }
+    }
+
+    fn draw_box_shadow(
+        &self,
+        scene: &mut impl PaintScene,
+        shadow: &BoxShadow,
+        box_shape: &NonUniformRoundedRect,
+        kind: BoxShadowKind,
+    ) {
+        let shadow_color = shadow
+            .base
+            .color
+            .resolve_to_absolute(&self.style.clone_color())
+            .as_srgb_color();
+        if shadow_color.components[3] == 0.0 {
+            return;
+        }
+        let shadow_color: Color = shadow_color;
+
+        let offset = Vec2::new(
+            shadow.base.horizontal.px() as f64,
+            shadow.base.vertical.px() as f64,
+        ) * self.scale;
+        let spread = shadow.spread.px() as f64 * self.scale;
+        // The standard deviation of a CSS shadow's blur is half of its blur radius
+        let std_dev = shadow.base.blur.px() as f64 * self.scale / 2.0;
+
+        scene.draw_box_shadow(
+            self.transform,
+            box_shape,
+            offset,
+            spread,
+            std_dev,
+            shadow_color,
+            kind,
+        );
     }
 }
