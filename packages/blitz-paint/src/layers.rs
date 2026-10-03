@@ -1,6 +1,6 @@
 use anyrender::{Filter, PaintScene};
 use kurbo::{Affine, Shape};
-use peniko::Mix;
+use peniko::{Fill, Mix};
 use std::{cell::Cell, sync::Arc};
 
 const LAYER_LIMIT: u32 = 1024;
@@ -65,9 +65,10 @@ impl LayerManager {
 
         // Actually push the layer
         if opacity == 1.0 && filter.is_none() && backdrop_filter.is_none() {
-            scene.push_clip_layer(transform, shape);
+            scene.push_clip_layer(Fill::NonZero, transform, shape);
         } else {
             scene.push_layer(
+                Fill::NonZero,
                 Mix::Normal,
                 opacity,
                 transform,

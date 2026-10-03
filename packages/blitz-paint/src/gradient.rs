@@ -173,14 +173,8 @@ fn radial_gradient(
     });
 
     let (width_px, height_px) = (
-        position
-            .horizontal
-            .resolve(CSSPixelLength::new(rect.width() as f32))
-            .px() as f64,
-        position
-            .vertical
-            .resolve(CSSPixelLength::new(rect.height() as f32))
-            .px() as f64,
+        resolve_gradient_length(&position.horizontal, rect.width()),
+        resolve_gradient_length(&position.vertical, rect.height()),
     );
 
     let gradient_scale: Option<Vec2> = match shape {
@@ -234,8 +228,8 @@ fn radial_gradient(
                 _ => None,
             },
             GenericEllipse::Radii(x, y) => Some(Vec2::new(
-                x.0.resolve(CSSPixelLength::new(rect.width() as f32)).px() as f64,
-                y.0.resolve(CSSPixelLength::new(rect.height() as f32)).px() as f64,
+                resolve_gradient_length(&x.0, rect.width()),
+                resolve_gradient_length(&y.0, rect.height()),
             )),
         },
     };
@@ -501,20 +495,42 @@ fn resolve_angle_color_stops(
 }
 
 #[inline]
+fn resolve_gradient_length(value: &LengthPercentage, basis: f64) -> f64 {
+    // Percentage resolution can overflow even though computed lengths are finite.
+    value
+        .resolve(CSSPixelLength::new(basis as f32))
+        .px()
+        .clamp(f32::MIN, f32::MAX) as f64
+}
+
+#[inline]
 fn get_translation(
     position: &GenericPosition<LengthPercentage, LengthPercentage>,
     rect: Rect,
 ) -> Vec2 {
     Vec2::new(
-        rect.x0
-            + position
-                .horizontal
-                .resolve(CSSPixelLength::new(rect.width() as f32))
-                .px() as f64,
-        rect.y0
-            + position
-                .vertical
-                .resolve(CSSPixelLength::new(rect.height() as f32))
-                .px() as f64,
+        rect.x0 + resolve_gradient_length(&position.horizontal, rect.width()),
+        rect.y0 + resolve_gradient_length(&position.vertical, rect.height()),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn gradient_percentage_overflow_is_clamped() {
+        for percentage in [f32::MAX, f32::MIN] {
+            let value = LengthPercentage::new_percent(Percentage(percentage));
+            assert_eq!(resolve_gradient_length(&value, 300.0), percentage as f64);
+        }
+    }
+
+    #[test]
+    fn finite_gradient_lengths_are_preserved() {
+        let length = LengthPercentage::new_length(CSSPixelLength::new(-12.0));
+        let percentage = LengthPercentage::new_percent(Percentage(-0.5));
+        assert_eq!(resolve_gradient_length(&length, 300.0), -12.0);
+        assert_eq!(resolve_gradient_length(&percentage, 300.0), -150.0);
+    }
 }
