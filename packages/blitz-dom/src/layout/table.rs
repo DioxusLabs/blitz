@@ -22,7 +22,7 @@ use taffy::{
     DetailedGridInfo, LayoutPartialTree as _, ResolveOrZero, TrackSizingFunction, style_helpers,
 };
 
-use crate::BaseDocument;
+use crate::{BaseDocument, Node};
 
 use super::damage::{CONSTRUCT_BOX, CONSTRUCT_DESCENDENT, CONSTRUCT_FC};
 use super::resolve_calc_value;
@@ -213,7 +213,7 @@ pub(crate) fn build_table_context(
     let mut columns: Vec<TableColumn> = Vec::new();
     let mut column_sizes: Vec<taffy::TrackSizingFunction> = Vec::new();
     for child_id in children.iter().copied() {
-        collect_columns(doc, child_id, &mut columns, &mut column_sizes);
+        collect_columns(doc, child_id, None, &mut columns, &mut column_sizes);
     }
     // Percentage column widths only take effect in the fixed table layout algorithm
     if !is_fixed {
@@ -396,9 +396,13 @@ pub(crate) fn build_table_context(
 /// Collect `<col>` elements (and `display: table-column` elements) along with their
 /// widths, which take precedence over cell widths in the fixed table layout algorithm.
 /// Columns without a specified width are recorded as `auto`.
+///
+/// `group_size` is the size of the enclosing column group, which sizes the columns in
+/// it that have no width of their own.
 fn collect_columns(
     doc: &mut BaseDocument,
     node_id: NodeId,
+    group_size: Option<TrackSizingFunction>,
     columns: &mut Vec<TableColumn>,
     column_sizes: &mut Vec<TrackSizingFunction>,
 ) {
@@ -413,58 +417,82 @@ fn collect_columns(
     match display.inside() {
         DisplayInside::TableColumnGroup => {
             let first_column = columns.len();
+            let group_size = column_size(node);
             let children = std::mem::take(&mut doc.nodes[node_id].children);
             for child_id in children.iter().copied() {
-                collect_columns(doc, child_id, columns, column_sizes);
+                collect_columns(doc, child_id, Some(group_size), columns, column_sizes);
             }
             doc.nodes[node_id].children = children;
+            // A column group without columns of its own stands for `span` columns
+            if columns.len() == first_column {
+                push_columns(&doc.nodes[node_id], group_size, columns, column_sizes);
+            }
             for column in &mut columns[first_column..] {
                 column.group.get_or_insert(node_id);
             }
         }
         DisplayInside::TableColumn => {
-            let style = stylo_taffy::to_taffy_style(&node.primary_styles().unwrap());
-            let span: u16 = node
-                .attr(local_name!("span"))
-                .and_then(|val| val.parse::<u16>().ok())
-                .map(|v| v.max(1))
-                .unwrap_or(1);
-            let column: TrackSizingFunction = match style.size.width.tag() {
-                taffy::CompactLength::LENGTH_TAG => {
-                    // A definite `max-width` clamps the column width; a zero width is treated as auto
-                    let mut width = style.size.width.value();
-                    if style.max_size.width.into_raw().tag() == taffy::CompactLength::LENGTH_TAG {
-                        width = width.min(style.max_size.width.into_raw().value());
-                    }
-                    if width > 0.0 {
-                        style_helpers::length(width)
-                    } else {
-                        style_helpers::auto()
-                    }
-                }
-                taffy::CompactLength::PERCENT_TAG => {
-                    style_helpers::percent(style.size.width.value())
-                }
-                // Browsers treat calc() widths on columns as auto
-                _ => style_helpers::auto(),
+            let size = column_size(node);
+            let size = match group_size {
+                Some(group_size) if size.min.is_auto() && size.max.is_auto() => group_size,
+                _ => size,
             };
-            // A definite `min-width` on a column acts as a floor on its width
-            let column = match style.min_size.width.into_raw().tag() {
-                taffy::CompactLength::LENGTH_TAG if column.max.is_auto() => style_helpers::minmax(
-                    style_helpers::length(style.min_size.width.into_raw().value()),
-                    style_helpers::auto(),
-                ),
-                _ => column,
-            };
-            for _ in 0..span {
-                columns.push(TableColumn {
-                    node_id,
-                    group: None,
-                });
-                column_sizes.push(column);
-            }
+            push_columns(node, size, columns, column_sizes);
         }
         _ => {}
+    }
+}
+
+/// The track size a column (or column group) asks for with its `width`, `min-width` and
+/// `max-width`.
+fn column_size(node: &Node) -> TrackSizingFunction {
+    let style = stylo_taffy::to_taffy_style(&node.primary_styles().unwrap());
+    let column: TrackSizingFunction = match style.size.width.tag() {
+        taffy::CompactLength::LENGTH_TAG => {
+            // A definite `max-width` clamps the column width; a zero width is treated as auto
+            let mut width = style.size.width.value();
+            if style.max_size.width.into_raw().tag() == taffy::CompactLength::LENGTH_TAG {
+                width = width.min(style.max_size.width.into_raw().value());
+            }
+            if width > 0.0 {
+                style_helpers::length(width)
+            } else {
+                style_helpers::auto()
+            }
+        }
+        taffy::CompactLength::PERCENT_TAG => style_helpers::percent(style.size.width.value()),
+        // Browsers treat calc() widths on columns as auto
+        _ => style_helpers::auto(),
+    };
+    // A definite `min-width` on a column acts as a floor on its width
+    match style.min_size.width.into_raw().tag() {
+        taffy::CompactLength::LENGTH_TAG if column.max.is_auto() => style_helpers::minmax(
+            style_helpers::length(style.min_size.width.into_raw().value()),
+            style_helpers::auto(),
+        ),
+        _ => column,
+    }
+}
+
+/// Record the `span` columns that `node` (a column, or a column group without columns)
+/// stands for.
+fn push_columns(
+    node: &Node,
+    size: TrackSizingFunction,
+    columns: &mut Vec<TableColumn>,
+    column_sizes: &mut Vec<TrackSizingFunction>,
+) {
+    let span: u16 = node
+        .attr(local_name!("span"))
+        .and_then(|val| val.parse::<u16>().ok())
+        .map(|v| v.max(1))
+        .unwrap_or(1);
+    for _ in 0..span {
+        columns.push(TableColumn {
+            node_id: node.id,
+            group: None,
+        });
+        column_sizes.push(size);
     }
 }
 
