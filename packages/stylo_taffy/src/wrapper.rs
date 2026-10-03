@@ -155,6 +155,11 @@ impl<T: Deref<Target = ComputedValues>> taffy::CoreStyle for TaffyStyloStyle<T> 
     }
 
     #[inline]
+    fn aspect_ratio_content_box(&self) -> bool {
+        convert::aspect_ratio_content_box(self.style.get_position().aspect_ratio)
+    }
+
+    #[inline]
     fn margin(&self) -> taffy::Rect<taffy::LengthPercentageAuto> {
         let margin_styles = self.style.get_margin();
         taffy::Rect {

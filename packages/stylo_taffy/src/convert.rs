@@ -403,6 +403,13 @@ pub fn aspect_ratio(input: stylo::AspectRatio) -> Option<f32> {
     }
 }
 
+/// `aspect-ratio: auto <ratio>` always relates content-box sizes, whereas a plain `<ratio>`
+/// relates the sizes of the box selected by `box-sizing`.
+#[inline]
+pub fn aspect_ratio_content_box(input: stylo::AspectRatio) -> bool {
+    input.auto && matches!(input.ratio, stylo::PreferredRatio::Ratio(_))
+}
+
 /// Convert `align-content`/`justify-content` for a container with the given `display`.
 ///
 /// In a block container the whole in-flow content is a single alignment subject, and positional
@@ -856,6 +863,7 @@ pub fn to_taffy_style(style: &stylo::ComputedValues) -> taffy::Style<Atom> {
             height: self::max_size(&pos.max_height),
         },
         aspect_ratio: self::aspect_ratio(pos.aspect_ratio),
+        aspect_ratio_content_box: self::aspect_ratio_content_box(pos.aspect_ratio),
 
         inset: self::inset_rect(style),
         margin: taffy::Rect {
