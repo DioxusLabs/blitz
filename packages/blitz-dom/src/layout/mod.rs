@@ -667,6 +667,21 @@ impl taffy::LayoutGridContainer for BaseDocument {
             element.detailed_layout_info = DetailedLayoutInfo::Grid(Box::new(detailed_grid_info));
         }
     }
+
+    fn get_grid_placement_cache(&self, node_id: NodeId) -> Option<&taffy::GridPlacementCache> {
+        let element = self.node_from_id(node_id).element_data()?;
+        element.grid_placement_cache.as_deref()
+    }
+
+    fn set_grid_placement_cache(
+        &mut self,
+        node_id: NodeId,
+        grid_placement_cache: taffy::GridPlacementCache,
+    ) {
+        if let Some(element) = self.node_from_id_mut(node_id).element_data_mut() {
+            element.grid_placement_cache = Some(Box::new(grid_placement_cache));
+        }
+    }
 }
 
 impl RoundTree for BaseDocument {

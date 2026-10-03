@@ -110,6 +110,12 @@ pub struct ElementData {
     /// devtools grid inspection and out-of-flow grid-area positioning.
     pub detailed_layout_info: taffy::DetailedLayoutInfo<Atom>,
 
+    /// The result of the grid item placement algorithm for this node (grid
+    /// containers only), which taffy reuses each time the node is sized or
+    /// laid out rather than running placement again. Discarded along with
+    /// the node's layout cache (see `Node::clear_layout_cache`).
+    pub grid_placement_cache: Option<Box<taffy::GridPlacementCache>>,
+
     // Taffy layout data:
     pub display_constructed_as: StyloDisplay,
     /// Layout output state (`None` until layout first writes to this node).
@@ -316,6 +322,7 @@ impl Clone for ElementData {
             before: None,
             after: None,
             detailed_layout_info: taffy::DetailedLayoutInfo::None,
+            grid_placement_cache: None,
             display_constructed_as: StyloDisplay::Block,
             layout_data: None,
             transform: None,
@@ -423,6 +430,7 @@ impl ElementData {
             before: None,
             after: None,
             detailed_layout_info: taffy::DetailedLayoutInfo::None,
+            grid_placement_cache: None,
             display_constructed_as: StyloDisplay::Block,
             layout_data: None,
             transform: None,
