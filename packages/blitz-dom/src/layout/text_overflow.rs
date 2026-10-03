@@ -236,10 +236,9 @@ fn for_each_atom<B: Brush>(line: &Line<'_, B>, mut visit: impl FnMut(f32, f32) -
 /// (layout units). `None` when the scrolled view already shows the end of the
 /// content, in which case the line is painted whole.
 ///
-/// The marker goes at the inline-end of the scrolled view. If a float has
-/// shortened the line box on that side, it goes at the line box's edge
-/// instead (the content past it is under the float), for as long as that edge
-/// is in view.
+/// The marker goes at the inline-end of the scrolled view. As in Gecko, a
+/// line whose line box is shortened by floats is limited to the part of that
+/// line box that is in view, and is painted whole once none of it is.
 ///
 /// Starting from the inline-start side, atoms (see [`for_each_atom`]) are kept
 /// until one does not fit before the marker; that atom and everything after it
@@ -255,12 +254,12 @@ pub fn resolve<B: Brush>(
     let (line_min, line_max) = line_bounds(line, layout.max_width);
     let mut visible_start = scroll_x;
     let mut visible_end = scroll_x + layout.max_width;
-    if layout.is_rtl {
-        if line_min > EPSILON && line_min < visible_end - EPSILON {
-            visible_start = visible_start.max(line_min);
-        }
-    } else if line_max < layout.max_width - EPSILON && line_max > visible_start + EPSILON {
+    if line_min > EPSILON || line_max < layout.max_width - EPSILON {
+        visible_start = visible_start.max(line_min);
         visible_end = visible_end.min(line_max);
+        if visible_end <= visible_start + EPSILON {
+            return None;
+        }
     }
     let advance = layout.marker.advance;
 
