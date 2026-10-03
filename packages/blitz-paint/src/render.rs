@@ -5,7 +5,7 @@ mod clip_path;
 mod form_controls;
 mod mask;
 
-use std::cell::RefCell;
+use std::cell::{OnceCell, RefCell};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -656,6 +656,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             list_item: element.list_item_data.as_deref(),
             devtools: self.dom.devtools(),
             custom_widget_scene,
+            text_overflow_cuts: OnceCell::new(),
         }
     }
 }
@@ -703,6 +704,8 @@ struct ElementCx<'dom, 'a> {
     devtools: &'dom DevtoolSettings,
     #[cfg_attr(not(feature = "custom-widget"), expect(unused))]
     custom_widget_scene: Option<&'a Scene>,
+    /// See [`ElementCx::text_overflow_cuts`].
+    text_overflow_cuts: OnceCell<Vec<(usize, Cut)>>,
 }
 
 /// Converts parley BoundingBox into peniko Rect
@@ -837,8 +840,14 @@ impl ElementCx<'_, '_> {
     }
 
     /// Where `text-overflow` cuts each truncated line of this inline root at the
-    /// current scroll position, as `(line index, cut)`. Empty if nothing is cut.
-    fn text_overflow_cuts(&self) -> Vec<(usize, Cut)> {
+    /// current scroll position, as `(line index, cut)` in line order. Empty if
+    /// nothing is cut. Resolved once per paint of this element.
+    fn text_overflow_cuts(&self) -> &[(usize, Cut)] {
+        self.text_overflow_cuts
+            .get_or_init(|| self.resolve_text_overflow_cuts())
+    }
+
+    fn resolve_text_overflow_cuts(&self) -> Vec<(usize, Cut)> {
         let Some(text_layout) = self.element.inline_layout_data.as_ref() else {
             return Vec::new();
         };
@@ -873,7 +882,13 @@ impl ElementCx<'_, '_> {
             .iter()
             .filter_map(|truncated| {
                 let line = text_layout.layout.get(truncated.line_index)?;
-                let cut = text_overflow::resolve(overflow, truncated, &line, scroll_x)?;
+                let cut = text_overflow::resolve(
+                    overflow,
+                    &text_layout.layout,
+                    truncated,
+                    &line,
+                    scroll_x,
+                )?;
                 Some((truncated.line_index, cut))
             })
             .collect()
@@ -886,7 +901,7 @@ impl ElementCx<'_, '_> {
             return Vec::new();
         };
         let mut hidden = Vec::new();
-        for (line_index, cut) in cuts {
+        for &(line_index, cut) in cuts {
             let Some(line) = text_layout.layout.get(line_index) else {
                 continue;
             };
@@ -947,7 +962,7 @@ impl ElementCx<'_, '_> {
                 .overflow
                 .as_deref()
                 .filter(|_| !text_overflow_cuts.is_empty())
-                .map(|overflow| (overflow, text_overflow_cuts.as_slice()));
+                .map(|overflow| (overflow, text_overflow_cuts));
             let mut draw_text_context = self.context.draw_text_context.borrow_mut();
             crate::text::stroke_text(
                 scene,

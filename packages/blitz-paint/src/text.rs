@@ -69,15 +69,8 @@ pub(crate) fn draw_inline_backgrounds<'a>(
 }
 
 /// An inline root's `text-overflow` record and the `(line index, cut)` of each
-/// line it truncates at the current scroll position.
+/// line it truncates at the current scroll position, in line order.
 pub(crate) type TextOverflowCuts<'a> = (&'a TextOverflowLayout<TextBrush>, &'a [(usize, Cut)]);
-
-/// The `text-overflow` cut for a line, if it is truncated.
-fn cut_for_line(cuts: &[(usize, Cut)], line_index: usize) -> Option<Cut> {
-    cuts.iter()
-        .find(|(index, _)| *index == line_index)
-        .map(|(_, cut)| *cut)
-}
 
 /// The synthetic emboldening Blitz applies to glyphs of the given size.
 fn embolden_for(font_size: f32, scale: f64) -> kurbo::Vec2 {
@@ -653,9 +646,15 @@ pub(crate) fn stroke_text<'a>(
     // ancestor chain on every run, we cache each node's resolved values here and,
     // for each run, only resolve styles for the nodes newly descended into (popping
     // as we ascend). `path_scratch` is a reusable buffer for the run's node path.
+    let mut remaining_cuts = text_overflow
+        .map_or(&[][..], |(_, cuts)| cuts)
+        .iter()
+        .peekable();
     for (line_index, line) in lines.enumerate() {
         // `text-overflow`: where this line is cut, if it is truncated.
-        let cut = text_overflow.and_then(|(_, cuts)| cut_for_line(cuts, line_index));
+        let cut = remaining_cuts
+            .next_if(|(index, _)| *index == line_index)
+            .map(|(_, cut)| *cut);
         // Decorations accumulated for this line, keyed by decorating box, so each box is
         // painted once (spanning all its runs) using its own font — matching Firefox, which
         // draws one decoration per box rather than one stepped segment per differently-sized

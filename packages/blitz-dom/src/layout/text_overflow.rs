@@ -20,7 +20,7 @@
 //!
 //! [`TextLayout`]: crate::node::TextLayout
 
-use parley::{Brush, FontData, InlineBoxKind, Layout, Line, PositionedLayoutItem};
+use parley::{Brush, Cluster, FontData, InlineBoxKind, Layout, Line, PositionedLayoutItem, Run};
 
 /// Slack for float rounding when comparing positions (layout units).
 const EPSILON: f32 = 0.01;
@@ -186,48 +186,162 @@ pub fn overflowing_lines<B: Brush>(
     (is_rtl, lines)
 }
 
-/// Calls `visit(start, end)` for each atom of the line, left to right, until
-/// it returns `false`. Atoms are grapheme clusters (a ligature counts as one)
+/// Calls `visit(start, end)` for the atoms of the line that overlap the view
+/// `view_start..view_end`, and possibly some of their neighbours, in no
+/// particular order. Atoms are grapheme clusters (a ligature counts as one)
 /// and in-flow inline boxes.
-fn for_each_atom<B: Brush>(line: &Line<'_, B>, mut visit: impl FnMut(f32, f32) -> bool) {
-    // A run is yielded as one glyph run per style, but its clusters are only
-    // reachable through the whole run: walk them once, at the run's first
-    // (visually leftmost) glyph run.
-    let mut last_run_index = None;
-    for item in line.items() {
-        match item {
+///
+/// Runs and inline boxes outside the view are stepped over by their extent.
+/// Clusters are only walked in the runs that overlap the view, from whichever
+/// end of the run is nearer to it: beyond the view itself, that is at most
+/// the shorter of the run's two parts outside it. (Parley still measures the
+/// items up to the end of the view to position them.)
+fn for_each_atom_in_view<'a, B: Brush>(
+    layout: &'a Layout<B>,
+    line: &Line<'a, B>,
+    view_start: f32,
+    view_end: f32,
+    mut visit: impl FnMut(f32, f32),
+) {
+    let mut items = line.items().peekable();
+    while let Some(item) = items.next() {
+        let glyph_run = match item {
             PositionedLayoutItem::InlineBox(ibox) => {
-                last_run_index = None;
-                if ibox.kind == InlineBoxKind::InFlow && !visit(ibox.x, ibox.x + ibox.width) {
+                if ibox.x >= view_end {
                     return;
                 }
-            }
-            PositionedLayoutItem::GlyphRun(glyph_run) => {
-                let run = glyph_run.run();
-                if last_run_index.replace(run.index()) == Some(run.index()) {
-                    continue;
+                if ibox.kind == InlineBoxKind::InFlow {
+                    visit(ibox.x, ibox.x + ibox.width);
                 }
-                let is_rtl = run.is_rtl();
-                let mut x = glyph_run.offset();
-                let mut atom_start = x;
-                let mut clusters = run.visual_clusters().peekable();
-                while let Some(cluster) = clusters.next() {
-                    x += cluster.advance();
-                    // Not an atom boundary if the next cluster (visually) is
-                    // part of the same ligature as this one.
-                    let splits_ligature = match clusters.peek() {
-                        Some(_) if is_rtl => cluster.is_ligature_continuation(),
-                        Some(next) => next.is_ligature_continuation(),
-                        None => false,
-                    };
-                    if !splits_ligature {
-                        if !visit(atom_start, x) {
-                            return;
-                        }
-                        atom_start = x;
-                    }
-                }
+                continue;
             }
+            PositionedLayoutItem::GlyphRun(glyph_run) => glyph_run,
+        };
+        // A run is yielded as one glyph run per style, but its clusters are
+        // only reachable through the whole run.
+        let run = glyph_run.run();
+        // The end of the run's next glyph run, consuming it.
+        let mut next_end_in_run = || {
+            let next = items.next_if(|item| {
+                matches!(item, PositionedLayoutItem::GlyphRun(next)
+                    if next.run().index() == run.index())
+            });
+            match next? {
+                PositionedLayoutItem::GlyphRun(next) => Some(next.offset() + next.advance()),
+                PositionedLayoutItem::InlineBox(_) => None,
+            }
+        };
+        let run_start = glyph_run.offset();
+        if run_start >= view_end {
+            return;
+        }
+        let mut run_end = run_start + glyph_run.advance();
+
+        if run_start < view_start {
+            // The run starts out of view: find its end, to skip it or to
+            // walk it from there.
+            while let Some(end) = next_end_in_run() {
+                run_end = end;
+            }
+            if run_end <= view_start {
+                continue;
+            }
+            let from_end = run_end - view_end < view_start - run_start;
+            if from_end && walk_run_from_end(layout, run, run_end, view_start, &mut visit) {
+                continue;
+            }
+        }
+
+        let mut in_view = true;
+        walk_clusters(
+            run.visual_clusters(),
+            !run.is_rtl(),
+            run_start,
+            1.0,
+            |start, end| {
+                in_view = start < view_end;
+                if in_view {
+                    visit(start, end);
+                }
+                in_view
+            },
+        );
+        if !in_view {
+            return;
+        }
+        while next_end_in_run().is_some() {}
+    }
+}
+
+/// Visits the atoms of `run`, which ends at `run_end`, from right to left
+/// down to `view_start`. Returns `false`, without visiting any, if the run
+/// cannot be walked in that direction.
+fn walk_run_from_end<'a, B: Brush>(
+    layout: &'a Layout<B>,
+    run: &Run<'a, B>,
+    run_end: f32,
+    view_start: f32,
+    visit: &mut impl FnMut(f32, f32),
+) -> bool {
+    let visit = |start, end| {
+        visit(start, end);
+        start > view_start
+    };
+    if run.is_rtl() {
+        walk_clusters(run.clusters(), true, run_end, -1.0, visit);
+        return true;
+    }
+    // Parley has no public right-to-left iterator for a left-to-right run:
+    // step back from its last cluster instead.
+    let Some(last_byte) = run.text_range().end.checked_sub(1) else {
+        return false;
+    };
+    let Some(last) = Cluster::from_byte_index(layout, last_byte) else {
+        return false;
+    };
+    let path = last.path();
+    let in_run = |cluster: &Cluster<'a, B>| {
+        let other = cluster.path();
+        other.line_index() == path.line_index() && other.run_index() == path.run_index()
+    };
+    if path.run_index() != run.index() || last.is_rtl() {
+        return false;
+    }
+    let clusters = std::iter::successors(Some(last), |cluster| {
+        cluster.previous_visual().filter(in_run)
+    });
+    walk_clusters(clusters, false, run_end, -1.0, visit);
+    true
+}
+
+/// Calls `visit(start, end)` for each atom made of `clusters`, which lie side
+/// by side from `origin` in the direction `step` (`1.0` rightwards, `-1.0`
+/// leftwards), until it returns `false`. `logical` is whether the clusters
+/// are given in logical order rather than reversed.
+fn walk_clusters<'a, B: Brush + 'a>(
+    clusters: impl Iterator<Item = Cluster<'a, B>>,
+    logical: bool,
+    origin: f32,
+    step: f32,
+    mut visit: impl FnMut(f32, f32) -> bool,
+) {
+    let mut x = origin;
+    let mut atom_edge = origin;
+    let mut clusters = clusters.peekable();
+    while let Some(cluster) = clusters.next() {
+        x += step * cluster.advance();
+        // Not an atom boundary if the next cluster is part of the same
+        // ligature as this one.
+        let splits_ligature = match clusters.peek() {
+            Some(next) if logical => next.is_ligature_continuation(),
+            Some(_) => cluster.is_ligature_continuation(),
+            None => false,
+        };
+        if !splits_ligature {
+            if !visit(atom_edge.min(x), atom_edge.max(x)) {
+                return;
+            }
+            atom_edge = x;
         }
     }
 }
@@ -240,52 +354,49 @@ fn for_each_atom<B: Brush>(line: &Line<'_, B>, mut visit: impl FnMut(f32, f32) -
 /// line whose line box is shortened by floats is limited to the part of that
 /// line box that is in view, and is painted whole once none of it is.
 ///
-/// Starting from the inline-start side, atoms (see [`for_each_atom`]) are kept
-/// until one does not fit before the marker; that atom and everything after it
-/// is cut. The first atom in view is always kept (css-overflow §5.1: it is
+/// Atoms (see [`for_each_atom_in_view`]) are kept from the inline-start side
+/// up to the last one that fits before the marker; everything after it is
+/// cut. The first atom in view is always kept (css-overflow §5.1: it is
 /// clipped rather than ellipsed), in which case the marker may itself be
 /// clipped by the box.
 pub fn resolve<B: Brush>(
-    layout: &TextOverflowLayout<B>,
+    overflow: &TextOverflowLayout<B>,
+    layout: &Layout<B>,
     truncated: &TruncatedLine,
     line: &Line<'_, B>,
     scroll_x: f32,
 ) -> Option<Cut> {
-    let (line_min, line_max) = line_bounds(line, layout.max_width);
+    let (line_min, line_max) = line_bounds(line, overflow.max_width);
     let mut visible_start = scroll_x;
-    let mut visible_end = scroll_x + layout.max_width;
-    if line_min > EPSILON || line_max < layout.max_width - EPSILON {
+    let mut visible_end = scroll_x + overflow.max_width;
+    if line_min > EPSILON || line_max < overflow.max_width - EPSILON {
         visible_start = visible_start.max(line_min);
         visible_end = visible_end.min(line_max);
         if visible_end <= visible_start + EPSILON {
             return None;
         }
     }
-    let advance = layout.marker.advance;
+    let advance = overflow.marker.advance;
 
-    if layout.is_rtl {
+    if overflow.is_rtl {
         if truncated.end >= visible_start - 0.5 {
             return None;
         }
         let limit = visible_start + advance;
-        // The line is walked left to right, i.e. from the inline-end side, so
-        // the kept atoms are a suffix: from the first atom that fits after the
-        // marker, or from the last atom in view if that is further left.
+        // The kept atoms are those on the right, from the leftmost one that
+        // fits after the marker. The rightmost atom in view is always kept.
         let mut first_fitting: Option<f32> = None;
-        let mut last_in_view: Option<f32> = None;
-        for_each_atom(line, |start, _| {
-            if start >= limit - EPSILON && first_fitting.is_none() {
+        let mut first_in_view: Option<f32> = None;
+        for_each_atom_in_view(layout, line, visible_start, visible_end, |start, _| {
+            if start >= limit - EPSILON && first_fitting.is_none_or(|x| start < x) {
                 first_fitting = Some(start);
             }
-            if start < visible_end - EPSILON {
-                last_in_view = Some(start);
+            if start < visible_end - EPSILON && first_in_view.is_none_or(|x| start > x) {
+                first_in_view = Some(start);
             }
-            true
         });
-        let cut_x = match (first_fitting, last_in_view) {
-            (Some(a), Some(b)) => a.min(b),
-            (a, b) => a.or(b)?,
-        };
+        let first_in_view = first_in_view?;
+        let cut_x = first_fitting.map_or(first_in_view, |x| x.min(first_in_view));
         return Some(Cut {
             cut_x,
             marker_x: cut_x - advance,
@@ -297,20 +408,21 @@ pub fn resolve<B: Brush>(
         return None;
     }
     let limit = visible_end - advance;
-    // End of the last atom that is kept.
-    let mut cut_x: Option<f32> = None;
-    // Whether a kept atom is (at least partly) inside the scrolled view.
-    let mut kept_in_view = false;
-    for_each_atom(line, |_, end| {
-        if end > limit + EPSILON && kept_in_view {
-            return false;
+    // The kept atoms are those on the left, up to the rightmost one that fits
+    // before the marker. The leftmost atom in view is always kept.
+    let mut last_fitting: Option<f32> = None;
+    let mut first_in_view: Option<f32> = None;
+    for_each_atom_in_view(layout, line, visible_start, visible_end, |_, end| {
+        if end <= limit + EPSILON && last_fitting.is_none_or(|x| end > x) {
+            last_fitting = Some(end);
         }
-        kept_in_view |= end > visible_start + EPSILON;
-        cut_x = Some(end);
-        true
+        if end > visible_start + EPSILON && first_in_view.is_none_or(|x| end < x) {
+            first_in_view = Some(end);
+        }
     });
-
-    cut_x.map(|cut_x| Cut {
+    let first_in_view = first_in_view?;
+    let cut_x = last_fitting.map_or(first_in_view, |x| x.max(first_in_view));
+    Some(Cut {
         cut_x,
         marker_x: cut_x,
         is_rtl: false,
