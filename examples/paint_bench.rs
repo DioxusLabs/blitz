@@ -217,16 +217,21 @@ async fn main() {
             .await
             .expect("Failed to create wgpu device");
 
-            let mut renderer = vello_hybrid::Renderer::new(
+            let (mut renderer, mut resources) = vello_gpu::Renderer::new(
                 &device_handle.device,
-                &vello_hybrid::RenderTargetConfig {
+                &vello_gpu::RenderTargetConfig {
                     format: wgpu::TextureFormat::Bgra8Unorm,
-                    width: render_width,
-                    height: render_height,
+                    width: render_width as u16,
+                    height: render_height as u16,
                 },
             );
-            let mut resources = vello_hybrid::Resources::new();
-            let mut scene = vello_hybrid::Scene::new(render_width as u16, render_height as u16);
+            let render_size = vello_gpu::RenderSize {
+                width: render_width as u16,
+                height: render_height as u16,
+            };
+            let depth_texture_view =
+                vello_gpu::Renderer::create_depth_texture_view(&device_handle.device, &render_size);
+            let mut scene = vello_gpu::Scene::new(render_width as u16, render_height as u16);
             let mut image_cache = FxHashMap::default();
             let mut texture_bindings = FxHashMap::default();
 
@@ -282,7 +287,7 @@ async fn main() {
                 let encode = encode_start.elapsed().as_micros();
 
                 let raster_start = Instant::now();
-                let mut hybrid_texture_bindings = vello_hybrid::TextureBindings::new();
+                let mut hybrid_texture_bindings = vello_gpu::TextureBindings::new();
                 for (resource_id, texture_view) in texture_bindings.iter() {
                     hybrid_texture_bindings.insert(
                         vello_common::TextureId(resource_id.into_ffi()),
@@ -296,12 +301,11 @@ async fn main() {
                         &device_handle.device,
                         &device_handle.queue,
                         &mut encoder,
-                        &vello_hybrid::RenderSize {
-                            width: render_width,
-                            height: render_height,
-                        },
+                        &render_size,
                         &target_texture_view,
+                        Some(&depth_texture_view),
                         &hybrid_texture_bindings,
+                        vello_gpu::TargetInit::Clear(vello_gpu::ClearSettings::default()),
                     )
                     .expect("Failed to render to texture");
                 device_handle.queue.submit([encoder.finish()]);
