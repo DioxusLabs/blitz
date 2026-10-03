@@ -22,14 +22,44 @@ use crate::{FONT_EMBOLDEN_ENABLED, SELECTION_COLOR};
 ///
 /// The inline root's own background is painted separately (as a normal block box), so
 /// runs belonging to the root are skipped to avoid drawing it twice.
-pub(crate) fn draw_inline_backgrounds<'a>(
+///
+/// Collapsible whitespace at the end of a line (e.g. the space that a line was wrapped at)
+/// is removed by CSS, so the background does not cover it. Parley keeps that whitespace in
+/// the line and hangs it instead, so it is clipped out of the painted area here.
+pub(crate) fn draw_inline_backgrounds(
     scene: &mut impl PaintScene,
-    lines: impl Iterator<Item = Line<'a, TextBrush>>,
+    layout: &Layout<TextBrush>,
+    text: &str,
     doc: &BaseDocument,
     transform: Affine,
     inline_root_id: NodeId,
 ) {
-    for line in lines {
+    let is_rtl = layout.is_rtl();
+    for line in layout.lines() {
+        // The extent of the line's content, excluding collapsible whitespace at the end of
+        // the line (which is on the left of a right-to-left line)
+        let mut content_start = f64::NEG_INFINITY;
+        let mut content_end = f64::INFINITY;
+        let trimmed = collapsed_trailing_advance(&line, text, doc) as f64;
+        if trimmed > 0.0 {
+            // The trailing whitespace is the glyph run(s) at the end edge of the line
+            let (start, end) = line
+                .items()
+                .filter_map(|item| match item {
+                    PositionedLayoutItem::GlyphRun(run) => Some((run.offset(), run.advance())),
+                    PositionedLayoutItem::InlineBox(_) => None,
+                })
+                .fold(
+                    (f64::INFINITY, f64::NEG_INFINITY),
+                    |(start, end), (x, w)| (start.min(x as f64), end.max((x + w) as f64)),
+                );
+            if is_rtl {
+                content_start = start + trimmed;
+            } else {
+                content_end = end - trimmed;
+            }
+        }
+
         for item in line.items() {
             let PositionedLayoutItem::GlyphRun(glyph_run) = item else {
                 continue;
@@ -55,16 +85,65 @@ pub(crate) fn draw_inline_backgrounds<'a>(
             }
 
             let metrics = glyph_run.run().font_metrics();
-            let x = glyph_run.offset() as f64;
-            let w = glyph_run.advance() as f64;
+            let x0 = (glyph_run.offset() as f64).max(content_start);
+            let x1 = ((glyph_run.offset() + glyph_run.advance()) as f64).min(content_end);
+            if x1 <= x0 {
+                continue;
+            }
             let baseline = glyph_run.baseline() as f64;
             let y0 = baseline - metrics.ascent as f64;
             let y1 = baseline + metrics.descent as f64;
-            let rect = Rect::new(x, y0, x + w, y1);
+            let rect = Rect::new(x0, y0, x1, y1);
 
             scene.fill(Fill::NonZero, transform, bg_color, None, &rect);
         }
     }
+}
+
+/// The advance of the collapsible whitespace that hangs at the end of `line`.
+///
+/// Preserved whitespace (e.g. `white-space: pre-wrap`) and non-collapsible spaces such as
+/// U+3000 also hang, but remain part of their inline box so they are not counted.
+fn collapsed_trailing_advance(line: &Line<'_, TextBrush>, text: &str, doc: &BaseDocument) -> f32 {
+    use style::computed_values::white_space_collapse::T as WhiteSpaceCollapse;
+
+    let hanging_advance = line.metrics().hanging_advance;
+    if hanging_advance <= 0.0 {
+        return 0.0;
+    }
+
+    // The whitespace at the end of the line's text. Runs are not in logical order in
+    // bidirectional text, so the clusters within it are found by their text range.
+    let line_range = line.text_range();
+    let line_text = text.get(line_range.clone()).unwrap_or("");
+    let trailing_start = line_range.start
+        + line_text
+            .trim_end_matches(|c: char| c.is_ascii_whitespace())
+            .len();
+
+    let mut advance = 0.0;
+    for cluster in line.runs().flat_map(|run| run.clusters()) {
+        let range = cluster.text_range();
+        if range.start < trailing_start {
+            continue;
+        }
+        let mode = doc
+            .get_node(cluster.style().brush.id)
+            .and_then(|node| node.primary_styles())
+            .map(|styles| styles.clone_white_space_collapse());
+        let is_collapsed = match mode {
+            Some(WhiteSpaceCollapse::Collapse) => true,
+            Some(WhiteSpaceCollapse::PreserveBreaks) => text
+                .get(range)
+                .is_some_and(|chars| chars.chars().all(|c| matches!(c, ' ' | '\t'))),
+            _ => false,
+        };
+        if is_collapsed {
+            advance += cluster.advance();
+        }
+    }
+
+    advance.min(hanging_advance)
 }
 
 /// Per-font-face cache of the OS/2 `usWinAscent / unitsPerEm` ratio, keyed by the font
