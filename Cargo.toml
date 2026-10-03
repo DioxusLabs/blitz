@@ -290,14 +290,14 @@ wgpu_context = { workspace = true }
 rustc-hash = { workspace = true }
 
 [patch.crates-io]
-anyrender = { path = "../anyrender/crates/anyrender" }
-anyrender_serialize = { path = "../anyrender/crates/anyrender_serialize" }
-anyrender_skia = { path = "../anyrender/crates/anyrender_skia" }
-anyrender_vello = { path = "../anyrender/crates/anyrender_vello" }
-anyrender_vello_cpu = { path = "../anyrender/crates/anyrender_vello_cpu" }
-anyrender_vello_hybrid = { path = "../anyrender/crates/anyrender_vello_hybrid" }
-anyrender_svg = { path = "../anyrender/crates/anyrender_svg" }
-wgpu_context = { path = "../anyrender/crates/wgpu_context" }
+anyrender = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1791048554-box-shadow-shape-inset" }
+anyrender_serialize = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1791048554-box-shadow-shape-inset" }
+anyrender_skia = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1791048554-box-shadow-shape-inset" }
+anyrender_vello = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1791048554-box-shadow-shape-inset" }
+anyrender_vello_cpu = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1791048554-box-shadow-shape-inset" }
+anyrender_vello_hybrid = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1791048554-box-shadow-shape-inset" }
+anyrender_svg = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1791048554-box-shadow-shape-inset" }
+wgpu_context = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1791048554-box-shadow-shape-inset" }
 vello = { git = "https://github.com/nicoburns/vello", branch = "inverse-blur-classic" }
 vello_common = { git = "https://github.com/nicoburns/vello", branch = "inverse-blur-classic" }
 vello_cpu = { git = "https://github.com/nicoburns/vello", branch = "inverse-blur-classic" }
