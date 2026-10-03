@@ -106,6 +106,22 @@ impl BaseDocument {
                 builder.set_hidden();
             }
 
+            if let Some(aria_expanded) = element_data.attr(local_name!("aria-expanded"))
+                && let Ok(aria_expanded) = aria_expanded.parse()
+            {
+                builder.set_expanded(aria_expanded);
+            }
+
+            if element_data.attr(local_name!("aria-disabled")) == Some("true") {
+                builder.set_disabled();
+            }
+
+            if let Some(aria_selected) = element_data.attr(local_name!("aria-selected"))
+                && let Ok(aria_selected) = aria_selected.parse()
+            {
+                builder.set_selected(aria_selected);
+            }
+
             if let Some(aria_label) = element_data.attr(local_name!("aria-label")) {
                 builder.set_label(aria_label);
             }
