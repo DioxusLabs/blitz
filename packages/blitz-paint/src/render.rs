@@ -849,38 +849,48 @@ impl ElementCx<'_, '_> {
             let transform =
                 self.transform * Affine::translate((pos.x * self.scale, pos.y * self.scale));
 
-            // Render inline element backgrounds (e.g. `<span style="background: ...">`)
-            // behind the text and selection highlight.
-            crate::text::draw_inline_backgrounds(
-                scene,
-                text_layout.layout.lines(),
-                self.context.dom,
-                transform,
-                self.node.id,
-            );
+            // The selection highlight (if any), as rectangles tagged with their line index
+            // (in line order)
+            let selection_rects = self
+                .context
+                .selection_ranges
+                .get(&self.node.id)
+                .map(|&(sel_start, sel_end)| {
+                    crate::text::text_selection_geometry(&text_layout.layout, sel_start, sel_end)
+                })
+                .unwrap_or_default();
+            let mut selection_rects = selection_rects.iter().peekable();
 
-            // Render text selection highlight (if any) using cached selection ranges
-            if let Some(&(sel_start, sel_end)) = self.context.selection_ranges.get(&self.node.id) {
-                crate::text::draw_text_selection(
+            // Line boxes are painted one at a time (CSS 2.1 Appendix E), so the backgrounds
+            // of a line are painted over any text of earlier lines that overflows into it.
+            let mut draw_text_context = self.context.draw_text_context.borrow_mut();
+            for (line_idx, line) in text_layout.layout.lines().enumerate() {
+                // Render inline element backgrounds (e.g. `<span style="background: ...">`)
+                // behind the text and selection highlight.
+                crate::text::draw_inline_backgrounds(
                     scene,
-                    &text_layout.layout,
+                    std::iter::once(line),
+                    self.context.dom,
                     transform,
-                    sel_start,
-                    sel_end,
+                    self.node.id,
+                );
+
+                // Render text selection highlight
+                while let Some((rect, _)) = selection_rects.next_if(|(_, idx)| *idx <= line_idx) {
+                    scene.fill(Fill::NonZero, transform, SELECTION_COLOR, None, rect);
+                }
+
+                // Render text
+                crate::text::stroke_text(
+                    scene,
+                    std::iter::once(line),
+                    self.context.dom,
+                    transform,
+                    self.scale,
+                    self.node.id,
+                    &mut draw_text_context,
                 );
             }
-
-            // Render text
-            let mut draw_text_context = self.context.draw_text_context.borrow_mut();
-            crate::text::stroke_text(
-                scene,
-                text_layout.layout.lines(),
-                self.context.dom,
-                transform,
-                self.scale,
-                self.node.id,
-                &mut draw_text_context,
-            );
         }
     }
 
