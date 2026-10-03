@@ -290,19 +290,14 @@ wgpu_context = { workspace = true }
 rustc-hash = { workspace = true }
 
 [patch.crates-io]
-anyrender = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1791048554-box-shadow-shape-inset" }
-anyrender_serialize = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1791048554-box-shadow-shape-inset" }
-anyrender_skia = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1791048554-box-shadow-shape-inset" }
-anyrender_vello = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1791048554-box-shadow-shape-inset" }
-anyrender_vello_cpu = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1791048554-box-shadow-shape-inset" }
-anyrender_vello_hybrid = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1791048554-box-shadow-shape-inset" }
-anyrender_svg = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1791048554-box-shadow-shape-inset" }
-wgpu_context = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1791048554-box-shadow-shape-inset" }
-vello = { git = "https://github.com/nicoburns/vello", branch = "inverse-blur-classic" }
-vello_common = { git = "https://github.com/nicoburns/vello", branch = "inverse-blur-classic" }
-vello_cpu = { git = "https://github.com/nicoburns/vello", branch = "inverse-blur-classic" }
-vello_gpu = { git = "https://github.com/nicoburns/vello", branch = "inverse-blur-classic" }
-glifo = { git = "https://github.com/nicoburns/vello", branch = "inverse-blur-classic" }
+anyrender = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1791068178-box-shadow-api" }
+anyrender_serialize = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1791068178-box-shadow-api" }
+anyrender_skia = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1791068178-box-shadow-api" }
+anyrender_vello = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1791068178-box-shadow-api" }
+anyrender_vello_cpu = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1791068178-box-shadow-api" }
+anyrender_vello_hybrid = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1791068178-box-shadow-api" }
+anyrender_svg = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1791068178-box-shadow-api" }
+wgpu_context = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1791068178-box-shadow-api" }
 
 # vello = { path = "../vello/vello" }
 # vello_cpu = { path = "../vello/sparse_strips/vello_cpu" }
