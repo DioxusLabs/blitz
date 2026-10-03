@@ -522,6 +522,20 @@ pub fn item_alignment(input: stylo::AlignFlags, is_horiz_rtl: bool) -> Option<ta
     Some(align)
 }
 
+/// Convert a container's `align-items`/`justify-items`. `normal` is left unset so that Taffy
+/// applies its per-item default, which unlike an explicit `stretch` does not stretch an item
+/// that has a preferred aspect ratio in the block axis.
+#[inline]
+pub fn default_item_alignment(
+    input: stylo::AlignFlags,
+    is_horiz_rtl: bool,
+) -> Option<taffy::AlignItems> {
+    if input.value() == stylo::AlignFlags::NORMAL {
+        return None;
+    }
+    item_alignment(input, is_horiz_rtl)
+}
+
 #[inline]
 pub fn gap(input: &stylo::Gap) -> taffy::LengthPercentage {
     match input {
@@ -899,11 +913,11 @@ pub fn to_taffy_style(style: &stylo::ComputedValues) -> taffy::Style<Atom> {
             display,
         ),
         #[cfg(any(feature = "flexbox", feature = "grid"))]
-        align_items: self::item_alignment(pos.align_items.0, false),
+        align_items: self::default_item_alignment(pos.align_items.0, false),
         #[cfg(any(feature = "flexbox", feature = "grid"))]
         align_self: self::item_alignment(pos.align_self.0, false),
         #[cfg(feature = "grid")]
-        justify_items: self::item_alignment(
+        justify_items: self::default_item_alignment(
             (pos.justify_items.computed.0).0,
             style.clone_direction() == stylo::Direction::Rtl,
         ),
