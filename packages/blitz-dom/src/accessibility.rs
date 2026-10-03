@@ -7,6 +7,9 @@ impl BaseDocument {
         let mut nodes = std::collections::HashMap::new();
         let mut window = AccessKitNode::new(Role::Window);
         let mut hidden_nodes = std::collections::HashSet::new();
+        let mut labelled_by_nodes = std::collections::HashMap::new();
+        let mut described_by_nodes = std::collections::HashMap::new();
+        let mut nodes_by_dom_id = std::collections::HashMap::new();
 
         self.visit(|node_id, node| {
             if node.is_hidden_from_accessibility_tree()
@@ -23,7 +26,13 @@ impl BaseDocument {
                 .and_then(|parent_id| nodes.get_mut(&parent_id))
                 .map(|(_, parent)| parent)
                 .unwrap_or(&mut window);
-            let (id, builder) = self.build_accessibility_node(node, parent);
+            let (id, builder) = self.build_accessibility_node(
+                node,
+                parent,
+                &mut labelled_by_nodes,
+                &mut described_by_nodes,
+                &mut nodes_by_dom_id,
+            );
 
             nodes.insert(node_id, (id, builder));
         });
@@ -33,6 +42,28 @@ impl BaseDocument {
             .map(|(_, (id, node))| (id, node))
             .collect();
         nodes.push((NodeId(u64::MAX), window));
+
+        for (node_id, node) in nodes.iter_mut() {
+            let Some(labelled_by) = labelled_by_nodes.get(node_id) else {
+                continue;
+            };
+            for dom_id in labelled_by.split(|c: char| c.is_whitespace()) {
+                if let Some(labelled_by_node_id) = nodes_by_dom_id.get(dom_id) {
+                    node.push_labelled_by(*labelled_by_node_id);
+                }
+            }
+        }
+
+        for (node_id, node) in nodes.iter_mut() {
+            let Some(described_by) = described_by_nodes.get(node_id) else {
+                continue;
+            };
+            for dom_id in described_by.split(|c: char| c.is_whitespace()) {
+                if let Some(described_by_node_id) = nodes_by_dom_id.get(dom_id) {
+                    node.push_described_by(*described_by_node_id);
+                }
+            }
+        }
 
         let tree = TreeInfo::new(NodeId(u64::MAX));
         TreeUpdate {
@@ -47,6 +78,9 @@ impl BaseDocument {
         &self,
         node: &BlitzDomNode,
         parent: &mut AccessKitNode,
+        labelled_by_nodes: &mut std::collections::HashMap<NodeId, String>,
+        described_by_nodes: &mut std::collections::HashMap<NodeId, String>,
+        nodes_by_dom_id: &mut std::collections::HashMap<String, NodeId>,
     ) -> (NodeId, AccessKitNode) {
         let id = NodeId(node.id.as_u64());
 
@@ -65,12 +99,54 @@ impl BaseDocument {
                 .unwrap_or(Role::Unknown);
 
             builder.set_role(role);
-            builder.set_html_tag(name);
 
             // https://www.w3.org/TR/wai-aria-1.2/#tree_exclusion
             if element_data.attr(local_name!("aria-hidden")) == Some("true") {
                 builder.set_hidden();
             }
+
+            if let Some(aria_expanded) = element_data.attr(local_name!("aria-expanded"))
+                && let Ok(aria_expanded) = aria_expanded.parse()
+            {
+                builder.set_expanded(aria_expanded);
+            }
+
+            if element_data.attr(local_name!("aria-disabled")) == Some("true") {
+                builder.set_disabled();
+            }
+
+            if let Some(aria_selected) = element_data.attr(local_name!("aria-selected"))
+                && let Ok(aria_selected) = aria_selected.parse()
+            {
+                builder.set_selected(aria_selected);
+            }
+
+            if let Some(aria_label) = element_data.attr(local_name!("aria-label")) {
+                builder.set_label(aria_label);
+            }
+            if let Some(aria_labelled_by) = element_data.attr(local_name!("aria-labelledby")) {
+                labelled_by_nodes.insert(id, aria_labelled_by.to_string());
+            }
+            if let Some(aria_description) = element_data.attr(local_name!("aria-description")) {
+                builder.set_description(aria_description);
+            }
+            if let Some(aria_described_by) = element_data.attr(local_name!("aria-describedby")) {
+                described_by_nodes.insert(id, aria_described_by.to_string());
+            }
+            if let Some(aria_level) = element_data.attr(local_name!("aria-level"))
+                && let Ok(aria_level) = aria_level.parse::<usize>()
+            {
+                // Accesskit levels are 0-based, while ARIA levels are 1-based
+                // See https://docs.rs/accesskit/latest/accesskit/struct.Node.html#method.level
+                builder.set_level(aria_level - 1);
+            } else if let Some(default_level) = default_level_for_tag(&name) {
+                builder.set_level(default_level);
+            }
+            if let Some(dom_id) = element_data.attr(local_name!("id")) {
+                nodes_by_dom_id.insert(dom_id.to_string(), id);
+            }
+
+            builder.set_html_tag(name);
         } else if node.is_text_node() {
             builder.set_role(Role::TextRun);
             builder.set_value(node.text_content());
@@ -158,6 +234,20 @@ fn role_from_name(name: &str) -> Option<Role> {
         "main" => Some(Role::Main),
         "navigation" => Some(Role::Navigation),
         "search" => Some(Role::Search),
+        _ => None,
+    }
+}
+
+fn default_level_for_tag(name: &str) -> Option<usize> {
+    // Accesskit levels are 0-based, while ARIA levels are 1-based
+    // See https://docs.rs/accesskit/latest/accesskit/struct.Node.html#method.level
+    match name {
+        "h1" => Some(0),
+        "h2" => Some(1),
+        "h3" => Some(2),
+        "h4" => Some(3),
+        "h5" => Some(4),
+        "h6" => Some(5),
         _ => None,
     }
 }
