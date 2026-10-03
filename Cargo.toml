@@ -98,7 +98,7 @@ dioxus-cli-config = { version = "0.7.3" }
 dioxus-core-macro = { version = "0.7.3" }
 
 # Taffy + Parley + Fontations
-taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "fb461a7826e49f488f31220744bf12227ffb580e", default-features = false, features = [
+taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "9770a07a749489e759b9d2186d1f674373de1527", default-features = false, features = [
     "std",
     "flexbox",
     "flexbox_balance",
@@ -283,7 +283,7 @@ env_logger = "0.11"
 tracing-subscriber = "0.3"
 vello = "0.11"
 vello_cpu = "0.3"
-vello_hybrid = { package = "vello_gpu", version = "0.3" }
+vello_gpu = "0.3"
 vello_common = "0.3"
 wgpu = { workspace = true }
 wgpu_context = { workspace = true }
@@ -306,7 +306,7 @@ glifo = { git = "https://github.com/nicoburns/vello", branch = "inverse-blur-cla
 
 # vello = { path = "../vello/vello" }
 # vello_cpu = { path = "../vello/sparse_strips/vello_cpu" }
-# vello_hybrid = { path = "../vello/sparse_strips/vello_hybrid" }
+# vello_gpu = { path = "../vello/sparse_strips/vello_gpu" }
 # vello_common = { path = "../vello/sparse_strips/vello_common" }
 # glifo = { path = "../vello/glifo" }
 
