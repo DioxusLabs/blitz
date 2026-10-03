@@ -451,7 +451,6 @@ impl BaseDocument {
 
                 #[cfg(feature = "floats")]
                 let float_width = match available_space.width {
-                    AvailableSpace::Definite(_) => 0.0,
                     AvailableSpace::MinContent => {
                         let mut width: f32 = 0.0;
                         for ibox in inline_layout.layout.inline_boxes_mut() {
@@ -476,7 +475,9 @@ impl BaseDocument {
 
                         width * scale
                     }
-                    AvailableSpace::MaxContent => {
+                    // A definite available width only occurs here when shrink-to-fit sizing,
+                    // which needs the max-content contribution of the floats.
+                    AvailableSpace::MaxContent | AvailableSpace::Definite(_) => {
                         // When computing a max-content size the available width is effectively
                         // infinite, so floats never wrap onto a new "band" due to a lack of
                         // horizontal space. They only move below preceding floats when the `clear`
