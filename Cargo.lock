@@ -7981,7 +7981,7 @@ dependencies = [
 [[package]]
 name = "taffy"
 version = "0.14.0"
-source = "git+https://github.com/DioxusLabs/taffy?rev=48204a1dc75aca5843567578dda74c27c457adc9#48204a1dc75aca5843567578dda74c27c457adc9"
+source = "git+https://github.com/DioxusLabs/taffy?rev=88dd366ecbb6d77fcd820a69a0a5e5d6032505a3#88dd366ecbb6d77fcd820a69a0a5e5d6032505a3"
 dependencies = [
  "serde",
  "slotmap",
