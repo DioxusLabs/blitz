@@ -72,6 +72,16 @@ impl BaseDocument {
             }
         }
 
+        // Keep the `position: sticky` registry in step with this node: its
+        // own damage is non-empty exactly when it was restyled or (re)inserted
+        // into the document, the only ways for it to start or stop being sticky.
+        if !damage.is_empty() {
+            let is_sticky = self.nodes[node_id]
+                .primary_styles()
+                .is_some_and(|s| s.get_box().position == Position::Sticky);
+            self.note_sticky(node_id, is_sticky);
+        }
+
         let mut damage_from_children = RestyleDamage::empty();
         let children = std::mem::take(&mut self.nodes[node_id].children);
         for child in children.iter() {
