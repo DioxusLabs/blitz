@@ -552,12 +552,9 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                             None,
                             None,
                             |scene| {
-                                // Now that background has been drawn, offset pos and cx in order to draw our contents scrolled
-                                let content_position = Point {
-                                    x: content_position.x - node.scroll_offset().x,
-                                    y: content_position.y - node.scroll_offset().y,
-                                };
-
+                                // Now that background has been drawn, offset cx in order to draw our contents
+                                // scrolled. `content_position` is applied on top of `cx.transform`, so it must
+                                // not be offset as well.
                                 cx.transform = cx.transform.then_translate(Vec2 {
                                     x: -node.scroll_offset().x * self.scale,
                                     y: -node.scroll_offset().y * self.scale,
