@@ -27,6 +27,7 @@ use blitz_dom::text_overflow::{self, Cut};
 use blitz_dom::{BaseDocument, ElementData, Node, NodeId, local_name};
 use blitz_traits::devtools::DevtoolSettings;
 use parley::{InlineBoxKind, PositionedLayoutItem};
+use smallvec::SmallVec;
 
 use style::values::computed::{BorderCornerRadius, ColorOrAuto};
 use style::{
@@ -895,12 +896,15 @@ impl ElementCx<'_, '_> {
     }
 
     /// The inline boxes of this inline root that `text-overflow` hides.
-    fn text_overflow_hidden_boxes(&self) -> Vec<NodeId> {
-        let cuts = self.text_overflow_cuts();
+    fn text_overflow_hidden_boxes(&self) -> SmallVec<[NodeId; 8]> {
+        let mut hidden = SmallVec::new();
         let Some(text_layout) = self.element.inline_layout_data.as_ref() else {
-            return Vec::new();
+            return hidden;
         };
-        let mut hidden = Vec::new();
+        if text_layout.layout.inline_boxes().len() == 0 {
+            return hidden;
+        }
+        let cuts = self.text_overflow_cuts();
         for &(line_index, cut) in cuts {
             let Some(line) = text_layout.layout.get(line_index) else {
                 continue;
@@ -1129,7 +1133,7 @@ impl ElementCx<'_, '_> {
             let hidden_boxes = if self.node.flags.is_inline_root() {
                 self.text_overflow_hidden_boxes()
             } else {
-                Vec::new()
+                SmallVec::new()
             };
             for child_id in children {
                 if hidden_boxes.contains(child_id) {
