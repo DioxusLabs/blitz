@@ -280,7 +280,7 @@ impl<T: Deref<Target = ComputedValues>> taffy::FlexboxContainerStyle for TaffySt
 
     #[inline]
     fn align_items(&self) -> Option<taffy::AlignItems> {
-        convert::item_alignment(self.style.get_position().align_items.0, false)
+        convert::default_item_alignment(self.style.get_position().align_items.0, false)
     }
 
     #[inline]
@@ -584,12 +584,12 @@ impl<T: Deref<Target = ComputedValues>> taffy::GridContainerStyle for TaffyStylo
 
     #[inline]
     fn align_items(&self) -> Option<taffy::AlignItems> {
-        convert::item_alignment(self.style.get_position().align_items.0, false)
+        convert::default_item_alignment(self.style.get_position().align_items.0, false)
     }
 
     #[inline]
     fn justify_items(&self) -> Option<taffy::AlignItems> {
-        convert::item_alignment(
+        convert::default_item_alignment(
             (self.style.get_position().justify_items.computed.0).0,
             self.style.clone_direction() == stylo::Direction::Rtl,
         )
