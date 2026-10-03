@@ -8,9 +8,8 @@ use style::values::{
 use taffy::{
     AvailableSpace, AxisStaticEdge, AxisStaticPosition, BlockContext, BlockFormattingContext,
     BoxSizing, CollapsibleMarginSet, CompactLength, CoreStyle as _, Direction, LayoutInput,
-    LayoutOutput, LayoutPartialTree as _, MaybeMath as _, MaybeResolve as _, OofCandidate,
-    OofCandidates, OofPositioningArea, Overflow, Point, RequestedAxis, ResolveOrZero as _, RunMode,
-    Size, SizingMode,
+    LayoutOutput, MaybeMath as _, MaybeResolve as _, OofCandidate, OofCandidates,
+    OofPositioningArea, Overflow, Point, RequestedAxis, ResolveOrZero as _, RunMode, Size,
 };
 
 #[cfg(feature = "floats")]
@@ -91,54 +90,10 @@ impl BaseDocument {
             .border()
             .resolve_or_zero(parent_size.width, resolve_calc_value);
         let padding_border_size = (padding + border).sum_axes();
-        let box_sizing_adjustment = if style.box_sizing() == BoxSizing::ContentBox {
-            padding_border_size
-        } else {
-            Size::ZERO
-        };
-
-        // Resolve node's preferred/min/max sizes (width/heights) against the available space (percentages resolve to pixel values)
-        // For ContentSize mode, we pretend that the node has no size styles as these should be ignored.
-        let (clamped_style_size, min_size, max_size, _aspect_ratio) = match inputs.sizing_mode {
-            SizingMode::ContentSize => {
-                let node_size = known_dimensions;
-                let node_min_size = Size::NONE;
-                let node_max_size = Size::NONE;
-                (node_size, node_min_size, node_max_size, None)
-            }
-            SizingMode::InherentSize => {
-                let aspect_ratio = style.aspect_ratio();
-                let style_size = style
-                    .size()
-                    .maybe_resolve(parent_size, resolve_calc_value)
-                    .maybe_apply_aspect_ratio(aspect_ratio)
-                    .maybe_add(box_sizing_adjustment);
-                let style_min_size = style
-                    .min_size()
-                    .maybe_resolve(parent_size, resolve_calc_value)
-                    .maybe_apply_aspect_ratio(aspect_ratio)
-                    .maybe_add(box_sizing_adjustment);
-                let style_max_size = style
-                    .max_size()
-                    .maybe_resolve(parent_size, resolve_calc_value)
-                    .maybe_add(box_sizing_adjustment);
-
-                let node_size =
-                    known_dimensions.or(style_size.maybe_clamp(style_min_size, style_max_size));
-                (node_size, style_min_size, style_max_size, aspect_ratio)
-            }
-        };
-
-        // If both min and max in a given axis are set and max <= min then this determines the size in that axis
-        let min_max_definite_size = min_size.zip_map(max_size, |min, max| match (min, max) {
-            (Some(min), Some(max)) if max <= min => Some(min),
-            _ => None,
-        });
-
-        let styled_based_known_dimensions = known_dimensions
-            .or(min_max_definite_size)
-            .or(clamped_style_size)
-            .maybe_max(padding_border_size);
+        // An inline formatting context root never applies its own preferred/min/max size or
+        // aspect-ratio styles: these are resolved by its parent, which passes the result down
+        // as known dimensions and clamps the size that this node reports.
+        let styled_based_known_dimensions = known_dimensions.maybe_max(padding_border_size);
 
         // Short-circuit layout if the container's size is fully determined by the container's size and the run mode
         // is ComputeSize (and thus the container's size is all that we're interested in)
@@ -190,7 +145,6 @@ impl BaseDocument {
             known_dimensions,
             parent_size,
             available_space,
-            sizing_mode,
             ..
         } = inputs;
 
@@ -216,12 +170,26 @@ impl BaseDocument {
             .border()
             .resolve_or_zero(parent_size.width, resolve_calc_value);
         let container_pb = padding + border;
-        let pb_sum = container_pb.sum_axes();
         let box_sizing_adjustment = if style.box_sizing() == BoxSizing::ContentBox {
-            pb_sum
+            container_pb.sum_axes()
         } else {
             Size::ZERO
         };
+
+        // Resolve the node's min/max sizes. The node's preferred size is never applied by the node itself
+        // (its parent passes it down as a known dimension), and nor are the min/max sizes applied to the
+        // size that the node reports when it is being measured (the parent clamps that size). But they
+        // do determine the size that the content is laid out into in any axis whose size is not known.
+        let aspect_ratio = style.aspect_ratio();
+        let node_min_size = style
+            .min_size()
+            .maybe_resolve(parent_size, resolve_calc_value)
+            .maybe_apply_aspect_ratio(aspect_ratio)
+            .maybe_add(box_sizing_adjustment);
+        let node_max_size = style
+            .max_size()
+            .maybe_resolve(parent_size, resolve_calc_value)
+            .maybe_add(box_sizing_adjustment);
 
         // Scrollbar gutters are reserved when the `overflow` property is set to `Overflow::Scroll`.
         // However, the axis are switched (transposed) because a node that scrolls vertically needs
@@ -243,42 +211,9 @@ impl BaseDocument {
             || padding.bottom > 0.0
             || border.top > 0.0
             || border.bottom > 0.0;
-        // || matches!(node_size.height, Some(h) if h > 0.0)
-        // || matches!(node_min_size.height, Some(h) if h > 0.0)
+        // || matches!(known_dimensions.height, Some(h) if h > 0.0)
         // || !inline_layout.text.is_empty();
         // || inline_layout.layout.inline_boxes().len() > 0;
-
-        // Resolve node's preferred/min/max sizes (width/heights) against the available space (percentages resolve to pixel values)
-        // For ContentSize mode, we pretend that the node has no size styles as these should be ignored.
-        let (node_size, node_min_size, node_max_size, aspect_ratio) = match sizing_mode {
-            SizingMode::ContentSize => {
-                let node_size = known_dimensions;
-                let node_min_size = Size::NONE;
-                let node_max_size = Size::NONE;
-                (node_size, node_min_size, node_max_size, None)
-            }
-            SizingMode::InherentSize => {
-                let aspect_ratio = style.aspect_ratio();
-                let style_size = style
-                    .size()
-                    .maybe_resolve(parent_size, resolve_calc_value)
-                    .maybe_apply_aspect_ratio(aspect_ratio)
-                    .maybe_add(box_sizing_adjustment);
-                let style_min_size = style
-                    .min_size()
-                    .maybe_resolve(parent_size, resolve_calc_value)
-                    .maybe_apply_aspect_ratio(aspect_ratio)
-                    .maybe_add(box_sizing_adjustment);
-                let style_max_size = style
-                    .max_size()
-                    .maybe_resolve(parent_size, resolve_calc_value)
-                    .maybe_add(box_sizing_adjustment);
-
-                let node_size =
-                    known_dimensions.or(style_size.maybe_clamp(style_min_size, style_max_size));
-                (node_size, style_min_size, style_max_size, aspect_ratio)
-            }
-        };
 
         drop(style);
 
@@ -306,11 +241,8 @@ impl BaseDocument {
                 .unwrap_or(available_space.width)
                 .maybe_sub(margin.horizontal_axis_sum())
                 .maybe_set(known_dimensions.width)
-                .maybe_set(node_size.width)
                 .map_definite_value(|size| {
-                    (size.maybe_clamp(node_min_size.width, node_max_size.width)
-                        - content_box_inset.horizontal_axis_sum())
-                    .max(0.0)
+                    (size - content_box_inset.horizontal_axis_sum()).max(0.0)
                 }),
             height: known_dimensions
                 .height
@@ -318,19 +250,13 @@ impl BaseDocument {
                 .unwrap_or(available_space.height)
                 .maybe_sub(margin.vertical_axis_sum())
                 .maybe_set(known_dimensions.height)
-                .maybe_set(node_size.height)
-                .map_definite_value(|size| {
-                    (size.maybe_clamp(node_min_size.height, node_max_size.height)
-                        - content_box_inset.vertical_axis_sum())
-                    .max(0.0)
-                }),
+                .map_definite_value(|size| (size - content_box_inset.vertical_axis_sum()).max(0.0)),
         };
 
         // Compute size of inline boxes
         let child_inputs = taffy::tree::LayoutInput {
             known_dimensions: Size::NONE,
             available_space,
-            sizing_mode: SizingMode::InherentSize,
             parent_size: available_space.into_options(),
             // Atomic inlines (e.g. inline-block) establish independent formatting
             // contexts: their margins never collapse with their children's margins.
@@ -381,7 +307,11 @@ impl BaseDocument {
                 ibox.height = 0.0;
                 ibox.baseline = None;
             } else {
-                let output = self.compute_child_layout(taffy::NodeId::from(ibox.id), box_inputs);
+                let output = taffy::compute_child_layout_with_styles(
+                    self,
+                    taffy::NodeId::from(ibox.id),
+                    box_inputs,
+                );
                 ibox.width = (margin.left + margin.right + output.size.width) * scale;
                 ibox.baseline = if exports_baseline {
                     output
@@ -436,7 +366,7 @@ impl BaseDocument {
         );
 
         let pbw = container_pb.horizontal_components().sum() * scale;
-        let width = known_dimensions
+        let content_based_width = known_dimensions
             .width
             .map(|w| (w * scale) - pbw)
             .unwrap_or_else(|| {
@@ -466,7 +396,8 @@ impl BaseDocument {
                             };
 
                             if is_floated {
-                                let output = self.compute_child_layout(
+                                let output = taffy::compute_child_layout_with_styles(
+                                    self,
                                     taffy::NodeId::from(ibox.id),
                                     child_inputs,
                                 );
@@ -508,7 +439,8 @@ impl BaseDocument {
                                     right_band = 0.0;
                                 }
 
-                                let output = self.compute_child_layout(
+                                let output = taffy::compute_child_layout_with_styles(
+                                    self,
                                     taffy::NodeId::from(ibox.id),
                                     child_inputs,
                                 );
@@ -530,25 +462,25 @@ impl BaseDocument {
                 #[cfg(not(feature = "floats"))]
                 let float_width = 0.0;
 
-                let computed_width = match available_space.width {
+                match available_space.width {
                     AvailableSpace::MinContent => min_content_width.max(float_width),
                     AvailableSpace::MaxContent => max_content_width + float_width,
                     AvailableSpace::Definite(limit) => (limit * scale)
                         .min(max_content_width + float_width)
                         .max(min_content_width),
                 }
-                .ceil();
-
-                let style_width = node_size.width.map(|w| w * scale);
-                let min_width = node_min_size.width.map(|w| w * scale);
-                let max_width = node_max_size.width.map(|w| w * scale);
-
-                (style_width)
-                    .unwrap_or(computed_width + pbw)
-                    .max(computed_width)
-                    .maybe_clamp(min_width, max_width)
-                    - pbw
+                .ceil()
             });
+
+        // The content is laid out at the width clamped by the node's min/max width,
+        // but it is the unclamped content-based width that is reported when measuring.
+        let width = if known_dimensions.width.is_some() {
+            content_based_width
+        } else {
+            let min_width = node_min_size.width.map(|w| w * scale);
+            let max_width = node_max_size.width.map(|w| w * scale);
+            ((content_based_width + pbw).maybe_clamp(min_width, max_width) - pbw).max(0.0)
+        };
 
         #[cfg(not(feature = "floats"))]
         let _ = block_ctx; // Suppress unused variable warning
@@ -578,19 +510,17 @@ impl BaseDocument {
                 .inline_layout_data = Some(inline_layout);
 
             let measured_size = inputs.known_dimensions.unwrap_or(taffy::Size {
-                width: width.ceil() / scale,
+                width: content_based_width.ceil() / scale,
                 // Height is ignored if RequestedAxis if Horizontal
                 height: 0.0,
             });
 
-            let clamped_size = inputs
+            let size = inputs
                 .known_dimensions
-                .or(node_size)
                 .unwrap_or(measured_size + content_box_inset.sum_axes())
-                .maybe_clamp(node_min_size, node_max_size)
                 .maybe_max(container_pb.sum_axes().map(Some));
 
-            return LayoutOutput::from_outer_size(clamped_size);
+            return LayoutOutput::from_outer_size(size);
         }
 
         #[cfg(not(feature = "floats"))]
@@ -672,7 +602,8 @@ impl BaseDocument {
 
                         let margin_sum = margin.sum_axes();
 
-                        let mut output = self.compute_child_layout(
+                        let mut output = taffy::compute_child_layout_with_styles(
+                            self,
                             crate::taffy_node_id(node_id),
                             float_child_inputs,
                         );
@@ -804,19 +735,19 @@ impl BaseDocument {
         // extent of the line boxes must be taken from the laid-out lines for `content_size`.
         let content_width = f32_max(width, inline_layout.layout.width()) / scale;
 
-        let clamped_size = inputs
-            .known_dimensions
-            .or(node_size)
-            .unwrap_or(measured_size + content_box_inset.sum_axes())
-            .maybe_clamp(node_min_size, node_max_size);
-        let final_size = Size {
-            width: clamped_size.width,
-            height: f32_max(
-                clamped_size.height,
-                aspect_ratio
-                    .map(|ratio| clamped_size.width / ratio)
-                    .unwrap_or(0.0),
-            ),
+        let final_size = if inputs.run_mode == RunMode::ComputeSize {
+            // The parent is responsible for clamping the size that is reported when measuring
+            inputs.known_dimensions.unwrap_or(
+                taffy::Size {
+                    width: content_based_width / scale,
+                    height: height / scale,
+                } + content_box_inset.sum_axes(),
+            )
+        } else {
+            inputs
+                .known_dimensions
+                .unwrap_or(measured_size + content_box_inset.sum_axes())
+                .maybe_clamp(node_min_size, node_max_size)
         }
         .maybe_max(container_pb.sum_axes().map(Some));
 
@@ -923,8 +854,11 @@ impl BaseDocument {
                         // Re-measure the box to get its border-box size (this hits the layout
                         // cache). The size cannot be recovered from `ibox` dimensions as the
                         // space reserved in the line is clamped to be non-negative.
-                        let mut output =
-                            self.compute_child_layout(taffy::NodeId::from(ibox.id), box_inputs);
+                        let mut output = taffy::compute_child_layout_with_styles(
+                            self,
+                            taffy::NodeId::from(ibox.id),
+                            box_inputs,
+                        );
                         let size = output.size;
                         let node = &mut self.nodes[NodeId::from_u64(ibox.id)];
 

@@ -591,7 +591,14 @@ fn collect_table_cells(
 
             // In the collapsed borders model the borders are laid out as gutters between
             // the cells (see the table's `gap`) rather than as part of the cells
+            let mut collapsed_border_size = taffy::Size::ZERO;
             if border_collapse == BorderCollapse::Collapse {
+                if style.box_sizing == taffy::BoxSizing::ContentBox {
+                    collapsed_border_size = style
+                        .border
+                        .resolve_or_zero(None, resolve_calc_value)
+                        .sum_axes();
+                }
                 style.border = taffy::Rect::ZERO.map(style_helpers::length);
             }
 
@@ -673,7 +680,51 @@ fn collect_table_cells(
                 start: style_helpers::line(*row as i16),
                 end: style_helpers::span(rowspan),
             };
+            // A cell always fills its column(s), so its `width` is not a preferred size.
+            // Instead it is a lower bound on the size that the cell contributes to its
+            // column(s) (except in the fixed table layout algorithm, where the widths of
+            // columns are not affected by cells outside of the first row).
+            if !is_fixed {
+                let min_width = style.min_size.width.into_raw();
+                let max_width = style.max_size.width.into_raw();
+                match style.size.width.tag() {
+                    taffy::CompactLength::LENGTH_TAG => {
+                        let mut width = style.size.width.value();
+                        if max_width.tag() == taffy::CompactLength::LENGTH_TAG {
+                            width = width.min(max_width.value());
+                        }
+                        if min_width.tag() == taffy::CompactLength::LENGTH_TAG {
+                            width = width.max(min_width.value());
+                        }
+                        if min_width.is_auto()
+                            || min_width.tag() == taffy::CompactLength::LENGTH_TAG
+                        {
+                            style.min_size.width = style_helpers::length(width);
+                        }
+                    }
+                    taffy::CompactLength::PERCENT_TAG if min_width.is_auto() => {
+                        style.min_size.width = style_helpers::percent(style.size.width.value());
+                    }
+                    _ => {}
+                }
+            }
             style.size.width = style_helpers::auto();
+
+            // The cell itself is laid out with its borders (even though they are not part of
+            // the style that the table lays the cell out with), so the min and max sizes that
+            // the table applies on the cell's behalf must make room for them.
+            let add_collapsed_border = |value: &mut taffy::LengthPercentageAuto, border: f32| {
+                if border > 0.0 && value.into_raw().tag() == taffy::CompactLength::LENGTH_TAG {
+                    *value = style_helpers::length(value.into_raw().value() + border);
+                }
+            };
+            if !is_fixed {
+                add_collapsed_border(&mut style.min_size.width, collapsed_border_size.width);
+            }
+            add_collapsed_border(&mut style.max_size.width, collapsed_border_size.width);
+            add_collapsed_border(&mut style.min_size.height, collapsed_border_size.height);
+            add_collapsed_border(&mut style.max_size.height, collapsed_border_size.height);
+
             cells.push(TableCell {
                 node_id,
                 row: row.saturating_sub(1),
