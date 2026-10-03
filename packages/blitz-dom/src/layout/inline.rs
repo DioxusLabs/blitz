@@ -662,12 +662,20 @@ impl LayoutPassState<'_> {
         // These are laid out by the out-of-flow positioning pass (`compute_oof_layout`).
         let mut oof_candidates = OofCandidates::new();
 
+        // Whether any line may have been laid out next to a float, and so be
+        // shorter than the container.
+        #[cfg(not(feature = "floats"))]
+        let had_floats = false;
+        #[cfg(feature = "floats")]
+        let mut had_floats = false;
+
         // Perform inline layout
         #[cfg(feature = "floats")]
         {
             let mut breaker = inline_layout.layout.break_lines();
             let initial_slot = block_ctx.find_content_slot(0.0, Clear::None, None);
             let mut has_active_floats = initial_slot.segment_id.is_some();
+            had_floats |= has_active_floats;
             let state = breaker.state_mut();
             state.set_layout_max_advance(width);
             state.set_line_max_advance(initial_slot.width * scale);
@@ -694,6 +702,7 @@ impl LayoutPassState<'_> {
                             let next_slot =
                                 block_ctx.find_content_slot(min_y as f32, Clear::None, None);
                             has_active_floats = next_slot.segment_id.is_some();
+                            had_floats |= has_active_floats;
 
                             state.set_line_max_advance(next_slot.width * scale);
                             state.set_line_x(next_slot.x * scale);
@@ -751,6 +760,7 @@ impl LayoutPassState<'_> {
                         let next_slot =
                             block_ctx.find_content_slot(min_y as f32, Clear::None, None);
                         has_active_floats = next_slot.segment_id.is_some();
+                        had_floats |= has_active_floats;
 
                         state.set_line_max_advance(next_slot.width * scale);
                         state.set_line_x(next_slot.x * scale);
@@ -827,7 +837,7 @@ impl LayoutPassState<'_> {
         // style here rather than at construction so that a style-only change
         // (which relayouts without reconstructing) is honoured.
         inline_layout.overflow =
-            self.compute_text_overflow(node_id, &inline_layout.layout, width, scale);
+            self.compute_text_overflow(node_id, &inline_layout.layout, width, scale, had_floats);
 
         // Parley lays out empty text as a single strut-height line (text-editor semantics),
         // but a line box containing no text, inline boxes or other in-flow content is a
@@ -1176,6 +1186,7 @@ impl BaseDocument {
         layout: &parley::Layout<TextBrush>,
         width: f32,
         scale: f32,
+        had_floats: bool,
     ) -> Option<Box<TextOverflowLayout<TextBrush>>> {
         // The property belongs to the block container. For the anonymous block
         // that wraps inline content next to block siblings that is the parent;
@@ -1202,14 +1213,10 @@ impl BaseDocument {
             return None;
         }
 
-        let (is_rtl, lines) = text_overflow::overflowing_lines(layout, width);
-        if lines.is_empty() {
-            return None;
-        }
-
         // Only the inline-end marker is implemented. Stylo stores a single
         // value as `(clip, value)` with logical sides, and two values as
         // physical `(left, right)`.
+        let is_rtl = layout.is_rtl();
         let text_overflow = styles.clone_text_overflow();
         let end_side = if is_rtl && !text_overflow.sides_are_logical {
             &text_overflow.first
@@ -1221,6 +1228,17 @@ impl BaseDocument {
             TextOverflowSide::Ellipsis => "\u{2026}",
             TextOverflowSide::String(s) => s.as_ref(),
         };
+
+        // Without floats every line box is as wide as the container, so if
+        // the widest line fits, they all do.
+        if !had_floats && layout.width() <= width + text_overflow::OVERFLOW_SLACK {
+            return None;
+        }
+
+        let lines = text_overflow::overflowing_lines(layout, width);
+        if lines.is_empty() {
+            return None;
+        }
 
         // The marker is styled by the block (css-overflow §5.2): shape it with
         // the block's parley style, which also gives font fallback.

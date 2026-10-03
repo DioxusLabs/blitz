@@ -25,6 +25,10 @@ use parley::{Brush, Cluster, FontData, InlineBoxKind, Layout, Line, PositionedLa
 /// Slack for float rounding when comparing positions (layout units).
 const EPSILON: f32 = 0.01;
 
+/// How far content may extend past its line box before it counts as
+/// overflowing (layout units).
+pub const OVERFLOW_SLACK: f32 = 0.5;
+
 /// One shaped run of the marker (Parley may split it across fonts when the
 /// block's font lacks a glyph).
 #[derive(Clone, Debug)]
@@ -154,13 +158,9 @@ fn line_bounds<B: Brush>(line: &Line<'_, B>, max_width: f32) -> (f32, f32) {
     )
 }
 
-/// Post-layout: whether the paragraph is right-to-left, and the lines whose
-/// content ends outside their line box (see [`line_bounds`], layout units) on
-/// the inline-end side.
-pub fn overflowing_lines<B: Brush>(
-    layout: &Layout<B>,
-    max_width: f32,
-) -> (bool, Vec<TruncatedLine>) {
+/// Post-layout: the lines whose content ends outside their line box (see
+/// [`line_bounds`], layout units) on the inline-end side.
+pub fn overflowing_lines<B: Brush>(layout: &Layout<B>, max_width: f32) -> Vec<TruncatedLine> {
     let is_rtl = layout.is_rtl();
     let mut lines = Vec::new();
     for (line_index, line) in layout.lines().enumerate() {
@@ -170,10 +170,10 @@ pub fn overflowing_lines<B: Brush>(
         // Hanging whitespace is at the inline-end of the line.
         let (end, overflows) = if is_rtl {
             let end = left + metrics.hanging_advance;
-            (end, end < min - 0.5)
+            (end, end < min - OVERFLOW_SLACK)
         } else {
             let end = left + metrics.advance - metrics.hanging_advance;
-            (end, end > max + 0.5)
+            (end, end > max + OVERFLOW_SLACK)
         };
         if overflows && line.items().next().is_some() {
             lines.push(TruncatedLine {
@@ -183,7 +183,7 @@ pub fn overflowing_lines<B: Brush>(
             });
         }
     }
-    (is_rtl, lines)
+    lines
 }
 
 /// Calls `visit(start, end)` for the atoms of the line that overlap the view
