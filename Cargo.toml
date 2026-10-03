@@ -25,6 +25,7 @@ members = [
     "examples/seven_guis",
     "examples/todomvc",
     "examples/wgpu_texture",
+    "examples/skia_paint_bench",
     "examples/wasm_hello",
 ]
 exclude = ["sites"]
@@ -116,7 +117,7 @@ skrifa = { version = "0.44", default-features = false, features = [
 # AnyRender
 anyrender = { version = "0.13.0" }
 anyrender_serialize = { version = "0.7.0" }
-anyrender_skia = { version = "0.11.0" }
+anyrender_skia = { version = "0.11.0", default-features = false }
 anyrender_vello = { version = "0.14.0" }
 anyrender_vello_cpu = { version = "0.17.0" }
 anyrender_vello_hybrid = { version = "0.10.0" }
@@ -288,6 +289,17 @@ vello_common = "0.1"
 wgpu = { workspace = true }
 wgpu_context = { workspace = true }
 rustc-hash = { workspace = true }
+
+# Testing https://github.com/DioxusLabs/anyrender/pull/103 (Skia Graphite)
+[patch.crates-io]
+anyrender = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1790696745-skia-graphite-metal" }
+anyrender_serialize = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1790696745-skia-graphite-metal" }
+anyrender_skia = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1790696745-skia-graphite-metal" }
+anyrender_vello = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1790696745-skia-graphite-metal" }
+anyrender_vello_cpu = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1790696745-skia-graphite-metal" }
+anyrender_vello_hybrid = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1790696745-skia-graphite-metal" }
+anyrender_svg = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1790696745-skia-graphite-metal" }
+wgpu_context = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1790696745-skia-graphite-metal" }
 
 # [patch.crates-io]
 # anyrender = { path = "../anyrender/crates/anyrender" }

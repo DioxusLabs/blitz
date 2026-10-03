@@ -1,0 +1,26 @@
+[package]
+name = "skia_paint_bench"
+version = "0.1.0"
+edition = "2024"
+license.workspace = true
+publish = false
+
+[features]
+default = ["ganesh"]
+# Pick one: rust-skia only publishes prebuilt binaries with a single GPU engine enabled.
+ganesh = ["anyrender_skia/ganesh"]
+graphite = ["anyrender_skia/graphite"]
+
+[target.'cfg(target_os = "macos")'.dependencies]
+anyrender = { workspace = true }
+anyrender_skia = { workspace = true }
+blitz-dom = { workspace = true, features = ["default"] }
+blitz-html = { workspace = true }
+blitz-net = { workspace = true }
+blitz-paint = { workspace = true, features = ["default"] }
+blitz-traits = { workspace = true }
+reqwest = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+skia-safe = { version = "0.153.3", features = ["metal"] }
+objc2 = "0.6"
+objc2-metal = { version = "0.3", default-features = false, features = ["std", "MTLDevice", "MTLCommandQueue"] }

@@ -15,7 +15,7 @@ mod markdown {
     pub(crate) use pulldown_cmark::*;
 }
 
-#[cfg(feature = "skia")]
+#[cfg(any(feature = "skia", feature = "skia-graphite"))]
 use anyrender_skia::SkiaWindowRenderer as WindowRenderer;
 #[cfg(feature = "skia-pixels")]
 use anyrender_skia::raster::SkiaRasterWindowRenderer as WindowRenderer;
