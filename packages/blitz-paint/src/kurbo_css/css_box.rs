@@ -1,3 +1,4 @@
+use anyrender::NonUniformRoundedRect;
 use kurbo::{Arc, BezPath, Insets, PathEl, Point, Rect, Shape as _, Vec2};
 use std::{f64::consts::FRAC_PI_2, f64::consts::PI};
 
@@ -207,6 +208,47 @@ impl CssBox {
         path.move_to(self.corner(Corner::TopLeft, CssBoxKind::BorderBox));
 
         path
+    }
+
+    /// The frame's border box as a shape that backends can recognise as a (rounded) rect
+    pub fn border_box_shape(&self) -> NonUniformRoundedRect {
+        self.box_shape(CssBoxKind::BorderBox)
+    }
+
+    /// The frame's padding box as a shape that backends can recognise as a (rounded) rect
+    pub fn padding_box_shape(&self) -> NonUniformRoundedRect {
+        self.box_shape(CssBoxKind::PaddingBox)
+    }
+
+    /// The frame's content box as a shape that backends can recognise as a (rounded) rect
+    pub fn content_box_shape(&self) -> NonUniformRoundedRect {
+        self.box_shape(CssBoxKind::ContentBox)
+    }
+
+    fn box_shape(&self, kind: CssBoxKind) -> NonUniformRoundedRect {
+        use Corner::*;
+        let rect = match kind {
+            CssBoxKind::OutlineBox => self.outline_box,
+            CssBoxKind::BorderBox => self.border_box,
+            CssBoxKind::PaddingBox => self.padding_box,
+            CssBoxKind::ContentBox => self.content_box,
+        };
+        let radii = |corner| {
+            if self.is_sharp(corner, kind) {
+                Vec2::ZERO
+            } else {
+                self.ellipse(corner, kind).1
+            }
+        };
+        NonUniformRoundedRect::new(
+            rect,
+            anyrender::NonUniformRoundedRectRadii {
+                top_left: radii(TopLeft),
+                top_right: radii(TopRight),
+                bottom_right: radii(BottomRight),
+                bottom_left: radii(BottomLeft),
+            },
+        )
     }
 
     /// Construct a bezpath drawing the frame border

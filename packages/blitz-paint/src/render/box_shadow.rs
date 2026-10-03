@@ -71,7 +71,7 @@ impl ElementCx<'_, '_> {
                             self.transform.pre_translate(offset),
                             shadow_color,
                             None,
-                            &self.frame.border_box_path(),
+                            &self.frame.border_box_shape(),
                         );
                     },
                 );
@@ -110,7 +110,7 @@ impl ElementCx<'_, '_> {
             return;
         }
 
-        let padding_box = self.frame.padding_box_path();
+        let padding_box = self.frame.padding_box_shape();
 
         for shadow in box_shadow.iter().filter(|s| s.inset) {
             let shadow_color = shadow
