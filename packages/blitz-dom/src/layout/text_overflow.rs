@@ -91,7 +91,8 @@ pub struct TruncatedLine {
 }
 
 /// Every candidate line of an inline context, the box width they are
-/// measured against, and the marker they share.
+/// measured against (each line is further limited to its own line box, which
+/// floats may have shortened), and the marker they share.
 #[derive(Clone, Debug)]
 pub struct TextOverflowLayout<B: Brush> {
     pub max_width: f32,
@@ -143,8 +144,19 @@ impl<B: Brush> TextOverflowLayout<B> {
     }
 }
 
+/// The inline extent content may occupy on a line: the line box (shortened by
+/// floats, if any), within `0..max_width`.
+fn line_bounds<B: Brush>(line: &Line<'_, B>, max_width: f32) -> (f32, f32) {
+    let metrics = line.metrics();
+    (
+        metrics.inline_min_coord.max(0.0),
+        metrics.inline_max_coord.min(max_width),
+    )
+}
+
 /// Post-layout: whether the paragraph is right-to-left, and the lines whose
-/// content ends outside `0..max_width` (layout units) on the inline-end side.
+/// content ends outside their line box (see [`line_bounds`], layout units) on
+/// the inline-end side.
 pub fn overflowing_lines<B: Brush>(
     layout: &Layout<B>,
     max_width: f32,
@@ -153,13 +165,15 @@ pub fn overflowing_lines<B: Brush>(
     let mut lines = Vec::new();
     for (line_index, line) in layout.lines().enumerate() {
         let metrics = line.metrics();
+        let (min, max) = line_bounds(&line, max_width);
+        let left = metrics.inline_min_coord + metrics.offset;
         // Hanging whitespace is at the inline-end of the line.
         let (end, overflows) = if is_rtl {
-            let end = metrics.offset + metrics.hanging_advance;
-            (end, end < -0.5)
+            let end = left + metrics.hanging_advance;
+            (end, end < min - 0.5)
         } else {
-            let end = metrics.offset + metrics.advance - metrics.hanging_advance;
-            (end, end > max_width + 0.5)
+            let end = left + metrics.advance - metrics.hanging_advance;
+            (end, end > max + 0.5)
         };
         if overflows && line.items().next().is_some() {
             lines.push(TruncatedLine {
@@ -222,6 +236,11 @@ fn for_each_atom<B: Brush>(line: &Line<'_, B>, mut visit: impl FnMut(f32, f32) -
 /// (layout units). `None` when the scrolled view already shows the end of the
 /// content, in which case the line is painted whole.
 ///
+/// The marker goes at the inline-end of the scrolled view. If a float has
+/// shortened the line box on that side, it goes at the line box's edge
+/// instead (the content past it is under the float), for as long as that edge
+/// is in view.
+///
 /// Starting from the inline-start side, atoms (see [`for_each_atom`]) are kept
 /// until one does not fit before the marker; that atom and everything after it
 /// is cut. The first atom in view is always kept (css-overflow §5.1: it is
@@ -233,8 +252,16 @@ pub fn resolve<B: Brush>(
     line: &Line<'_, B>,
     scroll_x: f32,
 ) -> Option<Cut> {
-    let visible_start = scroll_x;
-    let visible_end = scroll_x + layout.max_width;
+    let (line_min, line_max) = line_bounds(line, layout.max_width);
+    let mut visible_start = scroll_x;
+    let mut visible_end = scroll_x + layout.max_width;
+    if layout.is_rtl {
+        if line_min > EPSILON && line_min < visible_end - EPSILON {
+            visible_start = visible_start.max(line_min);
+        }
+    } else if line_max < layout.max_width - EPSILON && line_max > visible_start + EPSILON {
+        visible_end = visible_end.min(line_max);
+    }
     let advance = layout.marker.advance;
 
     if layout.is_rtl {
