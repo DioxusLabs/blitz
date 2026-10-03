@@ -19,7 +19,7 @@ use crate::render::background::get_cyclic;
 use super::ElementCx;
 use super::background::ImageLayerStyles;
 use anyrender::PaintScene;
-use peniko::{BlendMode, Compose, Mix};
+use peniko::{BlendMode, Compose, Fill, Mix};
 use style::properties::generated::longhands::mask_composite::single_value::computed_value::T as StyloMaskComposite;
 use style::values::generics::image::GenericImage;
 
@@ -56,6 +56,7 @@ impl ElementCx<'_, '_> {
         // Content outside of the mask painting area (at largest the border box) has
         // a mask alpha of 0, so we can clip the isolation layer to the border box.
         scene.push_layer(
+            Fill::NonZero,
             Mix::Normal,
             ALMOST_OPAQUE,
             self.transform,
@@ -75,6 +76,7 @@ impl ElementCx<'_, '_> {
         }
 
         scene.push_layer(
+            Fill::NonZero,
             BlendMode::new(Mix::Normal, Compose::DestIn),
             1.0,
             self.transform,
@@ -127,6 +129,7 @@ impl ElementCx<'_, '_> {
             // which draw nothing) as compositing a transparent black layer with e.g.
             // `intersect` clears the mask built up so far.
             scene.push_layer(
+                Fill::NonZero,
                 BlendMode::new(Mix::Normal, compose),
                 1.0,
                 self.transform,

@@ -1,8 +1,8 @@
 use super::ElementCx;
 use crate::color::{Color, ToColorColor as _};
 use anyrender::PaintScene;
-use kurbo::{Rect, Vec2};
-use peniko::{Compose, Fill, Mix};
+use kurbo::{Rect, Shape as _, Vec2};
+use peniko::Fill;
 
 impl ElementCx<'_, '_> {
     pub(super) fn draw_outset_box_shadow(&self, scene: &mut impl PaintScene) {
@@ -35,55 +35,71 @@ impl ElementCx<'_, '_> {
             prev.union(rect)
         });
 
-        self.context.layer_manager.maybe_with_layer(
-            scene,
-            needs_clip,
-            1.0,
-            self.transform,
-            &self.frame.shadow_clip(max_shadow_rect),
-            None,
-            None,
-            |scene| {
-                for shadow in box_shadow.iter().filter(|s| !s.inset).rev() {
-                    let shadow_color = shadow
-                        .base
-                        .color
-                        .resolve_to_absolute(&current_color)
-                        .as_srgb_color();
+        for shadow in box_shadow.iter().filter(|s| !s.inset).rev() {
+            let shadow_color = shadow
+                .base
+                .color
+                .resolve_to_absolute(&current_color)
+                .as_srgb_color();
 
-                    let alpha = shadow_color.components[3];
-                    if alpha != 0.0 {
-                        let transform = self.transform.then_translate(Vec2 {
-                            x: shadow.base.horizontal.px() as f64 * self.scale,
-                            y: shadow.base.vertical.px() as f64 * self.scale,
-                        });
+            let alpha = shadow_color.components[3];
+            if alpha == 0.0 {
+                continue;
+            }
 
-                        let spread = shadow.spread.px() as f64 * self.scale;
-                        let blur = shadow.base.blur.px() as f64;
+            let offset = Vec2 {
+                x: shadow.base.horizontal.px() as f64 * self.scale,
+                y: shadow.base.vertical.px() as f64 * self.scale,
+            };
+            let spread = shadow.spread.px() as f64 * self.scale;
+            let blur = shadow.base.blur.px() as f64;
 
-                        // Without blur or spread the shadow is exactly the element's shape,
-                        // so fill the border box path directly (preserving individual radii)
-                        if blur == 0.0 && spread == 0.0 {
-                            scene.fill(
-                                Fill::NonZero,
-                                transform,
-                                shadow_color,
-                                None,
-                                &self.frame.border_box_path(),
-                            );
-                            continue;
-                        }
+            // Without blur or spread the shadow is exactly the element's shape,
+            // so fill the border box path directly (preserving individual radii)
+            if blur == 0.0 && spread == 0.0 {
+                self.context.layer_manager.maybe_with_layer(
+                    scene,
+                    needs_clip,
+                    1.0,
+                    self.transform,
+                    &self.frame.shadow_clip(max_shadow_rect),
+                    None,
+                    None,
+                    |scene| {
+                        scene.fill(
+                            Fill::NonZero,
+                            self.transform.pre_translate(offset),
+                            shadow_color,
+                            None,
+                            &self.frame.border_box_path(),
+                        );
+                    },
+                );
+                continue;
+            }
 
-                        // TODO draw shadows with matching individual radii instead of averaging
-                        let radius = self.frame.border_radii.average();
-                        let rect = self.frame.border_box.inflate(spread, spread);
+            // TODO draw shadows with matching individual radii instead of averaging
+            let radius = self.frame.border_radii.average();
+            let rect = self.frame.border_box.inflate(spread, spread) + offset;
 
-                        // Fill the color
-                        scene.draw_box_shadow(transform, rect, shadow_color, radius, blur);
-                    }
-                }
-            },
-        )
+            // Only paint the shadow outside of the border box if it could otherwise be seen
+            // through the element
+            let shape = if needs_clip {
+                self.frame.shadow_clip(max_shadow_rect)
+            } else {
+                max_shadow_rect.to_path(0.1)
+            };
+
+            scene.draw_box_shadow(
+                self.transform,
+                &shape,
+                rect,
+                shadow_color,
+                radius,
+                blur,
+                false,
+            );
+        }
     }
 
     pub(super) fn draw_inset_box_shadow(&self, scene: &mut impl PaintScene) {
@@ -108,41 +124,23 @@ impl ElementCx<'_, '_> {
 
             // TODO draw shadows with matching individual radii instead of averaging
             let radius = self.frame.border_radii.average();
-            let transform = self.transform.then_translate(Vec2 {
+            let offset = Vec2 {
                 x: shadow.base.horizontal.px() as f64,
                 y: shadow.base.vertical.px() as f64,
-            });
+            };
 
-            scene.push_layer(Mix::Normal, 1.0, self.transform, &padding_box, None, None);
-            scene.fill(
-                Fill::NonZero,
-                self.transform,
-                shadow_color,
-                None,
-                &padding_box,
-            );
-
-            scene.push_layer(
-                Compose::DestOut,
-                1.0,
-                self.transform,
-                &padding_box,
-                None,
-                None,
-            );
             // The unshadowed area is the padding box shrunk by the spread radius
             let spread = shadow.spread.px() as f64 * self.scale;
-            let hole = self.frame.padding_box.inflate(-spread, -spread);
+            let hole = self.frame.padding_box.inflate(-spread, -spread) + offset;
             scene.draw_box_shadow(
-                transform,
+                self.transform,
+                &padding_box,
                 hole,
-                Color::WHITE,
+                shadow_color,
                 radius,
                 shadow.base.blur.px() as f64 * self.scale,
+                true,
             );
-
-            scene.pop_layer();
-            scene.pop_layer();
         }
     }
 }

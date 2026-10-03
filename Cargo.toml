@@ -114,21 +114,21 @@ skrifa = { version = "0.44", default-features = false, features = [
 ] } # Should match parley and vello versions
 
 # AnyRender
-anyrender = { version = "0.13.0" }
-anyrender_serialize = { version = "0.7.0" }
-anyrender_skia = { version = "0.11.0" }
-anyrender_vello = { version = "0.14.0" }
-anyrender_vello_cpu = { version = "0.17.0" }
-anyrender_vello_hybrid = { version = "0.10.0" }
-anyrender_svg = { version = "0.14.0" }
-wgpu_context = { version = "0.9.0" }
+anyrender = { version = "0.14.0" }
+anyrender_serialize = { version = "0.8.0" }
+anyrender_skia = { version = "0.12.0" }
+anyrender_vello = { version = "0.15.0" }
+anyrender_vello_cpu = { version = "0.18.0" }
+anyrender_vello_hybrid = { version = "0.11.0" }
+anyrender_svg = { version = "0.15.0" }
+wgpu_context = { version = "0.10.0" }
 
 # Linebender + Fontations + WGPU + SVG
 color = "0.3"
 linebender_resource_handle = "0.1"
 peniko = "0.6.0"
 kurbo = "0.13.1"
-wgpu = "29"
+wgpu = "30"
 usvg = "0.48.1"
 svgtypes = "0.16.1" # Should match usvg's version
 
@@ -281,22 +281,28 @@ peniko = { workspace = true }
 color = { workspace = true }
 env_logger = "0.11"
 tracing-subscriber = "0.3"
-vello = "0.10"
-vello_cpu = "0.1"
-vello_hybrid = "0.1"
-vello_common = "0.1"
+vello = "0.11"
+vello_cpu = "0.3"
+vello_hybrid = { package = "vello_gpu", version = "0.3" }
+vello_common = "0.3"
 wgpu = { workspace = true }
 wgpu_context = { workspace = true }
 rustc-hash = { workspace = true }
 
-# [patch.crates-io]
-# anyrender = { path = "../anyrender/crates/anyrender" }
-# anyrender_skia = { path = "../anyrender/crates/anyrender_skia" }
-# anyrender_vello = { path = "../anyrender/crates/anyrender_vello" }
-# anyrender_vello_cpu = { path = "../anyrender/crates/anyrender_vello_cpu" }
-# anyrender_vello_hybrid = { path = "../anyrender/crates/anyrender_vello_hybrid" }
-# anyrender_svg = { path = "../anyrender/crates/anyrender_svg" }
-# wgpu_context = { path = "../anyrender/crates/wgpu_context" }
+[patch.crates-io]
+anyrender = { path = "../anyrender/crates/anyrender" }
+anyrender_serialize = { path = "../anyrender/crates/anyrender_serialize" }
+anyrender_skia = { path = "../anyrender/crates/anyrender_skia" }
+anyrender_vello = { path = "../anyrender/crates/anyrender_vello" }
+anyrender_vello_cpu = { path = "../anyrender/crates/anyrender_vello_cpu" }
+anyrender_vello_hybrid = { path = "../anyrender/crates/anyrender_vello_hybrid" }
+anyrender_svg = { path = "../anyrender/crates/anyrender_svg" }
+wgpu_context = { path = "../anyrender/crates/wgpu_context" }
+vello = { git = "https://github.com/nicoburns/vello", branch = "inverse-blur-classic" }
+vello_common = { git = "https://github.com/nicoburns/vello", branch = "inverse-blur-classic" }
+vello_cpu = { git = "https://github.com/nicoburns/vello", branch = "inverse-blur-classic" }
+vello_gpu = { git = "https://github.com/nicoburns/vello", branch = "inverse-blur-classic" }
+glifo = { git = "https://github.com/nicoburns/vello", branch = "inverse-blur-classic" }
 
 # vello = { path = "../vello/vello" }
 # vello_cpu = { path = "../vello/sparse_strips/vello_cpu" }
