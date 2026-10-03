@@ -210,10 +210,7 @@ impl<T: Deref<Target = ComputedValues>> taffy::BlockContainerStyle for TaffyStyl
 
     #[inline]
     fn align_content(&self) -> Option<taffy::AlignContent> {
-        convert::content_alignment(
-            self.style.get_position().align_content,
-            self.style.clone_display(),
-        )
+        convert::align_content(&self.style)
     }
 }
 
@@ -267,10 +264,7 @@ impl<T: Deref<Target = ComputedValues>> taffy::FlexboxContainerStyle for TaffySt
 
     #[inline]
     fn align_content(&self) -> Option<taffy::AlignContent> {
-        convert::content_alignment(
-            self.style.get_position().align_content,
-            self.style.clone_display(),
-        )
+        convert::align_content(&self.style)
     }
 
     #[inline]
@@ -560,10 +554,7 @@ impl<T: Deref<Target = ComputedValues>> taffy::GridContainerStyle for TaffyStylo
 
     #[inline]
     fn align_content(&self) -> Option<taffy::AlignContent> {
-        convert::content_alignment(
-            self.style.get_position().align_content,
-            self.style.clone_display(),
-        )
+        convert::align_content(&self.style)
     }
 
     #[inline]
