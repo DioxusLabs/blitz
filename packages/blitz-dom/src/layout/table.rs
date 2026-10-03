@@ -1,5 +1,8 @@
 use blitz_traits::node_id::NodeId;
-use std::{ops::Range, sync::Arc};
+use std::{
+    ops::Range,
+    sync::{Arc, OnceLock},
+};
 
 use atomic_refcell::AtomicRefCell;
 use markup5ever::local_name;
@@ -43,6 +46,10 @@ pub struct TableContext {
     pub rows: Vec<TableRow>,
     pub columns: Vec<TableColumn>,
     pub computed_grid_info: AtomicRefCell<Option<DetailedGridInfo<Atom>>>,
+    /// The result of running grid item placement on the table's cells. Placement only depends
+    /// on `style` and on the styles in `cells`, which are immutable once the context is built,
+    /// so the cache is valid for as long as the context is.
+    pub(crate) grid_placement_cache: OnceLock<taffy::GridPlacementCache>,
     pub border_style: Option<ServoArc<Border>>,
     pub border_collapse: BorderCollapse,
     /// Backing storage for `calc()` track sizes synthesised by the table layout code.
@@ -385,6 +392,7 @@ pub(crate) fn build_table_context(
             rows,
             columns,
             computed_grid_info: AtomicRefCell::new(None),
+            grid_placement_cache: OnceLock::new(),
             border_collapse,
             border_style: first_cell_border,
             calc_values,
@@ -795,5 +803,22 @@ impl taffy::LayoutGridContainer for TableTreeWrapper<'_> {
         detailed_grid_info: DetailedGridInfo<Atom>,
     ) {
         *self.ctx.computed_grid_info.borrow_mut() = Some(detailed_grid_info);
+    }
+
+    fn get_grid_placement_cache(
+        &self,
+        _node_id: taffy::NodeId,
+    ) -> Option<&taffy::GridPlacementCache> {
+        self.ctx.grid_placement_cache.get()
+    }
+
+    fn set_grid_placement_cache(
+        &mut self,
+        _node_id: taffy::NodeId,
+        grid_placement_cache: taffy::GridPlacementCache,
+    ) {
+        // Tables have no auto-repeated tracks, so their placement never varies between runs
+        // and the first result can be kept.
+        let _ = self.ctx.grid_placement_cache.set(grid_placement_cache);
     }
 }

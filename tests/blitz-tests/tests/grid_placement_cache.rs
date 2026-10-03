@@ -276,3 +276,115 @@ fn resizing_an_item_runs_placement_once_per_damaged_grid_container() {
         ],
     );
 }
+
+/// Tables are laid out as grids of their cells. `#table` is the only item of
+/// `#outer`, whose auto-sized column makes it measure `#table` more than once
+/// per layout.
+const TABLE_HTML: &str = r#"<html><body style="margin:0">
+    <div id="outer" style="display:grid; grid-template-columns:auto; justify-items:start;">
+        <table id="table" style="border-spacing:0">
+            <tr id="r1">
+                <td id="a" style="padding:0"><div style="width:10px; height:10px"></div></td>
+                <td id="b" style="padding:0"><div style="width:20px; height:10px"></div></td>
+                <td id="c" style="padding:0"><div style="width:30px; height:10px"></div></td>
+            </tr>
+            <tr id="r2">
+                <td id="d" style="padding:0"><div id="d-content" style="width:40px; height:10px"></div></td>
+                <td id="e" style="padding:0"><div style="width:50px; height:10px"></div></td>
+            </tr>
+        </table>
+    </div>
+</body></html>"#;
+
+/// The x location of each of the passed table cells (relative to their row)
+fn cell_xs<const N: usize>(doc: &HtmlDocument, selectors: [&str; N]) -> [f32; N] {
+    locations(doc, selectors).map(|(x, _)| x)
+}
+
+#[test]
+fn placement_runs_once_per_table() {
+    for incremental in [false, true] {
+        let before = placement_runs();
+        let doc = make_doc(TABLE_HTML, incremental);
+
+        assert_eq!(
+            cell_xs(&doc, ITEMS),
+            [0.0, 40.0, 90.0, 0.0, 40.0],
+            "incremental={incremental}"
+        );
+        // One run for `#outer` and one for `#table`
+        if let (Some(before), Some(after)) = (before, placement_runs()) {
+            assert_eq!(after - before, 2, "incremental={incremental}");
+        }
+    }
+}
+
+/// A table's placement is stored alongside the cell data that it was computed
+/// from, so (unlike that of a grid container) it survives a relayout which
+/// does not rebuild the table's boxes.
+#[test]
+fn table_placement_is_reused_when_the_table_is_relaid_out() {
+    let html = r#"<html><body style="margin:0">
+        <table id="table" style="border-spacing:0; width:50%">
+            <tr>
+                <td id="a" style="padding:0; width:50%"></td>
+                <td id="b" style="padding:0; width:50%"></td>
+            </tr>
+        </table>
+    </body></html>"#;
+    let mut doc = make_doc(html, true);
+    assert_eq!(cell_xs(&doc, ["#a", "#b"]), [0.0, 100.0]);
+
+    doc.set_viewport(Viewport::new(300, 400, 1.0, ColorScheme::Light));
+    let before = placement_runs();
+    doc.resolve(0.0);
+    assert_eq!(cell_xs(&doc, ["#a", "#b"]), [0.0, 75.0]);
+    assert_eq!(placement_runs(), before);
+}
+
+#[test]
+fn changing_a_cells_span_invalidates_table_placement() {
+    for incremental in [false, true] {
+        let mut doc = make_doc(TABLE_HTML, incremental);
+        let node_id = id(&doc, "#d");
+        doc.mutate().set_attribute(node_id, attr("colspan"), "2");
+        doc.resolve(0.0);
+        // `#e` moves from the second column to the third
+        assert_eq!(
+            cell_xs(&doc, ITEMS),
+            [0.0, 15.0, 40.0, 0.0, 40.0],
+            "incremental={incremental}"
+        );
+    }
+}
+
+#[test]
+fn removing_a_cell_invalidates_table_placement() {
+    for incremental in [false, true] {
+        let mut doc = make_doc(TABLE_HTML, incremental);
+        let node_id = id(&doc, "#d");
+        doc.mutate().remove_node(node_id);
+        doc.resolve(0.0);
+        // `#e` moves from the second column to the first
+        assert_eq!(
+            cell_xs(&doc, ["#a", "#b", "#c", "#e"]),
+            [0.0, 50.0, 70.0, 0.0],
+            "incremental={incremental}"
+        );
+    }
+}
+
+#[test]
+fn removing_a_row_invalidates_table_placement() {
+    for incremental in [false, true] {
+        let mut doc = make_doc(TABLE_HTML, incremental);
+        let node_id = id(&doc, "#r1");
+        doc.mutate().remove_node(node_id);
+        doc.resolve(0.0);
+        assert_eq!(
+            locations(&doc, ["#r2", "#d", "#e"]),
+            [(0.0, 0.0), (0.0, 0.0), (40.0, 0.0)],
+            "incremental={incremental}"
+        );
+    }
+}
