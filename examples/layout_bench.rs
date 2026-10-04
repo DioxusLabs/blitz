@@ -225,6 +225,8 @@ async fn main() {
         "root weight {:?}",
         doc.parallel_layout_subtree_weight(doc.root_element().id)
     );
+    #[cfg(feature = "parallel-layout")]
+    println!("{} floated boxes", doc.parallel_layout_float_count());
 
     #[cfg(not(feature = "parallel-layout"))]
     {

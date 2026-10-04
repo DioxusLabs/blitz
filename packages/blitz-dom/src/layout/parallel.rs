@@ -356,6 +356,27 @@ impl BaseDocument {
         self.layout_subtree_info.weights.get(slot(node_id)).copied()
     }
 
+    /// The number of floated boxes in the layout tree
+    #[doc(hidden)]
+    pub fn parallel_layout_float_count(&self) -> usize {
+        let mut count = 0;
+        let mut stack = vec![self.root_element().id];
+        while let Some(node_id) = stack.pop() {
+            let node = &self.nodes[node_id];
+            #[cfg(feature = "floats")]
+            {
+                use taffy::BlockItemStyle as _;
+                let is_floated =
+                    node.primary_styles().is_some() && node.layout_style().float().is_floated();
+                count += is_floated as usize;
+            }
+            if let Some(children) = node.layout_children.borrow().as_ref() {
+                stack.extend(children.iter().copied());
+            }
+        }
+        count
+    }
+
     /// Compute the weight of each subtree of the layout tree and whether it contains floats
     pub(crate) fn compute_layout_subtree_info(&mut self, root: DomNodeId) {
         let mut info = std::mem::take(&mut self.layout_subtree_info);
