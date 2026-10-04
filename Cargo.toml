@@ -259,6 +259,8 @@ log-frame-times = ["dioxus-native/log-frame-times"]
 log-phase-times = ["dioxus-native/log-phase-times"]
 # PROTOTYPE: lay out sibling subtrees in parallel
 parallel-layout = ["blitz-dom/parallel-layout"]
+# PROTOTYPE: round layouts using the best instructions that the CPU is detected to support
+simd-rounding = ["blitz-dom/simd-rounding"]
 mimalloc = ["dep:mimalloc"]
 
 [dependencies]

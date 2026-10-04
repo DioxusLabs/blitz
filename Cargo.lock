@@ -8016,6 +8016,7 @@ name = "taffy"
 version = "0.15.0"
 source = "git+https://github.com/DioxusLabs/taffy?rev=a2b0f009f3425f0c9d1fd09fa49d0df36ef19736#a2b0f009f3425f0c9d1fd09fa49d0df36ef19736"
 dependencies = [
+ "fearless_simd 1.1.0",
  "serde",
  "slotmap",
  "smallvec",

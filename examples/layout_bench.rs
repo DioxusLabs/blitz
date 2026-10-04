@@ -13,11 +13,21 @@
 //! - `PHASES=1`: also print the time taken by the subtree weight walk, the layout and the rounding
 //! - `IDLE_MS=16`: sleep before each layout, so that the pool's threads are asleep when it starts
 //! - `KEEP_AWAKE=1`: keep the pool's other threads spinning for the duration of each layout
+//! - `ROUND_THRESHOLD=n`: the minimum subtree weight for rounding in parallel
 //! - `PROFILE=1`: instead of timing parallel layout, run every batch that would be parallel in order
 //!   on one thread, and report the time that layout would take with unlimited threads (`tinf`), the
 //!   share of the time spent outside of all batches, and the share spent laying out inline boxes.
 //!   Each line is printed twice: `inline_whatif true` treats the inline boxes of an inline root as
 //!   if they were laid out in parallel.
+//!
+//! `RELAYOUT=1` (with or without the feature) times incremental relayouts instead of layouts from
+//! scratch: before each layout, only the layout caches that a change to one node would invalidate
+//! are cleared. Several nodes are tried, chosen by the share of the layout tree that is in their
+//! subtree (`RELAYOUT=0.01,0.1,0.4` chooses the shares). For each node two changes are timed:
+//! `node` clears the caches of the node and its ancestors, and `subtree` also clears the caches of
+//! every node in the node's subtree. Lastly, a change to 16 nodes spread across the tree is timed.
+//! `RELAYOUT=check` instead checks, for every node, that a relayout after a change to that node
+//! gives the same layout as a layout from scratch. `DIFF=n` prints the first n nodes that differ.
 
 use blitz_dom::{BaseDocument, DocumentConfig};
 use blitz_html::HtmlDocument;
@@ -54,6 +64,63 @@ fn set_thread_qos() {}
 
 const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/81.0";
 
+/// The final layout of every node in the layout tree, for `DIFF=1` to report the nodes whose
+/// layout has changed
+fn layout_snapshot(doc: &BaseDocument) -> Vec<(blitz_dom::NodeId, usize, [f32; 4])> {
+    let mut snapshot = Vec::new();
+    let mut stack = vec![(doc.root_element().id, 0)];
+    while let Some((node_id, depth)) = stack.pop() {
+        let node = doc.get_node(node_id).unwrap();
+        let layout = node.final_layout();
+        let values = [
+            layout.location.x,
+            layout.location.y,
+            layout.size.width,
+            layout.size.height,
+        ];
+        snapshot.push((node_id, depth, values));
+        if let Some(children) = node.layout_children.borrow().as_ref() {
+            stack.extend(children.iter().rev().map(|child| (*child, depth + 1)));
+        }
+    }
+    snapshot
+}
+
+static SNAPSHOT: std::sync::Mutex<Vec<(blitz_dom::NodeId, usize, [f32; 4])>> =
+    std::sync::Mutex::new(Vec::new());
+
+/// Print the first nodes whose layout is not the same as in the snapshot
+fn print_layout_differences(doc: &BaseDocument) {
+    let before = SNAPSHOT.lock().unwrap();
+    let after = layout_snapshot(doc);
+    let mut count = 0;
+    for (old, new) in before.iter().zip(&after) {
+        if old != new {
+            count += 1;
+            if count
+                <= std::env::var("DIFF")
+                    .ok()
+                    .and_then(|n| n.parse().ok())
+                    .unwrap_or(8usize)
+            {
+                let node = doc.get_node(new.0).unwrap();
+                println!(
+                    "  DIFF depth {} {}: {:?} -> {:?}",
+                    new.1,
+                    node.node_debug_str(),
+                    old.2,
+                    new.2
+                );
+            }
+        }
+    }
+    println!(
+        "  DIFF {count} nodes differ ({} before, {} after)",
+        before.len(),
+        after.len()
+    );
+}
+
 /// Hash the final layout of every node in the layout tree. Also returns the number of nodes.
 fn layout_fingerprint(doc: &BaseDocument) -> (u64, usize) {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
@@ -82,6 +149,97 @@ fn layout_fingerprint(doc: &BaseDocument) -> (u64, usize) {
     (hasher.finish(), count)
 }
 
+/// Which layout caches to clear before each layout
+#[derive(Clone)]
+enum Invalidation {
+    /// All of them, so that the document is laid out from scratch
+    All,
+    /// Those of some nodes and their ancestors, and of their descendants if `include_descendants`
+    Nodes {
+        node_ids: Vec<blitz_dom::NodeId>,
+        include_descendants: bool,
+    },
+}
+
+static INVALIDATION: std::sync::Mutex<Invalidation> = std::sync::Mutex::new(Invalidation::All);
+
+/// Nodes to time relayouts of
+struct RelayoutTarget {
+    node_ids: Vec<blitz_dom::NodeId>,
+    description: String,
+}
+
+/// For each share, choose the node whose subtree contains the share of the layout tree's nodes
+/// that is closest to it (the first such node in tree order). The last target is
+/// `SCATTERED_NODE_COUNT` nodes that are evenly spaced in tree order.
+fn choose_relayout_targets(doc: &BaseDocument, shares: &[f64]) -> Vec<RelayoutTarget> {
+    // Nodes in tree order, with their depth. A node's subtree is the nodes that follow it
+    // for as long as they are deeper than it.
+    let mut nodes: Vec<(blitz_dom::NodeId, usize)> = Vec::new();
+    let mut stack = vec![(doc.root_element().id, 0)];
+    while let Some((node_id, depth)) = stack.pop() {
+        nodes.push((node_id, depth));
+        let node = doc.get_node(node_id).unwrap();
+        if let Some(children) = node.layout_children.borrow().as_ref() {
+            stack.extend(children.iter().rev().map(|child| (*child, depth + 1)));
+        }
+    }
+    let subtree_size = |index: usize| {
+        let depth = nodes[index].1;
+        1 + nodes[index + 1..]
+            .iter()
+            .take_while(|(_, d)| *d > depth)
+            .count()
+    };
+    let sizes: Vec<usize> = (0..nodes.len()).map(subtree_size).collect();
+
+    let mut targets: Vec<RelayoutTarget> = Vec::new();
+    for share in shares {
+        let wanted = share * nodes.len() as f64;
+        let distance = |index: &usize| (sizes[*index] as f64 - wanted).abs();
+        let best = (1..nodes.len())
+            .min_by(|a, b| distance(a).total_cmp(&distance(b)))
+            .unwrap();
+        let (node_id, depth) = nodes[best];
+        if targets.iter().any(|target| target.node_ids == [node_id]) {
+            continue;
+        }
+        #[cfg(feature = "parallel-layout")]
+        let weight = format!(
+            ", weight {} of {}",
+            doc.parallel_layout_subtree_weight(node_id).unwrap_or(0),
+            doc.parallel_layout_subtree_weight(doc.root_element().id)
+                .unwrap_or(0)
+        );
+        #[cfg(not(feature = "parallel-layout"))]
+        let weight = "";
+        targets.push(RelayoutTarget {
+            node_ids: vec![node_id],
+            description: format!(
+                "{} nodes of {} ({:.1}%), depth {depth}{weight}: {}",
+                sizes[best],
+                nodes.len(),
+                100.0 * sizes[best] as f64 / nodes.len() as f64,
+                doc.get_node(node_id).unwrap().node_debug_str()
+            ),
+        });
+    }
+
+    let step = (nodes.len() / SCATTERED_NODE_COUNT).max(1);
+    let scattered = nodes.iter().skip(step / 2).step_by(step);
+    targets.push(RelayoutTarget {
+        node_ids: scattered.map(|(node_id, _)| *node_id).collect(),
+        description: format!(
+            "{SCATTERED_NODE_COUNT} nodes of {} evenly spaced in tree order",
+            nodes.len()
+        ),
+    });
+    targets
+}
+
+/// The number of nodes that are changed by the scattered relayout
+const SCATTERED_NODE_COUNT: usize = 16;
+
 /// Lay the document out from scratch `iterations` times. Returns the times and the layout's fingerprint.
 ///
 /// `IDLE_MS=n` sleeps for n milliseconds before each layout (so that the threads of the pool are
@@ -96,8 +254,19 @@ fn time_layout(doc: &mut BaseDocument, iterations: usize) -> (Vec<Duration>, u64
     let mut times = Vec::new();
     #[cfg(feature = "parallel-layout")]
     let mut phases = [u64::MAX; 3];
+    let invalidation = INVALIDATION.lock().unwrap().clone();
     for _ in 0..iterations {
-        doc.invalidate_all_layout_caches();
+        match &invalidation {
+            Invalidation::All => doc.invalidate_all_layout_caches(),
+            Invalidation::Nodes {
+                node_ids,
+                include_descendants,
+            } => {
+                for node_id in node_ids {
+                    doc.invalidate_layout_caches_for(*node_id, *include_descendants);
+                }
+            }
+        }
         if let Some(idle) = idle {
             std::thread::sleep(idle);
         }
@@ -141,6 +310,9 @@ fn time_layout(doc: &mut BaseDocument, iterations: usize) -> (Vec<Duration>, u64
         }
     }
     times.sort();
+    if std::env::var_os("DIFF").is_some() {
+        print_layout_differences(doc);
+    }
     #[cfg(feature = "parallel-layout")]
     if std::env::var_os("PHASES").is_some() {
         println!(
@@ -217,6 +389,7 @@ async fn main() {
     let doc: &mut BaseDocument = &mut document;
 
     let (fingerprint, node_count) = layout_fingerprint(doc);
+    *SNAPSHOT.lock().unwrap() = layout_snapshot(doc);
     let height = doc.root_element().final_layout().size.height;
     println!("{url_string}");
     println!("{node_count} layout nodes, {width}x{height}, layout fingerprint {fingerprint:016x}");
@@ -228,6 +401,94 @@ async fn main() {
     #[cfg(feature = "parallel-layout")]
     println!("{} floated boxes", doc.parallel_layout_float_count());
 
+    // `RELAYOUT=1` times incremental relayouts of several nodes instead of layouts from scratch
+    let Ok(relayout) = std::env::var("RELAYOUT") else {
+        return bench(doc, iterations, fingerprint);
+    };
+    if relayout == "check" {
+        return check_relayouts(doc, fingerprint);
+    }
+    let shares: Vec<f64> = match relayout.as_str() {
+        "1" => vec![0.01, 0.1, 0.4],
+        shares => shares.split(',').map(|s| s.parse().unwrap()).collect(),
+    };
+    let targets = choose_relayout_targets(doc, &shares);
+    println!("RELAYOUT full: every node");
+    bench(doc, iterations, fingerprint);
+    for target in targets {
+        // Changing every descendant of scattered nodes is much the same as changing one large subtree
+        let kinds: &[bool] = match target.node_ids.len() {
+            1 => &[false, true],
+            _ => &[false],
+        };
+        for &include_descendants in kinds {
+            let kind = if include_descendants {
+                "subtree"
+            } else {
+                "node"
+            };
+            println!("RELAYOUT {kind}: {}", target.description);
+
+            // A relayout does not always give the same layout as a layout from scratch (with or
+            // without the `parallel-layout` feature). So the layouts are compared with that of
+            // one relayout without parallelism, starting from a layout from scratch.
+            #[cfg(feature = "parallel-layout")]
+            doc.set_parallel_layout_threshold(None);
+            doc.invalidate_all_layout_caches();
+            doc.resolve_layout();
+            for node_id in &target.node_ids {
+                doc.invalidate_layout_caches_for(*node_id, include_descendants);
+            }
+            doc.resolve_layout();
+            let relayout_fingerprint = layout_fingerprint(doc).0;
+            let comparison = if relayout_fingerprint == fingerprint {
+                "the same as"
+            } else {
+                "DIFFERENT from"
+            };
+            println!(
+                "relayout fingerprint {relayout_fingerprint:016x}, {comparison} the layout from scratch"
+            );
+
+            *INVALIDATION.lock().unwrap() = Invalidation::Nodes {
+                node_ids: target.node_ids.clone(),
+                include_descendants,
+            };
+            bench(doc, iterations, relayout_fingerprint);
+        }
+    }
+}
+
+/// `RELAYOUT=check`: for each node in turn, clear the layout caches of the node and its ancestors
+/// and lay the document out again, and report the nodes for which the layout is then not the same
+/// as the layout from scratch
+fn check_relayouts(doc: &mut BaseDocument, fingerprint: u64) {
+    let nodes: Vec<_> = layout_snapshot(doc);
+    let mut differing = 0;
+    for (node_id, depth, _) in &nodes {
+        doc.invalidate_layout_caches_for(*node_id, false);
+        doc.resolve_layout();
+        if layout_fingerprint(doc).0 != fingerprint {
+            differing += 1;
+            let node = doc.get_node(*node_id).unwrap();
+            println!("CHECK depth {depth} {}", node.node_debug_str());
+            if std::env::var_os("DIFF").is_some() {
+                print_layout_differences(doc);
+            }
+            doc.invalidate_all_layout_caches();
+            doc.resolve_layout();
+            assert_eq!(layout_fingerprint(doc).0, fingerprint);
+        }
+    }
+    println!(
+        "CHECK {differing} of {} single-node relayouts differ from the layout from scratch",
+        nodes.len()
+    );
+}
+
+/// Time the layout of the document, on thread pools of various sizes if the `parallel-layout`
+/// feature is enabled
+fn bench(doc: &mut BaseDocument, iterations: usize, fingerprint: u64) {
     #[cfg(not(feature = "parallel-layout"))]
     {
         let (times, new_fingerprint) = time_layout(doc, iterations);
