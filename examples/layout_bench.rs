@@ -298,6 +298,13 @@ async fn main() {
             Ok(thresholds) => thresholds.split(',').map(|t| t.parse().unwrap()).collect(),
             Err(_) => vec![256],
         };
+        // `ROUND_THRESHOLD=n` sets the minimum subtree weight for rounding in parallel
+        if let Ok(threshold) = std::env::var("ROUND_THRESHOLD") {
+            blitz_dom::MIN_ROUND_BATCH_WEIGHT.store(
+                threshold.parse().unwrap(),
+                std::sync::atomic::Ordering::Relaxed,
+            );
+        }
         // `SPLIT=weight` divides the jobs of a batch between tasks by weight rather than by count
         let split_by_weight = std::env::var("SPLIT").as_deref() == Ok("weight");
         blitz_dom::SPLIT_BY_WEIGHT.store(split_by_weight, std::sync::atomic::Ordering::Relaxed);

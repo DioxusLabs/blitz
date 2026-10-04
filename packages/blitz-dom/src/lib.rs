@@ -163,5 +163,6 @@ pub use layout::parallel::ParallelLayoutWeights;
 #[cfg(feature = "parallel-layout")]
 #[doc(hidden)]
 pub use layout::parallel::{
-    LAYOUT_PHASE_NS, PROFILE_INLINE_WHATIF, SPLIT_BY_WEIGHT, profile_begin, profile_end,
+    LAYOUT_PHASE_NS, MIN_ROUND_BATCH_WEIGHT, PROFILE_INLINE_WHATIF, SPLIT_BY_WEIGHT, profile_begin,
+    profile_end,
 };
