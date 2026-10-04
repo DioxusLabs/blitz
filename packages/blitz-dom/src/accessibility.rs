@@ -143,7 +143,7 @@ impl BaseDocument {
                 builder.set_level(aria_level);
             } else if let Some(default_level) = default_level_for_tag(&name) {
                 builder.set_level(default_level);
-            } else if let Some(default_level) = default_level_for_role(&role) {
+            } else if let Some(default_level) = default_level_for_role(role) {
                 builder.set_level(default_level);
             }
 
