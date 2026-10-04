@@ -1,4 +1,6 @@
-use crate::{BaseDocument, ElementData, Node as BlitzDomNode, NodeData, local_name};
+use crate::{
+    BaseDocument, ElementData, Node as BlitzDomNode, NodeData, NodeId as BlitzDomNodeId, local_name,
+};
 use accesskit::{Node as AccessKitNode, NodeId, Role, TreeId, TreeInfo, TreeUpdate};
 use style::properties::longhands::visibility;
 
@@ -46,10 +48,7 @@ impl BaseDocument {
             };
             let mut has_target = false;
             label.clear();
-            for target in id_refs
-                .split_ascii_whitespace()
-                .filter_map(|dom_id| self.nodes_to_id.get(dom_id)?.first().copied())
-            {
+            for target in self.referenced_dom_ids_to_node_ids(id_refs) {
                 if !has_target {
                     builder.clear_labelled_by();
                     has_target = true;
@@ -73,10 +72,7 @@ impl BaseDocument {
             let Some((_, builder)) = nodes.get_mut(&node_id) else {
                 continue;
             };
-            for target in id_refs
-                .split_ascii_whitespace()
-                .filter_map(|dom_id| self.nodes_to_id.get(dom_id)?.first().copied())
-            {
+            for target in self.referenced_dom_ids_to_node_ids(id_refs) {
                 builder.push_described_by(NodeId(target.as_u64()));
             }
         }
@@ -94,6 +90,15 @@ impl BaseDocument {
             tree: Some(tree),
             focus: NodeId(self.focus_node_id.map(|id| id.as_u64()).unwrap_or(u64::MAX)),
         }
+    }
+
+    fn referenced_dom_ids_to_node_ids<'a>(
+        &'a self,
+        nodes_reference: &'a str,
+    ) -> impl Iterator<Item = BlitzDomNodeId> + 'a {
+        nodes_reference
+            .split_ascii_whitespace()
+            .filter_map(|dom_id| self.nodes_to_id.get(dom_id)?.first().copied())
     }
 
     fn build_accessibility_node(
