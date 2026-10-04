@@ -124,6 +124,73 @@ fn slot(node_id: DomNodeId) -> usize {
     (node_id.as_u64() as u32) as usize
 }
 
+/// Whether the jobs of a batch are divided between tasks so that each task has a similar weight
+/// (rather than a similar number of jobs)
+#[doc(hidden)]
+pub static SPLIT_BY_WEIGHT: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// Compute jobs in parallel by recursively dividing them into two contiguous groups with weights
+/// that are as close to equal as possible, until a group is a single job or its weight is less
+/// than twice `min_task_weight`.
+fn compute_jobs_split_by_weight(
+    doc_ptr: DocPtr,
+    fields: PassFields,
+    jobs: &mut [&mut ChildLayoutJob],
+    weights: &[u32],
+    total_weight: u64,
+    min_task_weight: u64,
+) {
+    if jobs.len() <= 1 || total_weight < min_task_weight * 2 {
+        for job in jobs.iter_mut() {
+            // SAFETY: see the module docs. This is not sound in general.
+            let mut state = unsafe { LayoutPassState::for_task(doc_ptr, fields) };
+            job.output = state.compute_uncached_job(job);
+        }
+        return;
+    }
+
+    // The split point for which the weights of the two groups differ the least
+    let mut split = 1;
+    let mut left_weight = weights[0] as u64;
+    let mut prefix = left_weight;
+    for (index, weight) in weights.iter().enumerate().skip(1).take(jobs.len() - 2) {
+        prefix += *weight as u64;
+        if (2 * prefix).abs_diff(total_weight) < (2 * left_weight).abs_diff(total_weight) {
+            split = index + 1;
+            left_weight = prefix;
+        } else if 2 * prefix > total_weight {
+            break;
+        }
+    }
+
+    let (left_jobs, right_jobs) = jobs.split_at_mut(split);
+    let (left_weights, right_weights) = weights.split_at(split);
+    let right_weight = total_weight - left_weight;
+    rayon::join(
+        || {
+            compute_jobs_split_by_weight(
+                doc_ptr,
+                fields,
+                left_jobs,
+                left_weights,
+                left_weight,
+                min_task_weight,
+            )
+        },
+        || {
+            compute_jobs_split_by_weight(
+                doc_ptr,
+                fields,
+                right_jobs,
+                right_weights,
+                right_weight,
+                min_task_weight,
+            )
+        },
+    );
+}
+
 #[derive(Copy, Clone)]
 struct DocPtr(*mut BaseDocument);
 // SAFETY: see the module docs. This is not sound in general.
@@ -306,6 +373,7 @@ impl LayoutPassState<'_> {
         jobs: impl Iterator<Item = &'a mut ChildLayoutJob>,
     ) {
         let mut uncached_jobs: Vec<&mut ChildLayoutJob> = Vec::new();
+        let mut job_weights: Vec<u32> = Vec::new();
         let mut weight: u32 = 0;
         for job in jobs {
             if let Some(output) = self.cache_get(job.node, &job.input) {
@@ -318,27 +386,64 @@ impl LayoutPassState<'_> {
                     .copied()
                     .unwrap_or(1);
                 weight = weight.saturating_add(job_weight);
+                job_weights.push(job_weight);
                 uncached_jobs.push(job);
             }
         }
 
         let min_batch_weight = self.parallel_layout_min_batch_weight;
-        if uncached_jobs.len() >= 2 && min_batch_weight.is_some_and(|min| weight >= min) {
+        if PROFILE.load(std::sync::atomic::Ordering::Relaxed)
+            && uncached_jobs.len() >= 2
+            && min_batch_weight.is_some_and(|min| weight >= min)
+        {
+            let batch_start = std::time::Instant::now();
+            let mut jobs_ns = 0u64;
+            let mut max_job_tinf = 0u64;
+            for job in uncached_jobs.iter_mut() {
+                PROFILE_STACK.with(|st| st.borrow_mut().push((0, 0)));
+                let job_start = std::time::Instant::now();
+                job.output = self.compute_uncached_job(job);
+                let job_ns = job_start.elapsed().as_nanos() as u64;
+                let (saved, _) = PROFILE_STACK.with(|st| st.borrow_mut().pop().unwrap());
+                jobs_ns += job_ns;
+                max_job_tinf = max_job_tinf.max(job_ns.saturating_sub(saved));
+            }
+            let batch_ns = batch_start.elapsed().as_nanos() as u64;
+            let batch_tinf = batch_ns.saturating_sub(jobs_ns) + max_job_tinf;
+            PROFILE_STACK.with(|st| {
+                let mut st = st.borrow_mut();
+                let top = st.last_mut().unwrap();
+                top.0 += batch_ns.saturating_sub(batch_tinf);
+                top.1 += batch_ns;
+            });
+        } else if uncached_jobs.len() >= 2 && min_batch_weight.is_some_and(|min| weight >= min) {
             // Group small jobs so that the subtrees laid out by each task are (on average)
             // at least a quarter of the weight of the smallest batch that is run in parallel
             let min_task_weight = (min_batch_weight.unwrap_or(0) / 4).max(1) as usize;
             let min_len = (min_task_weight * uncached_jobs.len() / (weight.max(1) as usize)).max(1);
             let doc_ptr = DocPtr(self.doc);
             let fields = self.pass_fields();
+            let split_by_weight = SPLIT_BY_WEIGHT.load(std::sync::atomic::Ordering::Relaxed);
             let mut compute_jobs = || {
-                uncached_jobs
-                    .par_iter_mut()
-                    .with_min_len(min_len)
-                    .for_each(|job| {
-                        // SAFETY: see the module docs. This is not sound in general.
-                        let mut state = unsafe { LayoutPassState::for_task(doc_ptr, fields) };
-                        job.output = state.compute_uncached_job(job);
-                    });
+                if split_by_weight {
+                    compute_jobs_split_by_weight(
+                        doc_ptr,
+                        fields,
+                        &mut uncached_jobs,
+                        &job_weights,
+                        weight as u64,
+                        min_task_weight as u64,
+                    );
+                } else {
+                    uncached_jobs
+                        .par_iter_mut()
+                        .with_min_len(min_len)
+                        .for_each(|job| {
+                            // SAFETY: see the module docs. This is not sound in general.
+                            let mut state = unsafe { LayoutPassState::for_task(doc_ptr, fields) };
+                            job.output = state.compute_uncached_job(job);
+                        });
+                }
             };
             match dedicated_thread_pool() {
                 // A rayon thread that waits for another thread pool still runs tasks from its own
@@ -361,4 +466,110 @@ impl LayoutPassState<'_> {
             self.cache_store(job.node, &job.input, job.output.clone());
         }
     }
+}
+
+#[doc(hidden)]
+pub static PROFILE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+thread_local! {
+    static PROFILE_STACK: std::cell::RefCell<Vec<(u64, u64)>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+#[doc(hidden)]
+pub fn profile_begin() {
+    PROFILE.store(true, std::sync::atomic::Ordering::Relaxed);
+    PROFILE_STACK.with(|st| {
+        let mut st = st.borrow_mut();
+        st.clear();
+        st.push((0, 0));
+    });
+}
+/// Returns (time saved with unlimited threads, time inside outermost parallel batches,
+/// time inside outermost layouts of inline boxes)
+#[doc(hidden)]
+pub fn profile_end() -> (u64, u64, u64) {
+    use std::sync::atomic::Ordering::Relaxed;
+    PROFILE.store(false, Relaxed);
+    NODE_STACK.with(|st| st.borrow_mut().clear());
+    INLINE_BOX_DEPTH.with(|d| d.set(0));
+    let (saved, in_batches) = PROFILE_STACK.with(|st| st.borrow_mut().pop().unwrap());
+    (saved, in_batches, INLINE_BOX_NS.swap(0, Relaxed))
+}
+
+/// Whether the profile treats the inline boxes of an inline root as if they were laid out in parallel
+#[doc(hidden)]
+pub static PROFILE_INLINE_WHATIF: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+static INLINE_BOX_NS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+struct NodeFrame {
+    is_inline_root: bool,
+    parent_is_inline_root: bool,
+    start: std::time::Instant,
+    child_sum_ns: u64,
+    child_sum_saved: u64,
+    child_max_tinf: u64,
+}
+thread_local! {
+    static NODE_STACK: std::cell::RefCell<Vec<NodeFrame>> = const { std::cell::RefCell::new(Vec::new()) };
+    static INLINE_BOX_DEPTH: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+}
+
+pub(crate) fn profile_node_enter(is_inline_root: bool) -> bool {
+    use std::sync::atomic::Ordering::Relaxed;
+    if !PROFILE.load(Relaxed) {
+        return false;
+    }
+    NODE_STACK.with(|st| {
+        let mut st = st.borrow_mut();
+        let parent_is_inline_root = st.last().is_some_and(|f| f.is_inline_root);
+        if parent_is_inline_root {
+            PROFILE_STACK.with(|st| st.borrow_mut().push((0, 0)));
+            INLINE_BOX_DEPTH.with(|d| d.set(d.get() + 1));
+        }
+        st.push(NodeFrame {
+            is_inline_root,
+            parent_is_inline_root,
+            start: std::time::Instant::now(),
+            child_sum_ns: 0,
+            child_sum_saved: 0,
+            child_max_tinf: 0,
+        });
+    });
+    true
+}
+
+pub(crate) fn profile_node_exit() {
+    use std::sync::atomic::Ordering::Relaxed;
+    NODE_STACK.with(|st| {
+        let mut st = st.borrow_mut();
+        let frame = st.pop().unwrap();
+        let ns = frame.start.elapsed().as_nanos() as u64;
+        if frame.is_inline_root {
+            let saved = if PROFILE_INLINE_WHATIF.load(Relaxed) {
+                frame.child_sum_ns.saturating_sub(frame.child_max_tinf)
+            } else {
+                frame.child_sum_saved
+            };
+            PROFILE_STACK.with(|st| st.borrow_mut().last_mut().unwrap().0 += saved);
+        }
+        if frame.parent_is_inline_root {
+            let (saved, in_batches) = PROFILE_STACK.with(|st| {
+                let mut st = st.borrow_mut();
+                let popped = st.pop().unwrap();
+                st.last_mut().unwrap().1 += popped.1;
+                popped
+            });
+            let _ = in_batches;
+            let depth = INLINE_BOX_DEPTH.with(|d| {
+                d.set(d.get() - 1);
+                d.get()
+            });
+            if depth == 0 {
+                INLINE_BOX_NS.fetch_add(ns, Relaxed);
+            }
+            let parent = st.last_mut().unwrap();
+            parent.child_sum_ns += ns;
+            parent.child_sum_saved += saved;
+            parent.child_max_tinf = parent.child_max_tinf.max(ns.saturating_sub(saved));
+        }
+    });
 }
