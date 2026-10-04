@@ -63,7 +63,7 @@ fn includes_aria_labelledby_as_labelled_by_for_two_nodes() -> TestResult<()> {
         r#"<html>
           <div role="button" aria-labelledby="arbitrary-element another-element"></div>
           <label id="another-element">Another label</label>
-          <nav id="arbitrary-element">Label</label>
+          <nav id="arbitrary-element">Label</nav>
         </html>"#,
         default_document_config(),
     );
