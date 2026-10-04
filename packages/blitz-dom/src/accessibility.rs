@@ -136,11 +136,14 @@ impl BaseDocument {
             }
             if let Some(aria_level) = element_data.attr(local_name!("aria-level"))
                 && let Ok(aria_level) = aria_level.parse::<usize>()
-            {
                 // Accesskit levels are 0-based, while ARIA levels are 1-based
                 // See https://docs.rs/accesskit/latest/accesskit/struct.Node.html#method.level
-                builder.set_level(aria_level - 1);
+                && let Some(aria_level) = aria_level.checked_sub(1)
+            {
+                builder.set_level(aria_level);
             } else if let Some(default_level) = default_level_for_tag(&name) {
+                builder.set_level(default_level);
+            } else if let Some(default_level) = default_level_for_role(&role) {
                 builder.set_level(default_level);
             }
 
@@ -246,6 +249,15 @@ fn default_level_for_tag(name: &str) -> Option<usize> {
         "h4" => Some(3),
         "h5" => Some(4),
         "h6" => Some(5),
+        _ => None,
+    }
+}
+
+fn default_level_for_role(role: Role) -> Option<usize> {
+    match role {
+        // ARIA specifies an implicit level of 2 for the heading role. Accesskit levels are 0-based,
+        // so this turns into level 1
+        Role::Heading => Some(1),
         _ => None,
     }
 }
