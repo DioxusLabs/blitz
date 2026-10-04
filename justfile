@@ -21,6 +21,10 @@ wpt *ARGS:
 browser *ARGS:
   cargo run --release --package browser --features log-frame-times,log-phase-times {{ARGS}}
 
+# PROTOTYPE: the browser with sibling subtrees laid out in parallel
+parabrow *ARGS:
+  cargo run --release --package browser --features parallel-layout,log-frame-times,log-phase-times {{ARGS}}
+
 browser-with-perf:
   cargo run --release --package browser --features log-frame-times,log-phase-times
 
