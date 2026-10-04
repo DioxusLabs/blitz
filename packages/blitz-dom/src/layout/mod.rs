@@ -202,9 +202,16 @@ impl LayoutPassState<'_> {
         inputs: taffy::tree::LayoutInput,
         block_ctx: Option<&mut BlockContext<'_>>,
     ) -> taffy::tree::LayoutOutput {
+        #[cfg(feature = "parallel-layout")]
+        let profiling =
+            parallel::profile_node_enter(self.nodes[dom_node_id(node_id)].flags.is_inline_root());
         let mut output = self.dispatch_child_layout(node_id, inputs, block_ctx);
         if inputs.run_mode == RunMode::PerformLayout {
             compute_oof_layout(self, node_id, &mut output);
+        }
+        #[cfg(feature = "parallel-layout")]
+        if profiling {
+            parallel::profile_node_exit();
         }
         output
     }
