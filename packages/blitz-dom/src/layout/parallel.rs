@@ -359,17 +359,19 @@ impl BaseDocument {
     /// The number of floated boxes in the layout tree
     #[doc(hidden)]
     pub fn parallel_layout_float_count(&self) -> usize {
+        #[cfg(feature = "floats")]
+        let is_floated = |node: &crate::Node| {
+            use taffy::BlockItemStyle as _;
+            node.primary_styles().is_some() && node.layout_style().float().is_floated()
+        };
+        #[cfg(not(feature = "floats"))]
+        let is_floated = |_node: &crate::Node| false;
+
         let mut count = 0;
         let mut stack = vec![self.root_element().id];
         while let Some(node_id) = stack.pop() {
             let node = &self.nodes[node_id];
-            #[cfg(feature = "floats")]
-            {
-                use taffy::BlockItemStyle as _;
-                let is_floated =
-                    node.primary_styles().is_some() && node.layout_style().float().is_floated();
-                count += is_floated as usize;
-            }
+            count += is_floated(node) as usize;
             if let Some(children) = node.layout_children.borrow().as_ref() {
                 stack.extend(children.iter().copied());
             }
