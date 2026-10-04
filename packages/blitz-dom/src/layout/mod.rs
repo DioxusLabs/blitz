@@ -921,6 +921,22 @@ impl RoundTree for LayoutPassState<'_> {
     fn get_hoisted_child_id(&self, node_id: NodeId, index: usize) -> NodeId {
         taffy_node_id(self.node_from_id(node_id).hoisted_children.borrow()[index])
     }
+
+    #[cfg(feature = "parallel-layout")]
+    fn round_child_subtrees(
+        &mut self,
+        node_id: NodeId,
+        cumulative_x: f32,
+        cumulative_y: f32,
+        round_subtree: impl Fn(&mut Self, NodeId, f32, f32) + Copy + Send + Sync,
+    ) {
+        self.round_child_subtrees_maybe_in_parallel(
+            node_id,
+            cumulative_x,
+            cumulative_y,
+            round_subtree,
+        );
+    }
 }
 
 pub(crate) struct TaffyDebugTree<'doc>(pub(crate) &'doc BaseDocument);

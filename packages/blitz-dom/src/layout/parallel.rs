@@ -130,6 +130,94 @@ fn slot(node_id: DomNodeId) -> usize {
 pub static SPLIT_BY_WEIGHT: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
+/// The point at which to split a list of at least two weights into two contiguous groups whose
+/// total weights differ the least. Returns the length and the total weight of the first group.
+fn weight_split_point(weights: &[u32], total_weight: u64) -> (usize, u64) {
+    let mut split = 1;
+    let mut left_weight = weights[0] as u64;
+    let mut prefix = left_weight;
+    for (index, weight) in weights.iter().enumerate().skip(1).take(weights.len() - 2) {
+        prefix += *weight as u64;
+        if (2 * prefix).abs_diff(total_weight) < (2 * left_weight).abs_diff(total_weight) {
+            split = index + 1;
+            left_weight = prefix;
+        } else if 2 * prefix > total_weight {
+            break;
+        }
+    }
+    (split, left_weight)
+}
+
+/// Run a function that spawns rayon tasks: on the dedicated thread pool if there is one,
+/// and otherwise on the current thread (and so on the current thread pool)
+fn run_on_layout_pool(f: impl FnOnce() + Send) {
+    match dedicated_thread_pool() {
+        // A rayon thread that waits for another thread pool still runs tasks from its own
+        // thread pool in the meantime, so the wait is done by a thread that is not in a pool
+        Some(pool) if pool.current_thread_index().is_none() => std::thread::scope(|s| {
+            let result = s.spawn(|| pool.install(f)).join();
+            if let Err(panic) = result {
+                std::panic::resume_unwind(panic);
+            }
+        }),
+        _ => f(),
+    }
+}
+
+/// The minimum total weight of the subtrees below a node for their layouts to be rounded in
+/// parallel. Rounding a node is much cheaper than laying it out, so this is much higher than the
+/// minimum weight of a batch of layouts.
+#[doc(hidden)]
+pub static MIN_ROUND_BATCH_WEIGHT: std::sync::atomic::AtomicU32 =
+    std::sync::atomic::AtomicU32::new(1024);
+
+/// Call `round_subtree` for each node in parallel, recursively dividing the nodes into two
+/// contiguous groups with weights that are as close to equal as possible
+#[allow(clippy::too_many_arguments)]
+fn round_subtrees_split_by_weight<'doc, F>(
+    doc_ptr: DocPtr,
+    fields: PassFields,
+    nodes: &[taffy::NodeId],
+    weights: &[u32],
+    total_weight: u64,
+    min_task_weight: u64,
+    cumulative_x: f32,
+    cumulative_y: f32,
+    round_subtree: F,
+) where
+    F: Fn(&mut LayoutPassState<'doc>, taffy::NodeId, f32, f32) + Copy + Send + Sync,
+{
+    if nodes.len() <= 1 || total_weight < min_task_weight * 2 {
+        for node in nodes {
+            // SAFETY: see the module docs. This is not sound in general.
+            let mut state = unsafe { LayoutPassState::for_task(doc_ptr, fields) };
+            round_subtree(&mut state, *node, cumulative_x, cumulative_y);
+        }
+        return;
+    }
+
+    let (split, left_weight) = weight_split_point(weights, total_weight);
+    let (left_nodes, right_nodes) = nodes.split_at(split);
+    let (left_weights, right_weights) = weights.split_at(split);
+    let round = |nodes, weights, weight| {
+        round_subtrees_split_by_weight(
+            doc_ptr,
+            fields,
+            nodes,
+            weights,
+            weight,
+            min_task_weight,
+            cumulative_x,
+            cumulative_y,
+            round_subtree,
+        )
+    };
+    rayon::join(
+        || round(left_nodes, left_weights, left_weight),
+        || round(right_nodes, right_weights, total_weight - left_weight),
+    );
+}
+
 /// Compute jobs in parallel by recursively dividing them into two contiguous groups with weights
 /// that are as close to equal as possible, until a group is a single job or its weight is less
 /// than twice `min_task_weight`.
@@ -150,20 +238,7 @@ fn compute_jobs_split_by_weight(
         return;
     }
 
-    // The split point for which the weights of the two groups differ the least
-    let mut split = 1;
-    let mut left_weight = weights[0] as u64;
-    let mut prefix = left_weight;
-    for (index, weight) in weights.iter().enumerate().skip(1).take(jobs.len() - 2) {
-        prefix += *weight as u64;
-        if (2 * prefix).abs_diff(total_weight) < (2 * left_weight).abs_diff(total_weight) {
-            split = index + 1;
-            left_weight = prefix;
-        } else if 2 * prefix > total_weight {
-            break;
-        }
-    }
-
+    let (split, left_weight) = weight_split_point(weights, total_weight);
     let (left_jobs, right_jobs) = jobs.split_at_mut(split);
     let (left_weights, right_weights) = weights.split_at(split);
     let right_weight = total_weight - left_weight;
@@ -351,7 +426,74 @@ impl BaseDocument {
     }
 }
 
-impl LayoutPassState<'_> {
+impl<'doc> LayoutPassState<'doc> {
+    /// Round the layouts of the subtrees below a node (see `RoundTree::round_child_subtrees`),
+    /// in parallel if they are large enough
+    pub(crate) fn round_child_subtrees_maybe_in_parallel<F>(
+        &mut self,
+        node_id: taffy::NodeId,
+        cumulative_x: f32,
+        cumulative_y: f32,
+        round_subtree: F,
+    ) where
+        F: Fn(&mut Self, taffy::NodeId, f32, f32) + Copy + Send + Sync,
+    {
+        use taffy::{RoundTree as _, TraversePartialTree as _};
+
+        // In-flow children, then the out-of-flow boxes for which this node is the containing block
+        let in_flow_child_count = self.child_count(node_id);
+        let hoisted_child_count = self.hoisted_child_count(node_id);
+        let child_ids = move |doc: &Self| {
+            let in_flow = (0..in_flow_child_count)
+                .map(|index| doc.get_child_id(node_id, index))
+                .filter(|child| !doc.is_out_of_flow(*child));
+            let hoisted =
+                (0..hoisted_child_count).map(|index| doc.get_hoisted_child_id(node_id, index));
+            in_flow.chain(hoisted).collect::<Vec<_>>()
+        };
+
+        let min_batch_weight = MIN_ROUND_BATCH_WEIGHT.load(std::sync::atomic::Ordering::Relaxed);
+        let weight_of = |doc: &Self, node: taffy::NodeId| {
+            let weights = &doc.layout_subtree_info.weights;
+            weights.get(slot(dom_node_id(node))).copied().unwrap_or(1)
+        };
+        let is_parallel = self.parallel_layout_min_batch_weight.is_some()
+            && in_flow_child_count + hoisted_child_count >= 2
+            && weight_of(self, node_id) >= min_batch_weight;
+        if !is_parallel {
+            for index in 0..in_flow_child_count {
+                let child = self.get_child_id(node_id, index);
+                if !self.is_out_of_flow(child) {
+                    round_subtree(self, child, cumulative_x, cumulative_y);
+                }
+            }
+            for index in 0..hoisted_child_count {
+                let child = self.get_hoisted_child_id(node_id, index);
+                round_subtree(self, child, cumulative_x, cumulative_y);
+            }
+            return;
+        }
+
+        let children = child_ids(self);
+        let weights: Vec<u32> = children.iter().map(|c| weight_of(self, *c)).collect();
+        let total_weight: u64 = weights.iter().map(|weight| *weight as u64).sum();
+        let doc_ptr = DocPtr(self.doc);
+        let fields = self.pass_fields();
+        run_on_layout_pool(|| {
+            round_subtrees_split_by_weight(
+                doc_ptr,
+                fields,
+                &children,
+                &weights,
+                total_weight,
+                (min_batch_weight / 4).max(1) as u64,
+                cumulative_x,
+                cumulative_y,
+                round_subtree,
+            )
+        });
+    }
+
     /// Compute the layout for a job, without consulting (or storing the result to) the node's cache
     fn compute_uncached_job(&mut self, job: &ChildLayoutJob) -> LayoutOutput {
         if job.is_in_parent_bfc {
@@ -424,7 +566,7 @@ impl LayoutPassState<'_> {
             let doc_ptr = DocPtr(self.doc);
             let fields = self.pass_fields();
             let split_by_weight = SPLIT_BY_WEIGHT.load(std::sync::atomic::Ordering::Relaxed);
-            let mut compute_jobs = || {
+            let compute_jobs = || {
                 if split_by_weight {
                     compute_jobs_split_by_weight(
                         doc_ptr,
@@ -445,17 +587,7 @@ impl LayoutPassState<'_> {
                         });
                 }
             };
-            match dedicated_thread_pool() {
-                // A rayon thread that waits for another thread pool still runs tasks from its own
-                // thread pool in the meantime, so the wait is done by a thread that is not in a pool
-                Some(pool) if pool.current_thread_index().is_none() => std::thread::scope(|s| {
-                    let result = s.spawn(|| pool.install(compute_jobs)).join();
-                    if let Err(panic) = result {
-                        std::panic::resume_unwind(panic);
-                    }
-                }),
-                _ => compute_jobs(),
-            }
+            run_on_layout_pool(compute_jobs);
         } else {
             for job in uncached_jobs.iter_mut() {
                 job.output = self.compute_uncached_job(job);
