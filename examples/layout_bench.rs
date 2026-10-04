@@ -143,17 +143,35 @@ async fn main() {
             fingerprint,
         );
 
+        // Sweep: `WEIGHTS=leaf,container,inline_root,text_bytes_per_unit` and `THRESHOLDS=a,b,c`
+        let weights = std::env::var("WEIGHTS").ok().map(|weights| {
+            let w: Vec<u32> = weights.split(',').map(|w| w.parse().unwrap()).collect();
+            blitz_dom::ParallelLayoutWeights {
+                leaf: w[0],
+                container: w[1],
+                inline_root: w[2],
+                text_bytes_per_unit: w[3],
+            }
+        });
+        if let Some(weights) = weights {
+            println!("{weights:?}");
+            doc.set_parallel_layout_weights(weights);
+        }
         let thresholds: Vec<u32> = match std::env::var("THRESHOLDS") {
             Ok(thresholds) => thresholds.split(',').map(|t| t.parse().unwrap()).collect(),
-            Err(_) => vec![64],
+            Err(_) => vec![256],
         };
-        for threshold in thresholds {
-            doc.set_parallel_layout_threshold(Some(threshold));
-            for thread_count in [1, 2, 4, 8] {
-                let pool = rayon::ThreadPoolBuilder::new()
-                    .num_threads(thread_count)
-                    .build()
-                    .unwrap();
+        let thread_counts: Vec<usize> = match std::env::var("THREADS") {
+            Ok(threads) => threads.split(',').map(|t| t.parse().unwrap()).collect(),
+            Err(_) => vec![1, 2, 4, 8],
+        };
+        for thread_count in thread_counts {
+            let pool = rayon::ThreadPoolBuilder::new()
+                .num_threads(thread_count)
+                .build()
+                .unwrap();
+            for &threshold in &thresholds {
+                doc.set_parallel_layout_threshold(Some(threshold));
                 // The document is not `Send`, but it is only used by one thread
                 // at a time (other than by the parallel layout code itself)
                 struct AssertSend<T>(T);
