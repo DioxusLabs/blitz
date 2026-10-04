@@ -22,6 +22,17 @@ use super::resolve_calc_value;
 use crate::BaseDocument;
 use crate::stylo_to_parley;
 
+/// Subtract a child's margins from the definite axes of the available space it is laid out in.
+/// Taffy's convention is that the parent subtracts a child's margins from the available space
+/// before passing it to the child, and that the child does not subtract them again.
+fn subtract_margins(mut child_inputs: LayoutInput, margin: taffy::Rect<f32>) -> LayoutInput {
+    child_inputs.available_space = child_inputs
+        .available_space
+        .maybe_sub(margin.sum_axes())
+        .maybe_max(Size::ZERO);
+    child_inputs
+}
+
 /// Layout inputs for an atomic inline box, with any sizing keyword on its `width` style
 /// (`min-content`, `max-content`, `fit-content`, `fit-content(...)`, `stretch`) resolved
 /// into the available space or known width the box is measured with.
@@ -30,14 +41,10 @@ fn inline_box_inputs(
     margin: taffy::Rect<f32>,
     child_inputs: LayoutInput,
 ) -> LayoutInput {
-    let stretch_width = child_inputs
-        .available_space
-        .width
-        .into_option()
-        .map(|width| (width - margin.horizontal_axis_sum()).max(0.0));
+    let mut inputs = subtract_margins(child_inputs, margin);
+    let stretch_width = inputs.available_space.width.into_option();
     let percent_basis = child_inputs.parent_size.width;
 
-    let mut inputs = child_inputs;
     match width_style.tag() {
         CompactLength::MIN_CONTENT_TAG => inputs.available_space.width = AvailableSpace::MinContent,
         CompactLength::MAX_CONTENT_TAG => inputs.available_space.width = AvailableSpace::MaxContent,
@@ -206,9 +213,6 @@ impl BaseDocument {
 
         // Note: both horizontal and vertical percentage padding/borders are resolved against the container's inline size (i.e. width).
         // This is not a bug, but is how CSS is specified (see: https://developer.mozilla.org/en-US/docs/Web/CSS/padding#values)
-        let margin = style
-            .margin()
-            .resolve_or_zero(parent_size.width, resolve_calc_value);
         let padding = style
             .padding()
             .resolve_or_zero(parent_size.width, resolve_calc_value);
@@ -304,7 +308,6 @@ impl BaseDocument {
                 .width
                 .map(AvailableSpace::from)
                 .unwrap_or(available_space.width)
-                .maybe_sub(margin.horizontal_axis_sum())
                 .maybe_set(known_dimensions.width)
                 .maybe_set(node_size.width)
                 .map_definite_value(|size| {
@@ -316,7 +319,6 @@ impl BaseDocument {
                 .height
                 .map(AvailableSpace::from)
                 .unwrap_or(available_space.height)
-                .maybe_sub(margin.vertical_axis_sum())
                 .maybe_set(known_dimensions.height)
                 .maybe_set(node_size.height)
                 .map_definite_value(|size| {
@@ -468,7 +470,7 @@ impl BaseDocument {
                             if is_floated {
                                 let output = self.compute_child_layout(
                                     taffy::NodeId::from(ibox.id),
-                                    child_inputs,
+                                    subtract_margins(child_inputs, margin),
                                 );
                                 width = width.max(output.size.width + margin.left + margin.right);
                             }
@@ -510,7 +512,7 @@ impl BaseDocument {
 
                                 let output = self.compute_child_layout(
                                     taffy::NodeId::from(ibox.id),
-                                    child_inputs,
+                                    subtract_margins(child_inputs, margin),
                                 );
                                 let box_width = output.size.width + margin.left + margin.right;
 
