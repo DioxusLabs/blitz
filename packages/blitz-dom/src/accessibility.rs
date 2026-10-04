@@ -1,5 +1,6 @@
 use crate::{BaseDocument, ElementData, Node as BlitzDomNode, local_name};
 use accesskit::{Node as AccessKitNode, NodeId, Role, TreeId, TreeInfo, TreeUpdate};
+use smallvec::SmallVec;
 use style::properties::longhands::visibility;
 
 impl BaseDocument {
@@ -42,27 +43,14 @@ impl BaseDocument {
         nodes.push((NodeId(u64::MAX), window));
 
         for (node_id, node) in nodes.iter_mut() {
-            let Some(labelled_by) = labelled_by_nodes.get(node_id) else {
-                continue;
-            };
-            for dom_id in labelled_by.split_ascii_whitespace() {
-                if let Some(labelled_by_node_id) = self.nodes_to_id.get(dom_id)
-                    && let Some(labelled_by_node_id) = labelled_by_node_id.first()
-                {
-                    node.push_labelled_by(NodeId(labelled_by_node_id.as_u64()));
+            if let Some(labelled_by) = labelled_by_nodes.get(node_id) {
+                for refed_node_id in self.referenced_dom_ids_to_node_ids(labelled_by) {
+                    node.push_labelled_by(refed_node_id);
                 }
             }
-        }
-
-        for (node_id, node) in nodes.iter_mut() {
-            let Some(described_by) = described_by_nodes.get(node_id) else {
-                continue;
-            };
-            for dom_id in described_by.split(|c: char| c.is_whitespace()) {
-                if let Some(described_by_node_id) = self.nodes_to_id.get(dom_id)
-                    && let Some(described_by_node_id) = described_by_node_id.get(0)
-                {
-                    node.push_described_by(NodeId(described_by_node_id.as_u64()));
+            if let Some(described_by) = described_by_nodes.get(node_id) {
+                for refed_node_id in self.referenced_dom_ids_to_node_ids(described_by) {
+                    node.push_described_by(refed_node_id);
                 }
             }
         }
@@ -74,6 +62,18 @@ impl BaseDocument {
             tree: Some(tree),
             focus: NodeId(self.focus_node_id.map(|id| id.as_u64()).unwrap_or(u64::MAX)),
         }
+    }
+
+    fn referenced_dom_ids_to_node_ids(&self, nodes_reference: &str) -> SmallVec<[NodeId; 3]> {
+        let mut result = SmallVec::new();
+        for dom_id in nodes_reference.split_ascii_whitespace() {
+            if let Some(refed_node_ids) = self.nodes_to_id.get(dom_id)
+                && let Some(refed_node_id) = refed_node_ids.first()
+            {
+                result.push(NodeId(refed_node_id.as_u64()));
+            }
+        }
+        result
     }
 
     fn build_accessibility_node(
