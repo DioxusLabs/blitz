@@ -15,8 +15,8 @@ use style::values::computed::length_percentage::CalcLengthPercentage;
 use stylo_taffy::TaffyStyloStyle;
 use taffy::{
     AxisStaticEdge, AxisStaticPosition, BlockContext, CoreStyle as _, DetailedLayoutInfo,
-    FlexDirection, LayoutContainingBlock, LayoutPartialTree, NodeId, OofCandidate, ResolveOrZero,
-    RoundTree, RunMode, TraversePartialTree, TraverseTree, compute_block_layout,
+    FlexDirection, LayoutContainingBlock, LayoutPartialTree, MaybeMath as _, NodeId, OofCandidate,
+    ResolveOrZero, RoundTree, RunMode, TraversePartialTree, TraverseTree, compute_block_layout,
     compute_cached_layout, compute_flexbox_layout, compute_grid_layout, compute_leaf_layout,
     compute_oof_layout, prelude::*,
 };
@@ -368,6 +368,24 @@ impl BaseDocument {
                 }
 
                 if node.flags.is_table_root() {
+                    // The space available to an absolutely positioned table never exceeds
+                    // the size of its containing block (less the table's margins), even
+                    // when negative insets would otherwise add to it
+                    // (https://drafts.csswg.org/css-tables-3/#abspos).
+                    let mut inputs = inputs;
+                    if self.nodes[dom_node_id(node_id)].is_out_of_flow() {
+                        let margin = self.nodes[dom_node_id(node_id)]
+                            .layout_style()
+                            .margin()
+                            .resolve_or_zero(inputs.parent_size.width, resolve_calc_value);
+                        let max_available_space = inputs
+                            .parent_size
+                            .maybe_sub(margin.sum_axes())
+                            .maybe_max(taffy::Size::ZERO);
+                        inputs.available_space =
+                            inputs.available_space.maybe_min(max_available_space);
+                    }
+
                     let SpecialElementData::TableRoot(context) = &self.nodes[dom_node_id(node_id)]
                         .data
                         .downcast_element()
