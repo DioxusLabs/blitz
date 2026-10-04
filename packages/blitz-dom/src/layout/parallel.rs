@@ -26,8 +26,52 @@ use std::sync::OnceLock;
 use taffy::{BlockFormattingContext, CacheTree as _, ChildLayoutJob, LayoutOutput};
 
 /// The default minimum total weight of the subtrees that a batch of jobs would lay out for the
-/// jobs to be computed in parallel
-pub(crate) const DEFAULT_MIN_BATCH_WEIGHT: u32 = 64;
+/// jobs to be computed in parallel. With the default weights this is very roughly 64µs of work.
+pub(crate) const DEFAULT_MIN_BATCH_WEIGHT: u32 = 256;
+
+/// How the cost of laying out a node (excluding its descendants) is estimated. The weight of a
+/// subtree is the sum of the weights of its nodes.
+#[doc(hidden)]
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct ParallelLayoutWeights {
+    /// The weight of a node that has no children and is not an inline root (a replaced element,
+    /// a form control or an empty box)
+    pub leaf: u32,
+    /// The weight of a node that has children and is not an inline root
+    pub container: u32,
+    /// The weight of an inline root, in addition to the weight of its text
+    pub inline_root: u32,
+    /// The number of bytes of an inline root's text that have a weight of 1.
+    /// If this is 0 then the weight of an inline root does not depend on its text.
+    pub text_bytes_per_unit: u32,
+}
+
+impl ParallelLayoutWeights {
+    /// Every node has the same weight, except that inline roots weigh 9 times as much
+    pub const NODE_COUNT: Self = Self {
+        leaf: 1,
+        container: 1,
+        inline_root: 9,
+        text_bytes_per_unit: 0,
+    };
+}
+
+    /// Weights in units of very roughly 0.25µs, from timing the layout of ten web pages on one
+    /// machine: a leaf took about 0.25µs, a container about 3.5µs (excluding its descendants)
+    /// and an inline root about 1.4µs plus 38ns per byte of text.
+    pub const MEASURED: Self = Self {
+        leaf: 1,
+        container: 12,
+        inline_root: 6,
+        text_bytes_per_unit: 6,
+    };
+}
+
+impl Default for ParallelLayoutWeights {
+    fn default() -> Self {
+        Self::MEASURED
+    }
+}
 
 /// The minimum batch weight that documents are created with: the value of the
 /// `BLITZ_PARALLEL_LAYOUT_THRESHOLD` environment variable if it is set (for experiments), or else
@@ -62,10 +106,6 @@ fn dedicated_thread_pool() -> Option<&'static rayon::ThreadPool> {
     .as_ref()
 }
 
-/// The weight of an inline root in addition to the weights of its inline boxes (laying out text is
-/// much more expensive than laying out a box).
-const INLINE_ROOT_WEIGHT: u32 = 8;
-
 /// Per-node data computed before each layout pass that the parallel layout code uses to decide
 /// whether a batch of child layouts is worth computing in parallel, and whether the children of
 /// a block can be laid out independently of each other.
@@ -75,6 +115,8 @@ pub(crate) struct LayoutSubtreeInfo {
     weights: Vec<u32>,
     /// For each node (indexed by node id) whether its subtree contains a floated box
     has_floats: Vec<bool>,
+    /// How the cost of laying out a node is estimated
+    node_weights: ParallelLayoutWeights,
 }
 
 /// The index of the slot that a node is stored in
@@ -161,6 +203,12 @@ impl BaseDocument {
         self.parallel_layout_min_batch_weight = min_batch_weight;
     }
 
+    /// Set how the cost of laying out a node is estimated
+    #[doc(hidden)]
+    pub fn set_parallel_layout_weights(&mut self, weights: ParallelLayoutWeights) {
+        self.layout_subtree_info.node_weights = weights;
+    }
+
     /// Compute the weight of each subtree of the layout tree and whether it contains floats
     pub(crate) fn compute_layout_subtree_info(&mut self, root: DomNodeId) {
         let mut info = std::mem::take(&mut self.layout_subtree_info);
@@ -183,10 +231,25 @@ impl BaseDocument {
                 info.weights.resize(slot + 1, 0);
                 info.has_floats.resize(slot + 1, false);
             }
-            info.weights[slot] = 1;
-            if node.flags.is_inline_root() {
-                info.weights[slot] += INLINE_ROOT_WEIGHT;
-            }
+            let node_weights = info.node_weights;
+            info.weights[slot] = if node.flags.is_inline_root() {
+                let text_len = node
+                    .element_data()
+                    .and_then(|element| element.inline_layout_data.as_ref())
+                    .map(|inline_layout| inline_layout.text.len() as u32)
+                    .unwrap_or(0);
+                let text_weight = text_len.checked_div(node_weights.text_bytes_per_unit);
+                node_weights.inline_root + text_weight.unwrap_or(0)
+            } else if node
+                .layout_children
+                .borrow()
+                .as_ref()
+                .is_some_and(|c| !c.is_empty())
+            {
+                node_weights.container
+            } else {
+                node_weights.leaf
+            };
             #[cfg(feature = "floats")]
             {
                 use taffy::BlockItemStyle as _;
