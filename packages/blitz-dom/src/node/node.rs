@@ -222,10 +222,18 @@ impl Node {
 
     /// Clear this node's taffy layout cache without allocating `LayoutData`
     /// for nodes that have never been laid out.
+    ///
+    /// This also discards the node's cached grid item placement. Placement
+    /// only depends on the node's style and on its children's placement
+    /// styles, so this is more often than strictly necessary. But every
+    /// change to those inputs damages the node and so ends up here.
     #[inline]
     pub fn clear_layout_cache(&mut self) {
         if let Some(layout_data) = self.try_layout_data_mut() {
             layout_data.cache.clear();
+        }
+        if let Some(element) = self.data.downcast_element_mut() {
+            element.grid_placement_cache = None;
         }
     }
 
