@@ -10,6 +10,9 @@
 //! Environment variables (with the `parallel-layout` feature):
 //! - `THRESHOLDS=256,1024`, `THREADS=1,2,4,8`, `WEIGHTS=leaf,container,inline_root,text_bytes_per_unit`
 //! - `SPLIT=weight`: divide the jobs of a batch between tasks by weight rather than by count
+//! - `PHASES=1`: also print the time taken by the subtree weight walk, the layout and the rounding
+//! - `IDLE_MS=16`: sleep before each layout, so that the pool's threads are asleep when it starts
+//! - `KEEP_AWAKE=1`: keep the pool's other threads spinning for the duration of each layout
 //! - `PROFILE=1`: instead of timing parallel layout, run every batch that would be parallel in order
 //!   on one thread, and report the time that layout would take with unlimited threads (`tinf`), the
 //!   share of the time spent outside of all batches, and the share spent laying out inline boxes.
@@ -80,15 +83,73 @@ fn layout_fingerprint(doc: &BaseDocument) -> (u64, usize) {
 }
 
 /// Lay the document out from scratch `iterations` times. Returns the times and the layout's fingerprint.
+///
+/// `IDLE_MS=n` sleeps for n milliseconds before each layout (so that the threads of the pool are
+/// asleep when it starts, as they would be in an application). With `KEEP_AWAKE=1` the other threads
+/// of the current rayon pool are kept spinning for the duration of each layout, so that they never
+/// have to be woken up.
 fn time_layout(doc: &mut BaseDocument, iterations: usize) -> (Vec<Duration>, u64) {
+    let idle = std::env::var("IDLE_MS")
+        .ok()
+        .map(|ms| Duration::from_secs_f64(ms.parse::<f64>().unwrap() / 1000.0));
+    let keep_awake = std::env::var_os("KEEP_AWAKE").is_some();
     let mut times = Vec::new();
+    #[cfg(feature = "parallel-layout")]
+    let mut phases = [u64::MAX; 3];
     for _ in 0..iterations {
         doc.invalidate_all_layout_caches();
+        if let Some(idle) = idle {
+            std::thread::sleep(idle);
+        }
+
+        let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let active = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let spinners = match rayon::current_thread_index() {
+            Some(this_thread) if keep_awake => {
+                let (stop, active) = (stop.clone(), active.clone());
+                rayon::spawn_broadcast(move |ctx| {
+                    if ctx.index() == this_thread {
+                        return;
+                    }
+                    active.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    while !stop.load(std::sync::atomic::Ordering::Relaxed) {
+                        if rayon::yield_now() != Some(rayon::Yield::Executed) {
+                            std::hint::spin_loop();
+                        }
+                    }
+                    active.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+                });
+                rayon::current_num_threads() - 1
+            }
+            _ => 0,
+        };
+        while active.load(std::sync::atomic::Ordering::SeqCst) < spinners {
+            std::hint::spin_loop();
+        }
+
         let start = Instant::now();
         doc.resolve_layout();
         times.push(start.elapsed());
+
+        stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        while active.load(std::sync::atomic::Ordering::SeqCst) > 0 {
+            std::hint::spin_loop();
+        }
+        #[cfg(feature = "parallel-layout")]
+        for (phase, best) in blitz_dom::LAYOUT_PHASE_NS.iter().zip(&mut phases) {
+            *best = (*best).min(phase.load(std::sync::atomic::Ordering::Relaxed));
+        }
     }
     times.sort();
+    #[cfg(feature = "parallel-layout")]
+    if std::env::var_os("PHASES").is_some() {
+        println!(
+            "PHASES weights {:.1}us layout {:.1}us round {:.1}us",
+            phases[0] as f64 / 1e3,
+            phases[1] as f64 / 1e3,
+            phases[2] as f64 / 1e3
+        );
+    }
     (times, layout_fingerprint(doc).0)
 }
 
