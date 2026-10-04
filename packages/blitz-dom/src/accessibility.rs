@@ -41,7 +41,7 @@ impl BaseDocument {
             };
             for dom_id in labelled_by.split_ascii_whitespace() {
                 if let Some(labelled_by_node_id) = self.nodes_to_id.get(dom_id)
-                    && let Some(labelled_by_node_id) = labelled_by_node_id.get(0)
+                    && let Some(labelled_by_node_id) = labelled_by_node_id.first()
                 {
                     node.push_labelled_by(NodeId(labelled_by_node_id.as_u64()));
                 }
