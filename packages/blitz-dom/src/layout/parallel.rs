@@ -138,6 +138,118 @@ fn slot(node_id: DomNodeId) -> usize {
 pub static SPLIT_BY_WEIGHT: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
+/// EXPERIMENT: a rule that makes the minimum weight of a batch that is computed in parallel
+/// depend on the batch that it is nested in and on the number of threads, rather than being the
+/// same for every batch. It only ever raises the minimum weight that documents are set to use.
+#[doc(hidden)]
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct ParallelLayoutBatchRule {
+    /// The minimum weight of a batch that is not nested in a parallel batch
+    pub min_outermost_weight: u32,
+    /// The minimum weight of a batch that is nested in a parallel batch, as a fraction of the
+    /// share of an enclosing batch's weight that each thread of the pool would have if the
+    /// weight was divided equally between them. 0 disables this.
+    pub nested_share: f32,
+    /// Whether that enclosing batch is the outermost parallel batch (rather than the innermost)
+    pub relative_to_outermost: bool,
+}
+
+impl ParallelLayoutBatchRule {
+    /// Every batch has the same minimum weight
+    pub const NONE: Self = Self {
+        min_outermost_weight: 0,
+        nested_share: 0.0,
+        relative_to_outermost: false,
+    };
+}
+
+/// The rule in use (shared by all documents): its fields, with `nested_share` as its bits
+static BATCH_RULE: (
+    std::sync::atomic::AtomicU32,
+    std::sync::atomic::AtomicU32,
+    std::sync::atomic::AtomicBool,
+) = (
+    std::sync::atomic::AtomicU32::new(0),
+    std::sync::atomic::AtomicU32::new(0),
+    std::sync::atomic::AtomicBool::new(false),
+);
+
+/// Set the rule that adjusts the minimum weight of a batch that is computed in parallel
+#[doc(hidden)]
+pub fn set_parallel_layout_batch_rule(rule: ParallelLayoutBatchRule) {
+    use std::sync::atomic::Ordering::Relaxed;
+    BATCH_RULE.0.store(rule.min_outermost_weight, Relaxed);
+    BATCH_RULE.1.store(rule.nested_share.to_bits(), Relaxed);
+    BATCH_RULE.2.store(rule.relative_to_outermost, Relaxed);
+}
+
+/// The weights of the parallel batches that enclose the job that a thread is computing
+#[derive(Copy, Clone, Default)]
+struct EnclosingBatches {
+    /// The weight of the innermost (0 if there are none)
+    innermost: u32,
+    /// The weight of the outermost (0 if there are none)
+    outermost: u32,
+}
+
+thread_local! {
+    static ENCLOSING_BATCHES: std::cell::Cell<EnclosingBatches> =
+        const { std::cell::Cell::new(EnclosingBatches { innermost: 0, outermost: 0 }) };
+}
+
+impl EnclosingBatches {
+    /// Those of the jobs of a batch with a given weight that is started by the current thread
+    fn of_jobs_of_batch(weight: u32) -> Self {
+        let current = ENCLOSING_BATCHES.get();
+        Self {
+            innermost: weight,
+            outermost: if current.outermost == 0 {
+                weight
+            } else {
+                current.outermost
+            },
+        }
+    }
+
+    /// Call a function that computes a job that is enclosed by these batches
+    #[inline]
+    fn compute_job<T>(self, f: impl FnOnce() -> T) -> T {
+        let previous = ENCLOSING_BATCHES.replace(self);
+        let result = f();
+        ENCLOSING_BATCHES.set(previous);
+        result
+    }
+}
+
+/// The minimum weight of a batch started by the current thread for it to be computed in
+/// parallel, given the minimum weight that the document is set to use
+fn effective_min_batch_weight(min_batch_weight: u32) -> u32 {
+    use std::sync::atomic::Ordering::Relaxed;
+    let rule = ParallelLayoutBatchRule {
+        min_outermost_weight: BATCH_RULE.0.load(Relaxed),
+        nested_share: f32::from_bits(BATCH_RULE.1.load(Relaxed)),
+        relative_to_outermost: BATCH_RULE.2.load(Relaxed),
+    };
+    let enclosing = ENCLOSING_BATCHES.get();
+    if enclosing.innermost == 0 {
+        min_batch_weight.max(rule.min_outermost_weight)
+    } else if rule.nested_share > 0.0 {
+        let thread_count = match dedicated_thread_pool() {
+            Some(pool) => pool.current_num_threads(),
+            None => rayon::current_num_threads(),
+        };
+        let enclosing_weight = if rule.relative_to_outermost {
+            enclosing.outermost
+        } else {
+            enclosing.innermost
+        };
+        let share = enclosing_weight as f32 / thread_count.max(1) as f32;
+        min_batch_weight.max((share * rule.nested_share) as u32)
+    } else {
+        min_batch_weight
+    }
+}
+
 /// The point at which to split a list of at least two weights into two contiguous groups whose
 /// total weights differ the least. Returns the length and the total weight of the first group.
 fn weight_split_point(weights: &[u32], total_weight: u64) -> (usize, u64) {
@@ -175,9 +287,14 @@ fn run_on_layout_pool(f: impl FnOnce() + Send) {
 /// The minimum total weight of the subtrees below a node for their layouts to be rounded in
 /// parallel. Rounding a node is much cheaper than laying it out, so this is much higher than the
 /// minimum weight of a batch of layouts.
+///
+/// After an incremental relayout that did not compute anything in parallel, the thread pool's
+/// threads are asleep, and waking them takes longer than rounding a small tree does. With 1024,
+/// relayouts of pages with a total weight of 2000 to 3000 took up to twice as long as without
+/// parallel rounding. Layouts from scratch took the same time with 1024, 4096 and 8192.
 #[doc(hidden)]
 pub static MIN_ROUND_BATCH_WEIGHT: std::sync::atomic::AtomicU32 =
-    std::sync::atomic::AtomicU32::new(1024);
+    std::sync::atomic::AtomicU32::new(4096);
 
 /// Call `round_subtree` for each node in parallel, recursively dividing the nodes into two
 /// contiguous groups with weights that are as close to equal as possible
@@ -236,12 +353,13 @@ fn compute_jobs_split_by_weight(
     weights: &[u32],
     total_weight: u64,
     min_task_weight: u64,
+    enclosing: EnclosingBatches,
 ) {
     if jobs.len() <= 1 || total_weight < min_task_weight * 2 {
         for job in jobs.iter_mut() {
             // SAFETY: see the module docs. This is not sound in general.
             let mut state = unsafe { LayoutPassState::for_task(doc_ptr, fields) };
-            job.output = state.compute_uncached_job(job);
+            job.output = enclosing.compute_job(|| state.compute_uncached_job(job));
         }
         return;
     }
@@ -259,6 +377,7 @@ fn compute_jobs_split_by_weight(
                 left_weights,
                 left_weight,
                 min_task_weight,
+                enclosing,
             )
         },
         || {
@@ -269,6 +388,7 @@ fn compute_jobs_split_by_weight(
                 right_weights,
                 right_weight,
                 min_task_weight,
+                enclosing,
             )
         },
     );
@@ -683,7 +803,9 @@ impl<'doc> LayoutPassState<'doc> {
             }
         }
 
-        let min_batch_weight = self.parallel_layout_min_batch_weight;
+        let min_batch_weight = self
+            .parallel_layout_min_batch_weight
+            .map(effective_min_batch_weight);
         if PROFILE.load(std::sync::atomic::Ordering::Relaxed)
             && uncached_jobs.len() >= 2
             && min_batch_weight.is_some_and(|min| weight >= min)
@@ -716,6 +838,7 @@ impl<'doc> LayoutPassState<'doc> {
             let doc_ptr = DocPtr(self.doc);
             let fields = self.pass_fields();
             let split_by_weight = SPLIT_BY_WEIGHT.load(std::sync::atomic::Ordering::Relaxed);
+            let enclosing = EnclosingBatches::of_jobs_of_batch(weight);
             let compute_jobs = || {
                 if split_by_weight {
                     compute_jobs_split_by_weight(
@@ -725,6 +848,7 @@ impl<'doc> LayoutPassState<'doc> {
                         &job_weights,
                         weight as u64,
                         min_task_weight as u64,
+                        enclosing,
                     );
                 } else {
                     uncached_jobs
@@ -733,7 +857,7 @@ impl<'doc> LayoutPassState<'doc> {
                         .for_each(|job| {
                             // SAFETY: see the module docs. This is not sound in general.
                             let mut state = unsafe { LayoutPassState::for_task(doc_ptr, fields) };
-                            job.output = state.compute_uncached_job(job);
+                            job.output = enclosing.compute_job(|| state.compute_uncached_job(job));
                         });
                 }
             };
