@@ -573,3 +573,12 @@ pub(crate) fn profile_node_exit() {
         }
     });
 }
+
+/// The time taken by the phases of the last layout pass, in nanoseconds:
+/// the subtree weight walk, the layout itself, and rounding
+#[doc(hidden)]
+pub static LAYOUT_PHASE_NS: [std::sync::atomic::AtomicU64; 3] = [
+    std::sync::atomic::AtomicU64::new(0),
+    std::sync::atomic::AtomicU64::new(0),
+    std::sync::atomic::AtomicU64::new(0),
+];

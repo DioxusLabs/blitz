@@ -443,7 +443,16 @@ impl BaseDocument {
         // println!("\n\nRESOLVE LAYOUT\n===========\n");
 
         #[cfg(feature = "parallel-layout")]
-        self.compute_layout_subtree_info(self.root_element().id);
+        use crate::layout::parallel::LAYOUT_PHASE_NS;
+        #[cfg(feature = "parallel-layout")]
+        use std::sync::atomic::Ordering::Relaxed;
+
+        #[cfg(feature = "parallel-layout")]
+        {
+            let start = std::time::Instant::now();
+            self.compute_layout_subtree_info(self.root_element().id);
+            LAYOUT_PHASE_NS[0].store(start.elapsed().as_nanos() as u64, Relaxed);
+        }
 
         let mut state = LayoutPassState::new(self);
         #[cfg(feature = "writing-mode")]
@@ -455,11 +464,21 @@ impl BaseDocument {
                 available_space
             }
         };
+
+        #[cfg(feature = "parallel-layout")]
+        let start = std::time::Instant::now();
         taffy::compute_root_layout(&mut state, root_element_id, available_space);
+        #[cfg(feature = "parallel-layout")]
+        LAYOUT_PHASE_NS[1].store(start.elapsed().as_nanos() as u64, Relaxed);
+
+        #[cfg(feature = "parallel-layout")]
+        let start = std::time::Instant::now();
         #[cfg(feature = "writing-mode")]
         state.physicalise_and_round_layout(root_element_id);
         #[cfg(not(feature = "writing-mode"))]
         taffy::round_layout(&mut state, root_element_id);
+        #[cfg(feature = "parallel-layout")]
+        LAYOUT_PHASE_NS[2].store(start.elapsed().as_nanos() as u64, Relaxed);
 
         // println!("\n\n");
         // taffy::print_tree(self, root_node_id)
