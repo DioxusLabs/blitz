@@ -6,6 +6,15 @@
 //! runs with and without the feature can be compared.
 //!
 //! Usage: `cargo run --release --example layout_bench [--features parallel-layout] -- <url> [width] [iterations]`
+//!
+//! Environment variables (with the `parallel-layout` feature):
+//! - `THRESHOLDS=256,1024`, `THREADS=1,2,4,8`, `WEIGHTS=leaf,container,inline_root,text_bytes_per_unit`
+//! - `SPLIT=weight`: divide the jobs of a batch between tasks by weight rather than by count
+//! - `PROFILE=1`: instead of timing parallel layout, run every batch that would be parallel in order
+//!   on one thread, and report the time that layout would take with unlimited threads (`tinf`), the
+//!   share of the time spent outside of all batches, and the share spent laying out inline boxes.
+//!   Each line is printed twice: `inline_whatif true` treats the inline boxes of an inline root as
+//!   if they were laid out in parallel.
 
 use blitz_dom::{BaseDocument, DocumentConfig};
 use blitz_html::HtmlDocument;
@@ -173,6 +182,43 @@ async fn main() {
             fingerprint,
         );
 
+        if std::env::var_os("PROFILE").is_some() {
+            let thresholds: Vec<u32> = match std::env::var("THRESHOLDS") {
+                Ok(thresholds) => thresholds.split(',').map(|t| t.parse().unwrap()).collect(),
+                Err(_) => vec![256],
+            };
+            for threshold in thresholds {
+                doc.set_parallel_layout_threshold(Some(threshold));
+                for inline_whatif in [false, true] {
+                    blitz_dom::PROFILE_INLINE_WHATIF
+                        .store(inline_whatif, std::sync::atomic::Ordering::Relaxed);
+                    let mut best = (u64::MAX, 0, 0, 0);
+                    for _ in 0..iterations {
+                        doc.invalidate_all_layout_caches();
+                        blitz_dom::profile_begin();
+                        let start = Instant::now();
+                        doc.resolve_layout();
+                        let total = start.elapsed().as_nanos() as u64;
+                        let (saved, in_batches, inline_boxes) = blitz_dom::profile_end();
+                        if total < best.0 {
+                            best = (total, saved, in_batches, inline_boxes);
+                        }
+                    }
+                    let (total, saved, in_batches, inline_boxes) = best;
+                    let tinf = total - saved;
+                    println!(
+                        "PROFILE threshold {threshold} inline_whatif {inline_whatif} t1 {:.3}ms tinf {:.3}ms parallelism {:.2} outside_batches {:.1}% inline_boxes {:.1}%",
+                        total as f64 / 1e6,
+                        tinf as f64 / 1e6,
+                        total as f64 / tinf as f64,
+                        100.0 * (total - in_batches) as f64 / total as f64,
+                        100.0 * inline_boxes as f64 / total as f64,
+                    );
+                }
+            }
+            return;
+        }
+
         // Sweep: `WEIGHTS=leaf,container,inline_root,text_bytes_per_unit` and `THRESHOLDS=a,b,c`
         let weights = std::env::var("WEIGHTS").ok().map(|weights| {
             let w: Vec<u32> = weights.split(',').map(|w| w.parse().unwrap()).collect();
@@ -191,6 +237,9 @@ async fn main() {
             Ok(thresholds) => thresholds.split(',').map(|t| t.parse().unwrap()).collect(),
             Err(_) => vec![256],
         };
+        // `SPLIT=weight` divides the jobs of a batch between tasks by weight rather than by count
+        let split_by_weight = std::env::var("SPLIT").as_deref() == Ok("weight");
+        blitz_dom::SPLIT_BY_WEIGHT.store(split_by_weight, std::sync::atomic::Ordering::Relaxed);
         let thread_counts: Vec<usize> = match std::env::var("THREADS") {
             Ok(threads) => threads.split(',').map(|t| t.parse().unwrap()).collect(),
             Err(_) => vec![1, 2, 4, 8],
