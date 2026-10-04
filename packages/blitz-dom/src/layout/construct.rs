@@ -627,7 +627,12 @@ fn collect_layout_children_with_wrap(
                     .flags
                     .insert(NodeFlags::IS_INLINE_ROOT);
 
-                find_inline_layout_embedded_boxes(doc, container_node_id, &mut out.children);
+                let text_len =
+                    find_inline_layout_embedded_boxes(doc, container_node_id, &mut out.children);
+                #[cfg(feature = "parallel-layout")]
+                doc.set_inline_root_text_len_estimate(container_node_id, text_len);
+                #[cfg(not(feature = "parallel-layout"))]
+                let _ = text_len;
                 return;
             }
 
@@ -930,21 +935,26 @@ fn create_checkbox_input(doc: &mut BaseDocument, input_element_id: NodeId) {
 /// Find and return the "layout_children" (inline boxes) for an inline layout
 /// without actually constructing the layout. This allows us to defer the expensive
 /// construction of the Parley layout (which invokes text shaping) to a paralell phase.
+/// Find the boxes embedded in an inline context. Returns the total length in bytes of the text
+/// nodes in the inline context (an estimate of the length of the text that will be laid out).
 pub(crate) fn find_inline_layout_embedded_boxes(
     doc: &mut BaseDocument,
     inline_context_root_node_id: NodeId,
     layout_children: &mut ThinVec<NodeId>,
-) {
+) -> u32 {
     flush_inline_pseudos_recursive(doc, inline_context_root_node_id);
 
+    let mut text_len = 0u32;
     iter_children_and_pseudos!(doc.nodes[inline_context_root_node_id], |child_id| {
         find_inline_layout_embedded_boxes_recursive(
             &mut doc.nodes,
             inline_context_root_node_id,
             child_id,
             layout_children,
+            &mut text_len,
         );
     });
+    return text_len;
 
     fn flush_inline_pseudos_recursive(doc: &mut BaseDocument, node_id: NodeId) {
         doc.iter_children_mut(node_id, |child_id, doc| {
@@ -968,6 +978,7 @@ pub(crate) fn find_inline_layout_embedded_boxes(
         parent_id: NodeId,
         node_id: NodeId,
         layout_children: &mut ThinVec<NodeId>,
+        text_len: &mut u32,
     ) {
         let node = &mut nodes[node_id];
 
@@ -997,6 +1008,7 @@ pub(crate) fn find_inline_layout_embedded_boxes(
                                 parent_id,
                                 child_id,
                                 layout_children,
+                                text_len,
                             );
                         });
                     }
@@ -1015,6 +1027,7 @@ pub(crate) fn find_inline_layout_embedded_boxes(
                                     node_id,
                                     child_id,
                                     layout_children,
+                                    text_len,
                                 );
                             });
                         }
@@ -1025,7 +1038,11 @@ pub(crate) fn find_inline_layout_embedded_boxes(
                     }
                 };
             }
-            NodeData::Comment { .. } | NodeData::Text(_) => {
+            NodeData::Text(data) => {
+                *text_len = text_len.saturating_add(data.content.len() as u32);
+                node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
+            }
+            NodeData::Comment { .. } => {
                 node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
             }
             NodeData::Document(_) => unreachable!(),
