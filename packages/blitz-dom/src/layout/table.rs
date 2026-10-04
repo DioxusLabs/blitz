@@ -713,7 +713,7 @@ fn collect_table_cells(
             // The cell itself is laid out with its borders (even though they are not part of
             // the style that the table lays the cell out with), so the min and max sizes that
             // the table applies on the cell's behalf must make room for them.
-            let add_collapsed_border = |value: &mut taffy::LengthPercentageAuto, border: f32| {
+            let add_collapsed_border = |value: &mut taffy::Dimension, border: f32| {
                 if border > 0.0 && value.into_raw().tag() == taffy::CompactLength::LENGTH_TAG {
                     *value = style_helpers::length(value.into_raw().value() + border);
                 }

@@ -98,16 +98,7 @@ pub fn dimension(val: &stylo::Size) -> taffy::Dimension {
         stylo::Size::MaxContent => taffy::Dimension::max_content(),
         stylo::Size::MinContent => taffy::Dimension::min_content(),
         stylo::Size::FitContent => taffy::Dimension::fit_content(),
-        stylo::Size::FitContentFunction(val) => match val.0.unpack() {
-            stylo::UnpackedLengthPercentage::Length(len) => {
-                taffy::Dimension::fit_content_px(len.px())
-            }
-            stylo::UnpackedLengthPercentage::Percentage(percentage) => {
-                taffy::Dimension::fit_content_percent(percentage.0)
-            }
-            // TODO: support calc values as fit-content() limits in Taffy
-            stylo::UnpackedLengthPercentage::Calc(_) => taffy::Dimension::AUTO,
-        },
+        stylo::Size::FitContentFunction(val) => fit_content_function(&val.0),
 
         stylo::Size::Stretch => taffy::Dimension::stretch(),
         stylo::Size::WebkitFillAvailable => taffy::Dimension::stretch(),
@@ -118,39 +109,36 @@ pub fn dimension(val: &stylo::Size) -> taffy::Dimension {
     }
 }
 
+/// Converts a `fit-content()` limit into a Taffy sizing keyword
 #[inline]
-pub fn min_size(val: &stylo::Size) -> taffy::LengthPercentageAuto {
-    match val {
-        stylo::Size::LengthPercentage(val) => length_percentage(&val.0).into(),
-        stylo::Size::Auto => taffy::LengthPercentageAuto::AUTO,
-
-        // Sizing keywords are not supported for min/max size properties in Taffy
-        stylo::Size::MaxContent => taffy::LengthPercentageAuto::AUTO,
-        stylo::Size::MinContent => taffy::LengthPercentageAuto::AUTO,
-        stylo::Size::FitContent => taffy::LengthPercentageAuto::AUTO,
-        stylo::Size::FitContentFunction(_) => taffy::LengthPercentageAuto::AUTO,
-        stylo::Size::Stretch => taffy::LengthPercentageAuto::AUTO,
-        stylo::Size::WebkitFillAvailable => taffy::LengthPercentageAuto::AUTO,
-
-        // Anchor positioning will be flagged off for time being
-        stylo::Size::AnchorSizeFunction(_) => unreachable!(),
-        stylo::Size::AnchorContainingCalcFunction(_) => unreachable!(),
+fn fit_content_function(limit: &stylo::LengthPercentage) -> taffy::Dimension {
+    match limit.unpack() {
+        stylo::UnpackedLengthPercentage::Length(len) => taffy::Dimension::fit_content_px(len.px()),
+        stylo::UnpackedLengthPercentage::Percentage(percentage) => {
+            taffy::Dimension::fit_content_percent(percentage.0)
+        }
+        // TODO: support calc values as fit-content() limits in Taffy
+        stylo::UnpackedLengthPercentage::Calc(_) => taffy::Dimension::AUTO,
     }
 }
 
 #[inline]
-pub fn max_size(val: &stylo::MaxSize) -> taffy::LengthPercentageAuto {
+pub fn min_size(val: &stylo::Size) -> taffy::Dimension {
+    dimension(val)
+}
+
+#[inline]
+pub fn max_size(val: &stylo::MaxSize) -> taffy::Dimension {
     match val {
         stylo::MaxSize::LengthPercentage(val) => length_percentage(&val.0).into(),
-        stylo::MaxSize::None => taffy::LengthPercentageAuto::AUTO,
+        stylo::MaxSize::None => taffy::Dimension::AUTO,
 
-        // Sizing keywords are not supported for min/max size properties in Taffy
-        stylo::MaxSize::MaxContent => taffy::LengthPercentageAuto::AUTO,
-        stylo::MaxSize::MinContent => taffy::LengthPercentageAuto::AUTO,
-        stylo::MaxSize::FitContent => taffy::LengthPercentageAuto::AUTO,
-        stylo::MaxSize::FitContentFunction(_) => taffy::LengthPercentageAuto::AUTO,
-        stylo::MaxSize::Stretch => taffy::LengthPercentageAuto::AUTO,
-        stylo::MaxSize::WebkitFillAvailable => taffy::LengthPercentageAuto::AUTO,
+        stylo::MaxSize::MaxContent => taffy::Dimension::max_content(),
+        stylo::MaxSize::MinContent => taffy::Dimension::min_content(),
+        stylo::MaxSize::FitContent => taffy::Dimension::fit_content(),
+        stylo::MaxSize::FitContentFunction(val) => fit_content_function(&val.0),
+        stylo::MaxSize::Stretch => taffy::Dimension::stretch(),
+        stylo::MaxSize::WebkitFillAvailable => taffy::Dimension::stretch(),
 
         // Anchor positioning will be flagged off for time being
         stylo::MaxSize::AnchorSizeFunction(_) => unreachable!(),
