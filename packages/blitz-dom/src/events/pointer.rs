@@ -401,8 +401,8 @@ pub(crate) fn handle_pointerdown(
     }
 
     let Some(hit) = doc.hit(x, y) else {
-        if let Some((node, offset)) = doc.find_text_position(x, y) {
-            doc.set_text_selection(node, offset, node, offset);
+        if let Some(point) = doc.find_text_position(x, y) {
+            doc.set_text_selection(point, point);
             doc.shell_provider.request_redraw();
         } else {
             doc.clear_text_selection();
@@ -433,6 +433,14 @@ pub(crate) fn handle_pointerdown(
     // This may differ from `target` for anonymous blocks (which are layout children
     // but not DOM children), so we use the hit result for text selection.
     let actual_target = hit.node_id;
+    let text_source = hit
+        .is_text
+        .then(|| {
+            doc.nodes[actual_target]
+                .inline_root_ancestor()
+                .and_then(|root| root.selection_text_source_at_point(hit.x, hit.y))
+        })
+        .flatten();
 
     // Check what kind of element we're dealing with and extract needed info
     enum ClickTarget {
@@ -494,10 +502,14 @@ pub(crate) fn handle_pointerdown(
         ClickTarget::SelectableText => {
             // Handle text selection for non-input elements
             if doc.nodes[actual_target].text_selection_allowed()
-                && let Some((node_id, offset)) = doc.find_text_position(x, y)
-                && doc.nodes[node_id].text_selection_allowed()
+                && text_source.is_none_or(|source| {
+                    doc.get_node(source)
+                        .is_some_and(|node| node.text_selection_allowed())
+                })
+                && let Some(point) = doc.find_text_position(x, y)
+                && doc.nodes[point.node].text_selection_allowed()
             {
-                doc.set_text_selection(node_id, offset, node_id, offset);
+                doc.set_text_selection(point, point);
                 doc.shell_provider.request_redraw();
             } else {
                 doc.clear_text_selection();

@@ -31,9 +31,7 @@ pub struct TextLayout {
     pub text: String,
     pub content_widths: Option<ContentWidths>,
     pub layout: parley::layout::Layout<TextBrush>,
-    pub(crate) sources: Vec<crate::selection::TextSource>,
-    pub(crate) selection_map: Vec<crate::selection::TextMapping>,
-    pub(crate) selection_map_built: bool,
+    pub(crate) source_ranges: Vec<(std::ops::Range<usize>, NodeId)>,
 }
 
 impl TextLayout {

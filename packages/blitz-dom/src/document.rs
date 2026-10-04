@@ -2550,9 +2550,8 @@ impl BaseDocument {
 
     // Text selection methods
 
-    /// Find a DOM boundary point at page coordinates. Text offsets are UTF-8
-    /// byte offsets; element offsets count children, not inline-layout bytes.
-    pub fn find_text_position(&self, x: f32, y: f32) -> Option<(NodeId, usize)> {
+    /// Find a flattened text-layout offset or an element child boundary.
+    pub fn find_text_position(&self, x: f32, y: f32) -> Option<crate::SelectionPoint> {
         let scale = self.viewport().scale_f64();
         let (node, point) = if let Some(hit) = self.hit(x, y) {
             let hit_node = self.get_node(hit.node_id)?;
@@ -2568,10 +2567,8 @@ impl BaseDocument {
                         && hit.y >= 0.0
                         && hit.y < ild.layout.height() / ild.layout.scale();
                     if (hit.is_text || within_text) && hit_node.text_selection_allowed() {
-                        if let Some(offset) = node.text_offset_at_point(hit.x, hit.y)
-                            && let Some(position) = ild.dom_point_at_offset(offset)
-                        {
-                            return Some((position.node, position.offset));
+                        if let Some(position) = node.selection_point_in_text(hit.x, hit.y) {
+                            return Some(position);
                         }
                     }
                 }
@@ -2592,31 +2589,19 @@ impl BaseDocument {
         if !point.x.is_finite() || !point.y.is_finite() {
             return None;
         }
-        let position = node.selection_child_boundary(point, scale)?;
-        Some((position.node, position.offset))
+        node.selection_child_boundary(point, scale)
     }
 
-    /// Set DOM selection endpoints. Text offsets must lie on UTF-8 boundaries;
-    /// other offsets count DOM children. Invalid endpoints clear the selection.
+    /// Set selection endpoints in text-layout or element coordinates.
     pub fn set_text_selection(
         &mut self,
-        anchor_node: NodeId,
-        anchor_offset: usize,
-        focus_node: NodeId,
-        focus_offset: usize,
+        anchor: crate::SelectionPoint,
+        focus: crate::SelectionPoint,
     ) {
-        let anchor = crate::SelectionPoint {
-            node: anchor_node,
-            offset: anchor_offset,
-        };
-        let focus = crate::SelectionPoint {
-            node: focus_node,
-            offset: focus_offset,
-        };
         if self.valid_selection_point(anchor) && self.valid_selection_point(focus) {
             self.text_selection = TextSelection {
-                anchor: Some(anchor),
-                focus: Some(focus),
+                anchor: Some(self.normalize_selection_point(anchor)),
+                focus: Some(self.normalize_selection_point(focus)),
             };
         } else {
             self.clear_text_selection();
@@ -2631,14 +2616,9 @@ impl BaseDocument {
         self.text_selection.clear();
     }
 
-    /// Update the focus using a DOM text-node byte offset or element child index.
-    pub fn update_selection_focus(&mut self, focus_node: NodeId, focus_offset: usize) {
-        let focus = crate::SelectionPoint {
-            node: focus_node,
-            offset: focus_offset,
-        };
+    pub fn update_selection_focus(&mut self, focus: crate::SelectionPoint) {
         if self.valid_selection_point(focus) {
-            self.text_selection.focus = Some(focus);
+            self.text_selection.focus = Some(self.normalize_selection_point(focus));
         }
     }
 
@@ -2646,8 +2626,8 @@ impl BaseDocument {
         if self.text_selection.anchor.is_none() {
             return false;
         }
-        if let Some((node, offset)) = self.find_text_position(x, y) {
-            self.update_selection_focus(node, offset);
+        if let Some(point) = self.find_text_position(x, y) {
+            self.update_selection_focus(point);
             self.shell_provider.request_redraw();
             true
         } else {
@@ -2686,20 +2666,30 @@ impl BaseDocument {
         (!result.is_empty()).then_some(result)
     }
 
-    /// Project DOM endpoints into inline-root byte ranges for painting and copying.
-    /// An inline root can have multiple ranges, e.g. around an embedded inline box.
+    /// Project structural child boundaries into ranges of flattened layout text.
+    /// Text endpoints already use the byte offsets consumed by Parley.
     pub fn get_text_selection_ranges(&self) -> Vec<(NodeId, usize, usize)> {
-        let (Some(mut start), Some(mut end)) =
-            (self.text_selection.anchor, self.text_selection.focus)
+        let (Some(anchor), Some(focus)) = (self.text_selection.anchor, self.text_selection.focus)
         else {
             return Vec::new();
         };
-        if !self.valid_selection_point(start) || !self.valid_selection_point(end) || start == end {
+        if !self.valid_selection_point(anchor)
+            || !self.valid_selection_point(focus)
+            || anchor == focus
+        {
             return Vec::new();
         }
+        let (Some(mut start), Some(mut end)) = (
+            self.resolve_selection_point(anchor),
+            self.resolve_selection_point(focus),
+        ) else {
+            return Vec::new();
+        };
         if self.compare_selection_points(start, end).is_gt() {
             std::mem::swap(&mut start, &mut end);
         }
+        let start_dom = self.text_point_in_dom(start).unwrap_or(start);
+        let end_dom = self.text_point_in_dom(end).unwrap_or(end);
         let mut selected = Vec::new();
         for (id, node) in self.nodes.iter() {
             if !node.flags.is_in_document() || !node.flags.is_inline_root() {
@@ -2711,33 +2701,35 @@ impl BaseDocument {
             else {
                 continue;
             };
-            for mapping in &ild.selection_map {
-                if mapping.start != mapping.end
-                    && self.valid_selection_point(mapping.start)
-                    && self.valid_selection_point(mapping.end)
-                    && self.nodes[mapping.start.node].text_selection_allowed()
-                    && self.compare_selection_points(mapping.end, start).is_gt()
-                    && self.compare_selection_points(mapping.start, end).is_lt()
-                {
-                    let mut range = mapping.range.clone();
-                    let mut point = mapping.start;
-                    if mapping.is_linear() {
-                        if start.node == point.node && start.offset > point.offset {
-                            range.start += start.offset - point.offset;
-                            point = start;
-                        }
-                        if end.node == mapping.end.node && end.offset < mapping.end.offset {
-                            range.end -= mapping.end.offset - end.offset;
-                        }
-                    }
-                    selected.push((id, point, range));
+            for (range, source) in ild.source_ranges() {
+                let mut range = range.clone();
+                let source = *source;
+                let source_point = crate::SelectionPoint::element(source, 0);
+                if !self.valid_dom_node(source) || !self.nodes[source].text_selection_allowed() {
+                    continue;
+                }
+                if start.kind == crate::SelectionKind::Text && start.node == id {
+                    range.start = range.start.max(start.offset);
+                } else if self.compare_dom_boundaries(source_point, start_dom).is_lt() {
+                    continue;
+                }
+                if end.kind == crate::SelectionKind::Text && end.node == id {
+                    range.end = range.end.min(end.offset);
+                } else if !self.compare_dom_boundaries(source_point, end_dom).is_lt() {
+                    continue;
+                }
+                if range.start < range.end {
+                    selected.push((id, source, range));
                 }
             }
         }
-        selected.sort_by(|(a_id, a_point, a), (b_id, b_point, b)| {
-            self.compare_selection_points(*a_point, *b_point)
-                .then_with(|| a_id.cmp(b_id))
-                .then_with(|| a.start.cmp(&b.start))
+        selected.sort_by(|(a_id, a_source, a), (b_id, b_source, b)| {
+            self.compare_dom_boundaries(
+                crate::SelectionPoint::element(*a_source, 0),
+                crate::SelectionPoint::element(*b_source, 0),
+            )
+            .then_with(|| a_id.cmp(b_id))
+            .then_with(|| a.start.cmp(&b.start))
         });
         let mut ranges: Vec<(NodeId, usize, usize)> = Vec::new();
         for (id, _, range) in selected {

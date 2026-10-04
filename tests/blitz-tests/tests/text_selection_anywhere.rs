@@ -1,3 +1,4 @@
+use blitz_dom::SelectionPoint;
 use blitz_test_harness::{Harness, HarnessOptions, pointer_event};
 use blitz_traits::events::{BlitzPointerId, MouseEventButton, MouseEventButtons, UiEvent};
 
@@ -11,7 +12,7 @@ const HTML: &str = r#"<!doctype html><html><head><style>
 fn assert_position(h: &Harness, point: (f32, f32), selector: &str, offset: usize) {
     assert_eq!(
         h.base().find_text_position(point.0, point.1),
-        Some((h.node(selector), offset)),
+        Some(SelectionPoint::element(h.node(selector), offset)),
         "position at {point:?}"
     );
 }
@@ -252,11 +253,10 @@ fn visible_descendant_of_hidden_parent_can_be_selected() {
         <div style="visibility:hidden; padding:20px"><p id="text" style="visibility:visible; margin:0">Visible</p></div>
     </body></html>"#,
     );
-    let text = h.base().get_node(h.node("#text")).unwrap().children[0];
     let (x, y) = h.center_of("#text");
     assert_eq!(
         h.base().find_text_position(x, y),
-        Some((text, "Visible".len()))
+        Some(SelectionPoint::text(h.node("#text"), "Visible".len()))
     );
 }
 

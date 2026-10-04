@@ -1,22 +1,48 @@
-//! Document selections store DOM boundary points independently of layout.
+//! Document selections use layout offsets in text and DOM child boundaries elsewhere.
 
-use crate::{BaseDocument, Node, NodeTree, node::TextLayout};
+use crate::{BaseDocument, Node, node::TextLayout};
 use blitz_traits::node_id::NodeId;
 use kurbo::{Affine, Point};
 use markup5ever::local_name;
-use std::{cmp::Ordering, collections::HashMap, ops::Range};
+use std::{cmp::Ordering, ops::Range};
 use style::computed_values::visibility::T as Visibility;
 use style::values::computed::UserSelect;
 
-/// A DOM boundary point. Text offsets are UTF-8 byte offsets; other offsets
-/// count DOM children. Anonymous layout boxes are never boundary containers.
+/// The type of position held by a selection endpoint.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SelectionKind {
+    Text,
+    Element,
+    AnonymousText { index: usize },
+}
+
+/// Text positions use an inline root's flattened UTF-8 layout bytes; element
+/// positions count its DOM children. Anonymous roots use a stable parent/index.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SelectionPoint {
     pub node: NodeId,
     pub offset: usize,
+    pub kind: SelectionKind,
 }
 
-/// Anchor and focus in DOM order-independent boundary-point coordinates.
+impl SelectionPoint {
+    pub fn text(node: NodeId, offset: usize) -> Self {
+        Self {
+            node,
+            offset,
+            kind: SelectionKind::Text,
+        }
+    }
+    pub fn element(node: NodeId, offset: usize) -> Self {
+        Self {
+            node,
+            offset,
+            kind: SelectionKind::Element,
+        }
+    }
+}
+
+/// Anchor and focus, each in either text-layout or element coordinates.
 #[derive(Clone, Debug, Default)]
 pub struct TextSelection {
     pub anchor: Option<SelectionPoint>,
@@ -33,189 +59,77 @@ impl TextSelection {
     }
 }
 
-#[derive(Clone)]
-pub(crate) struct TextSource {
-    pub node: NodeId,
-    pub text: String,
-    pub offsets: Vec<Range<usize>>,
-    pub collapse_spaces: bool,
-    pub collapse_breaks: bool,
-}
-
-impl TextSource {
-    fn next_char(&self, cursor: &mut (usize, usize)) -> Option<(char, Range<usize>)> {
-        let byte = cursor.0;
-        let ch = self.text[byte..].chars().next()?;
-        let offset = self
-            .offsets
-            .get(cursor.1)
-            .cloned()
-            .unwrap_or(byte..byte + ch.len_utf8());
-        cursor.0 += ch.len_utf8();
-        cursor.1 += 1;
-        Some((ch, offset))
-    }
-}
-
-#[derive(Clone)]
-pub(crate) struct TextMapping {
-    pub range: Range<usize>,
-    pub start: SelectionPoint,
-    pub end: SelectionPoint,
-}
-
-impl TextMapping {
-    pub(crate) fn is_linear(&self) -> bool {
-        self.start.node == self.end.node
-            && self.end.offset.checked_sub(self.start.offset) == Some(self.range.len())
-    }
-}
-
 impl TextLayout {
-    pub(crate) fn rebuild_selection_map(&mut self, nodes: &NodeTree) {
-        if self.selection_map_built {
-            return;
-        }
-        self.selection_map_built = true;
-        self.selection_map.clear();
-        if self.sources.is_empty() {
-            return;
-        }
-        let mut clusters: Vec<_> = self
+    pub(crate) fn rebuild_source_ranges(&mut self) {
+        let mut ranges: Vec<_> = self
             .layout
             .lines()
             .flat_map(|line| line.runs())
             .flat_map(|run| run.clusters())
             .filter_map(|cluster| Some((cluster.text_range(), cluster.style().brush.text_node?)))
             .collect();
-        clusters.sort_by_key(|(range, _)| range.start);
-        clusters.dedup_by_key(|(range, _)| range.start);
-        let source_indices: HashMap<_, _> = self
-            .sources
-            .iter()
-            .enumerate()
-            .map(|(index, source)| (source.node, index))
-            .collect();
-        let mut cursors = vec![(0, 0); self.sources.len()];
-        for (range, id) in clusters {
-            let Some(&first_source) = source_indices.get(&id) else {
-                continue;
-            };
-            let mut source_index = first_source;
-            for (index, ch) in self.text[range.clone()].char_indices() {
-                // A grapheme cluster can span several DOM text nodes.
-                while source_index < self.sources.len() {
-                    let source = &self.sources[source_index];
-                    let cursor = &mut cursors[source_index];
-                    let collapsible = |c: char| {
-                        (source.collapse_spaces && matches!(c, ' ' | '\t'))
-                            || (source.collapse_breaks && matches!(c, '\n' | '\r'))
-                    };
-                    let mut matched = None;
-                    while let Some((raw, offset)) = source.next_char(cursor) {
-                        if raw != ch && !(ch == ' ' && collapsible(raw)) {
-                            continue;
-                        }
-                        let mut end = offset.end;
-                        if ch == ' ' && collapsible(raw) {
-                            while source.text[cursor.0..]
-                                .chars()
-                                .next()
-                                .is_some_and(collapsible)
-                            {
-                                end = source.next_char(cursor).unwrap().1.end;
-                            }
-                        }
-                        matched = Some(offset.start..end);
-                        break;
-                    }
-                    let Some(offset) = matched else {
-                        source_index += 1;
-                        continue;
-                    };
-                    let node = &nodes[source.node];
-                    let (start, end) = if node.text_data().is_some() {
-                        (
-                            node.dom_text_point(offset.start),
-                            node.dom_text_point(offset.end),
-                        )
-                    } else {
-                        (node.dom_edge(false), node.dom_edge(true))
-                    };
-                    if let (Some(start), Some(end)) = (start, end) {
-                        let mapping = TextMapping {
-                            range: range.start + index..range.start + index + ch.len_utf8(),
-                            start,
-                            end,
-                        };
-                        if let Some(last) = self.selection_map.last_mut()
-                            && last.end == mapping.start
-                            && last.range.end == mapping.range.start
-                            && last.is_linear()
-                            && mapping.is_linear()
-                        {
-                            last.end = mapping.end;
-                            last.range.end = mapping.range.end;
-                        } else {
-                            self.selection_map.push(mapping);
-                        }
-                    }
-                    break;
-                }
+        ranges.sort_by_key(|(range, _)| range.start);
+        ranges.dedup_by_key(|(range, _)| range.start);
+        self.source_ranges.clear();
+        for (range, source) in ranges {
+            if let Some((last, last_source)) = self.source_ranges.last_mut()
+                && *last_source == source
+                && last.end == range.start
+            {
+                last.end = range.end;
+            } else {
+                self.source_ranges.push((range, source));
             }
         }
     }
 
-    pub(crate) fn dom_point_at_offset(&self, offset: usize) -> Option<SelectionPoint> {
-        self.selection_map
-            .iter()
-            .find(|mapping| mapping.range.end > offset)
-            .map(|mapping| {
-                if mapping.is_linear() {
-                    SelectionPoint {
-                        node: mapping.start.node,
-                        offset: mapping.start.offset + offset.saturating_sub(mapping.range.start),
-                    }
-                } else {
-                    mapping.start
-                }
-            })
-            .or_else(|| self.selection_map.last().map(|mapping| mapping.end))
+    pub(crate) fn source_ranges(&self) -> &[(Range<usize>, NodeId)] {
+        &self.source_ranges
     }
 }
 
 impl Node {
-    fn dom_text_point(&self, offset: usize) -> Option<SelectionPoint> {
-        let mut child = self;
-        while let Some(parent_id) = child.parent {
-            let parent = self.with(parent_id);
-            if parent.is_anonymous() {
-                return parent.dom_edge(false);
-            }
-            if !parent.children.contains(&child.id) {
+    pub(crate) fn selection_text_source_at_point(&self, x: f32, y: f32) -> Option<NodeId> {
+        let layout = &self.element_data()?.inline_layout_data.as_ref()?.layout;
+        parley::layout::Cluster::from_point(layout, x * layout.scale(), y * layout.scale())
+            .and_then(|(cluster, _)| cluster.style().brush.text_node)
+    }
+
+    pub(crate) fn selection_point_in_text(&self, x: f32, y: f32) -> Option<SelectionPoint> {
+        let offset = self.text_offset_at_point(x, y)?;
+        let ild = self.element_data()?.inline_layout_data.as_ref()?;
+        let layout = &ild.layout;
+        let mut point = SelectionPoint::text(self.id, offset);
+        let source = self.selection_text_source_at_point(x, y);
+        for inline_box in layout.inline_boxes().filter(|b| b.index == offset) {
+            let Some(source) = source else {
+                break;
+            };
+            let Some(child) = self.tree().get(NodeId::from_u64(inline_box.id)) else {
+                continue;
+            };
+            // Inline boxes occupy no text bytes, so their two edges need child boundaries.
+            let Some(source) = self.tree().get(source) else {
+                continue;
+            };
+            let order = source.compare_document_order(child);
+            if order.is_lt() {
                 return child.dom_edge(false);
             }
-            child = parent;
+            if order.is_gt() {
+                point = child.dom_edge(true)?;
+            }
         }
-        Some(SelectionPoint {
-            node: self.id,
-            offset,
-        })
+        Some(point)
     }
 
     pub(crate) fn dom_edge(&self, after: bool) -> Option<SelectionPoint> {
         let parent = self.with(self.parent?);
         if parent.before() == Some(self.id) {
-            return Some(SelectionPoint {
-                node: parent.id,
-                offset: 0,
-            });
+            return Some(SelectionPoint::element(parent.id, 0));
         }
         if parent.after() == Some(self.id) {
-            return Some(SelectionPoint {
-                node: parent.id,
-                offset: parent.children.len(),
-            });
+            return Some(SelectionPoint::element(parent.id, parent.children.len()));
         }
         if self.is_anonymous() {
             let child = if after {
@@ -225,23 +139,15 @@ impl Node {
             };
             return child
                 .and_then(|id| self.with(*id).dom_edge(after))
-                .or_else(|| {
-                    Some(SelectionPoint {
-                        node: self.parent?,
-                        offset: 0,
-                    })
-                });
+                .or_else(|| Some(SelectionPoint::element(self.parent?, 0)));
         }
         if let Some(index) = parent.children.iter().position(|id| *id == self.id) {
-            Some(SelectionPoint {
-                node: parent.id,
-                offset: index + usize::from(after),
-            })
+            Some(SelectionPoint::element(
+                parent.id,
+                index + usize::from(after),
+            ))
         } else {
-            Some(SelectionPoint {
-                node: parent.id,
-                offset: 0,
-            })
+            Some(SelectionPoint::element(parent.id, 0))
         }
     }
 
@@ -287,8 +193,8 @@ impl Node {
             && x <= layout.content_box_width()
             && y >= 0.0
             && y < ild.layout.height() / ild.layout.scale()
-            && let Some(offset) = self.text_offset_at_point(x, y)
-            && let Some(position) = ild.dom_point_at_offset(offset)
+            && let Some(position) = self.selection_point_in_text(x, y)
+            && !ild.text.is_empty()
         {
             return Some(position);
         }
@@ -308,10 +214,10 @@ impl Node {
         if self.is_anonymous() {
             self.dom_edge(!at_start)
         } else {
-            end.or(Some(SelectionPoint {
-                node: self.id,
-                offset: if at_start { 0 } else { self.children.len() },
-            }))
+            end.or(Some(SelectionPoint::element(
+                self.id,
+                if at_start { 0 } else { self.children.len() },
+            )))
         }
     }
 
@@ -378,8 +284,73 @@ impl Node {
 }
 
 impl BaseDocument {
+    pub(crate) fn normalize_selection_point(&self, point: SelectionPoint) -> SelectionPoint {
+        if point.kind != SelectionKind::Text {
+            return point;
+        }
+        let Some(root) = self.get_node(point.node) else {
+            return point;
+        };
+        if !root.is_anonymous() {
+            return point;
+        }
+        let Some(parent_id) = root.parent else {
+            return point;
+        };
+        let parent = &self.nodes[parent_id];
+        let children = parent.layout_children.borrow();
+        let Some(index) = children
+            .iter()
+            .flatten()
+            .filter(|&&id| self.nodes[id].is_anonymous())
+            .position(|&id| id == point.node)
+        else {
+            return point;
+        };
+        SelectionPoint {
+            node: parent_id,
+            offset: point.offset,
+            kind: SelectionKind::AnonymousText { index },
+        }
+    }
+
+    pub(crate) fn resolve_selection_point(&self, point: SelectionPoint) -> Option<SelectionPoint> {
+        if let SelectionKind::AnonymousText { index } = point.kind {
+            let parent = self.get_node(point.node)?;
+            let children = parent.layout_children.borrow();
+            let root = children
+                .iter()
+                .flatten()
+                .filter(|&&id| self.nodes[id].is_anonymous())
+                .nth(index)?;
+            Some(SelectionPoint::text(*root, point.offset))
+        } else {
+            Some(point)
+        }
+    }
+
     pub(crate) fn valid_selection_point(&self, point: SelectionPoint) -> bool {
-        self.get_node(point.node).is_some_and(|node| {
+        let Some(resolved) = self.resolve_selection_point(point) else {
+            return false;
+        };
+        if resolved.kind == SelectionKind::Text {
+            return self.get_node(resolved.node).is_some_and(|node| {
+                node.flags.is_in_document()
+                    && node.flags.is_inline_root()
+                    && node
+                        .element_data()
+                        .and_then(|el| el.inline_layout_data.as_ref())
+                        .is_some_and(|ild| ild.text.is_char_boundary(resolved.offset))
+            });
+        }
+        self.valid_dom_node(point.node)
+            && self.get_node(point.node).is_some_and(|node| {
+                node.text_data().is_none() && point.offset <= node.children.len()
+            })
+    }
+
+    pub(crate) fn valid_dom_node(&self, id: NodeId) -> bool {
+        self.get_node(id).is_some_and(|node| {
             let mut current = node;
             while let Some(parent_id) = current.parent {
                 let Some(parent) = self.get_node(parent_id) else {
@@ -390,22 +361,33 @@ impl BaseDocument {
                 }
                 current = parent;
             }
-            !node.is_anonymous()
-                && current.id == self.root_node().id
-                && node.flags.is_in_document()
-                && if let Some(text) = node.text_data() {
-                    text.content.is_char_boundary(point.offset)
-                } else {
-                    point.offset <= node.children.len()
-                }
+            !node.is_anonymous() && current.id == self.root_node().id && node.flags.is_in_document()
         })
     }
 
-    pub(crate) fn compare_selection_points(
-        &self,
-        a: SelectionPoint,
-        b: SelectionPoint,
-    ) -> Ordering {
+    pub(crate) fn text_point_in_dom(&self, point: SelectionPoint) -> Option<SelectionPoint> {
+        let point = self.resolve_selection_point(point)?;
+        if point.kind == SelectionKind::Element {
+            return Some(point);
+        }
+        let root = self.get_node(point.node)?;
+        let layout = root.element_data()?.inline_layout_data.as_ref()?;
+        let ranges = layout.source_ranges();
+        let source = ranges
+            .iter()
+            .find(|(range, id)| range.end > point.offset && self.valid_dom_node(*id))
+            .or_else(|| ranges.iter().rev().find(|(_, id)| self.valid_dom_node(*id)));
+        let Some((range, id)) = source else {
+            return root.dom_edge(point.offset == layout.text.len());
+        };
+        if point.offset >= range.end {
+            self.nodes[*id].dom_edge(true)
+        } else {
+            Some(SelectionPoint::element(*id, 0))
+        }
+    }
+
+    pub(crate) fn compare_dom_boundaries(&self, a: SelectionPoint, b: SelectionPoint) -> Ordering {
         if a.node == b.node {
             return a.offset.cmp(&b.offset);
         }
@@ -437,5 +419,20 @@ impl BaseDocument {
             };
         }
         self.compare_document_order(a.node, b.node)
+    }
+
+    pub(crate) fn compare_selection_points(
+        &self,
+        a: SelectionPoint,
+        b: SelectionPoint,
+    ) -> Ordering {
+        let a = self.resolve_selection_point(a).unwrap_or(a);
+        let b = self.resolve_selection_point(b).unwrap_or(b);
+        if a.kind == SelectionKind::Text && b.kind == SelectionKind::Text && a.node == b.node {
+            return a.offset.cmp(&b.offset);
+        }
+        let a = self.text_point_in_dom(a).unwrap_or(a);
+        let b = self.text_point_in_dom(b).unwrap_or(b);
+        self.compare_dom_boundaries(a, b)
     }
 }
