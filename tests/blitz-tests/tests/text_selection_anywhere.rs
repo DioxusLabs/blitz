@@ -17,22 +17,22 @@ fn assert_position(h: &Harness, point: (f32, f32), selector: &str, offset: usize
 }
 
 #[test]
-fn caret_in_padding_margins_empty_boxes_and_page_background() {
+fn boundaries_in_padding_margins_empty_boxes_and_page_background() {
     let h = Harness::from_html(HTML);
     let first = h.layout_rect("#first");
     let second = h.layout_rect("#second");
     let gap = h.layout_rect("#gap");
     assert!(first.height > 0.0, "requires a usable font");
-    assert_position(&h, (first.x, first.y - 10.0), "#first", 0);
-    assert_position(&h, (first.x - 50.0, first.y + 15.0), "#first", 0);
-    assert_position(&h, (gap.x, gap.y + 5.0), "#first", "First paragraph".len());
+    assert_position(&h, (first.x, first.y - 10.0), "#container", 0);
+    assert_position(&h, (first.x - 50.0, first.y + 15.0), "body", 0);
+    assert_position(&h, (gap.x + 1.0, gap.y + 5.0), "#gap", 0);
     assert_position(
         &h,
         (second.x, second.y + second.height + 10.0),
-        "#second",
-        "Second paragraph".len(),
+        "#container",
+        3,
     );
-    assert_position(&h, (700.0, 550.0), "#second", "Second paragraph".len());
+    assert_position(&h, (700.0, 550.0), "html", 2);
 }
 
 #[test]
@@ -83,26 +83,26 @@ fn start_and_extend_around_anonymous_inline_roots() {
 }
 
 #[test]
-fn nearest_text_stays_in_the_clicked_container() {
+fn padding_stays_in_the_clicked_container() {
     let h = Harness::from_html(
         r#"<html><body style="margin:0; font:20px/30px monospace">
         <div id="container" style="padding-bottom:100px"><p id="first" style="margin:0">First</p></div>
         <p style="margin:0">Second</p>
     </body></html>"#,
     );
-    assert_position(&h, (5.0, 120.0), "#first", 5);
+    assert_position(&h, (5.0, 120.0), "#container", 1);
 }
 
 #[test]
-fn nearest_text_in_side_by_side_columns() {
+fn column_padding_is_a_child_boundary() {
     let h = Harness::from_html(
         r#"<html><body style="margin:0; font:20px/30px monospace">
-        <div style="display:flex; gap:40px; padding:40px">
+        <div id="columns" style="display:flex; gap:40px; padding:40px">
             <div id="left" style="width:200px">Left</div><div id="right" style="width:200px">Right</div>
         </div>
     </body></html>"#,
     );
-    assert_position(&h, (265.0, 20.0), "#right", 0);
+    assert_position(&h, (265.0, 20.0), "#columns", 1);
 }
 
 #[test]
@@ -144,10 +144,11 @@ fn controls_do_not_start_a_document_selection() {
 }
 
 #[test]
-fn empty_document_has_no_selection_anchor() {
+fn empty_document_can_have_an_element_selection() {
     let mut h = Harness::from_html("<html><body><div style='height:100px'></div></body></html>");
     h.drag((10.0, 10.0), (100.0, 200.0), 3);
-    assert!(!h.base().has_text_selection());
+    assert!(h.base().has_text_selection());
+    assert_eq!(h.base().get_selected_text(), None);
 }
 
 #[test]
@@ -174,23 +175,23 @@ fn non_primary_mouse_button_does_not_start_selection() {
 }
 
 #[test]
-fn fallback_respects_transforms_and_viewport_scale() {
+fn boundaries_respect_transforms_and_viewport_scale() {
     for scale in [1.0, 2.0] {
         let h = Harness::from_html_with(
             r#"<html><body style="margin:0; font:20px/30px monospace">
-            <div style="transform:translate(100px, 70px); padding:20px"><p id="text" style="margin:0">Text</p></div>
+            <div id="transformed" style="transform:translate(100px, 70px); padding:20px"><p id="text" style="margin:0">Text</p></div>
         </body></html>"#,
             HarnessOptions {
                 scale,
                 ..Default::default()
             },
         );
-        assert_position(&h, (110.0, 75.0), "#text", 0);
+        assert_position(&h, (110.0, 75.0), "#transformed", 0);
     }
 }
 
 #[test]
-fn fallback_respects_scrolled_containers() {
+fn boundaries_respect_scrolled_containers() {
     let mut h = Harness::from_html(
         r#"<html><body style="margin:0; font:20px/30px monospace">
         <div id="scroller" style="height:100px; width:300px; overflow:auto; padding:20px">
@@ -199,28 +200,28 @@ fn fallback_respects_scrolled_containers() {
     </body></html>"#,
     );
     h.wheel_at(50.0, 50.0, 0.0, -200.0);
-    assert_position(&h, (10.0, 10.0), "#text", 0);
+    assert_position(&h, (10.0, 10.0), "#scroller", 1);
 }
 
 #[test]
-fn fallback_reaches_out_of_flow_text() {
+fn whitespace_does_not_snap_to_out_of_flow_text() {
     for position in ["absolute", "fixed"] {
         let h = Harness::from_html(&format!(
             r#"<html><body style="margin:0; font:20px/30px monospace">
-            <div style="position:relative; height:200px">
+            <div id="container" style="position:relative; height:200px">
                 <div><p id="text" style="position:{position}; left:100px; top:80px; margin:0">Text</p></div>
             </div>
         </body></html>"#
         ));
-        assert_position(&h, (100.0, 70.0), "#text", 0);
+        assert_position(&h, (100.0, 70.0), "#container", 2);
     }
 }
 
 #[test]
-fn fallback_reaches_text_in_inline_blocks() {
+fn empty_inline_block_child_is_a_boundary_container() {
     let h = Harness::from_html(
         r#"<html><body style="margin:0; font:20px/30px monospace">
-        <p style="padding:20px; margin:0">Before
+        <p style="margin:0">Before
             <span style="display:inline-block; margin-left:30px; padding:10px">
                 <span id="empty" style="display:block; height:20px"></span>
                 <span id="text" style="display:block">Inside</span>
@@ -229,29 +230,34 @@ fn fallback_reaches_text_in_inline_blocks() {
     </body></html>"#,
     );
     let empty = h.layout_rect("#empty");
-    assert_position(&h, (empty.x, empty.y + 5.0), "#text", 0);
+    assert_position(&h, (empty.x + 1.0, empty.y + 5.0), "#empty", 0);
 }
 
 #[test]
-fn hidden_and_collapsed_text_are_not_fallback_candidates() {
+fn background_before_hidden_content_is_a_root_boundary() {
     for css in ["visibility:hidden", "display:none", "transform:scale(0)"] {
         let h = Harness::from_html(&format!(
             r#"<html><body style="margin:0; font:20px/30px monospace">
             <div style="{css}">Hidden</div><p id="text" style="margin:0">Visible</p>
         </body></html>"#
         ));
-        assert_position(&h, (0.0, -10.0), "#text", 0);
+        assert_position(&h, (0.0, -10.0), "html", 0);
     }
 }
 
 #[test]
-fn visible_descendant_of_hidden_parent_is_a_fallback_candidate() {
+fn visible_descendant_of_hidden_parent_can_be_selected() {
     let h = Harness::from_html(
         r#"<html><body style="margin:0; font:20px/30px monospace">
         <div style="visibility:hidden; padding:20px"><p id="text" style="visibility:visible; margin:0">Visible</p></div>
     </body></html>"#,
     );
-    assert_position(&h, (0.0, -10.0), "#text", 0);
+    let text = h.base().get_node(h.node("#text")).unwrap().children[0];
+    let (x, y) = h.center_of("#text");
+    assert_eq!(
+        h.base().find_text_position(x, y),
+        Some((text, "Visible".len()))
+    );
 }
 
 #[test]

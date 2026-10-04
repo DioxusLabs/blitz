@@ -1,25 +1,320 @@
-//! Text selection state and logic for non-input elements.
-//!
-//! This module handles text selection across inline roots in the document,
-//! including support for anonymous blocks which have unstable IDs across
-//! layout reconstruction.
+//! Document selections store DOM boundary points independently of layout.
 
+use crate::{BaseDocument, Node, NodeTree, node::TextLayout};
 use blitz_traits::node_id::NodeId;
 use kurbo::{Affine, Point};
 use markup5ever::local_name;
-use parley::Cluster;
+use std::{cmp::Ordering, collections::HashMap, ops::Range};
 use style::computed_values::visibility::T as Visibility;
 use style::values::computed::UserSelect;
 
-use crate::Node;
-
-pub(crate) struct TextPosition {
-    pub node_id: NodeId,
+/// A DOM boundary point. Text offsets are UTF-8 byte offsets; other offsets
+/// count DOM children. Anonymous layout boxes are never boundary containers.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SelectionPoint {
+    pub node: NodeId,
     pub offset: usize,
-    point: Point,
+}
+
+/// Anchor and focus in DOM order-independent boundary-point coordinates.
+#[derive(Clone, Debug, Default)]
+pub struct TextSelection {
+    pub anchor: Option<SelectionPoint>,
+    pub focus: Option<SelectionPoint>,
+}
+
+impl TextSelection {
+    pub fn is_active(&self) -> bool {
+        self.anchor.is_some() && self.focus.is_some() && self.anchor != self.focus
+    }
+    pub fn clear(&mut self) {
+        self.anchor = None;
+        self.focus = None;
+    }
+}
+
+#[derive(Clone)]
+pub(crate) struct TextSource {
+    pub node: NodeId,
+    pub text: String,
+    pub offsets: Vec<Range<usize>>,
+    pub collapse_spaces: bool,
+    pub collapse_breaks: bool,
+}
+
+impl TextSource {
+    fn next_char(&self, cursor: &mut (usize, usize)) -> Option<(char, Range<usize>)> {
+        let byte = cursor.0;
+        let ch = self.text[byte..].chars().next()?;
+        let offset = self
+            .offsets
+            .get(cursor.1)
+            .cloned()
+            .unwrap_or(byte..byte + ch.len_utf8());
+        cursor.0 += ch.len_utf8();
+        cursor.1 += 1;
+        Some((ch, offset))
+    }
+}
+
+#[derive(Clone)]
+pub(crate) struct TextMapping {
+    pub range: Range<usize>,
+    pub start: SelectionPoint,
+    pub end: SelectionPoint,
+}
+
+impl TextMapping {
+    pub(crate) fn is_linear(&self) -> bool {
+        self.start.node == self.end.node
+            && self.end.offset.checked_sub(self.start.offset) == Some(self.range.len())
+    }
+}
+
+impl TextLayout {
+    pub(crate) fn rebuild_selection_map(&mut self, nodes: &NodeTree) {
+        if self.selection_map_built {
+            return;
+        }
+        self.selection_map_built = true;
+        self.selection_map.clear();
+        if self.sources.is_empty() {
+            return;
+        }
+        let mut clusters: Vec<_> = self
+            .layout
+            .lines()
+            .flat_map(|line| line.runs())
+            .flat_map(|run| run.clusters())
+            .filter_map(|cluster| Some((cluster.text_range(), cluster.style().brush.text_node?)))
+            .collect();
+        clusters.sort_by_key(|(range, _)| range.start);
+        clusters.dedup_by_key(|(range, _)| range.start);
+        let source_indices: HashMap<_, _> = self
+            .sources
+            .iter()
+            .enumerate()
+            .map(|(index, source)| (source.node, index))
+            .collect();
+        let mut cursors = vec![(0, 0); self.sources.len()];
+        for (range, id) in clusters {
+            let Some(&first_source) = source_indices.get(&id) else {
+                continue;
+            };
+            let mut source_index = first_source;
+            for (index, ch) in self.text[range.clone()].char_indices() {
+                // A grapheme cluster can span several DOM text nodes.
+                while source_index < self.sources.len() {
+                    let source = &self.sources[source_index];
+                    let cursor = &mut cursors[source_index];
+                    let collapsible = |c: char| {
+                        (source.collapse_spaces && matches!(c, ' ' | '\t'))
+                            || (source.collapse_breaks && matches!(c, '\n' | '\r'))
+                    };
+                    let mut matched = None;
+                    while let Some((raw, offset)) = source.next_char(cursor) {
+                        if raw != ch && !(ch == ' ' && collapsible(raw)) {
+                            continue;
+                        }
+                        let mut end = offset.end;
+                        if ch == ' ' && collapsible(raw) {
+                            while source.text[cursor.0..]
+                                .chars()
+                                .next()
+                                .is_some_and(collapsible)
+                            {
+                                end = source.next_char(cursor).unwrap().1.end;
+                            }
+                        }
+                        matched = Some(offset.start..end);
+                        break;
+                    }
+                    let Some(offset) = matched else {
+                        source_index += 1;
+                        continue;
+                    };
+                    let node = &nodes[source.node];
+                    let (start, end) = if node.text_data().is_some() {
+                        (
+                            node.dom_text_point(offset.start),
+                            node.dom_text_point(offset.end),
+                        )
+                    } else {
+                        (node.dom_edge(false), node.dom_edge(true))
+                    };
+                    if let (Some(start), Some(end)) = (start, end) {
+                        let mapping = TextMapping {
+                            range: range.start + index..range.start + index + ch.len_utf8(),
+                            start,
+                            end,
+                        };
+                        if let Some(last) = self.selection_map.last_mut()
+                            && last.end == mapping.start
+                            && last.range.end == mapping.range.start
+                            && last.is_linear()
+                            && mapping.is_linear()
+                        {
+                            last.end = mapping.end;
+                            last.range.end = mapping.range.end;
+                        } else {
+                            self.selection_map.push(mapping);
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
+    pub(crate) fn dom_point_at_offset(&self, offset: usize) -> Option<SelectionPoint> {
+        self.selection_map
+            .iter()
+            .find(|mapping| mapping.range.end > offset)
+            .map(|mapping| {
+                if mapping.is_linear() {
+                    SelectionPoint {
+                        node: mapping.start.node,
+                        offset: mapping.start.offset + offset.saturating_sub(mapping.range.start),
+                    }
+                } else {
+                    mapping.start
+                }
+            })
+            .or_else(|| self.selection_map.last().map(|mapping| mapping.end))
+    }
 }
 
 impl Node {
+    fn dom_text_point(&self, offset: usize) -> Option<SelectionPoint> {
+        let mut child = self;
+        while let Some(parent_id) = child.parent {
+            let parent = self.with(parent_id);
+            if parent.is_anonymous() {
+                return parent.dom_edge(false);
+            }
+            if !parent.children.contains(&child.id) {
+                return child.dom_edge(false);
+            }
+            child = parent;
+        }
+        Some(SelectionPoint {
+            node: self.id,
+            offset,
+        })
+    }
+
+    pub(crate) fn dom_edge(&self, after: bool) -> Option<SelectionPoint> {
+        let parent = self.with(self.parent?);
+        if parent.before() == Some(self.id) {
+            return Some(SelectionPoint {
+                node: parent.id,
+                offset: 0,
+            });
+        }
+        if parent.after() == Some(self.id) {
+            return Some(SelectionPoint {
+                node: parent.id,
+                offset: parent.children.len(),
+            });
+        }
+        if self.is_anonymous() {
+            let child = if after {
+                self.children.last()
+            } else {
+                self.children.first()
+            };
+            return child
+                .and_then(|id| self.with(*id).dom_edge(after))
+                .or_else(|| {
+                    Some(SelectionPoint {
+                        node: self.parent?,
+                        offset: 0,
+                    })
+                });
+        }
+        if let Some(index) = parent.children.iter().position(|id| *id == self.id) {
+            Some(SelectionPoint {
+                node: parent.id,
+                offset: index + usize::from(after),
+            })
+        } else {
+            Some(SelectionPoint {
+                node: parent.id,
+                offset: 0,
+            })
+        }
+    }
+
+    pub(crate) fn selection_child_boundary(
+        &self,
+        point: Point,
+        scale: f64,
+    ) -> Option<SelectionPoint> {
+        for &id in self
+            .layout_children
+            .borrow()
+            .iter()
+            .flatten()
+            .chain(self.hoisted_children.borrow().iter())
+        {
+            let child = self.with(id);
+            if child.containing_block() != Some(self.id) {
+                continue;
+            }
+            let local = child.selection_transform_to_parent(scale).inverse() * point;
+            let size = child.final_layout().size;
+            if local.x >= 0.0
+                && local.x <= size.width as f64
+                && local.y >= 0.0
+                && local.y <= size.height as f64
+            {
+                if let Some(position) = child.selection_child_boundary(local, scale) {
+                    return Some(position);
+                }
+            }
+        }
+        let mut end = None;
+        let layout = self.final_layout();
+        let content_top = (layout.padding.top + layout.border.top) as f64;
+        let content_left = (layout.padding.left + layout.border.left) as f64;
+        let x = (point.x - content_left) as f32;
+        let y = (point.y - content_top) as f32;
+        if self.text_selection_allowed()
+            && let Some(ild) = self
+                .element_data()
+                .and_then(|el| el.inline_layout_data.as_ref())
+            && x >= 0.0
+            && x <= layout.content_box_width()
+            && y >= 0.0
+            && y < ild.layout.height() / ild.layout.scale()
+            && let Some(offset) = self.text_offset_at_point(x, y)
+            && let Some(position) = ild.dom_point_at_offset(offset)
+        {
+            return Some(position);
+        }
+        let at_start = point.y <= content_top || point.x <= content_left;
+        for &id in self.layout_children.borrow().iter().flatten() {
+            let child = self.with(id);
+            if child.taffy_position().is_out_of_flow() {
+                continue;
+            }
+            let local = child.selection_transform_to_parent(scale).inverse() * point;
+            let size = child.final_layout().size;
+            if local.y < size.height as f64 && (local.x < size.width as f64 || local.y < 0.0) {
+                return child.dom_edge(false);
+            }
+            end = child.dom_edge(true);
+        }
+        if self.is_anonymous() {
+            self.dom_edge(!at_start)
+        } else {
+            end.or(Some(SelectionPoint {
+                node: self.id,
+                offset: if at_start { 0 } else { self.children.len() },
+            }))
+        }
+    }
+
     pub(crate) fn text_selection_allowed(&self) -> bool {
         let mut node = self;
         let mut user_select = UserSelect::Auto;
@@ -53,7 +348,6 @@ impl Node {
         }
     }
 
-    /// Map unscrolled local border-box coordinates to the containing block's coordinates.
     pub(crate) fn selection_transform_to_parent(&self, scale: f64) -> Affine {
         let layout = self.final_layout();
         let mut x = layout.location.x as f64 - self.scroll_offset().x;
@@ -72,199 +366,76 @@ impl Node {
                 y += parent.scroll_offset().y + self.tree().viewport_scroll().y;
             }
         }
-        let transform = self.transform();
         Affine::translate((x, y))
             * Affine::scale(1.0 / scale)
-            * transform.as_deref().copied().unwrap_or(Affine::IDENTITY)
+            * self
+                .transform()
+                .as_deref()
+                .copied()
+                .unwrap_or(Affine::IDENTITY)
             * Affine::scale(scale)
     }
+}
 
-    /// Find the nearest caret in this layout subtree, even outside its boxes.
-    pub(crate) fn nearest_text_position(&self, point: Point, scale: f64) -> Option<TextPosition> {
-        if !point.x.is_finite()
-            || !point.y.is_finite()
-            || self
-                .primary_styles()
-                .is_some_and(|style| style.clone_display().is_none())
-        {
-            return None;
-        }
-
-        let mut nearest = None;
-        let mut distance = f64::INFINITY;
-        if self.flags.is_inline_root()
-            && let Some(ild) = self.element_data()?.inline_layout_data.as_ref()
-            && !ild.text.is_empty()
-            && ild.layout.height() > 0.0
-        {
-            let layout = self.final_layout();
-            let origin = Point::new(
-                (layout.padding.left + layout.border.left) as f64,
-                (layout.padding.top + layout.border.top) as f64,
-            );
-            let text_point = point - origin.to_vec2();
-            let text_scale = ild.layout.scale();
-            if let Some((cluster, _)) = Cluster::from_point(
-                &ild.layout,
-                text_point.x as f32 * text_scale,
-                text_point.y as f32 * text_scale,
-            ) && self.with(cluster.style().brush.id).text_selection_allowed()
-                && let Some(offset) =
-                    self.text_offset_at_point(text_point.x as f32, text_point.y as f32)
-            {
-                let nearest_point = Point::new(
-                    text_point.x.clamp(0.0, layout.content_box_width() as f64),
-                    text_point
-                        .y
-                        .clamp(0.0, (ild.layout.height() / text_scale) as f64),
-                ) + origin.to_vec2();
-                distance = point.distance_squared(nearest_point);
-                nearest = Some(TextPosition {
-                    node_id: self.id,
-                    offset,
-                    point: nearest_point,
-                });
-            }
-        }
-
-        let children = self.layout_children.borrow();
-        let hoisted = self.hoisted_children.borrow();
-        for &child_id in children.iter().flatten().chain(
-            hoisted
-                .iter()
-                .filter(|&&id| self.with(id).layout_parent.get() != Some(self.id)),
-        ) {
-            let child = self.with(child_id);
-            if child.containing_block() != Some(self.id) {
-                continue;
-            }
-            let transform = child.selection_transform_to_parent(scale);
-            if let Some(mut position) =
-                child.nearest_text_position(transform.inverse() * point, scale)
-            {
-                position.point = transform * position.point;
-                let child_distance = point.distance_squared(position.point);
-                if child_distance < distance {
-                    distance = child_distance;
-                    nearest = Some(position);
+impl BaseDocument {
+    pub(crate) fn valid_selection_point(&self, point: SelectionPoint) -> bool {
+        self.get_node(point.node).is_some_and(|node| {
+            let mut current = node;
+            while let Some(parent_id) = current.parent {
+                let Some(parent) = self.get_node(parent_id) else {
+                    return false;
+                };
+                if !parent.children.contains(&current.id) {
+                    return false;
                 }
+                current = parent;
             }
-        }
-        nearest
-    }
-}
-
-/// Represents one endpoint (anchor or focus) of a text selection.
-///
-/// For regular nodes, `node_or_parent` contains the node ID directly.
-/// For anonymous blocks, `node_or_parent` contains the parent ID and
-/// `sibling_index` contains the index among anonymous siblings.
-#[derive(Clone, Debug, Default)]
-pub struct SelectionEndpoint {
-    /// For regular nodes: the node ID directly.
-    /// For anonymous blocks: the parent ID (requires lookup via sibling_index).
-    pub(crate) node_or_parent: Option<NodeId>,
-    /// Byte offset within the inline root's text
-    pub offset: usize,
-    /// For anonymous blocks only: index among anonymous siblings.
-    /// When Some, node_or_parent is a parent ID requiring lookup.
-    pub(crate) sibling_index: Option<usize>,
-}
-
-impl SelectionEndpoint {
-    /// Create a new endpoint at the given node and offset (for non-anonymous nodes)
-    fn new(node: NodeId, offset: usize) -> Self {
-        Self {
-            node_or_parent: Some(node),
-            offset,
-            sibling_index: None,
-        }
+            !node.is_anonymous()
+                && current.id == self.root_node().id
+                && node.flags.is_in_document()
+                && if let Some(text) = node.text_data() {
+                    text.content.is_char_boundary(point.offset)
+                } else {
+                    point.offset <= node.children.len()
+                }
+        })
     }
 
-    /// Check if this endpoint is set
-    pub fn is_some(&self) -> bool {
-        self.node_or_parent.is_some()
-    }
-
-    /// Clear this endpoint
-    pub fn clear(&mut self) {
-        self.node_or_parent = None;
-        self.offset = 0;
-        self.sibling_index = None;
-    }
-
-    /// Resolve the node ID, using a lookup function for anonymous blocks.
-    pub fn resolve_node_id(
+    pub(crate) fn compare_selection_points(
         &self,
-        lookup_fn: impl FnOnce(NodeId, usize) -> Option<NodeId>,
-    ) -> Option<NodeId> {
-        match (self.node_or_parent, self.sibling_index) {
-            (Some(node), None) => Some(node),
-            (Some(parent), Some(idx)) => lookup_fn(parent, idx),
-            _ => None,
+        a: SelectionPoint,
+        b: SelectionPoint,
+    ) -> Ordering {
+        if a.node == b.node {
+            return a.offset.cmp(&b.offset);
         }
-    }
-
-    /// Set as a direct node reference (for regular nodes)
-    pub fn set_node(&mut self, node: NodeId, offset: usize) {
-        self.node_or_parent = Some(node);
-        self.offset = offset;
-        self.sibling_index = None;
-    }
-
-    /// Set as an anonymous block reference
-    pub fn set_anonymous(&mut self, parent: NodeId, sibling_index: usize, offset: usize) {
-        self.node_or_parent = Some(parent);
-        self.offset = offset;
-        self.sibling_index = Some(sibling_index);
-    }
-}
-
-/// Text selection state for non-input elements.
-///
-/// Tracks both the anchor (where selection started) and focus (where it currently ends).
-/// For anonymous blocks, we store stable parent references since anonymous block IDs
-/// can change during layout reconstruction.
-#[derive(Clone, Debug, Default)]
-pub struct TextSelection {
-    /// The anchor point (where selection started via mousedown)
-    pub anchor: SelectionEndpoint,
-    /// The focus point (where selection currently ends, updated during drag)
-    pub focus: SelectionEndpoint,
-}
-
-impl TextSelection {
-    /// Create a selection spanning from anchor to focus
-    pub fn new(
-        anchor_node: NodeId,
-        anchor_offset: usize,
-        focus_node: NodeId,
-        focus_offset: usize,
-    ) -> Self {
-        Self {
-            anchor: SelectionEndpoint::new(anchor_node, anchor_offset),
-            focus: SelectionEndpoint::new(focus_node, focus_offset),
+        let child_index = |ancestor, mut child| {
+            while let Some(node) = self.get_node(child) {
+                let parent = node.parent?;
+                if parent == ancestor {
+                    return self.nodes[parent]
+                        .children
+                        .iter()
+                        .position(|id| *id == child);
+                }
+                child = parent;
+            }
+            None
+        };
+        if let Some(index) = child_index(a.node, b.node) {
+            return if a.offset <= index {
+                Ordering::Less
+            } else {
+                Ordering::Greater
+            };
         }
-    }
-
-    /// Check if there is an active (non-empty) selection.
-    /// Note: For anonymous blocks this compares parent+sibling_index, not resolved node IDs.
-    pub fn is_active(&self) -> bool {
-        self.anchor.is_some()
-            && self.focus.is_some()
-            && (self.anchor.node_or_parent != self.focus.node_or_parent
-                || self.anchor.sibling_index != self.focus.sibling_index
-                || self.anchor.offset != self.focus.offset)
-    }
-
-    /// Clear the selection
-    pub fn clear(&mut self) {
-        self.anchor.clear();
-        self.focus.clear();
-    }
-
-    /// Update the focus endpoint (for non-anonymous nodes)
-    pub fn set_focus(&mut self, node: NodeId, offset: usize) {
-        self.focus.set_node(node, offset);
+        if let Some(index) = child_index(b.node, a.node) {
+            return if b.offset <= index {
+                Ordering::Greater
+            } else {
+                Ordering::Less
+            };
+        }
+        self.compare_document_order(a.node, b.node)
     }
 }

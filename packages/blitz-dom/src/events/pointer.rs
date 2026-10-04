@@ -494,9 +494,10 @@ pub(crate) fn handle_pointerdown(
         ClickTarget::SelectableText => {
             // Handle text selection for non-input elements
             if doc.nodes[actual_target].text_selection_allowed()
-                && let Some((inline_root_id, byte_offset)) = doc.find_text_position(x, y)
+                && let Some((node_id, offset)) = doc.find_text_position(x, y)
+                && doc.nodes[node_id].text_selection_allowed()
             {
-                doc.set_text_selection(inline_root_id, byte_offset, inline_root_id, byte_offset);
+                doc.set_text_selection(node_id, offset, node_id, offset);
                 doc.shell_provider.request_redraw();
             } else {
                 doc.clear_text_selection();

@@ -990,8 +990,14 @@ impl<'doc> DocumentMutator<'doc> {
 
             // Clear the text selection if one of its endpoints references this node.
             // This prevents stale selection endpoint references.
-            if doc.text_selection.anchor.node_or_parent == Some(node_id)
-                || doc.text_selection.focus.node_or_parent == Some(node_id)
+            if doc
+                .text_selection
+                .anchor
+                .is_some_and(|point| point.node == node_id)
+                || doc
+                    .text_selection
+                    .focus
+                    .is_some_and(|point| point.node == node_id)
             {
                 doc.text_selection.clear();
             }

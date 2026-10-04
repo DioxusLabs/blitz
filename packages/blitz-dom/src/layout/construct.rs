@@ -1042,6 +1042,8 @@ pub(crate) fn build_inline_layout_into(
 ) {
     // Get the inline context's root node's text styles
     let root_node = &nodes[inline_context_root_node_id];
+    text_layout.sources.clear();
+    text_layout.selection_map_built = false;
     let root_node_style = root_node.primary_styles().or_else(|| {
         root_node
             .parent
@@ -1095,13 +1097,34 @@ pub(crate) fn build_inline_layout_into(
     };
 
     if let Some(before_id) = root_node.before() {
-        build_inline_layout_recursive(&mut builder, nodes, before_id, text_transform);
+        build_inline_layout_recursive(
+            &mut builder,
+            nodes,
+            before_id,
+            text_transform,
+            &mut text_layout.sources,
+            inline_context_root_node_id,
+        );
     }
     for child_id in root_node.children.iter().copied() {
-        build_inline_layout_recursive(&mut builder, nodes, child_id, text_transform);
+        build_inline_layout_recursive(
+            &mut builder,
+            nodes,
+            child_id,
+            text_transform,
+            &mut text_layout.sources,
+            inline_context_root_node_id,
+        );
     }
     if let Some(after_id) = root_node.after() {
-        build_inline_layout_recursive(&mut builder, nodes, after_id, text_transform);
+        build_inline_layout_recursive(
+            &mut builder,
+            nodes,
+            after_id,
+            text_transform,
+            &mut text_layout.sources,
+            inline_context_root_node_id,
+        );
     }
 
     text_layout.text = builder.build_into(&mut text_layout.layout);
@@ -1112,6 +1135,8 @@ pub(crate) fn build_inline_layout_into(
         nodes: &crate::NodeTree,
         node_id: NodeId,
         parent_text_transform: TextTransform,
+        sources: &mut Vec<crate::selection::TextSource>,
+        brush_owner: NodeId,
     ) {
         let node = &nodes[node_id];
 
@@ -1168,7 +1193,14 @@ pub(crate) fn build_inline_layout_into(
                         );
                         for child_id in node.children.iter().copied() {
                             // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
-                            build_inline_layout_recursive(builder, nodes, child_id, text_transform);
+                            build_inline_layout_recursive(
+                                builder,
+                                nodes,
+                                child_id,
+                                text_transform,
+                                sources,
+                                brush_owner,
+                            );
                         }
                         builder.pop_style_span();
                     }
@@ -1197,8 +1229,19 @@ pub(crate) fn build_inline_layout_into(
                                 parley::StyleProperty::WhiteSpaceCollapse(
                                     WhiteSpaceCollapse::Preserve,
                                 ),
+                                StyleProperty::Brush(TextBrush {
+                                    id: brush_owner,
+                                    text_node: Some(node_id),
+                                }),
                             ]);
                             builder.push_text("\n");
+                            sources.push(crate::selection::TextSource {
+                                node: node_id,
+                                text: "\n".to_string(),
+                                offsets: Vec::new(),
+                                collapse_spaces: false,
+                                collapse_breaks: false,
+                            });
                             builder.pop_style_span();
                         } else {
                             // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
@@ -1218,6 +1261,8 @@ pub(crate) fn build_inline_layout_into(
                                     nodes,
                                     before_id,
                                     text_transform,
+                                    sources,
+                                    node_id,
                                 );
                             }
 
@@ -1227,6 +1272,8 @@ pub(crate) fn build_inline_layout_into(
                                     nodes,
                                     child_id,
                                     text_transform,
+                                    sources,
+                                    node_id,
                                 );
                             }
                             if let Some(after_id) = node.after() {
@@ -1235,6 +1282,8 @@ pub(crate) fn build_inline_layout_into(
                                     nodes,
                                     after_id,
                                     text_transform,
+                                    sources,
+                                    node_id,
                                 );
                             }
 
@@ -1264,18 +1313,59 @@ pub(crate) fn build_inline_layout_into(
                 // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
                 // dbg!(&data.content);
 
-                // TODO: optimize case transforms to be non-allocating
-                match parent_text_transform {
-                    TextTransform::UPPERCASE => {
-                        builder.push_text(&data.content.to_uppercase());
+                let text = match parent_text_transform {
+                    TextTransform::UPPERCASE => data.content.to_uppercase(),
+                    TextTransform::LOWERCASE => data.content.to_lowercase(),
+                    _ => data.content.to_string(),
+                };
+                let mut offsets = Vec::new();
+                if matches!(
+                    parent_text_transform,
+                    TextTransform::UPPERCASE | TextTransform::LOWERCASE
+                ) {
+                    for (index, ch) in data.content.char_indices() {
+                        let count = match parent_text_transform {
+                            TextTransform::UPPERCASE => ch.to_uppercase().count(),
+                            TextTransform::LOWERCASE => ch.to_lowercase().count(),
+                            _ => 1,
+                        };
+                        offsets.extend(std::iter::repeat_n(index..index + ch.len_utf8(), count));
                     }
-                    TextTransform::LOWERCASE => {
-                        builder.push_text(&data.content.to_lowercase());
-                    }
-                    _ => {
-                        builder.push_text(&data.content);
+                    if text
+                        .char_indices()
+                        .zip(&offsets)
+                        .all(|((index, ch), offset)| *offset == (index..index + ch.len_utf8()))
+                    {
+                        offsets.clear();
+                        offsets.shrink_to_fit();
                     }
                 }
+                let parent = node.parent.map(|id| &nodes[id]);
+                let whitespace = parent
+                    .and_then(|node| node.primary_styles())
+                    .map(|style| {
+                        stylo_to_parley::white_space_collapse(style.clone_white_space_collapse())
+                    })
+                    .unwrap_or(WhiteSpaceCollapse::Collapse);
+                builder.push_style_modification_span(&[
+                    StyleProperty::Brush(TextBrush {
+                        id: brush_owner,
+                        text_node: Some(node_id),
+                    }),
+                    StyleProperty::VerticalAlign(parley::VerticalAlign::default()),
+                ]);
+                builder.push_text(&text);
+                builder.pop_style_span();
+                sources.push(crate::selection::TextSource {
+                    node: node_id,
+                    text,
+                    offsets,
+                    collapse_spaces: matches!(
+                        whitespace,
+                        WhiteSpaceCollapse::Collapse | WhiteSpaceCollapse::PreserveBreaks
+                    ),
+                    collapse_breaks: whitespace == WhiteSpaceCollapse::Collapse,
+                });
             }
             NodeData::Comment { .. } => {
                 // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);

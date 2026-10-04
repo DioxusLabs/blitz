@@ -922,8 +922,14 @@ impl BaseDocument {
         if self.mousedown_node_id == Some(node_id) {
             self.mousedown_node_id = None;
         }
-        if self.text_selection.anchor.node_or_parent == Some(node_id)
-            || self.text_selection.focus.node_or_parent == Some(node_id)
+        if self
+            .text_selection
+            .anchor
+            .is_some_and(|point| point.node == node_id)
+            || self
+                .text_selection
+                .focus
+                .is_some_and(|point| point.node == node_id)
         {
             self.text_selection.clear();
         }
@@ -2544,25 +2550,32 @@ impl BaseDocument {
 
     // Text selection methods
 
-    /// Find the text position (inline_root_id, byte_offset) at a given point.
-    /// Prefer the hit inline root, otherwise find the nearest caret in the hit box's
-    /// subtree (or its ancestors for empty boxes and page background).
+    /// Find a DOM boundary point at page coordinates. Text offsets are UTF-8
+    /// byte offsets; element offsets count children, not inline-layout bytes.
     pub fn find_text_position(&self, x: f32, y: f32) -> Option<(NodeId, usize)> {
         let scale = self.viewport().scale_f64();
-        let (mut node, mut point) = if let Some(hit) = self.hit(x, y) {
+        let (node, point) = if let Some(hit) = self.hit(x, y) {
             let hit_node = self.get_node(hit.node_id)?;
-            if hit_node.text_selection_allowed()
-                && (hit.is_text || hit_node.flags.is_inline_root())
-                && let Some(inline_root) = hit_node.inline_root_ancestor()
-                && let Some(offset) = inline_root.text_offset_at_point(hit.x, hit.y)
-            {
-                return Some((inline_root.id, offset));
-            }
             let node = if hit.is_text {
                 hit_node.inline_root_ancestor()?
             } else {
                 hit_node
             };
+            if node.flags.is_inline_root() {
+                if let Some(ild) = node.element_data()?.inline_layout_data.as_ref() {
+                    let within_text = hit.x >= 0.0
+                        && hit.x <= node.final_layout().content_box_width()
+                        && hit.y >= 0.0
+                        && hit.y < ild.layout.height() / ild.layout.scale();
+                    if (hit.is_text || within_text) && hit_node.text_selection_allowed() {
+                        if let Some(offset) = node.text_offset_at_point(hit.x, hit.y)
+                            && let Some(position) = ild.dom_point_at_offset(offset)
+                        {
+                            return Some((position.node, position.offset));
+                        }
+                    }
+                }
+            }
             let mut point = kurbo::Point::new(hit.x as f64, hit.y as f64);
             if node.flags.is_inline_root() {
                 let layout = node.final_layout();
@@ -2576,16 +2589,15 @@ impl BaseDocument {
                 * kurbo::Point::new(x as f64, y as f64);
             (node, point)
         };
-        loop {
-            if let Some(position) = node.nearest_text_position(point, scale) {
-                return Some((position.node_id, position.offset));
-            }
-            point = node.selection_transform_to_parent(scale) * point;
-            node = self.get_node(node.containing_block()?)?;
+        if !point.x.is_finite() || !point.y.is_finite() {
+            return None;
         }
+        let position = node.selection_child_boundary(point, scale)?;
+        Some((position.node, position.offset))
     }
 
-    /// Set the text selection range (creates a new selection from anchor to focus)
+    /// Set DOM selection endpoints. Text offsets must lie on UTF-8 boundaries;
+    /// other offsets count DOM children. Invalid endpoints clear the selection.
     pub fn set_text_selection(
         &mut self,
         anchor_node: NodeId,
@@ -2593,84 +2605,47 @@ impl BaseDocument {
         focus_node: NodeId,
         focus_offset: usize,
     ) {
-        self.text_selection =
-            TextSelection::new(anchor_node, anchor_offset, focus_node, focus_offset);
-
-        // For anonymous blocks, switch to storing parent+sibling_index (stable reference)
-        if let (Some(parent), Some(idx)) = self.anonymous_block_location(anchor_node) {
-            self.text_selection
-                .anchor
-                .set_anonymous(parent, idx, anchor_offset);
-        }
-        if let (Some(parent), Some(idx)) = self.anonymous_block_location(focus_node) {
-            self.text_selection
-                .focus
-                .set_anonymous(parent, idx, focus_offset);
+        let anchor = crate::SelectionPoint {
+            node: anchor_node,
+            offset: anchor_offset,
+        };
+        let focus = crate::SelectionPoint {
+            node: focus_node,
+            offset: focus_offset,
+        };
+        if self.valid_selection_point(anchor) && self.valid_selection_point(focus) {
+            self.text_selection = TextSelection {
+                anchor: Some(anchor),
+                focus: Some(focus),
+            };
+        } else {
+            self.clear_text_selection();
         }
     }
 
-    /// Get the parent ID and sibling index for a node if it's an anonymous block.
-    /// Returns (None, None) for non-anonymous blocks.
-    fn anonymous_block_location(&self, node_id: NodeId) -> (Option<NodeId>, Option<usize>) {
-        let Some(node) = self.get_node(node_id) else {
-            return (None, None);
-        };
-
-        if !node.is_anonymous() {
-            return (None, None);
-        }
-
-        let Some(parent_id) = node.parent else {
-            return (None, None);
-        };
-
-        let Some(parent) = self.get_node(parent_id) else {
-            return (Some(parent_id), None);
-        };
-
-        let layout_children = parent.layout_children.borrow();
-        let Some(children) = layout_children.as_ref() else {
-            return (Some(parent_id), None);
-        };
-
-        // Find the index of this anonymous block among siblings
-        let mut anon_index = 0;
-        for &child_id in children.iter() {
-            if child_id == node_id {
-                return (Some(parent_id), Some(anon_index));
-            }
-            if self.get_node(child_id).is_some_and(|n| n.is_anonymous()) {
-                anon_index += 1;
-            }
-        }
-
-        (Some(parent_id), None)
+    pub fn text_selection(&self) -> &TextSelection {
+        &self.text_selection
     }
 
-    /// Clear the text selection
     pub fn clear_text_selection(&mut self) {
         self.text_selection.clear();
     }
 
-    /// Update the selection focus point (used during mouse drag to extend selection).
+    /// Update the focus using a DOM text-node byte offset or element child index.
     pub fn update_selection_focus(&mut self, focus_node: NodeId, focus_offset: usize) {
-        // For anonymous blocks, store parent+sibling_index; otherwise store node directly
-        if let (Some(parent), Some(idx)) = self.anonymous_block_location(focus_node) {
-            self.text_selection
-                .focus
-                .set_anonymous(parent, idx, focus_offset);
-        } else {
-            self.text_selection.set_focus(focus_node, focus_offset);
+        let focus = crate::SelectionPoint {
+            node: focus_node,
+            offset: focus_offset,
+        };
+        if self.valid_selection_point(focus) {
+            self.text_selection.focus = Some(focus);
         }
     }
 
-    /// Extend text selection to the given point. Returns true if selection was updated.
-    /// This is a convenience method that combines find_text_position and update_selection_focus.
     pub fn extend_text_selection_to_point(&mut self, x: f32, y: f32) -> bool {
-        if !self.text_selection.anchor.is_some() {
+        if self.text_selection.anchor.is_none() {
             return false;
         }
-
         if let Some((node, offset)) = self.find_text_position(x, y) {
             self.update_selection_focus(node, offset);
             self.shell_provider.request_redraw();
@@ -2680,165 +2655,101 @@ impl BaseDocument {
         }
     }
 
-    /// Find the Nth anonymous block under a parent.
-    fn find_anonymous_block_by_index(
-        &self,
-        parent_id: NodeId,
-        target_index: usize,
-    ) -> Option<NodeId> {
-        let parent = self.get_node(parent_id)?;
-        let layout_children = parent.layout_children.borrow();
-        let children = layout_children.as_ref()?;
-
-        children
-            .iter()
-            .filter(|&&child_id| self.get_node(child_id).is_some_and(|n| n.is_anonymous()))
-            .nth(target_index)
-            .copied()
-    }
-
-    /// Check if there is an active (non-empty) text selection
     pub fn has_text_selection(&self) -> bool {
         self.text_selection.is_active()
     }
 
-    /// Get the selected text content, supporting selection across multiple inline roots.
+    /// Copy selected rendered text in DOM order.
     pub fn get_selected_text(&self) -> Option<String> {
-        let ranges = self.get_text_selection_ranges();
-        if ranges.is_empty() {
-            return None;
-        }
-
         let mut result = String::new();
-        for (node_id, start, end) in &ranges {
-            let node = self.get_node(*node_id)?;
-            let element_data = node.element_data()?;
-            let inline_layout = element_data.inline_layout_data.as_ref()?;
-
-            if *end > inline_layout.text.len() {
-                continue;
+        let mut previous_context = None;
+        for (node_id, start, end) in self.get_text_selection_ranges() {
+            let mut node = self.get_node(node_id)?;
+            while let Some(parent) = node.containing_block().and_then(|id| self.get_node(id)) {
+                if !parent.flags.is_inline_root() || node.taffy_position().is_out_of_flow() {
+                    break;
+                }
+                node = parent;
             }
-
-            if !result.is_empty() {
+            let context = node.id;
+            let inline_layout = self
+                .get_node(node_id)?
+                .element_data()?
+                .inline_layout_data
+                .as_ref()?;
+            if !result.is_empty() && previous_context != Some(context) {
                 result.push(' ');
             }
-            result.push_str(&inline_layout.text[*start..*end]);
+            result.push_str(&inline_layout.text[start..end]);
+            previous_context = Some(context);
         }
-
-        if result.is_empty() {
-            None
-        } else {
-            Some(result)
-        }
+        (!result.is_empty()).then_some(result)
     }
 
-    /// Get all selection ranges as Vec<(node_id, start_offset, end_offset)>.
-    /// Returns empty vec if no selection.
+    /// Project DOM endpoints into inline-root byte ranges for painting and copying.
+    /// An inline root can have multiple ranges, e.g. around an embedded inline box.
     pub fn get_text_selection_ranges(&self) -> Vec<(NodeId, usize, usize)> {
-        let lookup = |parent_id, idx| self.find_anonymous_block_by_index(parent_id, idx);
-
-        let anchor_node = match self.text_selection.anchor.resolve_node_id(lookup) {
-            Some(id) => id,
-            None => return Vec::new(),
+        let (Some(mut start), Some(mut end)) =
+            (self.text_selection.anchor, self.text_selection.focus)
+        else {
+            return Vec::new();
         };
-        let focus_node = match self.text_selection.focus.resolve_node_id(lookup) {
-            Some(id) => id,
-            None => return Vec::new(),
-        };
-
-        // Guard against stale selection endpoints: nodes may have been removed from
-        // the document (e.g. by script) since the selection was made.
-        let node_is_in_doc = |node_id: NodeId| {
-            self.nodes
-                .get(node_id)
-                .is_some_and(|node| node.flags.is_in_document())
-        };
-        if !node_is_in_doc(anchor_node) || !node_is_in_doc(focus_node) {
+        if !self.valid_selection_point(start) || !self.valid_selection_point(end) || start == end {
             return Vec::new();
         }
-
-        // Single node selection
-        if anchor_node == focus_node {
-            let start = self
-                .text_selection
-                .anchor
-                .offset
-                .min(self.text_selection.focus.offset);
-            let end = self
-                .text_selection
-                .anchor
-                .offset
-                .max(self.text_selection.focus.offset);
-
-            if start == end {
-                return Vec::new();
+        if self.compare_selection_points(start, end).is_gt() {
+            std::mem::swap(&mut start, &mut end);
+        }
+        let mut selected = Vec::new();
+        for (id, node) in self.nodes.iter() {
+            if !node.flags.is_in_document() || !node.flags.is_inline_root() {
+                continue;
             }
-            return vec![(anchor_node, start, end)];
+            let Some(ild) = node
+                .element_data()
+                .and_then(|el| el.inline_layout_data.as_ref())
+            else {
+                continue;
+            };
+            for mapping in &ild.selection_map {
+                if mapping.start != mapping.end
+                    && self.valid_selection_point(mapping.start)
+                    && self.valid_selection_point(mapping.end)
+                    && self.nodes[mapping.start.node].text_selection_allowed()
+                    && self.compare_selection_points(mapping.end, start).is_gt()
+                    && self.compare_selection_points(mapping.start, end).is_lt()
+                {
+                    let mut range = mapping.range.clone();
+                    let mut point = mapping.start;
+                    if mapping.is_linear() {
+                        if start.node == point.node && start.offset > point.offset {
+                            range.start += start.offset - point.offset;
+                            point = start;
+                        }
+                        if end.node == mapping.end.node && end.offset < mapping.end.offset {
+                            range.end -= mapping.end.offset - end.offset;
+                        }
+                    }
+                    selected.push((id, point, range));
+                }
+            }
         }
-
-        // Multi-node selection: collect all inline roots between anchor and focus
-        let inline_roots = self.collect_inline_roots_in_range(anchor_node, focus_node);
-        if inline_roots.is_empty() {
-            return Vec::new();
-        }
-
-        // Determine document order using the collected inline_roots order
-        // (inline_roots is already in document order from first to last)
-        let first_in_roots = inline_roots[0];
-
-        let (first_node, first_offset, last_node, last_offset) =
-            if first_in_roots == anchor_node || (first_in_roots != focus_node) {
-                // anchor is first (or neither endpoint is in roots, which shouldn't happen)
-                (
-                    anchor_node,
-                    self.text_selection.anchor.offset,
-                    focus_node,
-                    self.text_selection.focus.offset,
-                )
+        selected.sort_by(|(a_id, a_point, a), (b_id, b_point, b)| {
+            self.compare_selection_points(*a_point, *b_point)
+                .then_with(|| a_id.cmp(b_id))
+                .then_with(|| a.start.cmp(&b.start))
+        });
+        let mut ranges: Vec<(NodeId, usize, usize)> = Vec::new();
+        for (id, _, range) in selected {
+            if let Some((last_id, _, last_end)) = ranges.last_mut()
+                && *last_id == id
+                && *last_end == range.start
+            {
+                *last_end = range.end;
             } else {
-                // focus is first
-                (
-                    focus_node,
-                    self.text_selection.focus.offset,
-                    anchor_node,
-                    self.text_selection.anchor.offset,
-                )
-            };
-
-        let mut ranges = Vec::with_capacity(inline_roots.len());
-
-        for &node_id in &inline_roots {
-            let Some(node) = self.get_node(node_id) else {
-                continue;
-            };
-            let Some(element_data) = node.element_data() else {
-                continue;
-            };
-            let Some(inline_layout) = element_data.inline_layout_data.as_ref() else {
-                continue;
-            };
-
-            let text_len = inline_layout.text.len();
-
-            if node_id == first_node && node_id == last_node {
-                let start = first_offset.min(last_offset);
-                let end = first_offset.max(last_offset);
-                if start < end && end <= text_len {
-                    ranges.push((node_id, start, end));
-                }
-            } else if node_id == first_node {
-                if first_offset < text_len {
-                    ranges.push((node_id, first_offset, text_len));
-                }
-            } else if node_id == last_node {
-                if last_offset > 0 && last_offset <= text_len {
-                    ranges.push((node_id, 0, last_offset));
-                }
-            } else if text_len > 0 {
-                ranges.push((node_id, 0, text_len));
+                ranges.push((id, range.start, range.end));
             }
         }
-
         ranges
     }
 }

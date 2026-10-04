@@ -13,11 +13,16 @@ use crate::util::ACTION_MOD;
 pub struct TextBrush {
     /// The node id for the span
     pub id: NodeId,
+    /// Source text node (or `br`), distinct from the styling node.
+    pub text_node: Option<NodeId>,
 }
 
 impl TextBrush {
     pub(crate) fn from_id(id: NodeId) -> Self {
-        Self { id }
+        Self {
+            id,
+            text_node: None,
+        }
     }
 }
 
@@ -26,6 +31,9 @@ pub struct TextLayout {
     pub text: String,
     pub content_widths: Option<ContentWidths>,
     pub layout: parley::layout::Layout<TextBrush>,
+    pub(crate) sources: Vec<crate::selection::TextSource>,
+    pub(crate) selection_map: Vec<crate::selection::TextMapping>,
+    pub(crate) selection_map_built: bool,
 }
 
 impl TextLayout {

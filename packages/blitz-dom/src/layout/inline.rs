@@ -994,6 +994,7 @@ impl BaseDocument {
             .map(line_baseline);
 
         // Put layout back
+        inline_layout.rebuild_selection_map(&self.nodes);
         self.nodes[node_id]
             .data
             .downcast_element_mut()
