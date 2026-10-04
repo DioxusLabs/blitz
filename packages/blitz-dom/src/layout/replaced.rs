@@ -1,7 +1,7 @@
 use markup5ever::{LocalName, local_name};
 use taffy::{
     AvailableSpace, BoxSizing, CoreStyle, LayoutInput, LayoutOutput, MaybeMath, MaybeResolve,
-    RequestedAxis, ResolveOrZero as _, RunMode, Size, SizingMode,
+    RequestedAxis, ResolveOrZero as _, RunMode, Size,
 };
 
 /// Whether an element is a replaced element laid out as a leaf box with an
@@ -59,7 +59,6 @@ pub fn compute_replaced_layout(
         known_dimensions,
         parent_size,
         available_space,
-        sizing_mode,
         run_mode,
         axis: requested_axis,
         ..
@@ -259,23 +258,24 @@ pub fn compute_replaced_layout(
         .maybe_max(min_size)
         .maybe_sub(box_sizing_adjustment);
 
-    // For ContentSize mode, ignore preferred/min size styles in the axis being measured: the
-    // parent layout algorithm applies them itself, and content-based measurement should return
-    // the content size (the intrinsic size for replaced elements). Constraints in the opposite
-    // axis are retained as they transfer through the aspect ratio (transferred size suggestion).
+    // When a single axis is being measured, ignore the preferred/min size styles in that axis:
+    // the parent applies them itself (it passes a resolved preferred size as a known dimension
+    // and clamps the size that is returned), and content-based measurement should return the
+    // content size (the intrinsic size for replaced elements). Constraints in the opposite axis
+    // are retained as they transfer through the aspect ratio (transferred size suggestion).
+    //
+    // This must not depend on which kind of container is asking, as measurements are cached.
     let mut style_size = style_size;
-    if sizing_mode == SizingMode::ContentSize {
-        match requested_axis {
-            RequestedAxis::Horizontal => {
-                style_size.width = None;
-                min_size.width = None;
-            }
-            RequestedAxis::Vertical => {
-                style_size.height = None;
-                min_size.height = None;
-            }
-            RequestedAxis::Both => {}
+    match requested_axis {
+        RequestedAxis::Horizontal => {
+            style_size.width = None;
+            min_size.width = None;
         }
+        RequestedAxis::Vertical => {
+            style_size.height = None;
+            min_size.height = None;
+        }
+        RequestedAxis::Both => {}
     }
 
     // Known dimensions are the parent's current sizing inputs. Clamp them before transferring
@@ -289,8 +289,12 @@ pub fn compute_replaced_layout(
             .maybe_sub(box_sizing_adjustment)
             .maybe_max(min_size);
 
+        // The parent may only have been able to resolve one of the axes (it cannot resolve
+        // `stretch` sizes or sizes that depend on replaced-element percentage rules), so the
+        // preferred size in the other axis still applies.
         let content_box_known_dimensions = known_dimensions.maybe_sub(pb_sum);
         let transferred = content_box_known_dimensions
+            .or(style_size)
             .maybe_clamp(min_size, style_max_size)
             .maybe_apply_aspect_ratio(aspect_ratio)
             .unwrap_or(inherent_size);
