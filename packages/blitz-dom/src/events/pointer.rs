@@ -12,7 +12,7 @@ use blitz_traits::{
 };
 use keyboard_types::Modifiers;
 use markup5ever::local_name;
-use style::values::computed::{Overflow, TouchAction, UserSelect};
+use style::values::computed::{Overflow, TouchAction};
 use style_dom::ElementState;
 use taffy::AbsoluteAxis;
 
@@ -216,32 +216,22 @@ pub(crate) fn handle_pointermove<F: FnMut(DomEvent)>(
     let mut changed = doc.set_hover_to(x, y);
 
     // Check if we've moved enough to be considered a selection drag (2px threshold)
-    if buttons != MouseEventButtons::None && doc.drag_mode == DragMode::None {
+    if buttons.contains(MouseEventButtons::from(MouseEventButton::Main))
+        && doc.drag_mode == DragMode::None
+    {
         let dx = x - doc.mousedown_position.x;
         let dy = y - doc.mousedown_position.y;
         if dx.abs() > 2.0 || dy.abs() > 2.0 {
             match event.id {
                 BlitzPointerId::Mouse | BlitzPointerId::Pen => {
-                    if let Some(mousedown_node_id) = doc.mousedown_node_id {
-                        let node = &doc.nodes[mousedown_node_id];
-                        if let Some(style) = node.primary_styles() {
-                            let user_select = style.clone_user_select();
-                            if user_select == UserSelect::None {
-                                // Do nothing. Continue with rest of function
-                            } else if user_select == UserSelect::Auto {
-                                if let Some(parent) = node.parent {
-                                    let node = &doc.nodes[parent];
-                                    if let Some(style) = node.primary_styles() {
-                                        let user_select = style.clone_user_select();
-                                        if user_select == UserSelect::None {
-                                            // Do nothing. Continue with rest of function
-                                        } else {
-                                            doc.drag_mode = DragMode::Selecting;
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                    if doc.text_selection.anchor.is_some()
+                        || doc.mousedown_node_id.is_some_and(|id| {
+                            doc.nodes[id]
+                                .element_data()
+                                .is_some_and(|el| el.text_input_data().is_some())
+                        })
+                    {
+                        doc.drag_mode = DragMode::Selecting;
                     }
                 }
                 BlitzPointerId::Finger(_) => {
@@ -297,6 +287,9 @@ pub(crate) fn handle_pointermove<F: FnMut(DomEvent)>(
     }
 
     let Some(hit) = doc.hit(x, y) else {
+        if doc.drag_mode == DragMode::Selecting && doc.text_selection.anchor.is_some() {
+            changed |= doc.extend_text_selection_to_point(x, y);
+        }
         return changed;
     };
 
@@ -305,6 +298,12 @@ pub(crate) fn handle_pointermove<F: FnMut(DomEvent)>(
             hit.node_id,
             DomEventData::MouseEnter(event.clone()),
         ));
+    }
+
+    // A document selection follows the pointer even over controls or outside all boxes.
+    if doc.drag_mode == DragMode::Selecting && doc.text_selection.anchor.is_some() {
+        changed |= doc.extend_text_selection_to_point(x, y);
+        return changed;
     }
 
     // `target` is the event's canonicalized target (never a layout-generated
@@ -317,13 +316,6 @@ pub(crate) fn handle_pointermove<F: FnMut(DomEvent)>(
 
     let node = &mut doc.nodes[target];
     let Some(el) = node.data.downcast_element_mut() else {
-        // Handle text selection extension for non-element nodes
-        if buttons != MouseEventButtons::None
-            && doc.drag_mode == DragMode::Selecting
-            && doc.extend_text_selection_to_point(x, y)
-        {
-            changed = true;
-        }
         return changed;
     };
 
@@ -369,12 +361,6 @@ pub(crate) fn handle_pointermove<F: FnMut(DomEvent)>(
             .extend_selection_to_point(x as f32, y as f32);
 
         changed = true;
-    } else if event.is_mouse()
-        && buttons != MouseEventButtons::None
-        && doc.drag_mode == DragMode::Selecting
-        && doc.extend_text_selection_to_point(x, y)
-    {
-        changed = true;
     }
 
     changed
@@ -410,9 +396,17 @@ pub(crate) fn handle_pointerdown(
     doc.drag_mode = DragMode::None;
     doc.scroll_animation = ScrollAnimationState::None;
 
+    if button != MouseEventButton::Main {
+        return;
+    }
+
     let Some(hit) = doc.hit(x, y) else {
-        // Clear text selection when clicking outside any element
-        doc.clear_text_selection();
+        if let Some((node, offset)) = doc.find_text_position(x, y) {
+            doc.set_text_selection(node, offset, node, offset);
+            doc.shell_provider.request_redraw();
+        } else {
+            doc.clear_text_selection();
+        }
         return;
     };
 
@@ -496,10 +490,12 @@ pub(crate) fn handle_pointerdown(
     };
 
     match click_target {
-        ClickTarget::Disabled => (),
+        ClickTarget::Disabled => doc.clear_text_selection(),
         ClickTarget::SelectableText => {
             // Handle text selection for non-input elements
-            if let Some((inline_root_id, byte_offset)) = doc.find_text_position(x, y) {
+            if doc.nodes[actual_target].text_selection_allowed()
+                && let Some((inline_root_id, byte_offset)) = doc.find_text_position(x, y)
+            {
                 doc.set_text_selection(inline_root_id, byte_offset, inline_root_id, byte_offset);
                 doc.shell_provider.request_redraw();
             } else {

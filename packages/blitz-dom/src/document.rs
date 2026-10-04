@@ -2545,14 +2545,44 @@ impl BaseDocument {
     // Text selection methods
 
     /// Find the text position (inline_root_id, byte_offset) at a given point.
-    /// Uses hit() for proper coordinate transformation, then finds the inline root
-    /// and byte offset.
+    /// Prefer the hit inline root, otherwise find the nearest caret in the hit box's
+    /// subtree (or its ancestors for empty boxes and page background).
     pub fn find_text_position(&self, x: f32, y: f32) -> Option<(NodeId, usize)> {
-        let hit = self.hit(x, y)?;
-        let hit_node = self.get_node(hit.node_id)?;
-        let inline_root = hit_node.inline_root_ancestor()?;
-        let byte_offset = inline_root.text_offset_at_point(hit.x, hit.y)?;
-        Some((inline_root.id, byte_offset))
+        let scale = self.viewport().scale_f64();
+        let (mut node, mut point) = if let Some(hit) = self.hit(x, y) {
+            let hit_node = self.get_node(hit.node_id)?;
+            if hit_node.text_selection_allowed()
+                && (hit.is_text || hit_node.flags.is_inline_root())
+                && let Some(inline_root) = hit_node.inline_root_ancestor()
+                && let Some(offset) = inline_root.text_offset_at_point(hit.x, hit.y)
+            {
+                return Some((inline_root.id, offset));
+            }
+            let node = if hit.is_text {
+                hit_node.inline_root_ancestor()?
+            } else {
+                hit_node
+            };
+            let mut point = kurbo::Point::new(hit.x as f64, hit.y as f64);
+            if node.flags.is_inline_root() {
+                let layout = node.final_layout();
+                point.x += (layout.padding.left + layout.border.left) as f64;
+                point.y += (layout.padding.top + layout.border.top) as f64;
+            }
+            (node, point)
+        } else {
+            let node = self.try_root_element()?;
+            let point = node.selection_transform_to_parent(scale).inverse()
+                * kurbo::Point::new(x as f64, y as f64);
+            (node, point)
+        };
+        loop {
+            if let Some(position) = node.nearest_text_position(point, scale) {
+                return Some((position.node_id, position.offset));
+            }
+            point = node.selection_transform_to_parent(scale) * point;
+            node = self.get_node(node.containing_block()?)?;
+        }
     }
 
     /// Set the text selection range (creates a new selection from anchor to focus)
