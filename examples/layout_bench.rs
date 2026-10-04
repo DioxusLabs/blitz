@@ -10,7 +10,9 @@
 //! Environment variables (with the `parallel-layout` feature):
 //! - `THRESHOLDS=256,1024`, `THREADS=1,2,4,8`, `WEIGHTS=leaf,container,inline_root,text_bytes_per_unit`
 //! - `SPLIT=weight`: divide the jobs of a batch between tasks by weight rather than by count
-//! - `PHASES=1`: also print the time taken by the subtree weight walk, the layout and the rounding
+//! - `PHASES=1`: also print the time taken by the separate subtree weight walk (only needed after the
+//!   weights of nodes are changed: the weights are otherwise computed while the layout tree is
+//!   constructed, see the `CONSTRUCT walk` line), the layout and the rounding
 //! - `IDLE_MS=16`: sleep before each layout, so that the pool's threads are asleep when it starts
 //! - `KEEP_AWAKE=1`: keep the pool's other threads spinning for the duration of each layout
 //! - `ROUND_THRESHOLD=n`: the minimum subtree weight for rounding in parallel
@@ -400,6 +402,35 @@ async fn main() {
     );
     #[cfg(feature = "parallel-layout")]
     println!("{} floated boxes", doc.parallel_layout_float_count());
+    #[cfg(feature = "parallel-layout")]
+    {
+        println!(
+            "{} nodes whose subtree weight or float flag differs from a separate walk",
+            doc.parallel_layout_recompute_subtree_info()
+        );
+        // The weight of an inline root is based on an estimate of the length of its text
+        let lens = doc.parallel_layout_inline_text_lens();
+        let estimate: u64 = lens.iter().map(|(estimate, _)| *estimate as u64).sum();
+        let actual: u64 = lens.iter().map(|(_, actual)| *actual as u64).sum();
+        // The text weight is the length divided by 64
+        let differing = lens.iter().filter(|(e, a)| e / 64 != a / 64).count();
+        println!(
+            "{} inline roots: estimated text length {estimate}, actual {actual}, text weight differs for {differing}",
+            lens.len()
+        );
+    }
+
+    // The walk that constructs the layout tree (which also computes the subtree weights when
+    // parallel layout is enabled), for a tree that does not need any construction
+    {
+        let mut min = Duration::MAX;
+        for _ in 0..200 {
+            let start = Instant::now();
+            doc.resolve_layout_children();
+            min = min.min(start.elapsed());
+        }
+        println!("CONSTRUCT walk min {:.1}us", min.as_secs_f64() * 1e6);
+    }
 
     // `RELAYOUT=1` times incremental relayouts of several nodes instead of layouts from scratch
     let Ok(relayout) = std::env::var("RELAYOUT") else {

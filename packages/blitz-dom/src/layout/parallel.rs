@@ -114,6 +114,14 @@ pub(crate) struct LayoutSubtreeInfo {
     weights: Vec<u32>,
     /// For each node (indexed by node id) whether its subtree contains a floated box
     has_floats: Vec<bool>,
+    /// For each node (indexed by node id) whether it is a floated box. This is read from the
+    /// node's style when its box is constructed (a change of `float` reconstructs the box).
+    is_floated: Vec<bool>,
+    /// For each inline root (indexed by node id) an estimate of the length in bytes of its text:
+    /// the total length of the text nodes found when its box was constructed
+    inline_text_len: Vec<u32>,
+    /// Whether `weights` and `has_floats` are those of the current layout tree and `node_weights`
+    is_current: bool,
     /// How the cost of laying out a node is estimated
     node_weights: ParallelLayoutWeights,
 }
@@ -348,6 +356,7 @@ impl BaseDocument {
     #[doc(hidden)]
     pub fn set_parallel_layout_weights(&mut self, weights: ParallelLayoutWeights) {
         self.layout_subtree_info.node_weights = weights;
+        self.layout_subtree_info.is_current = false;
     }
 
     /// The estimated cost of laying out the subtree of a node, as of the last layout pass
@@ -379,64 +388,182 @@ impl BaseDocument {
         count
     }
 
-    /// Compute the weight of each subtree of the layout tree and whether it contains floats
-    pub(crate) fn compute_layout_subtree_info(&mut self, root: DomNodeId) {
-        let mut info = std::mem::take(&mut self.layout_subtree_info);
-        info.weights.clear();
-        info.has_floats.clear();
+    /// Record an estimate of the length in bytes of the text of an inline root
+    pub(crate) fn set_inline_root_text_len_estimate(&mut self, node_id: DomNodeId, text_len: u32) {
+        let lens = &mut self.layout_subtree_info.inline_text_len;
+        let slot = slot(node_id);
+        if slot >= lens.len() {
+            lens.resize(slot + 1, 0);
+        }
+        lens[slot] = text_len;
+    }
 
-        // List the nodes so that each node comes after its parent, then add
-        // each node's contribution to its parent's in reverse order.
-        let mut order: Vec<(DomNodeId, Option<DomNodeId>)> = Vec::with_capacity(self.nodes.len());
-        let mut stack: Vec<(DomNodeId, Option<DomNodeId>)> = vec![(root, None)];
-        while let Some((node_id, parent_id)) = stack.pop() {
-            order.push((node_id, parent_id));
+    /// For each inline root: the estimate of the length of its text that its weight is based on,
+    /// and the length of the text that was laid out
+    #[doc(hidden)]
+    pub fn parallel_layout_inline_text_lens(&self) -> Vec<(u32, u32)> {
+        let mut lens = Vec::new();
+        let mut stack = vec![self.root_element().id];
+        while let Some(node_id) = stack.pop() {
             let node = &self.nodes[node_id];
             if let Some(children) = node.layout_children.borrow().as_ref() {
-                stack.extend(children.iter().map(|child_id| (*child_id, Some(node_id))));
+                stack.extend(children.iter().copied());
             }
-
-            let slot = slot(node_id);
-            if slot >= info.weights.len() {
-                info.weights.resize(slot + 1, 0);
-                info.has_floats.resize(slot + 1, false);
-            }
-            let node_weights = info.node_weights;
-            info.weights[slot] = if node.flags.is_inline_root() {
-                let text_len = node
+            if node.flags.is_inline_root() {
+                let estimate = self.layout_subtree_info.inline_text_len.get(slot(node_id));
+                let actual = node
                     .element_data()
                     .and_then(|element| element.inline_layout_data.as_ref())
-                    .map(|inline_layout| inline_layout.text.len() as u32)
-                    .unwrap_or(0);
-                let text_weight = text_len.checked_div(node_weights.text_bytes_per_unit);
-                node_weights.inline_root + text_weight.unwrap_or(0)
-            } else if node
-                .layout_children
-                .borrow()
-                .as_ref()
-                .is_some_and(|c| !c.is_empty())
-            {
-                node_weights.container
-            } else {
-                node_weights.leaf
-            };
-            #[cfg(feature = "floats")]
-            {
-                use taffy::BlockItemStyle as _;
-                let is_layout_node = node.primary_styles().is_some();
-                info.has_floats[slot] = is_layout_node && node.layout_style().float().is_floated();
+                    .map(|inline_layout| inline_layout.text.len() as u32);
+                lens.push((estimate.copied().unwrap_or(0), actual.unwrap_or(0)));
             }
         }
-        for (node_id, parent_id) in order.into_iter().rev() {
-            if let Some(parent_id) = parent_id {
-                let (slot, parent_slot) = (slot(node_id), slot(parent_id));
-                info.weights[parent_slot] =
-                    info.weights[parent_slot].saturating_add(info.weights[slot]);
-                info.has_floats[parent_slot] |= info.has_floats[slot];
-            }
-        }
+        lens
+    }
 
-        self.layout_subtree_info = info;
+    /// Whether a node is a floated box, according to its style
+    #[inline]
+    fn is_floated_box(&self, node_id: DomNodeId) -> bool {
+        #[cfg(feature = "floats")]
+        return self.nodes[node_id]
+            .primary_styles()
+            .is_some_and(|style| stylo_taffy::convert::float(style.clone_float()).is_floated());
+        #[cfg(not(feature = "floats"))]
+        {
+            let _ = node_id;
+            false
+        }
+    }
+
+    /// The number of nodes of the layout tree whose subtree weight or float flag differs from
+    /// that given by a separate walk of the layout tree (which replaces them)
+    #[doc(hidden)]
+    pub fn parallel_layout_recompute_subtree_info(&mut self) -> usize {
+        let before_weights = self.layout_subtree_info.weights.clone();
+        let before_has_floats = self.layout_subtree_info.has_floats.clone();
+        self.compute_layout_subtree_info(self.root_element().id);
+        let info = &self.layout_subtree_info;
+
+        let mut differing = 0;
+        let mut stack = vec![self.root_element().id];
+        while let Some(node_id) = stack.pop() {
+            if let Some(children) = self.nodes[node_id].layout_children.borrow().as_ref() {
+                stack.extend(children.iter().copied());
+            }
+            let slot = slot(node_id);
+            let same = before_weights.get(slot) == info.weights.get(slot)
+                && before_has_floats.get(slot) == info.has_floats.get(slot);
+            differing += !same as usize;
+        }
+        differing
+    }
+
+    /// The weight of a node itself
+    #[inline]
+    fn own_layout_weight(&self, node_id: DomNodeId) -> u32 {
+        let info = &self.layout_subtree_info;
+        let node = &self.nodes[node_id];
+        let node_weights = info.node_weights;
+        if node.flags.is_inline_root() {
+            let text_len = info
+                .inline_text_len
+                .get(slot(node_id))
+                .copied()
+                .unwrap_or(0);
+            let text_weight = text_len.checked_div(node_weights.text_bytes_per_unit);
+            node_weights.inline_root + text_weight.unwrap_or(0)
+        } else if node
+            .layout_children
+            .borrow()
+            .as_ref()
+            .is_some_and(|c| !c.is_empty())
+        {
+            node_weights.container
+        } else {
+            node_weights.leaf
+        }
+    }
+
+    /// Set the weight of the subtree of a node and whether it contains floats, given the totals
+    /// for the subtrees of its layout children (which must already have been set as its
+    /// `layout_children`). Returns the values set.
+    ///
+    /// `box_was_constructed` is whether the box of the node has been constructed since this was
+    /// last called for the node. Whether the node is floated is only read from its style if so.
+    #[inline]
+    pub(crate) fn set_layout_subtree_info(
+        &mut self,
+        node_id: DomNodeId,
+        (children_weight, children_have_floats): (u32, bool),
+        box_was_constructed: bool,
+    ) -> (u32, bool) {
+        let slot = slot(node_id);
+        if slot >= self.layout_subtree_info.weights.len() {
+            let info = &mut self.layout_subtree_info;
+            info.weights.resize(slot + 1, 0);
+            info.has_floats.resize(slot + 1, false);
+            info.is_floated.resize(slot + 1, false);
+        }
+        let is_floated = if box_was_constructed {
+            let is_floated = self.is_floated_box(node_id);
+            self.layout_subtree_info.is_floated[slot] = is_floated;
+            is_floated
+        } else {
+            let is_floated = self.layout_subtree_info.is_floated[slot];
+            debug_assert_eq!(
+                is_floated,
+                self.is_floated_box(node_id),
+                "`float` of {node_id:?} changed without its box being reconstructed"
+            );
+            is_floated
+        };
+        let weight = self
+            .own_layout_weight(node_id)
+            .saturating_add(children_weight);
+        let has_floats = is_floated | children_have_floats;
+
+        let info = &mut self.layout_subtree_info;
+        info.weights[slot] = weight;
+        info.has_floats[slot] = has_floats;
+        (weight, has_floats)
+    }
+
+    /// Whether the subtree weights and float flags are those of the current layout tree
+    pub(crate) fn layout_subtree_info_is_current(&self) -> bool {
+        self.layout_subtree_info.is_current
+    }
+
+    /// Record that the subtree weights and float flags were set for every node of the layout tree
+    pub(crate) fn set_layout_subtree_info_is_current(&mut self) {
+        self.layout_subtree_info.is_current = true;
+    }
+
+    /// Compute the weight of each subtree of the layout tree and whether it contains floats.
+    ///
+    /// This is normally done by `resolve_layout_children` as it walks the layout tree. This
+    /// separate walk is only needed when the weights of nodes have been changed since.
+    pub(crate) fn compute_layout_subtree_info(&mut self, root: DomNodeId) {
+        // List the nodes so that each node comes after its parent, then set each node's totals
+        // in reverse order, adding them to those of its parent.
+        let mut order: Vec<(DomNodeId, usize)> = Vec::with_capacity(self.nodes.len());
+        let mut stack: Vec<(DomNodeId, usize)> = vec![(root, usize::MAX)];
+        while let Some((node_id, parent_index)) = stack.pop() {
+            let index = order.len();
+            order.push((node_id, parent_index));
+            if let Some(children) = self.nodes[node_id].layout_children.borrow().as_ref() {
+                stack.extend(children.iter().map(|child_id| (*child_id, index)));
+            }
+        }
+        let mut children_info: Vec<(u32, bool)> = vec![(0, false); order.len()];
+        for (index, (node_id, parent_index)) in order.into_iter().enumerate().rev() {
+            let (weight, has_floats) =
+                self.set_layout_subtree_info(node_id, children_info[index], true);
+            if let Some(parent_info) = children_info.get_mut(parent_index) {
+                parent_info.0 = parent_info.0.saturating_add(weight);
+                parent_info.1 |= has_floats;
+            }
+        }
+        self.layout_subtree_info.is_current = true;
     }
 
     /// Whether the subtree of a node contains a floated box
@@ -730,7 +857,7 @@ pub(crate) fn profile_node_exit() {
 }
 
 /// The time taken by the phases of the last layout pass, in nanoseconds:
-/// the subtree weight walk, the layout itself, and rounding
+/// the separate subtree weight walk (if it was needed), the layout itself, and rounding
 #[doc(hidden)]
 pub static LAYOUT_PHASE_NS: [std::sync::atomic::AtomicU64; 3] = [
     std::sync::atomic::AtomicU64::new(0),
