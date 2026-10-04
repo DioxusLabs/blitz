@@ -8,7 +8,6 @@ impl BaseDocument {
         let mut window = AccessKitNode::new(Role::Window);
         let mut hidden_nodes = std::collections::HashSet::new();
         let mut labelled_by_nodes = std::collections::HashMap::new();
-        let mut nodes_by_dom_id = std::collections::HashMap::new();
 
         self.visit(|node_id, node| {
             if node.is_hidden_from_accessibility_tree()
@@ -25,12 +24,7 @@ impl BaseDocument {
                 .and_then(|parent_id| nodes.get_mut(&parent_id))
                 .map(|(_, parent)| parent)
                 .unwrap_or(&mut window);
-            let (id, builder) = self.build_accessibility_node(
-                node,
-                parent,
-                &mut labelled_by_nodes,
-                &mut nodes_by_dom_id,
-            );
+            let (id, builder) = self.build_accessibility_node(node, parent, &mut labelled_by_nodes);
 
             nodes.insert(node_id, (id, builder));
         });
@@ -45,9 +39,11 @@ impl BaseDocument {
             let Some(labelled_by) = labelled_by_nodes.get(node_id) else {
                 continue;
             };
-            for dom_id in labelled_by.split(|c: char| c.is_whitespace()) {
-                if let Some(labelled_by_node_id) = nodes_by_dom_id.get(dom_id) {
-                    node.push_labelled_by(*labelled_by_node_id);
+            for dom_id in labelled_by.split_ascii_whitespace() {
+                if let Some(labelled_by_node_id) = self.nodes_to_id.get(dom_id)
+                    && let Some(labelled_by_node_id) = labelled_by_node_id.get(0)
+                {
+                    node.push_labelled_by(NodeId(labelled_by_node_id.as_u64()));
                 }
             }
         }
@@ -66,7 +62,6 @@ impl BaseDocument {
         node: &BlitzDomNode,
         parent: &mut AccessKitNode,
         labelled_by_nodes: &mut std::collections::HashMap<NodeId, String>,
-        nodes_by_dom_id: &mut std::collections::HashMap<String, NodeId>,
     ) -> (NodeId, AccessKitNode) {
         let id = NodeId(node.id.as_u64());
 
@@ -97,9 +92,6 @@ impl BaseDocument {
             }
             if let Some(aria_labelled_by) = element_data.attr(local_name!("aria-labelledby")) {
                 labelled_by_nodes.insert(id, aria_labelled_by.to_string());
-            }
-            if let Some(dom_id) = element_data.attr(local_name!("id")) {
-                nodes_by_dom_id.insert(dom_id.to_string(), id);
             }
         } else if node.is_text_node() {
             builder.set_role(Role::TextRun);
