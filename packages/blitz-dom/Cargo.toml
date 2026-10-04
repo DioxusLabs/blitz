@@ -43,6 +43,8 @@ scrollbars = []
 parallel-construct = []
 # PROTOTYPE: lay out sibling subtrees in parallel
 parallel-layout = []
+# PROTOTYPE: round layouts using the best instructions that the CPU is detected to support
+simd-rounding = ["taffy/simd_rounding"]
 log-phase-times = ["debug_timer/enable"]
 
 [dependencies]
