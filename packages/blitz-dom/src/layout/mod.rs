@@ -173,6 +173,33 @@ impl BaseDocument {
             node.invalidate_layout_cache();
         }
     }
+
+    /// Clear the layout cache of a node and of each of its ancestors in the layout tree, as a
+    /// change to the node would. With `include_descendants` the caches of all of the nodes in
+    /// the node's subtree are cleared too, as if every node in it had changed.
+    #[doc(hidden)]
+    pub fn invalidate_layout_caches_for(
+        &mut self,
+        node_id: crate::NodeId,
+        include_descendants: bool,
+    ) {
+        let mut stack = vec![node_id];
+        while let Some(node_id) = stack.pop() {
+            let node = &mut self.nodes[node_id];
+            node.invalidate_layout_cache();
+            if include_descendants {
+                if let Some(children) = node.layout_children.borrow().as_ref() {
+                    stack.extend(children.iter().copied());
+                }
+            }
+        }
+
+        let mut ancestor = self.nodes[node_id].layout_parent.get();
+        while let Some(ancestor_id) = ancestor {
+            self.nodes[ancestor_id].invalidate_layout_cache();
+            ancestor = self.nodes[ancestor_id].layout_parent.get();
+        }
+    }
 }
 
 impl LayoutPassState<'_> {
