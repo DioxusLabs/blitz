@@ -208,6 +208,12 @@ impl BaseDocument {
         self.layout_subtree_info.node_weights = weights;
     }
 
+    /// The estimated cost of laying out the subtree of a node, as of the last layout pass
+    #[doc(hidden)]
+    pub fn parallel_layout_subtree_weight(&self, node_id: DomNodeId) -> Option<u32> {
+        self.layout_subtree_info.weights.get(slot(node_id)).copied()
+    }
+
     /// Compute the weight of each subtree of the layout tree and whether it contains floats
     pub(crate) fn compute_layout_subtree_info(&mut self, root: DomNodeId) {
         let mut info = std::mem::take(&mut self.layout_subtree_info);
