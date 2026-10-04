@@ -257,6 +257,13 @@ publish = false
 log-times = ["log-frame-times", "log-phase-times"]
 log-frame-times = ["dioxus-native/log-frame-times"]
 log-phase-times = ["dioxus-native/log-phase-times"]
+# PROTOTYPE: lay out sibling subtrees in parallel
+parallel-layout = ["blitz-dom/parallel-layout"]
+mimalloc = ["dep:mimalloc"]
+
+[dependencies]
+mimalloc = { version = "0.1.48", optional = true }
+rayon = { workspace = true }
 
 [dev-dependencies]
 anyrender = { workspace = true }

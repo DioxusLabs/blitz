@@ -16,6 +16,30 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+#[cfg(feature = "mimalloc")]
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
+/// Set the QoS class of the current thread, which decides which cores macOS runs it on. By default
+/// it is the highest class, so that the fastest cores are preferred. `QOS=background` confines the
+/// thread to the slowest cores instead (and lowers its priority).
+#[cfg(target_os = "macos")]
+fn set_thread_qos() {
+    const QOS_CLASS_USER_INTERACTIVE: u32 = 0x21;
+    const QOS_CLASS_BACKGROUND: u32 = 0x09;
+    unsafe extern "C" {
+        fn pthread_set_qos_class_self_np(qos_class: u32, relative_priority: i32) -> i32;
+    }
+    let qos_class = match std::env::var("QOS").as_deref() {
+        Ok("background") => QOS_CLASS_BACKGROUND,
+        _ => QOS_CLASS_USER_INTERACTIVE,
+    };
+    // SAFETY: only changes the scheduling class of the current thread
+    unsafe { pthread_set_qos_class_self_np(qos_class, 0) };
+}
+#[cfg(not(target_os = "macos"))]
+fn set_thread_qos() {}
+
 const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/81.0";
 
 /// Hash the final layout of every node in the layout tree. Also returns the number of nodes.
@@ -75,6 +99,7 @@ fn report(label: &str, times: &[Duration], fingerprint: u64, expected_fingerprin
 
 #[tokio::main]
 async fn main() {
+    set_thread_qos();
     let mut args = std::env::args().skip(1);
     let url_string = args
         .next()
@@ -125,6 +150,11 @@ async fn main() {
     let height = doc.root_element().final_layout().size.height;
     println!("{url_string}");
     println!("{node_count} layout nodes, {width}x{height}, layout fingerprint {fingerprint:016x}");
+    #[cfg(feature = "parallel-layout")]
+    println!(
+        "root weight {:?}",
+        doc.parallel_layout_subtree_weight(doc.root_element().id)
+    );
 
     #[cfg(not(feature = "parallel-layout"))]
     {
@@ -168,6 +198,7 @@ async fn main() {
         for thread_count in thread_counts {
             let pool = rayon::ThreadPoolBuilder::new()
                 .num_threads(thread_count)
+                .start_handler(|_| set_thread_qos())
                 .build()
                 .unwrap();
             for &threshold in &thresholds {
