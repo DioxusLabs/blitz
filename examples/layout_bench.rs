@@ -9,13 +9,19 @@
 //!
 //! Environment variables (with the `parallel-layout` feature):
 //! - `THRESHOLDS=256,1024`, `THREADS=1,2,4,8`, `WEIGHTS=leaf,container,inline_root,text_bytes_per_unit`
+//! - `RULES=0:0,1024:0.5,1024:0.5:top`: rules that raise the threshold of some batches, each tried
+//!   with every threshold. A rule is `min_outermost_weight:nested_share[:top]`: the minimum weight
+//!   of a batch that is not nested in a parallel batch, and the minimum weight of one that is as a
+//!   fraction of the enclosing parallel batch's weight divided by the number of threads (of the
+//!   outermost enclosing parallel batch with `:top`, otherwise of the innermost).
 //! - `SPLIT=weight`: divide the jobs of a batch between tasks by weight rather than by count
 //! - `PHASES=1`: also print the time taken by the separate subtree weight walk (only needed after the
 //!   weights of nodes are changed: the weights are otherwise computed while the layout tree is
 //!   constructed, see the `CONSTRUCT walk` line), the layout and the rounding
 //! - `IDLE_MS=16`: sleep before each layout, so that the pool's threads are asleep when it starts
 //! - `KEEP_AWAKE=1`: keep the pool's other threads spinning for the duration of each layout
-//! - `ROUND_THRESHOLD=n`: the minimum subtree weight for rounding in parallel
+//! - `ROUND_THRESHOLDS=1024,4096`: minimum subtree weights for rounding in parallel, each tried
+//!   with every threshold and rule
 //! - `PROFILE=1`: instead of timing parallel layout, run every batch that would be parallel in order
 //!   on one thread, and report the time that layout would take with unlimited threads (`tinf`), the
 //!   share of the time spent outside of all batches, and the share spent laying out inline boxes.
@@ -592,16 +598,33 @@ fn bench(doc: &mut BaseDocument, iterations: usize, fingerprint: u64) {
             Ok(thresholds) => thresholds.split(',').map(|t| t.parse().unwrap()).collect(),
             Err(_) => vec![256],
         };
-        // `ROUND_THRESHOLD=n` sets the minimum subtree weight for rounding in parallel
-        if let Ok(threshold) = std::env::var("ROUND_THRESHOLD") {
-            blitz_dom::MIN_ROUND_BATCH_WEIGHT.store(
-                threshold.parse().unwrap(),
-                std::sync::atomic::Ordering::Relaxed,
-            );
-        }
+        // `ROUND_THRESHOLDS=a,b` sets the minimum subtree weights for rounding in parallel
+        let round_thresholds: Vec<Option<u32>> = match std::env::var("ROUND_THRESHOLDS") {
+            Ok(thresholds) => thresholds
+                .split(',')
+                .map(|threshold| Some(threshold.parse().unwrap()))
+                .collect(),
+            Err(_) => vec![None],
+        };
         // `SPLIT=weight` divides the jobs of a batch between tasks by weight rather than by count
         let split_by_weight = std::env::var("SPLIT").as_deref() == Ok("weight");
         blitz_dom::SPLIT_BY_WEIGHT.store(split_by_weight, std::sync::atomic::Ordering::Relaxed);
+        let rules: Vec<(String, blitz_dom::ParallelLayoutBatchRule)> = match std::env::var("RULES")
+        {
+            Ok(rules) => rules
+                .split(',')
+                .map(|rule| {
+                    let parts: Vec<&str> = rule.split(':').collect();
+                    let rule = blitz_dom::ParallelLayoutBatchRule {
+                        min_outermost_weight: parts[0].parse().unwrap(),
+                        nested_share: parts[1].parse().unwrap(),
+                        relative_to_outermost: parts.get(2) == Some(&"top"),
+                    };
+                    (format!(", rule {}", parts.join(":")), rule)
+                })
+                .collect(),
+            Err(_) => vec![(String::new(), blitz_dom::ParallelLayoutBatchRule::NONE)],
+        };
         let thread_counts: Vec<usize> = match std::env::var("THREADS") {
             Ok(threads) => threads.split(',').map(|t| t.parse().unwrap()).collect(),
             Err(_) => vec![1, 2, 4, 8],
@@ -613,20 +636,36 @@ fn bench(doc: &mut BaseDocument, iterations: usize, fingerprint: u64) {
                 .build()
                 .unwrap();
             for &threshold in &thresholds {
-                doc.set_parallel_layout_threshold(Some(threshold));
-                // The document is not `Send`, but it is only used by one thread
-                // at a time (other than by the parallel layout code itself)
-                struct AssertSend<T>(T);
-                // SAFETY: see above
-                unsafe impl<T> Send for AssertSend<T> {}
-                let doc_ref = AssertSend(&mut *doc);
-                let (times, new_fingerprint) = pool.install(move || {
-                    let doc_ref = doc_ref;
-                    time_layout(doc_ref.0, iterations)
+                let configs = rules.iter().flat_map(|rule| {
+                    let round_thresholds = round_thresholds.iter();
+                    round_thresholds.map(move |round_threshold| (rule, *round_threshold))
                 });
-                let label = format!("{thread_count} threads, threshold {threshold}");
-                report(&label, &times, new_fingerprint, fingerprint);
+                for ((rule_label, rule), round_threshold) in configs {
+                    let mut round_label = String::new();
+                    if let Some(round_threshold) = round_threshold {
+                        use std::sync::atomic::Ordering::Relaxed;
+                        blitz_dom::MIN_ROUND_BATCH_WEIGHT.store(round_threshold, Relaxed);
+                        round_label = format!(", round {round_threshold}");
+                    }
+                    doc.set_parallel_layout_threshold(Some(threshold));
+                    blitz_dom::set_parallel_layout_batch_rule(*rule);
+                    // The document is not `Send`, but it is only used by one thread
+                    // at a time (other than by the parallel layout code itself)
+                    struct AssertSend<T>(T);
+                    // SAFETY: see above
+                    unsafe impl<T> Send for AssertSend<T> {}
+                    let doc_ref = AssertSend(&mut *doc);
+                    let (times, new_fingerprint) = pool.install(move || {
+                        let doc_ref = doc_ref;
+                        time_layout(doc_ref.0, iterations)
+                    });
+                    let label = format!(
+                        "{thread_count} threads, threshold {threshold}{rule_label}{round_label}"
+                    );
+                    report(&label, &times, new_fingerprint, fingerprint);
+                }
             }
+            blitz_dom::set_parallel_layout_batch_rule(blitz_dom::ParallelLayoutBatchRule::NONE);
         }
     }
 }
