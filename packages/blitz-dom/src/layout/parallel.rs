@@ -54,7 +54,6 @@ impl ParallelLayoutWeights {
         inline_root: 9,
         text_bytes_per_unit: 0,
     };
-}
 
     /// Weights in units of very roughly 0.25µs, from timing the layout of ten web pages on one
     /// machine: a leaf took about 0.25µs, a container about 3.5µs (excluding its descendants)
