@@ -663,13 +663,24 @@ impl LayoutPassState<'_> {
         #[cfg(feature = "floats")]
         {
             let mut breaker = inline_layout.layout.break_lines();
-            let initial_slot = block_ctx.find_content_slot(0.0, Clear::None, None);
-            let mut has_active_floats = initial_slot.segment_id.is_some();
+            // If the block formatting context cannot contain floats then lines are never shortened
+            // by floats. In that case the context may not know where this box is within the block
+            // formatting context, so it must not be asked for slots.
+            let bfc_may_contain_floats = block_ctx.may_contain_floats();
+            let mut has_active_floats = false;
             let state = breaker.state_mut();
             state.set_layout_max_advance(width);
-            state.set_line_max_advance(initial_slot.width * scale);
-            state.set_line_x(initial_slot.x * scale);
-            state.set_line_y((initial_slot.y * scale) as f64);
+            if bfc_may_contain_floats {
+                let initial_slot = block_ctx.find_content_slot(0.0, Clear::None, None);
+                has_active_floats = initial_slot.segment_id.is_some();
+                state.set_line_max_advance(initial_slot.width * scale);
+                state.set_line_x(initial_slot.x * scale);
+                state.set_line_y((initial_slot.y * scale) as f64);
+            } else {
+                state.set_line_max_advance(width);
+                state.set_line_x(0.0);
+                state.set_line_y(0.0);
+            }
 
             // TODO: revert state and retry layout if a line doesn't fit
             //

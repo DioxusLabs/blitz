@@ -442,6 +442,9 @@ impl BaseDocument {
 
         // println!("\n\nRESOLVE LAYOUT\n===========\n");
 
+        #[cfg(feature = "parallel-layout")]
+        self.compute_layout_subtree_info(self.root_element().id);
+
         let mut state = LayoutPassState::new(self);
         #[cfg(feature = "writing-mode")]
         let available_space = {
