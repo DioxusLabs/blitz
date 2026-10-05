@@ -627,11 +627,12 @@ impl BaseDocument {
         let Ok(property_id) = PropertyId::parse_enabled_for_all_content(property_name) else {
             return String::new();
         };
-        match property_id.as_shorthand() {
+        let css = match property_id.as_shorthand() {
             // Serialize shorthands from the resolved values of their longhands
             Ok(shorthand) => serialize_resolved_shorthand(styles, shorthand),
             Err(declaration_id) => styles.computed_value_to_string(declaration_id),
-        }
+        };
+        canonicalize_computed_alignment(property_name, css)
     }
 
     /// Whether the node's box is a flex or grid item, i.e. its nearest ancestor
@@ -680,4 +681,29 @@ fn serialize_resolved_shorthand(styles: &ComputedValues, shorthand: ShorthandId)
     let mut css = CssStringWriter::new();
     let _ = shorthand.longhands_to_css(&declaration_refs, &mut css);
     css
+}
+
+/// Canonicalize the computed value of an alignment property the way css-align-3
+/// now requires: `flex-start`/`flex-end` compute to `flow-start`/`flow-end`
+/// (e.g. `align-self: flex-start` resolves to `flow-start`, `safe flex-end` to
+/// `safe flow-end`). Stylo does not yet do this, so patch the serialized value
+/// here until it does (see https://github.com/servo/stylo).
+fn canonicalize_computed_alignment(property_name: &str, value: String) -> String {
+    const ALIGNMENT_PROPERTIES: [&str; 9] = [
+        "align-content",
+        "align-items",
+        "align-self",
+        "justify-content",
+        "justify-items",
+        "justify-self",
+        "place-content",
+        "place-items",
+        "place-self",
+    ];
+    if !ALIGNMENT_PROPERTIES.contains(&property_name) || !value.contains("flex-") {
+        return value;
+    }
+    value
+        .replace("flex-start", "flow-start")
+        .replace("flex-end", "flow-end")
 }
