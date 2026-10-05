@@ -1539,6 +1539,73 @@ impl Node {
         Some(offset)
     }
 
+    /// The node whose box this node's `Layout.location` is relative to: the
+    /// `oof_containing_block` for a hoisted out-of-flow box, otherwise the
+    /// `layout_parent`.
+    pub fn containing_block(&self) -> Option<NodeId> {
+        self.oof_containing_block
+            .get()
+            .or_else(|| self.layout_parent.get())
+    }
+
+    /// Computes the Document-relative coordinates of the `Node`
+    pub fn absolute_position(&self, x: f32, y: f32) -> crate::util::Point<f32> {
+        let x = x + self.final_layout().location.x - self.scroll_offset().x as f32;
+        let y = y + self.final_layout().location.y - self.scroll_offset().y as f32;
+
+        // Recurse up the positioning hierarchy
+        self.containing_block()
+            .map(|i| self.with(i).absolute_position(x, y))
+            .unwrap_or(crate::util::Point { x, y })
+    }
+
+    /// Computes the Document-relative coordinates of the `Node` from the unrounded
+    /// (sub-pixel) layout, for CSSOM geometry APIs such as `getBoundingClientRect`
+    pub fn unrounded_absolute_position(&self, x: f32, y: f32) -> crate::util::Point<f32> {
+        let x = x + self.unrounded_layout().location.x - self.scroll_offset().x as f32;
+        let y = y + self.unrounded_layout().location.y - self.scroll_offset().y as f32;
+
+        self.containing_block()
+            .map(|i| self.with(i).unrounded_absolute_position(x, y))
+            .unwrap_or(crate::util::Point { x, y })
+    }
+
+    /// Whether this node can act as an [`offset_parent`](Self::offset_parent): a positioned
+    /// element, or one of the elements that always qualify (`body`, `td`, `th`).
+    pub(crate) fn is_offset_parent(&self) -> bool {
+        let Some(styles) = self.primary_styles() else {
+            return false;
+        };
+        if styles.get_box().position != Position::Static {
+            return true;
+        }
+        self.data.is_element_with_tag_name(&local_name!("body"))
+            || self.data.is_element_with_tag_name(&local_name!("td"))
+            || self.data.is_element_with_tag_name(&local_name!("th"))
+    }
+
+    /// Whether this node is a non-positioned `body` element. When such an element is the
+    /// `offsetParent`, `offsetLeft`/`offsetTop` are measured from the initial containing
+    /// block origin rather than from the `body`'s padding edge.
+    pub(crate) fn is_static_body(&self) -> bool {
+        self.data.is_element_with_tag_name(&local_name!("body"))
+            && self
+                .primary_styles()
+                .is_some_and(|styles| styles.get_box().position == Position::Static)
+    }
+
+    /// The nearest layout ancestor that [is an offset parent](Self::is_offset_parent), as in
+    /// CSSOM View's `offsetParent`.
+    pub fn offset_parent(&self) -> Option<&Node> {
+        let mut node = self;
+        loop {
+            node = self.with(node.containing_block()?);
+            if node.is_offset_parent() {
+                return Some(node);
+            }
+        }
+    }
+
     /// Computes this non-atomic inline element's per-line-box fragment rects in
     /// viewport coordinates. Returns `None` for nodes that have their own layout box.
     pub(crate) fn inline_fragment_rects(
@@ -1651,73 +1718,6 @@ impl Node {
         }
 
         Some(rects)
-    }
-
-    /// The node whose box this node's `Layout.location` is relative to: the
-    /// `oof_containing_block` for a hoisted out-of-flow box, otherwise the
-    /// `layout_parent`.
-    pub fn containing_block(&self) -> Option<NodeId> {
-        self.oof_containing_block
-            .get()
-            .or_else(|| self.layout_parent.get())
-    }
-
-    /// Computes the Document-relative coordinates of the `Node`
-    pub fn absolute_position(&self, x: f32, y: f32) -> crate::util::Point<f32> {
-        let x = x + self.final_layout().location.x - self.scroll_offset().x as f32;
-        let y = y + self.final_layout().location.y - self.scroll_offset().y as f32;
-
-        // Recurse up the positioning hierarchy
-        self.containing_block()
-            .map(|i| self.with(i).absolute_position(x, y))
-            .unwrap_or(crate::util::Point { x, y })
-    }
-
-    /// Computes the Document-relative coordinates of the `Node` from the unrounded
-    /// (sub-pixel) layout, for CSSOM geometry APIs such as `getBoundingClientRect`
-    pub fn unrounded_absolute_position(&self, x: f32, y: f32) -> crate::util::Point<f32> {
-        let x = x + self.unrounded_layout().location.x - self.scroll_offset().x as f32;
-        let y = y + self.unrounded_layout().location.y - self.scroll_offset().y as f32;
-
-        self.containing_block()
-            .map(|i| self.with(i).unrounded_absolute_position(x, y))
-            .unwrap_or(crate::util::Point { x, y })
-    }
-
-    /// Whether this node can act as an [`offset_parent`](Self::offset_parent): a positioned
-    /// element, or one of the elements that always qualify (`body`, `td`, `th`).
-    pub(crate) fn is_offset_parent(&self) -> bool {
-        let Some(styles) = self.primary_styles() else {
-            return false;
-        };
-        if styles.get_box().position != Position::Static {
-            return true;
-        }
-        self.data.is_element_with_tag_name(&local_name!("body"))
-            || self.data.is_element_with_tag_name(&local_name!("td"))
-            || self.data.is_element_with_tag_name(&local_name!("th"))
-    }
-
-    /// Whether this node is a non-positioned `body` element. When such an element is the
-    /// `offsetParent`, `offsetLeft`/`offsetTop` are measured from the initial containing
-    /// block origin rather than from the `body`'s padding edge.
-    pub(crate) fn is_static_body(&self) -> bool {
-        self.data.is_element_with_tag_name(&local_name!("body"))
-            && self
-                .primary_styles()
-                .is_some_and(|styles| styles.get_box().position == Position::Static)
-    }
-
-    /// The nearest layout ancestor that [is an offset parent](Self::is_offset_parent), as in
-    /// CSSOM View's `offsetParent`.
-    pub fn offset_parent(&self) -> Option<&Node> {
-        let mut node = self;
-        loop {
-            node = self.with(node.containing_block()?);
-            if node.is_offset_parent() {
-                return Some(node);
-            }
-        }
     }
 
     /// CSSOM View's `offsetLeft`/`offsetTop`: the offset of this node's border box from the
