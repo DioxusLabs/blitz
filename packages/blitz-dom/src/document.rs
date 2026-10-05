@@ -2229,7 +2229,7 @@ impl BaseDocument {
         // Non-atomic inline elements have no layout box of their own: return
         // the union of their per-line-box fragment rects.
         if let Some(rects) = self.inline_fragment_rects(node_id) {
-            return BoundingRect::union(rects);
+            return rects.reduce(BoundingRect::union);
         }
 
         let node = self.get_node(node_id)?;
@@ -2267,7 +2267,7 @@ impl BaseDocument {
         };
 
         // Union the per-line-box fragments into a single bounding box
-        let bounds = BoundingRect::union(rects)?;
+        let bounds = rects.reduce(BoundingRect::union)?;
 
         // Fragment rects are viewport-relative; convert to document-relative
         let scroll = self.viewport_scroll();
@@ -2704,30 +2704,16 @@ pub struct BoundingRect {
 }
 
 impl BoundingRect {
-    /// The smallest rect containing all of `rects`, or `None` if there are none.
-    pub fn union(rects: impl Iterator<Item = BoundingRect>) -> Option<BoundingRect> {
-        let (x0, y0, x1, y1) = rects.fold(
-            (
-                f64::INFINITY,
-                f64::INFINITY,
-                f64::NEG_INFINITY,
-                f64::NEG_INFINITY,
-            ),
-            |(x0, y0, x1, y1), r| {
-                (
-                    x0.min(r.x),
-                    y0.min(r.y),
-                    x1.max(r.x + r.width),
-                    y1.max(r.y + r.height),
-                )
-            },
-        );
-        (x0 <= x1).then_some(BoundingRect {
-            x: x0,
-            y: y0,
-            width: x1 - x0,
-            height: y1 - y0,
-        })
+    /// The smallest rect containing both `self` and `other`.
+    pub fn union(self, other: BoundingRect) -> BoundingRect {
+        let x = self.x.min(other.x);
+        let y = self.y.min(other.y);
+        BoundingRect {
+            x,
+            y,
+            width: (self.x + self.width).max(other.x + other.width) - x,
+            height: (self.y + self.height).max(other.y + other.height) - y,
+        }
     }
 }
 
