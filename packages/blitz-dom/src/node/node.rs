@@ -1512,6 +1512,16 @@ impl Node {
         let layout = &inline_layout.layout;
         let scale = layout.scale();
 
+        if inline_layout.text.is_empty() || layout.height() == 0.0 {
+            return None;
+        }
+        if y < 0.0 {
+            return Some(0);
+        }
+        if y * scale >= layout.height() {
+            return Some(inline_layout.text.len());
+        }
+
         // Use Parley's cluster hit testing (from_point is more forgiving than from_point_exact)
         let (cluster, side) = Cluster::from_point(layout, x * scale, y * scale)?;
 

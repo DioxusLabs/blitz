@@ -1095,13 +1095,31 @@ pub(crate) fn build_inline_layout_into(
     };
 
     if let Some(before_id) = root_node.before() {
-        build_inline_layout_recursive(&mut builder, nodes, before_id, text_transform);
+        build_inline_layout_recursive(
+            &mut builder,
+            nodes,
+            before_id,
+            text_transform,
+            inline_context_root_node_id,
+        );
     }
     for child_id in root_node.children.iter().copied() {
-        build_inline_layout_recursive(&mut builder, nodes, child_id, text_transform);
+        build_inline_layout_recursive(
+            &mut builder,
+            nodes,
+            child_id,
+            text_transform,
+            inline_context_root_node_id,
+        );
     }
     if let Some(after_id) = root_node.after() {
-        build_inline_layout_recursive(&mut builder, nodes, after_id, text_transform);
+        build_inline_layout_recursive(
+            &mut builder,
+            nodes,
+            after_id,
+            text_transform,
+            inline_context_root_node_id,
+        );
     }
 
     text_layout.text = builder.build_into(&mut text_layout.layout);
@@ -1112,6 +1130,7 @@ pub(crate) fn build_inline_layout_into(
         nodes: &crate::NodeTree,
         node_id: NodeId,
         parent_text_transform: TextTransform,
+        brush_owner: NodeId,
     ) {
         let node = &nodes[node_id];
 
@@ -1168,7 +1187,13 @@ pub(crate) fn build_inline_layout_into(
                         );
                         for child_id in node.children.iter().copied() {
                             // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
-                            build_inline_layout_recursive(builder, nodes, child_id, text_transform);
+                            build_inline_layout_recursive(
+                                builder,
+                                nodes,
+                                child_id,
+                                text_transform,
+                                brush_owner,
+                            );
                         }
                         builder.pop_style_span();
                     }
@@ -1197,6 +1222,10 @@ pub(crate) fn build_inline_layout_into(
                                 parley::StyleProperty::WhiteSpaceCollapse(
                                     WhiteSpaceCollapse::Preserve,
                                 ),
+                                StyleProperty::Brush(TextBrush {
+                                    id: brush_owner,
+                                    text_node: Some(node_id),
+                                }),
                             ]);
                             builder.push_text("\n");
                             builder.pop_style_span();
@@ -1218,6 +1247,7 @@ pub(crate) fn build_inline_layout_into(
                                     nodes,
                                     before_id,
                                     text_transform,
+                                    node_id,
                                 );
                             }
 
@@ -1227,6 +1257,7 @@ pub(crate) fn build_inline_layout_into(
                                     nodes,
                                     child_id,
                                     text_transform,
+                                    node_id,
                                 );
                             }
                             if let Some(after_id) = node.after() {
@@ -1235,6 +1266,7 @@ pub(crate) fn build_inline_layout_into(
                                     nodes,
                                     after_id,
                                     text_transform,
+                                    node_id,
                                 );
                             }
 
@@ -1264,18 +1296,19 @@ pub(crate) fn build_inline_layout_into(
                 // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
                 // dbg!(&data.content);
 
-                // TODO: optimize case transforms to be non-allocating
+                builder.push_style_modification_span(&[
+                    StyleProperty::Brush(TextBrush {
+                        id: brush_owner,
+                        text_node: Some(node_id),
+                    }),
+                    StyleProperty::VerticalAlign(parley::VerticalAlign::default()),
+                ]);
                 match parent_text_transform {
-                    TextTransform::UPPERCASE => {
-                        builder.push_text(&data.content.to_uppercase());
-                    }
-                    TextTransform::LOWERCASE => {
-                        builder.push_text(&data.content.to_lowercase());
-                    }
-                    _ => {
-                        builder.push_text(&data.content);
-                    }
+                    TextTransform::UPPERCASE => builder.push_text(&data.content.to_uppercase()),
+                    TextTransform::LOWERCASE => builder.push_text(&data.content.to_lowercase()),
+                    _ => builder.push_text(&data.content),
                 }
+                builder.pop_style_span();
             }
             NodeData::Comment { .. } => {
                 // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);

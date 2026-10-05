@@ -994,6 +994,7 @@ impl BaseDocument {
             .map(line_baseline);
 
         // Put layout back
+        inline_layout.rebuild_source_ranges();
         self.nodes[node_id]
             .data
             .downcast_element_mut()

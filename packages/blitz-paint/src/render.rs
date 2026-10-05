@@ -121,8 +121,8 @@ pub struct BlitzDomPainter<'dom, 'a> {
     pub(crate) layer_manager: LayerManager,
     /// Reusable scratch allocations shared by all text layouts painted for this document.
     pub(crate) draw_text_context: RefCell<DrawTextContext>,
-    /// Cached selection ranges for O(1) lookup: node_id -> (start_offset, end_offset)
-    pub(crate) selection_ranges: HashMap<NodeId, (usize, usize)>,
+    /// Cached inline-layout selection ranges for O(1) lookup by node id.
+    pub(crate) selection_ranges: HashMap<NodeId, Vec<(usize, usize)>>,
 
     // Pre-computed `Scene`s for each CustomWidget
     pub(crate) custom_widget_scenes: &'a CustomWidgetSceneMap,
@@ -139,11 +139,13 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         initial_y: f64,
         custom_widget_scenes: &'a CustomWidgetSceneMap,
     ) -> Self {
-        let selection_ranges: HashMap<NodeId, (usize, usize)> = dom
-            .get_text_selection_ranges()
-            .into_iter()
-            .map(|(node_id, start, end)| (node_id, (start, end)))
-            .collect();
+        let mut selection_ranges: HashMap<NodeId, Vec<(usize, usize)>> = HashMap::new();
+        for (node_id, start, end) in dom.get_text_selection_ranges() {
+            selection_ranges
+                .entry(node_id)
+                .or_default()
+                .push((start, end));
+        }
 
         let layer_manager = LayerManager::default();
         let root_element_id = dom.try_root_element().map(|el| el.id);
@@ -860,7 +862,13 @@ impl ElementCx<'_, '_> {
             );
 
             // Render text selection highlight (if any) using cached selection ranges
-            if let Some(&(sel_start, sel_end)) = self.context.selection_ranges.get(&self.node.id) {
+            for &(sel_start, sel_end) in self
+                .context
+                .selection_ranges
+                .get(&self.node.id)
+                .into_iter()
+                .flatten()
+            {
                 crate::text::draw_text_selection(
                     scene,
                     &text_layout.layout,
