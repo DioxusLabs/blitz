@@ -42,6 +42,7 @@ use style::{
 
 use kurbo::{self, Affine, Insets, Point, Rect, Shape, Size, Stroke, Vec2};
 use peniko::{self, Fill, ImageData, ImageSampler};
+use style::selector_parser::PseudoElement;
 use style::values::generics::color::GenericColor;
 use taffy::Layout;
 
@@ -867,6 +868,7 @@ impl ElementCx<'_, '_> {
                     transform,
                     sel_start,
                     sel_end,
+                    self.selection_color(),
                 );
             }
 
@@ -882,6 +884,30 @@ impl ElementCx<'_, '_> {
                 &mut draw_text_context,
             );
         }
+    }
+
+    /// The color selected text is highlighted with: the background color of the
+    /// element's `::selection`, or the default highlight if it has none.
+    fn selection_color(&self) -> Color {
+        let Some(data) = self
+            .node
+            .try_stylo_element_data()
+            .and_then(|data| data.get())
+        else {
+            return SELECTION_COLOR;
+        };
+        data.styles
+            .pseudos
+            .get(&PseudoElement::Selection)
+            .map(|style| {
+                style
+                    .clone_background_color()
+                    .resolve_to_absolute(&style.clone_color())
+                    .as_srgb_color()
+            })
+            // A `::selection` rule that only sets `color` leaves the background transparent
+            .filter(|color| color.components[3] > 0.0)
+            .unwrap_or(SELECTION_COLOR)
     }
 
     fn draw_text_input_text(&self, scene: &mut impl PaintScene, pos: Point) {
@@ -910,11 +936,12 @@ impl ElementCx<'_, '_> {
 
             if self.node.is_focussed() {
                 // Render selection/caret
+                let selection_color = self.selection_color();
                 for (rect, _line_idx) in input_data.editor.selection_geometry().iter() {
                     scene.fill(
                         Fill::NonZero,
                         transform,
-                        SELECTION_COLOR,
+                        selection_color,
                         None,
                         &convert_rect(rect),
                     );
