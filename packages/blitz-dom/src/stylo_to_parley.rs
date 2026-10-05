@@ -495,6 +495,9 @@ pub(crate) fn style(
         locale: parley::Language::parse(&font_styles._x_lang.0).ok(),
         line_height,
         vertical_align,
+        // Set by the caller for elements that generate a box (see `InlineSpanBox`)
+        inline_start: 0.0,
+        inline_end: 0.0,
         word_spacing,
         letter_spacing,
         text_wrap_mode,

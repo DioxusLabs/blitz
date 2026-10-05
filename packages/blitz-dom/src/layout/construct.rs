@@ -33,6 +33,7 @@ use crate::{
 
 use super::{
     damage::ALL_DAMAGE,
+    inline_span::InlineSpanBox,
     list::{BULLET_FONT_FAMILY, collect_list_item_children},
     replaced::is_inline_box_element,
     table::build_table_context,
@@ -1202,13 +1203,21 @@ pub(crate) fn build_inline_layout_into(
                             builder.pop_style_span();
                         } else {
                             // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
-                            let style = node
+                            let mut style = node
                                 .primary_styles()
                                 .map(|s| stylo_to_parley::style(node.id, &s))
                                 .unwrap_or_else(|| parley::TextStyle {
                                     white_space_collapse: WhiteSpaceCollapse::Collapse,
                                     ..Default::default()
                                 });
+
+                            // The actual size of the edges is set at layout time (they may be
+                            // percentages). All that matters here is whether they are non-zero,
+                            // which tells Parley that the span has edges at all.
+                            if InlineSpanBox::has_inline_edges(node) {
+                                style.inline_start = 1.0;
+                                style.inline_end = 1.0;
+                            }
 
                             builder.push_style_span(style);
 
