@@ -125,6 +125,10 @@ pub struct TableRow {
     pub group: Option<NodeId>,
     /// The row's specified `height`, if it is a length
     pub height: Option<f32>,
+    /// Whether the row or any cell originating in it (and spanning only this row) has a
+    /// specified length `height`. Such rows do not receive excess table height when there
+    /// are unconstrained rows to receive it instead.
+    pub is_constrained: bool,
 }
 
 /// The used width of one border side: border widths are not adjusted for
@@ -315,13 +319,23 @@ pub(crate) fn build_table_context(
 
     style.grid_template_columns = column_sizes.into_iter().map(|dim| dim.into()).collect();
     // A row's `height` is a minimum: the row grows to fit the content of its cells.
+    // Excess table height is distributed to unconstrained rows (via the stretching of
+    // `auto` tracks) if there are any, and to all rows otherwise. So constrained rows
+    // use a `max-content` (rather than `auto`) maximum when there are unconstrained rows.
+    let has_unconstrained_rows = rows.iter().any(|row| !row.is_constrained);
     style.grid_template_rows = rows
         .iter()
-        .map(|row| match row.height {
-            Some(height) => {
-                style_helpers::minmax(style_helpers::length(height), style_helpers::auto())
-            }
-            None => style_helpers::auto(),
+        .map(|row| {
+            let min = match row.height {
+                Some(height) => style_helpers::length(height),
+                None => style_helpers::auto(),
+            };
+            let max = if row.is_constrained && has_unconstrained_rows {
+                style_helpers::max_content()
+            } else {
+                style_helpers::auto()
+            };
+            style_helpers::minmax(min, max)
         })
         .collect();
 
@@ -553,6 +567,7 @@ fn collect_table_cells(
                 node_id,
                 group: None,
                 height,
+                is_constrained: height.is_some(),
             });
 
             let children = std::mem::take(&mut doc.nodes[node_id].children);
@@ -673,6 +688,12 @@ fn collect_table_cells(
                 start: style_helpers::line(*row as i16),
                 end: style_helpers::span(rowspan),
             };
+            if rowspan == 1 && style.size.height.tag() == taffy::CompactLength::LENGTH_TAG {
+                if let Some(row) = rows.last_mut() {
+                    row.is_constrained = true;
+                }
+            }
+
             style.size.width = style_helpers::auto();
             cells.push(TableCell {
                 node_id,
