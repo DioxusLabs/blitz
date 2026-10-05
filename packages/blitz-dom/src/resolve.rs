@@ -396,12 +396,6 @@ impl BaseDocument {
                         LAYOUT_CTX.set(Some(layout_ctx));
                     }
 
-                    // If layout doesn't contain any inline boxes, then it is safe to populate the content_widths
-                    // cache during this parallelized stage.
-                    // if layout.layout.inline_boxes().is_empty() {
-                    //     layout.content_widths();
-                    // }
-
                     ConstructionTaskResult {
                         node_id: task.node_id,
                         data: ConstructionTaskResultData::InlineLayout(layout),

@@ -34,6 +34,11 @@ impl TextLayout {
     }
 
     pub fn content_widths(&mut self) -> ContentWidths {
+        // Inline box sizes depend on the current layout constraints.
+        if self.layout.inline_boxes().len() != 0 {
+            return self.layout.calculate_content_widths();
+        }
+
         *self
             .content_widths
             .get_or_insert_with(|| self.layout.calculate_content_widths())
