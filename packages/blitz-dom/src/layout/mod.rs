@@ -16,9 +16,9 @@ use stylo_taffy::TaffyStyloStyle;
 use taffy::{
     AxisStaticEdge, AxisStaticPosition, BlockContext, CoreStyle as _, DetailedLayoutInfo,
     FlexDirection, LayoutContainingBlock, LayoutPartialTree, MaybeMath as _, NodeId, OofCandidate,
-    ResolveOrZero, RoundTree, RunMode, TraversePartialTree, TraverseTree, compute_block_layout,
-    compute_cached_layout, compute_flexbox_layout, compute_grid_layout, compute_leaf_layout,
-    compute_oof_layout, prelude::*,
+    ResolveOrZero, RoundTree, RunMode, SubgridContext, TraversePartialTree, TraverseTree,
+    compute_block_layout, compute_cached_layout, compute_flexbox_layout, compute_grid_layout,
+    compute_grid_layout_with_subgrid_context, compute_leaf_layout, compute_oof_layout, prelude::*,
 };
 
 pub(crate) mod construct;
@@ -93,8 +93,9 @@ impl BaseDocument {
         node_id: NodeId,
         inputs: taffy::tree::LayoutInput,
         block_ctx: Option<&mut BlockContext<'_>>,
+        subgrid_ctx: Option<&SubgridContext>,
     ) -> taffy::tree::LayoutOutput {
-        let mut output = self.dispatch_child_layout(node_id, inputs, block_ctx);
+        let mut output = self.dispatch_child_layout(node_id, inputs, block_ctx, subgrid_ctx);
         if inputs.run_mode == RunMode::PerformLayout {
             compute_oof_layout(self, node_id, &mut output);
         }
@@ -106,6 +107,7 @@ impl BaseDocument {
         node_id: NodeId,
         inputs: taffy::tree::LayoutInput,
         block_ctx: Option<&mut BlockContext<'_>>,
+        subgrid_ctx: Option<&SubgridContext>,
     ) -> taffy::tree::LayoutOutput {
         let node = &mut self.nodes[dom_node_id(node_id)];
 
@@ -453,7 +455,9 @@ impl BaseDocument {
                     Display::Block => compute_block_layout(self, node_id, inputs, block_ctx),
                     Display::FlowRoot => compute_block_layout(self, node_id, inputs, None),
                     Display::Flex => compute_flexbox_layout(self, node_id, inputs),
-                    Display::Grid => compute_grid_layout(self, node_id, inputs),
+                    Display::Grid => {
+                        compute_grid_layout_with_subgrid_context(self, node_id, inputs, subgrid_ctx)
+                    }
                     Display::None => taffy::LayoutOutput::HIDDEN,
                 }
             }
@@ -522,7 +526,7 @@ impl LayoutPartialTree for BaseDocument {
         inputs: taffy::LayoutInput,
     ) -> taffy::LayoutOutput {
         compute_cached_layout(self, node_id, inputs, |tree, node_id, inputs| {
-            tree.compute_child_layout_internal(node_id, inputs, None)
+            tree.compute_child_layout_internal(node_id, inputs, None, None)
         })
     }
 }
@@ -631,7 +635,7 @@ impl taffy::LayoutBlockContainer for BaseDocument {
         block_ctx: Option<&mut BlockContext<'_>>,
     ) -> taffy::LayoutOutput {
         compute_cached_layout(self, node_id, inputs, |tree, node_id, inputs| {
-            tree.compute_child_layout_internal(node_id, inputs, block_ctx)
+            tree.compute_child_layout_internal(node_id, inputs, block_ctx, None)
         })
     }
 }
@@ -673,6 +677,23 @@ impl taffy::LayoutGridContainer for BaseDocument {
 
     fn get_grid_child_style(&self, child_node_id: NodeId) -> Self::GridItemStyle<'_> {
         self.get_core_container_style(child_node_id)
+    }
+
+    fn compute_grid_child_layout(
+        &mut self,
+        node_id: NodeId,
+        inputs: taffy::LayoutInput,
+        subgrid_ctx: Option<&SubgridContext>,
+    ) -> taffy::LayoutOutput {
+        // Layouts of subgrids depend on the tracks adopted from the parent grid, which are not
+        // part of the layout cache key, so they bypass the cache.
+        if subgrid_ctx.is_some() {
+            self.node_from_id_mut(node_id)
+                .cache_mut()
+                .mark_uncached_result();
+            return self.compute_child_layout_internal(node_id, inputs, None, subgrid_ctx);
+        }
+        self.compute_child_layout(node_id, inputs)
     }
 
     fn set_detailed_grid_info(
