@@ -46,6 +46,10 @@ pub(crate) mod stylo {
 
     #[cfg(feature = "block")]
     pub(crate) use style::values::computed::text::TextAlign;
+    #[cfg(feature = "block")]
+    pub(crate) use style::values::computed::{AlignmentBaseline, BaselineShift};
+    #[cfg(feature = "block")]
+    pub(crate) use style::values::generics::box_::BaselineShiftKeyword;
     #[cfg(feature = "grid")]
     pub(crate) use style::{
         computed_values::grid_auto_flow::T as GridAutoFlow,
@@ -438,7 +442,9 @@ pub fn content_alignment(
     };
     let is_block_container = matches!(
         display.inside(),
-        stylo::DisplayInside::Flow | stylo::DisplayInside::FlowRoot
+        stylo::DisplayInside::Flow
+            | stylo::DisplayInside::FlowRoot
+            | stylo::DisplayInside::TableCell
     );
     let safe = primary.flags().contains(stylo::AlignFlags::SAFE)
         || (is_block_container && !primary.flags().contains(stylo::AlignFlags::UNSAFE));
@@ -446,6 +452,32 @@ pub fn content_alignment(
         align.safety = taffy::AlignmentSafety::Safe;
     }
     align
+}
+
+/// The `align-content` value that a table cell's `vertical-align` is equivalent to when the
+/// cell's own `align-content` is `normal`: `top`, `middle` and `bottom` behave as
+/// `safe start`, `safe center` and `safe end` respectively
+/// (<https://drafts.csswg.org/css-align-3/#distribution-block>). Baseline alignment is left
+/// to the table's row layout.
+#[cfg(feature = "block")]
+#[inline]
+pub fn table_cell_vertical_align(style: &stylo::ComputedValues) -> Option<taffy::AlignContent> {
+    let box_styles = style.get_box();
+    let mut align = match (
+        box_styles.clone_alignment_baseline(),
+        box_styles.clone_baseline_shift(),
+    ) {
+        (_, stylo::BaselineShift::Keyword(stylo::BaselineShiftKeyword::Top)) => {
+            taffy::AlignContent::START
+        }
+        (_, stylo::BaselineShift::Keyword(stylo::BaselineShiftKeyword::Bottom)) => {
+            taffy::AlignContent::END
+        }
+        (stylo::AlignmentBaseline::Middle, _) => taffy::AlignContent::CENTER,
+        _ => return None,
+    };
+    align.safety = taffy::AlignmentSafety::Safe;
+    Some(align)
 }
 
 /// Convert `justify-content`, resolving the physical `left`/`right` keywords against the

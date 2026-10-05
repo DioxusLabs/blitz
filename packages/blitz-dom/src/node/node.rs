@@ -1452,6 +1452,7 @@ impl Node {
             if let Some(ild) = element_data.inline_layout_data.as_ref() {
                 let layout = &ild.layout;
                 let scale = layout.scale();
+                let y = y - ild.block_offset;
 
                 if let Some((cluster, _side)) =
                     Cluster::from_point_exact(layout, x * scale, y * scale)
@@ -1511,6 +1512,7 @@ impl Node {
         let inline_layout = element_data.inline_layout_data.as_ref()?;
         let layout = &inline_layout.layout;
         let scale = layout.scale();
+        let y = y - inline_layout.block_offset;
 
         // Use Parley's cluster hit testing (from_point is more forgiving than from_point_exact)
         let (cluster, side) = Cluster::from_point(layout, x * scale, y * scale)?;
@@ -1660,7 +1662,7 @@ impl Node {
         let root_layout = inline_root.unrounded_layout();
         let content_box_inset = root_layout.padding + root_layout.border;
         let origin_x = content_box_inset.left;
-        let origin_y = content_box_inset.top;
+        let origin_y = content_box_inset.top + inline_layout.block_offset;
 
         fn union(acc: &mut Option<taffy::Rect<f32>>, left: f32, top: f32, right: f32, bottom: f32) {
             *acc = Some(match *acc {
