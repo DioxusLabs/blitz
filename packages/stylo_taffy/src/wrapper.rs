@@ -215,10 +215,16 @@ impl<T: Deref<Target = ComputedValues>> taffy::BlockContainerStyle for TaffyStyl
 
     #[inline]
     fn align_content(&self) -> taffy::AlignContent {
-        convert::content_alignment(
-            self.style.get_position().align_content,
-            self.style.clone_display(),
-        )
+        let display = self.style.clone_display();
+        let align_content =
+            convert::content_alignment(self.style.get_position().align_content, display);
+        if align_content.keyword() == taffy::AlignContentKeyword::Normal
+            && display.inside() == stylo::DisplayInside::TableCell
+        {
+            convert::table_cell_vertical_align(&self.style).unwrap_or(align_content)
+        } else {
+            align_content
+        }
     }
 
     #[inline]
@@ -250,6 +256,11 @@ impl<T: Deref<Target = ComputedValues>> taffy::BlockItemStyle for TaffyStyloStyl
             true,
             self.style.clone_direction() == stylo::Direction::Rtl,
         )
+    }
+
+    #[inline]
+    fn align_content(&self) -> taffy::AlignContent {
+        taffy::BlockContainerStyle::align_content(self)
     }
 
     #[cfg(feature = "floats")]

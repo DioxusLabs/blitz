@@ -631,7 +631,10 @@ const BOOTSTRAP_JS: &str = r#"
                 return null;
             }
             get disabled() {
-                return false;
+                return __blitz_sheet_disabled(data(this).owner);
+            }
+            set disabled(value) {
+                __blitz_sheet_set_disabled(data(this).owner, !!value);
             }
         }
 
