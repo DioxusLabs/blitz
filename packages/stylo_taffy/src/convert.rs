@@ -1004,16 +1004,14 @@ pub fn to_taffy_style(style: &stylo::ComputedValues) -> taffy::Style<Atom> {
             display,
         ),
         #[cfg(any(feature = "flexbox", feature = "grid"))]
-        align_items: self::item_alignment(pos.align_items.0, false)
-            .unwrap_or(taffy::AlignItems::NORMAL),
+        align_items: self::default_item_alignment(pos.align_items.0, false),
         #[cfg(any(feature = "flexbox", feature = "grid"))]
         align_self: self::item_alignment(pos.align_self.0, false),
         #[cfg(feature = "grid")]
-        justify_items: self::item_alignment(
+        justify_items: self::default_item_alignment(
             (pos.justify_items.computed.0).0,
             style.clone_direction() == stylo::Direction::Rtl,
-        )
-        .unwrap_or(taffy::AlignItems::NORMAL),
+        ),
         #[cfg(feature = "grid")]
         justify_self: self::item_alignment(
             pos.justify_self.0,
