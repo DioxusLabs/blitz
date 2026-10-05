@@ -928,17 +928,17 @@ impl BaseDocument {
                             position,
                             static_position: taffy::Point {
                                 x: AxisStaticPosition::from_alignment(
-                                    justify_self,
+                                    justify_self.map(|align| {
+                                        align.resolve_self_relative(item_direction, container_direction, true)
+                                    }),
                                     inline_area,
-                                    item_direction,
-                                    container_direction,
-                                    true,
+                                    container_direction.is_rtl(),
                                 ),
                                 y: AxisStaticPosition::from_alignment(
-                                    align_self,
+                                    align_self.map(|align| {
+                                        align.resolve_self_relative(item_direction, container_direction, false)
+                                    }),
                                     block_area,
-                                    item_direction,
-                                    container_direction,
                                     false,
                                 ),
                             },
