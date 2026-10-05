@@ -62,6 +62,12 @@ fn inline_box_inputs(
                 inputs.available_space.width = AvailableSpace::Definite(width);
             }
         }
+        _ if width_style.is_fit_content_calc() => {
+            if let Some(basis) = percent_basis {
+                inputs.available_space.width =
+                    AvailableSpace::Definite(resolve_calc_value(width_style.calc_value(), basis));
+            }
+        }
         CompactLength::STRETCH_TAG => {
             if let Some(width) = stretch_width {
                 inputs.known_dimensions.width = Some(width);
