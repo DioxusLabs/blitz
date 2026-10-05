@@ -846,6 +846,10 @@ impl ElementCx<'_, '_> {
                     panic!("Tried to render node marked as inline root that does not have an inline layout: {:?}", self.node);
                 });
 
+            let pos = Point {
+                x: pos.x,
+                y: pos.y + text_layout.block_offset as f64,
+            };
             let transform =
                 self.transform * Affine::translate((pos.x * self.scale, pos.y * self.scale));
 
@@ -970,15 +974,16 @@ impl ElementCx<'_, '_> {
                 + item_layout.border.left);
 
             // Align the marker with the baseline of the first line of text in the list item
-            let y_offset = if let Some(first_text_line) = &self
+            let y_offset = if let Some((text_layout, first_text_line)) = &self
                 .element
                 .inline_layout_data
                 .as_ref()
-                .and_then(|text_layout| text_layout.layout.lines().next())
+                .and_then(|text_layout| Some((text_layout, text_layout.layout.lines().next()?)))
             {
                 (first_text_line.metrics().baseline
                     - layout.lines().next().unwrap().metrics().baseline)
                     / layout.scale()
+                    + text_layout.block_offset
             } else {
                 0.0
             };
