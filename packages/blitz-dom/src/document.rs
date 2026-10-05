@@ -395,6 +395,7 @@ impl BaseDocument {
 
         // Make sure we turn on stylo features *before* creating the Stylist
         style_config::set_pref!("layout.grid.enabled", true);
+        style_config::set_pref!("layout.css.grid-template-subgrid-value.enabled", true);
         style_config::set_pref!("layout.flexbox.balance", true);
         style_config::set_pref!("layout.unimplemented", true);
         style_config::set_pref!("layout.columns.enabled", true);

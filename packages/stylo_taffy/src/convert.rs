@@ -50,11 +50,17 @@ pub(crate) mod stylo {
     pub(crate) use style::{
         computed_values::grid_auto_flow::T as GridAutoFlow,
         values::{
-            computed::{GridLine, GridTemplateComponent, ImplicitGridTracks},
+            computed::{GridLine, GridTemplateComponent, ImplicitGridTracks, Integer},
             generics::grid::{RepeatCount, TrackBreadth, TrackListValue, TrackSize},
             specified::GenericGridTemplateComponent,
         },
     };
+    #[cfg(feature = "grid")]
+    pub(crate) type LineNameList = style::values::generics::grid::LineNameList<Integer>;
+    #[cfg(feature = "grid")]
+    pub(crate) type LineNameListValue = style::values::generics::grid::LineNameListValue<Integer>;
+    #[cfg(feature = "grid")]
+    pub(crate) type NameRepeat = style::values::generics::grid::NameRepeat<Integer>;
 }
 
 use stylo::Atom;
@@ -197,6 +203,13 @@ pub fn inset(val: &stylo::InsetVal) -> taffy::LengthPercentageAuto {
 #[inline]
 pub fn is_block(input: stylo::Display) -> bool {
     self::display(input) == taffy::Display::Block
+}
+
+#[inline]
+#[cfg(feature = "grid")]
+pub fn is_grid_container(input: stylo::Display) -> bool {
+    matches!(input.inside(), stylo::DisplayInside::Grid)
+        && self::display(input) == taffy::Display::Grid
 }
 
 #[inline]
@@ -663,40 +676,42 @@ pub fn grid_line(input: &stylo::GridLine) -> taffy::GridPlacement<Atom> {
 
 #[inline]
 #[cfg(feature = "grid")]
-pub fn grid_template_tracks(
-    input: &stylo::GridTemplateComponent,
-) -> Vec<taffy::GridTemplateComponent<Atom>> {
+pub fn grid_template_tracks(input: &stylo::GridTemplateComponent) -> taffy::GridTemplate<Atom> {
     match input {
-        stylo::GenericGridTemplateComponent::None => Vec::new(),
-        stylo::GenericGridTemplateComponent::TrackList(list) => list
-            .values
-            .iter()
-            .map(|track| match track {
-                stylo::TrackListValue::TrackSize(size) => {
-                    taffy::GridTemplateComponent::Single(track_size(size))
-                }
-                stylo::TrackListValue::TrackRepeat(repeat) => {
-                    taffy::GridTemplateComponent::Repeat(taffy::GridTemplateRepetition {
-                        count: track_repeat(repeat.count),
-                        tracks: repeat.track_sizes.iter().map(track_size).collect(),
-                        line_names: repeat
-                            .line_names
-                            .iter()
-                            .map(|line_name_set| {
-                                line_name_set
-                                    .iter()
-                                    .map(|ident| ident.0.clone())
-                                    .collect::<Vec<_>>()
-                            })
-                            .collect::<Vec<_>>(),
-                    })
-                }
-            })
-            .collect(),
-
-        // TODO: Implement subgrid and masonry
-        stylo::GenericGridTemplateComponent::Subgrid(_) => Vec::new(),
-        stylo::GenericGridTemplateComponent::Masonry => Vec::new(),
+        stylo::GenericGridTemplateComponent::None => taffy::GridTemplate::Tracks(Vec::new()),
+        stylo::GenericGridTemplateComponent::TrackList(list) => taffy::GridTemplate::Tracks(
+            list.values
+                .iter()
+                .map(|track| match track {
+                    stylo::TrackListValue::TrackSize(size) => {
+                        taffy::GridTemplateComponent::Single(track_size(size))
+                    }
+                    stylo::TrackListValue::TrackRepeat(repeat) => {
+                        taffy::GridTemplateComponent::Repeat(taffy::GridTemplateRepetition {
+                            count: track_repeat(repeat.count),
+                            tracks: repeat.track_sizes.iter().map(track_size).collect(),
+                            line_names: repeat
+                                .line_names
+                                .iter()
+                                .map(|line_name_set| {
+                                    line_name_set
+                                        .iter()
+                                        .map(|ident| ident.0.clone())
+                                        .collect::<Vec<_>>()
+                                })
+                                .collect::<Vec<_>>(),
+                        })
+                    }
+                })
+                .collect(),
+        ),
+        stylo::GenericGridTemplateComponent::Subgrid(list) => taffy::GridTemplate::Subgrid(
+            crate::wrapper::StyloLineNameIter::new_subgrid(list)
+                .map(|line_name_set| line_name_set.cloned().collect())
+                .collect(),
+        ),
+        // TODO: Implement masonry
+        stylo::GenericGridTemplateComponent::Masonry => taffy::GridTemplate::Tracks(Vec::new()),
     }
 }
 
@@ -711,8 +726,9 @@ pub fn grid_template_line_names(
             Some(crate::wrapper::StyloLineNameIter::new(&list.line_names))
         }
 
-        // TODO: Implement subgrid and masonry
+        // Subgrid line names are part of `grid_template_tracks`
         stylo::GenericGridTemplateComponent::Subgrid(_) => None,
+        // TODO: Implement masonry
         stylo::GenericGridTemplateComponent::Masonry => None,
     }
 }
