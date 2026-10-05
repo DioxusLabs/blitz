@@ -78,6 +78,11 @@ impl<T: Deref<Target = ComputedValues>> taffy::CoreStyle for TaffyStyloStyle<T> 
     }
 
     #[inline]
+    fn is_replaced(&self) -> bool {
+        self.flags.contains(StyleFlags::IS_REPLACED)
+    }
+
+    #[inline]
     fn box_sizing(&self) -> taffy::BoxSizing {
         convert::box_sizing(self.style.get_position().box_sizing)
     }
