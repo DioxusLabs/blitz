@@ -860,9 +860,9 @@ impl BaseDocument {
                     // Inline formatting contexts have no `justify-items`/`align-items` for an
                     // `auto` self-alignment to defer to, so it behaves as `normal`.
                     let justify_self =
-                        OofItemStyle::justify_self(&style).resolve_auto(taffy::AlignItems::NORMAL);
+                        OofItemStyle::justify_self(&style).unwrap_or(taffy::AlignItems::NORMAL);
                     let align_self =
-                        OofItemStyle::align_self(&style).resolve_auto(taffy::AlignItems::NORMAL);
+                        OofItemStyle::align_self(&style).unwrap_or(taffy::AlignItems::NORMAL);
 
                     // The static position of an absolutely positioned box depends on the
                     // display its hypothetical box would have had (the display specified

@@ -490,13 +490,14 @@ pub fn justify_content(
 /// aligned is a horizontal axis with right-to-left text direction. Pass `false` for the vertical
 /// axis (<https://www.w3.org/TR/css-align-3/#positional-values>).
 ///
-/// `normal` and `auto` map to Taffy's `NORMAL` and `AUTO` keywords, which Taffy resolves
-/// according to the layout mode of the box being aligned.
+/// `auto` maps to `None` (for the `*-self` properties Taffy then defers to the container's
+/// `*-items` value). `normal` maps to Taffy's `NORMAL` keyword, which Taffy resolves according
+/// to the layout mode of the box being aligned.
 #[inline]
-pub fn item_alignment(input: stylo::AlignFlags, is_horiz_rtl: bool) -> taffy::AlignItems {
+pub fn item_alignment(input: stylo::AlignFlags, is_horiz_rtl: bool) -> Option<taffy::AlignItems> {
     let mut align = match input.value() {
-        stylo::AlignFlags::AUTO => return taffy::AlignSelf::AUTO,
-        stylo::AlignFlags::NORMAL => return taffy::AlignItems::NORMAL,
+        stylo::AlignFlags::AUTO => return None,
+        stylo::AlignFlags::NORMAL => return Some(taffy::AlignItems::NORMAL),
         stylo::AlignFlags::STRETCH => taffy::AlignItems::STRETCH,
         stylo::AlignFlags::FLEX_START => taffy::AlignItems::FLEX_START,
         stylo::AlignFlags::FLEX_END => taffy::AlignItems::FLEX_END,
@@ -513,16 +514,15 @@ pub fn item_alignment(input: stylo::AlignFlags, is_horiz_rtl: bool) -> taffy::Al
         // Taffy does not support last-baseline alignment, so map it to its
         // fallback alignment of `self-end` (https://www.w3.org/TR/css-align-3/#baseline-values)
         stylo::AlignFlags::LAST_BASELINE => taffy::AlignItems::END,
-        // Should never be hit. But no real reason to panic here. `AUTO` defers to the parent
-        // for the `*-self` properties and behaves as `NORMAL` for the `*-items` properties.
-        _ => return taffy::AlignSelf::AUTO,
+        // Should never be hit. But no real reason to panic here.
+        _ => return None,
     };
     if input.flags().contains(stylo::AlignFlags::SAFE) {
         align.safety = taffy::AlignmentSafety::Safe;
     } else if input.flags().contains(stylo::AlignFlags::UNSAFE) {
         align.safety = taffy::AlignmentSafety::Unsafe;
     }
-    align
+    Some(align)
 }
 
 /// Convert the `align-self`/`justify-self` value of an absolutely positioned box. This only
@@ -540,7 +540,7 @@ pub fn oof_item_alignment(
     input: stylo::AlignFlags,
     is_inline_axis: bool,
     is_item_rtl: bool,
-) -> taffy::AlignItems {
+) -> Option<taffy::AlignItems> {
     let mut align = match input.value() {
         stylo::AlignFlags::LEFT | stylo::AlignFlags::RIGHT if !is_inline_axis => {
             taffy::AlignItems::START
@@ -556,13 +556,14 @@ pub fn oof_item_alignment(
     } else if input.flags().contains(stylo::AlignFlags::UNSAFE) {
         align.safety = taffy::AlignmentSafety::Unsafe;
     }
-    align
+    Some(align)
 }
 
-/// Convert a container's `align-items`/`justify-items`.
+/// Convert a container's `align-items`/`justify-items`. `auto` is not a valid value of these
+/// properties, so it is treated as `normal`.
 #[inline]
 pub fn default_item_alignment(input: stylo::AlignFlags, is_horiz_rtl: bool) -> taffy::AlignItems {
-    item_alignment(input, is_horiz_rtl)
+    item_alignment(input, is_horiz_rtl).unwrap_or(taffy::AlignItems::NORMAL)
 }
 
 #[inline]

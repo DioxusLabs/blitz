@@ -223,7 +223,7 @@ impl<T: Deref<Target = ComputedValues>> taffy::BlockContainerStyle for TaffyStyl
 
     #[inline]
     fn justify_items(&self) -> taffy::AlignItems {
-        convert::item_alignment(
+        convert::default_item_alignment(
             (self.style.get_position().justify_items.computed.0).0,
             self.style.clone_direction() == stylo::Direction::Rtl,
         )
@@ -239,12 +239,12 @@ impl<T: Deref<Target = ComputedValues>> taffy::BlockItemStyle for TaffyStyloStyl
     }
 
     #[inline]
-    fn align_self(&self) -> taffy::AlignSelf {
+    fn align_self(&self) -> Option<taffy::AlignSelf> {
         convert::oof_item_alignment(self.style.get_position().align_self.0, false, false)
     }
 
     #[inline]
-    fn justify_self(&self) -> taffy::AlignSelf {
+    fn justify_self(&self) -> Option<taffy::AlignSelf> {
         convert::oof_item_alignment(
             self.style.get_position().justify_self.0,
             true,
@@ -336,7 +336,7 @@ impl<T: Deref<Target = ComputedValues>> taffy::FlexboxItemStyle for TaffyStyloSt
     }
 
     #[inline]
-    fn align_self(&self) -> taffy::AlignSelf {
+    fn align_self(&self) -> Option<taffy::AlignSelf> {
         convert::item_alignment(self.style.get_position().align_self.0, false)
     }
 }
@@ -640,12 +640,12 @@ impl<T: Deref<Target = ComputedValues>> taffy::GridItemStyle for TaffyStyloStyle
     }
 
     #[inline]
-    fn align_self(&self) -> taffy::AlignSelf {
+    fn align_self(&self) -> Option<taffy::AlignSelf> {
         convert::item_alignment(self.style.get_position().align_self.0, false)
     }
 
     #[inline]
-    fn justify_self(&self) -> taffy::AlignSelf {
+    fn justify_self(&self) -> Option<taffy::AlignSelf> {
         convert::item_alignment(
             self.style.get_position().justify_self.0,
             self.style.clone_direction() == stylo::Direction::Rtl,
@@ -655,12 +655,12 @@ impl<T: Deref<Target = ComputedValues>> taffy::GridItemStyle for TaffyStyloStyle
 
 impl<T: Deref<Target = ComputedValues>> taffy::OofItemStyle for TaffyStyloStyle<T> {
     #[inline]
-    fn align_self(&self) -> taffy::AlignSelf {
+    fn align_self(&self) -> Option<taffy::AlignSelf> {
         convert::oof_item_alignment(self.style.get_position().align_self.0, false, false)
     }
 
     #[inline]
-    fn justify_self(&self) -> taffy::AlignSelf {
+    fn justify_self(&self) -> Option<taffy::AlignSelf> {
         convert::oof_item_alignment(
             self.style.get_position().justify_self.0,
             true,
