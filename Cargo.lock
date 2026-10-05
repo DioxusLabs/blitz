@@ -3265,7 +3265,7 @@ dependencies = [
 [[package]]
 name = "fontique"
 version = "0.11.0"
-source = "git+https://github.com/linebender/parley?rev=718dcb721941fd8e72128833122d31f5a4e80504#718dcb721941fd8e72128833122d31f5a4e80504"
+source = "git+https://github.com/linebender/parley?rev=e41dfea5cf50669ac67c5a8aca8d1664ffb72904#e41dfea5cf50669ac67c5a8aca8d1664ffb72904"
 dependencies = [
  "hashbrown 0.17.1",
  "linebender_resource_handle",
@@ -5972,7 +5972,7 @@ dependencies = [
 [[package]]
 name = "parlance"
 version = "0.1.0"
-source = "git+https://github.com/linebender/parley?rev=718dcb721941fd8e72128833122d31f5a4e80504#718dcb721941fd8e72128833122d31f5a4e80504"
+source = "git+https://github.com/linebender/parley?rev=e41dfea5cf50669ac67c5a8aca8d1664ffb72904#e41dfea5cf50669ac67c5a8aca8d1664ffb72904"
 dependencies = [
  "bytemuck",
 ]
@@ -5980,7 +5980,7 @@ dependencies = [
 [[package]]
 name = "parley"
 version = "0.11.0"
-source = "git+https://github.com/linebender/parley?rev=718dcb721941fd8e72128833122d31f5a4e80504#718dcb721941fd8e72128833122d31f5a4e80504"
+source = "git+https://github.com/linebender/parley?rev=e41dfea5cf50669ac67c5a8aca8d1664ffb72904#e41dfea5cf50669ac67c5a8aca8d1664ffb72904"
 dependencies = [
  "fontique",
  "hashbrown 0.17.1",
@@ -5993,7 +5993,7 @@ dependencies = [
 [[package]]
 name = "parley_data"
 version = "0.11.0"
-source = "git+https://github.com/linebender/parley?rev=718dcb721941fd8e72128833122d31f5a4e80504#718dcb721941fd8e72128833122d31f5a4e80504"
+source = "git+https://github.com/linebender/parley?rev=e41dfea5cf50669ac67c5a8aca8d1664ffb72904#e41dfea5cf50669ac67c5a8aca8d1664ffb72904"
 dependencies = [
  "icu_collections",
  "icu_properties",
@@ -6002,12 +6002,12 @@ dependencies = [
 [[package]]
 name = "parley_emoji"
 version = "0.11.0"
-source = "git+https://github.com/linebender/parley?rev=718dcb721941fd8e72128833122d31f5a4e80504#718dcb721941fd8e72128833122d31f5a4e80504"
+source = "git+https://github.com/linebender/parley?rev=e41dfea5cf50669ac67c5a8aca8d1664ffb72904#e41dfea5cf50669ac67c5a8aca8d1664ffb72904"
 
 [[package]]
 name = "parley_engine"
 version = "0.11.0"
-source = "git+https://github.com/linebender/parley?rev=718dcb721941fd8e72128833122d31f5a4e80504#718dcb721941fd8e72128833122d31f5a4e80504"
+source = "git+https://github.com/linebender/parley?rev=e41dfea5cf50669ac67c5a8aca8d1664ffb72904#e41dfea5cf50669ac67c5a8aca8d1664ffb72904"
 dependencies = [
  "fontique",
  "harfrust",
@@ -7981,7 +7981,7 @@ dependencies = [
 [[package]]
 name = "taffy"
 version = "0.14.0"
-source = "git+https://github.com/DioxusLabs/taffy?rev=3db98a4cd2edd9ff2d6712743dc3ba96e202b42c#3db98a4cd2edd9ff2d6712743dc3ba96e202b42c"
+source = "git+https://github.com/DioxusLabs/taffy?rev=769b78b488fb2e7d4521adaf131c811216938603#769b78b488fb2e7d4521adaf131c811216938603"
 dependencies = [
  "serde",
  "slotmap",
