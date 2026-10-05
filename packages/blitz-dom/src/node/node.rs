@@ -1,5 +1,4 @@
 use crate::Document;
-use crate::document::{BoundingRect, snap_to_layout_unit};
 use crate::layout::paint_tree::{HoistedPaintChild, StackingContext};
 use bitflags::bitflags;
 use blitz_traits::events::{
@@ -1539,6 +1538,24 @@ impl Node {
         Some(offset)
     }
 
+    /// Whether this node is a non-atomic inline element: one that has no layout box of its
+    /// own because it is flattened into the containing inline root's text layout as a style
+    /// span.
+    pub fn is_non_atomic_inline(&self) -> bool {
+        let Some(element) = self.element_data() else {
+            return false;
+        };
+        if self.flags.is_inline_root()
+            || crate::layout::replaced::is_inline_box_element(&element.name.local)
+        {
+            return false;
+        }
+        self.primary_styles().is_some_and(|styles| {
+            let display = styles.clone_display();
+            display.outside() == DisplayOutside::Inline && display.inside() == DisplayInside::Flow
+        })
+    }
+
     /// The node whose box this node's `Layout.location` is relative to: the
     /// `oof_containing_block` for a hoisted out-of-flow box, otherwise the
     /// `layout_parent`.
@@ -1606,73 +1623,66 @@ impl Node {
         }
     }
 
-    /// Computes this non-atomic inline element's per-line-box fragment rects in
-    /// viewport coordinates. Returns `None` for nodes that have their own layout box.
-    pub(crate) fn inline_fragment_rects(
-        &self,
-        viewport_scroll: crate::Point<f64>,
-    ) -> Option<Vec<BoundingRect>> {
+    /// The per-line-box fragment boxes of a non-atomic inline element, in CSS pixels relative
+    /// to the border box of its inline root.
+    ///
+    /// Returns `None` for nodes that have their own layout box.
+    pub fn inline_fragment_boxes(&self) -> Option<impl Iterator<Item = taffy::Rect<f32>> + '_> {
         use parley::PositionedLayoutItem;
 
-        // Only non-atomic inline elements lack their own layout box: they are
-        // flattened into the containing inline root's text layout as style spans.
-        let element = self.element_data()?;
-        if self.flags.is_inline_root()
-            || crate::layout::replaced::is_inline_box_element(&element.name.local)
-        {
-            return None;
-        }
-        let display = self.primary_styles()?.clone_display();
-        if !(display.outside() == DisplayOutside::Inline && display.inside() == DisplayInside::Flow)
-        {
+        if !self.is_non_atomic_inline() {
             return None;
         }
 
         let inline_root = self.inline_root_ancestor()?;
         let inline_layout = inline_root.element_data()?.inline_layout_data.as_ref()?;
         let layout = &inline_layout.layout;
-        let scale = layout.scale() as f64;
+        let scale = layout.scale();
 
         // Walk up the DOM parent chain from `id` to check whether it is (or is
         // inside) the target node, stopping at the inline root.
-        let is_in_target = |mut id: NodeId| -> bool {
+        let inline_root_id = inline_root.id;
+        let is_in_target = move |mut id: NodeId| -> bool {
             loop {
                 if id == self.id {
                     return true;
                 }
-                if id == inline_root.id {
+                if id == inline_root_id {
                     return false;
                 }
-                match self.tree().get(id).and_then(|n| n.parent) {
+                match self.with(id).parent {
                     Some(parent) => id = parent,
                     None => return false,
                 }
             }
         };
 
-        // Fragment rects are relative to the inline root's content box.
         let root_layout = inline_root.unrounded_layout();
-        let root_pos = inline_root.unrounded_absolute_position(0.0, 0.0);
-        let origin_x = root_pos.x as f64
-            + (root_layout.padding.left + root_layout.border.left) as f64
-            - viewport_scroll.x;
-        let origin_y = root_pos.y as f64
-            + (root_layout.padding.top + root_layout.border.top) as f64
-            - viewport_scroll.y;
+        let content_box_inset = root_layout.padding + root_layout.border;
+        let origin_x = content_box_inset.left;
+        let origin_y = content_box_inset.top;
 
-        let mut rects: Vec<BoundingRect> = Vec::new();
-        for line in layout.lines() {
+        fn union(acc: &mut Option<taffy::Rect<f32>>, left: f32, top: f32, right: f32, bottom: f32) {
+            *acc = Some(match *acc {
+                Some(rect) => taffy::Rect {
+                    left: rect.left.min(left),
+                    top: rect.top.min(top),
+                    right: rect.right.max(right),
+                    bottom: rect.bottom.max(bottom),
+                },
+                None => taffy::Rect {
+                    left,
+                    top,
+                    right,
+                    bottom,
+                },
+            });
+        }
+
+        // One rect per line box: the union of all of the target's fragments on that line
+        Some(layout.lines().filter_map(move |line| {
             let line_metrics = line.metrics();
-            // Union all of the target's fragments on this line into a single rect
-            let mut line_rect: Option<(f64, f64, f64, f64)> = None;
-            let mut add = |x0: f64, y0: f64, x1: f64, y1: f64| {
-                line_rect = Some(match line_rect {
-                    Some((lx0, ly0, lx1, ly1)) => {
-                        (lx0.min(x0), ly0.min(y0), lx1.max(x1), ly1.max(y1))
-                    }
-                    None => (x0, y0, x1, y1),
-                });
-            };
+            let mut line_rect: Option<taffy::Rect<f32>> = None;
 
             for item in line.items() {
                 match item {
@@ -1680,44 +1690,41 @@ impl Node {
                         if !is_in_target(glyph_run.style().brush.id) {
                             continue;
                         }
-                        let x0 = glyph_run.offset() as f64;
-                        let x1 = x0 + glyph_run.advance() as f64;
+                        let x0 = glyph_run.offset();
+                        let x1 = x0 + glyph_run.advance();
                         // Use the line box's block extent rather than the
                         // run's font ascent/descent: fonts with small
                         // typographic metrics would otherwise produce rects
                         // that clip the rendered glyphs. This matches the
                         // geometry used for text selection highlights.
-                        let y0 = line_metrics.block_min_coord as f64;
-                        let y1 = line_metrics.block_max_coord as f64;
-                        add(x0, y0, x1, y1);
+                        let y0 = line_metrics.block_min_coord;
+                        let y1 = line_metrics.block_max_coord;
+                        union(&mut line_rect, x0, y0, x1, y1);
                     }
                     PositionedLayoutItem::InlineBox(inline_box) => {
                         if !is_in_target(NodeId::from_u64(inline_box.id)) {
                             continue;
                         }
-                        let x0 = inline_box.x as f64;
-                        let y0 = inline_box.y as f64;
-                        add(
+                        let x0 = inline_box.x;
+                        let y0 = inline_box.y;
+                        union(
+                            &mut line_rect,
                             x0,
                             y0,
-                            x0 + inline_box.width as f64,
-                            y0 + inline_box.height as f64,
+                            x0 + inline_box.width,
+                            y0 + inline_box.height,
                         );
                     }
                 }
             }
 
-            if let Some((x0, y0, x1, y1)) = line_rect {
-                rects.push(BoundingRect {
-                    x: snap_to_layout_unit(origin_x + x0 / scale),
-                    y: snap_to_layout_unit(origin_y + y0 / scale),
-                    width: snap_to_layout_unit((x1 - x0) / scale),
-                    height: snap_to_layout_unit((y1 - y0) / scale),
-                });
-            }
-        }
-
-        Some(rects)
+            line_rect.map(|rect| taffy::Rect {
+                left: origin_x + rect.left / scale,
+                top: origin_y + rect.top / scale,
+                right: origin_x + rect.right / scale,
+                bottom: origin_y + rect.bottom / scale,
+            })
+        }))
     }
 
     /// CSSOM View's `offsetLeft`/`offsetTop`: the offset of this node's border box from the
@@ -1726,6 +1733,28 @@ impl Node {
         let mut x = 0.0;
         let mut y = 0.0;
         let mut current = self;
+
+        // Non-atomic inlines have no layout box of their own: start from the first
+        // fragment box (relative to the inline root's border box) and continue the
+        // walk from the inline root.
+        if let Some(mut fragments) = self.inline_fragment_boxes() {
+            if let Some(first) = fragments.next() {
+                x += first.left;
+                y += first.top;
+            }
+            let Some(inline_root) = self.inline_root_ancestor() else {
+                return crate::util::Point { x, y };
+            };
+            if inline_root.is_offset_parent() && !inline_root.is_static_body() {
+                let border = inline_root.final_layout().border;
+                return crate::util::Point {
+                    x: x - border.left,
+                    y: y - border.top,
+                };
+            }
+            current = inline_root;
+        }
+
         loop {
             let layout = current.final_layout();
             x += layout.location.x;
