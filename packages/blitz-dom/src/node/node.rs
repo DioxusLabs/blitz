@@ -1623,46 +1623,8 @@ impl Node {
         }
     }
 
-    /// The offset applied to this node's fragments by `position: relative` (zero for other
-    /// positioning schemes), with percentages resolved against the given containing block size.
-    fn relative_inset_offset(
-        &self,
-        containing_block_size: taffy::Size<f32>,
-    ) -> crate::util::Point<f32> {
-        use taffy::{CoreStyle as _, MaybeResolve as _};
-
-        let style = self.layout_style();
-        if style.position() != taffy::Position::Relative {
-            return crate::util::Point { x: 0.0, y: 0.0 };
-        }
-        let resolve_calc_value = crate::layout::resolve_calc_value;
-        let inset = style.inset();
-        let left = inset
-            .left
-            .maybe_resolve(containing_block_size.width, resolve_calc_value);
-        let right = inset
-            .right
-            .maybe_resolve(containing_block_size.width, resolve_calc_value);
-        let top = inset
-            .top
-            .maybe_resolve(containing_block_size.height, resolve_calc_value);
-        let bottom = inset
-            .bottom
-            .maybe_resolve(containing_block_size.height, resolve_calc_value);
-        let is_rtl = style.direction() == taffy::Direction::Rtl;
-        crate::util::Point {
-            x: if is_rtl {
-                right.map(|x| -x).or(left).unwrap_or(0.0)
-            } else {
-                left.or(right.map(|x| -x)).unwrap_or(0.0)
-            },
-            y: top.or(bottom.map(|y| -y)).unwrap_or(0.0),
-        }
-    }
-
     /// The per-line-box fragment boxes of a non-atomic inline element, in CSS pixels relative
-    /// to the border box of its inline root. Includes the offsets of `position: relative` on the
-    /// element and on any non-atomic inline ancestors within the inline root.
+    /// to the border box of its inline root.
     ///
     /// Returns `None` for nodes that have their own layout box.
     pub fn inline_fragment_boxes(&self) -> Option<Vec<taffy::Rect<f32>>> {
@@ -1696,26 +1658,8 @@ impl Node {
 
         let root_layout = inline_root.unrounded_layout();
         let content_box_inset = root_layout.padding + root_layout.border;
-        let containing_block_size = root_layout.size - content_box_inset.sum_axes();
-
-        let mut origin_x = content_box_inset.left;
-        let mut origin_y = content_box_inset.top;
-        let mut node = self;
-        loop {
-            let offset = node.relative_inset_offset(containing_block_size);
-            origin_x += offset.x;
-            origin_y += offset.y;
-            let Some(parent_id) = node.parent else {
-                break;
-            };
-            if parent_id == inline_root.id {
-                break;
-            }
-            node = self.with(parent_id);
-            if !node.is_non_atomic_inline() {
-                break;
-            }
-        }
+        let origin_x = content_box_inset.left;
+        let origin_y = content_box_inset.top;
 
         let mut rects: Vec<taffy::Rect<f32>> = Vec::new();
         for line in layout.lines() {
