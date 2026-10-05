@@ -10,10 +10,12 @@ pub(crate) mod stylo {
     pub(crate) use style::properties::longhands::position::computed_value::T as Position;
     pub(crate) use style::values::computed::length_percentage::CalcLengthPercentage;
     pub(crate) use style::values::computed::length_percentage::Unpacked as UnpackedLengthPercentage;
+    pub(crate) use style::values::computed::{AlignmentBaseline, BaselineShift};
     pub(crate) use style::values::computed::{
         BorderSideWidth, Contain, LengthPercentage, Percentage,
     };
     pub(crate) use style::values::generics::NonNegative;
+    pub(crate) use style::values::generics::box_::BaselineShiftKeyword;
     pub(crate) use style::values::generics::length::{
         GenericLengthPercentageOrNormal, GenericMargin, GenericMaxSize, GenericSize,
     };
@@ -445,6 +447,33 @@ pub fn content_alignment(
         align.safety = taffy::AlignmentSafety::Safe;
     }
     Some(align)
+}
+
+/// The `align-content` of a box, including the alignment a table cell gets from
+/// `vertical-align` when its `align-content` is `normal`
+/// (<https://www.w3.org/TR/css-align-3/#valdef-align-content-normal>).
+#[inline]
+pub fn align_content(style: &stylo::ComputedValues) -> Option<taffy::AlignContent> {
+    let display = style.clone_display();
+    let align = content_alignment(style.get_position().align_content, display);
+    if align.is_some() || display.inside() != stylo::DisplayInside::TableCell {
+        return align;
+    }
+
+    // Stylo stores `vertical-align` as the `alignment-baseline` and `baseline-shift` longhands
+    let box_styles = style.get_box();
+    match box_styles.clone_baseline_shift() {
+        stylo::BaselineShift::Keyword(stylo::BaselineShiftKeyword::Top) => None,
+        stylo::BaselineShift::Keyword(stylo::BaselineShiftKeyword::Bottom) => {
+            Some(taffy::AlignContent::END)
+        }
+        _ => match box_styles.clone_alignment_baseline() {
+            stylo::AlignmentBaseline::Middle => Some(taffy::AlignContent::CENTER),
+            // TODO: `baseline` (which all other values behave as) should align the first
+            // baselines of the cells in a row. It is approximated by `top`.
+            _ => None,
+        },
+    }
 }
 
 /// Convert `justify-content`, resolving the physical `left`/`right` keywords against the
@@ -900,7 +929,7 @@ pub fn to_taffy_style(style: &stylo::ComputedValues) -> taffy::Style<Atom> {
 
         // Alignment
         #[cfg(any(feature = "flexbox", feature = "block", feature = "grid"))]
-        align_content: self::content_alignment(pos.align_content, display),
+        align_content: self::align_content(style),
         #[cfg(any(feature = "flexbox", feature = "grid"))]
         justify_content: self::justify_content(
             pos.justify_content,

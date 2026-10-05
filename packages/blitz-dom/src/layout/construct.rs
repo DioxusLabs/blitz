@@ -611,6 +611,23 @@ fn collect_layout_children_with_wrap(
 
             // TODO: fix display:contents
             if classification.all_inline {
+                // Content alignment (`align-content`, or `vertical-align` on a table cell)
+                // shifts the container's content as a single unit, which block layout
+                // implements. So the inline content is wrapped in an anonymous block rather
+                // than making the container itself the inline root.
+                let aligns_content = doc.nodes[container_node_id]
+                    .primary_styles()
+                    .is_some_and(|style| stylo_taffy::convert::align_content(&style).is_some());
+                if aligns_content {
+                    return collect_complex_layout_children(
+                        doc,
+                        container_node_id,
+                        out,
+                        false,
+                        block_item_needs_wrap,
+                    );
+                }
+
                 let existing_layout = doc.nodes[container_node_id]
                     .element_data_mut()
                     .and_then(|el| el.inline_layout_data.take());
