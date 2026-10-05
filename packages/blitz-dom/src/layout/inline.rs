@@ -857,8 +857,12 @@ impl BaseDocument {
                     let position = style.position();
                     let is_absolute = position.is_out_of_flow();
                     let item_direction = style.direction();
-                    let justify_self = OofItemStyle::justify_self(&style);
-                    let align_self = OofItemStyle::align_self(&style);
+                    // Inline formatting contexts have no `justify-items`/`align-items` for an
+                    // `auto` self-alignment to defer to, so it behaves as `normal`.
+                    let justify_self =
+                        OofItemStyle::justify_self(&style).resolve_auto(taffy::AlignItems::NORMAL);
+                    let align_self =
+                        OofItemStyle::align_self(&style).resolve_auto(taffy::AlignItems::NORMAL);
 
                     // The static position of an absolutely positioned box depends on the
                     // display its hypothetical box would have had (the display specified
@@ -928,24 +932,20 @@ impl BaseDocument {
                             position,
                             static_position: taffy::Point {
                                 x: AxisStaticPosition::from_alignment(
-                                    justify_self.map(|align| {
-                                        align.resolve_self_relative(
-                                            item_direction,
-                                            container_direction,
-                                            true,
-                                        )
-                                    }),
+                                    justify_self.resolve_self_relative(
+                                        item_direction,
+                                        container_direction,
+                                        true,
+                                    ),
                                     inline_area,
                                     container_direction.is_rtl(),
                                 ),
                                 y: AxisStaticPosition::from_alignment(
-                                    align_self.map(|align| {
-                                        align.resolve_self_relative(
-                                            item_direction,
-                                            container_direction,
-                                            false,
-                                        )
-                                    }),
+                                    align_self.resolve_self_relative(
+                                        item_direction,
+                                        container_direction,
+                                        false,
+                                    ),
                                     block_area,
                                     false,
                                 ),
