@@ -21,8 +21,17 @@ bitflags! {
     /// stylo [`ComputedValues`]
     #[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
     pub struct StyleFlags: u8 {
-        /// Whether the node is a replaced element (e.g. an image or form control)
+        /// Whether the node is a replaced element (e.g. an image or video). Replaced elements are
+        /// also compressible replaced elements, so `IS_COMPRESSIBLE_REPLACED` must be set too.
         const IS_REPLACED = 1 << 0;
+        /// Whether `justify-self: auto` on the node behaves as `normal` rather than taking the
+        /// parent's `justify-items`: anonymous block boxes, and block-level boxes whose parent
+        /// is an inline box (<https://www.w3.org/TR/css-align-3/#justify-self-property>)
+        const JUSTIFY_SELF_AUTO_IS_NORMAL = 1 << 1;
+        /// Whether the node is a compressible replaced element
+        /// (<https://drafts.csswg.org/css-sizing-3/#compressible>): a replaced element, or a form
+        /// control laid out as a leaf box with an intrinsic size (e.g. `<input>`).
+        const IS_COMPRESSIBLE_REPLACED = 1 << 2;
     }
 }
 
@@ -146,6 +155,8 @@ impl<T: Deref<Target = ComputedValues>> From<TaffyStyloStyle<T>> for taffy::Styl
         let mut style = convert::to_taffy_style(&value.style);
         value.layout_wm().transpose_style(&mut style);
         style.item_is_replaced = value.flags.contains(StyleFlags::IS_REPLACED);
+        style.item_is_compressible_replaced =
+            value.flags.contains(StyleFlags::IS_COMPRESSIBLE_REPLACED);
         style
     }
 }
@@ -166,7 +177,7 @@ impl<T: Deref<Target = ComputedValues>> taffy::CoreStyle for TaffyStyloStyle<T> 
 
     #[inline]
     fn is_compressible_replaced(&self) -> bool {
-        self.flags.contains(StyleFlags::IS_REPLACED)
+        self.flags.contains(StyleFlags::IS_COMPRESSIBLE_REPLACED)
     }
 
     #[inline]
@@ -457,6 +468,12 @@ impl<T: Deref<Target = ComputedValues>> taffy::BlockItemStyle for TaffyStyloStyl
 
     #[inline]
     fn justify_self(&self) -> Option<taffy::AlignSelf> {
+        let justify_self = self.style.get_position().justify_self.0;
+        if justify_self.value() == stylo::AlignFlags::AUTO
+            && self.flags.contains(StyleFlags::JUSTIFY_SELF_AUTO_IS_NORMAL)
+        {
+            return Some(taffy::AlignSelf::NORMAL);
+        }
         self.oof_self_alignment(
             self.style.get_position().justify_self.0,
             self.align_axis_is_inline(),
