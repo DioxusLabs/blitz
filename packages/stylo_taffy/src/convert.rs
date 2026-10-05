@@ -105,8 +105,9 @@ pub fn dimension(val: &stylo::Size) -> taffy::Dimension {
             stylo::UnpackedLengthPercentage::Percentage(percentage) => {
                 taffy::Dimension::fit_content_percent(percentage.0)
             }
-            // TODO: support calc values as fit-content() limits in Taffy
-            stylo::UnpackedLengthPercentage::Calc(_) => taffy::Dimension::AUTO,
+            stylo::UnpackedLengthPercentage::Calc(calc_ptr) => taffy::Dimension::fit_content_calc(
+                calc_ptr as *const stylo::CalcLengthPercentage as *const (),
+            ),
         },
 
         stylo::Size::Stretch => taffy::Dimension::stretch(),
