@@ -1627,7 +1627,7 @@ impl Node {
     /// to the border box of its inline root.
     ///
     /// Returns `None` for nodes that have their own layout box.
-    pub fn inline_fragment_boxes(&self) -> Option<Vec<taffy::Rect<f32>>> {
+    pub fn inline_fragment_boxes(&self) -> Option<impl Iterator<Item = taffy::Rect<f32>> + '_> {
         use parley::PositionedLayoutItem;
 
         if !self.is_non_atomic_inline() {
@@ -1641,12 +1641,13 @@ impl Node {
 
         // Walk up the DOM parent chain from `id` to check whether it is (or is
         // inside) the target node, stopping at the inline root.
-        let is_in_target = |mut id: NodeId| -> bool {
+        let inline_root_id = inline_root.id;
+        let is_in_target = move |mut id: NodeId| -> bool {
             loop {
                 if id == self.id {
                     return true;
                 }
-                if id == inline_root.id {
+                if id == inline_root_id {
                     return false;
                 }
                 match self.with(id).parent {
@@ -1661,27 +1662,27 @@ impl Node {
         let origin_x = content_box_inset.left;
         let origin_y = content_box_inset.top;
 
-        let mut rects: Vec<taffy::Rect<f32>> = Vec::new();
-        for line in layout.lines() {
+        fn union(acc: &mut Option<taffy::Rect<f32>>, left: f32, top: f32, right: f32, bottom: f32) {
+            *acc = Some(match *acc {
+                Some(rect) => taffy::Rect {
+                    left: rect.left.min(left),
+                    top: rect.top.min(top),
+                    right: rect.right.max(right),
+                    bottom: rect.bottom.max(bottom),
+                },
+                None => taffy::Rect {
+                    left,
+                    top,
+                    right,
+                    bottom,
+                },
+            });
+        }
+
+        // One rect per line box: the union of all of the target's fragments on that line
+        Some(layout.lines().filter_map(move |line| {
             let line_metrics = line.metrics();
-            // Union all of the target's fragments on this line into a single rect
             let mut line_rect: Option<taffy::Rect<f32>> = None;
-            let mut add = |left: f32, top: f32, right: f32, bottom: f32| {
-                line_rect = Some(match line_rect {
-                    Some(rect) => taffy::Rect {
-                        left: rect.left.min(left),
-                        top: rect.top.min(top),
-                        right: rect.right.max(right),
-                        bottom: rect.bottom.max(bottom),
-                    },
-                    None => taffy::Rect {
-                        left,
-                        top,
-                        right,
-                        bottom,
-                    },
-                });
-            };
 
             for item in line.items() {
                 match item {
@@ -1698,7 +1699,7 @@ impl Node {
                         // geometry used for text selection highlights.
                         let y0 = line_metrics.block_min_coord;
                         let y1 = line_metrics.block_max_coord;
-                        add(x0, y0, x1, y1);
+                        union(&mut line_rect, x0, y0, x1, y1);
                     }
                     PositionedLayoutItem::InlineBox(inline_box) => {
                         if !is_in_target(NodeId::from_u64(inline_box.id)) {
@@ -1706,22 +1707,24 @@ impl Node {
                         }
                         let x0 = inline_box.x;
                         let y0 = inline_box.y;
-                        add(x0, y0, x0 + inline_box.width, y0 + inline_box.height);
+                        union(
+                            &mut line_rect,
+                            x0,
+                            y0,
+                            x0 + inline_box.width,
+                            y0 + inline_box.height,
+                        );
                     }
                 }
             }
 
-            if let Some(rect) = line_rect {
-                rects.push(taffy::Rect {
-                    left: origin_x + rect.left / scale,
-                    top: origin_y + rect.top / scale,
-                    right: origin_x + rect.right / scale,
-                    bottom: origin_y + rect.bottom / scale,
-                });
-            }
-        }
-
-        Some(rects)
+            line_rect.map(|rect| taffy::Rect {
+                left: origin_x + rect.left / scale,
+                top: origin_y + rect.top / scale,
+                right: origin_x + rect.right / scale,
+                bottom: origin_y + rect.bottom / scale,
+            })
+        }))
     }
 
     /// CSSOM View's `offsetLeft`/`offsetTop`: the offset of this node's border box from the
@@ -1734,8 +1737,8 @@ impl Node {
         // Non-atomic inlines have no layout box of their own: start from the first
         // fragment box (relative to the inline root's border box) and continue the
         // walk from the inline root.
-        if let Some(fragments) = self.inline_fragment_boxes() {
-            if let Some(first) = fragments.first() {
+        if let Some(mut fragments) = self.inline_fragment_boxes() {
+            if let Some(first) = fragments.next() {
                 x += first.left;
                 y += first.top;
             }

@@ -2229,25 +2229,7 @@ impl BaseDocument {
         // Non-atomic inline elements have no layout box of their own: return
         // the union of their per-line-box fragment rects.
         if let Some(rects) = self.inline_fragment_rects(node_id) {
-            let x0 = rects.iter().map(|r| r.x).fold(f64::INFINITY, f64::min);
-            let y0 = rects.iter().map(|r| r.y).fold(f64::INFINITY, f64::min);
-            let x1 = rects
-                .iter()
-                .map(|r| r.x + r.width)
-                .fold(f64::NEG_INFINITY, f64::max);
-            let y1 = rects
-                .iter()
-                .map(|r| r.y + r.height)
-                .fold(f64::NEG_INFINITY, f64::max);
-            return match rects.is_empty() {
-                true => None,
-                false => Some(BoundingRect {
-                    x: x0,
-                    y: y0,
-                    width: x1 - x0,
-                    height: y1 - y0,
-                }),
-            };
+            return BoundingRect::union(rects);
         }
 
         let node = self.get_node(node_id)?;
@@ -2283,26 +2265,14 @@ impl BaseDocument {
                 height: size.height as f64,
             });
         };
-        if rects.is_empty() {
-            return None;
-        }
 
         // Union the per-line-box fragments into a single bounding box
-        let x0 = rects.iter().map(|r| r.x).fold(f64::INFINITY, f64::min);
-        let y0 = rects.iter().map(|r| r.y).fold(f64::INFINITY, f64::min);
-        let x1 = rects
-            .iter()
-            .map(|r| r.x + r.width)
-            .fold(f64::NEG_INFINITY, f64::max);
-        let y1 = rects
-            .iter()
-            .map(|r| r.y + r.height)
-            .fold(f64::NEG_INFINITY, f64::max);
+        let bounds = BoundingRect::union(rects)?;
 
         // Fragment rects are viewport-relative; convert to document-relative
         let scroll = self.viewport_scroll();
-        let mut x = x0 + scroll.x;
-        let mut y = y0 + scroll.y;
+        let mut x = bounds.x + scroll.x;
+        let mut y = bounds.y + scroll.y;
 
         // Resolve the offsetParent from the inline root (the root itself if it is positioned)
         let inline_root = node.inline_root_ancestor()?;
@@ -2322,8 +2292,8 @@ impl BaseDocument {
         Some(BoundingRect {
             x,
             y,
-            width: x1 - x0,
-            height: y1 - y0,
+            width: bounds.width,
+            height: bounds.height,
         })
     }
 
@@ -2333,7 +2303,7 @@ impl BaseDocument {
     /// spans within an inline root's text layout) return one rect per line box.
     pub fn node_client_rects(&self, node_id: NodeId) -> Vec<BoundingRect> {
         match self.inline_fragment_rects(node_id) {
-            Some(rects) => rects,
+            Some(rects) => rects.collect(),
             None => self.get_client_bounding_rect(node_id).into_iter().collect(),
         }
     }
@@ -2341,7 +2311,10 @@ impl BaseDocument {
     /// Computes per-line-box fragment rects for a non-atomic inline element by walking
     /// the containing inline root's text layout. Returns `None` for nodes that have
     /// their own layout box (which should use `get_client_bounding_rect` instead).
-    pub fn inline_fragment_rects(&self, node_id: NodeId) -> Option<Vec<BoundingRect>> {
+    pub fn inline_fragment_rects(
+        &self,
+        node_id: NodeId,
+    ) -> Option<impl Iterator<Item = BoundingRect> + '_> {
         let node = self.get_node(node_id)?;
 
         // Only non-atomic inline elements lack their own layout box: they are
@@ -2354,17 +2327,12 @@ impl BaseDocument {
         let origin_x = root_pos.x as f64 - self.viewport_scroll().x;
         let origin_y = root_pos.y as f64 - self.viewport_scroll().y;
 
-        Some(
-            fragments
-                .into_iter()
-                .map(|rect| BoundingRect {
-                    x: snap_to_layout_unit(origin_x + rect.left as f64),
-                    y: snap_to_layout_unit(origin_y + rect.top as f64),
-                    width: snap_to_layout_unit((rect.right - rect.left) as f64),
-                    height: snap_to_layout_unit((rect.bottom - rect.top) as f64),
-                })
-                .collect(),
-        )
+        Some(fragments.map(move |rect| BoundingRect {
+            x: snap_to_layout_unit(origin_x + rect.left as f64),
+            y: snap_to_layout_unit(origin_y + rect.top as f64),
+            width: snap_to_layout_unit((rect.right - rect.left) as f64),
+            height: snap_to_layout_unit((rect.bottom - rect.top) as f64),
+        }))
     }
 
     /// The first element in tree order with the given tag name. The root element and
@@ -2733,6 +2701,34 @@ pub struct BoundingRect {
     pub y: f64,
     pub width: f64,
     pub height: f64,
+}
+
+impl BoundingRect {
+    /// The smallest rect containing all of `rects`, or `None` if there are none.
+    pub fn union(rects: impl Iterator<Item = BoundingRect>) -> Option<BoundingRect> {
+        let (x0, y0, x1, y1) = rects.fold(
+            (
+                f64::INFINITY,
+                f64::INFINITY,
+                f64::NEG_INFINITY,
+                f64::NEG_INFINITY,
+            ),
+            |(x0, y0, x1, y1), r| {
+                (
+                    x0.min(r.x),
+                    y0.min(r.y),
+                    x1.max(r.x + r.width),
+                    y1.max(r.y + r.height),
+                )
+            },
+        );
+        (x0 <= x1).then_some(BoundingRect {
+            x: x0,
+            y: y0,
+            width: x1 - x0,
+            height: y1 - y0,
+        })
+    }
 }
 
 /// Snap a CSSOM geometry value to a 1/64px grid (the precision of Blink's `LayoutUnit`).
