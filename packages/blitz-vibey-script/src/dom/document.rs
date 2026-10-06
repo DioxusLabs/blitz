@@ -42,6 +42,13 @@ pub(crate) fn init_document_proto(proto: &JsObject, context: &mut Context) {
     define_accessor(proto, "styleSheets", Some(style_sheets), None, context);
     define_accessor(
         proto,
+        "children",
+        Some(super::element::children),
+        None,
+        context,
+    );
+    define_accessor(
+        proto,
         "childElementCount",
         Some(super::element::child_element_count),
         None,
