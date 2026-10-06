@@ -858,7 +858,6 @@ impl BaseDocument {
         // Store sizes and positions of inline boxes
         for (ibox_order, ibox) in inline_layout.layout.positioned_inline_boxes().enumerate() {
             let order = ibox_order as u32;
-            let line = inline_layout.layout.get(ibox.line_index).unwrap();
             let node = &self.nodes[NodeId::from_u64(ibox.id)];
             let style = node.layout_style();
             let padding = style
@@ -922,6 +921,7 @@ impl BaseDocument {
                 //   zero-sized) and spans the line box in the block axis.
                 // - A block-level box's rectangle spans the containing block's content
                 //   box in the inline axis and is zero-height below the line box.
+                let line = inline_layout.layout.get(ibox.line_index).unwrap();
                 let line_metrics = line.metrics();
                 let line_top = (line_metrics.block_min_coord / scale) + line_box_top;
                 let line_bottom = (line_metrics.block_max_coord / scale) + line_box_top;
