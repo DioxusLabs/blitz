@@ -284,6 +284,22 @@ fn run_on_layout_pool(f: impl FnOnce() + Send) {
     }
 }
 
+/// Whether a layout pass that may compute batches in parallel is run on the thread pool as a whole
+/// (see [`BaseDocument::run_layout_pass`]). Only `layout_bench` turns this off.
+#[doc(hidden)]
+pub static ENTER_LAYOUT_POOL: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(true);
+
+/// Run a function on the thread pool that batches are computed on, unless the current thread is
+/// already a thread of that pool
+fn enter_layout_pool(f: impl FnOnce() + Send) {
+    match dedicated_thread_pool() {
+        Some(_) => run_on_layout_pool(f),
+        None if rayon::current_thread_index().is_none() => rayon::scope(|_| f()),
+        None => f(),
+    }
+}
+
 /// The minimum total weight of the subtrees below a node for their layouts to be rounded in
 /// parallel. Rounding a node is much cheaper than laying it out, so this is much higher than the
 /// minimum weight of a batch of layouts.
@@ -470,6 +486,37 @@ impl BaseDocument {
     #[doc(hidden)]
     pub fn set_parallel_layout_threshold(&mut self, min_batch_weight: Option<u32>) {
         self.parallel_layout_min_batch_weight = min_batch_weight;
+    }
+
+    /// Run a layout pass over the subtree of `root`.
+    ///
+    /// A batch that is started by a thread that is not in the thread pool is handed over to the
+    /// pool while that thread sleeps, which costs far more than starting a batch from a thread of
+    /// the pool. So if any batch could be computed in parallel then the whole pass is run on the
+    /// pool (while the current thread waits for it).
+    pub(crate) fn run_layout_pass(
+        &mut self,
+        root: taffy::NodeId,
+        layout_pass: impl FnOnce(&mut BaseDocument) + Send,
+    ) {
+        let min_batch_weight = self
+            .parallel_layout_min_batch_weight
+            .map(effective_min_batch_weight);
+        let weights = &self.layout_subtree_info.weights;
+        let root_weight = weights.get(slot(dom_node_id(root))).copied().unwrap_or(0);
+        let may_compute_in_parallel = min_batch_weight.is_some_and(|min| root_weight >= min);
+        // (the profile is collected by the thread that starts the layout pass)
+        use std::sync::atomic::Ordering::Relaxed;
+        if may_compute_in_parallel && ENTER_LAYOUT_POOL.load(Relaxed) && !PROFILE.load(Relaxed) {
+            let doc_ptr = DocPtr(self);
+            enter_layout_pool(move || {
+                // SAFETY: see the module docs. This is not sound in general. The current thread
+                // does not use the document until this function has returned.
+                layout_pass(unsafe { &mut *doc_ptr.get() })
+            });
+        } else {
+            layout_pass(self);
+        }
     }
 
     /// Set how the cost of laying out a node is estimated
