@@ -1381,21 +1381,17 @@ impl Node {
         use style::computed_values::pointer_events::T as PointerEvents;
         use style::computed_values::visibility::T as Visibility;
 
-        // Don't hit on visbility:hidden elements
-        if let Some(style) = self.primary_styles() {
-            if matches!(
-                style.clone_visibility(),
-                Visibility::Hidden | Visibility::Collapse
-            ) {
-                return None;
-            }
-        }
-
         // pointer-events:none makes this element transparent to hits, but its
         // descendants are still tested (one may restore pointer-events:auto).
-        let pointer_events_none = self
-            .primary_styles()
-            .is_some_and(|style| style.clone_pointer_events() == PointerEvents::None);
+        // So does visibility:hidden/collapse: the element is not a hit target,
+        // but a descendant with visibility:visible is (CSS Display §4).
+        let pointer_events_none = self.primary_styles().is_some_and(|style| {
+            style.clone_pointer_events() == PointerEvents::None
+                || matches!(
+                    style.clone_visibility(),
+                    Visibility::Hidden | Visibility::Collapse
+                )
+        });
 
         let mut x = x - self.final_layout().location.x + self.scroll_offset().x as f32;
         let mut y = y - self.final_layout().location.y + self.scroll_offset().y as f32;
