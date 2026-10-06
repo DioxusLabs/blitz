@@ -105,8 +105,18 @@ fn check_layout(
                 pass_count += 1;
             }
 
+            let mut name = format!("{subtest_selector} {}", idx + 1);
+            if let Some(title) = document
+                .get_node(root_id)
+                .and_then(|node| node.attr(blitz_dom::local_name!("title")))
+                .filter(|title| !title.is_empty())
+            {
+                name.push_str(": ");
+                name.push_str(title);
+            }
+
             SubtestResult {
-                name: format!("{subtest_selector} {}", idx + 1),
+                name,
                 status: status_from_bool(!has_error),
                 errors,
             }
@@ -247,4 +257,37 @@ fn check_attr(attr_name: &str, attr_val: &str, actual: f32) -> Result<(), String
 
 fn assert_with_tolerance(expected: f32, actual: f32) -> bool {
     (actual - expected).abs() < 1.0
+}
+
+#[cfg(test)]
+mod tests {
+    use blitz_dom::DocumentConfig;
+    use blitz_html::HtmlDocument;
+
+    use super::*;
+
+    #[test]
+    fn subtest_names_include_nonempty_root_titles() {
+        let html = r#"
+            <div class="test" title="start"><span title="child"></span></div>
+            <div class="test" title="last baseline"></div>
+            <div class="test"></div>
+            <div class="test" title=""></div>
+            <div class="test" title=" "></div>
+        "#;
+        let mut document = HtmlDocument::from_html(html, DocumentConfig::default()).into();
+        let (_, _, results) = check_layout(&mut document, ".test");
+
+        let names: Vec<_> = results.iter().map(|result| result.name.as_str()).collect();
+        assert_eq!(
+            names,
+            [
+                ".test 1: start",
+                ".test 2: last baseline",
+                ".test 3",
+                ".test 4",
+                ".test 5:  ",
+            ]
+        );
+    }
 }
