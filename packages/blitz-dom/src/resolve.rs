@@ -485,31 +485,37 @@ impl BaseDocument {
             LAYOUT_PHASE_NS[0].store(start.elapsed().as_nanos() as u64, Relaxed);
         }
 
-        let mut state = LayoutPassState::new(self);
-        #[cfg(feature = "writing-mode")]
-        let available_space = {
-            state.layout_wm = state.layout_wm_of(crate::dom_node_id(root_element_id));
-            if state.layout_wm.is_vertical() {
-                available_space.transpose()
-            } else {
-                available_space
-            }
+        let layout_pass = move |doc: &mut BaseDocument| {
+            let mut state = LayoutPassState::new(doc);
+            #[cfg(feature = "writing-mode")]
+            let available_space = {
+                state.layout_wm = state.layout_wm_of(crate::dom_node_id(root_element_id));
+                if state.layout_wm.is_vertical() {
+                    available_space.transpose()
+                } else {
+                    available_space
+                }
+            };
+
+            #[cfg(feature = "parallel-layout")]
+            let start = std::time::Instant::now();
+            taffy::compute_root_layout(&mut state, root_element_id, available_space);
+            #[cfg(feature = "parallel-layout")]
+            LAYOUT_PHASE_NS[1].store(start.elapsed().as_nanos() as u64, Relaxed);
+
+            #[cfg(feature = "parallel-layout")]
+            let start = std::time::Instant::now();
+            #[cfg(feature = "writing-mode")]
+            state.physicalise_and_round_layout(root_element_id);
+            #[cfg(not(feature = "writing-mode"))]
+            taffy::round_layout(&mut state, root_element_id);
+            #[cfg(feature = "parallel-layout")]
+            LAYOUT_PHASE_NS[2].store(start.elapsed().as_nanos() as u64, Relaxed);
         };
-
         #[cfg(feature = "parallel-layout")]
-        let start = std::time::Instant::now();
-        taffy::compute_root_layout(&mut state, root_element_id, available_space);
-        #[cfg(feature = "parallel-layout")]
-        LAYOUT_PHASE_NS[1].store(start.elapsed().as_nanos() as u64, Relaxed);
-
-        #[cfg(feature = "parallel-layout")]
-        let start = std::time::Instant::now();
-        #[cfg(feature = "writing-mode")]
-        state.physicalise_and_round_layout(root_element_id);
-        #[cfg(not(feature = "writing-mode"))]
-        taffy::round_layout(&mut state, root_element_id);
-        #[cfg(feature = "parallel-layout")]
-        LAYOUT_PHASE_NS[2].store(start.elapsed().as_nanos() as u64, Relaxed);
+        self.run_layout_pass(root_element_id, layout_pass);
+        #[cfg(not(feature = "parallel-layout"))]
+        layout_pass(self);
 
         // println!("\n\n");
         // taffy::print_tree(self, root_node_id)
