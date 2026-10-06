@@ -849,3 +849,77 @@ impl taffy::LayoutGridContainer for TableTreeWrapper<'_, '_> {
         *self.ctx.computed_grid_info.borrow_mut() = Some(detailed_grid_info);
     }
 }
+
+#[cfg(test)]
+mod table_height_tests {
+    use crate::{Attribute, BaseDocument, DocumentConfig, NodeId, qual_name};
+    use blitz_traits::shell::{ColorScheme, Viewport};
+
+    fn style(value: &str) -> Attribute {
+        Attribute {
+            name: qual_name!("style"),
+            value: value.to_string(),
+        }
+    }
+
+    /// A table with one cell `height:80px` styled with `cell_style`, holding
+    /// either a 20px-tall block or a line of 20px-tall text.
+    fn layout_in(
+        cell_style: &str,
+        block_child: bool,
+        container_style: &str,
+    ) -> (BaseDocument, NodeId, NodeId) {
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(800, 600, 1.0, ColorScheme::Light)),
+            ..Default::default()
+        });
+        let root_id = doc.root_node().id;
+        let mut m = doc.mutate();
+        let html = m.create_element(qual_name!("html"), vec![]);
+        let body = m.create_element(qual_name!("body"), vec![style("margin:0")]);
+        let table = m.create_element(qual_name!("div"), vec![style(container_style)]);
+        let cell = m.create_element(
+            qual_name!("div"),
+            vec![style(&format!(
+                "display:table-cell;width:200px;height:80px;font-size:16px;line-height:20px;{cell_style}"
+            ))],
+        );
+        let content = if block_child {
+            m.create_element(
+                qual_name!("div"),
+                vec![style("display:block;width:50px;height:20px")],
+            )
+        } else {
+            m.create_text_node("text")
+        };
+        m.append_children(cell, &[content]);
+        m.append_children(table, &[cell]);
+        m.append_children(body, &[table]);
+        m.append_children(html, &[body]);
+        m.append_children(root_id, &[html]);
+        drop(m);
+        doc.resolve(0.0);
+        (doc, cell, content)
+    }
+
+    /// The `height` of a table is a minimum: it grows to fit its rows
+    /// (CSS 2.1 §17.5.3), and keeps that height when the rows are shorter.
+    #[test]
+    fn table_height_is_a_minimum() {
+        let (doc, cell, _) = layout_in(
+            "height:auto;vertical-align:top",
+            true,
+            "display:table;height:10px",
+        );
+        let table = doc.nodes[cell].parent.unwrap();
+        assert_eq!(doc.nodes[table].final_layout().size.height, 20.0);
+
+        let (doc, cell, _) = layout_in(
+            "height:auto;vertical-align:top",
+            true,
+            "display:table;height:100px",
+        );
+        let table = doc.nodes[cell].parent.unwrap();
+        assert_eq!(doc.nodes[table].final_layout().size.height, 100.0);
+    }
+}

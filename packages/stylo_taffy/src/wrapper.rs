@@ -249,18 +249,28 @@ impl<T: Deref<Target = ComputedValues>> taffy::CoreStyle for TaffyStyloStyle<T> 
     #[inline]
     fn size(&self) -> taffy::Size<taffy::Dimension> {
         let position_styles = self.style.get_position();
+        let (height, _) = convert::height_and_min_height(
+            self.style.clone_display(),
+            &position_styles.height,
+            &position_styles.min_height,
+        );
         self.size(taffy::Size {
             width: convert::dimension(&position_styles.width),
-            height: convert::dimension(&position_styles.height),
+            height,
         })
     }
 
     #[inline]
     fn min_size(&self) -> taffy::Size<taffy::LengthPercentageAuto> {
         let position_styles = self.style.get_position();
+        let (_, min_height) = convert::height_and_min_height(
+            self.style.clone_display(),
+            &position_styles.height,
+            &position_styles.min_height,
+        );
         self.size(taffy::Size {
             width: convert::min_size(&position_styles.min_width),
-            height: convert::min_size(&position_styles.min_height),
+            height: min_height,
         })
     }
 

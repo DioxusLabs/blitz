@@ -126,6 +126,33 @@ pub fn dimension(val: &stylo::Size) -> taffy::Dimension {
 }
 
 #[inline]
+/// The `height` and `min-height` of a box. The `height` of a table is a
+/// minimum: a table grows to fit its rows (CSS 2.1 §17.5.3), so it is laid
+/// out as the table's `min-height` (or the larger of the two, when both are
+/// lengths) with an `auto` height.
+pub fn height_and_min_height(
+    display: stylo::Display,
+    height: &stylo::Size,
+    min_height: &stylo::Size,
+) -> (taffy::Dimension, taffy::LengthPercentageAuto) {
+    let stylo::Size::LengthPercentage(table_height) = height else {
+        return (dimension(height), min_size(min_height));
+    };
+    if !is_table(display) {
+        return (dimension(height), min_size(min_height));
+    }
+    let min_height = match min_height {
+        stylo::Size::LengthPercentage(min) => match (table_height.0.to_length(), min.0.to_length())
+        {
+            (Some(height), Some(min)) => taffy::LengthPercentage::length(height.px().max(min.px())),
+            (_, Some(min)) if min.px() == 0.0 => length_percentage(&table_height.0),
+            _ => length_percentage(&min.0),
+        },
+        _ => length_percentage(&table_height.0),
+    };
+    (taffy::Dimension::AUTO, min_height.into())
+}
+
 pub fn min_size(val: &stylo::Size) -> taffy::LengthPercentageAuto {
     match val {
         stylo::Size::LengthPercentage(val) => length_percentage(&val.0).into(),
@@ -962,6 +989,7 @@ pub fn to_taffy_style(style: &stylo::ComputedValues) -> taffy::Style<Atom> {
     let margin = style.get_margin();
     let padding = style.get_padding();
     let border = style.get_border();
+    let table_height = self::height_and_min_height(display, &pos.height, &pos.min_height);
 
     taffy::Style {
         dummy: core::marker::PhantomData,
@@ -986,11 +1014,11 @@ pub fn to_taffy_style(style: &stylo::ComputedValues) -> taffy::Style<Atom> {
 
         size: taffy::Size {
             width: self::dimension(&pos.width),
-            height: self::dimension(&pos.height),
+            height: table_height.0,
         },
         min_size: taffy::Size {
             width: self::min_size(&pos.min_width),
-            height: self::min_size(&pos.min_height),
+            height: table_height.1,
         },
         max_size: taffy::Size {
             width: self::max_size(&pos.max_width),
