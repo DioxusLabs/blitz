@@ -661,6 +661,11 @@ impl LayoutPassState<'_> {
             let initial_slot = block_ctx.find_content_slot(0.0, 0.0, Clear::None, None);
             let mut has_active_floats = initial_slot.segment_id.is_some();
             let mut current_slot = initial_slot;
+            // The slot the current line started in. Floats placed mid-line shorten
+            // `current_slot` but not this: a line is only re-laid below floats if it overflows
+            // the space that was available when it started (a line shortened only by a float
+            // it contains overflows in place, as in Chrome).
+            let mut line_start_slot = current_slot;
             let state = breaker.state_mut();
             state.set_layout_max_advance(width);
             state.set_line_max_advance(current_slot.width * scale);
@@ -674,21 +679,26 @@ impl LayoutPassState<'_> {
             let mut saved_state = breaker.state().clone();
             let mut line_retry_count = 0;
 
-            // Track the bottom edge of the lowest committed line: a line moved down below floats
-            // may end below the sum of the line heights (which is what parley reports as the
-            // layout height)
-            let mut max_line_bottom: f64 = 0.0;
+            // Parley's layout height is the sum of the line heights, so it does not include the
+            // distance that lines were moved down to clear floats. Track that distance (and
+            // the bottom of the last committed line, for floats deferred past it).
+            let mut line_shift: f64 = 0.0;
+            let mut natural_line_y: f64 = 0.0;
+            let mut last_line_bottom: f64 = 0.0;
 
             while let Some(yield_data) = breaker.break_next() {
                 match yield_data {
                     YieldData::LineBreak(line_break_data) => {
-                        // If the line's content overflows a float-shortened line box then re-lay
-                        // the line out in the next available space down.
+                        // If the line's content (excluding trailing whitespace, which may hang
+                        // past the line's end edge) overflows a float-shortened line box then
+                        // re-lay the line out in the next available space down.
+                        let content_advance =
+                            line_break_data.advance - line_break_data.hanging_advance;
                         if has_active_floats
                             && line_retry_count < MAX_LINE_RETRIES
-                            && line_break_data.advance > current_slot.width * scale + 0.001
+                            && content_advance > line_start_slot.width * scale + 0.001
                         {
-                            if let Some(segment_id) = current_slot.segment_id {
+                            if let Some(segment_id) = line_start_slot.segment_id {
                                 line_retry_count += 1;
                                 let line_top = (line_break_data.line_y_start / scale as f64) as f32;
                                 let line_height = (line_break_data.line_height / scale).max(0.0);
@@ -700,6 +710,7 @@ impl LayoutPassState<'_> {
                                 );
                                 has_active_floats = next_slot.segment_id.is_some();
                                 current_slot = next_slot;
+                                line_start_slot = next_slot;
 
                                 breaker.revert_to(saved_state.clone());
                                 let state = breaker.state_mut();
@@ -712,7 +723,9 @@ impl LayoutPassState<'_> {
                         }
                         line_retry_count = 0;
                         line_deferred_ids.clear();
-                        max_line_bottom = max_line_bottom.max(line_break_data.line_y_end);
+                        line_shift += line_break_data.line_y_start - natural_line_y;
+                        natural_line_y = line_break_data.line_y_end;
+                        last_line_bottom = line_break_data.line_y_end;
 
                         let line_bottom = (line_break_data.line_y_end / scale as f64) as f32;
 
@@ -755,10 +768,18 @@ impl LayoutPassState<'_> {
                             state.set_line_y((current_slot.y * scale) as f64);
                             state.set_line_max_height(current_slot.height * scale);
                         } else {
+                            current_slot = taffy::ContentSlot {
+                                segment_id: None,
+                                x: 0.0,
+                                y: (state.line_y() / scale as f64) as f32,
+                                width: width / scale,
+                                height: f32::INFINITY,
+                            };
                             state.set_line_x(0.0);
                             state.set_line_max_advance(width);
                             state.set_line_max_height(f32::INFINITY);
                         }
+                        line_start_slot = current_slot;
 
                         saved_state = breaker.state().clone();
                         continue;
@@ -779,6 +800,7 @@ impl LayoutPassState<'_> {
                             );
                             has_active_floats = next_slot.segment_id.is_some();
                             current_slot = next_slot;
+                            line_start_slot = next_slot;
 
                             breaker.revert_to(saved_state.clone());
                             let state = breaker.state_mut();
@@ -859,6 +881,9 @@ impl LayoutPassState<'_> {
                             state.set_line_x(current_slot.x * scale);
                             state.set_line_y((current_slot.y * scale) as f64);
                             state.set_line_max_height(current_slot.height * scale);
+                            if box_break_data.advance <= 0.0 {
+                                line_start_slot = current_slot;
+                            }
 
                             let location = taffy::Point {
                                 x: pos.x + margin.left + container_pb.left,
@@ -908,7 +933,7 @@ impl LayoutPassState<'_> {
             for pending in pending_floats.drain(..) {
                 let pos = block_ctx.place_floated_box(
                     pending.size + pending.margin.sum_axes(),
-                    max_line_bottom as f32 / scale,
+                    last_line_bottom as f32 / scale,
                     pending.direction,
                     pending.clear,
                     false,
@@ -928,7 +953,7 @@ impl LayoutPassState<'_> {
                 }
             }
 
-            line_bottom_height = max_line_bottom as f32;
+            line_bottom_height = line_shift as f32;
         }
 
         // Propagate the height consumed by floats placed within this container to the
@@ -971,7 +996,7 @@ impl LayoutPassState<'_> {
         };
         #[cfg(feature = "floats")]
         if has_inline_content {
-            height = height.max(line_bottom_height);
+            height += line_bottom_height;
         }
 
         // A forced line break (e.g. `<br>` or a preserved newline) at the end of the inline
