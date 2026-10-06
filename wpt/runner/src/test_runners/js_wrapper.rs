@@ -2,66 +2,45 @@
 //! JS-file tests (`.any.js` and `.window.js`), mirroring `AnyHtmlHandler` and
 //! `WindowHandler` in wpt's `tools/serve/serve.py`. This lets the runner
 //! execute these tests through the regular testharness path without a server.
+//!
+//! The `// META:` comment block is parsed by the `wpt-runner-types` crate.
 
-/// The maximum set of `// META:` directives at the top of a JS test file,
-/// in file order. Parsing stops at the first non-META line (matching
-/// upstream's `read_script_metadata`).
-fn parse_metas(js_source: &str) -> Vec<(&str, &str)> {
-    let mut metas = Vec::new();
-    for line in js_source.lines() {
-        let Some(rest) = line.strip_prefix("//") else {
-            break;
-        };
-        let rest = rest.trim_start();
-        let Some(rest) = rest.strip_prefix("META:") else {
-            break;
-        };
-        let Some((key, value)) = rest.trim_start().split_once('=') else {
-            break;
-        };
-        metas.push((key, value));
-    }
-    metas
-}
-
-/// Does the test's `// META: global=` line (or the `.any.js` default of
-/// "window,dedicatedworker") include the `window` global?
-fn globals_include_window(metas: &[(&str, &str)]) -> bool {
-    let Some((_, value)) = metas.iter().find(|(key, _)| *key == "global") else {
-        return true;
-    };
-    value.split(',').any(|item| item.trim() == "window")
-}
+use wpt_runner_types::script_metadata::{
+    GlobalScope, ScriptMetadata, ScriptMetadataExt as _, Timeout, parse_script_metadata,
+};
 
 /// Whether the runner can run this `.any.js` / `.window.js` test, i.e.
 /// whether it has a window variant. `.any.js` tests whose `// META: global=`
 /// list excludes the `window` global (worker-only tests) cannot be run.
 pub fn js_test_has_window_variant(relative_path: &str, js_source: &str) -> bool {
-    !relative_path.ends_with(".any.js") || globals_include_window(&parse_metas(js_source))
+    !relative_path.ends_with(".any.js")
+        || parse_script_metadata(js_source)
+            .global_scopes()
+            .contains(&GlobalScope::Window)
 }
 
 /// Build the wrapper HTML for a `.any.js` or `.window.js` test.
 pub fn wrapper_html_for_js_test(relative_path: &str, js_source: &str) -> String {
     let is_any = relative_path.ends_with(".any.js");
-    let metas = parse_metas(js_source);
+    let metas = parse_script_metadata(js_source);
 
     let mut meta_tags = String::new();
     let mut script_tags = String::new();
-    for (key, value) in &metas {
-        match *key {
-            "timeout" if *value == "long" => {
+    for meta in &metas {
+        match meta {
+            ScriptMetadata::Timeout(Timeout::Long) => {
                 meta_tags.push_str("<meta name=\"timeout\" content=\"long\">\n");
             }
-            "title" => {
+            ScriptMetadata::Title(title) => {
                 meta_tags.push_str(&format!(
                     "<title>{}</title>\n",
-                    html_escape::encode_text(value)
+                    html_escape::encode_text(title)
                 ));
             }
-            "script" => {
+            ScriptMetadata::Script(src) => {
                 script_tags.push_str(&format!(
                     "<script src=\"{}\"></script>\n",
-                    html_escape::encode_double_quoted_attribute(value)
+                    html_escape::encode_double_quoted_attribute(src)
                 ));
             }
             _ => {}
