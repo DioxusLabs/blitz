@@ -19,6 +19,8 @@
 //!   weights of nodes are changed: the weights are otherwise computed while the layout tree is
 //!   constructed, see the `CONSTRUCT walk` line), the layout and the rounding
 //! - `IDLE_MS=16`: sleep before each layout, so that the pool's threads are asleep when it starts
+//! - `OUTSIDE_POOL=1`: run the layouts on the main thread rather than on a thread of the pool (with
+//!   one `THREADS` value). `POOL_ENTRY=0` then also stops each layout pass from entering the pool.
 //! - `KEEP_AWAKE=1`: keep the pool's other threads spinning for the duration of each layout
 //! - `ROUND_THRESHOLDS=1024,4096`: minimum subtree weights for rounding in parallel, each tried
 //!   with every threshold and rule
@@ -350,6 +352,19 @@ fn report(label: &str, times: &[Duration], fingerprint: u64, expected_fingerprin
 #[tokio::main]
 async fn main() {
     set_thread_qos();
+    // With `OUTSIDE_POOL=1` the batches are computed on the global pool (see below)
+    if std::env::var_os("OUTSIDE_POOL").is_some() {
+        let threads = std::env::var("THREADS").expect("OUTSIDE_POOL needs one THREADS value");
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(
+                threads
+                    .parse()
+                    .expect("OUTSIDE_POOL needs one THREADS value"),
+            )
+            .start_handler(|_| set_thread_qos())
+            .build_global()
+            .unwrap();
+    }
     let mut args = std::env::args().skip(1);
     let url_string = args
         .next()
@@ -629,9 +644,23 @@ fn bench(doc: &mut BaseDocument, iterations: usize, fingerprint: u64) {
             Ok(threads) => threads.split(',').map(|t| t.parse().unwrap()).collect(),
             Err(_) => vec![1, 2, 4, 8],
         };
+        // `OUTSIDE_POOL=1` runs the layouts on this thread, which is not in a thread pool (as an
+        // application's main thread usually is not). The batches are then computed on rayon's
+        // global pool, so only one thread count can be timed per run. `POOL_ENTRY=0` then stops
+        // each layout pass from being run on that pool as a whole.
+        let outside_pool = std::env::var_os("OUTSIDE_POOL").is_some();
+        let enter_pool = std::env::var("POOL_ENTRY").as_deref() != Ok("0");
+        blitz_dom::ENTER_LAYOUT_POOL.store(enter_pool, std::sync::atomic::Ordering::Relaxed);
+        if outside_pool {
+            assert_eq!(
+                thread_counts.len(),
+                1,
+                "OUTSIDE_POOL needs one THREADS value"
+            );
+        }
         for thread_count in thread_counts {
             let pool = rayon::ThreadPoolBuilder::new()
-                .num_threads(thread_count)
+                .num_threads(if outside_pool { 1 } else { thread_count })
                 .start_handler(|_| set_thread_qos())
                 .build()
                 .unwrap();
@@ -655,12 +684,21 @@ fn bench(doc: &mut BaseDocument, iterations: usize, fingerprint: u64) {
                     // SAFETY: see above
                     unsafe impl<T> Send for AssertSend<T> {}
                     let doc_ref = AssertSend(&mut *doc);
-                    let (times, new_fingerprint) = pool.install(move || {
-                        let doc_ref = doc_ref;
+                    let (times, new_fingerprint) = if outside_pool {
                         time_layout(doc_ref.0, iterations)
-                    });
+                    } else {
+                        pool.install(move || {
+                            let doc_ref = doc_ref;
+                            time_layout(doc_ref.0, iterations)
+                        })
+                    };
+                    let outside_label = match (outside_pool, enter_pool) {
+                        (false, _) => "",
+                        (true, true) => ", from outside the pool",
+                        (true, false) => ", from outside the pool without pool entry",
+                    };
                     let label = format!(
-                        "{thread_count} threads, threshold {threshold}{rule_label}{round_label}"
+                        "{thread_count} threads, threshold {threshold}{rule_label}{round_label}{outside_label}"
                     );
                     report(&label, &times, new_fingerprint, fingerprint);
                 }
