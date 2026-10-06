@@ -1874,17 +1874,34 @@ impl Node {
     }
 
     /// Does the node generate any boxes? (e.g. `getClientRects()` returns an empty
-    /// list for boxless nodes, such as `display: none`, `display: contents`, or
-    /// detached elements)
+    /// list for boxless nodes, such as `display: none`, `display: contents`, the
+    /// descendants of a `display: none` element, or detached elements)
     pub fn has_boxes(&self) -> bool {
-        self.flags.is_in_document()
-            && !self.display_style().is_some_and(|display| {
+        use style::values::specified::box_::DisplayInside;
+        if !self.flags.is_in_document()
+            || self.display_style().is_some_and(|display| {
                 matches!(
                     display.inside(),
-                    style::values::specified::box_::DisplayInside::None
-                        | style::values::specified::box_::DisplayInside::Contents
+                    DisplayInside::None | DisplayInside::Contents
                 )
             })
+        {
+            return false;
+        }
+        // A `display: none` ancestor means no box is generated for anything
+        // inside it either (`display: contents` ancestors are transparent).
+        let mut parent = self.parent;
+        while let Some(parent_id) = parent {
+            let ancestor = self.with(parent_id);
+            if ancestor
+                .display_style()
+                .is_some_and(|display| display.inside() == DisplayInside::None)
+            {
+                return false;
+            }
+            parent = ancestor.parent;
+        }
+        true
     }
 
     /// Creates a synthetic click event

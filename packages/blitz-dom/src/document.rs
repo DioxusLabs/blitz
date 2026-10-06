@@ -2321,6 +2321,12 @@ impl BaseDocument {
     pub fn offset_rect(&self, node_id: NodeId) -> Option<BoundingRect> {
         let node = self.get_node(node_id)?;
 
+        // An element with no associated box (e.g. inside a `display: none`
+        // subtree, whose layout is stale) has no offset rect (CSSOM View).
+        if !node.has_boxes() {
+            return None;
+        }
+
         // Nodes with their own layout box: use it directly
         let Some(rects) = self.inline_fragment_rects(node_id) else {
             let pos = node.offset_top_left();
