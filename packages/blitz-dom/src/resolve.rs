@@ -441,6 +441,15 @@ impl BaseDocument {
 
         // println!("\n\nRESOLVE LAYOUT\n===========\n");
 
+        #[cfg(feature = "writing-modes")]
+        let available_space = {
+            self.current_frame = self.frame_of(crate::dom_node_id(root_element_id));
+            if self.current_frame.is_vertical() {
+                available_space.transpose()
+            } else {
+                available_space
+            }
+        };
         taffy::compute_root_layout(self, root_element_id, available_space);
         #[cfg(feature = "writing-modes")]
         self.physicalise_and_round_layout(root_element_id);

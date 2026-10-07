@@ -166,7 +166,8 @@ impl<T: Deref<Target = ComputedValues>> taffy::CoreStyle for TaffyStyloStyle<T> 
     fn direction(&self) -> taffy::Direction {
         #[cfg(feature = "writing-modes")]
         {
-            frame::direction(self.frame)
+            // The node's own inline-start side, expressed in Taffy's inline axis
+            frame::direction(self.style.writing_mode)
         }
         #[cfg(not(feature = "writing-modes"))]
         {

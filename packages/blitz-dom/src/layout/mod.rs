@@ -559,13 +559,12 @@ impl LayoutPartialTree for BaseDocument {
     fn get_core_container_style(&self, node_id: NodeId) -> Self::CoreContainerStyle<'_> {
         #[cfg(feature = "writing-modes")]
         {
-            // `current_frame` is the node's own frame while its algorithm runs, and the placer's
-            // frame when called by `compute_root_layout` for the root.
-            let mut style = self
-                .node_from_id(node_id)
-                .layout_style_in(self.current_frame);
+            // Container styles are read by the node's own algorithm (or, for the containing block
+            // of an out-of-flow box, by that box's algorithm) and are expressed in the node's frame.
+            let dom_id = dom_node_id(node_id);
+            let mut style = self.nodes[dom_id].layout_style_in(self.frame_of(dom_id));
             if let Some((orthogonal_node, basis)) = self.orthogonal_percent_basis {
-                if orthogonal_node == dom_node_id(node_id) {
+                if orthogonal_node == dom_id {
                     style.percent_basis = Some(basis);
                 }
             }
