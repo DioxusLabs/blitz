@@ -51,26 +51,40 @@ pub const MARKER_KEY: u64 = 1 << 61;
 pub(crate) struct WinkinFonts {
     /// What every layout is built and broken with.
     pub(crate) cx: Context,
+    /// The fonts the document was handed, which its iframes are handed too.
+    pub(crate) given: Collection,
     /// The installed and shipped fonts.
     base: Collection,
     /// The document's `@font-face` faces.
     document: LayerBuilder,
 }
 
+/// The platform's fonts where Blitz is built to read them.
+///
+/// Listing them reads every installed font file. Build one collection and
+/// hand clones of it to each document through
+/// [`DocumentConfig::winkin_fonts`](crate::DocumentConfig::winkin_fonts).
+pub fn system_fonts() -> Collection {
+    #[cfg(feature = "system-fonts")]
+    return Collection::system();
+    #[cfg(not(feature = "system-fonts"))]
+    return Collection::new();
+}
+
 impl WinkinFonts {
-    /// The platform's fonts where Blitz is built to read them, and the
-    /// bullet font list markers are set in.
-    pub(crate) fn new() -> Self {
-        #[cfg(feature = "system-fonts")]
-        let base = Collection::system();
-        #[cfg(not(feature = "system-fonts"))]
-        let base = Collection::new();
+    /// The `given` fonts, and the bullet font list markers are set in.
+    pub(crate) fn new(given: Collection) -> Self {
         let mut shipped = LayerBuilder::new(Role::Application);
         let _ = shipped.add_data(FontBytes::from(crate::BULLET_FONT));
-        let base = base.with_layer(shipped.snapshot());
+        let base = given.clone().with_layer(shipped.snapshot());
         let document = LayerBuilder::new(Role::Document);
         let cx = Context::new(base.clone().with_layer(document.snapshot()));
-        Self { cx, base, document }
+        Self {
+            cx,
+            given,
+            base,
+            document,
+        }
     }
 
     /// Adds a web font that has loaded, under its `@font-face` rule's
