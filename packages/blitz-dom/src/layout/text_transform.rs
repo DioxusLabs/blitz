@@ -1,10 +1,10 @@
-//! Case mapping for the CSS `text-transform` property.
+//! Case and mathematical italic mapping for the CSS `text-transform` property.
 //!
 //! <https://drafts.csswg.org/css-text/#text-transform-property>
 
-#[cfg(feature = "icu-text-transform")]
+#[cfg(feature = "text-transform-icu")]
 use icu_casemap::options::{LeadingAdjustment, TitlecaseOptions, TrailingCase};
-#[cfg(feature = "icu-text-transform")]
+#[cfg(feature = "text-transform-icu")]
 use icu_casemap::{CaseMapper, CaseMapperBorrowed, TitlecaseMapper, TitlecaseMapperBorrowed};
 use icu_locale_core::LanguageIdentifier;
 use icu_properties::props::{GeneralCategory, GeneralCategoryGroup};
@@ -13,12 +13,12 @@ use icu_segmenter::{WordSegmenter, WordSegmenterBorrowed, options::WordBreakInva
 use parley::{Brush, TreeBuilder};
 use style::properties::ComputedValues;
 use style::values::computed::TextTransform;
-#[cfg(feature = "icu-text-transform")]
+#[cfg(feature = "text-transform-icu")]
 use writeable::Writeable;
 
-#[cfg(feature = "icu-text-transform")]
+#[cfg(feature = "text-transform-icu")]
 const CASE_MAPPER: CaseMapperBorrowed<'static> = CaseMapper::new();
-#[cfg(feature = "icu-text-transform")]
+#[cfg(feature = "text-transform-icu")]
 const TITLECASE_MAPPER: TitlecaseMapperBorrowed<'static> = TitlecaseMapper::new();
 const WORD_SEGMENTER: WordSegmenterBorrowed<'static> =
     WordSegmenter::new_for_non_complex_scripts(WordBreakInvariantOptions::default());
@@ -28,7 +28,7 @@ const GENERAL_CATEGORY: CodePointMapDataBorrowed<'static, GeneralCategory> =
 /// The maximum number of bytes of preceding text kept as context for finding word boundaries.
 const MAX_CONTEXT_LEN: usize = 32;
 
-/// The case transform (and language) that applies to the text content of an element.
+/// The case or mathematical transform (and language) for an element's text content.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct CaseTransform {
     kind: TextTransform,
@@ -46,6 +46,12 @@ impl CaseTransform {
         if kind.is_empty() {
             return Self::NONE;
         }
+        if kind == TextTransform::MATH_AUTO {
+            return Self {
+                kind,
+                lang: LanguageIdentifier::UNKNOWN,
+            };
+        }
         let lang = LanguageIdentifier::try_from_str(&style.get_font()._x_lang.0)
             .map(casing_language)
             .unwrap_or(LanguageIdentifier::UNKNOWN);
@@ -55,7 +61,7 @@ impl CaseTransform {
     /// Whether the language has case mappings for ASCII characters that differ from the
     /// default ones (`i` ↔ `İ` and `ı` ↔ `I`).
     fn has_turkic_casing(&self) -> bool {
-        cfg!(feature = "icu-text-transform") && matches!(self.lang.language.as_str(), "tr" | "az")
+        cfg!(feature = "text-transform-icu") && matches!(self.lang.language.as_str(), "tr" | "az")
     }
 }
 
@@ -81,7 +87,7 @@ fn casing_language(lang: LanguageIdentifier) -> LanguageIdentifier {
     }
 }
 
-/// Applies case transforms to the sequence of text nodes in an inline formatting context.
+/// Applies text transforms to the sequence of text nodes in an inline formatting context.
 ///
 /// `capitalize` operates on words, which may span multiple text nodes, so the text already
 /// pushed to the [`TreeBuilder`] is used as context for word segmentation. Only look-behind
@@ -140,6 +146,7 @@ impl TextTransformer {
         match transform.kind {
             TextTransform::UPPERCASE => uppercase(text, &transform.lang, &mut output),
             TextTransform::LOWERCASE => lowercase(text, &transform.lang, &mut output),
+            TextTransform::MATH_AUTO => math_auto(text, &mut output),
             TextTransform::CAPITALIZE => {
                 // Pending (collapsed) whitespace always ends the preceding word, so no
                 // context is needed.
@@ -165,6 +172,40 @@ impl TextTransformer {
         }
         output.finish()
     }
+}
+
+/// Maps single-character text nodes to mathematical italic characters.
+/// <https://w3c.github.io/mathml-core/#italic-mappings>
+fn math_auto(text: &str, output: &mut OutputSink<'_>) {
+    let mut chars = text.chars();
+    let Some(c) = chars.next().filter(|_| chars.next().is_none()) else {
+        output.push_str(text);
+        return;
+    };
+    let codepoint = match c {
+        'A'..='Z' => c as u32 + 0x1D3F3,
+        'h' => 0x210E,
+        'a'..='z' => c as u32 + 0x1D3ED,
+        '\u{131}' => 0x1D6A4,
+        '\u{237}' => 0x1D6A5,
+        '\u{391}'..='\u{3A1}' | '\u{3A3}'..='\u{3A9}' => c as u32 + 0x1D351,
+        '\u{3B1}'..='\u{3C9}' => c as u32 + 0x1D34B,
+        '\u{3F4}' => 0x1D6F3,
+        '\u{2207}' => 0x1D6FB,
+        '\u{2202}' => 0x1D715,
+        '\u{3F5}' => 0x1D716,
+        '\u{3D1}' => 0x1D717,
+        '\u{3F0}' => 0x1D718,
+        '\u{3D5}' => 0x1D719,
+        '\u{3F1}' => 0x1D71A,
+        '\u{3D6}' => 0x1D71B,
+        _ => {
+            output.push_str(text);
+            return;
+        }
+    };
+    let mapped = char::from_u32(codepoint).unwrap();
+    output.push_str(mapped.encode_utf8(&mut [0; 4]));
 }
 
 /// Case maps ASCII `text`, borrowing it if no bytes need mapping and otherwise copying it into
@@ -216,7 +257,7 @@ impl<'a> OutputSink<'a> {
         self.buffer.push_str(s);
     }
 
-    #[cfg(feature = "icu-text-transform")]
+    #[cfg(feature = "text-transform-icu")]
     fn write(&mut self, writeable: impl Writeable) {
         // Writing to an `OutputSink` is infallible.
         let _ = writeable.write_to(self);
@@ -230,7 +271,7 @@ impl<'a> OutputSink<'a> {
     }
 }
 
-#[cfg(feature = "icu-text-transform")]
+#[cfg(feature = "text-transform-icu")]
 impl std::fmt::Write for OutputSink<'_> {
     fn write_str(&mut self, s: &str) -> std::fmt::Result {
         self.push_str(s);
@@ -282,19 +323,19 @@ fn capitalize(
     }
 }
 
-#[cfg(feature = "icu-text-transform")]
+#[cfg(feature = "text-transform-icu")]
 fn uppercase(text: &str, lang: &LanguageIdentifier, output: &mut OutputSink<'_>) {
     output.write(CASE_MAPPER.uppercase(text, lang));
 }
 
-#[cfg(feature = "icu-text-transform")]
+#[cfg(feature = "text-transform-icu")]
 fn lowercase(text: &str, lang: &LanguageIdentifier, output: &mut OutputSink<'_>) {
     output.write(CASE_MAPPER.lowercase(text, lang));
 }
 
 /// Titlecases the first character of `text`, which must start with a typographic letter unit,
 /// leaving the rest unchanged.
-#[cfg(feature = "icu-text-transform")]
+#[cfg(feature = "text-transform-icu")]
 fn titlecase_segment(text: &str, lang: &LanguageIdentifier, output: &mut OutputSink<'_>) {
     let mut options = TitlecaseOptions::default();
     options.leading_adjustment = Some(LeadingAdjustment::None);
@@ -302,14 +343,14 @@ fn titlecase_segment(text: &str, lang: &LanguageIdentifier, output: &mut OutputS
     output.write(TITLECASE_MAPPER.titlecase_segment(text, lang, options));
 }
 
-#[cfg(not(feature = "icu-text-transform"))]
+#[cfg(not(feature = "text-transform-icu"))]
 fn uppercase(text: &str, _lang: &LanguageIdentifier, output: &mut OutputSink<'_>) {
     for c in text.chars() {
         push_chars(output, c.to_uppercase());
     }
 }
 
-#[cfg(not(feature = "icu-text-transform"))]
+#[cfg(not(feature = "text-transform-icu"))]
 fn lowercase(text: &str, _lang: &LanguageIdentifier, output: &mut OutputSink<'_>) {
     // Only `str::to_lowercase` implements the context-sensitive final sigma rule.
     if text.contains('Σ') {
@@ -322,7 +363,7 @@ fn lowercase(text: &str, _lang: &LanguageIdentifier, output: &mut OutputSink<'_>
 }
 
 /// Approximates titlecasing with uppercasing, as the standard library has no titlecase mapping.
-#[cfg(not(feature = "icu-text-transform"))]
+#[cfg(not(feature = "text-transform-icu"))]
 fn titlecase_segment(text: &str, _lang: &LanguageIdentifier, output: &mut OutputSink<'_>) {
     let mut chars = text.chars();
     if let Some(first) = chars.next() {
@@ -331,7 +372,7 @@ fn titlecase_segment(text: &str, _lang: &LanguageIdentifier, output: &mut Output
     output.push_str(chars.as_str());
 }
 
-#[cfg(not(feature = "icu-text-transform"))]
+#[cfg(not(feature = "text-transform-icu"))]
 fn push_chars(output: &mut OutputSink<'_>, chars: impl Iterator<Item = char>) {
     for c in chars {
         output.push_str(c.encode_utf8(&mut [0; 4]));
@@ -415,7 +456,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "icu-text-transform")]
+    #[cfg(feature = "text-transform-icu")]
     fn capitalize_uses_titlecase() {
         assert_eq!(capitalize(&["ǆǆ"]), ["ǅǆ"]);
         assert_eq!(capitalize(&["ßa"]), ["Ssa"]);
@@ -481,7 +522,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "icu-text-transform")]
+    #[cfg(feature = "text-transform-icu")]
     fn capitalize_language_sensitive() {
         assert_eq!(
             transform(TextTransform::CAPITALIZE, "nl", &["ijsland"]),
@@ -514,7 +555,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "icu-text-transform")]
+    #[cfg(feature = "text-transform-icu")]
     fn ascii_fast_path_matches_icu() {
         let ascii: String = (0..128u8).map(char::from).collect();
         for lang in ["und", "en", "lt", "nl", "el", "tr", "az"] {
@@ -549,7 +590,65 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "icu-text-transform")]
+    fn math_auto_italic_mappings() {
+        // MathML Core, Appendix C.1.
+        let mappings = [
+            ("ABCDEFGHIJKLMNOPQRSTUVWXYZ", "𝐴𝐵𝐶𝐷𝐸𝐹𝐺𝐻𝐼𝐽𝐾𝐿𝑀𝑁𝑂𝑃𝑄𝑅𝑆𝑇𝑈𝑉𝑊𝑋𝑌𝑍"),
+            ("abcdefghijklmnopqrstuvwxyz", "𝑎𝑏𝑐𝑑𝑒𝑓𝑔ℎ𝑖𝑗𝑘𝑙𝑚𝑛𝑜𝑝𝑞𝑟𝑠𝑡𝑢𝑣𝑤𝑥𝑦𝑧"),
+            ("ΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡϴΣΤΥΦΧΨΩ", "𝛢𝛣𝛤𝛥𝛦𝛧𝛨𝛩𝛪𝛫𝛬𝛭𝛮𝛯𝛰𝛱𝛲𝛳𝛴𝛵𝛶𝛷𝛸𝛹𝛺"),
+            ("αβγδεζηθικλμνξοπρςστυφχψω", "𝛼𝛽𝛾𝛿𝜀𝜁𝜂𝜃𝜄𝜅𝜆𝜇𝜈𝜉𝜊𝜋𝜌𝜍𝜎𝜏𝜐𝜑𝜒𝜓𝜔"),
+            ("ıȷ∇∂ϵϑϰϕϱϖ", "𝚤𝚥𝛻𝜕𝜖𝜗𝜘𝜙𝜚𝜛"),
+        ];
+        for (original, italic) in mappings {
+            assert_eq!(original.chars().count(), italic.chars().count());
+            for (input, expected) in original.chars().zip(italic.chars()) {
+                assert_eq!(
+                    transform(
+                        TextTransform::MATH_AUTO,
+                        "und",
+                        &[input.encode_utf8(&mut [0; 4])]
+                    ),
+                    [expected.to_string()],
+                    "U+{:04X}",
+                    input as u32,
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn math_auto_operates_on_each_text_node() {
+        assert_eq!(
+            transform(
+                TextTransform::MATH_AUTO,
+                "und",
+                &["a", "b", "ab", "∂", "∂∇"]
+            ),
+            ["𝑎", "𝑏", "ab", "𝜕", "∂∇"],
+        );
+        assert_eq!(transform(TextTransform::MATH_AUTO, "tr", &["i"]), ["𝑖"]);
+    }
+
+    #[test]
+    fn math_auto_unchanged_text_is_borrowed() {
+        let transform = CaseTransform {
+            kind: TextTransform::MATH_AUTO,
+            lang: LanguageIdentifier::UNKNOWN,
+        };
+        with_builder(|builder, transformer| {
+            for text in [
+                "", "ab", "a ", " a", "a\u{301}", "∂∇", "1", "+", "é", "\u{3A2}", "ℎ", "𝑎", "😀",
+            ] {
+                let output = transformer.transform(text, &transform, builder);
+                assert_eq!(output, text);
+                assert_eq!(output.as_ptr(), text.as_ptr());
+            }
+            assert_eq!(transformer.output.capacity(), 0);
+        });
+    }
+
+    #[test]
+    #[cfg(feature = "text-transform-icu")]
     fn uppercase_and_lowercase_language_sensitive() {
         assert_eq!(transform(TextTransform::UPPERCASE, "tr", &["i"]), ["İ"]);
         assert_eq!(transform(TextTransform::LOWERCASE, "tr", &["I"]), ["ı"]);
