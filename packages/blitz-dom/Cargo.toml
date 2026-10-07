@@ -17,7 +17,8 @@ default = [
     "accessibility",
     "system-fonts",
     "file-input",
-    "custom-widget"
+    "custom-widget",
+    "icu-text-transform"
 ]
 custom-widget = ["dep:anyrender", "accessibility"]
 tracing = ["dep:tracing"]
@@ -28,6 +29,9 @@ accessibility = ["accesskit"]
 system-fonts = ["parley/system"]
 # complex-scripts: enable dictionary-based line-breaking
 complex-scripts = ["parley/complex-scripts"]
+# icu-text-transform: language-aware, Unicode-complete case mapping for `text-transform`
+# (otherwise falls back to the standard library's case mapping)
+icu-text-transform = ["dep:icu_casemap", "dep:writeable"]
 autofocus = []
 floats = ["taffy/float_layout", "stylo_taffy/floats"]
 file-input = []
@@ -70,11 +74,11 @@ color = { workspace = true }
 kurbo = { workspace = true }
 
 # Unicode
-icu_casemap = { workspace = true }
+icu_casemap = { workspace = true, optional = true }
 icu_locale_core = { workspace = true }
 icu_properties = { workspace = true }
 icu_segmenter = { workspace = true }
-writeable = { workspace = true }
+writeable = { workspace = true, optional = true }
 
 # Other dependencies
 slotmap = { workspace = true }
