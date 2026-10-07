@@ -41,6 +41,8 @@ mimalloc = ["dep:mimalloc"]
 font-embolden = ["dioxus-native/font-embolden"]
 apple-font-embolden = ["dioxus-native/apple-font-embolden"]
 writing-mode = ["blitz-dom/writing-mode", "dioxus-native/writing-mode"]
+# Lay out and paint document text with winkin.
+winkin = ["blitz-paint/winkin"]
 
 [dependencies]
 dioxus-native = { workspace = true, features = [
