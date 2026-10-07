@@ -8,6 +8,7 @@ use std::rc::Rc;
 
 use blitz_dom::{BaseDocument, NodeId};
 use blitz_traits::events::{DomEvent, DomEventData, EventState};
+use blitz_traits::time::Timestamp;
 use boa_engine::builtins::promise::PromiseState;
 use boa_engine::module::{Module, ModuleLoader, ModuleRequest, Referrer};
 use boa_engine::object::{JsObject, ObjectInitializer};
@@ -2155,7 +2156,7 @@ fn window_scroll_to(_: &JsValue, args: &[JsValue], context: &mut Context) -> JsR
     let parsed = crate::dom::element::parse_scroll_to_args(args, context)?;
     let ctx = dom_ctx(context)?;
     let mut doc = ctx.doc.borrow_mut();
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
     let Some(root_id) = doc.try_root_element().map(|root| root.id) else {
         return Ok(JsValue::undefined());
     };
@@ -2173,7 +2174,7 @@ fn window_scroll_by(_: &JsValue, args: &[JsValue], context: &mut Context) -> JsR
     let parsed = crate::dom::element::parse_scroll_to_args(args, context)?;
     let ctx = dom_ctx(context)?;
     let mut doc = ctx.doc.borrow_mut();
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
     let Some(root_id) = doc.try_root_element().map(|root| root.id) else {
         return Ok(JsValue::undefined());
     };

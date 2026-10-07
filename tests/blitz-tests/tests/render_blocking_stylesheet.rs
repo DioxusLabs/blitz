@@ -10,6 +10,7 @@
 use blitz_dom::DocumentConfig;
 use blitz_html::HtmlDocument;
 use blitz_traits::net::{Bytes, NetHandler, NetProvider, Request};
+use blitz_traits::time::Timestamp;
 use std::sync::{Arc, Mutex};
 use style::properties::generated::longhands::visibility::computed_value::T as Visibility;
 
@@ -57,13 +58,13 @@ fn transition_does_not_start_from_pre_stylesheet_styles() {
     // Resolve while the stylesheet is still loading. This must not give
     // elements computed styles (which would later be treated as
     // before-change styles and start spurious transitions).
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
 
     // Deliver the stylesheet and resolve again.
     let (url, handler) = net.requests.lock().unwrap().pop().expect("css requested");
     assert!(url.ends_with("case.css"));
     handler.bytes(url, Bytes::from_static(CSS.as_bytes()));
-    doc.resolve(1.0);
+    doc.resolve(Timestamp::from_secs_f64(1.0));
     assert!(!doc.has_pending_critical_resources());
 
     // The element must be hidden immediately: no transition from the

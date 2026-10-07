@@ -1,6 +1,7 @@
 //! The `Document` prototype: node creation and lookup.
 
 use blitz_dom::NodeId;
+use blitz_traits::time::Timestamp;
 use boa_engine::object::JsObject;
 use boa_engine::object::builtins::JsArray;
 use boa_engine::value::JsValue;
@@ -319,7 +320,7 @@ fn element_from_point(
     let element_id = {
         let mut doc = ctx.doc.borrow_mut();
         // Hit testing consults layout, so make sure it is up to date
-        doc.resolve(0.0);
+        doc.resolve(Timestamp::ZERO);
         doc.element_from_point(x, y)
     };
     Ok(node_or_null(&ctx, element_id, context))
@@ -336,7 +337,7 @@ fn elements_from_point(
 
     let element_ids: Vec<NodeId> = {
         let mut doc = ctx.doc.borrow_mut();
-        doc.resolve(0.0);
+        doc.resolve(Timestamp::ZERO);
         doc.elements_from_point(x, y)
     };
 

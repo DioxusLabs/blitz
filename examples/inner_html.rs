@@ -1,3 +1,4 @@
+use blitz_traits::time::Timestamp;
 use std::sync::Arc;
 
 use anyrender_vello::VelloWindowRenderer;
@@ -19,7 +20,7 @@ pub fn main() {
 
     let node_id = doc.query_selector("#content_area").unwrap().unwrap();
     doc.mutate().set_inner_html(node_id, INNER_HTML);
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
 
     // Create the Winit application and window
     let event_loop = create_default_event_loop();
