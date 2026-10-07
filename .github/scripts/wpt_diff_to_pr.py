@@ -113,34 +113,41 @@ def format_lines(diff):
     ]
 
 
-def format_area_table(areas):
-    """Render per-area subtest changes as a Markdown table."""
+def format_area_lines(areas):
+    """Render per-area subtest changes as diff-syntax lines, nested areas indented."""
 
     def percent(passing, total):
         return 100 * passing / total if total else 0.0
 
-    rows = [
-        "| Area | Passing subtests | Change | Pass rate |",
-        "| :--- | ---: | ---: | ---: |",
-    ]
+    rows = []
     for area in areas:
+        net = area["after"] - area["before"]
         before = percent(area["before"], area["total"])
         after = percent(area["after"], area["total"])
+        depth = area["area"].count("/")
         rows.append(
-            "| `{}` | {} → {} / {} | {:+} (+{} / -{}) | {:.2f}% → {:.2f}% ({:+.2f}pp) |".format(
-                area["area"],
-                area["before"],
-                area["after"],
-                area["total"],
-                area["after"] - area["before"],
-                area["gained"],
-                area["lost"],
-                before,
-                after,
-                after - before,
+            (
+                "+" if net > 0 else "-" if net < 0 else "!",
+                "  " * depth + area["area"].rsplit("/", 1)[-1],
+                str(area["before"]),
+                str(area["after"]),
+                str(area["total"]),
+                f"{net:+}",
+                f"(+{area['gained']} / -{area['lost']})",
+                f"{before:.2f}%",
+                f"{after:.2f}%",
+                f"({after - before:+.2f}pp)",
             )
         )
-    return rows
+
+    widths = [max(len(row[i]) for row in rows) for i in range(len(rows[0]))]
+    template = "{} {:<{}}  {:>{}} -> {:>{}} / {:>{}}  {:>{}} {:<{}}  {:>{}} -> {:>{}} {:>{}}"
+    return [
+        template.format(
+            row[0], *(value for i in range(1, len(row)) for value in (row[i], widths[i]))
+        ).rstrip()
+        for row in rows
+    ]
 
 
 def render(diff, run_url, areas=None):
@@ -169,11 +176,13 @@ def render(diff, run_url, areas=None):
     out = [START_MARKER, "## WPT results", "", headline, ""]
 
     if areas:
-        out.append("<details open>")
         noun = "area" if len(areas) == 1 else "areas"
+        out.append("<details>")
         out.append(f"<summary>Subtest changes by area ({len(areas)} {noun})</summary>")
         out.append("")
-        out.extend(format_area_table(areas))
+        out.append("```diff")
+        out.extend(format_area_lines(areas))
+        out.append("```")
         out.append("")
         out.append("</details>")
         out.append("")

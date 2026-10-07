@@ -3,7 +3,7 @@
 
 import unittest
 
-from wpt_diff_to_pr import Diff, format_lines, render, splice
+from wpt_diff_to_pr import Diff, format_area_lines, format_lines, render, splice
 
 ENTRIES = [
     {
@@ -73,16 +73,22 @@ class RenderTest(unittest.TestCase):
         self.assertNotIn("Crashes", section)
         self.assertIn("<summary>Full diff (5 changed tests)</summary>", section)
 
-    def test_area_table(self):
+    def test_area_lines(self):
         areas = [
             {"area": "css", "before": 100, "after": 104, "total": 200, "gained": 6, "lost": 2},
+            {"area": "css/css-grid", "before": 9, "after": 8, "total": 10, "gained": 0, "lost": 1},
+            {"area": "css/css-grid/x", "before": 3, "after": 3, "total": 4, "gained": 1, "lost": 1},
         ]
-        section = render(Diff(ENTRIES), run_url=None, areas=areas)
-        self.assertIn("<summary>Subtest changes by area (1 area)</summary>", section)
-        self.assertIn(
-            "| `css` | 100 → 104 / 200 | +4 (+6 / -2) | 50.00% → 52.00% (+2.00pp) |",
-            section,
+        self.assertEqual(
+            format_area_lines(areas),
+            [
+                "+ css         100 -> 104 / 200  +4 (+6 / -2)  50.00% -> 52.00%  (+2.00pp)",
+                "-   css-grid    9 ->   8 /  10  -1 (+0 / -1)  90.00% -> 80.00% (-10.00pp)",
+                "!     x         3 ->   3 /   4  +0 (+1 / -1)  75.00% -> 75.00%  (+0.00pp)",
+            ],
         )
+        section = render(Diff(ENTRIES), run_url=None, areas=areas)
+        self.assertIn("<summary>Subtest changes by area (3 areas)</summary>", section)
         self.assertNotIn("by area", render(Diff(ENTRIES), run_url=None, areas=[]))
 
     def test_no_changes(self):
