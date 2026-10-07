@@ -326,3 +326,17 @@ rustc-hash = { workspace = true }
 # [patch."https://github.com/linebender/parley"]
 # parley = { path = "../parley/parley" }
 # fontique = { path = "../parley/fontique" }
+
+# Stylo with sideways-rl / sideways-lr writing modes (servo/stylo PR pending)
+[patch.crates-io]
+stylo = { git = "https://github.com/DioxusLabs/stylo", rev = "42235f471c39c251ae13a0b9fb86edd482884341" }
+stylo_traits = { git = "https://github.com/DioxusLabs/stylo", rev = "42235f471c39c251ae13a0b9fb86edd482884341" }
+stylo_atoms = { git = "https://github.com/DioxusLabs/stylo", rev = "42235f471c39c251ae13a0b9fb86edd482884341" }
+stylo_static_prefs = { git = "https://github.com/DioxusLabs/stylo", rev = "42235f471c39c251ae13a0b9fb86edd482884341" }
+stylo_dom = { git = "https://github.com/DioxusLabs/stylo", rev = "42235f471c39c251ae13a0b9fb86edd482884341" }
+stylo_derive = { git = "https://github.com/DioxusLabs/stylo", rev = "42235f471c39c251ae13a0b9fb86edd482884341" }
+stylo_malloc_size_of = { git = "https://github.com/DioxusLabs/stylo", rev = "42235f471c39c251ae13a0b9fb86edd482884341" }
+selectors = { git = "https://github.com/DioxusLabs/stylo", rev = "42235f471c39c251ae13a0b9fb86edd482884341" }
+servo_arc = { git = "https://github.com/DioxusLabs/stylo", rev = "42235f471c39c251ae13a0b9fb86edd482884341" }
+to_shmem = { git = "https://github.com/DioxusLabs/stylo", rev = "42235f471c39c251ae13a0b9fb86edd482884341" }
+to_shmem_derive = { git = "https://github.com/DioxusLabs/stylo", rev = "42235f471c39c251ae13a0b9fb86edd482884341" }
