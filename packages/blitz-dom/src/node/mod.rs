@@ -4,6 +4,7 @@ mod attributes;
 #[cfg(feature = "custom-widget")]
 mod custom_widget;
 mod element;
+mod inner_text;
 mod node;
 pub(crate) mod scrollbar;
 mod serialize;
