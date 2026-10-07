@@ -443,6 +443,15 @@ impl BaseDocument {
         // println!("\n\nRESOLVE LAYOUT\n===========\n");
 
         let mut state = LayoutPassState::new(self);
+        #[cfg(feature = "writing-modes")]
+        let available_space = {
+            state.current_frame = state.frame_of(crate::dom_node_id(root_element_id));
+            if state.current_frame.is_vertical() {
+                available_space.transpose()
+            } else {
+                available_space
+            }
+        };
         taffy::compute_root_layout(&mut state, root_element_id, available_space);
         #[cfg(feature = "writing-modes")]
         state.physicalise_and_round_layout(root_element_id);

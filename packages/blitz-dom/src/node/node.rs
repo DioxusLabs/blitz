@@ -1120,7 +1120,16 @@ impl Node {
             }
         }
 
-        stylo_taffy::TaffyStyloStyle::new(styles, flags)
+        #[cfg(feature = "writing-modes")]
+        {
+            // Own-frame by default: the node's own algorithm reads its style in its own axes
+            let frame = styles.writing_mode;
+            stylo_taffy::TaffyStyloStyle::new_in_frame(styles, flags, frame)
+        }
+        #[cfg(not(feature = "writing-modes"))]
+        {
+            stylo_taffy::TaffyStyloStyle::new(styles, flags)
+        }
     }
 
     /// The node's style for Taffy, expressed in the axes of the writing mode `frame` (the writing

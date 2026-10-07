@@ -87,6 +87,24 @@ impl BaseDocument {
         ));
 
         let mut inputs = inputs.transpose();
+
+        // A block container stretches its children's inline size and passes it as a known
+        // dimension. For an orthogonal child that is its block size, which is content-sized.
+        let node = &self.nodes[dom_node_id(node_id)];
+        let placed_by_block_container = node
+            .layout_parent
+            .get()
+            .map(|parent| self.nodes[parent].taffy_display() == taffy::Display::Block)
+            .unwrap_or(true);
+        if placed_by_block_container
+            && taffy::CoreStyle::size(&node.layout_style())
+                .height
+                .is_auto()
+        {
+            inputs.known_dimensions.height = None;
+            inputs.known_dimensions_are_definite.height = false;
+        }
+
         if inputs.run_mode != RunMode::PerformHiddenLayout
             && inputs.known_dimensions.width.is_none()
         {
@@ -149,7 +167,8 @@ impl BaseDocument {
             width: viewport.width.to_f32_px(),
             height: viewport.height.to_f32_px(),
         };
-        self.physicalise_and_round_inner(root, WritingMode::empty(), viewport, Point::ZERO);
+        let root_frame = self.frame_of(dom_node_id(root));
+        self.physicalise_and_round_inner(root, root_frame, viewport, Point::ZERO);
     }
 
     fn physicalise_and_round_inner(
@@ -209,9 +228,8 @@ impl BaseDocument {
         layout.scrollable_overflow_rect.top = round(pos.y + overflow.top) - round(pos.y);
         layout.scrollable_overflow_rect.bottom = round(pos.y + overflow.bottom) - round(pos.y);
 
-        // Store the physical unrounded layout too, so that readers of unrounded geometry
-        // (e.g. bounding client rects) see physical coordinates.
-        *self.nodes[dom_node_id(node_id)].unrounded_layout_mut() = unrounded;
+        // `unrounded_layout` is left in the placer's frame: Taffy's cache may skip re-placing
+        // this node on a later layout, and only `final_layout` is read downstream.
         self.set_final_layout(node_id, &layout);
 
         let frame = self.frame_of(dom_node_id(node_id));
