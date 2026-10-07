@@ -589,7 +589,7 @@ pub(crate) fn stroke_text<'a>(
         for item in line.items() {
             if let PositionedLayoutItem::GlyphRun(glyph_run) = item {
                 let run = glyph_run.run();
-                let font = &run.font().font;
+                let font = run.font();
                 let font_size = run.font_size();
                 let metrics = run.font_metrics();
                 let style = glyph_run.style();
