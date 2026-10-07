@@ -26,8 +26,8 @@ use crate::dom_node_id;
 use stylo_taffy::WritingMode;
 use stylo_taffy::WritingModeExt;
 use taffy::{
-    AvailableSpace, AxisStaticEdge, AxisStaticPosition, LayoutInput, LayoutOutput, NodeId, Point,
-    RoundTree, RunMode, Size, TraversePartialTree,
+    AvailableSpace, AxisStaticEdge, AxisStaticPosition, Layout, LayoutInput, LayoutOutput, NodeId,
+    Point, RoundTree, RunMode, Size, TraversePartialTree,
 };
 
 impl BaseDocument {
@@ -114,14 +114,16 @@ impl LayoutPassState<'_> {
 
         let mut inputs = inputs.transpose();
 
-        // A block container stretches its children's inline size and passes it as a known
+        // A block container stretches its in-flow children's inline size and passes it as a known
         // dimension. For an orthogonal child that is its block size, which is content-sized.
+        // (An out-of-flow box's known dimensions come from its insets and are kept.)
         let node = &self.nodes[dom_node_id(node_id)];
-        let placed_by_block_container = node
-            .layout_parent
-            .get()
-            .map(|parent| self.nodes[parent].taffy_display() == taffy::Display::Block)
-            .unwrap_or(true);
+        let placed_by_block_container = !self.is_out_of_flow(node_id)
+            && node
+                .layout_parent
+                .get()
+                .map(|parent| self.nodes[parent].taffy_display() == taffy::Display::Block)
+                .unwrap_or(true);
         if placed_by_block_container
             && taffy::CoreStyle::size(&node.layout_style())
                 .height
@@ -208,24 +210,7 @@ impl LayoutPassState<'_> {
         parent_pos: Point<f32>,
         rounded_parent_pos: Point<f32>,
     ) {
-        let logical = self.get_unrounded_layout(node_id);
-        let mut unrounded = logical;
-        if placer_wm.is_vertical() {
-            unrounded.location = Point {
-                x: if placer_wm.is_vertical_lr() {
-                    logical.location.y
-                } else {
-                    placer_size.width - logical.location.y - logical.size.height
-                },
-                y: logical.location.x,
-            };
-            unrounded.size = logical.size.transpose();
-            unrounded.scrollbar_size = logical.scrollbar_size.transpose();
-            unrounded.scrollable_overflow_rect = logical.scrollable_overflow_rect.transpose();
-            unrounded.border = placer_wm.physical_rect(logical.border);
-            unrounded.padding = placer_wm.physical_rect(logical.padding);
-            unrounded.margin = placer_wm.physical_rect(logical.margin);
-        }
+        let unrounded = physical_layout(self.get_unrounded_layout(node_id), placer_wm, placer_size);
 
         let pos = Point {
             x: parent_pos.x + unrounded.location.x,
@@ -343,5 +328,65 @@ fn mirror_static_position(position: AxisStaticPosition, extent: f32) -> AxisStat
             fallback: flip(position.align.fallback),
             ..position.align
         },
+    }
+}
+
+/// `logical`, written by a placing algorithm running in `placer_wm` within a box of physical size
+/// `placer_size`, in physical coordinates.
+fn physical_layout(logical: Layout, placer_wm: WritingMode, placer_size: Size<f32>) -> Layout {
+    if !placer_wm.is_vertical() {
+        return logical;
+    }
+    Layout {
+        location: Point {
+            x: if placer_wm.is_vertical_lr() {
+                logical.location.y
+            } else {
+                placer_size.width - logical.location.y - logical.size.height
+            },
+            y: logical.location.x,
+        },
+        size: logical.size.transpose(),
+        scrollbar_size: logical.scrollbar_size.transpose(),
+        scrollable_overflow_rect: logical.scrollable_overflow_rect.transpose(),
+        border: placer_wm.physical_rect(logical.border),
+        padding: placer_wm.physical_rect(logical.padding),
+        margin: placer_wm.physical_rect(logical.margin),
+        ..logical
+    }
+}
+
+impl BaseDocument {
+    /// The writing mode `node_id`'s layout algorithm ran in, for use outside a layout pass (CSSOM);
+    /// `LayoutPassState::layout_wm_of` caches the root lookup during layout.
+    fn layout_wm_of(&self, node_id: crate::NodeId) -> WritingMode {
+        if self.try_root_element().map(|root| root.id) == Some(node_id) {
+            self.root_layout_wm(node_id)
+        } else {
+            self.nodes[node_id].writing_mode()
+        }
+    }
+
+    /// `node_id`'s unrounded layout in physical coordinates (`unrounded_layout` itself is left in
+    /// the placing algorithm's writing mode, see [`LayoutPassState::physicalise_and_round_layout`]).
+    pub(crate) fn physical_unrounded_layout(&self, node_id: crate::NodeId) -> Layout {
+        let node = &self.nodes[node_id];
+        let logical = *node.unrounded_layout();
+        let is_root = self.try_root_element().map(|root| root.id) == Some(node_id);
+        match node.containing_block().filter(|_| !is_root) {
+            Some(placer) => physical_layout(
+                logical,
+                self.layout_wm_of(placer),
+                self.physical_unrounded_layout(placer).size,
+            ),
+            None => {
+                let viewport = self.stylist.device().au_viewport_size();
+                let viewport = Size {
+                    width: viewport.width.to_f32_px(),
+                    height: viewport.height.to_f32_px(),
+                };
+                physical_layout(logical, self.layout_wm_of(node_id), viewport)
+            }
+        }
     }
 }

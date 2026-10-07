@@ -2231,6 +2231,27 @@ impl BaseDocument {
     }
 
     /// Computes the size and position of the `Node` relative to the viewport
+    /// `node_id`'s unrounded layout in physical coordinates.
+    #[cfg(not(feature = "writing-mode"))]
+    pub(crate) fn physical_unrounded_layout(&self, node_id: NodeId) -> taffy::Layout {
+        *self.nodes[node_id].unrounded_layout()
+    }
+
+    /// Document-relative coordinates of `node_id` from the unrounded (sub-pixel) layout, for
+    /// CSSOM geometry APIs such as `getBoundingClientRect`.
+    pub(crate) fn unrounded_absolute_position(&self, node_id: NodeId) -> crate::util::Point<f32> {
+        let mut pos = crate::util::Point { x: 0.0, y: 0.0 };
+        let mut current = Some(node_id);
+        while let Some(id) = current {
+            let node = &self.nodes[id];
+            let location = self.physical_unrounded_layout(id).location;
+            pos.x += location.x - node.scroll_offset().x as f32;
+            pos.y += location.y - node.scroll_offset().y as f32;
+            current = node.containing_block();
+        }
+        pos
+    }
+
     pub fn get_client_bounding_rect(&self, node_id: NodeId) -> Option<BoundingRect> {
         // Non-atomic inline elements have no layout box of their own: return
         // the union of their per-line-box fragment rects.
@@ -2238,14 +2259,15 @@ impl BaseDocument {
             return rects.reduce(BoundingRect::union);
         }
 
-        let node = self.get_node(node_id)?;
-        let pos = node.unrounded_absolute_position(0.0, 0.0);
+        self.get_node(node_id)?;
+        let pos = self.unrounded_absolute_position(node_id);
+        let size = self.physical_unrounded_layout(node_id).size;
 
         Some(BoundingRect {
             x: snap_to_layout_unit(pos.x as f64 - self.viewport_scroll().x),
             y: snap_to_layout_unit(pos.y as f64 - self.viewport_scroll().y),
-            width: snap_to_layout_unit(node.unrounded_layout().size.width as f64),
-            height: snap_to_layout_unit(node.unrounded_layout().size.height as f64),
+            width: snap_to_layout_unit(size.width as f64),
+            height: snap_to_layout_unit(size.height as f64),
         })
     }
 
@@ -2289,8 +2311,8 @@ impl BaseDocument {
         };
         // Make the position relative to the offsetParent's padding edge
         if let Some(parent) = offset_parent.filter(|parent| !parent.is_static_body()) {
-            let parent_pos = parent.unrounded_absolute_position(0.0, 0.0);
-            let border = parent.unrounded_layout().border;
+            let parent_pos = self.unrounded_absolute_position(parent.id);
+            let border = self.physical_unrounded_layout(parent.id).border;
             x -= (parent_pos.x + border.left) as f64;
             y -= (parent_pos.y + border.top) as f64;
         }
@@ -2329,7 +2351,7 @@ impl BaseDocument {
         let inline_root = node.inline_root_ancestor()?;
 
         // Fragment boxes are relative to the inline root's border box.
-        let root_pos = inline_root.unrounded_absolute_position(0.0, 0.0);
+        let root_pos = self.unrounded_absolute_position(inline_root.id);
         let origin_x = root_pos.x as f64 - self.viewport_scroll().x;
         let origin_y = root_pos.y as f64 - self.viewport_scroll().y;
 
