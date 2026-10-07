@@ -34,6 +34,7 @@ mod document;
 mod dom;
 mod event_handler;
 mod fetch;
+mod inner_text;
 mod runtime;
 mod state;
 mod timers;

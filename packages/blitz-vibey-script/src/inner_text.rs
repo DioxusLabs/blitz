@@ -1,95 +1,101 @@
 //! The `innerText` getter: an element's rendered text, read back from the inline layouts.
+//!
+//! Self-contained so that it can move into `blitz-dom` later.
 
-use blitz_traits::node_id::NodeId;
+use blitz_dom::node::{ListItemLayoutPosition, Marker, TextBrush, TextLayout};
+use blitz_dom::{Node, NodeId};
 use markup5ever::local_name;
-use parley::Run;
 use style::computed_values::visibility::T as Visibility;
+use style::values::computed::Display;
 use style::values::specified::box_::{DisplayInside, DisplayOutside};
 
-use crate::layout::replaced::is_replaced_element;
-
-use super::{ListItemLayoutPosition, Marker, Node, TextBrush, TextLayout};
-
-impl Node {
-    /// The rendered text of this element, as returned by `HTMLElement.innerText`.
-    ///
-    /// Reads the text-transformed and white-space-processed text from the inline layouts,
-    /// so layout must be up to date. Falls back to `textContent` if the element has no box.
-    pub fn inner_text(&self) -> String {
-        if !self.is_rendered() {
-            return self.text_content();
-        }
-
-        // A non-atomic inline in an inline formatting context has no box of its own: collect the
-        // text attributed to it from the layouts of its containing block, which may hold several
-        // anonymous inline roots. (An inline containing blocks has its own layout children.)
-        let mut start = self;
-        let mut filter = None;
-        if let Some(mut root) = self
-            .is_non_atomic_inline()
-            .then(|| self.inline_root_ancestor())
-            .flatten()
-        {
-            while root.is_anonymous() && !root.is_generated_pseudo() {
-                let Some(parent) = root.layout_parent.get() else {
-                    break;
-                };
-                root = self.with(parent);
-            }
-            start = root;
-            filter = Some(self.id);
-        }
-
-        let mut collector = InnerTextCollector {
-            target: self.id,
-            text: String::new(),
-            pending_line_breaks: 0,
-        };
-        collector.visit(start, filter);
-        collector.text
+/// The rendered text of `element`, as returned by `HTMLElement.innerText`.
+///
+/// Reads the text-transformed and white-space-processed text from the inline layouts,
+/// so layout must be up to date. Falls back to `textContent` if the element has no box.
+pub(crate) fn inner_text(element: &Node) -> String {
+    if !is_rendered(element) {
+        return element.text_content();
     }
 
-    fn is_rendered(&self) -> bool {
-        if !self.flags.is_in_document() || self.element_data().is_none() {
-            return false;
+    // A non-atomic inline in an inline formatting context has no box of its own: collect the
+    // text attributed to it from the layouts of its containing block, which may hold several
+    // anonymous inline roots. (An inline containing blocks has its own layout children.)
+    let mut start = element;
+    let mut filter = None;
+    if let Some(mut root) = element
+        .is_non_atomic_inline()
+        .then(|| element.inline_root_ancestor())
+        .flatten()
+    {
+        while root.is_anonymous() && !is_generated_pseudo(root) {
+            let Some(parent) = root.layout_parent.get() else {
+                break;
+            };
+            root = element.with(parent);
         }
-        let display = |node: &Node| node.display_style().map(|d| d.inside());
-        if matches!(display(self), None | Some(DisplayInside::Contents)) {
-            return false;
-        }
-        let mut node = Some(self);
-        while let Some(n) = node {
-            if let Some(element) = n.element_data() {
-                if matches!(display(n), None | Some(DisplayInside::None)) {
-                    return false;
-                }
-                // The children of replaced elements are not rendered
-                if n.id != self.id && is_replaced_element(&element.name.local) {
-                    return false;
-                }
-            }
-            node = n.parent.map(|id| self.with(id));
-        }
-        true
+        start = root;
+        filter = Some(element.id);
     }
 
-    fn is_generated_pseudo(&self) -> bool {
-        self.parent.is_some_and(|parent| {
-            let parent = self.with(parent);
-            parent.before() == Some(self.id) || parent.after() == Some(self.id)
+    let mut collector = InnerTextCollector {
+        target: element.id,
+        text: String::new(),
+        pending_line_breaks: 0,
+    };
+    collector.visit(start, filter);
+    collector.text
+}
+
+fn display(node: &Node) -> Option<Display> {
+    Some(node.primary_styles()?.clone_display())
+}
+
+/// Whether `element` has a box. Stylo drops the styles of `display: none` subtrees, so the
+/// only other unrendered elements are the descendants of replaced elements.
+fn is_rendered(element: &Node) -> bool {
+    let has_box = display(element)
+        .is_some_and(|d| !matches!(d.inside(), DisplayInside::None | DisplayInside::Contents));
+    let mut ancestors = std::iter::successors(element.parent, |&id| element.with(id).parent);
+    element.flags.is_in_document()
+        && has_box
+        && !ancestors.any(|id| {
+            element
+                .with(id)
+                .element_data()
+                .is_some_and(|el| is_replaced_element(&el.name.local))
         })
-    }
+}
 
-    fn is_inclusive_descendant_of(&self, ancestor: NodeId) -> bool {
-        let mut node = Some(self);
-        while let Some(n) = node {
-            if n.id == ancestor {
-                return true;
-            }
-            node = n.parent.map(|id| self.with(id));
+fn is_replaced_element(name: &markup5ever::LocalName) -> bool {
+    matches!(
+        *name,
+        local_name!("img")
+            | local_name!("svg")
+            | local_name!("canvas")
+            | local_name!("video")
+            | local_name!("embed")
+            | local_name!("iframe")
+    )
+}
+
+/// `::before` and `::after` are anonymous nodes referenced by their parent element.
+fn is_generated_pseudo(node: &Node) -> bool {
+    node.parent.is_some_and(|parent| {
+        let parent = node.with(parent);
+        parent.before() == Some(node.id) || parent.after() == Some(node.id)
+    })
+}
+
+fn is_inclusive_descendant_of(node: &Node, ancestor: NodeId) -> bool {
+    let mut current = Some(node);
+    while let Some(n) = current {
+        if n.id == ancestor {
+            return true;
         }
-        false
+        current = n.parent.map(|id| node.with(id));
     }
+    false
 }
 
 /// Implements the rendered text collection steps, merging required line breaks as it goes.
@@ -120,10 +126,10 @@ impl InnerTextCollector {
     /// Collects the text of `node`'s box. If `filter` is set, only text belonging to that
     /// element (a non-atomic inline inside `node`) is collected.
     fn visit(&mut self, node: &Node, filter: Option<NodeId>) {
-        if node.is_generated_pseudo() {
+        if is_generated_pseudo(node) {
             return;
         }
-        let Some(display) = node.display_style() else {
+        let Some(display) = display(node) else {
             return;
         };
         if display.inside() == DisplayInside::None {
@@ -170,9 +176,9 @@ impl InnerTextCollector {
         let Some(target) = filter else {
             return self.visit(child, None);
         };
-        if child.is_inclusive_descendant_of(target) {
+        if is_inclusive_descendant_of(child, target) {
             self.visit(child, None);
-        } else if child.is_anonymous() || node_contains(child, target) {
+        } else if child.is_anonymous() || is_inclusive_descendant_of(child.with(target), child.id) {
             self.visit(child, filter);
         }
     }
@@ -189,8 +195,8 @@ impl InnerTextCollector {
                 }
             }
             let node = root.with(brush.id);
-            let included = !node.is_generated_pseudo()
-                && filter.is_none_or(|target| node.is_inclusive_descendant_of(target))
+            let included = !is_generated_pseudo(node)
+                && filter.is_none_or(|target| is_inclusive_descendant_of(node, target))
                 && node
                     .primary_styles()
                     .is_none_or(|s| s.clone_visibility() == Visibility::Visible);
@@ -199,7 +205,7 @@ impl InnerTextCollector {
         };
 
         let mut boxes = layout.layout.inline_boxes().peekable();
-        let mut runs: Vec<Run<'_, TextBrush>> = Vec::new();
+        let mut runs = Vec::new();
         for line in layout.layout.lines() {
             // Runs are stored in visual order: restore logical order for bidi text
             runs.clear();
@@ -225,14 +231,10 @@ impl InnerTextCollector {
 
     fn visit_inline_box(&mut self, root: &Node, id: u64, filter: Option<NodeId>) {
         let node = root.with(NodeId::from_u64(id));
-        if filter.is_none_or(|target| node.is_inclusive_descendant_of(target)) {
+        if filter.is_none_or(|target| is_inclusive_descendant_of(node, target)) {
             self.visit(node, None);
         }
     }
-}
-
-fn node_contains(node: &Node, descendant: NodeId) -> bool {
-    node.with(descendant).is_inclusive_descendant_of(node.id)
 }
 
 fn is_internal_table_part(display: DisplayInside) -> bool {
@@ -252,11 +254,7 @@ fn is_last_table_cell(cell: &Node) -> bool {
     let position = row.children.iter().position(|&id| id == cell.id);
     row.children[position.map_or(0, |p| p + 1)..]
         .iter()
-        .all(|&id| {
-            cell.with(id)
-                .display_style()
-                .is_none_or(|d| d.inside() != DisplayInside::TableCell)
-        })
+        .all(|&id| display(cell.with(id)).is_none_or(|d| d.inside() != DisplayInside::TableCell))
 }
 
 /// The byte length of a `list-style-position: inside` marker at the start of `text`.

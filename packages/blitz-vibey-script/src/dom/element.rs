@@ -768,7 +768,7 @@ fn get_inner_text(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsRes
     doc.resolve(0.0);
     let text = doc
         .get_node(node_id)
-        .map(|node| node.inner_text())
+        .map(crate::inner_text::inner_text)
         .unwrap_or_default();
     Ok(js_str(&text))
 }
