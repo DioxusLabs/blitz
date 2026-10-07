@@ -33,12 +33,12 @@ use taffy::{
 impl BaseDocument {
     /// The writing-mode frame in which `node_id`'s layout algorithm runs.
     ///
-    /// For the root element this applies the HTML special case of css-writing-modes-3 §8: when the
-    /// root is `horizontal-tb`, the `writing-mode` of its `<body>` child is used instead.
+    /// For the root element this applies the HTML special case of css-writing-modes-3 §8: the
+    /// `writing-mode` of its `<body>` child is used instead of its own.
     pub(crate) fn frame_of(&self, node_id: crate::NodeId) -> WritingMode {
         let node = &self.nodes[node_id];
         let frame = node.writing_mode();
-        if frame.is_vertical() || node_id != self.root_element().id || has_containment(node) {
+        if node_id != self.root_element().id || has_containment(node) {
             return frame;
         }
         node.children
