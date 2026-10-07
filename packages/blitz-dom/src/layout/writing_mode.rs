@@ -7,20 +7,20 @@
 //! - Style getters: a box's own algorithm reads its style in its own frame
 //!   (`get_core_container_style`); the algorithm laying it out reads it in *that* algorithm's frame
 //!   (`get_*_child_style`, `get_oof_item_style`, [`BaseDocument::child_layout_style`]).
-//!   [`BaseDocument::current_frame`] tracks the frame of the running algorithm.
+//!   [`LayoutPassState::current_frame`] tracks the frame of the running algorithm.
 //! - Orthogonal flows ([`compute_child_layout_in_frame`]): when a box's frame differs from its
 //!   parent's, the `LayoutInput` is transposed into the box's frame, its auto inline size is
 //!   resolved to fit-content (css-writing-modes-3 §7.3.1), and the `LayoutOutput` is transposed
 //!   back. Percentage padding on such a box resolves against the containing block's inline size
-//!   ([`BaseDocument::orthogonal_percent_basis`]).
+//!   ([`LayoutPassState::orthogonal_percent_basis`]).
 //! - Geometry: `unrounded_layout` is written by the placing algorithm in *its* frame.
 //!   [`physicalise_and_round_layout`] converts every layout to physical coordinates (mirroring
 //!   the block axis for `*-rl` modes) and rounds it, replacing `taffy::round_layout`.
 //!
-//! [`compute_child_layout_in_frame`]: BaseDocument::compute_child_layout_in_frame
-//! [`physicalise_and_round_layout`]: BaseDocument::physicalise_and_round_layout
+//! [`compute_child_layout_in_frame`]: LayoutPassState::compute_child_layout_in_frame
+//! [`physicalise_and_round_layout`]: LayoutPassState::physicalise_and_round_layout
 
-use super::BlockContext;
+use super::{BlockContext, LayoutPassState};
 use crate::document::BaseDocument;
 use crate::dom_node_id;
 use stylo_taffy::WritingMode;
@@ -54,7 +54,9 @@ impl BaseDocument {
             .map(|body| body.writing_mode())
             .unwrap_or(frame)
     }
+}
 
+impl LayoutPassState<'_> {
     /// Lay out `node_id`, translating between the parent's frame and the node's own frame at an
     /// orthogonal-flow boundary.
     pub(crate) fn compute_child_layout_in_frame(
@@ -65,10 +67,9 @@ impl BaseDocument {
     ) -> LayoutOutput {
         let node_frame = self.frame_of(dom_node_id(node_id));
         let parent_frame = core::mem::replace(&mut self.current_frame, node_frame);
-        let parent_align_axis_is_inline = core::mem::replace(
-            &mut self.current_align_axis_is_inline,
-            self.nodes[dom_node_id(node_id)].is_column_flex_container(),
-        );
+        let align_axis_is_inline = self.nodes[dom_node_id(node_id)].is_column_flex_container();
+        let parent_align_axis_is_inline =
+            core::mem::replace(&mut self.current_align_axis_is_inline, align_axis_is_inline);
 
         let output = if node_frame.is_vertical() == parent_frame.is_vertical() {
             let mut output = self.compute_child_layout_same_frame(node_id, inputs, block_ctx);

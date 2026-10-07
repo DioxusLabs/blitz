@@ -83,11 +83,31 @@ pub(crate) fn resolve_calc_value(calc_ptr: *const (), parent_size: f32) -> f32 {
 /// the Taffy tree trait implementations. Derefs to [`BaseDocument`].
 pub(crate) struct LayoutPassState<'doc> {
     doc: &'doc mut BaseDocument,
+    /// The writing mode of the box whose layout algorithm is currently running (see
+    /// `layout::writing_mode`). Child styles read during that algorithm are expressed in this frame.
+    #[cfg(feature = "writing-modes")]
+    pub(crate) current_frame: stylo_taffy::WritingMode,
+    /// Whether the node whose layout algorithm is running aligns its children's `align-self` in its
+    /// inline axis (a column flex container).
+    #[cfg(feature = "writing-modes")]
+    pub(crate) current_align_axis_is_inline: bool,
+    /// The box currently being laid out in an orthogonal flow and its containing block's inline
+    /// size, against which its percentage padding resolves (see `layout::writing_mode`).
+    #[cfg(feature = "writing-modes")]
+    pub(crate) orthogonal_percent_basis: Option<(crate::NodeId, f32)>,
 }
 
 impl<'doc> LayoutPassState<'doc> {
     pub(crate) fn new(doc: &'doc mut BaseDocument) -> Self {
-        Self { doc }
+        Self {
+            doc,
+            #[cfg(feature = "writing-modes")]
+            current_frame: stylo_taffy::WritingMode::empty(),
+            #[cfg(feature = "writing-modes")]
+            current_align_axis_is_inline: false,
+            #[cfg(feature = "writing-modes")]
+            orthogonal_percent_basis: None,
+        }
     }
 }
 
