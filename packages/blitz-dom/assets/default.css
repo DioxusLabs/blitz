@@ -39,7 +39,9 @@
     display: none;
 }
 
-a {
+/* https://html.spec.whatwg.org/#phrasing-content-3: only a link is
+   underlined, not an `a` without `href` */
+a[href] {
     color: rgb(0, 0, 238);
     text-decoration: underline;
 }
