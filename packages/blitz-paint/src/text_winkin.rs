@@ -241,9 +241,7 @@ impl Painter<'_> {
         key: u64,
         first: bool,
     ) -> impl Iterator<Item = ServoArc<ComputedValues>> + '_ {
-        let (propagated, own, first_line) = if self.text.is_placeholder(key) {
-            (&[][..], None, None)
-        } else if key == self.root_key {
+        let (propagated, own, first_line) = if key == self.root_key {
             let first_line = first.then(|| self.text.first_line_style_of(key)).flatten();
             (&self.propagated[..], self.root_styles.clone(), first_line)
         } else {
@@ -319,9 +317,6 @@ impl Painter<'_> {
         first: bool,
     ) {
         let key = fragment.key().0;
-        if self.text.is_placeholder(key) {
-            return;
-        }
         let Some(styles) = self.styles(key, first) else {
             return;
         };
@@ -488,9 +483,6 @@ impl Painter<'_> {
 
     /// The style whose text shadows what `key` paints casts.
     fn shadow_styles(&self, key: u64, first: bool) -> Option<ServoArc<ComputedValues>> {
-        if self.text.is_placeholder(key) {
-            return None;
-        }
         self.styles(key, first)
     }
 
