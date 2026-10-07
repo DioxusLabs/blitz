@@ -109,6 +109,10 @@ taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "7d33901cc383489d99
     "detailed_layout_info",
 ] }
 parley = { version = "0.12", default-features = false, features = ["std"] }
+winkin = { path = "../ifc/crates/winkin" }
+# The fonts winkin chooses from. Its `system` feature, the platform's font
+# APIs, is blitz-dom's `system-fonts`.
+fontwich = { path = "../ifc/crates/fontwich", default-features = false, features = ["std"] }
 skrifa = { version = "0.44", default-features = false, features = [
     "std",
 ] } # Should match parley and vello versions
@@ -257,6 +261,8 @@ publish = false
 log-times = ["log-frame-times", "log-phase-times"]
 log-frame-times = ["dioxus-native/log-frame-times"]
 log-phase-times = ["dioxus-native/log-phase-times"]
+# Lay out and paint document text with winkin.
+winkin = ["blitz-paint/winkin"]
 
 [dev-dependencies]
 anyrender = { workspace = true }

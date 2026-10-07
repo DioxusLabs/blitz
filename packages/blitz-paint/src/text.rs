@@ -161,7 +161,15 @@ fn resolve_decoration_entry(doc: &BaseDocument, node_id: NodeId) -> DecorationSt
             decoration: None,
         };
     };
+    DecorationStackEntry {
+        node_id,
+        text_color: styles.get_inherited_text().color.as_color_color(),
+        decoration: resolve_decoration(&styles),
+    }
+}
 
+/// The decoration an element draws as a decorating box, if it is one.
+fn resolve_decoration(styles: &style::properties::ComputedValues) -> Option<ResolvedDecoration> {
     let itext = styles.get_inherited_text();
     let text = styles.get_text();
     let text_color = itext.color.as_color_color();
@@ -173,7 +181,7 @@ fn resolve_decoration_entry(doc: &BaseDocument, node_id: NodeId) -> DecorationSt
     // Decorations propagate through the box tree, and a `display: contents` element
     // generates no box, so its decorations have no effect on descendants.
     let is_contents = styles.clone_display().is_contents();
-    let decoration = (!is_contents && line.intersects(drawn_lines)).then(|| {
+    (!is_contents && line.intersects(drawn_lines)).then(|| {
         // `text-decoration-color: currentColor` (the initial value) resolves against
         // the decorating box's own colour, not the descendant run's.
         let color = text
@@ -196,13 +204,7 @@ fn resolve_decoration_entry(doc: &BaseDocument, node_id: NodeId) -> DecorationSt
                 .contains(TextUnderlinePosition::FROM_FONT),
             inset: text.text_decoration_inset.clone(),
         }
-    });
-
-    DecorationStackEntry {
-        node_id,
-        text_color,
-        decoration,
-    }
+    })
 }
 
 /// The run-dependent geometry used to position and size a decoration, captured from a
@@ -219,9 +221,15 @@ struct DecorationRunGeometry {
     underline_offset: f32,
     underline_size: f32,
     strikethrough_size: f32,
-    font: parley::FontData,
+    /// The font whose OS/2 ascent an overline and a line-through are placed
+    /// by, where `ascent` is not already the one to use.
+    font: Option<parley::FontData>,
     font_size: f32,
     css_font_size: f64,
+    /// Whether `ascent` and `descent` are measured about a central baseline,
+    /// as a vertical line's are, so that the em box's edges are the overline's
+    /// place and its middle the line-through's.
+    centered: bool,
 }
 
 /// A decoration accumulated across the runs of a single line for one decorating box.
@@ -391,6 +399,9 @@ fn draw_decoration_line(
 }
 
 /// Paint the decorations accumulated for one line, one line per decorating box.
+///
+/// Only the kinds of line in `drawn` are painted: a caller painting the lines
+/// under the text apart from the one through it asks for each in turn.
 fn flush_line_decorations(
     scene: &mut impl PaintScene,
     transform: Affine,
@@ -399,6 +410,7 @@ fn flush_line_decorations(
     win_ascent_ratios: &mut WinAscentCache,
     inline_root_id: NodeId,
     line_baseline: f32,
+    drawn: TextDecorationLine,
 ) {
     // Draw innermost boxes first so ancestors' decorations paint on top, matching the
     // per-run drawing order this replaced (`stack.iter().rev()`).
@@ -442,7 +454,8 @@ fn flush_line_decorations(
             GenericTextDecorationInset::Auto => (0.0, 0.0),
         };
 
-        if deco.line.contains(TextDecorationLine::UNDERLINE) {
+        let lines = deco.line & drawn;
+        if lines.contains(TextDecorationLine::UNDERLINE) {
             let size = decoration_size(
                 &deco.thickness,
                 geom.underline_size,
@@ -491,7 +504,7 @@ fn flush_line_decorations(
                 inset_end,
             );
         }
-        if deco.line.contains(TextDecorationLine::OVERLINE) {
+        if lines.contains(TextDecorationLine::OVERLINE) {
             // Fonts don't provide a dedicated overline metric, so reuse the underline
             // thickness. The line sits at the top of the "em box": its lower edge rests on
             // the ascent so it clears the glyphs, and it extends upward from there.
@@ -506,8 +519,12 @@ fn flush_line_decorations(
                 geom.css_font_size,
                 scale,
             );
-            let ascent =
-                win_ascent(win_ascent_ratios, &geom.font, geom.font_size).unwrap_or(geom.ascent);
+            let ascent = match &geom.font {
+                Some(font) if !geom.centered => {
+                    win_ascent(win_ascent_ratios, font, geom.font_size).unwrap_or(geom.ascent)
+                }
+                _ => geom.ascent,
+            };
             let offset = ascent + size;
 
             // A `double` overline extends upward, away from the text.
@@ -527,7 +544,7 @@ fn flush_line_decorations(
                 inset_end,
             );
         }
-        if deco.line.contains(TextDecorationLine::LINE_THROUGH) {
+        if lines.contains(TextDecorationLine::LINE_THROUGH) {
             let size = decoration_size(
                 &deco.thickness,
                 geom.strikethrough_size,
@@ -539,9 +556,18 @@ fn flush_line_decorations(
             // Chrome (which places it `2/3 * ascent` below the text-top). Parley's
             // `strikethrough_offset` (the font's `yStrikeoutPosition`) sits lower and would
             // draw the line too close to the baseline.
-            let ascent =
-                win_ascent(win_ascent_ratios, &geom.font, geom.font_size).unwrap_or(geom.ascent);
-            let offset = ascent / 3.0 + size / 2.0;
+            // A vertical line's is through the middle of the em box, which is
+            // its baseline.
+            let offset = if geom.centered {
+                size / 2.0
+            } else {
+                let ascent = geom
+                    .font
+                    .as_ref()
+                    .and_then(|font| win_ascent(win_ascent_ratios, font, geom.font_size))
+                    .unwrap_or(geom.ascent);
+                ascent / 3.0 + size / 2.0
+            };
 
             draw_decoration_line(
                 scene,
@@ -674,9 +700,10 @@ pub(crate) fn stroke_text<'a>(
                     underline_offset: metrics.underline_offset,
                     underline_size: metrics.underline_size,
                     strikethrough_size: metrics.strikethrough_size,
-                    font: font.clone(),
+                    font: Some(font.clone()),
                     font_size,
                     css_font_size,
+                    centered: false,
                 };
                 let run_node_id = style.brush.id;
                 let run_x0 = glyph_run.offset() as f64;
@@ -723,6 +750,7 @@ pub(crate) fn stroke_text<'a>(
             win_ascent_ratios,
             inline_root_id,
             line.metrics().baseline,
+            TextDecorationLine::all(),
         );
     }
 }
@@ -744,4 +772,95 @@ pub(crate) fn draw_text_selection(
         let rect = kurbo::Rect::new(rect.x0, rect.y0, rect.x1, rect.y1);
         scene.fill(Fill::NonZero, transform, SELECTION_COLOR, None, &rect);
     });
+}
+
+/// One bar of a decoration on a line of winkin-laid text, and the font
+/// geometry it is drawn with, in device pixels along and across its line.
+#[cfg(feature = "winkin")]
+#[derive(Copy, Clone)]
+pub(crate) struct WinkinDecoration {
+    /// Where it starts and ends along the line.
+    pub(crate) left: f64,
+    pub(crate) right: f64,
+    /// Its box's baseline, and its primary font's ascent and descent about it.
+    pub(crate) baseline: f32,
+    pub(crate) ascent: f32,
+    pub(crate) descent: f32,
+    /// Where an `auto` underline's top is under the baseline, and how thick
+    /// an `auto` line is: Chrome's, as winkin works them out.
+    pub(crate) underline_gap: f32,
+    pub(crate) thickness: f32,
+    /// Its box's used font size.
+    pub(crate) font_size: f32,
+    /// Whether the metrics are measured about a central baseline, as a
+    /// vertical line's are.
+    pub(crate) centered: bool,
+}
+
+/// Painting the decorations of lines laid out by winkin, with the same
+/// resolution and drawing as the lines laid out by Parley.
+#[cfg(feature = "winkin")]
+impl DrawTextContext {
+    /// Paints one bar of the decoration `styles` sets, as a decorating box:
+    /// its underline and overline where `after_text` is false, and its line
+    /// through where it is true. `color`, where given, is the color it is
+    /// drawn in instead of its own: a shadow's.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn draw_winkin_decoration(
+        &mut self,
+        scene: &mut impl PaintScene,
+        transform: Affine,
+        scale: f64,
+        styles: &style::properties::ComputedValues,
+        bar: WinkinDecoration,
+        after_text: bool,
+        color: Option<Color>,
+    ) {
+        let Some(mut deco) = resolve_decoration(styles) else {
+            return;
+        };
+        if let Some(color) = color {
+            deco.color = color;
+        }
+        self.deco_boxes.clear();
+        self.deco_boxes.push(LineDecoration {
+            node_id: NodeId::from_u64(0),
+            deco,
+            min_x: bar.left,
+            max_x: bar.right,
+            own: Some(DecorationRunGeometry {
+                baseline: bar.baseline,
+                ascent: bar.ascent,
+                descent: bar.descent,
+                // Placed from the baseline, up: an underline's top is its gap
+                // under it.
+                underline_offset: -bar.underline_gap,
+                underline_size: bar.thickness,
+                strikethrough_size: bar.thickness,
+                // winkin's ascent is already the one the platform's browser
+                // draws an overline against: its line metrics are.
+                font: None,
+                font_size: bar.font_size,
+                css_font_size: f64::from(bar.font_size) / scale,
+                centered: bar.centered,
+            }),
+            first: None,
+        });
+        let drawn = if after_text {
+            TextDecorationLine::LINE_THROUGH
+        } else {
+            TextDecorationLine::UNDERLINE | TextDecorationLine::OVERLINE
+        };
+        flush_line_decorations(
+            scene,
+            transform,
+            scale,
+            &self.deco_boxes,
+            &mut self.win_ascent_ratios,
+            NodeId::from_u64(0),
+            bar.baseline,
+            drawn,
+        );
+        self.deco_boxes.clear();
+    }
 }

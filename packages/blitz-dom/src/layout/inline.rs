@@ -25,7 +25,10 @@ use crate::stylo_to_parley;
 /// Subtract a child's margins from the definite axes of the available space it is laid out in.
 /// Taffy's convention is that the parent subtracts a child's margins from the available space
 /// before passing it to the child, and that the child does not subtract them again.
-fn subtract_margins(mut child_inputs: LayoutInput, margin: taffy::Rect<f32>) -> LayoutInput {
+pub(super) fn subtract_margins(
+    mut child_inputs: LayoutInput,
+    margin: taffy::Rect<f32>,
+) -> LayoutInput {
     child_inputs.available_space = child_inputs
         .available_space
         .maybe_sub(margin.sum_axes())
@@ -36,7 +39,7 @@ fn subtract_margins(mut child_inputs: LayoutInput, margin: taffy::Rect<f32>) -> 
 /// Layout inputs for an atomic inline box, with any sizing keyword on its `width` style
 /// (`min-content`, `max-content`, `fit-content`, `fit-content(...)`, `stretch`) resolved
 /// into the available space or known width the box is measured with.
-fn inline_box_inputs(
+pub(super) fn inline_box_inputs(
     width_style: taffy::Dimension,
     margin: taffy::Rect<f32>,
     child_inputs: LayoutInput,
@@ -192,6 +195,10 @@ impl LayoutPassState<'_> {
         }
     }
 
+    #[cfg_attr(
+        feature = "winkin",
+        allow(unreachable_code, unused_variables, unused_mut)
+    )]
     fn compute_inline_layout_inner(
         &mut self,
         node_id: NodeId,
@@ -292,8 +299,11 @@ impl LayoutPassState<'_> {
 
         drop(style);
 
-        // Short circuit if inline context contains no text or inline boxes
-        if !has_styles_preventing_being_collapsed_through
+        // Short circuit if inline context contains no text or inline boxes.
+        // Parley's text is collapsed, which drops a lone no-break space, so
+        // under winkin the layout answers instead.
+        if !cfg!(feature = "winkin")
+            && !has_styles_preventing_being_collapsed_through
             && inline_layout.text.is_empty()
             && inline_layout.layout.inline_boxes().len() == 0
         {
@@ -430,6 +440,37 @@ impl LayoutPassState<'_> {
                 };
             }
         }
+
+        // Everything from here -- widths, breaking, and where the boxes go --
+        // is winkin's when it lays the text out.
+        #[cfg(feature = "winkin")]
+        let margin = self.nodes[node_id]
+            .layout_style()
+            .margin()
+            .resolve_or_zero(parent_size.width, resolve_calc_value);
+        #[cfg(feature = "winkin")]
+        return self.compute_inline_layout_winkin(
+            node_id,
+            inline_layout,
+            super::inline_winkin::Frame {
+                inputs,
+                node_size,
+                node_min_size,
+                node_max_size,
+                aspect_ratio,
+                margin,
+                padding,
+                border,
+                scrollbar_gutter,
+                container_pb,
+                content_box_inset,
+                child_inputs,
+                available_space,
+                collapses_through: has_styles_preventing_being_collapsed_through,
+                scale,
+            },
+            block_ctx,
+        );
 
         let text_indent = self.nodes[node_id]
             .primary_styles()
@@ -1109,6 +1150,6 @@ impl LayoutPassState<'_> {
 }
 
 #[inline(always)]
-fn f32_max(a: f32, b: f32) -> f32 {
+pub(super) fn f32_max(a: f32, b: f32) -> f32 {
     a.max(b)
 }

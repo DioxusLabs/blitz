@@ -52,6 +52,11 @@ pub struct FontFaceOverrides {
     pub weight: Option<f32>,
     /// `font-style` descriptor mapped to fontique's `FontStyle`.
     pub style: Option<parley::fontique::FontStyle>,
+    /// Every descriptor winkin's fonts match and set a face by: the weight,
+    /// width and style ranges, `unicode-range`, the feature and variation
+    /// settings, and the metrics overrides.
+    #[cfg(feature = "winkin")]
+    pub descriptors: fontwich::FaceDescriptors,
 }
 
 #[derive(Clone, Debug)]
@@ -428,6 +433,8 @@ pub(crate) fn fetch_font_face_rules<'a>(
                         .as_ref()
                         .and_then(|range| range.0.compute().map(|w| w.value())),
                     style: descriptor.font_style.as_ref().map(stylo_to_fontique_style),
+                    #[cfg(feature = "winkin")]
+                    descriptors: face_descriptors(descriptor),
                 };
                 Some((src, overrides))
             }
@@ -539,6 +546,113 @@ fn stylo_to_fontique_style(style: &FontStyleRange) -> parley::fontique::FontStyl
             }
         }
     }
+}
+
+/// An `@font-face` rule's descriptors as fontwich declares a face with them.
+///
+/// A descriptor left out, or one whose `calc()` cannot be resolved without an
+/// element, is `auto`: the font's own value.
+#[cfg(feature = "winkin")]
+fn face_descriptors(descriptor: &style::font_face::Descriptors) -> fontwich::FaceDescriptors {
+    use fontwich::{FaceStyle, FontWeight, FontWidth};
+    use style::values::specified::font::MetricsOverride;
+
+    let metric = |value: &Option<MetricsOverride>| match value {
+        Some(MetricsOverride::Override(percentage)) => percentage.0.get(),
+        _ => None,
+    };
+    // The rule's settings are specified values, whose numbers are known
+    // once parsed.
+    let tag = |tag: &style::values::generics::font::FontTag| parlance_tag(tag.0);
+    let features = descriptor
+        .font_feature_settings
+        .as_ref()
+        .map(|settings| {
+            settings
+                .0
+                .iter()
+                .filter_map(|setting| {
+                    let value = setting.value.resolve()?;
+                    Some(winkin::style::FontFeature::new(
+                        tag(&setting.tag),
+                        value.clamp(0, i32::from(u16::MAX)) as u16,
+                    ))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    fontwich::FaceDescriptors {
+        weight: descriptor
+            .font_weight
+            .as_ref()
+            .and_then(|range| range.compute())
+            .map(|range| {
+                (
+                    FontWeight::new(range.0.value()),
+                    FontWeight::new(range.1.value()),
+                )
+            }),
+        width: descriptor
+            .font_width
+            .as_ref()
+            .and_then(|range| range.compute())
+            .map(|range| {
+                (
+                    FontWidth::from_percentage(range.0.to_percentage().0 * 100.0),
+                    FontWidth::from_percentage(range.1.to_percentage().0 * 100.0),
+                )
+            }),
+        style: descriptor
+            .font_style
+            .as_ref()
+            .and_then(|style| match style {
+                FontStyleRange::Italic => Some(FaceStyle::Italic),
+                FontStyleRange::Oblique(min, max) => {
+                    let (min, max) = (min.degrees()?, max.degrees()?);
+                    // `normal` is parsed as an oblique of nothing.
+                    Some(if min == 0.0 && max == 0.0 {
+                        FaceStyle::Normal
+                    } else {
+                        FaceStyle::Oblique(min, max)
+                    })
+                }
+            }),
+        unicode_range: descriptor
+            .unicode_range
+            .as_ref()
+            .map(|ranges| ranges.iter().map(|range| range.start..=range.end).collect())
+            .unwrap_or_default(),
+        feature_settings: features,
+        variation_settings: descriptor
+            .font_variation_settings
+            .as_ref()
+            .map(|settings| {
+                settings
+                    .0
+                    .iter()
+                    .filter_map(|setting| {
+                        Some(winkin::style::FontVariation {
+                            tag: tag(&setting.tag),
+                            value: setting.value.get()?,
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default(),
+        size_adjust: descriptor
+            .size_adjust
+            .as_ref()
+            .and_then(|percentage| percentage.0.get()),
+        ascent_override: metric(&descriptor.ascent_override),
+        descent_override: metric(&descriptor.descent_override),
+        line_gap_override: metric(&descriptor.line_gap_override),
+    }
+}
+
+/// An OpenType tag, from Stylo's big-endian `u32`.
+#[cfg(feature = "winkin")]
+fn parlance_tag(tag: u32) -> winkin::style::Tag {
+    winkin::style::Tag::from_bytes(tag.to_be_bytes())
 }
 
 /// Handles HTML fetched for an `<iframe>` element's `src`
