@@ -47,6 +47,13 @@ pub struct DocumentConfig {
     pub html_parser_provider: Option<Arc<dyn HtmlParserProvider>>,
     /// Parley `FontContext`
     pub font_ctx: Option<FontContext>,
+    /// The installed and application fonts winkin lays document text out
+    /// with. Clones share loaded fonts and fallback answers, so pass a clone
+    /// of one collection to every document rather than letting each list the
+    /// platform's fonts again. Defaults to
+    /// [`text_winkin::system_fonts`](crate::text_winkin::system_fonts).
+    #[cfg(feature = "winkin")]
+    pub winkin_fonts: Option<fontwich::Collection>,
     /// The CSS media type used to evaluate `@media` rules.
     /// Defaults to [`MediaType::screen`].
     pub media_type: Option<MediaType>,
@@ -79,6 +86,8 @@ impl Default for DocumentConfig {
             shell_provider: None,
             html_parser_provider: None,
             font_ctx: None,
+            #[cfg(feature = "winkin")]
+            winkin_fonts: None,
             media_type: None,
             style_threading: StyleThreading::default(),
             incremental: None,
