@@ -94,8 +94,8 @@ pub struct View<Rend: WindowRenderer> {
     /// The events stored here always have an empty `active_pointers` list to
     /// avoid a reference cycle.
     pub active_events: Arc<AtomicRefCell<Vec<BlitzPointerEvent>>>,
-    /// The clock frame times are sampled from. Defaults to [`SystemClock`]; replace it
-    /// to drive the view on your own time.
+    /// The clock frame times and input event timestamps are sampled from. Defaults to
+    /// [`SystemClock`]; replace it to drive the view on your own time.
     pub clock: Box<dyn Clock>,
     pub is_visible: bool,
     pub safe_area_insets: PhysicalInsets<u32>,
@@ -585,6 +585,10 @@ impl<Rend: WindowRenderer> View<Rend> {
         self.accessibility
             .process_window_event(&*self.window, &event);
 
+        // winit doesn't report when an event happened, so stamp it with the time it
+        // was received.
+        let now = self.current_time();
+
         match event {
             WindowEvent::Destroyed => {}
             WindowEvent::ActivationTokenDone { .. } => {},
@@ -685,7 +689,7 @@ impl<Rend: WindowRenderer> View<Rend> {
                 }
 
                 // Unmodified keypresses
-                let key_event_data = winit_key_event_to_blitz(&event, self.keyboard_modifiers.state());
+                let key_event_data = winit_key_event_to_blitz(&event, self.keyboard_modifiers.state(), now);
                 let event = if event.state.is_pressed() {
                     UiEvent::KeyDown(key_event_data)
                 } else {
@@ -723,6 +727,7 @@ impl<Rend: WindowRenderer> View<Rend> {
                         details: PointerDetails::default(),
                         element: Default::default(),
                         active_pointers: Arc::clone(&self.active_events),
+                        timestamp: now,
                     };
 
                     self.doc.handle_ui_event(UiEvent::PointerCancel(event));
@@ -742,6 +747,7 @@ impl<Rend: WindowRenderer> View<Rend> {
                     details: pointer_source_to_blitz_details(&source),
                     element: Default::default(),
                     active_pointers: Arc::clone(&self.active_events),
+                    timestamp: now,
                 };
                 // Keep multi-touch positions current (no-op for non-active pointers).
                 if id != BlitzPointerId::Mouse {
@@ -781,6 +787,7 @@ impl<Rend: WindowRenderer> View<Rend> {
                     details: PointerDetails::default(),
                     element: Default::default(),
                     active_pointers: Arc::clone(&self.active_events),
+                    timestamp: now,
                 };
 
                 // Maintain the list of active (pressed) non-mouse pointers. A
@@ -806,6 +813,7 @@ impl<Rend: WindowRenderer> View<Rend> {
                         details: PointerDetails::default(),
                         element: Default::default(),
                         active_pointers: Arc::clone(&self.active_events),
+                        timestamp: now,
                     };
                     self.doc.handle_ui_event(UiEvent::PointerMove(event));
                 }
@@ -840,7 +848,8 @@ impl<Rend: WindowRenderer> View<Rend> {
                     coords: self.pointer_coords(self.pointer_pos),
                     buttons: self.buttons,
                     mods: winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state()),
-                    element: Default::default()
+                    element: Default::default(),
+                    timestamp: now,
                 };
 
                 self.doc.handle_ui_event(UiEvent::Wheel(event));

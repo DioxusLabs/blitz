@@ -1,6 +1,7 @@
 use crate::Document;
 use crate::layout::paint_tree::{HoistedPaintChild, StackingContext};
 use bitflags::bitflags;
+use blitz_traits::Timestamp;
 use blitz_traits::events::{
     BlitzPointerEvent, BlitzPointerId, DomEventData, HitResult, PointerCoords,
 };
@@ -1819,12 +1820,17 @@ impl Node {
             })
     }
 
-    /// Creates a synthetic click event
-    pub fn synthetic_click_event(&self, mods: Modifiers) -> DomEventData {
-        DomEventData::Click(self.synthetic_click_event_data(mods))
+    /// Creates a synthetic click event, stamped with `timestamp` (the time of the input
+    /// event it is synthesized from, or the current frame time if there is none)
+    pub fn synthetic_click_event(&self, mods: Modifiers, timestamp: Timestamp) -> DomEventData {
+        DomEventData::Click(self.synthetic_click_event_data(mods, timestamp))
     }
 
-    pub fn synthetic_click_event_data(&self, mods: Modifiers) -> BlitzPointerEvent {
+    pub fn synthetic_click_event_data(
+        &self,
+        mods: Modifiers,
+        timestamp: Timestamp,
+    ) -> BlitzPointerEvent {
         let absolute_position = self.absolute_position(0.0, 0.0);
         let x = absolute_position.x + (self.final_layout().size.width / 2.0);
         let y = absolute_position.y + (self.final_layout().size.height / 2.0);
@@ -1848,6 +1854,7 @@ impl Node {
             details: Default::default(),
             element: Default::default(),
             active_pointers: Default::default(),
+            timestamp,
         }
     }
 }
