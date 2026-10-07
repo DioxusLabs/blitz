@@ -27,7 +27,7 @@ use winkin::style::{
 };
 use winkin::{
     Area, BoxSize, BuildOptions, ComputedBlockStyle, ComputedStyle, Context, Exclusions, FloatSide,
-    IntrinsicSizes, Layout, LayoutBuilder, LineMetrics, NodeKey,
+    IntrinsicSizes, Layout, LayoutBuilder, LineMetrics, NodeKey, OriginalDisplay,
 };
 
 use crate::layout::replaced::is_replaced_element;
@@ -140,8 +140,6 @@ struct PaintStyles {
     first_letter: Option<(ServoArc<ComputedValues>, Option<ServoArc<ComputedValues>>)>,
     /// The inside list marker's style.
     marker: Option<ServoArc<ComputedValues>>,
-    /// The absolutely positioned boxes the content holds a place for.
-    placeholders: Vec<u64>,
     /// Each element's emphasis mark, by node, where its text takes marks:
     /// the mark's string laid out on one line in the element's fonts at the
     /// marks' size, which a mark is drawn as.
@@ -195,12 +193,6 @@ impl WinkinText {
             .iter()
             .find(|(held, _)| *held == node)
             .map(|(_, layout)| layout)
-    }
-
-    /// Whether `key` is an absolutely positioned box the content holds only
-    /// a place for: an empty box, which paints nothing.
-    pub fn is_placeholder(&self, key: u64) -> bool {
-        self.styles.placeholders.contains(&key)
     }
 
     /// The computed style the text and boxes of `key` are painted in, on the
@@ -408,7 +400,6 @@ pub(crate) fn build(
     text.styles.first_line.clear();
     text.styles.first_letter = None;
     text.styles.marker = None;
-    text.styles.placeholders.clear();
     text.styles.marks.clear();
 
     // An anonymous block has no style of its own worth reading: its text is
@@ -738,10 +729,17 @@ impl Walk<'_> {
                     return;
                 }
                 let language = own_language(node).unwrap_or(parent.language);
-                // Out of the flow: the content holds its static position, an
-                // empty box in its parent's style that takes no room.
+                // Out of the flow: the content holds its anchor, which takes
+                // no room, and the lines say where its static position is.
                 if computed.clone_position().is_absolutely_positioned() {
-                    self.placeholder(builder, parent, node_id);
+                    let display = if computed.get_box().original_display.outside()
+                        == DisplayOutside::Inline
+                    {
+                        OriginalDisplay::Inline
+                    } else {
+                        OriginalDisplay::Block
+                    };
+                    builder.absolute(NodeKey(node_id.as_u64()), display);
                     return;
                 }
                 match (display.outside(), display.inside()) {
@@ -970,30 +968,6 @@ impl Walk<'_> {
         };
         let size = self.measured(node_id.as_u64());
         builder.float(NodeKey(node_id.as_u64()), &own, side, size);
-    }
-
-    /// Holds the static position of an absolutely positioned box: an empty
-    /// box in its parent's style, which changes nothing about the line and
-    /// whose one fragment says where it is.
-    fn placeholder(
-        &mut self,
-        builder: &mut LayoutBuilder<'_>,
-        parent: Parent<'_>,
-        node_id: NodeId,
-    ) {
-        let lists = style::FontLists::of(parent.computed, &self.feature_values);
-        let inherited = style::computed_style(
-            &lists,
-            parent.computed,
-            self.scale,
-            self.basis,
-            parent.language,
-        );
-        let empty = unboxed(inherited);
-        let key = node_id.as_u64();
-        self.styles.placeholders.push(key);
-        builder.open_box(NodeKey(key), &empty, None);
-        builder.close_box();
     }
 
     /// Asks for the block's `::first-letter` before `text`, in the style the

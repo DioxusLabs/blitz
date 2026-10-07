@@ -12,10 +12,10 @@ use taffy::{
     MaybeResolve as _, OofCandidate, OofCandidates, OofPositioningArea, Point, Rect, RequestedAxis,
     ResolveOrZero as _, RunMode, Size, SizingMode,
 };
-use winkin::style::WritingMode;
+use winkin::style::{Direction as TextDirection, WritingMode};
 use winkin::{
     Area, BlockExtents, BoxSize, Exclusions, ExclusionsCheckpoint, FloatRequest, FloatSide,
-    InlineExtents, Item, NodeKey, PlacedFloat,
+    InlineExtents, Item, PlacedFloat,
 };
 
 use super::inline::{f32_max, inline_box_inputs};
@@ -54,6 +54,11 @@ struct Placed {
     top: f32,
     line_top: f32,
     line_bottom: f32,
+    /// Whether an absolutely positioned box's static position faces right
+    /// to left across the page: its inline start's way in a horizontal
+    /// block, as winkin found it, and its block start's in a vertical one.
+    /// `None` for an atomic inline.
+    rtl: Option<bool>,
 }
 
 /// A float, or the block's initial letter, placed while the lines were
@@ -445,12 +450,6 @@ impl BaseDocument {
                 })
                 .map(|height| (height * scale) - pbh)
                 .unwrap_or_else(|| inline_layout.winkin.content_widths().max_content.ceil());
-            let placeholders: Vec<u64> = inline_layout
-                .layout
-                .inline_boxes()
-                .map(|ibox| ibox.id)
-                .filter(|id| inline_layout.winkin.is_placeholder(*id))
-                .collect();
             let mut room = FloatRoom {
                 #[cfg(feature = "floats")]
                 outer: None,
@@ -481,7 +480,7 @@ impl BaseDocument {
             // What the lines placed, along them and across the block from
             // its start, in device pixels: each atomic inline's margin box,
             // and where each absolutely positioned box would have been.
-            let mut placed: Vec<(NodeId, [f32; 4])> = Vec::new();
+            let mut placed: Vec<(NodeId, [f32; 4], Option<bool>)> = Vec::new();
             let across = match laid {
                 Some(layout) => {
                     for line in layout.lines() {
@@ -509,20 +508,24 @@ impl BaseDocument {
                                         start,
                                         end,
                                     ],
+                                    None,
                                 ));
                             }
                         }
                     }
-                    for &id in &placeholders {
-                        let Some(fragment) = layout.box_fragments(NodeKey(id)).next() else {
-                            continue;
-                        };
-                        let Some(line) = layout.line(fragment.line()) else {
-                            continue;
-                        };
-                        let metrics = line.metrics();
-                        let at = metrics.left + fragment.inline().left;
-                        placed.push((NodeId::from_u64(id), [at, at, metrics.top, metrics.top]));
+                    // Where each absolutely positioned box would have been.
+                    // Its block-start edge, across the page, faces right
+                    // where the lines stack from the right.
+                    let from_right = matches!(
+                        writing_mode,
+                        WritingMode::VerticalRl | WritingMode::SidewaysRl
+                    );
+                    for at in layout.static_positions() {
+                        placed.push((
+                            NodeId::from_u64(at.key.0),
+                            [at.inline, at.inline, at.block, at.block],
+                            Some(from_right),
+                        ));
                     }
                     let metrics = layout.metrics();
                     metrics.block_end - into_end_padding(layout.room_below(), end_padding * scale)
@@ -564,7 +567,7 @@ impl BaseDocument {
                 WritingMode::HorizontalTb => (left, start),
             };
             let container_direction = self.nodes[node_id].layout_style().direction();
-            for (order, (node, extents)) in placed.into_iter().enumerate() {
+            for (order, (node, extents, rtl)) in placed.into_iter().enumerate() {
                 let (x, y) = page(extents);
                 self.place_inline_box(
                     &Placed {
@@ -573,6 +576,7 @@ impl BaseDocument {
                         top: y,
                         line_top: y,
                         line_bottom: y,
+                        rtl,
                     },
                     order as u32,
                     &child_inputs,
@@ -715,14 +719,6 @@ impl BaseDocument {
             ..Area::new(width)
         };
 
-        // The absolutely positioned boxes whose static positions the content
-        // holds.
-        let placeholders: Vec<u64> = inline_layout
-            .layout
-            .inline_boxes()
-            .map(|ibox| ibox.id)
-            .filter(|id| inline_layout.winkin.is_placeholder(*id))
-            .collect();
         let mut placed = Vec::new();
         let laid = inline_layout
             .winkin
@@ -743,26 +739,30 @@ impl BaseDocument {
                                 top: metrics.top + block.over,
                                 line_top: metrics.top,
                                 line_bottom: metrics.top + metrics.height(),
+                                rtl: None,
                             });
                         }
                     }
                 }
-                // Where each absolutely positioned box would have been: the
-                // empty box that holds its place.
-                for &id in &placeholders {
-                    let Some(fragment) = layout.box_fragments(NodeKey(id)).next() else {
-                        continue;
-                    };
-                    let Some(line) = layout.line(fragment.line()) else {
-                        continue;
-                    };
-                    let metrics = line.metrics();
+                // Where each absolutely positioned box would have been, as
+                // winkin finds its static position: its line box spans the
+                // block axis of an inline-level box's static-position
+                // rectangle.
+                for at in layout.static_positions() {
+                    let bottom =
+                        at.line
+                            .and_then(|line| layout.line(line))
+                            .map_or(at.block, |line| {
+                                let metrics = line.metrics();
+                                (metrics.top + metrics.height()).max(at.block)
+                            });
                     placed.push(Placed {
-                        node: NodeId::from_u64(id),
-                        x: metrics.left + fragment.inline().left,
-                        top: metrics.top,
-                        line_top: metrics.top,
-                        line_bottom: metrics.top + metrics.height(),
+                        node: NodeId::from_u64(at.key.0),
+                        x: at.inline,
+                        top: at.block,
+                        line_top: at.block,
+                        line_bottom: bottom,
+                        rtl: Some(at.direction == TextDirection::Rtl),
                     });
                 }
                 let metrics = layout.metrics();
@@ -1311,9 +1311,11 @@ impl BaseDocument {
         drop(style);
 
         if is_absolute {
-            // The static-position rectangle: an inline-level box's is
-            // zero-wide where it stands in the line and spans the line box,
-            // and a block-level box's spans the content box under the line.
+            // The static-position rectangle, from winkin's static position.
+            // An inline-level box's is zero-wide where it stands in the line
+            // and spans the line box from its top. A block-level box's spans
+            // the content box at the line's top, or under the line where
+            // in-flow content comes before it there.
             let line_top = (at.line_top / scale) + container_pb.top;
             let line_bottom = (at.line_bottom / scale) + container_pb.top;
             let (inline_area, block_area) = if is_inline_level {
@@ -1332,10 +1334,18 @@ impl BaseDocument {
                         end: final_size.width - container_pb.right,
                     },
                     taffy::Line {
-                        start: line_bottom,
-                        end: line_bottom,
+                        start: line_top,
+                        end: line_top,
                     },
                 )
+            };
+            // An inline-level box's start faces the way its anchor's bidi
+            // level reads, as in Chrome. In a vertical block the horizontal
+            // axis runs across the lines, and its block start faces right
+            // where they stack from the right.
+            let inline_rtl = match at.rtl {
+                Some(rtl) if is_inline_level => rtl,
+                _ => container_direction.is_rtl(),
             };
             oof_candidates.push(OofCandidate {
                 node: taffy::NodeId::from(at.node.as_u64()),
@@ -1349,7 +1359,7 @@ impl BaseDocument {
                             true,
                         ),
                         inline_area,
-                        container_direction.is_rtl(),
+                        inline_rtl,
                     ),
                     y: AxisStaticPosition::from_alignment(
                         align_self.resolve_self_relative(
