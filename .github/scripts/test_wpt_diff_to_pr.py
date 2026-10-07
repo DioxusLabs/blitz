@@ -82,9 +82,9 @@ class RenderTest(unittest.TestCase):
         self.assertEqual(
             format_area_lines(areas),
             [
-                "+ css         100 -> 104 / 200  +4 (+6 / -2)  50.00% -> 52.00%  (+2.00pp)",
-                "-   css-grid    9 ->   8 /  10  -1 (+0 / -1)  90.00% -> 80.00% (-10.00pp)",
-                "!     x         3 ->   3 /   4  +0 (+1 / -1)  75.00% -> 75.00%  (+0.00pp)",
+                "+ css         100 -> 104 / 200  +4 (+6 / -2)  50.00% -> 52.00%  (+2.00%)",
+                "-   css-grid    9 ->   8 /  10  -1 (+0 / -1)  90.00% -> 80.00% (-10.00%)",
+                "!     x         3 ->   3 /   4  +0 (+1 / -1)  75.00% -> 75.00%  (+0.00%)",
             ],
         )
         section = render(Diff(ENTRIES), run_url=None, areas=areas)

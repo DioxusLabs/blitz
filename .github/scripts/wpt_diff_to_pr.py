@@ -136,7 +136,7 @@ def format_area_lines(areas):
                 f"(+{area['gained']} / -{area['lost']})",
                 f"{before:.2f}%",
                 f"{after:.2f}%",
-                f"({after - before:+.2f}pp)",
+                f"({after - before:+.2f}%)",
             )
         )
 
