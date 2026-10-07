@@ -2,14 +2,17 @@ use blitz_traits::node_id::NodeId;
 use parley::layout::PositionedLayoutItem;
 
 use crate::BaseDocument;
+use crate::layout::LayoutPassState;
 
 impl BaseDocument {
-    pub fn print_taffy_tree(&self) {
-        taffy::print_tree(self, crate::taffy_node_id(self.root_element().id));
-        for &node_id in &self.sub_document_nodes {
-            if let Some(sub_doc) = self.nodes[node_id].subdoc() {
+    pub fn print_taffy_tree(&mut self) {
+        let root_id = crate::taffy_node_id(self.root_element().id);
+        taffy::print_tree(&LayoutPassState::new(self), root_id);
+        let sub_document_nodes: Vec<_> = self.sub_document_nodes.iter().copied().collect();
+        for node_id in sub_document_nodes {
+            if let Some(sub_doc) = self.nodes[node_id].subdoc_mut() {
                 println!("\n=== Subdocument (node {node_id:?}) ===");
-                sub_doc.inner().print_taffy_tree();
+                sub_doc.inner_mut().print_taffy_tree();
             }
         }
     }

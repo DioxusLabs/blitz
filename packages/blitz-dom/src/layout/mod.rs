@@ -8,6 +8,7 @@ use crate::node::{ComputedStyleRef, ImageData, NodeData, SpecialElementData};
 use crate::{document::BaseDocument, dom_node_id, node::Node, taffy_node_id};
 use markup5ever::{LocalName, local_name};
 use std::cell::Ref;
+use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 use style::Atom;
 use style::values::computed::CSSPixelLength;
@@ -76,7 +77,32 @@ pub(crate) fn resolve_calc_value(calc_ptr: *const (), parent_size: f32) -> f32 {
     result.px()
 }
 
-impl BaseDocument {
+/// Per-pass layout state: wraps the document for the duration of a layout pass and carries
+/// the Taffy tree trait implementations. Derefs to [`BaseDocument`].
+pub(crate) struct LayoutPassState<'doc> {
+    doc: &'doc mut BaseDocument,
+}
+
+impl<'doc> LayoutPassState<'doc> {
+    pub(crate) fn new(doc: &'doc mut BaseDocument) -> Self {
+        Self { doc }
+    }
+}
+
+impl Deref for LayoutPassState<'_> {
+    type Target = BaseDocument;
+    fn deref(&self) -> &BaseDocument {
+        self.doc
+    }
+}
+
+impl DerefMut for LayoutPassState<'_> {
+    fn deref_mut(&mut self) -> &mut BaseDocument {
+        self.doc
+    }
+}
+
+impl LayoutPassState<'_> {
     fn node_from_id(&self, node_id: taffy::prelude::NodeId) -> &Node {
         &self.nodes[dom_node_id(node_id)]
     }
@@ -85,7 +111,7 @@ impl BaseDocument {
     }
 }
 
-impl BaseDocument {
+impl LayoutPassState<'_> {
     /// Run the node's layout algorithm, then lay out the out-of-flow (absolute/fixed)
     /// boxes for which it is the containing block. Must be called inside the layout
     /// cache wrapper so that cache hits do not re-run the out-of-flow pass.
@@ -193,8 +219,9 @@ impl BaseDocument {
                                     .resolve_or_zero(inputs.parent_size.width, resolve_calc_value)
                         };
                         let content_width = (output.size.width - pb.horizontal_axis_sum()).max(0.0);
-                        let scale = self.viewport.scale();
-                        let node = &mut self.nodes[dom_node_id(node_id)];
+                        let doc = &mut *self.doc;
+                        let scale = doc.viewport.scale();
+                        let node = &mut doc.nodes[dom_node_id(node_id)];
                         if let Some(input) = node
                             .data
                             .downcast_element_mut()
@@ -202,8 +229,8 @@ impl BaseDocument {
                         {
                             input.editor.set_width(Some(content_width * scale));
                             input.editor.refresh_layout(
-                                &mut self.font_ctx.lock().unwrap(),
-                                &mut self.layout_ctx,
+                                &mut doc.font_ctx.lock().unwrap(),
+                                &mut doc.layout_ctx,
                             );
                         }
                     }
@@ -465,8 +492,11 @@ impl BaseDocument {
     }
 }
 
-impl TraversePartialTree for BaseDocument {
-    type ChildIter<'a> = RefCellChildIter<'a>;
+impl TraversePartialTree for LayoutPassState<'_> {
+    type ChildIter<'a>
+        = RefCellChildIter<'a>
+    where
+        Self: 'a;
 
     fn child_ids(&self, node_id: NodeId) -> Self::ChildIter<'_> {
         let layout_children = self.node_from_id(node_id).layout_children.borrow(); //.unwrap().as_ref();
@@ -494,9 +524,9 @@ impl TraversePartialTree for BaseDocument {
         )
     }
 }
-impl TraverseTree for BaseDocument {}
+impl TraverseTree for LayoutPassState<'_> {}
 
-impl LayoutPartialTree for BaseDocument {
+impl LayoutPartialTree for LayoutPassState<'_> {
     type CoreContainerStyle<'a>
         = TaffyStyloStyle<ComputedStyleRef<'a>>
     where
@@ -528,7 +558,7 @@ impl LayoutPartialTree for BaseDocument {
     }
 }
 
-impl LayoutContainingBlock for BaseDocument {
+impl LayoutContainingBlock for LayoutPassState<'_> {
     type OofItemStyle<'a>
         = TaffyStyloStyle<ComputedStyleRef<'a>>
     where
@@ -574,7 +604,7 @@ impl LayoutContainingBlock for BaseDocument {
     }
 }
 
-impl taffy::CacheTree for BaseDocument {
+impl taffy::CacheTree for LayoutPassState<'_> {
     #[inline]
     fn cache_get(
         &mut self,
@@ -605,7 +635,7 @@ impl taffy::CacheTree for BaseDocument {
     }
 }
 
-impl taffy::LayoutBlockContainer for BaseDocument {
+impl taffy::LayoutBlockContainer for LayoutPassState<'_> {
     type BlockContainerStyle<'a>
         = TaffyStyloStyle<ComputedStyleRef<'a>>
     where
@@ -637,7 +667,7 @@ impl taffy::LayoutBlockContainer for BaseDocument {
     }
 }
 
-impl taffy::LayoutFlexboxContainer for BaseDocument {
+impl taffy::LayoutFlexboxContainer for LayoutPassState<'_> {
     type FlexboxContainerStyle<'a>
         = TaffyStyloStyle<ComputedStyleRef<'a>>
     where
@@ -657,7 +687,7 @@ impl taffy::LayoutFlexboxContainer for BaseDocument {
     }
 }
 
-impl taffy::LayoutGridContainer for BaseDocument {
+impl taffy::LayoutGridContainer for LayoutPassState<'_> {
     type GridContainerStyle<'a>
         = TaffyStyloStyle<ComputedStyleRef<'a>>
     where
@@ -688,7 +718,7 @@ impl taffy::LayoutGridContainer for BaseDocument {
     }
 }
 
-impl RoundTree for BaseDocument {
+impl RoundTree for LayoutPassState<'_> {
     fn get_unrounded_layout(&self, node_id: NodeId) -> Layout {
         *self.node_from_id(node_id).unrounded_layout()
     }
@@ -710,7 +740,7 @@ impl RoundTree for BaseDocument {
     }
 }
 
-impl PrintTree for BaseDocument {
+impl PrintTree for LayoutPassState<'_> {
     fn get_debug_label(&self, node_id: NodeId) -> &'static str {
         let node = &self.node_from_id(node_id);
 

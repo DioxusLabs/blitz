@@ -23,12 +23,13 @@ use taffy::{
 };
 
 use crate::BaseDocument;
+use crate::layout::LayoutPassState;
 
 use super::damage::{CONSTRUCT_BOX, CONSTRUCT_DESCENDENT, CONSTRUCT_FC};
 use super::resolve_calc_value;
 
-pub struct TableTreeWrapper<'doc> {
-    pub(crate) doc: &'doc mut BaseDocument,
+pub struct TableTreeWrapper<'a, 'doc> {
+    pub(crate) doc: &'a mut LayoutPassState<'doc>,
     pub(crate) ctx: Arc<TableContext>,
 }
 
@@ -736,7 +737,7 @@ impl Iterator for RangeIter {
     }
 }
 
-impl taffy::TraversePartialTree for TableTreeWrapper<'_> {
+impl taffy::TraversePartialTree for TableTreeWrapper<'_, '_> {
     type ChildIter<'a>
         = RangeIter
     where
@@ -757,9 +758,9 @@ impl taffy::TraversePartialTree for TableTreeWrapper<'_> {
         index.into()
     }
 }
-impl taffy::TraverseTree for TableTreeWrapper<'_> {}
+impl taffy::TraverseTree for TableTreeWrapper<'_, '_> {}
 
-impl taffy::LayoutPartialTree for TableTreeWrapper<'_> {
+impl taffy::LayoutPartialTree for TableTreeWrapper<'_, '_> {
     type CoreContainerStyle<'a>
         = &'a taffy::Style<Atom>
     where
@@ -791,7 +792,7 @@ impl taffy::LayoutPartialTree for TableTreeWrapper<'_> {
     }
 }
 
-impl taffy::LayoutGridContainer for TableTreeWrapper<'_> {
+impl taffy::LayoutGridContainer for TableTreeWrapper<'_, '_> {
     type GridContainerStyle<'a>
         = &'a taffy::Style<Atom>
     where
