@@ -20,7 +20,7 @@
 //! (`float`, `clear`, `text-align`) refer to the line-left/line-right sides, which are the
 //! physical top/bottom for every vertical mode except `sideways-lr`, where they are swapped.
 
-use style::logical_geometry::WritingMode;
+use style::logical_geometry::{PhysicalSide, WritingMode};
 
 /// Whether `frame` swaps Taffy's axes relative to the physical axes.
 #[inline(always)]
@@ -34,20 +34,63 @@ pub fn line_left_is_bottom(frame: WritingMode) -> bool {
     frame.contains(WritingMode::WRITING_MODE_SIDEWAYS_LR)
 }
 
-/// Taffy's `direction` in `frame`: `Ltr` when inline-start is at Taffy's left (physical top for a
-/// vertical frame).
+/// The physical side that is Taffy's left (inline-axis start, `x = 0`) in `frame`.
 #[inline]
-pub fn direction(frame: WritingMode) -> taffy::Direction {
-    let inline_start_is_taffy_left = if frame.is_vertical() {
-        frame.is_inline_tb()
+fn taffy_left_side(frame: WritingMode) -> PhysicalSide {
+    if frame.is_vertical() {
+        PhysicalSide::Top
     } else {
-        frame.is_bidi_ltr()
+        PhysicalSide::Left
+    }
+}
+
+/// Taffy `direction` of a node whose own writing mode is `own`, expressed in `frame`: `Ltr` if the
+/// node's start edge along the frame's inline axis is Taffy's left side. For a node orthogonal to
+/// the frame that edge is its block-start side.
+#[inline]
+pub fn direction_in(frame: WritingMode, own: WritingMode) -> taffy::Direction {
+    let own_start = if own.is_vertical() == frame.is_vertical() {
+        own.inline_start_physical_side()
+    } else {
+        own.block_start_physical_side()
     };
-    if inline_start_is_taffy_left {
+    if own_start == taffy_left_side(frame) {
         taffy::Direction::Ltr
     } else {
         taffy::Direction::Rtl
     }
+}
+
+/// Whether the `left` alignment keyword (line-left: the top of a vertical frame, bottom for
+/// `sideways-lr`) is Taffy's `end` in `frame`'s inline axis.
+#[inline]
+pub fn inline_left_is_end(frame: WritingMode) -> bool {
+    (direction(frame) == taffy::Direction::Rtl) != line_left_is_bottom(frame)
+}
+
+/// Whether the physical `left` is Taffy's `end` in `frame`'s block axis (`vertical-rl`/`sideways-rl`).
+#[inline]
+pub fn block_left_is_end(frame: WritingMode) -> bool {
+    frame.block_start_physical_side() == PhysicalSide::Right
+}
+
+/// Whether the start edge of a node with writing mode `own` along `frame`'s block axis is the
+/// frame's block-end side: its block-start for parallel writing modes, its inline-start for
+/// orthogonal ones.
+#[inline]
+pub fn block_start_is_reversed(frame: WritingMode, own: WritingMode) -> bool {
+    let own_start = if own.is_vertical() == frame.is_vertical() {
+        own.block_start_physical_side()
+    } else {
+        own.inline_start_physical_side()
+    };
+    own_start != frame.block_start_physical_side()
+}
+
+/// Taffy `direction` of a node laid out in its own frame.
+#[inline]
+pub fn direction(frame: WritingMode) -> taffy::Direction {
+    direction_in(frame, frame)
 }
 
 /// Map a physical rect (`left`/`right`/`top`/`bottom` are the physical sides) into `frame`.
