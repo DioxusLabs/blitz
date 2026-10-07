@@ -535,9 +535,9 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
 
                         // TODO: allow layers with opacity to be unclipped (overflow: visible)
                         let clip = if is_text_input {
-                            &cx.frame.content_box_path()
+                            &cx.frame.content_box_shape()
                         } else {
-                            &cx.frame.padding_box_path()
+                            &cx.frame.padding_box_shape()
                         };
 
                         // Clip layer if box requires clipping. Opacity set to 1.0

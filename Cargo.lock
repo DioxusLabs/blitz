@@ -295,8 +295,7 @@ checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 [[package]]
 name = "anyrender"
 version = "0.14.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1755d0ef8e00e87b6b825dfbe5a35d34d3b302e97e80a48e93f9cd361fbada06"
+source = "git+https://github.com/DioxusLabs/anyrender?branch=devin%2F1791068178-box-shadow-api#5863bc787e2101cfac98028d954cbcc92b32c789"
 dependencies = [
  "kurbo",
  "peniko",
@@ -308,8 +307,7 @@ dependencies = [
 [[package]]
 name = "anyrender_serialize"
 version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3c94ffeb5bf25fbd3c1ac50a00669b8432baf380904daeb260c9f4aafe44c6c2"
+source = "git+https://github.com/DioxusLabs/anyrender?branch=devin%2F1791068178-box-shadow-api#5863bc787e2101cfac98028d954cbcc92b32c789"
 dependencies = [
  "anyrender",
  "image",
@@ -327,8 +325,7 @@ dependencies = [
 [[package]]
 name = "anyrender_skia"
 version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "282fdae1228486bcdbc973abf6f45afabcbd1579b63b4c95de9da4a0b893b4b7"
+source = "git+https://github.com/DioxusLabs/anyrender?branch=devin%2F1791068178-box-shadow-api#5863bc787e2101cfac98028d954cbcc92b32c789"
 dependencies = [
  "anyrender",
  "ash",
@@ -355,8 +352,7 @@ dependencies = [
 [[package]]
 name = "anyrender_svg"
 version = "0.15.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "39327debd1bdca190d086c107825a5dc4c665be31e99e5c0854345a050d08cad"
+source = "git+https://github.com/DioxusLabs/anyrender?branch=devin%2F1791068178-box-shadow-api#5863bc787e2101cfac98028d954cbcc92b32c789"
 dependencies = [
  "anyrender",
  "image",
@@ -368,8 +364,7 @@ dependencies = [
 [[package]]
 name = "anyrender_vello"
 version = "0.15.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "04d545f71a3f13b1099d5787c44cfeb00322cebbebbf90c4f8cdae78bee423f7"
+source = "git+https://github.com/DioxusLabs/anyrender?branch=devin%2F1791068178-box-shadow-api#5863bc787e2101cfac98028d954cbcc92b32c789"
 dependencies = [
  "anyrender",
  "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -387,8 +382,7 @@ dependencies = [
 [[package]]
 name = "anyrender_vello_cpu"
 version = "0.18.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a09d9356dd2b2f032345711a350c0e2326a854cb5070f899265bc80fb33884b1"
+source = "git+https://github.com/DioxusLabs/anyrender?branch=devin%2F1791068178-box-shadow-api#5863bc787e2101cfac98028d954cbcc92b32c789"
 dependencies = [
  "anyrender",
  "bytemuck",
@@ -406,8 +400,7 @@ dependencies = [
 [[package]]
 name = "anyrender_vello_hybrid"
 version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b5139465733e457ebd2dd04efbee5aa6fbc1d8747d0e3fe0f81b8de4f240cb01"
+source = "git+https://github.com/DioxusLabs/anyrender?branch=devin%2F1791068178-box-shadow-api#5863bc787e2101cfac98028d954cbcc92b32c789"
 dependencies = [
  "anyrender",
  "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -6232,8 +6225,7 @@ dependencies = [
 [[package]]
 name = "pixels_window_renderer"
 version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "31c2ba47171f8376a1cd74f8d575f1d729c033fc007f59a9da3688c31187264b"
+source = "git+https://github.com/DioxusLabs/anyrender?branch=devin%2F1791068178-box-shadow-api#5863bc787e2101cfac98028d954cbcc92b32c789"
 dependencies = [
  "anyrender",
  "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -7585,8 +7577,7 @@ dependencies = [
 [[package]]
 name = "softbuffer_window_renderer"
 version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "809f260e686014e0222158362d571a7813cd836a27b7e51ed7e1dcf39ce08378"
+source = "git+https://github.com/DioxusLabs/anyrender?branch=devin%2F1791068178-box-shadow-api#5863bc787e2101cfac98028d954cbcc92b32c789"
 dependencies = [
  "anyrender",
  "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -9683,8 +9674,7 @@ dependencies = [
 [[package]]
 name = "wgpu_context"
 version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5277f9d30e7087f1eeb0034206dce7d3377e76da017fdceb8aa4faebb1df68e2"
+source = "git+https://github.com/DioxusLabs/anyrender?branch=devin%2F1791068178-box-shadow-api#5863bc787e2101cfac98028d954cbcc92b32c789"
 dependencies = [
  "futures-intrusive",
  "wgpu 30.0.1",
