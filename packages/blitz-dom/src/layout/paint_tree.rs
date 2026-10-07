@@ -56,7 +56,9 @@ pub fn hoisted_child_position(tree: &NodeTree, sc_root_id: NodeId, child_id: Nod
         let Some(node) = tree.get(id) else {
             break;
         };
-        let location = node.final_layout().location;
+        // Where the box is drawn: a `position: sticky` ancestor carries its
+        // hoisted descendants along with its shift.
+        let location = node.visual_location();
         let scroll_offset = *node.scroll_offset();
         position.x += location.x - scroll_offset.x as f32;
         position.y += location.y - scroll_offset.y as f32;
@@ -146,7 +148,7 @@ impl StackingContext {
         let child_rect = |child: &HoistedPaintChild| -> Rect<f32> {
             let node = &tree[child.node_id];
             let position = child.position(tree, sc_root_id);
-            let location = node.final_layout().location;
+            let location = node.visual_location();
             let mut overflow = *node.scrollable_overflow();
             if let Some(transform) = node.transform().as_deref() {
                 overflow = transform.transform_rect_bbox(overflow);

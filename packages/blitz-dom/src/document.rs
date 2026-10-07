@@ -297,6 +297,9 @@ pub struct BaseDocument {
     /// May contain multiple nodes for the same id: `get_element_by_id`
     /// returns the first in tree order.
     pub(crate) nodes_to_id: HashMap<String, SmallVec<[NodeId; 1]>>,
+    /// Registered `position: sticky` boxes with their layout-invariant
+    /// constraints, sorted by depth (see `sticky.rs`).
+    pub(crate) sticky_nodes: Vec<crate::sticky::StickyEntry>,
     /// Map of `<style>` and `<link>` node IDs to their associated stylesheet
     pub(crate) nodes_to_stylesheet: BTreeMap<NodeId, DocumentStyleSheet>,
     /// Incremented whenever `nodes_to_stylesheet` changes (a stylesheet is
@@ -444,6 +447,7 @@ impl BaseDocument {
             animations: DocumentAnimationSet::default(),
             snapshots,
             nodes_to_id,
+            sticky_nodes: Vec::new(),
             viewport,
             media_type,
             pending_device_changes: DeviceChanges::empty(),
@@ -2205,6 +2209,7 @@ impl BaseDocument {
 
     pub fn set_viewport_scroll(&mut self, scroll: crate::Point<f64>) {
         self.nodes.set_viewport_scroll(scroll);
+        self.refresh_sticky_offsets();
     }
 
     /// Find the node targeted by a URL fragment (the `#...` part of a URL).
