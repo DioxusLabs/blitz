@@ -1399,6 +1399,12 @@ impl ScriptRuntime {
 
         // `getComputedStyle`
         register_global_fn(&mut context, "getComputedStyle", 1, get_computed_style);
+        register_global_fn(
+            &mut context,
+            "getSelection",
+            0,
+            crate::dom::selection::get_selection,
+        );
         register_global_fn(&mut context, "__blitz_parse_transform", 1, parse_transform);
 
         // CSSOM stylesheet natives (`__blitz_sheet_*`), used by the bootstrap's
