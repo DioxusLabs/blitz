@@ -94,14 +94,16 @@ pub(crate) fn init_element_proto(proto: &JsObject, context: &mut Context) {
         context,
     );
     define_accessor(proto, "outerHTML", Some(get_outer_html), None, context);
-    // Approximated with `textContent` semantics (no rendered-text processing)
+    // The setter is approximated with `textContent` semantics (no `<br>` insertion)
     define_accessor(
         proto,
         "innerText",
-        Some(super::node::text_content),
+        Some(get_inner_text),
         Some(super::node::set_text_content),
         context,
     );
+    // The `outerText` getter is the same as `innerText`'s
+    define_accessor(proto, "outerText", Some(get_inner_text), None, context);
     define_accessor(proto, "content", Some(get_content), None, context);
     define_accessor(proto, "children", Some(children), None, context);
     define_accessor(
@@ -757,6 +759,18 @@ fn set_selection_utf16_range(
         let end_byte = utf16_to_byte(&text, start.max(end));
         driver.select_byte_range(start_byte, end_byte);
     });
+}
+
+fn get_inner_text(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    let ctx = dom_ctx(context)?;
+    let node_id = this_node_id(this)?;
+    let mut doc = ctx.doc.borrow_mut();
+    doc.resolve(0.0);
+    let text = doc
+        .get_node(node_id)
+        .map(crate::inner_text::inner_text)
+        .unwrap_or_default();
+    Ok(js_str(&text))
 }
 
 fn get_selection_start(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
