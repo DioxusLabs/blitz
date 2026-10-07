@@ -1383,8 +1383,12 @@ impl BaseDocument {
 
             match image_type {
                 ImageType::Image => {
-                    node.element_data_mut().unwrap().special_data =
-                        SpecialElementData::Image(Box::new(image.clone()));
+                    let element = node.element_data_mut().unwrap();
+                    #[cfg(feature = "custom-widget")]
+                    if element.custom_widget_data().is_some() {
+                        continue;
+                    }
+                    element.special_data = SpecialElementData::Image(Box::new(image.clone()));
 
                     // Clear layout cache
                     node.clear_layout_cache();

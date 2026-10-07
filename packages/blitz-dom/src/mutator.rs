@@ -376,6 +376,12 @@ impl DocumentMutator<'_> {
             return;
         }
 
+        // Custom widgets replace the element's built-in tag-specific behaviour
+        #[cfg(feature = "custom-widget")]
+        if element.custom_widget_data().is_some() {
+            return;
+        }
+
         if (tag, attr) == tag_and_attr!("input", "checked") {
             set_input_checked_state(element, value.to_string());
         } else if (tag, attr) == tag_and_attr!("img", "src") {
@@ -939,19 +945,26 @@ impl<'doc> DocumentMutator<'doc> {
                 return;
             };
 
+            // Custom widgets replace the element's built-in tag-specific behaviour
+            #[cfg(feature = "custom-widget")]
+            let has_custom_widget = element.custom_widget_data().is_some();
+            #[cfg(not(feature = "custom-widget"))]
+            let has_custom_widget = false;
+
             // Custom post-processing by element tag name
             let tag = element.name.local.as_ref();
             match tag {
                 "title" => self.title_node = Some(node_id),
+                "style" => {
+                    self.style_nodes.insert(node_id);
+                }
+                _ if has_custom_widget => {}
                 "link" => self.eager_op_queue.push(SpecialOp::LoadStylesheet(node_id)),
                 "img" => self.eager_op_queue.push(SpecialOp::LoadImage(node_id)),
                 "iframe" => self.eager_op_queue.push(SpecialOp::LoadIframe(node_id)),
                 "canvas" => self
                     .eager_op_queue
                     .push(SpecialOp::LoadCustomPaintSource(node_id)),
-                "style" => {
-                    self.style_nodes.insert(node_id);
-                }
                 "button" | "fieldset" | "input" | "select" | "textarea" | "object" | "output" => {
                     self.eager_op_queue
                         .push(SpecialOp::ProcessButtonInput(node_id));
