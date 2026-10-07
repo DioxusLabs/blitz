@@ -10,6 +10,7 @@ pub(crate) mod stylo {
     pub(crate) use style::properties::generated::longhands::direction::computed_value::T as Direction;
     pub(crate) use style::properties::longhands::aspect_ratio::computed_value::T as AspectRatio;
     pub(crate) use style::properties::longhands::position::computed_value::T as Position;
+    pub(crate) use style::values::computed::CSSPixelLength;
     pub(crate) use style::values::computed::length_percentage::CalcLengthPercentage;
     pub(crate) use style::values::computed::length_percentage::Unpacked as UnpackedLengthPercentage;
     pub(crate) use style::values::computed::{
@@ -270,6 +271,13 @@ pub fn box_sizing(input: stylo::BoxSizing) -> taffy::BoxSizing {
 /// Convert the inset properties to a Taffy `Rect`. Insets have no effect on
 /// `position: static` boxes, so they are reported as `auto` in that case.
 #[inline]
+/// Resolve a `calc()` length-percentage (as stored in a [`taffy::LengthPercentage`] created by
+/// [`length_percentage`]) against `parent_size`
+pub fn resolve_calc_value(calc_ptr: *const (), parent_size: f32) -> f32 {
+    let calc = unsafe { &*(calc_ptr as *const stylo::CalcLengthPercentage) };
+    calc.resolve(stylo::CSSPixelLength::new(parent_size)).px()
+}
+
 pub fn inset_rect(style: &stylo::ComputedValues) -> taffy::Rect<taffy::LengthPercentageAuto> {
     if style.get_box().position == stylo::Position::Static {
         return taffy::Rect::auto();

@@ -29,6 +29,8 @@ pub(crate) mod paint_tree;
 pub(crate) mod replaced;
 pub(crate) mod table;
 pub(crate) mod text_transform;
+#[cfg(feature = "writing-modes")]
+pub(crate) mod writing_mode;
 
 use self::replaced::{
     IntrinsicSizes, ReplacedContext, compute_replaced_layout, is_replaced_element,
@@ -96,19 +98,25 @@ impl BaseDocument {
         block_ctx: Option<&mut BlockContext<'_>>,
     ) -> taffy::tree::LayoutOutput {
         #[cfg(feature = "writing-modes")]
-        let parent_frame = core::mem::replace(
-            &mut self.current_frame,
-            self.nodes[dom_node_id(node_id)].writing_mode(),
-        );
+        {
+            self.compute_child_layout_in_frame(node_id, inputs, block_ctx)
+        }
+        #[cfg(not(feature = "writing-modes"))]
+        {
+            self.compute_child_layout_same_frame(node_id, inputs, block_ctx)
+        }
+    }
 
+    /// Lay out `node_id` in the frame of the currently running algorithm (its parent's)
+    pub(crate) fn compute_child_layout_same_frame(
+        &mut self,
+        node_id: NodeId,
+        inputs: taffy::tree::LayoutInput,
+        block_ctx: Option<&mut BlockContext<'_>>,
+    ) -> taffy::tree::LayoutOutput {
         let mut output = self.dispatch_child_layout(node_id, inputs, block_ctx);
         if inputs.run_mode == RunMode::PerformLayout {
             compute_oof_layout(self, node_id, &mut output);
-        }
-
-        #[cfg(feature = "writing-modes")]
-        {
-            self.current_frame = parent_frame;
         }
         output
     }
@@ -533,7 +541,24 @@ impl LayoutPartialTree for BaseDocument {
     type CustomIdent = Atom;
 
     fn get_core_container_style(&self, node_id: NodeId) -> Self::CoreContainerStyle<'_> {
-        self.node_from_id(node_id).layout_style()
+        #[cfg(feature = "writing-modes")]
+        {
+            // `current_frame` is the node's own frame while its algorithm runs, and the placer's
+            // frame when called by `compute_root_layout` for the root.
+            let mut style = self
+                .node_from_id(node_id)
+                .layout_style_in(self.current_frame);
+            if let Some((orthogonal_node, basis)) = self.orthogonal_percent_basis {
+                if orthogonal_node == dom_node_id(node_id) {
+                    style.percent_basis = Some(basis);
+                }
+            }
+            style
+        }
+        #[cfg(not(feature = "writing-modes"))]
+        {
+            self.node_from_id(node_id).layout_style()
+        }
     }
 
     fn set_unrounded_layout(&mut self, node_id: NodeId, layout: &Layout) {

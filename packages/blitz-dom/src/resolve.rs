@@ -442,6 +442,9 @@ impl BaseDocument {
         // println!("\n\nRESOLVE LAYOUT\n===========\n");
 
         taffy::compute_root_layout(self, root_element_id, available_space);
+        #[cfg(feature = "writing-modes")]
+        self.physicalise_and_round_layout(root_element_id);
+        #[cfg(not(feature = "writing-modes"))]
         taffy::round_layout(self, root_element_id);
 
         // println!("\n\n");

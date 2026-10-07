@@ -204,6 +204,10 @@ pub struct BaseDocument {
     /// `layout::writing_mode`). Child styles read during that algorithm are expressed in this frame.
     #[cfg(feature = "writing-modes")]
     pub(crate) current_frame: stylo_taffy::WritingMode,
+    /// The box currently being laid out in an orthogonal flow and its containing block's inline
+    /// size, against which its percentage padding resolves (see `layout::writing_mode`).
+    #[cfg(feature = "writing-modes")]
+    pub(crate) orthogonal_percent_basis: Option<(crate::NodeId, f32)>,
     /// CSS media type used to evaluate `@media` rules.
     pub(crate) media_type: MediaType,
     /// Changes to the stylist [`Device`] that have been requested since the
@@ -451,6 +455,8 @@ impl BaseDocument {
             viewport,
             #[cfg(feature = "writing-modes")]
             current_frame: stylo_taffy::WritingMode::empty(),
+            #[cfg(feature = "writing-modes")]
+            orthogonal_percent_basis: None,
             media_type,
             pending_device_changes: DeviceChanges::empty(),
             style_threading: config.style_threading,

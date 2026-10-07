@@ -8,6 +8,8 @@ use style::logical_geometry::WritingMode;
 use style::properties::ComputedValues;
 use style::values::CustomIdent;
 use style::{Atom, OwnedSlice};
+#[cfg(feature = "writing-modes")]
+use taffy::ResolveOrZero;
 
 #[cfg(feature = "grid")]
 use style::values::{
@@ -37,6 +39,12 @@ pub struct TaffyStyloStyle<T: Deref<Target = ComputedValues>> {
     /// (see [`crate::frame`]). Defaults to the style's own `writing-mode`.
     #[cfg(feature = "writing-modes")]
     pub frame: WritingMode,
+    /// When set, percentages in `padding` resolve against this length instead of being passed to
+    /// Taffy. Used for a box in an orthogonal flow, whose padding percentages resolve against its
+    /// containing block's inline size while Taffy would resolve them against the (transposed)
+    /// `parent_size.width`, i.e. the containing block's block size.
+    #[cfg(feature = "writing-modes")]
+    pub percent_basis: Option<f32>,
 }
 
 impl<T: Deref<Target = ComputedValues>> TaffyStyloStyle<T> {
@@ -50,6 +58,8 @@ impl<T: Deref<Target = ComputedValues>> TaffyStyloStyle<T> {
             flags,
             #[cfg(feature = "writing-modes")]
             frame,
+            #[cfg(feature = "writing-modes")]
+            percent_basis: None,
         }
     }
 
@@ -63,6 +73,8 @@ impl<T: Deref<Target = ComputedValues>> TaffyStyloStyle<T> {
             flags,
             #[cfg(feature = "writing-modes")]
             frame,
+            #[cfg(feature = "writing-modes")]
+            percent_basis: None,
         }
     }
 
@@ -253,6 +265,21 @@ impl<T: Deref<Target = ComputedValues>> taffy::CoreStyle for TaffyStyloStyle<T> 
     #[inline]
     fn padding(&self) -> taffy::Rect<taffy::LengthPercentage> {
         let padding_styles = self.style.get_padding();
+        #[cfg(feature = "writing-modes")]
+        if let Some(basis) = self.percent_basis {
+            let resolve = |value: &stylo::LengthPercentage| {
+                taffy::LengthPercentage::length(
+                    convert::length_percentage(value)
+                        .resolve_or_zero(Some(basis), convert::resolve_calc_value),
+                )
+            };
+            return self.rect(taffy::Rect {
+                left: resolve(&padding_styles.padding_left.0),
+                right: resolve(&padding_styles.padding_right.0),
+                top: resolve(&padding_styles.padding_top.0),
+                bottom: resolve(&padding_styles.padding_bottom.0),
+            });
+        }
         self.rect(taffy::Rect {
             left: convert::length_percentage(&padding_styles.padding_left.0),
             right: convert::length_percentage(&padding_styles.padding_right.0),
