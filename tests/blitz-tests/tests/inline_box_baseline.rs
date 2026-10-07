@@ -75,3 +75,50 @@ fn trailing_br_does_not_move_last_baseline() {
     assert_eq!(a_height, 20.0);
     assert_eq!(a_y, b_y);
 }
+
+#[test]
+fn negative_vertical_margins_offset_the_border_box() {
+    for tag in ["img", "span"] {
+        for alignment in [
+            "baseline",
+            "middle",
+            "text-top",
+            "text-bottom",
+            "top",
+            "bottom",
+            "-14px",
+            "10px",
+        ] {
+            for (top, bottom) in [
+                (-30, 0),
+                (0, -30),
+                (-30, -40),
+                (-120, 0),
+                (0, -120),
+                (0, 0),
+                (30, 0),
+                (0, 30),
+            ] {
+                let reserved_height = (100 + top + bottom).max(0);
+                let doc = layout_doc(&format!(
+                    r#"{STYLE}
+                    <div id="actual"><{tag} id="a" style="width:100px; height:100px;
+                        vertical-align:{alignment}; margin-top:{top}px; margin-bottom:{bottom}px"></{tag}></div>
+                    <div id="reference"><{tag} id="b" style="width:100px; height:{reserved_height}px;
+                        vertical-align:{alignment}; position:relative; top:{top}px"></{tag}></div>"#
+                ));
+                let context = format!("{tag}, {alignment}, margins: {top}px {bottom}px");
+                let (a_y, a_height) = rect(&doc, "#a");
+                let (b_y, b_height) = rect(&doc, "#b");
+                assert_eq!(a_height, 100.0, "{context}");
+                assert_eq!(b_height, reserved_height as f32, "{context}");
+                assert_eq!(a_y, b_y, "{context}");
+                assert_eq!(
+                    rect(&doc, "#actual").1,
+                    rect(&doc, "#reference").1,
+                    "{context}"
+                );
+            }
+        }
+    }
+}
