@@ -482,7 +482,6 @@ fn set_autofocus(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsR
     let node_id = this_node_id(this)?;
     let value = args.first().map(JsValue::to_boolean).unwrap_or(false);
     if value {
-        // blitz-dom's autofocus handling expects the value "true"
         write_attr(&ctx, node_id, "autofocus", "true");
     } else {
         clear_attr(&ctx, node_id, "autofocus");
