@@ -38,7 +38,7 @@ const MAX_CONTEXT_LEN: usize = 32;
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct CaseTransform {
     text_transform: TextTransform,
-    /// Determines which spaces `full-width` maps (only used for `full-width`).
+    /// Determines which spaces `full-width` maps.
     white_space_collapse: WhiteSpaceCollapse,
     lang: LanguageIdentifier,
 }
@@ -55,11 +55,7 @@ impl CaseTransform {
         if text_transform.is_empty() {
             return Self::NONE;
         }
-        let white_space_collapse = if text_transform.contains(TextTransform::FULL_WIDTH) {
-            style.clone_white_space_collapse()
-        } else {
-            WhiteSpaceCollapse::Collapse
-        };
+        let white_space_collapse = style.clone_white_space_collapse();
         let lang = match text_transform.case() {
             TextTransformCase::None | TextTransformCase::MathAuto => LanguageIdentifier::UNKNOWN,
             _ => LanguageIdentifier::try_from_str(&style.get_font()._x_lang.0)
