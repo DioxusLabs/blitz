@@ -333,6 +333,31 @@ pub fn compute_replaced_layout(
         Violation::None
     };
 
+    // The ratio-preserving resolution table below (CSS 2.2 §10.4) only applies when both
+    // `width` and `height` are `auto`. A specified axis is clamped by its own min/max and
+    // keeps that size; an `auto` axis is derived from the other's used size through the
+    // ratio and then clamped (§10.3.2, §10.6.2).
+    if style_size.width.is_some() || style_size.height.is_some() {
+        let size = match (style_size.width, style_size.height, aspect_ratio) {
+            (Some(_), None, Some(ratio)) => {
+                let width = size.width.maybe_clamp(min_size.width, max_size.width);
+                Size {
+                    width,
+                    height: (width / ratio).maybe_clamp(min_size.height, max_size.height),
+                }
+            }
+            (None, Some(_), Some(ratio)) => {
+                let height = size.height.maybe_clamp(min_size.height, max_size.height);
+                Size {
+                    width: (height * ratio).maybe_clamp(min_size.width, max_size.width),
+                    height,
+                }
+            }
+            _ => size.maybe_clamp(min_size, max_size),
+        };
+        return LayoutOutput::from_sizes(size + pb_sum, overflow_rect_for(size));
+    }
+
     // Without an intrinsic aspect ratio, each axis is clamped independently
     let Some(aspect_ratio) = aspect_ratio else {
         let size = size.maybe_clamp(min_size, max_size);
