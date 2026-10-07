@@ -1,4 +1,5 @@
-//! Case and mathematical italic mapping for the CSS `text-transform` property.
+//! Case, mathematical italic, full-width and full-size kana mapping for the CSS `text-transform`
+//! property.
 //!
 //! <https://drafts.csswg.org/css-text/#text-transform-property>
 
@@ -11,8 +12,10 @@ use icu_properties::props::{GeneralCategory, GeneralCategoryGroup};
 use icu_properties::{CodePointMapData, CodePointMapDataBorrowed};
 use icu_segmenter::{WordSegmenter, WordSegmenterBorrowed, options::WordBreakInvariantOptions};
 use parley::{Brush, TreeBuilder};
+use style::computed_values::white_space_collapse::T as WhiteSpaceCollapse;
 use style::properties::ComputedValues;
 use style::values::computed::TextTransform;
+use style::values::specified::text::TextTransformCase;
 #[cfg(feature = "text-transform-icu")]
 use writeable::Writeable;
 
@@ -25,37 +28,45 @@ const WORD_SEGMENTER: WordSegmenterBorrowed<'static> =
 const GENERAL_CATEGORY: CodePointMapDataBorrowed<'static, GeneralCategory> =
     CodePointMapData::<GeneralCategory>::new();
 
+const WIDTH_TRANSFORMS: TextTransform =
+    TextTransform::FULL_WIDTH.union(TextTransform::FULL_SIZE_KANA);
+
 /// The maximum number of bytes of preceding text kept as context for finding word boundaries.
 const MAX_CONTEXT_LEN: usize = 32;
 
-/// The case or mathematical transform (and language) for an element's text content.
+/// The text transforms (and language) for an element's text content.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct CaseTransform {
-    kind: TextTransform,
+    text_transform: TextTransform,
+    /// Determines which spaces `full-width` maps.
+    white_space_collapse: WhiteSpaceCollapse,
     lang: LanguageIdentifier,
 }
 
 impl CaseTransform {
     pub(crate) const NONE: Self = Self {
-        kind: TextTransform::NONE,
+        text_transform: TextTransform::NONE,
+        white_space_collapse: WhiteSpaceCollapse::Collapse,
         lang: LanguageIdentifier::UNKNOWN,
     };
 
     pub(crate) fn from_style(style: &ComputedValues) -> Self {
-        let kind = style.clone_text_transform() & TextTransform::CASE_TRANSFORMS;
-        if kind.is_empty() {
+        let text_transform = style.clone_text_transform();
+        if text_transform.is_empty() {
             return Self::NONE;
         }
-        if kind == TextTransform::MATH_AUTO {
-            return Self {
-                kind,
-                lang: LanguageIdentifier::UNKNOWN,
-            };
+        let white_space_collapse = style.clone_white_space_collapse();
+        let lang = match text_transform.case() {
+            TextTransformCase::None | TextTransformCase::MathAuto => LanguageIdentifier::UNKNOWN,
+            _ => LanguageIdentifier::try_from_str(&style.get_font()._x_lang.0)
+                .map(casing_language)
+                .unwrap_or(LanguageIdentifier::UNKNOWN),
+        };
+        Self {
+            text_transform,
+            white_space_collapse,
+            lang,
         }
-        let lang = LanguageIdentifier::try_from_str(&style.get_font()._x_lang.0)
-            .map(casing_language)
-            .unwrap_or(LanguageIdentifier::UNKNOWN);
-        Self { kind, lang }
     }
 
     /// Whether the language has case mappings for ASCII characters that differ from the
@@ -110,19 +121,32 @@ impl TextTransformer {
     }
 
     /// Transforms the content of a text node that is about to be pushed to `builder`.
+    #[inline]
     pub(crate) fn transform<'a, B: Brush>(
         &'a mut self,
         text: &'a str,
         transform: &CaseTransform,
         builder: &TreeBuilder<'_, B>,
     ) -> &'a str {
-        if transform.kind.is_empty() {
+        if transform.text_transform.is_empty() {
             return text;
         }
+        self.transform_nonempty(text, transform, builder)
+    }
 
-        if text.is_ascii() && !transform.has_turkic_casing() {
-            match transform.kind {
-                TextTransform::UPPERCASE => {
+    fn transform_nonempty<'a, B: Brush>(
+        &'a mut self,
+        text: &'a str,
+        transform: &CaseTransform,
+        builder: &TreeBuilder<'_, B>,
+    ) -> &'a str {
+        let case = transform.text_transform.case();
+        if text.is_ascii()
+            && !transform.has_turkic_casing()
+            && !transform.text_transform.contains(TextTransform::FULL_WIDTH)
+        {
+            match case {
+                TextTransformCase::Uppercase => {
                     return map_ascii(
                         text,
                         &mut self.output,
@@ -130,7 +154,7 @@ impl TextTransformer {
                         str::make_ascii_uppercase,
                     );
                 }
-                TextTransform::LOWERCASE => {
+                TextTransformCase::Lowercase => {
                     return map_ascii(
                         text,
                         &mut self.output,
@@ -138,16 +162,20 @@ impl TextTransformer {
                         str::make_ascii_lowercase,
                     );
                 }
+                TextTransformCase::None => return text,
                 _ => {}
             }
         }
 
         let mut output = OutputSink::new(text, &mut self.output);
-        match transform.kind {
-            TextTransform::UPPERCASE => uppercase(text, &transform.lang, &mut output),
-            TextTransform::LOWERCASE => lowercase(text, &transform.lang, &mut output),
-            TextTransform::MATH_AUTO => math_auto(text, &mut output),
-            TextTransform::CAPITALIZE => {
+        output.width = transform.text_transform & WIDTH_TRANSFORMS;
+        output.white_space_collapse = transform.white_space_collapse;
+        match case {
+            TextTransformCase::None => output.push_str(text),
+            TextTransformCase::Uppercase => uppercase(text, &transform.lang, &mut output),
+            TextTransformCase::Lowercase => lowercase(text, &transform.lang, &mut output),
+            TextTransformCase::MathAuto => math_auto(text, &mut output),
+            TextTransformCase::Capitalize => {
                 // Pending (collapsed) whitespace always ends the preceding word, so no
                 // context is needed.
                 let context = if builder.has_pending_whitespace() {
@@ -168,7 +196,6 @@ impl TextTransformer {
                     &mut output,
                 );
             }
-            _ => return text,
         }
         output.finish()
     }
@@ -208,6 +235,91 @@ fn math_auto(text: &str, output: &mut OutputSink<'_>) {
     output.push_str(mapped.encode_utf8(&mut [0; 4]));
 }
 
+/// Whether Parley collapses `c` with the given `white-space-collapse`.
+fn is_collapsible(white_space_collapse: WhiteSpaceCollapse, c: char) -> bool {
+    match white_space_collapse {
+        WhiteSpaceCollapse::Collapse => c.is_ascii_whitespace(),
+        WhiteSpaceCollapse::PreserveBreaks => matches!(c, ' ' | '\t'),
+        WhiteSpaceCollapse::Preserve | WhiteSpaceCollapse::BreakSpaces => false,
+    }
+}
+
+/// Maps `c` to its full-width form: the reverse of its `<wide>` decomposition mapping or its
+/// `<narrow>` decomposition mapping, if any.
+/// <https://drafts.csswg.org/css-text-3/#text-transform-mapping>
+pub fn full_width(c: char) -> char {
+    const HALFWIDTH_KATAKANA: [char; 63] = [
+        '\u{3002}', '\u{300C}', '\u{300D}', '\u{3001}', '\u{30FB}', '\u{30F2}', '\u{30A1}',
+        '\u{30A3}', '\u{30A5}', '\u{30A7}', '\u{30A9}', '\u{30E3}', '\u{30E5}', '\u{30E7}',
+        '\u{30C3}', '\u{30FC}', '\u{30A2}', '\u{30A4}', '\u{30A6}', '\u{30A8}', '\u{30AA}',
+        '\u{30AB}', '\u{30AD}', '\u{30AF}', '\u{30B1}', '\u{30B3}', '\u{30B5}', '\u{30B7}',
+        '\u{30B9}', '\u{30BB}', '\u{30BD}', '\u{30BF}', '\u{30C1}', '\u{30C4}', '\u{30C6}',
+        '\u{30C8}', '\u{30CA}', '\u{30CB}', '\u{30CC}', '\u{30CD}', '\u{30CE}', '\u{30CF}',
+        '\u{30D2}', '\u{30D5}', '\u{30D8}', '\u{30DB}', '\u{30DE}', '\u{30DF}', '\u{30E0}',
+        '\u{30E1}', '\u{30E2}', '\u{30E4}', '\u{30E6}', '\u{30E8}', '\u{30E9}', '\u{30EA}',
+        '\u{30EB}', '\u{30EC}', '\u{30ED}', '\u{30EF}', '\u{30F3}', '\u{3099}', '\u{309A}',
+    ];
+    let codepoint = match c {
+        ' ' => 0x3000,
+        '!'..='~' => c as u32 + 0xFEE0,
+        '\u{A2}' => 0xFFE0,
+        '\u{A3}' => 0xFFE1,
+        '\u{A5}' => 0xFFE5,
+        '\u{A6}' => 0xFFE4,
+        '\u{AC}' => 0xFFE2,
+        '\u{AF}' => 0xFFE3,
+        '\u{20A9}' => 0xFFE6,
+        '\u{2985}' => 0xFF5F,
+        '\u{2986}' => 0xFF60,
+        '\u{FF61}'..='\u{FF9F}' => return HALFWIDTH_KATAKANA[c as usize - 0xFF61],
+        // Halfwidth Hangul
+        '\u{FFA0}' => 0x3164,
+        '\u{FFA1}'..='\u{FFBE}' => c as u32 - 0xCE70,
+        '\u{FFC2}'..='\u{FFC7}' => c as u32 - 0xCE73,
+        '\u{FFCA}'..='\u{FFCF}' => c as u32 - 0xCE75,
+        '\u{FFD2}'..='\u{FFD7}' => c as u32 - 0xCE77,
+        '\u{FFDA}'..='\u{FFDC}' => c as u32 - 0xCE79,
+        '\u{FFE8}' => 0x2502,
+        '\u{FFE9}'..='\u{FFEC}' => c as u32 - 0xDE59,
+        '\u{FFED}' => 0x25A0,
+        '\u{FFEE}' => 0x25CB,
+        _ => return c,
+    };
+    char::from_u32(codepoint).unwrap()
+}
+
+/// Maps small kana to full-size kana.
+/// <https://drafts.csswg.org/css-text-3/#small-kana>
+pub fn full_size_kana(c: char) -> char {
+    const SMALL_KATAKANA_EXTENSIONS: [char; 16] = [
+        '\u{30AF}', '\u{30B7}', '\u{30B9}', '\u{30C8}', '\u{30CC}', '\u{30CF}', '\u{30D2}',
+        '\u{30D5}', '\u{30D8}', '\u{30DB}', '\u{30E0}', '\u{30E9}', '\u{30EA}', '\u{30EB}',
+        '\u{30EC}', '\u{30ED}',
+    ];
+    let codepoint = match c {
+        '\u{3041}' | '\u{3043}' | '\u{3045}' | '\u{3047}' | '\u{3049}' | '\u{3063}'
+        | '\u{3083}' | '\u{3085}' | '\u{3087}' | '\u{308E}' | '\u{30A1}' | '\u{30A3}'
+        | '\u{30A5}' | '\u{30A7}' | '\u{30A9}' | '\u{30C3}' | '\u{30E3}' | '\u{30E5}'
+        | '\u{30E7}' | '\u{30EE}' => c as u32 + 1,
+        '\u{3095}' => 0x304B,
+        '\u{3096}' => 0x3051,
+        '\u{30F5}' => 0x30AB,
+        '\u{30F6}' => 0x30B1,
+        '\u{31F0}'..='\u{31FF}' => return SMALL_KATAKANA_EXTENSIONS[c as usize - 0x31F0],
+        '\u{FF67}'..='\u{FF6B}' => c as u32 + 10,
+        '\u{FF6C}' => 0xFF94,
+        '\u{FF6D}' => 0xFF95,
+        '\u{FF6E}' => 0xFF96,
+        '\u{FF6F}' => 0xFF82,
+        '\u{1B132}' => 0x3053,
+        '\u{1B150}'..='\u{1B152}' => c as u32 - 0x180C0,
+        '\u{1B155}' => 0x30B3,
+        '\u{1B164}'..='\u{1B167}' => c as u32 - 0x18074,
+        _ => return c,
+    };
+    char::from_u32(codepoint).unwrap()
+}
+
 /// Case maps ASCII `text`, borrowing it if no bytes need mapping and otherwise copying it into
 /// `buffer`.
 fn map_ascii<'a>(
@@ -233,6 +345,9 @@ struct OutputSink<'a> {
     /// has diverged and is in `buffer`.
     unchanged_len: Option<usize>,
     buffer: &'a mut String,
+    /// `full-width` and/or `full-size-kana`, applied to each pushed character.
+    width: TextTransform,
+    white_space_collapse: WhiteSpaceCollapse,
 }
 
 impl<'a> OutputSink<'a> {
@@ -241,10 +356,38 @@ impl<'a> OutputSink<'a> {
             original,
             unchanged_len: Some(0),
             buffer,
+            width: TextTransform::NONE,
+            white_space_collapse: WhiteSpaceCollapse::Collapse,
         }
     }
 
     fn push_str(&mut self, s: &str) {
+        if self.width.is_empty() {
+            self.push_unmapped(s);
+        } else {
+            s.chars().for_each(|c| self.push_char(c));
+        }
+    }
+
+    /// Pushes `c` after applying the `full-width` and `full-size-kana` mappings.
+    ///
+    /// Text transforms apply after white space collapsing, so collapsible white space is left
+    /// for Parley to collapse.
+    // TODO: collapsed spaces should become U+3000 for `full-width`, which needs Parley support.
+    fn push_char(&mut self, mut c: char) {
+        if self.width.contains(TextTransform::FULL_WIDTH)
+            && !is_collapsible(self.white_space_collapse, c)
+        {
+            c = full_width(c);
+        }
+        if self.width.contains(TextTransform::FULL_SIZE_KANA) {
+            c = full_size_kana(c);
+        }
+        self.push_unmapped(c.encode_utf8(&mut [0; 4]));
+    }
+
+    #[inline(always)]
+    fn push_unmapped(&mut self, s: &str) {
         if let Some(len) = self.unchanged_len {
             if self.original[len..].starts_with(s) {
                 self.unchanged_len = Some(len + s.len());
@@ -400,8 +543,9 @@ mod tests {
 
     fn transform(kind: TextTransform, lang: &str, texts: &[&str]) -> Vec<String> {
         let transform = CaseTransform {
-            kind,
+            text_transform: kind,
             lang: casing_language(LanguageIdentifier::try_from_str(lang).unwrap()),
+            ..CaseTransform::NONE
         };
         with_builder(|builder, transformer| {
             texts
@@ -480,8 +624,9 @@ mod tests {
     #[test]
     fn capitalize_mid_word_text_node() {
         let capitalize = CaseTransform {
-            kind: TextTransform::CAPITALIZE,
+            text_transform: TextTransform::CAPITALIZE,
             lang: LanguageIdentifier::UNKNOWN,
+            ..CaseTransform::NONE
         };
         with_builder(|builder, transformer| {
             assert_eq!(push(builder, transformer, "a", &CaseTransform::NONE), "a");
@@ -493,8 +638,9 @@ mod tests {
     #[test]
     fn capitalize_after_word_break() {
         let capitalize = CaseTransform {
-            kind: TextTransform::CAPITALIZE,
+            text_transform: TextTransform::CAPITALIZE,
             lang: LanguageIdentifier::UNKNOWN,
+            ..CaseTransform::NONE
         };
         with_builder(|builder, transformer| {
             assert_eq!(push(builder, transformer, "abc", &capitalize), "Abc");
@@ -543,8 +689,9 @@ mod tests {
         with_builder(|builder, transformer| {
             for (kind, text, borrowed) in cases {
                 let transform = CaseTransform {
-                    kind,
+                    text_transform: kind,
                     lang: LanguageIdentifier::UNKNOWN,
+                    ..CaseTransform::NONE
                 };
                 transformer.word_break(builder);
                 let output = transformer.transform(text, &transform, builder);
@@ -632,8 +779,9 @@ mod tests {
     #[test]
     fn math_auto_unchanged_text_is_borrowed() {
         let transform = CaseTransform {
-            kind: TextTransform::MATH_AUTO,
+            text_transform: TextTransform::MATH_AUTO,
             lang: LanguageIdentifier::UNKNOWN,
+            ..CaseTransform::NONE
         };
         with_builder(|builder, transformer| {
             for text in [
@@ -642,6 +790,173 @@ mod tests {
                 let output = transformer.transform(text, &transform, builder);
                 assert_eq!(output, text);
                 assert_eq!(output.as_ptr(), text.as_ptr());
+            }
+            assert_eq!(transformer.output.capacity(), 0);
+        });
+    }
+
+    fn transform_with(
+        text_transform: TextTransform,
+        white_space_collapse: WhiteSpaceCollapse,
+        texts: &[&str],
+    ) -> Vec<String> {
+        let transform = CaseTransform {
+            text_transform,
+            white_space_collapse,
+            ..CaseTransform::NONE
+        };
+        with_builder(|builder, transformer| {
+            texts
+                .iter()
+                .map(|text| push(builder, transformer, text, &transform))
+                .collect()
+        })
+    }
+
+    fn full_width_with(white_space_collapse: WhiteSpaceCollapse, text: &str) -> String {
+        transform_with(TextTransform::FULL_WIDTH, white_space_collapse, &[text]).remove(0)
+    }
+
+    #[test]
+    fn full_width_mappings() {
+        let ascii: String = ('!'..='~').collect();
+        let wide: String = ('\u{FF01}'..='\u{FF5E}').collect();
+        assert_eq!(full_width_with(WhiteSpaceCollapse::Collapse, &ascii), wide);
+        // <wide> decompositions, reversed.
+        assert_eq!(
+            full_width_with(WhiteSpaceCollapse::Collapse, "¢£¬¯¦¥₩⦅⦆"),
+            "￠￡￢￣￤￥￦｟｠"
+        );
+        // <narrow> decompositions.
+        assert_eq!(
+            full_width_with(WhiteSpaceCollapse::Collapse, "｡｢｣､･ｦｧｯｰｱﾝﾞﾟ"),
+            "。「」、・ヲァッーアン\u{3099}\u{309A}"
+        );
+        assert_eq!(
+            full_width_with(WhiteSpaceCollapse::Collapse, "\u{FFA0}ﾡﾾￂￇￊￏￒￗￚￜ"),
+            "\u{3164}ㄱㅎㅏㅔㅕㅚㅛㅠㅡㅣ"
+        );
+        assert_eq!(
+            full_width_with(WhiteSpaceCollapse::Collapse, "￨￩￪￫￬￭￮"),
+            "│←↑→↓■○"
+        );
+        // Unassigned code points between the halfwidth Hangul blocks are left as is.
+        assert_eq!(
+            full_width_with(WhiteSpaceCollapse::Collapse, "\u{FFBF}\u{FFC8}\u{FFDD}"),
+            "\u{FFBF}\u{FFC8}\u{FFDD}"
+        );
+        assert_eq!(
+            full_width_with(WhiteSpaceCollapse::Collapse, "é\u{A0}あＡ"),
+            "é\u{A0}あＡ"
+        );
+    }
+
+    #[test]
+    fn full_width_preserved_spaces() {
+        for collapse in [
+            WhiteSpaceCollapse::Preserve,
+            WhiteSpaceCollapse::BreakSpaces,
+        ] {
+            assert_eq!(
+                full_width_with(collapse, " a  b\t\n"),
+                "\u{3000}ａ\u{3000}\u{3000}ｂ\t\n"
+            );
+        }
+    }
+
+    #[test]
+    fn full_width_leaves_collapsible_whitespace() {
+        use WhiteSpaceCollapse::{Collapse, PreserveBreaks};
+        assert_eq!(full_width_with(Collapse, " a \n\t b "), " ａ \n\t ｂ ");
+        assert_eq!(full_width_with(PreserveBreaks, "a \t\n b"), "ａ \t\n ｂ");
+    }
+
+    #[test]
+    fn full_size_kana_mappings() {
+        let small = "ぁぃぅぇぉゕゖ𛄲っゃゅょゎ𛅐𛅑𛅒ァィゥェォヵㇰヶ𛅕ㇱㇲッㇳㇴㇵㇶㇷㇸㇹㇺャュョㇻㇼㇽㇾㇿヮ𛅤𛅥𛅦𛅧ｧｨｩｪｫｬｭｮｯ";
+        let full = "あいうえおかけこつやゆよわゐゑをアイウエオカクケコシスツトヌハヒフヘホムヤユヨラリルレロワヰヱヲンｱｲｳｴｵﾔﾕﾖﾂ";
+        assert_eq!(small.chars().count(), full.chars().count());
+        let output = transform_with(
+            TextTransform::FULL_SIZE_KANA,
+            WhiteSpaceCollapse::Collapse,
+            &[small],
+        );
+        assert_eq!(output, [full]);
+    }
+
+    #[test]
+    fn combined_transforms() {
+        let collapse = WhiteSpaceCollapse::Collapse;
+        let transform =
+            |text_transform, text| transform_with(text_transform, collapse, &[text]).remove(0);
+        assert_eq!(
+            transform(
+                TextTransform::UPPERCASE | TextTransform::FULL_WIDTH,
+                "HELLO Transformed world"
+            ),
+            "ＨＥＬＬＯ ＴＲＡＮＳＦＯＲＭＥＤ ＷＯＲＬＤ"
+        );
+        assert_eq!(
+            transform(
+                TextTransform::CAPITALIZE | TextTransform::FULL_WIDTH,
+                "HELLO Transformed world"
+            ),
+            "ＨＥＬＬＯ Ｔｒａｎｓｆｏｒｍｅｄ Ｗｏｒｌｄ"
+        );
+        assert_eq!(
+            transform(
+                TextTransform::UPPERCASE | TextTransform::FULL_WIDTH,
+                "straße"
+            ),
+            "ＳＴＲＡＳＳＥ"
+        );
+        assert_eq!(
+            transform(
+                TextTransform::UPPERCASE | TextTransform::FULL_SIZE_KANA,
+                "Katakana: ァィゥ"
+            ),
+            "KATAKANA: アイウ"
+        );
+        assert_eq!(
+            transform(
+                TextTransform::LOWERCASE
+                    | TextTransform::FULL_WIDTH
+                    | TextTransform::FULL_SIZE_KANA,
+                "Hiragana: ぁぃ"
+            ),
+            "ｈｉｒａｇａｎａ： あい"
+        );
+        // full-width is applied before full-size-kana.
+        assert_eq!(
+            transform(
+                TextTransform::FULL_WIDTH | TextTransform::FULL_SIZE_KANA,
+                "ｧｯ"
+            ),
+            "アツ"
+        );
+    }
+
+    #[test]
+    fn width_transforms_unchanged_text_is_borrowed() {
+        let cases = [
+            (TextTransform::FULL_SIZE_KANA, "abc あア ｱ"),
+            (TextTransform::FULL_WIDTH, "ＡＢ\u{3000}あ"),
+            (TextTransform::FULL_WIDTH, "  ＡＢ  "),
+            (
+                TextTransform::UPPERCASE | TextTransform::FULL_SIZE_KANA,
+                "ABC",
+            ),
+            (TextTransform::UPPERCASE | TextTransform::FULL_WIDTH, "ＡＢ"),
+        ];
+        with_builder(|builder, transformer| {
+            for (text_transform, text) in cases {
+                let transform = CaseTransform {
+                    text_transform,
+                    ..CaseTransform::NONE
+                };
+                let output = transformer.transform(text, &transform, builder);
+                assert_eq!(output, text);
+                assert_eq!(output.as_ptr(), text.as_ptr(), "{text:?}");
             }
             assert_eq!(transformer.output.capacity(), 0);
         });
