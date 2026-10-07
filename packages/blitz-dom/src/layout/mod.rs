@@ -740,7 +740,50 @@ impl RoundTree for LayoutPassState<'_> {
     }
 }
 
-impl PrintTree for LayoutPassState<'_> {
+pub(crate) struct TaffyDebugTree<'doc>(pub(crate) &'doc BaseDocument);
+
+impl TaffyDebugTree<'_> {
+    fn node_from_id(&self, node_id: NodeId) -> &Node {
+        &self.0.nodes[dom_node_id(node_id)]
+    }
+}
+
+impl TraversePartialTree for TaffyDebugTree<'_> {
+    type ChildIter<'a>
+        = RefCellChildIter<'a>
+    where
+        Self: 'a;
+
+    fn child_ids(&self, node_id: NodeId) -> Self::ChildIter<'_> {
+        let layout_children = self.node_from_id(node_id).layout_children.borrow();
+        RefCellChildIter::new(Ref::map(layout_children, |children| {
+            children.as_ref().map(|c| c.as_slice()).unwrap_or(&[])
+        }))
+    }
+
+    fn child_count(&self, node_id: NodeId) -> usize {
+        self.node_from_id(node_id)
+            .layout_children
+            .borrow()
+            .as_ref()
+            .map(|c| c.len())
+            .unwrap_or(0)
+    }
+
+    fn get_child_id(&self, node_id: NodeId, index: usize) -> NodeId {
+        taffy_node_id(
+            self.node_from_id(node_id)
+                .layout_children
+                .borrow()
+                .as_ref()
+                .unwrap()[index],
+        )
+    }
+}
+
+impl TraverseTree for TaffyDebugTree<'_> {}
+
+impl PrintTree for TaffyDebugTree<'_> {
     fn get_debug_label(&self, node_id: NodeId) -> &'static str {
         let node = &self.node_from_id(node_id);
 
