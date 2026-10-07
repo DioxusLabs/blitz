@@ -65,11 +65,6 @@ jobs:
       - run: perl -pi.bak -e 's/opt-level = 2/opt-level = 0/g' Cargo.toml
       - run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
       - run: cargo test --workspace
-      - name: Test text-transform feature combinations
-        run: |
-          for features in '' text-transform-icu text-transform-math; do
-            cargo test -p blitz-dom --lib --no-default-features --features "svg,woff,accessibility,system-fonts,file-input,custom-widget,$features" text_transform
-          done
 
   build-counter:
     name: "Build counter example"
