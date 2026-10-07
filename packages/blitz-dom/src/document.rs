@@ -1066,6 +1066,25 @@ impl BaseDocument {
     }
 
     pub(crate) fn resolve_url(&self, raw: &str) -> url::Url {
+        #[cfg(windows)]
+        {
+            let path = std::path::Path::new(raw);
+            if path.is_absolute() {
+                if let Ok(file_url) = url::Url::from_file_path(path) {
+                    return file_url;
+                }
+            }
+        }
+        #[cfg(not(windows))]
+        {
+            let path = std::path::Path::new(raw);
+            if path.is_absolute() && self.url.scheme() == "file" {
+                if let Ok(file_url) = url::Url::from_file_path(path) {
+                    return file_url;
+                }
+            }
+        }
+
         self.url.resolve_relative(raw).unwrap_or_else(|| {
             panic!(
                 "to be able to resolve {raw} with the base_url: {:?}",

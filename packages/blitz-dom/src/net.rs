@@ -1,9 +1,9 @@
 use blitz_traits::node_id::NodeId;
 use selectors::context::QuirksMode;
-use std::sync::atomic::Ordering as Ao;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering as Ao};
 use std::{
     io::Cursor,
-    sync::{Arc, atomic::AtomicUsize, mpsc::Sender},
+    sync::{Arc, mpsc::Sender},
 };
 use style::{
     font_face::{FontFaceSourceFormat, FontFaceSourceFormatKeyword, FontStyleRange, Source},
@@ -75,6 +75,7 @@ pub(crate) struct ResourceHandler<T: Send + Sync + 'static> {
     tx: Sender<DocumentEvent>,
     shell_provider: Arc<dyn ShellProvider>,
     data: T,
+    responded: AtomicBool,
 }
 
 impl<T: Send + Sync + 'static> ResourceHandler<T> {
@@ -93,6 +94,7 @@ impl<T: Send + Sync + 'static> ResourceHandler<T> {
             tx,
             shell_provider,
             data,
+            responded: AtomicBool::new(false),
         }
     }
 
@@ -114,6 +116,9 @@ impl<T: Send + Sync + 'static> ResourceHandler<T> {
     }
 
     fn respond(&self, resolved_url: String, result: Result<Resource, String>) {
+        if self.responded.swap(true, Ao::SeqCst) {
+            return;
+        }
         let response = ResourceLoadResponse {
             request_id: self.request_id,
             node_id: self.node_id,
@@ -122,6 +127,21 @@ impl<T: Send + Sync + 'static> ResourceHandler<T> {
         };
         let _ = self.tx.send(DocumentEvent::ResourceLoad(response));
         self.shell_provider.request_redraw();
+    }
+}
+
+impl<T: Send + Sync + 'static> Drop for ResourceHandler<T> {
+    fn drop(&mut self) {
+        if !self.responded.swap(true, Ao::SeqCst) {
+            let response = ResourceLoadResponse {
+                request_id: self.request_id,
+                node_id: self.node_id,
+                resolved_url: None,
+                result: Err(String::from("Resource handler dropped without response")),
+            };
+            let _ = self.tx.send(DocumentEvent::ResourceLoad(response));
+            self.shell_provider.request_redraw();
+        }
     }
 }
 
@@ -642,5 +662,43 @@ mod tests {
             stylo_to_fontique_style(&oblique(10.0, 20.0)),
             Fq::Oblique(Some(10.0)),
         );
+    }
+
+    #[test]
+    fn dropped_handler_emits_error_response() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let shell = Arc::new(blitz_traits::shell::DummyShellProvider);
+        let handler = ResourceHandler::new(tx, 0, None, shell, ());
+        let req_id = handler.request_id();
+        drop(handler);
+
+        let event = rx.try_recv().expect("drop should emit an event");
+        match event {
+            DocumentEvent::ResourceLoad(res) => {
+                assert_eq!(res.request_id, req_id);
+                assert!(res.result.is_err());
+            }
+            _ => panic!("unexpected event"),
+        }
+    }
+
+    #[test]
+    fn responded_handler_does_not_emit_on_drop() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let shell = Arc::new(blitz_traits::shell::DummyShellProvider);
+        let handler = ResourceHandler::new(tx, 0, None, shell, ());
+        let req_id = handler.request_id();
+        handler.respond("test".into(), Ok(Resource::None));
+        drop(handler);
+
+        let event = rx.try_recv().expect("respond should emit an event");
+        match event {
+            DocumentEvent::ResourceLoad(res) => {
+                assert_eq!(res.request_id, req_id);
+                assert!(res.result.is_ok());
+            }
+            _ => panic!("unexpected event"),
+        }
+        assert!(rx.try_recv().is_err(), "should not emit duplicate event on drop");
     }
 }
