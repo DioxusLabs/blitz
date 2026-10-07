@@ -103,6 +103,23 @@ pub(crate) struct LayoutPassState<'doc> {
 }
 
 impl<'doc> LayoutPassState<'doc> {
+    /// The containing block's inline size when `dom_id` is the box currently laid out in an orthogonal
+    /// flow: its percentage padding resolves against it (see `layout::writing_mode`).
+    #[inline]
+    fn orthogonal_percent_basis_of(&self, dom_id: crate::NodeId) -> Option<f32> {
+        #[cfg(feature = "writing-mode")]
+        {
+            self.orthogonal_percent_basis
+                .filter(|(node, _)| *node == dom_id)
+                .map(|(_, basis)| basis)
+        }
+        #[cfg(not(feature = "writing-mode"))]
+        {
+            let _ = dom_id;
+            None
+        }
+    }
+
     pub(crate) fn new(doc: &'doc mut BaseDocument) -> Self {
         #[cfg(feature = "writing-mode")]
         let root_id = doc.try_root_element().map(|root| root.id);
@@ -205,6 +222,7 @@ impl LayoutPassState<'_> {
         inputs: taffy::tree::LayoutInput,
         block_ctx: Option<&mut BlockContext<'_>>,
     ) -> taffy::tree::LayoutOutput {
+        let orthogonal_percent_basis = self.orthogonal_percent_basis_of(dom_node_id(node_id));
         let node = &mut self.nodes[dom_node_id(node_id)];
 
         let font_styles = node.primary_styles().map(|style| {
@@ -474,9 +492,11 @@ impl LayoutPassState<'_> {
                         default_object_size,
                     };
 
+                    let mut style = node.layout_style();
+                    style.set_percent_basis(orthogonal_percent_basis);
                     return compute_replaced_layout(
                         inputs,
-                        &node.layout_style(),
+                        &style,
                         resolve_calc_value,
                         &replaced_context,
                     );
@@ -628,11 +648,7 @@ impl LayoutPartialTree for LayoutPassState<'_> {
             // of an out-of-flow box, by that box's algorithm) and are expressed in the node's writing mode.
             let dom_id = dom_node_id(node_id);
             let mut style = self.nodes[dom_id].layout_style_in(self.layout_wm_of(dom_id));
-            if let Some((orthogonal_node, basis)) = self.orthogonal_percent_basis {
-                if orthogonal_node == dom_id {
-                    style.percent_basis = Some(basis);
-                }
-            }
+            style.set_percent_basis(self.orthogonal_percent_basis_of(dom_id));
             style
         }
         #[cfg(not(feature = "writing-mode"))]

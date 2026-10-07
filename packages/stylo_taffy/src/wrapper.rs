@@ -402,6 +402,17 @@ impl<T: Deref<Target = ComputedValues>> TaffyStyloStyle<T> {
         convert::oof_item_alignment(input, true, own_is_rtl != layout_wm.line_left_is_bottom())
     }
 
+    /// Resolve percentage padding against `basis` instead of the parent's inline size (a box laid
+    /// out in an orthogonal flow). No-op without the `writing-mode` feature.
+    #[inline]
+    #[cfg_attr(not(feature = "writing-mode"), allow(unused_variables))]
+    pub fn set_percent_basis(&mut self, basis: Option<f32>) {
+        #[cfg(feature = "writing-mode")]
+        {
+            self.percent_basis = basis;
+        }
+    }
+
     /// Item alignment in the layout writing mode's block axis. With the feature on, `self-start`/`self-end`
     /// are resolved here against
     /// the node's own writing mode because Taffy treats its block axis as having no direction.
