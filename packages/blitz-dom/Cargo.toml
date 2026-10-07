@@ -18,8 +18,7 @@ default = [
     "system-fonts",
     "file-input",
     "custom-widget",
-    "text-transform-icu",
-    "text-transform-math"
+    "text-transform-icu"
 ]
 custom-widget = ["dep:anyrender", "accessibility"]
 tracing = ["dep:tracing"]
@@ -33,8 +32,6 @@ complex-scripts = ["parley/complex-scripts"]
 # text-transform-icu: language-aware, Unicode-complete case mapping for `text-transform`
 # (otherwise falls back to the standard library's case mapping)
 text-transform-icu = ["dep:icu_casemap", "dep:writeable"]
-# Mathematical italic mapping for `text-transform: math-auto`
-text-transform-math = []
 autofocus = []
 floats = ["taffy/float_layout", "stylo_taffy/floats"]
 file-input = []

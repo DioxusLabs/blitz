@@ -47,13 +47,9 @@ impl CaseTransform {
             return Self::NONE;
         }
         if kind == TextTransform::MATH_AUTO {
-            return if cfg!(feature = "text-transform-math") {
-                Self {
-                    kind,
-                    lang: LanguageIdentifier::UNKNOWN,
-                }
-            } else {
-                Self::NONE
+            return Self {
+                kind,
+                lang: LanguageIdentifier::UNKNOWN,
             };
         }
         let lang = LanguageIdentifier::try_from_str(&style.get_font()._x_lang.0)
@@ -150,7 +146,6 @@ impl TextTransformer {
         match transform.kind {
             TextTransform::UPPERCASE => uppercase(text, &transform.lang, &mut output),
             TextTransform::LOWERCASE => lowercase(text, &transform.lang, &mut output),
-            #[cfg(feature = "text-transform-math")]
             TextTransform::MATH_AUTO => math_auto(text, &mut output),
             TextTransform::CAPITALIZE => {
                 // Pending (collapsed) whitespace always ends the preceding word, so no
@@ -181,7 +176,6 @@ impl TextTransformer {
 
 /// Maps single-character text nodes to mathematical italic characters.
 /// <https://w3c.github.io/mathml-core/#italic-mappings>
-#[cfg(feature = "text-transform-math")]
 fn math_auto(text: &str, output: &mut OutputSink<'_>) {
     let mut chars = text.chars();
     let Some(c) = chars.next().filter(|_| chars.next().is_none()) else {
@@ -596,7 +590,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "text-transform-math")]
     fn math_auto_italic_mappings() {
         // MathML Core, Appendix C.1.
         let mappings = [
@@ -624,7 +617,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "text-transform-math")]
     fn math_auto_operates_on_each_text_node() {
         assert_eq!(
             transform(
@@ -653,15 +645,6 @@ mod tests {
             }
             assert_eq!(transformer.output.capacity(), 0);
         });
-    }
-
-    #[test]
-    #[cfg(not(feature = "text-transform-math"))]
-    fn math_auto_disabled() {
-        assert_eq!(
-            transform(TextTransform::MATH_AUTO, "und", &["a", "h", "α", "∂"]),
-            ["a", "h", "α", "∂"],
-        );
     }
 
     #[test]

@@ -11,11 +11,10 @@ edition.workspace = true
 rust-version.workspace = true
 
 [features]
-default = ["net", "accessibility", "text-transform-icu", "text-transform-math", "tracing"]
+default = ["net", "accessibility", "text-transform-icu", "tracing"]
 net = ["dep:tokio", "dep:url", "dep:blitz-net"]
 accessibility = ["blitz-shell/accessibility"]
 text-transform-icu = ["blitz-dom/text-transform-icu"]
-text-transform-math = ["blitz-dom/text-transform-math"]
 tracing = ["dep:tracing", "blitz-shell/tracing", "blitz-html/tracing", "blitz-net/tracing"]
 scrollbars = ["blitz-paint/scrollbars"]
 
