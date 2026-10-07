@@ -240,7 +240,9 @@ fn is_collapsible(white_space_collapse: WhiteSpaceCollapse, c: char) -> bool {
     match white_space_collapse {
         WhiteSpaceCollapse::Collapse => c.is_ascii_whitespace(),
         WhiteSpaceCollapse::PreserveBreaks => matches!(c, ' ' | '\t'),
-        WhiteSpaceCollapse::Preserve | WhiteSpaceCollapse::BreakSpaces => false,
+        WhiteSpaceCollapse::Preserve
+        | WhiteSpaceCollapse::PreserveSpaces
+        | WhiteSpaceCollapse::BreakSpaces => false,
     }
 }
 
