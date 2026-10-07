@@ -10,6 +10,8 @@ publish = false
 default = ["cpu"]
 gpu = ["dep:anyrender_vello"]
 cpu = ["dep:anyrender_vello_cpu"]
+# Lay out and paint document text with winkin rather than Parley.
+winkin = ["blitz-paint/winkin", "blitz-dom/winkin"]
 
 [dependencies]
 blitz-dom = { workspace = true, features = ["svg", "floats", "system-fonts", "woff", "complex-scripts"] }
