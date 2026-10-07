@@ -134,6 +134,8 @@ struct ResolvedDecoration {
     underline_offset: Option<LengthPercentage>,
     /// Whether `text-underline-position: under` is in effect.
     underline_under: bool,
+    /// Whether `text-underline-position: from-font` is in effect.
+    underline_from_font: bool,
     /// `text-decoration-inset`. Resolved per run.
     inset: GenericTextDecorationInset<LengthPercentage>,
 }
@@ -197,6 +199,9 @@ fn resolve_decoration(styles: &style::properties::ComputedValues) -> Option<Reso
             underline_under: itext
                 .text_underline_position
                 .contains(TextUnderlinePosition::UNDER),
+            underline_from_font: itext
+                .text_underline_position
+                .contains(TextUnderlinePosition::FROM_FONT),
             inset: text.text_decoration_inset.clone(),
         }
     })
@@ -471,8 +476,12 @@ fn flush_line_decorations(
             // (below descenders) rather than at the font's suggested position near the
             // alphabetic baseline. We anchor the top of the line at the descent so it clears
             // descending glyphs like "gqy".
+            // An explicit offset under `auto` is taken from the alphabetic
+            // baseline, as CSS and Chrome have it, not from the auto gap.
             let base_offset = if deco.underline_under {
                 -geom.descent
+            } else if deco.underline_offset.is_some() && !deco.underline_from_font {
+                0.0
             } else {
                 geom.underline_offset
             };
