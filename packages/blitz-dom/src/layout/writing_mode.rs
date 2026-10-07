@@ -1,4 +1,4 @@
-//! CSS vertical writing modes (`writing-modes` feature).
+//! CSS vertical writing modes (`writing-mode` feature).
 //!
 //! Taffy is a horizontal-tb engine: `width`/x is the inline axis and `height`/+y the block axis.
 //! Blitz runs each box's layout algorithm in the box's own writing-mode *frame* and translates at

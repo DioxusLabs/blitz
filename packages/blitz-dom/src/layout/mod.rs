@@ -30,7 +30,7 @@ pub(crate) mod paint_tree;
 pub(crate) mod replaced;
 pub(crate) mod table;
 pub(crate) mod text_transform;
-#[cfg(feature = "writing-modes")]
+#[cfg(feature = "writing-mode")]
 pub(crate) mod writing_mode;
 
 use self::replaced::{
@@ -85,15 +85,15 @@ pub(crate) struct LayoutPassState<'doc> {
     doc: &'doc mut BaseDocument,
     /// The writing mode of the box whose layout algorithm is currently running (see
     /// `layout::writing_mode`). Child styles read during that algorithm are expressed in this frame.
-    #[cfg(feature = "writing-modes")]
+    #[cfg(feature = "writing-mode")]
     pub(crate) current_frame: stylo_taffy::WritingMode,
     /// Whether the node whose layout algorithm is running aligns its children's `align-self` in its
     /// inline axis (a column flex container).
-    #[cfg(feature = "writing-modes")]
+    #[cfg(feature = "writing-mode")]
     pub(crate) current_align_axis_is_inline: bool,
     /// The box currently being laid out in an orthogonal flow and its containing block's inline
     /// size, against which its percentage padding resolves (see `layout::writing_mode`).
-    #[cfg(feature = "writing-modes")]
+    #[cfg(feature = "writing-mode")]
     pub(crate) orthogonal_percent_basis: Option<(crate::NodeId, f32)>,
 }
 
@@ -101,11 +101,11 @@ impl<'doc> LayoutPassState<'doc> {
     pub(crate) fn new(doc: &'doc mut BaseDocument) -> Self {
         Self {
             doc,
-            #[cfg(feature = "writing-modes")]
+            #[cfg(feature = "writing-mode")]
             current_frame: stylo_taffy::WritingMode::empty(),
-            #[cfg(feature = "writing-modes")]
+            #[cfg(feature = "writing-mode")]
             current_align_axis_is_inline: false,
-            #[cfg(feature = "writing-modes")]
+            #[cfg(feature = "writing-mode")]
             orthogonal_percent_basis: None,
         }
     }
@@ -143,11 +143,11 @@ impl LayoutPassState<'_> {
         inputs: taffy::tree::LayoutInput,
         block_ctx: Option<&mut BlockContext<'_>>,
     ) -> taffy::tree::LayoutOutput {
-        #[cfg(feature = "writing-modes")]
+        #[cfg(feature = "writing-mode")]
         {
             self.compute_child_layout_in_frame(node_id, inputs, block_ctx)
         }
-        #[cfg(not(feature = "writing-modes"))]
+        #[cfg(not(feature = "writing-mode"))]
         {
             self.compute_child_layout_same_frame(node_id, inputs, block_ctx)
         }
@@ -174,13 +174,13 @@ impl LayoutPassState<'_> {
         &self,
         node: &'a Node,
     ) -> stylo_taffy::TaffyStyloStyle<ComputedStyleRef<'a>> {
-        #[cfg(feature = "writing-modes")]
+        #[cfg(feature = "writing-mode")]
         {
             let mut style = node.layout_style_in(self.current_frame);
             style.align_axis_is_inline = self.current_align_axis_is_inline;
             style
         }
-        #[cfg(not(feature = "writing-modes"))]
+        #[cfg(not(feature = "writing-mode"))]
         {
             node.layout_style()
         }
@@ -440,7 +440,7 @@ impl LayoutPassState<'_> {
                         _ => unreachable!(),
                     };
 
-                    #[cfg(feature = "writing-modes")]
+                    #[cfg(feature = "writing-mode")]
                     let (intrinsic_sizes, default_object_size) =
                         if node.writing_mode().is_vertical() {
                             // Intrinsic sizes are physical; the element's algorithm runs in its own frame
@@ -609,7 +609,7 @@ impl LayoutPartialTree for LayoutPassState<'_> {
     type CustomIdent = Atom;
 
     fn get_core_container_style(&self, node_id: NodeId) -> Self::CoreContainerStyle<'_> {
-        #[cfg(feature = "writing-modes")]
+        #[cfg(feature = "writing-mode")]
         {
             // Container styles are read by the node's own algorithm (or, for the containing block
             // of an out-of-flow box, by that box's algorithm) and are expressed in the node's frame.
@@ -622,7 +622,7 @@ impl LayoutPartialTree for LayoutPassState<'_> {
             }
             style
         }
-        #[cfg(not(feature = "writing-modes"))]
+        #[cfg(not(feature = "writing-mode"))]
         {
             self.node_from_id(node_id).layout_style()
         }

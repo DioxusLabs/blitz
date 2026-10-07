@@ -35,7 +35,7 @@ text-transform-icu = ["dep:icu_casemap", "dep:writeable"]
 autofocus = []
 floats = ["taffy/float_layout", "stylo_taffy/floats"]
 # CSS vertical `writing-mode` support (layout runs in each box's writing-mode frame; see layout/writing_mode.rs)
-writing-modes = ["stylo_taffy/writing-modes"]
+writing-mode = ["stylo_taffy/writing-mode"]
 file-input = []
 # Overlay-scrollbar thumb interaction (drag + hover tracking). Normally
 # enabled through `blitz-paint/scrollbars`, which paints the thumbs.

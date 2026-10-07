@@ -138,26 +138,26 @@ pub struct TableRow {
 /// border-style in computed styles, so a border with `none`/`hidden` style
 /// must be treated as zero-width.
 /// The writing-mode frame the table's grid runs in (the table's own frame)
-#[cfg_attr(not(feature = "writing-modes"), allow(unused_variables))]
+#[cfg_attr(not(feature = "writing-mode"), allow(unused_variables))]
 fn table_frame(doc: &BaseDocument, table_root_node_id: NodeId) -> WritingMode {
-    #[cfg(feature = "writing-modes")]
+    #[cfg(feature = "writing-mode")]
     {
         doc.frame_of(table_root_node_id)
     }
-    #[cfg(not(feature = "writing-modes"))]
+    #[cfg(not(feature = "writing-mode"))]
     {
         WritingMode::empty()
     }
 }
 
 /// Convert a table part's style into the table's frame
-#[cfg_attr(not(feature = "writing-modes"), allow(unused_variables))]
+#[cfg_attr(not(feature = "writing-mode"), allow(unused_variables))]
 fn table_taffy_style(style: &ComputedValues, frame: WritingMode) -> taffy::Style<Atom> {
-    #[cfg(feature = "writing-modes")]
+    #[cfg(feature = "writing-mode")]
     {
         stylo_taffy::to_taffy_style_in(style, frame)
     }
-    #[cfg(not(feature = "writing-modes"))]
+    #[cfg(not(feature = "writing-mode"))]
     {
         stylo_taffy::to_taffy_style(style)
     }

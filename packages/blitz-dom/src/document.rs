@@ -401,7 +401,7 @@ impl BaseDocument {
         style_config::set_pref!("layout.css.tree-counting-functions.enabled", true);
         style_config::set_pref!("layout.css.progress-function.enabled", true);
         style_config::set_pref!("layout.variable_fonts.enabled", true);
-        #[cfg(feature = "writing-modes")]
+        #[cfg(feature = "writing-mode")]
         style_config::set_pref!("layout.writing-mode.enabled", true);
         style_config::set_pref!("layout.threads", -1);
 

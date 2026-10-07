@@ -3,7 +3,7 @@
 /// Private module of type aliases so we can refer to stylo types with nicer names
 pub(crate) mod stylo {
     pub(crate) use style::Atom;
-    #[cfg(feature = "writing-modes")]
+    #[cfg(feature = "writing-mode")]
     pub(crate) use style::logical_geometry::WritingMode;
     pub(crate) use style::properties::ComputedValues;
     pub(crate) use style::properties::generated::longhands::box_sizing::computed_value::T as BoxSizing;
@@ -915,7 +915,7 @@ pub fn max_track(
 /// Eagerly convert an entire [`stylo::ComputedValues`] into a [`taffy::Style`]
 /// Convert a stylo style into a concrete [`taffy::Style`] expressed in the axes of the writing-mode
 /// `frame` (see [`crate::frame`]).
-#[cfg(feature = "writing-modes")]
+#[cfg(feature = "writing-mode")]
 pub fn to_taffy_style_in(
     style: &stylo::ComputedValues,
     frame: stylo::WritingMode,

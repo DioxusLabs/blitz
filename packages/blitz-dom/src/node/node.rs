@@ -17,7 +17,7 @@ use std::fmt::Write;
 use std::ops::Deref;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-#[cfg(feature = "writing-modes")]
+#[cfg(feature = "writing-mode")]
 use style::computed_values::flex_direction::T as FlexDirection;
 use style::computed_values::isolation::T as Isolation;
 use style::computed_values::white_space_collapse::T as WhiteSpaceCollapse;
@@ -1122,13 +1122,13 @@ impl Node {
             }
         }
 
-        #[cfg(feature = "writing-modes")]
+        #[cfg(feature = "writing-mode")]
         {
             // Own-frame by default: the node's own algorithm reads its style in its own axes
             let frame = styles.writing_mode;
             stylo_taffy::TaffyStyloStyle::new_in_frame(styles, flags, frame)
         }
-        #[cfg(not(feature = "writing-modes"))]
+        #[cfg(not(feature = "writing-mode"))]
         {
             stylo_taffy::TaffyStyloStyle::new(styles, flags)
         }
@@ -1136,7 +1136,7 @@ impl Node {
 
     /// The node's style for Taffy, expressed in the axes of the writing mode `frame` (the writing
     /// mode of the box laying this node out). Used for the child-style getters.
-    #[cfg(feature = "writing-modes")]
+    #[cfg(feature = "writing-mode")]
     pub fn layout_style_in(
         &self,
         frame: stylo_taffy::WritingMode,
@@ -1148,7 +1148,7 @@ impl Node {
 
     /// Whether the node is a flex container with a column `flex-direction`, i.e. aligns its
     /// children's `align-self` in its inline axis.
-    #[cfg(feature = "writing-modes")]
+    #[cfg(feature = "writing-mode")]
     pub(crate) fn is_column_flex_container(&self) -> bool {
         self.primary_styles().is_some_and(|s| {
             s.clone_display().inside() == style::values::specified::box_::DisplayInside::Flex
@@ -1160,7 +1160,7 @@ impl Node {
     }
 
     /// The node's computed `writing-mode` (horizontal-tb for nodes without styles)
-    #[cfg(feature = "writing-modes")]
+    #[cfg(feature = "writing-mode")]
     pub fn writing_mode(&self) -> stylo_taffy::WritingMode {
         self.primary_styles()
             .map(|s| s.writing_mode)
