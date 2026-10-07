@@ -343,11 +343,6 @@ struct OutputSink<'a> {
     /// `full-width` and/or `full-size-kana`, applied to each pushed character.
     width: TextTransform,
     white_space_collapse: WhiteSpaceCollapse,
-    /// Whether the last character was content that a following collapsed space would separate
-    /// from the next content (i.e. not whitespace or a segment break).
-    after_content: bool,
-    /// The output length at the start of the current sequence of collapsible whitespace.
-    whitespace_start: Option<usize>,
 }
 
 impl<'a> OutputSink<'a> {
@@ -358,8 +353,6 @@ impl<'a> OutputSink<'a> {
             buffer,
             width: TextTransform::NONE,
             white_space_collapse: WhiteSpaceCollapse::Collapse,
-            after_content: false,
-            whitespace_start: None,
         }
     }
 
@@ -373,43 +366,19 @@ impl<'a> OutputSink<'a> {
 
     /// Pushes `c` after applying the `full-width` and `full-size-kana` mappings.
     ///
-    /// Text transforms apply after white space collapsing, so `full-width` only maps preserved
-    /// spaces, and a sequence of collapsible whitespace to U+3000 if it is between two pieces of
-    /// content in this text node, where Parley would collapse it to a single space. Sequences at
-    /// the start or end of the text node are left for Parley to collapse.
+    /// Text transforms apply after white space collapsing, so collapsible white space is left
+    /// for Parley to collapse.
+    // TODO: collapsed spaces should become U+3000 for `full-width`, which needs Parley support.
     fn push_char(&mut self, mut c: char) {
-        if self.width.contains(TextTransform::FULL_WIDTH) {
-            if is_collapsible(self.white_space_collapse, c) {
-                self.whitespace_start.get_or_insert(self.len());
-                self.push_unmapped(c.encode_utf8(&mut [0; 4]));
-                return;
-            }
-            let is_segment_break = matches!(c, '\n' | '\r' | '\u{2028}' | '\u{2029}');
-            if let Some(whitespace_start) = self.whitespace_start.take()
-                && self.after_content
-                && !is_segment_break
-            {
-                self.truncate(whitespace_start);
-                self.push_unmapped("\u{3000}");
-            }
-            self.after_content = !is_segment_break;
+        if self.width.contains(TextTransform::FULL_WIDTH)
+            && !is_collapsible(self.white_space_collapse, c)
+        {
             c = full_width(c);
         }
         if self.width.contains(TextTransform::FULL_SIZE_KANA) {
             c = full_size_kana(c);
         }
         self.push_unmapped(c.encode_utf8(&mut [0; 4]));
-    }
-
-    fn len(&self) -> usize {
-        self.unchanged_len.unwrap_or(self.buffer.len())
-    }
-
-    fn truncate(&mut self, len: usize) {
-        match &mut self.unchanged_len {
-            Some(unchanged_len) => *unchanged_len = len,
-            None => self.buffer.truncate(len),
-        }
     }
 
     fn push_unmapped(&mut self, s: &str) {
@@ -890,20 +859,10 @@ mod tests {
     }
 
     #[test]
-    fn full_width_collapsed_spaces() {
+    fn full_width_leaves_collapsible_whitespace() {
         use WhiteSpaceCollapse::{Collapse, PreserveBreaks};
-        assert_eq!(full_width_with(Collapse, "a b"), "ａ\u{3000}ｂ");
-        assert_eq!(full_width_with(Collapse, "a \n\t b"), "ａ\u{3000}ｂ");
-        // Whitespace at the start or end of the text node is collapsed by Parley.
-        assert_eq!(full_width_with(Collapse, "  a  "), "  ａ  ");
-        assert_eq!(full_width_with(Collapse, "   "), "   ");
-        // Whitespace around a segment break is removed by Parley.
-        assert_eq!(full_width_with(Collapse, "a \u{2028} b"), "ａ \u{2028} ｂ");
-        assert_eq!(full_width_with(PreserveBreaks, "a \n b"), "ａ \n ｂ");
-        assert_eq!(
-            full_width_with(PreserveBreaks, "a  b\nc"),
-            "ａ\u{3000}ｂ\nｃ"
-        );
+        assert_eq!(full_width_with(Collapse, " a \n\t b "), " ａ \n\t ｂ ");
+        assert_eq!(full_width_with(PreserveBreaks, "a \t\n b"), "ａ \t\n ｂ");
     }
 
     #[test]
@@ -929,14 +888,14 @@ mod tests {
                 TextTransform::UPPERCASE | TextTransform::FULL_WIDTH,
                 "HELLO Transformed world"
             ),
-            "ＨＥＬＬＯ　ＴＲＡＮＳＦＯＲＭＥＤ　ＷＯＲＬＤ"
+            "ＨＥＬＬＯ ＴＲＡＮＳＦＯＲＭＥＤ ＷＯＲＬＤ"
         );
         assert_eq!(
             transform(
                 TextTransform::CAPITALIZE | TextTransform::FULL_WIDTH,
                 "HELLO Transformed world"
             ),
-            "ＨＥＬＬＯ　Ｔｒａｎｓｆｏｒｍｅｄ　Ｗｏｒｌｄ"
+            "ＨＥＬＬＯ Ｔｒａｎｓｆｏｒｍｅｄ Ｗｏｒｌｄ"
         );
         assert_eq!(
             transform(
@@ -959,7 +918,7 @@ mod tests {
                     | TextTransform::FULL_SIZE_KANA,
                 "Hiragana: ぁぃ"
             ),
-            "ｈｉｒａｇａｎａ：　あい"
+            "ｈｉｒａｇａｎａ： あい"
         );
         // full-width is applied before full-size-kana.
         assert_eq!(
