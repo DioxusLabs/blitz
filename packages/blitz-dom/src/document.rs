@@ -204,6 +204,10 @@ pub struct BaseDocument {
     /// `layout::writing_mode`). Child styles read during that algorithm are expressed in this frame.
     #[cfg(feature = "writing-modes")]
     pub(crate) current_frame: stylo_taffy::WritingMode,
+    /// Whether the node whose layout algorithm is running aligns its children's `align-self` in its
+    /// inline axis (a column flex container). Only meaningful when `writing-modes` is enabled.
+    #[cfg(feature = "writing-modes")]
+    pub(crate) current_align_axis_is_inline: bool,
     /// The box currently being laid out in an orthogonal flow and its containing block's inline
     /// size, against which its percentage padding resolves (see `layout::writing_mode`).
     #[cfg(feature = "writing-modes")]
@@ -457,6 +461,8 @@ impl BaseDocument {
             viewport,
             #[cfg(feature = "writing-modes")]
             current_frame: stylo_taffy::WritingMode::empty(),
+            #[cfg(feature = "writing-modes")]
+            current_align_axis_is_inline: false,
             #[cfg(feature = "writing-modes")]
             orthogonal_percent_basis: None,
             media_type,

@@ -65,6 +65,10 @@ impl BaseDocument {
     ) -> LayoutOutput {
         let node_frame = self.frame_of(dom_node_id(node_id));
         let parent_frame = core::mem::replace(&mut self.current_frame, node_frame);
+        let parent_align_axis_is_inline = core::mem::replace(
+            &mut self.current_align_axis_is_inline,
+            self.nodes[dom_node_id(node_id)].is_column_flex_container(),
+        );
 
         let output = if node_frame.is_vertical() == parent_frame.is_vertical() {
             self.compute_child_layout_same_frame(node_id, inputs, block_ctx)
@@ -73,6 +77,7 @@ impl BaseDocument {
         };
 
         self.current_frame = parent_frame;
+        self.current_align_axis_is_inline = parent_align_axis_is_inline;
         output
     }
 

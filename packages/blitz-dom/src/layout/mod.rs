@@ -156,7 +156,9 @@ impl LayoutPassState<'_> {
     ) -> stylo_taffy::TaffyStyloStyle<ComputedStyleRef<'a>> {
         #[cfg(feature = "writing-modes")]
         {
-            node.layout_style_in(self.current_frame)
+            let mut style = node.layout_style_in(self.current_frame);
+            style.align_axis_is_inline = self.current_align_axis_is_inline;
+            style
         }
         #[cfg(not(feature = "writing-modes"))]
         {
