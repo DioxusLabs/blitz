@@ -25,10 +25,10 @@ Windows, Apple, Linux, Android and Wasm dependencies are checked together withou
 having to build those targets. Only the license check runs; this is not an
 advisory, duplicate-dependency or dependency-source audit.
 
-All license expressions must be satisfied by the explicit allowlist or an
-existing crate-specific exception. Unknown/unlicensed packages and new copyleft
-dependencies fail. Do not add a license merely to make CI green: review its terms
-and the dependency's actual license files first.
+All license expressions must be satisfied by the explicit allowlist, which allows
+permissive licenses and MPL-2.0 globally. Unknown/unlicensed packages and licenses
+outside this list (including GPL, AGPL and LGPL) fail. Do not add a license merely
+to make CI green: review its terms and the dependency's actual license files first.
 
 ## Review of the current Cargo dependency graph
 
@@ -46,20 +46,20 @@ permissive license choices.
 | BSL-1.0 (Boost), Zlib | Permitted; no source-disclosure requirement | Follow their notice and altered-source requirements. `BSL-1.0` means the **Boost Software License**, not the Business Source License. |
 | Unicode-3.0, Unicode-DFS-2016 | Permitted, including sale of software/data | Preserve copyright and permission notices in copies or associated documentation; respect restrictions on promotional use of names. |
 | CC0-1.0 | Public-domain dedication with fallback license | No copyleft obligation; it does not grant patent or trademark rights. |
-| MPL-2.0 (exceptions below) | Permitted, including proprietary larger works | Make the corresponding covered source, including modifications, available under MPL; inform recipients how to obtain it and preserve notices. |
+| MPL-2.0 | Permitted, including proprietary larger works | Make the corresponding covered source, including modifications, available under MPL; inform recipients how to obtain it and preserve notices. |
 
 Expressions using `OR` offer a choice; expressions using `AND` require all listed
 licenses. For example, `r-efi` offers MIT/Apache alternatives to LGPL and
 `stylo_taffy` offers MIT/Apache alternatives to MPL. These do **not** require a
-GNU-license exception. `encoding_rs` requires BSD-3-Clause in addition to a
+GNU-license allowance. `encoding_rs` requires BSD-3-Clause in addition to a
 MIT/Apache choice, `unicode-ident` requires Unicode-3.0 in addition to a
 MIT/Apache choice, and `libfuzzer-sys` requires NCSA in addition to a MIT/Apache
 choice. No dependency requires GPL, AGPL or LGPL to satisfy its declared license
 expression under this policy.
 
-### MPL-2.0 exceptions
+### MPL-2.0 dependencies
 
-MPL is deliberately **not** allowed globally. The reviewed exceptions are:
+MPL-2.0 is allowed globally. The current MPL-only dependencies are:
 
 - Style/Servo stack: `app_units`, `cssparser`, `cssparser-macros`, `dtoa-short`,
   `selectors`, `stylo`, `stylo_atoms`, `stylo_derive`, `stylo_dom`,
