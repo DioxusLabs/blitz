@@ -2775,7 +2775,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users",
- "windows-sys 0.60.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -5406,7 +5406,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.60.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -7144,7 +7144,7 @@ dependencies = [
 [[package]]
 name = "selectors"
 version = "0.41.0"
-source = "git+https://github.com/DioxusLabs/stylo?rev=d6502e0002e9c40c43a0a4776f9e7eb93be360e3#d6502e0002e9c40c43a0a4776f9e7eb93be360e3"
+source = "git+https://github.com/dfrg/stylo?branch=style-more#b7f09681a179d327e9237555203b26058316bdf5"
 dependencies = [
  "bitflags 2.13.2",
  "cssparser",
@@ -7284,7 +7284,7 @@ dependencies = [
 [[package]]
 name = "servo_arc"
 version = "0.5.0"
-source = "git+https://github.com/DioxusLabs/stylo?rev=d6502e0002e9c40c43a0a4776f9e7eb93be360e3#d6502e0002e9c40c43a0a4776f9e7eb93be360e3"
+source = "git+https://github.com/dfrg/stylo?branch=style-more#b7f09681a179d327e9237555203b26058316bdf5"
 dependencies = [
  "serde",
  "stable_deref_trait",
@@ -7744,7 +7744,7 @@ dependencies = [
 [[package]]
 name = "stylo"
 version = "0.22.0"
-source = "git+https://github.com/DioxusLabs/stylo?rev=d6502e0002e9c40c43a0a4776f9e7eb93be360e3#d6502e0002e9c40c43a0a4776f9e7eb93be360e3"
+source = "git+https://github.com/dfrg/stylo?branch=style-more#b7f09681a179d327e9237555203b26058316bdf5"
 dependencies = [
  "app_units",
  "arrayvec",
@@ -7802,7 +7802,7 @@ dependencies = [
 [[package]]
 name = "stylo_atoms"
 version = "0.22.0"
-source = "git+https://github.com/DioxusLabs/stylo?rev=d6502e0002e9c40c43a0a4776f9e7eb93be360e3#d6502e0002e9c40c43a0a4776f9e7eb93be360e3"
+source = "git+https://github.com/dfrg/stylo?branch=style-more#b7f09681a179d327e9237555203b26058316bdf5"
 dependencies = [
  "string_cache 0.11.0",
  "string_cache_codegen",
@@ -7811,7 +7811,7 @@ dependencies = [
 [[package]]
 name = "stylo_derive"
 version = "0.22.0"
-source = "git+https://github.com/DioxusLabs/stylo?rev=d6502e0002e9c40c43a0a4776f9e7eb93be360e3#d6502e0002e9c40c43a0a4776f9e7eb93be360e3"
+source = "git+https://github.com/dfrg/stylo?branch=style-more#b7f09681a179d327e9237555203b26058316bdf5"
 dependencies = [
  "darling 0.20.11",
  "proc-macro2",
@@ -7823,7 +7823,7 @@ dependencies = [
 [[package]]
 name = "stylo_dom"
 version = "0.22.0"
-source = "git+https://github.com/DioxusLabs/stylo?rev=d6502e0002e9c40c43a0a4776f9e7eb93be360e3#d6502e0002e9c40c43a0a4776f9e7eb93be360e3"
+source = "git+https://github.com/dfrg/stylo?branch=style-more#b7f09681a179d327e9237555203b26058316bdf5"
 dependencies = [
  "bitflags 2.13.2",
  "stylo_malloc_size_of",
@@ -7832,7 +7832,7 @@ dependencies = [
 [[package]]
 name = "stylo_malloc_size_of"
 version = "0.22.0"
-source = "git+https://github.com/DioxusLabs/stylo?rev=d6502e0002e9c40c43a0a4776f9e7eb93be360e3#d6502e0002e9c40c43a0a4776f9e7eb93be360e3"
+source = "git+https://github.com/dfrg/stylo?branch=style-more#b7f09681a179d327e9237555203b26058316bdf5"
 dependencies = [
  "app_units",
  "cssparser",
@@ -7851,7 +7851,7 @@ dependencies = [
 [[package]]
 name = "stylo_static_prefs"
 version = "0.22.0"
-source = "git+https://github.com/DioxusLabs/stylo?rev=d6502e0002e9c40c43a0a4776f9e7eb93be360e3#d6502e0002e9c40c43a0a4776f9e7eb93be360e3"
+source = "git+https://github.com/dfrg/stylo?branch=style-more#b7f09681a179d327e9237555203b26058316bdf5"
 dependencies = [
  "toml",
 ]
@@ -7869,7 +7869,7 @@ dependencies = [
 [[package]]
 name = "stylo_traits"
 version = "0.22.0"
-source = "git+https://github.com/DioxusLabs/stylo?rev=d6502e0002e9c40c43a0a4776f9e7eb93be360e3#d6502e0002e9c40c43a0a4776f9e7eb93be360e3"
+source = "git+https://github.com/dfrg/stylo?branch=style-more#b7f09681a179d327e9237555203b26058316bdf5"
 dependencies = [
  "app_units",
  "bitflags 2.13.2",
@@ -8093,7 +8093,7 @@ version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d8c27177b12a6399ffc08b98f76f7c9a1f4fe9fc967c784c5a071fa8d93cf7e1"
 dependencies = [
- "windows-sys 0.60.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -8292,7 +8292,7 @@ checksum = "fd3ca314f692efd6c868f8408f53fe444634a845f96c028b97d35f6a1f79f0ee"
 [[package]]
 name = "to_shmem"
 version = "0.6.0"
-source = "git+https://github.com/DioxusLabs/stylo?rev=d6502e0002e9c40c43a0a4776f9e7eb93be360e3#d6502e0002e9c40c43a0a4776f9e7eb93be360e3"
+source = "git+https://github.com/dfrg/stylo?branch=style-more#b7f09681a179d327e9237555203b26058316bdf5"
 dependencies = [
  "cssparser",
  "hashbrown 0.17.1",
@@ -8306,7 +8306,7 @@ dependencies = [
 [[package]]
 name = "to_shmem_derive"
 version = "0.2.0"
-source = "git+https://github.com/DioxusLabs/stylo?rev=d6502e0002e9c40c43a0a4776f9e7eb93be360e3#d6502e0002e9c40c43a0a4776f9e7eb93be360e3"
+source = "git+https://github.com/dfrg/stylo?branch=style-more#b7f09681a179d327e9237555203b26058316bdf5"
 dependencies = [
  "darling 0.20.11",
  "proc-macro2",
