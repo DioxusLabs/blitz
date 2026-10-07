@@ -10,7 +10,7 @@ homepage = "https://dioxuslabs.com/learn/0.7/getting_started"
 keywords = ["dom", "ui", "gui", "react"]
 
 [features]
-default = ["accessibility", "hot-reload", "net", "html", "svg", "system-fonts", "clipboard", "file-dialog", "vello-hybrid", "woff", "icu-text-transform", "apple-font-embolden"]
+default = ["accessibility", "hot-reload", "net", "html", "svg", "system-fonts", "clipboard", "file-dialog", "vello-hybrid", "woff", "text-transform-icu", "text-transform-math", "apple-font-embolden"]
 prelude = ["dep:dioxus-core-macro", "dep:dioxus-hooks", "dep:dioxus-signals", "dep:dioxus-stores", "dep:manganis"]
 
 # DOM features
@@ -23,7 +23,8 @@ complex-scripts = ["blitz-dom/complex-scripts"]
 # WOFF/WOFF2 decoder. Default-on so wasm callers (which can't use system fonts)
 # can bundle compressed fonts without extra setup.
 woff = ["blitz-dom/woff"]
-icu-text-transform = ["blitz-dom/icu-text-transform"]
+text-transform-icu = ["blitz-dom/text-transform-icu"]
+text-transform-math = ["blitz-dom/text-transform-math"]
 
 # Shell Features
 clipboard = ["blitz-shell/clipboard"]
