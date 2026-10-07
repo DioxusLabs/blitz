@@ -994,6 +994,20 @@ impl<'a> TElement for BlitzNode<'a> {
             let name = &attr.name.local;
             let value = attr.value.as_str();
 
+            // `dir=auto` takes its direction from the first strong character
+            // of its text, as HTML's bidi rendering maps it; with none, the
+            // inherited direction stands.
+            if *name == local_name!("dir") && value.eq_ignore_ascii_case("auto") {
+                if let Some(rtl) = self.auto_direction_is_rtl() {
+                    use style::properties::longhands::direction::SpecifiedValue as Direction;
+                    push_style(PropertyDeclaration::Direction(if rtl {
+                        Direction::Rtl
+                    } else {
+                        Direction::Ltr
+                    }));
+                }
+            }
+
             if *name == local_name!("lang") {
                 if attr.name.ns == ns!(xml) {
                     lang = Some(value);
