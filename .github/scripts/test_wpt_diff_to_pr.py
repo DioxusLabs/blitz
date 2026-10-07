@@ -73,6 +73,18 @@ class RenderTest(unittest.TestCase):
         self.assertNotIn("Crashes", section)
         self.assertIn("<summary>Full diff (5 changed tests)</summary>", section)
 
+    def test_area_table(self):
+        areas = [
+            {"area": "css", "before": 100, "after": 104, "total": 200, "gained": 6, "lost": 2},
+        ]
+        section = render(Diff(ENTRIES), run_url=None, areas=areas)
+        self.assertIn("<summary>Subtest changes by area (1 area)</summary>", section)
+        self.assertIn(
+            "| `css` | 100 → 104 / 200 | +4 (+6 / -2) | 50.00% → 52.00% (+2.00pp) |",
+            section,
+        )
+        self.assertNotIn("by area", render(Diff(ENTRIES), run_url=None, areas=[]))
+
     def test_no_changes(self):
         section = render(Diff([]), run_url="https://example.com/run")
         self.assertIn("No changes in test results compared to `main`.", section)

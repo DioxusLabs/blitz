@@ -78,11 +78,12 @@ jobs:
         run: |
           wpt diff ./wpt/output/main-wptreport.json ./wpt/output/wptreport.json | tee ./wpt/output/wptdiff.txt
           wpt diff --format json ./wpt/output/main-wptreport.json ./wpt/output/wptreport.json > ./wpt/output/wptdiff.json
+          python3 ./.github/scripts/wpt_area_changes.py ./wpt/output/main-wptreport.json ./wpt/output/wptreport.json > ./wpt/output/wptareas.json
       - name: Render results in step summary
         if: github.event_name == 'pull_request'
         env:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: python3 ./.github/scripts/wpt_diff_to_pr.py --dry-run ./wpt/output/wptdiff.json
+        run: python3 ./.github/scripts/wpt_diff_to_pr.py --dry-run --areas ./wpt/output/wptareas.json ./wpt/output/wptdiff.json
       - name: Upload WPT diff
         if: github.event_name == 'pull_request'
         uses: actions/upload-artifact@v7
@@ -91,6 +92,7 @@ jobs:
           path: |
             ./wpt/output/wptdiff.txt
             ./wpt/output/wptdiff.json
+            ./wpt/output/wptareas.json
       - name: Setup Github Pages
         if: github.ref == 'refs/heads/main'
         uses: actions/configure-pages@v6
