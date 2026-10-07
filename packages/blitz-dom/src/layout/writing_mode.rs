@@ -71,7 +71,19 @@ impl BaseDocument {
         );
 
         let output = if node_frame.is_vertical() == parent_frame.is_vertical() {
-            self.compute_child_layout_same_frame(node_id, inputs, block_ctx)
+            let mut output = self.compute_child_layout_same_frame(node_id, inputs, block_ctx);
+            if node_frame.is_vertical()
+                && node_frame.is_vertical_lr() != parent_frame.is_vertical_lr()
+            {
+                // Parallel frames with opposite block directions (`vertical-lr` in `vertical-rl`
+                // or vice versa) share Taffy's axes but run the block axis the other way.
+                let extent = output.size.height;
+                for candidate in output.oof_candidates.as_mut_slice() {
+                    candidate.static_position.y =
+                        mirror_static_position(candidate.static_position.y, extent);
+                }
+            }
+            output
         } else {
             self.compute_orthogonal_child_layout(node_id, inputs, parent_frame)
         };
