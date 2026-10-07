@@ -505,20 +505,25 @@ pub fn justify_content(
         stylo::FlexDirection::Row | stylo::FlexDirection::RowReverse
     );
     let is_rtl = matches!(direction, stylo::Direction::Rtl);
+    justify_content_in(input, is_row.then_some(is_rtl), display)
+}
+
+/// Convert `justify-content`. `left_is_end` is how the physical `left` keyword resolves when the
+/// main axis is parallel to the left/right axis; `None` makes `left`/`right` behave as `start`.
+#[inline]
+pub fn justify_content_in(
+    input: stylo::ContentDistribution,
+    left_is_end: Option<bool>,
+    display: stylo::Display,
+) -> taffy::AlignContent {
     let primary = input.primary();
-    let physical = match primary.value() {
-        stylo::AlignFlags::LEFT => Some(false),
-        stylo::AlignFlags::RIGHT => Some(true),
+    let is_right = match primary.value() {
+        stylo::AlignFlags::LEFT => false,
+        stylo::AlignFlags::RIGHT => true,
         _ => return self::content_alignment(input, display),
     };
-    let mut align = match physical {
-        Some(is_right) if is_row => {
-            if is_right != is_rtl {
-                taffy::AlignContent::END
-            } else {
-                taffy::AlignContent::START
-            }
-        }
+    let mut align = match left_is_end {
+        Some(left_is_end) if is_right != left_is_end => taffy::AlignContent::END,
         _ => taffy::AlignContent::START,
     };
     if primary.flags().contains(stylo::AlignFlags::SAFE) {

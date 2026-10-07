@@ -39,6 +39,10 @@ pub struct TaffyStyloStyle<T: Deref<Target = ComputedValues>> {
     /// (see [`crate::frame`]). Defaults to the style's own `writing-mode`.
     #[cfg(feature = "writing-modes")]
     pub frame: WritingMode,
+    /// Whether `align-self` of this node is applied in the frame's inline axis (the node is an item
+    /// or out-of-flow child of a column flex container) rather than its block axis.
+    #[cfg(feature = "writing-modes")]
+    pub align_axis_is_inline: bool,
     /// When set, percentages in `padding` resolve against this length instead of being passed to
     /// Taffy. Used for a box in an orthogonal flow, whose padding percentages resolve against its
     /// containing block's inline size while Taffy would resolve them against the (transposed)
@@ -59,6 +63,8 @@ impl<T: Deref<Target = ComputedValues>> TaffyStyloStyle<T> {
             #[cfg(feature = "writing-modes")]
             frame,
             #[cfg(feature = "writing-modes")]
+            align_axis_is_inline: false,
+            #[cfg(feature = "writing-modes")]
             percent_basis: None,
         }
     }
@@ -73,6 +79,8 @@ impl<T: Deref<Target = ComputedValues>> TaffyStyloStyle<T> {
             flags,
             #[cfg(feature = "writing-modes")]
             frame,
+            #[cfg(feature = "writing-modes")]
+            align_axis_is_inline: false,
             #[cfg(feature = "writing-modes")]
             percent_basis: None,
         }
@@ -362,6 +370,33 @@ impl<T: Deref<Target = ComputedValues>> TaffyStyloStyle<T> {
         convert::item_alignment(input, frame::inline_left_is_end(self.frame))
     }
 
+    /// How `left` resolves for content distributed along the frame's inline or block axis
+    /// (`None`: the axis is a horizontal frame's block axis, where `left`/`right` behave as `start`).
+    #[inline]
+    fn content_left_is_end(&self, main_is_inline: bool) -> Option<bool> {
+        if main_is_inline {
+            Some(frame::inline_left_is_end(self.frame))
+        } else if self.frame.is_vertical() {
+            Some(frame::block_left_is_end(self.frame))
+        } else {
+            None
+        }
+    }
+
+    /// `align-self`/`justify-self` in the frame's block axis (`block_axis`) or inline axis.
+    #[inline]
+    fn self_alignment(
+        &self,
+        input: stylo::AlignFlags,
+        block_axis: bool,
+    ) -> Option<taffy::AlignItems> {
+        if block_axis {
+            self.block_item_alignment(input)
+        } else {
+            self.inline_item_alignment(input)
+        }
+    }
+
     /// Item alignment in the frame's block axis. `self-start`/`self-end` are resolved here against
     /// the node's own writing mode because Taffy treats its block axis as having no direction.
     #[inline]
@@ -395,7 +430,10 @@ impl<T: Deref<Target = ComputedValues>> taffy::BlockItemStyle for TaffyStyloStyl
     fn align_self(&self) -> Option<taffy::AlignSelf> {
         #[cfg(feature = "writing-modes")]
         {
-            self.block_item_alignment(self.style.get_position().align_self.0)
+            self.self_alignment(
+                self.style.get_position().align_self.0,
+                !self.align_axis_is_inline,
+            )
         }
         #[cfg(not(feature = "writing-modes"))]
         {
@@ -407,7 +445,10 @@ impl<T: Deref<Target = ComputedValues>> taffy::BlockItemStyle for TaffyStyloStyl
     fn justify_self(&self) -> Option<taffy::AlignSelf> {
         #[cfg(feature = "writing-modes")]
         {
-            self.inline_item_alignment(self.style.get_position().justify_self.0)
+            self.self_alignment(
+                self.style.get_position().justify_self.0,
+                self.align_axis_is_inline,
+            )
         }
         #[cfg(not(feature = "writing-modes"))]
         {
@@ -486,6 +527,19 @@ impl<T: Deref<Target = ComputedValues>> taffy::FlexboxContainerStyle for TaffySt
     #[inline]
     fn justify_content(&self) -> taffy::JustifyContent {
         let position_styles = self.style.get_position();
+        #[cfg(feature = "writing-modes")]
+        {
+            let main_is_inline = matches!(
+                position_styles.flex_direction,
+                stylo::FlexDirection::Row | stylo::FlexDirection::RowReverse
+            );
+            convert::justify_content_in(
+                position_styles.justify_content,
+                self.content_left_is_end(main_is_inline),
+                self.style.clone_display(),
+            )
+        }
+        #[cfg(not(feature = "writing-modes"))]
         convert::justify_content(
             position_styles.justify_content,
             position_styles.flex_direction,
@@ -517,7 +571,10 @@ impl<T: Deref<Target = ComputedValues>> taffy::FlexboxItemStyle for TaffyStyloSt
     fn align_self(&self) -> Option<taffy::AlignSelf> {
         #[cfg(feature = "writing-modes")]
         {
-            self.block_item_alignment(self.style.get_position().align_self.0)
+            self.self_alignment(
+                self.style.get_position().align_self.0,
+                !self.align_axis_is_inline,
+            )
         }
         #[cfg(not(feature = "writing-modes"))]
         {
@@ -820,6 +877,19 @@ impl<T: Deref<Target = ComputedValues>> taffy::GridContainerStyle for TaffyStylo
     #[inline]
     fn justify_content(&self) -> taffy::JustifyContent {
         let position_styles = self.style.get_position();
+        #[cfg(feature = "writing-modes")]
+        {
+            let main_is_inline = matches!(
+                position_styles.flex_direction,
+                stylo::FlexDirection::Row | stylo::FlexDirection::RowReverse
+            );
+            convert::justify_content_in(
+                position_styles.justify_content,
+                self.content_left_is_end(main_is_inline),
+                self.style.clone_display(),
+            )
+        }
+        #[cfg(not(feature = "writing-modes"))]
         convert::justify_content(
             position_styles.justify_content,
             position_styles.flex_direction,
@@ -867,7 +937,10 @@ impl<T: Deref<Target = ComputedValues>> taffy::GridItemStyle for TaffyStyloStyle
     fn align_self(&self) -> Option<taffy::AlignSelf> {
         #[cfg(feature = "writing-modes")]
         {
-            self.block_item_alignment(self.style.get_position().align_self.0)
+            self.self_alignment(
+                self.style.get_position().align_self.0,
+                !self.align_axis_is_inline,
+            )
         }
         #[cfg(not(feature = "writing-modes"))]
         {
@@ -879,7 +952,10 @@ impl<T: Deref<Target = ComputedValues>> taffy::GridItemStyle for TaffyStyloStyle
     fn justify_self(&self) -> Option<taffy::AlignSelf> {
         #[cfg(feature = "writing-modes")]
         {
-            self.inline_item_alignment(self.style.get_position().justify_self.0)
+            self.self_alignment(
+                self.style.get_position().justify_self.0,
+                self.align_axis_is_inline,
+            )
         }
         #[cfg(not(feature = "writing-modes"))]
         {
@@ -896,7 +972,10 @@ impl<T: Deref<Target = ComputedValues>> taffy::OofItemStyle for TaffyStyloStyle<
     fn align_self(&self) -> Option<taffy::AlignSelf> {
         #[cfg(feature = "writing-modes")]
         {
-            self.block_item_alignment(self.style.get_position().align_self.0)
+            self.self_alignment(
+                self.style.get_position().align_self.0,
+                !self.align_axis_is_inline,
+            )
         }
         #[cfg(not(feature = "writing-modes"))]
         {
@@ -908,7 +987,10 @@ impl<T: Deref<Target = ComputedValues>> taffy::OofItemStyle for TaffyStyloStyle<
     fn justify_self(&self) -> Option<taffy::AlignSelf> {
         #[cfg(feature = "writing-modes")]
         {
-            self.inline_item_alignment(self.style.get_position().justify_self.0)
+            self.self_alignment(
+                self.style.get_position().justify_self.0,
+                self.align_axis_is_inline,
+            )
         }
         #[cfg(not(feature = "writing-modes"))]
         {

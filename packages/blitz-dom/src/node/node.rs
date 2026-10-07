@@ -17,6 +17,8 @@ use std::fmt::Write;
 use std::ops::Deref;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(feature = "writing-modes")]
+use style::computed_values::flex_direction::T as FlexDirection;
 use style::computed_values::isolation::T as Isolation;
 use style::computed_values::white_space_collapse::T as WhiteSpaceCollapse;
 use style::invalidation::element::restyle_hints::RestyleHint;
@@ -1142,6 +1144,19 @@ impl Node {
         let mut style = self.layout_style();
         style.frame = frame;
         style
+    }
+
+    /// Whether the node is a flex container with a column `flex-direction`, i.e. aligns its
+    /// children's `align-self` in its inline axis.
+    #[cfg(feature = "writing-modes")]
+    pub(crate) fn is_column_flex_container(&self) -> bool {
+        self.primary_styles().is_some_and(|s| {
+            s.clone_display().inside() == style::values::specified::box_::DisplayInside::Flex
+                && matches!(
+                    s.get_position().flex_direction,
+                    FlexDirection::Column | FlexDirection::ColumnReverse
+                )
+        })
     }
 
     /// The node's computed `writing-mode` (horizontal-tb for nodes without styles)
