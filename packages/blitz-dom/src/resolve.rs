@@ -23,6 +23,7 @@ use taffy::AvailableSpace;
 use crate::{
     BaseDocument,
     layout::{
+        LayoutPassState,
         construct::{
             ConstructionTask, ConstructionTaskData, ConstructionTaskResult,
             ConstructionTaskResultData, LayoutChildren, build_inline_layout_into,
@@ -441,8 +442,9 @@ impl BaseDocument {
 
         // println!("\n\nRESOLVE LAYOUT\n===========\n");
 
-        taffy::compute_root_layout(self, root_element_id, available_space);
-        taffy::round_layout(self, root_element_id);
+        let mut state = LayoutPassState::new(self);
+        taffy::compute_root_layout(&mut state, root_element_id, available_space);
+        taffy::round_layout(&mut state, root_element_id);
 
         // println!("\n\n");
         // taffy::print_tree(self, root_node_id)

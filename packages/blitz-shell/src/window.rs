@@ -680,7 +680,7 @@ impl<Rend: WindowRenderer> View<Rend> {
                                     drop(inner);
                                     self.request_redraw();
                                 }
-                                KeyCode::KeyT => self.doc.inner().print_taffy_tree(),
+                                KeyCode::KeyT => self.doc.inner_mut().print_taffy_tree(),
                                 _ => {}
                             };
                         }

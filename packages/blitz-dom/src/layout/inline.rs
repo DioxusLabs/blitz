@@ -19,7 +19,7 @@ use parley::YieldData;
 use taffy::{BlockItemStyle as _, Clear, Float, prelude::TaffyMaxContent};
 
 use super::resolve_calc_value;
-use crate::BaseDocument;
+use crate::layout::LayoutPassState;
 use crate::stylo_to_parley;
 
 /// Subtract a child's margins from the definite axes of the available space it is laid out in.
@@ -79,7 +79,7 @@ fn inline_box_inputs(
     inputs
 }
 
-impl BaseDocument {
+impl LayoutPassState<'_> {
     pub(crate) fn compute_inline_layout(
         &mut self,
         node_id: NodeId,
