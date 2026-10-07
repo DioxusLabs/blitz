@@ -277,3 +277,55 @@ fn dioxus_cancel_and_restart_have_empty_end_data() {
     );
     assert_value(&harness, "");
 }
+
+fn keydown_app() -> Element {
+    let mut log = use_signal(Vec::<String>::new);
+    rsx! {
+        input {
+            id: "text",
+            r#type: "text",
+            style: "width:200px; height:20px;",
+            onkeydown: move |evt| log.write().push(format!("keydown:{}", evt.is_composing())),
+            onkeyup: move |evt| log.write().push(format!("keyup:{}", evt.is_composing())),
+        }
+        div { id: "log", "{log.read().join(\"|\")}" }
+    }
+}
+
+#[test]
+fn key_events_report_is_composing_during_composition() {
+    use blitz_test_harness::key_event;
+    use blitz_traits::events::KeyState;
+    use keyboard_types::{Key, Modifiers};
+
+    let down = || UiEvent::KeyDown(key_event(Key::Shift, KeyState::Pressed, Modifiers::empty()));
+    let up = || {
+        UiEvent::KeyUp(key_event(
+            Key::Shift,
+            KeyState::Released,
+            Modifiers::empty(),
+        ))
+    };
+
+    let mut harness = Harness::from_component(keydown_app);
+    harness.click("#text");
+    harness.dispatch(down());
+    harness.ime(preedit("ㅎ"));
+    harness.dispatch(up());
+    harness.dispatch(down());
+    harness.ime(preedit(""));
+    harness.ime(commit("ㅎ"));
+    harness.dispatch(up());
+    harness.pump();
+    assert_eq!(
+        harness.text_content("#log"),
+        "keydown:false|keyup:true|keydown:true|keyup:false"
+    );
+
+    // A value already set by the shell is kept
+    let mut composing_down = key_event(Key::Shift, KeyState::Pressed, Modifiers::empty());
+    composing_down.is_composing = true;
+    harness.dispatch(UiEvent::KeyDown(composing_down));
+    harness.pump();
+    assert!(harness.text_content("#log").ends_with("|keydown:true"));
+}

@@ -91,6 +91,11 @@ impl Clone for TextInputData {
 }
 
 impl TextInputData {
+    /// Whether an IME composition is in progress (between `compositionstart` and `compositionend`)
+    pub fn is_composing(&self) -> bool {
+        self.composition_state != CompositionState::Idle
+    }
+
     pub fn new(is_multiline: bool) -> Self {
         let editor = Box::new(parley::PlainEditor::new(16.0));
         Self {

@@ -145,6 +145,16 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
         hover_node_id
     }
 
+    /// Whether the focussed node is a text input with an IME composition in progress
+    fn is_composing(&self, focussed_node_id: Option<NodeId>) -> bool {
+        let doc = self.doc.inner();
+        focussed_node_id
+            .and_then(|id| doc.get_node(id))
+            .and_then(|node| node.element_data())
+            .and_then(|element| element.text_input_data())
+            .is_some_and(|input| input.is_composing())
+    }
+
     pub fn handle_ui_event(&mut self, event: UiEvent) {
         let doc = self.doc.inner();
 
@@ -245,10 +255,12 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
             UiEvent::Wheel(data) => {
                 self.handle_dom_event(DomEvent::new(target, DomEventData::Wheel(data)))
             }
-            UiEvent::KeyUp(data) => {
+            UiEvent::KeyUp(mut data) => {
+                data.is_composing |= self.is_composing(focussed_node_id);
                 self.handle_dom_event(DomEvent::new(target, DomEventData::KeyUp(data)))
             }
-            UiEvent::KeyDown(data) => {
+            UiEvent::KeyDown(mut data) => {
+                data.is_composing |= self.is_composing(focussed_node_id);
                 self.handle_dom_event(DomEvent::new(target, DomEventData::KeyDown(data)))
             }
             UiEvent::Ime(data) => {
