@@ -1154,6 +1154,49 @@ impl Node {
         })
     }
 
+    /// The direction `dir=auto` gives the element from its text: `Some(true)`
+    /// where the first strong character is right-to-left, `Some(false)` where
+    /// it is left-to-right, and `None` where it has none, as HTML's "auto
+    /// directionality" finds it. Text inside `bdi`, `script`, `style` and
+    /// `textarea`, and inside an element with a valid `dir` of its own, is
+    /// skipped.
+    pub fn auto_direction_is_rtl(&self) -> Option<bool> {
+        use icu_properties::{CodePointMapData, props::BidiClass};
+        let classes = CodePointMapData::<BidiClass>::new();
+        let mut stack: Vec<NodeId> = self.children.iter().rev().copied().collect();
+        while let Some(id) = stack.pop() {
+            let node = self.with(id);
+            match &node.data {
+                NodeData::Text(data) => {
+                    for c in data.content.chars() {
+                        match classes.get(c) {
+                            BidiClass::LeftToRight => return Some(false),
+                            BidiClass::RightToLeft | BidiClass::ArabicLetter => return Some(true),
+                            _ => {}
+                        }
+                    }
+                }
+                NodeData::Element(element) => {
+                    let name = &element.name.local;
+                    let skipped = *name == local_name!("bdi")
+                        || *name == local_name!("script")
+                        || *name == local_name!("style")
+                        || *name == local_name!("textarea")
+                        || element.attr(local_name!("dir")).is_some_and(|dir| {
+                            ["ltr", "rtl", "auto"]
+                                .iter()
+                                .any(|valid| dir.eq_ignore_ascii_case(valid))
+                        });
+                    if !skipped {
+                        stack.extend(node.children.iter().rev().copied());
+                    }
+                }
+                _ => {}
+            }
+        }
+        None
+    }
+
     pub fn text_content(&self) -> String {
         let mut out = String::new();
         self.write_text_content(&mut out);
