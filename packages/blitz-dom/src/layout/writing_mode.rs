@@ -38,7 +38,7 @@ impl BaseDocument {
     pub(crate) fn frame_of(&self, node_id: crate::NodeId) -> WritingMode {
         let node = &self.nodes[node_id];
         let frame = node.writing_mode();
-        if frame.is_vertical() || node_id != self.root_element().id {
+        if frame.is_vertical() || node_id != self.root_element().id || has_containment(node) {
             return frame;
         }
         node.children
@@ -50,6 +50,7 @@ impl BaseDocument {
                     .downcast_element()
                     .is_some_and(|el| *el.name.local == *"body")
             })
+            .filter(|body| !has_containment(body))
             .map(|body| body.writing_mode())
             .unwrap_or(frame)
     }
@@ -114,10 +115,12 @@ impl BaseDocument {
                     .is_auto();
             if inline_size_is_auto {
                 // css-writing-modes-3 §7.3.1: an auto inline size in an orthogonal flow is
-                // fit-content against the available space in that axis, falling back to the
-                // initial containing block (nearest fixed-size scroll container not implemented).
-                let available = match inputs.available_space.width {
-                    AvailableSpace::Definite(size) => size,
+                // fit-content against the available space in that axis: the containing block's
+                // block size if definite, else the initial containing block (nearest fixed-size
+                // scroll container not implemented).
+                let available = match (inputs.available_space.width, inputs.parent_size.width) {
+                    (AvailableSpace::Definite(size), _) => size,
+                    (_, Some(size)) => size,
                     _ => {
                         let viewport = self.stylist.device().au_viewport_size();
                         if parent_frame.is_vertical() {
@@ -244,4 +247,10 @@ impl BaseDocument {
             self.physicalise_and_round_inner(child, frame, size, pos);
         }
     }
+}
+
+/// Any `contain` value on `<html>` or `<body>` disables body-to-root `writing-mode` propagation.
+fn has_containment(node: &crate::Node) -> bool {
+    node.primary_styles()
+        .is_some_and(|style| !style.clone_contain().is_empty())
 }
