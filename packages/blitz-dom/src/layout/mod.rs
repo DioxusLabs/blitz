@@ -87,6 +87,11 @@ pub(crate) struct LayoutPassState<'doc> {
     /// `layout::writing_mode`). Child styles read during that algorithm are expressed in its axes.
     #[cfg(feature = "writing-mode")]
     pub(crate) layout_wm: stylo_taffy::WritingMode,
+    /// The root element and the writing mode its algorithm runs in (see `BaseDocument::root_layout_wm`).
+    #[cfg(feature = "writing-mode")]
+    root_id: Option<crate::NodeId>,
+    #[cfg(feature = "writing-mode")]
+    root_wm: stylo_taffy::WritingMode,
     /// Whether the node whose layout algorithm is running aligns its children's `align-self` in its
     /// inline axis (a column flex container).
     #[cfg(feature = "writing-mode")]
@@ -99,8 +104,16 @@ pub(crate) struct LayoutPassState<'doc> {
 
 impl<'doc> LayoutPassState<'doc> {
     pub(crate) fn new(doc: &'doc mut BaseDocument) -> Self {
+        #[cfg(feature = "writing-mode")]
+        let root_id = doc.try_root_element().map(|root| root.id);
         Self {
+            #[cfg(feature = "writing-mode")]
+            root_wm: root_id.map_or(stylo_taffy::WritingMode::empty(), |id| {
+                doc.root_layout_wm(id)
+            }),
             doc,
+            #[cfg(feature = "writing-mode")]
+            root_id,
             #[cfg(feature = "writing-mode")]
             layout_wm: stylo_taffy::WritingMode::empty(),
             #[cfg(feature = "writing-mode")]

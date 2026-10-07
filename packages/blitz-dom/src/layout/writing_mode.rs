@@ -31,17 +31,15 @@ use taffy::{
 };
 
 impl BaseDocument {
-    /// The writing mode in which `node_id`'s layout algorithm runs.
-    ///
-    /// For the root element this applies the HTML special case of css-writing-modes-3 §8: the
-    /// `writing-mode` of its `<body>` child is used instead of its own.
-    pub(crate) fn layout_wm_of(&self, node_id: crate::NodeId) -> WritingMode {
-        let node = &self.nodes[node_id];
-        let wm = node.writing_mode();
-        if node_id != self.root_element().id || has_containment(node) {
+    /// The writing mode in which the root element's layout algorithm runs: the HTML special case of
+    /// css-writing-modes-3 §8 uses the `writing-mode` of its `<body>` child instead of its own.
+    pub(crate) fn root_layout_wm(&self, root_id: crate::NodeId) -> WritingMode {
+        let root = &self.nodes[root_id];
+        let wm = root.writing_mode();
+        if has_containment(root) {
             return wm;
         }
-        node.children
+        root.children
             .iter()
             .map(|&child| &self.nodes[child])
             .find(|child| {
@@ -57,6 +55,17 @@ impl BaseDocument {
 }
 
 impl LayoutPassState<'_> {
+    /// The writing mode in which `node_id`'s layout algorithm runs (the root's is resolved once per
+    /// pass by [`BaseDocument::root_layout_wm`]).
+    #[inline]
+    pub(crate) fn layout_wm_of(&self, node_id: crate::NodeId) -> WritingMode {
+        if Some(node_id) == self.root_id {
+            self.root_wm
+        } else {
+            self.nodes[node_id].writing_mode()
+        }
+    }
+
     /// Lay out `node_id`, translating between the parent's writing mode and the node's own at an
     /// orthogonal-flow boundary.
     pub(crate) fn compute_child_layout_in_own_wm(

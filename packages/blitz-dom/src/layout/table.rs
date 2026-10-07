@@ -142,7 +142,11 @@ pub struct TableRow {
 fn table_wm(doc: &BaseDocument, table_root_node_id: NodeId) -> WritingMode {
     #[cfg(feature = "writing-mode")]
     {
-        doc.layout_wm_of(table_root_node_id)
+        if doc.try_root_element().map(|root| root.id) == Some(table_root_node_id) {
+            doc.root_layout_wm(table_root_node_id)
+        } else {
+            doc.nodes[table_root_node_id].writing_mode()
+        }
     }
     #[cfg(not(feature = "writing-mode"))]
     {

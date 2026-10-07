@@ -1146,6 +1146,14 @@ impl Node {
         style
     }
 
+    /// Whether the node has any `contain` value, which blocks `writing-mode` propagation from
+    /// `<body>` to the root (css-writing-modes-3 §8).
+    #[cfg(feature = "writing-mode")]
+    pub(crate) fn has_containment(&self) -> bool {
+        self.primary_styles()
+            .is_some_and(|style| !style.clone_contain().is_empty())
+    }
+
     /// Whether the node is a flex container with a column `flex-direction`, i.e. aligns its
     /// children's `align-self` in its inline axis.
     #[cfg(feature = "writing-mode")]
