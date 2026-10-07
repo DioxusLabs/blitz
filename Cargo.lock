@@ -314,7 +314,7 @@ dependencies = [
  "anyrender",
  "image",
  "peniko",
- "read-fonts",
+ "read-fonts 0.41.0",
  "serde",
  "serde_json",
  "sha2",
@@ -910,6 +910,7 @@ dependencies = [
  "cursor-icon",
  "debug_timer 0.1.3",
  "euclid",
+ "fontwich",
  "html-escape",
  "icu_casemap",
  "icu_locale_core",
@@ -941,6 +942,7 @@ dependencies = [
  "url",
  "usvg",
  "web-time",
+ "winkin",
  "writeable",
  "wuff",
 ]
@@ -1029,6 +1031,7 @@ dependencies = [
  "taffy",
  "tracing",
  "usvg",
+ "winkin",
 ]
 
 [[package]]
@@ -3304,9 +3307,26 @@ dependencies = [
  "objc2-core-text",
  "objc2-foundation 0.3.2",
  "parlance",
- "read-fonts",
+ "read-fonts 0.41.0",
  "roxmltree 0.21.1",
  "smallvec",
+ "windows",
+ "windows-core",
+ "yeslogic-fontconfig-sys",
+]
+
+[[package]]
+name = "fontwich"
+version = "0.0.1"
+source = "git+https://github.com/dfrg/winkin?rev=6a55e15ca9356ada4651af0001b9467bafc4eff7#6a55e15ca9356ada4651af0001b9467bafc4eff7"
+dependencies = [
+ "hashbrown 0.17.1",
+ "objc2-core-foundation",
+ "objc2-core-text",
+ "parlance",
+ "read-fonts 0.45.0",
+ "roxmltree 0.21.1",
+ "spin",
  "windows",
  "windows-core",
  "yeslogic-fontconfig-sys",
@@ -3807,8 +3827,22 @@ checksum = "c03d949a14aa089bbb282f7dd76a498a7f684428e4257202efc119ec010376f9"
 dependencies = [
  "bitflags 2.13.2",
  "bytemuck",
- "read-fonts",
+ "read-fonts 0.41.0",
  "smallvec",
+]
+
+[[package]]
+name = "harfrust"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "86aa776d6d32b072119e1f1650f4db843ff4382a4aaa6a2c9c4e35703cd377cb"
+dependencies = [
+ "bitflags 2.13.2",
+ "bytemuck",
+ "core_maths",
+ "read-fonts 0.45.0",
+ "smallvec",
+ "spin",
 ]
 
 [[package]]
@@ -6079,7 +6113,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b74c0d373e462e504ad4436710a39f099e18e848e1ee711f70cd2dcd5a69b290"
 dependencies = [
  "fontique",
- "harfrust",
+ "harfrust 0.12.0",
  "hashbrown 0.17.1",
  "icu_locale_core",
  "icu_normalizer",
@@ -6752,6 +6786,19 @@ dependencies = [
  "bytemuck",
  "font-types 0.12.6",
  "once_cell",
+]
+
+[[package]]
+name = "read-fonts"
+version = "0.45.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8a5b7bed3d16ab428d8fa533640ab805ff50e7ad8a4d00649de1259e70023282"
+dependencies = [
+ "bytemuck",
+ "core_maths",
+ "font-types 0.12.6",
+ "once_cell",
+ "yoke",
 ]
 
 [[package]]
@@ -7491,7 +7538,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "819ab7d62b1d3e72d9d9dea5650bac30424f9111364bb94928dbf5ecad1baa68"
 dependencies = [
  "bytemuck",
- "read-fonts",
+ "read-fonts 0.41.0",
 ]
 
 [[package]]
@@ -7652,6 +7699,12 @@ dependencies = [
  "peniko",
  "softbuffer",
 ]
+
+[[package]]
+name = "spin"
+version = "0.12.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0134f9043ed38b087ac4f7d4af44c79e2c9e5094421fe3164f435ce585953b10"
 
 [[package]]
 name = "spirv"
@@ -8801,7 +8854,7 @@ dependencies = [
  "data-url",
  "flate2",
  "fontdb",
- "harfrust",
+ "harfrust 0.12.0",
  "imagesize",
  "kurbo",
  "log",
@@ -10381,6 +10434,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "winkin"
+version = "0.0.1"
+source = "git+https://github.com/dfrg/winkin?rev=6a55e15ca9356ada4651af0001b9467bafc4eff7#6a55e15ca9356ada4651af0001b9467bafc4eff7"
+dependencies = [
+ "fontwich",
+ "harfrust 0.14.0",
+ "hashbrown 0.17.1",
+ "icu_casemap",
+ "icu_locale_core",
+ "icu_segmenter",
+ "parlance",
+ "read-fonts 0.45.0",
+ "writeable",
+]
+
+[[package]]
 name = "winnow"
 version = "0.7.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10468,7 +10537,7 @@ checksum = "cae90d1d9f6d1d36ef116b0b1e651a6d7c12ba925439d4d06ff9adc94662a3d8"
 dependencies = [
  "font-types 0.12.6",
  "log",
- "read-fonts",
+ "read-fonts 0.41.0",
 ]
 
 [[package]]
