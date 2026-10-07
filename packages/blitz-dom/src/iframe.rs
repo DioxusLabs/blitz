@@ -67,6 +67,8 @@ impl BaseDocument {
             shell_provider: Some(self.shell_provider.clone()),
             html_parser_provider: Some(self.html_parser_provider.clone()),
             font_ctx: Some(self.font_ctx.lock().unwrap().clone()),
+            #[cfg(feature = "winkin")]
+            winkin_fonts: Some(self.winkin.given.clone()),
             media_type: Some(self.media_type.clone()),
             style_threading: self.style_threading,
             incremental: Some(self.incremental_layout),
