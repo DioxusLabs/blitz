@@ -17,6 +17,17 @@ env:
 
 jobs:
 
+  licenses:
+    name: Dependency licenses
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          rust-version: stable
+          arguments: --workspace --all-features --locked
+          command-arguments: licenses
+
   # MSRV check.
   # Blitz only guarantees "latest stable". However we have this check here to ensure that we advertise
   # our MSRV. We also make an effort not to increase MSRV in patch versions of Blitz.
