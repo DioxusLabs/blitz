@@ -65,6 +65,9 @@ mod stylo_device;
 mod stylo_to_cursor_icon;
 mod stylo_to_kurbo;
 mod stylo_to_parley;
+/// Inline formatting contexts laid out by winkin.
+#[cfg(feature = "winkin")]
+pub mod text_winkin;
 pub mod traversal;
 /// Versioned storage for the nodes of the DOM tree.
 mod tree;

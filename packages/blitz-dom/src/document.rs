@@ -90,37 +90,11 @@ pub(crate) fn init_stylo_prefs() {
         style_config::set_pref!("layout.css.basic-shape-shape.enabled", true);
         style_config::set_pref!("layout.css.tree-counting-functions.enabled", true);
         style_config::set_pref!("layout.css.progress-function.enabled", true);
-        style_config::set_pref!("layout.css.font-variations.enabled", true);
-        style_config::set_pref!("layout.css.text-indent-keywords.enabled", true);
-        style_config::set_pref!("layout.css.word-break.break-word.enabled", true);
-        #[cfg(feature = "writing-mode")]
-        {
-            style_config::set_pref!("layout.css.writing-mode.enabled", true);
-            style_config::set_pref!("layout.css.writing-mode.sideways.enabled", true);
-        }
-
-        // Properties that were previously enabled by the `layout.unimplemented` pref
-        style_config::set_pref!("layout.css.appearance.enabled", true);
-        style_config::set_pref!("layout.css.backdrop-filter.enabled", true);
-        style_config::set_pref!("layout.css.contain.enabled", true);
-        style_config::set_pref!("layout.css.content.alt-text.enabled", true);
-        style_config::set_pref!("layout.css.corner-shape.enabled", true);
-        style_config::set_pref!("layout.css.counters.enabled", true);
-        style_config::set_pref!("layout.css.font-size-adjust.enabled", true);
-        style_config::set_pref!("layout.css.forced-color-adjust.enabled", true);
-        style_config::set_pref!("layout.css.masking.enabled", true);
-        style_config::set_pref!("layout.css.math-properties.enabled", true);
-        style_config::set_pref!("layout.css.motion-path.enabled", true);
-        style_config::set_pref!("layout.css.overscroll-behavior.enabled", true);
-        style_config::set_pref!("layout.css.scroll-driven-animations.enabled", true);
-        style_config::set_pref!("layout.css.scroll-behavior.enabled", true);
-        style_config::set_pref!("layout.css.scrollbar-styling.enabled", true);
-        style_config::set_pref!("layout.css.text-decoration-inset.enabled", true);
-        style_config::set_pref!("layout.css.text-overflow.enabled", true);
-        style_config::set_pref!("layout.css.text-underline.enabled", true);
-        style_config::set_pref!("layout.css.view-transitions.enabled", true);
-        style_config::set_pref!("layout.css.writing-mode.text-orientation.enabled", true);
-        style_config::set_pref!("layout.css.zoom.enabled", true);
+        style_config::set_pref!("layout.variable_fonts.enabled", true);
+        // The `writing-mode` feature lays out vertical boxes and winkin
+        // vertical lines; without either the property stays unparsed.
+        #[cfg(any(feature = "writing-mode", feature = "winkin"))]
+        style_config::set_pref!("layout.writing-mode.enabled", true);
         style_config::set_pref!("layout.threads", -1);
     });
 }
@@ -332,6 +306,10 @@ pub struct BaseDocument {
     pub(crate) thread_font_contexts: ThreadLocal<RefCell<Box<FontContext>>>,
     /// A Parley layout context
     pub(crate) layout_ctx: parley::LayoutContext<TextBrush>,
+    /// The fonts winkin chooses from, and the context it builds and breaks
+    /// every inline formatting context in.
+    #[cfg(feature = "winkin")]
+    pub(crate) winkin: crate::text_winkin::WinkinFonts,
 
     /// The real (non-anonymous) node which is currently hovered (if any).
     /// This is never a layout-generated (anonymous) node, so it remains valid
@@ -531,6 +509,8 @@ impl BaseDocument {
             #[cfg(feature = "parallel-construct")]
             thread_font_contexts: ThreadLocal::new(),
             layout_ctx: parley::LayoutContext::new(),
+            #[cfg(feature = "winkin")]
+            winkin: crate::text_winkin::WinkinFonts::new(),
 
             hover_node_id: None,
             hover_hit_node_id: None,
@@ -1436,6 +1416,18 @@ impl BaseDocument {
                     });
                 }
                 drop(global_font_ctx);
+
+                // Winkin chooses fonts from a collection of its own, whose
+                // document layer holds the `@font-face` faces under their
+                // rules' descriptors. Without this every web font falls back
+                // to a system font under winkin, which is most of what a test
+                // using Ahem measures.
+                #[cfg(feature = "winkin")]
+                self.winkin.add_face(
+                    font.clone(),
+                    overrides.family_name.as_deref(),
+                    overrides.descriptors.clone(),
+                );
 
                 // TODO: see if we can only invalidate if resolved fonts may have changed
                 self.invalidate_inline_contexts();
@@ -3700,6 +3692,8 @@ mod font_face_override_tests {
                     family_name: Some(String::from(ALIAS)),
                     weight: Some(800.0),
                     style: Some(parley::fontique::FontStyle::Italic),
+                    #[cfg(feature = "winkin")]
+                    descriptors: Default::default(),
                 },
             )),
         };

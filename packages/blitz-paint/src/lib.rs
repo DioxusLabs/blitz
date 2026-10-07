@@ -13,6 +13,8 @@ mod layers;
 mod render;
 mod sizing;
 mod text;
+#[cfg(feature = "winkin")]
+mod text_winkin;
 
 use std::collections::HashMap;
 
