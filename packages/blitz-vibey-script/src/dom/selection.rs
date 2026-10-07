@@ -348,8 +348,14 @@ impl OffsetMapper<'_> {
             _ => false,
         };
         if collapsible {
-            if !self.collapsed_space && remaining.starts_with(' ') {
-                self.cursor += 1;
+            if !self.collapsed_space {
+                if remaining.starts_with(' ') {
+                    self.cursor += 1;
+                } else if transform.contains(TextTransform::FULL_WIDTH)
+                    && remaining.starts_with('\u{3000}')
+                {
+                    self.cursor += '\u{3000}'.len_utf8();
+                }
             }
             self.collapsed_space = true;
             return;
@@ -362,12 +368,24 @@ impl OffsetMapper<'_> {
             return;
         }
         // Consume case expansions only when they occur in the actual layout text.
+        let map_width = |c| {
+            let c = if transform.contains(TextTransform::FULL_WIDTH) {
+                blitz_dom::full_width(c)
+            } else {
+                c
+            };
+            if transform.contains(TextTransform::FULL_SIZE_KANA) {
+                blitz_dom::full_size_kana(c)
+            } else {
+                c
+            }
+        };
         let mapped = if transform.contains(TextTransform::UPPERCASE)
             || transform.contains(TextTransform::CAPITALIZE)
         {
-            matching_prefix(remaining, c.to_uppercase())
+            matching_prefix(remaining, c.to_uppercase().map(map_width))
         } else if transform.contains(TextTransform::LOWERCASE) {
-            matching_prefix(remaining, c.to_lowercase())
+            matching_prefix(remaining, c.to_lowercase().map(map_width))
         } else {
             None
         };
@@ -379,7 +397,8 @@ impl OffsetMapper<'_> {
         {
             // Tailored casing can remove combining marks (e.g. Greek uppercase acute).
         } else if let Some(rendered) = remaining.chars().next() {
-            // math-auto and one-to-one tailored case mappings preserve character count.
+            // math-auto, full-width, full-size-kana and one-to-one tailored case mappings preserve
+            // character count.
             self.cursor += rendered.len_utf8();
         }
     }
