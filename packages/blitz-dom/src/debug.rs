@@ -2,17 +2,16 @@ use blitz_traits::node_id::NodeId;
 use parley::layout::PositionedLayoutItem;
 
 use crate::BaseDocument;
-use crate::layout::LayoutPassState;
+use crate::layout::TaffyDebugTree;
 
 impl BaseDocument {
-    pub fn print_taffy_tree(&mut self) {
+    pub fn print_taffy_tree(&self) {
         let root_id = crate::taffy_node_id(self.root_element().id);
-        taffy::print_tree(&LayoutPassState::new(self), root_id);
-        let sub_document_nodes: Vec<_> = self.sub_document_nodes.iter().copied().collect();
-        for node_id in sub_document_nodes {
-            if let Some(sub_doc) = self.nodes[node_id].subdoc_mut() {
+        taffy::print_tree(&TaffyDebugTree(self), root_id);
+        for &node_id in &self.sub_document_nodes {
+            if let Some(sub_doc) = self.nodes[node_id].subdoc() {
                 println!("\n=== Subdocument (node {node_id:?}) ===");
-                sub_doc.inner_mut().print_taffy_tree();
+                sub_doc.inner().print_taffy_tree();
             }
         }
     }
@@ -153,5 +152,55 @@ impl BaseDocument {
             println!("Paint Children: {paint_children:?}");
         }
         // taffy::print_tree(&self.dom, node_id.into());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{DocumentConfig, qual_name, taffy_node_id};
+    use blitz_traits::shell::{ColorScheme, Viewport};
+    use taffy::{PrintTree, TraversePartialTree};
+
+    #[test]
+    fn prints_tree_from_shared_document_reference() {
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
+            ..Default::default()
+        });
+        let root = doc.root_node().id;
+        let mut mutator = doc.mutate();
+        let html = mutator.create_element(qual_name!("html", html), vec![]);
+        let body = mutator.create_element(qual_name!("body", html), vec![]);
+        let child = mutator.create_element(qual_name!("div", html), vec![]);
+        mutator.set_style_property(child, "height", "20px");
+        mutator.append_children(body, &[child]);
+        mutator.append_children(html, &[body]);
+        mutator.append_children(root, &[html]);
+        drop(mutator);
+        doc.resolve(0.0);
+
+        let doc: &BaseDocument = &doc;
+        doc.print_taffy_tree();
+
+        let tree = TaffyDebugTree(doc);
+        let body_id = taffy_node_id(body);
+        let child_id = taffy_node_id(child);
+        assert_eq!(tree.child_count(body_id), 1);
+        assert_eq!(tree.get_child_id(body_id, 0), child_id);
+        assert_eq!(tree.child_ids(body_id).collect::<Vec<_>>(), [child_id]);
+        assert_eq!(tree.child_count(child_id), 0);
+        assert_eq!(tree.child_ids(child_id).count(), 0);
+        assert_eq!(tree.get_final_layout(child_id).size.height, 20.0);
+        assert_eq!(
+            tree.get_final_layout(child_id),
+            *doc.nodes[child].final_layout()
+        );
+
+        let mut output = Vec::new();
+        taffy::write_tree(&mut output, &tree, taffy_node_id(html)).unwrap();
+        let output = String::from_utf8(output).unwrap();
+        assert_eq!(output.lines().count(), 4);
+        assert!(output.contains("BLOCK"));
     }
 }
