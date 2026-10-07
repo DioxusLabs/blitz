@@ -84,9 +84,9 @@ pub(crate) fn resolve_calc_value(calc_ptr: *const (), parent_size: f32) -> f32 {
 pub(crate) struct LayoutPassState<'doc> {
     doc: &'doc mut BaseDocument,
     /// The writing mode of the box whose layout algorithm is currently running (see
-    /// `layout::writing_mode`). Child styles read during that algorithm are expressed in this frame.
+    /// `layout::writing_mode`). Child styles read during that algorithm are expressed in its axes.
     #[cfg(feature = "writing-mode")]
-    pub(crate) current_frame: stylo_taffy::WritingMode,
+    pub(crate) layout_wm: stylo_taffy::WritingMode,
     /// Whether the node whose layout algorithm is running aligns its children's `align-self` in its
     /// inline axis (a column flex container).
     #[cfg(feature = "writing-mode")]
@@ -102,7 +102,7 @@ impl<'doc> LayoutPassState<'doc> {
         Self {
             doc,
             #[cfg(feature = "writing-mode")]
-            current_frame: stylo_taffy::WritingMode::empty(),
+            layout_wm: stylo_taffy::WritingMode::empty(),
             #[cfg(feature = "writing-mode")]
             current_align_axis_is_inline: false,
             #[cfg(feature = "writing-mode")]
@@ -145,16 +145,16 @@ impl LayoutPassState<'_> {
     ) -> taffy::tree::LayoutOutput {
         #[cfg(feature = "writing-mode")]
         {
-            self.compute_child_layout_in_frame(node_id, inputs, block_ctx)
+            self.compute_child_layout_in_own_wm(node_id, inputs, block_ctx)
         }
         #[cfg(not(feature = "writing-mode"))]
         {
-            self.compute_child_layout_same_frame(node_id, inputs, block_ctx)
+            self.compute_child_layout_in_current_wm(node_id, inputs, block_ctx)
         }
     }
 
-    /// Lay out `node_id` in the frame of the currently running algorithm (its parent's)
-    pub(crate) fn compute_child_layout_same_frame(
+    /// Lay out `node_id` in the writing mode of the currently running algorithm (its parent's)
+    pub(crate) fn compute_child_layout_in_current_wm(
         &mut self,
         node_id: NodeId,
         inputs: taffy::tree::LayoutInput,
@@ -168,7 +168,7 @@ impl LayoutPassState<'_> {
     }
 
     /// The style of a node being laid out *by* the node whose algorithm is currently running,
-    /// expressed in that node's writing-mode frame (see `layout::writing_mode`).
+    /// expressed in that node's writing mode (see `layout::writing_mode`).
     #[inline]
     pub(crate) fn child_layout_style<'a>(
         &self,
@@ -176,7 +176,7 @@ impl LayoutPassState<'_> {
     ) -> stylo_taffy::TaffyStyloStyle<ComputedStyleRef<'a>> {
         #[cfg(feature = "writing-mode")]
         {
-            let mut style = node.layout_style_in(self.current_frame);
+            let mut style = node.layout_style_in(self.layout_wm);
             style.align_axis_is_inline = self.current_align_axis_is_inline;
             style
         }
@@ -443,7 +443,7 @@ impl LayoutPassState<'_> {
                     #[cfg(feature = "writing-mode")]
                     let (intrinsic_sizes, default_object_size) =
                         if node.writing_mode().is_vertical() {
-                            // Intrinsic sizes are physical; the element's algorithm runs in its own frame
+                            // Intrinsic sizes are physical; the element's algorithm runs in its own writing mode
                             (
                                 crate::layout::replaced::IntrinsicSizes {
                                     width: intrinsic_sizes.height,
@@ -612,9 +612,9 @@ impl LayoutPartialTree for LayoutPassState<'_> {
         #[cfg(feature = "writing-mode")]
         {
             // Container styles are read by the node's own algorithm (or, for the containing block
-            // of an out-of-flow box, by that box's algorithm) and are expressed in the node's frame.
+            // of an out-of-flow box, by that box's algorithm) and are expressed in the node's writing mode.
             let dom_id = dom_node_id(node_id);
-            let mut style = self.nodes[dom_id].layout_style_in(self.frame_of(dom_id));
+            let mut style = self.nodes[dom_id].layout_style_in(self.layout_wm_of(dom_id));
             if let Some((orthogonal_node, basis)) = self.orthogonal_percent_basis {
                 if orthogonal_node == dom_id {
                     style.percent_basis = Some(basis);

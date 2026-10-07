@@ -1124,9 +1124,9 @@ impl Node {
 
         #[cfg(feature = "writing-mode")]
         {
-            // Own-frame by default: the node's own algorithm reads its style in its own axes
-            let frame = styles.writing_mode;
-            stylo_taffy::TaffyStyloStyle::new_in(styles, flags, frame)
+            // Own-layout_wm by default: the node's own algorithm reads its style in its own axes
+            let layout_wm = styles.writing_mode;
+            stylo_taffy::TaffyStyloStyle::new_in(styles, flags, layout_wm)
         }
         #[cfg(not(feature = "writing-mode"))]
         {
@@ -1134,15 +1134,15 @@ impl Node {
         }
     }
 
-    /// The node's style for Taffy, expressed in the axes of the writing mode `frame` (the writing
+    /// The node's style for Taffy, expressed in the axes of the writing mode `layout_wm` (the writing
     /// mode of the box laying this node out). Used for the child-style getters.
     #[cfg(feature = "writing-mode")]
     pub fn layout_style_in(
         &self,
-        frame: stylo_taffy::WritingMode,
+        layout_wm: stylo_taffy::WritingMode,
     ) -> stylo_taffy::TaffyStyloStyle<ComputedStyleRef<'_>> {
         let mut style = self.layout_style();
-        style.layout_wm = frame;
+        style.layout_wm = layout_wm;
         style
     }
 

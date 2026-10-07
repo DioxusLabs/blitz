@@ -1,23 +1,23 @@
 //! CSS vertical writing modes (`writing-mode` feature).
 //!
 //! Taffy is a horizontal-tb engine: `width`/x is the inline axis and `height`/+y the block axis.
-//! Blitz runs each box's layout algorithm in the box's own writing-mode *frame* and translates at
+//! Blitz runs each box's layout algorithm in the axes of the box's own writing mode and translates at
 //! the boundary (see [`stylo_taffy::writing_mode`] for the axis mapping):
 //!
-//! - Style getters: a box's own algorithm reads its style in its own frame
-//!   (`get_core_container_style`); the algorithm laying it out reads it in *that* algorithm's frame
+//! - Style getters: a box's own algorithm reads its style in its own writing mode
+//!   (`get_core_container_style`); the algorithm laying it out reads it in *that* algorithm's writing mode
 //!   (`get_*_child_style`, `get_oof_item_style`, [`BaseDocument::child_layout_style`]).
-//!   [`LayoutPassState::current_frame`] tracks the frame of the running algorithm.
-//! - Orthogonal flows ([`compute_child_layout_in_frame`]): when a box's frame differs from its
-//!   parent's, the `LayoutInput` is transposed into the box's frame, its auto inline size is
+//!   [`LayoutPassState::layout_wm`] tracks the writing mode of the running algorithm.
+//! - Orthogonal flows ([`compute_child_layout_in_own_wm`]): when a box's writing mode differs from its
+//!   parent's, the `LayoutInput` is transposed into the box's axes, its auto inline size is
 //!   resolved to fit-content (css-writing-modes-3 §7.3.1), and the `LayoutOutput` is transposed
 //!   back. Percentage padding on such a box resolves against the containing block's inline size
 //!   ([`LayoutPassState::orthogonal_percent_basis`]).
-//! - Geometry: `unrounded_layout` is written by the placing algorithm in *its* frame.
+//! - Geometry: `unrounded_layout` is written by the placing algorithm in *its* writing mode.
 //!   [`physicalise_and_round_layout`] converts every layout to physical coordinates (mirroring
 //!   the block axis for `*-rl` modes) and rounds it, replacing `taffy::round_layout`.
 //!
-//! [`compute_child_layout_in_frame`]: LayoutPassState::compute_child_layout_in_frame
+//! [`compute_child_layout_in_own_wm`]: LayoutPassState::compute_child_layout_in_own_wm
 //! [`physicalise_and_round_layout`]: LayoutPassState::physicalise_and_round_layout
 
 use super::{BlockContext, LayoutPassState};
@@ -31,15 +31,15 @@ use taffy::{
 };
 
 impl BaseDocument {
-    /// The writing-mode frame in which `node_id`'s layout algorithm runs.
+    /// The writing mode in which `node_id`'s layout algorithm runs.
     ///
     /// For the root element this applies the HTML special case of css-writing-modes-3 §8: the
     /// `writing-mode` of its `<body>` child is used instead of its own.
-    pub(crate) fn frame_of(&self, node_id: crate::NodeId) -> WritingMode {
+    pub(crate) fn layout_wm_of(&self, node_id: crate::NodeId) -> WritingMode {
         let node = &self.nodes[node_id];
-        let frame = node.writing_mode();
+        let wm = node.writing_mode();
         if node_id != self.root_element().id || has_containment(node) {
-            return frame;
+            return wm;
         }
         node.children
             .iter()
@@ -52,31 +52,29 @@ impl BaseDocument {
             })
             .filter(|body| !has_containment(body))
             .map(|body| body.writing_mode())
-            .unwrap_or(frame)
+            .unwrap_or(wm)
     }
 }
 
 impl LayoutPassState<'_> {
-    /// Lay out `node_id`, translating between the parent's frame and the node's own frame at an
+    /// Lay out `node_id`, translating between the parent's writing mode and the node's own at an
     /// orthogonal-flow boundary.
-    pub(crate) fn compute_child_layout_in_frame(
+    pub(crate) fn compute_child_layout_in_own_wm(
         &mut self,
         node_id: NodeId,
         inputs: LayoutInput,
         block_ctx: Option<&mut BlockContext<'_>>,
     ) -> LayoutOutput {
-        let node_frame = self.frame_of(dom_node_id(node_id));
-        let parent_frame = core::mem::replace(&mut self.current_frame, node_frame);
+        let node_wm = self.layout_wm_of(dom_node_id(node_id));
+        let parent_wm = core::mem::replace(&mut self.layout_wm, node_wm);
         let align_axis_is_inline = self.nodes[dom_node_id(node_id)].is_column_flex_container();
         let parent_align_axis_is_inline =
             core::mem::replace(&mut self.current_align_axis_is_inline, align_axis_is_inline);
 
-        let output = if node_frame.is_vertical() == parent_frame.is_vertical() {
-            let mut output = self.compute_child_layout_same_frame(node_id, inputs, block_ctx);
-            if node_frame.is_vertical()
-                && node_frame.is_vertical_lr() != parent_frame.is_vertical_lr()
-            {
-                // Parallel frames with opposite block directions (`vertical-lr` in `vertical-rl`
+        let output = if node_wm.is_vertical() == parent_wm.is_vertical() {
+            let mut output = self.compute_child_layout_in_current_wm(node_id, inputs, block_ctx);
+            if node_wm.is_vertical() && node_wm.is_vertical_lr() != parent_wm.is_vertical_lr() {
+                // Parallel writing modes with opposite block directions (`vertical-lr` in `vertical-rl`
                 // or vice versa) share Taffy's axes but run the block axis the other way.
                 let extent = output.size.height;
                 for candidate in output.oof_candidates.as_mut_slice() {
@@ -86,10 +84,10 @@ impl LayoutPassState<'_> {
             }
             output
         } else {
-            self.compute_orthogonal_child_layout(node_id, inputs, parent_frame)
+            self.compute_orthogonal_child_layout(node_id, inputs, parent_wm)
         };
 
-        self.current_frame = parent_frame;
+        self.layout_wm = parent_wm;
         self.current_align_axis_is_inline = parent_align_axis_is_inline;
         output
     }
@@ -98,7 +96,7 @@ impl LayoutPassState<'_> {
         &mut self,
         node_id: NodeId,
         inputs: LayoutInput,
-        parent_frame: WritingMode,
+        parent_wm: WritingMode,
     ) -> LayoutOutput {
         let percent_basis = self.orthogonal_percent_basis.replace((
             dom_node_id(node_id),
@@ -141,7 +139,7 @@ impl LayoutPassState<'_> {
                     (_, Some(size)) => size,
                     _ => {
                         let viewport = self.stylist.device().au_viewport_size();
-                        if parent_frame.is_vertical() {
+                        if parent_wm.is_vertical() {
                             viewport.width.to_f32_px()
                         } else {
                             viewport.height.to_f32_px()
@@ -162,7 +160,7 @@ impl LayoutPassState<'_> {
                         },
                         ..inputs
                     };
-                    doc.compute_child_layout_same_frame(node_id, measure_inputs, None)
+                    doc.compute_child_layout_in_current_wm(node_id, measure_inputs, None)
                         .size
                         .width
                 };
@@ -173,13 +171,13 @@ impl LayoutPassState<'_> {
             }
         }
 
-        let mut output = self.compute_child_layout_same_frame(node_id, inputs, None);
+        let mut output = self.compute_child_layout_in_current_wm(node_id, inputs, None);
         self.orthogonal_percent_basis = percent_basis;
-        transpose_static_positions(&mut output, self.current_frame, parent_frame);
+        transpose_static_positions(&mut output, self.layout_wm, parent_wm);
         output.transpose()
     }
 
-    /// Convert every `unrounded_layout` (written in the frame of the box that placed it) to
+    /// Convert every `unrounded_layout` (written in the writing mode of the box that placed it) to
     /// physical coordinates and round it into `final_layout`. Mirrors `taffy::round_layout`,
     /// which it replaces: rounding is applied to cumulative physical positions so that adjacent
     /// boxes never gain gaps or overlaps.
@@ -189,22 +187,22 @@ impl LayoutPassState<'_> {
             width: viewport.width.to_f32_px(),
             height: viewport.height.to_f32_px(),
         };
-        let root_frame = self.frame_of(dom_node_id(root));
-        self.physicalise_and_round_inner(root, root_frame, viewport, Point::ZERO);
+        let root_wm = self.layout_wm_of(dom_node_id(root));
+        self.physicalise_and_round_inner(root, root_wm, viewport, Point::ZERO);
     }
 
     fn physicalise_and_round_inner(
         &mut self,
         node_id: NodeId,
-        placer_frame: WritingMode,
+        placer_wm: WritingMode,
         placer_size: Size<f32>,
         parent_pos: Point<f32>,
     ) {
         let logical = self.get_unrounded_layout(node_id);
         let mut unrounded = logical;
-        if placer_frame.is_vertical() {
+        if placer_wm.is_vertical() {
             unrounded.location = Point {
-                x: if placer_frame.is_vertical_lr() {
+                x: if placer_wm.is_vertical_lr() {
                     logical.location.y
                 } else {
                     placer_size.width - logical.location.y - logical.size.height
@@ -214,9 +212,9 @@ impl LayoutPassState<'_> {
             unrounded.size = logical.size.transpose();
             unrounded.scrollbar_size = logical.scrollbar_size.transpose();
             unrounded.scrollable_overflow_rect = logical.scrollable_overflow_rect.transpose();
-            unrounded.border = placer_frame.physical_rect(logical.border);
-            unrounded.padding = placer_frame.physical_rect(logical.padding);
-            unrounded.margin = placer_frame.physical_rect(logical.margin);
+            unrounded.border = placer_wm.physical_rect(logical.border);
+            unrounded.padding = placer_wm.physical_rect(logical.padding);
+            unrounded.margin = placer_wm.physical_rect(logical.margin);
         }
 
         let round = |value: f32| value.round();
@@ -250,47 +248,47 @@ impl LayoutPassState<'_> {
         layout.scrollable_overflow_rect.top = round(pos.y + overflow.top) - round(pos.y);
         layout.scrollable_overflow_rect.bottom = round(pos.y + overflow.bottom) - round(pos.y);
 
-        // `unrounded_layout` is left in the placer's frame: Taffy's cache may skip re-placing
+        // `unrounded_layout` is left in the placer's writing mode: Taffy's cache may skip re-placing
         // this node on a later layout, and only `final_layout` is read downstream.
         self.set_final_layout(node_id, &layout);
 
-        let frame = self.frame_of(dom_node_id(node_id));
+        let wm = self.layout_wm_of(dom_node_id(node_id));
         for index in 0..self.child_count(node_id) {
             let child = self.get_child_id(node_id, index);
             if !self.is_out_of_flow(child) {
-                self.physicalise_and_round_inner(child, frame, size, pos);
+                self.physicalise_and_round_inner(child, wm, size, pos);
             }
         }
         for index in 0..self.hoisted_child_count(node_id) {
             let child = self.get_hoisted_child_id(node_id, index);
-            self.physicalise_and_round_inner(child, frame, size, pos);
+            self.physicalise_and_round_inner(child, wm, size, pos);
         }
     }
 }
 
 /// Map the static positions of `output`'s out-of-flow candidates (relative to the border box of a
-/// node laid out in `child_frame`) into `parent_frame`, ahead of [`LayoutOutput::transpose`],
-/// which leaves them untouched. The block axis of a `vertical-rl` frame runs against Taffy's
+/// node laid out in `child_wm`) into `parent_wm`, ahead of [`LayoutOutput::transpose`],
+/// which leaves them untouched. The block axis of `vertical-rl` runs against Taffy's
 /// coordinate, so that coordinate is mirrored within the node's size.
 fn transpose_static_positions(
     output: &mut LayoutOutput,
-    child_frame: WritingMode,
-    parent_frame: WritingMode,
+    child_wm: WritingMode,
+    parent_wm: WritingMode,
 ) {
     if output.oof_candidates.is_empty() {
         return;
     }
-    let vertical_frame = if child_frame.is_vertical() {
-        child_frame
+    let vertical_wm = if child_wm.is_vertical() {
+        child_wm
     } else {
-        parent_frame
+        parent_wm
     };
-    let mirror_block = !vertical_frame.is_vertical_lr();
+    let mirror_block = !vertical_wm.is_vertical_lr();
     let size = output.size;
     for candidate in output.oof_candidates.as_mut_slice() {
         let Point { mut x, mut y } = candidate.static_position;
         if mirror_block {
-            if child_frame.is_vertical() {
+            if child_wm.is_vertical() {
                 y = mirror_static_position(y, size.height);
             } else {
                 x = mirror_static_position(x, size.width);

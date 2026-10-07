@@ -445,8 +445,8 @@ impl BaseDocument {
         let mut state = LayoutPassState::new(self);
         #[cfg(feature = "writing-mode")]
         let available_space = {
-            state.current_frame = state.frame_of(crate::dom_node_id(root_element_id));
-            if state.current_frame.is_vertical() {
+            state.layout_wm = state.layout_wm_of(crate::dom_node_id(root_element_id));
+            if state.layout_wm.is_vertical() {
                 available_space.transpose()
             } else {
                 available_space
