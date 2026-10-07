@@ -163,53 +163,6 @@ pub fn text_align(frame: WritingMode, align: taffy::TextAlign) -> taffy::TextAli
     }
 }
 
-/// Map a physical flex direction into `frame` (rows become columns in a vertical frame).
-#[cfg(feature = "flexbox")]
-#[inline]
-pub fn flex_direction(frame: WritingMode, dir: taffy::FlexDirection) -> taffy::FlexDirection {
-    if frame.is_vertical() {
-        match dir {
-            taffy::FlexDirection::Row => taffy::FlexDirection::Column,
-            taffy::FlexDirection::RowReverse => taffy::FlexDirection::ColumnReverse,
-            taffy::FlexDirection::Column => taffy::FlexDirection::Row,
-            taffy::FlexDirection::ColumnReverse => taffy::FlexDirection::RowReverse,
-        }
-    } else {
-        dir
-    }
-}
-
-/// Map a physical grid auto flow into `frame`.
-#[cfg(feature = "grid")]
-#[inline]
-pub fn grid_auto_flow(frame: WritingMode, flow: taffy::GridAutoFlow) -> taffy::GridAutoFlow {
-    if frame.is_vertical() {
-        match flow {
-            taffy::GridAutoFlow::Row => taffy::GridAutoFlow::Column,
-            taffy::GridAutoFlow::RowDense => taffy::GridAutoFlow::ColumnDense,
-            taffy::GridAutoFlow::Column => taffy::GridAutoFlow::Row,
-            taffy::GridAutoFlow::ColumnDense => taffy::GridAutoFlow::RowDense,
-        }
-    } else {
-        flow
-    }
-}
-
-/// Swap the row and column placement of a grid area.
-#[cfg(feature = "grid")]
-#[inline]
-pub fn grid_template_area<S: taffy::CheapCloneStr>(
-    area: taffy::GridTemplateArea<S>,
-) -> taffy::GridTemplateArea<S> {
-    taffy::GridTemplateArea {
-        name: area.name,
-        row_start: area.column_start,
-        row_end: area.column_end,
-        column_start: area.row_start,
-        column_end: area.row_end,
-    }
-}
-
 /// Transpose a concrete physical [`taffy::Style`] into `frame`.
 pub fn transpose_style<S: taffy::CheapCloneStr>(frame: WritingMode, style: &mut taffy::Style<S>) {
     if !frame.is_vertical() {
@@ -234,33 +187,4 @@ pub fn transpose_style<S: taffy::CheapCloneStr>(frame: WritingMode, style: &mut 
     style.margin = rect(frame, style.margin);
     style.padding = rect(frame, style.padding);
     style.border = rect(frame, style.border);
-    #[cfg(any(feature = "flexbox", feature = "grid"))]
-    {
-        style.gap = style.gap.transpose();
-    }
-    #[cfg(feature = "flexbox")]
-    {
-        style.flex_direction = flex_direction(frame, style.flex_direction);
-    }
-    #[cfg(feature = "grid")]
-    {
-        style.grid_auto_flow = grid_auto_flow(frame, style.grid_auto_flow);
-        core::mem::swap(
-            &mut style.grid_template_rows,
-            &mut style.grid_template_columns,
-        );
-        core::mem::swap(
-            &mut style.grid_template_row_names,
-            &mut style.grid_template_column_names,
-        );
-        core::mem::swap(&mut style.grid_auto_rows, &mut style.grid_auto_columns);
-        core::mem::swap(&mut style.grid_row, &mut style.grid_column);
-        if let Some(areas) = &mut style.grid_template_areas {
-            core::mem::swap(&mut areas.row_count, &mut areas.column_count);
-            for area in areas.areas.iter_mut() {
-                core::mem::swap(&mut area.row_start, &mut area.column_start);
-                core::mem::swap(&mut area.row_end, &mut area.column_end);
-            }
-        }
-    }
 }

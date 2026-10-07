@@ -797,19 +797,6 @@ pub fn grid_template_line_names(
 
 #[inline]
 #[cfg(feature = "grid")]
-/// [`grid_template_area`] with rows and columns swapped (for a vertical writing-mode frame)
-#[cfg(feature = "grid")]
-pub fn grid_template_area_transposed(input: &stylo::NamedArea) -> taffy::GridTemplateArea<Atom> {
-    let area = grid_template_area(input);
-    taffy::GridTemplateArea {
-        name: area.name,
-        row_start: area.column_start,
-        row_end: area.column_end,
-        column_start: area.row_start,
-        column_end: area.row_end,
-    }
-}
-
 pub fn grid_template_area(input: &stylo::NamedArea) -> taffy::GridTemplateArea<Atom> {
     taffy::GridTemplateArea {
         name: input.name.clone(),
