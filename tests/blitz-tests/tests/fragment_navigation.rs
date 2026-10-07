@@ -12,7 +12,7 @@ use blitz_traits::{
     shell::{ColorScheme, Viewport},
 };
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 fn layout_doc(html: &str) -> HtmlDocument {
     let mut doc = HtmlDocument::from_html(
@@ -29,15 +29,19 @@ fn layout_doc(html: &str) -> HtmlDocument {
     doc
 }
 
-/// Drive `resolve` repeatedly (advancing the wall-clock-based scroll animation)
-/// until the document reports it is no longer animating, or a timeout elapses.
+/// Drive `resolve` with synthetic frames (advancing the frame clock by 16ms each) until
+/// the document reports it is no longer animating, or too much virtual time elapses.
+///
+/// The frames are also paced on the wall clock, since the overlay scrollbars' fade-out
+/// (which keeps `is_animating()` true while it runs) is still timed on the wall clock.
 fn drive_until_settled(doc: &mut HtmlDocument) {
-    let start = Instant::now();
+    let mut now = Timestamp::ZERO;
     while doc.is_animating() {
         std::thread::sleep(Duration::from_millis(8));
-        doc.resolve(Timestamp::ZERO);
+        now += Duration::from_millis(16);
+        doc.resolve(now);
         assert!(
-            start.elapsed() < Duration::from_secs(5),
+            now < Timestamp::from_secs_f64(5.0),
             "scroll animation did not settle within 5s"
         );
     }
@@ -369,8 +373,7 @@ fn wheel_scroll_cancels_smooth_scroll() {
     wheel_at(&mut doc, 5.0, 5.0, 0.0, -20.0);
     assert_eq!(doc.get_node(scroller).unwrap().scroll_offset().y, 20.0);
 
-    std::thread::sleep(Duration::from_millis(50));
-    doc.resolve(Timestamp::ZERO);
+    doc.resolve(Timestamp::ZERO + Duration::from_millis(50));
     assert_eq!(doc.get_node(scroller).unwrap().scroll_offset().y, 20.0);
 }
 
