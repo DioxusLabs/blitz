@@ -75,16 +75,16 @@ class RenderTest(unittest.TestCase):
 
     def test_area_lines(self):
         areas = [
-            {"area": "css", "before": 100, "after": 104, "total": 200, "gained": 6, "lost": 2},
+            {"area": "css", "before": 100, "after": 104, "total": 200, "gained": 12, "lost": 8},
             {"area": "css/css-grid", "before": 9, "after": 8, "total": 10, "gained": 0, "lost": 1},
             {"area": "css/css-grid/x", "before": 3, "after": 3, "total": 4, "gained": 1, "lost": 1},
         ]
         self.assertEqual(
             format_area_lines(areas),
             [
-                "+ css         100 -> 104 / 200  +4 (+6 / -2)  50.00% -> 52.00%  (+2.00%)",
-                "-   css-grid    9 ->   8 /  10  -1 (+0 / -1)  90.00% -> 80.00% (-10.00%)",
-                "!     x         3 ->   3 /   4  +0 (+1 / -1)  75.00% -> 75.00%  (+0.00%)",
+                "+ css         100 -> 104 / 200  +4 (+12 / -8)  50.00% -> 52.00% ( +2.00%)",
+                "-   css-grid    9 ->   8 /  10  -1 ( +0 / -1)  90.00% -> 80.00% (-10.00%)",
+                "!     x         3 ->   3 /   4  +0 ( +1 / -1)  75.00% -> 75.00% ( +0.00%)",
             ],
         )
         section = render(Diff(ENTRIES), run_url=None, areas=areas)

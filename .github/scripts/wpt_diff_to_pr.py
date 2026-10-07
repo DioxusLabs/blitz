@@ -133,15 +133,16 @@ def format_area_lines(areas):
                 str(area["after"]),
                 str(area["total"]),
                 f"{net:+}",
-                f"(+{area['gained']} / -{area['lost']})",
+                f"+{area['gained']}",
+                f"-{area['lost']}",
                 f"{before:.2f}%",
                 f"{after:.2f}%",
-                f"({after - before:+.2f}%)",
+                f"{after - before:+.2f}%",
             )
         )
 
     widths = [max(len(row[i]) for row in rows) for i in range(len(rows[0]))]
-    template = "{} {:<{}}  {:>{}} -> {:>{}} / {:>{}}  {:>{}} {:<{}}  {:>{}} -> {:>{}} {:>{}}"
+    template = "{} {:<{}}  {:>{}} -> {:>{}} / {:>{}}  {:>{}} ({:>{}} / {:>{}})  {:>{}} -> {:>{}} ({:>{}})"
     return [
         template.format(
             row[0], *(value for i in range(1, len(row)) for value in (row[i], widths[i]))
