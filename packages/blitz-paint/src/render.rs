@@ -43,6 +43,7 @@ use style::{
 use kurbo::{self, Affine, Insets, Point, Rect, Shape, Size, Stroke, Vec2};
 use peniko::{self, Fill, ImageData, ImageSampler};
 use style::values::generics::color::GenericColor;
+use style::values::generics::image::GenericImage;
 use taffy::Layout;
 
 /// A view of the track positions reported by taffy in physical (left-to-right /
@@ -101,6 +102,35 @@ impl<'a> PhysicalTracks<'a> {
     }
 }
 
+/// The element whose background is painted on the canvas: the root element, or the
+/// `<body>` child of an `<html>` root element that has no background of its own
+/// (<https://drafts.csswg.org/css-backgrounds/#body-background>).
+fn canvas_background_source(dom: &BaseDocument) -> Option<NodeId> {
+    let root_element = dom.try_root_element()?;
+    let has_background = root_element.primary_styles().is_none_or(|style| {
+        let background = style.get_background();
+        background.background_color != GenericColor::TRANSPARENT_BLACK
+            || background
+                .background_image
+                .0
+                .iter()
+                .any(|image| !matches!(image, GenericImage::None))
+    });
+    if has_background
+        || !root_element
+            .data
+            .is_element_with_tag_name(&local_name!("html"))
+    {
+        return Some(root_element.id);
+    }
+
+    let body = root_element.children.iter().find(|id| {
+        dom.get_node(**id)
+            .is_some_and(|node| node.data.is_element_with_tag_name(&local_name!("body")))
+    });
+    Some(body.copied().unwrap_or(root_element.id))
+}
+
 /// A short-lived struct which holds a bunch of parameters for rendering a scene so
 /// that we don't have to pass them down as parameters
 pub struct BlitzDomPainter<'dom, 'a> {
@@ -113,6 +143,9 @@ pub struct BlitzDomPainter<'dom, 'a> {
     pub(crate) initial_y: f64,
     /// The id of the document's root element (cached to avoid re-resolving it for every element)
     pub(crate) root_element_id: Option<NodeId>,
+    /// The id of the element whose background is painted on the canvas
+    /// (see [`canvas_background_source`])
+    pub(crate) canvas_background_source: Option<NodeId>,
     /// Scrollbar hover/drag state, resolved once per scene like the root element
     #[cfg(feature = "scrollbars")]
     pub(crate) hovered_scrollbar: Option<blitz_dom::node::ScrollbarRef>,
@@ -147,6 +180,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
 
         let layer_manager = LayerManager::default();
         let root_element_id = dom.try_root_element().map(|el| el.id);
+        let canvas_background_source = canvas_background_source(dom);
 
         Self {
             dom,
@@ -156,6 +190,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             initial_x,
             initial_y,
             root_element_id,
+            canvas_background_source,
             #[cfg(feature = "scrollbars")]
             hovered_scrollbar: dom.hovered_scrollbar(),
             #[cfg(feature = "scrollbars")]
@@ -190,41 +225,32 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         let bg_width = (self.width as f32).max(root_element.final_layout().size.width);
         let bg_height = (self.height as f32).max(root_element.final_layout().size.height);
 
-        let background_color = {
-            let html_color = root_element
-                .primary_styles()
-                .map(|s| s.clone_background_color())
-                .unwrap_or(GenericColor::TRANSPARENT_BLACK);
-            if html_color == GenericColor::TRANSPARENT_BLACK {
-                root_element
-                    .children
-                    .iter()
-                    .find_map(|id| {
-                        self.dom
-                            .as_ref()
-                            .get_node(*id)
-                            .filter(|node| node.data.is_element_with_tag_name(&local_name!("body")))
-                    })
-                    .and_then(|body| body.primary_styles())
-                    .map(|style| {
-                        let current_color = style.clone_color();
-                        style
-                            .clone_background_color()
-                            .resolve_to_absolute(&current_color)
-                    })
-            } else {
-                let current_color = root_element.primary_styles().unwrap().clone_color();
-                Some(html_color.resolve_to_absolute(&current_color))
-            }
-        };
+        // Paint the canvas background: the background of the root element (or of the
+        // `<body>` element it was propagated from). It is positioned relative to the root
+        // element's box but covers the whole canvas, and is not affected by the root
+        // element's transform (https://drafts.csswg.org/css-backgrounds/#root-background)
+        let root_transform = Affine::translate(Vec2 {
+            x: self.initial_x - (viewport_scroll.x * self.scale),
+            y: self.initial_y - (viewport_scroll.y * self.scale),
+        });
+        let source = self
+            .canvas_background_source
+            .and_then(|id| self.dom.as_ref().get_node(id))
+            .filter(|source| source.primary_styles().is_some());
+        if let (Some(source), Some(root_style)) = (source, root_element.primary_styles()) {
+            let root_layout = *root_element.final_layout();
+            let location = Vec2::new(root_layout.location.x as f64, root_layout.location.y as f64);
+            let transform = root_transform * Affine::translate(location * self.scale);
 
-        if let Some(bg_color) = background_color {
-            let bg_color = bg_color.as_srgb_color();
-            let rect = Rect::from_origin_size(
+            let mut cx = self.element_cx(source, root_layout, transform, None);
+            cx.frame = create_css_rect(&root_style, &root_layout, self.scale);
+            cx.node = root_element;
+
+            let canvas_rect = Rect::from_origin_size(
                 (self.initial_x, self.initial_y),
                 (bg_width as f64, bg_height as f64),
             );
-            scene.fill(Fill::NonZero, Affine::IDENTITY, bg_color, None, &rect);
+            cx.draw_canvas_background(scene, transform.inverse().transform_rect_bbox(canvas_rect));
         }
 
         // The root clip rectangle is the viewport (in screen coordinates, with the
@@ -232,15 +258,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         // scrollports narrow this rectangle further for their descendants.
         let viewport_clip_rect = Rect::new(0.0, 0.0, self.width as f64, self.height as f64);
 
-        self.render_element(
-            scene,
-            root_id,
-            Affine::translate(Vec2 {
-                x: self.initial_x - (viewport_scroll.x * self.scale),
-                y: self.initial_y - (viewport_scroll.y * self.scale),
-            }),
-            viewport_clip_rect,
-        );
+        self.render_element(scene, root_id, root_transform, viewport_clip_rect);
 
         // Render debug overlay
         if self.dom.devtools().highlight_hover {
@@ -712,6 +730,13 @@ fn convert_rect(rect: &parley::BoundingBox) -> kurbo::Rect {
 }
 
 impl ElementCx<'_, '_> {
+    /// Whether this element's background is painted on the canvas rather than in its own box:
+    /// true for the root element, and for a `<body>` whose background was propagated to it.
+    fn background_is_painted_on_canvas(&self) -> bool {
+        let id = Some(self.node.id);
+        id == self.context.root_element_id || id == self.context.canvas_background_source
+    }
+
     /// Paint overlay scrollbar thumbs for scroll containers: `overflow:
     /// scroll`, or `auto` when the content overflows (never `hidden`/`clip`,
     /// which scroll only programmatically). Thumbs appear on scroll and fade
