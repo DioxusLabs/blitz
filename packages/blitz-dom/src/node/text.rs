@@ -54,7 +54,18 @@ pub enum GeneratedTextInputEvent {
     Input,
     Select,
     PreEditChange,
+    CompositionStart,
+    CompositionUpdate(String),
+    CompositionEnd(String),
     Submit,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum CompositionState {
+    Idle,
+    Composing,
+    // An empty preedit may precede a commit or cancel the current composition.
+    PendingEnd,
 }
 
 pub struct TextInputData {
@@ -68,6 +79,8 @@ pub struct TextInputData {
     /// vertical offset. It is kept up to date so that the caret remains visible within the
     /// input's content box.
     pub scroll_offset: f32,
+    /// IME composition state, used to generate composition events
+    composition_state: CompositionState,
 }
 
 // FIXME: Implement Clone for PlainEditor
@@ -81,6 +94,7 @@ impl TextInputData {
     pub fn new(is_multiline: bool) -> Self {
         let editor = Box::new(parley::PlainEditor::new(16.0));
         Self {
+            composition_state: CompositionState::Idle,
             editor,
             is_multiline,
             scroll_offset: 0.0,
@@ -761,30 +775,52 @@ impl TextInputData {
         font_ctx: &mut FontContext,
         layout_ctx: &mut LayoutContext<TextBrush>,
         event: BlitzImeEvent,
-    ) -> Option<GeneratedTextInputEvent> {
-        let editor = &mut self.editor;
-        let mut driver = editor.driver(font_ctx, layout_ctx);
+    ) -> Vec<GeneratedTextInputEvent> {
+        let mut driver = self.editor.driver(font_ctx, layout_ctx);
+        let mut events = Vec::new();
 
         match event {
-            BlitzImeEvent::Enabled => {
-                // Do nothing
-                None
-            }
+            BlitzImeEvent::Enabled => {}
             BlitzImeEvent::Disabled => {
                 driver.clear_compose();
-                Some(GeneratedTextInputEvent::PreEditChange)
+                events.push(GeneratedTextInputEvent::PreEditChange);
+                if self.composition_state != CompositionState::Idle {
+                    events.push(GeneratedTextInputEvent::CompositionEnd(String::new()));
+                    self.composition_state = CompositionState::Idle;
+                }
             }
             BlitzImeEvent::Commit(text) => {
+                // Some IMEs commit without first sending an empty preedit.
+                driver.clear_compose();
                 driver.insert_or_replace_selection(&text);
-                Some(GeneratedTextInputEvent::Input)
+                if self.composition_state != CompositionState::Idle {
+                    // Keep the final update, existing input event, and end in queue order.
+                    events.push(GeneratedTextInputEvent::CompositionUpdate(text.clone()));
+                    events.push(GeneratedTextInputEvent::Input);
+                    events.push(GeneratedTextInputEvent::CompositionEnd(text));
+                    self.composition_state = CompositionState::Idle;
+                } else {
+                    events.push(GeneratedTextInputEvent::Input);
+                }
             }
             BlitzImeEvent::Preedit(text, cursor) => {
                 if text.is_empty() {
                     driver.clear_compose();
+                    if self.composition_state != CompositionState::Idle {
+                        self.composition_state = CompositionState::PendingEnd;
+                    }
                 } else {
                     driver.set_compose(&text, cursor);
+                    if self.composition_state == CompositionState::PendingEnd {
+                        events.push(GeneratedTextInputEvent::CompositionEnd(String::new()));
+                    }
+                    if self.composition_state != CompositionState::Composing {
+                        events.push(GeneratedTextInputEvent::CompositionStart);
+                    }
+                    events.push(GeneratedTextInputEvent::CompositionUpdate(text));
+                    self.composition_state = CompositionState::Composing;
                 }
-                Some(GeneratedTextInputEvent::PreEditChange)
+                events.push(GeneratedTextInputEvent::PreEditChange);
             }
             BlitzImeEvent::DeleteSurrounding {
                 before_bytes,
@@ -793,8 +829,8 @@ impl TextInputData {
                 let _ = before_bytes;
                 let _ = after_bytes;
                 // TODO
-                None
             }
         }
+        events
     }
 }

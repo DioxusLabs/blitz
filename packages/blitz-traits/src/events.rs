@@ -145,6 +145,9 @@ pub enum DomEventKind {
     KeyDown,
     KeyUp,
     Input,
+    CompositionStart,
+    CompositionUpdate,
+    CompositionEnd,
     Ime,
 
     Focus,
@@ -196,6 +199,9 @@ impl FromStr for DomEventKind {
             "keydown" => Ok(Self::KeyDown),
             "keyup" => Ok(Self::KeyUp),
             "input" => Ok(Self::Input),
+            "compositionstart" => Ok(Self::CompositionStart),
+            "compositionupdate" => Ok(Self::CompositionUpdate),
+            "compositionend" => Ok(Self::CompositionEnd),
             "composition" => Ok(Self::Ime),
 
             "focus" => Ok(Self::Focus),
@@ -243,6 +249,9 @@ pub enum DomEventData {
     KeyDown(BlitzKeyEvent),
     KeyUp(BlitzKeyEvent),
     Input(BlitzInputEvent),
+    CompositionStart(BlitzCompositionEvent),
+    CompositionUpdate(BlitzCompositionEvent),
+    CompositionEnd(BlitzCompositionEvent),
     Ime(BlitzImeEvent),
 
     Focus(BlitzFocusEvent),
@@ -298,6 +307,9 @@ impl DomEventData {
             Self::KeyDown { .. } => "keydown",
             Self::KeyUp { .. } => "keyup",
             Self::Input { .. } => "input",
+            Self::CompositionStart { .. } => "compositionstart",
+            Self::CompositionUpdate { .. } => "compositionupdate",
+            Self::CompositionEnd { .. } => "compositionend",
             Self::Ime { .. } => "composition",
 
             Self::Focus { .. } => "focus",
@@ -344,6 +356,9 @@ impl DomEventData {
             Self::KeyDown { .. } => DomEventKind::KeyDown,
             Self::KeyUp { .. } => DomEventKind::KeyUp,
             Self::Input { .. } => DomEventKind::Input,
+            Self::CompositionStart { .. } => DomEventKind::CompositionStart,
+            Self::CompositionUpdate { .. } => DomEventKind::CompositionUpdate,
+            Self::CompositionEnd { .. } => DomEventKind::CompositionEnd,
             Self::Ime { .. } => DomEventKind::Ime,
 
             Self::Focus { .. } => DomEventKind::Focus,
@@ -389,6 +404,9 @@ impl DomEventData {
             Self::KeyDown { .. } => true,
             Self::KeyUp { .. } => true,
             Self::KeyPress { .. } => true,
+            Self::CompositionStart { .. } => true,
+            Self::CompositionUpdate { .. } => false,
+            Self::CompositionEnd { .. } => false,
             Self::Ime { .. } => true,
             Self::Input { .. } => false,
 
@@ -435,6 +453,9 @@ impl DomEventData {
             Self::KeyDown { .. } => true,
             Self::KeyUp { .. } => true,
             Self::KeyPress { .. } => true,
+            Self::CompositionStart { .. } => true,
+            Self::CompositionUpdate { .. } => true,
+            Self::CompositionEnd { .. } => true,
             Self::Ime { .. } => true,
             Self::Input { .. } => true,
 
@@ -726,6 +747,11 @@ pub struct BlitzKeyEvent {
 #[derive(Clone, Debug)]
 pub struct BlitzInputEvent {
     pub value: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct BlitzCompositionEvent {
+    pub data: String,
 }
 
 #[derive(Clone, Debug)]
