@@ -444,6 +444,9 @@ impl BaseDocument {
 
         let mut state = LayoutPassState::new(self);
         taffy::compute_root_layout(&mut state, root_element_id, available_space);
+        #[cfg(feature = "writing-modes")]
+        state.physicalise_and_round_layout(root_element_id);
+        #[cfg(not(feature = "writing-modes"))]
         taffy::round_layout(&mut state, root_element_id);
 
         // println!("\n\n");
