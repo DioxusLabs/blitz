@@ -20,6 +20,7 @@ pub(crate) mod stylo {
     pub(crate) use style::values::computed::BaselineShift;
     pub(crate) use style::values::computed::LineBreak;
     pub(crate) use style::values::computed::OverflowWrap;
+    pub(crate) use style::values::computed::TextTransform;
     pub(crate) use style::values::computed::WordBreak;
     pub(crate) use style::values::computed::font::FontFeatureSettings;
     pub(crate) use style::values::computed::font::FontStyle;
@@ -499,6 +500,14 @@ pub(crate) fn style(
         letter_spacing,
         text_wrap_mode,
         white_space_collapse: white_space_collapse(itext_styles.white_space_collapse),
+        collapsed_space: if itext_styles
+            .text_transform
+            .contains(stylo::TextTransform::FULL_WIDTH)
+        {
+            parley::CollapsedSpace::IdeographicSpace
+        } else {
+            parley::CollapsedSpace::Space
+        },
         overflow_wrap,
         word_break,
         line_break,

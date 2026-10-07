@@ -372,8 +372,7 @@ impl<'a> OutputSink<'a> {
     /// Pushes `c` after applying the `full-width` and `full-size-kana` mappings.
     ///
     /// Text transforms apply after white space collapsing, so collapsible white space is left
-    /// for Parley to collapse.
-    // TODO: collapsed spaces should become U+3000 for `full-width`, which needs Parley support.
+    /// for Parley, which collapses it to U+3000 for `full-width` (see `stylo_to_parley::style`).
     fn push_char(&mut self, mut c: char) {
         if self.width.contains(TextTransform::FULL_WIDTH)
             && !is_collapsible(self.white_space_collapse, c)
