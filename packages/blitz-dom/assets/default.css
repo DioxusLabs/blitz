@@ -17,8 +17,8 @@
  * spec's bidi rendering section rather than Gecko's internal pseudo-classes
  * (:-moz-dir-attr-rtl and friends), which this engine's selector parser
  * does not know: it dropped these rules, and the dir attribute did nothing.
- * dir=auto keeps its isolation but not the content-based direction, which
- * needs bidi analysis no selector can express.
+ * dir=auto takes its content-based direction from a presentational hint,
+ * which needs bidi analysis no selector can express.
  */
 
 [dir="ltr" i] {
