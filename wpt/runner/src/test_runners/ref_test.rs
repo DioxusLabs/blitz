@@ -2,7 +2,6 @@ use anyrender::{ImageRenderer as _, PaintScene as _};
 use blitz_dom::util::Color;
 use blitz_dom::{BaseDocument, Document as _};
 use blitz_paint::paint_scene;
-use blitz_traits::time::Timestamp;
 use image::{ImageBuffer, ImageFormat};
 use log::warn;
 use peniko::Fill;
@@ -233,9 +232,10 @@ fn render_html_to_buffer(
 
         // Scripts may have mutated the DOM: re-resolve and load any
         // newly-requested resources
+        let now = script_document.clock_now();
         let mut doc = script_document.inner_mut();
-        doc.resolve(Timestamp::ZERO);
-        pump_net_provider(ctx, &mut doc);
+        doc.resolve(now);
+        pump_net_provider(ctx, &mut doc, now);
         render_document_to_buffer(ctx, buffer_kind, out_path, &mut doc);
     } else {
         render_document_to_buffer(ctx, buffer_kind, out_path, &mut document);
@@ -262,7 +262,7 @@ fn wait_for_screenshot_ready(document: &mut ScriptDocument) {
         let now = doc.clock_now();
         {
             let mut inner = doc.inner_mut();
-            inner.resolve(Timestamp::ZERO);
+            inner.resolve(now);
             if has_reftest_wait(&inner) {
                 waiting = true;
                 return None;

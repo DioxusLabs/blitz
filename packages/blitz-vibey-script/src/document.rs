@@ -11,6 +11,7 @@ use blitz_dom::{
 };
 use blitz_html::{DocumentHtmlParser, HtmlProvider};
 use blitz_traits::events::{DomEvent, UiEvent};
+use blitz_traits::time::{Clock, Timestamp};
 use url::Url;
 use web_time::Instant;
 
@@ -116,6 +117,18 @@ impl ScriptDocument {
         self
     }
 
+    /// Drive the document's clock (JS timer deadlines, `performance.now()`,
+    /// `Event.timeStamp`, `Date`) from `clock` instead of the default
+    /// [`SystemClock`](blitz_traits::time::SystemClock).
+    ///
+    /// Embedders should pass the same clock they sample frame times and input
+    /// event timestamps from, so that script-observable time and the engine's
+    /// time agree.
+    pub fn with_clock(self, clock: impl Clock + 'static) -> Self {
+        self.runtime.ctx.state.borrow().clock.set_source(clock);
+        self
+    }
+
     /// Switch the document's clock (which drives JS timer deadlines and
     /// `Date`) to virtual time: time stops and only advances via
     /// [`advance_clock_to`](Self::advance_clock_to).
@@ -132,14 +145,19 @@ impl ScriptDocument {
         self
     }
 
-    /// The current time according to the document's clock (virtual or real)
-    pub fn clock_now(&self) -> Instant {
+    /// The current time according to the document's clock (virtual or real).
+    ///
+    /// This is the time script observes (`performance.now()`, timer deadlines,
+    /// `Event.timeStamp`) and is in the same domain as the frame time passed to
+    /// [`resolve`](blitz_dom::BaseDocument::resolve), so embedders driving frames
+    /// and timers together should pass the same values to both.
+    pub fn clock_now(&self) -> Timestamp {
         self.runtime.ctx.state.borrow().clock.now()
     }
 
     /// Advance a virtual clock to `deadline` (never backwards). Does nothing
     /// unless [`with_virtual_time`](Self::with_virtual_time) was used.
-    pub fn advance_clock_to(&mut self, deadline: Instant) {
+    pub fn advance_clock_to(&mut self, deadline: Timestamp) {
         self.runtime.ctx.state.borrow().clock.advance_to(deadline);
     }
 
@@ -272,7 +290,7 @@ impl ScriptDocument {
     /// Embedders which drive the document manually (rather than through an
     /// event loop `Waker`) can sleep until this deadline and then call
     /// [`poll`](Document::poll) to run due timers.
-    pub fn next_timer_deadline(&self) -> Option<Instant> {
+    pub fn next_timer_deadline(&self) -> Option<Timestamp> {
         self.runtime.next_timer_deadline()
     }
 
@@ -346,6 +364,8 @@ impl ScriptDocument {
         let Some(deadline) = self.runtime.next_timer_deadline() else {
             return;
         };
+        // The thread sleeps in real time, so convert the deadline to an `Instant`.
+        let deadline = Instant::now() + deadline.duration_since(self.clock_now());
 
         let sender = self.timer_thread.get_or_insert_with(|| {
             let (tx, rx) = channel::<Instant>();
