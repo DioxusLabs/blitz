@@ -121,6 +121,7 @@ impl TextTransformer {
     }
 
     /// Transforms the content of a text node that is about to be pushed to `builder`.
+    #[inline]
     pub(crate) fn transform<'a, B: Brush>(
         &'a mut self,
         text: &'a str,
@@ -130,7 +131,15 @@ impl TextTransformer {
         if transform.text_transform.is_empty() {
             return text;
         }
+        self.transform_nonempty(text, transform, builder)
+    }
 
+    fn transform_nonempty<'a, B: Brush>(
+        &'a mut self,
+        text: &'a str,
+        transform: &CaseTransform,
+        builder: &TreeBuilder<'_, B>,
+    ) -> &'a str {
         let case = transform.text_transform.case();
         if text.is_ascii()
             && !transform.has_turkic_casing()
@@ -377,6 +386,7 @@ impl<'a> OutputSink<'a> {
         self.push_unmapped(c.encode_utf8(&mut [0; 4]));
     }
 
+    #[inline(always)]
     fn push_unmapped(&mut self, s: &str) {
         if let Some(len) = self.unchanged_len {
             if self.original[len..].starts_with(s) {
