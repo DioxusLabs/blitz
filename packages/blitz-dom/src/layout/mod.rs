@@ -95,11 +95,39 @@ impl BaseDocument {
         inputs: taffy::tree::LayoutInput,
         block_ctx: Option<&mut BlockContext<'_>>,
     ) -> taffy::tree::LayoutOutput {
+        #[cfg(feature = "writing-modes")]
+        let parent_frame = core::mem::replace(
+            &mut self.current_frame,
+            self.nodes[dom_node_id(node_id)].writing_mode(),
+        );
+
         let mut output = self.dispatch_child_layout(node_id, inputs, block_ctx);
         if inputs.run_mode == RunMode::PerformLayout {
             compute_oof_layout(self, node_id, &mut output);
         }
+
+        #[cfg(feature = "writing-modes")]
+        {
+            self.current_frame = parent_frame;
+        }
         output
+    }
+
+    /// The style of a node being laid out *by* the node whose algorithm is currently running,
+    /// expressed in that node's writing-mode frame (see `layout::writing_mode`).
+    #[inline]
+    pub(crate) fn child_layout_style<'a>(
+        &self,
+        node: &'a Node,
+    ) -> stylo_taffy::TaffyStyloStyle<ComputedStyleRef<'a>> {
+        #[cfg(feature = "writing-modes")]
+        {
+            node.layout_style_in(self.current_frame)
+        }
+        #[cfg(not(feature = "writing-modes"))]
+        {
+            node.layout_style()
+        }
     }
 
     fn dispatch_child_layout(
@@ -535,7 +563,7 @@ impl LayoutContainingBlock for BaseDocument {
         Self: 'a;
 
     fn get_oof_item_style(&self, node_id: NodeId) -> Self::OofItemStyle<'_> {
-        self.node_from_id(node_id).layout_style()
+        self.child_layout_style(self.node_from_id(node_id))
     }
 
     fn clear_hoisted_children(&mut self, node_id: NodeId) {
@@ -621,7 +649,7 @@ impl taffy::LayoutBlockContainer for BaseDocument {
     }
 
     fn get_block_child_style(&self, child_node_id: NodeId) -> Self::BlockItemStyle<'_> {
-        self.get_core_container_style(child_node_id)
+        self.child_layout_style(self.node_from_id(child_node_id))
     }
 
     #[inline(always)]
@@ -653,7 +681,7 @@ impl taffy::LayoutFlexboxContainer for BaseDocument {
     }
 
     fn get_flexbox_child_style(&self, child_node_id: NodeId) -> Self::FlexboxItemStyle<'_> {
-        self.get_core_container_style(child_node_id)
+        self.child_layout_style(self.node_from_id(child_node_id))
     }
 }
 
@@ -673,7 +701,7 @@ impl taffy::LayoutGridContainer for BaseDocument {
     }
 
     fn get_grid_child_style(&self, child_node_id: NodeId) -> Self::GridItemStyle<'_> {
-        self.get_core_container_style(child_node_id)
+        self.child_layout_style(self.node_from_id(child_node_id))
     }
 
     fn set_detailed_grid_info(

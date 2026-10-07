@@ -1,7 +1,10 @@
 use crate::convert;
+#[cfg(feature = "writing-modes")]
+use crate::frame;
 use bitflags::bitflags;
 use convert::stylo;
 use std::ops::Deref;
+use style::logical_geometry::WritingMode;
 use style::properties::ComputedValues;
 use style::values::CustomIdent;
 use style::{Atom, OwnedSlice};
@@ -30,22 +33,80 @@ pub struct TaffyStyloStyle<T: Deref<Target = ComputedValues>> {
     pub style: T,
     /// Extra node-derived flags that are not part of the stylo style
     pub flags: StyleFlags,
+    /// The writing mode whose inline/block axes the Taffy getters are expressed in
+    /// (see [`crate::frame`]). Defaults to the style's own `writing-mode`.
+    #[cfg(feature = "writing-modes")]
+    pub frame: WritingMode,
 }
 
 impl<T: Deref<Target = ComputedValues>> TaffyStyloStyle<T> {
-    /// Create a new [`TaffyStyloStyle`] from a stylo style and [`StyleFlags`]
+    /// Create a new [`TaffyStyloStyle`] from a stylo style and [`StyleFlags`], expressed in the
+    /// style's own writing mode
     pub fn new(style: T, flags: StyleFlags) -> Self {
-        Self { style, flags }
+        #[cfg(feature = "writing-modes")]
+        let frame = style.writing_mode;
+        Self {
+            style,
+            flags,
+            #[cfg(feature = "writing-modes")]
+            frame,
+        }
+    }
+
+    /// Create a new [`TaffyStyloStyle`] expressed in the axes of the writing mode `frame`
+    /// (the writing mode of the box laying this one out). Without the `writing-modes` feature the
+    /// frame is ignored and the getters return physical values.
+    #[cfg_attr(not(feature = "writing-modes"), allow(unused_variables))]
+    pub fn new_in_frame(style: T, flags: StyleFlags, frame: WritingMode) -> Self {
+        Self {
+            style,
+            flags,
+            #[cfg(feature = "writing-modes")]
+            frame,
+        }
+    }
+
+    /// Whether the getters swap the physical axes (vertical frame)
+    #[inline(always)]
+    fn is_vertical(&self) -> bool {
+        #[cfg(feature = "writing-modes")]
+        {
+            self.frame.is_vertical()
+        }
+        #[cfg(not(feature = "writing-modes"))]
+        {
+            false
+        }
+    }
+
+    /// Map a physical rect into the frame
+    #[inline(always)]
+    fn rect<U>(&self, physical: taffy::Rect<U>) -> taffy::Rect<U> {
+        #[cfg(feature = "writing-modes")]
+        {
+            frame::rect(self.frame, physical)
+        }
+        #[cfg(not(feature = "writing-modes"))]
+        {
+            physical
+        }
+    }
+
+    /// Map a physical size into the frame
+    #[inline(always)]
+    fn size<U>(&self, physical: taffy::Size<U>) -> taffy::Size<U> {
+        if self.is_vertical() {
+            physical.transpose()
+        } else {
+            physical
+        }
     }
 }
 
 // Deref<stylo::ComputedValues> impl
 impl<T: Deref<Target = ComputedValues>> From<T> for TaffyStyloStyle<T> {
     fn from(value: T) -> Self {
-        Self {
-            style: value,
-            flags: StyleFlags::empty(),
-        }
+        Self::new(value, StyleFlags::empty())
     }
 }
 
@@ -53,6 +114,8 @@ impl<T: Deref<Target = ComputedValues>> From<T> for TaffyStyloStyle<T> {
 impl<T: Deref<Target = ComputedValues>> From<TaffyStyloStyle<T>> for taffy::Style<Atom> {
     fn from(value: TaffyStyloStyle<T>) -> Self {
         let mut style = convert::to_taffy_style(&value.style);
+        #[cfg(feature = "writing-modes")]
+        frame::transpose_style(value.frame, &mut style);
         style.item_is_replaced = value.flags.contains(StyleFlags::IS_REPLACED);
         style
     }
@@ -89,15 +152,27 @@ impl<T: Deref<Target = ComputedValues>> taffy::CoreStyle for TaffyStyloStyle<T> 
 
     #[inline]
     fn direction(&self) -> taffy::Direction {
-        convert::direction(self.style.get_inherited_box().direction)
+        #[cfg(feature = "writing-modes")]
+        {
+            frame::direction(self.frame)
+        }
+        #[cfg(not(feature = "writing-modes"))]
+        {
+            convert::direction(self.style.get_inherited_box().direction)
+        }
     }
 
     #[inline]
     fn overflow(&self) -> taffy::Point<taffy::Overflow> {
         let box_styles = self.style.get_box();
-        taffy::Point {
+        let overflow = taffy::Point {
             x: convert::overflow(box_styles.overflow_x),
             y: convert::overflow(box_styles.overflow_y),
+        };
+        if self.is_vertical() {
+            overflow.transpose()
+        } else {
+            overflow
         }
     }
 
@@ -124,67 +199,72 @@ impl<T: Deref<Target = ComputedValues>> taffy::CoreStyle for TaffyStyloStyle<T> 
 
     #[inline]
     fn inset(&self) -> taffy::Rect<taffy::LengthPercentageAuto> {
-        convert::inset_rect(&self.style)
+        self.rect(convert::inset_rect(&self.style))
     }
 
     #[inline]
     fn size(&self) -> taffy::Size<taffy::Dimension> {
         let position_styles = self.style.get_position();
-        taffy::Size {
+        self.size(taffy::Size {
             width: convert::dimension(&position_styles.width),
             height: convert::dimension(&position_styles.height),
-        }
+        })
     }
 
     #[inline]
     fn min_size(&self) -> taffy::Size<taffy::LengthPercentageAuto> {
         let position_styles = self.style.get_position();
-        taffy::Size {
+        self.size(taffy::Size {
             width: convert::min_size(&position_styles.min_width),
             height: convert::min_size(&position_styles.min_height),
-        }
+        })
     }
 
     #[inline]
     fn max_size(&self) -> taffy::Size<taffy::LengthPercentageAuto> {
         let position_styles = self.style.get_position();
-        taffy::Size {
+        self.size(taffy::Size {
             width: convert::max_size(&position_styles.max_width),
             height: convert::max_size(&position_styles.max_height),
-        }
+        })
     }
 
     #[inline]
     fn aspect_ratio(&self) -> Option<f32> {
-        convert::aspect_ratio(self.style.get_position().aspect_ratio)
+        let ratio = convert::aspect_ratio(self.style.get_position().aspect_ratio);
+        if self.is_vertical() {
+            ratio.map(|ratio| 1.0 / ratio)
+        } else {
+            ratio
+        }
     }
 
     #[inline]
     fn margin(&self) -> taffy::Rect<taffy::LengthPercentageAuto> {
         let margin_styles = self.style.get_margin();
-        taffy::Rect {
+        self.rect(taffy::Rect {
             left: convert::margin(&margin_styles.margin_left),
             right: convert::margin(&margin_styles.margin_right),
             top: convert::margin(&margin_styles.margin_top),
             bottom: convert::margin(&margin_styles.margin_bottom),
-        }
+        })
     }
 
     #[inline]
     fn padding(&self) -> taffy::Rect<taffy::LengthPercentage> {
         let padding_styles = self.style.get_padding();
-        taffy::Rect {
+        self.rect(taffy::Rect {
             left: convert::length_percentage(&padding_styles.padding_left.0),
             right: convert::length_percentage(&padding_styles.padding_right.0),
             top: convert::length_percentage(&padding_styles.padding_top.0),
             bottom: convert::length_percentage(&padding_styles.padding_bottom.0),
-        }
+        })
     }
 
     #[inline]
     fn border(&self) -> taffy::Rect<taffy::LengthPercentage> {
         let border_styles = self.style.get_border();
-        taffy::Rect {
+        self.rect(taffy::Rect {
             left: convert::border(
                 &border_styles.border_left_width,
                 border_styles.border_left_style,
@@ -201,7 +281,7 @@ impl<T: Deref<Target = ComputedValues>> taffy::CoreStyle for TaffyStyloStyle<T> 
                 &border_styles.border_bottom_width,
                 border_styles.border_bottom_style,
             ),
-        }
+        })
     }
 }
 
@@ -210,7 +290,10 @@ impl<T: Deref<Target = ComputedValues>> taffy::CoreStyle for TaffyStyloStyle<T> 
 impl<T: Deref<Target = ComputedValues>> taffy::BlockContainerStyle for TaffyStyloStyle<T> {
     #[inline]
     fn text_align(&self) -> taffy::TextAlign {
-        convert::text_align(self.style.clone_text_align())
+        let align = convert::text_align(self.style.clone_text_align());
+        #[cfg(feature = "writing-modes")]
+        let align = frame::text_align(self.frame, align);
+        align
     }
 
     #[inline]
@@ -266,13 +349,19 @@ impl<T: Deref<Target = ComputedValues>> taffy::BlockItemStyle for TaffyStyloStyl
     #[cfg(feature = "floats")]
     #[inline]
     fn float(&self) -> taffy::Float {
-        convert::float(self.style.clone_float())
+        let float = convert::float(self.style.clone_float());
+        #[cfg(feature = "writing-modes")]
+        let float = frame::float(self.frame, float);
+        float
     }
 
     #[cfg(feature = "floats")]
     #[inline]
     fn clear(&self) -> taffy::Clear {
-        convert::clear(self.style.clone_clear())
+        let clear = convert::clear(self.style.clone_clear());
+        #[cfg(feature = "writing-modes")]
+        let clear = frame::clear(self.frame, clear);
+        clear
     }
 }
 
@@ -281,7 +370,10 @@ impl<T: Deref<Target = ComputedValues>> taffy::BlockItemStyle for TaffyStyloStyl
 impl<T: Deref<Target = ComputedValues>> taffy::FlexboxContainerStyle for TaffyStyloStyle<T> {
     #[inline]
     fn flex_direction(&self) -> taffy::FlexDirection {
-        convert::flex_direction(self.style.get_position().flex_direction)
+        let dir = convert::flex_direction(self.style.get_position().flex_direction);
+        #[cfg(feature = "writing-modes")]
+        let dir = frame::flex_direction(self.frame, dir);
+        dir
     }
 
     #[inline]
@@ -297,10 +389,10 @@ impl<T: Deref<Target = ComputedValues>> taffy::FlexboxContainerStyle for TaffySt
     #[inline]
     fn gap(&self) -> taffy::Size<taffy::LengthPercentage> {
         let position_styles = self.style.get_position();
-        taffy::Size {
+        self.size(taffy::Size {
             width: convert::gap(&position_styles.column_gap),
             height: convert::gap(&position_styles.row_gap),
-        }
+        })
     }
 
     #[inline]
@@ -442,6 +534,85 @@ impl taffy::GenericRepetition for RepetitionWrapper<'_> {
     }
 }
 
+/// Physical grid style accessors. The `*_source` helpers pick the physical property that plays the
+/// given Taffy role in the frame (rows and columns swap in a vertical frame).
+#[cfg(feature = "grid")]
+impl<T: Deref<Target = ComputedValues>> TaffyStyloStyle<T> {
+    #[inline]
+    fn template_rows_source(&self) -> &stylo::GenericGridTemplateComponent<LengthPercentage, i32> {
+        let position_styles = self.style.get_position();
+        if self.is_vertical() {
+            &position_styles.grid_template_columns
+        } else {
+            &position_styles.grid_template_rows
+        }
+    }
+
+    #[inline]
+    fn template_columns_source(
+        &self,
+    ) -> &stylo::GenericGridTemplateComponent<LengthPercentage, i32> {
+        let position_styles = self.style.get_position();
+        if self.is_vertical() {
+            &position_styles.grid_template_rows
+        } else {
+            &position_styles.grid_template_columns
+        }
+    }
+
+    #[inline]
+    fn auto_rows_source(&self) -> &stylo::ImplicitGridTracks {
+        let position_styles = self.style.get_position();
+        if self.is_vertical() {
+            &position_styles.grid_auto_columns
+        } else {
+            &position_styles.grid_auto_rows
+        }
+    }
+
+    #[inline]
+    fn auto_columns_source(&self) -> &stylo::ImplicitGridTracks {
+        let position_styles = self.style.get_position();
+        if self.is_vertical() {
+            &position_styles.grid_auto_rows
+        } else {
+            &position_styles.grid_auto_columns
+        }
+    }
+
+    fn physical_area_row_count(&self) -> u16 {
+        match &self.style.get_position().grid_template_areas {
+            GridTemplateAreas::Areas(areas) => areas.0.strings.len() as u16,
+            GridTemplateAreas::None => 0,
+        }
+    }
+
+    fn physical_area_column_count(&self) -> u16 {
+        match &self.style.get_position().grid_template_areas {
+            GridTemplateAreas::Areas(areas) => areas.0.width as u16,
+            GridTemplateAreas::None => 0,
+        }
+    }
+
+    #[inline]
+    fn physical_grid_row(&self) -> taffy::Line<taffy::GridPlacement<Atom>> {
+        let position_styles = self.style.get_position();
+        taffy::Line {
+            start: convert::grid_line(&position_styles.grid_row_start),
+            end: convert::grid_line(&position_styles.grid_row_end),
+        }
+    }
+
+    #[inline]
+    fn physical_grid_column(&self) -> taffy::Line<taffy::GridPlacement<Atom>> {
+        let position_styles = self.style.get_position();
+        taffy::Line {
+            start: convert::grid_line(&position_styles.grid_column_start),
+            end: convert::grid_line(&position_styles.grid_column_end),
+        }
+    }
+}
+
 #[cfg(feature = "grid")]
 impl<T: Deref<Target = ComputedValues>> taffy::GridContainerStyle for TaffyStyloStyle<T> {
     type Repetition<'a>
@@ -475,7 +646,7 @@ impl<T: Deref<Target = ComputedValues>> taffy::GridContainerStyle for TaffyStylo
 
     #[inline]
     fn grid_template_rows(&self) -> Option<Self::TemplateTrackList<'_>> {
-        match &self.style.get_position().grid_template_rows {
+        match self.template_rows_source() {
             stylo::GenericGridTemplateComponent::None => None,
             stylo::GenericGridTemplateComponent::TrackList(list) => {
                 Some(list.values.iter().map(|track| match track {
@@ -496,7 +667,7 @@ impl<T: Deref<Target = ComputedValues>> taffy::GridContainerStyle for TaffyStylo
 
     #[inline]
     fn grid_template_columns(&self) -> Option<Self::TemplateTrackList<'_>> {
-        match &self.style.get_position().grid_template_columns {
+        match self.template_columns_source() {
             stylo::GenericGridTemplateComponent::None => None,
             stylo::GenericGridTemplateComponent::TrackList(list) => {
                 Some(list.values.iter().map(|track| match track {
@@ -517,22 +688,12 @@ impl<T: Deref<Target = ComputedValues>> taffy::GridContainerStyle for TaffyStylo
 
     #[inline]
     fn grid_auto_rows(&self) -> Self::AutoTrackList<'_> {
-        self.style
-            .get_position()
-            .grid_auto_rows
-            .0
-            .iter()
-            .map(convert::track_size)
+        self.auto_rows_source().0.iter().map(convert::track_size)
     }
 
     #[inline]
     fn grid_auto_columns(&self) -> Self::AutoTrackList<'_> {
-        self.style
-            .get_position()
-            .grid_auto_columns
-            .0
-            .iter()
-            .map(convert::track_size)
+        self.auto_columns_source().0.iter().map(convert::track_size)
     }
 
     fn grid_template_areas(&self) -> Option<Self::GridTemplateAreas<'_>> {
@@ -559,7 +720,7 @@ impl<T: Deref<Target = ComputedValues>> taffy::GridContainerStyle for TaffyStylo
     }
 
     fn grid_template_column_names(&self) -> Option<Self::TemplateLineNames<'_>> {
-        match &self.style.get_position().grid_template_columns {
+        match self.template_columns_source() {
             stylo::GenericGridTemplateComponent::None => None,
             stylo::GenericGridTemplateComponent::TrackList(list) => {
                 Some(StyloLineNameIter::new(&list.line_names))
@@ -571,7 +732,7 @@ impl<T: Deref<Target = ComputedValues>> taffy::GridContainerStyle for TaffyStylo
     }
 
     fn grid_template_row_names(&self) -> Option<Self::TemplateLineNames<'_>> {
-        match &self.style.get_position().grid_template_rows {
+        match self.template_rows_source() {
             stylo::GenericGridTemplateComponent::None => None,
             stylo::GenericGridTemplateComponent::TrackList(list) => {
                 Some(StyloLineNameIter::new(&list.line_names))
@@ -584,16 +745,19 @@ impl<T: Deref<Target = ComputedValues>> taffy::GridContainerStyle for TaffyStylo
 
     #[inline]
     fn grid_auto_flow(&self) -> taffy::GridAutoFlow {
-        convert::grid_auto_flow(self.style.get_position().grid_auto_flow)
+        let flow = convert::grid_auto_flow(self.style.get_position().grid_auto_flow);
+        #[cfg(feature = "writing-modes")]
+        let flow = frame::grid_auto_flow(self.frame, flow);
+        flow
     }
 
     #[inline]
     fn gap(&self) -> taffy::Size<taffy::LengthPercentage> {
         let position_styles = self.style.get_position();
-        taffy::Size {
+        self.size(taffy::Size {
             width: convert::gap(&position_styles.column_gap),
             height: convert::gap(&position_styles.row_gap),
-        }
+        })
     }
 
     #[inline]
@@ -634,19 +798,19 @@ impl<T: Deref<Target = ComputedValues>> taffy::GridContainerStyle for TaffyStylo
 impl<T: Deref<Target = ComputedValues>> taffy::GridItemStyle for TaffyStyloStyle<T> {
     #[inline]
     fn grid_row(&self) -> taffy::Line<taffy::GridPlacement<Atom>> {
-        let position_styles = self.style.get_position();
-        taffy::Line {
-            start: convert::grid_line(&position_styles.grid_row_start),
-            end: convert::grid_line(&position_styles.grid_row_end),
+        if self.is_vertical() {
+            self.physical_grid_column()
+        } else {
+            self.physical_grid_row()
         }
     }
 
     #[inline]
     fn grid_column(&self) -> taffy::Line<taffy::GridPlacement<Atom>> {
-        let position_styles = self.style.get_position();
-        taffy::Line {
-            start: convert::grid_line(&position_styles.grid_column_start),
-            end: convert::grid_line(&position_styles.grid_column_end),
+        if self.is_vertical() {
+            self.physical_grid_row()
+        } else {
+            self.physical_grid_column()
         }
     }
 
@@ -686,19 +850,19 @@ impl<T: Deref<Target = ComputedValues>> taffy::OofItemStyle for TaffyStyloStyle<
 
     #[inline]
     fn grid_row(&self) -> taffy::Line<taffy::GridPlacement<Atom>> {
-        let position_styles = self.style.get_position();
-        taffy::Line {
-            start: convert::grid_line(&position_styles.grid_row_start),
-            end: convert::grid_line(&position_styles.grid_row_end),
+        if self.is_vertical() {
+            self.physical_grid_column()
+        } else {
+            self.physical_grid_row()
         }
     }
 
     #[inline]
     fn grid_column(&self) -> taffy::Line<taffy::GridPlacement<Atom>> {
-        let position_styles = self.style.get_position();
-        taffy::Line {
-            start: convert::grid_line(&position_styles.grid_column_start),
-            end: convert::grid_line(&position_styles.grid_column_end),
+        if self.is_vertical() {
+            self.physical_grid_row()
+        } else {
+            self.physical_grid_column()
         }
     }
 }

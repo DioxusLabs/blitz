@@ -353,7 +353,7 @@ impl BaseDocument {
 
         // Update inline boxes
         for ibox in inline_layout.layout.inline_boxes_mut() {
-            let style = self.nodes[NodeId::from_u64(ibox.id)].layout_style();
+            let style = self.child_layout_style(&self.nodes[NodeId::from_u64(ibox.id)]);
             let margin = style
                 .margin()
                 .resolve_or_zero(inputs.parent_size, resolve_calc_value);
@@ -464,7 +464,8 @@ impl BaseDocument {
                         let mut width: f32 = 0.0;
                         for ibox in inline_layout.layout.inline_boxes_mut() {
                             let (is_floated, margin) = {
-                                let style = self.nodes[NodeId::from_u64(ibox.id)].layout_style();
+                                let style =
+                                    self.child_layout_style(&self.nodes[NodeId::from_u64(ibox.id)]);
                                 (
                                     style.float().is_floated(),
                                     style
@@ -498,7 +499,8 @@ impl BaseDocument {
                         let mut width: f32 = 0.0;
                         for ibox in inline_layout.layout.inline_boxes_mut() {
                             let (float, clear, margin) = {
-                                let style = self.nodes[NodeId::from_u64(ibox.id)].layout_style();
+                                let style =
+                                    self.child_layout_style(&self.nodes[NodeId::from_u64(ibox.id)]);
                                 (
                                     style.float(),
                                     style.clear(),
@@ -664,7 +666,7 @@ impl BaseDocument {
                         let node_id = NodeId::from_u64(box_break_data.inline_box_id);
 
                         let (direction, clear, margin) = {
-                            let style = self.nodes[node_id].layout_style();
+                            let style = self.child_layout_style(&self.nodes[node_id]);
                             // We can assume that the box is a float because we only set `break_on_box: true` for floats
                             let direction = match style.float() {
                                 Float::Left => taffy::FloatDirection::Left,
@@ -863,7 +865,7 @@ impl BaseDocument {
                     let order = ibox_order;
                     ibox_order += 1;
                     let node = &self.nodes[NodeId::from_u64(ibox.id)];
-                    let style = node.layout_style();
+                    let style = self.child_layout_style(node);
                     let padding = style
                         .padding()
                         .resolve_or_zero(child_inputs.parent_size, resolve_calc_value);

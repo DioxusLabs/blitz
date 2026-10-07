@@ -1123,6 +1123,26 @@ impl Node {
         stylo_taffy::TaffyStyloStyle::new(styles, flags)
     }
 
+    /// The node's style for Taffy, expressed in the axes of the writing mode `frame` (the writing
+    /// mode of the box laying this node out). Used for the child-style getters.
+    #[cfg(feature = "writing-modes")]
+    pub fn layout_style_in(
+        &self,
+        frame: stylo_taffy::WritingMode,
+    ) -> stylo_taffy::TaffyStyloStyle<ComputedStyleRef<'_>> {
+        let mut style = self.layout_style();
+        style.frame = frame;
+        style
+    }
+
+    /// The node's computed `writing-mode` (horizontal-tb for nodes without styles)
+    #[cfg(feature = "writing-modes")]
+    pub fn writing_mode(&self) -> stylo_taffy::WritingMode {
+        self.primary_styles()
+            .map(|s| s.writing_mode)
+            .unwrap_or(stylo_taffy::WritingMode::empty())
+    }
+
     /// The node's `display` as a [`taffy::Display`]. Returns [`taffy::Display::Block`]
     /// for nodes without computed styles (e.g. text nodes).
     pub fn taffy_display(&self) -> taffy::Display {

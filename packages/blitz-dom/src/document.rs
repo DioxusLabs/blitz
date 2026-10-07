@@ -200,6 +200,10 @@ pub struct BaseDocument {
     pub(crate) devtool_settings: DevtoolSettings,
     // Viewport details such as the dimensions, HiDPI scale, and zoom factor,
     pub(crate) viewport: Viewport,
+    /// The writing mode of the box whose layout algorithm is currently running (see
+    /// `layout::writing_mode`). Child styles read during that algorithm are expressed in this frame.
+    #[cfg(feature = "writing-modes")]
+    pub(crate) current_frame: stylo_taffy::WritingMode,
     /// CSS media type used to evaluate `@media` rules.
     pub(crate) media_type: MediaType,
     /// Changes to the stylist [`Device`] that have been requested since the
@@ -445,6 +449,8 @@ impl BaseDocument {
             snapshots,
             nodes_to_id,
             viewport,
+            #[cfg(feature = "writing-modes")]
+            current_frame: stylo_taffy::WritingMode::empty(),
             media_type,
             pending_device_changes: DeviceChanges::empty(),
             style_threading: config.style_threading,
