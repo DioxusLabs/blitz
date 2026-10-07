@@ -9,13 +9,11 @@ pub use wrapper::{StyleFlags, TaffyStyloStyle};
 pub mod convert;
 #[doc(inline)]
 pub use convert::to_taffy_style;
-#[cfg(feature = "writing-mode")]
 #[doc(inline)]
 pub use convert::to_taffy_style_in;
 
-#[cfg(feature = "writing-mode")]
-pub mod frame;
-#[cfg(feature = "writing-mode")]
+pub mod writing_mode;
 pub use style::logical_geometry::WritingMode;
+pub use writing_mode::WritingModeExt;
 
 pub use style::Atom;

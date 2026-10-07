@@ -2,7 +2,7 @@
 //!
 //! Taffy is a horizontal-tb engine: `width`/x is the inline axis and `height`/+y the block axis.
 //! Blitz runs each box's layout algorithm in the box's own writing-mode *frame* and translates at
-//! the boundary (see [`stylo_taffy::frame`] for the axis mapping):
+//! the boundary (see [`stylo_taffy::writing_mode`] for the axis mapping):
 //!
 //! - Style getters: a box's own algorithm reads its style in its own frame
 //!   (`get_core_container_style`); the algorithm laying it out reads it in *that* algorithm's frame
@@ -24,7 +24,7 @@ use super::{BlockContext, LayoutPassState};
 use crate::document::BaseDocument;
 use crate::dom_node_id;
 use stylo_taffy::WritingMode;
-use stylo_taffy::frame;
+use stylo_taffy::WritingModeExt;
 use taffy::{
     AvailableSpace, AxisStaticEdge, AxisStaticPosition, LayoutInput, LayoutOutput, NodeId, Point,
     RoundTree, RunMode, Size, TraversePartialTree,
@@ -214,9 +214,9 @@ impl LayoutPassState<'_> {
             unrounded.size = logical.size.transpose();
             unrounded.scrollbar_size = logical.scrollbar_size.transpose();
             unrounded.scrollable_overflow_rect = logical.scrollable_overflow_rect.transpose();
-            unrounded.border = frame::rect_to_physical(placer_frame, logical.border);
-            unrounded.padding = frame::rect_to_physical(placer_frame, logical.padding);
-            unrounded.margin = frame::rect_to_physical(placer_frame, logical.margin);
+            unrounded.border = placer_frame.physical_rect(logical.border);
+            unrounded.padding = placer_frame.physical_rect(logical.padding);
+            unrounded.margin = placer_frame.physical_rect(logical.margin);
         }
 
         let round = |value: f32| value.round();

@@ -1126,7 +1126,7 @@ impl Node {
         {
             // Own-frame by default: the node's own algorithm reads its style in its own axes
             let frame = styles.writing_mode;
-            stylo_taffy::TaffyStyloStyle::new_in_frame(styles, flags, frame)
+            stylo_taffy::TaffyStyloStyle::new_in(styles, flags, frame)
         }
         #[cfg(not(feature = "writing-mode"))]
         {
@@ -1142,7 +1142,7 @@ impl Node {
         frame: stylo_taffy::WritingMode,
     ) -> stylo_taffy::TaffyStyloStyle<ComputedStyleRef<'_>> {
         let mut style = self.layout_style();
-        style.frame = frame;
+        style.layout_wm = frame;
         style
     }
 
