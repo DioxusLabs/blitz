@@ -17,6 +17,7 @@ accessibility = ["blitz-shell/accessibility"]
 text-transform-icu = ["blitz-dom/text-transform-icu"]
 tracing = ["dep:tracing", "blitz-shell/tracing", "blitz-html/tracing", "blitz-net/tracing"]
 scrollbars = ["blitz-paint/scrollbars"]
+writing-modes = ["blitz-dom/writing-modes"]
 
 [dependencies]
 # Blitz dependencies
