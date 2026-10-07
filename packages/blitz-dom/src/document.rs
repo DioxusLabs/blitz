@@ -626,18 +626,20 @@ impl BaseDocument {
 
     /// Find the label's bound input elements:
     /// the element id referenced by the "for" attribute of a given label element
-    /// or the first input element which is nested in the label
+    /// or the first input or textarea element which is nested in the label
     /// Note that although there should only be one bound element,
     /// we return all possibilities instead of just the first
     /// in order to allow the caller to decide which one is correct
     pub fn label_bound_input_element(&self, label_node_id: NodeId) -> Option<&Node> {
+        let is_labelable =
+            |name: &LocalName| *name == local_name!("input") || *name == local_name!("textarea");
         let label_element = self.nodes[label_node_id].element_data()?;
         if let Some(target_element_dom_id) = label_element.attr(local_name!("for")) {
             TreeTraverser::new(self)
                 .filter_map(|id| {
                     let node = self.get_node(id)?;
                     let element_data = node.element_data()?;
-                    if element_data.name.local != local_name!("input") {
+                    if !is_labelable(&element_data.name.local) {
                         return None;
                     }
                     let id = element_data.id.as_ref()?;
@@ -653,7 +655,7 @@ impl BaseDocument {
                 .filter_map(|child_id| {
                     let node = self.get_node(child_id)?;
                     let element_data = node.element_data()?;
-                    if element_data.name.local == local_name!("input") {
+                    if is_labelable(&element_data.name.local) {
                         Some(node)
                     } else {
                         None
