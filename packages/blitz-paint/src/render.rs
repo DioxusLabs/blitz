@@ -857,7 +857,8 @@ impl ElementCx<'_, '_> {
             // behind the text and selection highlight.
             crate::text::draw_inline_backgrounds(
                 scene,
-                text_layout.layout.lines(),
+                &text_layout.layout,
+                &text_layout.text,
                 self.context.dom,
                 transform,
                 self.node.id,
