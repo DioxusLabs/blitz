@@ -942,7 +942,6 @@ dependencies = [
  "tracing",
  "url",
  "usvg",
- "web-time",
  "wuff",
 ]
 

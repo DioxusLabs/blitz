@@ -6,6 +6,7 @@ use crate::mutator::ViewportMut;
 use crate::net::{
     Resource, ResourceHandler, ResourceLoadResponse, StylesheetHandler, StylesheetLoader,
 };
+use crate::node::scrollbar::ScrollbarFade;
 use crate::node::{ImageData, NodeFlags, RasterImageData, SpecialElementData, Status, TextBrush};
 use crate::scrolling::ScrollAnimationState;
 use crate::selection::TextSelection;
@@ -68,7 +69,6 @@ use style::{
 use style_dom::ElementState;
 use thin_vec::ThinVec;
 use url::Url;
-use web_time::Instant;
 
 #[cfg(feature = "parallel-construct")]
 use thread_local::ThreadLocal;
@@ -277,9 +277,9 @@ pub struct BaseDocument {
     pub(crate) drag_mode: DragMode,
     /// The scrollbar thumb currently under the pointer, if any
     pub(crate) hovered_scrollbar: Option<crate::node::ScrollbarRef>,
-    /// When each scroll container's overlay scrollbars were last shown
-    /// (scrolled, or the pointer left the thumb); drives their fade-out
-    pub(crate) scrollbar_activity: HashMap<NodeId, Instant>,
+    /// The fade-out state of each scroll container whose overlay scrollbars are
+    /// showing (it was scrolled, or the pointer left the thumb)
+    pub(crate) scrollbar_activity: HashMap<NodeId, ScrollbarFade>,
     /// Whether and what kind of scroll animation is currently in progress
     pub(crate) scroll_animation: ScrollAnimationState,
 
@@ -1749,10 +1749,10 @@ impl BaseDocument {
         }
     }
 
-    /// The current opacity of `node_id`'s overlay scrollbars. They show at
-    /// full opacity on scroll and fade out after a delay (Chromium's overlay
-    /// timings); the pointer resting on a thumb, or dragging it, holds them
-    /// visible.
+    /// The opacity of `node_id`'s overlay scrollbars as of the last [`resolve`]
+    /// (BaseDocument::resolve). They show at full opacity on scroll and fade
+    /// out after a delay (Chromium's overlay timings); the pointer resting on
+    /// a thumb, or dragging it, holds them visible.
     pub fn scrollbar_opacity(&self, node_id: NodeId) -> f32 {
         let interacting = |scrollbar: &crate::node::ScrollbarRef| scrollbar.node_id == node_id;
         if self.hovered_scrollbar.as_ref().is_some_and(interacting)
@@ -1763,26 +1763,25 @@ impl BaseDocument {
         {
             return 1.0;
         }
-        self.scrollbar_activity.get(&node_id).map_or(0.0, |last| {
-            crate::node::scrollbar::opacity_at(last.elapsed())
-        })
+        self.scrollbar_activity
+            .get(&node_id)
+            .map_or(0.0, ScrollbarFade::opacity)
     }
 
     /// Show `node_id`'s overlay scrollbars at full opacity and restart their
-    /// fade-out delay.
-    pub(crate) fn show_scrollbars(&mut self, node_id: NodeId) {
+    /// fade-out delay, timed from the input event at `timestamp`, or from the
+    /// next frame if there is no event (e.g. a programmatic scroll).
+    pub(crate) fn show_scrollbars(&mut self, node_id: NodeId, timestamp: Option<Timestamp>) {
         if cfg!(feature = "scrollbars") {
-            self.scrollbar_activity.insert(node_id, Instant::now());
+            self.scrollbar_activity
+                .insert(node_id, ScrollbarFade::shown(timestamp));
         }
     }
 
     /// Whether any overlay scrollbars are awaiting or animating their
     /// fade-out (so frames must keep rendering until they finish).
     fn scrollbars_animating(&self) -> bool {
-        use crate::node::scrollbar::{FADE_DELAY, FADE_DURATION};
-        self.scrollbar_activity
-            .values()
-            .any(|last| last.elapsed() < FADE_DELAY + FADE_DURATION)
+        !self.scrollbar_activity.is_empty()
     }
 
     /// [`hit`](Self::hit), also resolving the innermost overlay scrollbar
@@ -1808,7 +1807,16 @@ impl BaseDocument {
         (hit, scrollbar)
     }
 
+    /// Update hover state for a pointer at `(x, y)`, with no input event to attribute
+    /// the change to (e.g. re-resolving hover after a layout shift). Prefer
+    /// [`set_hover_to_at`](Self::set_hover_to_at) when handling a pointer event.
     pub fn set_hover_to(&mut self, x: f32, y: f32) -> bool {
+        self.set_hover_to_at(x, y, None)
+    }
+
+    /// Update hover state for a pointer event at `(x, y)` which occurred at
+    /// `timestamp` (if known)
+    pub fn set_hover_to_at(&mut self, x: f32, y: f32, timestamp: Option<Timestamp>) -> bool {
         // Record the pointer position in client (unscrolled) coordinates so
         // that `refresh_hover` can re-resolve hover state after layout or
         // scroll changes.
@@ -1833,7 +1841,7 @@ impl BaseDocument {
                 .into_iter()
                 .flatten()
             {
-                self.show_scrollbars(scrollbar.node_id);
+                self.show_scrollbars(scrollbar.node_id, timestamp);
             }
         }
         self.hovered_scrollbar = hovered_scrollbar;
