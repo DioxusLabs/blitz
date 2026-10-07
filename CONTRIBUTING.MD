@@ -5,6 +5,12 @@ Blitz is a "native" HTML/CSS renderer built to support the "Dioxus Native" proje
 
 Talk to us in: the #native channel in the [Dioxus Discord](https://discord.gg/BWTrn6d3)
 
+## Dependency licenses
+
+CI checks dependency licenses with `cargo deny --workspace --all-features --locked
+check licenses`. See [the licensing review](docs/licensing.md) for the allowlist
+policy and commercial-distribution obligations, including MPL-2.0 dependencies.
+
 ## Prerequisites
 
 All platforms require Rust, Python 3 and a C toolchain.

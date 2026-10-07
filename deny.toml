@@ -1,0 +1,47 @@
+# Check every workspace crate, feature, and target (no target filtering).
+[graph]
+all-features = true
+
+[licenses]
+include-dev = true
+include-build = true
+confidence-threshold = 0.8
+allow = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "CC0-1.0",
+    "ISC",
+    "MIT",
+    "NCSA",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "Zlib",
+]
+
+# MPL is file-level copyleft, not permissive. These existing dependencies permit
+# proprietary larger works subject to the obligations in docs/licensing.md.
+# Keep exceptions crate-specific so new MPL dependencies require review.
+exceptions = [
+    { crate = "app_units", allow = ["MPL-2.0"] },
+    { crate = "colored", allow = ["MPL-2.0"] },
+    { crate = "cssparser", allow = ["MPL-2.0"] },
+    { crate = "cssparser-macros", allow = ["MPL-2.0"] },
+    { crate = "dtoa-short", allow = ["MPL-2.0"] },
+    { crate = "mp4parse", allow = ["MPL-2.0"] },
+    { crate = "nucleo", allow = ["MPL-2.0"] },
+    { crate = "nucleo-matcher", allow = ["MPL-2.0"] },
+    { crate = "option-ext", allow = ["MPL-2.0"] },
+    { crate = "selectors", allow = ["MPL-2.0"] },
+    { crate = "stylo", allow = ["MPL-2.0"] },
+    { crate = "stylo_atoms", allow = ["MPL-2.0"] },
+    { crate = "stylo_derive", allow = ["MPL-2.0"] },
+    { crate = "stylo_dom", allow = ["MPL-2.0"] },
+    { crate = "stylo_static_prefs", allow = ["MPL-2.0"] },
+    { crate = "stylo_traits", allow = ["MPL-2.0"] },
+    { crate = "to_shmem", allow = ["MPL-2.0"] },
+    { crate = "to_shmem_derive", allow = ["MPL-2.0"] },
+    { crate = "uluru", allow = ["MPL-2.0"] },
+]
