@@ -197,9 +197,10 @@ impl<Rend: WindowRenderer> View<Rend> {
         inner.set_viewport(viewport);
         inner.set_shell_provider(Arc::new(shell_provider));
 
-        // If the document title is set prior to the window being created then it will
-        // have been sent to a dummy ShellProvider and won't get picked up.
-        // So we look for it here and set it if present.
+        // If the document title is set or a text input is focussed prior to the window being
+        // created then they will have been sent to a dummy ShellProvider and won't get picked up.
+        // So we look for them here and apply them if present.
+        inner.resend_ime_state();
         let title = inner.find_title_node().map(|node| node.text_content());
         if let Some(title) = title {
             winit_window.set_title(&title);
@@ -247,6 +248,7 @@ impl<Rend: WindowRenderer> View<Rend> {
         let mut inner = self.doc.inner_mut();
         inner.set_viewport(viewport);
         inner.set_shell_provider(shell_provider);
+        inner.resend_ime_state();
         drop(inner);
 
         self.poll();
