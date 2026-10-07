@@ -403,8 +403,10 @@ pub fn direction(input: stylo::Direction) -> taffy::Direction {
 #[inline]
 pub fn aspect_ratio(input: stylo::AspectRatio) -> Option<f32> {
     match input.ratio {
-        stylo::PreferredRatio::None => None,
-        stylo::PreferredRatio::Ratio(val) => Some(val.0.0 / val.1.0),
+        // A degenerate ratio (either side zero) behaves as `auto`:
+        // <https://drafts.csswg.org/css-sizing-4/#aspect-ratio>
+        stylo::PreferredRatio::Ratio(val) if !val.is_degenerate() => Some(val.0.0 / val.1.0),
+        _ => None,
     }
 }
 
