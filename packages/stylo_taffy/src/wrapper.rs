@@ -166,8 +166,7 @@ impl<T: Deref<Target = ComputedValues>> taffy::CoreStyle for TaffyStyloStyle<T> 
     fn direction(&self) -> taffy::Direction {
         #[cfg(feature = "writing-modes")]
         {
-            // The node's own inline-start side, expressed in Taffy's inline axis
-            frame::direction(self.style.writing_mode)
+            frame::direction_in(self.frame, self.style.writing_mode)
         }
         #[cfg(not(feature = "writing-modes"))]
         {
@@ -340,10 +339,47 @@ impl<T: Deref<Target = ComputedValues>> taffy::BlockContainerStyle for TaffyStyl
 
     #[inline]
     fn justify_items(&self) -> taffy::AlignItems {
-        convert::default_item_alignment(
-            (self.style.get_position().justify_items.computed.0).0,
-            self.style.clone_direction() == stylo::Direction::Rtl,
-        )
+        #[cfg(feature = "writing-modes")]
+        {
+            self.inline_item_alignment((self.style.get_position().justify_items.computed.0).0)
+                .unwrap_or(taffy::AlignItems::NORMAL)
+        }
+        #[cfg(not(feature = "writing-modes"))]
+        {
+            convert::default_item_alignment(
+                (self.style.get_position().justify_items.computed.0).0,
+                self.style.clone_direction() == stylo::Direction::Rtl,
+            )
+        }
+    }
+}
+
+#[cfg(feature = "writing-modes")]
+impl<T: Deref<Target = ComputedValues>> TaffyStyloStyle<T> {
+    /// Item alignment in the frame's inline axis; `left`/`right` resolve against the frame.
+    #[inline]
+    fn inline_item_alignment(&self, input: stylo::AlignFlags) -> Option<taffy::AlignItems> {
+        convert::item_alignment(input, frame::inline_left_is_end(self.frame))
+    }
+
+    /// Item alignment in the frame's block axis. `self-start`/`self-end` are resolved here against
+    /// the node's own writing mode because Taffy treats its block axis as having no direction.
+    #[inline]
+    fn block_item_alignment(&self, input: stylo::AlignFlags) -> Option<taffy::AlignItems> {
+        let mut align = if self.frame.is_vertical() {
+            convert::item_alignment(input, frame::block_left_is_end(self.frame))?
+        } else {
+            convert::oof_item_alignment(input, false, false)?
+        };
+        let reversed = frame::block_start_is_reversed(self.frame, self.style.writing_mode);
+        align.keyword = match align.keyword {
+            taffy::AlignItemsKeyword::SelfStart if reversed => taffy::AlignItemsKeyword::End,
+            taffy::AlignItemsKeyword::SelfStart => taffy::AlignItemsKeyword::Start,
+            taffy::AlignItemsKeyword::SelfEnd if reversed => taffy::AlignItemsKeyword::Start,
+            taffy::AlignItemsKeyword::SelfEnd => taffy::AlignItemsKeyword::End,
+            keyword => keyword,
+        };
+        Some(align)
     }
 }
 
@@ -357,16 +393,30 @@ impl<T: Deref<Target = ComputedValues>> taffy::BlockItemStyle for TaffyStyloStyl
 
     #[inline]
     fn align_self(&self) -> Option<taffy::AlignSelf> {
-        convert::oof_item_alignment(self.style.get_position().align_self.0, false, false)
+        #[cfg(feature = "writing-modes")]
+        {
+            self.block_item_alignment(self.style.get_position().align_self.0)
+        }
+        #[cfg(not(feature = "writing-modes"))]
+        {
+            convert::oof_item_alignment(self.style.get_position().align_self.0, false, false)
+        }
     }
 
     #[inline]
     fn justify_self(&self) -> Option<taffy::AlignSelf> {
-        convert::oof_item_alignment(
-            self.style.get_position().justify_self.0,
-            true,
-            self.style.clone_direction() == stylo::Direction::Rtl,
-        )
+        #[cfg(feature = "writing-modes")]
+        {
+            self.inline_item_alignment(self.style.get_position().justify_self.0)
+        }
+        #[cfg(not(feature = "writing-modes"))]
+        {
+            convert::oof_item_alignment(
+                self.style.get_position().justify_self.0,
+                true,
+                self.style.clone_direction() == stylo::Direction::Rtl,
+            )
+        }
     }
 
     #[inline]
@@ -465,7 +515,14 @@ impl<T: Deref<Target = ComputedValues>> taffy::FlexboxItemStyle for TaffyStyloSt
 
     #[inline]
     fn align_self(&self) -> Option<taffy::AlignSelf> {
-        convert::item_alignment(self.style.get_position().align_self.0, false)
+        #[cfg(feature = "writing-modes")]
+        {
+            self.block_item_alignment(self.style.get_position().align_self.0)
+        }
+        #[cfg(not(feature = "writing-modes"))]
+        {
+            convert::item_alignment(self.style.get_position().align_self.0, false)
+        }
     }
 }
 
@@ -778,10 +835,18 @@ impl<T: Deref<Target = ComputedValues>> taffy::GridContainerStyle for TaffyStylo
 
     #[inline]
     fn justify_items(&self) -> taffy::AlignItems {
-        convert::default_item_alignment(
-            (self.style.get_position().justify_items.computed.0).0,
-            self.style.clone_direction() == stylo::Direction::Rtl,
-        )
+        #[cfg(feature = "writing-modes")]
+        {
+            self.inline_item_alignment((self.style.get_position().justify_items.computed.0).0)
+                .unwrap_or(taffy::AlignItems::NORMAL)
+        }
+        #[cfg(not(feature = "writing-modes"))]
+        {
+            convert::default_item_alignment(
+                (self.style.get_position().justify_items.computed.0).0,
+                self.style.clone_direction() == stylo::Direction::Rtl,
+            )
+        }
     }
 }
 
@@ -800,31 +865,59 @@ impl<T: Deref<Target = ComputedValues>> taffy::GridItemStyle for TaffyStyloStyle
 
     #[inline]
     fn align_self(&self) -> Option<taffy::AlignSelf> {
-        convert::item_alignment(self.style.get_position().align_self.0, false)
+        #[cfg(feature = "writing-modes")]
+        {
+            self.block_item_alignment(self.style.get_position().align_self.0)
+        }
+        #[cfg(not(feature = "writing-modes"))]
+        {
+            convert::item_alignment(self.style.get_position().align_self.0, false)
+        }
     }
 
     #[inline]
     fn justify_self(&self) -> Option<taffy::AlignSelf> {
-        convert::item_alignment(
-            self.style.get_position().justify_self.0,
-            self.style.clone_direction() == stylo::Direction::Rtl,
-        )
+        #[cfg(feature = "writing-modes")]
+        {
+            self.inline_item_alignment(self.style.get_position().justify_self.0)
+        }
+        #[cfg(not(feature = "writing-modes"))]
+        {
+            convert::item_alignment(
+                self.style.get_position().justify_self.0,
+                self.style.clone_direction() == stylo::Direction::Rtl,
+            )
+        }
     }
 }
 
 impl<T: Deref<Target = ComputedValues>> taffy::OofItemStyle for TaffyStyloStyle<T> {
     #[inline]
     fn align_self(&self) -> Option<taffy::AlignSelf> {
-        convert::oof_item_alignment(self.style.get_position().align_self.0, false, false)
+        #[cfg(feature = "writing-modes")]
+        {
+            self.block_item_alignment(self.style.get_position().align_self.0)
+        }
+        #[cfg(not(feature = "writing-modes"))]
+        {
+            convert::oof_item_alignment(self.style.get_position().align_self.0, false, false)
+        }
     }
 
     #[inline]
     fn justify_self(&self) -> Option<taffy::AlignSelf> {
-        convert::oof_item_alignment(
-            self.style.get_position().justify_self.0,
-            true,
-            self.style.clone_direction() == stylo::Direction::Rtl,
-        )
+        #[cfg(feature = "writing-modes")]
+        {
+            self.inline_item_alignment(self.style.get_position().justify_self.0)
+        }
+        #[cfg(not(feature = "writing-modes"))]
+        {
+            convert::oof_item_alignment(
+                self.style.get_position().justify_self.0,
+                true,
+                self.style.clone_direction() == stylo::Direction::Rtl,
+            )
+        }
     }
 
     #[inline]
