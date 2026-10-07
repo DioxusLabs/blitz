@@ -468,7 +468,11 @@ impl BaseDocument {
             thread_font_contexts: ThreadLocal::new(),
             layout_ctx: parley::LayoutContext::new(),
             #[cfg(feature = "winkin")]
-            winkin: crate::text_winkin::WinkinFonts::new(),
+            winkin: crate::text_winkin::WinkinFonts::new(
+                config
+                    .winkin_fonts
+                    .unwrap_or_else(crate::text_winkin::system_fonts),
+            ),
 
             hover_node_id: None,
             hover_hit_node_id: None,
