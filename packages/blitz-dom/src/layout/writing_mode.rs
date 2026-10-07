@@ -26,8 +26,8 @@ use crate::dom_node_id;
 use stylo_taffy::WritingMode;
 use stylo_taffy::frame;
 use taffy::{
-    AvailableSpace, LayoutInput, LayoutOutput, NodeId, Point, RoundTree, RunMode, Size,
-    TraversePartialTree,
+    AvailableSpace, AxisStaticEdge, AxisStaticPosition, LayoutInput, LayoutOutput, NodeId, Point,
+    RoundTree, RunMode, Size, TraversePartialTree,
 };
 
 impl BaseDocument {
@@ -160,8 +160,9 @@ impl BaseDocument {
             }
         }
 
-        let output = self.compute_child_layout_same_frame(node_id, inputs, None);
+        let mut output = self.compute_child_layout_same_frame(node_id, inputs, None);
         self.orthogonal_percent_basis = percent_basis;
+        transpose_static_positions(&mut output, self.current_frame, parent_frame);
         output.transpose()
     }
 
@@ -251,6 +252,57 @@ impl BaseDocument {
             let child = self.get_hoisted_child_id(node_id, index);
             self.physicalise_and_round_inner(child, frame, size, pos);
         }
+    }
+}
+
+/// Map the static positions of `output`'s out-of-flow candidates (relative to the border box of a
+/// node laid out in `child_frame`) into `parent_frame`, ahead of [`LayoutOutput::transpose`],
+/// which leaves them untouched. The block axis of a `vertical-rl` frame runs against Taffy's
+/// coordinate, so that coordinate is mirrored within the node's size.
+fn transpose_static_positions(
+    output: &mut LayoutOutput,
+    child_frame: WritingMode,
+    parent_frame: WritingMode,
+) {
+    if output.oof_candidates.is_empty() {
+        return;
+    }
+    let vertical_frame = if child_frame.is_vertical() {
+        child_frame
+    } else {
+        parent_frame
+    };
+    let mirror_block = !vertical_frame.is_vertical_lr();
+    let size = output.size;
+    for candidate in output.oof_candidates.as_mut_slice() {
+        let Point { mut x, mut y } = candidate.static_position;
+        if mirror_block {
+            if child_frame.is_vertical() {
+                y = mirror_static_position(y, size.height);
+            } else {
+                x = mirror_static_position(x, size.width);
+            }
+        }
+        candidate.static_position = Point { x: y, y: x };
+    }
+}
+
+fn mirror_static_position(position: AxisStaticPosition, extent: f32) -> AxisStaticPosition {
+    let flip = |edge: AxisStaticEdge| match edge {
+        AxisStaticEdge::Start => AxisStaticEdge::End,
+        AxisStaticEdge::End => AxisStaticEdge::Start,
+        AxisStaticEdge::Center => AxisStaticEdge::Center,
+    };
+    AxisStaticPosition {
+        area: taffy::Line {
+            start: extent - position.area.end,
+            end: extent - position.area.start,
+        },
+        align: taffy::AxisStaticAlign {
+            keyword: flip(position.align.keyword),
+            fallback: flip(position.align.fallback),
+            ..position.align
+        },
     }
 }
 
