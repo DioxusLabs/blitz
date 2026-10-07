@@ -589,20 +589,6 @@ impl<T: Deref<Target = ComputedValues>> TaffyStyloStyle<T> {
         &position_styles.grid_auto_columns
     }
 
-    fn area_row_count(&self) -> u16 {
-        match &self.style.get_position().grid_template_areas {
-            GridTemplateAreas::Areas(areas) => areas.0.strings.len() as u16,
-            GridTemplateAreas::None => 0,
-        }
-    }
-
-    fn area_column_count(&self) -> u16 {
-        match &self.style.get_position().grid_template_areas {
-            GridTemplateAreas::Areas(areas) => areas.0.width as u16,
-            GridTemplateAreas::None => 0,
-        }
-    }
-
     #[inline]
     fn grid_row_placement(&self) -> taffy::Line<taffy::GridPlacement<Atom>> {
         let position_styles = self.style.get_position();
