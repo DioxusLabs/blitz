@@ -142,7 +142,7 @@ def format_area_lines(areas):
         )
 
     widths = [max(len(row[i]) for row in rows) for i in range(len(rows[0]))]
-    template = "{} {:<{}}  {:>{}} ({:>{}} / {:>{}})  {:>{}} -> {:>{}} ({:>{}})  {:>{}} -> {:>{}} / {:>{}}"
+    template = "{} {:<{}} | {:>{}} ({:>{}} / {:>{}}) | {:>{}} -> {:>{}} ({:>{}}) | {:>{}} -> {:>{}} / {:>{}}"
     return [
         template.format(
             row[0], *(value for i in range(1, len(row)) for value in (row[i], widths[i]))
