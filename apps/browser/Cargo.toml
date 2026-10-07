@@ -40,6 +40,8 @@ scrollbars = ["blitz-dom/scrollbars", "blitz-paint/scrollbars"]
 mimalloc = ["dep:mimalloc"]
 font-embolden = ["dioxus-native/font-embolden"]
 apple-font-embolden = ["dioxus-native/apple-font-embolden"]
+# Lay out and paint document text with winkin.
+winkin = ["blitz-paint/winkin"]
 
 [dependencies]
 dioxus-native = { workspace = true, features = [
