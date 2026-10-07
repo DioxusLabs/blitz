@@ -129,20 +129,20 @@ def format_area_lines(areas):
             (
                 "+" if net > 0 else "-" if net < 0 else "!",
                 "  " * depth + area["area"].rsplit("/", 1)[-1],
-                str(area["before"]),
-                str(area["after"]),
-                str(area["total"]),
                 f"{net:+}",
                 f"+{area['gained']}",
                 f"-{area['lost']}",
                 f"{before:.2f}%",
                 f"{after:.2f}%",
                 f"{after - before:+.2f}%",
+                str(area["before"]),
+                str(area["after"]),
+                str(area["total"]),
             )
         )
 
     widths = [max(len(row[i]) for row in rows) for i in range(len(rows[0]))]
-    template = "{} {:<{}}  {:>{}} -> {:>{}} / {:>{}}  {:>{}} ({:>{}} / {:>{}})  {:>{}} -> {:>{}} ({:>{}})"
+    template = "{} {:<{}}  {:>{}} ({:>{}} / {:>{}})  {:>{}} -> {:>{}} ({:>{}})  {:>{}} -> {:>{}} / {:>{}}"
     return [
         template.format(
             row[0], *(value for i in range(1, len(row)) for value in (row[i], widths[i]))
