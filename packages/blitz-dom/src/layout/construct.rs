@@ -1105,6 +1105,9 @@ pub(crate) fn build_inline_layout_into(
     }
 
     text_layout.text = builder.build_into(&mut text_layout.layout);
+    // The content changed, so winkin builds it again when it is next laid out.
+    #[cfg(feature = "winkin")]
+    text_layout.winkin.invalidate();
     return;
 
     fn build_inline_layout_recursive(

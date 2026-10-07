@@ -1685,8 +1685,53 @@ impl Node {
             });
         }
 
+        // Under winkin, the box's own parts on each line are its rects.
+        #[cfg(feature = "winkin")]
+        let winkin_rects: Vec<taffy::Rect<f32>> = match inline_layout.winkin.layout() {
+            Some(winkin) => {
+                let scale = f64::from(scale);
+                let content = kurbo::Size::new(
+                    f64::from(root_layout.content_box_width()) * scale,
+                    f64::from(root_layout.content_box_height()) * scale,
+                );
+                // `position: relative` moves the box and the boxes it is in.
+                let shift = crate::text_winkin::relative_shift_of(
+                    Some(self),
+                    self.id.as_u64(),
+                    content / scale,
+                    inline_root.primary_styles().is_some_and(|styles| {
+                        styles.clone_direction() == style::computed_values::direction::T::Rtl
+                    }),
+                );
+                crate::text_winkin::box_rects(
+                    winkin,
+                    inline_layout.winkin.writing_mode(),
+                    content,
+                    self.id.as_u64(),
+                )
+                .map(|rect| taffy::Rect {
+                    left: origin_x + (shift.x + rect.x0 / scale) as f32,
+                    top: origin_y + (shift.y + rect.y0 / scale) as f32,
+                    right: origin_x + (shift.x + rect.x1 / scale) as f32,
+                    bottom: origin_y + (shift.y + rect.y1 / scale) as f32,
+                })
+                .collect()
+            }
+            None => Vec::new(),
+        };
+        #[cfg(feature = "winkin")]
+        let lines = inline_layout
+            .winkin
+            .layout()
+            .is_none()
+            .then(|| layout.lines())
+            .into_iter()
+            .flatten();
+        #[cfg(not(feature = "winkin"))]
+        let lines = layout.lines();
+
         // One rect per line box: the union of all of the target's fragments on that line
-        Some(layout.lines().filter_map(move |line| {
+        let parley_rects = lines.filter_map(move |line| {
             let line_metrics = line.metrics();
             let mut line_rect: Option<taffy::Rect<f32>> = None;
 
@@ -1730,7 +1775,10 @@ impl Node {
                 right: origin_x + rect.right / scale,
                 bottom: origin_y + rect.bottom / scale,
             })
-        }))
+        });
+        #[cfg(feature = "winkin")]
+        let parley_rects = winkin_rects.into_iter().chain(parley_rects);
+        Some(parley_rects)
     }
 
     /// CSSOM View's `offsetLeft`/`offsetTop`: the offset of this node's border box from the

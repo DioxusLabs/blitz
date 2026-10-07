@@ -29,6 +29,10 @@ pub struct TextLayout {
     /// Block-axis offset (in CSS px) of the line boxes from the top of the container's content
     /// box, as applied by `align-content`.
     pub block_offset: f32,
+    /// The same content laid out by winkin, which measuring, breaking and
+    /// painting read in place of `layout`.
+    #[cfg(feature = "winkin")]
+    pub winkin: crate::text_winkin::WinkinText,
 }
 
 impl TextLayout {

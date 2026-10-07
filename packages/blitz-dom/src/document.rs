@@ -247,6 +247,10 @@ pub struct BaseDocument {
     pub(crate) thread_font_contexts: ThreadLocal<RefCell<Box<FontContext>>>,
     /// A Parley layout context
     pub(crate) layout_ctx: parley::LayoutContext<TextBrush>,
+    /// The fonts winkin chooses from, and the context it builds and breaks
+    /// every inline formatting context in.
+    #[cfg(feature = "winkin")]
+    pub(crate) winkin: crate::text_winkin::WinkinFonts,
 
     /// The real (non-anonymous) node which is currently hovered (if any).
     /// This is never a layout-generated (anonymous) node, so it remains valid
@@ -401,6 +405,10 @@ impl BaseDocument {
         style_config::set_pref!("layout.css.tree-counting-functions.enabled", true);
         style_config::set_pref!("layout.css.progress-function.enabled", true);
         style_config::set_pref!("layout.variable_fonts.enabled", true);
+        // winkin lays out vertical lines; Parley does not, so the property
+        // stays unparsed without it.
+        #[cfg(feature = "winkin")]
+        style_config::set_pref!("layout.writing-mode.enabled", true);
         style_config::set_pref!("layout.threads", -1);
 
         let viewport = config.viewport.unwrap_or_default();
@@ -459,6 +467,8 @@ impl BaseDocument {
             #[cfg(feature = "parallel-construct")]
             thread_font_contexts: ThreadLocal::new(),
             layout_ctx: parley::LayoutContext::new(),
+            #[cfg(feature = "winkin")]
+            winkin: crate::text_winkin::WinkinFonts::new(),
 
             hover_node_id: None,
             hover_hit_node_id: None,
@@ -1350,6 +1360,18 @@ impl BaseDocument {
                     });
                 }
                 drop(global_font_ctx);
+
+                // Winkin chooses fonts from a collection of its own, whose
+                // document layer holds the `@font-face` faces under their
+                // rules' descriptors. Without this every web font falls back
+                // to a system font under winkin, which is most of what a test
+                // using Ahem measures.
+                #[cfg(feature = "winkin")]
+                self.winkin.add_face(
+                    font.clone(),
+                    overrides.family_name.as_deref(),
+                    overrides.descriptors.clone(),
+                );
 
                 // TODO: see if we can only invalidate if resolved fonts may have changed
                 self.invalidate_inline_contexts();
@@ -3273,6 +3295,8 @@ mod font_face_override_tests {
                     family_name: Some(String::from(ALIAS)),
                     weight: Some(800.0),
                     style: Some(parley::fontique::FontStyle::Italic),
+                    #[cfg(feature = "winkin")]
+                    descriptors: Default::default(),
                 },
             )),
         };

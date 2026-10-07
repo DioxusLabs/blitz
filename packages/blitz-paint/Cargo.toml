@@ -21,6 +21,8 @@ apple-font-embolden = []
 # drag/hover interaction in blitz-dom (off by default while the feature
 # matures).
 scrollbars = ["blitz-dom/scrollbars"]
+# Paint document text laid out by winkin.
+winkin = ["blitz-dom/winkin", "dep:winkin"]
 
 [dependencies]
 # Blitz dependencies
@@ -38,6 +40,7 @@ taffy = { workspace = true }
 
 # Linebender + WGPU dependencies
 parley = { workspace = true, features = ["bytemuck"] }
+winkin = { workspace = true, optional = true }
 skrifa = { workspace = true }
 color = { workspace = true }
 peniko = { workspace = true }
