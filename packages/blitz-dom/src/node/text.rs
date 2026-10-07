@@ -33,6 +33,10 @@ pub struct TextLayout {
     /// containing block (as `SPAN_*_CB` flags). The inline root claims those boxes in its place.
     /// Set by each `RunMode::PerformLayout` run of inline layout.
     pub span_cb_flags: stylo_taffy::StyleFlags,
+    /// The same content laid out by winkin, which measuring, breaking and
+    /// painting read in place of `layout`.
+    #[cfg(feature = "winkin")]
+    pub winkin: crate::text_winkin::WinkinText,
 }
 
 impl TextLayout {
