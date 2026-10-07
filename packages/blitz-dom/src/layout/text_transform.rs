@@ -15,6 +15,7 @@ use parley::{Brush, TreeBuilder};
 use style::computed_values::white_space_collapse::T as WhiteSpaceCollapse;
 use style::properties::ComputedValues;
 use style::values::computed::TextTransform;
+use style::values::specified::text::TextTransformCase;
 #[cfg(feature = "text-transform-icu")]
 use writeable::Writeable;
 
@@ -36,19 +37,15 @@ const MAX_CONTEXT_LEN: usize = 32;
 /// The text transforms (and language) for an element's text content.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct CaseTransform {
-    /// The case or mathematical transform.
-    kind: TextTransform,
-    /// `full-width` and/or `full-size-kana`, which are applied after `kind`.
-    width: TextTransform,
-    /// Determines which spaces `full-width` maps (only used if `width` contains it).
+    text_transform: TextTransform,
+    /// Determines which spaces `full-width` maps (only used for `full-width`).
     white_space_collapse: WhiteSpaceCollapse,
     lang: LanguageIdentifier,
 }
 
 impl CaseTransform {
     pub(crate) const NONE: Self = Self {
-        kind: TextTransform::NONE,
-        width: TextTransform::NONE,
+        text_transform: TextTransform::NONE,
         white_space_collapse: WhiteSpaceCollapse::Collapse,
         lang: LanguageIdentifier::UNKNOWN,
     };
@@ -58,23 +55,19 @@ impl CaseTransform {
         if text_transform.is_empty() {
             return Self::NONE;
         }
-        let kind = text_transform & TextTransform::CASE_TRANSFORMS;
-        let width = text_transform & WIDTH_TRANSFORMS;
-        let white_space_collapse = if width.contains(TextTransform::FULL_WIDTH) {
+        let white_space_collapse = if text_transform.contains(TextTransform::FULL_WIDTH) {
             style.clone_white_space_collapse()
         } else {
             WhiteSpaceCollapse::Collapse
         };
-        let lang = if kind.is_empty() || kind == TextTransform::MATH_AUTO {
-            LanguageIdentifier::UNKNOWN
-        } else {
-            LanguageIdentifier::try_from_str(&style.get_font()._x_lang.0)
+        let lang = match text_transform.case() {
+            TextTransformCase::None | TextTransformCase::MathAuto => LanguageIdentifier::UNKNOWN,
+            _ => LanguageIdentifier::try_from_str(&style.get_font()._x_lang.0)
                 .map(casing_language)
-                .unwrap_or(LanguageIdentifier::UNKNOWN)
+                .unwrap_or(LanguageIdentifier::UNKNOWN),
         };
         Self {
-            kind,
-            width,
+            text_transform,
             white_space_collapse,
             lang,
         }
@@ -138,16 +131,17 @@ impl TextTransformer {
         transform: &CaseTransform,
         builder: &TreeBuilder<'_, B>,
     ) -> &'a str {
-        if transform.kind.is_empty() && transform.width.is_empty() {
+        if transform.text_transform.is_empty() {
             return text;
         }
 
+        let case = transform.text_transform.case();
         if text.is_ascii()
             && !transform.has_turkic_casing()
-            && !transform.width.contains(TextTransform::FULL_WIDTH)
+            && !transform.text_transform.contains(TextTransform::FULL_WIDTH)
         {
-            match transform.kind {
-                TextTransform::UPPERCASE => {
+            match case {
+                TextTransformCase::Uppercase => {
                     return map_ascii(
                         text,
                         &mut self.output,
@@ -155,7 +149,7 @@ impl TextTransformer {
                         str::make_ascii_uppercase,
                     );
                 }
-                TextTransform::LOWERCASE => {
+                TextTransformCase::Lowercase => {
                     return map_ascii(
                         text,
                         &mut self.output,
@@ -163,20 +157,20 @@ impl TextTransformer {
                         str::make_ascii_lowercase,
                     );
                 }
-                TextTransform::NONE => return text,
+                TextTransformCase::None => return text,
                 _ => {}
             }
         }
 
         let mut output = OutputSink::new(text, &mut self.output);
-        output.width = transform.width;
+        output.width = transform.text_transform & WIDTH_TRANSFORMS;
         output.white_space_collapse = transform.white_space_collapse;
-        match transform.kind {
-            TextTransform::NONE => output.push_str(text),
-            TextTransform::UPPERCASE => uppercase(text, &transform.lang, &mut output),
-            TextTransform::LOWERCASE => lowercase(text, &transform.lang, &mut output),
-            TextTransform::MATH_AUTO => math_auto(text, &mut output),
-            TextTransform::CAPITALIZE => {
+        match case {
+            TextTransformCase::None => output.push_str(text),
+            TextTransformCase::Uppercase => uppercase(text, &transform.lang, &mut output),
+            TextTransformCase::Lowercase => lowercase(text, &transform.lang, &mut output),
+            TextTransformCase::MathAuto => math_auto(text, &mut output),
+            TextTransformCase::Capitalize => {
                 // Pending (collapsed) whitespace always ends the preceding word, so no
                 // context is needed.
                 let context = if builder.has_pending_whitespace() {
@@ -197,7 +191,6 @@ impl TextTransformer {
                     &mut output,
                 );
             }
-            _ => return text,
         }
         output.finish()
     }
@@ -575,7 +568,7 @@ mod tests {
 
     fn transform(kind: TextTransform, lang: &str, texts: &[&str]) -> Vec<String> {
         let transform = CaseTransform {
-            kind,
+            text_transform: kind,
             lang: casing_language(LanguageIdentifier::try_from_str(lang).unwrap()),
             ..CaseTransform::NONE
         };
@@ -656,7 +649,7 @@ mod tests {
     #[test]
     fn capitalize_mid_word_text_node() {
         let capitalize = CaseTransform {
-            kind: TextTransform::CAPITALIZE,
+            text_transform: TextTransform::CAPITALIZE,
             lang: LanguageIdentifier::UNKNOWN,
             ..CaseTransform::NONE
         };
@@ -670,7 +663,7 @@ mod tests {
     #[test]
     fn capitalize_after_word_break() {
         let capitalize = CaseTransform {
-            kind: TextTransform::CAPITALIZE,
+            text_transform: TextTransform::CAPITALIZE,
             lang: LanguageIdentifier::UNKNOWN,
             ..CaseTransform::NONE
         };
@@ -721,7 +714,7 @@ mod tests {
         with_builder(|builder, transformer| {
             for (kind, text, borrowed) in cases {
                 let transform = CaseTransform {
-                    kind,
+                    text_transform: kind,
                     lang: LanguageIdentifier::UNKNOWN,
                     ..CaseTransform::NONE
                 };
@@ -811,7 +804,7 @@ mod tests {
     #[test]
     fn math_auto_unchanged_text_is_borrowed() {
         let transform = CaseTransform {
-            kind: TextTransform::MATH_AUTO,
+            text_transform: TextTransform::MATH_AUTO,
             lang: LanguageIdentifier::UNKNOWN,
             ..CaseTransform::NONE
         };
@@ -833,8 +826,7 @@ mod tests {
         texts: &[&str],
     ) -> Vec<String> {
         let transform = CaseTransform {
-            kind: text_transform & TextTransform::CASE_TRANSFORMS,
-            width: text_transform & WIDTH_TRANSFORMS,
+            text_transform,
             white_space_collapse,
             ..CaseTransform::NONE
         };
@@ -994,8 +986,7 @@ mod tests {
         with_builder(|builder, transformer| {
             for (text_transform, text) in cases {
                 let transform = CaseTransform {
-                    kind: text_transform & TextTransform::CASE_TRANSFORMS,
-                    width: text_transform & WIDTH_TRANSFORMS,
+                    text_transform,
                     ..CaseTransform::NONE
                 };
                 let output = transformer.transform(text, &transform, builder);
