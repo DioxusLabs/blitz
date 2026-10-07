@@ -36,7 +36,7 @@ impl BaseDocument {
     pub(crate) fn root_layout_wm(&self, root_id: crate::NodeId) -> WritingMode {
         let root = &self.nodes[root_id];
         let wm = root.writing_mode();
-        if has_containment(root) {
+        if root.has_containment() {
             return wm;
         }
         root.children
@@ -48,7 +48,7 @@ impl BaseDocument {
                     .downcast_element()
                     .is_some_and(|el| *el.name.local == *"body")
             })
-            .filter(|body| !has_containment(body))
+            .filter(|body| !body.has_containment())
             .map(|body| body.writing_mode())
             .unwrap_or(wm)
     }
@@ -197,7 +197,7 @@ impl LayoutPassState<'_> {
             height: viewport.height.to_f32_px(),
         };
         let root_wm = self.layout_wm_of(dom_node_id(root));
-        self.physicalise_and_round_inner(root, root_wm, viewport, Point::ZERO);
+        self.physicalise_and_round_inner(root, root_wm, viewport, Point::ZERO, Point::ZERO);
     }
 
     fn physicalise_and_round_inner(
@@ -206,6 +206,7 @@ impl LayoutPassState<'_> {
         placer_wm: WritingMode,
         placer_size: Size<f32>,
         parent_pos: Point<f32>,
+        rounded_parent_pos: Point<f32>,
     ) {
         let logical = self.get_unrounded_layout(node_id);
         let mut unrounded = logical;
@@ -226,36 +227,55 @@ impl LayoutPassState<'_> {
             unrounded.margin = placer_wm.physical_rect(logical.margin);
         }
 
-        let round = |value: f32| value.round();
         let pos = Point {
             x: parent_pos.x + unrounded.location.x,
             y: parent_pos.y + unrounded.location.y,
         };
         let size = unrounded.size;
+        // As in `taffy::round_layout`: the box's outer edges are rounded in absolute coordinates and
+        // every inner edge is rounded relative to them, so adjacent boxes never overlap or gap.
+        let rounded_pos = Point {
+            x: pos.x.round(),
+            y: pos.y.round(),
+        };
+        let rounded_end = Point {
+            x: (pos.x + size.width).round(),
+            y: (pos.y + size.height).round(),
+        };
+        let from_left = |v: f32| (pos.x + v).round() - rounded_pos.x;
+        let from_top = |v: f32| (pos.y + v).round() - rounded_pos.y;
+        let from_right = |v: f32| rounded_end.x - (pos.x + size.width - v).round();
+        let from_bottom = |v: f32| rounded_end.y - (pos.y + size.height - v).round();
+
         let mut layout = unrounded;
-        layout.location.x = round(pos.x) - round(parent_pos.x);
-        layout.location.y = round(pos.y) - round(parent_pos.y);
-        layout.size.width = round(pos.x + size.width) - round(pos.x);
-        layout.size.height = round(pos.y + size.height) - round(pos.y);
-        layout.scrollbar_size.width = round(unrounded.scrollbar_size.width);
-        layout.scrollbar_size.height = round(unrounded.scrollbar_size.height);
-        layout.border.left = round(pos.x + unrounded.border.left) - round(pos.x);
-        layout.border.right =
-            round(pos.x + size.width) - round(pos.x + size.width - unrounded.border.right);
-        layout.border.top = round(pos.y + unrounded.border.top) - round(pos.y);
-        layout.border.bottom =
-            round(pos.y + size.height) - round(pos.y + size.height - unrounded.border.bottom);
-        layout.padding.left = round(pos.x + unrounded.padding.left) - round(pos.x);
-        layout.padding.right =
-            round(pos.x + size.width) - round(pos.x + size.width - unrounded.padding.right);
-        layout.padding.top = round(pos.y + unrounded.padding.top) - round(pos.y);
-        layout.padding.bottom =
-            round(pos.y + size.height) - round(pos.y + size.height - unrounded.padding.bottom);
+        layout.location = Point {
+            x: rounded_pos.x - rounded_parent_pos.x,
+            y: rounded_pos.y - rounded_parent_pos.y,
+        };
+        layout.size = Size {
+            width: rounded_end.x - rounded_pos.x,
+            height: rounded_end.y - rounded_pos.y,
+        };
+        layout.scrollbar_size = unrounded.scrollbar_size.map(f32::round);
+        layout.border = taffy::Rect {
+            left: from_left(unrounded.border.left),
+            right: from_right(unrounded.border.right),
+            top: from_top(unrounded.border.top),
+            bottom: from_bottom(unrounded.border.bottom),
+        };
+        layout.padding = taffy::Rect {
+            left: from_left(unrounded.padding.left),
+            right: from_right(unrounded.padding.right),
+            top: from_top(unrounded.padding.top),
+            bottom: from_bottom(unrounded.padding.bottom),
+        };
         let overflow = unrounded.scrollable_overflow_rect;
-        layout.scrollable_overflow_rect.left = round(pos.x + overflow.left) - round(pos.x);
-        layout.scrollable_overflow_rect.right = round(pos.x + overflow.right) - round(pos.x);
-        layout.scrollable_overflow_rect.top = round(pos.y + overflow.top) - round(pos.y);
-        layout.scrollable_overflow_rect.bottom = round(pos.y + overflow.bottom) - round(pos.y);
+        layout.scrollable_overflow_rect = taffy::Rect {
+            left: from_left(overflow.left),
+            right: from_left(overflow.right),
+            top: from_top(overflow.top),
+            bottom: from_top(overflow.bottom),
+        };
 
         // `unrounded_layout` is left in the placer's writing mode: Taffy's cache may skip re-placing
         // this node on a later layout, and only `final_layout` is read downstream.
@@ -265,12 +285,12 @@ impl LayoutPassState<'_> {
         for index in 0..self.child_count(node_id) {
             let child = self.get_child_id(node_id, index);
             if !self.is_out_of_flow(child) {
-                self.physicalise_and_round_inner(child, wm, size, pos);
+                self.physicalise_and_round_inner(child, wm, size, pos, rounded_pos);
             }
         }
         for index in 0..self.hoisted_child_count(node_id) {
             let child = self.get_hoisted_child_id(node_id, index);
-            self.physicalise_and_round_inner(child, wm, size, pos);
+            self.physicalise_and_round_inner(child, wm, size, pos, rounded_pos);
         }
     }
 }
@@ -324,10 +344,4 @@ fn mirror_static_position(position: AxisStaticPosition, extent: f32) -> AxisStat
             ..position.align
         },
     }
-}
-
-/// Any `contain` value on `<html>` or `<body>` disables body-to-root `writing-mode` propagation.
-fn has_containment(node: &crate::Node) -> bool {
-    node.primary_styles()
-        .is_some_and(|style| !style.clone_contain().is_empty())
 }
