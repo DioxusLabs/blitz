@@ -1,5 +1,7 @@
 use blitz_traits::node_id::NodeId;
 use std::{ops::Range, sync::Arc};
+use style::logical_geometry::WritingMode;
+use style::properties::ComputedValues;
 
 use atomic_refcell::AtomicRefCell;
 use markup5ever::local_name;
@@ -134,6 +136,32 @@ pub struct TableRow {
 /// The used width of one border side: border widths are not adjusted for
 /// border-style in computed styles, so a border with `none`/`hidden` style
 /// must be treated as zero-width.
+/// The writing-mode frame the table's grid runs in (the table's own frame)
+#[cfg_attr(not(feature = "writing-modes"), allow(unused_variables))]
+fn table_frame(doc: &BaseDocument, table_root_node_id: NodeId) -> WritingMode {
+    #[cfg(feature = "writing-modes")]
+    {
+        doc.frame_of(table_root_node_id)
+    }
+    #[cfg(not(feature = "writing-modes"))]
+    {
+        WritingMode::empty()
+    }
+}
+
+/// Convert a table part's style into the table's frame
+#[cfg_attr(not(feature = "writing-modes"), allow(unused_variables))]
+fn table_taffy_style(style: &ComputedValues, frame: WritingMode) -> taffy::Style<Atom> {
+    #[cfg(feature = "writing-modes")]
+    {
+        stylo_taffy::to_taffy_style_in(style, frame)
+    }
+    #[cfg(not(feature = "writing-modes"))]
+    {
+        stylo_taffy::to_taffy_style(style)
+    }
+}
+
 fn side_width(width: app_units::Au, style: BorderStyle) -> f32 {
     if style.none_or_hidden() {
         0.0
@@ -184,6 +212,7 @@ pub(crate) fn build_table_context(
     let mut row = 0u16;
     let mut cursor = ColumnCursor::default();
 
+    let frame = table_frame(doc, table_root_node_id);
     let root_node = &mut doc.nodes[table_root_node_id];
 
     let children = std::mem::take(&mut root_node.children);
@@ -192,7 +221,7 @@ pub(crate) fn build_table_context(
         panic!("Ignoring table because it has no styles");
     };
 
-    let mut style = stylo_taffy::to_taffy_style(&stylo_styles);
+    let mut style = table_taffy_style(&stylo_styles, frame);
     style.item_is_table = true;
     // Use `dense` row-flow so that each cell scans the row from its
     // leftmost column for the first free track. Without `dense`,
@@ -217,7 +246,7 @@ pub(crate) fn build_table_context(
     let mut columns: Vec<TableColumn> = Vec::new();
     let mut column_sizes: Vec<taffy::TrackSizingFunction> = Vec::new();
     for child_id in children.iter().copied() {
-        collect_columns(doc, child_id, &mut columns, &mut column_sizes);
+        collect_columns(doc, child_id, frame, &mut columns, &mut column_sizes);
     }
     // Percentage column widths only take effect in the fixed table layout algorithm
     if !is_fixed {
@@ -250,6 +279,7 @@ pub(crate) fn build_table_context(
             collect_table_cells(
                 doc,
                 child_id,
+                frame,
                 is_fixed,
                 border_collapse,
                 &mut row,
@@ -413,6 +443,7 @@ pub(crate) fn build_table_context(
 fn collect_columns(
     doc: &mut BaseDocument,
     node_id: NodeId,
+    frame: WritingMode,
     columns: &mut Vec<TableColumn>,
     column_sizes: &mut Vec<TrackSizingFunction>,
 ) {
@@ -429,7 +460,7 @@ fn collect_columns(
             let first_column = columns.len();
             let children = std::mem::take(&mut doc.nodes[node_id].children);
             for child_id in children.iter().copied() {
-                collect_columns(doc, child_id, columns, column_sizes);
+                collect_columns(doc, child_id, frame, columns, column_sizes);
             }
             doc.nodes[node_id].children = children;
             for column in &mut columns[first_column..] {
@@ -437,7 +468,7 @@ fn collect_columns(
             }
         }
         DisplayInside::TableColumn => {
-            let style = stylo_taffy::to_taffy_style(&node.primary_styles().unwrap());
+            let style = table_taffy_style(&node.primary_styles().unwrap(), frame);
             let span: u16 = node
                 .attr(local_name!("span"))
                 .and_then(|val| val.parse::<u16>().ok())
@@ -486,6 +517,7 @@ fn collect_columns(
 fn collect_table_cells(
     doc: &mut BaseDocument,
     node_id: NodeId,
+    frame: WritingMode,
     is_fixed: bool,
     border_collapse: BorderCollapse,
     row: &mut u16,
@@ -535,6 +567,7 @@ fn collect_table_cells(
                 collect_table_cells(
                     doc,
                     child_id,
+                    frame,
                     is_fixed,
                     border_collapse,
                     row,
@@ -575,6 +608,7 @@ fn collect_table_cells(
                 collect_table_cells(
                     doc,
                     child_id,
+                    frame,
                     is_fixed,
                     border_collapse,
                     row,
@@ -601,7 +635,7 @@ fn collect_table_cells(
                 .and_then(|val| val.parse::<u16>().ok())
                 .map(|v| v.clamp(1, 65534))
                 .unwrap_or(1);
-            let mut style = stylo_taffy::to_taffy_style(stylo_style);
+            let mut style = table_taffy_style(stylo_style, frame);
             let col = cursor.next_free();
 
             // In the collapsed borders model the borders are laid out as gutters between

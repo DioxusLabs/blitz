@@ -391,6 +391,22 @@ impl BaseDocument {
                         _ => unreachable!(),
                     };
 
+                    #[cfg(feature = "writing-modes")]
+                    let (intrinsic_sizes, default_object_size) =
+                        if node.writing_mode().is_vertical() {
+                            // Intrinsic sizes are physical; the element's algorithm runs in its own frame
+                            (
+                                crate::layout::replaced::IntrinsicSizes {
+                                    width: intrinsic_sizes.height,
+                                    height: intrinsic_sizes.width,
+                                    ratio: intrinsic_sizes.ratio.map(|ratio| 1.0 / ratio),
+                                },
+                                default_object_size.transpose(),
+                            )
+                        } else {
+                            (intrinsic_sizes, default_object_size)
+                        };
+
                     let replaced_context = ReplacedContext {
                         intrinsic_sizes,
                         default_object_size,
