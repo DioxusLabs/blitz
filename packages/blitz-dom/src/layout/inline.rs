@@ -20,6 +20,7 @@ use taffy::{BlockItemStyle as _, Clear, Float, prelude::TaffyMaxContent};
 
 use super::resolve_calc_value;
 use crate::BaseDocument;
+use crate::node::TextLayout;
 use crate::stylo_to_parley;
 
 /// Subtract a child's margins from the definite axes of the available space it is laid out in.
@@ -192,6 +193,105 @@ impl BaseDocument {
         }
     }
 
+    /// Measure the atomic inline boxes of an inline layout and set the space that each
+    /// reserves in its line. Percentage margins resolve against `margin_basis`, or to zero
+    /// if it is `None`.
+    ///
+    /// Returns whether any in-flow box has a margin that depends on `margin_basis`.
+    fn size_inline_boxes(
+        &mut self,
+        inline_layout: &mut TextLayout,
+        child_inputs: LayoutInput,
+        margin_basis: Option<f32>,
+        scale: f32,
+    ) -> bool {
+        let mut has_relative_margins = false;
+        for ibox in inline_layout.layout.inline_boxes_mut() {
+            let style = self.nodes[NodeId::from_u64(ibox.id)].layout_style();
+            let margin_style = style.margin();
+            let margin = margin_style.resolve_or_zero(margin_basis, resolve_calc_value);
+
+            #[cfg(feature = "floats")]
+            let is_floated = style.float().is_floated();
+            #[cfg(not(feature = "floats"))]
+            let is_floated = false;
+
+            let is_out_of_flow = style.position().is_out_of_flow();
+            // The baseline of an inline-block is the baseline of its last in-flow line box,
+            // unless it has no line boxes or it is a block-axis scroll container, in which
+            // case it is the bottom margin edge (CSS 2 §10.8.1, css-align-3 §9.1
+            // `baseline-source: auto`; `overflow: clip` is not a scroll container). Other
+            // atomic inlines (flex, grid, table) export a baseline regardless of `overflow`,
+            // clamped to their border box if they are scroll containers (css-align-3 §9.1).
+            // A layout-contained box is treated as having no baseline (css-contain-1 §3.3).
+            let overflow = style.overflow();
+            let box_style = style.style.get_box();
+            let is_flow = matches!(
+                box_style.display.inside(),
+                DisplayInside::Flow | DisplayInside::FlowRoot
+            );
+            let is_scroll_container = !matches!(overflow.y, Overflow::Visible | Overflow::Clip);
+            let is_block_axis_scroll_container = is_flow && is_scroll_container;
+            let contain_layout = box_style.clone_contain().contains(Contain::LAYOUT);
+            let exports_baseline = !is_block_axis_scroll_container && !contain_layout;
+            let box_inputs = inline_box_inputs(style.size().width, margin, child_inputs);
+            drop(style);
+
+            if is_out_of_flow || is_floated {
+                ibox.width = 0.0;
+                ibox.height = 0.0;
+                ibox.baseline = None;
+            } else {
+                has_relative_margins |= [
+                    margin_style.left,
+                    margin_style.right,
+                    margin_style.top,
+                    margin_style.bottom,
+                ]
+                .iter()
+                .any(|margin| {
+                    !matches!(
+                        margin.into_raw().tag(),
+                        CompactLength::LENGTH_TAG | CompactLength::AUTO_TAG
+                    )
+                });
+                let output = self.compute_child_layout(taffy::NodeId::from(ibox.id), box_inputs);
+                ibox.width = (margin.left + margin.right + output.size.width) * scale;
+                ibox.baseline = if exports_baseline {
+                    output
+                        .baselines
+                        .last
+                        .or(output.baselines.first)
+                        .map(|baseline| {
+                            let baseline = if is_scroll_container {
+                                baseline.clamp(0.0, output.size.height)
+                            } else {
+                                baseline
+                            };
+                            (margin.top + baseline) * scale
+                        })
+                } else {
+                    None
+                };
+                // Vertical margins adjust the space the box reserves in the line. A box with a
+                // baseline splits that space into ascent (`margin.top + baseline`) and descent
+                // (`margin.bottom + height - baseline`), either of which may be negative. A box
+                // without a baseline sits on the baseline and cannot reserve negative space.
+                // Kept finite: huge author lengths can sum to infinity, which is taller than
+                // the line breaker's `f32::MAX` height limit, and it then yields
+                // `MaxHeightExceeded` for this box forever without advancing.
+                let margin_box_height = margin.top + margin.bottom + output.size.height;
+                ibox.height = if ibox.baseline.is_some() {
+                    (margin_box_height * scale).min(f32::MAX)
+                } else {
+                    (margin_box_height.max(0.0) * scale).min(f32::MAX)
+                };
+            }
+        }
+
+        has_relative_margins
+    }
+
     fn compute_inline_layout_inner(
         &mut self,
         node_id: NodeId,
@@ -351,77 +451,12 @@ impl BaseDocument {
             ..child_inputs
         };
 
-        // Update inline boxes
-        for ibox in inline_layout.layout.inline_boxes_mut() {
-            let style = self.nodes[NodeId::from_u64(ibox.id)].layout_style();
-            let margin = style
-                .margin()
-                .resolve_or_zero(inputs.parent_size, resolve_calc_value);
-
-            #[cfg(feature = "floats")]
-            let is_floated = style.float().is_floated();
-            #[cfg(not(feature = "floats"))]
-            let is_floated = false;
-
-            let is_out_of_flow = style.position().is_out_of_flow();
-            // The baseline of an inline-block is the baseline of its last in-flow line box,
-            // unless it has no line boxes or it is a block-axis scroll container, in which
-            // case it is the bottom margin edge (CSS 2 §10.8.1, css-align-3 §9.1
-            // `baseline-source: auto`; `overflow: clip` is not a scroll container). Other
-            // atomic inlines (flex, grid, table) export a baseline regardless of `overflow`,
-            // clamped to their border box if they are scroll containers (css-align-3 §9.1).
-            // A layout-contained box is treated as having no baseline (css-contain-1 §3.3).
-            let overflow = style.overflow();
-            let box_style = style.style.get_box();
-            let is_flow = matches!(
-                box_style.display.inside(),
-                DisplayInside::Flow | DisplayInside::FlowRoot
-            );
-            let is_scroll_container = !matches!(overflow.y, Overflow::Visible | Overflow::Clip);
-            let is_block_axis_scroll_container = is_flow && is_scroll_container;
-            let contain_layout = box_style.clone_contain().contains(Contain::LAYOUT);
-            let exports_baseline = !is_block_axis_scroll_container && !contain_layout;
-            let box_inputs = inline_box_inputs(style.size().width, margin, child_inputs);
-            drop(style);
-
-            if is_out_of_flow || is_floated {
-                ibox.width = 0.0;
-                ibox.height = 0.0;
-                ibox.baseline = None;
-            } else {
-                let output = self.compute_child_layout(taffy::NodeId::from(ibox.id), box_inputs);
-                ibox.width = (margin.left + margin.right + output.size.width) * scale;
-                ibox.baseline = if exports_baseline {
-                    output
-                        .baselines
-                        .last
-                        .or(output.baselines.first)
-                        .map(|baseline| {
-                            let baseline = if is_scroll_container {
-                                baseline.clamp(0.0, output.size.height)
-                            } else {
-                                baseline
-                            };
-                            (margin.top + baseline) * scale
-                        })
-                } else {
-                    None
-                };
-                // Vertical margins adjust the space the box reserves in the line. A box with a
-                // baseline splits that space into ascent (`margin.top + baseline`) and descent
-                // (`margin.bottom + height - baseline`), either of which may be negative. A box
-                // without a baseline sits on the baseline and cannot reserve negative space.
-                // Kept finite: huge author lengths can sum to infinity, which is taller than
-                // the line breaker's `f32::MAX` height limit, and it then yields
-                // `MaxHeightExceeded` for this box forever without advancing.
-                let margin_box_height = margin.top + margin.bottom + output.size.height;
-                ibox.height = if ibox.baseline.is_some() {
-                    (margin_box_height * scale).min(f32::MAX)
-                } else {
-                    (margin_box_height.max(0.0) * scale).min(f32::MAX)
-                };
-            }
-        }
+        // Percentage margins on atomic inlines resolve against the container's content width.
+        // If that is not known yet (the container is shrink-to-fit) then they contribute
+        // nothing to its intrinsic width, and are resolved once the width has been computed.
+        let margin_basis = node_size.width.and(available_space.width.into_option());
+        let has_relative_margins =
+            self.size_inline_boxes(&mut inline_layout, child_inputs, margin_basis, scale);
 
         // TODO: Resolve against style widths as well as known dimensions
         let text_indent = self.nodes[node_id]
@@ -602,6 +637,22 @@ impl BaseDocument {
 
             return LayoutOutput::from_outer_size(clamped_size);
         }
+
+        let margin_basis = match margin_basis {
+            Some(margin_basis) => margin_basis,
+            None => {
+                let margin_basis = width / scale;
+                if has_relative_margins {
+                    self.size_inline_boxes(
+                        &mut inline_layout,
+                        child_inputs,
+                        Some(margin_basis),
+                        scale,
+                    );
+                }
+                margin_basis
+            }
+        };
 
         #[cfg(not(feature = "floats"))]
         {
@@ -872,7 +923,7 @@ impl BaseDocument {
                         .resolve_or_zero(child_inputs.parent_size, resolve_calc_value);
                     let margin = style
                         .margin()
-                        .resolve_or_zero(child_inputs.parent_size, resolve_calc_value);
+                        .resolve_or_zero(Some(margin_basis), resolve_calc_value);
 
                     #[cfg(feature = "floats")]
                     let is_floated = style.float() != Float::None;
