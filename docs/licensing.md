@@ -1,7 +1,10 @@
 # Dependency licensing and commercial use
 
-Blitz's own Rust code is generally `MIT OR Apache-2.0` (`stylo_taffy` also offers
-`MPL-2.0`). The dependency graph is **not entirely permissively licensed**:
+**Review date: 7 October 2026.** The dependency inventory and findings below are
+correct at the time of writing and may change as dependencies are updated.
+
+Blitz's own Rust code is generally `MIT OR Apache-2.0`.
+The dependency graph is **not entirely permissively licensed**:
 Servo/Stylo and several other dependencies require MPL-2.0. MPL permits use in
 commercial, closed-source applications, including static linking, but imposes
 file-level source-disclosure obligations when distributing the covered code.
@@ -49,9 +52,8 @@ permissive license choices.
 | MPL-2.0 | Permitted, including proprietary larger works | Make the corresponding covered source, including modifications, available under MPL; inform recipients how to obtain it and preserve notices. |
 
 Expressions using `OR` offer a choice; expressions using `AND` require all listed
-licenses. For example, `r-efi` offers MIT/Apache alternatives to LGPL and
-`stylo_taffy` offers MIT/Apache alternatives to MPL. These do **not** require a
-GNU-license allowance. `encoding_rs` requires BSD-3-Clause in addition to a
+licenses. For example, `r-efi` offers MIT/Apache alternatives to LGPL, so it does
+**not** require a GNU-license allowance. `encoding_rs` requires BSD-3-Clause in addition to a
 MIT/Apache choice, `unicode-ident` requires Unicode-3.0 in addition to a
 MIT/Apache choice, and `libfuzzer-sys` requires NCSA in addition to a MIT/Apache
 choice. No dependency requires GPL, AGPL or LGPL to satisfy its declared license
