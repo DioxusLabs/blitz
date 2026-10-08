@@ -2,6 +2,7 @@
 
 use std::cell::Cell;
 
+use blitz_dom::text::InlineText as _;
 use blitz_dom::{BaseDocument, Node, NodeId, node::NodeData};
 use boa_engine::{
     Context, Finalize, JsData, JsNativeError, JsResult, JsValue, Trace, object::JsObject,
@@ -193,18 +194,37 @@ fn rendered_point(doc: &BaseDocument, point: Point) -> Option<Point> {
             .element_data()?
             .inline_layout_data
             .as_ref()?;
-        let mut mapper = OffsetMapper {
-            doc,
-            root,
-            text: &layout.text,
-            cursor: 0,
-            collapsed_space: false,
-            point,
-            result: None,
-        };
-        mapper.visit(root);
-        if let Some(offset) = mapper.result {
-            return Some((root, offset));
+        if layout.maps_source() {
+            // The layout maps a text node's own offsets; a point between nodes takes the
+            // adjacent text's, below.
+            if let NodeData::Text(data) = &node.data {
+                let offset = utf16_to_byte_offset(&data.content, point.1);
+                return layout
+                    .source_offset(node.id, offset)
+                    .map(|offset| (root, offset));
+            }
+            // A point in a node with neither text nor children, such as a comment, stands
+            // where the node does.
+            if node.children.is_empty() {
+                if let Some(parent) = node.parent.and_then(|id| doc.get_node(id)) {
+                    let index = parent.children.iter().position(|&id| id == node.id)?;
+                    return rendered_point(doc, (parent.id, index + 1));
+                }
+            }
+        } else {
+            let mut mapper = OffsetMapper {
+                doc,
+                root,
+                text: layout.text(),
+                cursor: 0,
+                collapsed_space: false,
+                point,
+                result: None,
+            };
+            mapper.visit(root);
+            if let Some(offset) = mapper.result {
+                return Some((root, offset));
+            }
         }
     }
 
@@ -219,6 +239,18 @@ fn rendered_point(doc: &BaseDocument, point: Point) -> Option<Point> {
                 .rev()
                 .find_map(|&id| subtree_point(doc, id, true))
         })
+}
+
+/// The byte offset in `text` of UTF-16 offset `units`, clamped to its end.
+fn utf16_to_byte_offset(text: &str, units: usize) -> usize {
+    let mut count = 0;
+    for (index, c) in text.char_indices() {
+        if count >= units {
+            return index;
+        }
+        count += c.len_utf16();
+    }
+    text.len()
 }
 
 fn inline_root(doc: &BaseDocument, mut id: NodeId) -> Option<NodeId> {
