@@ -47,6 +47,8 @@ log-phase-times = ["debug_timer/enable"]
 # Blitz dependencies
 blitz-traits = { workspace = true }
 stylo_taffy = { workspace = true, features = ["default"] }
+stylo_web_animations = { workspace = true }
+rustc-hash = { workspace = true }
 debug_timer = { workspace = true }
 
 # Servo dependencies

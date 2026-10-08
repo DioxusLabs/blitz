@@ -10,6 +10,7 @@ use crate::StyleThreading;
 use crate::layout::damage::compute_layout_damage;
 use crate::node::Node;
 use crate::node::NodeData;
+use crate::web_animations::{AnimationUpdate, animation_target};
 use markup5ever::{LocalName, LocalNameStaticSet, Namespace, NamespaceStaticSet, local_name, ns};
 use selectors::bloom::BLOOM_HASH_MASK;
 use selectors::{
@@ -19,15 +20,14 @@ use selectors::{
     sink::Push,
 };
 use style::CaseSensitivityExt;
-use style::animation::AnimationSetKey;
-use style::animation::AnimationState;
 use style::applicable_declarations::ApplicableDeclarationBlock;
 use style::bloom::each_relevant_element_hash;
 use style::color::AbsoluteColor;
+use style::context::UpdateAnimationsTasks;
 use style::data::{ElementDataMut, ElementDataRef};
 use style::global_style_data::STYLE_THREAD_POOL;
-use style::invalidation::element::restyle_hints::RestyleHint;
 use style::properties::ComputedValues;
+use style::properties::declaration_block::AnimationDeclarations;
 use style::properties::{Importance, PropertyDeclaration};
 use style::rule_tree::CascadeLevel;
 use style::rule_tree::CascadeOrigin;
@@ -63,7 +63,7 @@ impl crate::document::BaseDocument {
     pub fn resolve_stylist(&mut self, now: f64) {
         style::thread_state::enter(ThreadState::LAYOUT);
 
-        let guard = &self.guard;
+        let guard = &self.guard.clone();
         let guards = StylesheetGuards {
             author: &guard.read(),
             ua_or_user: &guard.read(),
@@ -79,104 +79,59 @@ impl crate::document::BaseDocument {
             .flush(&guards)
             .process_style(root, Some(&self.snapshots));
 
-        // Mark actively animating nodes as dirty
-        let mut sets = self.animations.sets.write();
-        for (key, set) in sets.iter_mut() {
-            let node_id = NodeId::from_u64(key.node.id() as u64);
+        self.tick_animations(now * 1000.);
 
-            // Drop animations belonging to nodes that are no longer in the
-            // document. A removed element is never restyled, so it would never
-            // get a chance to cancel its own animations; an infinite animation
-            // would then keep `has_active_animations` set forever and force a
-            // redraw every frame. Emptying the set here lets the `retain` below
-            // discard it so the flag can clear on this same pass.
-            let in_document = self
-                .nodes
-                .get(node_id)
-                .is_some_and(|node| node.flags.is_in_document());
-            if !in_document {
-                set.animations.clear();
-                set.transitions.clear();
-                continue;
+        // Animations that the first traversal starts or changes are applied by a second one.
+        for is_first in [true, false] {
+            let context = SharedStyleContext {
+                traversal_flags: TraversalFlags::empty(),
+                stylist: &self.stylist,
+                options: GLOBAL_STYLE_DATA.options.clone(),
+                guards: StylesheetGuards {
+                    author: &guard.read(),
+                    ua_or_user: &guard.read(),
+                },
+                visited_styles_enabled: false,
+                animations: self.animations.clone(),
+                current_time_for_animations: now,
+                snapshot_map: &self.snapshots,
+                registered_speculative_painters: &RegisteredPaintersImpl,
+            };
+
+            // components/layout_2020/lib.rs:983
+            let root = self.root_element();
+            let token = RecalcStyle::pre_traverse(root, &context);
+
+            let mut nodes_needing_style_image_flush = Vec::new();
+            if token.should_traverse() {
+                // Style the elements, resolving their data
+                let mut traverser = RecalcStyle::new(context);
+                // `Sequential` bypasses Stylo's global pool. See `StyleThreading`.
+                let pool_guard = matches!(self.style_threading, StyleThreading::Parallel)
+                    .then(|| STYLE_THREAD_POOL.pool());
+                let rayon_pool = pool_guard.as_ref().and_then(|g| g.as_ref());
+                style::driver::traverse_dom(&traverser, token, rayon_pool);
+                nodes_needing_style_image_flush =
+                    std::mem::take(traverser.nodes_needing_style_image_flush.get_mut().unwrap());
+            }
+            self.pending_style_image_nodes
+                .extend(nodes_needing_style_image_flush);
+
+            if is_first {
+                for opaque in self.snapshots.keys() {
+                    let id = NodeId::from_u64(opaque.id() as u64);
+                    if let Some(node) = self.nodes.get_mut(id) {
+                        node.set_has_snapshot(false);
+                    }
+                }
+                self.snapshots.clear();
             }
 
-            self.nodes[node_id].set_restyle_hint(RestyleHint::RESTYLE_SELF);
-
-            for animation in set.animations.iter_mut() {
-                if animation.state == AnimationState::Pending && animation.started_at <= now {
-                    animation.state = AnimationState::Running;
-                }
-                animation.iterate_if_necessary(now);
-
-                if animation.state == AnimationState::Running && animation.has_ended(now) {
-                    animation.state = AnimationState::Finished;
-                }
-            }
-
-            for transition in set.transitions.iter_mut() {
-                if transition.state == AnimationState::Pending && transition.start_time <= now {
-                    transition.state = AnimationState::Running;
-                }
-                if transition.state == AnimationState::Running && transition.has_ended(now) {
-                    transition.state = AnimationState::Finished;
-                }
+            if !self.update_animations() {
+                break;
             }
         }
-        drop(sets);
-
-        // Build the style context used by the style traversal
-        let context = SharedStyleContext {
-            traversal_flags: TraversalFlags::empty(),
-            stylist: &self.stylist,
-            options: GLOBAL_STYLE_DATA.options.clone(),
-            guards,
-            visited_styles_enabled: false,
-            animations: self.animations.clone(),
-            current_time_for_animations: now,
-            snapshot_map: &self.snapshots,
-            registered_speculative_painters: &RegisteredPaintersImpl,
-        };
-
-        // components/layout_2020/lib.rs:983
-        let root = self.root_element();
-        // dbg!(root);
-        let token = RecalcStyle::pre_traverse(root, &context);
-
-        let mut nodes_needing_style_image_flush = Vec::new();
-        if token.should_traverse() {
-            // Style the elements, resolving their data
-            let mut traverser = RecalcStyle::new(context);
-            // `Sequential` bypasses Stylo's global pool. See `StyleThreading`.
-            let pool_guard = matches!(self.style_threading, StyleThreading::Parallel)
-                .then(|| STYLE_THREAD_POOL.pool());
-            let rayon_pool = pool_guard.as_ref().and_then(|g| g.as_ref());
-            style::driver::traverse_dom(&traverser, token, rayon_pool);
-            nodes_needing_style_image_flush =
-                std::mem::take(traverser.nodes_needing_style_image_flush.get_mut().unwrap());
-        }
-        self.pending_style_image_nodes
-            .extend(nodes_needing_style_image_flush);
-
-        for opaque in self.snapshots.keys() {
-            let id = NodeId::from_u64(opaque.id() as u64);
-            if let Some(node) = self.nodes.get_mut(id) {
-                node.set_has_snapshot(false);
-            }
-        }
-        self.snapshots.clear();
-
-        let mut sets = self.animations.sets.write();
-        for set in sets.values_mut() {
-            set.clear_canceled_animations();
-            for animation in set.animations.iter_mut() {
-                animation.is_new = false;
-            }
-            for transition in set.transitions.iter_mut() {
-                transition.is_new = false;
-            }
-        }
-        sets.retain(|_, state| !state.is_empty());
-        self.has_active_animations = sets.values().any(|state| state.needs_animation_ticks());
+        self.has_active_animations = self.nodes.animations.store.needs_ticks();
 
         // Maybe run garbage collection. Stylo has internal to determine whether to run or not.
         self.stylist.rule_tree().maybe_gc();
@@ -776,50 +731,119 @@ impl<'a> TElement for BlitzNode<'a> {
         true
     }
 
-    fn has_animations(&self, context: &SharedStyleContext) -> bool {
-        self.has_css_animations(context, None) || self.has_css_transitions(context, None)
+    fn has_embedder_animations(&self) -> bool {
+        true
+    }
+
+    fn has_animations(&self, _context: &SharedStyleContext) -> bool {
+        let animations = &self.tree().animations;
+        !animations.store.is_empty()
+            && animations
+                .store
+                .has_animations(&animation_target(self.id, None))
     }
 
     fn has_css_animations(
         &self,
-        context: &SharedStyleContext,
+        _context: &SharedStyleContext,
         pseudo_element: Option<PseudoElement>,
     ) -> bool {
-        let key = AnimationSetKey::new(TNode::opaque(&TElement::as_node(self)), pseudo_element);
-        context.animations.has_active_animations(&key)
+        let animations = &self.tree().animations;
+        !animations.store.is_empty()
+            && animations
+                .store
+                .has_css_animations(&animation_target(self.id, pseudo_element))
     }
 
     fn has_css_transitions(
         &self,
-        context: &SharedStyleContext,
+        _context: &SharedStyleContext,
         pseudo_element: Option<PseudoElement>,
     ) -> bool {
-        let key = AnimationSetKey::new(TNode::opaque(&TElement::as_node(self)), pseudo_element);
-        context.animations.has_active_transitions(&key)
+        let animations = &self.tree().animations;
+        !animations.store.is_empty()
+            && animations
+                .store
+                .has_css_transitions(&animation_target(self.id, pseudo_element))
     }
 
     fn animation_rule(
         &self,
-        context: &SharedStyleContext,
+        _context: &SharedStyleContext,
     ) -> Option<Arc<Locked<PropertyDeclarationBlock>>> {
-        let opaque = TNode::opaque(&TElement::as_node(self));
-        context.animations.get_animation_declarations(
-            &AnimationSetKey::new_for_non_pseudo(opaque),
-            context.current_time_for_animations,
-            self.guard(),
-        )
+        let rules = &self.tree().animations.rules;
+        if rules.is_empty() {
+            return None;
+        }
+        rules
+            .get(&animation_target(self.id, None))?
+            .animations
+            .clone()
     }
 
     fn transition_rule(
         &self,
-        context: &SharedStyleContext,
+        _context: &SharedStyleContext,
     ) -> Option<Arc<Locked<PropertyDeclarationBlock>>> {
-        let opaque = TNode::opaque(&TElement::as_node(self));
-        context.animations.get_transition_declarations(
-            &AnimationSetKey::new_for_non_pseudo(opaque),
-            context.current_time_for_animations,
-            self.guard(),
+        let rules = &self.tree().animations.rules;
+        if rules.is_empty() {
+            return None;
+        }
+        rules
+            .get(&animation_target(self.id, None))?
+            .transitions
+            .clone()
+    }
+
+    fn animation_declarations_for_pseudo(
+        &self,
+        _context: &SharedStyleContext,
+        pseudo_element: &PseudoElement,
+    ) -> AnimationDeclarations {
+        let rules = &self.tree().animations.rules;
+        if rules.is_empty() {
+            return Default::default();
+        }
+        match rules.get(&animation_target(self.id, Some(*pseudo_element))) {
+            Some(rules) => AnimationDeclarations {
+                animations: rules.animations.clone(),
+                transitions: rules.transitions.clone(),
+            },
+            None => Default::default(),
+        }
+    }
+
+    fn needs_transitions_update(
+        &self,
+        pseudo_element: Option<&PseudoElement>,
+        before_change_style: &ComputedValues,
+        after_change_style: &ComputedValues,
+    ) -> bool {
+        let animations = &self.tree().animations;
+        let target = animation_target(self.id, pseudo_element.cloned());
+        let rules = animations.rules.get(&target);
+        animations.store.needs_transitions_update(
+            &target,
+            before_change_style,
+            after_change_style,
+            &|property| rules.is_some_and(|rules| rules.is_animated(property)),
         )
+    }
+
+    fn update_animations(
+        &self,
+        pseudo: Option<PseudoElement>,
+        before_change_style: Option<Arc<ComputedValues>>,
+        tasks: UpdateAnimationsTasks,
+    ) {
+        let update = AnimationUpdate {
+            node: self.id,
+            pseudo,
+            before_change_style,
+            tasks,
+        };
+        let mut updates = self.tree().animations.pending_updates.lock().unwrap();
+        updates.push(update);
     }
 
     fn shadow_root(&self) -> Option<<Self::ConcreteNode as TNode>::ConcreteShadowRoot> {
@@ -1245,26 +1269,6 @@ impl<'a> TElement for BlitzNode<'a> {
         compute_layout_damage(old, new)
         // ALL_DAMAGE
     }
-
-    // fn update_animations(
-    //     &self,
-    //     before_change_style: Option<Arc<ComputedValues>>,
-    //     tasks: style::context::UpdateAnimationsTasks,
-    // ) {
-    //     todo!()
-    // }
-
-    // fn process_post_animation(&self, tasks: style::context::PostAnimationTasks) {
-    //     todo!()
-    // }
-
-    // fn needs_transitions_update(
-    //     &self,
-    //     before_change_style: &ComputedValues,
-    //     after_change_style: &ComputedValues,
-    // ) -> bool {
-    //     todo!()
-    // }
 }
 
 pub struct Traverser<'a> {
