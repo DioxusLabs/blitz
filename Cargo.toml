@@ -98,11 +98,12 @@ dioxus-cli-config = { version = "0.7.3" }
 dioxus-core-macro = { version = "0.7.3" }
 
 # Taffy + Parley + Fontations
-taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "bc525c030e67d2fd58ecb7b96742f4fb34866c44", default-features = false, features = [
+taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "96ce55cadfe9fb06ccce0c256efb07532a82cd42", default-features = false, features = [
     "std",
     "flexbox",
     "flexbox_balance",
     "grid",
+    "grid_lanes",
     "block_layout",
     "content_size",
     "calc",
@@ -326,3 +327,17 @@ rustc-hash = { workspace = true }
 # [patch."https://github.com/linebender/parley"]
 # parley = { path = "../parley/parley" }
 # fontique = { path = "../parley/fontique" }
+
+[patch.crates-io]
+# Stylo with grid-lanes-direction and flow-tolerance (servo/stylo PR pending)
+stylo = { git = "https://github.com/DioxusLabs/stylo", rev = "1281c6c2cdd88f95e7abc0c6fe84149c36e57f4f" }
+stylo_traits = { git = "https://github.com/DioxusLabs/stylo", rev = "1281c6c2cdd88f95e7abc0c6fe84149c36e57f4f" }
+stylo_atoms = { git = "https://github.com/DioxusLabs/stylo", rev = "1281c6c2cdd88f95e7abc0c6fe84149c36e57f4f" }
+stylo_static_prefs = { git = "https://github.com/DioxusLabs/stylo", rev = "1281c6c2cdd88f95e7abc0c6fe84149c36e57f4f" }
+stylo_dom = { git = "https://github.com/DioxusLabs/stylo", rev = "1281c6c2cdd88f95e7abc0c6fe84149c36e57f4f" }
+stylo_derive = { git = "https://github.com/DioxusLabs/stylo", rev = "1281c6c2cdd88f95e7abc0c6fe84149c36e57f4f" }
+stylo_malloc_size_of = { git = "https://github.com/DioxusLabs/stylo", rev = "1281c6c2cdd88f95e7abc0c6fe84149c36e57f4f" }
+selectors = { git = "https://github.com/DioxusLabs/stylo", rev = "1281c6c2cdd88f95e7abc0c6fe84149c36e57f4f" }
+servo_arc = { git = "https://github.com/DioxusLabs/stylo", rev = "1281c6c2cdd88f95e7abc0c6fe84149c36e57f4f" }
+to_shmem = { git = "https://github.com/DioxusLabs/stylo", rev = "1281c6c2cdd88f95e7abc0c6fe84149c36e57f4f" }
+to_shmem_derive = { git = "https://github.com/DioxusLabs/stylo", rev = "1281c6c2cdd88f95e7abc0c6fe84149c36e57f4f" }

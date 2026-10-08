@@ -841,6 +841,19 @@ impl<T: Deref<Target = ComputedValues>> taffy::GridContainerStyle for TaffyStylo
         convert::grid_auto_flow(self.style.get_position().grid_auto_flow)
     }
 
+    #[cfg(feature = "grid-lanes")]
+    #[inline]
+    fn grid_lanes_direction(&self) -> taffy::GridLanesDirection {
+        convert::grid_lanes_direction(self.style.get_position().grid_lanes_direction)
+    }
+
+    #[cfg(feature = "grid-lanes")]
+    #[inline]
+    fn flow_tolerance(&self) -> taffy::LengthPercentage {
+        let font_size = self.style.clone_font_size().used_size().px();
+        convert::flow_tolerance(&self.style.get_position().flow_tolerance, font_size)
+    }
+
     #[inline]
     fn gap(&self) -> taffy::Size<taffy::LengthPercentage> {
         let position_styles = self.style.get_position();

@@ -50,6 +50,8 @@ pub(crate) mod stylo {
     pub(crate) use style::values::computed::text::TextAlign;
     #[cfg(feature = "block")]
     pub(crate) use style::values::computed::{AlignmentBaseline, BaselineShift};
+    #[cfg(feature = "grid-lanes")]
+    pub(crate) use style::values::computed::{GridLanesDirection, length::FlowTolerance};
     #[cfg(feature = "block")]
     pub(crate) use style::values::generics::box_::BaselineShiftKeyword;
     #[cfg(feature = "grid")]
@@ -219,6 +221,8 @@ pub fn display(input: stylo::Display) -> taffy::Display {
         stylo::DisplayInside::Flex => taffy::Display::Flex,
         #[cfg(feature = "grid")]
         stylo::DisplayInside::Grid => taffy::Display::Grid,
+        #[cfg(feature = "grid-lanes")]
+        stylo::DisplayInside::GridLanes => taffy::Display::GridLanes,
         #[cfg(feature = "block")]
         stylo::DisplayInside::Flow => taffy::Display::Block,
         #[cfg(feature = "block")]
@@ -710,6 +714,28 @@ pub fn clear(input: stylo::Clear) -> taffy::Clear {
 // ===============
 
 #[inline]
+#[cfg(feature = "grid-lanes")]
+pub fn grid_lanes_direction(input: stylo::GridLanesDirection) -> taffy::GridLanesDirection {
+    match input {
+        stylo::GridLanesDirection::Row => taffy::GridLanesDirection::Row,
+        stylo::GridLanesDirection::Normal | stylo::GridLanesDirection::Column => {
+            taffy::GridLanesDirection::Column
+        }
+    }
+}
+
+/// `normal` is 1em (css-grid-3 §4.2), so the container's font size is resolved here.
+#[inline]
+#[cfg(feature = "grid-lanes")]
+pub fn flow_tolerance(input: &stylo::FlowTolerance, font_size: f32) -> taffy::LengthPercentage {
+    match input {
+        stylo::FlowTolerance::Normal => taffy::LengthPercentage::length(font_size),
+        stylo::FlowTolerance::LengthPercentage(lp) => length_percentage(&lp.0),
+        stylo::FlowTolerance::Infinite => taffy::LengthPercentage::length(f32::INFINITY),
+    }
+}
+
+#[inline]
 #[cfg(feature = "grid")]
 pub fn grid_auto_flow(input: stylo::GridAutoFlow) -> taffy::GridAutoFlow {
     let is_row = input.contains(stylo::GridAutoFlow::ROW);
@@ -1037,6 +1063,13 @@ pub fn to_taffy_style(style: &stylo::ComputedValues) -> taffy::Style<Atom> {
         // Grid
         #[cfg(feature = "grid")]
         grid_auto_flow: self::grid_auto_flow(pos.grid_auto_flow),
+        #[cfg(feature = "grid-lanes")]
+        grid_lanes_direction: grid_lanes_direction(style.clone_grid_lanes_direction()),
+        #[cfg(feature = "grid-lanes")]
+        flow_tolerance: flow_tolerance(
+            &style.clone_flow_tolerance(),
+            style.clone_font_size().used_size().px(),
+        ),
         #[cfg(feature = "grid")]
         grid_template_rows: self::grid_template_tracks(&pos.grid_template_rows),
         #[cfg(feature = "grid")]
