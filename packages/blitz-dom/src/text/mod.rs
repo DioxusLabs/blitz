@@ -15,6 +15,9 @@
 //! Painting is the renderer's part: blitz-paint paints each backend's types in a module of its own,
 //! which [`cfg_text_backend!`](crate::cfg_text_backend) selects.
 
+#[cfg(not(text_parley))]
+compile_error!("Enable the `parley` feature: Blitz needs a text backend");
+
 use std::borrow::Cow;
 use std::ops::Range;
 

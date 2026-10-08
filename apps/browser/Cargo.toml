@@ -10,7 +10,7 @@ name = "blitz"
 path = "src/main.rs"
 
 [features]
-default = ["hybrid", "cookies", "cache", "screenshot", "apple-font-embolden", "scrollbars"]
+default = ["hybrid", "cookies", "cache", "screenshot", "apple-font-embolden", "scrollbars", "parley"]
 android-defaults = ["skia", "cookies"]
 
 screenshot = ["dep:anyrender_vello_cpu", "dep:blitz-paint", "dep:png", "dep:peniko", "dep:rfd"]
@@ -41,6 +41,8 @@ mimalloc = ["dep:mimalloc"]
 font-embolden = ["dioxus-native/font-embolden"]
 apple-font-embolden = ["dioxus-native/apple-font-embolden"]
 writing-mode = ["blitz-dom/writing-mode", "dioxus-native/writing-mode"]
+# The text backend, which is Parley: on by default, and required.
+parley = ["dioxus-native/parley", "blitz-dom/parley", "blitz-html/parley", "blitz-paint?/parley", "blitz-vibey-script?/parley"]
 # Lay out and paint document text with winkin.
 winkin = ["blitz-paint/winkin"]
 

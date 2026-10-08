@@ -55,7 +55,7 @@ dioxus-native-dom = { version = "0.7.0", path = "./packages/dioxus-native-dom", 
 debug_timer = { version = "0.1.2", path = "./packages/debug_timer" }
 accesskit_xplat = { version = "0.2", path = "./packages/accesskit_xplat", default-features = false }
 browser-persistence = { path = "./apps/browser/persistence" }
-blitz-test-harness = { path = "./packages/blitz-test-harness" }
+blitz-test-harness = { path = "./packages/blitz-test-harness", default-features = false }
 
 # Servo dependencies
 style = { version = "0.22.0", package = "stylo" }
@@ -263,6 +263,9 @@ publish = false
 log-times = ["log-frame-times", "log-phase-times"]
 log-frame-times = ["dioxus-native/log-frame-times"]
 log-phase-times = ["dioxus-native/log-phase-times"]
+# The text backend, which is Parley: on by default, and required.
+default = ["parley"]
+parley = ["blitz-dom/parley", "blitz-paint/parley", "dioxus-native/parley"]
 # Lay out and paint document text with winkin.
 winkin = ["blitz-paint/winkin"]
 
@@ -271,7 +274,7 @@ anyrender = { workspace = true }
 anyrender_vello = { workspace = true }
 anyrender_vello_cpu = { workspace = true, features = ["multithreading"] }
 anyrender_vello_hybrid = { workspace = true }
-blitz-dom = { workspace = true, features = ["default"] }
+blitz-dom = { workspace = true, features = ["svg", "woff", "accessibility", "system-fonts", "file-input", "custom-widget", "text-transform-icu"] }
 blitz-html = { workspace = true }
 blitz-traits = { workspace = true }
 blitz-paint = { workspace = true }

@@ -11,7 +11,9 @@ edition.workspace = true
 rust-version.workspace = true
 
 [features]
-default = ["net", "accessibility", "text-transform-icu", "tracing"]
+default = ["net", "accessibility", "text-transform-icu", "tracing", "parley"]
+# The text backend, which is Parley: on by default, and required.
+parley = ["blitz-dom/parley", "blitz-paint/parley", "blitz-shell/parley", "blitz-html/parley"]
 net = ["dep:tokio", "dep:url", "dep:blitz-net"]
 accessibility = ["blitz-shell/accessibility"]
 text-transform-icu = ["blitz-dom/text-transform-icu"]
