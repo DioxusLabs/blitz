@@ -18,32 +18,12 @@ use winkin::{
     InlineExtents, Item, PlacedFloat,
 };
 
-use super::inline::{f32_max, inline_box_inputs};
+use super::inline::{Frame, f32_max, inline_box_inputs};
 use super::replaced::is_replaced_element;
 use super::resolve_calc_value;
 use crate::BaseDocument;
 use crate::node::TextLayout;
 use crate::text_winkin;
-
-/// What `compute_inline_layout_inner` has worked out by the time the inline
-/// boxes are measured.
-pub(super) struct Frame {
-    pub(super) inputs: LayoutInput,
-    pub(super) node_size: Size<Option<f32>>,
-    pub(super) node_min_size: Size<Option<f32>>,
-    pub(super) node_max_size: Size<Option<f32>>,
-    pub(super) aspect_ratio: Option<f32>,
-    pub(super) margin: Rect<f32>,
-    pub(super) padding: Rect<f32>,
-    pub(super) border: Rect<f32>,
-    pub(super) scrollbar_gutter: Point<f32>,
-    pub(super) container_pb: Rect<f32>,
-    pub(super) content_box_inset: Rect<f32>,
-    pub(super) child_inputs: LayoutInput,
-    pub(super) available_space: Size<AvailableSpace>,
-    pub(super) collapses_through: bool,
-    pub(super) scale: f32,
-}
 
 /// An atomic inline's margin box on its line, or where an absolutely
 /// positioned box's static position is, in device pixels relative to the
@@ -315,7 +295,6 @@ impl BaseDocument {
             node_min_size,
             node_max_size,
             aspect_ratio,
-            margin,
             padding,
             border,
             scrollbar_gutter,
@@ -324,8 +303,13 @@ impl BaseDocument {
             child_inputs,
             available_space,
             collapses_through,
+            suppresses_baseline,
             scale,
         } = frame;
+        let margin = self.nodes[node_id]
+            .layout_style()
+            .margin()
+            .resolve_or_zero(inputs.parent_size.width, resolve_calc_value);
         // Where the absolutely positioned boxes are placed from: the
         // padding box, less any scrollbar.
         let oof_position_inset = Rect {
@@ -890,8 +874,12 @@ impl BaseDocument {
                 }
             },
             baselines: taffy::Baselines {
-                first: first_baseline.map(|baseline| (baseline / scale) + lines_pb.top),
-                last: last_baseline.map(|baseline| (baseline / scale) + lines_pb.top),
+                first: first_baseline
+                    .filter(|_| !suppresses_baseline)
+                    .map(|baseline| (baseline / scale) + lines_pb.top),
+                last: last_baseline
+                    .filter(|_| !suppresses_baseline)
+                    .map(|baseline| (baseline / scale) + lines_pb.top),
             },
             top_margin: CollapsibleMarginSet::ZERO,
             bottom_margin: CollapsibleMarginSet::ZERO,
