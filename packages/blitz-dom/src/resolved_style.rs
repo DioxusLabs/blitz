@@ -384,6 +384,7 @@ impl BaseDocument {
             "grid-template-columns" | "grid-template-rows"
                 if display.inside() == DisplayInside::Grid =>
             {
+                let zoom = styles.effective_zoom.value();
                 if let Some(info) =
                     node.element_data()
                         .and_then(|data| match &data.detailed_layout_info {
@@ -392,9 +393,9 @@ impl BaseDocument {
                         })
                 {
                     return if property_name == "grid-template-columns" {
-                        info.grid_template_columns()
+                        info.grid_template_columns(zoom)
                     } else {
-                        info.grid_template_rows()
+                        info.grid_template_rows(zoom)
                     };
                 }
             }
@@ -402,6 +403,7 @@ impl BaseDocument {
             // track lists, except that a `none` track list on a grid container
             // is replaced by the used (implicit) track sizes.
             "grid-template" if display.inside() == DisplayInside::Grid => {
+                let zoom = styles.effective_zoom.value();
                 let pos_styles = styles.get_position();
                 let rows_are_none =
                     matches!(pos_styles.grid_template_rows, GridTemplateComponent::None);
@@ -420,12 +422,12 @@ impl BaseDocument {
                     && matches!(pos_styles.grid_template_areas, GridTemplateAreas::None)
                 {
                     let rows = if rows_are_none {
-                        info.grid_template_rows()
+                        info.grid_template_rows(zoom)
                     } else {
                         pos_styles.grid_template_rows.to_css_string()
                     };
                     let columns = if columns_are_none {
-                        info.grid_template_columns()
+                        info.grid_template_columns(zoom)
                     } else {
                         pos_styles.grid_template_columns.to_css_string()
                     };
