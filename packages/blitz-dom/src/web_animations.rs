@@ -8,14 +8,22 @@ use std::sync::Mutex;
 
 use blitz_traits::node_id::NodeId;
 use rustc_hash::FxHashMap;
+use selectors::matching::QuirksMode;
 use style::context::{
     CascadeInputs, SharedStyleContext, StyleContext, ThreadLocalStyleContext, UpdateAnimationsTasks,
 };
 use style::invalidation::element::restyle_hints::RestyleHint;
 use style::properties::animated_properties::AnimationValue;
+use style::properties::declaration_block::Importance;
 use style::properties::{ComputedValues, OwnedPropertyDeclarationId, PropertyDeclarationBlock};
+use style::properties::{
+    PropertyDeclaration, PropertyId, SourcePropertyDeclaration, parse_one_declaration_into,
+};
 use style::rule_tree::RuleCascadeFlags;
 use style::selector_parser::PseudoElement;
+use style::servo::animation_compose::{IterationComposite, compute_keyframe_values};
+use style::servo::animation_timing::EffectTiming;
+use style::servo::animation_update::ComputedKeyframe;
 use style::servo::animation_update::{
     build_property_segments, compute_css_keyframes, css_animations,
 };
@@ -24,8 +32,14 @@ use style::shared_lock::{Locked, SharedRwLock};
 use style::style_resolver::{
     PrimaryStyle, PseudoElementResolution, ResolvedStyle, StyleResolverForElement,
 };
+use style::stylesheets::{CssRuleType, Origin};
 use style::stylist::RuleInclusion;
-use stylo_web_animations::{AnimationStore, ComposedValues, CssAnimation, Target};
+use style::values::computed::easing::TimingFunction;
+use style::values::specified::animation::AnimationComposition;
+use style_traits::ParsingMode;
+use stylo_web_animations::{
+    AnimationId, AnimationStore, ComposedValues, CssAnimation, KeyframeEffect, Target,
+};
 
 use style::global_style_data::GLOBAL_STYLE_DATA;
 use style::shared_lock::StylesheetGuards;
@@ -60,9 +74,39 @@ impl AnimationRules {
     }
 }
 
+/// A keyframe of a keyframe effect that a script or the embedder created.
+pub struct Keyframe {
+    /// The [computed keyframe offset](https://drafts.csswg.org/web-animations-1/#computed-keyframe-offset).
+    pub offset: f32,
+    /// The easing from this keyframe to the next one.
+    pub easing: TimingFunction,
+    /// `None` uses the composite operation of the effect.
+    pub composite: Option<AnimationComposition>,
+    pub declarations: PropertyDeclarationBlock,
+}
+
+/// The parts of a keyframe effect other than its target.
+pub struct KeyframeEffectOptions {
+    pub timing: EffectTiming,
+    /// The easing applied to the progress of each iteration.
+    pub easing: TimingFunction,
+    pub composite: AnimationComposition,
+    pub iteration_composite: IterationComposite,
+    /// Ordered by offset.
+    pub keyframes: Vec<Keyframe>,
+}
+
+struct ScriptKeyframes {
+    composite: AnimationComposition,
+    keyframes: Vec<Keyframe>,
+}
+
 #[derive(Default)]
 pub struct WebAnimations {
     pub(crate) store: AnimationStore,
+    /// The keyframes of the effects that scripts or the embedder created. They are computed
+    /// against the style of the target whenever it changes.
+    script_keyframes: FxHashMap<AnimationId, ScriptKeyframes>,
     pub(crate) rules: FxHashMap<Target, AnimationRules>,
     /// The style without animations of the targets whose effects read underlying values.
     base_styles: FxHashMap<Target, Arc<ComputedValues>>,
@@ -195,7 +239,13 @@ impl BaseDocument {
                 .get(target_node(target))
                 .is_some_and(|node| node.flags.is_in_document() && node.primary_styles().is_some())
         });
-        animations.store.tick(now);
+        if now > animations.store.timeline_time() {
+            animations.store.tick(now);
+        }
+        let store = &animations.store;
+        animations
+            .script_keyframes
+            .retain(|id, _| store.animation(*id).is_some());
 
         let store = &animations.store;
         let mut targets: Vec<Target> = store.targets().cloned().collect();
@@ -311,6 +361,39 @@ impl BaseDocument {
                     }
                 }
 
+                let parent_style = match &target.pseudo {
+                    Some(_) => node.primary_styles().map(|style| style.clone()),
+                    None => node
+                        .parent
+                        .and_then(|id| self.nodes.get(id))
+                        .and_then(|parent| parent.primary_styles().map(|style| style.clone())),
+                };
+                for id in animations.store.animations_of(&target).to_vec() {
+                    let Some(script) = animations.script_keyframes.get(&id) else {
+                        continue;
+                    };
+                    let keyframes: Vec<ComputedKeyframe> = script
+                        .keyframes
+                        .iter()
+                        .map(|keyframe| ComputedKeyframe {
+                            offset: keyframe.offset,
+                            timing_function: Some(keyframe.easing.clone()),
+                            composite: keyframe.composite.unwrap_or(script.composite),
+                            values: compute_keyframe_values(
+                                node,
+                                target.pseudo.as_ref(),
+                                stylist,
+                                &style,
+                                parent_style.as_deref(),
+                                &keyframe.declarations,
+                            ),
+                        })
+                        .collect();
+                    animations
+                        .store
+                        .set_properties(id, build_property_segments(&keyframes));
+                }
+
                 if animations.store.needs_base_values(&target) {
                     let base_style = base_style(node, &target, &style, &mut context);
                     animations.base_styles.insert(target.clone(), base_style);
@@ -329,5 +412,132 @@ impl BaseDocument {
         }
         self.nodes.animations = animations;
         !changed_targets.is_empty()
+    }
+}
+
+/// The API for animations that scripts or the embedder create.
+impl BaseDocument {
+    pub fn animations(&self) -> &AnimationStore {
+        &self.nodes.animations.store
+    }
+
+    /// Changes made through this take effect when the document is next resolved.
+    pub fn animations_mut(&mut self) -> &mut AnimationStore {
+        &mut self.nodes.animations.store
+    }
+
+    /// Moves the document timeline forwards to `now` (in milliseconds) and updates every
+    /// animation. Returns the new timeline time, which never decreases.
+    pub fn advance_animation_timeline(&mut self, now: f64) -> f64 {
+        let store = &mut self.nodes.animations.store;
+        if now > store.timeline_time() {
+            store.tick(now);
+        }
+        store.timeline_time()
+    }
+
+    /// Creates an idle animation without an effect.
+    pub fn create_animation(&mut self) -> AnimationId {
+        self.nodes.animations.store.create(None, None)
+    }
+
+    /// Creates an animation and plays it, as `Element.animate()` does.
+    pub fn animate(
+        &mut self,
+        node: NodeId,
+        pseudo: Option<PseudoElement>,
+        effect: KeyframeEffectOptions,
+    ) -> AnimationId {
+        let id = self.create_animation();
+        self.set_animation_effect(id, Some((node, pseudo)), Some(effect));
+        self.nodes
+            .animations
+            .store
+            .update_animation(id, |animation, time, actions| {
+                let _ = animation.play(true, time, actions);
+            });
+        id
+    }
+
+    /// Replaces the effect of an animation and the target of that effect.
+    pub fn set_animation_effect(
+        &mut self,
+        id: AnimationId,
+        target: Option<(NodeId, Option<PseudoElement>)>,
+        effect: Option<KeyframeEffectOptions>,
+    ) {
+        let animations = &mut self.nodes.animations;
+        let old_target = animations.store.target(id).cloned();
+        let target = target.map(|(node, pseudo)| animation_target(node, pseudo));
+        match effect {
+            Some(effect) => {
+                animations.store.set_effect(
+                    id,
+                    Some(KeyframeEffect {
+                        timing: effect.timing,
+                        easing: effect.easing,
+                        iteration_composite: effect.iteration_composite,
+                        properties: Vec::new(),
+                    }),
+                );
+                animations.script_keyframes.insert(
+                    id,
+                    ScriptKeyframes {
+                        composite: effect.composite,
+                        keyframes: effect.keyframes,
+                    },
+                );
+            }
+            None => {
+                animations.store.set_effect(id, None);
+                animations.script_keyframes.remove(&id);
+            }
+        }
+        animations.store.set_target(id, target.clone());
+
+        // The keyframes are computed when the target is restyled.
+        for target in [old_target, target].into_iter().flatten() {
+            if let Some(node) = self.nodes.get_mut(target_node(&target)) {
+                node.set_restyle_hint(restyle_hint(&target));
+            }
+        }
+    }
+
+    /// Parses a property of a keyframe. Returns `None` if the property is not animatable or
+    /// the value is invalid.
+    pub fn parse_keyframe_declaration(
+        &self,
+        property: &str,
+        value: &str,
+    ) -> Option<PropertyDeclarationBlock> {
+        let property_id = PropertyId::parse_enabled_for_all_content(property).ok()?;
+        let mut source = SourcePropertyDeclaration::default();
+        parse_one_declaration_into(
+            &mut source,
+            property_id,
+            value,
+            Origin::Author,
+            &self.url.url_extra_data(),
+            None,
+            ParsingMode::DEFAULT,
+            QuirksMode::NoQuirks,
+            CssRuleType::Keyframe,
+        )
+        .ok()?;
+        let mut block = PropertyDeclarationBlock::new();
+        block.extend(source.drain(), Importance::Normal);
+        Some(block)
+    }
+
+    /// Parses an `<easing-function>`.
+    pub fn parse_easing(&self, easing: &str) -> Option<TimingFunction> {
+        let block = self.parse_keyframe_declaration("animation-timing-function", easing)?;
+        match block.declarations() {
+            [PropertyDeclaration::AnimationTimingFunction(list)] => match &*list.0 {
+                [easing] => Some(easing.to_computed_value_without_context()),
+                _ => None,
+            },
+            _ => None,
+        }
     }
 }

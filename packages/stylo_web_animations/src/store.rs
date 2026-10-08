@@ -5,7 +5,7 @@ use style::properties::animated_properties::{AnimationValue, AnimationValueMap};
 use style::properties::{ComputedValues, OwnedPropertyDeclarationId};
 use style::selector_parser::PseudoElement;
 use style::servo::animation_compose::{AnimationPropertySegment, IterationComposite};
-use style::servo::animation_timing::EffectTiming;
+use style::servo::animation_timing::{ComputedTiming, EffectTiming};
 use style::servo::animation_update::{
     ExistingTransition, NewTransition, PropertySegments, RunningTransition, TransitionUpdate,
     TransitionUpdates, transition_updates,
@@ -53,9 +53,38 @@ pub enum Origin {
 #[derive(Clone, Debug)]
 struct Entry {
     animation: Animation,
-    effect: KeyframeEffect,
-    target: Target,
+    effect: Option<KeyframeEffect>,
+    target: Option<Target>,
     origin: Origin,
+    /// Whether the animation is associated with the document timeline.
+    has_timeline: bool,
+    /// Whether style still creates and cancels this CSS animation or transition.
+    owned_by_style: bool,
+    /// The number of handles the embedder holds. An animation without handles is removed
+    /// once it is no longer relevant.
+    handles: u32,
+}
+
+impl Entry {
+    fn timeline_time(&self, timeline_time: f64) -> Option<f64> {
+        self.has_timeline.then_some(timeline_time)
+    }
+
+    fn computed_timing(&self, timeline_time: f64) -> Option<ComputedTiming> {
+        let effect = self.effect.as_ref()?;
+        let time = self.timeline_time(timeline_time);
+        Some(effect.computed_timing(
+            self.animation.current_time(time),
+            self.animation.playback_rate(),
+        ))
+    }
+
+    /// <https://drafts.csswg.org/web-animations-1/#relevant-animations>
+    fn is_relevant(&self, timeline_time: f64) -> bool {
+        self.computed_timing(timeline_time).is_some_and(|timing| {
+            timing.progress.is_some() || is_current(timing.phase, self.animation.playback_rate())
+        })
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -147,10 +176,10 @@ impl AnimationStore {
 
     fn has_origin(&self, target: &Target, matches: impl Fn(&Origin) -> bool) -> bool {
         self.targets.get(target).is_some_and(|target| {
-            target
-                .animations
-                .iter()
-                .any(|id| matches(&self.animations[id].origin))
+            target.animations.iter().any(|id| {
+                let entry = &self.animations[id];
+                entry.owned_by_style && matches(&entry.origin)
+            })
         })
     }
 
@@ -172,7 +201,7 @@ impl AnimationStore {
     }
 
     fn entry_is_current(&self, entry: &Entry) -> bool {
-        let timeline_time = Some(self.timeline_time);
+        let timeline_time = entry.timeline_time(self.timeline_time);
         let animation = &entry.animation;
         if animation.pending() {
             return true;
@@ -180,11 +209,9 @@ impl AnimationStore {
         if animation.play_state(timeline_time) != PlayState::Running {
             return false;
         }
-        let timing = entry.effect.computed_timing(
-            animation.current_time(timeline_time),
-            animation.playback_rate(),
-        );
-        is_current(timing.phase, animation.playback_rate())
+        entry
+            .computed_timing(self.timeline_time)
+            .is_some_and(|timing| is_current(timing.phase, animation.playback_rate()))
     }
 
     pub fn animation(&self, id: AnimationId) -> Option<&Animation> {
@@ -192,7 +219,7 @@ impl AnimationStore {
     }
 
     pub fn effect(&self, id: AnimationId) -> Option<&KeyframeEffect> {
-        self.animations.get(&id).map(|entry| &entry.effect)
+        self.animations.get(&id)?.effect.as_ref()
     }
 
     pub fn origin(&self, id: AnimationId) -> Option<&Origin> {
@@ -200,7 +227,7 @@ impl AnimationStore {
     }
 
     pub fn target(&self, id: AnimationId) -> Option<&Target> {
-        self.animations.get(&id).map(|entry| &entry.target)
+        self.animations.get(&id)?.target.as_ref()
     }
 
     /// The animations of `target` in creation order.
@@ -217,19 +244,18 @@ impl AnimationStore {
         update: impl FnOnce(&mut Animation, Option<f64>, &mut Vec<Action>) -> R,
     ) -> Option<R> {
         let entry = self.animations.get_mut(&id)?;
-        let result = update(
-            &mut entry.animation,
-            Some(self.timeline_time),
-            &mut self.scratch,
-        );
+        let time = entry.timeline_time(self.timeline_time);
+        let result = update(&mut entry.animation, time, &mut self.scratch);
         self.actions
             .extend(self.scratch.drain(..).map(|action| (id, action)));
         Some(result)
     }
 
     /// Replaces the effect of an animation.
-    pub fn set_effect(&mut self, id: AnimationId, effect: KeyframeEffect) {
-        let effect_end = effect.timing.end_time();
+    pub fn set_effect(&mut self, id: AnimationId, effect: Option<KeyframeEffect>) {
+        let effect_end = effect
+            .as_ref()
+            .map_or(0., |effect| effect.timing.end_time());
         if let Some(entry) = self.animations.get_mut(&id) {
             entry.effect = effect;
         }
@@ -238,29 +264,156 @@ impl AnimationStore {
         });
     }
 
+    /// Replaces the computed keyframes of the effect of an animation.
+    pub fn set_properties(&mut self, id: AnimationId, properties: Vec<PropertySegments>) {
+        if let Some(effect) = self
+            .animations
+            .get_mut(&id)
+            .and_then(|entry| entry.effect.as_mut())
+        {
+            effect.properties = properties;
+        }
+    }
+
+    /// Changes the target of the effect of an animation.
+    pub fn set_target(&mut self, id: AnimationId, target: Option<Target>) {
+        let Some(entry) = self.animations.get_mut(&id) else {
+            return;
+        };
+        if entry.target == target {
+            return;
+        }
+        // A CSS animation or transition that a script retargets no longer belongs to the
+        // style of its original target.
+        entry.owned_by_style = false;
+        let old_target = std::mem::replace(&mut entry.target, target.clone());
+        if let Some(old_target) = old_target {
+            self.unlink(id, &old_target);
+        }
+        if let Some(target) = target {
+            let animations = &mut self.targets.entry(target).or_default().animations;
+            let position = animations.partition_point(|other| *other < id);
+            animations.insert(position, id);
+        }
+    }
+
+    /// Associates an animation with the document timeline or with no timeline.
+    pub fn set_has_timeline(&mut self, id: AnimationId, has_timeline: bool) {
+        if let Some(entry) = self.animations.get_mut(&id) {
+            entry.has_timeline = has_timeline;
+        }
+    }
+
+    pub fn has_timeline(&self, id: AnimationId) -> bool {
+        self.animations
+            .get(&id)
+            .is_some_and(|entry| entry.has_timeline)
+    }
+
+    /// The timeline time as the animation sees it.
+    pub fn timeline_time_of(&self, id: AnimationId) -> Option<f64> {
+        self.animations.get(&id)?.timeline_time(self.timeline_time)
+    }
+
+    /// Keeps an animation in the store until the matching [`AnimationStore::release`].
+    pub fn retain(&mut self, id: AnimationId) {
+        if let Some(entry) = self.animations.get_mut(&id) {
+            entry.handles += 1;
+        }
+    }
+
+    pub fn release(&mut self, id: AnimationId) {
+        if let Some(entry) = self.animations.get_mut(&id) {
+            entry.handles = entry.handles.saturating_sub(1);
+        }
+    }
+
+    /// Whether an embedder handle keeps the animation in the store.
+    pub fn is_retained(&self, id: AnimationId) -> bool {
+        self.animations
+            .get(&id)
+            .is_some_and(|entry| entry.handles > 0)
+    }
+
+    /// Whether the animation is [relevant] or has a pending task.
+    ///
+    /// [relevant]: https://drafts.csswg.org/web-animations-1/#relevant-animations
+    pub fn is_relevant(&self, id: AnimationId) -> bool {
+        self.animations
+            .get(&id)
+            .is_some_and(|entry| entry.animation.pending() || entry.is_relevant(self.timeline_time))
+    }
+
+    /// The relevant animations of `target`, or of every target, in composite order.
+    ///
+    /// <https://drafts.csswg.org/web-animations-1/#animation-composite-order>
+    pub fn relevant_animations(&self, target: Option<&Target>) -> Vec<AnimationId> {
+        let mut result: Vec<AnimationId> = match target {
+            Some(target) => self.animations_of(target).to_vec(),
+            None => self
+                .animations
+                .iter()
+                .filter(|(_, entry)| entry.target.is_some())
+                .map(|(id, _)| *id)
+                .collect(),
+        };
+        result.retain(|id| self.animations[id].is_relevant(self.timeline_time));
+        result.sort_by_key(|id| {
+            let entry = &self.animations[id];
+            match (&entry.origin, entry.owned_by_style) {
+                (Origin::CssTransition { .. }, true) => (0, 0, *id),
+                (Origin::CssAnimation { index, .. }, true) => (1, *index, *id),
+                _ => (2, 0, *id),
+            }
+        });
+        result
+    }
+
     /// The actions that animations have requested since the last call.
     pub fn take_actions(&mut self) -> Vec<(AnimationId, Action)> {
         std::mem::take(&mut self.actions)
     }
 
-    fn insert(&mut self, target: Target, effect: KeyframeEffect, origin: Origin) -> AnimationId {
+    fn insert(
+        &mut self,
+        target: Option<Target>,
+        effect: Option<KeyframeEffect>,
+        origin: Origin,
+    ) -> AnimationId {
         let id = AnimationId(self.next_id);
         self.next_id += 1;
-        self.targets
-            .entry(target.clone())
-            .or_default()
-            .animations
-            .push(id);
+        if let Some(target) = &target {
+            self.targets
+                .entry(target.clone())
+                .or_default()
+                .animations
+                .push(id);
+        }
+        let effect_end = effect
+            .as_ref()
+            .map_or(0., |effect| effect.timing.end_time());
         self.animations.insert(
             id,
             Entry {
-                animation: Animation::new(effect.timing.end_time()),
+                animation: Animation::new(effect_end),
+                owned_by_style: !matches!(origin, Origin::Script),
                 effect,
                 target,
                 origin,
+                has_timeline: true,
+                handles: 0,
             },
         );
         id
+    }
+
+    fn unlink(&mut self, id: AnimationId, target: &Target) {
+        if let Some(animations) = self.targets.get_mut(target) {
+            animations.animations.retain(|other| *other != id);
+            if animations.animations.is_empty() && animations.completed_transitions.is_empty() {
+                self.targets.remove(target);
+            }
+        }
     }
 
     /// Removes an animation without cancelling it.
@@ -268,45 +421,58 @@ impl AnimationStore {
         let Some(entry) = self.animations.remove(&id) else {
             return;
         };
-        if let Some(target) = self.targets.get_mut(&entry.target) {
-            target.animations.retain(|other| *other != id);
-            if target.animations.is_empty() && target.completed_transitions.is_empty() {
-                self.targets.remove(&entry.target);
-            }
+        if let Some(target) = &entry.target {
+            self.unlink(id, target);
         }
     }
 
+    /// Cancels an animation that style no longer specifies. It stays in the store as an
+    /// ordinary animation if the embedder holds a handle to it.
     fn cancel_and_remove(&mut self, id: AnimationId) {
         self.update_animation(id, |animation, time, actions| {
             animation.cancel(time, actions)
         });
-        self.remove(id);
+        match self.animations.get_mut(&id) {
+            Some(entry) if entry.handles > 0 => entry.owned_by_style = false,
+            _ => self.remove(id),
+        }
+    }
+
+    /// Creates an idle animation.
+    pub fn create(
+        &mut self,
+        target: Option<Target>,
+        effect: Option<KeyframeEffect>,
+    ) -> AnimationId {
+        self.insert(target, effect, Origin::Script)
     }
 
     /// Creates an animation for `effect` on `target` and plays it, as `Element.animate()`
     /// does. It becomes ready at the next [`AnimationStore::tick`].
     pub fn animate(&mut self, target: Target, effect: KeyframeEffect) -> AnimationId {
-        let id = self.insert(target, effect, Origin::Script);
+        let id = self.insert(Some(target), Some(effect), Origin::Script);
         self.update_animation(id, |animation, time, actions| {
             let _ = animation.play(true, time, actions);
         });
         id
     }
 
-    /// Cancels and removes every animation of `target`.
+    /// Cancels the CSS animations and transitions of `target`, and forgets its completed
+    /// transitions.
     pub fn cancel_all(&mut self, target: &Target) {
-        let Some(animations) = self.targets.remove(target) else {
-            return;
-        };
-        for id in animations.animations {
-            self.update_animation(id, |animation, time, actions| {
-                animation.cancel(time, actions)
-            });
-            self.animations.remove(&id);
+        let owned_by_style: Vec<AnimationId> = self
+            .animations_of(target)
+            .iter()
+            .copied()
+            .filter(|id| self.animations[id].owned_by_style)
+            .collect();
+        for id in owned_by_style {
+            self.cancel_and_remove(id);
         }
+        self.remove_completed_transitions(target, |_| false);
     }
 
-    /// Cancels and removes the animations of every target for which `keep` returns false.
+    /// Calls [`AnimationStore::cancel_all`] for every target for which `keep` returns false.
     pub fn retain_targets(&mut self, mut keep: impl FnMut(&Target) -> bool) {
         let removed: Vec<Target> = self
             .targets
@@ -323,33 +489,55 @@ impl AnimationStore {
     pub fn tick(&mut self, timeline_time: f64) {
         self.timeline_time = timeline_time;
         let mut finished_transitions = Vec::new();
-        for (id, entry) in self.animations.iter_mut() {
-            let time = Some(timeline_time);
+        let mut unused = Vec::new();
+        let mut ids: Vec<AnimationId> = self.animations.keys().copied().collect();
+        ids.sort();
+        for id in ids {
+            let entry = self.animations.get_mut(&id).unwrap();
+            let time = entry.timeline_time(timeline_time);
             let animation = &mut entry.animation;
-            animation.run_pending_task(timeline_time, &mut self.scratch);
+            if time.is_some() {
+                animation.run_pending_task(timeline_time, &mut self.scratch);
+            }
             animation.tick(time, &mut self.scratch);
             animation.run_finish_notification(time, &mut self.scratch);
             self.actions
-                .extend(self.scratch.drain(..).map(|action| (*id, action)));
+                .extend(self.scratch.drain(..).map(|action| (id, action)));
             if matches!(entry.origin, Origin::CssTransition { .. })
+                && entry.owned_by_style
                 && animation.play_state(time) == PlayState::Finished
             {
-                finished_transitions.push(*id);
+                finished_transitions.push(id);
+            } else if entry.handles == 0
+                && !entry.owned_by_style
+                && !animation.pending()
+                && !entry.is_relevant(timeline_time)
+            {
+                unused.push(id);
             }
         }
         for id in finished_transitions {
             let entry = &self.animations[&id];
-            if let Origin::CssTransition {
-                property,
-                end_value,
-                ..
-            } = &entry.origin
+            if let (
+                Origin::CssTransition {
+                    property,
+                    end_value,
+                    ..
+                },
+                Some(target),
+            ) = (&entry.origin, &entry.target)
             {
                 let completed = (property.clone(), end_value.clone());
-                if let Some(target) = self.targets.get_mut(&entry.target) {
+                if let Some(target) = self.targets.get_mut(target) {
                     target.completed_transitions.push(completed);
                 }
             }
+            match self.animations.get_mut(&id) {
+                Some(entry) if entry.handles > 0 => entry.owned_by_style = false,
+                _ => self.remove(id),
+            }
+        }
+        for id in unused {
             self.remove(id);
         }
     }
@@ -372,10 +560,12 @@ impl AnimationStore {
         let mut order: Vec<(usize, AnimationId)> = Vec::with_capacity(target.animations.len());
         for id in &target.animations {
             let entry = &self.animations[id];
-            let (map, key) = match entry.origin {
-                Origin::CssTransition { .. } => (&mut result.transitions, None),
-                Origin::CssAnimation { index, .. } => (&mut result.animations, Some(index)),
-                Origin::Script => (&mut result.animations, Some(usize::MAX)),
+            let (map, key) = match (&entry.origin, entry.owned_by_style) {
+                (Origin::CssTransition { .. }, true) => (&mut result.transitions, None),
+                (Origin::CssAnimation { index, .. }, true) => {
+                    (&mut result.animations, Some(*index))
+                }
+                _ => (&mut result.animations, Some(usize::MAX)),
             };
             match key {
                 Some(key) => order.push((key, *id)),
@@ -402,21 +592,22 @@ impl AnimationStore {
         values: &mut AnimationValueMap,
         base_value: &mut dyn FnMut(&OwnedPropertyDeclarationId) -> Option<AnimationValue>,
     ) {
-        let animation = &entry.animation;
-        let timing = entry.effect.computed_timing(
-            animation.current_time(Some(self.timeline_time)),
-            animation.playback_rate(),
-        );
-        entry.effect.compose(&timing, values, base_value);
+        if let (Some(effect), Some(timing)) =
+            (&entry.effect, entry.computed_timing(self.timeline_time))
+        {
+            effect.compose(&timing, values, base_value);
+        }
     }
 
     /// Whether composing the animations of `target` can read values without animations.
     pub fn needs_base_values(&self, target: &Target) -> bool {
         self.targets.get(target).is_some_and(|target| {
-            target
-                .animations
-                .iter()
-                .any(|id| self.animations[id].effect.needs_underlying_values())
+            target.animations.iter().any(|id| {
+                self.animations[id]
+                    .effect
+                    .as_ref()
+                    .is_some_and(|effect| effect.needs_underlying_values())
+            })
         })
     }
 
@@ -428,8 +619,12 @@ impl AnimationStore {
         let mut existing: Vec<(AnimationId, Atom)> = self
             .animations_of(target)
             .iter()
-            .filter_map(|id| match &self.animations[id].origin {
-                Origin::CssAnimation { name, .. } => Some((*id, name.clone())),
+            .filter_map(|id| match &self.animations[id] {
+                Entry {
+                    origin: Origin::CssAnimation { name, .. },
+                    owned_by_style: true,
+                    ..
+                } => Some((*id, name.clone())),
                 _ => None,
             })
             .collect();
@@ -452,12 +647,13 @@ impl AnimationStore {
             let id = match matching {
                 Some(position) => {
                     let (id, _) = existing.remove(position);
-                    let was_paused = self.animations[&id]
+                    let entry = &self.animations[&id];
+                    let was_paused = entry
                         .animation
-                        .play_state(Some(self.timeline_time))
+                        .play_state(entry.timeline_time(self.timeline_time))
                         == PlayState::Paused;
                     self.animations.get_mut(&id).unwrap().origin = origin;
-                    self.set_effect(id, effect);
+                    self.set_effect(id, Some(effect));
                     if was_paused == specified.paused {
                         // The keyframes may still have changed.
                         changed = true;
@@ -465,7 +661,7 @@ impl AnimationStore {
                     }
                     id
                 }
-                None => self.insert(target.clone(), effect, origin),
+                None => self.insert(Some(target.clone()), Some(effect), origin),
             };
             changed = true;
             self.update_animation(id, |animation, time, actions| {
@@ -494,8 +690,10 @@ impl AnimationStore {
         property: &OwnedPropertyDeclarationId,
     ) -> Option<AnimationId> {
         self.animations_of(target).iter().copied().find(|id| {
-            matches!(&self.animations[id].origin,
-                Origin::CssTransition { property: other, .. } if other == property)
+            let entry = &self.animations[id];
+            entry.owned_by_style
+                && matches!(&entry.origin,
+                    Origin::CssTransition { property: other, .. } if other == property)
         })
     }
 
@@ -506,9 +704,11 @@ impl AnimationStore {
         transitioning: &PropertyDeclarationIdSet,
     ) -> impl Iterator<Item = AnimationId> {
         self.animations_of(target).iter().copied().filter(|id| {
-            matches!(&self.animations[id].origin,
-                Origin::CssTransition { property, .. }
-                    if !transitioning.contains(property.as_borrowed()))
+            let entry = &self.animations[id];
+            entry.owned_by_style
+                && matches!(&entry.origin,
+                    Origin::CssTransition { property, .. }
+                        if !transitioning.contains(property.as_borrowed()))
         })
     }
 
@@ -519,7 +719,6 @@ impl AnimationStore {
         after_change_style: &ComputedValues,
         is_animated: &dyn Fn(&OwnedPropertyDeclarationId) -> bool,
     ) -> TransitionUpdates {
-        let timeline_time = Some(self.timeline_time);
         let mut updates = transition_updates(before_change_style, after_change_style, |property| {
             if let Some(id) = self.find_transition(target, property) {
                 let entry = &self.animations[&id];
@@ -532,15 +731,17 @@ impl AnimationStore {
                 else {
                     unreachable!()
                 };
-                let animation = &entry.animation;
-                let timing = entry.effect.computed_timing(
-                    animation.current_time(timeline_time),
-                    animation.playback_rate(),
-                );
-                let segment = &entry.effect.properties[0].segments[0];
+                let effect = entry.effect.as_ref()?;
+                let timing = entry.computed_timing(self.timeline_time)?;
+                let segment = effect
+                    .properties
+                    .iter()
+                    .find(|segments| segments.property == *property)?
+                    .segments
+                    .first()?;
                 let progress = timing.progress.unwrap_or(0.);
                 let mut values = AnimationValueMap::default();
-                entry.effect.compose(&timing, &mut values, &mut |_| None);
+                effect.compose(&timing, &mut values, &mut |_| None);
                 let current_value = values
                     .remove(property)
                     .or_else(|| segment.from_value.clone())?;
@@ -694,7 +895,7 @@ impl AnimationStore {
             reversing_adjusted_start_value: transition.reversing_adjusted_start_value,
             reversing_shortening_factor: transition.reversing_shortening_factor,
         };
-        let id = self.insert(target.clone(), effect, origin);
+        let id = self.insert(Some(target.clone()), Some(effect), origin);
         self.update_animation(id, |animation, time, actions| {
             let _ = animation.play(false, time, actions);
             // The start time of a transition is the time of the style change event.
