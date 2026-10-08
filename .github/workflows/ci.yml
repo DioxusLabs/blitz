@@ -14,6 +14,7 @@ concurrency:
 env:
   RUSTDOCFLAGS: "-D warnings"
   CARGO_REGISTRIES_CRATES_IO_PROTOCOL: "sparse"
+  CARGO_PROFILE_DEV_DEBUG: "line-tables-only"
 
 jobs:
 
