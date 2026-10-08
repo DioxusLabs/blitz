@@ -501,7 +501,7 @@ fn collect_layout_children_with_wrap(
                 el.attr_parsed(local_name!("reversed")).unwrap_or(false),
             )
         } else {
-            (1, false)
+            (0, false)
         };
         collect_list_item_children(doc, &mut index, reversed, container_node_id);
     }
