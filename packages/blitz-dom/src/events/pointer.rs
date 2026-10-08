@@ -179,7 +179,7 @@ fn touch_action_pan_axes(doc: &BaseDocument, node_id: NodeId) -> (bool, bool) {
     while let Some(id) = current {
         let node = &doc.nodes[id];
         if let Some(style) = node.primary_styles() {
-            let touch_action = style.clone_touch_action();
+            let touch_action = style.slow_clone_touch_action();
             if !done_x {
                 allow_x &= touch_action.intersects(pan_x_flags);
             }
@@ -187,10 +187,14 @@ fn touch_action_pan_axes(doc: &BaseDocument, node_id: NodeId) -> (bool, bool) {
                 allow_y &= touch_action.intersects(pan_y_flags);
             }
 
-            let scrolls_x = matches!(style.clone_overflow_x(), Overflow::Scroll | Overflow::Auto)
-                && node.final_layout().scroll_width() > 0.0;
-            let scrolls_y = matches!(style.clone_overflow_y(), Overflow::Scroll | Overflow::Auto)
-                && node.final_layout().scroll_height() > 0.0;
+            let scrolls_x = matches!(
+                style.slow_clone_overflow_x(),
+                Overflow::Scroll | Overflow::Auto
+            ) && node.final_layout().scroll_width() > 0.0;
+            let scrolls_y = matches!(
+                style.slow_clone_overflow_y(),
+                Overflow::Scroll | Overflow::Auto
+            ) && node.final_layout().scroll_height() > 0.0;
             done_x |= scrolls_x;
             done_y |= scrolls_y;
 
@@ -226,14 +230,14 @@ pub(crate) fn handle_pointermove<F: FnMut(DomEvent)>(
                     if let Some(mousedown_node_id) = doc.mousedown_node_id {
                         let node = &doc.nodes[mousedown_node_id];
                         if let Some(style) = node.primary_styles() {
-                            let user_select = style.clone_user_select();
+                            let user_select = style.slow_clone_user_select();
                             if user_select == UserSelect::None {
                                 // Do nothing. Continue with rest of function
                             } else if user_select == UserSelect::Auto {
                                 if let Some(parent) = node.parent {
                                     let node = &doc.nodes[parent];
                                     if let Some(style) = node.primary_styles() {
-                                        let user_select = style.clone_user_select();
+                                        let user_select = style.slow_clone_user_select();
                                         if user_select == UserSelect::None {
                                             // Do nothing. Continue with rest of function
                                         } else {

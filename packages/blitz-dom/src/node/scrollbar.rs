@@ -51,7 +51,7 @@ impl Node {
     /// The node's computed `scrollbar-width`.
     pub fn scrollbar_width(&self) -> ScrollbarWidth {
         self.primary_styles()
-            .map(|style| style.clone_scrollbar_width())
+            .map(|style| style.slow_clone_scrollbar_width())
             .unwrap_or(ScrollbarWidth::Auto)
     }
 
@@ -61,8 +61,8 @@ impl Node {
         let Some(style) = self.primary_styles() else {
             return ScrollbarColor::Auto;
         };
-        let current_color = style.clone_color();
-        match style.clone_scrollbar_color() {
+        let current_color = style.slow_clone_color();
+        match style.slow_clone_scrollbar_color() {
             style::values::computed::ScrollbarColor::Auto => ScrollbarColor::Auto,
             style::values::computed::ScrollbarColor::Colors { thumb, track } => {
                 ScrollbarColor::Colors {
@@ -87,11 +87,11 @@ impl Node {
         }
         let (overflow, scroll_extent) = match axis {
             AbsoluteAxis::Horizontal => (
-                style.clone_overflow_x(),
+                style.slow_clone_overflow_x(),
                 self.final_layout().scroll_width() as f64,
             ),
             AbsoluteAxis::Vertical => (
-                style.clone_overflow_y(),
+                style.slow_clone_overflow_y(),
                 self.final_layout().scroll_height() as f64,
             ),
         };

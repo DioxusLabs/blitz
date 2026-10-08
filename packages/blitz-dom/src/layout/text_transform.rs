@@ -50,11 +50,11 @@ impl CaseTransform {
     };
 
     pub(crate) fn from_style(style: &ComputedValues) -> Self {
-        let text_transform = style.clone_text_transform();
+        let text_transform = style.slow_clone_text_transform();
         if text_transform.is_empty() {
             return Self::NONE;
         }
-        let white_space_collapse = style.clone_white_space_collapse();
+        let white_space_collapse = style.slow_clone_white_space_collapse();
         let lang = match text_transform.case() {
             TextTransformCase::None | TextTransformCase::MathAuto => LanguageIdentifier::UNKNOWN,
             _ => LanguageIdentifier::try_from_str(&style.get_font()._x_lang.0)

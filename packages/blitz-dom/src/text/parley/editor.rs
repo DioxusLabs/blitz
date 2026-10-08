@@ -93,10 +93,15 @@ impl EditEngine for TextEditor {
             .map(|s| stylo_to_parley::style(node, s))
             .unwrap_or_default();
         let alignment = style
-            .map(|s| stylo_to_parley::text_align(s.clone_text_align()))
+            .map(|s| stylo_to_parley::text_align(s.slow_clone_text_align()))
             .unwrap_or(parley::layout::Alignment::Start);
         let base_direction = style
-            .map(|s| stylo_to_parley::base_direction(s.clone_direction(), s.clone_unicode_bidi()))
+            .map(|s| {
+                stylo_to_parley::base_direction(
+                    s.slow_clone_direction(),
+                    s.slow_clone_unicode_bidi(),
+                )
+            })
             .unwrap_or(parley::BaseDirection::Auto);
 
         let editor = &mut self.editor;
