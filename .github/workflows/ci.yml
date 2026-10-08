@@ -219,10 +219,7 @@ jobs:
 
       - name: Install apt deps
         if: ${{ matrix.platform.os == 'ubuntu-latest' }}
-        uses: awalsh128/cache-apt-pkgs-action@latest
-        with:
-          packages: libfontconfig1-dev
-          version: 1.0
+        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
 
       - name: Setup
         run: ${{ matrix.platform.setup }} 
