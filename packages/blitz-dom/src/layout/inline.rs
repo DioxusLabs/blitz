@@ -20,7 +20,6 @@ use taffy::{BlockItemStyle as _, Clear, Float, prelude::TaffyMaxContent};
 
 use super::resolve_calc_value;
 use crate::layout::LayoutPassState;
-use crate::BaseDocument;
 use crate::node::TextLayout;
 use crate::stylo_to_parley;
 

@@ -21,7 +21,7 @@ use winkin::{
 use super::inline::{Frame, f32_max, inline_box_inputs};
 use super::replaced::is_replaced_element;
 use super::resolve_calc_value;
-use crate::BaseDocument;
+use crate::layout::LayoutPassState;
 use crate::node::TextLayout;
 use crate::text_winkin;
 
@@ -281,7 +281,7 @@ impl Exclusions for FloatRoom<'_, '_> {
     }
 }
 
-impl BaseDocument {
+impl LayoutPassState<'_> {
     pub(super) fn compute_inline_layout_winkin(
         &mut self,
         node_id: NodeId,
@@ -389,14 +389,15 @@ impl BaseDocument {
             sizes.push(text_winkin::BoxMeasure { node: id, size });
         }
         if !inline_layout.winkin.is_built_with(&sizes, basis) {
-            let guard = self.guard.read();
+            let doc = &mut *self.doc;
+            let guard = doc.guard.read();
             text_winkin::build(
-                &self.nodes,
+                &doc.nodes,
                 text_winkin::Cascade {
-                    stylist: &self.stylist,
+                    stylist: &doc.stylist,
                     guards: &StylesheetGuards::same(&guard),
                 },
-                &mut self.winkin.cx,
+                &mut doc.winkin.cx,
                 &mut inline_layout.winkin,
                 scale,
                 basis,
