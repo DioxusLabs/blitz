@@ -37,14 +37,6 @@ pub(super) fn build_inline_layout_into(
     scale: f32,
     inline_context_root_node_id: NodeId,
 ) {
-    // winkin builds its own content when the context is next laid out, so the
-    // Parley layout, and the shaping it costs, is skipped.
-    if cfg!(feature = "winkin") {
-        #[cfg(feature = "winkin")]
-        text_layout.winkin.invalidate();
-        return;
-    }
-
     // Get the inline context's root node's text styles
     let root_node = &nodes[inline_context_root_node_id];
     let root_node_style = root_node.primary_styles().or_else(|| {

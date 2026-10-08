@@ -289,6 +289,7 @@ impl TextLayout {
                     line_bottom: metrics.block_max_coord,
                     // A block-level box's static position is below its line.
                     block_start: metrics.block_max_coord,
+                    rtl: None,
                 }),
                 parley::layout::PositionedLayoutItem::GlyphRun(_) => None,
             })
