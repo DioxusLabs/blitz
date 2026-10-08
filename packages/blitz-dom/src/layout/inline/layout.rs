@@ -22,7 +22,6 @@ use taffy::{BlockItemStyle as _, Clear, Float, prelude::TaffyMaxContent};
 use stylo_taffy::StyleFlags;
 
 use crate::layout::LayoutPassState;
-use crate::BaseDocument;
 use crate::node::TextLayout;
 use crate::stylo_to_parley;
 
