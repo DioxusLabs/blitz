@@ -121,7 +121,7 @@ impl Node {
             .resolve_current_color
             .then(|| self.primary_styles())
             .flatten()
-            .map(|style| style.clone_color())
+            .map(|style| style.slow_clone_color())
             .map(|color| color.to_css_string());
 
         match &self.data {

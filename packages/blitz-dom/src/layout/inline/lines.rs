@@ -893,7 +893,7 @@ impl LayoutPassState<'_> {
     fn stretches_along(&self, node_id: NodeId) -> bool {
         let node = &self.nodes[node_id];
         if let Some(style) = node.primary_styles() {
-            let display = style.clone_display();
+            let display = style.slow_clone_display();
             if display.outside() != DisplayOutside::Block
                 || style.get_box().float != style::computed_values::float::T::None
                 || style.get_box().position.is_absolutely_positioned()
@@ -1014,8 +1014,11 @@ impl LayoutPassState<'_> {
             }
             node.primary_styles().is_some_and(|computed| {
                 !computed.get_box().display.is_none()
-                    && !computed.clone_position().is_absolutely_positioned()
-                    && matches!(computed.clone_float(), style::values::computed::Float::None)
+                    && !computed.slow_clone_position().is_absolutely_positioned()
+                    && matches!(
+                        computed.slow_clone_float(),
+                        style::values::computed::Float::None
+                    )
             })
         })
     }
@@ -1078,7 +1081,7 @@ impl LayoutPassState<'_> {
             if is_floated {
                 // `inline-start` and `inline-end` are the containing block's sides, as its
                 // direction has them.
-                let float_side = match (held.primary_styles().map(|s| s.clone_float()), rtl) {
+                let float_side = match (held.primary_styles().map(|s| s.slow_clone_float()), rtl) {
                     (Some(StyloFloat::Right), _)
                     | (Some(StyloFloat::InlineStart), true)
                     | (Some(StyloFloat::InlineEnd), false) => FloatSide::Right,
@@ -1118,7 +1121,7 @@ impl LayoutPassState<'_> {
             let source = held
                 .primary_styles()
                 .map_or(BaselineSource::Auto, |computed| {
-                    computed.clone_baseline_source()
+                    computed.slow_clone_baseline_source()
                 });
             let uses_last = match source {
                 BaselineSource::First => false,
@@ -1231,16 +1234,19 @@ impl LayoutPassState<'_> {
             // An orthogonal flow gives no baseline across this one's lines.
             if computed.get_box().display.is_none()
                 || computed.writing_mode.is_vertical() != vertical
-                || computed.clone_position().is_absolutely_positioned()
-                || !matches!(computed.clone_float(), style::values::computed::Float::None)
+                || computed.slow_clone_position().is_absolutely_positioned()
+                || !matches!(
+                    computed.slow_clone_float(),
+                    style::values::computed::Float::None
+                )
             {
                 continue;
             }
             let scrolls = !matches!(
-                computed.clone_overflow_x(),
+                computed.slow_clone_overflow_x(),
                 style::values::computed::Overflow::Visible
             ) || !matches!(
-                computed.clone_overflow_y(),
+                computed.slow_clone_overflow_y(),
                 style::values::computed::Overflow::Visible
             );
             let inside = child_node.display_style().map(|display| display.inside());
@@ -1278,7 +1284,7 @@ fn reads_own_baseline(style: &style::properties::ComputedValues) -> bool {
     use style::values::computed::length_percentage::Unpacked;
     use style::values::generics::box_::{BaselineShiftKeyword, GenericBaselineShift};
     let box_style = style.get_box();
-    match box_style.clone_baseline_shift() {
+    match box_style.slow_clone_baseline_shift() {
         GenericBaselineShift::Keyword(BaselineShiftKeyword::Top | BaselineShiftKeyword::Bottom) => {
             return false;
         }
@@ -1290,7 +1296,7 @@ fn reads_own_baseline(style: &style::properties::ComputedValues) -> bool {
         },
     }
     !matches!(
-        box_style.clone_alignment_baseline(),
+        box_style.slow_clone_alignment_baseline(),
         AlignmentBaseline::TextTop | AlignmentBaseline::TextBottom
     )
 }

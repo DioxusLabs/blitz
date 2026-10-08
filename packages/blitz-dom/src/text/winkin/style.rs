@@ -117,7 +117,7 @@ impl FeatureValues {
         if self.0.is_empty() {
             return;
         }
-        let alternates = computed.clone_font_variant_alternates();
+        let alternates = computed.slow_clone_font_variant_alternates();
         if alternates
             .iter()
             .all(|alternate| matches!(alternate, VariantAlternates::HistoricalForms))
@@ -408,12 +408,12 @@ pub(crate) fn computed_style<'a>(
         orientation: OrientationGroup {
             // Which way each character stands in a vertical line. It
             // inherits, so a span may set it against the block around it.
-            text_orientation: match computed.clone_text_orientation() {
+            text_orientation: match computed.slow_clone_text_orientation() {
                 StyloTextOrientation::Mixed => TextOrientation::Mixed,
                 StyloTextOrientation::Upright => TextOrientation::Upright,
                 StyloTextOrientation::Sideways => TextOrientation::Sideways,
             },
-            text_combine_upright: match computed.clone_text_combine_upright() {
+            text_combine_upright: match computed.slow_clone_text_combine_upright() {
                 StyloTextCombineUpright::None => TextCombineUpright::None,
                 StyloTextCombineUpright::All => TextCombineUpright::All,
                 StyloTextCombineUpright::Digits(count) => TextCombineUpright::Digits(count),
@@ -422,13 +422,13 @@ pub(crate) fn computed_style<'a>(
         edges: edges_group(computed, scale, basis),
         ruby: RubyGroup {
             position: ruby_position(computed),
-            align: match computed.clone_ruby_align() {
+            align: match computed.slow_clone_ruby_align() {
                 StyloRubyAlign::SpaceAround => RubyAlign::SpaceAround,
                 StyloRubyAlign::SpaceBetween => RubyAlign::SpaceBetween,
                 StyloRubyAlign::Center => RubyAlign::Center,
                 StyloRubyAlign::Start => RubyAlign::Start,
             },
-            overhang: match computed.clone_ruby_overhang() {
+            overhang: match computed.slow_clone_ruby_overhang() {
                 StyloRubyOverhang::Auto => RubyOverhang::Auto,
                 StyloRubyOverhang::Spaces => RubyOverhang::Spaces,
             },
@@ -440,7 +440,7 @@ pub(crate) fn computed_style<'a>(
 
 /// `unicode-bidi`.
 pub(crate) fn unicode_bidi(computed: &ComputedValues) -> UnicodeBidi {
-    match computed.clone_unicode_bidi() {
+    match computed.slow_clone_unicode_bidi() {
         StyloUnicodeBidi::Normal => UnicodeBidi::Normal,
         StyloUnicodeBidi::Embed => UnicodeBidi::Embed,
         StyloUnicodeBidi::Isolate => UnicodeBidi::Isolate,
@@ -455,7 +455,7 @@ pub(crate) fn unicode_bidi(computed: &ComputedValues) -> UnicodeBidi {
 /// decoration line doesn't count. What it draws is read from the node when
 /// painting.
 fn paints(computed: &ComputedValues) -> bool {
-    let current_color = computed.clone_color();
+    let current_color = computed.slow_clone_color();
     let background = computed.get_background();
     let fills = background
         .background_color
@@ -484,7 +484,7 @@ fn paints(computed: &ComputedValues) -> bool {
 
 /// Whether the element sets a decoration line that is drawn.
 pub(crate) fn decorates(computed: &ComputedValues) -> bool {
-    computed.clone_text_decoration_line().intersects(
+    computed.slow_clone_text_decoration_line().intersects(
         TextDecorationLine::UNDERLINE
             | TextDecorationLine::OVERLINE
             | TextDecorationLine::LINE_THROUGH,
@@ -511,9 +511,9 @@ fn font_group<'a>(
             oblique => FontStyle::Oblique(Some(oblique.oblique_degrees())),
         },
         synthesis: FontSynthesis {
-            weight: synthesis(computed.clone_font_synthesis_weight()),
+            weight: synthesis(computed.slow_clone_font_synthesis_weight()),
             // `oblique-only` allows a slant only where one was asked for.
-            style: match computed.clone_font_synthesis_style() {
+            style: match computed.slow_clone_font_synthesis_style() {
                 StyloFontSynthesisStyle::Auto => true,
                 StyloFontSynthesisStyle::None => false,
                 StyloFontSynthesisStyle::ObliqueOnly => !matches!(
@@ -522,10 +522,10 @@ fn font_group<'a>(
                         | style::values::computed::font::FontStyle::ITALIC
                 ),
             },
-            small_caps: synthesis(computed.clone_font_synthesis_small_caps()),
-            position: synthesis(computed.clone_font_synthesis_position()),
+            small_caps: synthesis(computed.slow_clone_font_synthesis_small_caps()),
+            position: synthesis(computed.slow_clone_font_synthesis_position()),
         },
-        variant_caps: match computed.clone_font_variant_caps() {
+        variant_caps: match computed.slow_clone_font_variant_caps() {
             StyloFontVariantCaps::Normal => FontVariantCaps::Normal,
             StyloFontVariantCaps::SmallCaps => FontVariantCaps::SmallCaps,
             StyloFontVariantCaps::AllSmallCaps => FontVariantCaps::AllSmallCaps,
@@ -534,32 +534,32 @@ fn font_group<'a>(
             StyloFontVariantCaps::Unicase => FontVariantCaps::Unicase,
             StyloFontVariantCaps::TitlingCaps => FontVariantCaps::TitlingCaps,
         },
-        variant_position: match computed.clone_font_variant_position() {
+        variant_position: match computed.slow_clone_font_variant_position() {
             StyloFontVariantPosition::Normal => FontVariantPosition::Normal,
             StyloFontVariantPosition::Sub => FontVariantPosition::Sub,
             StyloFontVariantPosition::Super => FontVariantPosition::Super,
         },
         variants: variants(computed),
-        variant_emoji: match computed.clone_font_variant_emoji() {
+        variant_emoji: match computed.slow_clone_font_variant_emoji() {
             StyloFontVariantEmoji::Normal => FontVariantEmoji::Normal,
             StyloFontVariantEmoji::Text => FontVariantEmoji::Text,
             StyloFontVariantEmoji::Emoji => FontVariantEmoji::Emoji,
             StyloFontVariantEmoji::Unicode => FontVariantEmoji::Unicode,
         },
-        optical_sizing: match computed.clone_font_optical_sizing() {
+        optical_sizing: match computed.slow_clone_font_optical_sizing() {
             StyloFontOpticalSizing::Auto => FontOpticalSizing::Auto,
             StyloFontOpticalSizing::None => FontOpticalSizing::None,
         },
-        kerning: match computed.clone_font_kerning() {
+        kerning: match computed.slow_clone_font_kerning() {
             StyloFontKerning::Auto => FontKerning::Auto,
             StyloFontKerning::Normal => FontKerning::Normal,
             StyloFontKerning::None => FontKerning::None,
         },
-        language_override: match computed.clone_font_language_override().0 {
+        language_override: match computed.slow_clone_font_language_override().0 {
             0 => FontLanguageOverride::Normal,
             tag => FontLanguageOverride::System(Tag::from_bytes(tag.to_be_bytes())),
         },
-        size_adjust: match computed.clone_font_size_adjust() {
+        size_adjust: match computed.slow_clone_font_size_adjust() {
             GenericFontSizeAdjust::None => FontSizeAdjust::None,
             GenericFontSizeAdjust::ExHeight(value) => adjust(AdjustMetric::ExHeight, value.0),
             GenericFontSizeAdjust::CapHeight(value) => adjust(AdjustMetric::CapHeight, value.0),
@@ -583,7 +583,7 @@ fn variants(computed: &ComputedValues) -> FontVariants {
             set = set.union(keyword);
         }
     };
-    let ligatures = computed.clone_font_variant_ligatures();
+    let ligatures = computed.slow_clone_font_variant_ligatures();
     if ligatures.contains(FontVariantLigatures::NONE) {
         // `none` is every `no-` keyword.
         add(true, FontVariants::NO_COMMON_LIGATURES);
@@ -624,7 +624,7 @@ fn variants(computed: &ComputedValues) -> FontVariants {
     ] {
         add(ligatures.contains(bit), keyword);
     }
-    let numeric = computed.clone_font_variant_numeric();
+    let numeric = computed.slow_clone_font_variant_numeric();
     for (bit, keyword) in [
         (FontVariantNumeric::LINING_NUMS, FontVariants::LINING_NUMS),
         (
@@ -649,7 +649,7 @@ fn variants(computed: &ComputedValues) -> FontVariants {
     ] {
         add(numeric.contains(bit), keyword);
     }
-    let east_asian = computed.clone_font_variant_east_asian();
+    let east_asian = computed.slow_clone_font_variant_east_asian();
     for (bit, keyword) in [
         (FontVariantEastAsian::JIS78, FontVariants::JIS78),
         (FontVariantEastAsian::JIS83, FontVariants::JIS83),
@@ -669,7 +669,7 @@ fn variants(computed: &ComputedValues) -> FontVariants {
     // The other alternates name `@font-feature-values`, and are features
     // of the font lists.
     let historical = computed
-        .clone_font_variant_alternates()
+        .slow_clone_font_variant_alternates()
         .iter()
         .any(|alternate| matches!(alternate, VariantAlternates::HistoricalForms));
     add(historical, FontVariants::HISTORICAL_FORMS);
@@ -679,7 +679,7 @@ fn variants(computed: &ComputedValues) -> FontVariants {
 fn text_group(computed: &ComputedValues, scale: f32, language: Option<Language>) -> TextGroup<'_> {
     let text = computed.get_inherited_text();
     let css_size = computed.get_font().font_size.used_size.0.px();
-    let transform = computed.clone_text_transform();
+    let transform = computed.slow_clone_text_transform();
     TextGroup {
         language,
         hyphenate_character: match &text.hyphenate_character {
@@ -715,7 +715,7 @@ fn text_group(computed: &ComputedValues, scale: f32, language: Option<Language>)
             style::values::computed::WordBreak::BreakAll => WordBreak::BreakAll,
             style::values::computed::WordBreak::KeepAll => WordBreak::KeepAll,
         },
-        line_break: match computed.clone_line_break() {
+        line_break: match computed.slow_clone_line_break() {
             style::values::computed::LineBreak::Auto
             | style::values::computed::LineBreak::Normal => LineBreak::Normal,
             style::values::computed::LineBreak::Loose => LineBreak::Loose,
@@ -727,7 +727,7 @@ fn text_group(computed: &ComputedValues, scale: f32, language: Option<Language>)
             style::values::computed::OverflowWrap::BreakWord => OverflowWrap::BreakWord,
             style::values::computed::OverflowWrap::Anywhere => OverflowWrap::Anywhere,
         },
-        hyphens: match computed.clone_hyphens() {
+        hyphens: match computed.slow_clone_hyphens() {
             StyloHyphens::None => Hyphens::None,
             StyloHyphens::Manual => Hyphens::Manual,
             StyloHyphens::Auto => Hyphens::Auto,
@@ -741,7 +741,7 @@ fn text_group(computed: &ComputedValues, scale: f32, language: Option<Language>)
         // A percentage is of the font size, which layout takes it of.
         word_spacing: length_percentage(&text.word_spacing, scale),
         autospace: {
-            let autospace = computed.clone_text_autospace();
+            let autospace = computed.slow_clone_text_autospace();
             if autospace.intersects(StyloTextAutospace::NORMAL | StyloTextAutospace::AUTO) {
                 TextAutospace::NORMAL
             } else {
@@ -757,14 +757,14 @@ fn text_group(computed: &ComputedValues, scale: f32, language: Option<Language>)
             StyloTextJustify::InterWord => TextJustify::InterWord,
             StyloTextJustify::InterCharacter => TextJustify::InterCharacter,
         },
-        spacing_trim: match computed.clone_text_spacing_trim() {
+        spacing_trim: match computed.slow_clone_text_spacing_trim() {
             StyloTextSpacingTrim::Normal => TextSpacingTrim::Normal,
             StyloTextSpacingTrim::SpaceAll => TextSpacingTrim::SpaceAll,
             StyloTextSpacingTrim::SpaceFirst => TextSpacingTrim::SpaceFirst,
             StyloTextSpacingTrim::TrimStart => TextSpacingTrim::TrimStart,
         },
         hanging_punctuation: {
-            let hanging = computed.clone_hanging_punctuation();
+            let hanging = computed.slow_clone_hanging_punctuation();
             HangingPunctuation {
                 first: hanging.contains(StyloHangingPunctuation::FIRST),
                 last: hanging.contains(StyloHangingPunctuation::LAST),
@@ -810,10 +810,10 @@ pub(crate) fn emphasis_mark_string(computed: &ComputedValues) -> Option<String> 
 /// which side. `auto` is `over right`, which is Chrome's initial value.
 fn emphasis(computed: &ComputedValues) -> TextEmphasis {
     let marks = !matches!(
-        computed.clone_text_emphasis_style(),
+        computed.slow_clone_text_emphasis_style(),
         StyloTextEmphasisStyle::None
     );
-    let position = computed.clone_text_emphasis_position();
+    let position = computed.slow_clone_text_emphasis_position();
     TextEmphasis {
         marks,
         position: EmphasisPosition {
@@ -834,7 +834,7 @@ fn emphasis(computed: &ComputedValues) -> TextEmphasis {
 
 fn line_group(computed: &ComputedValues, scale: f32) -> LineGroup {
     let font = computed.get_font();
-    let initial_letter = computed.clone_initial_letter();
+    let initial_letter = computed.slow_clone_initial_letter();
     LineGroup {
         height: match font.line_height {
             StyloLineHeight::Normal => LineHeight::Normal,
@@ -842,7 +842,7 @@ fn line_group(computed: &ComputedValues, scale: f32) -> LineGroup {
             StyloLineHeight::Length(length) => LineHeight::Px(length.0.px() * scale),
         },
         vertical_align: vertical_align(computed, scale),
-        dominant_baseline: match computed.clone_dominant_baseline() {
+        dominant_baseline: match computed.slow_clone_dominant_baseline() {
             StyloDominantBaseline::Alphabetic => DominantBaseline::Alphabetic,
             StyloDominantBaseline::Ideographic => DominantBaseline::Ideographic,
             StyloDominantBaseline::Central | StyloDominantBaseline::Middle => {
@@ -865,8 +865,8 @@ fn line_group(computed: &ComputedValues, scale: f32) -> LineGroup {
         } else {
             InitialLetter::NONE
         },
-        text_box_trim: text_box_trim(computed.clone_text_box_trim()),
-        text_box_edge: text_box_edge(computed.clone_text_box_edge()),
+        text_box_trim: text_box_trim(computed.slow_clone_text_box_trim()),
+        text_box_edge: text_box_edge(computed.slow_clone_text_box_edge()),
         ..LineGroup::INITIAL
     }
 }
@@ -943,7 +943,7 @@ fn edges_group(computed: &ComputedValues, scale: f32, basis: &Basis) -> EdgesGro
             bottom: of_basis(&padding.padding_bottom.0, basis, scale),
             left: of_basis(&padding.padding_left.0, basis, scale),
         },
-        decoration_break: match computed.clone_box_decoration_break() {
+        decoration_break: match computed.slow_clone_box_decoration_break() {
             StyloBoxDecorationBreak::Slice => BoxDecorationBreak::Slice,
             StyloBoxDecorationBreak::Clone => BoxDecorationBreak::Clone,
         },
@@ -952,7 +952,7 @@ fn edges_group(computed: &ComputedValues, scale: f32, basis: &Basis) -> EdgesGro
 
 /// `vertical-align`, which Stylo keeps as its two longhands.
 fn vertical_align(computed: &ComputedValues, scale: f32) -> VerticalAlign {
-    match computed.clone_baseline_shift() {
+    match computed.slow_clone_baseline_shift() {
         GenericBaselineShift::Keyword(BaselineShiftKeyword::Sub) => return VerticalAlign::Sub,
         GenericBaselineShift::Keyword(BaselineShiftKeyword::Super) => return VerticalAlign::Super,
         GenericBaselineShift::Keyword(BaselineShiftKeyword::Top) => return VerticalAlign::Top,
@@ -973,7 +973,7 @@ fn vertical_align(computed: &ComputedValues, scale: f32) -> VerticalAlign {
         },
     }
     #[allow(unreachable_patterns)]
-    match computed.clone_alignment_baseline() {
+    match computed.slow_clone_alignment_baseline() {
         AlignmentBaseline::TextTop => VerticalAlign::TextTop,
         AlignmentBaseline::TextBottom => VerticalAlign::TextBottom,
         AlignmentBaseline::Middle => VerticalAlign::Middle,
@@ -1019,7 +1019,7 @@ pub(crate) fn block_style<'a>(
     scale: f32,
 ) -> ComputedBlockStyle<'a> {
     let text = computed.get_inherited_text();
-    let text_align = match computed.clone_text_align() {
+    let text_align = match computed.slow_clone_text_align() {
         TextAlignKeyword::Start => TextAlign::Start,
         TextAlignKeyword::End => TextAlign::End,
         TextAlignKeyword::Left | TextAlignKeyword::MozLeft => TextAlign::Left,
@@ -1027,7 +1027,7 @@ pub(crate) fn block_style<'a>(
         TextAlignKeyword::Center | TextAlignKeyword::MozCenter => TextAlign::Center,
         TextAlignKeyword::Justify => TextAlign::Justify,
     };
-    let indent = computed.clone_text_indent();
+    let indent = computed.slow_clone_text_indent();
     // `plaintext` on the block takes each paragraph's direction from its own
     // first strong character.
     let direction = if style.bidi.unicode_bidi == UnicodeBidi::Plaintext {
@@ -1042,7 +1042,7 @@ pub(crate) fn block_style<'a>(
     // the only side a line overflows at: Stylo keeps it in `second` either
     // way, a single value being the end with the start left at `clip`.
     let clips = !matches!(
-        container.clone_overflow_x(),
+        container.slow_clone_overflow_x(),
         style::values::computed::Overflow::Visible
     );
     let text_overflow = match &computed.get_text().text_overflow.second {
@@ -1070,7 +1070,7 @@ pub(crate) fn block_style<'a>(
             hanging: indent.hanging,
             each_line: indent.each_line,
         },
-        text_wrap_style: match computed.clone_text_wrap_style() {
+        text_wrap_style: match computed.slow_clone_text_wrap_style() {
             StyloTextWrapStyle::Auto => TextWrapStyle::Auto,
             StyloTextWrapStyle::Stable => TextWrapStyle::Stable,
             StyloTextWrapStyle::Balance => TextWrapStyle::Balance,
@@ -1081,15 +1081,15 @@ pub(crate) fn block_style<'a>(
         // Chrome applies to a `-webkit-box`; the box is not required here,
         // Stylo's servo build having no `-webkit-box` to ask for.
         line_clamp: {
-            let clamp = computed.clone_line_clamp();
+            let clamp = computed.slow_clone_line_clamp();
             match clamp.max_lines.lines_value() {
                 Some(lines) => LineClamp::Lines(lines.0.max(0) as u32),
                 None if clamp.max_lines.is_auto() => LineClamp::Auto,
                 None => LineClamp::None,
             }
         },
-        text_box_trim: text_box_trim(computed.clone_text_box_trim()),
-        text_box_edge: text_box_edge(computed.clone_text_box_edge()),
+        text_box_trim: text_box_trim(computed.slow_clone_text_box_trim()),
+        text_box_edge: text_box_edge(computed.slow_clone_text_box_edge()),
         ..ComputedBlockStyle::new(style)
     }
 }
@@ -1099,7 +1099,7 @@ pub(crate) fn block_style<'a>(
 /// `alternate` alone is Stylo's `AlternateOver`; the vendored Stylo's initial
 /// value is Chrome's `over`, so the two are told apart.
 pub(super) fn ruby_position(computed: &ComputedValues) -> RubyPosition {
-    match computed.clone_ruby_position() {
+    match computed.slow_clone_ruby_position() {
         StyloRubyPosition::AlternateOver => RubyPosition::Alternate,
         StyloRubyPosition::AlternateUnder => RubyPosition::AlternateUnder,
         StyloRubyPosition::Over => RubyPosition::Over,
