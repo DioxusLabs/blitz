@@ -21,6 +21,20 @@ pub struct InlineTextHit {
     pub byte_offset: usize,
 }
 
+/// A piece of an inline root's laid-out content, in logical order.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum InlineContent<'a> {
+    /// Text of node `node_id`, starting `start` bytes into the layout text. The node is the
+    /// text node under winkin and its parent element under Parley.
+    Text {
+        node_id: NodeId,
+        start: usize,
+        text: std::borrow::Cow<'a, str>,
+    },
+    /// An inline box.
+    Box(NodeId),
+}
+
 use crate::util::ACTION_MOD;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
@@ -92,6 +106,122 @@ impl TextLayout {
         {
             self.text.get(start..end).map(str::to_owned)
         }
+    }
+
+    /// The laid-out text and inline boxes in logical order, as the selected backend placed them
+    /// on its lines.
+    pub fn logical_content(&self) -> impl Iterator<Item = InlineContent<'_>> {
+        let mut content = Vec::new();
+        #[cfg(feature = "winkin")]
+        if let Some(layout) = self.winkin.layout() {
+            use crate::text_winkin::{FIRST_LETTER_KEY, MARKER_KEY};
+            use core::ops::Range;
+            use winkin::Item;
+            use winkin::selection::{Affinity, Position};
+            let mut items = Vec::new();
+            for line in layout.lines() {
+                items.clear();
+                items.extend(line.items().filter_map(|item| match item {
+                    Item::Text(run) => Some((run.text_range(), run.key().0, false)),
+                    Item::Atomic(atomic) => Some((atomic.text_range(), atomic.key().0, true)),
+                    _ => None,
+                }));
+                items.sort_by_key(|(range, ..)| range.start);
+                // What the runs leave of the line, such as a forced break or a space the line
+                // wraps at, goes with the node the layout maps it to.
+                let line_range = line.text_range();
+                let mut cursor = line_range.start;
+                let push_text = |content: &mut Vec<_>, key: Option<u64>, range: Range<usize>| {
+                    let key = key.or_else(|| {
+                        let position = Position::new(range.start, Affinity::Downstream);
+                        layout.node_position(position).map(|node| node.key.0)
+                    });
+                    let Some(key) = key.filter(|key| key & (FIRST_LETTER_KEY | MARKER_KEY) == 0)
+                    else {
+                        return;
+                    };
+                    let text = layout
+                        .selected_text(range.clone(), CopyKind::Text)
+                        .to_string();
+                    if !text.is_empty() {
+                        content.push(InlineContent::Text {
+                            node_id: NodeId::from_u64(key),
+                            start: range.start,
+                            text: text.into(),
+                        });
+                    }
+                };
+                for (range, key, atomic) in items.drain(..) {
+                    if range.start > cursor {
+                        push_text(&mut content, None, cursor..range.start);
+                    }
+                    if atomic {
+                        if key & (FIRST_LETTER_KEY | MARKER_KEY) == 0 {
+                            content.push(InlineContent::Box(NodeId::from_u64(key)));
+                        }
+                    } else {
+                        push_text(&mut content, Some(key), range.clone());
+                    }
+                    cursor = cursor.max(range.end);
+                }
+                if line_range.end > cursor {
+                    push_text(&mut content, None, cursor..line_range.end);
+                }
+            }
+        }
+        #[cfg(not(feature = "winkin"))]
+        {
+            let text = self.text.as_str();
+            let mut boxes = self.layout.inline_boxes().peekable();
+            let mut runs = Vec::new();
+            for line in self.layout.lines() {
+                // Runs are stored in visual order: restore logical order for bidi text
+                runs.clear();
+                runs.extend(line.runs());
+                runs.sort_by_key(|run| run.text_range().start);
+                for run in &runs {
+                    for cluster in run.clusters() {
+                        let range = cluster.text_range();
+                        while let Some(ibox) = boxes.next_if(|ibox| ibox.index <= range.start) {
+                            content.push(InlineContent::Box(NodeId::from_u64(ibox.id)));
+                        }
+                        content.push(InlineContent::Text {
+                            node_id: cluster.style().brush.id,
+                            start: range.start,
+                            text: text[range].into(),
+                        });
+                    }
+                }
+            }
+            content.extend(boxes.map(|ibox| InlineContent::Box(NodeId::from_u64(ibox.id))));
+        }
+        content.into_iter()
+    }
+
+    /// Where byte `offset` of text node `node_id`'s content falls in the layout text, where the
+    /// selected backend maps source text to its layout (winkin). `None` otherwise: Parley's
+    /// callers follow its white space collapsing and text transforms themselves.
+    pub fn source_offset(&self, node_id: NodeId, offset: usize) -> Option<usize> {
+        #[cfg(feature = "winkin")]
+        {
+            let layout = self.winkin.layout()?;
+            let position = layout.position(
+                winkin::NodeKey(node_id.as_u64()),
+                offset,
+                winkin::selection::Affinity::Downstream,
+            )?;
+            Some(position.offset)
+        }
+        #[cfg(not(feature = "winkin"))]
+        {
+            let _ = (node_id, offset);
+            None
+        }
+    }
+
+    /// Whether [`Self::source_offset`] answers for the selected backend.
+    pub fn maps_source(&self) -> bool {
+        cfg!(feature = "winkin")
     }
 
     /// Hit test physical CSS-pixel coordinates relative to the inline root's content box.
