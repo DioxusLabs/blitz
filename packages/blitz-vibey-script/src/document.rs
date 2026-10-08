@@ -203,6 +203,7 @@ impl ScriptDocument {
             .set_ready_state(crate::state::ReadyState::Complete);
         self.runtime.install_body_onload_attribute();
         self.runtime.dispatch_window_event("load");
+        self.runtime.update_virtual_rendering(false);
 
         self.request_redraw();
         self.arm_timer_thread();

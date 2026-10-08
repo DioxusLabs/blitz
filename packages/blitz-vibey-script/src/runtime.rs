@@ -1192,9 +1192,6 @@ struct BlitzModuleLoader {
     modules: RefCell<HashMap<Url, Module>>,
 }
 
-/// The time between the frames of running animations with a virtual clock.
-const ANIMATION_FRAME: std::time::Duration = std::time::Duration::from_millis(16);
-
 impl BlitzModuleLoader {
     fn resolve_specifier(&self, referrer: &Referrer, specifier: &str) -> Option<Url> {
         if let Ok(url) = Url::parse(specifier) {
@@ -1533,7 +1530,7 @@ impl ScriptRuntime {
         if state.clock.virtual_elapsed_ms().is_some()
             && self.ctx.doc.borrow().animations_need_ticks()
         {
-            let frame = state.clock.now() + ANIMATION_FRAME;
+            let frame = state.timers.next_frame(state.clock.now());
             return Some(timer.map_or(frame, |timer| timer.min(frame)));
         }
         timer
@@ -1650,12 +1647,13 @@ impl ScriptRuntime {
                 .borrow_mut()
                 .advance_animation_timeline(elapsed);
         }
-        if let Err(error) =
-            crate::dom::call_js_helper("__blitz_animations_frame", &[], &mut self.context)
-        {
-            report_js_error(&self.ctx, &mut self.context, "animation frame", &error);
+        // Finish notifications run in a microtask checkpoint before the events are dispatched.
+        for helper in ["__blitz_animations_actions", "__blitz_animations_frame"] {
+            if let Err(error) = crate::dom::call_js_helper(helper, &[], &mut self.context) {
+                report_js_error(&self.ctx, &mut self.context, "animation frame", &error);
+            }
+            self.run_jobs("animation microtasks");
         }
-        self.run_jobs("animation microtasks");
         self.dispatch_css_animation_events();
     }
 
@@ -1719,36 +1717,63 @@ impl ScriptRuntime {
             let now = state.clock.now();
             state.timers.take_due(now)
         };
-        if due.is_empty() {
-            let elapsed = self.ctx.state.borrow().clock.virtual_elapsed_ms();
-            let Some(elapsed) = elapsed else {
-                return false;
-            };
-            if !self.ctx.doc.borrow().animations_need_ticks() {
-                return false;
+        let virtual_clock = self.ctx.state.borrow().clock.virtual_elapsed_ms().is_some();
+        if due.is_empty() && !(virtual_clock && self.ctx.doc.borrow().animations_need_ticks()) {
+            return false;
+        }
+        // With a virtual clock the timeline only advances in frames: when animation frame
+        // callbacks run, or when running animations are the only thing to wait for.
+        let is_frame =
+            !virtual_clock || due.is_empty() || due.iter().any(|timer| timer.animation_frame);
+        if is_frame {
+            if virtual_clock {
+                let mut state = self.ctx.state.borrow_mut();
+                let now = state.clock.now();
+                state.timers.frame_started(now);
             }
             self.update_animations();
-            self.ctx.doc.borrow_mut().resolve(elapsed / 1000.);
-            return true;
         }
-        self.update_animations();
+        let frame_time = self.ctx.doc.borrow().animations().timeline_time();
         for timer in due {
-            if let Err(error) =
-                timer
-                    .callback
-                    .call(&JsValue::undefined(), &timer.args, &mut self.context)
+            let frame_args = [JsValue::from(if virtual_clock { frame_time } else { 16.0 })];
+            let args = if timer.animation_frame {
+                &frame_args[..]
+            } else {
+                &timer.args[..]
+            };
+            if let Err(error) = timer
+                .callback
+                .call(&JsValue::undefined(), args, &mut self.context)
             {
                 report_js_error(&self.ctx, &mut self.context, "timer callback", &error);
             }
         }
         self.run_jobs("timer microtasks");
-        // With a virtual clock nothing else updates the rendering. Updating the style
-        // starts and cancels CSS animations and transitions.
-        let elapsed = self.ctx.state.borrow().clock.virtual_elapsed_ms();
-        if let Some(elapsed) = elapsed {
-            self.ctx.doc.borrow_mut().resolve(elapsed / 1000.);
-        }
+        self.update_virtual_rendering(is_frame);
         true
+    }
+
+    /// With a virtual clock nothing else updates the rendering. Updating the style
+    /// starts and cancels CSS animations and transitions. In a frame, pending animations
+    /// become ready at the time of the frame.
+    pub(crate) fn update_virtual_rendering(&mut self, is_frame: bool) {
+        if self.ctx.state.borrow().clock.virtual_elapsed_ms().is_none() {
+            return;
+        }
+        {
+            let mut doc = self.ctx.doc.borrow_mut();
+            let timeline_time = doc.animations().timeline_time();
+            doc.resolve(timeline_time / 1000.);
+            if !is_frame || !doc.run_pending_animation_tasks() {
+                return;
+            }
+        }
+        if let Err(error) =
+            crate::dom::call_js_helper("__blitz_animations_actions", &[], &mut self.context)
+        {
+            report_js_error(&self.ctx, &mut self.context, "animation actions", &error);
+        }
+        self.run_jobs("animation microtasks");
     }
 
     /// Dispatch a Blitz DOM event to JavaScript event listeners registered on
@@ -2215,16 +2240,9 @@ fn request_animation_frame(
         return Ok(JsValue::from(0));
     };
     // Approximate the next frame as ~16ms away
-    let timestamp = JsValue::from(16.0);
     let mut state = ctx.state.borrow_mut();
     let now = state.clock.now();
-    let id = state.timers.add(
-        now,
-        Duration::from_millis(16),
-        None,
-        callback,
-        vec![timestamp],
-    );
+    let id = state.timers.add_animation_frame(now, callback);
     Ok(JsValue::from(id as f64))
 }
 

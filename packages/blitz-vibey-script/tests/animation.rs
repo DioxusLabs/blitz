@@ -142,7 +142,8 @@ fn replaced_animations_are_removed() {
         log.push(a.replaceState, b.replaceState);
         done(log);
     "#);
-    assert_eq!(out, "remove,removed,active,1,persisted,2,persisted,active");
+    // The `finished` reaction runs in the microtask checkpoint before events are dispatched.
+    assert_eq!(out, "removed,active,1,persisted,2,remove,persisted,active");
 }
 
 #[test]
@@ -216,7 +217,7 @@ fn display_none_cancels_transitions() {
         await new Promise(r => setTimeout(r, 500));
         done(log);
     "#);
-    assert_eq!(out, "anims 1,transitionrun,transitioncancel");
+    assert_eq!(out, "transitionrun,anims 1,transitioncancel");
 }
 
 #[test]
@@ -292,4 +293,103 @@ fn revert_in_keyframe_uses_user_agent_value() {
         done(expected !== "0px" && getComputedStyle(h1).marginTop === expected);
     "#);
     assert_eq!(out, "true");
+}
+
+#[test]
+fn removal_cancels_paused_css_animation_without_timers() {
+    let out = run(r#"
+        const style = document.createElement("style");
+        style.textContent = "@keyframes testAnim { from { margin-left: 0px } to { margin-left: 100px } }";
+        document.head.append(style);
+        const log = [];
+        const div = document.createElement("div");
+        div.setAttribute("style", "animation: testAnim 100s paused");
+        for (const n of ["animationstart", "animationcancel"]) div.addEventListener(n, () => log.push(n));
+        document.body.append(div);
+        await new Promise(r => div.addEventListener("animationstart", r));
+        log.push("started");
+        div.remove();
+        await new Promise(r => div.addEventListener("animationcancel", r));
+        done(log);
+    "#);
+    assert_eq!(out, "animationstart,started,animationcancel");
+}
+
+#[test]
+fn moving_element_cancels_css_animation() {
+    let out = run(r#"
+        const style = document.createElement("style");
+        style.textContent = "@keyframes testAnim { from { margin-left: 0px } to { margin-left: 100px } }";
+        document.head.append(style);
+        const log = [];
+        const container = document.createElement("div");
+        document.body.append(container);
+        const div = document.createElement("div");
+        div.setAttribute("style", "animation: testAnim 100s paused");
+        for (const n of ["animationstart", "animationcancel"]) div.addEventListener(n, () => log.push(n));
+        document.body.append(div);
+        await new Promise(r => div.addEventListener("animationstart", r));
+        container.append(div);
+        await new Promise(r => div.addEventListener("animationcancel", r));
+        const anim = div.getAnimations()[0];
+        anim.oncancel = () => log.push("cancel");
+        div.remove();
+        await new Promise(r => setTimeout(r, 100));
+        done(log);
+    "#);
+    assert_eq!(
+        out,
+        "animationstart,animationcancel,animationstart,cancel,animationcancel"
+    );
+}
+
+#[test]
+fn animation_started_in_frame_callback_starts_at_frame_time() {
+    let out = run(r#"
+        const frameTime = await new Promise(requestAnimationFrame);
+        const inFrame = box.animate(null, 100000);
+        await inFrame.ready;
+        await new Promise(r => setTimeout(r, 5));
+        const betweenFrames = box.animate(null, 100000);
+        const nextFrameTime = await new Promise(requestAnimationFrame);
+        await betweenFrames.ready;
+        done([frameTime, inFrame.startTime, nextFrameTime, betweenFrames.startTime]);
+    "#);
+    assert_eq!(out, "16,16,32,32");
+}
+
+#[test]
+fn reversed_animation_finishes_in_delay() {
+    let out = run(r#"
+        const animation = box.animate({ opacity: [0, 1] }, { duration: 1000, delay: 50 });
+        await animation.ready;
+        animation.currentTime = 100;
+        animation.reverse();
+        await animation.finished;
+        done(animation.currentTime);
+    "#);
+    assert_eq!(out, "0");
+}
+
+#[test]
+fn settling_unobserved_ready_promise_does_not_get_then() {
+    let out = run(r#"
+        const log = [];
+        const anim = new Animation();
+        let resolveFinished;
+        const thenCalled = new Promise(resolve => {
+            Object.defineProperty(anim, "then", { get() {
+                log.push('get');
+                return (resolveAnim) => { resolveFinished = resolveAnim; resolve(); };
+            } });
+        });
+        const finished = anim.finished;
+        anim.finish();
+        anim.cancel();
+        await thenCalled;
+        resolveFinished('hello');
+        log.push(await finished);
+        done(log);
+    "#);
+    assert_eq!(out, "get,hello");
 }

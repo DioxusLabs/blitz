@@ -29,6 +29,8 @@ pub enum Action {
         kind: EventKind,
         current_time: Option<f64>,
         timeline_time: Option<f64>,
+        /// The timeline time that events are sorted by before they are dispatched.
+        scheduled_time: Option<f64>,
     },
 }
 
@@ -403,6 +405,7 @@ impl Animation {
                 kind: EventKind::Cancel,
                 current_time: None,
                 timeline_time,
+                scheduled_time: timeline_time,
             });
         }
         self.hold_time = None;
@@ -573,10 +576,21 @@ impl Animation {
         }
         actions.push(Action::ResolveFinishedPromise);
         self.finished_promise_resolved = true;
+        // The timeline time at which the animation reached the end it plays towards.
+        let end = if self.playback_rate < 0. {
+            0.
+        } else {
+            self.effect_end
+        };
+        let scheduled_time = self
+            .start_time
+            .map(|start_time| start_time + end / self.playback_rate)
+            .filter(|time| time.is_finite());
         actions.push(Action::QueueEvent {
             kind: EventKind::Finish,
             current_time: self.current_time(timeline_time),
             timeline_time,
+            scheduled_time,
         });
     }
 }
@@ -595,11 +609,12 @@ mod tests {
         animation
     }
 
-    fn finish_event(current_time: f64, timeline_time: f64) -> Action {
+    fn finish_event(current_time: f64, timeline_time: f64, scheduled_time: f64) -> Action {
         QueueEvent {
             kind: EventKind::Finish,
             current_time: Some(current_time),
             timeline_time: Some(timeline_time),
+            scheduled_time: Some(scheduled_time),
         }
     }
 
@@ -650,7 +665,10 @@ mod tests {
         assert_eq!(actions, []);
 
         animation.run_finish_notification(Some(130.), &mut actions);
-        assert_eq!(actions, [ResolveFinishedPromise, finish_event(100., 130.)]);
+        assert_eq!(
+            actions,
+            [ResolveFinishedPromise, finish_event(100., 130., 100.)]
+        );
 
         actions.clear();
         animation.run_finish_notification(Some(130.), &mut actions);
@@ -677,7 +695,10 @@ mod tests {
         let mut actions = Vec::new();
         let mut animation = running(&mut actions);
         animation.finish(Some(10.), &mut actions).unwrap();
-        assert_eq!(actions, [ResolveFinishedPromise, finish_event(100., 10.)]);
+        assert_eq!(
+            actions,
+            [ResolveFinishedPromise, finish_event(100., 10., 10.)]
+        );
         assert_eq!(animation.start_time(), Some(-90.));
 
         actions.clear();
@@ -838,7 +859,7 @@ mod tests {
             [
                 ResolveReadyPromise,
                 ResolveFinishedPromise,
-                finish_event(100., 5.)
+                finish_event(100., 5., 5.)
             ]
         );
         assert_eq!(animation.play_state(Some(5.)), PlayState::Finished);
@@ -847,7 +868,10 @@ mod tests {
         animation.set_playback_rate(-1., Some(50.), &mut actions);
         actions.clear();
         animation.finish(Some(60.), &mut actions).unwrap();
-        assert_eq!(actions, [ResolveFinishedPromise, finish_event(0., 60.)]);
+        assert_eq!(
+            actions,
+            [ResolveFinishedPromise, finish_event(0., 60., 60.)]
+        );
 
         let mut animation = Animation::new(f64::INFINITY);
         assert_eq!(
@@ -879,6 +903,7 @@ mod tests {
             kind: EventKind::Cancel,
             current_time: None,
             timeline_time: Some(30.),
+            scheduled_time: Some(30.),
         };
 
         let mut animation = running(&mut actions);

@@ -11,13 +11,20 @@ pub(crate) struct Timer {
     pub interval: Option<Duration>,
     pub callback: JsObject,
     pub args: Vec<JsValue>,
+    /// Whether this is a `requestAnimationFrame` callback.
+    pub animation_frame: bool,
 }
 
 #[derive(Default)]
 pub(crate) struct TimerQueue {
     next_id: u64,
     timers: Vec<Timer>,
+    /// When the last frame ran. Only tracked with a virtual clock.
+    last_frame: Option<Instant>,
 }
+
+/// The time between frames.
+const FRAME: Duration = Duration::from_millis(16);
 
 impl TimerQueue {
     pub fn add(
@@ -28,14 +35,43 @@ impl TimerQueue {
         callback: JsObject,
         args: Vec<JsValue>,
     ) -> u64 {
+        self.push(now + delay, interval, callback, args, false)
+    }
+
+    pub fn add_animation_frame(&mut self, now: Instant, callback: JsObject) -> u64 {
+        self.push(self.next_frame(now), None, callback, Vec::new(), true)
+    }
+
+    /// The time of the next frame: one frame after the last one, or after `now` if no
+    /// frame ran recently.
+    pub fn next_frame(&self, now: Instant) -> Instant {
+        match self.last_frame {
+            Some(last_frame) if last_frame + FRAME > now => last_frame + FRAME,
+            _ => now + FRAME,
+        }
+    }
+
+    pub fn frame_started(&mut self, now: Instant) {
+        self.last_frame = Some(now);
+    }
+
+    fn push(
+        &mut self,
+        deadline: Instant,
+        interval: Option<Duration>,
+        callback: JsObject,
+        args: Vec<JsValue>,
+        animation_frame: bool,
+    ) -> u64 {
         self.next_id += 1;
         let id = self.next_id;
         self.timers.push(Timer {
             id,
-            deadline: now + delay,
+            deadline,
             interval,
             callback,
             args,
+            animation_frame,
         });
         id
     }
@@ -71,6 +107,7 @@ impl TimerQueue {
                     interval: timer.interval,
                     callback: timer.callback.clone(),
                     args: timer.args.clone(),
+                    animation_frame: false,
                 });
             }
         }

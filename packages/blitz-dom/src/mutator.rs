@@ -682,6 +682,14 @@ impl DocumentMutator<'_> {
                 continue;
             };
 
+            // Moving an element within the document cancels its CSS animations and
+            // transitions, as removing it does.
+            if child_was_in_doc && new_parent_is_in_document {
+                self.doc.iter_subtree_mut(child_id, |node_id, doc| {
+                    doc.nodes.animations.node_removed(node_id);
+                });
+            }
+
             let old_parent = &mut self.doc.nodes[old_parent_id];
             old_parent.insert_damage(ALL_DAMAGE);
 
@@ -1001,6 +1009,7 @@ impl<'doc> DocumentMutator<'doc> {
             // the usual teardown steps (unhover/unactive the surviving
             // ancestor chain, IME disable on blur of a focused input).
             doc.clear_interaction_state_for_removed_node(node_id);
+            doc.nodes.animations.node_removed(node_id);
 
             let node = &mut doc.nodes[node_id];
 

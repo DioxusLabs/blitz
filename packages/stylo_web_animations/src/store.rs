@@ -122,8 +122,8 @@ struct Entry {
     effect: Option<KeyframeEffect>,
     target: Option<Target>,
     origin: Origin,
-    /// Whether the animation is associated with the document timeline.
-    has_timeline: bool,
+    /// The origin time of the animation's timeline, if it has a timeline.
+    timeline_origin: Option<f64>,
     /// Whether style still creates and cancels this CSS animation or transition.
     owned_by_style: bool,
     /// The number of handles the embedder holds. An animation without handles is removed
@@ -218,7 +218,7 @@ impl Entry {
     }
 
     fn timeline_time(&self, timeline_time: f64) -> Option<f64> {
-        self.has_timeline.then_some(timeline_time)
+        self.timeline_origin.map(|origin| timeline_time - origin)
     }
 
     fn computed_timing(&self, timeline_time: f64) -> Option<ComputedTiming> {
@@ -251,8 +251,8 @@ impl Entry {
     fn is_replaceable(&self, timeline_time: f64) -> bool {
         !self.owned_by_style
             && self.replace_state == ReplaceState::Active
-            && self.has_timeline
-            && self.animation.play_state(Some(timeline_time)) == PlayState::Finished
+            && self.timeline_origin.is_some()
+            && self.animation.play_state(self.timeline_time(timeline_time)) == PlayState::Finished
             && self.is_in_effect(timeline_time)
     }
 
@@ -376,11 +376,14 @@ impl AnimationStore {
         })
     }
 
-    /// Whether any animation changes as time passes.
+    /// Whether any animation changes as time passes. A running animation whose effect is
+    /// not current still has to finish.
     pub fn needs_ticks(&self) -> bool {
-        self.animations
-            .values()
-            .any(|entry| self.entry_is_current(entry))
+        self.animations.values().any(|entry| {
+            let timeline_time = entry.timeline_time(self.timeline_time);
+            entry.animation.pending()
+                || entry.animation.play_state(timeline_time) == PlayState::Running
+        })
     }
 
     fn entry_is_current(&self, entry: &Entry) -> bool {
@@ -407,6 +410,13 @@ impl AnimationStore {
 
     pub fn origin(&self, id: AnimationId) -> Option<&Origin> {
         self.animations.get(&id).map(|entry| &entry.origin)
+    }
+
+    /// Whether style still creates and cancels this CSS animation or transition.
+    pub fn is_owned_by_style(&self, id: AnimationId) -> bool {
+        self.animations
+            .get(&id)
+            .is_some_and(|entry| entry.owned_by_style)
     }
 
     pub fn target(&self, id: AnimationId) -> Option<&Target> {
@@ -510,17 +520,22 @@ impl AnimationStore {
         }
     }
 
-    /// Associates an animation with the document timeline or with no timeline.
-    pub fn set_has_timeline(&mut self, id: AnimationId, has_timeline: bool) {
+    /// Associates an animation with a document timeline that has the given origin time, or
+    /// with no timeline.
+    pub fn set_timeline(&mut self, id: AnimationId, origin: Option<f64>) {
         if let Some(entry) = self.animations.get_mut(&id) {
-            entry.has_timeline = has_timeline;
+            entry.timeline_origin = origin;
         }
+    }
+
+    pub fn timeline_origin(&self, id: AnimationId) -> Option<f64> {
+        self.animations.get(&id)?.timeline_origin
     }
 
     pub fn has_timeline(&self, id: AnimationId) -> bool {
         self.animations
             .get(&id)
-            .is_some_and(|entry| entry.has_timeline)
+            .is_some_and(|entry| entry.timeline_origin.is_some())
     }
 
     /// The timeline time as the animation sees it.
@@ -630,11 +645,17 @@ impl AnimationStore {
                         Some(properties) => properties.iter().collect(),
                         None => effect.properties.iter().map(|p| &p.property).collect(),
                     };
-                if entry.is_replaceable(timeline_time)
-                    && properties.iter().all(|property| covered.contains(property))
-                {
-                    removed.push(id);
-                } else if entry.is_in_effect(timeline_time) {
+                // A completed transition still belongs to the style of its target.
+                let completed_transition = matches!(&entry.origin,
+                    Origin::CssTransition { property, .. } if target
+                        .completed_transitions
+                        .iter()
+                        .any(|(completed, _)| completed == property));
+                // Only replaceable animations replace others.
+                if entry.is_replaceable(timeline_time) && !completed_transition {
+                    if properties.iter().all(|property| covered.contains(property)) {
+                        removed.push(id);
+                    }
                     covered.extend(properties);
                 }
             }
@@ -644,8 +665,11 @@ impl AnimationStore {
             entry.replace_state = ReplaceState::Removed;
             let action = Action::QueueEvent {
                 kind: crate::EventKind::Remove,
-                current_time: entry.animation.current_time(Some(timeline_time)),
-                timeline_time: Some(timeline_time),
+                current_time: entry
+                    .animation
+                    .current_time(entry.timeline_time(timeline_time)),
+                timeline_time: entry.timeline_time(timeline_time),
+                scheduled_time: entry.timeline_time(timeline_time),
             };
             self.actions.push((id, action));
         }
@@ -660,6 +684,37 @@ impl AnimationStore {
             let entry = self.animations.get_mut(&id).unwrap();
             entry.queue_css_events(id, self.timeline_time, &mut self.css_events);
         }
+    }
+
+    /// Runs the pending play and pause tasks at the current timeline time. Returns whether
+    /// an animation had one.
+    pub fn run_pending_tasks(&mut self) -> bool {
+        let timeline_time = self.timeline_time;
+        let mut ids: Vec<AnimationId> = self
+            .animations
+            .iter()
+            .filter(|(_, entry)| entry.animation.pending())
+            .map(|(id, _)| *id)
+            .collect();
+        ids.sort();
+        for id in &ids {
+            let entry = self.animations.get_mut(id).unwrap();
+            if entry.timeline_time(timeline_time).is_none() {
+                continue;
+            }
+            entry
+                .animation
+                .run_pending_task(timeline_time, &mut self.scratch);
+            self.actions
+                .extend(self.scratch.drain(..).map(|action| (*id, action)));
+            entry.queue_css_events(*id, timeline_time, &mut self.css_events);
+        }
+        !ids.is_empty()
+    }
+
+    /// Whether there are actions or CSS events that have not been taken.
+    pub fn has_pending_events(&self) -> bool {
+        !self.actions.is_empty() || !self.css_events.is_empty()
     }
 
     /// The events that CSS animations and transitions have queued since the last call.
@@ -693,7 +748,7 @@ impl AnimationStore {
                 effect,
                 target,
                 origin,
-                has_timeline: true,
+                timeline_origin: Some(0.),
                 handles: 0,
                 replace_state: ReplaceState::Active,
                 uncomputed_properties: None,

@@ -15,12 +15,33 @@
         return new DOMException(message, name);
     }
 
+    // The Promise object is created when a script first asks for it, so that settling a promise
+    // nobody has seen does not look up `then` on the animation.
     function newPromise() {
-        let resolve, reject;
-        const promise = new Promise((res, rej) => { resolve = res; reject = rej; });
-        // An aborted promise that nobody observes is not an error
-        promise.catch(() => {});
-        return { promise, resolve, reject, settled: false };
+        let real = null;
+        let outcome = null;
+        const settle = (kind, value) => {
+            if (real) real[kind](value);
+            else outcome = [kind, value];
+        };
+        return {
+            get promise() {
+                if (!real) {
+                    real = {};
+                    real.promise = new Promise((resolve, reject) => {
+                        real.resolve = resolve;
+                        real.reject = reject;
+                    });
+                    // An aborted promise that nobody observes is not an error
+                    real.promise.catch(() => {});
+                    if (outcome) real[outcome[0]](outcome[1]);
+                }
+                return real.promise;
+            },
+            resolve: (value) => settle("resolve", value),
+            reject: (value) => settle("reject", value),
+            settled: false,
+        };
     }
 
     function requestFrame() {
@@ -31,7 +52,7 @@
 
     function processActions() {
         const actions = native("takeActions");
-        for (const [id, kind, currentTime, timelineTime] of actions) {
+        for (const [id, kind, currentTime, timelineTime, scheduledTime] of actions) {
             const animation = animations.get(id);
             if (!animation) continue;
             const state = animation[STATE];
@@ -69,7 +90,7 @@
                     queueMicrotask(() => call("finishNotification", id));
                     break;
                 default:
-                    pendingEvents.push({ animation, type: kind, currentTime, timelineTime });
+                    pendingEvents.push({ animation, type: kind, currentTime, timelineTime, scheduledTime });
             }
         }
         if (pendingEvents.length || native("needsFrames")) requestFrame();
@@ -83,6 +104,9 @@
         }
     }
 
+    // Called by the runtime after animations became ready at the end of a frame
+    globalThis.__blitz_animations_actions = processActions;
+
     // Called by the runtime at the start of each frame, after the timeline advanced
     globalThis.__blitz_animations_frame = function () {
         frameRequested = false;
@@ -90,8 +114,8 @@
         const events = pendingEvents;
         pendingEvents = [];
         events.sort((a, b) => {
-            const at = a.timelineTime === null ? -Infinity : a.timelineTime;
-            const bt = b.timelineTime === null ? -Infinity : b.timelineTime;
+            const at = a.scheduledTime === null ? -Infinity : a.scheduledTime;
+            const bt = b.scheduledTime === null ? -Infinity : b.scheduledTime;
             return at - bt || a.animation[ID] - b.animation[ID];
         });
         for (const { animation, type, currentTime, timelineTime } of events) {
@@ -620,7 +644,10 @@
             };
             animations.set(this[ID], this);
             if (adopt !== undefined) return;
-            if (this[STATE].timeline === null) call("setTimeline", this[ID], false);
+            const own = this[STATE].timeline;
+            if (own !== documentTimeline) {
+                call("setTimeline", this[ID], own === null ? null : own._originTime);
+            }
             if (effect) this.effect = effect;
         }
 
@@ -652,7 +679,7 @@
                 throw new TypeError("The timeline must be an AnimationTimeline or null");
             }
             this[STATE].timeline = timeline;
-            call("setTimeline", this[ID], timeline !== null);
+            call("setTimeline", this[ID], timeline === null ? null : timeline._originTime);
         }
 
         get startTime() { return native("state", this[ID])[1]; }
@@ -776,10 +803,10 @@
     if (elementProto) {
         elementProto.animate = function (keyframes, options) {
             const effect = new KeyframeEffect(this, keyframes, options);
-            const animation = new Animation(effect, documentTimeline);
-            if (typeof options === "object" && options !== null && options.id !== undefined) {
-                animation.id = options.id;
-            }
+            const init = typeof options === "object" && options !== null ? options : {};
+            const timeline = init.timeline === undefined ? documentTimeline : init.timeline;
+            const animation = new Animation(effect, timeline);
+            if (init.id !== undefined) animation.id = init.id;
             animation.play();
             return animation;
         };
@@ -807,5 +834,9 @@
         "AnimationPlaybackEvent", "CSSAnimation", "CSSTransition",
     ]) {
         Object.defineProperty(globalThis, name, { enumerable: false });
+        Object.defineProperty(globalThis[name].prototype, Symbol.toStringTag, {
+            value: name,
+            configurable: true,
+        });
     }
 })();
