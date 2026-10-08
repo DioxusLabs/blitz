@@ -1,10 +1,15 @@
+//! Building an inline formatting context's Parley layout from the DOM, and laying out outside
+//! list markers.
+
 use blitz_traits::node_id::NodeId;
 use markup5ever::local_name;
 use parley::{
-    FontContext, InlineBox, InlineBoxKind, LayoutContext, TreeBuilder, WhiteSpaceCollapse,
+    Brush, FontContext, FontFamily, InlineBox, InlineBoxKind, LayoutContext, TreeBuilder,
+    WhiteSpaceCollapse,
 };
 use style::{
     computed_values::position::T as PositionProperty,
+    properties::ComputedValues,
     values::{
         computed::{Display, Float},
         specified::box_::{DisplayInside, DisplayOutside},
@@ -12,16 +17,29 @@ use style::{
 };
 use stylo_taffy::CopyStyleGetters;
 
-use crate::{
-    NodeData,
-    layout::list::BULLET_FONT_FAMILY,
-    layout::replaced::is_inline_box_element,
-    layout::text_transform::{CaseTransform, TextTransformer},
-    node::{ListItemLayout, ListItemLayoutPosition, Marker, TextBrush, TextLayout},
-    stylo_to_parley,
-};
+use super::{MarkerLayout, TextBrush, TextContext, TextLayout, style as stylo_to_parley};
+use crate::NodeData;
+use crate::layout::replaced::is_inline_box_element;
+use crate::layout::text_transform::{CaseTransform, PushedText, TextTransformer};
+use crate::node::{ListItemLayout, ListItemLayoutPosition, Marker};
+use crate::text::MarkerEngine;
 
-pub(crate) fn build_inline_layout_into(
+/// The families a list marker's bullet is set in.
+const BULLET_FONT_FAMILY: &str = "Bullet, monospace, sans-serif";
+
+impl<B: Brush> PushedText for TreeBuilder<'_, B> {
+    fn text(&self) -> &str {
+        TreeBuilder::text(self)
+    }
+
+    fn has_pending_whitespace(&self) -> bool {
+        TreeBuilder::has_pending_whitespace(self)
+    }
+}
+
+/// Builds the Parley layout of the inline formatting context rooted at
+/// `inline_context_root_node_id`.
+pub(super) fn build_inline_layout_into(
     nodes: &crate::NodeTree,
     layout_ctx: &mut LayoutContext<TextBrush>,
     font_ctx: &mut FontContext,
@@ -300,5 +318,42 @@ pub(crate) fn build_inline_layout_into(
             }
             NodeData::Document(_) => unreachable!(),
         }
+    }
+}
+
+impl MarkerEngine for MarkerLayout {
+    fn build(
+        cx: &mut TextContext,
+        node: NodeId,
+        style: &ComputedValues,
+        marker: &Marker,
+        bullet: bool,
+        scale: f32,
+    ) -> Self {
+        let mut parley_style = stylo_to_parley::style(node, style);
+
+        // Override the font to our specific bullet font when rendering bullets
+        if bullet {
+            parley_style.font_family = FontFamily::from(BULLET_FONT_FAMILY);
+        }
+
+        // Create a parley tree builder
+        let mut font_ctx = cx.font_ctx.lock().unwrap();
+        let mut builder = cx
+            .layout_ctx
+            .tree_builder(&mut font_ctx, scale, true, &parley_style);
+
+        match marker {
+            Marker::Char(char) => {
+                let mut buf = [0u8; 4];
+                builder.push_text(char.encode_utf8(&mut buf));
+            }
+            Marker::String(str) => builder.push_text(str),
+        };
+
+        let mut layout = builder.build().0;
+        let width = layout.calculate_content_widths().max;
+        layout.break_all_lines(Some(width));
+        layout
     }
 }
