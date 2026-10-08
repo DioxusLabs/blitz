@@ -373,7 +373,7 @@ pub(crate) fn vertical_align(style: &stylo::ComputedValues) -> parley::VerticalA
         stylo::AlignmentBaseline::TextBottom => parley::AlignmentBaseline::TextBottom,
         stylo::AlignmentBaseline::Middle => parley::AlignmentBaseline::Middle,
     };
-    let shift = match box_styles.get_baseline_shift() {
+    let shift = match box_styles.slow_clone_baseline_shift() {
         stylo::BaselineShift::Keyword(stylo::BaselineShiftKeyword::Sub) => {
             parley::BaselineShift::Sub
         }

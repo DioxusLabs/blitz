@@ -233,7 +233,7 @@ impl LayoutPassState<'_> {
             use style::values::computed::font::LineHeight;
 
             let font_size = style.slow_clone_font_size().used_size().px();
-            let line_height = match style.clone_line_height() {
+            let line_height = match style.slow_clone_line_height() {
                 LineHeight::Normal => font_size * 1.2,
                 LineHeight::Number(num) => font_size * num.0,
                 LineHeight::Length(value) => value.0.px(),

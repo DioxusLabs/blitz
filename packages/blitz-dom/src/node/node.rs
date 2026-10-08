@@ -471,7 +471,7 @@ impl Node {
     }
 
     pub(crate) fn display_style(&self) -> Option<StyloDisplay> {
-        let display = self.primary_styles().as_ref()?.clone_display();
+        let display = self.primary_styles().as_ref()?.slow_clone_display();
         Some(
             if self.element_data().is_some_and(|el| el.is_button_input()) {
                 stylo_taffy::convert::button_input_display(display)
@@ -487,7 +487,7 @@ impl Node {
 
         // Ignore out-of-flow items
         let position = style
-            .map(|s| s.clone_position())
+            .map(|s| s.slow_clone_position())
             .unwrap_or(Position::Relative);
         let is_in_flow = matches!(
             position,
@@ -499,7 +499,7 @@ impl Node {
         // Floated boxes do not break up the inline flow: they participate in the
         // inline formatting context as out-of-flow inline boxes
         let is_floating = style
-            .map(|s| s.clone_float().is_floating())
+            .map(|s| s.slow_clone_float().is_floating())
             .unwrap_or(false);
         if is_floating {
             return false;
@@ -551,7 +551,7 @@ impl Node {
         let white_space_collapse = self
             .parent
             .and_then(|parent_id| self.with(parent_id).primary_styles())
-            .map(|style| style.clone_white_space_collapse());
+            .map(|style| style.slow_clone_white_space_collapse());
         match white_space_collapse {
             Some(
                 WhiteSpaceCollapse::Preserve
@@ -1204,7 +1204,7 @@ impl Node {
     #[cfg(feature = "writing-mode")]
     pub(crate) fn has_containment(&self) -> bool {
         self.primary_styles()
-            .is_some_and(|style| !style.clone_contain().is_empty())
+            .is_some_and(|style| !style.slow_clone_contain().is_empty())
     }
 
     /// Whether the node is a flex container with a column `flex-direction`, i.e. aligns its
@@ -1212,7 +1212,7 @@ impl Node {
     #[cfg(feature = "writing-mode")]
     pub(crate) fn is_column_flex_container(&self) -> bool {
         self.primary_styles().is_some_and(|s| {
-            s.clone_display().inside() == DisplayInside::Flex
+            s.slow_clone_display().inside() == DisplayInside::Flex
                 && !self.element_data().is_some_and(|el| el.is_button_input())
                 && matches!(
                     s.get_position().flex_direction,
@@ -1247,7 +1247,7 @@ impl Node {
     pub fn taffy_display(&self) -> taffy::Display {
         self.primary_styles()
             .map(|style| {
-                let display = style.clone_display();
+                let display = style.slow_clone_display();
                 if self.element_data().is_some_and(|el| el.is_button_input())
                     && !matches!(
                         display.inside(),
@@ -1368,13 +1368,13 @@ impl Node {
     pub fn order(&self) -> i32 {
         self.primary_styles()
             .filter(|s| !matches!(s.get_box().position, Position::Absolute | Position::Fixed))
-            .map(|s| s.clone_order())
+            .map(|s| s.slow_clone_order())
             .unwrap_or(0)
     }
 
     pub fn z_index(&self) -> i32 {
         self.primary_styles()
-            .map(|s| s.clone_z_index().integer_or(0))
+            .map(|s| s.slow_clone_z_index().integer_or(0))
             .unwrap_or(0)
     }
 
@@ -1384,10 +1384,10 @@ impl Node {
             return false;
         };
 
-        let position = style.clone_position();
-        let has_z_index = !style.clone_z_index().is_auto();
+        let position = style.slow_clone_position();
+        let has_z_index = !style.slow_clone_z_index().is_auto();
 
-        if style.clone_opacity() != 1.0 {
+        if style.slow_clone_opacity() != 1.0 {
             return true;
         }
 
@@ -1435,7 +1435,7 @@ impl Node {
             return false;
         };
 
-        if style.clone_opacity() != 1.0 {
+        if style.slow_clone_opacity() != 1.0 {
             return true;
         }
 
@@ -1444,7 +1444,7 @@ impl Node {
             return true;
         }
 
-        if !matches!(style.get_clip_path(), ClipPath::None) {
+        if !matches!(style.slow_clone_clip_path(), ClipPath::None) {
             return true;
         }
 
@@ -1489,7 +1489,7 @@ impl Node {
         // Don't hit on visbility:hidden elements
         if let Some(style) = self.primary_styles() {
             if matches!(
-                style.clone_visibility(),
+                style.slow_clone_visibility(),
                 Visibility::Hidden | Visibility::Collapse
             ) {
                 return None;
@@ -1500,7 +1500,7 @@ impl Node {
         // descendants are still tested (one may restore pointer-events:auto).
         let pointer_events_none = self
             .primary_styles()
-            .is_some_and(|style| style.clone_pointer_events() == PointerEvents::None);
+            .is_some_and(|style| style.slow_clone_pointer_events() == PointerEvents::None);
 
         let mut x = x - self.final_layout().location.x + self.scroll_offset().x as f32;
         let mut y = y - self.final_layout().location.y + self.scroll_offset().y as f32;
@@ -1676,9 +1676,9 @@ impl Node {
                     } else {
                         text_node
                     };
-                    let text_pointer_events_none = hit_node
-                        .primary_styles()
-                        .is_some_and(|style| style.clone_pointer_events() == PointerEvents::None);
+                    let text_pointer_events_none = hit_node.primary_styles().is_some_and(|style| {
+                        style.slow_clone_pointer_events() == PointerEvents::None
+                    });
                     if !text_pointer_events_none {
                         return Some(HitResult {
                             node_id: hit_node.id,
@@ -1745,7 +1745,7 @@ impl Node {
             return false;
         }
         self.primary_styles().is_some_and(|styles| {
-            let display = styles.clone_display();
+            let display = styles.slow_clone_display();
             display.outside() == DisplayOutside::Inline && display.inside() == DisplayInside::Flow
         })
     }

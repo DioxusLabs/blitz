@@ -115,7 +115,7 @@ impl Walk<'_> {
                 self.children_and_pseudos(builder, node, &text_transform);
                 builder.pop_span(SpanKind::Contents);
             }
-            _ if style.clone_position().is_absolutely_positioned() => {
+            _ if style.slow_clone_position().is_absolutely_positioned() => {
                 builder.push_inline_box(node, &style, InlineBoxKind::Absolute);
             }
             (DisplayOutside::Inline, DisplayInside::Flow) => {
@@ -166,7 +166,7 @@ impl Walk<'_> {
                     builder.pop_span(kind);
                 }
             }
-            _ if style.clone_float().is_floating() => {
+            _ if style.slow_clone_float().is_floating() => {
                 builder.push_inline_box(node, &style, InlineBoxKind::Float);
             }
             _ => {
