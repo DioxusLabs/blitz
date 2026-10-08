@@ -341,3 +341,31 @@ fn moving_element_cancels_css_animation() {
         "animationstart,animationcancel,animationstart,cancel,animationcancel"
     );
 }
+
+#[test]
+fn animation_started_in_frame_callback_starts_at_frame_time() {
+    let out = run(r#"
+        const frameTime = await new Promise(requestAnimationFrame);
+        const inFrame = box.animate(null, 100000);
+        await inFrame.ready;
+        await new Promise(r => setTimeout(r, 5));
+        const betweenFrames = box.animate(null, 100000);
+        const nextFrameTime = await new Promise(requestAnimationFrame);
+        await betweenFrames.ready;
+        done([frameTime, inFrame.startTime, nextFrameTime, betweenFrames.startTime]);
+    "#);
+    assert_eq!(out, "16,16,32,32");
+}
+
+#[test]
+fn reversed_animation_finishes_in_delay() {
+    let out = run(r#"
+        const animation = box.animate({ opacity: [0, 1] }, { duration: 1000, delay: 50 });
+        await animation.ready;
+        animation.currentTime = 100;
+        animation.reverse();
+        await animation.finished;
+        done(animation.currentTime);
+    "#);
+    assert_eq!(out, "0");
+}

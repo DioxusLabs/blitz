@@ -376,11 +376,14 @@ impl AnimationStore {
         })
     }
 
-    /// Whether any animation changes as time passes.
+    /// Whether any animation changes as time passes. A running animation whose effect is
+    /// not current still has to finish.
     pub fn needs_ticks(&self) -> bool {
-        self.animations
-            .values()
-            .any(|entry| self.entry_is_current(entry))
+        self.animations.values().any(|entry| {
+            let timeline_time = entry.timeline_time(self.timeline_time);
+            entry.animation.pending()
+                || entry.animation.play_state(timeline_time) == PlayState::Running
+        })
     }
 
     fn entry_is_current(&self, entry: &Entry) -> bool {
@@ -660,6 +663,32 @@ impl AnimationStore {
             let entry = self.animations.get_mut(&id).unwrap();
             entry.queue_css_events(id, self.timeline_time, &mut self.css_events);
         }
+    }
+
+    /// Runs the pending play and pause tasks at the current timeline time. Returns whether
+    /// an animation had one.
+    pub fn run_pending_tasks(&mut self) -> bool {
+        let timeline_time = self.timeline_time;
+        let mut ids: Vec<AnimationId> = self
+            .animations
+            .iter()
+            .filter(|(_, entry)| entry.animation.pending())
+            .map(|(id, _)| *id)
+            .collect();
+        ids.sort();
+        for id in &ids {
+            let entry = self.animations.get_mut(id).unwrap();
+            if entry.timeline_time(timeline_time).is_none() {
+                continue;
+            }
+            entry
+                .animation
+                .run_pending_task(timeline_time, &mut self.scratch);
+            self.actions
+                .extend(self.scratch.drain(..).map(|action| (*id, action)));
+            entry.queue_css_events(*id, timeline_time, &mut self.css_events);
+        }
+        !ids.is_empty()
     }
 
     /// Whether there are actions or CSS events that have not been taken.

@@ -83,6 +83,9 @@
         }
     }
 
+    // Called by the runtime after animations became ready at the end of a frame
+    globalThis.__blitz_animations_actions = processActions;
+
     // Called by the runtime at the start of each frame, after the timeline advanced
     globalThis.__blitz_animations_frame = function () {
         frameRequested = false;

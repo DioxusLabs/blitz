@@ -505,6 +505,12 @@ impl BaseDocument {
         &mut self.nodes.animations.store
     }
 
+    /// Makes the pending animations ready at the current timeline time. Returns whether
+    /// there were any.
+    pub fn run_pending_animation_tasks(&mut self) -> bool {
+        self.nodes.animations.store.run_pending_tasks()
+    }
+
     /// Whether an animation changes, or has events to dispatch, as time passes.
     pub fn animations_need_ticks(&self) -> bool {
         let store = &self.nodes.animations.store;
