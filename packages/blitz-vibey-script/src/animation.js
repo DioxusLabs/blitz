@@ -644,7 +644,10 @@
             };
             animations.set(this[ID], this);
             if (adopt !== undefined) return;
-            if (this[STATE].timeline === null) call("setTimeline", this[ID], null);
+            const own = this[STATE].timeline;
+            if (own !== documentTimeline) {
+                call("setTimeline", this[ID], own === null ? null : own._originTime);
+            }
             if (effect) this.effect = effect;
         }
 
@@ -800,10 +803,10 @@
     if (elementProto) {
         elementProto.animate = function (keyframes, options) {
             const effect = new KeyframeEffect(this, keyframes, options);
-            const animation = new Animation(effect, documentTimeline);
-            if (typeof options === "object" && options !== null && options.id !== undefined) {
-                animation.id = options.id;
-            }
+            const init = typeof options === "object" && options !== null ? options : {};
+            const timeline = init.timeline === undefined ? documentTimeline : init.timeline;
+            const animation = new Animation(effect, timeline);
+            if (init.id !== undefined) animation.id = init.id;
             animation.play();
             return animation;
         };
@@ -831,5 +834,9 @@
         "AnimationPlaybackEvent", "CSSAnimation", "CSSTransition",
     ]) {
         Object.defineProperty(globalThis, name, { enumerable: false });
+        Object.defineProperty(globalThis[name].prototype, Symbol.toStringTag, {
+            value: name,
+            configurable: true,
+        });
     }
 })();
