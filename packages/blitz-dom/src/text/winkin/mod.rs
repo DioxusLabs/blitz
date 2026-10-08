@@ -271,6 +271,33 @@ impl TextLayout {
         self.basis.is_none_or(|built| built == basis)
     }
 
+    /// Gives the atomic inlines the block sizes and baselines of `sizes`
+    /// without building the content again, and returns whether it could.
+    ///
+    /// It could where the content is built with boxes as long as `sizes`
+    /// and percentages taken of `basis`, and every box whose size changed
+    /// is an atomic inline winkin sets the size of in place. Where it could
+    /// not, nothing changes and the content must be built again.
+    pub(crate) fn set_box_extents(&mut self, sizes: &[BuiltBox], basis: f32) -> bool {
+        if !self.is_built_along(sizes, basis) {
+            return false;
+        }
+        let changed = self
+            .boxes
+            .iter()
+            .zip(sizes)
+            .filter(|(built, size)| built.size != size.size)
+            .map(|(_, size)| (NodeKey(size.node), size.size));
+        if !self.layout.set_atomic_sizes(changed) {
+            return false;
+        }
+        self.laid = false;
+        for (built, size) in self.boxes.iter_mut().zip(sizes) {
+            built.size = size.size;
+        }
+        true
+    }
+
     /// Gives each of `sizes`, measured along the line alone, the block size
     /// and baseline its box was last built with, where it was.
     pub(crate) fn keep_built_extents(&self, sizes: &mut [BuiltBox]) {
@@ -1671,10 +1698,13 @@ impl InlineLayoutEngine for TextLayout {
         // line. Where the content was built with boxes as long, it serves;
         // where it is built again, each box keeps the block size and baseline
         // it was last built with, which a later pass that sets the lines
-        // checks, and builds again with where they differ.
+        // checks. Where only atomic inlines' block sizes and baselines differ,
+        // it sets them in place; otherwise it builds again.
         let built = match lines.pass {
             Measure::InlineSizes => self.is_built_along(&sizes, lines.basis),
-            _ => self.is_built_with(&sizes, lines.basis),
+            _ => {
+                self.is_built_with(&sizes, lines.basis) || self.set_box_extents(&sizes, lines.basis)
+            }
         };
         if built {
             return;
