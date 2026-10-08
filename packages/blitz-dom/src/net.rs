@@ -455,8 +455,11 @@ pub(crate) fn fetch_font_face_rules<'a>(
                         },
                         _ => FontFaceSourceFormatKeyword::None,
                     };
-                    if format == FontFaceSourceFormatKeyword::None {
-                        let (_, end) = url_source.url.as_str().rsplit_once('.')?;
+                    // A url with no extension, such as a `data:` url, is
+                    // sniffed from its bytes once fetched.
+                    if format == FontFaceSourceFormatKeyword::None
+                        && let Some((_, end)) = url_source.url.as_str().rsplit_once('.')
+                    {
                         format = match end {
                             "woff2" => FontFaceSourceFormatKeyword::Woff2,
                             "woff" => FontFaceSourceFormatKeyword::Woff,
