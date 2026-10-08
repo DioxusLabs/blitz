@@ -359,7 +359,6 @@ impl BaseDocument {
         let text = TextContext::new(config.font_ctx);
 
         // Make sure we turn on stylo features *before* creating the Stylist
-        style_config::set_pref!("layout.grid.enabled", true);
         style_config::set_pref!("layout.flexbox.balance", true);
         style_config::set_pref!("layout.unimplemented", true);
         style_config::set_pref!("layout.columns.enabled", true);
@@ -2027,7 +2026,7 @@ impl BaseDocument {
             device.set_root_style(root_style);
 
             let font = root_style.get_font();
-            let font_size = font.clone_font_size().computed_size();
+            let font_size = font.slow_clone_font_size().computed_size();
             device.set_root_font_size(root_style.effective_zoom.unzoom(font_size.px()));
 
             let line_height = device
@@ -2097,8 +2096,8 @@ impl BaseDocument {
         }
 
         let style = node.primary_styles()?;
-        let user_select = style.clone_user_select();
-        let keyword = style.clone_cursor().keyword;
+        let user_select = style.slow_clone_user_select();
+        let keyword = style.slow_clone_cursor().keyword;
 
         // Return cursor from style if it is non-auto
         if keyword != CursorKind::Auto {
@@ -2878,7 +2877,7 @@ mod hover_invalidation_tests {
     fn text_color(doc: &BaseDocument, id: NodeId) -> String {
         format!(
             "{:?}",
-            doc.nodes[id].primary_styles().unwrap().clone_color()
+            doc.nodes[id].primary_styles().unwrap().slow_clone_color()
         )
     }
 

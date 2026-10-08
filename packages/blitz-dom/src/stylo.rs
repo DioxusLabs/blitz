@@ -372,7 +372,7 @@ impl selectors::Element for BlitzNode<'_> {
         // Shadow DOM functionality in Stylo.
         let non_null =
             NonNull::new((self.id.as_u64() as usize).wrapping_add(1) as *mut ()).unwrap();
-        OpaqueElement::from_non_null_ptr(non_null)
+        OpaqueElement::from_ptr(non_null)
     }
 
     fn parent_element(&self) -> Option<Self> {

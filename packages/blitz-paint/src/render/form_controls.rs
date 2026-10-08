@@ -22,7 +22,7 @@ impl ElementCx<'_, '_> {
         let accent_color = if disabled {
             Color::from_rgba8(209, 209, 209, 255)
         } else {
-            self.style.clone_color().as_srgb_color()
+            self.style.slow_clone_color().as_srgb_color()
         };
 
         let width = self.frame.border_box.width();

@@ -367,13 +367,13 @@ pub(crate) fn white_space_collapse(input: stylo::WhiteSpaceCollapse) -> parley::
 /// Percentages are resolved against the element's own `line-height`.
 pub(crate) fn vertical_align(style: &stylo::ComputedValues) -> parley::VerticalAlign {
     let box_styles = style.get_box();
-    let alignment = match box_styles.clone_alignment_baseline() {
+    let alignment = match box_styles.slow_clone_alignment_baseline() {
         stylo::AlignmentBaseline::Baseline => parley::AlignmentBaseline::Baseline,
         stylo::AlignmentBaseline::TextTop => parley::AlignmentBaseline::TextTop,
         stylo::AlignmentBaseline::TextBottom => parley::AlignmentBaseline::TextBottom,
         stylo::AlignmentBaseline::Middle => parley::AlignmentBaseline::Middle,
     };
-    let shift = match box_styles.clone_baseline_shift() {
+    let shift = match box_styles.slow_clone_baseline_shift() {
         stylo::BaselineShift::Keyword(stylo::BaselineShiftKeyword::Sub) => {
             parley::BaselineShift::Sub
         }
@@ -558,8 +558,7 @@ mod tests {
                     tag: FontTag(u32::from_be_bytes(**tag)),
                     value: *value,
                 })
-                .collect::<Vec<_>>()
-                .into_boxed_slice(),
+                .collect(),
         )
     }
 

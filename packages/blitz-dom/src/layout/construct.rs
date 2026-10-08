@@ -334,7 +334,7 @@ fn classify_flow_children(
         let style = child.primary_styles();
         let style = style.as_ref();
         let display = style
-            .map(|s| s.clone_display())
+            .map(|s| s.slow_clone_display())
             .unwrap_or(Display::inline());
         if matches!(display.inside(), DisplayInside::Contents) {
             // Transparent for box generation: the contents node casts
@@ -346,9 +346,9 @@ fn classify_flow_children(
             continue;
         } else {
             let position = style
-                .map(|s| s.clone_position())
+                .map(|s| s.slow_clone_position())
                 .unwrap_or(PositionProperty::Static);
-            let float = style.map(|s| s.clone_float()).unwrap_or(Float::None);
+            let float = style.map(|s| s.slow_clone_float()).unwrap_or(Float::None);
 
             // Ignore nodes whose whitespace is entirely collapsed away
             if child.is_collapsible_whitespace_node() {

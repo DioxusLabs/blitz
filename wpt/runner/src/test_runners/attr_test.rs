@@ -201,7 +201,7 @@ pub fn check_node_layout(node: &Node) -> Vec<String> {
                         "data-expected-display" => {
                             let display = node
                                 .primary_styles()
-                                .map(|styles| styles.clone_display().to_css_string())
+                                .map(|styles| styles.slow_clone_display().to_css_string())
                                 .unwrap_or_default();
                             if display == **value {
                                 Ok(())

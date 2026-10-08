@@ -266,7 +266,7 @@ fn draw_inline_backgrounds<'a>(
                 continue;
             };
 
-            let current_color = styles.clone_color();
+            let current_color = styles.slow_clone_color();
             let bg_color = styles
                 .get_background()
                 .background_color

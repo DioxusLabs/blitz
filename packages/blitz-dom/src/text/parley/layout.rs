@@ -79,7 +79,7 @@ impl TextLayout {
     /// percentages of `basis` CSS pixels.
     fn set_indent(&mut self, style: Option<&ComputedValues>, basis: f32) {
         let text_indent = style
-            .map(|s| s.clone_text_indent())
+            .map(|s| s.slow_clone_text_indent())
             .unwrap_or_else(GenericTextIndent::zero);
         let amount = text_indent
             .length
@@ -210,8 +210,8 @@ impl TextLayout {
         let (alignment, last_line_alignment) = style
             .map(|s| {
                 (
-                    stylo_to_parley::text_align(s.clone_text_align()),
-                    stylo_to_parley::text_align_last(s.clone_text_align_last()),
+                    stylo_to_parley::text_align(s.slow_clone_text_align()),
+                    stylo_to_parley::text_align_last(s.slow_clone_text_align_last()),
                 )
             })
             .unwrap_or((parley::layout::Alignment::Start, None));

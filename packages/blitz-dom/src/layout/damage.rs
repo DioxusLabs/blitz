@@ -241,7 +241,7 @@ impl BaseDocument {
 }
 
 // fn is_fc_root(style: &ComputedValues) -> bool {
-//     let display = style.clone_display();
+//     let display = style.slow_clone_display();
 //     let display_inside = display.inside();
 
 //     match display_inside {
@@ -276,7 +276,7 @@ pub(crate) fn compute_layout_damage(old: &ComputedValues, new: &ComputedValues) 
             || old_box.float != new_box.float
             || old_box.position != new_box.position
             || old_box.contain != new_box.contain
-            || old.clone_visibility() != new.clone_visibility()
+            || old.slow_clone_visibility() != new.slow_clone_visibility()
         {
             return true;
         }
@@ -324,8 +324,8 @@ pub(crate) fn compute_layout_damage(old: &ComputedValues, new: &ComputedValues) 
     };
 
     let text_shaping_needs_recollect = || {
-        if old.clone_direction() != new.clone_direction()
-            || old.clone_unicode_bidi() != new.clone_unicode_bidi()
+        if old.slow_clone_direction() != new.slow_clone_direction()
+            || old.slow_clone_unicode_bidi() != new.slow_clone_unicode_bidi()
         {
             return true;
         }

@@ -684,7 +684,7 @@ impl ElementData {
         guard: &SharedRwLock,
         url_extra_data: UrlExtraData,
     ) -> bool {
-        let context = ParserContext::new(
+        let mut context = ParserContext::new(
             Origin::Author,
             &url_extra_data,
             Some(CssRuleType::Style),
@@ -706,7 +706,7 @@ impl ElementData {
         let Ok(_) = PropertyDeclaration::parse_into(
             &mut source_property_declaration,
             property_id,
-            &context,
+            &mut context,
             &mut parser,
         ) else {
             #[cfg(feature = "tracing")]

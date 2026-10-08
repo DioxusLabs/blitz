@@ -487,8 +487,8 @@ impl BaseDocument {
                     .primary_styles()
                     .map(|styles| {
                         (
-                            scrollable(styles.clone_overflow_x()),
-                            scrollable(styles.clone_overflow_y()),
+                            scrollable(styles.slow_clone_overflow_x()),
+                            scrollable(styles.slow_clone_overflow_y()),
                         )
                     })
                     .unwrap_or((false, false));
@@ -538,7 +538,7 @@ impl BaseDocument {
                 };
                 styled_node.is_some_and(|node| {
                     node.primary_styles().is_some_and(|style| {
-                        style.clone_scroll_behavior()
+                        style.slow_clone_scroll_behavior()
                             == style::computed_values::scroll_behavior::T::Smooth
                     })
                 })

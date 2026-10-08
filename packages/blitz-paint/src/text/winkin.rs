@@ -106,10 +106,10 @@ pub(crate) fn paint(
         writing_mode,
         WritingMode::VerticalRl | WritingMode::VerticalLr
     ) && root_styles.as_ref().is_none_or(|styles| {
-        styles.clone_text_orientation() != style::computed_values::text_orientation::T::Sideways
+        styles.slow_clone_text_orientation() != style::computed_values::text_orientation::T::Sideways
     });
     let rtl = root_styles.as_ref().is_some_and(|styles| {
-        styles.clone_direction() == style::computed_values::direction::T::Rtl
+        styles.slow_clone_direction() == style::computed_values::direction::T::Rtl
     });
     let propagated = propagated_decorations(doc, root);
     let painter = Painter {
@@ -279,7 +279,7 @@ impl Painter<'_> {
         }
         let color = self
             .styles(key, first)
-            .map_or(Color::BLACK, |styles| styles.clone_color().as_srgb_color());
+            .map_or(Color::BLACK, |styles| styles.slow_clone_color().as_srgb_color());
         self.color.set(Some((key, first, color)));
         color
     }
@@ -312,10 +312,10 @@ impl Painter<'_> {
         let mut after = false;
         for styles in self.decorating_styles(key.0, first) {
             // A `display: contents` element is no box, and decorates nothing.
-            if styles.clone_display().is_contents() {
+            if styles.slow_clone_display().is_contents() {
                 continue;
             }
-            let lines = styles.clone_text_decoration_line();
+            let lines = styles.slow_clone_text_decoration_line();
             before |=
                 lines.intersects(TextDecorationLine::UNDERLINE | TextDecorationLine::OVERLINE);
             after |= lines.contains(TextDecorationLine::LINE_THROUGH);
@@ -347,7 +347,7 @@ impl Painter<'_> {
         let color = styles
             .get_background()
             .background_color
-            .resolve_to_absolute(&styles.clone_color())
+            .resolve_to_absolute(&styles.slow_clone_color())
             .as_srgb_color();
         if color.components[3] <= 0.0 {
             return;
@@ -375,7 +375,7 @@ impl Painter<'_> {
         let Some(styles) = self.styles(key, first) else {
             return;
         };
-        let current = styles.clone_color();
+        let current = styles.slow_clone_color();
         let background = styles
             .get_background()
             .background_color
@@ -600,7 +600,7 @@ impl Painter<'_> {
                 } else {
                     shadow
                         .color
-                        .resolve_to_absolute(&styles.clone_color())
+                        .resolve_to_absolute(&styles.slow_clone_color())
                         .as_srgb_color()
                 };
                 if color.components[3] <= 0.0 {
@@ -781,7 +781,7 @@ impl Painter<'_> {
             text_color
         } else {
             emphasis_color
-                .resolve_to_absolute(&styles.clone_color())
+                .resolve_to_absolute(&styles.slow_clone_color())
                 .as_srgb_color()
         };
         let upright = run.is_some_and(|run| {
@@ -864,16 +864,16 @@ fn propagated_decorations(doc: &BaseDocument, root: NodeId) -> Vec<ServoArc<Comp
             at = node.parent.and_then(|parent| doc.get_node(parent));
             continue;
         };
-        if node.id != root && !styles.clone_text_decoration_line().is_empty() {
+        if node.id != root && !styles.slow_clone_text_decoration_line().is_empty() {
             propagated.push((*styles).clone());
         }
-        let display = styles.clone_display();
+        let display = styles.slow_clone_display();
         let atomic = display.outside() == DisplayOutside::Inline
             && display.inside() != DisplayInside::Flow
             && !display.is_contents();
         if atomic
-            || styles.clone_position().is_absolutely_positioned()
-            || styles.clone_float() != style::values::computed::Float::None
+            || styles.slow_clone_position().is_absolutely_positioned()
+            || styles.slow_clone_float() != style::values::computed::Float::None
         {
             break;
         }

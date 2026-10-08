@@ -968,7 +968,7 @@ impl InlineBuilder for WinkinBuilder<'_, '_> {
                     block.get_inherited_box().direction
                         == ::style::computed_values::direction::T::Rtl
                 });
-                let side = match (computed.clone_float(), rtl) {
+                let side = match (computed.slow_clone_float(), rtl) {
                     (Float::Right, _) | (Float::InlineStart, true) | (Float::InlineEnd, false) => {
                         FloatSide::Right
                     }
@@ -1042,8 +1042,8 @@ fn follows_a_box(nodes: &crate::NodeTree, node: &Node) -> bool {
         .take_while(|&&child| child != node.id)
         .any(|&child| {
             nodes[child].primary_styles().is_none_or(|computed| {
-                !computed.clone_position().is_absolutely_positioned()
-                    && computed.clone_float() == Float::None
+                !computed.slow_clone_position().is_absolutely_positioned()
+                    && computed.slow_clone_float() == Float::None
             })
         })
 }
@@ -1055,7 +1055,7 @@ fn br_clear(
     element: &crate::node::ElementData,
 ) -> Option<winkin::Clear> {
     use ::style::values::computed::Clear as StyloClear;
-    match computed.clone_clear() {
+    match computed.slow_clone_clear() {
         StyloClear::Left | StyloClear::InlineStart if !is_rtl(computed) => {
             return Some(winkin::Clear::Left);
         }
@@ -1081,7 +1081,7 @@ fn br_clear(
 
 /// Whether `computed` is right-to-left.
 fn is_rtl(computed: &ComputedValues) -> bool {
-    computed.clone_direction() == ::style::computed_values::direction::T::Rtl
+    computed.slow_clone_direction() == ::style::computed_values::direction::T::Rtl
 }
 
 /// What takes a point of the area the lines were broken in -- along the lines
@@ -1145,13 +1145,13 @@ fn body_is_rtl(nodes: &crate::NodeTree, element: NodeId) -> Option<bool> {
     // Containment on either keeps the body's direction its own.
     let contained = |node: &Node| {
         node.primary_styles()
-            .is_some_and(|computed| !computed.clone_contain().is_empty())
+            .is_some_and(|computed| !computed.slow_clone_contain().is_empty())
     };
     if contained(html) || contained(body) {
         return None;
     }
     let computed = body.primary_styles()?;
-    Some(computed.clone_direction() == ::style::computed_values::direction::T::Rtl)
+    Some(computed.slow_clone_direction() == ::style::computed_values::direction::T::Rtl)
 }
 
 /// How far `position: relative` moves what `key` paints, in CSS pixels:
@@ -1196,7 +1196,7 @@ pub(crate) fn relative_shift_of(
                 let Some(computed) = node.primary_styles() else {
                     break;
                 };
-                let display = computed.clone_display();
+                let display = computed.slow_clone_display();
                 if !display.is_contents() {
                     // An atomic inline or a block moves as a box of its own.
                     if (display.outside(), display.inside())
@@ -1204,7 +1204,7 @@ pub(crate) fn relative_shift_of(
                     {
                         break;
                     }
-                    if computed.clone_position() == Position::Relative {
+                    if computed.slow_clone_position() == Position::Relative {
                         let insets = computed.get_position();
                         let left = resolve(&insets.left, containing.width);
                         let right = resolve(&insets.right, containing.width);
@@ -1541,7 +1541,7 @@ pub(crate) fn fragment_rects(
         node.id.as_u64(),
         content / scale,
         root.primary_styles().is_some_and(|styles| {
-            styles.clone_direction() == ::style::computed_values::direction::T::Rtl
+            styles.slow_clone_direction() == ::style::computed_values::direction::T::Rtl
         }),
     );
     box_rects(layout, writing_mode, content, node.id.as_u64()).map(move |rect| taffy::Rect {

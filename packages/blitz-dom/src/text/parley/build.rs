@@ -57,8 +57,8 @@ pub(super) fn build_inline_layout_into(
     let mut tree = layout_ctx.tree_builder(font_ctx, scale, true, &parley_style);
     if let Some(style) = root_node_style.as_deref() {
         tree.set_base_direction(stylo_to_parley::base_direction(
-            style.clone_direction(),
-            style.clone_unicode_bidi(),
+            style.slow_clone_direction(),
+            style.slow_clone_unicode_bidi(),
         ));
     }
     drop(root_node_style);
@@ -116,10 +116,10 @@ impl InlineBuilder for ParleyBuilder<'_, '_> {
             // A `display: contents` element keeps only its white space handling.
             SpanKind::Contents => self.tree.push_style_modification_span(&[
                 parley::StyleProperty::WhiteSpaceCollapse(stylo_to_parley::white_space_collapse(
-                    style.clone_white_space_collapse(),
+                    style.slow_clone_white_space_collapse(),
                 )),
                 parley::StyleProperty::TextWrapMode(stylo_to_parley::text_wrap_mode(
-                    style.clone_text_wrap_mode(),
+                    style.slow_clone_text_wrap_mode(),
                 )),
             ]),
             _ => self

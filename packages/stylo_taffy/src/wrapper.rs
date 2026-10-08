@@ -327,13 +327,13 @@ impl<T: Deref<Target = ComputedValues>> taffy::CoreStyle for TaffyStyloStyle<T> 
 impl<T: Deref<Target = ComputedValues>> taffy::BlockContainerStyle for TaffyStyloStyle<T> {
     #[inline]
     fn text_align(&self) -> taffy::TextAlign {
-        let align = convert::text_align(self.style.clone_text_align());
+        let align = convert::text_align(self.style.slow_clone_text_align());
         self.layout_wm().logical_text_align(align)
     }
 
     #[inline]
     fn align_content(&self) -> taffy::AlignContent {
-        let display = self.style.clone_display();
+        let display = self.style.slow_clone_display();
         let align_content =
             convert::content_alignment(self.style.get_position().align_content, display);
         if align_content.keyword() == taffy::AlignContentKeyword::Normal
@@ -453,7 +453,7 @@ impl<T: Deref<Target = ComputedValues>> TaffyStyloStyle<T> {
 impl<T: Deref<Target = ComputedValues>> taffy::BlockItemStyle for TaffyStyloStyle<T> {
     #[inline]
     fn is_table(&self) -> bool {
-        convert::is_table(self.style.clone_display())
+        convert::is_table(self.style.slow_clone_display())
     }
 
     #[inline]
@@ -480,14 +480,14 @@ impl<T: Deref<Target = ComputedValues>> taffy::BlockItemStyle for TaffyStyloStyl
     #[cfg(feature = "floats")]
     #[inline]
     fn float(&self) -> taffy::Float {
-        let float = convert::float(self.style.clone_float());
+        let float = convert::float(self.style.slow_clone_float());
         self.layout_wm().logical_float(float)
     }
 
     #[cfg(feature = "floats")]
     #[inline]
     fn clear(&self) -> taffy::Clear {
-        let clear = convert::clear(self.style.clone_clear());
+        let clear = convert::clear(self.style.slow_clone_clear());
         self.layout_wm().logical_clear(clear)
     }
 }
@@ -523,7 +523,7 @@ impl<T: Deref<Target = ComputedValues>> taffy::FlexboxContainerStyle for TaffySt
     fn align_content(&self) -> taffy::AlignContent {
         convert::content_alignment(
             self.style.get_position().align_content,
-            self.style.clone_display(),
+            self.style.slow_clone_display(),
         )
     }
 
@@ -543,7 +543,7 @@ impl<T: Deref<Target = ComputedValues>> taffy::FlexboxContainerStyle for TaffySt
             convert::justify_content_in(
                 position_styles.justify_content,
                 self.content_left_is_end(main_is_inline),
-                self.style.clone_display(),
+                self.style.slow_clone_display(),
             )
         }
     }
@@ -761,9 +761,8 @@ impl<T: Deref<Target = ComputedValues>> taffy::GridContainerStyle for TaffyStylo
                 }))
             }
 
-            // TODO: Implement subgrid and masonry
+            // TODO: Implement subgrid
             stylo::GenericGridTemplateComponent::Subgrid(_) => None,
-            stylo::GenericGridTemplateComponent::Masonry => None,
         }
     }
 
@@ -782,9 +781,8 @@ impl<T: Deref<Target = ComputedValues>> taffy::GridContainerStyle for TaffyStylo
                 }))
             }
 
-            // TODO: Implement subgrid and masonry
+            // TODO: Implement subgrid
             stylo::GenericGridTemplateComponent::Subgrid(_) => None,
-            stylo::GenericGridTemplateComponent::Masonry => None,
         }
     }
 
@@ -827,9 +825,8 @@ impl<T: Deref<Target = ComputedValues>> taffy::GridContainerStyle for TaffyStylo
             stylo::GenericGridTemplateComponent::TrackList(list) => {
                 Some(StyloLineNameIter::new(&list.line_names))
             }
-            // TODO: Implement subgrid and masonry
+            // TODO: Implement subgrid
             stylo::GenericGridTemplateComponent::Subgrid(_) => None,
-            stylo::GenericGridTemplateComponent::Masonry => None,
         }
     }
 
@@ -839,9 +836,8 @@ impl<T: Deref<Target = ComputedValues>> taffy::GridContainerStyle for TaffyStylo
             stylo::GenericGridTemplateComponent::TrackList(list) => {
                 Some(StyloLineNameIter::new(&list.line_names))
             }
-            // TODO: Implement subgrid and masonry
+            // TODO: Implement subgrid
             stylo::GenericGridTemplateComponent::Subgrid(_) => None,
-            stylo::GenericGridTemplateComponent::Masonry => None,
         }
     }
 
@@ -863,7 +859,7 @@ impl<T: Deref<Target = ComputedValues>> taffy::GridContainerStyle for TaffyStylo
     fn align_content(&self) -> taffy::AlignContent {
         convert::content_alignment(
             self.style.get_position().align_content,
-            self.style.clone_display(),
+            self.style.slow_clone_display(),
         )
     }
 
@@ -878,7 +874,7 @@ impl<T: Deref<Target = ComputedValues>> taffy::GridContainerStyle for TaffyStylo
             convert::justify_content_in(
                 position_styles.justify_content,
                 self.content_left_is_end(main_is_inline),
-                self.style.clone_display(),
+                self.style.slow_clone_display(),
             )
         }
     }
@@ -944,7 +940,7 @@ impl<T: Deref<Target = ComputedValues>> taffy::OofItemStyle for TaffyStyloStyle<
 
     #[inline]
     fn is_table(&self) -> bool {
-        convert::is_table(self.style.clone_display())
+        convert::is_table(self.style.slow_clone_display())
     }
 
     #[inline]

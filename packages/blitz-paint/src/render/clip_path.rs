@@ -3,7 +3,7 @@ use kurbo::{BezPath, Circle, Ellipse, Point, Rect, Shape, SvgArc, Vec2};
 use style::values::computed::basic_shape::{BasicShape, ClipPath};
 use style::values::computed::{Angle, CSSPixelLength, LengthPercentage};
 use style::values::generics::basic_shape::{
-    ArcSize, ArcSweep, AxisEndPoint, AxisPosition, CommandEndPoint, ControlPoint, ControlReference,
+    ArcSize, ArcSweep, AxisEndPoint, CommandEndPoint, ControlPoint, ControlReference,
     GenericBasicShape, GenericPathOrShapeFunction, GenericShapeCommand, GenericShapeRadius,
     ShapeBox, ShapeGeometryBox,
 };
@@ -44,7 +44,7 @@ impl ElementCx<'_, '_> {
     /// Compute the clip-path BezPath (if any) for this element.
     /// Returns `None` if clip-path is `none` or unsupported.
     pub(super) fn clip_path_shape(&self) -> Option<BezPath> {
-        let clip_path = self.style.clone_clip_path();
+        let clip_path = self.style.slow_clone_clip_path();
         match clip_path {
             ClipPath::None => None,
             ClipPath::Url(_) => {
@@ -170,8 +170,6 @@ impl ElementCx<'_, '_> {
             GenericBasicShape::PathOrShape(path_or_shape) => match path_or_shape {
                 GenericPathOrShapeFunction::Path(path) => svg_path_to_bezpath(
                     path.commands(),
-                    w,
-                    h,
                     |v| *v as f64,
                     |v| *v as f64,
                     |v| *v as f64,
@@ -182,8 +180,6 @@ impl ElementCx<'_, '_> {
                 }),
                 GenericPathOrShapeFunction::Shape(shape) => svg_path_to_bezpath(
                     &shape.commands,
-                    w,
-                    h,
                     move |v: &LengthPercentage| {
                         v.resolve(CSSPixelLength::new(w as f32)).px() as f64
                     },
@@ -282,15 +278,13 @@ fn resolve_shape_radius(
     }
 }
 
-type GenericPathCommand<Angle, N> = GenericShapeCommand<Angle, GenericPosition<N, N>, N>;
+type GenericPathCommand<Angle, N> = GenericShapeCommand<Angle, N, GenericPosition<N, N>, N>;
 
 /// Convert an SVG path() to a kurbo BezPath.
 /// The returned path is in the path's own coordinate system (origin at 0,0).
 /// The caller is responsible for translating it to the reference box origin.
 fn svg_path_to_bezpath<Angle: Copy, N>(
     commands: &[GenericPathCommand<Angle, N>],
-    w: f64,
-    h: f64,
     resolve_x: impl Fn(&N) -> f64,
     resolve_y: impl Fn(&N) -> f64,
     resolve_angle: impl Fn(&Angle) -> f64,
@@ -326,12 +320,12 @@ fn svg_path_to_bezpath<Angle: Copy, N>(
                 last_control = None;
             }
             GenericShapeCommand::HLine { x } => {
-                cur.x = resolve_axis_endpoint(x, cur.x, w, &resolve_x);
+                cur.x = resolve_axis_endpoint(x, cur.x, &resolve_x);
                 bez.line_to(cur);
                 last_control = None;
             }
             GenericShapeCommand::VLine { y } => {
-                cur.y = resolve_axis_endpoint(y, cur.y, h, &resolve_y);
+                cur.y = resolve_axis_endpoint(y, cur.y, &resolve_y);
                 bez.line_to(cur);
                 last_control = None;
             }
@@ -470,23 +464,15 @@ fn reflect_point(last_control: Option<Point>, cur: Point) -> Point {
 
 /// Resolve an AxisEndPoint to an absolute value.
 /// `ToPosition` is absolute; `ByCoordinate` is relative to `cur_val`.
-/// `w` and `h` are the reference box dimensions so keywords resolve against the correct axis.
+/// Position keywords arrive computed to percentages, which `resolve` takes
+/// against the reference box axis.
 fn resolve_axis_endpoint<N>(
-    endpoint: &AxisEndPoint<N>,
+    endpoint: &AxisEndPoint<N, N>,
     cur_val: f64,
-    basis: f64,
     resolve: impl Fn(&N) -> f64,
 ) -> f64 {
-    use style::values::generics::basic_shape::AxisPositionKeyword;
     match endpoint {
-        AxisEndPoint::ToPosition(AxisPosition::LengthPercent(lp)) => resolve(lp),
-        AxisEndPoint::ToPosition(AxisPosition::Keyword(kw)) => match kw {
-            AxisPositionKeyword::Left | AxisPositionKeyword::XStart => 0.0,
-            AxisPositionKeyword::Right | AxisPositionKeyword::XEnd => basis,
-            AxisPositionKeyword::Top | AxisPositionKeyword::YStart => 0.0,
-            AxisPositionKeyword::Bottom | AxisPositionKeyword::YEnd => basis,
-            AxisPositionKeyword::Center => basis / 2.0,
-        },
+        AxisEndPoint::ToPosition(pos) => resolve(pos),
         AxisEndPoint::ByCoordinate(val) => cur_val + resolve(val),
     }
 }
