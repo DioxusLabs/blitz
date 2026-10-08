@@ -200,8 +200,6 @@ pub fn Toolbar(
             shell_provider: None,
             html_parser_provider: Some(Arc::new(HtmlProvider)),
             font_ctx: Some(tab.loader_rc().font_ctx.clone()),
-            #[cfg(feature = "winkin")]
-            winkin_fonts: Some(tab.loader_rc().winkin_fonts.clone()),
             media_type: None,
             ..Default::default()
         };

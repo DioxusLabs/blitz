@@ -848,36 +848,16 @@ impl ElementCx<'_, '_> {
             let transform =
                 self.transform * Affine::translate((pos.x * self.scale, pos.y * self.scale));
 
-            #[cfg(feature = "winkin")]
-            if let Some(layout) = text_layout.winkin.layout() {
-                // How wide and tall the content box is: a vertical block's
-                // lines stack across it from its right edge in `vertical-rl`,
-                // and `sideways-lr` runs its lines up from its bottom edge.
-                let content_width = self.frame.content_box.width();
-                let content_height = self.frame.content_box.height();
-                let mut draw_text_context = self.context.draw_text_context.borrow_mut();
-                crate::text_winkin::paint(
-                    scene,
-                    &text_layout.winkin,
-                    layout,
-                    self.context.dom,
-                    transform,
-                    content_width,
-                    content_height,
-                    self.scale,
-                    self.node.id,
-                    &mut draw_text_context,
-                    self.context.selection_ranges.get(&self.node.id).copied(),
-                );
-                return;
-            }
-
             let mut draw_text_context = self.context.draw_text_context.borrow_mut();
             crate::text::paint_inline_layout(
                 scene,
                 text_layout,
                 self.context.dom,
                 transform,
+                Size::new(
+                    self.frame.content_box.width(),
+                    self.frame.content_box.height(),
+                ),
                 self.scale,
                 self.node.id,
                 self.context.selection_ranges.get(&self.node.id).copied(),

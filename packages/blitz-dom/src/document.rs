@@ -237,10 +237,6 @@ pub struct BaseDocument {
 
     /// The document's fonts, and the contexts the text backend lays out text in
     pub(crate) text: TextContext,
-    /// The fonts winkin chooses from, and the context it builds and breaks
-    /// every inline formatting context in.
-    #[cfg(feature = "winkin")]
-    pub(crate) winkin: crate::text_winkin::WinkinFonts,
 
     /// The real (non-anonymous) node which is currently hovered (if any).
     /// This is never a layout-generated (anonymous) node, so it remains valid
@@ -373,7 +369,7 @@ impl BaseDocument {
         style_config::set_pref!("layout.variable_fonts.enabled", true);
         // The `writing-mode` feature lays out vertical boxes and winkin
         // vertical lines; without either the property stays unparsed.
-        #[cfg(any(feature = "writing-mode", feature = "winkin"))]
+        #[cfg(any(feature = "writing-mode", text_winkin))]
         style_config::set_pref!("layout.writing-mode.enabled", true);
         style_config::set_pref!("layout.threads", -1);
 
@@ -430,12 +426,6 @@ impl BaseDocument {
             nodes_to_stylesheet: BTreeMap::new(),
             stylesheet_generation: 0,
             text,
-            #[cfg(feature = "winkin")]
-            winkin: crate::text_winkin::WinkinFonts::new(
-                config
-                    .winkin_fonts
-                    .unwrap_or_else(crate::text_winkin::system_fonts),
-            ),
 
             hover_node_id: None,
             hover_hit_node_id: None,
@@ -1293,21 +1283,7 @@ impl BaseDocument {
                 self.apply_iframe_html(node_id, res.request_id, res.resolved_url, &html);
             }
             Resource::Font(bytes, overrides) => {
-                #[cfg(feature = "winkin")]
-                let font = bytes.clone();
                 self.text.add_web_font(bytes, &overrides);
-
-                // Winkin chooses fonts from a collection of its own, whose
-                // document layer holds the `@font-face` faces under their
-                // rules' descriptors. Without this every web font falls back
-                // to a system font under winkin, which is most of what a test
-                // using Ahem measures.
-                #[cfg(feature = "winkin")]
-                self.winkin.add_face(
-                    font.clone(),
-                    overrides.family_name.as_deref(),
-                    overrides.winkin_descriptors.clone(),
-                );
 
                 // TODO: see if we can only invalidate if resolved fonts may have changed
                 self.invalidate_inline_contexts();
