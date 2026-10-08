@@ -36,7 +36,7 @@ use winkin::{
 use super::{
     ContentWidths, FloatRequest, InlineBoxKind, InlineBuilder, InlineLayoutEngine, InlineText,
     LastBaseline, LineArea, LineExclusions, LineFlow, LinesExtent, LinesInputs, MarkerEngine,
-    Placement, SpanKind,
+    Measure, Placement, SpanKind,
 };
 use crate::layout::inline::push_inline_content;
 use crate::layout::text_transform::PushedText;
@@ -250,6 +250,35 @@ impl TextLayout {
     /// measured as `sizes` are and percentages taken of `basis`.
     pub(crate) fn is_built_with(&self, sizes: &[BuiltBox], basis: f32) -> bool {
         self.built && self.boxes == sizes && self.basis == basis
+    }
+
+    /// Whether the content is built with atomic inlines and floats that
+    /// reach as far along the line as `sizes` do, and percentages taken of
+    /// `basis`: all the content's intrinsic inline sizes depend on.
+    pub(crate) fn is_built_along(&self, sizes: &[BuiltBox], basis: f32) -> bool {
+        self.built
+            && self.basis == basis
+            && self.boxes.len() == sizes.len()
+            && self.boxes.iter().zip(sizes).all(|(built, size)| {
+                built.node == size.node && built.size.inline == size.size.inline
+            })
+    }
+
+    /// Gives each of `sizes`, measured along the line alone, the block size
+    /// and baseline its box was last built with, where it was.
+    pub(crate) fn keep_built_extents(&self, sizes: &mut [BuiltBox]) {
+        for (at, size) in sizes.iter_mut().enumerate() {
+            // The boxes keep their order, so a box is mostly where it was.
+            let built = self
+                .boxes
+                .get(at)
+                .filter(|built| built.node == size.node)
+                .or_else(|| self.boxes.iter().find(|built| built.node == size.node));
+            if let Some(built) = built {
+                size.size.block = built.size.block;
+                size.size.baseline = built.size.baseline;
+            }
+        }
     }
 
     /// Returns the content's min-content and max-content widths.
@@ -1608,7 +1637,7 @@ impl InlineLayoutEngine for TextLayout {
         // Each border box, and where an atomic inline's baseline is, in device
         // pixels. In a vertical line a box's height is along it, and it sits on
         // no baseline of its own.
-        let sizes: Vec<BuiltBox> = lines
+        let mut sizes: Vec<BuiltBox> = lines
             .sizes
             .iter()
             .map(|measured| BuiltBox {
@@ -1628,8 +1657,20 @@ impl InlineLayoutEngine for TextLayout {
                 },
             })
             .collect();
-        if self.is_built_with(&sizes, lines.basis) {
+        // An inline-size pass reads only how far each box reaches along the
+        // line. Where the content was built with boxes as long, it serves;
+        // where it is built again, each box keeps the block size and baseline
+        // it was last built with, which a later pass that sets the lines
+        // checks, and builds again with where they differ.
+        let built = match lines.pass {
+            Measure::InlineSizes => self.is_built_along(&sizes, lines.basis),
+            _ => self.is_built_with(&sizes, lines.basis),
+        };
+        if built {
             return;
+        }
+        if lines.pass == Measure::InlineSizes {
+            self.keep_built_extents(&mut sizes);
         }
         let guard = doc.guard.read();
         build(
