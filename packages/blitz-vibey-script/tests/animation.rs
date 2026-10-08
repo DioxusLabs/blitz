@@ -254,3 +254,42 @@ fn display_transition_survives_display_none() {
     "#);
     assert_eq!(out, "block,1,block");
 }
+
+#[test]
+fn display_transition_ends_without_timers() {
+    let out = run(r#"
+        const log = [];
+        box.style.transitionBehavior = "allow-discrete";
+        box.style.transitionDuration = "0.01s";
+        getComputedStyle(box).display;
+        box.style.display = "none";
+        log.push(getComputedStyle(box).display);
+        box.addEventListener("transitionend", () => {
+            log.push(getComputedStyle(box).display);
+            done(log);
+        });
+    "#);
+    assert_eq!(out, "block,none");
+}
+
+#[test]
+fn unsupported_pseudo_element_does_not_animate_element() {
+    let out = run(r#"
+        box.animate({ opacity: [0.5, 0.5] }, { pseudoElement: "::marker", duration: Infinity });
+        done(getComputedStyle(box).opacity);
+    "#);
+    assert_eq!(out, "1");
+}
+
+#[test]
+fn revert_in_keyframe_uses_user_agent_value() {
+    let out = run(r#"
+        const h1 = document.createElement("h1");
+        document.body.append(h1);
+        const expected = getComputedStyle(h1).marginTop;
+        h1.style.marginTop = "0px";
+        h1.animate({ marginTop: ["revert", "revert"] }, { duration: Infinity });
+        done(expected !== "0px" && getComputedStyle(h1).marginTop === expected);
+    "#);
+    assert_eq!(out, "true");
+}

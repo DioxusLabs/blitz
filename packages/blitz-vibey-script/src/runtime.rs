@@ -1192,6 +1192,9 @@ struct BlitzModuleLoader {
     modules: RefCell<HashMap<Url, Module>>,
 }
 
+/// The time between the frames of running animations with a virtual clock.
+const ANIMATION_FRAME: std::time::Duration = std::time::Duration::from_millis(16);
+
 impl BlitzModuleLoader {
     fn resolve_specifier(&self, referrer: &Referrer, specifier: &str) -> Option<Url> {
         if let Ok(url) = Url::parse(specifier) {
@@ -1524,7 +1527,16 @@ impl ScriptRuntime {
 
     /// The deadline of the soonest pending timer (if any)
     pub fn next_timer_deadline(&self) -> Option<Instant> {
-        self.ctx.state.borrow().timers.next_deadline()
+        let state = self.ctx.state.borrow();
+        let timer = state.timers.next_deadline();
+        // With a virtual clock nothing else produces frames for running animations.
+        if state.clock.virtual_elapsed_ms().is_some()
+            && self.ctx.doc.borrow().animations_need_ticks()
+        {
+            let frame = state.clock.now() + ANIMATION_FRAME;
+            return Some(timer.map_or(frame, |timer| timer.min(frame)));
+        }
+        timer
     }
 
     /// Set the value exposed as `document.readyState`
@@ -1708,7 +1720,16 @@ impl ScriptRuntime {
             state.timers.take_due(now)
         };
         if due.is_empty() {
-            return false;
+            let elapsed = self.ctx.state.borrow().clock.virtual_elapsed_ms();
+            let Some(elapsed) = elapsed else {
+                return false;
+            };
+            if !self.ctx.doc.borrow().animations_need_ticks() {
+                return false;
+            }
+            self.update_animations();
+            self.ctx.doc.borrow_mut().resolve(elapsed / 1000.);
+            return true;
         }
         self.update_animations();
         for timer in due {

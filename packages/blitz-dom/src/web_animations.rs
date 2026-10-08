@@ -368,7 +368,7 @@ impl BaseDocument {
                                     node,
                                     target.pseudo.as_ref(),
                                     stylist,
-                                    shared.guards.author,
+                                    &shared.guards,
                                     &style,
                                     parent_style.as_deref(),
                                     animation.keyframes,
@@ -425,6 +425,7 @@ impl BaseDocument {
                                 target.pseudo.as_ref(),
                                 stylist,
                                 &style,
+                                &shared.guards,
                                 parent_style.as_deref(),
                                 &keyframe.declarations,
                             ),
@@ -476,6 +477,11 @@ impl BaseDocument {
     /// Changes made through this take effect when the document is next resolved.
     pub fn animations_mut(&mut self) -> &mut AnimationStore {
         &mut self.nodes.animations.store
+    }
+
+    /// Whether an animation changes, or has events to dispatch, as time passes.
+    pub fn animations_need_ticks(&self) -> bool {
+        self.nodes.animations.store.needs_ticks()
     }
 
     /// Moves the document timeline forwards to `now` (in milliseconds) and updates every
