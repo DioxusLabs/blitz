@@ -370,3 +370,26 @@ fn reversed_animation_finishes_in_delay() {
     "#);
     assert_eq!(out, "0");
 }
+
+#[test]
+fn settling_unobserved_ready_promise_does_not_get_then() {
+    let out = run(r#"
+        const log = [];
+        const anim = new Animation();
+        let resolveFinished;
+        const thenCalled = new Promise(resolve => {
+            Object.defineProperty(anim, "then", { get() {
+                log.push('get');
+                return (resolveAnim) => { resolveFinished = resolveAnim; resolve(); };
+            } });
+        });
+        const finished = anim.finished;
+        anim.finish();
+        anim.cancel();
+        await thenCalled;
+        resolveFinished('hello');
+        log.push(await finished);
+        done(log);
+    "#);
+    assert_eq!(out, "get,hello");
+}

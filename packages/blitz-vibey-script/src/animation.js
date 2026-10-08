@@ -15,12 +15,33 @@
         return new DOMException(message, name);
     }
 
+    // The Promise object is created when a script first asks for it, so that settling a promise
+    // nobody has seen does not look up `then` on the animation.
     function newPromise() {
-        let resolve, reject;
-        const promise = new Promise((res, rej) => { resolve = res; reject = rej; });
-        // An aborted promise that nobody observes is not an error
-        promise.catch(() => {});
-        return { promise, resolve, reject, settled: false };
+        let real = null;
+        let outcome = null;
+        const settle = (kind, value) => {
+            if (real) real[kind](value);
+            else outcome = [kind, value];
+        };
+        return {
+            get promise() {
+                if (!real) {
+                    real = {};
+                    real.promise = new Promise((resolve, reject) => {
+                        real.resolve = resolve;
+                        real.reject = reject;
+                    });
+                    // An aborted promise that nobody observes is not an error
+                    real.promise.catch(() => {});
+                    if (outcome) real[outcome[0]](outcome[1]);
+                }
+                return real.promise;
+            },
+            resolve: (value) => settle("resolve", value),
+            reject: (value) => settle("reject", value),
+            settled: false,
+        };
     }
 
     function requestFrame() {
