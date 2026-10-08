@@ -7,7 +7,7 @@
 use std::sync::Mutex;
 
 use blitz_traits::node_id::NodeId;
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 use selectors::matching::QuirksMode;
 use style::context::{
     CascadeInputs, SharedStyleContext, StyleContext, ThreadLocalStyleContext, UpdateAnimationsTasks,
@@ -123,6 +123,9 @@ pub struct WebAnimations {
     /// The style without animations of the targets whose effects read underlying values.
     base_styles: FxHashMap<Target, Arc<ComputedValues>>,
     pub(crate) pending_updates: Mutex<Vec<AnimationUpdate>>,
+    /// The nodes that were removed from the document since the last tick. Their CSS
+    /// animations and transitions are cancelled even if they were inserted again.
+    removed_nodes: FxHashSet<usize>,
 }
 
 pub(crate) fn animation_target(node: NodeId, pseudo: Option<PseudoElement>) -> Target {
@@ -137,6 +140,12 @@ fn target_node(target: &Target) -> NodeId {
 }
 
 impl WebAnimations {
+    pub(crate) fn node_removed(&mut self, node: NodeId) {
+        if !self.store.is_empty() {
+            self.removed_nodes.insert(node.as_u64() as usize);
+        }
+    }
+
     /// Samples the effect stack of `target`. Returns whether its rules changed.
     fn compose(&mut self, target: &Target, guard: &SharedRwLock, is_tick: bool) -> bool {
         let base_style = self.base_styles.get(target);
@@ -258,11 +267,28 @@ impl BaseDocument {
 
         // An element that was removed or lost its box is never restyled, so it would never
         // cancel its own animations.
+        let removed_nodes = std::mem::take(&mut animations.removed_nodes);
+        let mut moved = Vec::new();
         animations.store.retain_targets(|target| {
-            self.nodes
+            let styled = self
+                .nodes
                 .get(target_node(target))
-                .is_some_and(|node| node.flags.is_in_document() && node.primary_styles().is_some())
+                .is_some_and(|node| node.flags.is_in_document() && node.primary_styles().is_some());
+            let moved_target = styled && removed_nodes.contains(&target.node);
+            if moved_target {
+                moved.push(target.clone());
+            }
+            styled && !moved_target
         });
+        // The style of an element that was moved is unchanged, so the traversal would not
+        // start its CSS animations again.
+        let updates = animations.pending_updates.get_mut().unwrap();
+        updates.extend(moved.into_iter().map(|target| AnimationUpdate {
+            node: target_node(&target),
+            pseudo: target.pseudo,
+            before_change_style: None,
+            tasks: UpdateAnimationsTasks::CSS_ANIMATIONS,
+        }));
         if now > animations.store.timeline_time() {
             animations.store.tick(now);
         } else {

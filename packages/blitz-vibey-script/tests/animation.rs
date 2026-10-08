@@ -313,3 +313,31 @@ fn removal_cancels_paused_css_animation_without_timers() {
     "#);
     assert_eq!(out, "animationstart,started,animationcancel");
 }
+
+#[test]
+fn moving_element_cancels_css_animation() {
+    let out = run(r#"
+        const style = document.createElement("style");
+        style.textContent = "@keyframes testAnim { from { margin-left: 0px } to { margin-left: 100px } }";
+        document.head.append(style);
+        const log = [];
+        const container = document.createElement("div");
+        document.body.append(container);
+        const div = document.createElement("div");
+        div.setAttribute("style", "animation: testAnim 100s paused");
+        for (const n of ["animationstart", "animationcancel"]) div.addEventListener(n, () => log.push(n));
+        document.body.append(div);
+        await new Promise(r => div.addEventListener("animationstart", r));
+        container.append(div);
+        await new Promise(r => div.addEventListener("animationcancel", r));
+        const anim = div.getAnimations()[0];
+        anim.oncancel = () => log.push("cancel");
+        div.remove();
+        await new Promise(r => setTimeout(r, 100));
+        done(log);
+    "#);
+    assert_eq!(
+        out,
+        "animationstart,animationcancel,animationstart,cancel,animationcancel"
+    );
+}
