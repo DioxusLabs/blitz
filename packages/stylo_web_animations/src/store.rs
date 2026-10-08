@@ -5,7 +5,7 @@ use style::properties::animated_properties::{AnimationValue, AnimationValueMap};
 use style::properties::{ComputedValues, OwnedPropertyDeclarationId};
 use style::selector_parser::PseudoElement;
 use style::servo::animation_compose::{AnimationPropertySegment, IterationComposite};
-use style::servo::animation_timing::{ComputedTiming, EffectTiming};
+use style::servo::animation_timing::{ComputedTiming, EffectTiming, Phase};
 use style::servo::animation_update::{
     ExistingTransition, NewTransition, PropertySegments, RunningTransition, TransitionUpdate,
     TransitionUpdates, transition_updates,
@@ -60,6 +60,54 @@ pub enum Origin {
     },
 }
 
+impl Origin {
+    /// The name of a CSS animation or the property of a CSS transition.
+    pub fn css_name(&self) -> Option<String> {
+        use style_traits::ToCss;
+        match self {
+            Origin::Script => None,
+            Origin::CssAnimation { name, .. } => Some(name.to_string()),
+            Origin::CssTransition { property, .. } => Some(property.as_borrowed().to_css_string()),
+        }
+    }
+}
+
+/// The type of a [`CssEvent`].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CssEventKind {
+    AnimationStart,
+    AnimationEnd,
+    AnimationIteration,
+    AnimationCancel,
+    TransitionRun,
+    TransitionStart,
+    TransitionEnd,
+    TransitionCancel,
+}
+
+/// An event of a CSS animation or transition, to dispatch at its target.
+///
+/// <https://drafts.csswg.org/css-animations-2/#event-dispatch>
+/// <https://drafts.csswg.org/css-transitions-2/#event-dispatch>
+#[derive(Clone, Debug, PartialEq)]
+pub struct CssEvent {
+    pub animation: AnimationId,
+    pub target: Target,
+    pub kind: CssEventKind,
+    /// The animation name or the transition property.
+    pub name: String,
+    /// In seconds.
+    pub elapsed_time: f64,
+}
+
+/// The state of a CSS animation or transition when its events were last queued.
+#[derive(Clone, Copy, Debug)]
+struct CssEventState {
+    phase: Phase,
+    iteration: f64,
+    active_time: f64,
+}
+
 #[derive(Clone, Debug)]
 struct Entry {
     animation: Animation,
@@ -73,9 +121,91 @@ struct Entry {
     /// The number of handles the embedder holds. An animation without handles is removed
     /// once it is no longer relevant.
     handles: u32,
+    css_event_state: CssEventState,
 }
 
 impl Entry {
+    fn queue_css_events(
+        &mut self,
+        id: AnimationId,
+        timeline_time: f64,
+        events: &mut Vec<CssEvent>,
+    ) {
+        use CssEventKind::*;
+        use Phase::*;
+        let is_transition = match self.origin {
+            Origin::Script => return,
+            Origin::CssAnimation { .. } => false,
+            Origin::CssTransition { .. } => true,
+        };
+        let (Some(effect), Some(target)) = (&self.effect, &self.target) else {
+            return;
+        };
+        let previous = self.css_event_state;
+        let current = match self.computed_timing(timeline_time) {
+            Some(timing) if self.owned_by_style || previous.phase == After => CssEventState {
+                phase: timing.phase,
+                iteration: timing.current_iteration.unwrap_or(0.),
+                active_time: timing.active_time.unwrap_or(match timing.phase {
+                    After => effect.timing.active_duration(),
+                    _ => 0.,
+                }),
+            },
+            _ => CssEventState {
+                phase: Idle,
+                ..previous
+            },
+        };
+        self.css_event_state = current;
+        if !self.owned_by_style && current.phase != Idle {
+            return;
+        }
+
+        let timing = &effect.timing;
+        let active_duration = timing.active_duration();
+        let interval_start = (-timing.delay).min(active_duration).max(0.);
+        let interval_end = (timing.end_time() - timing.delay)
+            .min(active_duration)
+            .max(0.);
+        let iteration_time = (current.iteration - timing.iteration_start) * timing.duration;
+        let cancel_time = previous.active_time;
+        let (start, end, cancel) = if is_transition {
+            (TransitionStart, TransitionEnd, TransitionCancel)
+        } else {
+            (AnimationStart, AnimationEnd, AnimationCancel)
+        };
+        let run = (TransitionRun, interval_start);
+        let queued: &[(CssEventKind, f64)] = match (previous.phase, current.phase) {
+            (Idle, Before) if is_transition => &[run],
+            (Idle, Active) if is_transition => &[run, (start, interval_start)],
+            (Idle, After) if is_transition => &[run, (start, interval_start), (end, interval_end)],
+            (Idle, Active) => &[(start, interval_start)],
+            (Idle, After) => &[(start, interval_start), (end, interval_end)],
+            (Before, Active) => &[(start, interval_start)],
+            (Before, After) => &[(start, interval_start), (end, interval_end)],
+            (Active, Before) => &[(end, interval_start)],
+            (Active, Active) if !is_transition && previous.iteration != current.iteration => {
+                &[(AnimationIteration, iteration_time)]
+            }
+            (Active, After) => &[(end, interval_end)],
+            (After, Active) => &[(start, interval_end)],
+            (After, Before) => &[(start, interval_end), (end, interval_start)],
+            (After, Idle) if is_transition => &[],
+            (Before | Active | After, Idle) => &[(cancel, cancel_time)],
+            _ => &[],
+        };
+        let Some(name) = self.origin.css_name() else {
+            return;
+        };
+        events.extend(queued.iter().map(|(kind, elapsed_time)| CssEvent {
+            animation: id,
+            target: target.clone(),
+            kind: *kind,
+            name: name.clone(),
+            elapsed_time: elapsed_time / 1000.,
+        }));
+    }
+
     fn timeline_time(&self, timeline_time: f64) -> Option<f64> {
         self.has_timeline.then_some(timeline_time)
     }
@@ -133,6 +263,7 @@ pub struct AnimationStore {
     targets: FxHashMap<Target, TargetAnimations>,
     actions: Vec<(AnimationId, Action)>,
     scratch: Vec<Action>,
+    css_events: Vec<CssEvent>,
 }
 
 impl Default for AnimationStore {
@@ -150,6 +281,7 @@ impl AnimationStore {
             targets: FxHashMap::default(),
             actions: Vec::new(),
             scratch: Vec::new(),
+            css_events: Vec::new(),
         }
     }
 
@@ -391,6 +523,22 @@ impl AnimationStore {
         std::mem::take(&mut self.actions)
     }
 
+    /// Queues the events of CSS animations and transitions whose state changed since the
+    /// last call. [`AnimationStore::tick`] does this too.
+    pub fn queue_css_events(&mut self) {
+        let mut ids: Vec<AnimationId> = self.animations.keys().copied().collect();
+        ids.sort();
+        for id in ids {
+            let entry = self.animations.get_mut(&id).unwrap();
+            entry.queue_css_events(id, self.timeline_time, &mut self.css_events);
+        }
+    }
+
+    /// The events that CSS animations and transitions have queued since the last call.
+    pub fn take_css_events(&mut self) -> Vec<CssEvent> {
+        std::mem::take(&mut self.css_events)
+    }
+
     fn insert(
         &mut self,
         target: Option<Target>,
@@ -419,6 +567,11 @@ impl AnimationStore {
                 origin,
                 has_timeline: true,
                 handles: 0,
+                css_event_state: CssEventState {
+                    phase: Phase::Idle,
+                    iteration: 0.,
+                    active_time: 0.,
+                },
             },
         );
         id
@@ -449,6 +602,10 @@ impl AnimationStore {
         self.update_animation(id, |animation, time, actions| {
             animation.cancel(time, actions)
         });
+        if let Some(entry) = self.animations.get_mut(&id) {
+            entry.owned_by_style = false;
+            entry.queue_css_events(id, self.timeline_time, &mut self.css_events);
+        }
         match self.animations.get_mut(&id) {
             Some(entry) if entry.handles > 0 => entry.owned_by_style = false,
             _ => self.remove(id),
@@ -520,14 +677,18 @@ impl AnimationStore {
             animation.run_finish_notification(time, &mut self.scratch);
             self.actions
                 .extend(self.scratch.drain(..).map(|action| (id, action)));
+            let animation = &entry.animation;
+            let finished = animation.play_state(time) == PlayState::Finished;
+            let pending = animation.pending();
+            entry.queue_css_events(id, timeline_time, &mut self.css_events);
             if matches!(entry.origin, Origin::CssTransition { .. })
                 && entry.owned_by_style
-                && animation.play_state(time) == PlayState::Finished
+                && finished
             {
                 finished_transitions.push(id);
             } else if entry.handles == 0
                 && !entry.owned_by_style
-                && !animation.pending()
+                && !pending
                 && !entry.is_relevant(timeline_time)
             {
                 unused.push(id);

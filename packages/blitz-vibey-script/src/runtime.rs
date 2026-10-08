@@ -1644,6 +1644,60 @@ impl ScriptRuntime {
             report_js_error(&self.ctx, &mut self.context, "animation frame", &error);
         }
         self.run_jobs("animation microtasks");
+        self.dispatch_css_animation_events();
+    }
+
+    fn dispatch_css_animation_events(&mut self) {
+        use blitz_dom::web_animations::stylo_web_animations::CssEventKind::*;
+        let events = self.ctx.doc.borrow_mut().take_css_animation_events();
+        for (node_id, event) in events {
+            let chain = {
+                let doc = self.ctx.doc.borrow();
+                let mut chain = Vec::new();
+                let mut next = Some(node_id);
+                while let Some(node) = next.and_then(|id| doc.get_node(id)) {
+                    chain.push(node.id);
+                    next = node.parent;
+                }
+                chain
+            };
+            let (name, name_field) = match event.kind {
+                AnimationStart => ("animationstart", "animationName"),
+                AnimationEnd => ("animationend", "animationName"),
+                AnimationIteration => ("animationiteration", "animationName"),
+                AnimationCancel => ("animationcancel", "animationName"),
+                TransitionRun => ("transitionrun", "propertyName"),
+                TransitionStart => ("transitionstart", "propertyName"),
+                TransitionEnd => ("transitionend", "propertyName"),
+                TransitionCancel => ("transitioncancel", "propertyName"),
+            };
+            let pseudo = event
+                .target
+                .pseudo
+                .as_ref()
+                .map_or("", crate::animation::pseudo_name);
+            let ran = self.dispatch_event_inner(
+                &chain,
+                name,
+                true,
+                |ctx, target, context| {
+                    let object = create_event(ctx, name, true, false, target, context);
+                    crate::dom::define_value(&object, name_field, js_str(&event.name), context);
+                    crate::dom::define_value(
+                        &object,
+                        "elapsedTime",
+                        JsValue::from(event.elapsed_time),
+                        context,
+                    );
+                    crate::dom::define_value(&object, "pseudoElement", js_str(pseudo), context);
+                    object
+                },
+                &mut EventState::default(),
+            );
+            if ran {
+                self.run_jobs("event microtasks");
+            }
+        }
     }
 
     /// Run all timers that are currently due. Returns `true` if any JavaScript was run.

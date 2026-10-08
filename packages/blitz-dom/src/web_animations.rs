@@ -40,7 +40,7 @@ use style::values::specified::animation::AnimationComposition;
 use style_traits::ParsingMode;
 pub use stylo_web_animations;
 use stylo_web_animations::{
-    AnimationId, AnimationStore, ComposedValues, CssAnimation, KeyframeEffect, Target,
+    AnimationId, AnimationStore, ComposedValues, CssAnimation, CssEvent, KeyframeEffect, Target,
 };
 
 use style::global_style_data::GLOBAL_STYLE_DATA;
@@ -244,6 +244,8 @@ impl BaseDocument {
         });
         if now > animations.store.timeline_time() {
             animations.store.tick(now);
+        } else {
+            animations.store.queue_css_events();
         }
         let store = &animations.store;
         animations
@@ -435,8 +437,19 @@ impl BaseDocument {
         let store = &mut self.nodes.animations.store;
         if now > store.timeline_time() {
             store.tick(now);
+        } else {
+            store.queue_css_events();
         }
         store.timeline_time()
+    }
+
+    /// The events of CSS animations and transitions to dispatch, with their target nodes.
+    pub fn take_css_animation_events(&mut self) -> Vec<(NodeId, CssEvent)> {
+        let events = self.nodes.animations.store.take_css_events();
+        events
+            .into_iter()
+            .map(|event| (target_node(&event.target), event))
+            .collect()
     }
 
     /// Creates an idle animation without an effect.
@@ -506,6 +519,27 @@ impl BaseDocument {
         }
     }
 
+    /// Changes the timing of the effect of an animation, keeping its keyframes.
+    pub fn set_animation_timing(
+        &mut self,
+        id: AnimationId,
+        timing: EffectTiming,
+        easing: TimingFunction,
+    ) {
+        let store = &mut self.nodes.animations.store;
+        let Some(mut effect) = store.effect(id).cloned() else {
+            return;
+        };
+        effect.timing = timing;
+        effect.easing = easing;
+        store.set_effect(id, Some(effect));
+        if let Some(target) = store.target(id).cloned() {
+            if let Some(node) = self.nodes.get_mut(target_node(&target)) {
+                node.set_restyle_hint(restyle_hint(&target));
+            }
+        }
+    }
+
     /// Parses a property of a keyframe. Returns `None` if the property is not animatable or
     /// the value is invalid.
     pub fn parse_keyframe_declaration(
@@ -550,7 +584,7 @@ impl BaseDocument {
         id: AnimationId,
     ) -> Option<(NodeId, Option<PseudoElement>)> {
         let target = self.nodes.animations.store.target(id)?;
-        Some((target_node(target), target.pseudo.clone()))
+        Some((target_node(target), target.pseudo))
     }
 
     /// The name of a CSS animation, or the property of a CSS transition (with `true`).

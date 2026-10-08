@@ -101,3 +101,27 @@ fn css_animations_are_exposed() {
     "#);
     assert_eq!(out, "true,grow,paused,200px");
 }
+
+#[test]
+fn css_animation_events_and_timing() {
+    let out = run(r#"
+        const style = document.createElement('style');
+        style.textContent = '@keyframes anim { from { margin-left: 0px } to { margin-left: 100px } }';
+        document.head.appendChild(style);
+        const log = [];
+        for (const n of ['animationstart','animationend','animationcancel','animationiteration']) box.addEventListener(n, (e) => log.push(n + ':' + e.elapsedTime));
+        box.style.animation = 'anim 100s';
+        const a = box.getAnimations()[0];
+        log.push(a.effect.getTiming().duration);
+        await new Promise(requestAnimationFrame);
+        log.push('f1');
+        await new Promise(requestAnimationFrame);
+        log.push('f2');
+        await new Promise(requestAnimationFrame);
+        a.finish();
+        await new Promise(requestAnimationFrame);
+        await new Promise(requestAnimationFrame);
+        done(log);
+    "#);
+    assert_eq!(out, "100000,animationstart:0,f1,f2,animationend:100");
+}

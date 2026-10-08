@@ -511,8 +511,24 @@
             super();
             this._target = target;
             this._pseudo = pseudo;
-            this._timing = defaultTiming();
             this._animation = null;
+        }
+        // The timing lives in the animation store, where style updates it
+        get _timing() {
+            const timing = this._animation && native("effectTiming", this._animation[ID]);
+            if (!timing) return defaultTiming();
+            const [delay, endDelay, fill, iterationStart, iterations, duration, direction, easing] = timing;
+            return { delay, endDelay, fill, iterationStart, iterations, duration, direction, easing };
+        }
+        updateTiming(input = {}) {
+            const timing = this._timing;
+            updateTiming(timing, input || {});
+            if (!this._animation) return;
+            call("setEffectTiming", this._animation[ID], [
+                timing.delay, timing.endDelay, timing.fill === "auto" ? "none" : timing.fill,
+                timing.iterationStart, timing.iterations,
+                timing.duration === "auto" ? 0 : timing.duration, timing.direction, timing.easing,
+            ]);
         }
         get target() { return this._target; }
         get pseudoElement() { return this._pseudo; }

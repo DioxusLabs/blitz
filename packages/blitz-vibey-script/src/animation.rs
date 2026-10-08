@@ -13,6 +13,7 @@ use boa_engine::{Context, JsNativeError, JsResult};
 use style::selector_parser::PseudoElement;
 use style::servo::animation_compose::IterationComposite;
 use style::servo::animation_timing::EffectTiming;
+use style::values::computed::easing::TimingFunction;
 use style::values::specified::animation::AnimationComposition;
 use style::values::specified::animation::{AnimationDirection, AnimationFillMode};
 
@@ -52,7 +53,7 @@ fn parse_pseudo(pseudo: &str) -> Option<PseudoElement> {
     }
 }
 
-fn pseudo_name(pseudo: &PseudoElement) -> &'static str {
+pub(crate) fn pseudo_name(pseudo: &PseudoElement) -> &'static str {
     match pseudo {
         PseudoElement::Before => "::before",
         PseudoElement::After => "::after",
@@ -68,22 +69,21 @@ fn composite(name: &str) -> AnimationComposition {
     }
 }
 
-/// Reads `[timing, keyframes]` as `animation.js` builds it.
-fn effect_options(
+/// Reads the timing array that `animation.js` builds.
+fn effect_timing(
     doc: &BaseDocument,
-    spec: &JsValue,
+    timing: &JsValue,
     context: &mut Context,
-) -> JsResult<KeyframeEffectOptions> {
-    let timing = element(spec, 0, context)?;
+) -> JsResult<(EffectTiming, TimingFunction)> {
     let mut number =
-        |index| -> JsResult<f64> { element(&timing, index, context)?.to_number(context) };
+        |index| -> JsResult<f64> { element(timing, index, context)?.to_number(context) };
     let delay = number(0)?;
     let end_delay = number(1)?;
     let iteration_start = number(3)?;
     let iterations = number(4)?;
     let duration = number(5)?;
     let mut string = |index| -> JsResult<String> {
-        let value = element(&timing, index, context)?;
+        let value = element(timing, index, context)?;
         to_rust_string(&value, context)
     };
     let fill = match string(2)?.as_str() {
@@ -98,8 +98,34 @@ fn effect_options(
         "alternate-reverse" => AnimationDirection::AlternateReverse,
         _ => AnimationDirection::Normal,
     };
+    let easing = doc
+        .parse_easing(&string(7)?)
+        .unwrap_or_else(|| doc.parse_easing("linear").expect("linear is an easing"));
+    let timing = EffectTiming {
+        delay,
+        end_delay,
+        fill,
+        iteration_start,
+        iterations,
+        duration,
+        direction,
+    };
+    Ok((timing, easing))
+}
+
+/// Reads `[timing, keyframes]` as `animation.js` builds it.
+fn effect_options(
+    doc: &BaseDocument,
+    spec: &JsValue,
+    context: &mut Context,
+) -> JsResult<KeyframeEffectOptions> {
+    let timing_spec = element(spec, 0, context)?;
+    let (timing, easing) = effect_timing(doc, &timing_spec, context)?;
     let linear = || doc.parse_easing("linear").expect("linear is an easing");
-    let easing = doc.parse_easing(&string(7)?).unwrap_or_else(linear);
+    let mut string = |index| -> JsResult<String> {
+        let value = element(&timing_spec, index, context)?;
+        to_rust_string(&value, context)
+    };
     let effect_composite = composite(&string(8)?);
     let iteration_composite = match string(9)?.as_str() {
         "accumulate" => IterationComposite::Accumulate,
@@ -145,15 +171,7 @@ fn effect_options(
     }
 
     Ok(KeyframeEffectOptions {
-        timing: EffectTiming {
-            delay,
-            end_delay,
-            fill,
-            iteration_start,
-            iterations,
-            duration,
-            direction,
-        },
+        timing,
         easing,
         composite: effect_composite,
         iteration_composite,
@@ -321,6 +339,48 @@ pub(crate) fn animation_op(
             };
             Ok(JsArray::from_iter(values, context).into())
         }
+        ("effectTiming", Some(id)) => {
+            use style_traits::ToCss;
+            let values = {
+                let doc = ctx.doc.borrow();
+                let Some(effect) = doc.animations().effect(id) else {
+                    return Ok(JsValue::null());
+                };
+                let timing = &effect.timing;
+                [
+                    JsValue::from(timing.delay),
+                    JsValue::from(timing.end_delay),
+                    js_str(match timing.fill {
+                        AnimationFillMode::None => "none",
+                        AnimationFillMode::Forwards => "forwards",
+                        AnimationFillMode::Backwards => "backwards",
+                        AnimationFillMode::Both => "both",
+                    }),
+                    JsValue::from(timing.iteration_start),
+                    JsValue::from(timing.iterations),
+                    JsValue::from(timing.duration),
+                    js_str(match timing.direction {
+                        AnimationDirection::Normal => "normal",
+                        AnimationDirection::Reverse => "reverse",
+                        AnimationDirection::Alternate => "alternate",
+                        AnimationDirection::AlternateReverse => "alternate-reverse",
+                    }),
+                    js_str(&effect.easing.to_css_string()),
+                ]
+            };
+            Ok(JsArray::from_iter(values, context).into())
+        }
+        ("setEffectTiming", Some(id)) => {
+            let spec = arg.cloned().unwrap_or_default();
+            let (timing, easing) = {
+                let doc = ctx.doc.borrow();
+                effect_timing(&doc, &spec, context)?
+            };
+            ctx.doc
+                .borrow_mut()
+                .set_animation_timing(id, timing, easing);
+            Ok(JsValue::undefined())
+        }
         ("timelineTime", _) => Ok(JsValue::from(ctx.doc.borrow().animations().timeline_time())),
         ("needsFrames", _) => Ok(JsValue::from(ctx.doc.borrow().animations().needs_ticks())),
         ("takeActions", _) => {
@@ -361,6 +421,7 @@ pub(crate) fn animation_op(
         ("getAnimations", _) => {
             let root = arg.and_then(node_id_of_value);
             let subtree = args.get(3).is_some_and(|value| value.to_boolean());
+            ctx.doc.borrow_mut().resolve(0.0);
             let animations: Vec<_> = {
                 let doc = ctx.doc.borrow();
                 doc.relevant_animations(root, subtree)
