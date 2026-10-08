@@ -2,9 +2,7 @@
 //! backend that paints its own layouts.
 
 use anyrender::PaintScene;
-use blitz_dom::node::TextLayout;
-use blitz_dom::text::InlineText as _;
-use blitz_dom::{BaseDocument, NodeId, util::ToColorColor};
+use blitz_dom::{NodeId, util::ToColorColor};
 use kurbo::{Affine, BezPath, Cap, Circle, Rect, Stroke};
 use peniko::{Fill, FontData};
 use std::collections::HashMap;
@@ -14,31 +12,19 @@ use style::values::computed::{
 };
 use style::values::generics::text::{GenericTextDecorationInset, GenericTextDecorationLength};
 
-use crate::SELECTION_COLOR;
 use crate::color::Color;
 
 blitz_dom::cfg_text_backend! {
     parley => {
         mod parley;
+        use self::parley::Scratch;
         pub(crate) use self::parley::{paint_inline_layout, paint_marker, paint_text_input};
     }
-}
-
-/// Paints the highlight of the selected text between byte offsets `start` and `end` of an inline
-/// formatting context.
-///
-/// `transform` takes the content box's device pixels, moved down by the layout's block offset,
-/// onto the scene.
-fn paint_selection(
-    scene: &mut impl PaintScene,
-    layout: &TextLayout,
-    transform: Affine,
-    start: usize,
-    end: usize,
-) {
-    layout.for_each_selection_rect(start, end, |rect| {
-        scene.fill(Fill::NonZero, transform, SELECTION_COLOR, None, &rect);
-    });
+    winkin => {
+        mod winkin;
+        use self::winkin::Scratch;
+        pub(crate) use self::winkin::{paint_inline_layout, paint_marker, paint_text_input};
+    }
 }
 
 /// Per-font-face cache of the OS/2 `usWinAscent / unitsPerEm` ratio, keyed by the font
@@ -112,34 +98,6 @@ struct ResolvedDecoration {
     underline_from_font: bool,
     /// `text-decoration-inset`. Resolved per run.
     inset: GenericTextDecorationInset<LengthPercentage>,
-}
-
-/// An element on the current ancestor path (inline root -> run node), caching the
-/// values resolved from its computed style so descending into the same node across
-/// consecutive runs doesn't re-resolve them.
-struct DecorationStackEntry {
-    node_id: NodeId,
-    /// This node's (inherited) text colour, used for the glyphs of runs whose
-    /// innermost node is this one.
-    text_color: Color,
-    /// The decoration this node introduces as a decorating box, if any.
-    decoration: Option<ResolvedDecoration>,
-}
-
-/// Resolve the cached style values for a single node into a [`DecorationStackEntry`].
-fn resolve_decoration_entry(doc: &BaseDocument, node_id: NodeId) -> DecorationStackEntry {
-    let Some(styles) = doc.get_node(node_id).and_then(|node| node.primary_styles()) else {
-        return DecorationStackEntry {
-            node_id,
-            text_color: Color::BLACK,
-            decoration: None,
-        };
-    };
-    DecorationStackEntry {
-        node_id,
-        text_color: styles.get_inherited_text().color.as_color_color(),
-        decoration: resolve_decoration(&styles),
-    }
 }
 
 /// The decoration an element draws as a decorating box, if it is one.
@@ -227,8 +185,9 @@ struct LineDecoration {
 /// document. The vectors are cleared between uses without releasing their allocations.
 #[derive(Default)]
 pub(crate) struct DrawTextContext {
-    stack: Vec<DecorationStackEntry>,
-    path_scratch: Vec<NodeId>,
+    /// What the text backend's painter keeps between uses.
+    #[allow(dead_code, reason = "the winkin painter keeps nothing here")]
+    backend: Scratch,
     deco_boxes: Vec<LineDecoration>,
     win_ascent_ratios: WinAscentCache,
 }
@@ -559,96 +518,5 @@ fn flush_line_decorations(
                 inset_end,
             );
         }
-    }
-}
-
-/// One bar of a decoration on a line of winkin-laid text, and the font
-/// geometry it is drawn with, in device pixels along and across its line.
-#[cfg(feature = "winkin")]
-#[derive(Copy, Clone)]
-pub(crate) struct WinkinDecoration {
-    /// Where it starts and ends along the line.
-    pub(crate) left: f64,
-    pub(crate) right: f64,
-    /// Its box's baseline, and its primary font's ascent and descent about it.
-    pub(crate) baseline: f32,
-    pub(crate) ascent: f32,
-    pub(crate) descent: f32,
-    /// Where an `auto` underline's top is under the baseline, and how thick
-    /// an `auto` line is: Chrome's, as winkin works them out.
-    pub(crate) underline_gap: f32,
-    pub(crate) thickness: f32,
-    /// Its box's used font size.
-    pub(crate) font_size: f32,
-    /// Whether the metrics are measured about a central baseline, as a
-    /// vertical line's are.
-    pub(crate) centered: bool,
-}
-
-/// Painting the decorations of lines laid out by winkin, with the same
-/// resolution and drawing as the lines laid out by Parley.
-#[cfg(feature = "winkin")]
-impl DrawTextContext {
-    /// Paints one bar of the decoration `styles` sets, as a decorating box:
-    /// its underline and overline where `after_text` is false, and its line
-    /// through where it is true. `color`, where given, is the color it is
-    /// drawn in instead of its own: a shadow's.
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn draw_winkin_decoration(
-        &mut self,
-        scene: &mut impl PaintScene,
-        transform: Affine,
-        scale: f64,
-        styles: &style::properties::ComputedValues,
-        bar: WinkinDecoration,
-        after_text: bool,
-        color: Option<Color>,
-    ) {
-        let Some(mut deco) = resolve_decoration(styles) else {
-            return;
-        };
-        if let Some(color) = color {
-            deco.color = color;
-        }
-        self.deco_boxes.clear();
-        self.deco_boxes.push(LineDecoration {
-            node_id: NodeId::from_u64(0),
-            deco,
-            min_x: bar.left,
-            max_x: bar.right,
-            own: Some(DecorationRunGeometry {
-                baseline: bar.baseline,
-                ascent: bar.ascent,
-                descent: bar.descent,
-                // Placed from the baseline, up: an underline's top is its gap
-                // under it.
-                underline_offset: -bar.underline_gap,
-                underline_size: bar.thickness,
-                strikethrough_size: bar.thickness,
-                // winkin's ascent is already the one the platform's browser
-                // draws an overline against: its line metrics are.
-                font: None,
-                font_size: bar.font_size,
-                css_font_size: f64::from(bar.font_size) / scale,
-                centered: bar.centered,
-            }),
-            first: None,
-        });
-        let drawn = if after_text {
-            TextDecorationLine::LINE_THROUGH
-        } else {
-            TextDecorationLine::UNDERLINE | TextDecorationLine::OVERLINE
-        };
-        flush_line_decorations(
-            scene,
-            transform,
-            scale,
-            &self.deco_boxes,
-            &mut self.win_ascent_ratios,
-            NodeId::from_u64(0),
-            bar.baseline,
-            drawn,
-        );
-        self.deco_boxes.clear();
     }
 }

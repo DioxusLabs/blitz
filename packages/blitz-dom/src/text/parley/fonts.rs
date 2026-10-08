@@ -355,9 +355,8 @@ mod font_face_override_tests {
                     descriptors: FaceDescriptors {
                         weight: Some((FontWeight::new(800.0), FontWeight::new(800.0))),
                         style: Some((FontStyle::Italic, FontStyle::Italic)),
+                        ..Default::default()
                     },
-                    #[cfg(feature = "winkin")]
-                    winkin_descriptors: Default::default(),
                 },
             )),
         };

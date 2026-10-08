@@ -16,6 +16,7 @@ pub(crate) use build::push_inline_content;
 
 /// What `compute_inline_layout_inner` has resolved from the container's styles and inputs
 /// before the inline boxes are measured and the lines broken.
+#[derive(Clone, Copy)]
 pub(crate) struct Frame {
     pub(crate) inputs: LayoutInput,
     pub(crate) node_size: Size<Option<f32>>,
@@ -391,9 +392,6 @@ impl LayoutPassState<'_> {
             collapses_through: has_styles_preventing_being_collapsed_through,
             scale,
         };
-        #[cfg(feature = "winkin")]
-        return self.compute_inline_layout_winkin(node_id, inline_layout, frame, block_ctx);
-        #[cfg(not(feature = "winkin"))]
         self.lay_out_lines(node_id, inline_layout, frame, block_ctx)
     }
 }

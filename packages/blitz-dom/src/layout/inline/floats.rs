@@ -218,4 +218,12 @@ impl LineExclusions for FloatRoom<'_, '_> {
             bottom: top + height,
         }
     }
+
+    fn checkpoint(&self) -> usize {
+        self.placed.len()
+    }
+
+    fn rewind(&mut self, to: usize) {
+        self.placed.truncate(to);
+    }
 }

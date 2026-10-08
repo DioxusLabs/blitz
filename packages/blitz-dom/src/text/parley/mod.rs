@@ -8,21 +8,22 @@ pub(crate) mod style;
 
 #[cfg(feature = "parallel-construct")]
 use std::cell::RefCell;
-#[cfg(not(feature = "winkin"))]
-use std::ops::Range;
 use std::sync::{Arc, Mutex};
+
+use std::ops::Range;
 
 use blitz_traits::node_id::NodeId;
 use kurbo::Rect;
-#[cfg(not(feature = "winkin"))]
-use parley::{Affinity, BreakReason, Cluster, ClusterSide, Cursor, Run, Selection};
-use parley::{LayoutContext, PositionedLayoutItem};
+use parley::{
+    Affinity, BreakReason, Cluster, ClusterSide, Cursor, LayoutContext, PositionedLayoutItem, Run,
+    Selection,
+};
 #[cfg(feature = "parallel-construct")]
 use thread_local::ThreadLocal;
 
 use super::{
-    BoxMeasure, ContentWidths, FloatSide, InlineLayoutEngine, InlineText, LastBaseline,
-    LineExclusions, LinesExtent, Placement,
+    ContentWidths, FloatSide, InlineLayoutEngine, InlineText, LastBaseline, LineArea,
+    LineExclusions, LineFlow, LinesExtent, LinesInputs, Placement,
 };
 use crate::node::{InlineContent, InlineTextHit, Node};
 
@@ -74,10 +75,6 @@ pub struct TextLayout {
     /// Block-axis offset (in CSS px) of the line boxes from the top of the container's content
     /// box, as applied by `align-content`.
     pub(crate) block_offset: f32,
-    /// The same content laid out by winkin, which measuring, breaking and
-    /// painting read in place of `layout`.
-    #[cfg(feature = "winkin")]
-    pub winkin: crate::text_winkin::WinkinText,
     /// The floats, as the lines place them: each one's node, side and margin box's size in device
     /// pixels.
     floats: Vec<(u64, FloatSide, f32, f32)>,
@@ -92,11 +89,6 @@ impl std::fmt::Debug for TextLayout {
 impl InlineText for TextLayout {
     #[inline]
     fn scale(&self) -> f32 {
-        #[cfg(feature = "winkin")]
-        {
-            self.winkin.scale()
-        }
-        #[cfg(not(feature = "winkin"))]
         self.layout.scale()
     }
 
@@ -107,200 +99,144 @@ impl InlineText for TextLayout {
 
     #[inline]
     fn text(&self) -> &str {
-        #[cfg(feature = "winkin")]
-        {
-            self.winkin.layout().map_or("", |layout| layout.text())
-        }
-        #[cfg(not(feature = "winkin"))]
         &self.text
     }
 
     #[inline]
     fn text_len(&self) -> usize {
-        self.text().len()
+        self.text.len()
     }
 
+    #[inline]
     fn selected_text(&self, start: usize, end: usize) -> impl Iterator<Item = &str> {
-        #[cfg(feature = "winkin")]
-        {
-            crate::text_winkin::selected_text(&self.winkin, start, end)
-        }
-        #[cfg(not(feature = "winkin"))]
-        {
-            self.text.get(start..end).into_iter()
-        }
+        self.text.get(start..end).into_iter()
     }
 
     fn logical_content(&self) -> impl Iterator<Item = InlineContent> {
-        #[cfg(feature = "winkin")]
-        {
-            self.winkin
-                .layout()
-                .into_iter()
-                .flat_map(crate::text_winkin::logical_content)
-        }
-        #[cfg(not(feature = "winkin"))]
-        {
-            let mut lines = self.layout.lines();
-            let mut boxes = self.layout.inline_boxes().peekable();
-            // The current line's runs, sorted from visual into logical order for bidi text
-            let mut runs: Vec<Run<'_, TextBrush>> = Vec::new();
-            let mut next_run = 0;
-            let mut clusters = None;
-            // The node of the last cluster's style, which the clusters after it mostly share
-            let mut style = None;
-            // A cluster read but not yet taken in, which waits for the items before it
-            let mut held: Option<(NodeId, Range<usize>)> = None;
-            // The text taken in since the last item, all of one node
-            let mut pending: Option<(NodeId, Range<usize>)> = None;
-            let text = |(node_id, range)| InlineContent::Text { node_id, range };
-            std::iter::from_fn(move || {
-                loop {
-                    let (node_id, range) = match held.take() {
-                        Some(cluster) => cluster,
-                        None => {
-                            let Some(cluster) = clusters.as_mut().and_then(Iterator::next) else {
-                                while next_run >= runs.len() {
-                                    let Some(line) = lines.next() else {
-                                        // The text read last, then the boxes after the last line
-                                        if let Some(read) = pending.take() {
-                                            return Some(text(read));
-                                        }
-                                        let ibox = boxes.next()?;
-                                        return Some(InlineContent::Box(NodeId::from_u64(ibox.id)));
-                                    };
-                                    runs.clear();
-                                    runs.extend(line.runs());
-                                    runs.sort_by_key(|run| run.text_range().start);
-                                    next_run = 0;
-                                }
-                                clusters = runs.get(next_run).map(Run::clusters);
-                                next_run += 1;
-                                continue;
-                            };
-                            let index = cluster.style_index();
-                            let node_id = match style {
-                                Some((styled, node_id)) if styled == index => node_id,
-                                _ => {
-                                    let node_id = cluster.style().brush.id;
-                                    style = Some((index, node_id));
-                                    node_id
-                                }
-                            };
-                            (node_id, cluster.text_range())
-                        }
-                    };
-                    // The boxes before the cluster come first, after the text read before them
-                    if boxes.peek().is_some_and(|ibox| ibox.index <= range.start) {
-                        held = Some((node_id, range));
-                        if let Some(read) = pending.take() {
-                            return Some(text(read));
-                        }
-                        if let Some(ibox) = boxes.next() {
-                            return Some(InlineContent::Box(NodeId::from_u64(ibox.id)));
-                        }
-                        continue;
-                    }
-                    match &mut pending {
-                        Some((read_id, read)) if *read_id == node_id && read.end == range.start => {
-                            read.end = range.end;
-                        }
-                        _ => {
-                            if let Some(read) = pending.replace((node_id, range)) {
-                                return Some(text(read));
+        let mut lines = self.layout.lines();
+        let mut boxes = self.layout.inline_boxes().peekable();
+        // The current line's runs, sorted from visual into logical order for bidi text
+        let mut runs: Vec<Run<'_, TextBrush>> = Vec::new();
+        let mut next_run = 0;
+        let mut clusters = None;
+        // The node of the last cluster's style, which the clusters after it mostly share
+        let mut style = None;
+        // A cluster read but not yet taken in, which waits for the items before it
+        let mut held: Option<(NodeId, Range<usize>)> = None;
+        // The text taken in since the last item, all of one node
+        let mut pending: Option<(NodeId, Range<usize>)> = None;
+        let text = |(node_id, range)| InlineContent::Text { node_id, range };
+        std::iter::from_fn(move || {
+            loop {
+                let (node_id, range) = match held.take() {
+                    Some(cluster) => cluster,
+                    None => {
+                        let Some(cluster) = clusters.as_mut().and_then(Iterator::next) else {
+                            while next_run >= runs.len() {
+                                let Some(line) = lines.next() else {
+                                    // The text read last, then the boxes after the last line
+                                    if let Some(read) = pending.take() {
+                                        return Some(text(read));
+                                    }
+                                    let ibox = boxes.next()?;
+                                    return Some(InlineContent::Box(NodeId::from_u64(ibox.id)));
+                                };
+                                runs.clear();
+                                runs.extend(line.runs());
+                                runs.sort_by_key(|run| run.text_range().start);
+                                next_run = 0;
                             }
+                            clusters = runs.get(next_run).map(Run::clusters);
+                            next_run += 1;
+                            continue;
+                        };
+                        let index = cluster.style_index();
+                        let node_id = match style {
+                            Some((styled, node_id)) if styled == index => node_id,
+                            _ => {
+                                let node_id = cluster.style().brush.id;
+                                style = Some((index, node_id));
+                                node_id
+                            }
+                        };
+                        (node_id, cluster.text_range())
+                    }
+                };
+                // The boxes before the cluster come first, after the text read before them
+                if boxes.peek().is_some_and(|ibox| ibox.index <= range.start) {
+                    held = Some((node_id, range));
+                    if let Some(read) = pending.take() {
+                        return Some(text(read));
+                    }
+                    if let Some(ibox) = boxes.next() {
+                        return Some(InlineContent::Box(NodeId::from_u64(ibox.id)));
+                    }
+                    continue;
+                }
+                match &mut pending {
+                    Some((read_id, read)) if *read_id == node_id && read.end == range.start => {
+                        read.end = range.end;
+                    }
+                    _ => {
+                        if let Some(read) = pending.replace((node_id, range)) {
+                            return Some(text(read));
                         }
                     }
                 }
-            })
-        }
+            }
+        })
     }
 
     #[inline]
     fn source_offset(&self, node_id: NodeId, offset: usize) -> Option<usize> {
-        #[cfg(feature = "winkin")]
-        {
-            let layout = self.winkin.layout()?;
-            let position = layout.position(
-                winkin::NodeKey(node_id.as_u64()),
-                offset,
-                winkin::selection::Affinity::Downstream,
-            )?;
-            Some(position.offset)
-        }
-        #[cfg(not(feature = "winkin"))]
-        {
-            let _ = (node_id, offset);
-            None
-        }
+        let _ = (node_id, offset);
+        None
     }
 
     #[inline]
     fn maps_source(&self) -> bool {
-        cfg!(feature = "winkin")
+        false
     }
 
     fn first_baseline(&self) -> Option<f32> {
-        #[cfg(feature = "winkin")]
-        {
-            self.winkin.first_baseline(self.block_offset)
-        }
-        #[cfg(not(feature = "winkin"))]
-        {
-            let line = self.layout.lines().next()?;
-            Some(line.metrics().baseline / self.layout.scale() + self.block_offset)
-        }
+        let line = self.layout.lines().next()?;
+        Some(line.metrics().baseline / self.layout.scale() + self.block_offset)
     }
 
     fn hit_test(&self, x: f32, y: f32, exact: bool) -> Option<InlineTextHit> {
-        #[cfg(feature = "winkin")]
-        {
-            crate::text_winkin::hit_test(&self.winkin, self.block_offset, x, y, exact)
-        }
-        #[cfg(not(feature = "winkin"))]
-        {
-            let layout = &self.layout;
-            let point = (x * layout.scale(), (y - self.block_offset) * layout.scale());
-            let (cluster, side) = if exact {
-                Cluster::from_point_exact(layout, point.0, point.1)?
-            } else {
-                Cluster::from_point(layout, point.0, point.1)?
-            };
-            let leading = side == ClusterSide::Left;
-            let byte_offset = if cluster.is_rtl() {
-                if leading {
-                    cluster.text_range().end
-                } else {
-                    cluster.text_range().start
-                }
-            } else if leading || cluster.is_line_break() == Some(BreakReason::Explicit) {
-                cluster.text_range().start
-            } else {
+        let layout = &self.layout;
+        let point = (x * layout.scale(), (y - self.block_offset) * layout.scale());
+        let (cluster, side) = if exact {
+            Cluster::from_point_exact(layout, point.0, point.1)?
+        } else {
+            Cluster::from_point(layout, point.0, point.1)?
+        };
+        let leading = side == ClusterSide::Left;
+        let byte_offset = if cluster.is_rtl() {
+            if leading {
                 cluster.text_range().end
-            };
-            Some(InlineTextHit {
-                node_id: cluster.style().brush.id,
-                byte_offset,
-            })
-        }
+            } else {
+                cluster.text_range().start
+            }
+        } else if leading || cluster.is_line_break() == Some(BreakReason::Explicit) {
+            cluster.text_range().start
+        } else {
+            cluster.text_range().end
+        };
+        Some(InlineTextHit {
+            node_id: cluster.style().brush.id,
+            byte_offset,
+        })
     }
 
-    fn for_each_selection_rect(&self, start: usize, end: usize, f: impl FnMut(Rect)) {
-        #[cfg(feature = "winkin")]
-        {
-            crate::text_winkin::for_each_selection_rect(&self.winkin, start, end, f);
-        }
-        #[cfg(not(feature = "winkin"))]
-        {
-            let mut f = f;
-            let layout = &self.layout;
-            let anchor = Cursor::from_byte_index(layout, start, Affinity::Downstream);
-            let focus = Cursor::from_byte_index(layout, end, Affinity::Downstream);
-            let selection = Selection::new(anchor, focus);
-            selection.geometry_with(layout, |rect, _| {
-                f(Rect::new(rect.x0, rect.y0, rect.x1, rect.y1));
-            });
-        }
+    fn for_each_selection_rect(&self, start: usize, end: usize, mut f: impl FnMut(Rect)) {
+        let layout = &self.layout;
+        let anchor = Cursor::from_byte_index(layout, start, Affinity::Downstream);
+        let focus = Cursor::from_byte_index(layout, end, Affinity::Downstream);
+        let selection = Selection::new(anchor, focus);
+        selection.geometry_with(layout, |rect, _| {
+            f(Rect::new(rect.x0, rect.y0, rect.x1, rect.y1));
+        });
     }
 
     fn fragment_rects(&self, root: &Node, node: &Node) -> impl Iterator<Item = taffy::Rect<f32>> {
@@ -347,25 +283,8 @@ impl InlineText for TextLayout {
             });
         }
 
-        // Under winkin, the box's own parts on each line are its rects.
-        #[cfg(feature = "winkin")]
-        let winkin_rects = self.winkin.layout().map(|winkin| {
-            crate::text_winkin::fragment_rects(
-                winkin,
-                self.winkin.writing_mode(),
-                root,
-                node,
-                origin_x,
-                origin_y,
-                scale,
-            )
-        });
-        #[cfg(not(feature = "winkin"))]
-        let winkin_rects: Option<std::iter::Empty<taffy::Rect<f32>>> = None;
-        let lines = winkin_rects.is_none().then(|| layout.lines());
-
         // One rect per line box: the union of all of the target's fragments on that line
-        let line_rects = lines.into_iter().flatten().filter_map(move |line| {
+        layout.lines().filter_map(move |line| {
             let line_metrics = line.metrics();
             let mut line_rect: Option<taffy::Rect<f32>> = None;
 
@@ -409,8 +328,7 @@ impl InlineText for TextLayout {
                 right: origin_x + rect.right / scale,
                 bottom: origin_y + rect.bottom / scale,
             })
-        });
-        winkin_rects.into_iter().flatten().chain(line_rects)
+        })
     }
 
     fn debug_print(&self) {
@@ -456,7 +374,8 @@ impl InlineText for TextLayout {
 }
 
 impl InlineLayoutEngine for TextLayout {
-    const SETS_WRITING_MODES: bool = cfg!(feature = "winkin");
+    const SETS_WRITING_MODES: bool = false;
+    const READS_ROOM_ABOVE: bool = false;
 
     fn build_layouts(
         cx: &mut TextContext,
@@ -505,12 +424,9 @@ impl InlineLayoutEngine for TextLayout {
         self.holds_nothing()
     }
 
-    fn prepare(
-        &mut self,
-        sizes: &[BoxMeasure],
-        style: Option<&::style::properties::ComputedValues>,
-    ) {
-        self.prepare_lines(sizes, style);
+    fn prepare(&mut self, doc: &mut crate::BaseDocument, root: NodeId, lines: LinesInputs<'_>) {
+        let style = doc.nodes[root].primary_styles();
+        self.prepare_lines(lines.sizes, style.as_deref().map(|style| &**style));
     }
 
     #[inline]
@@ -520,21 +436,22 @@ impl InlineLayoutEngine for TextLayout {
 
     fn break_lines(
         &mut self,
-        width: f32,
+        _cx: &mut TextContext,
+        area: LineArea,
         style: Option<&::style::properties::ComputedValues>,
         exclusions: &mut impl LineExclusions,
     ) {
-        self.break_into_lines(width, style, exclusions);
+        self.break_into_lines(area.width, style, exclusions);
     }
 
     #[inline]
-    fn extent(&self) -> LinesExtent {
+    fn extent(&self, _end_padding: f32) -> LinesExtent {
         self.lines_extent()
     }
 
     #[inline]
-    fn set_block_offset(&mut self, offset: f32) {
-        self.block_offset = offset;
+    fn set_frame(&mut self, block_offset: f32, _content: taffy::Size<f32>) {
+        self.block_offset = block_offset;
     }
 
     fn placements(&self) -> impl Iterator<Item = Placement> {
@@ -546,5 +463,35 @@ impl InlineLayoutEngine for TextLayout {
             Some(baseline) => LastBaseline::At(baseline),
             None => LastBaseline::None,
         }
+    }
+
+    #[inline]
+    fn line_flow(&self) -> LineFlow {
+        LineFlow::Horizontal
+    }
+
+    #[inline]
+    fn place_on_page(&self, along: [f32; 2], across: [f32; 2]) -> (f32, f32) {
+        (along[0], across[0])
+    }
+
+    #[inline]
+    fn room_below(&self) -> f32 {
+        0.0
+    }
+
+    #[inline]
+    fn float_node(key: u64) -> Option<NodeId> {
+        Some(NodeId::from_u64(key))
+    }
+
+    #[inline]
+    fn inline_shift(
+        _doc: &crate::BaseDocument,
+        _node: NodeId,
+        _containing: taffy::Size<f32>,
+        _rtl: bool,
+    ) -> taffy::Point<f32> {
+        taffy::Point::ZERO
     }
 }

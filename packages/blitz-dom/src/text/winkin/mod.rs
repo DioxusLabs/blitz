@@ -1,10 +1,12 @@
-//! Inline formatting contexts laid out by winkin rather than Parley.
+//! The winkin text backend.
 //!
-//! The content of a context is built from the DOM the first time it is laid
-//! out, and again whenever it changes or its atomic inlines measure
-//! differently: winkin takes each atomic inline's size as it is pushed, and
-//! Blitz only knows it once taffy has measured the box.
+//! The content of an inline formatting context is built from the DOM the
+//! first time it is laid out, and again whenever it changes or its atomic
+//! inlines measure differently: winkin takes each atomic inline's size as it
+//! is pushed, and Blitz only knows it once taffy has measured the box.
 
+mod editor;
+mod fonts;
 pub(crate) mod style;
 
 use ::style::context::{CascadeInputs, TreeCountingCaches};
@@ -14,11 +16,11 @@ use ::style::selector_parser::PseudoElement;
 use ::style::servo_arc::Arc as ServoArc;
 use ::style::shared_lock::StylesheetGuards;
 use ::style::stylist::Stylist;
-use ::style::values::computed::{Display, Float};
+use ::style::values::computed::Float;
 use ::style::values::specified::box_::{DisplayInside, DisplayOutside};
 use ::style::values::specified::position::PositionTryFallbacksTryTactic;
 use blitz_traits::node_id::NodeId;
-use fontwich::{Collection, FaceDescriptors, FontBytes, LayerBuilder, Role};
+use fontwich::{Collection, LayerBuilder};
 use kurbo::Affine;
 use markup5ever::{local_name, ns};
 use winkin::style::{
@@ -26,13 +28,30 @@ use winkin::style::{
     UnicodeBidi, VerticalAlign, WritingMode,
 };
 use winkin::{
-    Area, BoxSize, BuildOptions, ComputedBlockStyle, ComputedStyle, Context, Exclusions, FloatSide,
-    IntrinsicSizes, Layout, LayoutBuilder, LineMetrics, NodeKey, OriginalDisplay,
+    Area, BlockExtents, BoxSize, BuildOptions, ComputedBlockStyle, ComputedStyle, Context,
+    Exclusions, ExclusionsCheckpoint, FloatSide, InlineExtents, IntrinsicSizes, Item, Layout,
+    LayoutBuilder, LineMetrics, NodeKey, OriginalDisplay, PlacedFloat,
 };
 
-use crate::layout::replaced::is_replaced_element;
-use crate::node::{ListItemLayout, ListItemLayoutPosition, Marker};
+use super::{
+    ContentWidths, FloatRequest, InlineBoxKind, InlineBuilder, InlineLayoutEngine, InlineText,
+    LastBaseline, LineArea, LineExclusions, LineFlow, LinesExtent, LinesInputs, MarkerEngine,
+    Placement, SpanKind,
+};
+use crate::layout::inline::push_inline_content;
+use crate::layout::text_transform::PushedText;
+use crate::node::{InlineContent, InlineTextHit, Marker};
 use crate::{BaseDocument, Node, NodeData};
+
+/// The fontwich crate, for the renderer and for hosts that build fonts.
+pub use ::fontwich;
+/// The winkin crate, for the renderer's winkin painter.
+pub use ::winkin;
+pub use editor::TextEditor;
+pub use fonts::FontContext;
+
+/// An outside list marker, laid out by winkin.
+pub type MarkerLayout = TextLayout;
 
 /// The key of a block's `::first-letter` box, which has no node of its own:
 /// the block's node with this bit set.
@@ -42,80 +61,29 @@ pub const FIRST_LETTER_KEY: u64 = 1 << 62;
 /// the block's node with this bit set.
 pub const MARKER_KEY: u64 = 1 << 61;
 
-/// The fonts winkin chooses from, and the context it builds and breaks in.
+/// What a document keeps for its text under winkin: the fonts winkin chooses from, and the
+/// context it builds and breaks in.
 ///
 /// The platform's fonts and the fonts Blitz ships are the collection's
 /// lower layers; a document's `@font-face` fonts are a layer of their own
 /// above them, which a face joins as it loads, the context being handed
 /// the new collection.
-pub(crate) struct WinkinFonts {
+pub struct TextContext {
     /// What every layout is built and broken with.
     pub(crate) cx: Context,
     /// The fonts the document was handed, which its iframes are handed too.
-    pub(crate) given: Collection,
+    given: FontContext,
     /// The installed and shipped fonts.
     base: Collection,
     /// The document's `@font-face` faces.
     document: LayerBuilder,
+    /// The collection the context has, which font metrics are read from.
+    metrics: std::sync::Arc<std::sync::RwLock<Collection>>,
 }
 
-/// The platform's fonts where Blitz is built to read them.
-///
-/// Listing them reads every installed font file. Build one collection and
-/// hand clones of it to each document through
-/// [`DocumentConfig::winkin_fonts`](crate::DocumentConfig::winkin_fonts).
-pub fn system_fonts() -> Collection {
-    #[cfg(feature = "system-fonts")]
-    return Collection::system();
-    #[cfg(not(feature = "system-fonts"))]
-    return Collection::new();
-}
-
-impl WinkinFonts {
-    /// The `given` fonts, and the bullet font list markers are set in.
-    pub(crate) fn new(given: Collection) -> Self {
-        let mut shipped = LayerBuilder::new(Role::Application);
-        let _ = shipped.add_data(FontBytes::from(crate::BULLET_FONT));
-        let base = given.clone().with_layer(shipped.snapshot());
-        let document = LayerBuilder::new(Role::Document);
-        let cx = Context::new(base.clone().with_layer(document.snapshot()));
-        Self {
-            cx,
-            given,
-            base,
-            document,
-        }
-    }
-
-    /// Adds a web font that has loaded, under its `@font-face` rule's
-    /// descriptors, and hands the context the collection with it.
-    ///
-    /// A rule with no family, or bytes that are not a font, adds nothing, as
-    /// CSS falls back past a face whose download is no font.
-    pub(crate) fn add_face(
-        &mut self,
-        bytes: impl AsRef<[u8]> + Send + Sync + 'static,
-        family: Option<&str>,
-        descriptors: FaceDescriptors,
-    ) {
-        let bytes = FontBytes::new(bytes);
-        let added = match family {
-            Some(family) => self
-                .document
-                .add_face(family, descriptors, Some((bytes, 0)))
-                .is_ok(),
-            None => self.document.add_data(bytes).is_ok(),
-        };
-        if added {
-            self.cx
-                .set_collection(self.base.clone().with_layer(self.document.snapshot()));
-        }
-    }
-}
-
-/// What winkin holds for one inline formatting context.
+/// An inline formatting context laid out by winkin.
 #[derive(Default)]
-pub struct WinkinText {
+pub struct TextLayout {
     /// The content, and its lines once they are broken. Its allocations are
     /// reused by the next build.
     layout: Layout,
@@ -125,7 +93,7 @@ pub struct WinkinText {
     laid: bool,
     /// What the atomic inlines and floats were built at, in content order,
     /// and what percentages of the containing block were resolved against.
-    boxes: Vec<BoxMeasure>,
+    boxes: Vec<BuiltBox>,
     basis: f32,
     /// The computed styles painted with that no node of the content's is
     /// styled in.
@@ -134,12 +102,15 @@ pub struct WinkinText {
     writing_mode: WritingMode,
     /// Device pixels per CSS pixel used to build the layout.
     scale: f32,
+    /// Block-axis offset (in CSS px) of the line boxes from the top of the
+    /// container's content box, as applied by `align-content`.
+    pub(crate) block_offset: f32,
     /// The size of the content box the lines were last placed in, in device pixels.
     content_size: kurbo::Size,
 }
 
 /// A copy starts empty, and is built again the first time it is laid out.
-impl Clone for WinkinText {
+impl Clone for TextLayout {
     fn clone(&self) -> Self {
         Self::default()
     }
@@ -164,30 +135,21 @@ struct PaintStyles {
     marks: Vec<(u64, Layout)>,
 }
 
-/// An atomic inline or a float as taffy measured it.
+/// An atomic inline or a float as the content was built with it.
 #[derive(Copy, Clone, PartialEq, Debug)]
-pub(crate) struct BoxMeasure {
+pub(crate) struct BuiltBox {
     pub(crate) node: u64,
     /// Its border box in device pixels, and its baseline where it has one.
     pub(crate) size: BoxSize,
 }
 
-impl WinkinText {
-    pub fn scale(&self) -> f32 {
-        self.scale
+impl std::fmt::Debug for TextLayout {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "TextLayout")
     }
+}
 
-    /// Records the size of the content box the lines are placed in, in device pixels.
-    pub(crate) fn set_content_size(&mut self, size: kurbo::Size) {
-        self.content_size = size;
-    }
-
-    /// The baseline of the first line, in CSS pixels below the top of the content box, where
-    /// the lines move `block_offset` CSS pixels down it.
-    pub(crate) fn first_baseline(&self, block_offset: f32) -> Option<f32> {
-        let line = self.layout()?.lines().next()?;
-        Some(line.metrics().baseline / self.scale + block_offset)
-    }
+impl TextLayout {
     /// Drops the built content, keeping its allocations, so that it is built
     /// again.
     pub(crate) fn invalidate(&mut self) {
@@ -281,12 +243,12 @@ impl WinkinText {
 
     /// Whether the content is built, with atomic inlines and floats
     /// measured as `sizes` are and percentages taken of `basis`.
-    pub(crate) fn is_built_with(&self, sizes: &[BoxMeasure], basis: f32) -> bool {
+    pub(crate) fn is_built_with(&self, sizes: &[BuiltBox], basis: f32) -> bool {
         self.built && self.boxes == sizes && self.basis == basis
     }
 
     /// Returns the content's min-content and max-content widths.
-    pub(crate) fn content_widths(&self) -> IntrinsicSizes {
+    pub(crate) fn intrinsic_widths(&self) -> IntrinsicSizes {
         if self.built {
             self.layout.intrinsic_sizes()
         } else {
@@ -417,11 +379,11 @@ pub(crate) fn build(
     nodes: &crate::NodeTree,
     cascade: Cascade<'_>,
     cx: &mut Context,
-    text: &mut WinkinText,
+    text: &mut TextLayout,
     scale: f32,
     basis: f32,
     root_id: NodeId,
-    sizes: &[BoxMeasure],
+    sizes: &[BuiltBox],
 ) {
     let root = &nodes[root_id];
     let key = NodeKey(root_id.as_u64());
@@ -536,44 +498,12 @@ pub(crate) fn build(
     }
     text.writing_mode = block.writing_mode;
 
-    let WinkinText { layout, styles, .. } = text;
+    let TextLayout { layout, styles, .. } = text;
     let mut options = BuildOptions::default();
     // Hit testing needs to map a layout position back to its DOM node.
     options.map_source = true;
-    let mut builder = layout.builder(key, &block, options);
-
-    // A marker inside the list item comes before its content, in the bullet
-    // font where it is a bullet.
-    if let Some(ListItemLayout {
-        marker,
-        position: ListItemLayoutPosition::Inside,
-    }) = root
-        .element_data()
-        .and_then(|element| element.list_item_data.as_deref())
-    {
-        let marker_key = NodeKey(MARKER_KEY | root_id.as_u64());
-        styles.marker = Some(root_computed.clone());
-        match marker {
-            Marker::Char(char) => {
-                let lists = style::FontLists::of(&root_computed, &feature_values)
-                    .with_families_first(&BULLET_FAMILIES);
-                let bullet = unboxed(style::computed_style(
-                    &lists,
-                    &root_computed,
-                    scale,
-                    basis,
-                    language,
-                ));
-                builder.open_box(marker_key, &bullet, None);
-                builder.text(marker_key, &format!("{char} "));
-                builder.close_box();
-            }
-            Marker::String(string) => builder.text(marker_key, string),
-        }
-    }
-
-    let mut walk = Walk {
-        nodes,
+    let mut builder = WinkinBuilder {
+        builder: layout.builder(key, &block, options),
         cascade,
         root,
         boxes: sizes,
@@ -583,21 +513,21 @@ pub(crate) fn build(
         marked: Vec::new(),
         scale,
         basis,
+        parents: vec![Parent {
+            computed: root_computed,
+            first_line: first_line_computed,
+            language,
+            is_root: true,
+        }],
     };
-    let parent = Parent {
-        computed: &root_computed,
-        first_line: first_line_computed.as_ref(),
-        language,
-        is_root: true,
-    };
-    for child_id in children_and_pseudos(root) {
-        walk.node(&mut builder, parent, child_id);
-    }
-    let Walk {
+    push_inline_content(nodes, root, &mut builder);
+    let WinkinBuilder {
+        builder,
         marked,
         feature_values,
+        styles,
         ..
-    } = walk;
+    } = builder;
     builder.finish(cx);
     for (node, computed, language) in marked {
         if let Some(layout) = emphasis_mark(cx, &computed, &feature_values, scale, basis, language)
@@ -673,35 +603,25 @@ fn unboxed(style: ComputedStyle<'_>) -> ComputedStyle<'_> {
     }
 }
 
-/// A node's `::before` pseudo-element, its children, and its `::after`, in
-/// tree order.
-fn children_and_pseudos(node: &Node) -> impl Iterator<Item = NodeId> + '_ {
-    node.before()
-        .into_iter()
-        .chain(node.children.iter().copied())
-        .chain(node.after())
-}
-
-/// What a node's children are set in: the box around them.
-#[derive(Copy, Clone)]
-struct Parent<'a> {
-    computed: &'a ServoArc<ComputedValues>,
+/// What a box's children are set in: the box around them.
+struct Parent {
+    computed: ServoArc<ComputedValues>,
     /// Its style on the first formatted line, where the block has a
     /// `::first-line`.
-    first_line: Option<&'a ServoArc<ComputedValues>>,
+    first_line: Option<ServoArc<ComputedValues>>,
     language: Option<Language>,
     /// Whether it is the block itself.
     is_root: bool,
 }
 
-/// Walking the DOM into a builder.
-struct Walk<'a> {
-    nodes: &'a crate::NodeTree,
+/// A winkin layout builder, as the walk of the DOM pushes into it.
+struct WinkinBuilder<'a, 'b> {
+    builder: LayoutBuilder<'b>,
     cascade: Cascade<'a>,
     /// The block the content is for.
     root: &'a Node,
-    boxes: &'a [BoxMeasure],
-    styles: &'a mut PaintStyles,
+    boxes: &'a [BuiltBox],
+    styles: &'b mut PaintStyles,
     /// The block's `::first-letter` style, until its letter is found.
     first_letter: Option<ServoArc<ComputedValues>>,
     /// The document's `@font-feature-values` rules.
@@ -711,29 +631,15 @@ struct Walk<'a> {
     marked: Vec<(u64, ServoArc<ComputedValues>, Option<Language>)>,
     scale: f32,
     basis: f32,
+    /// The boxes open around what is pushed next, the block's first.
+    parents: Vec<Parent>,
 }
 
-impl Walk<'_> {
-    /// Whether `node_id` holds an `<rt>`, which decides what an annotation
-    /// container is: the annotation itself, or a wrapper around several.
-    fn holds_annotation(&self, node_id: NodeId) -> bool {
-        self.nodes[node_id].children.iter().any(|child| {
-            matches!(
-                &self.nodes[*child].data,
-                NodeData::Element(element) if element.name.local == local_name!("rt")
-            )
-        })
-    }
-
-    /// Whether `node` is an `<rt>` inside an `<rtc>`, its annotation
-    /// container.
-    fn in_annotation_container(&self, node: &Node) -> bool {
-        node.parent.is_some_and(|parent| {
-            matches!(
-                &self.nodes[parent].data,
-                NodeData::Element(element) if element.name.local == local_name!("rtc")
-            )
-        })
+impl WinkinBuilder<'_, '_> {
+    /// The box what is pushed next is in.
+    fn parent(&self) -> &Parent {
+        // The block itself is never popped.
+        &self.parents[self.parents.len() - 1]
     }
 
     /// The size taffy measured `node` at.
@@ -744,222 +650,17 @@ impl Walk<'_> {
             .map_or(BoxSize::default(), |size| size.size)
     }
 
-    /// Pushes `node_id`, a child of `parent` in the inline formatting
-    /// context.
-    fn node(&mut self, builder: &mut LayoutBuilder<'_>, parent: Parent<'_>, node_id: NodeId) {
-        let node = &self.nodes[node_id];
-        match &node.data {
-            NodeData::Element(element) | NodeData::AnonymousBlock(element) => {
-                if *element.name.local == *"input"
-                    && element.attr(local_name!("type")) == Some("hidden")
-                {
-                    return;
-                }
-                let Some(computed) = node.primary_styles().map(|style| (*style).clone()) else {
-                    return;
-                };
-                let display = node.display_style().unwrap_or(Display::inline());
-                if matches!(
-                    (display.outside(), display.inside()),
-                    (DisplayOutside::None, DisplayInside::None)
-                ) {
-                    return;
-                }
-                let language = own_language(node).unwrap_or(parent.language);
-                // Out of the flow: the content holds its anchor, which takes
-                // no room, and the lines say where its static position is.
-                if computed.clone_position().is_absolutely_positioned() {
-                    let display = if computed.get_box().original_display.outside()
-                        == DisplayOutside::Inline
-                    {
-                        OriginalDisplay::Inline
-                    } else {
-                        OriginalDisplay::Block
-                    };
-                    builder.absolute(NodeKey(node_id.as_u64()), display);
-                    return;
-                }
-                match (display.outside(), display.inside()) {
-                    (DisplayOutside::None, DisplayInside::Contents) => {
-                        // No box, but its children inherit from it: a box
-                        // with no edges and nothing painted, in its style.
-                        self.open_box(
-                            builder,
-                            parent,
-                            node,
-                            &computed,
-                            language,
-                            BoxKind::Contents,
-                        );
-                    }
-                    (DisplayOutside::Inline, DisplayInside::Flow) => {
-                        let tag = &element.name.local;
-                        if is_replaced_element(tag)
-                            || *tag == local_name!("input")
-                            || *tag == local_name!("textarea")
-                            || *tag == local_name!("button")
-                        {
-                            self.atomic(builder, node_id, &computed, language);
-                        } else if *tag == local_name!("br") {
-                            self.first_letter = None;
-                            let key = NodeKey(node_id.as_u64());
-                            match br_clear(&computed, element) {
-                                Some(clear) => builder.line_break_clearing(key, clear),
-                                None => builder.line_break(key),
-                            }
-                        } else if *tag == local_name!("wbr") {
-                            builder.break_opportunity();
-                        } else if *tag == local_name!("rp") {
-                            // The fallback parentheses, for a renderer that
-                            // cannot set ruby. This one can.
-                        } else {
-                            // Ruby is known by its tags: Stylo's servo build
-                            // has no `display: ruby` values, so the elements
-                            // arrive as inline. The container bounds the
-                            // bases and each `<rt>` is the annotation of the
-                            // base before it. The parser has closed any
-                            // `<rt>` the document left open.
-                            let kind = if *tag == local_name!("ruby") {
-                                self.first_letter = None;
-                                BoxKind::Ruby
-                            } else if *tag == local_name!("rt") {
-                                BoxKind::Annotation
-                            } else if *tag == local_name!("rtc") {
-                                // An annotation container is the annotation
-                                // itself where it holds no `<rt>`: the text
-                                // inside it annotates the base before it. One
-                                // that does hold `<rt>`s is transparent, each
-                                // of them an annotation of its own.
-                                if self.holds_annotation(node_id) {
-                                    BoxKind::Contents
-                                } else {
-                                    BoxKind::Annotation
-                                }
-                            } else {
-                                BoxKind::Span
-                            };
-                            self.open_box(builder, parent, node, &computed, language, kind);
-                        }
-                    }
-                    _ => match computed.clone_float() {
-                        Float::None => self.atomic(builder, node_id, &computed, language),
-                        _ => self.float(builder, node_id, &computed, language),
-                    },
-                }
-            }
-            // A text node carries no style of its own: the box it is in is
-            // what sets it, and a painter reads the element it is in.
-            NodeData::Text(data) => {
-                if data.content.is_empty() {
-                    return;
-                }
-                self.arm_first_letter(builder, parent, &data.content);
-                if let Some(element) = node.parent
-                    && style::emphasis_mark_string(parent.computed).is_some()
-                    && !self
-                        .marked
-                        .iter()
-                        .any(|(held, ..)| *held == element.as_u64())
-                {
-                    self.marked
-                        .push((element.as_u64(), parent.computed.clone(), parent.language));
-                }
-                builder.text(NodeKey(node_id.as_u64()), &data.content);
-            }
-            _ => {}
-        }
-    }
-
-    /// Opens an inline box -- a span, a ruby container, an annotation, or
-    /// the box a `display: contents` element's children inherit from -- and
-    /// pushes its children into it.
-    fn open_box(
-        &mut self,
-        builder: &mut LayoutBuilder<'_>,
-        parent: Parent<'_>,
-        node: &Node,
-        computed: &ServoArc<ComputedValues>,
+    /// The style of an atomic inline or a float, `computed`, as winkin sets
+    /// it: where it sits on the line and its margins. Its border and padding
+    /// are inside the border box taffy measured, and taffy paints it.
+    fn boxed_style<'s>(
+        &self,
+        lists: &'s style::FontLists,
+        computed: &'s ComputedValues,
         language: Option<Language>,
-        kind: BoxKind,
-    ) {
-        let node_id = node.id;
-        let key = NodeKey(node_id.as_u64());
-        // On the first line, the same element inheriting from its parent's
-        // `::first-line` instead.
-        let first_line = parent
-            .first_line
-            .map(|first_line| self.cascade.reparent(node, computed, first_line));
-        if let Some(style) = &first_line {
-            self.styles
-                .first_line
-                .push((node_id.as_u64(), style.clone()));
-        }
-        {
-            let lists = style::FontLists::of(computed, &self.feature_values);
-            let own = style::computed_style(&lists, computed, self.scale, self.basis, language);
-            let first_line_lists = first_line
-                .as_deref()
-                .map(|computed| style::FontLists::of(computed, &self.feature_values));
-            let first_line_style = match (&first_line, &first_line_lists) {
-                (Some(computed), Some(lists)) => Some(style::computed_style(
-                    lists, computed, self.scale, self.basis, language,
-                )),
-                _ => None,
-            };
-            match kind {
-                BoxKind::Span => builder.open_box(key, &own, first_line_style.as_ref()),
-                BoxKind::Ruby => builder.open_ruby(key, &own, first_line_style.as_ref()),
-                // An `<rt>` in an `<rtc>` takes the side of its container,
-                // which `ruby-position` applies to.
-                BoxKind::Annotation if self.in_annotation_container(node) => builder
-                    .open_annotation_with_position(
-                        key,
-                        &own,
-                        first_line_style.as_ref(),
-                        style::ruby_position(parent.computed),
-                    ),
-                BoxKind::Annotation => {
-                    builder.open_annotation(key, &own, first_line_style.as_ref())
-                }
-                BoxKind::Contents => {
-                    let first_line_style = first_line_style.map(unboxed);
-                    builder.open_box(key, &unboxed(own), first_line_style.as_ref());
-                }
-            }
-        }
-        let this = Parent {
-            computed,
-            first_line: first_line.as_ref(),
-            language,
-            is_root: false,
-        };
-        for child_id in children_and_pseudos(node) {
-            self.node(builder, this, child_id);
-        }
-        match kind {
-            BoxKind::Span | BoxKind::Contents => builder.close_box(),
-            BoxKind::Ruby => builder.close_ruby(),
-            BoxKind::Annotation => builder.close_annotation(),
-        }
-    }
-
-    /// Pushes an atomic inline, sized as taffy measured it.
-    ///
-    /// Its style says where it sits on the line and its margins; its border
-    /// and padding are inside the border box taffy measured, and taffy paints
-    /// it.
-    fn atomic(
-        &mut self,
-        builder: &mut LayoutBuilder<'_>,
-        node_id: NodeId,
-        computed: &ComputedValues,
-        language: Option<Language>,
-    ) {
-        // A block has one first letter, and it comes before any atomic inline.
-        self.first_letter = None;
-        let lists = style::FontLists::of(computed, &self.feature_values);
-        let own = style::computed_style(&lists, computed, self.scale, self.basis, language);
-        let own = ComputedStyle {
+    ) -> ComputedStyle<'s> {
+        let own = style::computed_style(lists, computed, self.scale, self.basis, language);
+        ComputedStyle {
             edges: EdgesGroup {
                 border: EdgesGroup::INITIAL.border,
                 padding: EdgesGroup::INITIAL.padding,
@@ -967,89 +668,45 @@ impl Walk<'_> {
             },
             paints: false,
             ..own
-        };
-        let size = self.measured(node_id.as_u64());
-        builder.atomic(NodeKey(node_id.as_u64()), &own, None, size);
-    }
-
-    /// Pushes a float, which the block formatting context places when the
-    /// text reaches it, the lines flowing around it.
-    fn float(
-        &mut self,
-        builder: &mut LayoutBuilder<'_>,
-        node_id: NodeId,
-        computed: &ComputedValues,
-        language: Option<Language>,
-    ) {
-        // `inline-start` and `inline-end` are the containing block's
-        // sides, as its direction has them.
-        let rtl = self.root.primary_styles().is_some_and(|block| {
-            block.get_inherited_box().direction == ::style::computed_values::direction::T::Rtl
-        });
-        let side = match (computed.clone_float(), rtl) {
-            (Float::Right, _) | (Float::InlineStart, true) | (Float::InlineEnd, false) => {
-                FloatSide::Right
-            }
-            _ => FloatSide::Left,
-        };
-        let lists = style::FontLists::of(computed, &self.feature_values);
-        let own = style::computed_style(&lists, computed, self.scale, self.basis, language);
-        let own = ComputedStyle {
-            edges: EdgesGroup {
-                border: EdgesGroup::INITIAL.border,
-                padding: EdgesGroup::INITIAL.padding,
-                ..own.edges
-            },
-            paints: false,
-            ..own
-        };
-        let size = self.measured(node_id.as_u64());
-        builder.float(NodeKey(node_id.as_u64()), &own, side, size);
+        }
     }
 
     /// Asks for the block's `::first-letter` before `text`, in the style the
-    /// pseudo-element has in `parent`, the box the text is in, until the
-    /// letter is found.
+    /// pseudo-element has in the box the text is in, until the letter is
+    /// found.
     ///
     /// The builder finds the letter as the text is written; it is found once
     /// a text holds anything but white space and punctuation, and asking
     /// again after is ignored, so the asking stops there.
-    fn arm_first_letter(
-        &mut self,
-        builder: &mut LayoutBuilder<'_>,
-        parent: Parent<'_>,
-        text: &str,
-    ) {
+    fn arm_first_letter(&mut self, text: &str) {
         let Some(pseudo) = &self.first_letter else {
             return;
         };
+        let parent = self.parent();
         let letter = if parent.is_root {
             pseudo.clone()
         } else {
             self.cascade
-                .first_letter(self.root, pseudo, parent.computed)
+                .first_letter(self.root, pseudo, &parent.computed)
         };
         let letter_first_line = parent
             .first_line
+            .as_ref()
             .map(|first_line| self.cascade.first_letter(self.root, pseudo, first_line));
+        let language = parent.language;
         {
             let lists = style::FontLists::of(&letter, &self.feature_values);
-            let style =
-                style::computed_style(&lists, &letter, self.scale, self.basis, parent.language);
+            let style = style::computed_style(&lists, &letter, self.scale, self.basis, language);
             let first_line_lists = letter_first_line
                 .as_deref()
                 .map(|computed| style::FontLists::of(computed, &self.feature_values));
             let first_line_style = match (&letter_first_line, &first_line_lists) {
                 (Some(computed), Some(lists)) => Some(style::computed_style(
-                    lists,
-                    computed,
-                    self.scale,
-                    self.basis,
-                    parent.language,
+                    lists, computed, self.scale, self.basis, language,
                 )),
                 _ => None,
             };
-            builder.set_first_letter(
+            self.builder.set_first_letter(
                 NodeKey(FIRST_LETTER_KEY | self.root.id.as_u64()),
                 &style,
                 first_line_style.as_ref(),
@@ -1062,6 +719,213 @@ impl Walk<'_> {
         {
             self.first_letter = None;
         }
+    }
+}
+
+/// winkin reads no text back: it applies `text-transform` itself.
+impl PushedText for WinkinBuilder<'_, '_> {
+    fn text(&self) -> &str {
+        ""
+    }
+
+    fn has_pending_whitespace(&self) -> bool {
+        false
+    }
+}
+
+impl InlineBuilder for WinkinBuilder<'_, '_> {
+    const TRANSFORMS_TEXT: bool = true;
+    const SETS_RUBY: bool = true;
+
+    /// A marker inside the list item comes before its content, in the bullet
+    /// font where it is a bullet.
+    fn push_marker(&mut self, marker: &Marker) {
+        let root_id = self.root.id;
+        let marker_key = NodeKey(MARKER_KEY | root_id.as_u64());
+        let root = &self.parents[0];
+        let root_computed = root.computed.clone();
+        let language = root.language;
+        self.styles.marker = Some(root_computed.clone());
+        match marker {
+            Marker::Char(char) => {
+                let lists = style::FontLists::of(&root_computed, &self.feature_values)
+                    .with_families_first(&BULLET_FAMILIES);
+                let bullet = unboxed(style::computed_style(
+                    &lists,
+                    &root_computed,
+                    self.scale,
+                    self.basis,
+                    language,
+                ));
+                self.builder.open_box(marker_key, &bullet, None);
+                self.builder.text(marker_key, &format!("{char} "));
+                self.builder.close_box();
+            }
+            Marker::String(string) => self.builder.text(marker_key, string),
+        }
+    }
+
+    /// Opens an inline box -- a span, a ruby container, an annotation, or
+    /// the box a `display: contents` element's children inherit from.
+    fn push_span(&mut self, node: &Node, _style: &ComputedValues, kind: SpanKind) {
+        let Some(computed) = node.primary_styles().map(|style| (*style).clone()) else {
+            return;
+        };
+        let parent = self.parent();
+        let language = own_language(node).unwrap_or(parent.language);
+        let key = NodeKey(node.id.as_u64());
+        // On the first line, the same element inheriting from its parent's
+        // `::first-line` instead.
+        let first_line = parent
+            .first_line
+            .as_ref()
+            .map(|first_line| self.cascade.reparent(node, &computed, first_line));
+        // An `<rt>` in an `<rtc>` takes the side of its container, which
+        // `ruby-position` applies to.
+        let position = match kind {
+            SpanKind::Annotation { in_container: true } => {
+                Some(style::ruby_position(&parent.computed))
+            }
+            _ => None,
+        };
+        if kind == SpanKind::Ruby {
+            self.first_letter = None;
+        }
+        if let Some(style) = &first_line {
+            self.styles
+                .first_line
+                .push((node.id.as_u64(), style.clone()));
+        }
+        {
+            let lists = style::FontLists::of(&computed, &self.feature_values);
+            let own = style::computed_style(&lists, &computed, self.scale, self.basis, language);
+            let first_line_lists = first_line
+                .as_deref()
+                .map(|computed| style::FontLists::of(computed, &self.feature_values));
+            let first_line_style = match (&first_line, &first_line_lists) {
+                (Some(computed), Some(lists)) => Some(style::computed_style(
+                    lists, computed, self.scale, self.basis, language,
+                )),
+                _ => None,
+            };
+            let builder = &mut self.builder;
+            match (kind, position) {
+                (SpanKind::Span, _) => builder.open_box(key, &own, first_line_style.as_ref()),
+                (SpanKind::Ruby, _) => builder.open_ruby(key, &own, first_line_style.as_ref()),
+                (SpanKind::Annotation { .. }, Some(position)) => builder
+                    .open_annotation_with_position(key, &own, first_line_style.as_ref(), position),
+                (SpanKind::Annotation { .. }, None) => {
+                    builder.open_annotation(key, &own, first_line_style.as_ref())
+                }
+                // No box, but its children inherit from it: a box with no
+                // edges and nothing painted, in its style.
+                (SpanKind::Contents, _) => {
+                    let first_line_style = first_line_style.map(unboxed);
+                    builder.open_box(key, &unboxed(own), first_line_style.as_ref());
+                }
+            }
+        }
+        self.parents.push(Parent {
+            computed,
+            first_line,
+            language,
+            is_root: false,
+        });
+    }
+
+    fn pop_span(&mut self, kind: SpanKind) {
+        if self.parents.len() > 1 {
+            self.parents.pop();
+        }
+        match kind {
+            SpanKind::Span | SpanKind::Contents => self.builder.close_box(),
+            SpanKind::Ruby => self.builder.close_ruby(),
+            SpanKind::Annotation { .. } => self.builder.close_annotation(),
+        }
+    }
+
+    /// A text node carries no style of its own: the box it is in is what sets
+    /// it, and a painter reads the element it is in.
+    fn push_text(&mut self, node: &Node, text: &str) {
+        if text.is_empty() {
+            return;
+        }
+        self.arm_first_letter(text);
+        let parent = self.parent();
+        if let Some(element) = node.parent
+            && style::emphasis_mark_string(&parent.computed).is_some()
+            && !self
+                .marked
+                .iter()
+                .any(|(held, ..)| *held == element.as_u64())
+        {
+            let marked = (element.as_u64(), parent.computed.clone(), parent.language);
+            self.marked.push(marked);
+        }
+        self.builder.text(NodeKey(node.id.as_u64()), text);
+    }
+
+    /// Pushes an atomic inline or a float, sized as taffy measured it, or the
+    /// anchor of an absolutely positioned box, which takes no room and whose
+    /// static position the lines find.
+    fn push_inline_box(&mut self, node: &Node, computed: &ComputedValues, kind: InlineBoxKind) {
+        let key = NodeKey(node.id.as_u64());
+        let language = own_language(node).unwrap_or(self.parent().language);
+        match kind {
+            InlineBoxKind::Absolute => {
+                let display =
+                    if computed.get_box().original_display.outside() == DisplayOutside::Inline {
+                        OriginalDisplay::Inline
+                    } else {
+                        OriginalDisplay::Block
+                    };
+                self.builder.absolute(key, display);
+            }
+            InlineBoxKind::Atomic => {
+                // A block has one first letter, and it comes before any atomic
+                // inline.
+                self.first_letter = None;
+                let lists = style::FontLists::of(computed, &self.feature_values);
+                let own = self.boxed_style(&lists, computed, language);
+                let size = self.measured(node.id.as_u64());
+                self.builder.atomic(key, &own, None, size);
+            }
+            InlineBoxKind::Float => {
+                // `inline-start` and `inline-end` are the containing block's
+                // sides, as its direction has them.
+                let rtl = self.root.primary_styles().is_some_and(|block| {
+                    block.get_inherited_box().direction
+                        == ::style::computed_values::direction::T::Rtl
+                });
+                let side = match (computed.clone_float(), rtl) {
+                    (Float::Right, _) | (Float::InlineStart, true) | (Float::InlineEnd, false) => {
+                        FloatSide::Right
+                    }
+                    _ => FloatSide::Left,
+                };
+                let lists = style::FontLists::of(computed, &self.feature_values);
+                let own = self.boxed_style(&lists, computed, language);
+                let size = self.measured(node.id.as_u64());
+                self.builder.float(key, &own, side, size);
+            }
+        }
+    }
+
+    fn push_line_break(&mut self, node: &Node, computed: &ComputedValues) {
+        self.first_letter = None;
+        let key = NodeKey(node.id.as_u64());
+        match node
+            .element_data()
+            .and_then(|element| br_clear(computed, element))
+        {
+            Some(clear) => self.builder.line_break_clearing(key, clear),
+            None => self.builder.line_break(key),
+        }
+    }
+
+    fn push_break_opportunity(&mut self, _node: &Node) -> bool {
+        self.builder.break_opportunity();
+        true
     }
 }
 
@@ -1147,17 +1011,6 @@ fn br_clear(
 /// Whether `computed` is right-to-left.
 fn is_rtl(computed: &ComputedValues) -> bool {
     computed.clone_direction() == ::style::computed_values::direction::T::Rtl
-}
-
-/// What an inline box is opened as.
-#[derive(Copy, Clone, PartialEq)]
-enum BoxKind {
-    Span,
-    Ruby,
-    Annotation,
-    /// No box of its own: `display: contents`, or an annotation container
-    /// around `<rt>`s.
-    Contents,
 }
 
 /// What takes a point of the area the lines were broken in -- along the lines
@@ -1512,12 +1365,10 @@ fn content_pieces(layout: &Layout) -> impl Iterator<Item = crate::node::InlineCo
     })
 }
 
-/// Hit tests physical CSS-pixel coordinates relative to the inline root's content box, whose
-/// lines `block_offset` CSS pixels moves down. `exact` requires the point to be within a line and
-/// its text extent.
+/// Hit tests physical CSS-pixel coordinates relative to the inline root's content box. `exact`
+/// requires the point to be within a line and its text extent.
 pub(crate) fn hit_test(
-    text: &WinkinText,
-    block_offset: f32,
+    text: &TextLayout,
     x: f32,
     y: f32,
     exact: bool,
@@ -1530,7 +1381,10 @@ pub(crate) fn hit_test(
         text.content_size.height,
     );
     let point = page.inverse()
-        * kurbo::Point::new(f64::from(x * scale), f64::from((y - block_offset) * scale));
+        * kurbo::Point::new(
+            f64::from(x * scale),
+            f64::from((y - text.block_offset) * scale),
+        );
     let (inline, block) = (point.x as f32, point.y as f32);
     if exact
         && !layout.lines().any(|line| {
@@ -1555,7 +1409,7 @@ pub(crate) fn hit_test(
 /// Calls `f` with each rectangle that highlights the text between `start` and `end`, in physical
 /// device pixels relative to the content box.
 pub(crate) fn for_each_selection_rect(
-    text: &WinkinText,
+    text: &TextLayout,
     start: usize,
     end: usize,
     mut f: impl FnMut(kurbo::Rect),
@@ -1582,7 +1436,7 @@ pub(crate) fn for_each_selection_rect(
 /// The text between byte offsets `start` and `end` of the laid-out text, as it is copied, in the
 /// pieces of the text it is made of.
 pub(crate) fn selected_text(
-    text: &WinkinText,
+    text: &TextLayout,
     start: usize,
     end: usize,
 ) -> impl Iterator<Item = &str> {
@@ -1625,4 +1479,534 @@ pub(crate) fn fragment_rects(
         right: origin_x + (shift.x + rect.x1 / scale) as f32,
         bottom: origin_y + (shift.y + rect.y1 / scale) as f32,
     })
+}
+
+impl InlineText for TextLayout {
+    #[inline]
+    fn scale(&self) -> f32 {
+        self.scale
+    }
+
+    #[inline]
+    fn block_offset(&self) -> f32 {
+        self.block_offset
+    }
+
+    #[inline]
+    fn text(&self) -> &str {
+        self.layout().map_or("", |layout| layout.text())
+    }
+
+    #[inline]
+    fn text_len(&self) -> usize {
+        self.text().len()
+    }
+
+    fn selected_text(&self, start: usize, end: usize) -> impl Iterator<Item = &str> {
+        selected_text(self, start, end)
+    }
+
+    fn logical_content(&self) -> impl Iterator<Item = InlineContent> {
+        self.layout().into_iter().flat_map(logical_content)
+    }
+
+    fn source_offset(&self, node_id: NodeId, offset: usize) -> Option<usize> {
+        let layout = self.layout()?;
+        let position = layout.position(
+            NodeKey(node_id.as_u64()),
+            offset,
+            winkin::selection::Affinity::Downstream,
+        )?;
+        Some(position.offset)
+    }
+
+    #[inline]
+    fn maps_source(&self) -> bool {
+        true
+    }
+
+    fn first_baseline(&self) -> Option<f32> {
+        let line = self.layout()?.lines().next()?;
+        Some(line.metrics().baseline / self.scale + self.block_offset)
+    }
+
+    fn hit_test(&self, x: f32, y: f32, exact: bool) -> Option<InlineTextHit> {
+        hit_test(self, x, y, exact)
+    }
+
+    fn for_each_selection_rect(&self, start: usize, end: usize, f: impl FnMut(kurbo::Rect)) {
+        for_each_selection_rect(self, start, end, f);
+    }
+
+    fn fragment_rects(&self, root: &Node, node: &Node) -> impl Iterator<Item = taffy::Rect<f32>> {
+        let root_layout = root.unrounded_layout();
+        let content_box_inset = root_layout.padding + root_layout.border;
+        self.layout().into_iter().flat_map(move |layout| {
+            fragment_rects(
+                layout,
+                self.writing_mode,
+                root,
+                node,
+                content_box_inset.left,
+                content_box_inset.top + self.block_offset,
+                self.scale,
+            )
+        })
+    }
+
+    fn debug_print(&self) {
+        let Some(layout) = self.layout() else {
+            println!("Not laid out");
+            return;
+        };
+        println!("Text content: {:?}", layout.text());
+        println!("Lines:");
+        for line in layout.lines() {
+            let metrics = line.metrics();
+            println!(
+                "Line {}: left:{} top:{} width:{} height:{} text:{:?}",
+                line.index(),
+                metrics.left,
+                metrics.top,
+                metrics.width,
+                metrics.height(),
+                line.text_range(),
+            );
+        }
+    }
+}
+
+impl InlineLayoutEngine for TextLayout {
+    const SETS_WRITING_MODES: bool = true;
+    const READS_ROOM_ABOVE: bool = true;
+
+    fn build_layouts(
+        _cx: &mut TextContext,
+        _nodes: &crate::NodeTree,
+        _scale: f32,
+        layouts: &mut [(NodeId, Box<Self>)],
+    ) {
+        // winkin builds the content when the context is next laid out, once
+        // its atomic inlines are measured.
+        for (_, layout) in layouts {
+            layout.invalidate();
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        // The content is built when it is laid out.
+        false
+    }
+
+    fn prepare(&mut self, doc: &mut BaseDocument, root: NodeId, lines: LinesInputs<'_>) {
+        let scale = doc.viewport.scale();
+        // Each border box, and where an atomic inline's baseline is, in device
+        // pixels. In a vertical line a box's height is along it, and it sits on
+        // no baseline of its own.
+        let sizes: Vec<BuiltBox> = lines
+            .sizes
+            .iter()
+            .map(|measured| BuiltBox {
+                node: measured.node.as_u64(),
+                size: if lines.vertical {
+                    BoxSize {
+                        inline: measured.size.height * scale,
+                        block: measured.size.width * scale,
+                        baseline: None,
+                    }
+                } else {
+                    BoxSize {
+                        inline: measured.size.width * scale,
+                        block: measured.size.height * scale,
+                        baseline: measured.baseline.map(|baseline| baseline * scale),
+                    }
+                },
+            })
+            .collect();
+        if self.is_built_with(&sizes, lines.basis) {
+            return;
+        }
+        let guard = doc.guard.read();
+        build(
+            &doc.nodes,
+            Cascade {
+                stylist: &doc.stylist,
+                guards: &StylesheetGuards::same(&guard),
+            },
+            &mut doc.text.cx,
+            self,
+            scale,
+            lines.basis,
+            root,
+            &sizes,
+        );
+    }
+
+    fn content_widths(&mut self) -> ContentWidths {
+        let widths = self.intrinsic_widths();
+        ContentWidths {
+            min: widths.min_content,
+            max: widths.max_content,
+        }
+    }
+
+    fn break_lines(
+        &mut self,
+        cx: &mut TextContext,
+        area: LineArea,
+        _style: Option<&ComputedValues>,
+        exclusions: &mut impl LineExclusions,
+    ) {
+        let area = Area {
+            room_above: area.room_above,
+            block_end: area.block_end,
+            ..Area::new(area.width)
+        };
+        self.lay_out(&mut cx.cx, area, &mut ExclusionsOf(exclusions));
+    }
+
+    fn extent(&self, end_padding: f32) -> LinesExtent {
+        let Some(layout) = self.layout() else {
+            return LinesExtent::default();
+        };
+        let metrics = layout.metrics();
+        LinesExtent {
+            height: metrics.block_end - into_end_padding(layout.room_below(), end_padding),
+            width: layout
+                .lines()
+                .map(|line| {
+                    let metrics = line.metrics();
+                    metrics.left + metrics.width
+                })
+                .fold(0.0, f32::max),
+            first_baseline: metrics.first_baseline,
+            last_baseline: metrics.last_baseline,
+        }
+    }
+
+    fn set_frame(&mut self, block_offset: f32, content: taffy::Size<f32>) {
+        self.block_offset = block_offset;
+        self.content_size = kurbo::Size::new(f64::from(content.width), f64::from(content.height));
+    }
+
+    fn placements(&self) -> impl Iterator<Item = Placement> {
+        let mut placed = Vec::new();
+        if let Some(layout) = self.layout() {
+            if self.is_vertical() {
+                self.vertical_placements(layout, &mut placed);
+            } else {
+                horizontal_placements(layout, &mut placed);
+            }
+        }
+        placed.into_iter()
+    }
+
+    fn line_flow(&self) -> LineFlow {
+        match self.writing_mode {
+            WritingMode::HorizontalTb => LineFlow::Horizontal,
+            WritingMode::VerticalRl => LineFlow::VerticalRl,
+            WritingMode::VerticalLr => LineFlow::VerticalLr,
+            WritingMode::SidewaysRl => LineFlow::SidewaysRl,
+            WritingMode::SidewaysLr => LineFlow::SidewaysLr,
+        }
+    }
+
+    fn place_on_page(&self, along: [f32; 2], across: [f32; 2]) -> (f32, f32) {
+        let content = self.content_size;
+        let (width, height) = (content.width as f32, content.height as f32);
+        let [left, right] = along;
+        let [start, end] = across;
+        match self.writing_mode {
+            WritingMode::VerticalRl | WritingMode::SidewaysRl => (width - end, left),
+            WritingMode::VerticalLr => (start, left),
+            WritingMode::SidewaysLr => (start, height - right),
+            WritingMode::HorizontalTb => (left, start),
+        }
+    }
+
+    fn last_line_baseline(&self) -> LastBaseline {
+        let Some(layout) = self.layout() else {
+            return LastBaseline::Unknown;
+        };
+        if self.is_vertical() {
+            return LastBaseline::Unknown;
+        }
+        match layout.metrics().last_baseline {
+            Some(baseline) => LastBaseline::At(baseline),
+            None => LastBaseline::None,
+        }
+    }
+
+    fn room_below(&self) -> f32 {
+        self.layout().map_or(0.0, |layout| layout.room_below())
+    }
+
+    fn float_node(key: u64) -> Option<NodeId> {
+        // The block's initial letter and its inside marker have no node.
+        (key & (FIRST_LETTER_KEY | MARKER_KEY) == 0).then(|| NodeId::from_u64(key))
+    }
+
+    fn inline_shift(
+        doc: &BaseDocument,
+        node: NodeId,
+        containing: taffy::Size<f32>,
+        rtl: bool,
+    ) -> taffy::Point<f32> {
+        let shift =
+            doc.get_node(node)
+                .and_then(|node| node.parent)
+                .map_or(kurbo::Vec2::ZERO, |parent| {
+                    relative_shift(
+                        doc,
+                        parent.as_u64(),
+                        kurbo::Size::new(f64::from(containing.width), f64::from(containing.height)),
+                        rtl,
+                    )
+                });
+        taffy::Point {
+            x: shift.x as f32,
+            y: shift.y as f32,
+        }
+    }
+}
+
+impl TextLayout {
+    /// What the lines of a vertical layout placed, turned onto the page: each
+    /// atomic inline's margin box, and where each absolutely positioned box
+    /// would have been.
+    fn vertical_placements(&self, layout: &Layout, placed: &mut Vec<Placement>) {
+        let writing_mode = self.writing_mode;
+        let at = |node: u64, (x, y): (f32, f32), rtl| Placement {
+            node: NodeId::from_u64(node),
+            x,
+            top: y,
+            line_top: y,
+            line_bottom: y,
+            block_start: y,
+            rtl,
+        };
+        for line in layout.lines() {
+            let metrics = line.metrics();
+            // `vertical-lr` stacks its lines from the left while each line's
+            // over side is its right.
+            let block = |over: f32, under: f32| {
+                if writing_mode == WritingMode::VerticalLr {
+                    let bottom = metrics.top + metrics.height();
+                    [bottom - under, bottom - over]
+                } else {
+                    [metrics.top + over, metrics.top + under]
+                }
+            };
+            for item in line.items() {
+                if let Item::Atomic(atomic) = item {
+                    let inline = atomic.inline();
+                    let cross = atomic.block();
+                    let page = self.place_on_page(
+                        [metrics.left + inline.left, metrics.left + inline.right],
+                        block(cross.over, cross.under),
+                    );
+                    placed.push(at(atomic.key().0, page, None));
+                }
+            }
+        }
+        // An absolutely positioned box's block-start edge, across the page,
+        // faces right where the lines stack from the right.
+        let from_right = matches!(
+            writing_mode,
+            WritingMode::VerticalRl | WritingMode::SidewaysRl
+        );
+        for position in layout.static_positions() {
+            let page = self.place_on_page(
+                [position.inline, position.inline],
+                [position.block, position.block],
+            );
+            placed.push(at(position.key.0, page, Some(from_right)));
+        }
+    }
+}
+
+/// What the lines of a horizontal layout placed: each atomic inline's margin
+/// box on its line, and where each absolutely positioned box would have been,
+/// as winkin finds its static position: its line box spans the block axis of
+/// an inline-level box's static-position rectangle.
+fn horizontal_placements(layout: &Layout, placed: &mut Vec<Placement>) {
+    for line in layout.lines() {
+        let metrics = line.metrics();
+        for item in line.items() {
+            if let Item::Atomic(atomic) = item {
+                let inline = atomic.inline();
+                let block = atomic.block();
+                placed.push(Placement {
+                    node: NodeId::from_u64(atomic.key().0),
+                    x: metrics.left + inline.left,
+                    top: metrics.top + block.over,
+                    line_top: metrics.top,
+                    line_bottom: metrics.top + metrics.height(),
+                    block_start: metrics.top,
+                    rtl: None,
+                });
+            }
+        }
+    }
+    for at in layout.static_positions() {
+        let bottom = at
+            .line
+            .and_then(|line| layout.line(line))
+            .map_or(at.block, |line| {
+                let metrics = line.metrics();
+                (metrics.top + metrics.height()).max(at.block)
+            });
+        placed.push(Placement {
+            node: NodeId::from_u64(at.key.0),
+            x: at.inline,
+            top: at.block,
+            line_top: at.block,
+            line_bottom: bottom,
+            block_start: at.block,
+            rtl: Some(at.direction == winkin::style::Direction::Rtl),
+        });
+    }
+}
+
+/// How far the last line's ruby annotations and emphasis marks reach into
+/// the block's end padding, `padding` device pixels, where they reach past
+/// its line box: the layout's end counts them, and Chrome lets them into
+/// the padding rather than make the block taller.
+fn into_end_padding(room_below: f32, padding: f32) -> f32 {
+    (-room_below).clamp(0.0, padding.max(0.0))
+}
+
+/// The floats Blitz keeps an inline formatting context's lines clear of, as
+/// winkin asks after them.
+struct ExclusionsOf<'a, E>(&'a mut E);
+
+impl<E: LineExclusions> Exclusions for ExclusionsOf<'_, E> {
+    fn band(&self, _line: usize, block: BlockExtents) -> InlineExtents {
+        let (left, right) = self.0.band(block.start, block.end);
+        InlineExtents { left, right }
+    }
+
+    fn below(&self, top: f32) -> Option<f32> {
+        self.0.below(top)
+    }
+
+    fn place(&mut self, float: winkin::FloatRequest) -> PlacedFloat {
+        let placed = self.0.place(FloatRequest {
+            key: float.key.0,
+            side: match float.side {
+                FloatSide::Left => super::FloatSide::Left,
+                FloatSide::Right => super::FloatSide::Right,
+            },
+            inline_size: float.inline_size,
+            block_size: float.block_size,
+            block_start: float.block_start,
+        });
+        PlacedFloat {
+            inline: InlineExtents {
+                left: placed.left,
+                right: placed.right,
+            },
+            block: BlockExtents {
+                start: placed.top,
+                end: placed.bottom,
+            },
+        }
+    }
+
+    fn checkpoint(&self) -> ExclusionsCheckpoint {
+        ExclusionsCheckpoint(self.0.checkpoint() as u64)
+    }
+
+    fn rewind(&mut self, to: ExclusionsCheckpoint) {
+        self.0.rewind(to.0 as usize);
+    }
+}
+
+/// Builds `content`, the value of the `<input>` or `<textarea>` `node`, into `text`: set in
+/// `computed`, its computed style, with white space preserved and no text transform, so that
+/// offsets in the layout's text are offsets in `content`. The lines wrap at `width` device
+/// pixels, or not at all where it is `None`.
+pub(crate) fn build_plain_text(
+    cx: &mut TextContext,
+    text: &mut TextLayout,
+    node: NodeId,
+    computed: &ComputedValues,
+    content: &str,
+    scale: f32,
+    width: Option<f32>,
+) {
+    let feature_values = style::FeatureValues::default();
+    let lists = style::FontLists::of(computed, &feature_values);
+    let own = style::computed_style(&lists, computed, scale, 0.0, None);
+    let own = ComputedStyle {
+        text: winkin::style::TextGroup {
+            white_space_collapse: winkin::style::WhiteSpaceCollapse::Preserve,
+            wrap_mode: match width {
+                Some(_) => winkin::style::TextWrapMode::Wrap,
+                None => winkin::style::TextWrapMode::NoWrap,
+            },
+            transform: winkin::style::TextGroup::INITIAL.transform,
+            ..own.text
+        },
+        ..own
+    };
+    let block = style::block_style(&own, None, computed, computed, scale);
+    let key = NodeKey(node.as_u64());
+    text.built = false;
+    text.laid = false;
+    text.boxes.clear();
+    text.basis = 0.0;
+    text.scale = scale;
+    text.writing_mode = block.writing_mode;
+    text.styles.first_line.clear();
+    text.styles.first_letter = None;
+    text.styles.marker = None;
+    text.styles.marks.clear();
+    let mut builder = text.layout.builder(key, &block, BuildOptions::default());
+    builder.text(key, content);
+    builder.finish(&mut cx.cx);
+    text.built = true;
+    let area = Area::new(width.unwrap_or(f32::MAX / 4.0));
+    text.lay_out(&mut cx.cx, area, &mut winkin::NoExclusions);
+}
+
+impl MarkerEngine for TextLayout {
+    fn build(
+        cx: &mut TextContext,
+        node: NodeId,
+        computed: &ComputedValues,
+        marker: &Marker,
+        bullet: bool,
+        scale: f32,
+    ) -> Self {
+        let mut text = TextLayout {
+            scale,
+            ..TextLayout::default()
+        };
+        let key = NodeKey(MARKER_KEY | node.as_u64());
+        text.styles.marker = Some(ServoArc::new(computed.clone()));
+        let feature_values = style::FeatureValues::default();
+        let mut lists = style::FontLists::of(computed, &feature_values);
+        if bullet {
+            lists = lists.with_families_first(&BULLET_FAMILIES);
+        }
+        let own = unboxed(style::computed_style(&lists, computed, scale, 0.0, None));
+        let block = ComputedBlockStyle {
+            writing_mode: WritingMode::HorizontalTb,
+            ..ComputedBlockStyle::new(&own)
+        };
+        let mut builder = text.layout.builder(key, &block, BuildOptions::default());
+        match marker {
+            Marker::Char(char) => builder.text(key, char.encode_utf8(&mut [0; 4])),
+            Marker::String(string) => builder.text(key, string),
+        }
+        builder.finish(&mut cx.cx);
+        text.built = true;
+        text.lay_out(
+            &mut cx.cx,
+            Area::new(f32::MAX / 4.0),
+            &mut winkin::NoExclusions,
+        );
+        text
+    }
 }

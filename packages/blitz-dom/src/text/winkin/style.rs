@@ -278,12 +278,7 @@ impl<'a> FontLists<'a> {
             .families
             .list
             .iter()
-            .map(|family| match family {
-                SingleFontFamily::FamilyName(name) => family_name(name.name.as_str()),
-                SingleFontFamily::Generic(generic) => {
-                    FontFamilyName::Generic(generic_family(*generic))
-                }
-            })
+            .map(font_family_name)
             .collect();
         let mut features = Vec::new();
         values.resolve(computed, &mut features);
@@ -314,6 +309,14 @@ impl<'a> FontLists<'a> {
         let rest = std::mem::take(&mut self.families);
         self.families = first.iter().cloned().chain(rest).collect();
         self
+    }
+}
+
+/// A family of `font-family`, as fontwich names it.
+pub(crate) fn font_family_name(family: &SingleFontFamily) -> FontFamilyName<'_> {
+    match family {
+        SingleFontFamily::FamilyName(name) => family_name(name.name.as_str()),
+        SingleFontFamily::Generic(generic) => FontFamilyName::Generic(generic_family(*generic)),
     }
 }
 

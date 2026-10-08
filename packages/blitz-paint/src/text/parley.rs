@@ -5,8 +5,9 @@ use blitz_dom::node::Marker;
 use blitz_dom::text::InlineText as _;
 use blitz_dom::text::parley::parley::{Line, PositionedLayoutItem};
 use blitz_dom::text::parley::{MarkerLayout, TextBrush, TextEditor, TextLayout};
+use blitz_dom::util::ToColorColor as _;
 use blitz_dom::{BaseDocument, NodeId};
-use kurbo::{Affine, Point, Rect};
+use kurbo::{Affine, Point, Rect, Size};
 use peniko::Fill;
 use style::properties::generated::longhands::text_decoration_style::computed_value::T as TextDecorationStyle;
 use style::values::computed::TextDecorationLine;
@@ -14,22 +15,84 @@ use style::values::generics::text::{GenericTextDecorationInset, GenericTextDecor
 
 use super::{
     DecorationRunGeometry, DrawTextContext, LineDecoration, ResolvedDecoration,
-    flush_line_decorations, paint_selection, resolve_decoration_entry,
+    flush_line_decorations, resolve_decoration,
 };
+use crate::SELECTION_COLOR;
 use crate::color::{Color, ToColorColor as _};
-use crate::{FONT_EMBOLDEN_ENABLED, SELECTION_COLOR};
+
+const FONT_EMBOLDEN_ENABLED: bool = cfg!(any(
+    feature = "font-embolden",
+    all(feature = "apple-font-embolden", target_os = "macos"),
+    all(feature = "apple-font-embolden", target_os = "ios"),
+));
+
+/// What the Parley painter keeps between uses: the decorating boxes on the path from the inline
+/// root to the run being painted, and a buffer for that path.
+#[derive(Default)]
+pub(super) struct Scratch {
+    stack: Vec<DecorationStackEntry>,
+    path_scratch: Vec<NodeId>,
+}
+
+/// An element on the current ancestor path (inline root -> run node), caching the
+/// values resolved from its computed style so descending into the same node across
+/// consecutive runs doesn't re-resolve them.
+struct DecorationStackEntry {
+    node_id: NodeId,
+    /// This node's (inherited) text colour, used for the glyphs of runs whose
+    /// innermost node is this one.
+    text_color: Color,
+    /// The decoration this node introduces as a decorating box, if any.
+    decoration: Option<ResolvedDecoration>,
+}
+
+/// Resolve the cached style values for a single node into a [`DecorationStackEntry`].
+fn resolve_decoration_entry(doc: &BaseDocument, node_id: NodeId) -> DecorationStackEntry {
+    let Some(styles) = doc.get_node(node_id).and_then(|node| node.primary_styles()) else {
+        return DecorationStackEntry {
+            node_id,
+            text_color: Color::BLACK,
+            decoration: None,
+        };
+    };
+    DecorationStackEntry {
+        node_id,
+        text_color: styles.get_inherited_text().color.as_color_color(),
+        decoration: resolve_decoration(&styles),
+    }
+}
+
+
+/// Paints the highlight of the selected text between byte offsets `start` and `end` of an inline
+/// formatting context.
+///
+/// `transform` takes the content box's device pixels, moved down by the layout's block offset,
+/// onto the scene.
+fn paint_selection(
+    scene: &mut impl PaintScene,
+    layout: &TextLayout,
+    transform: Affine,
+    start: usize,
+    end: usize,
+) {
+    layout.for_each_selection_rect(start, end, |rect| {
+        scene.fill(Fill::NonZero, transform, SELECTION_COLOR, None, &rect);
+    });
+}
 
 /// Paints an inline formatting context: its inline elements' backgrounds, the selection
 /// highlight, and its text and decorations.
 ///
 /// `transform` takes the content box's device pixels, moved down by the layout's block offset,
-/// onto the scene.
+/// onto the scene. `content_size` is the content box's size in device pixels, which every text
+/// backend's painter is handed and Parley's does not need.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn paint_inline_layout(
     scene: &mut impl PaintScene,
     text_layout: &TextLayout,
     doc: &BaseDocument,
     transform: Affine,
+    _content_size: Size,
     scale: f64,
     root: NodeId,
     selection: Option<(usize, usize)>,
@@ -236,8 +299,10 @@ fn stroke_text<'a>(
     context: &mut DrawTextContext,
 ) {
     let DrawTextContext {
-        stack,
-        path_scratch,
+        backend: Scratch {
+            stack,
+            path_scratch,
+        },
         deco_boxes,
         win_ascent_ratios,
     } = context;

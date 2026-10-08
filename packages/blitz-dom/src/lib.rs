@@ -64,9 +64,6 @@ mod stylo_device;
 mod stylo_to_cursor_icon;
 mod stylo_to_kurbo;
 pub mod text;
-/// Inline formatting contexts laid out by winkin.
-#[cfg(feature = "winkin")]
-pub mod text_winkin;
 pub mod traversal;
 /// Versioned storage for the nodes of the DOM tree.
 mod tree;
@@ -96,8 +93,6 @@ pub use blitz_traits::node_id::NodeId;
 // `Node::final_layout`)
 pub use config::{DocumentConfig, StyleThreading};
 pub use document::{BaseDocument, BoundingRect, DocGuard, DocGuardMut, Document, PlainDocument};
-#[cfg(feature = "winkin")]
-pub use fontwich;
 pub use markup5ever::{
     LocalName, Namespace, NamespaceStaticSet, Prefix, PrefixStaticSet, QualName, local_name,
     namespace_prefix, namespace_url, ns,

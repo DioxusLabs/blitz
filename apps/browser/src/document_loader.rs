@@ -34,11 +34,9 @@ pub struct LoadedDocument {
 }
 
 pub struct DocumentLoader {
-    pub font_ctx: FontContext,
-    /// The fonts winkin lays out with, listed once and shared by every
+    /// The fonts the tab's documents lay out text with, listed once and shared by every
     /// document the tab loads.
-    #[cfg(feature = "winkin")]
-    pub winkin_fonts: blitz_dom::fontwich::Collection,
+    pub font_ctx: FontContext,
     pub net_provider: Arc<StdNetProvider>,
     pub status: Signal<DocumentLoaderStatus>,
     pub history: SyncStore<History>,
@@ -53,8 +51,6 @@ impl DocumentLoader {
 
         Self {
             font_ctx,
-            #[cfg(feature = "winkin")]
-            winkin_fonts: blitz_dom::text_winkin::system_fonts(),
             net_provider,
             status: Signal::new(DocumentLoaderStatus::Idle),
             history,
@@ -79,8 +75,6 @@ impl DocumentLoader {
             shell_provider: Some(consume_context::<Arc<dyn ShellProvider>>()),
             html_parser_provider: Some(Arc::new(HtmlProvider)),
             font_ctx: Some(self.font_ctx.clone()),
-            #[cfg(feature = "winkin")]
-            winkin_fonts: Some(self.winkin_fonts.clone()),
             media_type: None,
             abort_signal,
             ..Default::default()

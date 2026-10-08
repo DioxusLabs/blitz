@@ -15,30 +15,35 @@
 //! Painting is the renderer's part: blitz-paint paints each backend's types in a module of its own,
 //! which [`cfg_text_backend!`](crate::cfg_text_backend) selects.
 
-#[cfg(not(text_parley))]
+#[cfg(not(any(text_parley, text_winkin)))]
 compile_error!("Enable the `parley` feature: Blitz needs a text backend");
 
 use std::borrow::Cow;
-use std::ops::Range;
+use std::ops::{Range, RangeInclusive};
 
 use blitz_traits::net::Bytes;
 use blitz_traits::node_id::NodeId;
 use kurbo::{Rect, Size};
 pub use parlance;
-use parlance::{FontStyle, FontWeight};
+use parlance::{FontFeature, FontStyle, FontVariation, FontWeight, FontWidth, Tag};
 
 use crate::node::{InlineContent, InlineTextHit, Node};
 
 #[cfg(text_parley)]
 pub mod parley;
+#[cfg(text_winkin)]
+pub mod winkin;
 
 #[cfg(text_parley)]
 use self::parley as backend;
+#[cfg(text_winkin)]
+use self::winkin as backend;
 
 /// The fonts documents lay out text with. Clones share their fonts.
 ///
-/// This is the text backend's own type, Parley's `FontContext` under Parley, and its methods
-/// beyond [`TextFonts`] are the backend's: code written for every backend uses [`TextFonts`].
+/// This is the text backend's own type, Parley's `FontContext` under Parley and winkin's under
+/// winkin, and its methods beyond [`TextFonts`] are the backend's: code written for every backend
+/// uses [`TextFonts`].
 pub type FontContext = backend::FontContext;
 /// An inline formatting context, as the text backend lays it out.
 pub type TextLayout = backend::TextLayout;
@@ -51,15 +56,19 @@ pub(crate) type TextContext = backend::TextContext;
 
 /// The text backends Blitz can be built with.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[non_exhaustive]
 pub enum TextBackend {
     /// [Parley](https://github.com/linebender/parley), the `parley` feature.
     Parley,
+    /// [winkin](https://github.com/dfrg/winkin), the `winkin` feature.
+    Winkin,
 }
 
 /// The text backend this build of Blitz lays out text with.
 #[cfg(text_parley)]
 pub const BACKEND: TextBackend = TextBackend::Parley;
+/// The text backend this build of Blitz lays out text with.
+#[cfg(text_winkin)]
+pub const BACKEND: TextBackend = TextBackend::Winkin;
 
 /// Expands the arm for the text backend in use, and drops the others, so that a crate which
 /// holds code for each backend compiles the one blitz-dom was built with.
@@ -71,6 +80,7 @@ pub const BACKEND: TextBackend = TextBackend::Parley;
 /// ```ignore
 /// blitz_dom::cfg_text_backend! {
 ///     parley => { mod parley; use parley as backend; }
+///     winkin => { mod winkin; use winkin as backend; }
 /// }
 /// ```
 #[macro_export]
@@ -87,6 +97,21 @@ macro_rules! cfg_text_backend {
 macro_rules! __text_backend_arms {
     () => {};
     (parley => { $($tokens:tt)* } $($rest:tt)*) => {
+        $($tokens)*
+        $crate::__text_backend_arms! { $($rest)* }
+    };
+    ($other:ident => { $($tokens:tt)* } $($rest:tt)*) => {
+        $crate::__text_backend_arms! { $($rest)* }
+    };
+}
+
+/// Expands the arm of [`cfg_text_backend!`] named for the text backend in use.
+#[cfg(text_winkin)]
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __text_backend_arms {
+    () => {};
+    (winkin => { $($tokens:tt)* } $($rest:tt)*) => {
         $($tokens)*
         $crate::__text_backend_arms! { $($rest)* }
     };
@@ -265,42 +290,149 @@ pub(crate) trait InlineLayoutEngine: InlineText {
         layouts: &mut [(NodeId, Box<Self>)],
     );
 
-    /// Whether the content holds no text and no inline boxes.
+    /// Whether the backend's lines take room over the first line for ruby annotations and
+    /// emphasis marks, which the blocks before lend them: then [`LineArea::room_above`] is worked
+    /// out from those blocks, and [`room_below`](Self::room_below) read from them.
+    const READS_ROOM_ABOVE: bool;
+
+    /// Whether the content is known to hold no text and no inline boxes before it is laid out.
     fn is_empty(&self) -> bool;
 
-    /// Gives the inline boxes the sizes Taffy measured them at, in content order, and readies the
-    /// lines of `style`, the inline root's computed style, to be broken. `text-indent` percentages
-    /// count as zero until the lines are broken, and are then of the width they are broken in.
-    fn prepare(&mut self, sizes: &[BoxMeasure], style: Option<&style::properties::ComputedValues>);
+    /// Readies the content of the inline formatting context rooted at `root` to be broken into
+    /// lines, with its atomic inlines and floats as `lines` says Taffy measured them.
+    /// `text-indent` percentages count as zero until the lines are broken, and are then of the
+    /// width they are broken in.
+    fn prepare(&mut self, doc: &mut crate::BaseDocument, root: NodeId, lines: LinesInputs<'_>);
 
     /// Returns the content's min-content and max-content widths, in device pixels, with its
     /// floats: the widest of them is as wide as the content gets at min-content, and at
     /// max-content each paragraph is as wide as its text and the floats anchored in it.
     fn content_widths(&mut self) -> ContentWidths;
 
-    /// Breaks the content into lines `width` device pixels wide, or as narrow as `exclusions`
-    /// leaves them, placing each float into it as a line reaches it, and aligns them as `style`,
-    /// the inline root's computed style, says.
+    /// Breaks the content into lines in `area`, or as narrow as `exclusions` leaves them, placing
+    /// each float into it as a line reaches it, and aligns them as `style`, the inline root's
+    /// computed style, says.
     fn break_lines(
         &mut self,
-        width: f32,
+        cx: &mut TextContext,
+        area: LineArea,
         style: Option<&style::properties::ComputedValues>,
         exclusions: &mut impl LineExclusions,
     );
 
     /// Returns how far the lines reach and where their baselines are, in device pixels from the
-    /// content box's top.
-    fn extent(&self) -> LinesExtent;
+    /// content box's top, where `end_padding` device pixels of padding after the last line let
+    /// what reaches past it in.
+    fn extent(&self, end_padding: f32) -> LinesExtent;
 
-    /// Sets how far `align-content` moves the line boxes down the content box, in CSS pixels.
-    fn set_block_offset(&mut self, offset: f32);
+    /// Sets how far `align-content` moves the line boxes down the content box, in CSS pixels, and
+    /// the size of the content box the lines are placed in, in device pixels.
+    fn set_frame(&mut self, block_offset: f32, content: taffy::Size<f32>);
 
-    /// Returns where the lines put each inline box, in the order they are on the lines.
+    /// Returns where the lines put each atomic inline and the static position of each absolutely
+    /// positioned box, in the order they are on the lines, on the page: lines that run down the
+    /// page are turned onto the content box [`set_frame`](Self::set_frame) gave.
     fn placements(&self) -> impl Iterator<Item = Placement>;
+
+    /// Returns which way the lines run, as the content was last built.
+    fn line_flow(&self) -> LineFlow;
+
+    #[cfg_attr(any(not(text_winkin), not(feature = "floats")), allow(dead_code))]
+    /// Returns where a box that reaches `along` the lines from `along[0]` to `along[1]` and across
+    /// them from `across[0]` to `across[1]` has its top left on the page, in device pixels.
+    fn place_on_page(&self, along: [f32; 2], across: [f32; 2]) -> (f32, f32);
 
     /// Returns where the last line put its baseline when the lines were last broken, in device
     /// pixels from the content box's top, before `align-content` moved them.
     fn last_line_baseline(&self) -> LastBaseline;
+
+    /// Returns how far below the last line its ruby annotations and emphasis marks leave room for
+    /// the block after, in device pixels; negative where they reach past it.
+    fn room_below(&self) -> f32;
+
+    #[cfg_attr(not(feature = "floats"), allow(dead_code))]
+    /// Returns the node of the float the content holds by `key`, where it is a node's.
+    fn float_node(key: u64) -> Option<NodeId>;
+
+    /// Returns how far `position: relative` on the non-atomic inline boxes around the atomic
+    /// inline `node` moves it, in CSS pixels, where the backend paints them moved: `containing`
+    /// is the inline root's content box in CSS pixels, and `rtl` its direction.
+    fn inline_shift(
+        doc: &crate::BaseDocument,
+        node: NodeId,
+        containing: taffy::Size<f32>,
+        rtl: bool,
+    ) -> taffy::Point<f32>;
+}
+
+/// What a pass of layout needs of an inline formatting context's atomic inlines and floats,
+/// which says how far each is laid out to measure it.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(crate) enum Measure {
+    /// How far each reaches along the line: an intrinsic inline-size pass.
+    InlineSizes,
+    /// Each one's size, and the baselines the lines read: a pass that sets the lines to size the
+    /// block but places nothing.
+    Sizes,
+    /// Each one laid out, as the pass that places them lays them out.
+    Layout,
+}
+
+/// What the content of an inline formatting context is readied with.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct LinesInputs<'a> {
+    /// The atomic inlines and floats as Taffy measured them, in content order.
+    pub(crate) sizes: &'a [BoxMeasure],
+    /// What the pass measured them for.
+    #[allow(dead_code)]
+    pub(crate) pass: Measure,
+    /// The containing block's inline size in CSS pixels, which percentages are of.
+    #[cfg_attr(not(text_winkin), allow(dead_code))]
+    pub(crate) basis: f32,
+    /// Whether the lines run down the page, so that what Taffy measured across the page reaches
+    /// along them.
+    #[cfg_attr(not(text_winkin), allow(dead_code))]
+    pub(crate) vertical: bool,
+}
+
+/// The room an inline formatting context's lines are broken in, in device pixels.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct LineArea {
+    /// How long a line is where no float is in the way.
+    pub(crate) width: f32,
+    /// How much room over the first line its ruby annotations and emphasis marks may take before
+    /// the line moves down for them.
+    pub(crate) room_above: f32,
+    /// Where the content box ends, which `line-clamp: auto` keeps the lines within.
+    pub(crate) block_end: Option<f32>,
+}
+
+/// Which way an inline formatting context's lines run, and the way they stack.
+#[cfg_attr(not(text_winkin), allow(dead_code))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum LineFlow {
+    /// Across the page, stacking down it.
+    Horizontal,
+    /// Down the page, stacking from the right.
+    VerticalRl,
+    /// Down the page, stacking from the left.
+    VerticalLr,
+    /// Down the page with sideways glyphs, stacking from the right.
+    SidewaysRl,
+    /// Up the page, stacking from the left.
+    SidewaysLr,
+}
+
+impl LineFlow {
+    /// Whether the lines run down or up the page.
+    pub(crate) fn is_vertical(self) -> bool {
+        self != Self::Horizontal
+    }
+
+    /// Whether the lines stack from the right.
+    pub(crate) fn stacks_from_right(self) -> bool {
+        matches!(self, Self::VerticalRl | Self::SidewaysRl)
+    }
 }
 
 /// Where a block container's last line box puts its baseline.
@@ -366,6 +498,10 @@ pub(crate) struct Placement {
     pub(crate) line_bottom: f32,
     /// Where a block-level absolutely positioned box would have started.
     pub(crate) block_start: f32,
+    /// Whether an absolutely positioned box's static position faces right to left across the
+    /// page, where the lines say: its inline start's way in a horizontal block, and its block
+    /// start's in a vertical one.
+    pub(crate) rtl: Option<bool>,
 }
 
 /// The side of the block a float goes to.
@@ -413,6 +549,14 @@ pub(crate) trait LineExclusions {
 
     /// Places a float, which later bands account for, and returns where it went.
     fn place(&mut self, float: FloatRequest) -> PlacedFloat;
+
+    /// Returns a checkpoint that [`rewind`](Self::rewind) takes the placements back to.
+    #[cfg_attr(not(text_winkin), allow(dead_code))]
+    fn checkpoint(&self) -> usize;
+
+    /// Takes back the floats placed after `to`, as a trial break that is rejected does.
+    #[cfg_attr(not(text_winkin), allow(dead_code))]
+    fn rewind(&mut self, to: usize);
 }
 
 /// The size and scale of the laid-out text of an `<input>` or `<textarea>`.
@@ -614,19 +758,44 @@ impl TextInputDriver<'_> {
 
 /// The descriptors of an `@font-face` rule that a text backend registers a face by, beyond its
 /// family name, in the font value types the backends share.
+///
+/// A descriptor left out, or one whose `calc()` cannot be resolved without an element, is `None`
+/// or empty: the font's own value.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct FaceDescriptors {
     /// The `font-weight` descriptor, as its lowest and highest weight; a single weight is both.
     pub weight: Option<(FontWeight, FontWeight)>,
+    /// The `font-width` (`font-stretch`) descriptor, as its narrowest and widest width; a single
+    /// width is both.
+    pub width: Option<(FontWidth, FontWidth)>,
     /// The `font-style` descriptor, as its lowest and highest style; only an oblique's angle can
     /// differ between them.
     pub style: Option<(FontStyle, FontStyle)>,
+    /// The code point ranges of the `unicode-range` descriptor; empty where it allows every one.
+    pub unicode_range: Vec<RangeInclusive<u32>>,
+    /// The `font-feature-settings` descriptor.
+    pub feature_settings: Vec<FontFeature>,
+    /// The `font-variation-settings` descriptor.
+    pub variation_settings: Vec<FontVariation>,
+    /// The `size-adjust` descriptor, as a ratio: `1.0` is `100%`.
+    pub size_adjust: Option<f32>,
+    /// The `ascent-override` descriptor, as a fraction of the em.
+    pub ascent_override: Option<f32>,
+    /// The `descent-override` descriptor, as a fraction of the em.
+    pub descent_override: Option<f32>,
+    /// The `line-gap-override` descriptor, as a fraction of the em.
+    pub line_gap_override: Option<f32>,
 }
 
 impl FaceDescriptors {
     /// Reads the descriptors of an `@font-face` rule.
     pub(crate) fn from_rule(descriptors: &style::font_face::Descriptors) -> Self {
         use style::font_face::FontStyleRange;
+        use style::values::specified::font::MetricsOverride;
+        let metric = |value: &Option<MetricsOverride>| match value {
+            Some(MetricsOverride::Override(percentage)) => percentage.0.get(),
+            _ => None,
+        };
         Self {
             weight: descriptors
                 .font_weight
@@ -651,6 +820,62 @@ impl FaceDescriptors {
                     }
                 }
             }),
+            width: descriptors
+                .font_width
+                .as_ref()
+                .and_then(|range| range.compute())
+                .map(|range| {
+                    (
+                        FontWidth::from_percentage(range.0.to_percentage().0 * 100.0),
+                        FontWidth::from_percentage(range.1.to_percentage().0 * 100.0),
+                    )
+                }),
+            unicode_range: descriptors
+                .unicode_range
+                .as_ref()
+                .map(|ranges| ranges.iter().map(|range| range.start..=range.end).collect())
+                .unwrap_or_default(),
+            // The rule's settings are specified values, whose numbers are known once parsed.
+            feature_settings: descriptors
+                .font_feature_settings
+                .as_ref()
+                .map(|settings| {
+                    settings
+                        .0
+                        .iter()
+                        .filter_map(|setting| {
+                            let value = setting.value.resolve()?;
+                            Some(FontFeature::new(
+                                Tag::from_bytes(setting.tag.0.to_be_bytes()),
+                                value.clamp(0, i32::from(u16::MAX)) as u16,
+                            ))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
+            variation_settings: descriptors
+                .font_variation_settings
+                .as_ref()
+                .map(|settings| {
+                    settings
+                        .0
+                        .iter()
+                        .filter_map(|setting| {
+                            Some(FontVariation::new(
+                                Tag::from_bytes(setting.tag.0.to_be_bytes()),
+                                setting.value.get()?,
+                            ))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
+            size_adjust: descriptors
+                .size_adjust
+                .as_ref()
+                .and_then(|percentage| percentage.0.get()),
+            ascent_override: metric(&descriptors.ascent_override),
+            descent_override: metric(&descriptors.descent_override),
+            line_gap_override: metric(&descriptors.line_gap_override),
         }
     }
 }
@@ -717,9 +942,14 @@ mod tests {
         );
     }
 
-    /// The `parley` feature selects Parley.
+    /// The `winkin` feature selects winkin, and otherwise the `parley` feature selects Parley.
     #[test]
-    fn parley_is_the_backend() {
-        assert_eq!(BACKEND, TextBackend::Parley);
+    fn the_feature_selects_the_backend() {
+        let expected = if cfg!(feature = "winkin") {
+            TextBackend::Winkin
+        } else {
+            TextBackend::Parley
+        };
+        assert_eq!(BACKEND, expected);
     }
 }
