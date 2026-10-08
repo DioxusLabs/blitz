@@ -1,7 +1,11 @@
 use anyrender::PaintScene;
-use blitz_dom::{BaseDocument, NodeId, node::TextBrush, util::ToColorColor};
+use blitz_dom::{
+    BaseDocument, NodeId,
+    node::{TextBrush, TextLayout},
+    util::ToColorColor,
+};
 use kurbo::{Affine, BezPath, Cap, Circle, Rect, Stroke};
-use parley::{Affinity, Cursor, Layout, Line, PositionedLayoutItem, Selection};
+use parley::{Line, PositionedLayoutItem};
 use peniko::Fill;
 use std::collections::HashMap;
 use style::properties::generated::longhands::text_decoration_style::computed_value::T as TextDecorationStyle;
@@ -755,23 +759,19 @@ pub(crate) fn stroke_text<'a>(
     }
 }
 
-/// Draw selection highlight rectangles for the given byte range in a layout.
-/// Uses Parley's Selection type for accurate geometry calculation.
+/// Draw selection highlight rectangles from the selected text backend.
 pub(crate) fn draw_text_selection(
     scene: &mut impl PaintScene,
-    layout: &Layout<TextBrush>,
+    layout: &TextLayout,
+    content_size: kurbo::Size,
+    scale: f32,
     transform: Affine,
     selection_start: usize,
     selection_end: usize,
 ) {
-    let anchor = Cursor::from_byte_index(layout, selection_start, Affinity::Downstream);
-    let focus = Cursor::from_byte_index(layout, selection_end, Affinity::Downstream);
-    let selection = Selection::new(anchor, focus);
-
-    selection.geometry_with(layout, |rect, _line_idx| {
-        let rect = kurbo::Rect::new(rect.x0, rect.y0, rect.x1, rect.y1);
+    for rect in layout.selection_rects(selection_start, selection_end, content_size, scale) {
         scene.fill(Fill::NonZero, transform, SELECTION_COLOR, None, &rect);
-    });
+    }
 }
 
 /// One bar of a decoration on a line of winkin-laid text, and the font
