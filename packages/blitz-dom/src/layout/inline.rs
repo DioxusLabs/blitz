@@ -22,7 +22,6 @@ use stylo_taffy::StyleFlags;
 
 use super::resolve_calc_value;
 use crate::layout::LayoutPassState;
-use crate::BaseDocument;
 use crate::node::TextLayout;
 use crate::stylo_to_parley;
 
