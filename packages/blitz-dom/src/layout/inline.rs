@@ -1008,18 +1008,10 @@ impl LayoutPassState<'_> {
                         layout.scrollable_overflow_rect = output.scrollable_overflow_rect;
                         layout.location.x =
                             (ibox.x / scale) + margin.left + container_pb.left + inset_offset.x;
-                        // A box with a baseline is positioned by it, so its border box always
-                        // sits `margin.top` below the margin box (`ibox.y`). Without a baseline
-                        // a negative `margin-top` shrinks the space the box reserves in the
-                        // line but does not move the box itself, which stays anchored to the
-                        // bottom of the reserved space.
-                        let margin_top = if ibox.baseline.is_some() {
-                            margin.top
-                        } else {
-                            margin.top.max(0.0)
-                        };
+                        // Parley positions the margin box; offset to the border box even
+                        // when a negative top margin makes it extend above the margin box.
                         layout.location.y =
-                            (ibox.y / scale) + margin_top + line_box_top + inset_offset.y;
+                            (ibox.y / scale) + margin.top + line_box_top + inset_offset.y;
                         layout.padding = padding; //.map(|p| p / scale);
                         layout.border = border; //.map(|p| p / scale);
 
