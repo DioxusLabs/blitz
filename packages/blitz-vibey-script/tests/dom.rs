@@ -696,7 +696,7 @@ fn cssom_font_face_and_keyframes() {
     );
     assert_eq!(
         text_of_selector(&doc, "#out"),
-        "CSSFontFaceRule|5|\"Foo\"|true|\"Foo\"\
+        "CSSFontFaceRule|5|Foo|true|Foo\
          |CSSKeyframesRule|spin|2|0%|1\
          |3|50% { opacity: 0.5; }|2|100%"
     );
