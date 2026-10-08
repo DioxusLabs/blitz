@@ -250,7 +250,7 @@ impl LayoutPassState<'_> {
             }
             let ancestor = &self.nodes[id];
             if let Some(style) = ancestor.primary_styles() {
-                let display = style.clone_display();
+                let display = style.slow_clone_display();
                 if display.outside() == DisplayOutside::Inline
                     && display.inside() == DisplayInside::Flow
                 {

@@ -44,7 +44,8 @@ impl ElementCx<'_, '_> {
     /// Compute the clip-path BezPath (if any) for this element.
     /// Returns `None` if clip-path is `none` or unsupported.
     pub(super) fn clip_path_shape(&self) -> Option<BezPath> {
-        match self.style.get_clip_path() {
+        let clip_path = self.style.slow_clone_clip_path();
+        match clip_path {
             ClipPath::None => None,
             ClipPath::Url(_) => {
                 // URL references (e.g. `clip-path: url(#myClip)`) are not yet supported
@@ -463,6 +464,8 @@ fn reflect_point(last_control: Option<Point>, cur: Point) -> Point {
 
 /// Resolve an AxisEndPoint to an absolute value.
 /// `ToPosition` is absolute; `ByCoordinate` is relative to `cur_val`.
+/// Position keywords arrive computed to percentages, which `resolve` takes
+/// against the reference box axis.
 fn resolve_axis_endpoint<N>(
     endpoint: &AxisEndPoint<N, N>,
     cur_val: f64,

@@ -393,8 +393,9 @@ impl BaseDocument {
         let text = TextContext::new(config.font_ctx);
 
         // Make sure we turn on stylo features *before* creating the Stylist
-        style_config::set_pref!("layout.css.flexbox-balance.enabled", true);
-        style_config::set_pref!("layout.css.columns.enabled", true);
+        style_config::set_pref!("layout.flexbox.balance", true);
+        style_config::set_pref!("layout.unimplemented", true);
+        style_config::set_pref!("layout.columns.enabled", true);
         style_config::set_pref!("layout.css.basic-shape-shape.enabled", true);
         style_config::set_pref!("layout.css.tree-counting-functions.enabled", true);
         style_config::set_pref!("layout.css.progress-function.enabled", true);
@@ -2191,8 +2192,8 @@ impl BaseDocument {
         }
 
         let style = node.primary_styles()?;
-        let user_select = style.clone_user_select();
-        let keyword = style.get_cursor().keyword;
+        let user_select = style.slow_clone_user_select();
+        let keyword = style.slow_clone_cursor().keyword;
 
         // Return cursor from style if it is non-auto
         if keyword != CursorKind::Auto {
@@ -2983,7 +2984,7 @@ mod hover_invalidation_tests {
     fn text_color(doc: &BaseDocument, id: NodeId) -> String {
         format!(
             "{:?}",
-            doc.nodes[id].primary_styles().unwrap().clone_color()
+            doc.nodes[id].primary_styles().unwrap().slow_clone_color()
         )
     }
 
