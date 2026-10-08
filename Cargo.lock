@@ -8011,7 +8011,7 @@ dependencies = [
 [[package]]
 name = "taffy"
 version = "0.14.0"
-source = "git+https://github.com/DioxusLabs/taffy?rev=8f072ccdca0c35fce64f8c6d97b8f0db2380a22a#8f072ccdca0c35fce64f8c6d97b8f0db2380a22a"
+source = "git+https://github.com/DioxusLabs/taffy?rev=e32f2670c7c9e7e3cb3061da220e8295a15ec764#e32f2670c7c9e7e3cb3061da220e8295a15ec764"
 dependencies = [
  "serde",
  "slotmap",
@@ -10405,6 +10405,7 @@ dependencies = [
  "env_logger",
  "glob",
  "html-escape",
+ "html5ever",
  "image",
  "log",
  "markup5ever",
@@ -10416,11 +10417,13 @@ dependencies = [
  "pollster",
  "rayon",
  "regex",
+ "roxmltree 0.21.1",
  "serde_json",
  "stylo",
  "stylo_traits",
  "supports-hyperlinks",
  "taffy",
+ "tempfile",
  "terminal-link",
  "thread_local",
  "url",
