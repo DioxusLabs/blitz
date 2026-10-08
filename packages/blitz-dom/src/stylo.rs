@@ -150,7 +150,7 @@ impl crate::document::BaseDocument {
         }
         drop(sets);
 
-        // The normal traversal is preceded by an animation-only one, as in Gecko.
+        // The normal traversal is preceded by an animation-only one.
         let root = self.root_element();
         if root.has_animation_only_dirty_descendants()
             || TElement::has_animation_restyle_hints(&root)
