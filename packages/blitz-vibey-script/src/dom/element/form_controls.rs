@@ -1,10 +1,10 @@
-use blitz_dom::text::EditableText as _;
 //! Form-control values, text-input selection, and focus.
 
 use super::attributes::{attr_getter, attr_setter, clear_attr, read_attr, write_attr};
 use crate::dom::js_str;
 use crate::dom::{dom_ctx, this_node_id};
 use blitz_dom::NodeId;
+use blitz_dom::text::EditableText as _;
 use boa_engine::{Context, JsResult, JsValue};
 
 pub(super) fn get_placeholder(
