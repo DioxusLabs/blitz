@@ -8,11 +8,13 @@ use blitz_dom::text::parley::{MarkerLayout, TextBrush, TextEditor, TextLayout};
 use blitz_dom::{BaseDocument, NodeId};
 use kurbo::{Affine, Point, Rect};
 use peniko::Fill;
+use style::properties::generated::longhands::text_decoration_style::computed_value::T as TextDecorationStyle;
 use style::values::computed::TextDecorationLine;
+use style::values::generics::text::{GenericTextDecorationInset, GenericTextDecorationLength};
 
 use super::{
-    DecorationRunGeometry, DrawTextContext, LineDecoration, flush_line_decorations,
-    paint_selection, resolve_decoration_entry,
+    DecorationRunGeometry, DrawTextContext, LineDecoration, ResolvedDecoration,
+    flush_line_decorations, paint_selection, resolve_decoration_entry,
 };
 use crate::color::{Color, ToColorColor as _};
 use crate::{FONT_EMBOLDEN_ENABLED, SELECTION_COLOR};
@@ -256,6 +258,8 @@ fn stroke_text<'a>(
         // draws one decoration per box rather than one stepped segment per differently-sized
         // run. Clearing preserves the allocation for the next line and inline context.
         deco_boxes.clear();
+        // The composing text's underline on this line, spanning its runs.
+        let mut composing: Option<LineDecoration> = None;
 
         for item in line.items() {
             if let PositionedLayoutItem::GlyphRun(glyph_run) = item {
@@ -375,6 +379,21 @@ fn stroke_text<'a>(
                         acc.own = Some(geometry.clone());
                     }
                 }
+
+                // A text input's editor underlines the text an input method is composing.
+                if style.underline.is_some() {
+                    let acc = composing.get_or_insert_with(|| LineDecoration {
+                        node_id: run_node_id,
+                        deco: composition_underline(text_color),
+                        min_x: f64::INFINITY,
+                        max_x: f64::NEG_INFINITY,
+                        own: None,
+                        first: None,
+                    });
+                    acc.min_x = acc.min_x.min(run_x0);
+                    acc.max_x = acc.max_x.max(run_x1);
+                    acc.first.get_or_insert(geometry);
+                }
             }
         }
 
@@ -388,5 +407,32 @@ fn stroke_text<'a>(
             line.metrics().baseline,
             TextDecorationLine::all(),
         );
+        if let Some(composing) = composing.take() {
+            flush_line_decorations(
+                scene,
+                transform,
+                scale,
+                std::slice::from_ref(&composing),
+                win_ascent_ratios,
+                inline_root_id,
+                line.metrics().baseline,
+                TextDecorationLine::all(),
+            );
+        }
+    }
+}
+
+/// The underline under the text an input method is composing: solid, `auto` thick, and in
+/// the text's colour.
+fn composition_underline(color: Color) -> ResolvedDecoration {
+    ResolvedDecoration {
+        line: TextDecorationLine::UNDERLINE,
+        style: TextDecorationStyle::Solid,
+        color,
+        thickness: GenericTextDecorationLength::Auto,
+        underline_offset: None,
+        underline_under: false,
+        underline_from_font: false,
+        inset: GenericTextDecorationInset::Auto,
     }
 }
