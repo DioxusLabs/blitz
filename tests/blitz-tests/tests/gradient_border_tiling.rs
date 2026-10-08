@@ -149,3 +149,54 @@ fn transparent_border_repeat_retains_tiling() {
         "Border blue channel must be blended (~128), got {border_px:?}"
     );
 }
+
+/// Case 4: card_with_transform_scale_does_not_repeat_strip
+///
+/// Under `transform: scale(1.15)`, background tiles must be translated in local
+/// coordinate space before the element transform is applied (`pre_translate`),
+/// rather than after (`then_translate`).
+/// When translated properly in local space, the gradient from red (#ff0000) to blue (#0000ff)
+/// smoothly reaches blue at the right edge, without synthesizing an overlapping repeated
+/// red tile strip inside the border-box.
+#[test]
+fn card_with_transform_scale_does_not_repeat_strip() {
+    let html = r#"<html><body style="margin:0; background:#000000;">
+        <div id="card" style="width: 208px; height: 128px; border: 1px solid rgba(255, 255, 255, 0.2); background-image: linear-gradient(to right, #ff0000, #0000ff); transform: scale(1.15);"></div>
+    </body></html>"#;
+    let buf = render_html(html, 400, 300);
+
+    // Near the right edge inside the scaled card (e.g. x=220, y=60):
+    // The pixel must be predominantly BLUE (#0000ff), NOT RED (#ff0000)!
+    // If the tile stride was not scaled with the element (the `then_translate` bug),
+    // Tile 2 restarted at x=208 in scene space, producing solid RED at x=220.
+    let right_edge_px = pixel_at(&buf, 400, 220, 60);
+    assert!(
+        right_edge_px[2] > 200,
+        "Pixel near right edge must be BLUE [B > 200], got {right_edge_px:?}"
+    );
+    assert!(
+        right_edge_px[0] < 50,
+        "Pixel near right edge must NOT be RED [R < 50], got {right_edge_px:?}"
+    );
+}
+
+/// Case 5: handles_pop_scale_and_rotate_does_not_leave_gap
+///
+/// Under `transform: scale(1.35) rotate(180deg)` with `background-repeat: no-repeat`,
+/// the single tile must scale and rotate in sync with the border-box.
+/// It must fill the content box completely without drifting and leaving empty black gaps.
+#[test]
+fn handles_pop_scale_and_rotate_does_not_leave_gap() {
+    let html = r#"<html><body style="margin:0; background:#000000;">
+        <div id="card" style="width: 224px; height: 144px; border: 1px solid rgba(255, 255, 255, 0.2); background-image: linear-gradient(to right, #ff0000, #0000ff); background-repeat: no-repeat; transform: translate(50px, 50px) scale(1.35) rotate(180deg);"></div>
+    </body></html>"#;
+    let buf = render_html(html, 500, 400);
+
+    // Center of card is around x=201, y=147.
+    // Check that inside the card, pixels are filled with gradient colors, not black [0, 0, 0].
+    let center_px = pixel_at(&buf, 500, 201, 147);
+    assert_ne!(
+        center_px, BLACK,
+        "Center of rotated card must be filled, got {center_px:?}"
+    );
+}
