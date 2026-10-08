@@ -10,10 +10,12 @@ homepage = "https://dioxuslabs.com/learn/0.7/getting_started"
 keywords = ["dom", "ui", "gui", "react"]
 
 [features]
-default = ["accessibility", "hot-reload", "net", "html", "svg", "system-fonts", "clipboard", "file-dialog", "vello-hybrid", "woff", "text-transform-icu", "apple-font-embolden"]
+default = ["accessibility", "hot-reload", "net", "html", "svg", "system-fonts", "clipboard", "file-dialog", "vello-hybrid", "woff", "text-transform-icu", "apple-font-embolden", "parley"]
 prelude = ["dep:dioxus-core-macro", "dep:dioxus-hooks", "dep:dioxus-signals", "dep:dioxus-stores", "dep:manganis"]
 
 # DOM features
+# The text backend, which is Parley: on by default, and required.
+parley = ["blitz-dom/parley", "blitz-paint?/parley", "blitz-shell/parley", "blitz-html?/parley", "dioxus-native-dom/parley"]
 svg = ["blitz-dom/svg", "blitz-paint/svg"]
 floats = ["blitz-dom/floats"]
 autofocus = ["blitz-dom/autofocus"]

@@ -11,7 +11,9 @@ edition.workspace = true
 rust-version.workspace = true
 
 [features]
-default = ["svg"]
+default = ["svg", "parley"]
+# The text backend, as blitz-dom's features select it: Parley.
+parley = ["blitz-dom/parley"]
 tracing = ["dep:tracing"]
 svg = ["dep:anyrender_svg", "dep:usvg", "blitz-dom/svg"]
 custom-widget = ["blitz-dom/custom-widget"]
@@ -39,7 +41,6 @@ euclid = { workspace = true }
 taffy = { workspace = true }
 
 # Linebender + WGPU dependencies
-parley = { workspace = true, features = ["bytemuck"] }
 winkin = { workspace = true, optional = true }
 skrifa = { workspace = true }
 color = { workspace = true }
