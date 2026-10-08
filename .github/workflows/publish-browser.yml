@@ -144,11 +144,9 @@ jobs:
           large-packages: false
           swap-storage: false
 
-      - uses: awalsh128/cache-apt-pkgs-action@latest
+      - name: Install Linux dependencies
         if: ${{ startsWith(matrix.platform.os, 'ubuntu') }}
-        with:
-          packages: libfontconfig1-dev
-          version: 1.0
+        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
 
       - name: Bundle browser
         run: dx bundle --package browser --release --profile production --target ${{ matrix.platform.target }} --locked --verbose --trace ${{ matrix.platform.args }}

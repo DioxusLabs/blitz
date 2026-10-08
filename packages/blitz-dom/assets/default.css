@@ -39,7 +39,8 @@
     display: none;
 }
 
-a {
+/* https://html.spec.whatwg.org/#phrasing-content-3: only links are styled */
+a[href] {
     color: rgb(0, 0, 238);
     text-decoration: underline;
 }
