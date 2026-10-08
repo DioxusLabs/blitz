@@ -25,6 +25,8 @@ impl TextBrush {
 pub struct TextLayout {
     pub text: String,
     pub content_widths: Option<ContentWidths>,
+    /// Width and resolved text indent of the most recent reusable line breaking.
+    pub(crate) line_break_key: Option<(f32, f32)>,
     pub layout: parley::layout::Layout<TextBrush>,
     /// Block-axis offset (in CSS px) of the line boxes from the top of the container's content
     /// box, as applied by `align-content`.

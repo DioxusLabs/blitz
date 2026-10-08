@@ -605,8 +605,17 @@ impl LayoutPassState<'_> {
             return LayoutOutput::from_outer_size(clamped_size);
         }
 
+        let can_cache_lines = inline_layout.layout.inline_boxes().len() == 0;
+        #[cfg(feature = "floats")]
+        let has_floats = block_ctx.has_floats();
+        #[cfg(feature = "floats")]
+        let can_cache_lines = can_cache_lines && !has_floats;
+        let line_break_key = can_cache_lines.then_some((width, resolved_text_indent));
+        let reuse_lines =
+            line_break_key.is_some() && inline_layout.line_break_key == line_break_key;
+
         #[cfg(not(feature = "floats"))]
-        {
+        if !reuse_lines {
             inline_layout.layout.break_all_lines(Some(width));
         }
 
@@ -616,15 +625,22 @@ impl LayoutPassState<'_> {
 
         // Perform inline layout
         #[cfg(feature = "floats")]
-        {
+        if !reuse_lines {
+            let initial_slot =
+                has_floats.then(|| block_ctx.find_content_slot(0.0, Clear::None, None));
             let mut breaker = inline_layout.layout.break_lines();
-            let initial_slot = block_ctx.find_content_slot(0.0, Clear::None, None);
-            let mut has_active_floats = initial_slot.segment_id.is_some();
+            let mut has_active_floats = initial_slot
+                .as_ref()
+                .is_some_and(|slot| slot.segment_id.is_some());
             let state = breaker.state_mut();
             state.set_layout_max_advance(width);
-            state.set_line_max_advance(initial_slot.width * scale);
-            state.set_line_x(initial_slot.x * scale);
-            state.set_line_y((initial_slot.y * scale) as f64);
+            if let Some(initial_slot) = initial_slot {
+                state.set_line_max_advance(initial_slot.width * scale);
+                state.set_line_x(initial_slot.x * scale);
+                state.set_line_y((initial_slot.y * scale) as f64);
+            } else {
+                state.set_line_max_advance(width);
+            }
 
             // TODO: revert state and retry layout if a line doesn't fit
             //
@@ -754,6 +770,8 @@ impl LayoutPassState<'_> {
         outer_block_ctx.add_child_floated_content_height_contribution(
             container_pb.top + float_height_contribution,
         );
+
+        inline_layout.line_break_key = line_break_key;
 
         let (alignment, last_line_alignment) = self.nodes[node_id]
             .primary_styles()
