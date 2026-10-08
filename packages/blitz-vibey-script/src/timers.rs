@@ -1,12 +1,13 @@
 //! Timer support (`setTimeout` / `setInterval` / `requestAnimationFrame`)
 
+use blitz_traits::time::Timestamp;
 use boa_engine::JsValue;
 use boa_engine::object::JsObject;
-use web_time::{Duration, Instant};
+use web_time::Duration;
 
 pub(crate) struct Timer {
     pub id: u64,
-    pub deadline: Instant,
+    pub deadline: Timestamp,
     /// `Some` for `setInterval` timers, which reschedule themselves.
     pub interval: Option<Duration>,
     pub callback: JsObject,
@@ -22,7 +23,7 @@ pub(crate) struct TimerQueue {
 impl TimerQueue {
     pub fn add(
         &mut self,
-        now: Instant,
+        now: Timestamp,
         delay: Duration,
         interval: Option<Duration>,
         callback: JsObject,
@@ -45,13 +46,13 @@ impl TimerQueue {
     }
 
     /// The deadline of the timer which is due soonest (if any)
-    pub fn next_deadline(&self) -> Option<Instant> {
+    pub fn next_deadline(&self) -> Option<Timestamp> {
         self.timers.iter().map(|timer| timer.deadline).min()
     }
 
     /// Remove and return all timers that are due at `now`, soonest first.
     /// Interval timers are rescheduled.
-    pub fn take_due(&mut self, now: Instant) -> Vec<Timer> {
+    pub fn take_due(&mut self, now: Timestamp) -> Vec<Timer> {
         let mut due: Vec<Timer> = Vec::new();
         let mut idx = 0;
         while idx < self.timers.len() {
