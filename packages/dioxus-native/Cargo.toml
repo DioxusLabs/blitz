@@ -14,8 +14,9 @@ default = ["accessibility", "hot-reload", "net", "html", "svg", "system-fonts", 
 prelude = ["dep:dioxus-core-macro", "dep:dioxus-hooks", "dep:dioxus-signals", "dep:dioxus-stores", "dep:manganis"]
 
 # DOM features
-# The text backend, which is Parley: on by default, and required.
+# The text backend: Parley (the default) or winkin. With both, Parley is used.
 parley = ["blitz-dom/parley", "blitz-paint?/parley", "blitz-shell/parley", "blitz-html?/parley", "dioxus-native-dom/parley"]
+winkin = ["blitz-dom/winkin", "blitz-paint?/winkin", "blitz-shell/winkin", "blitz-html?/winkin", "dioxus-native-dom/winkin"]
 svg = ["blitz-dom/svg", "blitz-paint/svg"]
 floats = ["blitz-dom/floats"]
 autofocus = ["blitz-dom/autofocus"]
