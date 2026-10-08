@@ -605,8 +605,21 @@ impl LayoutPassState<'_> {
             return LayoutOutput::from_outer_size(clamped_size);
         }
 
+        let can_cache_lines = inline_layout.layout.inline_boxes().len() == 0;
+        #[cfg(feature = "floats")]
+        let initial_slot = block_ctx.find_content_slot(0.0, Clear::None, None);
+        #[cfg(feature = "floats")]
+        let can_cache_lines = can_cache_lines
+            && !block_ctx.has_floats()
+            && initial_slot.width * scale == width
+            && initial_slot.x == 0.0
+            && initial_slot.y == 0.0;
+        let line_break_key = can_cache_lines.then_some((width, resolved_text_indent));
+        let reuse_lines =
+            line_break_key.is_some() && inline_layout.line_break_key == line_break_key;
+
         #[cfg(not(feature = "floats"))]
-        {
+        if !reuse_lines {
             inline_layout.layout.break_all_lines(Some(width));
         }
 
@@ -616,9 +629,8 @@ impl LayoutPassState<'_> {
 
         // Perform inline layout
         #[cfg(feature = "floats")]
-        {
+        if !reuse_lines {
             let mut breaker = inline_layout.layout.break_lines();
-            let initial_slot = block_ctx.find_content_slot(0.0, Clear::None, None);
             let mut has_active_floats = initial_slot.segment_id.is_some();
             let state = breaker.state_mut();
             state.set_layout_max_advance(width);
@@ -754,6 +766,8 @@ impl LayoutPassState<'_> {
         outer_block_ctx.add_child_floated_content_height_contribution(
             container_pb.top + float_height_contribution,
         );
+
+        inline_layout.line_break_key = line_break_key;
 
         let (alignment, last_line_alignment) = self.nodes[node_id]
             .primary_styles()

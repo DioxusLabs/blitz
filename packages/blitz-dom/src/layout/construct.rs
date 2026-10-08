@@ -1041,6 +1041,8 @@ pub(crate) fn build_inline_layout_into(
     scale: f32,
     inline_context_root_node_id: NodeId,
 ) {
+    text_layout.line_break_key = None;
+
     // Get the inline context's root node's text styles
     let root_node = &nodes[inline_context_root_node_id];
     let root_node_style = root_node.primary_styles().or_else(|| {

@@ -231,8 +231,8 @@ impl Node {
         }
     }
 
-    /// Clear this node's taffy layout cache and any cached inline
-    /// `content_widths`, forcing a full relayout of it on the next pass.
+    /// Clear this node's taffy and inline layout caches, forcing a full
+    /// relayout of it on the next pass.
     pub fn invalidate_layout_cache(&mut self) {
         self.clear_layout_cache();
         if let Some(inline_layout) = self
@@ -241,6 +241,7 @@ impl Node {
             .and_then(|el| el.inline_layout_data.as_mut())
         {
             inline_layout.content_widths = None;
+            inline_layout.line_break_key = None;
         }
     }
 
