@@ -1245,6 +1245,10 @@ pub(crate) fn build_inline_layout_into(
 
                             builder.push_style_span(style);
 
+                            if *tag_name == local_name!("wbr") {
+                                builder.push_text("\u{200B}");
+                            }
+
                             if let Some(before_id) = node.before() {
                                 build_inline_layout_recursive(
                                     builder,

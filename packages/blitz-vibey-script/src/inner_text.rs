@@ -79,6 +79,12 @@ fn is_replaced_element(name: &markup5ever::LocalName) -> bool {
     )
 }
 
+/// `<wbr>` is laid out as a zero-width space, which is not part of the rendered text.
+fn is_wbr(node: &Node) -> bool {
+    node.element_data()
+        .is_some_and(|element| element.name.local == local_name!("wbr"))
+}
+
 /// `::before` and `::after` are anonymous nodes referenced by their parent element.
 fn is_generated_pseudo(node: &Node) -> bool {
     node.parent.is_some_and(|parent| {
@@ -196,6 +202,7 @@ impl InnerTextCollector {
             }
             let node = root.with(brush.id);
             let included = !is_generated_pseudo(node)
+                && !is_wbr(node)
                 && filter.is_none_or(|target| is_inclusive_descendant_of(node, target))
                 && node
                     .primary_styles()

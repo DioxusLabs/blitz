@@ -318,6 +318,16 @@ impl OffsetMapper<'_> {
             self.advance('\n', TextTransform::NONE, WhiteSpaceCollapse::Preserve);
             return;
         }
+        if node
+            .element_data()
+            .is_some_and(|element| element.name.local == blitz_dom::local_name!("wbr"))
+        {
+            self.advance(
+                '\u{200B}',
+                TextTransform::NONE,
+                WhiteSpaceCollapse::Preserve,
+            );
+        }
         if let Some(before) = node.before() {
             self.visit(before);
         }
