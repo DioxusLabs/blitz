@@ -849,9 +849,9 @@ impl<T: Deref<Target = ComputedValues>> taffy::GridContainerStyle for TaffyStylo
 
     #[cfg(feature = "grid-lanes")]
     #[inline]
-    fn flow_tolerance(&self) -> taffy::LengthPercentage {
+    fn fit_tolerance(&self) -> taffy::LengthPercentage {
         let font_size = self.style.clone_font_size().used_size().px();
-        convert::flow_tolerance(&self.style.get_position().flow_tolerance, font_size)
+        convert::fit_tolerance(&self.style.get_position().fit_tolerance, font_size)
     }
 
     #[inline]

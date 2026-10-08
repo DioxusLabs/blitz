@@ -51,7 +51,7 @@ pub(crate) mod stylo {
     #[cfg(feature = "block")]
     pub(crate) use style::values::computed::{AlignmentBaseline, BaselineShift};
     #[cfg(feature = "grid-lanes")]
-    pub(crate) use style::values::computed::{GridLanesDirection, length::FlowTolerance};
+    pub(crate) use style::values::computed::{GridLanesDirection, length::FitTolerance};
     #[cfg(feature = "block")]
     pub(crate) use style::values::generics::box_::BaselineShiftKeyword;
     #[cfg(feature = "grid")]
@@ -744,11 +744,11 @@ pub fn grid_lanes_direction(
 /// `normal` is 1em (css-grid-3 §4.2), so the container's font size is resolved here.
 #[inline]
 #[cfg(feature = "grid-lanes")]
-pub fn flow_tolerance(input: &stylo::FlowTolerance, font_size: f32) -> taffy::LengthPercentage {
+pub fn fit_tolerance(input: &stylo::FitTolerance, font_size: f32) -> taffy::LengthPercentage {
     match input {
-        stylo::FlowTolerance::Normal => taffy::LengthPercentage::length(font_size),
-        stylo::FlowTolerance::LengthPercentage(lp) => length_percentage(&lp.0),
-        stylo::FlowTolerance::Infinite => taffy::LengthPercentage::length(f32::INFINITY),
+        stylo::FitTolerance::Normal => taffy::LengthPercentage::length(font_size),
+        stylo::FitTolerance::LengthPercentage(lp) => length_percentage(&lp.0),
+        stylo::FitTolerance::Infinite => taffy::LengthPercentage::length(f32::INFINITY),
     }
 }
 
@@ -1083,8 +1083,8 @@ pub fn to_taffy_style(style: &stylo::ComputedValues) -> taffy::Style<Atom> {
         #[cfg(feature = "grid-lanes")]
         grid_lanes_direction: grid_lanes_direction(pos),
         #[cfg(feature = "grid-lanes")]
-        flow_tolerance: flow_tolerance(
-            &style.clone_flow_tolerance(),
+        fit_tolerance: fit_tolerance(
+            &style.clone_fit_tolerance(),
             style.clone_font_size().used_size().px(),
         ),
         #[cfg(feature = "grid")]
