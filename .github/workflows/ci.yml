@@ -135,7 +135,7 @@ jobs:
           - {
               name: windows,
               target: x86_64-pc-windows-msvc,
-              os: windows-latest,
+              os: warp-windows-2025-x64-8x,
               cross: false,
               command: "test",
               args: "--all --tests",
