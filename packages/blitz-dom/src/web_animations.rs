@@ -325,6 +325,21 @@ impl BaseDocument {
                     continue;
                 };
 
+                // A restyle that changed neither the CSS animations nor the transitions
+                // only affects effects whose values are computed against the style.
+                let css_tasks =
+                    UpdateAnimationsTasks::CSS_ANIMATIONS | UpdateAnimationsTasks::CSS_TRANSITIONS;
+                if !update.tasks.intersects(css_tasks)
+                    && !animations.store.needs_base_values(&target)
+                    && !animations
+                        .store
+                        .animations_of(&target)
+                        .iter()
+                        .any(|id| animations.script_keyframes.contains_key(id))
+                {
+                    continue;
+                }
+
                 if update.tasks.contains(UpdateAnimationsTasks::CSS_ANIMATIONS) {
                     let specified = if style.get_box().clone_display().is_none() {
                         Vec::new()
