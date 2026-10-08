@@ -6,6 +6,7 @@
 use blitz_dom::{BaseDocument, DocumentConfig, NodeId};
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::shell::{ColorScheme, Viewport};
+use blitz_traits::time::Timestamp;
 use std::sync::Arc;
 
 const HTML: &str = r#"<!DOCTYPE html>
@@ -28,7 +29,7 @@ fn make_doc() -> HtmlDocument {
             ..Default::default()
         },
     );
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
     doc
 }
 

@@ -5,6 +5,7 @@
 use blitz_dom::DocumentConfig;
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::shell::{ColorScheme, Viewport};
+use blitz_traits::time::Timestamp;
 use std::sync::Arc;
 
 #[test]
@@ -23,7 +24,7 @@ fn wide_pre_makes_scroller_scrollable() {
             ..Default::default()
         },
     );
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
 
     let pre_id = doc.query_selector("#pre").unwrap().expect("#pre");
     let pre_layout = doc.get_node(pre_id).unwrap().final_layout();

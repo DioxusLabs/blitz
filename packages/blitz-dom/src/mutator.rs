@@ -1352,6 +1352,7 @@ impl Drop for ViewportMut<'_> {
 
 #[cfg(test)]
 mod test {
+    use blitz_traits::time::Timestamp;
     use style::media_queries::MediaType;
     use style::servo_arc::Arc as ServoArc;
     use style_dom::ElementState;
@@ -1706,7 +1707,7 @@ mod test {
             mover_id
         };
 
-        document.resolve(0.0);
+        document.resolve(Timestamp::ZERO);
         assert_eq!(
             document
                 .get_node(mover_id)
@@ -1722,7 +1723,7 @@ mod test {
             mutator.set_style_property(mover_id, "left", "120px");
         }
 
-        document.resolve(0.0);
+        document.resolve(Timestamp::ZERO);
         assert_eq!(
             document
                 .get_node(mover_id)
@@ -1770,7 +1771,7 @@ mod test {
         // Not yet in the rule tree: mutated in place.
         assert!(ServoArc::ptr_eq(&before_resolve, &style_block(&document)));
 
-        document.resolve(0.0);
+        document.resolve(Timestamp::ZERO);
         let in_rule_tree = style_block(&document);
         assert!(
             in_rule_tree
@@ -1794,7 +1795,7 @@ mod test {
             assert_ne!(old, new);
         }
 
-        document.resolve(0.0);
+        document.resolve(Timestamp::ZERO);
         assert_eq!(
             document.get_node(div_id).unwrap().final_layout().size.width,
             200.0

@@ -2,6 +2,7 @@
 
 use blitz_dom::{Document, DocumentConfig};
 use blitz_traits::events::DomEvent;
+use blitz_traits::time::Timestamp;
 use blitz_vibey_script::ScriptDocument;
 use keyboard_types::Modifiers;
 
@@ -342,7 +343,7 @@ fn checkbox_click_fires_input_and_change_events() {
 
     // Resolve style/layout: this constructs the checkbox's internal state
     // (as would happen before rendering in a windowed application)
-    doc.inner_mut().resolve(0.0);
+    doc.inner_mut().resolve(Timestamp::ZERO);
 
     let click_event = {
         let inner = doc.inner();

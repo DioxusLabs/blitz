@@ -2,6 +2,7 @@
 //! `style`, `innerHTML` and friends.
 
 use blitz_dom::{LocalName, NodeId, QualName, ScrollBehavior, ScrollLogicalPosition};
+use blitz_traits::time::Timestamp;
 use boa_engine::object::{JsObject, ObjectInitializer};
 use boa_engine::property::Attribute as PropAttribute;
 use boa_engine::value::JsValue;
@@ -778,7 +779,7 @@ fn get_selection_start(this: &JsValue, _: &[JsValue], context: &mut Context) -> 
     let node_id = this_node_id(this)?;
     let mut doc = ctx.doc.borrow_mut();
     // The text editor is created during layout construction
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
     Ok(match selection_utf16_range(&doc, node_id) {
         Some((start, _)) => JsValue::from(start as u32),
         None => JsValue::null(),
@@ -790,7 +791,7 @@ fn get_selection_end(this: &JsValue, _: &[JsValue], context: &mut Context) -> Js
     let node_id = this_node_id(this)?;
     let mut doc = ctx.doc.borrow_mut();
     // The text editor is created during layout construction
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
     Ok(match selection_utf16_range(&doc, node_id) {
         Some((_, end)) => JsValue::from(end as u32),
         None => JsValue::null(),
@@ -810,7 +811,7 @@ fn set_selection_start(
         .to_number(context)?
         .max(0.0) as usize;
     let mut doc = ctx.doc.borrow_mut();
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
     if let Some((_, end)) = selection_utf16_range(&doc, node_id) {
         set_selection_utf16_range(&mut doc, node_id, start, end.max(start));
     }
@@ -826,7 +827,7 @@ fn set_selection_end(this: &JsValue, args: &[JsValue], context: &mut Context) ->
         .to_number(context)?
         .max(0.0) as usize;
     let mut doc = ctx.doc.borrow_mut();
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
     if let Some((start, _)) = selection_utf16_range(&doc, node_id) {
         set_selection_utf16_range(&mut doc, node_id, start.min(end), end);
     }
@@ -851,7 +852,7 @@ fn set_selection_range(
         .to_number(context)?
         .max(0.0) as usize;
     let mut doc = ctx.doc.borrow_mut();
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
     set_selection_utf16_range(&mut doc, node_id, start, end);
     Ok(JsValue::undefined())
 }
@@ -976,7 +977,7 @@ fn layout_value(
     let ctx = dom_ctx(context)?;
     let node_id = this_node_id(this)?;
     let mut doc = ctx.doc.borrow_mut();
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
     let value = doc.get_node(node_id).map(f).unwrap_or(0.0);
     Ok(JsValue::from(value as f64))
 }
@@ -1025,7 +1026,7 @@ fn client_size(
     let ctx = dom_ctx(context)?;
     let node_id = this_node_id(this)?;
     let mut doc = ctx.doc.borrow_mut();
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
     let Some(node) = doc.get_node(node_id) else {
         return Ok(JsValue::from(0.0));
     };
@@ -1194,7 +1195,7 @@ fn set_scroll_top(this: &JsValue, args: &[JsValue], context: &mut Context) -> Js
     let ctx = dom_ctx(context)?;
     let node_id = this_node_id(this)?;
     let mut doc = ctx.doc.borrow_mut();
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
     let current = current_scroll_offset(&doc, node_id);
     doc.scroll_to(node_id, current.x, value, ScrollBehavior::Auto);
     Ok(JsValue::undefined())
@@ -1205,7 +1206,7 @@ fn set_scroll_left(this: &JsValue, args: &[JsValue], context: &mut Context) -> J
     let ctx = dom_ctx(context)?;
     let node_id = this_node_id(this)?;
     let mut doc = ctx.doc.borrow_mut();
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
     let current = current_scroll_offset(&doc, node_id);
     doc.scroll_to(node_id, value, current.y, ScrollBehavior::Auto);
     Ok(JsValue::undefined())
@@ -1216,7 +1217,7 @@ fn scroll_to_method(this: &JsValue, args: &[JsValue], context: &mut Context) -> 
     let ctx = dom_ctx(context)?;
     let node_id = this_node_id(this)?;
     let mut doc = ctx.doc.borrow_mut();
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
     let current = current_scroll_offset(&doc, node_id);
     doc.scroll_to(
         node_id,
@@ -1232,7 +1233,7 @@ fn scroll_by_method(this: &JsValue, args: &[JsValue], context: &mut Context) -> 
     let ctx = dom_ctx(context)?;
     let node_id = this_node_id(this)?;
     let mut doc = ctx.doc.borrow_mut();
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
     doc.scroll_by(
         node_id,
         parsed.left.unwrap_or(0.0),
@@ -1297,7 +1298,7 @@ fn scroll_into_view(this: &JsValue, args: &[JsValue], context: &mut Context) -> 
     let ctx = dom_ctx(context)?;
     let node_id = this_node_id(this)?;
     let mut doc = ctx.doc.borrow_mut();
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
     doc.scroll_into_view(node_id, behavior, block, inline);
     Ok(JsValue::undefined())
 }
@@ -1329,7 +1330,7 @@ fn get_bounding_client_rect(
 ) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
     let node_id = this_node_id(this)?;
-    ctx.doc.borrow_mut().resolve(0.0);
+    ctx.doc.borrow_mut().resolve(Timestamp::ZERO);
     let rect = ctx.doc.borrow().get_client_bounding_rect(node_id);
     let (x, y, width, height) = match rect {
         Some(rect) => (rect.x, rect.y, rect.width, rect.height),
@@ -1341,7 +1342,7 @@ fn get_bounding_client_rect(
 fn get_client_rects(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
     let node_id = this_node_id(this)?;
-    ctx.doc.borrow_mut().resolve(0.0);
+    ctx.doc.borrow_mut().resolve(Timestamp::ZERO);
 
     // One rect per box fragment: a single border-box rect for nodes with their
     // own layout box, one rect per line box for non-atomic inline elements,

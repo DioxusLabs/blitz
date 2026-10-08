@@ -1,6 +1,7 @@
 //! Enable the dom to participate in styling by servo
 //!
 
+use blitz_traits::Timestamp;
 use blitz_traits::node_id::NodeId;
 use std::ptr::NonNull;
 use std::sync::Mutex;
@@ -60,8 +61,11 @@ use style_dom::ElementState;
 use style::values::computed::text::TextAlign as StyloTextAlign;
 
 impl crate::document::BaseDocument {
-    pub fn resolve_stylist(&mut self, now: f64) {
+    pub fn resolve_stylist(&mut self, now: Timestamp) {
         style::thread_state::enter(ThreadState::LAYOUT);
+
+        // Stylo's animation clock is `f64` seconds in an arbitrary (but consistent) domain
+        let now = now.as_secs_f64();
 
         let guard = &self.guard;
         let guards = StylesheetGuards {

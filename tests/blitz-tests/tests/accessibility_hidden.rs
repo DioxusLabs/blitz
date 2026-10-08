@@ -2,6 +2,7 @@ use accesskit::{Node as AccessKitNode, Role};
 use blitz_dom::DocumentConfig;
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::shell::{ColorScheme, Viewport};
+use blitz_traits::time::Timestamp;
 use std::sync::Arc;
 use test_that::prelude::*;
 
@@ -9,7 +10,7 @@ use test_that::prelude::*;
 fn includes_ordinary_div_as_node() -> TestResult<()> {
     let mut document =
         HtmlDocument::from_html("<html><div></div></html>", default_document_config());
-    document.resolve(0.0);
+    document.resolve(Timestamp::ZERO);
 
     let tree_update = document.build_accessibility_tree();
 
@@ -29,7 +30,7 @@ fn includes_ordinary_div_as_node() -> TestResult<()> {
 fn excludes_div_with_hidden_attribute() -> TestResult<()> {
     let mut document =
         HtmlDocument::from_html("<html><div hidden></div></html>", default_document_config());
-    document.resolve(0.0);
+    document.resolve(Timestamp::ZERO);
 
     let tree_update = document.build_accessibility_tree();
 
@@ -50,7 +51,7 @@ fn excludes_div_with_display_none() -> TestResult<()> {
         r#"<html><div style="display: none;"></div></html>"#,
         default_document_config(),
     );
-    document.resolve(0.0);
+    document.resolve(Timestamp::ZERO);
 
     let tree_update = document.build_accessibility_tree();
 
@@ -71,7 +72,7 @@ fn excludes_div_with_visibility_hidden() -> TestResult<()> {
         r#"<html><div style="visibility: hidden;"></div></html>"#,
         default_document_config(),
     );
-    document.resolve(0.0);
+    document.resolve(Timestamp::ZERO);
 
     let tree_update = document.build_accessibility_tree();
 
@@ -92,7 +93,7 @@ fn sets_hidden_flag_on_element_with_aria_hidden_attribute() -> TestResult<()> {
         r#"<html><div aria-hidden="true"></div></html>"#,
         default_document_config(),
     );
-    document.resolve(0.0);
+    document.resolve(Timestamp::ZERO);
 
     let tree_update = document.build_accessibility_tree();
 
@@ -121,7 +122,7 @@ fn excludes_child_element_of_hidden_element() -> TestResult<()> {
         </html>"#,
         default_document_config(),
     );
-    document.resolve(0.0);
+    document.resolve(Timestamp::ZERO);
 
     let tree_update = document.build_accessibility_tree();
 
