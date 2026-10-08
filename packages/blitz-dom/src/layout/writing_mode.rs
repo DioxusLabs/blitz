@@ -134,8 +134,15 @@ impl LayoutPassState<'_> {
             inputs.known_dimensions_are_definite.height = false;
         }
 
+        let is_intrinsic_inline_measurement = inputs.axis == taffy::RequestedAxis::Horizontal
+            && matches!(
+                inputs.available_space.width,
+                AvailableSpace::MinContent | AvailableSpace::MaxContent
+            );
+
         if inputs.run_mode != RunMode::PerformHiddenLayout
             && inputs.known_dimensions.width.is_none()
+            && !is_intrinsic_inline_measurement
         {
             let inline_size_is_auto =
                 taffy::CoreStyle::size(&self.nodes[dom_node_id(node_id)].layout_style())
