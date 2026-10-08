@@ -201,6 +201,7 @@ pub fn compute_replaced_layout(
         },
     };
 
+    // Percentages are only resolved against zero in the inline axis.
     // See https://www.w3.org/TR/css-sizing-3/#replaced-percentage-min-contribution
     let basis_for_max_and_preferred = Size {
         width: if available_space.width == AvailableSpace::MinContent {
@@ -208,11 +209,7 @@ pub fn compute_replaced_layout(
         } else {
             parent_size.width
         },
-        height: if available_space.height == AvailableSpace::MinContent {
-            Some(0.0)
-        } else {
-            parent_size.height
-        },
+        height: parent_size.height,
     };
 
     // `stretch` fills the containing block (less margins) when its size is definite, and
