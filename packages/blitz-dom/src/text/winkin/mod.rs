@@ -1923,9 +1923,10 @@ impl<E: LineExclusions> Exclusions for ExclusionsOf<'_, E> {
 }
 
 /// Builds `content`, the value of the `<input>` or `<textarea>` `node`, into `text`: set in
-/// `computed`, its computed style, with white space preserved and no text transform, so that
-/// offsets in the layout's text are offsets in `content`. The lines wrap at `width` device
-/// pixels, or not at all where it is `None`.
+/// `computed`, its computed style, with white space preserved (as `break-spaces` where the style
+/// asks for it) and no text transform, so that offsets in the layout's text are offsets in
+/// `content`. The lines wrap at `width` device pixels as the style wraps them, or not at all
+/// where it is `None`.
 pub(crate) fn build_plain_text(
     cx: &mut TextContext,
     text: &mut TextLayout,
@@ -1940,9 +1941,14 @@ pub(crate) fn build_plain_text(
     let own = style::computed_style(&lists, computed, scale, 0.0, None);
     let own = ComputedStyle {
         text: winkin::style::TextGroup {
-            white_space_collapse: winkin::style::WhiteSpaceCollapse::Preserve,
+            white_space_collapse: match own.text.white_space_collapse {
+                winkin::style::WhiteSpaceCollapse::BreakSpaces => {
+                    winkin::style::WhiteSpaceCollapse::BreakSpaces
+                }
+                _ => winkin::style::WhiteSpaceCollapse::Preserve,
+            },
             wrap_mode: match width {
-                Some(_) => winkin::style::TextWrapMode::Wrap,
+                Some(_) => own.text.wrap_mode,
                 None => winkin::style::TextWrapMode::NoWrap,
             },
             transform: winkin::style::TextGroup::INITIAL.transform,
