@@ -4,49 +4,33 @@ use blitz_traits::{
     shell::ShellProvider,
 };
 use keyboard_types::{Key, Modifiers};
-use parley::{ContentWidths, FontContext, LayoutContext};
 
+use crate::text::{
+    Edit, EditEngine as _, EditableText as _, Motion, TextContext, TextEditor, TextInputDriver,
+};
 use crate::util::ACTION_MOD;
 
-#[derive(Debug, Clone, Copy, Default, PartialEq)]
-/// Parley Brush type for Blitz which contains the Blitz node id
-pub struct TextBrush {
-    /// The node id for the span
-    pub id: NodeId,
+pub use crate::text::TextLayout;
+
+/// A position in an inline root's laid-out text.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct InlineTextHit {
+    pub node_id: NodeId,
+    pub byte_offset: usize,
 }
 
-impl TextBrush {
-    pub(crate) fn from_id(id: NodeId) -> Self {
-        Self { id }
-    }
-}
-
-#[derive(Clone, Default)]
-pub struct TextLayout {
-    pub text: String,
-    pub content_widths: Option<ContentWidths>,
-    pub layout: parley::layout::Layout<TextBrush>,
-    /// Block-axis offset (in CSS px) of the line boxes from the top of the container's content
-    /// box, as applied by `align-content`.
-    pub block_offset: f32,
-}
-
-impl TextLayout {
-    pub fn new() -> Self {
-        Default::default()
-    }
-
-    pub fn content_widths(&mut self) -> ContentWidths {
-        *self
-            .content_widths
-            .get_or_insert_with(|| self.layout.calculate_content_widths())
-    }
-}
-
-impl std::fmt::Debug for TextLayout {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "TextLayout")
-    }
+/// A piece of an inline root's laid-out content, in logical order.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum InlineContent<'a> {
+    /// Text of node `node_id`, starting `start` bytes into the layout text. The node is the
+    /// text node, or the element it is in, as the text backend maps the text.
+    Text {
+        node_id: NodeId,
+        start: usize,
+        text: std::borrow::Cow<'a, str>,
+    },
+    /// An inline box.
+    Box(NodeId),
 }
 
 // TODO: support keypress events
@@ -58,8 +42,8 @@ pub enum GeneratedTextInputEvent {
 }
 
 pub struct TextInputData {
-    /// A parley TextEditor instance
-    pub editor: Box<parley::PlainEditor<TextBrush>>,
+    /// The text backend's editor
+    pub editor: Box<TextEditor>,
     /// Whether the input is a singleline or multiline input
     pub is_multiline: bool,
     /// The scroll offset of the text content within the input, in CSS (unscaled) pixels.
@@ -70,7 +54,7 @@ pub struct TextInputData {
     pub scroll_offset: f32,
 }
 
-// FIXME: Implement Clone for PlainEditor
+// FIXME: Implement Clone for the editor
 impl Clone for TextInputData {
     fn clone(&self) -> Self {
         TextInputData::new(self.is_multiline)
@@ -79,7 +63,7 @@ impl Clone for TextInputData {
 
 impl TextInputData {
     pub fn new(is_multiline: bool) -> Self {
-        let editor = Box::new(parley::PlainEditor::new(16.0));
+        let editor = Box::new(<TextEditor as crate::text::EditEngine>::new(is_multiline));
         Self {
             editor,
             is_multiline,
@@ -87,16 +71,8 @@ impl TextInputData {
         }
     }
 
-    pub fn set_text(
-        &mut self,
-        font_ctx: &mut FontContext,
-        layout_ctx: &mut LayoutContext<TextBrush>,
-        text: &str,
-    ) {
-        if self.editor.text() != text {
-            self.editor.set_text(text);
-            self.editor.driver(font_ctx, layout_ctx).refresh_layout();
-        }
+    pub(crate) fn set_text(&mut self, cx: &mut TextContext, text: &str) {
+        self.editor.set_text(cx, text);
     }
 
     /// Recompute [`Self::scroll_offset`] so that the caret stays visible within the input's
@@ -105,15 +81,15 @@ impl TextInputData {
     /// `content_box_width` and `content_box_height` are the dimensions of the input's content
     /// box in CSS (unscaled) pixels.
     pub fn clamp_scroll_offset(&mut self, content_box_width: f32, content_box_height: f32) {
-        let Some(layout) = self.editor.try_layout() else {
+        let Some(size) = self.editor.size() else {
             return;
         };
-        // Parley lays out at the editor's scale, so its geometry is in scaled (device) pixels.
+        // The editor lays out at its scale, so its geometry is in scaled (device) pixels.
         // We convert into CSS (unscaled) pixels to match `scroll_offset` and the content box.
-        let scale = layout.scale();
+        let scale = self.editor.scale();
 
         // The caret geometry relative to the start of the text content.
-        let Some(caret) = self.editor.cursor_geometry(1.5) else {
+        let Some(caret) = self.editor.caret_rect() else {
             return;
         };
 
@@ -122,14 +98,14 @@ impl TextInputData {
             (
                 caret.y0 as f32 / scale,
                 caret.y1 as f32 / scale,
-                layout.height() / scale,
+                size.height as f32 / scale,
                 content_box_height,
             )
         } else {
             (
                 caret.x0 as f32 / scale,
                 caret.x1 as f32 / scale,
-                layout.full_width() / scale,
+                size.width as f32 / scale,
                 content_box_width,
             )
         };
@@ -158,14 +134,14 @@ impl TextInputData {
     /// `content_box_width` and `content_box_height` are the dimensions of the input's content
     /// box in CSS (unscaled) pixels.
     pub fn max_scroll_offset(&self, content_box_width: f32, content_box_height: f32) -> f32 {
-        let Some(layout) = self.editor.try_layout() else {
+        let Some(size) = self.editor.size() else {
             return 0.0;
         };
-        let scale = layout.scale();
+        let scale = self.editor.scale();
         let (content, viewport) = if self.is_multiline {
-            (layout.height() / scale, content_box_height)
+            (size.height as f32 / scale, content_box_height)
         } else {
-            (layout.full_width() / scale, content_box_width)
+            (size.width as f32 / scale, content_box_width)
         };
         (content - viewport).max(0.0)
     }
@@ -197,8 +173,7 @@ impl TextInputData {
 
     pub(crate) fn apply_keypress_event(
         &mut self,
-        font_ctx: &mut FontContext,
-        layout_ctx: &mut LayoutContext<TextBrush>,
+        cx: &mut TextContext,
         shell_provider: &dyn ShellProvider,
         event: BlitzKeyEvent,
     ) -> Option<GeneratedTextInputEvent> {
@@ -212,8 +187,10 @@ impl TextInputData {
         let action_mod = mods.contains(ACTION_MOD);
 
         let is_multiline = self.is_multiline;
-        let editor = &mut self.editor;
-        let mut driver = editor.driver(font_ctx, layout_ctx);
+        let mut driver = TextInputDriver {
+            editor: &mut self.editor,
+            cx,
+        };
         match event.key {
             Key::Character(c) if action_mod && matches!(c.as_str(), "c" | "x" | "v") => {
                 match c.to_lowercase().as_str() {
@@ -225,12 +202,12 @@ impl TextInputData {
                     "x" => {
                         if let Some(text) = driver.editor.selected_text() {
                             let _ = shell_provider.set_clipboard_text(text.to_owned());
-                            driver.delete_selection()
+                            driver.edit(Edit::DeleteSelection)
                         }
                     }
                     "v" => {
                         let text = shell_provider.get_clipboard_text().unwrap_or_default();
-                        driver.insert_or_replace_selection(&text)
+                        driver.edit(Edit::Insert(&text))
                     }
                     _ => unreachable!(),
                 }
@@ -239,89 +216,89 @@ impl TextInputData {
             }
             Key::Character(c) if action_mod && matches!(c.to_lowercase().as_str(), "a") => {
                 if shift {
-                    driver.collapse_selection()
+                    driver.edit(Edit::CollapseSelection)
                 } else {
-                    driver.select_all()
+                    driver.edit(Edit::SelectAll)
                 }
                 return Some(GeneratedTextInputEvent::Select);
             }
             Key::ArrowLeft => {
                 if action_mod {
                     if shift {
-                        driver.select_word_left()
+                        driver.edit(Edit::Extend(Motion::WordLeft))
                     } else {
-                        driver.move_word_left()
+                        driver.edit(Edit::Move(Motion::WordLeft))
                     }
                 } else if shift {
-                    driver.select_left()
+                    driver.edit(Edit::Extend(Motion::Left))
                 } else {
-                    driver.move_left()
+                    driver.edit(Edit::Move(Motion::Left))
                 }
                 return Some(GeneratedTextInputEvent::Select);
             }
             Key::ArrowRight => {
                 if action_mod {
                     if shift {
-                        driver.select_word_right()
+                        driver.edit(Edit::Extend(Motion::WordRight))
                     } else {
-                        driver.move_word_right()
+                        driver.edit(Edit::Move(Motion::WordRight))
                     }
                 } else if shift {
-                    driver.select_right()
+                    driver.edit(Edit::Extend(Motion::Right))
                 } else {
-                    driver.move_right()
+                    driver.edit(Edit::Move(Motion::Right))
                 }
                 return Some(GeneratedTextInputEvent::Select);
             }
             Key::ArrowUp => {
                 if shift {
-                    driver.select_up()
+                    driver.edit(Edit::Extend(Motion::Up))
                 } else {
-                    driver.move_up()
+                    driver.edit(Edit::Move(Motion::Up))
                 }
                 return Some(GeneratedTextInputEvent::Select);
             }
             Key::ArrowDown => {
                 if shift {
-                    driver.select_down()
+                    driver.edit(Edit::Extend(Motion::Down))
                 } else {
-                    driver.move_down()
+                    driver.edit(Edit::Move(Motion::Down))
                 }
                 return Some(GeneratedTextInputEvent::Select);
             }
             Key::Home => {
                 if action_mod {
                     if shift {
-                        driver.select_to_text_start()
+                        driver.edit(Edit::Extend(Motion::TextStart))
                     } else {
-                        driver.move_to_text_start()
+                        driver.edit(Edit::Move(Motion::TextStart))
                     }
                 } else if shift {
-                    driver.select_to_line_start()
+                    driver.edit(Edit::Extend(Motion::LineStart))
                 } else {
-                    driver.move_to_line_start()
+                    driver.edit(Edit::Move(Motion::LineStart))
                 }
                 return Some(GeneratedTextInputEvent::Select);
             }
             Key::End => {
                 if action_mod {
                     if shift {
-                        driver.select_to_text_end()
+                        driver.edit(Edit::Extend(Motion::TextEnd))
                     } else {
-                        driver.move_to_text_end()
+                        driver.edit(Edit::Move(Motion::TextEnd))
                     }
                 } else if shift {
-                    driver.select_to_line_end()
+                    driver.edit(Edit::Extend(Motion::LineEnd))
                 } else {
-                    driver.move_to_line_end()
+                    driver.edit(Edit::Move(Motion::LineEnd))
                 }
                 return Some(GeneratedTextInputEvent::Select);
             }
             Key::Delete => {
                 if action_mod {
-                    driver.delete_word()
+                    driver.edit(Edit::DeleteWord)
                 } else {
-                    driver.delete()
+                    driver.edit(Edit::Delete)
                 }
                 return Some(GeneratedTextInputEvent::Input);
             }
@@ -330,16 +307,16 @@ impl TextInputData {
             #[cfg(not(target_os = "macos"))]
             Key::Backspace => {
                 if action_mod {
-                    driver.backdelete_word()
+                    driver.edit(Edit::BackdeleteWord)
                 } else {
-                    driver.backdelete()
+                    driver.edit(Edit::Backdelete)
                 }
                 return Some(GeneratedTextInputEvent::Input);
             }
 
             Key::Character(c) if c == "\n" => {
                 if is_multiline {
-                    driver.insert_or_replace_selection("\n");
+                    driver.edit(Edit::Insert("\n"));
                     return Some(GeneratedTextInputEvent::Input);
                 } else {
                     return Some(GeneratedTextInputEvent::Submit);
@@ -347,7 +324,7 @@ impl TextInputData {
             }
             Key::Enter => {
                 if is_multiline {
-                    driver.insert_or_replace_selection("\n");
+                    driver.edit(Edit::Insert("\n"));
                     return Some(GeneratedTextInputEvent::Input);
                 } else {
                     return Some(GeneratedTextInputEvent::Submit);
@@ -356,7 +333,7 @@ impl TextInputData {
             Key::Character(s)
                 if !mods.contains(Modifiers::CONTROL) && !mods.contains(Modifiers::SUPER) =>
             {
-                driver.insert_or_replace_selection(&s);
+                driver.edit(Edit::Insert(&s));
                 return Some(GeneratedTextInputEvent::Input);
             }
             _ => {}
@@ -367,14 +344,15 @@ impl TextInputData {
 
     pub(crate) fn apply_apple_standard_keybinding(
         &mut self,
-        font_ctx: &mut FontContext,
-        layout_ctx: &mut LayoutContext<TextBrush>,
+        cx: &mut TextContext,
         shell_provider: &dyn ShellProvider,
         command: &str,
     ) -> Option<GeneratedTextInputEvent> {
-        let editor = &mut self.editor;
-        let mut driver = editor.driver(font_ctx, layout_ctx);
         let is_multiline = self.is_multiline;
+        let mut driver = TextInputDriver {
+            editor: &mut self.editor,
+            cx,
+        };
 
         match command {
             // Inserting Content
@@ -385,18 +363,18 @@ impl TextInputData {
             "insertContainerBreak:" => {}
             // Inserts a double quotation mark without substituting a curly quotation mark.
             "insertDoubleQuoteIgnoringSubstitution:" => {
-                driver.insert_or_replace_selection("\"");
+                driver.edit(Edit::Insert("\""));
                 return Some(GeneratedTextInputEvent::Input);
             }
             // Inserts a line break character.
             "insertLineBreak:" => {
-                driver.insert_or_replace_selection("\n");
+                driver.edit(Edit::Insert("\n"));
                 return Some(GeneratedTextInputEvent::Input);
             }
             // Inserts a newline character.
             "insertNewline:" => {
                 if is_multiline {
-                    driver.insert_or_replace_selection("\n");
+                    driver.edit(Edit::Insert("\n"));
                     return Some(GeneratedTextInputEvent::Input);
                 } else {
                     return Some(GeneratedTextInputEvent::Submit);
@@ -404,16 +382,16 @@ impl TextInputData {
             }
             // Inserts a newline character without invoking the field editor’s normal handling to end editing.
             "insertNewlineIgnoringFieldEditor:" => {
-                driver.insert_or_replace_selection("\n");
+                driver.edit(Edit::Insert("\n"));
                 return Some(GeneratedTextInputEvent::Input);
             }
             // Inserts a paragraph separator.
             "insertParagraphSeparator:" => {
-                driver.insert_or_replace_selection("\n");
+                driver.edit(Edit::Insert("\n"));
                 return Some(GeneratedTextInputEvent::Input);
             }
             "insertSingleQuoteIgnoringSubstitution:" => {
-                driver.insert_or_replace_selection("'");
+                driver.edit(Edit::Insert("'"));
                 return Some(GeneratedTextInputEvent::Input);
             }
             // Inserts a tab character.
@@ -428,60 +406,60 @@ impl TextInputData {
             // Deletes content moving backward from the current insertion point.
             // TODO: handle deleteBackwardByDecomposingPreviousCharacter separately
             "deleteBackward:" | "deleteBackwardByDecomposingPreviousCharacter:" => {
-                driver.backdelete();
+                driver.edit(Edit::Backdelete);
                 return Some(GeneratedTextInputEvent::Input);
             }
             "deleteForward:" => {
-                driver.delete();
+                driver.edit(Edit::Delete);
                 return Some(GeneratedTextInputEvent::Input);
             }
             // Deletes content from the insertion point to the beginning of the current line.
             "deleteToBeginningOfLine:" => {
-                if driver.editor.raw_selection().is_collapsed() {
-                    driver.select_to_line_start();
+                if driver.editor.is_selection_collapsed() {
+                    driver.edit(Edit::Extend(Motion::LineStart));
                 }
-                driver.delete_selection();
+                driver.edit(Edit::DeleteSelection);
                 return Some(GeneratedTextInputEvent::Input);
             }
             // Deletes content from the insertion point to the beginning of the current paragraph.
             "deleteToEndOfLine:" => {
-                if driver.editor.raw_selection().is_collapsed() {
-                    driver.select_to_line_end();
+                if driver.editor.is_selection_collapsed() {
+                    driver.edit(Edit::Extend(Motion::LineEnd));
                 }
-                driver.delete_selection();
+                driver.edit(Edit::DeleteSelection);
                 return Some(GeneratedTextInputEvent::Input);
             }
             "deleteToBeginningOfParagraph:" => {
-                if driver.editor.raw_selection().is_collapsed() {
-                    driver.select_to_hard_line_start();
+                if driver.editor.is_selection_collapsed() {
+                    driver.edit(Edit::Extend(Motion::HardLineStart));
                 }
-                driver.delete_selection();
+                driver.edit(Edit::DeleteSelection);
                 return Some(GeneratedTextInputEvent::Input);
             }
 
             // Deletes content from the insertion point to the end of the current line.
             "deleteToEndOfParagraph:" => {
-                if driver.editor.raw_selection().is_collapsed() {
-                    driver.select_to_hard_line_end();
+                if driver.editor.is_selection_collapsed() {
+                    driver.edit(Edit::Extend(Motion::HardLineEnd));
                 }
-                driver.delete_selection();
+                driver.edit(Edit::DeleteSelection);
                 return Some(GeneratedTextInputEvent::Input);
             }
             // Deletes content from the insertion point to the end of the current paragraph.
             "deleteWordBackward:" => {
-                driver.backdelete_word();
+                driver.edit(Edit::BackdeleteWord);
                 return Some(GeneratedTextInputEvent::Input);
             }
             // Deletes the word preceding the current insertion point.
             "deleteWordForward:" => {
-                driver.delete_word();
+                driver.edit(Edit::DeleteWord);
                 return Some(GeneratedTextInputEvent::Input);
             }
             // Deletes the current selection, placing it in a temporary buffer, such as the Clipboard.
             "yank:" => {
                 if let Some(text) = driver.editor.selected_text() {
                     let _ = shell_provider.set_clipboard_text(text.to_owned());
-                    driver.delete_selection();
+                    driver.edit(Edit::DeleteSelection);
                     return Some(GeneratedTextInputEvent::Input);
                 }
             }
@@ -490,34 +468,34 @@ impl TextInputData {
 
             // Moves the insertion pointer backward in the current content.
             "moveBackward:" => {
-                driver.move_left(); // TODO: Bidi-aware
+                driver.edit(Edit::Move(Motion::Left)); // TODO: Bidi-aware
                 return Some(GeneratedTextInputEvent::Select);
             }
 
             // Moves the insertion pointer down in the current content.
             "moveDown:" => {
-                driver.move_down();
+                driver.edit(Edit::Move(Motion::Down));
                 return Some(GeneratedTextInputEvent::Select);
             }
             // Moves the insertion pointer forward in the current content.
             "moveForward:" => {
-                driver.move_right();
+                driver.edit(Edit::Move(Motion::Right));
                 return Some(GeneratedTextInputEvent::Select);
             } // TODO: Bidi-aware
 
             // Moves the insertion pointer left in the current content.
             "moveLeft:" => {
-                driver.move_left();
+                driver.edit(Edit::Move(Motion::Left));
                 return Some(GeneratedTextInputEvent::Select);
             }
             // Moves the insertion pointer right in the current content.
             "moveRight:" => {
-                driver.move_right();
+                driver.edit(Edit::Move(Motion::Right));
                 return Some(GeneratedTextInputEvent::Select);
             }
             // Moves the insertion pointer up in the current content.
             "moveUp:" => {
-                driver.move_up();
+                driver.edit(Edit::Move(Motion::Up));
                 return Some(GeneratedTextInputEvent::Select);
             }
 
@@ -525,48 +503,48 @@ impl TextInputData {
 
             // Extends the selection to include the content before the current selection.
             "moveBackwardAndModifySelection:" => {
-                driver.select_left(); // TODO: Bidi-aware
+                driver.edit(Edit::Extend(Motion::Left)); // TODO: Bidi-aware
                 return Some(GeneratedTextInputEvent::Select);
             }
             // Extends the selection to include the content below the current selection.
             "moveDownAndModifySelection:" => {
-                driver.select_down();
+                driver.edit(Edit::Extend(Motion::Down));
                 return Some(GeneratedTextInputEvent::Select);
             }
             // Extends the selection to include the content after the current selection.
             "moveForwardAndModifySelection:" => {
-                driver.select_right(); // TODO: Bidi-aware
+                driver.edit(Edit::Extend(Motion::Right)); // TODO: Bidi-aware
                 return Some(GeneratedTextInputEvent::Select);
             }
             // Extends the selection to include the content to the left of the current selection.
             "moveLeftAndModifySelection:" => {
-                driver.select_left();
+                driver.edit(Edit::Extend(Motion::Left));
                 return Some(GeneratedTextInputEvent::Select);
             }
             // Extends the selection to include the content to the right of the current selection.
             "moveRightAndModifySelection:" => {
-                driver.select_right();
+                driver.edit(Edit::Extend(Motion::Right));
                 return Some(GeneratedTextInputEvent::Select);
             }
             // Extends the selection to include the content above the current selection.
             "moveUpAndModifySelection:" => {
-                driver.select_up();
+                driver.edit(Edit::Extend(Motion::Up));
                 return Some(GeneratedTextInputEvent::Select);
             }
 
             // Changing the Selection
             "selectAll:" => {
-                driver.select_all();
+                driver.edit(Edit::SelectAll);
                 return Some(GeneratedTextInputEvent::Select);
             }
             "selectLine:" => {
-                driver.move_to_line_start();
-                driver.select_to_line_end();
+                driver.edit(Edit::Move(Motion::LineStart));
+                driver.edit(Edit::Extend(Motion::LineEnd));
                 return Some(GeneratedTextInputEvent::Select);
             }
             "selectParagraph:" => {
-                driver.move_to_hard_line_start();
-                driver.select_to_hard_line_end();
+                driver.edit(Edit::Move(Motion::HardLineStart));
+                driver.edit(Edit::Extend(Motion::HardLineEnd));
                 return Some(GeneratedTextInputEvent::Select);
             }
             "selectWord:" => {
@@ -575,19 +553,19 @@ impl TextInputData {
 
             // Moving the Selection in Documents
             "moveToBeginningOfDocument:" => {
-                driver.move_to_text_start();
+                driver.edit(Edit::Move(Motion::TextStart));
                 return Some(GeneratedTextInputEvent::Select);
             }
             "moveToBeginningOfDocumentAndModifySelection:" => {
-                driver.select_to_text_start();
+                driver.edit(Edit::Extend(Motion::TextStart));
                 return Some(GeneratedTextInputEvent::Select);
             }
             "moveToEndOfDocument:" => {
-                driver.move_to_text_end();
+                driver.edit(Edit::Move(Motion::TextEnd));
                 return Some(GeneratedTextInputEvent::Select);
             }
             "moveToEndOfDocumentAndModifySelection:" => {
-                driver.move_to_text_end();
+                driver.edit(Edit::Move(Motion::TextEnd));
                 return Some(GeneratedTextInputEvent::Select);
             }
 
@@ -595,87 +573,87 @@ impl TextInputData {
             "moveParagraphBackwardAndModifySelection:" => {}
             "moveParagraphForwardAndModifySelection:" => {}
             "moveToBeginningOfParagraph:" => {
-                driver.move_to_hard_line_start();
+                driver.edit(Edit::Move(Motion::HardLineStart));
                 return Some(GeneratedTextInputEvent::Select);
             }
             "moveToBeginningOfParagraphAndModifySelection:" => {
-                driver.select_to_hard_line_start();
+                driver.edit(Edit::Extend(Motion::HardLineStart));
                 return Some(GeneratedTextInputEvent::Select);
             }
             "moveToEndOfParagraph:" => {
-                driver.move_to_hard_line_end();
+                driver.edit(Edit::Move(Motion::HardLineEnd));
                 return Some(GeneratedTextInputEvent::Select);
             }
             "moveToEndOfParagraphAndModifySelection:" => {
-                driver.select_to_hard_line_end();
+                driver.edit(Edit::Extend(Motion::HardLineEnd));
                 return Some(GeneratedTextInputEvent::Select);
             }
 
             // Moving the Selection in Lines of Text
             "moveToBeginningOfLine:" => {
-                driver.move_to_line_start();
+                driver.edit(Edit::Move(Motion::LineStart));
                 return Some(GeneratedTextInputEvent::Select);
             }
             "moveToBeginningOfLineAndModifySelection:" => {
-                driver.select_to_line_start();
+                driver.edit(Edit::Extend(Motion::LineStart));
                 return Some(GeneratedTextInputEvent::Select);
             }
             "moveToEndOfLine:" => {
-                driver.move_to_line_end();
+                driver.edit(Edit::Move(Motion::LineEnd));
                 return Some(GeneratedTextInputEvent::Select);
             }
             "moveToEndOfLineAndModifySelection:" => {
-                driver.select_to_line_end();
+                driver.edit(Edit::Extend(Motion::LineEnd));
                 return Some(GeneratedTextInputEvent::Select);
             }
             "moveToLeftEndOfLine:" => {
-                driver.move_to_text_start();
+                driver.edit(Edit::Move(Motion::TextStart));
                 return Some(GeneratedTextInputEvent::Select);
             }
             "moveToLeftEndOfLineAndModifySelection:" => {
-                driver.select_to_line_start();
+                driver.edit(Edit::Extend(Motion::LineStart));
                 return Some(GeneratedTextInputEvent::Select);
             }
             "moveToRightEndOfLine:" => {
-                driver.move_to_line_end();
+                driver.edit(Edit::Move(Motion::LineEnd));
                 return Some(GeneratedTextInputEvent::Select);
             }
             "moveToRightEndOfLineAndModifySelection:" => {
-                driver.select_to_line_end();
+                driver.edit(Edit::Extend(Motion::LineEnd));
                 return Some(GeneratedTextInputEvent::Select);
             }
 
             // Moving the Selection by Word Boundaries
             "moveWordBackward:" => {
-                driver.move_word_left();
+                driver.edit(Edit::Move(Motion::WordLeft));
                 return Some(GeneratedTextInputEvent::Select);
             }
             "moveWordBackwardAndModifySelection:" => {
-                driver.select_word_left();
+                driver.edit(Edit::Extend(Motion::WordLeft));
                 return Some(GeneratedTextInputEvent::Select);
             }
             "moveWordForward:" => {
-                driver.move_word_right();
+                driver.edit(Edit::Move(Motion::WordRight));
                 return Some(GeneratedTextInputEvent::Select);
             }
             "moveWordForwardAndModifySelection:" => {
-                driver.select_word_right();
+                driver.edit(Edit::Extend(Motion::WordRight));
                 return Some(GeneratedTextInputEvent::Select);
             }
             "moveWordLeft:" => {
-                driver.move_word_left();
+                driver.edit(Edit::Move(Motion::WordLeft));
                 return Some(GeneratedTextInputEvent::Select);
             }
             "moveWordLeftAndModifySelection:" => {
-                driver.select_word_left();
+                driver.edit(Edit::Extend(Motion::WordLeft));
                 return Some(GeneratedTextInputEvent::Select);
             }
             "moveWordRight:" => {
-                driver.move_word_right();
+                driver.edit(Edit::Move(Motion::WordRight));
                 return Some(GeneratedTextInputEvent::Select);
             }
             "moveWordRightAndModifySelection:" => {
-                driver.select_word_right();
+                driver.edit(Edit::Extend(Motion::WordRight));
                 return Some(GeneratedTextInputEvent::Select);
             }
 
@@ -758,12 +736,13 @@ impl TextInputData {
 
     pub(crate) fn apply_ime_event(
         &mut self,
-        font_ctx: &mut FontContext,
-        layout_ctx: &mut LayoutContext<TextBrush>,
+        cx: &mut TextContext,
         event: BlitzImeEvent,
     ) -> Option<GeneratedTextInputEvent> {
-        let editor = &mut self.editor;
-        let mut driver = editor.driver(font_ctx, layout_ctx);
+        let mut driver = TextInputDriver {
+            editor: &mut self.editor,
+            cx,
+        };
 
         match event {
             BlitzImeEvent::Enabled => {
@@ -771,18 +750,18 @@ impl TextInputData {
                 None
             }
             BlitzImeEvent::Disabled => {
-                driver.clear_compose();
+                driver.edit(Edit::ClearCompose);
                 Some(GeneratedTextInputEvent::PreEditChange)
             }
             BlitzImeEvent::Commit(text) => {
-                driver.insert_or_replace_selection(&text);
+                driver.edit(Edit::Insert(&text));
                 Some(GeneratedTextInputEvent::Input)
             }
             BlitzImeEvent::Preedit(text, cursor) => {
                 if text.is_empty() {
-                    driver.clear_compose();
+                    driver.edit(Edit::ClearCompose);
                 } else {
-                    driver.set_compose(&text, cursor);
+                    driver.edit(Edit::SetCompose(&text, cursor));
                 }
                 Some(GeneratedTextInputEvent::PreEditChange)
             }
