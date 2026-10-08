@@ -127,6 +127,54 @@
         Object.setPrototypeOf(AnimationPlaybackEvent.prototype, Event.prototype);
     }
 
+    // ---- AnimationEvent / TransitionEvent ----------------------------------
+
+    function styleEventClass(className, nameField) {
+        const cls = class {
+            constructor(type, init = {}) {
+                if (arguments.length < 1) throw new TypeError("Not enough arguments");
+                if (init === null || init === undefined) init = {};
+                if (typeof init !== "object" && typeof init !== "function") {
+                    throw new TypeError("The init dictionary must be an object");
+                }
+                const elapsedTime = init.elapsedTime === undefined ? 0 : Number(init.elapsedTime);
+                if (!Number.isFinite(elapsedTime)) throw new TypeError("elapsedTime must be finite");
+                const values = {
+                    type: String(type), bubbles: !!init.bubbles, cancelable: !!init.cancelable,
+                    composed: !!init.composed, defaultPrevented: false, target: null,
+                    currentTarget: null, eventPhase: 0, isTrusted: false, timeStamp: 0,
+                };
+                for (const key in values) {
+                    Object.defineProperty(this, key, { value: values[key], configurable: true });
+                }
+                this._name = init[nameField] === undefined ? "" : String(init[nameField]);
+                this._elapsedTime = elapsedTime;
+                this._pseudoElement = init.pseudoElement === undefined ? "" : String(init.pseudoElement);
+            }
+            get elapsedTime() { return this._elapsedTime; }
+            get pseudoElement() { return this._pseudoElement; }
+            get [Symbol.toStringTag]() { return className; }
+        };
+        Object.defineProperty(cls.prototype, nameField, {
+            configurable: true,
+            enumerable: true,
+            get() { return this._name; },
+        });
+        for (const key of ["elapsedTime", "pseudoElement"]) {
+            Object.defineProperty(cls.prototype, key, { enumerable: true });
+        }
+        Object.defineProperty(cls, "name", { value: className });
+        if (typeof Event === "function" && Event.prototype) {
+            Object.setPrototypeOf(cls.prototype, Event.prototype);
+            Object.setPrototypeOf(cls, Event);
+        }
+        Object.defineProperty(globalThis, className, {
+            value: cls, writable: true, configurable: true, enumerable: false,
+        });
+    }
+    styleEventClass("AnimationEvent", "animationName");
+    styleEventClass("TransitionEvent", "propertyName");
+
     // ---- Timelines ---------------------------------------------------------
 
     let constructingTimeline = false;
@@ -619,7 +667,7 @@
         }
         get playState() { return native("state", this[ID])[3]; }
         get pending() { return native("state", this[ID])[4]; }
-        get replaceState() { return "active"; }
+        get replaceState() { return native("replaceState", this[ID]); }
         get ready() { return this[STATE].ready.promise; }
         get finished() { return this[STATE].finished.promise; }
 
@@ -634,7 +682,7 @@
             if (!Number.isFinite(rate)) throw new TypeError("playbackRate must be finite");
             call("updatePlaybackRate", this[ID], rate);
         }
-        persist() {}
+        persist() { call("persist", this[ID]); }
 
         addEventListener(type, listener, options) {
             if (listener === null || listener === undefined) return;

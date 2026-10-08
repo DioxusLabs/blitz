@@ -125,3 +125,22 @@ fn css_animation_events_and_timing() {
     "#);
     assert_eq!(out, "100000,animationstart:0,f1,f2,animationend:100");
 }
+
+#[test]
+fn replaced_animations_are_removed() {
+    let out = run(r#"
+        const a = box.animate({ opacity: 0.2 }, { duration: 1, fill: 'forwards' });
+        const b = box.animate({ opacity: 0.3 }, { duration: 1, fill: 'forwards' });
+        const log = [];
+        a.onremove = () => log.push('remove');
+        await a.finished;
+        log.push(a.replaceState, b.replaceState, box.getAnimations().length);
+        a.persist();
+        log.push(a.replaceState, box.getAnimations().length);
+        await new Promise(requestAnimationFrame);
+        await new Promise(requestAnimationFrame);
+        log.push(a.replaceState, b.replaceState);
+        done(log);
+    "#);
+    assert_eq!(out, "remove,removed,active,1,persisted,2,persisted,active");
+}

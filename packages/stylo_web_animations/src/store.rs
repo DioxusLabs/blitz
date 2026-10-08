@@ -72,6 +72,14 @@ impl Origin {
     }
 }
 
+/// <https://drafts.csswg.org/web-animations-1/#animation-replace-state>
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ReplaceState {
+    Active,
+    Removed,
+    Persisted,
+}
+
 /// The type of a [`CssEvent`].
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CssEventKind {
@@ -121,6 +129,9 @@ struct Entry {
     /// The number of handles the embedder holds. An animation without handles is removed
     /// once it is no longer relevant.
     handles: u32,
+    replace_state: ReplaceState,
+    /// The properties of an effect whose keyframes the embedder has yet to compute.
+    uncomputed_properties: Option<Vec<OwnedPropertyDeclarationId>>,
     css_event_state: CssEventState,
 }
 
@@ -221,9 +232,39 @@ impl Entry {
 
     /// <https://drafts.csswg.org/web-animations-1/#relevant-animations>
     fn is_relevant(&self, timeline_time: f64) -> bool {
-        self.computed_timing(timeline_time).is_some_and(|timing| {
-            timing.progress.is_some() || is_current(timing.phase, self.animation.playback_rate())
-        })
+        self.replace_state != ReplaceState::Removed
+            && self.computed_timing(timeline_time).is_some_and(|timing| {
+                timing.progress.is_some()
+                    || is_current(timing.phase, self.animation.playback_rate())
+            })
+    }
+
+    /// <https://drafts.csswg.org/web-animations-1/#in-effect>
+    fn is_in_effect(&self, timeline_time: f64) -> bool {
+        self.replace_state != ReplaceState::Removed
+            && self
+                .computed_timing(timeline_time)
+                .is_some_and(|timing| timing.progress.is_some())
+    }
+
+    /// <https://drafts.csswg.org/web-animations-1/#removing-replaced-animations>
+    fn is_replaceable(&self, timeline_time: f64) -> bool {
+        !self.owned_by_style
+            && self.replace_state == ReplaceState::Active
+            && self.has_timeline
+            && self.animation.play_state(Some(timeline_time)) == PlayState::Finished
+            && self.is_in_effect(timeline_time)
+    }
+
+    /// The position of the animation in the composite order of its target.
+    ///
+    /// <https://drafts.csswg.org/web-animations-1/#animation-composite-order>
+    fn composite_order(&self, id: AnimationId) -> (u8, usize, AnimationId) {
+        match (&self.origin, self.owned_by_style) {
+            (Origin::CssTransition { .. }, true) => (0, 0, id),
+            (Origin::CssAnimation { index, .. }, true) => (1, *index, id),
+            _ => (2, 0, id),
+        }
     }
 }
 
@@ -406,8 +447,23 @@ impl AnimationStore {
         });
     }
 
+    /// Sets the properties that the effect of an animation targets, for an effect whose
+    /// keyframes are computed later with [`Self::set_properties`].
+    pub fn set_uncomputed_properties(
+        &mut self,
+        id: AnimationId,
+        properties: Vec<OwnedPropertyDeclarationId>,
+    ) {
+        if let Some(entry) = self.animations.get_mut(&id) {
+            entry.uncomputed_properties = Some(properties);
+        }
+    }
+
     /// Replaces the computed keyframes of the effect of an animation.
     pub fn set_properties(&mut self, id: AnimationId, properties: Vec<PropertySegments>) {
+        if let Some(entry) = self.animations.get_mut(&id) {
+            entry.uncomputed_properties = None;
+        }
         if let Some(effect) = self
             .animations
             .get_mut(&id)
@@ -523,6 +579,63 @@ impl AnimationStore {
         std::mem::take(&mut self.actions)
     }
 
+    /// <https://drafts.csswg.org/web-animations-1/#animation-replace-state>
+    pub fn replace_state(&self, id: AnimationId) -> ReplaceState {
+        self.animations
+            .get(&id)
+            .map_or(ReplaceState::Active, |entry| entry.replace_state)
+    }
+
+    /// Makes an animation that was or would be removed for being replaced take effect.
+    pub fn persist(&mut self, id: AnimationId) {
+        if let Some(entry) = self.animations.get_mut(&id) {
+            entry.replace_state = ReplaceState::Persisted;
+        }
+    }
+
+    /// <https://drafts.csswg.org/web-animations-1/#removing-replaced-animations>
+    fn remove_replaced_animations(&mut self) {
+        let timeline_time = self.timeline_time;
+        let mut removed = Vec::new();
+        let mut covered: Vec<&OwnedPropertyDeclarationId> = Vec::new();
+        for target in self.targets.values() {
+            if target.animations.len() < 2 {
+                continue;
+            }
+            let mut order: Vec<AnimationId> = target.animations.clone();
+            order.sort_by_key(|id| self.animations[id].composite_order(*id));
+            covered.clear();
+            for id in order.into_iter().rev() {
+                let entry = &self.animations[&id];
+                let Some(effect) = &entry.effect else {
+                    continue;
+                };
+                let properties: Vec<&OwnedPropertyDeclarationId> =
+                    match &entry.uncomputed_properties {
+                        Some(properties) => properties.iter().collect(),
+                        None => effect.properties.iter().map(|p| &p.property).collect(),
+                    };
+                if entry.is_replaceable(timeline_time)
+                    && properties.iter().all(|property| covered.contains(property))
+                {
+                    removed.push(id);
+                } else if entry.is_in_effect(timeline_time) {
+                    covered.extend(properties);
+                }
+            }
+        }
+        for id in removed {
+            let entry = self.animations.get_mut(&id).unwrap();
+            entry.replace_state = ReplaceState::Removed;
+            let action = Action::QueueEvent {
+                kind: crate::EventKind::Remove,
+                current_time: entry.animation.current_time(Some(timeline_time)),
+                timeline_time: Some(timeline_time),
+            };
+            self.actions.push((id, action));
+        }
+    }
+
     /// Queues the events of CSS animations and transitions whose state changed since the
     /// last call. [`AnimationStore::tick`] does this too.
     pub fn queue_css_events(&mut self) {
@@ -567,6 +680,8 @@ impl AnimationStore {
                 origin,
                 has_timeline: true,
                 handles: 0,
+                replace_state: ReplaceState::Active,
+                uncomputed_properties: None,
                 css_event_state: CssEventState {
                     phase: Phase::Idle,
                     iteration: 0.,
@@ -718,6 +833,7 @@ impl AnimationStore {
         for id in unused {
             self.remove(id);
         }
+        self.remove_replaced_animations();
     }
 
     /// Composes the effect stack of `target`.
@@ -770,6 +886,9 @@ impl AnimationStore {
         values: &mut AnimationValueMap,
         base_value: &mut dyn FnMut(&OwnedPropertyDeclarationId) -> Option<AnimationValue>,
     ) {
+        if entry.replace_state == ReplaceState::Removed {
+            return;
+        }
         if let (Some(effect), Some(timing)) =
             (&entry.effect, entry.computed_timing(self.timeline_time))
         {

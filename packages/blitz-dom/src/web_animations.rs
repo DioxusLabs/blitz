@@ -496,6 +496,16 @@ impl BaseDocument {
                         properties: Vec::new(),
                     }),
                 );
+                let mut properties = Vec::new();
+                for keyframe in &effect.keyframes {
+                    for declaration in keyframe.declarations.declarations() {
+                        let property = declaration.id().to_owned();
+                        if !properties.contains(&property) {
+                            properties.push(property);
+                        }
+                    }
+                }
+                animations.store.set_uncomputed_properties(id, properties);
                 animations.script_keyframes.insert(
                     id,
                     ScriptKeyframes {
@@ -513,6 +523,17 @@ impl BaseDocument {
 
         // The keyframes are computed when the target is restyled.
         for target in [old_target, target].into_iter().flatten() {
+            if let Some(node) = self.nodes.get_mut(target_node(&target)) {
+                node.set_restyle_hint(restyle_hint(&target));
+            }
+        }
+    }
+
+    /// Makes an animation that was removed for being replaced take effect again.
+    pub fn persist_animation(&mut self, id: AnimationId) {
+        let store = &mut self.nodes.animations.store;
+        store.persist(id);
+        if let Some(target) = store.target(id).cloned() {
             if let Some(node) = self.nodes.get_mut(target_node(&target)) {
                 node.set_restyle_hint(restyle_hint(&target));
             }

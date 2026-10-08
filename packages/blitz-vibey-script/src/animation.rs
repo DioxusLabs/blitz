@@ -298,6 +298,20 @@ pub(crate) fn animation_op(
                 .set_animation_effect(id, node.map(|node| (node, pseudo)), options);
             Ok(JsValue::undefined())
         }
+        ("replaceState", Some(id)) => {
+            use blitz_dom::web_animations::stylo_web_animations::ReplaceState;
+            Ok(js_str(
+                match ctx.doc.borrow().animations().replace_state(id) {
+                    ReplaceState::Active => "active",
+                    ReplaceState::Removed => "removed",
+                    ReplaceState::Persisted => "persisted",
+                },
+            ))
+        }
+        ("persist", Some(id)) => {
+            ctx.doc.borrow_mut().persist_animation(id);
+            Ok(JsValue::undefined())
+        }
         ("setTimeline", Some(id)) => {
             let has_timeline = arg.is_some_and(|value| value.to_boolean());
             let mut doc = ctx.doc.borrow_mut();
@@ -403,6 +417,7 @@ pub(crate) fn animation_op(
                         match kind {
                             EventKind::Finish => "finish",
                             EventKind::Cancel => "cancel",
+                            EventKind::Remove => "remove",
                         },
                         current_time,
                         timeline_time,

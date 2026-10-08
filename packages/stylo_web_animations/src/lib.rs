@@ -11,5 +11,5 @@ pub use animation::{Action, Animation, Error, EventKind, PlayState};
 pub use effect::KeyframeEffect;
 pub use store::{
     AnimationId, AnimationStore, ComposedValues, CssAnimation, CssEvent, CssEventKind, Origin,
-    Target,
+    ReplaceState, Target,
 };
