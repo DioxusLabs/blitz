@@ -302,8 +302,6 @@ fn collect_tests(wpt_dir: &Path, mut suites: Vec<String>) -> Vec<Test> {
         }
     }
 
-    let mut seen = std::collections::HashSet::new();
-    tests.retain(|test| seen.insert(test.url.clone()));
     tests
 }
 
@@ -912,11 +910,5 @@ mod tests {
         assert_eq!(tests[1].path, suite.join("test.any.js"));
         assert_eq!(tests[2].url, "suite/test.window.html?override");
         assert_eq!(tests[2].path, suite.join("test.window.js"));
-
-        let tests = collect_tests(
-            dir.path(),
-            vec!["suite".into(), "suite/test.html?one".into()],
-        );
-        assert_eq!(tests.len(), 6);
     }
 }
