@@ -17,6 +17,8 @@ use std::fmt::Write;
 use std::ops::Deref;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(feature = "writing-mode")]
+use style::computed_values::flex_direction::T as FlexDirection;
 use style::computed_values::isolation::T as Isolation;
 use style::computed_values::white_space_collapse::T as WhiteSpaceCollapse;
 use style::invalidation::element::restyle_hints::RestyleHint;
@@ -1120,7 +1122,57 @@ impl Node {
             }
         }
 
-        stylo_taffy::TaffyStyloStyle::new(styles, flags)
+        #[cfg(feature = "writing-mode")]
+        {
+            // Own-layout_wm by default: the node's own algorithm reads its style in its own axes
+            let layout_wm = styles.writing_mode;
+            stylo_taffy::TaffyStyloStyle::new_in(styles, flags, layout_wm)
+        }
+        #[cfg(not(feature = "writing-mode"))]
+        {
+            stylo_taffy::TaffyStyloStyle::new(styles, flags)
+        }
+    }
+
+    /// The node's style for Taffy, expressed in the axes of the writing mode `layout_wm` (the writing
+    /// mode of the box laying this node out). Used for the child-style getters.
+    #[cfg(feature = "writing-mode")]
+    pub fn layout_style_in(
+        &self,
+        layout_wm: stylo_taffy::WritingMode,
+    ) -> stylo_taffy::TaffyStyloStyle<ComputedStyleRef<'_>> {
+        let mut style = self.layout_style();
+        style.layout_wm = layout_wm;
+        style
+    }
+
+    /// Whether the node has any `contain` value, which blocks `writing-mode` propagation from
+    /// `<body>` to the root (css-writing-modes-3 §8).
+    #[cfg(feature = "writing-mode")]
+    pub(crate) fn has_containment(&self) -> bool {
+        self.primary_styles()
+            .is_some_and(|style| !style.clone_contain().is_empty())
+    }
+
+    /// Whether the node is a flex container with a column `flex-direction`, i.e. aligns its
+    /// children's `align-self` in its inline axis.
+    #[cfg(feature = "writing-mode")]
+    pub(crate) fn is_column_flex_container(&self) -> bool {
+        self.primary_styles().is_some_and(|s| {
+            s.clone_display().inside() == style::values::specified::box_::DisplayInside::Flex
+                && matches!(
+                    s.get_position().flex_direction,
+                    FlexDirection::Column | FlexDirection::ColumnReverse
+                )
+        })
+    }
+
+    /// The node's computed `writing-mode` (horizontal-tb for nodes without styles)
+    #[cfg(feature = "writing-mode")]
+    pub fn writing_mode(&self) -> stylo_taffy::WritingMode {
+        self.primary_styles()
+            .map(|s| s.writing_mode)
+            .unwrap_or(stylo_taffy::WritingMode::empty())
     }
 
     /// The node's `display` as a [`taffy::Display`]. Returns [`taffy::Display::Block`]
@@ -1575,17 +1627,6 @@ impl Node {
         // Recurse up the positioning hierarchy
         self.containing_block()
             .map(|i| self.with(i).absolute_position(x, y))
-            .unwrap_or(crate::util::Point { x, y })
-    }
-
-    /// Computes the Document-relative coordinates of the `Node` from the unrounded
-    /// (sub-pixel) layout, for CSSOM geometry APIs such as `getBoundingClientRect`
-    pub fn unrounded_absolute_position(&self, x: f32, y: f32) -> crate::util::Point<f32> {
-        let x = x + self.unrounded_layout().location.x - self.scroll_offset().x as f32;
-        let y = y + self.unrounded_layout().location.y - self.scroll_offset().y as f32;
-
-        self.containing_block()
-            .map(|i| self.with(i).unrounded_absolute_position(x, y))
             .unwrap_or(crate::util::Point { x, y })
     }
 

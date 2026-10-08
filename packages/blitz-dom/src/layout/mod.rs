@@ -30,6 +30,8 @@ pub(crate) mod paint_tree;
 pub(crate) mod replaced;
 pub(crate) mod table;
 pub(crate) mod text_transform;
+#[cfg(feature = "writing-mode")]
+pub(crate) mod writing_mode;
 
 use self::replaced::{
     IntrinsicSizes, ReplacedContext, compute_replaced_layout, is_replaced_element,
@@ -81,11 +83,61 @@ pub(crate) fn resolve_calc_value(calc_ptr: *const (), parent_size: f32) -> f32 {
 /// the Taffy tree trait implementations. Derefs to [`BaseDocument`].
 pub(crate) struct LayoutPassState<'doc> {
     doc: &'doc mut BaseDocument,
+    /// The writing mode of the box whose layout algorithm is currently running (see
+    /// `layout::writing_mode`). Child styles read during that algorithm are expressed in its axes.
+    #[cfg(feature = "writing-mode")]
+    pub(crate) layout_wm: stylo_taffy::WritingMode,
+    /// The root element and the writing mode its algorithm runs in (see `BaseDocument::root_layout_wm`).
+    #[cfg(feature = "writing-mode")]
+    root_id: Option<crate::NodeId>,
+    #[cfg(feature = "writing-mode")]
+    root_wm: stylo_taffy::WritingMode,
+    /// Whether the node whose layout algorithm is running aligns its children's `align-self` in its
+    /// inline axis (a column flex container).
+    #[cfg(feature = "writing-mode")]
+    pub(crate) current_align_axis_is_inline: bool,
+    /// The box currently being laid out in an orthogonal flow and its containing block's inline
+    /// size, against which its percentage padding resolves (see `layout::writing_mode`).
+    #[cfg(feature = "writing-mode")]
+    pub(crate) orthogonal_percent_basis: Option<(crate::NodeId, f32)>,
 }
 
 impl<'doc> LayoutPassState<'doc> {
+    /// The containing block's inline size when `dom_id` is the box currently laid out in an orthogonal
+    /// flow: its percentage padding resolves against it (see `layout::writing_mode`).
+    #[inline]
+    fn orthogonal_percent_basis_of(&self, dom_id: crate::NodeId) -> Option<f32> {
+        #[cfg(feature = "writing-mode")]
+        {
+            self.orthogonal_percent_basis
+                .filter(|(node, _)| *node == dom_id)
+                .map(|(_, basis)| basis)
+        }
+        #[cfg(not(feature = "writing-mode"))]
+        {
+            let _ = dom_id;
+            None
+        }
+    }
+
     pub(crate) fn new(doc: &'doc mut BaseDocument) -> Self {
-        Self { doc }
+        #[cfg(feature = "writing-mode")]
+        let root_id = doc.try_root_element().map(|root| root.id);
+        Self {
+            #[cfg(feature = "writing-mode")]
+            root_wm: root_id.map_or(stylo_taffy::WritingMode::empty(), |id| {
+                doc.root_layout_wm(id)
+            }),
+            doc,
+            #[cfg(feature = "writing-mode")]
+            root_id,
+            #[cfg(feature = "writing-mode")]
+            layout_wm: stylo_taffy::WritingMode::empty(),
+            #[cfg(feature = "writing-mode")]
+            current_align_axis_is_inline: false,
+            #[cfg(feature = "writing-mode")]
+            orthogonal_percent_basis: None,
+        }
     }
 }
 
@@ -121,11 +173,47 @@ impl LayoutPassState<'_> {
         inputs: taffy::tree::LayoutInput,
         block_ctx: Option<&mut BlockContext<'_>>,
     ) -> taffy::tree::LayoutOutput {
+        #[cfg(feature = "writing-mode")]
+        {
+            self.compute_child_layout_in_own_wm(node_id, inputs, block_ctx)
+        }
+        #[cfg(not(feature = "writing-mode"))]
+        {
+            self.compute_child_layout_in_current_wm(node_id, inputs, block_ctx)
+        }
+    }
+
+    /// Lay out `node_id` in the writing mode of the currently running algorithm (its parent's)
+    pub(crate) fn compute_child_layout_in_current_wm(
+        &mut self,
+        node_id: NodeId,
+        inputs: taffy::tree::LayoutInput,
+        block_ctx: Option<&mut BlockContext<'_>>,
+    ) -> taffy::tree::LayoutOutput {
         let mut output = self.dispatch_child_layout(node_id, inputs, block_ctx);
         if inputs.run_mode == RunMode::PerformLayout {
             compute_oof_layout(self, node_id, &mut output);
         }
         output
+    }
+
+    /// The style of a node being laid out *by* the node whose algorithm is currently running,
+    /// expressed in that node's writing mode (see `layout::writing_mode`).
+    #[inline]
+    pub(crate) fn child_layout_style<'a>(
+        &self,
+        node: &'a Node,
+    ) -> stylo_taffy::TaffyStyloStyle<ComputedStyleRef<'a>> {
+        #[cfg(feature = "writing-mode")]
+        {
+            let mut style = node.layout_style_in(self.layout_wm);
+            style.align_axis_is_inline = self.current_align_axis_is_inline;
+            style
+        }
+        #[cfg(not(feature = "writing-mode"))]
+        {
+            node.layout_style()
+        }
     }
 
     fn dispatch_child_layout(
@@ -134,6 +222,7 @@ impl LayoutPassState<'_> {
         inputs: taffy::tree::LayoutInput,
         block_ctx: Option<&mut BlockContext<'_>>,
     ) -> taffy::tree::LayoutOutput {
+        let orthogonal_percent_basis = self.orthogonal_percent_basis_of(dom_node_id(node_id));
         let node = &mut self.nodes[dom_node_id(node_id)];
 
         let font_styles = node.primary_styles().map(|style| {
@@ -382,14 +471,32 @@ impl LayoutPassState<'_> {
                         _ => unreachable!(),
                     };
 
+                    #[cfg(feature = "writing-mode")]
+                    let (intrinsic_sizes, default_object_size) =
+                        if node.writing_mode().is_vertical() {
+                            // Intrinsic sizes are physical; the element's algorithm runs in its own writing mode
+                            (
+                                crate::layout::replaced::IntrinsicSizes {
+                                    width: intrinsic_sizes.height,
+                                    height: intrinsic_sizes.width,
+                                    ratio: intrinsic_sizes.ratio.map(|ratio| 1.0 / ratio),
+                                },
+                                default_object_size.transpose(),
+                            )
+                        } else {
+                            (intrinsic_sizes, default_object_size)
+                        };
+
                     let replaced_context = ReplacedContext {
                         intrinsic_sizes,
                         default_object_size,
                     };
 
+                    let mut style = node.layout_style();
+                    style.set_percent_basis(orthogonal_percent_basis);
                     return compute_replaced_layout(
                         inputs,
-                        &node.layout_style(),
+                        &style,
                         resolve_calc_value,
                         &replaced_context,
                     );
@@ -535,7 +642,19 @@ impl LayoutPartialTree for LayoutPassState<'_> {
     type CustomIdent = Atom;
 
     fn get_core_container_style(&self, node_id: NodeId) -> Self::CoreContainerStyle<'_> {
-        self.node_from_id(node_id).layout_style()
+        #[cfg(feature = "writing-mode")]
+        {
+            // Container styles are read by the node's own algorithm (or, for the containing block
+            // of an out-of-flow box, by that box's algorithm) and are expressed in the node's writing mode.
+            let dom_id = dom_node_id(node_id);
+            let mut style = self.nodes[dom_id].layout_style_in(self.layout_wm_of(dom_id));
+            style.set_percent_basis(self.orthogonal_percent_basis_of(dom_id));
+            style
+        }
+        #[cfg(not(feature = "writing-mode"))]
+        {
+            self.node_from_id(node_id).layout_style()
+        }
     }
 
     fn set_unrounded_layout(&mut self, node_id: NodeId, layout: &Layout) {
@@ -565,7 +684,7 @@ impl LayoutContainingBlock for LayoutPassState<'_> {
         Self: 'a;
 
     fn get_oof_item_style(&self, node_id: NodeId) -> Self::OofItemStyle<'_> {
-        self.node_from_id(node_id).layout_style()
+        self.child_layout_style(self.node_from_id(node_id))
     }
 
     fn clear_hoisted_children(&mut self, node_id: NodeId) {
@@ -651,7 +770,7 @@ impl taffy::LayoutBlockContainer for LayoutPassState<'_> {
     }
 
     fn get_block_child_style(&self, child_node_id: NodeId) -> Self::BlockItemStyle<'_> {
-        self.get_core_container_style(child_node_id)
+        self.child_layout_style(self.node_from_id(child_node_id))
     }
 
     #[inline(always)]
@@ -683,7 +802,7 @@ impl taffy::LayoutFlexboxContainer for LayoutPassState<'_> {
     }
 
     fn get_flexbox_child_style(&self, child_node_id: NodeId) -> Self::FlexboxItemStyle<'_> {
-        self.get_core_container_style(child_node_id)
+        self.child_layout_style(self.node_from_id(child_node_id))
     }
 }
 
@@ -703,7 +822,7 @@ impl taffy::LayoutGridContainer for LayoutPassState<'_> {
     }
 
     fn get_grid_child_style(&self, child_node_id: NodeId) -> Self::GridItemStyle<'_> {
-        self.get_core_container_style(child_node_id)
+        self.child_layout_style(self.node_from_id(child_node_id))
     }
 
     fn set_detailed_grid_info(
