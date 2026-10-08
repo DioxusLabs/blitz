@@ -12,8 +12,9 @@ rust-version.workspace = true
 
 [features]
 default = ["svg", "parley"]
-# The text backend, as blitz-dom's features select it: Parley.
+# The text backend, as blitz-dom's features select it: Parley or winkin.
 parley = ["blitz-dom/parley"]
+winkin = ["blitz-dom/winkin"]
 tracing = ["dep:tracing"]
 svg = ["dep:anyrender_svg", "dep:usvg", "blitz-dom/svg"]
 custom-widget = ["blitz-dom/custom-widget"]
@@ -23,8 +24,6 @@ apple-font-embolden = []
 # drag/hover interaction in blitz-dom (off by default while the feature
 # matures).
 scrollbars = ["blitz-dom/scrollbars"]
-# Paint document text laid out by winkin.
-winkin = ["blitz-dom/winkin", "dep:winkin"]
 
 [dependencies]
 # Blitz dependencies
@@ -41,7 +40,6 @@ euclid = { workspace = true }
 taffy = { workspace = true }
 
 # Linebender + WGPU dependencies
-winkin = { workspace = true, optional = true }
 skrifa = { workspace = true }
 color = { workspace = true }
 peniko = { workspace = true }

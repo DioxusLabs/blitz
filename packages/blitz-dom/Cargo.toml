@@ -21,9 +21,10 @@ default = [
     "text-transform-icu",
     "parley",
 ]
-# The text backend that lays out, edits and reads back text: Parley. It must be
-# enabled.
+# The text backend that lays out, edits and reads back text: Parley or winkin.
+# One of them must be enabled; with both, Parley is used.
 parley = ["dep:parley"]
+winkin = ["dep:winkin", "dep:fontwich"]
 custom-widget = ["dep:anyrender", "accessibility"]
 tracing = ["dep:tracing"]
 svg = ["dep:usvg", "dep:svgtypes"]
@@ -32,7 +33,7 @@ woff = ["dep:wuff"]
 accessibility = ["accesskit"]
 system-fonts = ["parley?/system", "fontwich?/system"]
 # complex-scripts: enable dictionary-based line-breaking
-complex-scripts = ["parley?/complex-scripts"]
+complex-scripts = ["parley?/complex-scripts", "winkin?/dictionaries"]
 # text-transform-icu: language-aware, Unicode-complete case mapping for `text-transform`
 # (otherwise falls back to the standard library's case mapping)
 text-transform-icu = ["dep:icu_casemap", "dep:writeable"]
@@ -40,9 +41,6 @@ autofocus = []
 floats = ["taffy/float_layout", "stylo_taffy/floats"]
 # CSS vertical `writing-mode` support (layout runs in each box's writing-mode frame; see layout/writing_mode.rs)
 writing-mode = ["stylo_taffy/writing-mode"]
-# Lay out and paint document text with winkin rather than Parley. Text inputs
-# still use Parley; inline text interaction uses the selected layout backend.
-winkin = ["dep:winkin", "dep:fontwich"]
 file-input = []
 # Overlay-scrollbar thumb interaction (drag + hover tracking). Normally
 # enabled through `blitz-paint/scrollbars`, which paints the thumbs.
