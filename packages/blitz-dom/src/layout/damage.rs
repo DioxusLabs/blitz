@@ -5,6 +5,7 @@ use stylo_taffy::CopyStyleGetters;
 
 use crate::net::ResourceHandler;
 use crate::node::{Node, NodeFlags};
+use crate::text::EditEngine as _;
 use crate::tree::NodeTree;
 use crate::{
     BaseDocument, net::ImageHandler, node::ImageResourceData, node::Status, util::ImageLayerKind,
@@ -483,8 +484,7 @@ impl BaseDocument {
     pub(crate) fn invalidate_inline_contexts(&mut self) {
         let scale = self.viewport.scale();
 
-        let font_ctx = &self.font_ctx;
-        let layout_ctx = &mut self.layout_ctx;
+        let text = &mut self.text;
 
         let mut anon_nodes = Vec::new();
 
@@ -504,9 +504,7 @@ impl BaseDocument {
                     node.insert_damage(ALL_DAMAGE);
                 }
             } else if let Some(input) = element.text_input_data_mut() {
-                input.editor.set_scale(scale);
-                let mut font_ctx = font_ctx.lock().unwrap();
-                input.editor.refresh_layout(&mut font_ctx, layout_ctx);
+                input.editor.set_scale(text, scale);
                 node.insert_damage(ONLY_RELAYOUT);
             }
         }
