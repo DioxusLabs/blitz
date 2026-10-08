@@ -1,10 +1,11 @@
 //! The text of an `<input>` or `<textarea>` under winkin.
 //!
 //! The value is laid out by winkin as plain text in the control's style, on one line or wrapped
-//! at the control's width, with white space preserved. Editing is basic: text is inserted and
-//! deleted at the selection, which winkin's selection motions move by character, word, line,
-//! paragraph and the whole text, and points are hit tested against the lines. Input methods'
-//! composing text is not shown; committed text is inserted.
+//! at the control's width, with white space preserved. Text is inserted and deleted at the
+//! selection, which winkin's selection motions move by character, word, line, paragraph and the
+//! whole text, and points are hit tested against the lines. Text an input method is composing is
+//! laid out in place of the selection, underlined, until it is committed or cancelled. Every
+//! change to the text can be undone and redone.
 
 use std::borrow::Cow;
 use std::ops::Range;
@@ -19,8 +20,30 @@ use winkin::selection::{Granularity, MotionDirection, Position, Selection};
 use super::{TextContext, TextLayout};
 use crate::text::{Edit, EditEngine, EditableText, EditorMetrics, Motion};
 
+/// How many changes can be undone.
+const HISTORY_LIMIT: usize = 100;
+
+/// The text and selection an undo or a redo returns to.
+#[derive(Clone)]
+struct Snapshot {
+    text: String,
+    selection: Selection,
+}
+
+/// Text an input method is composing, laid out in the text in place of the selection it began
+/// at.
+struct Composition {
+    /// The text and selection before composing began, which cancelling returns to.
+    original: Snapshot,
+    /// Where the composing text is in the text.
+    range: Range<usize>,
+    /// Whether the input method shows a caret in the composing text.
+    caret_visible: bool,
+}
+
 /// The text of an `<input>` or `<textarea>`, laid out by winkin.
 pub struct TextEditor {
+    /// The text, with any text an input method is composing.
     text: String,
     selection: Selection,
     is_multiline: bool,
@@ -32,6 +55,9 @@ pub struct TextEditor {
     layout: TextLayout,
     /// Whether a setter changed what the text is laid out with since it was last laid out.
     dirty: bool,
+    undo: Vec<Snapshot>,
+    redo: Vec<Snapshot>,
+    composition: Option<Composition>,
 }
 
 impl TextEditor {
@@ -45,6 +71,13 @@ impl TextEditor {
         self.selection.range()
     }
 
+    /// Where the text an input method is composing is, in bytes of the text, while it composes.
+    pub fn composition_range(&self) -> Option<Range<usize>> {
+        self.composition
+            .as_ref()
+            .map(|composition| composition.range.clone())
+    }
+
     /// Lays the text out again in the control's style.
     fn relayout(&mut self, cx: &mut TextContext) {
         self.dirty = false;
@@ -52,12 +85,14 @@ impl TextEditor {
             return;
         };
         let width = if self.is_multiline { self.width } else { None };
+        let composition = self.composition_range();
         super::build_plain_text(
             cx,
             &mut self.layout,
             *node,
             style,
             &self.text,
+            composition,
             self.scale,
             width,
         );
@@ -78,12 +113,135 @@ impl TextEditor {
         );
     }
 
-    /// Replaces the selection with `text`, leaving a caret after it.
+    fn snapshot(&self) -> Snapshot {
+        Snapshot {
+            text: self.text.clone(),
+            selection: self.selection,
+        }
+    }
+
+    /// Returns the text and the selection to `snapshot`, and lays the text out again.
+    fn restore(&mut self, cx: &mut TextContext, snapshot: Snapshot) {
+        self.text = snapshot.text;
+        self.selection = snapshot.selection;
+        self.clamp_selection();
+        self.relayout(cx);
+    }
+
+    /// Records `before` as the state an undo returns to, which drops what could be redone.
+    fn remember(&mut self, before: Snapshot) {
+        if self.undo.len() == HISTORY_LIMIT {
+            self.undo.remove(0);
+        }
+        self.undo.push(before);
+        self.redo.clear();
+    }
+
+    /// Drops the history, as a change of the text from outside the editor does.
+    fn forget(&mut self) {
+        self.undo.clear();
+        self.redo.clear();
+    }
+
+    /// Removes the text an input method is composing, returning the text and the selection to
+    /// what they were before it began.
+    fn cancel_composition(&mut self, cx: &mut TextContext) {
+        if let Some(composition) = self.composition.take() {
+            self.restore(cx, composition.original);
+        }
+    }
+
+    /// Replaces the selection with `text`, leaving a caret after it, as one change to undo.
     fn replace_selection(&mut self, cx: &mut TextContext, text: &str) {
+        self.cancel_composition(cx);
         let range = self.selection.range();
+        if range.is_empty() && text.is_empty() {
+            return;
+        }
+        let before = self.snapshot();
+        self.replace(cx, range, text, before);
+    }
+
+    /// Replaces `range` with `text`, leaving a caret after it, as one change, which an undo
+    /// takes back to `before`.
+    fn replace(&mut self, cx: &mut TextContext, range: Range<usize>, text: &str, before: Snapshot) {
+        self.remember(before);
         self.text.replace_range(range.clone(), text);
         self.selection = Selection::from(Position::from(range.start + text.len()));
         self.relayout(cx);
+    }
+
+    /// Deletes the selection or, where it is a caret, what `granularity` takes in `direction`.
+    fn delete(
+        &mut self,
+        cx: &mut TextContext,
+        direction: MotionDirection,
+        granularity: Granularity,
+    ) {
+        self.cancel_composition(cx);
+        let before = self.snapshot();
+        if self.selection.is_collapsed() {
+            self.modify(direction.extending(granularity));
+        }
+        let range = self.selection.range();
+        if range.is_empty() {
+            self.selection = before.selection;
+        } else {
+            self.replace(cx, range, "", before);
+        }
+    }
+
+    /// Lays out `text` as what an input method is composing, in place of the selection or of the
+    /// text it composed before, with the selection `cursor` sets inside it.
+    fn compose(&mut self, cx: &mut TextContext, text: &str, cursor: Option<(usize, usize)>) {
+        if text.is_empty() {
+            self.cancel_composition(cx);
+            return;
+        }
+        let composition = self.composition.take().unwrap_or_else(|| Composition {
+            original: self.snapshot(),
+            range: self.selection.range(),
+            caret_visible: true,
+        });
+        let start = composition.range.start;
+        self.text.replace_range(composition.range, text);
+        // The input method's offsets are bytes of the composing text.
+        let boundary = |offset: usize| {
+            let mut offset = offset.min(text.len());
+            while !text.is_char_boundary(offset) {
+                offset -= 1;
+            }
+            start + offset
+        };
+        let (anchor, focus) = cursor.unwrap_or((text.len(), text.len()));
+        self.selection = Selection::new(
+            Position::from(boundary(anchor)),
+            Position::from(boundary(focus)),
+        );
+        self.composition = Some(Composition {
+            original: composition.original,
+            range: start..start + text.len(),
+            caret_visible: cursor.is_some(),
+        });
+        self.relayout(cx);
+    }
+
+    /// Returns to the state before the last change, keeping the present one to redo.
+    fn undo(&mut self, cx: &mut TextContext) {
+        self.cancel_composition(cx);
+        if let Some(snapshot) = self.undo.pop() {
+            self.redo.push(self.snapshot());
+            self.restore(cx, snapshot);
+        }
+    }
+
+    /// Makes the last change undone again.
+    fn redo(&mut self, cx: &mut TextContext) {
+        self.cancel_composition(cx);
+        if let Some(snapshot) = self.redo.pop() {
+            self.undo.push(self.snapshot());
+            self.restore(cx, snapshot);
+        }
     }
 
     /// Moves or extends the selection by `motion`, where the text is laid out.
@@ -144,7 +302,14 @@ impl EditableText for TextEditor {
     }
 
     fn text(&self) -> Cow<'_, str> {
-        Cow::Borrowed(&self.text)
+        match &self.composition {
+            Some(composition) => {
+                let mut text = self.text.clone();
+                text.replace_range(composition.range.clone(), "");
+                Cow::Owned(text)
+            }
+            None => Cow::Borrowed(&self.text),
+        }
     }
 
     fn selection(&self) -> Range<usize> {
@@ -153,7 +318,7 @@ impl EditableText for TextEditor {
 
     fn selected_text(&self) -> Option<&str> {
         let range = self.selection.range();
-        (!range.is_empty()).then(|| &self.text[range])
+        (self.composition.is_none() && !range.is_empty()).then(|| &self.text[range])
     }
 
     fn is_selection_collapsed(&self) -> bool {
@@ -176,6 +341,13 @@ impl EditableText for TextEditor {
     }
 
     fn caret_rect(&self) -> Option<Rect> {
+        if self
+            .composition
+            .as_ref()
+            .is_some_and(|composition| !composition.caret_visible)
+        {
+            return None;
+        }
         let layout = self.layout.layout().filter(|_| !self.dirty)?;
         let caret = layout.caret(self.selection.focus())?;
         let metrics = layout.line(caret.line)?.metrics();
@@ -200,17 +372,24 @@ impl EditEngine for TextEditor {
             width: None,
             layout: TextLayout::default(),
             dirty: false,
+            undo: Vec::new(),
+            redo: Vec::new(),
+            composition: None,
         }
     }
 
     fn set_initial_text(&mut self, text: &str) {
         self.text = text.to_string();
         self.selection = Selection::from(Position::from(text.len()));
+        self.composition = None;
+        self.forget();
     }
 
     fn set_text(&mut self, text: &str) {
         if self.text != text {
             self.text = text.to_string();
+            self.composition = None;
+            self.forget();
             self.clamp_selection();
             self.dirty = true;
         }
@@ -245,23 +424,16 @@ impl EditEngine for TextEditor {
 
     fn edit(&mut self, cx: &mut TextContext, edit: Edit<'_>) {
         self.refresh(cx);
-        let deletion = |editor: &mut Self, direction: MotionDirection, granularity| {
-            if editor.selection.is_collapsed() {
-                editor.modify(direction.extending(granularity));
-            }
-        };
+        // Composing ends where anything but the input method changes the text or the selection.
+        if !matches!(edit, Edit::SetCompose(..)) {
+            self.cancel_composition(cx);
+        }
         match edit {
             Edit::Insert(text) => self.replace_selection(cx, text),
-            Edit::Delete | Edit::Backdelete | Edit::DeleteWord | Edit::BackdeleteWord => {
-                let (direction, granularity) = match edit {
-                    Edit::Delete => (MotionDirection::Forward, Granularity::Character),
-                    Edit::Backdelete => (MotionDirection::Backward, Granularity::Character),
-                    Edit::DeleteWord => (MotionDirection::Forward, Granularity::Word),
-                    _ => (MotionDirection::Backward, Granularity::Word),
-                };
-                deletion(self, direction, granularity);
-                self.replace_selection(cx, "");
-            }
+            Edit::Delete => self.delete(cx, MotionDirection::Forward, Granularity::Character),
+            Edit::Backdelete => self.delete(cx, MotionDirection::Backward, Granularity::Character),
+            Edit::DeleteWord => self.delete(cx, MotionDirection::Forward, Granularity::Word),
+            Edit::BackdeleteWord => self.delete(cx, MotionDirection::Backward, Granularity::Word),
             Edit::DeleteSelection => self.replace_selection(cx, ""),
             Edit::Move(to) => self.modify(motion(to, false)),
             Edit::Extend(to) => self.modify(motion(to, true)),
@@ -279,8 +451,11 @@ impl EditEngine for TextEditor {
                 self.selection = Selection::new(Position::from(start), Position::from(end));
                 self.clamp_selection();
             }
-            // Text being composed is not shown; the text it commits is inserted.
-            Edit::SetCompose(..) | Edit::ClearCompose => {}
+            Edit::SetCompose(text, cursor) => self.compose(cx, text, cursor),
+            // Cancelled above.
+            Edit::ClearCompose => {}
+            Edit::Undo => self.undo(cx),
+            Edit::Redo => self.redo(cx),
             Edit::MoveToPoint(x, y) => {
                 if let Some(position) = self.hit(x, y) {
                     self.selection = Selection::from(position);

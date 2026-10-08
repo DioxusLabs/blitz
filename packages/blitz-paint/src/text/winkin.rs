@@ -11,7 +11,7 @@ use blitz_dom::node::Marker;
 use blitz_dom::text::EditableText as _;
 use blitz_dom::text::winkin::winkin;
 use blitz_dom::text::winkin::{
-    MarkerLayout, TextEditor, TextLayout, line_frame, page, relative_shift,
+    COMPOSE_KEY, MarkerLayout, TextEditor, TextLayout, line_frame, page, relative_shift,
 };
 use blitz_dom::text::InlineText as _;
 use blitz_dom::{BaseDocument, NodeId};
@@ -19,7 +19,9 @@ use kurbo::{Affine, Insets, Point, Rect, Vec2};
 use peniko::{Blob, Fill, FontData};
 use style::properties::ComputedValues;
 use style::servo_arc::Arc as ServoArc;
+use style::properties::generated::longhands::text_decoration_style::computed_value::T as TextDecorationStyle;
 use style::values::computed::{BorderCornerRadius, CSSPixelLength, TextDecorationLine};
+use style::values::generics::text::{GenericTextDecorationInset, GenericTextDecorationLength};
 use winkin::paint::{Decorates, Decoration, EmphasisMark, Paint};
 use winkin::style::WritingMode;
 use winkin::{BoxFragment, FontInstance, Layout, NodeKey, RunOrientation, TextRun};
@@ -303,6 +305,9 @@ impl Painter<'_> {
     /// Which decoration lines `key` draws: the question [`Line::paints`]
     /// asks of the block and each box.
     fn decorates(&self, key: NodeKey, first: bool) -> Decorates {
+        if key.0 & COMPOSE_KEY != 0 {
+            return Decorates::BeforeText;
+        }
         let mut before = false;
         let mut after = false;
         for styles in self.decorating_styles(key.0, first) {
@@ -516,6 +521,18 @@ impl Painter<'_> {
             (geometry.left, geometry.right),
             None,
             |scene, placed, color| {
+                if key & COMPOSE_KEY != 0 {
+                    if !after_text {
+                        context.draw_winkin_composition_underline(
+                            scene,
+                            placed * frame,
+                            self.scale,
+                            geometry,
+                            color.unwrap_or_else(|| self.color(key, first)),
+                        );
+                    }
+                    return;
+                }
                 for styles in self.decorating_styles(key, first) {
                     context.draw_winkin_decoration(
                         scene,
@@ -1104,6 +1121,43 @@ impl DrawTextContext {
         if let Some(color) = color {
             deco.color = color;
         }
+        self.draw_winkin_bar(scene, transform, scale, deco, bar, after_text);
+    }
+
+    /// Paints the underline under the text an input method is composing, in `color`: a solid
+    /// `auto` underline.
+    pub(crate) fn draw_winkin_composition_underline(
+        &mut self,
+        scene: &mut impl PaintScene,
+        transform: Affine,
+        scale: f64,
+        bar: WinkinDecoration,
+        color: Color,
+    ) {
+        let deco = super::ResolvedDecoration {
+            line: TextDecorationLine::UNDERLINE,
+            style: TextDecorationStyle::Solid,
+            color,
+            thickness: GenericTextDecorationLength::Auto,
+            underline_offset: None,
+            underline_under: false,
+            underline_from_font: false,
+            inset: GenericTextDecorationInset::Auto,
+        };
+        self.draw_winkin_bar(scene, transform, scale, deco, bar, false);
+    }
+
+    /// Paints one bar of `deco`: its underline and overline where `after_text` is false, and its
+    /// line through where it is true.
+    fn draw_winkin_bar(
+        &mut self,
+        scene: &mut impl PaintScene,
+        transform: Affine,
+        scale: f64,
+        deco: super::ResolvedDecoration,
+        bar: WinkinDecoration,
+        after_text: bool,
+    ) {
         self.deco_boxes.clear();
         self.deco_boxes.push(LineDecoration {
             node_id: NodeId::from_u64(0),

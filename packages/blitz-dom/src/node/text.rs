@@ -214,6 +214,16 @@ impl TextInputData {
 
                 return Some(GeneratedTextInputEvent::Input);
             }
+            Key::Character(c)
+                if action_mod
+                    && (c.eq_ignore_ascii_case("z")
+                        || (cfg!(not(target_os = "macos")) && c.eq_ignore_ascii_case("y"))) =>
+            {
+                let redo = shift || c.eq_ignore_ascii_case("y");
+                return undo_or_redo(&mut driver, if redo { Edit::Redo } else { Edit::Undo });
+            }
+            Key::Undo => return undo_or_redo(&mut driver, Edit::Undo),
+            Key::Redo => return undo_or_redo(&mut driver, Edit::Redo),
             Key::Character(c) if action_mod && matches!(c.to_lowercase().as_str(), "a") => {
                 if shift {
                     driver.edit(Edit::CollapseSelection)
@@ -774,4 +784,19 @@ impl TextInputData {
             }
         }
     }
+}
+
+/// Applies an [`Edit::Undo`] or an [`Edit::Redo`], which changes the text only where the text
+/// backend keeps a history.
+fn undo_or_redo(
+    driver: &mut TextInputDriver<'_>,
+    edit: Edit<'_>,
+) -> Option<GeneratedTextInputEvent> {
+    let before = driver.raw_text().to_owned();
+    driver.edit(edit);
+    Some(if driver.raw_text() == before {
+        GeneratedTextInputEvent::Select
+    } else {
+        GeneratedTextInputEvent::Input
+    })
 }

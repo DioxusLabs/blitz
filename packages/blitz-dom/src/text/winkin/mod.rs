@@ -61,6 +61,10 @@ pub const FIRST_LETTER_KEY: u64 = 1 << 62;
 /// the block's node with this bit set.
 pub const MARKER_KEY: u64 = 1 << 61;
 
+/// The key of the box holding the text an input method is composing in an `<input>` or a
+/// `<textarea>`, which has no node of its own: the control's node with this bit set.
+pub const COMPOSE_KEY: u64 = 1 << 60;
+
 /// What a document keeps for its text under winkin: the fonts winkin chooses from, and the
 /// context it builds and breaks in.
 ///
@@ -220,7 +224,8 @@ impl TextLayout {
             }
             return self.styles.marker.clone();
         }
-        let node = doc.get_node(NodeId::from_u64(key))?;
+        // The composing text's box is set in the control's style.
+        let node = doc.get_node(NodeId::from_u64(key & !COMPOSE_KEY))?;
         let styled = match &node.data {
             NodeData::Text(_) => doc.get_node(node.parent?)?,
             _ => node,
@@ -1108,7 +1113,7 @@ pub(crate) fn relative_shift_of(
     use ::style::computed_values::position::T as Position;
     use ::style::values::computed::{CSSPixelLength, Inset};
     let mut shift = kurbo::Vec2::ZERO;
-    if key & (FIRST_LETTER_KEY | MARKER_KEY) != 0 {
+    if key & (FIRST_LETTER_KEY | MARKER_KEY | COMPOSE_KEY) != 0 {
         return shift;
     }
     let resolve = |inset: &Inset, basis: f64| match inset {
@@ -1927,12 +1932,14 @@ impl<E: LineExclusions> Exclusions for ExclusionsOf<'_, E> {
 /// asks for it) and no text transform, so that offsets in the layout's text are offsets in
 /// `content`. The lines wrap at `width` device pixels as the style wraps them, or not at all
 /// where it is `None`.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn build_plain_text(
     cx: &mut TextContext,
     text: &mut TextLayout,
     node: NodeId,
     computed: &ComputedValues,
     content: &str,
+    composition: Option<std::ops::Range<usize>>,
     scale: f32,
     width: Option<f32>,
 ) {
@@ -1969,7 +1976,31 @@ pub(crate) fn build_plain_text(
     text.styles.marker = None;
     text.styles.marks.clear();
     let mut builder = text.layout.builder(key, &block, BuildOptions::default());
-    builder.text(key, content);
+    match composition {
+        // The composing text is in a box of its own, which the renderer underlines.
+        Some(range) => {
+            let composing = ComputedStyle {
+                decorates: true,
+                ..unboxed(own)
+            };
+            for (part, boxed) in [
+                (&content[..range.start], false),
+                (&content[range.clone()], true),
+                (&content[range.end..], false),
+            ] {
+                if boxed {
+                    builder.open_box(NodeKey(COMPOSE_KEY | node.as_u64()), &composing, None);
+                }
+                if !part.is_empty() {
+                    builder.text(key, part);
+                }
+                if boxed {
+                    builder.close_box();
+                }
+            }
+        }
+        None => builder.text(key, content),
+    }
     builder.finish(&mut cx.cx);
     text.built = true;
     let area = Area::new(width.unwrap_or(f32::MAX / 4.0));
