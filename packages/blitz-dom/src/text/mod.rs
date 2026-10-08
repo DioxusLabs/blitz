@@ -384,7 +384,7 @@ pub(crate) struct LinesInputs<'a> {
     /// The atomic inlines and floats as Taffy measured them, in content order.
     pub(crate) sizes: &'a [BoxMeasure],
     /// What the pass measured them for.
-    #[allow(dead_code)]
+    #[cfg_attr(not(text_winkin), allow(dead_code))]
     pub(crate) pass: Measure,
     /// The containing block's inline size in CSS pixels, which percentages are of.
     #[cfg_attr(not(text_winkin), allow(dead_code))]
