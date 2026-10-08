@@ -414,7 +414,18 @@ impl BaseDocument {
                     animations.base_styles.insert(target.clone(), base_style);
                 }
 
-                if animations.compose(&target, &self.guard, false) {
+                // The traversal replaced the style by the after-change style, which
+                // has no transition rule, so restyle even if the rule is unchanged.
+                let lost_transition_rule = update.before_change_style.is_some()
+                    && update
+                        .tasks
+                        .contains(UpdateAnimationsTasks::CSS_TRANSITIONS);
+                let changed = animations.compose(&target, &self.guard, false);
+                let has_transition_rule = animations
+                    .rules
+                    .get(&target)
+                    .is_some_and(|rules| rules.transitions.is_some());
+                if changed || (lost_transition_rule && has_transition_rule) {
                     changed_targets.push(target);
                 }
             }
