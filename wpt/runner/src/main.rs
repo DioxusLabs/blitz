@@ -332,8 +332,6 @@ struct ThreadCtx {
     navigation_provider: Arc<dyn NavigationProvider>,
     renderer: VelloImageRenderer,
     font_ctx: FontContext,
-    #[cfg(feature = "winkin")]
-    winkin_fonts: blitz_dom::fontwich::Collection,
     buffers: Buffers,
 
     // Things that aren't really thread-specifc, but are convenient to store here
@@ -530,8 +528,6 @@ fn main() {
     // Listing the platform's fonts reads every installed font file: list them once, and hand
     // every test a clone.
     let base_font_context = FontContext::default();
-    #[cfg(feature = "winkin")]
-    let base_winkin_fonts = blitz_dom::text_winkin::system_fonts();
 
     let thread_state: ThreadLocal<RefCell<ThreadCtx>> = ThreadLocal::new();
     let worker_counter = AtomicUsize::new(0);
@@ -594,8 +590,6 @@ fn main() {
                         net_provider,
                         renderer,
                         font_ctx,
-                        #[cfg(feature = "winkin")]
-                        winkin_fonts: base_winkin_fonts.clone(),
                         buffers: Buffers {
                             test_buffer,
                             ref_buffer,
