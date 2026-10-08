@@ -5,6 +5,7 @@
 //! This is slower, yes, but happens fast enough that it's not a huge issue.
 
 use crate::node::{ComputedStyleRef, ImageData, NodeData, SpecialElementData};
+use crate::text::EditEngine as _;
 use crate::{document::BaseDocument, dom_node_id, node::Node, taffy_node_id};
 use markup5ever::{LocalName, local_name};
 use std::cell::Ref;
@@ -82,7 +83,7 @@ pub(crate) fn resolve_calc_value(calc_ptr: *const (), parent_size: f32) -> f32 {
 /// Per-pass layout state: wraps the document for the duration of a layout pass and carries
 /// the Taffy tree trait implementations. Derefs to [`BaseDocument`].
 pub(crate) struct LayoutPassState<'doc> {
-    doc: &'doc mut BaseDocument,
+    pub(crate) doc: &'doc mut BaseDocument,
     /// The writing mode of the box whose layout algorithm is currently running (see
     /// `layout::writing_mode`). Child styles read during that algorithm are expressed in its axes.
     #[cfg(feature = "writing-mode")]
@@ -316,11 +317,9 @@ impl LayoutPassState<'_> {
                             .downcast_element_mut()
                             .and_then(|el| el.text_input_data_mut())
                         {
-                            input.editor.set_width(Some(content_width * scale));
-                            input.editor.refresh_layout(
-                                &mut doc.font_ctx.lock().unwrap(),
-                                &mut doc.layout_ctx,
-                            );
+                            input
+                                .editor
+                                .set_width(&mut doc.text, Some(content_width * scale));
                         }
                     }
                     return output;

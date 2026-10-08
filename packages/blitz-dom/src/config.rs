@@ -1,10 +1,10 @@
 use crate::HtmlParserProvider;
+use crate::text::FontContext;
 use blitz_traits::{
     navigation::NavigationProvider,
     net::{AbortSignal, NetProvider},
     shell::{ShellProvider, Viewport},
 };
-use parley::FontContext;
 use std::sync::Arc;
 use style::media_queries::MediaType;
 
@@ -45,7 +45,10 @@ pub struct DocumentConfig {
     pub shell_provider: Option<Arc<dyn ShellProvider>>,
     /// HTML parser provider. Used to parse HTML for setInnerHTML
     pub html_parser_provider: Option<Arc<dyn HtmlParserProvider>>,
-    /// Parley `FontContext`
+    /// The fonts the document lays out text with. Defaults to the platform's fonts, where Blitz
+    /// is built to read them (`system-fonts`), and Blitz's bullet font. Clones share loaded
+    /// fonts, so hand a clone of one to every document rather than listing the platform's fonts
+    /// for each.
     pub font_ctx: Option<FontContext>,
     /// The CSS media type used to evaluate `@media` rules.
     /// Defaults to [`MediaType::screen`].
