@@ -55,16 +55,6 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
       - run: cargo build --workspace
 
-  test-features-default:
-    name: "Test [default features]"
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - run: perl -pi.bak -e 's/opt-level = 2/opt-level = 0/g' Cargo.toml
-      - run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
-      - run: cargo test --workspace
-
   # wasm_hello is a standalone workspace; seven_guis and todomvc are workspace
   # members with a [lib] crate-type = ["cdylib"] target for wasm.
   build-wasm-examples:
@@ -154,7 +144,7 @@ jobs:
               os: ubuntu-latest,
               cross: false,
               command: "test",
-              args: "--all --tests",
+              args: "--workspace",
             }
           - {
               name: ios,
