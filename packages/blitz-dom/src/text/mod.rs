@@ -678,6 +678,10 @@ pub enum Edit<'a> {
     SetCompose(&'a str, Option<(usize, usize)>),
     /// Clears the text an input method is composing.
     ClearCompose,
+    /// Undoes the last change to the text, where the backend keeps a history.
+    Undo,
+    /// Redoes the last change undone, where the backend keeps a history.
+    Redo,
     /// Moves the caret to the point.
     MoveToPoint(f32, f32),
     /// Extends the selection to the point, as a drag does.
