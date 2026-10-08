@@ -336,12 +336,16 @@ pub(crate) fn animation_op(
             Ok(JsValue::undefined())
         }
         ("setTimeline", Some(id)) => {
-            let has_timeline = arg.is_some_and(|value| value.to_boolean());
+            let origin = arg.and_then(|value| value.as_number());
             let mut doc = ctx.doc.borrow_mut();
-            doc.animations_mut().set_has_timeline(id, has_timeline);
+            doc.animations_mut().set_timeline(id, origin);
             Ok(JsValue::undefined())
         }
         ("state", Some(id)) => {
+            // A pending style change can cancel a CSS animation or transition.
+            if ctx.doc.borrow().animations().is_owned_by_style(id) {
+                ctx.doc.borrow_mut().resolve(0.0);
+            }
             let values = {
                 let doc = ctx.doc.borrow();
                 let store = doc.animations();
@@ -421,21 +425,24 @@ pub(crate) fn animation_op(
         ("timelineTime", _) => Ok(JsValue::from(ctx.doc.borrow().animations().timeline_time())),
         ("needsFrames", _) => Ok(JsValue::from(ctx.doc.borrow().animations().needs_ticks())),
         ("takeActions", _) => {
-            let actions = ctx.doc.borrow_mut().animations_mut().take_actions();
+            let mut doc = ctx.doc.borrow_mut();
+            let store = doc.animations_mut();
+            let actions = store.take_actions();
             let mut result = Vec::with_capacity(actions.len());
             for (id, action) in actions {
-                let (name, current_time, timeline_time) = match action {
-                    Action::ReplaceReadyPromise => ("replaceReady", None, None),
-                    Action::ResolveReadyPromise => ("resolveReady", None, None),
-                    Action::AbortReadyPromise => ("abortReady", None, None),
-                    Action::ReplaceFinishedPromise => ("replaceFinished", None, None),
-                    Action::ResolveFinishedPromise => ("resolveFinished", None, None),
-                    Action::AbortFinishedPromise => ("abortFinished", None, None),
-                    Action::QueueFinishNotification => ("finishNotification", None, None),
+                let (name, current_time, timeline_time, scheduled_time) = match action {
+                    Action::ReplaceReadyPromise => ("replaceReady", None, None, None),
+                    Action::ResolveReadyPromise => ("resolveReady", None, None, None),
+                    Action::AbortReadyPromise => ("abortReady", None, None, None),
+                    Action::ReplaceFinishedPromise => ("replaceFinished", None, None, None),
+                    Action::ResolveFinishedPromise => ("resolveFinished", None, None, None),
+                    Action::AbortFinishedPromise => ("abortFinished", None, None, None),
+                    Action::QueueFinishNotification => ("finishNotification", None, None, None),
                     Action::QueueEvent {
                         kind,
                         current_time,
                         timeline_time,
+                        scheduled_time,
                     } => (
                         match kind {
                             EventKind::Finish => "finish",
@@ -444,6 +451,10 @@ pub(crate) fn animation_op(
                         },
                         current_time,
                         timeline_time,
+                        // Events are sorted by the time on the document's timeline.
+                        scheduled_time
+                            .zip(store.timeline_origin(id))
+                            .map(|(time, origin)| time + origin),
                     ),
                 };
                 let values = [
@@ -451,6 +462,7 @@ pub(crate) fn animation_op(
                     js_str(name),
                     time_value(current_time),
                     time_value(timeline_time),
+                    time_value(scheduled_time),
                 ];
                 result.push(JsValue::from(JsArray::from_iter(values, context)));
             }

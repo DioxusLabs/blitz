@@ -142,7 +142,8 @@ fn replaced_animations_are_removed() {
         log.push(a.replaceState, b.replaceState);
         done(log);
     "#);
-    assert_eq!(out, "remove,removed,active,1,persisted,2,persisted,active");
+    // The `finished` reaction runs in the microtask checkpoint before events are dispatched.
+    assert_eq!(out, "removed,active,1,persisted,2,remove,persisted,active");
 }
 
 #[test]

@@ -31,7 +31,7 @@
 
     function processActions() {
         const actions = native("takeActions");
-        for (const [id, kind, currentTime, timelineTime] of actions) {
+        for (const [id, kind, currentTime, timelineTime, scheduledTime] of actions) {
             const animation = animations.get(id);
             if (!animation) continue;
             const state = animation[STATE];
@@ -69,7 +69,7 @@
                     queueMicrotask(() => call("finishNotification", id));
                     break;
                 default:
-                    pendingEvents.push({ animation, type: kind, currentTime, timelineTime });
+                    pendingEvents.push({ animation, type: kind, currentTime, timelineTime, scheduledTime });
             }
         }
         if (pendingEvents.length || native("needsFrames")) requestFrame();
@@ -93,8 +93,8 @@
         const events = pendingEvents;
         pendingEvents = [];
         events.sort((a, b) => {
-            const at = a.timelineTime === null ? -Infinity : a.timelineTime;
-            const bt = b.timelineTime === null ? -Infinity : b.timelineTime;
+            const at = a.scheduledTime === null ? -Infinity : a.scheduledTime;
+            const bt = b.scheduledTime === null ? -Infinity : b.scheduledTime;
             return at - bt || a.animation[ID] - b.animation[ID];
         });
         for (const { animation, type, currentTime, timelineTime } of events) {
@@ -623,7 +623,7 @@
             };
             animations.set(this[ID], this);
             if (adopt !== undefined) return;
-            if (this[STATE].timeline === null) call("setTimeline", this[ID], false);
+            if (this[STATE].timeline === null) call("setTimeline", this[ID], null);
             if (effect) this.effect = effect;
         }
 
@@ -655,7 +655,7 @@
                 throw new TypeError("The timeline must be an AnimationTimeline or null");
             }
             this[STATE].timeline = timeline;
-            call("setTimeline", this[ID], timeline !== null);
+            call("setTimeline", this[ID], timeline === null ? null : timeline._originTime);
         }
 
         get startTime() { return native("state", this[ID])[1]; }

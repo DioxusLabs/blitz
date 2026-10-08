@@ -1647,12 +1647,13 @@ impl ScriptRuntime {
                 .borrow_mut()
                 .advance_animation_timeline(elapsed);
         }
-        if let Err(error) =
-            crate::dom::call_js_helper("__blitz_animations_frame", &[], &mut self.context)
-        {
-            report_js_error(&self.ctx, &mut self.context, "animation frame", &error);
+        // Finish notifications run in a microtask checkpoint before the events are dispatched.
+        for helper in ["__blitz_animations_actions", "__blitz_animations_frame"] {
+            if let Err(error) = crate::dom::call_js_helper(helper, &[], &mut self.context) {
+                report_js_error(&self.ctx, &mut self.context, "animation frame", &error);
+            }
+            self.run_jobs("animation microtasks");
         }
-        self.run_jobs("animation microtasks");
         self.dispatch_css_animation_events();
     }
 
