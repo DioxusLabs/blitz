@@ -12,6 +12,7 @@ import argparse
 import json
 import sys
 from collections import defaultdict
+from urllib.parse import urlsplit
 
 PASS = "PASS"
 SKIP = "SKIP"
@@ -34,7 +35,7 @@ def load_units(path):
 
 
 def areas_of(test):
-    parts = test.split("/")[:-1]
+    parts = urlsplit(test).path.split("/")[:-1]
     return ["/".join(parts[: i + 1]) for i in range(len(parts))]
 
 
