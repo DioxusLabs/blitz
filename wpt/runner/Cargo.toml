@@ -7,16 +7,18 @@ rust-version.workspace = true
 publish = false
 
 [features]
-default = ["cpu"]
+default = ["cpu", "parley"]
 gpu = ["dep:anyrender_vello"]
 cpu = ["dep:anyrender_vello_cpu"]
+# The text backend, which is Parley: on by default, and required.
+parley = ["blitz-dom/parley", "blitz-paint/parley", "blitz-html/parley", "blitz-vibey-script/parley"]
 
 [dependencies]
 blitz-dom = { workspace = true, features = ["svg", "floats", "system-fonts", "woff", "complex-scripts", "text-transform-icu", "writing-mode"] }
 blitz-html = {workspace = true }
 blitz-vibey-script = { workspace = true }
 blitz-traits = { workspace = true }
-blitz-paint = { workspace = true, features = ["default"] }
+blitz-paint = { workspace = true, features = ["svg"] }
 anyrender = { workspace = true }
 anyrender_vello = { workspace = true, optional = true }
 anyrender_vello_cpu = { workspace = true, optional = true }
@@ -27,7 +29,6 @@ style_traits = { workspace = true }
 markup5ever = { workspace = true }
 html5ever = { workspace = true }
 roxmltree = "0.21"
-parley = { workspace = true }
 peniko = { workspace = true }
 image = { workspace = true, features = ["png"] }
 url = { workspace = true }
