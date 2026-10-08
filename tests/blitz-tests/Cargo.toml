@@ -8,6 +8,7 @@ homepage.workspace = true
 repository.workspace = true
 categories.workspace = true
 edition.workspace = true
+autotests = false
 rust-version.workspace = true
 
 [dev-dependencies]
@@ -36,3 +37,7 @@ usvg = { workspace = true }
 
 [lib]
 path = "lib.rs"
+
+[[test]]
+name = "all"
+path = "tests/all.rs"

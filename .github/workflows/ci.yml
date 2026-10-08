@@ -14,6 +14,7 @@ concurrency:
 env:
   RUSTDOCFLAGS: "-D warnings"
   CARGO_REGISTRIES_CRATES_IO_PROTOCOL: "sparse"
+  CARGO_PROFILE_DEV_DEBUG: "line-tables-only"
 
 jobs:
 
@@ -42,7 +43,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: 1.91
-      - run: perl -pi.bak -e 's/opt-level = 2/opt-level = 0/g' Cargo.toml
       - run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
       - run: cargo build --workspace
 
@@ -52,19 +52,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - run: perl -pi.bak -e 's/opt-level = 2/opt-level = 0/g' Cargo.toml
       - run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
       - run: cargo build --workspace
-
-  build-counter:
-    name: "Build counter example"
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - run: perl -pi.bak -e 's/opt-level = 2/opt-level = 0/g' Cargo.toml
-      - run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
-      - run: cargo build -p counter
 
   # wasm_hello is a standalone workspace; seven_guis and todomvc are workspace
   # members with a [lib] crate-type = ["cdylib"] target for wasm.
@@ -105,7 +94,6 @@ jobs:
         with:
           toolchain: stable
           components: clippy
-      - run: perl -pi.bak -e 's/opt-level = 2/opt-level = 0/g' Cargo.toml
       - run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
       - run: cargo clippy --workspace -- -D warnings
       - run: cargo clippy -p blitz-dom --no-default-features --features svg,woff,accessibility,system-fonts,file-input,custom-widget --all-targets -- -D warnings
@@ -184,7 +172,6 @@ jobs:
         with:
           toolchain: stable
           targets: ${{ matrix.platform.target }}
-          components: rustfmt
 
       # Install cross from source. Because latest release doesn't work with recent Rust
       # when targeting Android. See https://github.com/cross-rs/cross/issues/1222
@@ -192,13 +179,14 @@ jobs:
         if: ${{ matrix.platform.cross == true }}
         run: cargo install cross --git https://github.com/cross-rs/cross --rev 426e811
 
-      - name: Free Disk Space (Ubuntu)
-        if: ${{ matrix.platform.os == 'ubuntu-24.04' || matrix.platform.os == 'ubuntu-24.04-arm' }}
-        uses: jlumbroso/free-disk-space@v1.3.1
-        with: # speed things up a bit
-          android: ${{ matrix.platform.target != 'aarch64-linux-android' }}
-          large-packages: false
-          swap-storage: false
+      # Disabled: not currently needed. Uncomment if Linux runners run out of disk space.
+      # - name: Free Disk Space (Ubuntu)
+      #   if: ${{ runner.os == 'Linux' }}
+      #   uses: jlumbroso/free-disk-space@v1.3.1
+      #   with: # speed things up a bit
+      #     android: ${{ matrix.platform.target != 'aarch64-linux-android' }}
+      #     large-packages: false
+      #     swap-storage: false
 
       - uses: Swatinem/rust-cache@v2
         with:
