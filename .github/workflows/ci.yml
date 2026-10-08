@@ -56,16 +56,6 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
       - run: cargo build --workspace
 
-  test-features-default:
-    name: "Test [default features]"
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - run: perl -pi.bak -e 's/opt-level = 2/opt-level = 0/g' Cargo.toml
-      - run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
-      - run: cargo test --workspace
-
   build-counter:
     name: "Build counter example"
     runs-on: ubuntu-latest
@@ -166,7 +156,7 @@ jobs:
               os: ubuntu-latest,
               cross: false,
               command: "test",
-              args: "--all --tests",
+              args: "--workspace",
             }
           - {
               name: ios,
