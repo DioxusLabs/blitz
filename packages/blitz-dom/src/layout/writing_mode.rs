@@ -23,6 +23,7 @@
 use super::{BlockContext, LayoutPassState};
 use crate::document::BaseDocument;
 use crate::dom_node_id;
+use crate::node::Node;
 use stylo_taffy::WritingMode;
 use stylo_taffy::WritingModeExt;
 use taffy::{
@@ -267,6 +268,9 @@ impl LayoutPassState<'_> {
         self.set_final_layout(node_id, &layout);
 
         let wm = self.layout_wm_of(dom_node_id(node_id));
+        self.node_from_id_mut(node_id)
+            .layout_data_mut()
+            .writing_mode = wm;
         for index in 0..self.child_count(node_id) {
             let child = self.get_child_id(node_id, index);
             if !self.is_out_of_flow(child) {
@@ -357,36 +361,68 @@ fn physical_layout(logical: Layout, placer_wm: WritingMode, placer_size: Size<f3
 }
 
 impl BaseDocument {
-    /// The writing mode `node_id`'s layout algorithm ran in, for use outside a layout pass (CSSOM);
-    /// `LayoutPassState::layout_wm_of` caches the root lookup during layout.
-    fn layout_wm_of(&self, node_id: crate::NodeId) -> WritingMode {
-        if self.try_root_element().map(|root| root.id) == Some(node_id) {
-            self.root_layout_wm(node_id)
-        } else {
-            self.nodes[node_id].writing_mode()
+    /// `node_id`'s document-relative position and unrounded layout in physical coordinates, for
+    /// CSSOM geometry. `unrounded_layout` itself is left in the placing algorithm's writing mode (see
+    /// [`LayoutPassState::physicalise_and_round_layout`]), so the containing-block chain is
+    /// physicalised root-down in a single descent, each box in its placer's writing mode and size.
+    pub(crate) fn physical_unrounded_geometry(
+        &self,
+        node_id: crate::NodeId,
+    ) -> (crate::util::Point<f32>, Layout) {
+        // Without a vertical box on the containing-block chain there is nothing to physicalise.
+        let mut pos = crate::util::Point { x: 0.0, y: 0.0 };
+        let mut has_vertical = false;
+        let mut current = Some(node_id);
+        while let Some(id) = current {
+            let node = &self.nodes[id];
+            pos.x += node.unrounded_layout().location.x - node.scroll_offset().x as f32;
+            pos.y += node.unrounded_layout().location.y - node.scroll_offset().y as f32;
+            has_vertical |= node.layout_data().writing_mode.is_vertical();
+            current = node.containing_block();
         }
+        if !has_vertical {
+            return (pos, *self.nodes[node_id].unrounded_layout());
+        }
+
+        let root_id = self.try_root_element().map(|root| root.id);
+        let node = &self.nodes[node_id];
+        let (mut pos, placer_wm, placer_size) = self.placer_geometry(node, node_id, root_id);
+        let layout = physical_layout(*node.unrounded_layout(), placer_wm, placer_size);
+        pos.x += layout.location.x - node.scroll_offset().x as f32;
+        pos.y += layout.location.y - node.scroll_offset().y as f32;
+        (pos, layout)
     }
 
-    /// `node_id`'s unrounded layout in physical coordinates (`unrounded_layout` itself is left in
-    /// the placing algorithm's writing mode, see [`LayoutPassState::physicalise_and_round_layout`]).
-    pub(crate) fn physical_unrounded_layout(&self, node_id: crate::NodeId) -> Layout {
-        let node = &self.nodes[node_id];
-        let logical = *node.unrounded_layout();
-        let is_root = self.try_root_element().map(|root| root.id) == Some(node_id);
-        match node.containing_block().filter(|_| !is_root) {
-            Some(placer) => physical_layout(
-                logical,
-                self.layout_wm_of(placer),
-                self.physical_unrounded_layout(placer).size,
-            ),
-            None => {
-                let viewport = self.stylist.device().au_viewport_size();
-                let viewport = Size {
-                    width: viewport.width.to_f32_px(),
-                    height: viewport.height.to_f32_px(),
-                };
-                physical_layout(logical, self.layout_wm_of(node_id), viewport)
-            }
-        }
+    /// Document-relative position, writing mode and physical size of the box that places `node`.
+    fn placer_geometry(
+        &self,
+        node: &Node,
+        node_id: crate::NodeId,
+        root_id: Option<crate::NodeId>,
+    ) -> (crate::util::Point<f32>, WritingMode, Size<f32>) {
+        let Some(placer_id) = node.containing_block().filter(|_| Some(node_id) != root_id) else {
+            let viewport = self.stylist.device().au_viewport_size();
+            let viewport = Size {
+                width: viewport.width.to_f32_px(),
+                height: viewport.height.to_f32_px(),
+            };
+            let wm = root_id.map_or(WritingMode::empty(), |root| {
+                self.nodes[root].layout_data().writing_mode
+            });
+            return (crate::util::Point { x: 0.0, y: 0.0 }, wm, viewport);
+        };
+
+        let placer = &self.nodes[placer_id];
+        let (mut pos, grand_wm, grand_size) = self.placer_geometry(placer, placer_id, root_id);
+        let logical = placer.unrounded_layout();
+        let (location, size) = if grand_wm.is_vertical() {
+            let physical = physical_layout(*logical, grand_wm, grand_size);
+            (physical.location, physical.size)
+        } else {
+            (logical.location, logical.size)
+        };
+        pos.x += location.x - placer.scroll_offset().x as f32;
+        pos.y += location.y - placer.scroll_offset().y as f32;
+        (pos, placer.layout_data().writing_mode, size)
     }
 }
