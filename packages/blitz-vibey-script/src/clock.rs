@@ -19,7 +19,7 @@ pub(crate) struct ScriptClock {
 
 enum ClockMode {
     Real,
-    Virtual { now: Instant },
+    Virtual { now: Instant, origin: Instant },
 }
 
 impl Default for ScriptClock {
@@ -35,7 +35,7 @@ impl ScriptClock {
     pub fn now(&self) -> Instant {
         match *self.inner.borrow() {
             ClockMode::Real => Instant::now(),
-            ClockMode::Virtual { now } => now,
+            ClockMode::Virtual { now, .. } => now,
         }
     }
 
@@ -44,16 +44,25 @@ impl ScriptClock {
     pub fn make_virtual(&self) {
         let mut mode = self.inner.borrow_mut();
         if matches!(*mode, ClockMode::Real) {
-            *mode = ClockMode::Virtual {
-                now: Instant::now(),
-            };
+            let now = Instant::now();
+            *mode = ClockMode::Virtual { now, origin: now };
+        }
+    }
+
+    /// The milliseconds a virtual clock has advanced by. `None` in real mode.
+    pub fn virtual_elapsed_ms(&self) -> Option<f64> {
+        match *self.inner.borrow() {
+            ClockMode::Real => None,
+            ClockMode::Virtual { now, origin } => {
+                Some(now.duration_since(origin).as_secs_f64() * 1000.)
+            }
         }
     }
 
     /// Advance a virtual clock to `deadline` (never backwards).
     /// Does nothing in real mode.
     pub fn advance_to(&self, deadline: Instant) {
-        if let ClockMode::Virtual { now } = &mut *self.inner.borrow_mut() {
+        if let ClockMode::Virtual { now, .. } = &mut *self.inner.borrow_mut() {
             *now = (*now).max(deadline);
         }
     }

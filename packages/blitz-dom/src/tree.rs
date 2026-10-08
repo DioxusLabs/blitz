@@ -41,6 +41,9 @@ pub struct NodeTree {
     /// Scroll offset of the viewport (the root element scrolls the viewport,
     /// so its offset lives here rather than on the node).
     viewport_scroll: crate::Point<f64>,
+    /// The animations of the document. They live here so that nodes can read them during
+    /// the style traversal.
+    pub(crate) animations: crate::web_animations::WebAnimations,
 }
 
 impl NodeTree {
@@ -49,6 +52,7 @@ impl NodeTree {
             map: SlotMap::with_key(),
             geometry_generation: AtomicU64::new(1),
             viewport_scroll: crate::Point::ZERO,
+            animations: Default::default(),
         }
     }
 

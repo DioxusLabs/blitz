@@ -51,6 +51,7 @@ blitz-vibey-script = { version = "=0.3.0-beta.2", path = "./packages/blitz-vibey
 blitz-shell = { version = "=0.3.0-beta.2", path = "./packages/blitz-shell", default-features = false }
 blitz-traits = { version = "=0.3.0-beta.2", path = "./packages/blitz-traits", default-features = false }
 stylo_taffy = { version = "=0.3.0-beta.2", path = "./packages/stylo_taffy", default-features = false }
+stylo_web_animations = { version = "=0.3.0-beta.2", path = "./packages/stylo_web_animations" }
 dioxus-native = { version = "0.7.0", path = "./packages/dioxus-native", default-features = false }
 dioxus-native-dom = { version = "0.7.0", path = "./packages/dioxus-native-dom", default-features = false }
 debug_timer = { version = "0.1.2", path = "./packages/debug_timer" }
@@ -327,3 +328,17 @@ rustc-hash = { workspace = true }
 # [patch."https://github.com/linebender/parley"]
 # parley = { path = "../parley/parley" }
 # fontique = { path = "../parley/fontique" }
+
+# Web Animations support in Stylo, until it is released.
+[patch.crates-io]
+stylo = { git = "https://github.com/DioxusLabs/stylo", branch = "devin/1791427494-web-animations" }
+stylo_traits = { git = "https://github.com/DioxusLabs/stylo", branch = "devin/1791427494-web-animations" }
+stylo_atoms = { git = "https://github.com/DioxusLabs/stylo", branch = "devin/1791427494-web-animations" }
+stylo_static_prefs = { git = "https://github.com/DioxusLabs/stylo", branch = "devin/1791427494-web-animations" }
+stylo_dom = { git = "https://github.com/DioxusLabs/stylo", branch = "devin/1791427494-web-animations" }
+stylo_derive = { git = "https://github.com/DioxusLabs/stylo", branch = "devin/1791427494-web-animations" }
+stylo_malloc_size_of = { git = "https://github.com/DioxusLabs/stylo", branch = "devin/1791427494-web-animations" }
+selectors = { git = "https://github.com/DioxusLabs/stylo", branch = "devin/1791427494-web-animations" }
+servo_arc = { git = "https://github.com/DioxusLabs/stylo", branch = "devin/1791427494-web-animations" }
+to_shmem = { git = "https://github.com/DioxusLabs/stylo", branch = "devin/1791427494-web-animations" }
+to_shmem_derive = { git = "https://github.com/DioxusLabs/stylo", branch = "devin/1791427494-web-animations" }

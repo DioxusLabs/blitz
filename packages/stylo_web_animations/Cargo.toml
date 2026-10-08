@@ -11,3 +11,6 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+style = { workspace = true }
+style_traits = { workspace = true }
+rustc-hash = { workspace = true }

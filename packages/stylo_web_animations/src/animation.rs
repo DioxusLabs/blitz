@@ -37,6 +37,7 @@ pub enum Action {
 pub enum EventKind {
     Finish,
     Cancel,
+    Remove,
 }
 
 /// The exception a failed call should throw.

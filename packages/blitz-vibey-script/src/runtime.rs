@@ -1442,6 +1442,14 @@ impl ScriptRuntime {
             .build();
         register_global(&mut context, "CSS", css_namespace.into());
 
+        // Web Animations, backing the interfaces defined in `animation.js`
+        register_global_fn(
+            &mut context,
+            "__blitz_anim",
+            1,
+            crate::animation::animation_op,
+        );
+
         let mut runtime = Self {
             context,
             ctx,
@@ -1451,6 +1459,7 @@ impl ScriptRuntime {
         // Small JS bootstrap for APIs that are easiest to define in JS
         runtime.eval_internal(BOOTSTRAP_JS, "<blitz-bootstrap>");
         runtime.eval_internal(GEOMETRY_JS, "<blitz-geometry>");
+        runtime.eval_internal(crate::animation::ANIMATION_JS, "<blitz-animation>");
 
         runtime
     }
@@ -1617,6 +1626,80 @@ impl ScriptRuntime {
         }
     }
 
+    /// Starts a frame for animations: delivers their promise resolutions and events.
+    ///
+    /// A virtual clock also drives the document timeline. Otherwise the timeline
+    /// advances when the embedder resolves the document.
+    fn update_animations(&mut self) {
+        let elapsed = self.ctx.state.borrow().clock.virtual_elapsed_ms();
+        if let Some(elapsed) = elapsed {
+            self.ctx
+                .doc
+                .borrow_mut()
+                .advance_animation_timeline(elapsed);
+        }
+        if let Err(error) =
+            crate::dom::call_js_helper("__blitz_animations_frame", &[], &mut self.context)
+        {
+            report_js_error(&self.ctx, &mut self.context, "animation frame", &error);
+        }
+        self.run_jobs("animation microtasks");
+        self.dispatch_css_animation_events();
+    }
+
+    fn dispatch_css_animation_events(&mut self) {
+        use blitz_dom::web_animations::stylo_web_animations::CssEventKind::*;
+        let events = self.ctx.doc.borrow_mut().take_css_animation_events();
+        for (node_id, event) in events {
+            let chain = {
+                let doc = self.ctx.doc.borrow();
+                let mut chain = Vec::new();
+                let mut next = Some(node_id);
+                while let Some(node) = next.and_then(|id| doc.get_node(id)) {
+                    chain.push(node.id);
+                    next = node.parent;
+                }
+                chain
+            };
+            let (name, name_field) = match event.kind {
+                AnimationStart => ("animationstart", "animationName"),
+                AnimationEnd => ("animationend", "animationName"),
+                AnimationIteration => ("animationiteration", "animationName"),
+                AnimationCancel => ("animationcancel", "animationName"),
+                TransitionRun => ("transitionrun", "propertyName"),
+                TransitionStart => ("transitionstart", "propertyName"),
+                TransitionEnd => ("transitionend", "propertyName"),
+                TransitionCancel => ("transitioncancel", "propertyName"),
+            };
+            let pseudo = event
+                .target
+                .pseudo
+                .as_ref()
+                .map_or("", crate::animation::pseudo_name);
+            let ran = self.dispatch_event_inner(
+                &chain,
+                name,
+                true,
+                |ctx, target, context| {
+                    let object = create_event(ctx, name, true, false, target, context);
+                    crate::dom::define_value(&object, name_field, js_str(&event.name), context);
+                    crate::dom::define_value(
+                        &object,
+                        "elapsedTime",
+                        JsValue::from(event.elapsed_time),
+                        context,
+                    );
+                    crate::dom::define_value(&object, "pseudoElement", js_str(pseudo), context);
+                    object
+                },
+                &mut EventState::default(),
+            );
+            if ran {
+                self.run_jobs("event microtasks");
+            }
+        }
+    }
+
     /// Run all timers that are currently due. Returns `true` if any JavaScript was run.
     pub fn run_due_timers(&mut self) -> bool {
         let due = {
@@ -1627,6 +1710,7 @@ impl ScriptRuntime {
         if due.is_empty() {
             return false;
         }
+        self.update_animations();
         for timer in due {
             if let Err(error) =
                 timer
