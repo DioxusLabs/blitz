@@ -844,7 +844,7 @@ impl<T: Deref<Target = ComputedValues>> taffy::GridContainerStyle for TaffyStylo
     #[cfg(feature = "grid-lanes")]
     #[inline]
     fn grid_lanes_direction(&self) -> taffy::GridLanesDirection {
-        convert::grid_lanes_direction(self.style.get_position().grid_lanes_direction)
+        convert::grid_lanes_direction(self.style.get_position())
     }
 
     #[cfg(feature = "grid-lanes")]

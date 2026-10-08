@@ -715,11 +715,28 @@ pub fn clear(input: stylo::Clear) -> taffy::Clear {
 
 #[inline]
 #[cfg(feature = "grid-lanes")]
-pub fn grid_lanes_direction(input: stylo::GridLanesDirection) -> taffy::GridLanesDirection {
-    match input {
+/// Resolves `grid-lanes-direction`. `normal` establishes rows only when `grid-template-columns`
+/// is `none` and `grid-template-rows` is not (css-grid-3 §2.3).
+pub fn grid_lanes_direction(
+    position: &style::properties::style_structs::Position,
+) -> taffy::GridLanesDirection {
+    match position.grid_lanes_direction {
         stylo::GridLanesDirection::Row => taffy::GridLanesDirection::Row,
-        stylo::GridLanesDirection::Normal | stylo::GridLanesDirection::Column => {
-            taffy::GridLanesDirection::Column
+        stylo::GridLanesDirection::Column => taffy::GridLanesDirection::Column,
+        stylo::GridLanesDirection::Normal => {
+            let columns_none = matches!(
+                position.grid_template_columns,
+                stylo::GenericGridTemplateComponent::None
+            );
+            let rows_none = matches!(
+                position.grid_template_rows,
+                stylo::GenericGridTemplateComponent::None
+            );
+            if columns_none && !rows_none {
+                taffy::GridLanesDirection::Row
+            } else {
+                taffy::GridLanesDirection::Column
+            }
         }
     }
 }
@@ -1064,7 +1081,7 @@ pub fn to_taffy_style(style: &stylo::ComputedValues) -> taffy::Style<Atom> {
         #[cfg(feature = "grid")]
         grid_auto_flow: self::grid_auto_flow(pos.grid_auto_flow),
         #[cfg(feature = "grid-lanes")]
-        grid_lanes_direction: grid_lanes_direction(style.clone_grid_lanes_direction()),
+        grid_lanes_direction: grid_lanes_direction(pos),
         #[cfg(feature = "grid-lanes")]
         flow_tolerance: flow_tolerance(
             &style.clone_flow_tolerance(),
