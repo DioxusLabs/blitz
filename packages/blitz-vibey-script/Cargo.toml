@@ -12,8 +12,9 @@ rust-version.workspace = true
 
 [features]
 default = ["parley"]
-# The text backend, which is Parley: on by default, and required.
+# The text backend: Parley (the default) or winkin. With both, Parley is used.
 parley = ["blitz-dom/parley", "blitz-html/parley"]
+winkin = ["blitz-dom/winkin", "blitz-html/winkin"]
 tracing = ["dep:tracing", "blitz-dom/tracing"]
 
 [dependencies]

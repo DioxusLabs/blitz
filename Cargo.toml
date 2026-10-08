@@ -111,7 +111,9 @@ taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "7d33901cc383489d99
 # The font value types shared by the text backends, from Parley's revision
 parlance = { version = "0.1", default-features = false, features = ["std"] }
 parley = { version = "0.12", default-features = false, features = ["std"] }
-winkin = { git = "https://github.com/dfrg/winkin", rev = "6a55e15ca9356ada4651af0001b9467bafc4eff7" }
+# Its `dictionaries` feature, ICU's line and word dictionaries, is blitz-dom's
+# `complex-scripts`.
+winkin = { git = "https://github.com/dfrg/winkin", rev = "6a55e15ca9356ada4651af0001b9467bafc4eff7", default-features = false, features = ["std"] }
 # The fonts winkin chooses from. Its `system` feature, the platform's font
 # APIs, is blitz-dom's `system-fonts`.
 fontwich = { git = "https://github.com/dfrg/winkin", rev = "6a55e15ca9356ada4651af0001b9467bafc4eff7", default-features = false, features = ["std"] }
@@ -263,11 +265,10 @@ publish = false
 log-times = ["log-frame-times", "log-phase-times"]
 log-frame-times = ["dioxus-native/log-frame-times"]
 log-phase-times = ["dioxus-native/log-phase-times"]
-# The text backend, which is Parley: on by default, and required.
+# The text backend: Parley (the default) or winkin. With both, Parley is used.
 default = ["parley"]
 parley = ["blitz-dom/parley", "blitz-paint/parley", "dioxus-native/parley"]
-# Lay out and paint document text with winkin.
-winkin = ["blitz-paint/winkin"]
+winkin = ["blitz-dom/winkin", "blitz-paint/winkin", "dioxus-native/winkin"]
 
 [dev-dependencies]
 anyrender = { workspace = true }

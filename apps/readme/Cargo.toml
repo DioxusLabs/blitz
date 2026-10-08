@@ -11,8 +11,9 @@ publish = true
 
 [features]
 default = ["hybrid", "comrak", "floats", "scrollbars", "parley"]
-# The text backend, which is Parley: on by default, and required.
+# The text backend: Parley (the default) or winkin. With both, Parley is used.
 parley = ["blitz-dom/parley", "blitz-html/parley", "blitz-paint/parley", "blitz-shell/parley"]
+winkin = ["blitz-dom/winkin", "blitz-html/winkin", "blitz-paint/winkin", "blitz-shell/winkin"]
 
 # Renderers
 gpu = ["dep:anyrender_vello"]

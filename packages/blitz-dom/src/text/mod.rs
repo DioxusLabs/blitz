@@ -16,7 +16,7 @@
 //! which [`cfg_text_backend!`](crate::cfg_text_backend) selects.
 
 #[cfg(not(any(text_parley, text_winkin)))]
-compile_error!("Enable the `parley` feature: Blitz needs a text backend");
+compile_error!("Enable one of the `parley` or `winkin` features");
 
 use std::borrow::Cow;
 use std::ops::{Range, RangeInclusive};
@@ -942,13 +942,13 @@ mod tests {
         );
     }
 
-    /// The `winkin` feature selects winkin, and otherwise the `parley` feature selects Parley.
+    /// Parley is the backend wherever its feature is on, winkin's or not.
     #[test]
-    fn the_feature_selects_the_backend() {
-        let expected = if cfg!(feature = "winkin") {
-            TextBackend::Winkin
-        } else {
+    fn parley_wins_when_both_backends_are_enabled() {
+        let expected = if cfg!(feature = "parley") {
             TextBackend::Parley
+        } else {
+            TextBackend::Winkin
         };
         assert_eq!(BACKEND, expected);
     }
