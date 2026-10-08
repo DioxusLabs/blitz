@@ -169,6 +169,8 @@ impl EditEngine for TextEditor {
             }
             Edit::SetCompose(text, cursor) => driver.set_compose(text, cursor),
             Edit::ClearCompose => driver.clear_compose(),
+            // PlainEditor keeps no history.
+            Edit::Undo | Edit::Redo => {}
             Edit::MoveToPoint(x, y) => driver.move_to_point(x, y),
             Edit::ExtendSelectionToPoint(x, y) => driver.extend_selection_to_point(x, y),
             Edit::ShiftClickExtension(x, y) => driver.shift_click_extension(x, y),
