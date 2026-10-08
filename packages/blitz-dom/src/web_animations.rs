@@ -177,6 +177,17 @@ fn restyle_hint(target: &Target) -> RestyleHint {
     }
 }
 
+/// Requests a restyle of `target` for a change of its animation rules only.
+fn set_animation_restyle_hint(node: &mut Node, target: &Target) {
+    match target.pseudo {
+        // The animation-only traversal does not replace the rules of pseudo-elements.
+        Some(_) => node.set_restyle_hint(restyle_hint(target)),
+        None => node.set_animation_restyle_hint(
+            RestyleHint::RESTYLE_CSS_ANIMATIONS | RestyleHint::RESTYLE_CSS_TRANSITIONS,
+        ),
+    }
+}
+
 /// The style of `target` without the rules of animations and transitions.
 fn base_style<'a>(
     node: &'a Node,
@@ -277,7 +288,7 @@ impl BaseDocument {
         for target in targets {
             if animations.compose(&target, &self.guard, true) {
                 if let Some(node) = self.nodes.get_mut(target_node(&target)) {
-                    node.set_restyle_hint(restyle_hint(&target));
+                    set_animation_restyle_hint(node, &target);
                 }
             }
         }
@@ -448,7 +459,7 @@ impl BaseDocument {
 
         for target in &changed_targets {
             if let Some(node) = self.nodes.get_mut(target_node(target)) {
-                node.set_restyle_hint(restyle_hint(target));
+                set_animation_restyle_hint(node, target);
             }
         }
         self.nodes.animations = animations;
