@@ -7138,7 +7138,7 @@ dependencies = [
 [[package]]
 name = "selectors"
 version = "0.41.0"
-source = "git+https://github.com/DioxusLabs/stylo?rev=0b2ffa762d0711866c04bec495399050faede330#0b2ffa762d0711866c04bec495399050faede330"
+source = "git+https://github.com/DioxusLabs/stylo?rev=ee927b58c0ddb84c1f8eb7e4abe669d69ed3f345#ee927b58c0ddb84c1f8eb7e4abe669d69ed3f345"
 dependencies = [
  "bitflags 2.13.1",
  "cssparser",
@@ -7277,7 +7277,7 @@ dependencies = [
 [[package]]
 name = "servo_arc"
 version = "0.5.0"
-source = "git+https://github.com/DioxusLabs/stylo?rev=0b2ffa762d0711866c04bec495399050faede330#0b2ffa762d0711866c04bec495399050faede330"
+source = "git+https://github.com/DioxusLabs/stylo?rev=ee927b58c0ddb84c1f8eb7e4abe669d69ed3f345#ee927b58c0ddb84c1f8eb7e4abe669d69ed3f345"
 dependencies = [
  "serde",
  "stable_deref_trait",
@@ -7737,7 +7737,7 @@ dependencies = [
 [[package]]
 name = "stylo"
 version = "0.22.0"
-source = "git+https://github.com/DioxusLabs/stylo?rev=0b2ffa762d0711866c04bec495399050faede330#0b2ffa762d0711866c04bec495399050faede330"
+source = "git+https://github.com/DioxusLabs/stylo?rev=ee927b58c0ddb84c1f8eb7e4abe669d69ed3f345#ee927b58c0ddb84c1f8eb7e4abe669d69ed3f345"
 dependencies = [
  "app_units",
  "arrayvec",
@@ -7793,7 +7793,7 @@ dependencies = [
 [[package]]
 name = "stylo_atoms"
 version = "0.22.0"
-source = "git+https://github.com/DioxusLabs/stylo?rev=0b2ffa762d0711866c04bec495399050faede330#0b2ffa762d0711866c04bec495399050faede330"
+source = "git+https://github.com/DioxusLabs/stylo?rev=ee927b58c0ddb84c1f8eb7e4abe669d69ed3f345#ee927b58c0ddb84c1f8eb7e4abe669d69ed3f345"
 dependencies = [
  "string_cache 0.11.0",
  "string_cache_codegen",
@@ -7802,7 +7802,7 @@ dependencies = [
 [[package]]
 name = "stylo_derive"
 version = "0.22.0"
-source = "git+https://github.com/DioxusLabs/stylo?rev=0b2ffa762d0711866c04bec495399050faede330#0b2ffa762d0711866c04bec495399050faede330"
+source = "git+https://github.com/DioxusLabs/stylo?rev=ee927b58c0ddb84c1f8eb7e4abe669d69ed3f345#ee927b58c0ddb84c1f8eb7e4abe669d69ed3f345"
 dependencies = [
  "darling 0.20.11",
  "proc-macro2",
@@ -7814,7 +7814,7 @@ dependencies = [
 [[package]]
 name = "stylo_dom"
 version = "0.22.0"
-source = "git+https://github.com/DioxusLabs/stylo?rev=0b2ffa762d0711866c04bec495399050faede330#0b2ffa762d0711866c04bec495399050faede330"
+source = "git+https://github.com/DioxusLabs/stylo?rev=ee927b58c0ddb84c1f8eb7e4abe669d69ed3f345#ee927b58c0ddb84c1f8eb7e4abe669d69ed3f345"
 dependencies = [
  "bitflags 2.13.1",
  "stylo_malloc_size_of",
@@ -7823,7 +7823,7 @@ dependencies = [
 [[package]]
 name = "stylo_malloc_size_of"
 version = "0.22.0"
-source = "git+https://github.com/DioxusLabs/stylo?rev=0b2ffa762d0711866c04bec495399050faede330#0b2ffa762d0711866c04bec495399050faede330"
+source = "git+https://github.com/DioxusLabs/stylo?rev=ee927b58c0ddb84c1f8eb7e4abe669d69ed3f345#ee927b58c0ddb84c1f8eb7e4abe669d69ed3f345"
 dependencies = [
  "app_units",
  "cssparser",
@@ -7841,7 +7841,7 @@ dependencies = [
 [[package]]
 name = "stylo_static_prefs"
 version = "0.22.0"
-source = "git+https://github.com/DioxusLabs/stylo?rev=0b2ffa762d0711866c04bec495399050faede330#0b2ffa762d0711866c04bec495399050faede330"
+source = "git+https://github.com/DioxusLabs/stylo?rev=ee927b58c0ddb84c1f8eb7e4abe669d69ed3f345#ee927b58c0ddb84c1f8eb7e4abe669d69ed3f345"
 dependencies = [
  "toml",
 ]
@@ -7859,7 +7859,7 @@ dependencies = [
 [[package]]
 name = "stylo_traits"
 version = "0.22.0"
-source = "git+https://github.com/DioxusLabs/stylo?rev=0b2ffa762d0711866c04bec495399050faede330#0b2ffa762d0711866c04bec495399050faede330"
+source = "git+https://github.com/DioxusLabs/stylo?rev=ee927b58c0ddb84c1f8eb7e4abe669d69ed3f345#ee927b58c0ddb84c1f8eb7e4abe669d69ed3f345"
 dependencies = [
  "app_units",
  "bitflags 2.13.1",
@@ -8288,7 +8288,7 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 [[package]]
 name = "to_shmem"
 version = "0.6.0"
-source = "git+https://github.com/DioxusLabs/stylo?rev=0b2ffa762d0711866c04bec495399050faede330#0b2ffa762d0711866c04bec495399050faede330"
+source = "git+https://github.com/DioxusLabs/stylo?rev=ee927b58c0ddb84c1f8eb7e4abe669d69ed3f345#ee927b58c0ddb84c1f8eb7e4abe669d69ed3f345"
 dependencies = [
  "cssparser",
  "servo_arc",
@@ -8301,7 +8301,7 @@ dependencies = [
 [[package]]
 name = "to_shmem_derive"
 version = "0.2.0"
-source = "git+https://github.com/DioxusLabs/stylo?rev=0b2ffa762d0711866c04bec495399050faede330#0b2ffa762d0711866c04bec495399050faede330"
+source = "git+https://github.com/DioxusLabs/stylo?rev=ee927b58c0ddb84c1f8eb7e4abe669d69ed3f345#ee927b58c0ddb84c1f8eb7e4abe669d69ed3f345"
 dependencies = [
  "darling 0.20.11",
  "proc-macro2",

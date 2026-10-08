@@ -330,14 +330,14 @@ rustc-hash = { workspace = true }
 
 [patch.crates-io]
 # Stylo with grid-lanes-direction and flow-tolerance (servo/stylo PR pending)
-stylo = { git = "https://github.com/DioxusLabs/stylo", rev = "0b2ffa762d0711866c04bec495399050faede330" }
-stylo_traits = { git = "https://github.com/DioxusLabs/stylo", rev = "0b2ffa762d0711866c04bec495399050faede330" }
-stylo_atoms = { git = "https://github.com/DioxusLabs/stylo", rev = "0b2ffa762d0711866c04bec495399050faede330" }
-stylo_static_prefs = { git = "https://github.com/DioxusLabs/stylo", rev = "0b2ffa762d0711866c04bec495399050faede330" }
-stylo_dom = { git = "https://github.com/DioxusLabs/stylo", rev = "0b2ffa762d0711866c04bec495399050faede330" }
-stylo_derive = { git = "https://github.com/DioxusLabs/stylo", rev = "0b2ffa762d0711866c04bec495399050faede330" }
-stylo_malloc_size_of = { git = "https://github.com/DioxusLabs/stylo", rev = "0b2ffa762d0711866c04bec495399050faede330" }
-selectors = { git = "https://github.com/DioxusLabs/stylo", rev = "0b2ffa762d0711866c04bec495399050faede330" }
-servo_arc = { git = "https://github.com/DioxusLabs/stylo", rev = "0b2ffa762d0711866c04bec495399050faede330" }
-to_shmem = { git = "https://github.com/DioxusLabs/stylo", rev = "0b2ffa762d0711866c04bec495399050faede330" }
-to_shmem_derive = { git = "https://github.com/DioxusLabs/stylo", rev = "0b2ffa762d0711866c04bec495399050faede330" }
+stylo = { git = "https://github.com/DioxusLabs/stylo", rev = "ee927b58c0ddb84c1f8eb7e4abe669d69ed3f345" }
+stylo_traits = { git = "https://github.com/DioxusLabs/stylo", rev = "ee927b58c0ddb84c1f8eb7e4abe669d69ed3f345" }
+stylo_atoms = { git = "https://github.com/DioxusLabs/stylo", rev = "ee927b58c0ddb84c1f8eb7e4abe669d69ed3f345" }
+stylo_static_prefs = { git = "https://github.com/DioxusLabs/stylo", rev = "ee927b58c0ddb84c1f8eb7e4abe669d69ed3f345" }
+stylo_dom = { git = "https://github.com/DioxusLabs/stylo", rev = "ee927b58c0ddb84c1f8eb7e4abe669d69ed3f345" }
+stylo_derive = { git = "https://github.com/DioxusLabs/stylo", rev = "ee927b58c0ddb84c1f8eb7e4abe669d69ed3f345" }
+stylo_malloc_size_of = { git = "https://github.com/DioxusLabs/stylo", rev = "ee927b58c0ddb84c1f8eb7e4abe669d69ed3f345" }
+selectors = { git = "https://github.com/DioxusLabs/stylo", rev = "ee927b58c0ddb84c1f8eb7e4abe669d69ed3f345" }
+servo_arc = { git = "https://github.com/DioxusLabs/stylo", rev = "ee927b58c0ddb84c1f8eb7e4abe669d69ed3f345" }
+to_shmem = { git = "https://github.com/DioxusLabs/stylo", rev = "ee927b58c0ddb84c1f8eb7e4abe669d69ed3f345" }
+to_shmem_derive = { git = "https://github.com/DioxusLabs/stylo", rev = "ee927b58c0ddb84c1f8eb7e4abe669d69ed3f345" }

@@ -752,9 +752,8 @@ impl<T: Deref<Target = ComputedValues>> taffy::GridContainerStyle for TaffyStylo
                 }))
             }
 
-            // TODO: Implement subgrid and masonry
+            // TODO: Implement subgrid
             stylo::GenericGridTemplateComponent::Subgrid(_) => None,
-            stylo::GenericGridTemplateComponent::Masonry => None,
         }
     }
 
@@ -773,9 +772,8 @@ impl<T: Deref<Target = ComputedValues>> taffy::GridContainerStyle for TaffyStylo
                 }))
             }
 
-            // TODO: Implement subgrid and masonry
+            // TODO: Implement subgrid
             stylo::GenericGridTemplateComponent::Subgrid(_) => None,
-            stylo::GenericGridTemplateComponent::Masonry => None,
         }
     }
 
@@ -818,9 +816,8 @@ impl<T: Deref<Target = ComputedValues>> taffy::GridContainerStyle for TaffyStylo
             stylo::GenericGridTemplateComponent::TrackList(list) => {
                 Some(StyloLineNameIter::new(&list.line_names))
             }
-            // TODO: Implement subgrid and masonry
+            // TODO: Implement subgrid
             stylo::GenericGridTemplateComponent::Subgrid(_) => None,
-            stylo::GenericGridTemplateComponent::Masonry => None,
         }
     }
 
@@ -830,9 +827,8 @@ impl<T: Deref<Target = ComputedValues>> taffy::GridContainerStyle for TaffyStylo
             stylo::GenericGridTemplateComponent::TrackList(list) => {
                 Some(StyloLineNameIter::new(&list.line_names))
             }
-            // TODO: Implement subgrid and masonry
+            // TODO: Implement subgrid
             stylo::GenericGridTemplateComponent::Subgrid(_) => None,
-            stylo::GenericGridTemplateComponent::Masonry => None,
         }
     }
 

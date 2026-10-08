@@ -819,9 +819,8 @@ pub fn grid_template_tracks(
             })
             .collect(),
 
-        // TODO: Implement subgrid and masonry
+        // TODO: Implement subgrid
         stylo::GenericGridTemplateComponent::Subgrid(_) => Vec::new(),
-        stylo::GenericGridTemplateComponent::Masonry => Vec::new(),
     }
 }
 
@@ -836,9 +835,8 @@ pub fn grid_template_line_names(
             Some(crate::wrapper::StyloLineNameIter::new(&list.line_names))
         }
 
-        // TODO: Implement subgrid and masonry
+        // TODO: Implement subgrid
         stylo::GenericGridTemplateComponent::Subgrid(_) => None,
-        stylo::GenericGridTemplateComponent::Masonry => None,
     }
 }
 
