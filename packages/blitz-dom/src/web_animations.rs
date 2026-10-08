@@ -38,6 +38,7 @@ use style::stylist::RuleInclusion;
 use style::values::computed::easing::TimingFunction;
 use style::values::specified::animation::AnimationComposition;
 use style_traits::ParsingMode;
+use style_traits::{CssWriter, ToCss};
 pub use stylo_web_animations;
 use stylo_web_animations::{
     AnimationId, AnimationStore, ComposedValues, CssAnimation, CssEvent, KeyframeEffect, Target,
@@ -96,6 +97,15 @@ pub struct KeyframeEffectOptions {
     pub iteration_composite: IterationComposite,
     /// Ordered by offset.
     pub keyframes: Vec<Keyframe>,
+}
+
+/// Why the styles of an animation can't be committed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CommitStylesError {
+    /// The target is a pseudo-element.
+    NoModificationAllowed,
+    /// The target is not being rendered.
+    NotRendered,
 }
 
 struct ScriptKeyframes {
@@ -527,6 +537,41 @@ impl BaseDocument {
                 node.set_restyle_hint(restyle_hint(&target));
             }
         }
+    }
+
+    /// The declarations that [`commitStyles()`] writes to the style attribute of the target
+    /// of an animation, as property names and values. Style must be up to date.
+    ///
+    /// [`commitStyles()`]: https://drafts.csswg.org/web-animations-1/#dom-animation-commitstyles
+    pub fn animation_styles_to_commit(
+        &self,
+        id: AnimationId,
+    ) -> Result<Vec<(String, String)>, CommitStylesError> {
+        let animations = &self.nodes.animations;
+        let Some(target) = animations.store.target(id) else {
+            return Ok(Vec::new());
+        };
+        if target.pseudo.is_some() {
+            return Err(CommitStylesError::NoModificationAllowed);
+        }
+        self.get_node(target_node(target))
+            .and_then(|node| node.primary_styles().map(|style| style.clone()))
+            .filter(|style| !style.get_box().display.is_none())
+            .ok_or(CommitStylesError::NotRendered)?;
+        let base_style = animations.base_styles.get(target);
+        let values = animations.store.compose_through(id, &mut |property| {
+            AnimationValue::from_computed_values(property.as_borrowed(), base_style?)
+        });
+        let mut declarations = Vec::with_capacity(values.len());
+        for value in values.values() {
+            let declaration = value.uncompute();
+            let mut name = String::new();
+            let mut css = String::new();
+            let _ = declaration.id().to_css(&mut CssWriter::new(&mut name));
+            let _ = declaration.to_css(&mut css);
+            declarations.push((name, css));
+        }
+        Ok(declarations)
     }
 
     /// Makes an animation that was removed for being replaced take effect again.

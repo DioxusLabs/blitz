@@ -144,3 +144,18 @@ fn replaced_animations_are_removed() {
     "#);
     assert_eq!(out, "remove,removed,active,1,persisted,2,persisted,active");
 }
+
+#[test]
+fn commit_styles() {
+    let out = run(r#"
+        const div = document.createElement('div');
+        document.body.appendChild(div);
+        div.style.opacity = '0.1';
+        const a = div.animate({ opacity: 0.2 }, { duration: 1, fill: 'forwards' });
+        a.finish();
+        a.commitStyles();
+        a.cancel();
+        done([div.style.opacity, getComputedStyle(div).opacity]);
+    "#);
+    assert_eq!(out, "0.2,0.2");
+}

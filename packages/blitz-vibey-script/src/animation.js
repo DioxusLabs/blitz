@@ -683,6 +683,21 @@
             call("updatePlaybackRate", this[ID], rate);
         }
         persist() { call("persist", this[ID]); }
+        commitStyles() {
+            const effect = this.effect;
+            const target = effect && effect.target;
+            if (!target) return;
+            if (effect.pseudoElement) {
+                throw domException("NoModificationAllowedError", "The target is a pseudo-element");
+            }
+            const declarations = native("stylesToCommit", this[ID]);
+            if (typeof declarations === "string") {
+                throw domException(declarations, "The styles can't be committed");
+            }
+            for (let i = 0; i < declarations.length; i += 2) {
+                target.style.setProperty(declarations[i], declarations[i + 1]);
+            }
+        }
 
         addEventListener(type, listener, options) {
             if (listener === null || listener === undefined) return;

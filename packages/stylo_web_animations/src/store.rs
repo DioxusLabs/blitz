@@ -880,6 +880,54 @@ impl AnimationStore {
         result
     }
 
+    /// The values of the properties that the effect of `id` targets, composed from the
+    /// effects of its target up to and including that one, as `commitStyles()` needs them.
+    /// Includes the effect of `id` even if the animation was removed for being replaced.
+    pub fn compose_through(
+        &self,
+        id: AnimationId,
+        base_value: &mut dyn FnMut(&OwnedPropertyDeclarationId) -> Option<AnimationValue>,
+    ) -> AnimationValueMap {
+        let mut values = AnimationValueMap::default();
+        let Some(entry) = self.animations.get(&id) else {
+            return values;
+        };
+        let (Some(target), Some(effect)) = (&entry.target, &entry.effect) else {
+            return values;
+        };
+        let mut order: Vec<AnimationId> = self.animations_of(target).to_vec();
+        order.sort_by_key(|id| self.animations[id].composite_order(*id));
+        for other in order {
+            let other_entry = &self.animations[&other];
+            if other_entry.replace_state == ReplaceState::Removed && other != id {
+                continue;
+            }
+            if other == id {
+                // The active interval includes its endpoints here, so that an animation that
+                // has just finished commits its final value.
+                let time = entry.timeline_time(self.timeline_time);
+                let time = entry.animation.current_time(time);
+                let mut timing = effect.timing.clone();
+                let active_end = timing.delay + timing.active_duration();
+                if time.is_some_and(|time| time >= timing.delay && time <= active_end) {
+                    timing.fill = AnimationFillMode::Both;
+                }
+                let rate = entry.animation.playback_rate();
+                let timing = ComputedTiming::new(&timing, &effect.easing, time, rate);
+                effect.compose(&timing, &mut values, base_value);
+                break;
+            }
+            if let (Some(effect), Some(timing)) = (
+                &other_entry.effect,
+                other_entry.computed_timing(self.timeline_time),
+            ) {
+                effect.compose(&timing, &mut values, base_value);
+            }
+        }
+        values.retain(|property, _| effect.properties.iter().any(|p| p.property == *property));
+        values
+    }
+
     fn compose_entry(
         &self,
         entry: &Entry,

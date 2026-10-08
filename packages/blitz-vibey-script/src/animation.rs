@@ -298,6 +298,23 @@ pub(crate) fn animation_op(
                 .set_animation_effect(id, node.map(|node| (node, pseudo)), options);
             Ok(JsValue::undefined())
         }
+        ("stylesToCommit", Some(id)) => {
+            use blitz_dom::web_animations::CommitStylesError;
+            ctx.doc.borrow_mut().resolve(0.0);
+            let declarations = ctx.doc.borrow().animation_styles_to_commit(id);
+            match declarations {
+                Ok(declarations) => {
+                    let values = declarations
+                        .into_iter()
+                        .flat_map(|(name, value)| [js_str(&name), js_str(&value)]);
+                    Ok(JsArray::from_iter(values, context).into())
+                }
+                Err(CommitStylesError::NoModificationAllowed) => {
+                    Ok(js_str("NoModificationAllowedError"))
+                }
+                Err(CommitStylesError::NotRendered) => Ok(js_str("InvalidStateError")),
+            }
+        }
         ("replaceState", Some(id)) => {
             use blitz_dom::web_animations::stylo_web_animations::ReplaceState;
             Ok(js_str(
