@@ -159,6 +159,56 @@ fn inline_boxes_floats_and_slot_changes_match_full_breaking() {
 }
 
 #[test]
+fn float_free_first_line_uses_content_width() {
+    let mut harness = Harness::from_html(
+        "<div id='outer' style='width:300px'><div id='inner' style='box-sizing:border-box;width:100px;padding-left:50%'>one two three four five six</div></div>",
+    );
+    let outer = harness.node("#outer");
+    let inner = harness.node("#inner");
+    for width in [300, 400, 200, 300] {
+        harness
+            .base_mut()
+            .mutate()
+            .set_style_property(outer, "width", &format!("{width}px"));
+        harness.pump();
+        {
+            let doc = harness.base();
+            let layout = doc.get_node(inner).unwrap().element_data().unwrap();
+            let first_line = layout
+                .inline_layout_data
+                .as_ref()
+                .unwrap()
+                .layout
+                .get(0)
+                .unwrap();
+            assert_eq!(first_line.metrics().inline_max_coord, 0.0);
+        }
+        assert_relayout_equivalent(&mut harness);
+    }
+}
+
+#[test]
+fn float_free_fractional_width_matches_full_breaking() {
+    let mut harness = Harness::from_html(
+        "<div id='outer' style='width:300px'><div id='inner' style='width:180.3px;padding:10.7px'>one two three four five six</div></div>",
+    );
+    let inner = harness.node("#inner");
+    {
+        let doc = harness.base();
+        let layout = doc.get_node(inner).unwrap().element_data().unwrap();
+        let first_line = layout
+            .inline_layout_data
+            .as_ref()
+            .unwrap()
+            .layout
+            .get(0)
+            .unwrap();
+        assert_eq!(first_line.metrics().inline_max_coord, 180.3);
+    }
+    assert_relayout_equivalent(&mut harness);
+}
+
+#[test]
 fn intrinsic_sizing_and_scale_round_trips_match_full_breaking() {
     for display in ["flex", "grid", "table"] {
         let mut harness = Harness::from_html(&format!(
