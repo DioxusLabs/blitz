@@ -587,7 +587,13 @@ impl LayoutPassState<'_> {
                 match node.taffy_display() {
                     Display::Block => compute_block_layout(self, node_id, inputs, block_ctx),
                     Display::FlowRoot => compute_block_layout(self, node_id, inputs, None),
-                    Display::Flex => compute_flexbox_layout(self, node_id, inputs),
+                    Display::Flex => {
+                        #[cfg(feature = "writing-mode")]
+                        {
+                            self.current_align_axis_is_inline = node.is_column_flex_container();
+                        }
+                        compute_flexbox_layout(self, node_id, inputs)
+                    }
                     Display::Grid => compute_grid_layout(self, node_id, inputs),
                     Display::None => taffy::LayoutOutput::HIDDEN,
                 }
