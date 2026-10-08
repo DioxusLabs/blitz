@@ -10,6 +10,11 @@ categories.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 
+[features]
+default = ["parley"]
+# The text backend, which is Parley: on by default, and required.
+parley = ["blitz-dom/parley", "blitz-paint/parley", "blitz-html/parley", "blitz-test-harness/parley", "dioxus-native-dom/parley"]
+
 [dev-dependencies]
 # Blitz dependencies
 blitz-test-harness = { workspace = true }

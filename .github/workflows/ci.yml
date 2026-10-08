@@ -66,6 +66,24 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
       - run: cargo test --workspace
 
+  # The text backend feature: Parley, on by default, is required: without it
+  # blitz-dom must fail to compile.
+  check-text-backends:
+    name: "Check text backend features"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
+      - name: Parley (default)
+        run: cargo check -p blitz-dom -p blitz-paint -p blitz -p wpt
+      - name: No backend fails to compile
+        run: |
+          if cargo check -p blitz-dom --no-default-features --features svg 2> neither.log; then
+            echo "blitz-dom built without a text backend"; exit 1
+          fi
+          grep -q "Enable the \`parley\` feature" neither.log
+
   build-counter:
     name: "Build counter example"
     runs-on: ubuntu-latest
@@ -91,9 +109,9 @@ jobs:
         run: cargo build --target wasm32-unknown-unknown
         working-directory: examples/wasm_hello
       - name: Build seven_guis (wasm)
-        run: cargo build -p seven_guis --lib --target wasm32-unknown-unknown --no-default-features --features hybrid
+        run: cargo build -p seven_guis --lib --target wasm32-unknown-unknown --no-default-features --features hybrid,parley
       - name: Build todomvc (wasm)
-        run: cargo build -p todomvc --lib --target wasm32-unknown-unknown --no-default-features --features hybrid
+        run: cargo build -p todomvc --lib --target wasm32-unknown-unknown --no-default-features --features hybrid,parley
 
   fmt:
     name: Rustfmt
@@ -118,7 +136,7 @@ jobs:
       - run: perl -pi.bak -e 's/opt-level = 2/opt-level = 0/g' Cargo.toml
       - run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
       - run: cargo clippy --workspace -- -D warnings
-      - run: cargo clippy -p blitz-dom --no-default-features --features svg,woff,accessibility,system-fonts,file-input,custom-widget --all-targets -- -D warnings
+      - run: cargo clippy -p blitz-dom --no-default-features --features parley,svg,woff,accessibility,system-fonts,file-input,custom-widget --all-targets -- -D warnings
 
   ci-scripts:
     name: "Test CI scripts"

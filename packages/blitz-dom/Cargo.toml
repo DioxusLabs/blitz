@@ -18,17 +18,21 @@ default = [
     "system-fonts",
     "file-input",
     "custom-widget",
-    "text-transform-icu"
+    "text-transform-icu",
+    "parley",
 ]
+# The text backend that lays out, edits and reads back text: Parley. It must be
+# enabled.
+parley = ["dep:parley"]
 custom-widget = ["dep:anyrender", "accessibility"]
 tracing = ["dep:tracing"]
 svg = ["dep:usvg", "dep:svgtypes"]
 # WOFF decoding (using the "wuff" crate which is pure Rust)
 woff = ["dep:wuff"]
 accessibility = ["accesskit"]
-system-fonts = ["parley/system"]
+system-fonts = ["parley?/system"]
 # complex-scripts: enable dictionary-based line-breaking
-complex-scripts = ["parley/complex-scripts"]
+complex-scripts = ["parley?/complex-scripts"]
 # text-transform-icu: language-aware, Unicode-complete case mapping for `text-transform`
 # (otherwise falls back to the standard library's case mapping)
 text-transform-icu = ["dep:icu_casemap", "dep:writeable"]
@@ -69,7 +73,8 @@ anyrender = { workspace = true, optional = true }
 
 # Linebender/Fontations dependencies
 accesskit = { workspace = true, optional = true }
-parley = { workspace = true }
+# blitz-paint casts Parley's glyph coordinates with bytemuck.
+parley = { workspace = true, optional = true, features = ["bytemuck"] }
 skrifa = { workspace = true }
 linebender_resource_handle = { workspace = true }
 color = { workspace = true }

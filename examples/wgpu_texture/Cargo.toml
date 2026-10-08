@@ -9,7 +9,9 @@ license = "MIT"
 publish = false
 
 [features]
-default = ["vello-hybrid"]
+default = ["vello-hybrid", "parley"]
+# The text backend, which is Parley: on by default, and required.
+parley = ["dioxus-native/parley", "blitz-dom/parley", "blitz-paint/parley", "blitz-html/parley", "blitz-shell/parley"]
 vello = ["dep:anyrender_vello", "dioxus-native/vello"]
 vello-hybrid = ["dep:anyrender_vello_hybrid", "dioxus-native/vello-hybrid"]
 
