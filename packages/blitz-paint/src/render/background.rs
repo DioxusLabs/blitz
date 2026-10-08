@@ -510,20 +510,20 @@ impl ElementCx<'_, '_> {
             y_ratio,
         );
 
-        let transform = base_transform
-            .pre_scale_non_uniform(x_ratio, y_ratio)
-            .then_translate(Vec2 {
-                x: x.translate,
-                y: y.translate,
-            });
+        let base_tile_transform = base_transform.pre_translate(Vec2 {
+            x: x.translate,
+            y: y.translate,
+        });
         let tile_rect = Rect::new(0.0, 0.0, x.rect_len, y.rect_len);
 
         for hc in 0..y.count {
             for wc in 0..x.count {
-                let transform = transform.then_translate(Vec2 {
-                    x: wc as f64 * x.stride,
-                    y: hc as f64 * y.stride,
-                });
+                let transform = base_tile_transform
+                    .pre_translate(Vec2 {
+                        x: wc as f64 * x.stride,
+                        y: hc as f64 * y.stride,
+                    })
+                    .pre_scale_non_uniform(x_ratio, y_ratio);
 
                 scene.fill(
                     peniko::Fill::NonZero,
@@ -600,14 +600,14 @@ impl ElementCx<'_, '_> {
             to_peniko_gradient(gradient, image_rect, self.scale, &current_color);
         let brush = anyrender::Paint::Gradient(&gradient);
 
-        let transform = base_transform.then_translate(Vec2 {
+        let transform = base_transform.pre_translate(Vec2 {
             x: x.translate,
             y: y.translate,
         });
 
         for hc in 0..y.count {
             for wc in 0..x.count {
-                let transform = transform.then_translate(Vec2 {
+                let transform = transform.pre_translate(Vec2 {
                     x: wc as f64 * x.stride,
                     y: hc as f64 * y.stride,
                 });
