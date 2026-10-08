@@ -47,7 +47,7 @@ jobs:
         uses: awalsh128/cache-apt-pkgs-action@latest
         with:
           packages: libfontconfig1-dev fonts-tlwg-loma-otf
-          version: 1.0-warp-ubuntu-latest-arm64-16x
+          version: 1.1-warp-ubuntu-latest-arm64-16x
       - name: Clone WPT tests
         run: git clone --depth 1 --revision "$(cat ./wpt/WPT_COMMIT)" https://github.com/web-platform-tests/wpt ./wpt/tests
       - name: Build WPT runner
