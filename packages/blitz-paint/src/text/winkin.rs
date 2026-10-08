@@ -7,7 +7,13 @@
 use core::cell::Cell;
 
 use anyrender::{Glyph, PaintScene};
-use blitz_dom::text_winkin::{WinkinText, line_frame, page, relative_shift};
+use blitz_dom::node::Marker;
+use blitz_dom::text::EditableText as _;
+use blitz_dom::text::winkin::winkin;
+use blitz_dom::text::winkin::{
+    MarkerLayout, TextEditor, TextLayout, line_frame, page, relative_shift,
+};
+use blitz_dom::text::InlineText as _;
 use blitz_dom::{BaseDocument, NodeId};
 use kurbo::{Affine, Insets, Point, Rect, Vec2};
 use peniko::{Blob, Fill, FontData};
@@ -20,7 +26,11 @@ use winkin::{BoxFragment, FontInstance, Layout, NodeKey, RunOrientation, TextRun
 
 use crate::color::{Color, ToColorColor as _};
 use crate::kurbo_css::{CssBox, Edge, NonUniformRoundedRectRadii};
-use crate::text::{DrawTextContext, WinkinDecoration};
+use super::{DecorationRunGeometry, DrawTextContext, LineDecoration};
+
+/// What the winkin painter keeps between uses: nothing beyond the shared decoration buffers.
+#[derive(Default)]
+pub(super) struct Scratch;
 
 /// A box's four sides in a line's own terms, from its physical ones: its
 /// line-left and line-right, and its over and under sides.
@@ -67,7 +77,7 @@ impl<T> LineSides<T> {
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn paint(
     scene: &mut impl PaintScene,
-    text: &WinkinText,
+    text: &TextLayout,
     layout: &Layout,
     doc: &BaseDocument,
     transform: Affine,
@@ -205,7 +215,7 @@ fn paint_selection(
 
 /// What one layout is painted with.
 struct Painter<'a> {
-    text: &'a WinkinText,
+    text: &'a TextLayout,
     doc: &'a BaseDocument,
     transform: Affine,
     /// The block's content box in CSS pixels, which relative offsets'
@@ -903,4 +913,236 @@ fn embolden(font: &FontInstance<'_>) -> Vec2 {
     };
     let extra = size * ratio / 2.0;
     Vec2::new(extra, extra)
+}
+
+/// Paints an inline formatting context laid out by winkin.
+///
+/// `transform` takes the content box's device pixels, moved down by the layout's block offset,
+/// onto the scene, and `content_size` is the content box's size in device pixels.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn paint_inline_layout(
+    scene: &mut impl PaintScene,
+    text_layout: &TextLayout,
+    doc: &BaseDocument,
+    transform: Affine,
+    content_size: kurbo::Size,
+    scale: f64,
+    root: NodeId,
+    selection: Option<(usize, usize)>,
+    context: &mut DrawTextContext,
+) {
+    let Some(layout) = text_layout.layout() else {
+        return;
+    };
+    paint(
+        scene,
+        text_layout,
+        layout,
+        doc,
+        transform,
+        content_size.width,
+        content_size.height,
+        scale,
+        root,
+        context,
+        selection,
+    );
+}
+
+/// Paints the text of an `<input>` or `<textarea>`, and its selection and caret where it is
+/// focussed.
+///
+/// `transform` takes the text's device pixels onto the scene.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn paint_text_input(
+    scene: &mut impl PaintScene,
+    editor: &TextEditor,
+    focussed: bool,
+    caret_color: Color,
+    doc: &BaseDocument,
+    transform: Affine,
+    scale: f64,
+    node_id: NodeId,
+    context: &mut DrawTextContext,
+) {
+    let text_layout = editor.text_layout();
+    let Some(layout) = text_layout.layout() else {
+        return;
+    };
+    let size = editor.metrics().map(|metrics| metrics.size).unwrap_or_default();
+    let selection = editor.selection_range();
+    let selection = (focussed && !selection.is_empty()).then_some((selection.start, selection.end));
+    paint(
+        scene,
+        text_layout,
+        layout,
+        doc,
+        transform,
+        size.width,
+        size.height,
+        scale,
+        node_id,
+        context,
+        selection,
+    );
+    if focussed
+        && editor.is_selection_collapsed()
+        && let Some(caret) = editor.caret_rect()
+    {
+        scene.fill(Fill::NonZero, transform, caret_color, None, &caret);
+    }
+}
+
+/// Paints a list item's outside marker, right-aligned before its border box, on the baseline of
+/// the item's first line of text.
+///
+/// `pos` is the item's content box origin in CSS pixels, and `transform` takes the element's CSS
+/// pixels, scaled to device pixels, onto the scene.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn paint_marker(
+    scene: &mut impl PaintScene,
+    marker: &Marker,
+    marker_layout: &MarkerLayout,
+    text_layout: Option<&TextLayout>,
+    item_layout: &taffy::Layout,
+    doc: &BaseDocument,
+    pos: Point,
+    transform: Affine,
+    scale: f64,
+    node_id: NodeId,
+    context: &mut DrawTextContext,
+) {
+    let Some(layout) = marker_layout.layout() else {
+        return;
+    };
+    let Some(line) = layout.lines().next() else {
+        return;
+    };
+    let metrics = line.metrics();
+    let marker_scale = marker_layout.scale();
+    // Right align and pad the bullet when rendering outside
+    let x_padding = match marker {
+        Marker::Char(_) => 8.0,
+        Marker::String(_) => 0.0,
+    };
+    // Outside markers are placed outside the list item's border box
+    // (`pos` is the origin of its content box)
+    let x_offset = -((metrics.left + metrics.width) / marker_scale
+        + x_padding
+        + item_layout.padding.left
+        + item_layout.border.left);
+    // Align the marker with the baseline of the first line of text in the list item
+    let y_offset = text_layout
+        .and_then(|text_layout| {
+            let first = text_layout.layout()?.lines().next()?.metrics();
+            Some((first.baseline - metrics.baseline) / marker_scale + text_layout.block_offset())
+        })
+        .unwrap_or(0.0);
+    let pos = Point {
+        x: pos.x + f64::from(x_offset),
+        y: pos.y + f64::from(y_offset),
+    };
+    let transform = transform * Affine::translate((pos.x * scale, pos.y * scale));
+    paint(
+        scene,
+        marker_layout,
+        layout,
+        doc,
+        transform,
+        0.0,
+        0.0,
+        scale,
+        node_id,
+        context,
+        None,
+    );
+}
+
+/// One bar of a decoration on a line of winkin-laid text, and the font
+/// geometry it is drawn with, in device pixels along and across its line.
+#[derive(Copy, Clone)]
+pub(crate) struct WinkinDecoration {
+    /// Where it starts and ends along the line.
+    pub(crate) left: f64,
+    pub(crate) right: f64,
+    /// Its box's baseline, and its primary font's ascent and descent about it.
+    pub(crate) baseline: f32,
+    pub(crate) ascent: f32,
+    pub(crate) descent: f32,
+    /// Where an `auto` underline's top is under the baseline, and how thick
+    /// an `auto` line is: Chrome's, as winkin works them out.
+    pub(crate) underline_gap: f32,
+    pub(crate) thickness: f32,
+    /// Its box's used font size.
+    pub(crate) font_size: f32,
+    /// Whether the metrics are measured about a central baseline, as a
+    /// vertical line's are.
+    pub(crate) centered: bool,
+}
+
+/// Painting the decorations of lines laid out by winkin, with the same
+/// resolution and drawing as the lines laid out by Parley.
+impl DrawTextContext {
+    /// Paints one bar of the decoration `styles` sets, as a decorating box:
+    /// its underline and overline where `after_text` is false, and its line
+    /// through where it is true. `color`, where given, is the color it is
+    /// drawn in instead of its own: a shadow's.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn draw_winkin_decoration(
+        &mut self,
+        scene: &mut impl PaintScene,
+        transform: Affine,
+        scale: f64,
+        styles: &style::properties::ComputedValues,
+        bar: WinkinDecoration,
+        after_text: bool,
+        color: Option<Color>,
+    ) {
+        let Some(mut deco) = super::resolve_decoration(styles) else {
+            return;
+        };
+        if let Some(color) = color {
+            deco.color = color;
+        }
+        self.deco_boxes.clear();
+        self.deco_boxes.push(LineDecoration {
+            node_id: NodeId::from_u64(0),
+            deco,
+            min_x: bar.left,
+            max_x: bar.right,
+            own: Some(DecorationRunGeometry {
+                baseline: bar.baseline,
+                ascent: bar.ascent,
+                descent: bar.descent,
+                // Placed from the baseline, up: an underline's top is its gap
+                // under it.
+                underline_offset: -bar.underline_gap,
+                underline_size: bar.thickness,
+                strikethrough_size: bar.thickness,
+                // winkin's ascent is already the one the platform's browser
+                // draws an overline against: its line metrics are.
+                font: None,
+                font_size: bar.font_size,
+                css_font_size: f64::from(bar.font_size) / scale,
+                centered: bar.centered,
+            }),
+            first: None,
+        });
+        let drawn = if after_text {
+            TextDecorationLine::LINE_THROUGH
+        } else {
+            TextDecorationLine::UNDERLINE | TextDecorationLine::OVERLINE
+        };
+        super::flush_line_decorations(
+            scene,
+            transform,
+            scale,
+            &self.deco_boxes,
+            &mut self.win_ascent_ratios,
+            NodeId::from_u64(0),
+            bar.baseline,
+            drawn,
+        );
+        self.deco_boxes.clear();
+    }
 }
