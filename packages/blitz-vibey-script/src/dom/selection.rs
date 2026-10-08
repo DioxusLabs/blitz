@@ -2,6 +2,7 @@
 
 use std::cell::Cell;
 
+use blitz_dom::text::InlineText as _;
 use blitz_dom::{BaseDocument, Node, NodeId, node::NodeData};
 use boa_engine::{
     Context, Finalize, JsData, JsNativeError, JsResult, JsValue, Trace, object::JsObject,
@@ -214,7 +215,7 @@ fn rendered_point(doc: &BaseDocument, point: Point) -> Option<Point> {
             let mut mapper = OffsetMapper {
                 doc,
                 root,
-                text: &layout.text,
+                text: layout.text(),
                 cursor: 0,
                 collapsed_space: false,
                 point,

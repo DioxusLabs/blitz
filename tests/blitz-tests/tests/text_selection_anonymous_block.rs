@@ -7,6 +7,7 @@
 //! pointer event's target is the canonicalized DOM node (the body). The
 //! selection drag path must not require these to be the same node.
 
+use blitz_dom::text::InlineText as _;
 use blitz_dom::{Document, DocumentConfig, NodeId};
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::{
