@@ -4,7 +4,7 @@ use std::borrow::Cow;
 
 use style::values::computed::Length;
 
-use crate::node::TextBrush;
+use super::TextBrush;
 
 // Module of type aliases so we can refer to stylo types with nicer names
 pub(crate) mod stylo {
