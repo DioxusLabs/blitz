@@ -5,6 +5,7 @@
 //! This is slower, yes, but happens fast enough that it's not a huge issue.
 
 use crate::node::{ComputedStyleRef, ImageData, NodeData, SpecialElementData};
+use crate::text::EditEngine as _;
 use crate::{document::BaseDocument, dom_node_id, node::Node, taffy_node_id};
 use markup5ever::{LocalName, local_name};
 use std::cell::Ref;
@@ -318,11 +319,9 @@ impl LayoutPassState<'_> {
                             .downcast_element_mut()
                             .and_then(|el| el.text_input_data_mut())
                         {
-                            input.editor.set_width(Some(content_width * scale));
-                            input.editor.refresh_layout(
-                                &mut doc.font_ctx.lock().unwrap(),
-                                &mut doc.layout_ctx,
-                            );
+                            input
+                                .editor
+                                .set_width(&mut doc.text, Some(content_width * scale));
                         }
                     }
                     return output;

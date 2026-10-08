@@ -282,7 +282,7 @@ impl Exclusions for FloatRoom<'_, '_> {
 }
 
 impl LayoutPassState<'_> {
-    pub(super) fn compute_inline_layout_winkin(
+    pub(crate) fn compute_inline_layout_winkin(
         &mut self,
         node_id: NodeId,
         mut inline_layout: Box<TextLayout>,

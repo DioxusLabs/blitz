@@ -1327,3 +1327,246 @@ fn fragment_rect(fragment: &winkin::BoxFragment<'_>) -> kurbo::Rect {
         f64::from(block.under),
     )
 }
+
+/// A piece of a line's content, as [`logical_content`] reads it.
+#[derive(Clone)]
+enum LinePiece {
+    /// The text between these byte offsets of the layout text, of the node the key names, or of
+    /// the node the layout maps its start to.
+    Text(Option<u64>, core::ops::Range<usize>),
+    /// An atomic inline, a float or an absolutely positioned box.
+    Box(u64),
+}
+
+/// The laid-out text and inline boxes of `layout` in logical order, as its lines place them, read
+/// as it is walked. A float or an absolutely positioned box follows the content of the line it is
+/// anchored on, and one anchored on no line follows the last line.
+pub(crate) fn logical_content(
+    layout: &Layout,
+) -> impl Iterator<Item = crate::node::InlineContent<'_>> {
+    use crate::node::InlineContent;
+    use winkin::Item;
+    use winkin::selection::{Affinity, CopyKind, Position};
+    let shown = |key: u64| key & (FIRST_LETTER_KEY | MARKER_KEY) == 0;
+    let text = layout.text();
+    let mut lines = layout.lines();
+    let mut statics = layout.static_positions().peekable();
+    let mut line_floats = 0;
+    let mut past_lines = false;
+    // The current line's items, sorted into logical order, and its pieces
+    let mut items: Vec<(core::ops::Range<usize>, u64, bool)> = Vec::new();
+    let mut pieces = Vec::new();
+    let mut next_piece = 0;
+    // The current text piece's node, its start and the slices it copies as
+    let mut slices = None;
+    core::iter::from_fn(move || {
+        loop {
+            if slices.is_none() {
+                while next_piece == pieces.len() {
+                    pieces.clear();
+                    next_piece = 0;
+                    if let Some(line) = lines.next() {
+                        items.clear();
+                        items.extend(line.all_items().filter_map(|item| match item {
+                            Item::Text(run) => Some((run.text_range(), run.key().0, false)),
+                            Item::Atomic(atomic) => {
+                                Some((atomic.text_range(), atomic.key().0, true))
+                            }
+                            _ => None,
+                        }));
+                        items.sort_by_key(|(range, ..)| range.start);
+                        // What the runs leave of the line, such as a forced break or a space the
+                        // line wraps at, goes with the node the layout maps it to.
+                        let line_range = line.text_range();
+                        let mut cursor = line_range.start;
+                        for (range, key, atomic) in items.drain(..) {
+                            if range.start > cursor {
+                                pieces.push(LinePiece::Text(None, cursor..range.start));
+                            }
+                            if !atomic {
+                                pieces.push(LinePiece::Text(Some(key), range.clone()));
+                            } else if shown(key) {
+                                pieces.push(LinePiece::Box(key));
+                            }
+                            cursor = cursor.max(range.end);
+                        }
+                        if line_range.end > cursor {
+                            pieces.push(LinePiece::Text(None, cursor..line_range.end));
+                        }
+                        for float in line.floats() {
+                            line_floats += 1;
+                            if shown(float.key.0) {
+                                pieces.push(LinePiece::Box(float.key.0));
+                            }
+                        }
+                        let index = line.index();
+                        while let Some(position) = statics
+                            .next_if(|position| position.line.is_some_and(|line| line <= index))
+                        {
+                            pieces.push(LinePiece::Box(position.key.0));
+                        }
+                    } else if !past_lines {
+                        past_lines = true;
+                        let floats = layout.floats().skip(line_floats);
+                        pieces.extend(
+                            floats
+                                .map(|float| float.key.0)
+                                .filter(|&key| shown(key))
+                                .map(LinePiece::Box),
+                        );
+                        pieces.extend(
+                            statics
+                                .by_ref()
+                                .map(|position| LinePiece::Box(position.key.0)),
+                        );
+                    } else {
+                        return None;
+                    }
+                }
+                let piece = pieces[next_piece].clone();
+                next_piece += 1;
+                match piece {
+                    LinePiece::Box(key) => {
+                        return Some(InlineContent::Box(NodeId::from_u64(key)));
+                    }
+                    LinePiece::Text(key, range) => {
+                        let key = key.or_else(|| {
+                            let position = Position::new(range.start, Affinity::Downstream);
+                            layout.node_position(position).map(|node| node.key.0)
+                        });
+                        let Some(key) = key.filter(|&key| shown(key)) else {
+                            continue;
+                        };
+                        let start = range.start;
+                        let copied = layout.selected_text(range, CopyKind::Text);
+                        slices = Some((NodeId::from_u64(key), start, copied));
+                    }
+                }
+            }
+            let (node_id, start, copied) = slices.as_mut()?;
+            let Some(slice) = copied.next() else {
+                slices = None;
+                continue;
+            };
+            if slice.is_empty() {
+                continue;
+            }
+            // The slices borrow from the layout text, which says where each starts.
+            let at = (slice.as_ptr() as usize).wrapping_sub(text.as_ptr() as usize);
+            return Some(InlineContent::Text {
+                node_id: *node_id,
+                start: if at < text.len() { at } else { *start },
+                text: slice.into(),
+            });
+        }
+    })
+}
+
+/// Hit tests physical CSS-pixel coordinates relative to the inline root's content box, which is
+/// `content_size` CSS pixels in size. `exact` requires the point to be within a line and its text
+/// extent.
+pub(crate) fn hit_test(
+    text: &WinkinText,
+    block_offset: f32,
+    x: f32,
+    y: f32,
+    content_size: kurbo::Size,
+    scale: f32,
+    exact: bool,
+) -> Option<crate::node::InlineTextHit> {
+    let layout = text.layout()?;
+    let page = page(
+        text.writing_mode(),
+        content_size.width * f64::from(scale),
+        content_size.height * f64::from(scale),
+    );
+    let point = page.inverse()
+        * kurbo::Point::new(f64::from(x * scale), f64::from((y - block_offset) * scale));
+    let (inline, block) = (point.x as f32, point.y as f32);
+    if exact
+        && !layout.lines().any(|line| {
+            let metrics = line.metrics();
+            block >= metrics.top
+                && block < metrics.top + metrics.height()
+                && inline >= metrics.left
+                && inline < metrics.left + metrics.width
+        })
+    {
+        return None;
+    }
+    let position = layout.hit_test(inline, block, winkin::config::PastLines::Column)?;
+    let node = layout.node_position(position)?;
+    let node_id = NodeId::from_u64(node.key.0);
+    Some(crate::node::InlineTextHit {
+        node_id,
+        byte_offset: position.offset,
+    })
+}
+
+/// Selection rectangles in physical device pixels relative to the content box, which is
+/// `content_size` CSS pixels in size.
+pub(crate) fn selection_rects(
+    text: &WinkinText,
+    start: usize,
+    end: usize,
+    content_size: kurbo::Size,
+    scale: f32,
+) -> Vec<kurbo::Rect> {
+    let Some(layout) = text.layout() else {
+        return Vec::new();
+    };
+    let mode = text.writing_mode();
+    let page = page(
+        mode,
+        content_size.width * f64::from(scale),
+        content_size.height * f64::from(scale),
+    );
+    layout
+        .selection_rects(start..end)
+        .filter_map(|selection| {
+            let metrics = layout.line(selection.line)?.metrics();
+            let rect = kurbo::Rect::new(
+                f64::from(selection.inline.left),
+                f64::from(selection.block.over),
+                f64::from(selection.inline.right),
+                f64::from(selection.block.under),
+            );
+            Some(line_frame(mode, page, &metrics).transform_rect_bbox(rect))
+        })
+        .collect()
+}
+
+/// The parts of `node`'s inline box on each line, in CSS pixels relative to the border box of the
+/// inline root `root`, whose content box starts at `origin_x` and `origin_y`, computed as they are
+/// walked.
+pub(crate) fn fragment_rects(
+    layout: &Layout,
+    writing_mode: WritingMode,
+    root: &Node,
+    node: &Node,
+    origin_x: f32,
+    origin_y: f32,
+    scale: f32,
+) -> impl Iterator<Item = taffy::Rect<f32>> {
+    let root_layout = root.unrounded_layout();
+    let scale = f64::from(scale);
+    let content = kurbo::Size::new(
+        f64::from(root_layout.content_box_width()) * scale,
+        f64::from(root_layout.content_box_height()) * scale,
+    );
+    // `position: relative` moves the box and the boxes it is in.
+    let shift = relative_shift_of(
+        Some(node),
+        node.id.as_u64(),
+        content / scale,
+        root.primary_styles().is_some_and(|styles| {
+            styles.clone_direction() == ::style::computed_values::direction::T::Rtl
+        }),
+    );
+    box_rects(layout, writing_mode, content, node.id.as_u64()).map(move |rect| taffy::Rect {
+        left: origin_x + (shift.x + rect.x0 / scale) as f32,
+        top: origin_y + (shift.y + rect.y0 / scale) as f32,
+        right: origin_x + (shift.x + rect.x1 / scale) as f32,
+        bottom: origin_y + (shift.y + rect.y1 / scale) as f32,
+    })
+}

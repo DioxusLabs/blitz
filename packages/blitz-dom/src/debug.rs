@@ -1,8 +1,8 @@
 use blitz_traits::node_id::NodeId;
-use parley::layout::PositionedLayoutItem;
 
 use crate::BaseDocument;
 use crate::layout::TaffyDebugTree;
+use crate::text::InlineText as _;
 
 impl BaseDocument {
     pub fn print_taffy_tree(&self) {
@@ -42,48 +42,7 @@ impl BaseDocument {
                 .as_ref()
                 .unwrap();
 
-            println!(
-                "Size: {}x{}",
-                inline_layout.layout.width(),
-                inline_layout.layout.height()
-            );
-            println!("Text content: {:?}", inline_layout.text);
-            println!("Inline Boxes:");
-            for ibox in inline_layout.layout.inline_boxes() {
-                print!("(id: {}) ", ibox.id);
-            }
-            println!();
-            println!("Lines:");
-            for (i, line) in inline_layout.layout.lines().enumerate() {
-                let metrics = line.metrics();
-                let x = metrics.inline_min_coord;
-                let y = metrics.block_min_coord;
-                let w = metrics.inline_max_coord - metrics.inline_min_coord;
-                let h = metrics.block_max_coord - metrics.block_min_coord;
-                println!("Line {i}: x:{x} y:{y} width:{w} height:{h}");
-                for item in line.items() {
-                    print!("  ");
-                    match item {
-                        PositionedLayoutItem::GlyphRun(run) => {
-                            print!(
-                                "RUN (x: {}, w: {}) ",
-                                run.offset().round(),
-                                run.run().advance()
-                            )
-                        }
-                        PositionedLayoutItem::InlineBox(ibox) => print!(
-                            "BOX {:?} (id: {} x: {} y: {} w: {}, h: {})",
-                            ibox.kind,
-                            ibox.id,
-                            ibox.x.round(),
-                            ibox.y.round(),
-                            ibox.width.round(),
-                            ibox.height.round()
-                        ),
-                    }
-                    println!();
-                }
-            }
+            inline_layout.debug_print();
         }
 
         let layout = node.final_layout();

@@ -1,5 +1,6 @@
 use std::sync::{Arc, Mutex};
 
+use blitz_dom::text::TextFonts as _;
 use blitz_dom::{DocumentConfig, FontContext};
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::{
@@ -7,7 +8,6 @@ use blitz_traits::{
     shell::ShellProvider,
 };
 use dioxus_native::{SubDocumentAttr, prelude::*};
-use linebender_resource_handle::Blob;
 
 use crate::StdNetProvider;
 use crate::favicon::favicon_candidate;
@@ -49,9 +49,7 @@ pub struct DocumentLoader {
 impl DocumentLoader {
     pub fn new(net_provider: Arc<StdNetProvider>, history: SyncStore<History>) -> Self {
         let mut font_ctx = FontContext::default();
-        font_ctx
-            .collection
-            .register_fonts(Blob::new(Arc::new(blitz_dom::BULLET_FONT) as _), None);
+        font_ctx.add_fonts(blitz_dom::BULLET_FONT);
 
         Self {
             font_ctx,

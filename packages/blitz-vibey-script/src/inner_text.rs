@@ -3,6 +3,7 @@
 //! Self-contained so that it can move into `blitz-dom` later.
 
 use blitz_dom::node::{InlineContent, ListItemLayoutPosition, Marker, TextLayout};
+use blitz_dom::text::InlineText as _;
 use blitz_dom::{Node, NodeId};
 use markup5ever::local_name;
 use style::computed_values::visibility::T as Visibility;
@@ -184,7 +185,7 @@ impl InnerTextCollector {
     }
 
     fn visit_inline_layout(&mut self, root: &Node, layout: &TextLayout, filter: Option<NodeId>) {
-        let marker_len = inside_marker_len(root, layout.text.as_str());
+        let marker_len = inside_marker_len(root, layout.text());
 
         let mut cached_node: Option<(NodeId, bool)> = None;
         let mut include = |id: NodeId| -> bool {
@@ -209,13 +210,9 @@ impl InnerTextCollector {
             included
         };
 
-        let mut visited_boxes = Vec::new();
         for content in layout.logical_content() {
             match content {
-                InlineContent::Box(id) => {
-                    visited_boxes.push(id);
-                    self.visit_inline_box(root, id, filter);
-                }
+                InlineContent::Box(id) => self.visit_inline_box(root, id, filter),
                 InlineContent::Text {
                     node_id,
                     start,
@@ -225,13 +222,6 @@ impl InnerTextCollector {
                         self.push_str(&text);
                     }
                 }
-            }
-        }
-        // Boxes the lines do not place, such as floats under winkin, follow the text.
-        let children = root.layout_children.borrow();
-        for &id in children.iter().flatten() {
-            if !visited_boxes.contains(&id) {
-                self.visit_inline_box(root, id, filter);
             }
         }
     }

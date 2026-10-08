@@ -1,5 +1,6 @@
 use crate::Document;
 use crate::layout::paint_tree::{HoistedPaintChild, StackingContext};
+use crate::text::{EditableText as _, InlineLayoutEngine as _, InlineText as _};
 use bitflags::bitflags;
 use blitz_traits::events::{
     BlitzPointerEvent, BlitzPointerId, DomEventData, HitResult, PointerCoords,
@@ -239,7 +240,7 @@ impl Node {
             .downcast_element_mut()
             .and_then(|el| el.inline_layout_data.as_mut())
         {
-            inline_layout.content_widths = None;
+            inline_layout.invalidate_content_widths();
         }
     }
 
@@ -819,7 +820,7 @@ impl Node {
         {
             if !input_data.is_multiline {
                 let content_box_height = self.final_layout().content_box_height();
-                let input_height = input_data.editor.try_layout().unwrap().height() / scale as f32;
+                let input_height = input_data.editor.size().unwrap().height as f32 / scale as f32;
                 let y_offset = ((content_box_height - input_height) / 2.0).max(0.0);
 
                 return y_offset as f64;
@@ -1183,8 +1184,9 @@ impl Node {
     /// axes, and its writing mode only meets Taffy's at its edges.
     #[cfg(feature = "writing-mode")]
     pub(crate) fn layout_frame_wm(&self) -> stylo_taffy::WritingMode {
-        #[cfg(feature = "winkin")]
-        if self.flags.is_inline_root() {
+        if <crate::text::TextLayout as crate::text::InlineLayoutEngine>::SETS_WRITING_MODES
+            && self.flags.is_inline_root()
+        {
             return stylo_taffy::WritingMode::empty();
         }
         self.writing_mode()
@@ -1735,151 +1737,13 @@ impl Node {
     ///
     /// Returns `None` for nodes that have their own layout box.
     pub fn inline_fragment_boxes(&self) -> Option<impl Iterator<Item = taffy::Rect<f32>> + '_> {
-        use parley::PositionedLayoutItem;
-
         if !self.is_non_atomic_inline() {
             return None;
         }
 
         let inline_root = self.inline_root_ancestor()?;
         let inline_layout = inline_root.element_data()?.inline_layout_data.as_ref()?;
-        let layout = &inline_layout.layout;
-        let scale = layout.scale();
-
-        // Walk up the DOM parent chain from `id` to check whether it is (or is
-        // inside) the target node, stopping at the inline root.
-        let inline_root_id = inline_root.id;
-        let is_in_target = move |mut id: NodeId| -> bool {
-            loop {
-                if id == self.id {
-                    return true;
-                }
-                if id == inline_root_id {
-                    return false;
-                }
-                match self.with(id).parent {
-                    Some(parent) => id = parent,
-                    None => return false,
-                }
-            }
-        };
-
-        let root_layout = inline_root.unrounded_layout();
-        let content_box_inset = root_layout.padding + root_layout.border;
-        let origin_x = content_box_inset.left;
-        let origin_y = content_box_inset.top + inline_layout.block_offset;
-
-        fn union(acc: &mut Option<taffy::Rect<f32>>, left: f32, top: f32, right: f32, bottom: f32) {
-            *acc = Some(match *acc {
-                Some(rect) => taffy::Rect {
-                    left: rect.left.min(left),
-                    top: rect.top.min(top),
-                    right: rect.right.max(right),
-                    bottom: rect.bottom.max(bottom),
-                },
-                None => taffy::Rect {
-                    left,
-                    top,
-                    right,
-                    bottom,
-                },
-            });
-        }
-
-        // Under winkin, the box's own parts on each line are its rects.
-        #[cfg(feature = "winkin")]
-        let winkin_rects: Vec<taffy::Rect<f32>> = match inline_layout.winkin.layout() {
-            Some(winkin) => {
-                let scale = f64::from(scale);
-                let content = kurbo::Size::new(
-                    f64::from(root_layout.content_box_width()) * scale,
-                    f64::from(root_layout.content_box_height()) * scale,
-                );
-                // `position: relative` moves the box and the boxes it is in.
-                let shift = crate::text_winkin::relative_shift_of(
-                    Some(self),
-                    self.id.as_u64(),
-                    content / scale,
-                    inline_root.primary_styles().is_some_and(|styles| {
-                        styles.clone_direction() == style::computed_values::direction::T::Rtl
-                    }),
-                );
-                crate::text_winkin::box_rects(
-                    winkin,
-                    inline_layout.winkin.writing_mode(),
-                    content,
-                    self.id.as_u64(),
-                )
-                .map(|rect| taffy::Rect {
-                    left: origin_x + (shift.x + rect.x0 / scale) as f32,
-                    top: origin_y + (shift.y + rect.y0 / scale) as f32,
-                    right: origin_x + (shift.x + rect.x1 / scale) as f32,
-                    bottom: origin_y + (shift.y + rect.y1 / scale) as f32,
-                })
-                .collect()
-            }
-            None => Vec::new(),
-        };
-        #[cfg(feature = "winkin")]
-        let lines = inline_layout
-            .winkin
-            .layout()
-            .is_none()
-            .then(|| layout.lines())
-            .into_iter()
-            .flatten();
-        #[cfg(not(feature = "winkin"))]
-        let lines = layout.lines();
-
-        // One rect per line box: the union of all of the target's fragments on that line
-        let parley_rects = lines.filter_map(move |line| {
-            let line_metrics = line.metrics();
-            let mut line_rect: Option<taffy::Rect<f32>> = None;
-
-            for item in line.items() {
-                match item {
-                    PositionedLayoutItem::GlyphRun(glyph_run) => {
-                        if !is_in_target(glyph_run.style().brush.id) {
-                            continue;
-                        }
-                        let x0 = glyph_run.offset();
-                        let x1 = x0 + glyph_run.advance();
-                        // Use the line box's block extent rather than the
-                        // run's font ascent/descent: fonts with small
-                        // typographic metrics would otherwise produce rects
-                        // that clip the rendered glyphs. This matches the
-                        // geometry used for text selection highlights.
-                        let y0 = line_metrics.block_min_coord;
-                        let y1 = line_metrics.block_max_coord;
-                        union(&mut line_rect, x0, y0, x1, y1);
-                    }
-                    PositionedLayoutItem::InlineBox(inline_box) => {
-                        if !is_in_target(NodeId::from_u64(inline_box.id)) {
-                            continue;
-                        }
-                        let x0 = inline_box.x;
-                        let y0 = inline_box.y;
-                        union(
-                            &mut line_rect,
-                            x0,
-                            y0,
-                            x0 + inline_box.width,
-                            y0 + inline_box.height,
-                        );
-                    }
-                }
-            }
-
-            line_rect.map(|rect| taffy::Rect {
-                left: origin_x + rect.left / scale,
-                top: origin_y + rect.top / scale,
-                right: origin_x + rect.right / scale,
-                bottom: origin_y + rect.bottom / scale,
-            })
-        });
-        #[cfg(feature = "winkin")]
-        let parley_rects = winkin_rects.into_iter().chain(parley_rects);
-        Some(parley_rects)
+        Some(inline_layout.fragment_rects(inline_root, self))
     }
 
     /// CSSOM View's `offsetLeft`/`offsetTop`: the offset of this node's border box from the
