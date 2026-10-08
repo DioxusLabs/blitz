@@ -76,9 +76,13 @@ pub(crate) fn paint(
     scale: f64,
     root: NodeId,
     context: &mut DrawTextContext,
+    selection: Option<(usize, usize)>,
 ) {
     let writing_mode = text.writing_mode();
     let page = page(writing_mode, content_width, content_height);
+    let selection_rects: Vec<_> = selection
+        .map(|(start, end)| layout.selection_rects(start..end).collect())
+        .unwrap_or_default();
     let root_key = root.as_u64();
     let root_styles = doc
         .get_node(root)
@@ -132,7 +136,16 @@ pub(crate) fn paint(
         for pass in (0..shadows).rev().map(Some).chain([None]) {
             // The run whose marks follow it, and whose font they are set in.
             let mut marked: Option<TextRun<'_>> = None;
+            let mut selection_drawn = false;
             for item in &items {
+                // Backgrounds precede the highlight; glyphs follow it.
+                if pass.is_none()
+                    && !selection_drawn
+                    && !matches!(item, Paint::Background(_) | Paint::Box(_))
+                {
+                    paint_selection(scene, &selection_rects, line.index(), frame, transform);
+                    selection_drawn = true;
+                }
                 match *item {
                     Paint::Background(background) if pass.is_none() => {
                         painter.paint_first_line_background(scene, frame, first, background);
@@ -159,7 +172,34 @@ pub(crate) fn paint(
                     _ => {}
                 }
             }
+            if pass.is_none() && !selection_drawn {
+                paint_selection(scene, &selection_rects, line.index(), frame, transform);
+            }
         }
+    }
+}
+
+fn paint_selection(
+    scene: &mut impl PaintScene,
+    rects: &[winkin::selection::SelectionRect],
+    line: usize,
+    frame: Affine,
+    transform: Affine,
+) {
+    for rect in rects.iter().filter(|rect| rect.line == line) {
+        let shape = Rect::new(
+            f64::from(rect.inline.left),
+            f64::from(rect.block.over),
+            f64::from(rect.inline.right),
+            f64::from(rect.block.under),
+        );
+        scene.fill(
+            Fill::NonZero,
+            transform * frame,
+            crate::SELECTION_COLOR,
+            None,
+            &shape,
+        );
     }
 }
 
