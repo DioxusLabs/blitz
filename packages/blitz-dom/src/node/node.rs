@@ -563,6 +563,52 @@ impl Node {
         self.mark_ancestors_dirty();
     }
 
+    fn animation_only_dirty_descendants_flag(&self) -> Option<&AtomicBool> {
+        match &self.data {
+            NodeData::Element(data) | NodeData::AnonymousBlock(data) => {
+                Some(&data.animation_only_dirty_descendants)
+            }
+            NodeData::Document(data) => Some(&data.animation_only_dirty_descendants),
+            _ => None,
+        }
+    }
+
+    /// Returns whether any descendant needs restyling in the animation-only traversal.
+    pub fn has_animation_only_dirty_descendants(&self) -> bool {
+        self.animation_only_dirty_descendants_flag()
+            .is_some_and(|flag| flag.load(Ordering::Relaxed))
+    }
+
+    pub fn set_animation_only_dirty_descendants(&self) {
+        if let Some(flag) = self.animation_only_dirty_descendants_flag() {
+            flag.store(true, Ordering::Relaxed);
+        }
+    }
+
+    pub fn unset_animation_only_dirty_descendants(&self) {
+        if let Some(flag) = self.animation_only_dirty_descendants_flag() {
+            flag.store(false, Ordering::Relaxed);
+        }
+    }
+
+    /// Sets a restyle hint that the animation-only traversal handles, such as
+    /// `RESTYLE_CSS_ANIMATIONS`.
+    pub fn set_animation_restyle_hint(&mut self, hint: RestyleHint) {
+        if let Some(stylo_element_data) = self.try_stylo_element_data_mut() {
+            if let Some(mut element_data) = stylo_element_data.get_mut() {
+                element_data.hint.insert(hint);
+            }
+        }
+        // No early exit at a set flag: the traversal skips `display: none` subtrees,
+        // which can leave flags set below an ancestor whose flag was cleared.
+        let mut current_id = self.parent;
+        while let Some(parent_id) = current_id {
+            let parent = &self.tree()[parent_id];
+            parent.set_animation_only_dirty_descendants();
+            current_id = parent.parent;
+        }
+    }
+
     /// Returns whether this node has any descendants that need restyling.
     pub fn has_dirty_descendants(&self) -> bool {
         self.dirty_descendants_flag()

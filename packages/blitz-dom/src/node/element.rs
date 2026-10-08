@@ -97,6 +97,8 @@ pub struct ElementData {
     /// Whether any descendant of this node needs restyling.
     /// Used by Stylo's incremental style traversal to skip unchanged subtrees.
     pub dirty_descendants: AtomicBool,
+    /// Whether any descendant of this node needs restyling in the animation-only traversal.
+    pub animation_only_dirty_descendants: AtomicBool,
     /// Whether this node or any of its descendants may carry `RestyleDamage`.
     /// Used by the damage propagation pass to skip unchanged subtrees.
     pub damaged_descendants: AtomicBool,
@@ -206,6 +208,8 @@ pub struct DocumentData {
     /// [`Node`](super::Node) is constructed.
     pub guard: Option<SharedRwLock>,
     pub dirty_descendants: AtomicBool,
+    /// Whether any descendant of this node needs restyling in the animation-only traversal.
+    pub animation_only_dirty_descendants: AtomicBool,
     pub damaged_descendants: AtomicBool,
     pub element_state: ElementState,
     pub has_snapshot: bool,
@@ -242,6 +246,7 @@ impl DocumentData {
             selector_flags: Cell::new(ElementSelectorFlags::empty()),
             guard: None,
             dirty_descendants: AtomicBool::new(true),
+            animation_only_dirty_descendants: AtomicBool::new(false),
             damaged_descendants: AtomicBool::new(true),
             element_state: ElementState::empty(),
             has_snapshot: false,
@@ -318,6 +323,7 @@ impl Clone for ElementData {
             has_snapshot: false,
             snapshot_handled: AtomicBool::new(false),
             dirty_descendants: AtomicBool::new(true),
+            animation_only_dirty_descendants: AtomicBool::new(false),
             damaged_descendants: AtomicBool::new(true),
             before: None,
             after: None,
@@ -425,6 +431,7 @@ impl ElementData {
             has_snapshot: false,
             snapshot_handled: AtomicBool::new(false),
             dirty_descendants: AtomicBool::new(true),
+            animation_only_dirty_descendants: AtomicBool::new(false),
             damaged_descendants: AtomicBool::new(true),
             before: None,
             after: None,

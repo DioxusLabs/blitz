@@ -326,3 +326,16 @@ rustc-hash = { workspace = true }
 # [patch."https://github.com/linebender/parley"]
 # parley = { path = "../parley/parley" }
 # fontique = { path = "../parley/fontique" }
+
+[patch.crates-io]
+stylo = { git = "https://github.com/DioxusLabs/stylo", branch = "devin/1791471608-legacy-animation-only-traversal" }
+stylo_traits = { git = "https://github.com/DioxusLabs/stylo", branch = "devin/1791471608-legacy-animation-only-traversal" }
+stylo_atoms = { git = "https://github.com/DioxusLabs/stylo", branch = "devin/1791471608-legacy-animation-only-traversal" }
+stylo_dom = { git = "https://github.com/DioxusLabs/stylo", branch = "devin/1791471608-legacy-animation-only-traversal" }
+stylo_static_prefs = { git = "https://github.com/DioxusLabs/stylo", branch = "devin/1791471608-legacy-animation-only-traversal" }
+stylo_malloc_size_of = { git = "https://github.com/DioxusLabs/stylo", branch = "devin/1791471608-legacy-animation-only-traversal" }
+stylo_derive = { git = "https://github.com/DioxusLabs/stylo", branch = "devin/1791471608-legacy-animation-only-traversal" }
+selectors = { git = "https://github.com/DioxusLabs/stylo", branch = "devin/1791471608-legacy-animation-only-traversal" }
+servo_arc = { git = "https://github.com/DioxusLabs/stylo", branch = "devin/1791471608-legacy-animation-only-traversal" }
+to_shmem = { git = "https://github.com/DioxusLabs/stylo", branch = "devin/1791471608-legacy-animation-only-traversal" }
+to_shmem_derive = { git = "https://github.com/DioxusLabs/stylo", branch = "devin/1791471608-legacy-animation-only-traversal" }

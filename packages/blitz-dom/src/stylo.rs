@@ -63,21 +63,23 @@ impl crate::document::BaseDocument {
     pub fn resolve_stylist(&mut self, now: f64) {
         style::thread_state::enter(ThreadState::LAYOUT);
 
-        let guard = &self.guard;
-        let guards = StylesheetGuards {
-            author: &guard.read(),
-            ua_or_user: &guard.read(),
-        };
+        {
+            let guard = &self.guard;
+            let guards = StylesheetGuards {
+                author: &guard.read(),
+                ua_or_user: &guard.read(),
+            };
 
-        let root = TDocument::as_node(&&self.nodes[self.root_node_id])
-            .first_element_child()
-            .unwrap()
-            .as_element()
-            .unwrap();
+            let root = TDocument::as_node(&&self.nodes[self.root_node_id])
+                .first_element_child()
+                .unwrap()
+                .as_element()
+                .unwrap();
 
-        self.stylist
-            .flush(&guards)
-            .process_style(root, Some(&self.snapshots));
+            self.stylist
+                .flush(&guards)
+                .process_style(root, Some(&self.snapshots));
+        }
 
         // Mark actively animating nodes as dirty
         let mut sets = self.animations.sets.write();
@@ -100,8 +102,6 @@ impl crate::document::BaseDocument {
                 continue;
             }
 
-            self.nodes[node_id].set_restyle_hint(RestyleHint::RESTYLE_SELF);
-
             for animation in set.animations.iter_mut() {
                 if animation.state == AnimationState::Pending && animation.started_at <= now {
                     animation.state = AnimationState::Running;
@@ -121,41 +121,43 @@ impl crate::document::BaseDocument {
                     transition.state = AnimationState::Finished;
                 }
             }
+
+            // The animation-only traversal applies the tick: it replaces the animation and
+            // transition rules without matching selectors. A full restyle is still needed to
+            // remove finished and canceled animations, and for animations of pseudo-elements,
+            // whose rules that traversal does not replace.
+            let node = &mut self.nodes[node_id];
+            if key.pseudo_element.is_none() {
+                let mut hint = RestyleHint::empty();
+                if !set.animations.is_empty() {
+                    hint |= RestyleHint::RESTYLE_CSS_ANIMATIONS;
+                }
+                if !set.transitions.is_empty() {
+                    hint |= RestyleHint::RESTYLE_CSS_TRANSITIONS;
+                }
+                node.set_animation_restyle_hint(hint);
+            }
+            let is_done = |state: &AnimationState| {
+                matches!(state, AnimationState::Finished | AnimationState::Canceled)
+            };
+            if key.pseudo_element.is_some()
+                || set.dirty
+                || set.animations.iter().any(|a| is_done(&a.state))
+                || set.transitions.iter().any(|t| is_done(&t.state))
+            {
+                node.set_restyle_hint(RestyleHint::RESTYLE_SELF);
+            }
         }
         drop(sets);
 
-        // Build the style context used by the style traversal
-        let context = SharedStyleContext {
-            traversal_flags: TraversalFlags::empty(),
-            stylist: &self.stylist,
-            options: GLOBAL_STYLE_DATA.options.clone(),
-            guards,
-            visited_styles_enabled: false,
-            animations: self.animations.clone(),
-            current_time_for_animations: now,
-            snapshot_map: &self.snapshots,
-            registered_speculative_painters: &RegisteredPaintersImpl,
-        };
-
-        // components/layout_2020/lib.rs:983
+        // The normal traversal is preceded by an animation-only one, as in Gecko.
         let root = self.root_element();
-        // dbg!(root);
-        let token = RecalcStyle::pre_traverse(root, &context);
-
-        let mut nodes_needing_style_image_flush = Vec::new();
-        if token.should_traverse() {
-            // Style the elements, resolving their data
-            let mut traverser = RecalcStyle::new(context);
-            // `Sequential` bypasses Stylo's global pool. See `StyleThreading`.
-            let pool_guard = matches!(self.style_threading, StyleThreading::Parallel)
-                .then(|| STYLE_THREAD_POOL.pool());
-            let rayon_pool = pool_guard.as_ref().and_then(|g| g.as_ref());
-            style::driver::traverse_dom(&traverser, token, rayon_pool);
-            nodes_needing_style_image_flush =
-                std::mem::take(traverser.nodes_needing_style_image_flush.get_mut().unwrap());
+        if root.has_animation_only_dirty_descendants()
+            || TElement::has_animation_restyle_hints(&root)
+        {
+            self.traverse_styles::<true>(now);
         }
-        self.pending_style_image_nodes
-            .extend(nodes_needing_style_image_flush);
+        self.traverse_styles::<false>(now);
 
         for opaque in self.snapshots.keys() {
             let id = NodeId::from_u64(opaque.id() as u64);
@@ -182,6 +184,50 @@ impl crate::document::BaseDocument {
         self.stylist.rule_tree().maybe_gc();
 
         style::thread_state::exit(ThreadState::LAYOUT);
+    }
+
+    /// Run a style traversal: either the normal one or the animation-only one.
+    fn traverse_styles<const ANIMATION_ONLY: bool>(&mut self, now: f64) {
+        let guard = &self.guard;
+        // Build the style context used by the style traversal
+        let context = SharedStyleContext {
+            traversal_flags: if ANIMATION_ONLY {
+                TraversalFlags::AnimationOnly
+            } else {
+                TraversalFlags::empty()
+            },
+            stylist: &self.stylist,
+            options: GLOBAL_STYLE_DATA.options.clone(),
+            guards: StylesheetGuards {
+                author: &guard.read(),
+                ua_or_user: &guard.read(),
+            },
+            visited_styles_enabled: false,
+            animations: self.animations.clone(),
+            current_time_for_animations: now,
+            snapshot_map: &self.snapshots,
+            registered_speculative_painters: &RegisteredPaintersImpl,
+        };
+
+        // components/layout_2020/lib.rs:983
+        let root = self.root_element();
+        // dbg!(root);
+        let token = RecalcStyle::<ANIMATION_ONLY>::pre_traverse(root, &context);
+
+        let mut nodes_needing_style_image_flush = Vec::new();
+        if token.should_traverse() {
+            // Style the elements, resolving their data
+            let mut traverser = RecalcStyle::<ANIMATION_ONLY>::new(context);
+            // `Sequential` bypasses Stylo's global pool. See `StyleThreading`.
+            let pool_guard = matches!(self.style_threading, StyleThreading::Parallel)
+                .then(|| STYLE_THREAD_POOL.pool());
+            let rayon_pool = pool_guard.as_ref().and_then(|g| g.as_ref());
+            style::driver::traverse_dom(&traverser, token, rayon_pool);
+            nodes_needing_style_image_flush =
+                std::mem::take(traverser.nodes_needing_style_image_flush.get_mut().unwrap());
+        }
+        self.pending_style_image_nodes
+            .extend(nodes_needing_style_image_flush);
     }
 
     /// Compute the style of an element which the regular style traversal
@@ -736,6 +782,18 @@ impl<'a> TElement for BlitzNode<'a> {
 
     unsafe fn unset_dirty_descendants(&self) {
         Node::unset_dirty_descendants(self);
+    }
+
+    fn has_animation_only_dirty_descendants(&self) -> bool {
+        Node::has_animation_only_dirty_descendants(self)
+    }
+
+    unsafe fn set_animation_only_dirty_descendants(&self) {
+        Node::set_animation_only_dirty_descendants(self);
+    }
+
+    unsafe fn unset_animation_only_dirty_descendants(&self) {
+        Node::unset_animation_only_dirty_descendants(self);
     }
 
     fn store_children_to_process(&self, _n: isize) {
@@ -1304,7 +1362,7 @@ impl RegisteredSpeculativePainters for RegisteredPaintersImpl {
 
 use style::traversal::recalc_style_at;
 
-pub struct RecalcStyle<'a> {
+pub struct RecalcStyle<'a, const ANIMATION_ONLY: bool = false> {
     context: SharedStyleContext<'a>,
     /// Nodes whose `background-image`/`mask-image` layers need flushing to
     /// dedicated storage on the node (see `flush_image_layers_from_style`)
@@ -1312,7 +1370,7 @@ pub struct RecalcStyle<'a> {
     nodes_needing_style_image_flush: Mutex<Vec<NodeId>>,
 }
 
-impl<'a> RecalcStyle<'a> {
+impl<'a, const ANIMATION_ONLY: bool> RecalcStyle<'a, ANIMATION_ONLY> {
     pub fn new(context: SharedStyleContext<'a>) -> Self {
         RecalcStyle {
             context,
@@ -1322,7 +1380,9 @@ impl<'a> RecalcStyle<'a> {
 }
 
 #[allow(unsafe_code)]
-impl<'dom> DomTraversal<BlitzNode<'dom>> for RecalcStyle<'_> {
+impl<'dom, const ANIMATION_ONLY: bool> DomTraversal<BlitzNode<'dom>>
+    for RecalcStyle<'_, ANIMATION_ONLY>
+{
     fn process_preorder<F: FnMut(BlitzNode<'dom>)>(
         &self,
         context: &mut StyleContext<BlitzNode<'dom>>,
@@ -1354,7 +1414,11 @@ impl<'dom> DomTraversal<BlitzNode<'dom>> for RecalcStyle<'_> {
             }
 
             // Gets set later on
-            el.unset_dirty_descendants();
+            if ANIMATION_ONLY {
+                el.unset_animation_only_dirty_descendants();
+            } else {
+                el.unset_dirty_descendants();
+            }
         }
     }
 
