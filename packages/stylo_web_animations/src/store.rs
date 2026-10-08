@@ -2,7 +2,7 @@ use rustc_hash::FxHashMap;
 use style::Atom;
 use style::properties::PropertyDeclarationIdSet;
 use style::properties::animated_properties::{AnimationValue, AnimationValueMap};
-use style::properties::{ComputedValues, OwnedPropertyDeclarationId};
+use style::properties::{ComputedValues, LonghandId, OwnedPropertyDeclarationId};
 use style::selector_parser::PseudoElement;
 use style::servo::animation_compose::{AnimationPropertySegment, IterationComposite};
 use style::servo::animation_timing::{ComputedTiming, EffectTiming, Phase};
@@ -457,6 +457,21 @@ impl AnimationStore {
         if let Some(entry) = self.animations.get_mut(&id) {
             entry.uncomputed_properties = Some(properties);
         }
+    }
+
+    /// Whether an animation of `target` targets `property` with keyframes that are not
+    /// computed yet.
+    fn has_uncomputed_property(
+        &self,
+        target: &Target,
+        property: &OwnedPropertyDeclarationId,
+    ) -> bool {
+        self.animations_of(target).iter().any(|id| {
+            self.animations[id]
+                .uncomputed_properties
+                .as_ref()
+                .is_some_and(|properties| properties.contains(property))
+        })
     }
 
     /// Replaces the computed keyframes of the effect of an animation.
@@ -1116,7 +1131,7 @@ impl AnimationStore {
                 TransitionUpdate::Cancel(property)
                 | TransitionUpdate::RemoveCompleted(property) => property,
             };
-            !is_animated(property)
+            !is_animated(property) && !self.has_uncomputed_property(target, property)
         });
         updates
     }
@@ -1129,6 +1144,12 @@ impl AnimationStore {
         after_change_style: &ComputedValues,
         is_animated: &dyn Fn(&OwnedPropertyDeclarationId) -> bool,
     ) -> bool {
+        // A style without a box cancels the transitions, which `update_transitions` decides.
+        if after_change_style.get_box().clone_display().is_none()
+            && self.has_css_transitions(target)
+        {
+            return true;
+        }
         let updates =
             self.transition_updates(target, before_change_style, after_change_style, is_animated);
         let transitioning = &updates.transitioning_properties;
@@ -1189,6 +1210,21 @@ impl AnimationStore {
         self.remove_completed_transitions(target, |property| {
             transitioning.contains(property.as_borrowed())
         });
+
+        // An element without a box has no transitions, unless `display` is transitioning.
+        if after_change_style.get_box().clone_display().is_none() {
+            let display = OwnedPropertyDeclarationId::Longhand(LonghandId::Display);
+            if self.find_transition(target, &display).is_none() {
+                let transitions: Vec<AnimationId> = self
+                    .stale_transitions(target, &PropertyDeclarationIdSet::default())
+                    .collect();
+                changed |= !transitions.is_empty();
+                for id in transitions {
+                    self.cancel_and_remove(id);
+                }
+                self.remove_completed_transitions(target, |_| false);
+            }
+        }
         changed
     }
 

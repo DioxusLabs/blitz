@@ -1721,6 +1721,12 @@ impl ScriptRuntime {
             }
         }
         self.run_jobs("timer microtasks");
+        // With a virtual clock nothing else updates the rendering. Updating the style
+        // starts and cancels CSS animations and transitions.
+        let elapsed = self.ctx.state.borrow().clock.virtual_elapsed_ms();
+        if let Some(elapsed) = elapsed {
+            self.ctx.doc.borrow_mut().resolve(elapsed / 1000.);
+        }
         true
     }
 
