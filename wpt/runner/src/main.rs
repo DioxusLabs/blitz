@@ -40,8 +40,10 @@ mod test_runners;
 mod net_provider;
 mod panic_backtrace;
 mod report;
+mod test_variants;
 
 use net_provider::WptNetProvider;
+use test_variants::{Test, expand_test, split_test_url};
 
 /// Create a unix timestamp of the current time using the standard library
 fn unix_timestamp() -> u64 {
@@ -234,13 +236,8 @@ fn filter_path(p: &Path) -> bool {
     !(is_ref | is_manual | is_support_file | is_blocked | is_dir)
 }
 
-fn collect_tests(wpt_dir: &Path) -> Vec<PathBuf> {
-    let mut test_paths = Vec::new();
-
-    let mut suites: Vec<_> = std::env::args()
-        .skip(1)
-        .filter(|arg| !arg.starts_with('-'))
-        .collect();
+fn collect_tests(wpt_dir: &Path, mut suites: Vec<String>) -> Vec<Test> {
+    let mut tests = Vec::new();
     if suites.is_empty() {
         suites.push("css/css-flexbox".to_string());
         suites.push("css/css-grid".to_string());
@@ -269,6 +266,14 @@ fn collect_tests(wpt_dir: &Path) -> Vec<PathBuf> {
     const JS_TEST_SUFFIXES: &[&str] = &["any.js", "window.js"];
 
     for suite in suites {
+        let (suite_path, suffix) = split_test_url(&suite);
+        let source_path = if let Some(stem) = suite_path.strip_suffix(".any.html") {
+            format!("{stem}.any.js")
+        } else if let Some(stem) = suite_path.strip_suffix(".window.html") {
+            format!("{stem}.window.js")
+        } else {
+            suite_path.to_string()
+        };
         for pat in std::iter::once(String::new())
             .chain(TEST_EXTENSIONS.iter().map(|ext| format!("/**/*.{ext}")))
             .chain(
@@ -277,11 +282,11 @@ fn collect_tests(wpt_dir: &Path) -> Vec<PathBuf> {
                     .map(|suffix| format!("/**/*.{suffix}")),
             )
         {
-            let pattern = format!("{}/{}{}", wpt_dir.display(), suite, pat);
+            let pattern = format!("{}/{}{}", wpt_dir.display(), source_path, pat);
 
             let glob_results = glob::glob(&pattern).expect("Invalid glob pattern.");
 
-            test_paths.extend(
+            tests.extend(
                 glob_results
                     .map(|glob_result| {
                         if let Ok(path_buf) = glob_result {
@@ -291,12 +296,15 @@ fn collect_tests(wpt_dir: &Path) -> Vec<PathBuf> {
                             panic!("Failure during glob");
                         }
                     })
-                    .filter(|path_buf| filter_path(path_buf)),
+                    .filter(|path_buf| filter_path(path_buf))
+                    .flat_map(|path| expand_test(wpt_dir, path, suffix)),
             );
         }
     }
 
-    test_paths
+    let mut seen = std::collections::HashSet::new();
+    tests.retain(|test| seen.insert(test.url.clone()));
+    tests
 }
 
 enum BufferKind {
@@ -467,13 +475,17 @@ fn main() {
             "WPT_DIR does not exist. This should be set to a local copy of https://github.com/web-platform-tests/wpt."
         );
     }
-    let test_paths = collect_tests(&wpt_dir);
+    let suites = env::args()
+        .skip(1)
+        .filter(|arg| !arg.starts_with('-'))
+        .collect();
+    let test_paths = collect_tests(&wpt_dir, suites);
     let count = test_paths.len();
 
-    // `--list` prints the selected test files (relative to WPT_DIR) without running them
+    // `--list` prints the selected test URLs without running them
     if env::args().any(|arg| arg == "--list") {
-        for path in &test_paths {
-            println!("{}", path.strip_prefix(&wpt_dir).unwrap_or(path).display());
+        for test in &test_paths {
+            println!("{}", test.url);
         }
         return;
     }
@@ -528,7 +540,7 @@ fn main() {
 
     let mut results: Vec<TestResult> = test_paths
         .into_par_iter()
-        .map(|path| {
+        .map(|test| {
             let mut ctx = thread_state
                 .get_or(|| {
                     let worker_index = worker_counter.fetch_add(1, Ordering::Relaxed);
@@ -605,7 +617,7 @@ fn main() {
 
             let num = num.fetch_add(1, Ordering::Relaxed) + 1;
 
-            let relative_path = path
+            let relative_path = test.path
                 .strip_prefix(&ctx.wpt_dir)
                 .unwrap()
                 .to_string_lossy()
@@ -614,7 +626,7 @@ fn main() {
             let start = Instant::now();
 
             let result = catch_unwind(AssertUnwindSafe(|| {
-                panic_backtrace::backtrace_cutoff(|| process_test_file(&mut ctx, &relative_path))
+                panic_backtrace::backtrace_cutoff(|| process_test_file(&mut ctx, &relative_path, &test.url))
             }));
             let (kind, flags, status, subtest_counts, panic_info, subtest_results) = match result {
                 Ok((kind, flags, status, subtest_counts, subtest_results)) => {
@@ -674,19 +686,8 @@ fn main() {
                 Ordering::Relaxed,
             );
 
-            // JS-file tests are known by the URL of their auto-generated
-            // wrapper page (e.g. `foo.any.js` runs as `foo.any.html`), so
-            // report them under that name to match other engines' reports
-            let name = if let Some(stem) = relative_path.strip_suffix(".any.js") {
-                format!("{stem}.any.html")
-            } else if let Some(stem) = relative_path.strip_suffix(".window.js") {
-                format!("{stem}.window.html")
-            } else {
-                relative_path
-            };
-
             let result = TestResult {
-                name,
+                name: test.url,
                 kind,
                 flags,
                 status,
@@ -850,4 +851,72 @@ fn main() {
         report_path,
         write_report_start.elapsed().as_millis()
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn discovers_variants_and_accepts_explicit_urls() {
+        let dir = tempfile::tempdir().unwrap();
+        let suite = dir.path().join("suite");
+        fs::create_dir(&suite).unwrap();
+        fs::write(
+            suite.join("test.html"),
+            "<meta name=variant content='?one'><meta name=variant content='?two#part'>",
+        )
+        .unwrap();
+        fs::write(
+            suite.join("test.any.js"),
+            "// META: variant=?js\ntest(() => {});",
+        )
+        .unwrap();
+        fs::write(
+            suite.join("test.window.js"),
+            "// META: variant=?window\ntest(() => {});",
+        )
+        .unwrap();
+        fs::write(suite.join("plain.html"), "<p>No variants</p>").unwrap();
+        fs::write(suite.join("test.xhtml"), "<html xmlns='http://www.w3.org/1999/xhtml'><meta name='variant' content='?xml'/></html>").unwrap();
+
+        let mut urls: Vec<_> = collect_tests(dir.path(), vec!["suite".into()])
+            .into_iter()
+            .map(|test| test.url)
+            .collect();
+        urls.sort_unstable();
+        assert_eq!(
+            urls,
+            [
+                "suite/plain.html",
+                "suite/test.any.html?js",
+                "suite/test.html?one",
+                "suite/test.html?two#part",
+                "suite/test.window.html?window",
+                "suite/test.xhtml?xml"
+            ]
+        );
+
+        let tests = collect_tests(
+            dir.path(),
+            vec![
+                "suite/test.html?override#hash".into(),
+                "suite/test.any.html?override".into(),
+                "suite/test.window.html?override".into(),
+            ],
+        );
+        assert_eq!(tests.len(), 3);
+        assert_eq!(tests[0].url, "suite/test.html?override#hash");
+        assert_eq!(tests[0].path, suite.join("test.html"));
+        assert_eq!(tests[1].url, "suite/test.any.html?override");
+        assert_eq!(tests[1].path, suite.join("test.any.js"));
+        assert_eq!(tests[2].url, "suite/test.window.html?override");
+        assert_eq!(tests[2].path, suite.join("test.window.js"));
+
+        let tests = collect_tests(
+            dir.path(),
+            vec!["suite".into(), "suite/test.html?one".into()],
+        );
+        assert_eq!(tests.len(), 6);
+    }
 }
