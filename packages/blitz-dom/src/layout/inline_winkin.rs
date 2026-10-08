@@ -352,10 +352,14 @@ impl BaseDocument {
         // content is built with: each border box, and where an atomic
         // inline's baseline is. In a vertical line a box's height is along
         // it, and it sits on no baseline of its own.
-        let ids: Vec<u64> = inline_layout
-            .layout
-            .inline_boxes()
-            .map(|ibox| ibox.id)
+        // The inline root's layout children are its atomic inlines and
+        // floats, in content order.
+        let ids: Vec<u64> = self.nodes[node_id]
+            .layout_children
+            .borrow()
+            .iter()
+            .flatten()
+            .map(|child| child.as_u64())
             .collect();
         let mut sizes = Vec::with_capacity(ids.len());
         #[cfg(feature = "floats")]
