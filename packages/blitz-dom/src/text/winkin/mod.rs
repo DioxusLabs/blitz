@@ -96,9 +96,10 @@ pub struct TextLayout {
     /// Whether the content has been broken into lines since it was built.
     laid: bool,
     /// What the atomic inlines and floats were built at, in content order,
-    /// and what percentages of the containing block were resolved against.
+    /// and what percentages of the containing block were resolved against,
+    /// where any were.
     boxes: Vec<BuiltBox>,
-    basis: f32,
+    basis: Option<f32>,
     /// The computed styles painted with that no node of the content's is
     /// styled in.
     styles: PaintStyles,
@@ -249,7 +250,7 @@ impl TextLayout {
     /// Whether the content is built, with atomic inlines and floats
     /// measured as `sizes` are and percentages taken of `basis`.
     pub(crate) fn is_built_with(&self, sizes: &[BuiltBox], basis: f32) -> bool {
-        self.built && self.boxes == sizes && self.basis == basis
+        self.built && self.boxes == sizes && self.is_built_at(basis)
     }
 
     /// Whether the content is built with atomic inlines and floats that
@@ -257,11 +258,17 @@ impl TextLayout {
     /// `basis`: all the content's intrinsic inline sizes depend on.
     pub(crate) fn is_built_along(&self, sizes: &[BuiltBox], basis: f32) -> bool {
         self.built
-            && self.basis == basis
+            && self.is_built_at(basis)
             && self.boxes.len() == sizes.len()
             && self.boxes.iter().zip(sizes).all(|(built, size)| {
                 built.node == size.node && built.size.inline == size.size.inline
             })
+    }
+
+    /// Whether the content is built as it is with percentages taken of
+    /// `basis`: it resolved none, or resolved them against `basis`.
+    fn is_built_at(&self, basis: f32) -> bool {
+        self.basis.is_none_or(|built| built == basis)
     }
 
     /// Gives each of `sizes`, measured along the line alone, the block size
@@ -425,7 +432,8 @@ pub(crate) fn build(
     text.laid = false;
     text.boxes.clear();
     text.boxes.extend_from_slice(sizes);
-    text.basis = basis;
+    text.basis = None;
+    let basis = style::Basis::new(basis);
     text.scale = scale;
     text.styles.first_line.clear();
     text.styles.first_letter = None;
@@ -464,7 +472,8 @@ pub(crate) fn build(
     let language = language_of(nodes, Some(root_id));
     let feature_values = style::FeatureValues::of(cascade.stylist);
     let root_lists = style::FontLists::of(&root_computed, &feature_values);
-    let mut root_style = style::computed_style(&root_lists, &root_computed, scale, basis, language);
+    let mut root_style =
+        style::computed_style(&root_lists, &root_computed, scale, &basis, language);
     // An anonymous block's lines are the element's around it, whose
     // `unicode-bidi` applies to them: an override, or `plaintext`.
     if matches!(root.data, NodeData::AnonymousBlock(_)) {
@@ -481,7 +490,7 @@ pub(crate) fn build(
         .map(|computed| style::FontLists::of(computed, &feature_values));
     let first_line_style = match (&first_line_computed, &first_line_lists) {
         (Some(computed), Some(lists)) => Some(style::computed_style(
-            lists, computed, scale, basis, language,
+            lists, computed, scale, &basis, language,
         )),
         _ => None,
     };
@@ -546,7 +555,7 @@ pub(crate) fn build(
         feature_values,
         marked: Vec::new(),
         scale,
-        basis,
+        basis: &basis,
         parents: vec![Parent {
             computed: root_computed,
             first_line: first_line_computed,
@@ -564,11 +573,12 @@ pub(crate) fn build(
     } = builder;
     builder.finish(cx);
     for (node, computed, language) in marked {
-        if let Some(layout) = emphasis_mark(cx, &computed, &feature_values, scale, basis, language)
+        if let Some(layout) = emphasis_mark(cx, &computed, &feature_values, scale, &basis, language)
         {
             styles.marks.push((node, layout));
         }
     }
+    text.basis = basis.is_read().then_some(basis.px());
     text.built = true;
 }
 
@@ -580,7 +590,7 @@ fn emphasis_mark(
     computed: &ComputedValues,
     feature_values: &style::FeatureValues,
     scale: f32,
-    basis: f32,
+    basis: &style::Basis,
     language: Option<Language>,
 ) -> Option<Layout> {
     let string = style::emphasis_mark_string(computed)?;
@@ -664,7 +674,7 @@ struct WinkinBuilder<'a, 'b> {
     /// languages their marks are set in.
     marked: Vec<(u64, ServoArc<ComputedValues>, Option<Language>)>,
     scale: f32,
-    basis: f32,
+    basis: &'a style::Basis,
     /// The boxes open around what is pushed next, the block's first.
     parents: Vec<Parent>,
 }
@@ -1986,7 +1996,7 @@ pub(crate) fn build_plain_text(
 ) {
     let feature_values = style::FeatureValues::default();
     let lists = style::FontLists::of(computed, &feature_values);
-    let own = style::computed_style(&lists, computed, scale, 0.0, None);
+    let own = style::computed_style(&lists, computed, scale, &style::Basis::new(0.0), None);
     let own = ComputedStyle {
         text: winkin::style::TextGroup {
             white_space_collapse: match own.text.white_space_collapse {
@@ -2009,7 +2019,7 @@ pub(crate) fn build_plain_text(
     text.built = false;
     text.laid = false;
     text.boxes.clear();
-    text.basis = 0.0;
+    text.basis = None;
     text.scale = scale;
     text.writing_mode = block.writing_mode;
     text.styles.first_line.clear();
@@ -2068,7 +2078,13 @@ impl MarkerEngine for TextLayout {
         if bullet {
             lists = lists.with_families_first(&BULLET_FAMILIES);
         }
-        let own = unboxed(style::computed_style(&lists, computed, scale, 0.0, None));
+        let own = unboxed(style::computed_style(
+            &lists,
+            computed,
+            scale,
+            &style::Basis::new(0.0),
+            None,
+        ));
         let block = ComputedBlockStyle {
             writing_mode: WritingMode::HorizontalTb,
             ..ComputedBlockStyle::new(&own)

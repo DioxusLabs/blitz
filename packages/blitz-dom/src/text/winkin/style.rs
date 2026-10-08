@@ -12,6 +12,7 @@
 //! `line-fit-edge`, `initial-letter-align` and `text-group-align`.
 
 use std::borrow::Cow;
+use std::cell::Cell;
 
 use style::Atom;
 use style::computed_values::box_decoration_break::T as StyloBoxDecorationBreak;
@@ -344,22 +345,52 @@ fn length_percentage(value: &StyloLengthPercentage, scale: f32) -> LengthPercent
     }
 }
 
-/// A length-percentage of the containing block, `basis` CSS pixels wide, in
-/// device pixels.
-fn of_basis(value: &StyloLengthPercentage, basis: f32, scale: f32) -> f32 {
-    value.resolve(Length::new(basis)).px() * scale
+/// The containing block's inline size, in CSS pixels, that percentages of it
+/// are resolved against, and whether any was.
+pub(crate) struct Basis {
+    px: f32,
+    read: Cell<bool>,
+}
+
+impl Basis {
+    /// A basis `px` CSS pixels wide, which nothing has read yet.
+    pub(crate) fn new(px: f32) -> Self {
+        Self {
+            px,
+            read: Cell::new(false),
+        }
+    }
+
+    /// Its size in CSS pixels.
+    pub(crate) fn px(&self) -> f32 {
+        self.px
+    }
+
+    /// Whether a percentage was resolved against it.
+    pub(crate) fn is_read(&self) -> bool {
+        self.read.get()
+    }
+}
+
+/// A length-percentage of the containing block, `basis` wide, in device
+/// pixels.
+fn of_basis(value: &StyloLengthPercentage, basis: &Basis, scale: f32) -> f32 {
+    if value.has_percentage() {
+        basis.read.set(true);
+    }
+    value.resolve(Length::new(basis.px)).px() * scale
 }
 
 /// Converts an element's computed style, its lists borrowed from `lists`.
 ///
 /// Lengths are scaled by `scale` into device pixels, and percentages of the
-/// containing block resolved against `basis` CSS pixels. `language` is the
+/// containing block resolved against `basis`. `language` is the
 /// content language from the nearest `lang`.
 pub(crate) fn computed_style<'a>(
     lists: &'a FontLists<'_>,
     computed: &'a ComputedValues,
     scale: f32,
-    basis: f32,
+    basis: &Basis,
     language: Option<Language>,
 ) -> ComputedStyle<'a> {
     ComputedStyle {
@@ -877,7 +908,7 @@ fn text_box_edge(edge: StyloTextBoxEdge) -> TextBoxEdge {
 ///
 /// A border width is snapped as CSS snaps it, in device pixels: one under a
 /// pixel to a pixel, and any other down to a whole one.
-fn edges_group(computed: &ComputedValues, scale: f32, basis: f32) -> EdgesGroup {
+fn edges_group(computed: &ComputedValues, scale: f32, basis: &Basis) -> EdgesGroup {
     let margin = computed.get_margin();
     let padding = computed.get_padding();
     let border = computed.get_border();
