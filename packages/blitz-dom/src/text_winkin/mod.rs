@@ -132,6 +132,8 @@ pub struct WinkinText {
     styles: PaintStyles,
     /// Which way the content's lines run.
     writing_mode: WritingMode,
+    /// Device pixels per CSS pixel used to build the layout.
+    scale: f32,
 }
 
 /// A copy starts empty, and is built again the first time it is laid out.
@@ -169,6 +171,9 @@ pub(crate) struct BoxMeasure {
 }
 
 impl WinkinText {
+    pub fn scale(&self) -> f32 {
+        self.scale
+    }
     /// Drops the built content, keeping its allocations, so that it is built
     /// again.
     pub(crate) fn invalidate(&mut self) {
@@ -411,6 +416,7 @@ pub(crate) fn build(
     text.boxes.clear();
     text.boxes.extend_from_slice(sizes);
     text.basis = basis;
+    text.scale = scale;
     text.styles.first_line.clear();
     text.styles.first_letter = None;
     text.styles.marker = None;
@@ -517,7 +523,10 @@ pub(crate) fn build(
     text.writing_mode = block.writing_mode;
 
     let WinkinText { layout, styles, .. } = text;
-    let mut builder = layout.builder(key, &block, BuildOptions::default());
+    let mut options = BuildOptions::default();
+    // Hit testing needs to map a layout position back to its DOM node.
+    options.map_source = true;
+    let mut builder = layout.builder(key, &block, options);
 
     // A marker inside the list item comes before its content, in the bullet
     // font where it is a bullet.

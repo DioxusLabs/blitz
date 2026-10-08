@@ -4,7 +4,22 @@ use blitz_traits::{
     shell::ShellProvider,
 };
 use keyboard_types::{Key, Modifiers};
+use kurbo::{Rect, Size};
+#[cfg(not(feature = "winkin"))]
+use parley::{Affinity, BreakReason, Cluster, ClusterSide, Cursor, Selection};
 use parley::{ContentWidths, FontContext, LayoutContext};
+
+#[cfg(feature = "winkin")]
+use winkin::config::PastLines;
+#[cfg(feature = "winkin")]
+use winkin::selection::CopyKind;
+
+/// A position in an inline root's laid-out text.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct InlineTextHit {
+    pub node_id: NodeId,
+    pub byte_offset: usize,
+}
 
 use crate::util::ACTION_MOD;
 
@@ -40,10 +55,166 @@ impl TextLayout {
         Default::default()
     }
 
+    pub fn scale(&self) -> f32 {
+        #[cfg(feature = "winkin")]
+        {
+            self.winkin.scale()
+        }
+        #[cfg(not(feature = "winkin"))]
+        self.layout.scale()
+    }
+
     pub fn content_widths(&mut self) -> ContentWidths {
         *self
             .content_widths
             .get_or_insert_with(|| self.layout.calculate_content_widths())
+    }
+
+    /// The byte length of the selected backend's collapsed layout text.
+    pub fn text_len(&self) -> usize {
+        #[cfg(feature = "winkin")]
+        {
+            self.winkin.layout().map_or(0, |layout| layout.text().len())
+        }
+        #[cfg(not(feature = "winkin"))]
+        self.text.len()
+    }
+
+    /// Text for a selection in the selected backend's byte-offset space.
+    pub fn selected_text(&self, start: usize, end: usize) -> Option<String> {
+        #[cfg(feature = "winkin")]
+        {
+            let layout = self.winkin.layout()?;
+            (start < end && end <= layout.text().len())
+                .then(|| layout.selected_text(start..end, CopyKind::Text).to_string())
+        }
+        #[cfg(not(feature = "winkin"))]
+        {
+            self.text.get(start..end).map(str::to_owned)
+        }
+    }
+
+    /// Hit test physical CSS-pixel coordinates relative to the inline root's content box.
+    /// `exact` requires the point to be within a line and its text extent.
+    pub fn hit_test(
+        &self,
+        x: f32,
+        y: f32,
+        content_size: Size,
+        scale: f32,
+        exact: bool,
+    ) -> Option<InlineTextHit> {
+        #[cfg(feature = "winkin")]
+        {
+            let layout = self.winkin.layout()?;
+            let page = crate::text_winkin::page(
+                self.winkin.writing_mode(),
+                content_size.width * f64::from(scale),
+                content_size.height * f64::from(scale),
+            );
+            let point = page.inverse()
+                * kurbo::Point::new(
+                    f64::from(x * scale),
+                    f64::from((y - self.block_offset) * scale),
+                );
+            let (inline, block) = (point.x as f32, point.y as f32);
+            if exact
+                && !layout.lines().any(|line| {
+                    let metrics = line.metrics();
+                    block >= metrics.top
+                        && block < metrics.top + metrics.height()
+                        && inline >= metrics.left
+                        && inline < metrics.left + metrics.width
+                })
+            {
+                return None;
+            }
+            let position = layout.hit_test(inline, block, PastLines::Column)?;
+            let node = layout.node_position(position)?;
+            let node_id = NodeId::from_u64(node.key.0);
+            Some(InlineTextHit {
+                node_id,
+                byte_offset: position.offset,
+            })
+        }
+        #[cfg(not(feature = "winkin"))]
+        {
+            let _ = (content_size, scale);
+            let layout = &self.layout;
+            let point = (x * layout.scale(), (y - self.block_offset) * layout.scale());
+            let (cluster, side) = if exact {
+                Cluster::from_point_exact(layout, point.0, point.1)?
+            } else {
+                Cluster::from_point(layout, point.0, point.1)?
+            };
+            let leading = side == ClusterSide::Left;
+            let byte_offset = if cluster.is_rtl() {
+                if leading {
+                    cluster.text_range().end
+                } else {
+                    cluster.text_range().start
+                }
+            } else if leading || cluster.is_line_break() == Some(BreakReason::Explicit) {
+                cluster.text_range().start
+            } else {
+                cluster.text_range().end
+            };
+            Some(InlineTextHit {
+                node_id: cluster.style().brush.id,
+                byte_offset,
+            })
+        }
+    }
+
+    /// Selection rectangles in physical device pixels relative to the content box.
+    pub fn selection_rects(
+        &self,
+        start: usize,
+        end: usize,
+        content_size: Size,
+        scale: f32,
+    ) -> Vec<Rect> {
+        #[cfg(feature = "winkin")]
+        {
+            let Some(layout) = self.winkin.layout() else {
+                return Vec::new();
+            };
+            let mode = self.winkin.writing_mode();
+            let page = crate::text_winkin::page(
+                mode,
+                content_size.width * f64::from(scale),
+                content_size.height * f64::from(scale),
+            );
+            layout
+                .selection_rects(start..end)
+                .filter_map(|selection| {
+                    let metrics = layout.line(selection.line)?.metrics();
+                    let rect = Rect::new(
+                        f64::from(selection.inline.left),
+                        f64::from(selection.block.over),
+                        f64::from(selection.inline.right),
+                        f64::from(selection.block.under),
+                    );
+                    Some(
+                        crate::text_winkin::line_frame(mode, page, &metrics)
+                            .transform_rect_bbox(rect),
+                    )
+                })
+                .collect()
+        }
+        #[cfg(not(feature = "winkin"))]
+        {
+            let _ = (content_size, scale);
+            let layout = &self.layout;
+            let anchor = Cursor::from_byte_index(layout, start, Affinity::Downstream);
+            let focus = Cursor::from_byte_index(layout, end, Affinity::Downstream);
+            let selection = Selection::new(anchor, focus);
+            let mut rects = Vec::new();
+            selection.geometry_with(layout, |rect, _| {
+                rects.push(Rect::new(rect.x0, rect.y0, rect.x1, rect.y1));
+            });
+            rects
+        }
     }
 }
 

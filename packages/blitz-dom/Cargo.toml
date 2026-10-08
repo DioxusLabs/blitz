@@ -36,8 +36,8 @@ autofocus = []
 floats = ["taffy/float_layout", "stylo_taffy/floats"]
 # CSS vertical `writing-mode` support (layout runs in each box's writing-mode frame; see layout/writing_mode.rs)
 writing-mode = ["stylo_taffy/writing-mode"]
-# Lay out and paint document text with winkin rather than Parley. Text inputs,
-# selection and hit testing still use Parley.
+# Lay out and paint document text with winkin rather than Parley. Text inputs
+# still use Parley; inline text interaction uses the selected layout backend.
 winkin = ["dep:winkin", "dep:fontwich"]
 file-input = []
 # Overlay-scrollbar thumb interaction (drag + hover tracking). Normally

@@ -2623,14 +2623,13 @@ impl BaseDocument {
             let element_data = node.element_data()?;
             let inline_layout = element_data.inline_layout_data.as_ref()?;
 
-            if *end > inline_layout.text.len() {
+            let Some(selected) = inline_layout.selected_text(*start, *end) else {
                 continue;
-            }
-
+            };
             if !result.is_empty() {
                 result.push(' ');
             }
-            result.push_str(&inline_layout.text[*start..*end]);
+            result.push_str(&selected);
         }
 
         if result.is_empty() {
@@ -2726,7 +2725,7 @@ impl BaseDocument {
                 continue;
             };
 
-            let text_len = inline_layout.text.len();
+            let text_len = inline_layout.text_len();
 
             if node_id == first_node && node_id == last_node {
                 let start = first_offset.min(last_offset);

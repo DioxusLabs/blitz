@@ -10,7 +10,6 @@ use euclid::{Point2D, Rect, Size2D};
 use keyboard_types::Modifiers;
 use kurbo::{Affine, Rect as KurboRect};
 use markup5ever::{LocalName, local_name};
-use parley::{BreakReason, Cluster, ClusterSide};
 use selectors::matching::ElementSelectorFlags;
 use std::cell::{Cell, RefCell};
 use std::fmt::Write;
@@ -1549,21 +1548,25 @@ impl Node {
         if self.flags.is_inline_root() {
             let element_data = &self.element_data().unwrap();
             if let Some(ild) = element_data.inline_layout_data.as_ref() {
-                let layout = &ild.layout;
-                let scale = layout.scale();
-                let y = y - ild.block_offset;
-
-                if let Some((cluster, _side)) =
-                    Cluster::from_point_exact(layout, x * scale, y * scale)
+                if let Some(hit) =
+                    ild.hit_test(x, y, self.inline_text_content_size(), scale as f32, true)
+                    && let Some(text_node) = self.tree().get(hit.node_id)
                 {
-                    let node_id = cluster.style().brush.id;
-                    let text_pointer_events_none = self
-                        .with(node_id)
+                    let hit_node = if matches!(text_node.data, NodeData::Text(_)) {
+                        text_node
+                            .layout_parent
+                            .get()
+                            .and_then(|parent| self.tree().get(parent))
+                            .unwrap_or(self)
+                    } else {
+                        text_node
+                    };
+                    let text_pointer_events_none = hit_node
                         .primary_styles()
                         .is_some_and(|style| style.clone_pointer_events() == PointerEvents::None);
                     if !text_pointer_events_none {
                         return Some(HitResult {
-                            node_id,
+                            node_id: hit_node.id,
                             x,
                             y,
                             is_text: true,
@@ -1609,34 +1612,37 @@ impl Node {
 
         let element_data = self.element_data()?;
         let inline_layout = element_data.inline_layout_data.as_ref()?;
-        let layout = &inline_layout.layout;
-        let scale = layout.scale();
-        let y = y - inline_layout.block_offset;
+        inline_layout
+            .hit_test(
+                x,
+                y,
+                self.inline_text_content_size(),
+                inline_layout.scale(),
+                false,
+            )
+            .map(|hit| hit.byte_offset)
+    }
 
-        // Use Parley's cluster hit testing (from_point is more forgiving than from_point_exact)
-        let (cluster, side) = Cluster::from_point(layout, x * scale, y * scale)?;
-
-        // Determine byte offset based on which side of the cluster was clicked
-        // For LTR text: left side = start of cluster, right side = end of cluster
-        // For RTL text: left side = end of cluster, right side = start of cluster
-        // Also, explicit line breaks should always use start to avoid cursor appearing on next line
-        let is_leading = side == ClusterSide::Left;
-        let offset = if cluster.is_rtl() {
-            if is_leading {
-                cluster.text_range().end
-            } else {
-                cluster.text_range().start
-            }
-        } else {
-            // LTR text
-            if is_leading || cluster.is_line_break() == Some(BreakReason::Explicit) {
-                cluster.text_range().start
-            } else {
-                cluster.text_range().end
-            }
-        };
-
-        Some(offset)
+    fn inline_text_content_size(&self) -> kurbo::Size {
+        let layout = self.final_layout();
+        kurbo::Size::new(
+            f64::from(
+                (layout.size.width
+                    - layout.padding.left
+                    - layout.padding.right
+                    - layout.border.left
+                    - layout.border.right)
+                    .max(0.0),
+            ),
+            f64::from(
+                (layout.size.height
+                    - layout.padding.top
+                    - layout.padding.bottom
+                    - layout.border.top
+                    - layout.border.bottom)
+                    .max(0.0),
+            ),
+        )
     }
 
     /// Whether this node is a non-atomic inline element: one that has no layout box of its

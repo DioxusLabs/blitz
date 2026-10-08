@@ -872,6 +872,7 @@ impl ElementCx<'_, '_> {
                     self.scale,
                     self.node.id,
                     &mut draw_text_context,
+                    self.context.selection_ranges.get(&self.node.id).copied(),
                 );
                 return;
             }
@@ -890,7 +891,12 @@ impl ElementCx<'_, '_> {
             if let Some(&(sel_start, sel_end)) = self.context.selection_ranges.get(&self.node.id) {
                 crate::text::draw_text_selection(
                     scene,
-                    &text_layout.layout,
+                    text_layout,
+                    Size::new(
+                        self.frame.content_box.width() / self.scale,
+                        self.frame.content_box.height() / self.scale,
+                    ),
+                    self.scale as f32,
                     transform,
                     sel_start,
                     sel_end,
