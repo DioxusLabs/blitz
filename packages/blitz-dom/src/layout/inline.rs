@@ -9,7 +9,7 @@ use taffy::{
     AvailableSpace, AxisStaticPosition, BlockContainerStyle, BlockContext, BlockFormattingContext,
     BoxSizing, CollapsibleMarginSet, CompactLength, CoreStyle as _, Direction, LayoutInput,
     LayoutOutput, LayoutPartialTree as _, MaybeMath as _, MaybeResolve as _, OofCandidate,
-    OofCandidates, OofItemStyle, OofPositioningArea, Overflow, Point, RequestedAxis,
+    OofCandidates, OofItemStyle, OofPositioningArea, Overflow, Point, Rect, RequestedAxis,
     ResolveOrZero as _, RunMode, Size, SizingMode,
 };
 
@@ -20,7 +20,27 @@ use taffy::{BlockItemStyle as _, Clear, Float, prelude::TaffyMaxContent};
 
 use super::resolve_calc_value;
 use crate::BaseDocument;
+use crate::node::TextLayout;
 use crate::stylo_to_parley;
+
+/// What `compute_inline_layout_inner` has resolved from the container's styles and inputs
+/// before the text backend measures the inline boxes and breaks lines.
+pub(super) struct Frame {
+    pub(super) inputs: LayoutInput,
+    pub(super) node_size: Size<Option<f32>>,
+    pub(super) node_min_size: Size<Option<f32>>,
+    pub(super) node_max_size: Size<Option<f32>>,
+    pub(super) aspect_ratio: Option<f32>,
+    pub(super) padding: Rect<f32>,
+    pub(super) border: Rect<f32>,
+    pub(super) scrollbar_gutter: Point<f32>,
+    pub(super) container_pb: Rect<f32>,
+    pub(super) content_box_inset: Rect<f32>,
+    pub(super) child_inputs: LayoutInput,
+    pub(super) available_space: Size<AvailableSpace>,
+    pub(super) collapses_through: bool,
+    pub(super) scale: f32,
+}
 
 /// Subtract a child's margins from the definite axes of the available space it is laid out in.
 /// Taffy's convention is that the parent subtracts a child's margins from the available space
@@ -195,10 +215,6 @@ impl BaseDocument {
         }
     }
 
-    #[cfg_attr(
-        feature = "winkin",
-        allow(unreachable_code, unused_variables, unused_mut)
-    )]
     fn compute_inline_layout_inner(
         &mut self,
         node_id: NodeId,
@@ -215,7 +231,7 @@ impl BaseDocument {
         } = inputs;
 
         // Take inline layout to satisfy borrow checker
-        let mut inline_layout = self.nodes[node_id]
+        let inline_layout = self.nodes[node_id]
             .data
             .downcast_element_mut()
             .unwrap()
@@ -299,25 +315,6 @@ impl BaseDocument {
 
         drop(style);
 
-        // Short circuit if inline context contains no text or inline boxes.
-        // Parley's text is collapsed, which drops a lone no-break space, so
-        // under winkin the layout answers instead.
-        if !cfg!(feature = "winkin")
-            && !has_styles_preventing_being_collapsed_through
-            && inline_layout.text.is_empty()
-            && inline_layout.layout.inline_boxes().len() == 0
-        {
-            // Put layout back
-            self.nodes[node_id]
-                .data
-                .downcast_element_mut()
-                .unwrap()
-                .inline_layout_data = Some(inline_layout);
-            return LayoutOutput::from_outer_size(
-                Size::ZERO.maybe_max(container_pb.sum_axes().map(Some)),
-            );
-        }
-
         // Compute available space
         let available_space = Size {
             width: known_dimensions
@@ -355,6 +352,71 @@ impl BaseDocument {
             vertical_margins_are_collapsible: taffy::Line::FALSE,
             ..inputs
         };
+        let frame = Frame {
+            inputs,
+            node_size,
+            node_min_size,
+            node_max_size,
+            aspect_ratio,
+            padding,
+            border,
+            scrollbar_gutter,
+            container_pb,
+            content_box_inset,
+            child_inputs,
+            available_space,
+            collapses_through: has_styles_preventing_being_collapsed_through,
+            scale,
+        };
+        #[cfg(feature = "winkin")]
+        return self.compute_inline_layout_winkin(node_id, inline_layout, frame, block_ctx);
+        #[cfg(not(feature = "winkin"))]
+        return self.compute_inline_layout_parley(node_id, inline_layout, frame, block_ctx);
+    }
+
+    /// Measures, breaks and places the inline formatting context with Parley.
+    #[cfg_attr(feature = "winkin", allow(dead_code))]
+    fn compute_inline_layout_parley(
+        &mut self,
+        node_id: NodeId,
+        mut inline_layout: Box<TextLayout>,
+        frame: Frame,
+        block_ctx: &mut BlockContext<'_>,
+    ) -> LayoutOutput {
+        let Frame {
+            inputs,
+            node_size,
+            node_min_size,
+            node_max_size,
+            aspect_ratio,
+            padding,
+            border,
+            scrollbar_gutter,
+            container_pb,
+            content_box_inset,
+            child_inputs,
+            available_space,
+            collapses_through,
+            scale,
+        } = frame;
+        let known_dimensions = inputs.known_dimensions;
+
+        // Short circuit if inline context contains no text or inline boxes
+        if !collapses_through
+            && inline_layout.text.is_empty()
+            && inline_layout.layout.inline_boxes().len() == 0
+        {
+            // Put layout back
+            self.nodes[node_id]
+                .data
+                .downcast_element_mut()
+                .unwrap()
+                .inline_layout_data = Some(inline_layout);
+            return LayoutOutput::from_outer_size(
+                Size::ZERO.maybe_max(container_pb.sum_axes().map(Some)),
+            );
+        }
+
         #[cfg(feature = "floats")]
         let float_child_inputs = taffy::tree::LayoutInput {
             available_space: Size::MAX_CONTENT,
@@ -432,37 +494,6 @@ impl BaseDocument {
                 };
             }
         }
-
-        // Everything from here -- widths, breaking, and where the boxes go --
-        // is winkin's when it lays the text out.
-        #[cfg(feature = "winkin")]
-        let margin = self.nodes[node_id]
-            .layout_style()
-            .margin()
-            .resolve_or_zero(parent_size.width, resolve_calc_value);
-        #[cfg(feature = "winkin")]
-        return self.compute_inline_layout_winkin(
-            node_id,
-            inline_layout,
-            super::inline_winkin::Frame {
-                inputs,
-                node_size,
-                node_min_size,
-                node_max_size,
-                aspect_ratio,
-                margin,
-                padding,
-                border,
-                scrollbar_gutter,
-                container_pb,
-                content_box_inset,
-                child_inputs,
-                available_space,
-                collapses_through: has_styles_preventing_being_collapsed_through,
-                scale,
-            },
-            block_ctx,
-        );
 
         // TODO: Resolve against style widths as well as known dimensions
         let text_indent = self.nodes[node_id]
@@ -1127,7 +1158,7 @@ impl BaseDocument {
             },
             top_margin: CollapsibleMarginSet::ZERO,
             bottom_margin: CollapsibleMarginSet::ZERO,
-            margins_can_collapse_through: !has_styles_preventing_being_collapsed_through
+            margins_can_collapse_through: !collapses_through
                 && final_size.height == 0.0
                 && measured_size.height == 0.0,
             oof_candidates,
