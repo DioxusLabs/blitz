@@ -370,8 +370,12 @@ impl LayoutPassState<'_> {
                 continue;
             };
             #[cfg(feature = "floats")]
-            if self.nodes[node].layout_style().float().is_floated() {
-                clears.push((id, self.nodes[node].layout_style().clear()));
+            if self
+                .child_layout_style(&self.nodes[node])
+                .float()
+                .is_floated()
+            {
+                clears.push((id, self.child_layout_style(&self.nodes[node]).clear()));
             }
             let size = if vertical {
                 BoxSize {
@@ -416,28 +420,66 @@ impl LayoutPassState<'_> {
             let writing_mode = inline_layout.winkin.writing_mode();
             let pbh = container_pb.vertical_components().sum() * scale;
             // Its own height, or where it has none the height it has room
-            // for, or failing both as long as its longest line.
-            let along = known_dimensions
-                .height
-                .or(node_size.height)
-                .or_else(|| {
+            // for, or failing both as long as its longest line. A block in a
+            // block container whose lines run the same way stretches into
+            // the room; any other box fits its content into it.
+            let fit = |along: f32| {
+                let widths = inline_layout.winkin.content_widths();
+                along.min(widths.max_content).max(widths.min_content).ceil()
+            };
+            let along = match known_dimensions.height.or(node_size.height) {
+                Some(height) => (height * scale) - pbh,
+                None => {
                     let room = match available_space.height {
                         AvailableSpace::Definite(height) => Some(height),
                         _ => None,
                     };
+                    // The initial containing block's height, which an
+                    // orthogonal flow without a definite parent height fits
+                    // into.
+                    let icb = self.stylist.device().au_viewport_size().height.to_f32_px();
                     // An orthogonal flow whose parent has no definite height
                     // has at most the parent's `max-height`, as Chrome takes
                     // its fallback inline size.
-                    match self.parent_max_height(node_id) {
+                    let room = match self.parent_max_height(node_id) {
                         Some(cap) => {
-                            let cap = (cap - margin.vertical_components().sum()).max(0.0);
+                            let cap = (cap.min(icb) - margin.vertical_components().sum()).max(0.0);
                             Some(room.map_or(cap, |room| room.min(cap)))
                         }
                         None => room,
+                    };
+                    // Asked for its intrinsic height, it answers its
+                    // lines' intrinsic length.
+                    let intrinsic = inputs.run_mode == RunMode::ComputeSize
+                        && inputs.axis == RequestedAxis::Vertical;
+                    let widths = inline_layout.winkin.content_widths();
+                    match room {
+                        None if intrinsic
+                            && available_space.height == AvailableSpace::MinContent =>
+                        {
+                            widths.min_content.ceil()
+                        }
+                        None if intrinsic => widths.max_content.ceil(),
+                        Some(room) if self.stretches_along(node_id, vertical) => {
+                            (room * scale) - pbh
+                        }
+                        Some(room) => fit((room * scale) - pbh),
+                        // Within a parent of definite height, an orthogonal
+                        // flow fits into that height, less its margins, and
+                        // within any other parent into the initial
+                        // containing block.
+                        None => match inputs.parent_size.height {
+                            Some(height) => {
+                                fit((height - margin.vertical_components().sum()) * scale - pbh)
+                            }
+                            None if self.is_orthogonal(node_id, vertical) => {
+                                fit((icb - margin.vertical_components().sum()) * scale - pbh)
+                            }
+                            None => widths.max_content.ceil(),
+                        },
                     }
-                })
-                .map(|height| (height * scale) - pbh)
-                .unwrap_or_else(|| inline_layout.winkin.content_widths().max_content.ceil());
+                }
+            };
             let mut room = FloatRoom {
                 #[cfg(feature = "floats")]
                 outer: None,
@@ -897,12 +939,45 @@ impl LayoutPassState<'_> {
         }
     }
 
+    /// Whether vertical block `node_id` stretches along its lines into the
+    /// room it is given: whether it is an in-flow block in a block
+    /// container whose lines run the same way.
+    fn stretches_along(&self, node_id: NodeId, vertical: bool) -> bool {
+        let node = &self.nodes[node_id];
+        if let Some(style) = node.primary_styles() {
+            let display = style.clone_display();
+            if display.outside() != DisplayOutside::Block
+                || style.get_box().float != style::computed_values::float::T::None
+                || style.get_box().position.is_absolutely_positioned()
+            {
+                return false;
+            }
+        }
+        let Some(parent) = node.layout_parent.get().map(|id| &self.nodes[id]) else {
+            return false;
+        };
+        parent.taffy_display() == taffy::Display::Block
+            && parent
+                .primary_styles()
+                .is_some_and(|style| style.writing_mode.is_vertical() == vertical)
+    }
+
+    /// Whether vertical block `node_id` is an orthogonal flow: whether its
+    /// layout parent's lines run across its own.
+    fn is_orthogonal(&self, node_id: NodeId, vertical: bool) -> bool {
+        self.nodes[node_id]
+            .layout_parent
+            .get()
+            .and_then(|parent| self.nodes[parent].primary_styles())
+            .is_some_and(|style| style.writing_mode.is_vertical() != vertical)
+    }
+
     /// The content height `node_id`'s layout parent may grow to where its
     /// own height is `auto` and its `max-height` a length: that length, no
     /// less than its `min-height`, in CSS pixels.
     fn parent_max_height(&self, node_id: NodeId) -> Option<f32> {
         let parent = self.nodes[node_id].layout_parent.get()?;
-        let style = self.nodes[parent].layout_style();
+        let style = self.child_layout_style(&self.nodes[parent]);
         if !style.size().height.is_auto() {
             return None;
         }
@@ -951,7 +1026,7 @@ impl LayoutPassState<'_> {
             return room + own;
         };
         let node = &self.nodes[before];
-        let style = node.layout_style();
+        let style = self.child_layout_style(node);
         let parent_size = inputs.parent_size;
         let margin = style
             .margin()
@@ -1028,7 +1103,7 @@ impl LayoutPassState<'_> {
     ) -> Option<Measured> {
         let (floated, uses_last, has_baseline, margin, width_style) = {
             let held = &self.nodes[node];
-            let style = held.layout_style();
+            let style = self.child_layout_style(held);
             if style.position().is_out_of_flow() {
                 return None;
             }
@@ -1216,7 +1291,7 @@ impl LayoutPassState<'_> {
             return;
         };
         let (margin, padding, border) = {
-            let style = self.nodes[node].layout_style();
+            let style = self.child_layout_style(&self.nodes[node]);
             (
                 style
                     .margin()
@@ -1258,7 +1333,7 @@ impl LayoutPassState<'_> {
         oof_candidates: &mut OofCandidates,
     ) {
         let node = &self.nodes[at.node];
-        let style = node.layout_style();
+        let style = self.child_layout_style(node);
         let padding = style
             .padding()
             .resolve_or_zero(child_inputs.parent_size, resolve_calc_value);

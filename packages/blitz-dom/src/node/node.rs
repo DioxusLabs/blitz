@@ -1128,7 +1128,7 @@ impl Node {
         #[cfg(feature = "writing-mode")]
         {
             // Own-layout_wm by default: the node's own algorithm reads its style in its own axes
-            let layout_wm = styles.writing_mode;
+            let layout_wm = self.layout_frame_wm();
             stylo_taffy::TaffyStyloStyle::new_in(styles, flags, layout_wm)
         }
         #[cfg(not(feature = "writing-mode"))]
@@ -1176,6 +1176,18 @@ impl Node {
         self.primary_styles()
             .map(|s| s.writing_mode)
             .unwrap_or(stylo_taffy::WritingMode::empty())
+    }
+
+    /// The writing mode in whose axes the node's own layout algorithm runs. winkin turns an
+    /// inline formatting context's lines onto the page itself, so such a box runs in physical
+    /// axes, and its writing mode only meets Taffy's at its edges.
+    #[cfg(feature = "writing-mode")]
+    pub(crate) fn layout_frame_wm(&self) -> stylo_taffy::WritingMode {
+        #[cfg(feature = "winkin")]
+        if self.flags.is_inline_root() {
+            return stylo_taffy::WritingMode::empty();
+        }
+        self.writing_mode()
     }
 
     /// The node's `display` as a [`taffy::Display`]. Returns [`taffy::Display::Block`]
