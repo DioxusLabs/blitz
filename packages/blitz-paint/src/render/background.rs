@@ -634,17 +634,12 @@ impl ElementCx<'_, '_> {
             return;
         }
 
+        let image_rect = Rect::new(0.0, 0.0, bg_size.width, bg_size.height);
         let tile_rect = Rect::new(0.0, 0.0, x.rect_len, y.rect_len);
-        let bounding_box = self.frame.border_box.bounding_box();
         let current_color = self.style.clone_color();
 
-        let (gradient, gradient_transform) = to_peniko_gradient(
-            gradient,
-            tile_rect,
-            bounding_box,
-            self.scale,
-            &current_color,
-        );
+        let (gradient, gradient_transform) =
+            to_peniko_gradient(gradient, image_rect, self.scale, &current_color);
         let brush = anyrender::Paint::Gradient(&gradient);
 
         let transform = base_transform.then_translate(Vec2 {
@@ -947,6 +942,7 @@ fn gradient_axis_tiling(
             } else {
                 (origin_start, origin_len)
             };
+
             let extend_len = extend((origin_start - area_start) + bg_pos, tile_len);
             let count = ((area_len + extend_len) / tile_len).ceil() as u32;
             AxisTiling {
