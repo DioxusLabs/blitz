@@ -157,7 +157,16 @@ impl Provider {
                 Ok((request.url.to_string(), Bytes::from(decoded.0)))
             }
             "file" => {
-                let file_content = std::fs::read(request.url.path())?;
+                // The URL's path is `/C:/...` on Windows, which is no file
+                // there: the URL's own conversion knows the platform's paths.
+                #[cfg(not(target_arch = "wasm32"))]
+                let path = request.url.to_file_path().map_err(|()| {
+                    std::io::Error::new(std::io::ErrorKind::InvalidInput, "not a file path")
+                })?;
+                // `Url::to_file_path` does not exist on wasm32-unknown-unknown.
+                #[cfg(target_arch = "wasm32")]
+                let path = request.url.path();
+                let file_content = std::fs::read(path)?;
                 Ok((request.url.to_string(), Bytes::from(file_content)))
             }
             _ => Self::fetch_http(client, request, per_host_limits).await,
