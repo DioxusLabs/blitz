@@ -29,6 +29,7 @@
 
 #![allow(clippy::collapsible_if)]
 
+mod animation;
 mod clock;
 mod document;
 mod dom;

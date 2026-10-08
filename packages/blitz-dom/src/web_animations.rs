@@ -12,6 +12,7 @@ use selectors::matching::QuirksMode;
 use style::context::{
     CascadeInputs, SharedStyleContext, StyleContext, ThreadLocalStyleContext, UpdateAnimationsTasks,
 };
+use style::dom::{TElement, TNode};
 use style::invalidation::element::restyle_hints::RestyleHint;
 use style::properties::animated_properties::AnimationValue;
 use style::properties::declaration_block::Importance;
@@ -37,6 +38,7 @@ use style::stylist::RuleInclusion;
 use style::values::computed::easing::TimingFunction;
 use style::values::specified::animation::AnimationComposition;
 use style_traits::ParsingMode;
+pub use stylo_web_animations;
 use stylo_web_animations::{
     AnimationId, AnimationStore, ComposedValues, CssAnimation, KeyframeEffect, Target,
 };
@@ -187,6 +189,7 @@ fn base_style<'a>(
         flags: style.flags.for_cascade_inputs(),
         included_cascade_flags: RuleCascadeFlags::empty(),
     };
+    context.thread_local.current_dom_depth = TNode::depth(&TElement::as_node(&node));
     let mut resolver = StyleResolverForElement::new(
         node,
         context,
@@ -538,6 +541,72 @@ impl BaseDocument {
                 _ => None,
             },
             _ => None,
+        }
+    }
+
+    /// The element and pseudo-element that the effect of an animation targets.
+    pub fn animation_effect_target(
+        &self,
+        id: AnimationId,
+    ) -> Option<(NodeId, Option<PseudoElement>)> {
+        let target = self.nodes.animations.store.target(id)?;
+        Some((target_node(target), target.pseudo.clone()))
+    }
+
+    /// The name of a CSS animation, or the property of a CSS transition (with `true`).
+    pub fn css_animation_name(&self, id: AnimationId) -> Option<(bool, String)> {
+        use style_traits::ToCss;
+        match self.nodes.animations.store.origin(id)? {
+            stylo_web_animations::Origin::Script => None,
+            stylo_web_animations::Origin::CssAnimation { name, .. } => {
+                Some((false, name.to_string()))
+            }
+            stylo_web_animations::Origin::CssTransition { property, .. } => {
+                Some((true, property.as_borrowed().to_css_string()))
+            }
+        }
+    }
+
+    /// The relevant animations of the document, or of `root` and (with `subtree`) of its
+    /// descendants, in composite order.
+    pub fn relevant_animations(&self, root: Option<NodeId>, subtree: bool) -> Vec<AnimationId> {
+        let store = &self.nodes.animations.store;
+        let mut animations = store.relevant_animations(None);
+        animations.retain(|id| {
+            let Some(target) = store.target(*id) else {
+                return false;
+            };
+            let mut node = Some(target_node(target));
+            let Some(root) = root else {
+                return node
+                    .and_then(|id| self.nodes.get(id))
+                    .is_some_and(|node| node.flags.is_in_document());
+            };
+            if !subtree {
+                return node == Some(root) && target.pseudo.is_none();
+            }
+            while let Some(id) = node {
+                if id == root {
+                    return true;
+                }
+                node = self.nodes.get(id).and_then(|node| node.parent);
+            }
+            false
+        });
+        animations
+    }
+
+    /// Whether `property` is the name of a property that animations can affect.
+    pub fn is_animatable_property(property: &str) -> bool {
+        match PropertyId::parse_enabled_for_all_content(property) {
+            Ok(PropertyId::NonCustom(id)) => match id.longhand_or_shorthand() {
+                Ok(longhand) => longhand.is_animatable(),
+                Err(shorthand) => shorthand
+                    .longhands()
+                    .any(|longhand| longhand.is_animatable()),
+            },
+            Ok(PropertyId::Custom(_)) => true,
+            Err(()) => false,
         }
     }
 }

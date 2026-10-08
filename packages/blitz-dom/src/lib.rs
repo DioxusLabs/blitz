@@ -70,7 +70,7 @@ pub mod traversal;
 mod tree;
 
 mod url;
-mod web_animations;
+pub mod web_animations;
 
 pub use cssom::{CssRuleInfo, CssomError};
 pub use resolved_style::{

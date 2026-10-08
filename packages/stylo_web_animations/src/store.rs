@@ -30,6 +30,16 @@ pub struct Target {
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct AnimationId(u64);
 
+impl AnimationId {
+    pub fn from_u64(id: u64) -> Self {
+        Self(id)
+    }
+
+    pub fn as_u64(self) -> u64 {
+        self.0
+    }
+}
+
 /// What created an animation.
 #[derive(Clone, Debug)]
 pub enum Origin {
@@ -333,6 +343,13 @@ impl AnimationStore {
         self.animations
             .get(&id)
             .is_some_and(|entry| entry.handles > 0)
+    }
+
+    /// The timing of the effect of an animation at the current time.
+    pub fn computed_timing(&self, id: AnimationId) -> Option<ComputedTiming> {
+        self.animations
+            .get(&id)?
+            .computed_timing(self.timeline_time)
     }
 
     /// Whether the animation is [relevant] or has a pending task.
