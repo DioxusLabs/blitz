@@ -159,3 +159,137 @@ fn commit_styles() {
     "#);
     assert_eq!(out, "0.2,0.2");
 }
+
+#[test]
+fn removing_element_cancels_css_animation() {
+    let out = run(r#"
+        const style = document.createElement("style");
+        style.textContent = "@keyframes a { from { margin-left: 0px } to { margin-left: 100px } }";
+        document.head.appendChild(style);
+        const div = document.createElement("div");
+        div.setAttribute("style", "animation: a 100s");
+        document.body.appendChild(div);
+        const events = [];
+        for (const n of ["animationstart", "animationcancel"]) div.addEventListener(n, e => events.push(n));
+        getComputedStyle(div).marginLeft;
+        await new Promise(requestAnimationFrame);
+        await new Promise(requestAnimationFrame);
+        div.remove();
+        events.push("removed");
+        await new Promise(requestAnimationFrame);
+        await new Promise(requestAnimationFrame);
+        done(events);
+    "#);
+    assert_eq!(out, "animationstart,removed,animationcancel");
+}
+
+#[test]
+fn paused_transition_keeps_current_time() {
+    let out = run(r#"
+        box.style.transition = "width 1s linear";
+        await new Promise(requestAnimationFrame);
+        await new Promise(requestAnimationFrame);
+        box.style.width = "200px";
+        const log = [];
+        const promises = [];
+        document.getAnimations().forEach(anim => { anim.pause(); anim.currentTime = 500; promises.push(anim.ready); });
+        log.push(promises.length);
+        setTimeout(() => log.push("timer " + getComputedStyle(box).width + " " + document.getAnimations().length), 5000);
+        await Promise.all(promises);
+        log.push(getComputedStyle(box).width);
+        done(log);
+    "#);
+    assert_eq!(out, "1,150px");
+}
+
+#[test]
+fn display_none_cancels_transitions() {
+    let out = run(r#"
+        const log = [];
+        box.style.transition = "width 0.4s";
+        getComputedStyle(box).width;
+        box.style.width = "200px";
+        for (const n of ["transitionrun", "transitionend", "transitioncancel"]) box.addEventListener(n, e => log.push(n));
+        await new Promise(requestAnimationFrame);
+        log.push("anims " + box.getAnimations().length);
+        box.style.display = "none";
+        await new Promise(r => setTimeout(r, 500));
+        done(log);
+    "#);
+    assert_eq!(out, "anims 1,transitionrun,transitioncancel");
+}
+
+#[test]
+fn animate_does_not_start_transition() {
+    let out = run(r#"
+        const log = [];
+        box.addEventListener("transitionrun", () => log.push("transitionrun"));
+        box.style.transition = "opacity 100s";
+        getComputedStyle(box).opacity;
+        box.style.opacity = "0.5";
+        const anim = box.animate({ opacity: [0, 1] }, 100000);
+        await anim.ready;
+        await new Promise(requestAnimationFrame);
+        log.push(box.getAnimations().length);
+        done(log);
+    "#);
+    assert_eq!(out, "1");
+}
+
+#[test]
+fn display_transition_survives_display_none() {
+    let out = run(r#"
+        const log = [];
+        getComputedStyle(box).display;
+        box.style.transitionDuration = "100s";
+        box.style.transitionDelay = "-10s";
+        box.style.transitionTimingFunction = "linear";
+        box.style.transitionProperty = "display";
+        box.style.transitionBehavior = "allow-discrete";
+        box.style.display = "none";
+        log.push(getComputedStyle(box).display);
+        log.push(box.getAnimations().length);
+        log.push(getComputedStyle(box).display);
+        done(log);
+    "#);
+    assert_eq!(out, "block,1,block");
+}
+
+#[test]
+fn display_transition_ends_without_timers() {
+    let out = run(r#"
+        const log = [];
+        box.style.transitionBehavior = "allow-discrete";
+        box.style.transitionDuration = "0.01s";
+        getComputedStyle(box).display;
+        box.style.display = "none";
+        log.push(getComputedStyle(box).display);
+        box.addEventListener("transitionend", () => {
+            log.push(getComputedStyle(box).display);
+            done(log);
+        });
+    "#);
+    assert_eq!(out, "block,none");
+}
+
+#[test]
+fn unsupported_pseudo_element_does_not_animate_element() {
+    let out = run(r#"
+        box.animate({ opacity: [0.5, 0.5] }, { pseudoElement: "::marker", duration: Infinity });
+        done(getComputedStyle(box).opacity);
+    "#);
+    assert_eq!(out, "1");
+}
+
+#[test]
+fn revert_in_keyframe_uses_user_agent_value() {
+    let out = run(r#"
+        const h1 = document.createElement("h1");
+        document.body.append(h1);
+        const expected = getComputedStyle(h1).marginTop;
+        h1.style.marginTop = "0px";
+        h1.animate({ marginTop: ["revert", "revert"] }, { duration: Infinity });
+        done(expected !== "0px" && getComputedStyle(h1).marginTop === expected);
+    "#);
+    assert_eq!(out, "true");
+}

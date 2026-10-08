@@ -278,10 +278,16 @@ pub(crate) fn animation_op(
             Ok(JsValue::undefined())
         }
         ("setEffect", Some(id)) => {
-            let node = arg.and_then(node_id_of_value);
+            let mut node = arg.and_then(node_id_of_value);
             let pseudo = match args.get(3) {
                 Some(value) if !value.is_null_or_undefined() => {
-                    parse_pseudo(&to_rust_string(value, context)?)
+                    let pseudo = parse_pseudo(&to_rust_string(value, context)?);
+                    // An effect on a pseudo-element that is not supported must not animate
+                    // the element itself.
+                    if pseudo.is_none() {
+                        node = None;
+                    }
+                    pseudo
                 }
                 _ => None,
             };
