@@ -1742,13 +1742,17 @@ impl ScriptRuntime {
             }
         }
         self.run_jobs("timer microtasks");
-        // With a virtual clock nothing else updates the rendering. Updating the style
-        // starts and cancels CSS animations and transitions.
+        self.update_virtual_rendering();
+        true
+    }
+
+    /// With a virtual clock nothing else updates the rendering. Updating the style
+    /// starts and cancels CSS animations and transitions.
+    pub(crate) fn update_virtual_rendering(&mut self) {
         let elapsed = self.ctx.state.borrow().clock.virtual_elapsed_ms();
         if let Some(elapsed) = elapsed {
             self.ctx.doc.borrow_mut().resolve(elapsed / 1000.);
         }
-        true
     }
 
     /// Dispatch a Blitz DOM event to JavaScript event listeners registered on

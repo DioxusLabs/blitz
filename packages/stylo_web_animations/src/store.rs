@@ -662,6 +662,11 @@ impl AnimationStore {
         }
     }
 
+    /// Whether there are actions or CSS events that have not been taken.
+    pub fn has_pending_events(&self) -> bool {
+        !self.actions.is_empty() || !self.css_events.is_empty()
+    }
+
     /// The events that CSS animations and transitions have queued since the last call.
     pub fn take_css_events(&mut self) -> Vec<CssEvent> {
         std::mem::take(&mut self.css_events)

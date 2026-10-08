@@ -481,7 +481,8 @@ impl BaseDocument {
 
     /// Whether an animation changes, or has events to dispatch, as time passes.
     pub fn animations_need_ticks(&self) -> bool {
-        self.nodes.animations.store.needs_ticks()
+        let store = &self.nodes.animations.store;
+        store.needs_ticks() || store.has_pending_events()
     }
 
     /// Moves the document timeline forwards to `now` (in milliseconds) and updates every

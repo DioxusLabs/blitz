@@ -216,7 +216,7 @@ fn display_none_cancels_transitions() {
         await new Promise(r => setTimeout(r, 500));
         done(log);
     "#);
-    assert_eq!(out, "anims 1,transitionrun,transitioncancel");
+    assert_eq!(out, "transitionrun,anims 1,transitioncancel");
 }
 
 #[test]
@@ -292,4 +292,24 @@ fn revert_in_keyframe_uses_user_agent_value() {
         done(expected !== "0px" && getComputedStyle(h1).marginTop === expected);
     "#);
     assert_eq!(out, "true");
+}
+
+#[test]
+fn removal_cancels_paused_css_animation_without_timers() {
+    let out = run(r#"
+        const style = document.createElement("style");
+        style.textContent = "@keyframes testAnim { from { margin-left: 0px } to { margin-left: 100px } }";
+        document.head.append(style);
+        const log = [];
+        const div = document.createElement("div");
+        div.setAttribute("style", "animation: testAnim 100s paused");
+        for (const n of ["animationstart", "animationcancel"]) div.addEventListener(n, () => log.push(n));
+        document.body.append(div);
+        await new Promise(r => div.addEventListener("animationstart", r));
+        log.push("started");
+        div.remove();
+        await new Promise(r => div.addEventListener("animationcancel", r));
+        done(log);
+    "#);
+    assert_eq!(out, "animationstart,started,animationcancel");
 }
