@@ -1,5 +1,6 @@
 use crate::{BaseDocument, ElementData, Node as BlitzDomNode, local_name};
 use accesskit::{Node as AccessKitNode, NodeId, Role, TreeId, TreeInfo, TreeUpdate};
+use smallvec::SmallVec;
 use style::properties::longhands::visibility;
 
 impl BaseDocument {
@@ -7,6 +8,8 @@ impl BaseDocument {
         let mut nodes = std::collections::HashMap::new();
         let mut window = AccessKitNode::new(Role::Window);
         let mut hidden_nodes = std::collections::HashSet::new();
+        let mut labelled_by_nodes = std::collections::HashMap::new();
+        let mut described_by_nodes = std::collections::HashMap::new();
 
         self.visit(|node_id, node| {
             if node.is_hidden_from_accessibility_tree()
@@ -23,7 +26,12 @@ impl BaseDocument {
                 .and_then(|parent_id| nodes.get_mut(&parent_id))
                 .map(|(_, parent)| parent)
                 .unwrap_or(&mut window);
-            let (id, builder) = self.build_accessibility_node(node, parent);
+            let (id, builder) = self.build_accessibility_node(
+                node,
+                parent,
+                &mut labelled_by_nodes,
+                &mut described_by_nodes,
+            );
 
             nodes.insert(node_id, (id, builder));
         });
@@ -34,6 +42,19 @@ impl BaseDocument {
             .collect();
         nodes.push((NodeId(u64::MAX), window));
 
+        for (node_id, node) in nodes.iter_mut() {
+            if let Some(labelled_by) = labelled_by_nodes.get(node_id) {
+                for refed_node_id in self.referenced_dom_ids_to_node_ids(labelled_by) {
+                    node.push_labelled_by(refed_node_id);
+                }
+            }
+            if let Some(described_by) = described_by_nodes.get(node_id) {
+                for refed_node_id in self.referenced_dom_ids_to_node_ids(described_by) {
+                    node.push_described_by(refed_node_id);
+                }
+            }
+        }
+
         let tree = TreeInfo::new(NodeId(u64::MAX));
         TreeUpdate {
             tree_id: TreeId::ROOT,
@@ -43,10 +64,24 @@ impl BaseDocument {
         }
     }
 
+    fn referenced_dom_ids_to_node_ids(&self, nodes_reference: &str) -> SmallVec<[NodeId; 3]> {
+        let mut result = SmallVec::new();
+        for dom_id in nodes_reference.split_ascii_whitespace() {
+            if let Some(refed_node_ids) = self.nodes_to_id.get(dom_id)
+                && let Some(refed_node_id) = refed_node_ids.first()
+            {
+                result.push(NodeId(refed_node_id.as_u64()));
+            }
+        }
+        result
+    }
+
     fn build_accessibility_node(
         &self,
         node: &BlitzDomNode,
         parent: &mut AccessKitNode,
+        labelled_by_nodes: &mut std::collections::HashMap<NodeId, String>,
+        described_by_nodes: &mut std::collections::HashMap<NodeId, String>,
     ) -> (NodeId, AccessKitNode) {
         let id = NodeId(node.id.as_u64());
 
@@ -70,6 +105,19 @@ impl BaseDocument {
             // https://www.w3.org/TR/wai-aria-1.2/#tree_exclusion
             if element_data.attr(local_name!("aria-hidden")) == Some("true") {
                 builder.set_hidden();
+            }
+
+            if let Some(aria_label) = element_data.attr(local_name!("aria-label")) {
+                builder.set_label(aria_label);
+            }
+            if let Some(aria_labelled_by) = element_data.attr(local_name!("aria-labelledby")) {
+                labelled_by_nodes.insert(id, aria_labelled_by.to_string());
+            }
+            if let Some(aria_description) = element_data.attr(local_name!("aria-description")) {
+                builder.set_description(aria_description);
+            }
+            if let Some(aria_described_by) = element_data.attr(local_name!("aria-describedby")) {
+                described_by_nodes.insert(id, aria_described_by.to_string());
             }
         } else if node.is_text_node() {
             builder.set_role(Role::TextRun);
