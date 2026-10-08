@@ -77,9 +77,9 @@ impl LayoutPassState<'_> {
     ) -> LayoutOutput {
         let node_wm = self.layout_wm_of(dom_node_id(node_id));
         let parent_wm = core::mem::replace(&mut self.layout_wm, node_wm);
-        let align_axis_is_inline = self.nodes[dom_node_id(node_id)].is_column_flex_container();
+        // Set by `dispatch_child_layout` when the node turns out to be a column flex container.
         let parent_align_axis_is_inline =
-            core::mem::replace(&mut self.current_align_axis_is_inline, align_axis_is_inline);
+            core::mem::replace(&mut self.current_align_axis_is_inline, false);
 
         let output = if node_wm.is_vertical() == parent_wm.is_vertical() {
             let mut output = self.compute_child_layout_in_current_wm(node_id, inputs, block_ctx);
