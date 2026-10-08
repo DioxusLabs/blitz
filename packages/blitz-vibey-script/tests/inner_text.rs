@@ -105,27 +105,42 @@ fn display_none_children() {
     assert_eq!(inner_text(html, "t"), "abc");
 }
 
+/// Whether the text backend is winkin, which places a float or an absolutely positioned box after
+/// the content of the line it is anchored on, where Parley places it where it is in the text.
+const WINKIN: bool = cfg!(all(feature = "winkin", not(feature = "parley")));
+
+/// `parley` under Parley, `winkin` under winkin.
+fn backend<'a>(parley: &'a str, winkin: &'a str) -> &'a str {
+    if WINKIN { winkin } else { parley }
+}
+
 #[test]
 fn absolutely_positioned_children() {
     let html = "<div id=t>a b<span style=\"position:absolute\">abs</span></div>";
     assert_eq!(inner_text(html, "t"), "a b\nabs");
     let html = "<div id=t>a <span style=\"position:absolute\">abs</span> b</div>";
-    assert_eq!(inner_text(html, "t"), "a\nabs\n b");
+    assert_eq!(inner_text(html, "t"), backend("a\nabs\n b", "a b\nabs"));
     let html = "<div id=t style=\"width:40px\">aaa bbb <span style=\"position:absolute\">abs</span>ccc ddd</div>";
-    assert_eq!(inner_text(html, "t"), "aaa bbb\nabs\n ccc ddd");
+    assert_eq!(
+        inner_text(html, "t"),
+        backend("aaa bbb\nabs\n ccc ddd", "aaa bbb \nabs\nccc ddd")
+    );
 }
 
 #[test]
 fn floated_children() {
     let html = "<div id=t><span style=\"float:left\">flt</span>a b</div>";
-    assert_eq!(inner_text(html, "t"), "flt\na b");
+    assert_eq!(inner_text(html, "t"), backend("flt\na b", "a b\nflt"));
     let html = "<div id=t>a <span style=\"float:left\">flt</span> b</div>";
-    assert_eq!(inner_text(html, "t"), "a\nflt\n b");
+    assert_eq!(inner_text(html, "t"), backend("a\nflt\n b", "a b\nflt"));
     let html = "<div>a <span id=s>b <span style=\"float:right\">flt</span> c</span> d</div>";
-    assert_eq!(inner_text(html, "s"), "b\nflt\n c");
+    assert_eq!(inner_text(html, "s"), backend("b\nflt\n c", "b c\nflt"));
     let html =
         "<div id=t style=\"width:40px\">aaa bbb <span style=\"float:left\">flt</span>ccc ddd</div>";
-    assert_eq!(inner_text(html, "t"), "aaa bbb\nflt\n ccc ddd");
+    assert_eq!(
+        inner_text(html, "t"),
+        backend("aaa bbb\nflt\n ccc ddd", "aaa bbb \nflt\nccc ddd")
+    );
 }
 
 #[test]

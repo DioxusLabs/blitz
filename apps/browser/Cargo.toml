@@ -41,10 +41,9 @@ mimalloc = ["dep:mimalloc"]
 font-embolden = ["dioxus-native/font-embolden"]
 apple-font-embolden = ["dioxus-native/apple-font-embolden"]
 writing-mode = ["blitz-dom/writing-mode", "dioxus-native/writing-mode"]
-# The text backend, which is Parley: on by default, and required.
+# The text backend: Parley (the default) or winkin. With both, Parley is used.
 parley = ["dioxus-native/parley", "blitz-dom/parley", "blitz-html/parley", "blitz-paint?/parley", "blitz-vibey-script?/parley"]
-# Lay out and paint document text with winkin.
-winkin = ["blitz-paint/winkin"]
+winkin = ["dioxus-native/winkin", "blitz-dom/winkin", "blitz-html/winkin", "blitz-paint?/winkin", "blitz-vibey-script?/winkin"]
 
 [dependencies]
 dioxus-native = { workspace = true, features = [
