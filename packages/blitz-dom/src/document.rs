@@ -19,6 +19,7 @@ use crate::{
     EventDriver, HtmlParserProvider, Node, NodeData, NoopEventHandler, StyleThreading,
     TextNodeData,
 };
+use blitz_traits::Timestamp;
 use blitz_traits::devtools::DevtoolSettings;
 use blitz_traits::events::{DomEvent, HitResult, UiEvent};
 use blitz_traits::navigation::{DummyNavigationProvider, NavigationProvider};
@@ -266,8 +267,8 @@ pub struct BaseDocument {
     pub(crate) active_node_id: Option<NodeId>,
     /// The node which recieved a mousedown event (if any)
     pub(crate) mousedown_node_id: Option<NodeId>,
-    /// The last time a mousedown was made (for double-click detection)
-    pub(crate) last_mousedown_time: Option<Instant>,
+    /// The timestamp of the last mousedown event (for double-click detection)
+    pub(crate) last_mousedown_time: Option<Timestamp>,
     /// The position where mousedown occurred (for selection drags and double-click detection)
     pub(crate) mousedown_position: taffy::Point<f32>,
     /// How many clicks have been made in quick succession
@@ -2764,7 +2765,6 @@ impl AsMut<BaseDocument> for BaseDocument {
 #[cfg(test)]
 mod zoom_tests {
     use super::*;
-    use blitz_traits::Timestamp;
     use blitz_traits::shell::ColorScheme;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -2802,7 +2802,6 @@ mod zoom_tests {
 mod hover_state_tests {
     use super::*;
     use crate::{Attribute, qual_name};
-    use blitz_traits::Timestamp;
     use blitz_traits::shell::ColorScheme;
 
     /// Build `<html><body style="margin:0"><div style="width:300px">some text
@@ -2894,7 +2893,6 @@ mod hover_state_tests {
 mod hover_invalidation_tests {
     use super::*;
     use crate::{Attribute, QualName, qual_name};
-    use blitz_traits::Timestamp;
     use blitz_traits::shell::ColorScheme;
 
     /// Build `<html><body style="margin:0"><div style="width:300px;height:100px">

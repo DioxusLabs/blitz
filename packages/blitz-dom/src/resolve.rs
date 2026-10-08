@@ -38,10 +38,10 @@ use crate::{
 impl BaseDocument {
     /// Advance the document to the frame at `now`, then restyle and relayout it.
     ///
-    /// `now` is the frame time: CSS animations and transitions are advanced to it, so
-    /// that painting reads plain state and never samples a clock. Embedders must call
-    /// this before painting each frame, with `now` from a monotonic clock (see
-    /// [`Timestamp`]).
+    /// `now` is the frame time: CSS animations and transitions, smooth scrolls and flings
+    /// are advanced to it, so that painting reads plain state and never samples a clock.
+    /// Embedders must call this before painting each frame, with `now` from the same
+    /// monotonic clock which timestamps their input events (see [`Timestamp`]).
     pub fn resolve(&mut self, now: Timestamp) {
         if TDocument::as_node(&self.root_node())
             .first_element_child()
@@ -68,7 +68,7 @@ impl BaseDocument {
             return;
         }
 
-        self.resolve_scroll_animation();
+        self.resolve_scroll_animation(now);
 
         // Drop scrollbar-activity entries whose fade-out has finished (also
         // sheds entries for removed nodes).

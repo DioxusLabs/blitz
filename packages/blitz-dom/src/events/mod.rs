@@ -183,15 +183,7 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
             // Do nothing (handled in PointerMove)
         }
         DomEventData::PointerDown(event) => {
-            handle_pointerdown(
-                doc,
-                target_node_id,
-                event.page_x(),
-                event.page_y(),
-                event.button,
-                event.mods,
-                &mut dispatch_event,
-            );
+            handle_pointerdown(doc, target_node_id, event, &mut dispatch_event);
         }
         DomEventData::MouseDown(_) => {
             // Do nothing (handled in PointerDown)
