@@ -10,10 +10,9 @@ publish = false
 default = ["cpu", "parley"]
 gpu = ["dep:anyrender_vello"]
 cpu = ["dep:anyrender_vello_cpu"]
-# The text backend, which is Parley: on by default, and required.
+# The text backend: Parley (the default) or winkin. With both, Parley is used.
 parley = ["blitz-dom/parley", "blitz-paint/parley", "blitz-html/parley", "blitz-vibey-script/parley"]
-# Lay out and paint document text with winkin rather than Parley.
-winkin = ["blitz-paint/winkin", "blitz-dom/winkin"]
+winkin = ["blitz-dom/winkin", "blitz-paint/winkin", "blitz-html/winkin", "blitz-vibey-script/winkin"]
 
 [dependencies]
 blitz-dom = { workspace = true, features = ["svg", "floats", "system-fonts", "woff", "complex-scripts", "text-transform-icu", "writing-mode"] }
