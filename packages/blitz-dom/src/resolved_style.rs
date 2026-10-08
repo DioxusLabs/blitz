@@ -342,6 +342,10 @@ impl BaseDocument {
         let Some(node) = self.get_node(node_id) else {
             return String::new();
         };
+        // The computed style of an element that is not in the document is empty
+        if !node.flags.is_in_document() {
+            return String::new();
+        }
         // Elements inside a `display: none` subtree are skipped by the style
         // traversal, so their style has to be computed on demand.
         let undisplayed_styles;
