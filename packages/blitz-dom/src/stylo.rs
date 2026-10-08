@@ -81,10 +81,26 @@ impl crate::document::BaseDocument {
 
         self.tick_animations(now * 1000.);
 
-        // Animations that the first traversal starts or changes are applied by a second one.
-        for is_first in [true, false] {
+        // Each normal traversal is preceded by an animation-only one, which applies changed
+        // animation rules without matching selectors. Animations that the first normal
+        // traversal starts or changes are applied by the second round.
+        for (is_first, traversal_flags) in [
+            (true, TraversalFlags::AnimationOnly),
+            (true, TraversalFlags::empty()),
+            (false, TraversalFlags::AnimationOnly),
+            (false, TraversalFlags::empty()),
+        ] {
+            let animation_only = traversal_flags.for_animation_only();
+            if animation_only {
+                let root = self.root_element();
+                if !root.has_animation_only_dirty_descendants()
+                    && !TElement::has_animation_restyle_hints(&root)
+                {
+                    continue;
+                }
+            }
             let context = SharedStyleContext {
-                traversal_flags: TraversalFlags::empty(),
+                traversal_flags,
                 stylist: &self.stylist,
                 options: GLOBAL_STYLE_DATA.options.clone(),
                 guards: StylesheetGuards {
@@ -117,6 +133,9 @@ impl crate::document::BaseDocument {
             self.pending_style_image_nodes
                 .extend(nodes_needing_style_image_flush);
 
+            if animation_only {
+                continue;
+            }
             if is_first {
                 for opaque in self.snapshots.keys() {
                     let id = NodeId::from_u64(opaque.id() as u64);
@@ -691,6 +710,18 @@ impl<'a> TElement for BlitzNode<'a> {
 
     unsafe fn unset_dirty_descendants(&self) {
         Node::unset_dirty_descendants(self);
+    }
+
+    fn has_animation_only_dirty_descendants(&self) -> bool {
+        Node::has_animation_only_dirty_descendants(self)
+    }
+
+    unsafe fn set_animation_only_dirty_descendants(&self) {
+        Node::set_animation_only_dirty_descendants(self);
+    }
+
+    unsafe fn unset_animation_only_dirty_descendants(&self) {
+        Node::unset_animation_only_dirty_descendants(self);
     }
 
     fn store_children_to_process(&self, _n: isize) {
@@ -1357,8 +1388,11 @@ impl<'dom> DomTraversal<BlitzNode<'dom>> for RecalcStyle<'_> {
                 }
             }
 
-            // Gets set later on
-            el.unset_dirty_descendants();
+            if self.context.traversal_flags.for_animation_only() {
+                el.unset_animation_only_dirty_descendants();
+            } else {
+                el.unset_dirty_descendants();
+            }
         }
     }
 
