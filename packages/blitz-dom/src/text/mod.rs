@@ -9,15 +9,20 @@
 //!   broken into lines and placed, and read back for hit testing, selection and `innerText`.
 //! - [`TextEditor`] ([`EditableText`]): the text of an `<input>` or `<textarea>`, and its editing.
 //! - [`MarkerLayout`]: an outside list marker.
-//! - [`FaceDescriptors`]: an `@font-face` rule's descriptors, as the backend registers a face.
+//! - [`FaceDescriptors`]: an `@font-face` rule's descriptors, which a backend registers a face by,
+//!   in [`parlance`]'s font value types.
 //!
 //! Painting is the renderer's part: blitz-paint paints each backend's types in a module of its own,
 //! which [`cfg_text_backend!`](crate::cfg_text_backend) selects.
 
+use std::borrow::Cow;
 use std::ops::Range;
 
+use blitz_traits::net::Bytes;
 use blitz_traits::node_id::NodeId;
 use kurbo::{Rect, Size};
+pub use parlance;
+use parlance::{FontStyle, FontWeight};
 
 use crate::node::{InlineContent, InlineTextHit, Node};
 
@@ -27,9 +32,10 @@ pub mod parley;
 #[cfg(text_parley)]
 use self::parley as backend;
 
-pub(crate) use backend::face_descriptors;
-
 /// The fonts documents lay out text with. Clones share their fonts.
+///
+/// This is the text backend's own type, Parley's `FontContext` under Parley, and its methods
+/// beyond [`TextFonts`] are the backend's: code written for every backend uses [`TextFonts`].
 pub type FontContext = backend::FontContext;
 /// An inline formatting context, as the text backend lays it out.
 pub type TextLayout = backend::TextLayout;
@@ -37,8 +43,6 @@ pub type TextLayout = backend::TextLayout;
 pub type TextEditor = backend::TextEditor;
 /// An outside list marker, as the text backend lays it out.
 pub type MarkerLayout = backend::MarkerLayout;
-/// An `@font-face` rule's descriptors, as the text backend registers a face by them.
-pub type FaceDescriptors = backend::FaceDescriptors;
 /// What a document keeps for its text: its fonts, and the backend's contexts.
 pub(crate) type TextContext = backend::TextContext;
 
@@ -54,18 +58,38 @@ pub enum TextBackend {
 #[cfg(text_parley)]
 pub const BACKEND: TextBackend = TextBackend::Parley;
 
-/// Expands the tokens for the text backend in use, and drops the others, so that a crate which
+/// Expands the arm for the text backend in use, and drops the others, so that a crate which
 /// holds code for each backend compiles the one blitz-dom was built with.
+///
+/// Each arm is a backend's name and its tokens in braces. The arms of backends other than the one
+/// in use are dropped, whether or not this build knows them, so callers can list every backend
+/// they hold code for.
 ///
 /// ```ignore
 /// blitz_dom::cfg_text_backend! {
 ///     parley => { mod parley; use parley as backend; }
 /// }
 /// ```
-#[cfg(text_parley)]
 #[macro_export]
 macro_rules! cfg_text_backend {
-    (parley => { $($parley:tt)* }) => { $($parley)* };
+    ($($arms:tt)*) => {
+        $crate::__text_backend_arms! { $($arms)* }
+    };
+}
+
+/// Expands the arm of [`cfg_text_backend!`] named for the text backend in use.
+#[cfg(text_parley)]
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __text_backend_arms {
+    () => {};
+    (parley => { $($tokens:tt)* } $($rest:tt)*) => {
+        $($tokens)*
+        $crate::__text_backend_arms! { $($rest)* }
+    };
+    ($other:ident => { $($tokens:tt)* } $($rest:tt)*) => {
+        $crate::__text_backend_arms! { $($rest)* }
+    };
 }
 
 /// The fonts documents lay out text with.
@@ -76,8 +100,8 @@ pub trait TextFonts: Clone + Default {
     fn with_single_font(font_data: &[u8]) -> Self;
 
     /// Adds the fonts in `font_data`, decoded from WOFF or WOFF2 where it is, under the family
-    /// names they declare.
-    fn add_fonts(&mut self, font_data: &[u8]);
+    /// names they declare. Fonts that need no decoding are kept without a copy.
+    fn add_fonts(&mut self, font_data: impl Into<Bytes>);
 }
 
 /// What a document keeps for its text: its fonts, and the contexts the backend builds and
@@ -90,11 +114,7 @@ pub(crate) trait DocumentText: Sized {
     fn fonts(&self) -> FontContext;
 
     /// Adds a web font that has loaded, under its `@font-face` rule's descriptors.
-    fn add_web_font(
-        &mut self,
-        bytes: blitz_traits::net::Bytes,
-        overrides: &crate::net::FontFaceOverrides,
-    );
+    fn add_web_font(&mut self, bytes: Bytes, overrides: &crate::net::FontFaceOverrides);
 
     /// What Stylo measures font-relative units (`ex`, `ch`, `cap`, `ic`) with.
     fn font_metrics_provider(&self) -> Box<dyn style::device::servo::FontMetricsProvider>;
@@ -118,12 +138,14 @@ pub trait InlineText: Default + Clone + std::fmt::Debug {
     /// The byte length of the laid-out text.
     fn text_len(&self) -> usize;
 
-    /// The text between byte offsets `start` and `end`, as it is copied.
-    fn selected_text(&self, start: usize, end: usize) -> Option<String>;
+    /// The text between byte offsets `start` and `end`, as it is copied, in the pieces of the
+    /// laid-out text it is made of. Nothing where the range is not within the text.
+    fn selected_text(&self, start: usize, end: usize) -> impl Iterator<Item = &str>;
 
     /// The laid-out text and inline boxes in logical order, as the lines place them, read as it
-    /// is walked. Each inline box comes once.
-    fn logical_content(&self) -> impl Iterator<Item = InlineContent<'_>>;
+    /// is walked. Each stretch of text one node holds comes as one item, whose range indexes
+    /// [`text`](Self::text), and each inline box comes once.
+    fn logical_content(&self) -> impl Iterator<Item = InlineContent>;
 
     /// Where byte `offset` of text node `node_id`'s content falls in the laid-out text, where
     /// [`maps_source`](Self::maps_source).
@@ -133,27 +155,18 @@ pub trait InlineText: Default + Clone + std::fmt::Debug {
     /// callers follow white space collapsing and text transforms themselves.
     fn maps_source(&self) -> bool;
 
-    /// The text position at physical CSS-pixel coordinates relative to the inline root's content
-    /// box, which is `content_size` CSS pixels in size. `exact` requires the point to be within a
-    /// line and its text.
-    fn hit_test(
-        &self,
-        x: f32,
-        y: f32,
-        content_size: Size,
-        scale: f32,
-        exact: bool,
-    ) -> Option<InlineTextHit>;
+    /// The baseline of the first line, in CSS pixels below the top of the inline root's content
+    /// box, or `None` where the layout has no lines.
+    fn first_baseline(&self) -> Option<f32>;
 
-    /// The rectangles that highlight the text between `start` and `end`, in device pixels
-    /// relative to the content box, which is `content_size` CSS pixels in size.
-    fn selection_rects(
-        &self,
-        start: usize,
-        end: usize,
-        content_size: Size,
-        scale: f32,
-    ) -> Vec<Rect>;
+    /// The text position at physical CSS-pixel coordinates relative to the inline root's content
+    /// box. `exact` requires the point to be within a line and its text.
+    fn hit_test(&self, x: f32, y: f32, exact: bool) -> Option<InlineTextHit>;
+
+    /// Calls `f` with each rectangle that highlights the text between `start` and `end`, in
+    /// device pixels relative to the inline root's content box moved down by
+    /// [`block_offset`](Self::block_offset).
+    fn for_each_selection_rect(&self, start: usize, end: usize, f: impl FnMut(Rect));
 
     /// The boxes `node`, a non-atomic inline element inside the inline root `root`, has on each
     /// line, first line first, in CSS pixels relative to `root`'s border box, computed as they are
@@ -171,9 +184,6 @@ pub(crate) trait InlineLayoutEngine: InlineText {
     /// formatting context runs in physical axes and meets Taffy's writing modes only at its edges.
     #[cfg_attr(not(feature = "writing-mode"), allow(dead_code))]
     const SETS_WRITING_MODES: bool;
-
-    /// Drops the cached intrinsic sizes, so that they are measured again.
-    fn invalidate_content_widths(&mut self);
 
     /// Builds the content of each inline formatting context in `layouts`, rooted at its node, from
     /// the DOM. This is the deferred, possibly parallel, part of box construction.
@@ -195,13 +205,23 @@ pub(crate) trait InlineLayoutEngine: InlineText {
     ) -> taffy::LayoutOutput;
 }
 
+/// The size and scale of the laid-out text of an `<input>` or `<textarea>`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct EditorMetrics {
+    /// How wide and tall the laid-out text is, in device pixels.
+    pub size: Size,
+    /// Device pixels per CSS pixel that the text is laid out at.
+    pub scale: f32,
+}
+
 /// The text of an `<input>` or `<textarea>`, as it is read back.
 pub trait EditableText {
     /// The text, with any text an input method is composing, which the selection indexes.
     fn raw_text(&self) -> &str;
 
-    /// The text without any text an input method is composing, as a form submits it.
-    fn text(&self) -> String;
+    /// The text without any text an input method is composing, as a form submits it: borrowed
+    /// where nothing is composing.
+    fn text(&self) -> Cow<'_, str>;
 
     /// The selection's byte range in [`raw_text`](Self::raw_text).
     fn selection(&self) -> Range<usize>;
@@ -212,11 +232,8 @@ pub trait EditableText {
     /// Whether the selection is a caret.
     fn is_selection_collapsed(&self) -> bool;
 
-    /// Device pixels per CSS pixel that the text is laid out at.
-    fn scale(&self) -> f32;
-
-    /// How wide and tall the laid-out text is, in device pixels, once it is laid out.
-    fn size(&self) -> Option<Size>;
+    /// The size and scale of the laid-out text, or `None` where it is not laid out.
+    fn metrics(&self) -> Option<EditorMetrics>;
 
     /// The caret, in device pixels relative to the text's origin, where the editor shows one.
     fn caret_rect(&self) -> Option<Rect>;
@@ -224,32 +241,38 @@ pub trait EditableText {
 
 /// Changing the text of an `<input>` or `<textarea>`: the part of [`EditableText`] the document
 /// drives.
+///
+/// The setters record what changes, and the text is laid out again once, by the next
+/// [`refresh`](Self::refresh) or [`edit`](Self::edit).
 pub(crate) trait EditEngine: EditableText + Sized {
     /// An empty editor.
     fn new(is_multiline: bool) -> Self;
 
-    /// Sets the text, without laying it out.
+    /// Sets the text the editor starts with.
     fn set_initial_text(&mut self, text: &str);
 
-    /// Sets the text, and lays it out again where it changed.
-    fn set_text(&mut self, cx: &mut TextContext, text: &str);
+    /// Sets the text, where it changed.
+    fn set_text(&mut self, text: &str);
 
-    /// Sets the text in `style`, `node`'s computed style, at `scale`, and lays it out.
+    /// Sets the text in `style`, `node`'s computed style, at `scale`, with lines unwrapped until a
+    /// width is set.
     fn set_style(
         &mut self,
-        cx: &mut TextContext,
         node: NodeId,
         style: Option<&style::properties::ComputedValues>,
         scale: f32,
     );
 
-    /// Sets the scale, and lays the text out again.
-    fn set_scale(&mut self, cx: &mut TextContext, scale: f32);
+    /// Sets the scale.
+    fn set_scale(&mut self, scale: f32);
 
-    /// Sets the width lines wrap at, in device pixels, and lays the text out again.
-    fn set_width(&mut self, cx: &mut TextContext, width: Option<f32>);
+    /// Sets the width lines wrap at, in device pixels.
+    fn set_width(&mut self, width: Option<f32>);
 
-    /// Applies `edit`.
+    /// Lays the text out again, where a setter changed it since it was last laid out.
+    fn refresh(&mut self, cx: &mut TextContext);
+
+    /// Applies `edit`, leaving the text laid out.
     fn edit(&mut self, cx: &mut TextContext, edit: Edit<'_>);
 }
 
@@ -294,6 +317,9 @@ pub enum Edit<'a> {
     CollapseSelection,
     /// Selects the bytes from the first offset to the second.
     SelectByteRange(usize, usize),
+    /// Moves the caret by the first motion, then extends the selection by the second:
+    /// `Select(LineStart, LineEnd)` selects the line.
+    Select(Motion, Motion),
     /// Sets the text an input method is composing, and the cursor within it.
     SetCompose(&'a str, Option<(usize, usize)>),
     /// Clears the text an input method is composing.
@@ -348,16 +374,19 @@ pub struct TextInputDriver<'a> {
 
 impl TextInputDriver<'_> {
     /// The editor, to read back.
+    #[inline]
     pub fn editor(&self) -> &TextEditor {
         self.editor
     }
 
     /// The text, with any text an input method is composing.
+    #[inline]
     pub fn raw_text(&self) -> &str {
         self.editor.raw_text()
     }
 
     /// Applies `edit`.
+    #[inline]
     pub fn edit(&mut self, edit: Edit<'_>) {
         self.editor.edit(self.cx, edit);
     }
@@ -373,6 +402,49 @@ impl TextInputDriver<'_> {
     }
 }
 
+/// The descriptors of an `@font-face` rule that a text backend registers a face by, beyond its
+/// family name, in the font value types the backends share.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct FaceDescriptors {
+    /// The `font-weight` descriptor, as its lowest and highest weight; a single weight is both.
+    pub weight: Option<(FontWeight, FontWeight)>,
+    /// The `font-style` descriptor, as its lowest and highest style; only an oblique's angle can
+    /// differ between them.
+    pub style: Option<(FontStyle, FontStyle)>,
+}
+
+impl FaceDescriptors {
+    /// Reads the descriptors of an `@font-face` rule.
+    pub(crate) fn from_rule(descriptors: &style::font_face::Descriptors) -> Self {
+        use style::font_face::FontStyleRange;
+        Self {
+            weight: descriptors
+                .font_weight
+                .as_ref()
+                .and_then(|range| range.compute())
+                .map(|range| {
+                    (
+                        FontWeight::new(range.0.value()),
+                        FontWeight::new(range.1.value()),
+                    )
+                }),
+            style: descriptors.font_style.as_ref().map(|style| match style {
+                FontStyleRange::Italic => (FontStyle::Italic, FontStyle::Italic),
+                FontStyleRange::Oblique(min, max) => {
+                    let (min, max) = (min.degrees(), max.degrees());
+                    // Stylo parses `normal` as an oblique of no angle.
+                    if min.is_none_or(|angle| angle == 0.0) && max.is_none_or(|angle| angle == 0.0)
+                    {
+                        (FontStyle::Normal, FontStyle::Normal)
+                    } else {
+                        (FontStyle::Oblique(min), FontStyle::Oblique(max.or(min)))
+                    }
+                }
+            }),
+        }
+    }
+}
+
 /// Fonts with only the fonts in `font_data`, which every generic family resolves to, and no
 /// platform fonts: the standard setup for WASM, where browsers do not expose them. WOFF and WOFF2
 /// are decoded.
@@ -382,7 +454,58 @@ pub fn build_single_font_ctx(font_data: &[u8]) -> FontContext {
 
 #[cfg(test)]
 mod tests {
-    use super::{BACKEND, TextBackend};
+    use style::stylesheets::{CssRule, Origin, StylesheetInDocument as _};
+
+    use parlance::{FontStyle, FontWeight};
+
+    use super::{BACKEND, FaceDescriptors, TextBackend};
+    use crate::{BaseDocument, DocumentConfig};
+
+    /// The descriptors of an `@font-face` rule with `declarations`.
+    fn face(declarations: &str) -> FaceDescriptors {
+        let doc = BaseDocument::new(DocumentConfig::default());
+        let css = format!("@font-face {{ font-family: face; {declarations} }}");
+        let sheet = doc.make_stylesheet(css, Origin::Author);
+        let guard = doc.guard.read();
+        let rules = sheet.0.contents(&guard).rules(&guard);
+        rules
+            .iter()
+            .find_map(|rule| match rule {
+                CssRule::FontFace(face) => Some(FaceDescriptors::from_rule(
+                    &face.read_with(&guard).descriptors,
+                )),
+                _ => None,
+            })
+            .unwrap()
+    }
+
+    #[test]
+    fn face_weight_is_a_value_or_a_range() {
+        assert_eq!(face("").weight, None);
+        let weight = |min, max| Some((FontWeight::new(min), FontWeight::new(max)));
+        assert_eq!(face("font-weight: 700").weight, weight(700.0, 700.0));
+        assert_eq!(face("font-weight: bold").weight, weight(700.0, 700.0));
+        assert_eq!(face("font-weight: 300 600").weight, weight(300.0, 600.0));
+    }
+
+    #[test]
+    fn face_style_is_normal_italic_or_oblique() {
+        let style = |style| Some((style, style));
+        assert_eq!(face("").style, None);
+        assert_eq!(face("font-style: normal").style, style(FontStyle::Normal));
+        assert_eq!(face("font-style: italic").style, style(FontStyle::Italic));
+        assert_eq!(
+            face("font-style: oblique").style,
+            style(FontStyle::Oblique(Some(14.0)))
+        );
+        assert_eq!(
+            face("font-style: oblique 10deg 20deg").style,
+            Some((
+                FontStyle::Oblique(Some(10.0)),
+                FontStyle::Oblique(Some(20.0))
+            ))
+        );
+    }
 
     /// The `parley` feature selects Parley.
     #[test]

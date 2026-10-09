@@ -134,6 +134,8 @@ pub struct WinkinText {
     writing_mode: WritingMode,
     /// Device pixels per CSS pixel used to build the layout.
     scale: f32,
+    /// The size of the content box the lines were last placed in, in device pixels.
+    content_size: kurbo::Size,
 }
 
 /// A copy starts empty, and is built again the first time it is laid out.
@@ -173,6 +175,18 @@ pub(crate) struct BoxMeasure {
 impl WinkinText {
     pub fn scale(&self) -> f32 {
         self.scale
+    }
+
+    /// Records the size of the content box the lines are placed in, in device pixels.
+    pub(crate) fn set_content_size(&mut self, size: kurbo::Size) {
+        self.content_size = size;
+    }
+
+    /// The baseline of the first line, in CSS pixels below the top of the content box, where
+    /// the lines move `block_offset` CSS pixels down it.
+    pub(crate) fn first_baseline(&self, block_offset: f32) -> Option<f32> {
+        let line = self.layout()?.lines().next()?;
+        Some(line.metrics().baseline / self.scale + block_offset)
     }
     /// Drops the built content, keeping its allocations, so that it is built
     /// again.
@@ -1339,11 +1353,49 @@ enum LinePiece {
 }
 
 /// The laid-out text and inline boxes of `layout` in logical order, as its lines place them, read
-/// as it is walked. A float or an absolutely positioned box follows the content of the line it is
-/// anchored on, and one anchored on no line follows the last line.
+/// as it is walked: each stretch of the layout text one node holds as one item. A float or an
+/// absolutely positioned box follows the content of the line it is anchored on, and one anchored
+/// on no line follows the last line.
 pub(crate) fn logical_content(
     layout: &Layout,
-) -> impl Iterator<Item = crate::node::InlineContent<'_>> {
+) -> impl Iterator<Item = crate::node::InlineContent> + '_ {
+    coalesce(content_pieces(layout))
+}
+
+/// Joins each run of text items of one node that follow on in the text into one item.
+fn coalesce(
+    mut items: impl Iterator<Item = crate::node::InlineContent>,
+) -> impl Iterator<Item = crate::node::InlineContent> {
+    use crate::node::InlineContent;
+    let mut pending: Option<InlineContent> = None;
+    core::iter::from_fn(move || {
+        loop {
+            let Some(item) = items.next() else {
+                return pending.take();
+            };
+            if let (
+                Some(InlineContent::Text { node_id, range }),
+                InlineContent::Text {
+                    node_id: next_id,
+                    range: next,
+                },
+            ) = (&mut pending, &item)
+                && node_id == next_id
+                && range.end == next.start
+            {
+                range.end = next.end;
+                continue;
+            }
+            if let Some(read) = pending.replace(item) {
+                return Some(read);
+            }
+        }
+    })
+}
+
+/// The pieces of `layout`'s content in logical order: each slice the text copies as, and each
+/// box.
+fn content_pieces(layout: &Layout) -> impl Iterator<Item = crate::node::InlineContent> + '_ {
     use crate::node::InlineContent;
     use winkin::Item;
     use winkin::selection::{Affinity, CopyKind, Position};
@@ -1437,48 +1489,45 @@ pub(crate) fn logical_content(
                         let Some(key) = key.filter(|&key| shown(key)) else {
                             continue;
                         };
-                        let start = range.start;
                         let copied = layout.selected_text(range, CopyKind::Text);
-                        slices = Some((NodeId::from_u64(key), start, copied));
+                        slices = Some((NodeId::from_u64(key), copied));
                     }
                 }
             }
-            let (node_id, start, copied) = slices.as_mut()?;
+            let (node_id, copied) = slices.as_mut()?;
             let Some(slice) = copied.next() else {
                 slices = None;
                 continue;
             };
-            if slice.is_empty() {
+            // The slices borrow from the layout text, which says where each is.
+            let at = (slice.as_ptr() as usize).wrapping_sub(text.as_ptr() as usize);
+            if slice.is_empty() || at >= text.len() {
                 continue;
             }
-            // The slices borrow from the layout text, which says where each starts.
-            let at = (slice.as_ptr() as usize).wrapping_sub(text.as_ptr() as usize);
             return Some(InlineContent::Text {
                 node_id: *node_id,
-                start: if at < text.len() { at } else { *start },
-                text: slice.into(),
+                range: at..at + slice.len(),
             });
         }
     })
 }
 
-/// Hit tests physical CSS-pixel coordinates relative to the inline root's content box, which is
-/// `content_size` CSS pixels in size. `exact` requires the point to be within a line and its text
-/// extent.
+/// Hit tests physical CSS-pixel coordinates relative to the inline root's content box, whose
+/// lines `block_offset` CSS pixels moves down. `exact` requires the point to be within a line and
+/// its text extent.
 pub(crate) fn hit_test(
     text: &WinkinText,
     block_offset: f32,
     x: f32,
     y: f32,
-    content_size: kurbo::Size,
-    scale: f32,
     exact: bool,
 ) -> Option<crate::node::InlineTextHit> {
     let layout = text.layout()?;
+    let scale = text.scale;
     let page = page(
         text.writing_mode(),
-        content_size.width * f64::from(scale),
-        content_size.height * f64::from(scale),
+        text.content_size.width,
+        text.content_size.height,
     );
     let point = page.inverse()
         * kurbo::Point::new(f64::from(x * scale), f64::from((y - block_offset) * scale));
@@ -1503,37 +1552,44 @@ pub(crate) fn hit_test(
     })
 }
 
-/// Selection rectangles in physical device pixels relative to the content box, which is
-/// `content_size` CSS pixels in size.
-pub(crate) fn selection_rects(
+/// Calls `f` with each rectangle that highlights the text between `start` and `end`, in physical
+/// device pixels relative to the content box.
+pub(crate) fn for_each_selection_rect(
     text: &WinkinText,
     start: usize,
     end: usize,
-    content_size: kurbo::Size,
-    scale: f32,
-) -> Vec<kurbo::Rect> {
+    mut f: impl FnMut(kurbo::Rect),
+) {
     let Some(layout) = text.layout() else {
-        return Vec::new();
+        return;
     };
     let mode = text.writing_mode();
-    let page = page(
-        mode,
-        content_size.width * f64::from(scale),
-        content_size.height * f64::from(scale),
-    );
-    layout
-        .selection_rects(start..end)
-        .filter_map(|selection| {
-            let metrics = layout.line(selection.line)?.metrics();
-            let rect = kurbo::Rect::new(
-                f64::from(selection.inline.left),
-                f64::from(selection.block.over),
-                f64::from(selection.inline.right),
-                f64::from(selection.block.under),
-            );
-            Some(line_frame(mode, page, &metrics).transform_rect_bbox(rect))
-        })
-        .collect()
+    let page = page(mode, text.content_size.width, text.content_size.height);
+    for selection in layout.selection_rects(start..end) {
+        let Some(line) = layout.line(selection.line) else {
+            continue;
+        };
+        let rect = kurbo::Rect::new(
+            f64::from(selection.inline.left),
+            f64::from(selection.block.over),
+            f64::from(selection.inline.right),
+            f64::from(selection.block.under),
+        );
+        f(line_frame(mode, page, &line.metrics()).transform_rect_bbox(rect));
+    }
+}
+
+/// The text between byte offsets `start` and `end` of the laid-out text, as it is copied, in the
+/// pieces of the text it is made of.
+pub(crate) fn selected_text(
+    text: &WinkinText,
+    start: usize,
+    end: usize,
+) -> impl Iterator<Item = &str> {
+    text.layout()
+        .filter(|layout| start < end && end <= layout.text().len())
+        .into_iter()
+        .flat_map(move |layout| layout.selected_text(start..end, winkin::selection::CopyKind::Text))
 }
 
 /// The parts of `node`'s inline box on each line, in CSS pixels relative to the border box of the
