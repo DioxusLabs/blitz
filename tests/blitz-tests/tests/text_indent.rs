@@ -42,7 +42,11 @@ fn percentages_resolve_against_the_content_box() {
         for (indent, expected) in [("50%", 50.0), ("calc(25px + 25%)", 50.0), ("-50%", -50.0)] {
             for scale in [1.0, 2.0] {
                 let harness = layout(css, indent, scale);
-                assert_eq!(first_line_indent(&harness), expected * scale, "{css}; {indent}; scale {scale}");
+                assert_eq!(
+                    first_line_indent(&harness),
+                    expected * scale,
+                    "{css}; {indent}; scale {scale}"
+                );
             }
         }
     }
@@ -51,13 +55,20 @@ fn percentages_resolve_against_the_content_box() {
 #[test]
 fn percentage_indents_do_not_increase_intrinsic_widths() {
     for width in ["min-content", "max-content", "fit-content"] {
-        for (indent, expected_width, expected_indent) in [
-            ("50%", 10.0, 5.0),
-            ("calc(10px + 50%)", 20.0, 20.0),
-        ] {
+        for (indent, expected_width, expected_indent) in
+            [("50%", 10.0, 5.0), ("calc(10px + 50%)", 20.0, 20.0)]
+        {
             let harness = layout(&format!("width: {width}"), indent, 1.0);
-            assert_eq!(harness.layout_rect("#test").width, expected_width, "{width}; {indent}");
-            assert_eq!(first_line_indent(&harness), expected_indent, "{width}; {indent}");
+            assert_eq!(
+                harness.layout_rect("#test").width,
+                expected_width,
+                "{width}; {indent}"
+            );
+            assert_eq!(
+                first_line_indent(&harness),
+                expected_indent,
+                "{width}; {indent}"
+            );
         }
     }
 }
