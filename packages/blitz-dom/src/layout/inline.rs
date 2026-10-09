@@ -1154,14 +1154,15 @@ impl LayoutPassState<'_> {
                 return claims;
             }
             let ancestor = &self.nodes[id];
-            let is_span = ancestor.display_style().is_some_and(|display| {
-                display.outside() == DisplayOutside::Inline
+            if let Some(style) = ancestor.primary_styles() {
+                let display = style.clone_display();
+                if display.outside() == DisplayOutside::Inline
                     && display.inside() == DisplayInside::Flow
-            });
-            if is_span {
-                let span_claims = ancestor.layout_style().is_containing_block();
-                claims.absolute |= span_claims.absolute;
-                claims.fixed |= span_claims.fixed;
+                {
+                    let span_claims = stylo_taffy::convert::inline_containing_block_claims(&style);
+                    claims.absolute |= span_claims.absolute;
+                    claims.fixed |= span_claims.fixed;
+                }
             }
             current = ancestor.parent;
         }

@@ -370,6 +370,29 @@ pub fn containing_block_claims(style: &stylo::ComputedValues) -> taffy::Containi
     }
 }
 
+/// [`containing_block_claims`] for a non-atomic inline box, to which transforms and containment
+/// do not apply.
+pub fn inline_containing_block_claims(
+    style: &stylo::ComputedValues,
+) -> taffy::ContainingBlockClaims {
+    use style::values::specified::box_::WillChangeBits;
+
+    let box_style = style.get_box();
+    let effects = style.get_effects();
+    let fixed = !effects.filter.0.is_empty()
+        || !effects.backdrop_filter.0.is_empty()
+        || box_style
+            .will_change
+            .bits
+            .intersects(WillChangeBits::FIXPOS_CB_NON_SVG);
+    taffy::ContainingBlockClaims {
+        absolute: box_style.position != stylo::Position::Static
+            || fixed
+            || establishes_absolute_containing_block(style),
+        fixed,
+    }
+}
+
 #[inline]
 pub fn overflow(input: stylo::Overflow) -> taffy::Overflow {
     match input {

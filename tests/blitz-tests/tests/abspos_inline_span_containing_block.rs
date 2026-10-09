@@ -120,3 +120,15 @@ fn fixed_descendant_of_absolute_child_of_relative_span() {
     assert_eq!((rect.x, rect.y), (0.0, 0.0));
     assert!(rect.width > ROOT_PADDING_BOX.width);
 }
+
+#[test]
+fn fixed_child_of_transformed_span() {
+    // Transforms and containment do not apply to non-atomic inline boxes
+    let rect = layout_rect(
+        "before <span style='transform: scale(1); will-change: transform; contain: paint'>text\
+         <div id='fixed' class='fill' style='position: fixed'></div></span>",
+        "#fixed",
+    );
+    assert_eq!((rect.x, rect.y), (0.0, 0.0));
+    assert!(rect.width > ROOT_PADDING_BOX.width);
+}
