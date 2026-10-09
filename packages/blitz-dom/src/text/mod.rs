@@ -262,15 +262,110 @@ pub(crate) trait InlineLayoutEngine: InlineText {
         layouts: &mut [(NodeId, Box<Self>)],
     );
 
-    /// Measures the inline boxes, breaks the lines and places them and what they hold, in the room
-    /// `frame` describes.
-    fn compute_layout(
-        state: &mut crate::layout::LayoutPassState<'_>,
-        node_id: NodeId,
-        layout: Box<Self>,
-        frame: crate::layout::inline::Frame,
-        block_ctx: &mut taffy::BlockContext<'_>,
-    ) -> taffy::LayoutOutput;
+    /// Whether the content holds no text and no inline boxes.
+    fn is_empty(&self) -> bool;
+
+    /// Gives the inline boxes the sizes Taffy measured them at, in content order, and readies the
+    /// lines of `style`, the inline root's computed style, to be broken. `text-indent` percentages
+    /// count as zero until the lines are broken, and are then of the width they are broken in.
+    fn prepare(&mut self, sizes: &[BoxMeasure], style: Option<&style::properties::ComputedValues>);
+
+    /// Returns the content's min-content and max-content widths, in device pixels.
+    fn content_widths(&self) -> ContentWidths;
+
+    /// Breaks the content into lines `width` device pixels wide, or as narrow as `floats` leaves
+    /// them, placing each float as a line reaches it, and aligns them as `style`, the inline
+    /// root's computed style, says.
+    fn break_lines(
+        &mut self,
+        width: f32,
+        style: Option<&style::properties::ComputedValues>,
+        floats: &mut impl LineFloats,
+    );
+
+    /// Returns how far the lines reach and where their baselines are, in device pixels from the
+    /// content box's top.
+    fn extent(&self) -> LinesExtent;
+
+    /// Sets how far `align-content` moves the line boxes down the content box, in CSS pixels.
+    fn set_block_offset(&mut self, offset: f32);
+
+    /// Returns where the lines put each inline box, in the order they are on the lines.
+    fn placements(&self) -> impl Iterator<Item = Placement>;
+}
+
+/// An atomic inline as Taffy measured it, which the lines are broken with.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct BoxMeasure {
+    /// The box's node.
+    pub(crate) node: NodeId,
+    /// Its border box, in CSS pixels.
+    pub(crate) size: taffy::Size<f32>,
+    /// Its margins, in CSS pixels.
+    pub(crate) margin: taffy::Rect<f32>,
+    /// Its baseline down from its border box's top, in CSS pixels, where it has one.
+    pub(crate) baseline: Option<f32>,
+}
+
+/// The min-content and max-content widths of an inline formatting context's content.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) struct ContentWidths {
+    pub(crate) min: f32,
+    pub(crate) max: f32,
+}
+
+/// How far an inline formatting context's lines reach, and where their baselines are, in device
+/// pixels from the content box's top left.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) struct LinesExtent {
+    /// How far down the line boxes reach.
+    pub(crate) height: f32,
+    /// How far along the longest line reaches.
+    pub(crate) width: f32,
+    /// The first line's baseline, where there is a line.
+    pub(crate) first_baseline: Option<f32>,
+    /// The last line's baseline, where there is a line.
+    pub(crate) last_baseline: Option<f32>,
+}
+
+/// Where the lines put an inline box, in device pixels from the content box's top left. Its style
+/// says which of the positions apply.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct Placement {
+    /// The box's node.
+    pub(crate) node: NodeId,
+    /// Where an atomic inline's margin box's left edge is, or where an inline-level absolutely
+    /// positioned box would have been along its line.
+    pub(crate) x: f32,
+    /// Where an atomic inline's margin box's top edge is.
+    pub(crate) top: f32,
+    /// Where the line the box is on reaches from and to.
+    pub(crate) line_top: f32,
+    pub(crate) line_bottom: f32,
+    /// Where a block-level absolutely positioned box would have started.
+    pub(crate) block_start: f32,
+}
+
+/// Where a line goes, in device pixels from the content box's top left.
+#[cfg_attr(not(feature = "floats"), allow(dead_code))]
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct LineSlot {
+    pub(crate) x: f32,
+    pub(crate) y: f64,
+    pub(crate) width: f32,
+    /// Whether floats narrow the line, so that the lines after it ask again.
+    pub(crate) narrowed: bool,
+}
+
+/// The floats of the block formatting context an inline formatting context's lines are broken
+/// in, which the lines flow around and place their own floats into.
+#[cfg_attr(not(feature = "floats"), allow(dead_code))]
+pub(crate) trait LineFloats {
+    /// Returns where a line that starts `y` device pixels down goes.
+    fn slot(&self, y: f64) -> LineSlot;
+
+    /// Lays out and places the float `node`, which a line `y` device pixels down reached.
+    fn place_float(&mut self, node: NodeId, y: f64);
 }
 
 /// The size and scale of the laid-out text of an `<input>` or `<textarea>`.
