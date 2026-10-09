@@ -1,4 +1,6 @@
 mod build;
+mod floats;
+mod lines;
 
 use blitz_traits::node_id::NodeId;
 use taffy::{
@@ -12,13 +14,11 @@ use stylo_taffy::StyleFlags;
 
 use super::resolve_calc_value;
 use crate::layout::LayoutPassState;
-use crate::node::TextLayout;
-use crate::text::InlineLayoutEngine as _;
 
 pub(crate) use build::push_inline_content;
 
 /// What `compute_inline_layout_inner` has resolved from the container's styles and inputs
-/// before the text backend measures the inline boxes and breaks lines.
+/// before the inline boxes are measured and the lines broken.
 pub(crate) struct Frame {
     pub(crate) inputs: LayoutInput,
     pub(crate) node_size: Size<Option<f32>>,
@@ -212,6 +212,7 @@ impl LayoutPassState<'_> {
 
     /// The out-of-flow positions for which an inline span between the inline box `box_id` and its
     /// inline root `root_id` is a containing block (as `SPAN_*_CB` flags)
+    #[cfg_attr(feature = "winkin", allow(dead_code))]
     pub(crate) fn inline_span_cb_flags(&self, root_id: NodeId, box_id: NodeId) -> StyleFlags {
         let root = &self.nodes[root_id];
         // The spans of an anonymous inline root are descendants of its parent
@@ -406,7 +407,10 @@ impl LayoutPassState<'_> {
             suppresses_baseline,
             scale,
         };
-        TextLayout::compute_layout(self, node_id, inline_layout, frame, block_ctx)
+        #[cfg(feature = "winkin")]
+        return self.compute_inline_layout_winkin(node_id, inline_layout, frame, block_ctx);
+        #[cfg(not(feature = "winkin"))]
+        self.lay_out_lines(node_id, inline_layout, frame, block_ctx)
     }
 }
 
