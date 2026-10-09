@@ -20,7 +20,9 @@ use parley::{LayoutContext, PositionedLayoutItem};
 #[cfg(feature = "parallel-construct")]
 use thread_local::ThreadLocal;
 
-use super::{InlineLayoutEngine, InlineText};
+use super::{
+    BoxMeasure, ContentWidths, InlineLayoutEngine, InlineText, LineFloats, LinesExtent, Placement,
+};
 use crate::node::{InlineContent, InlineTextHit, Node};
 
 /// The Parley crate, for the renderer's Parley painter.
@@ -494,16 +496,44 @@ impl InlineLayoutEngine for TextLayout {
         }
     }
 
-    fn compute_layout(
-        state: &mut crate::layout::LayoutPassState<'_>,
-        node_id: NodeId,
-        layout: Box<Self>,
-        frame: crate::layout::inline::Frame,
-        block_ctx: &mut taffy::BlockContext<'_>,
-    ) -> taffy::LayoutOutput {
-        #[cfg(feature = "winkin")]
-        return state.compute_inline_layout_winkin(node_id, layout, frame, block_ctx);
-        #[cfg(not(feature = "winkin"))]
-        return state.compute_inline_layout_parley(node_id, layout, frame, block_ctx);
+    #[inline]
+    fn is_empty(&self) -> bool {
+        self.holds_nothing()
+    }
+
+    fn prepare(
+        &mut self,
+        sizes: &[BoxMeasure],
+        style: Option<&::style::properties::ComputedValues>,
+    ) {
+        self.prepare_lines(sizes, style);
+    }
+
+    #[inline]
+    fn content_widths(&self) -> ContentWidths {
+        self.widths()
+    }
+
+    fn break_lines(
+        &mut self,
+        width: f32,
+        style: Option<&::style::properties::ComputedValues>,
+        floats: &mut impl LineFloats,
+    ) {
+        self.break_into_lines(width, style, floats);
+    }
+
+    #[inline]
+    fn extent(&self) -> LinesExtent {
+        self.lines_extent()
+    }
+
+    #[inline]
+    fn set_block_offset(&mut self, offset: f32) {
+        self.block_offset = offset;
+    }
+
+    fn placements(&self) -> impl Iterator<Item = Placement> {
+        self.box_placements()
     }
 }

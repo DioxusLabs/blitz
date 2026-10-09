@@ -1,4 +1,6 @@
 mod build;
+mod floats;
+mod lines;
 
 use blitz_traits::node_id::NodeId;
 use taffy::{
@@ -9,13 +11,11 @@ use taffy::{
 
 use super::resolve_calc_value;
 use crate::layout::LayoutPassState;
-use crate::node::TextLayout;
-use crate::text::InlineLayoutEngine as _;
 
 pub(crate) use build::push_inline_content;
 
 /// What `compute_inline_layout_inner` has resolved from the container's styles and inputs
-/// before the text backend measures the inline boxes and breaks lines.
+/// before the inline boxes are measured and the lines broken.
 pub(crate) struct Frame {
     pub(crate) inputs: LayoutInput,
     pub(crate) node_size: Size<Option<f32>>,
@@ -367,7 +367,10 @@ impl LayoutPassState<'_> {
             collapses_through: has_styles_preventing_being_collapsed_through,
             scale,
         };
-        TextLayout::compute_layout(self, node_id, inline_layout, frame, block_ctx)
+        #[cfg(feature = "winkin")]
+        return self.compute_inline_layout_winkin(node_id, inline_layout, frame, block_ctx);
+        #[cfg(not(feature = "winkin"))]
+        self.lay_out_lines(node_id, inline_layout, frame, block_ctx)
     }
 }
 

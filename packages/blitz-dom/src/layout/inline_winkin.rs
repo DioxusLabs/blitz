@@ -1086,14 +1086,6 @@ impl LayoutPassState<'_> {
         })
     }
 
-    fn put_inline_layout(&mut self, node_id: NodeId, inline_layout: Box<TextLayout>) {
-        self.nodes[node_id]
-            .data
-            .downcast_element_mut()
-            .unwrap()
-            .inline_layout_data = Some(inline_layout);
-    }
-
     /// Lays out an atomic inline or a float as the line will hold it: its
     /// border box, in CSS pixels, and an atomic inline's baseline down from
     /// its top. `None` for an absolutely positioned box, which the content
