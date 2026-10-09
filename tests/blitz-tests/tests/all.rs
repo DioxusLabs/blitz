@@ -6,6 +6,7 @@ mod accessibility_roles;
 mod animations;
 mod anonymous_block_cache_invalidation;
 mod anonymous_block_leak;
+mod anonymous_block_percentage_height;
 mod autofocus_attribute;
 mod background_size;
 mod br_trailing_line;
