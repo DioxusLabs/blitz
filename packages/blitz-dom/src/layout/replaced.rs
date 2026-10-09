@@ -17,7 +17,7 @@ pub(crate) fn is_replaced_element(tag_name: &LocalName) -> bool {
 }
 
 /// The intrinsic dimensions of a replaced element per CSS Images 3
-/// (https://drafts.csswg.org/css-images/#intrinsic-dimensions): an intrinsic
+/// (<https://drafts.csswg.org/css-images/#intrinsic-dimensions>): an intrinsic
 /// width, an intrinsic height, and an intrinsic aspect ratio, each of which
 /// may independently be absent.
 #[derive(Debug, Clone, Copy, Default)]
