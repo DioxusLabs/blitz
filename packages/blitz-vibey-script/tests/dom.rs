@@ -784,3 +784,41 @@ fn uncaught_errors_fire_window_error_event() {
         "{out}"
     );
 }
+
+// Layout-dependent properties resolve to used values, including through their
+// logical longhands and shorthands. Expected values are Chrome's.
+#[test]
+fn computed_style_used_values() {
+    let doc = doc_from_html(
+        r#"
+        <html><body style="margin: 0">
+            <div style="width: 200px; height: 100px; position: relative;">
+                <div id="box" style="padding: 10% 5%; margin: 5% auto; width: 50%; height: 50%;
+                    border: 2px solid; position: relative; top: 10%; left: 5%;
+                    perspective-origin: 25% 75%;"></div>
+                <div id="none" style="display: none; padding: 10%;"></div>
+                <span id="inline-block" style="display: inline-block; margin: 11px 12px;">x</span>
+            </div>
+            <div id="out"></div>
+            <script>
+                const style = getComputedStyle(document.getElementById("box"));
+                const names = [
+                    "padding-top", "padding-left", "padding-inline-start", "padding-block-end",
+                    "padding", "padding-block", "margin", "margin-inline-start", "inline-size",
+                    "block-size", "inset-block-start", "inset-inline-end", "inset",
+                    "transform-origin", "perspective-origin",
+                ];
+                const values = names.map((name) => style.getPropertyValue(name));
+                values.push(getComputedStyle(document.getElementById("none")).paddingTop);
+                values.push(getComputedStyle(document.getElementById("inline-block")).margin);
+                document.getElementById("out").textContent = values.join("|");
+            </script>
+        </body></html>
+        "#,
+    );
+    assert_eq!(
+        text_of_selector(&doc, "#out"),
+        "20px|10px|10px|20px|20px 10px|20px|10px 38px|38px|100px|50px|10px|-10px|\
+         10px -10px -10px 10px|62px 47px|31px 70.5px|10%|11px 12px"
+    );
+}

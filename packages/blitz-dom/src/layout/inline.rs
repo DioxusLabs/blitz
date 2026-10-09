@@ -723,6 +723,7 @@ impl LayoutPassState<'_> {
                         let layout = self.nodes[node_id].unrounded_layout_mut();
                         layout.size = output.size;
                         layout.location = location;
+                        layout.margin = margin;
 
                         // Translate anchors from item-relative to container-relative
                         // coordinates and collect candidates bubbled from the float's subtree
@@ -990,6 +991,7 @@ impl LayoutPassState<'_> {
                         let layout = self.nodes[NodeId::from_u64(ibox.id)].unrounded_layout_mut();
                         layout.padding = padding; //.map(|p| p / scale);
                         layout.border = border; //.map(|p| p / scale);
+                        layout.margin = margin;
                     } else {
                         // Re-measure the box to get its border-box size (this hits the layout
                         // cache). The size cannot be recovered from `ibox` dimensions as the
@@ -1024,6 +1026,7 @@ impl LayoutPassState<'_> {
                             (ibox.y / scale) + margin.top + line_box_top + inset_offset.y;
                         layout.padding = padding; //.map(|p| p / scale);
                         layout.border = border; //.map(|p| p / scale);
+                        layout.margin = margin;
 
                         // Translate anchors from item-relative to container-relative
                         // coordinates and collect candidates bubbled from the box's subtree
