@@ -1,6 +1,7 @@
 //! All integration tests are compiled into this single test binary because linking
 //! one binary per file dominates build time. New test files must be added here.
 
+mod abspos_inline_span_containing_block;
 mod accessibility_hidden;
 mod accessibility_roles;
 mod animations;

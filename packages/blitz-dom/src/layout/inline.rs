@@ -7,10 +7,10 @@ use style::values::{
 };
 use taffy::{
     AvailableSpace, AxisStaticPosition, BlockContainerStyle, BlockContext, BlockFormattingContext,
-    BoxSizing, CollapsibleMarginSet, CompactLength, CoreStyle as _, Direction, LayoutInput,
-    LayoutOutput, LayoutPartialTree as _, MaybeMath as _, MaybeResolve as _, OofCandidate,
-    OofCandidates, OofItemStyle, OofPositioningArea, Overflow, Point, RequestedAxis,
-    ResolveOrZero as _, RunMode, Size, SizingMode,
+    BoxSizing, CollapsibleMarginSet, CompactLength, ContainingBlockClaims, CoreStyle as _,
+    Direction, LayoutInput, LayoutOutput, LayoutPartialTree as _, MaybeMath as _,
+    MaybeResolve as _, OofCandidate, OofCandidates, OofItemStyle, OofPositioningArea, Overflow,
+    Point, RequestedAxis, ResolveOrZero as _, RunMode, Size, SizingMode,
 };
 
 #[cfg(feature = "floats")]
@@ -623,6 +623,12 @@ impl LayoutPassState<'_> {
         // Out-of-flow candidates bubbled up from this container and its in-flow subtree.
         // These are laid out by the out-of-flow positioning pass (`compute_oof_layout`).
         let mut oof_candidates = OofCandidates::new();
+        // Candidates whose containing block is an inline span within this container. Spans have
+        // no layout node, so these are positioned against this container's padding box instead.
+        // Indexed by whether the span is also the containing block for `position: fixed` boxes.
+        let mut span_oof_candidates = [OofCandidates::new(), OofCandidates::new()];
+        #[cfg(feature = "floats")]
+        let root_id = node_id;
 
         // Perform inline layout
         #[cfg(feature = "floats")]
@@ -731,7 +737,15 @@ impl LayoutPassState<'_> {
                         // coordinates and collect candidates bubbled from the float's subtree
                         if !output.oof_candidates.is_empty() {
                             output.oof_candidates.translate(location);
-                            oof_candidates.append(&mut output.oof_candidates);
+                            let span_claims = self.inline_span_claims(root_id, node_id);
+                            for candidate in output.oof_candidates.iter() {
+                                if span_claims.for_position(candidate.position) {
+                                    span_oof_candidates[span_claims.fixed as usize]
+                                        .push(*candidate);
+                                } else {
+                                    oof_candidates.push(*candidate);
+                                }
+                            }
                         }
 
                         // dbg!(&layout.size);
@@ -964,7 +978,14 @@ impl LayoutPassState<'_> {
                             )
                         };
 
-                        oof_candidates.push(OofCandidate {
+                        let span_claims =
+                            self.inline_span_claims(node_id, NodeId::from_u64(ibox.id));
+                        let candidates = if span_claims.for_position(position) {
+                            &mut span_oof_candidates[span_claims.fixed as usize]
+                        } else {
+                            &mut oof_candidates
+                        };
+                        candidates.push(OofCandidate {
                             node: taffy::NodeId::from(ibox.id),
                             order,
                             position,
@@ -1035,7 +1056,16 @@ impl LayoutPassState<'_> {
                         if !output.oof_candidates.is_empty() {
                             let location = layout.location;
                             output.oof_candidates.translate(location);
-                            oof_candidates.append(&mut output.oof_candidates);
+                            let span_claims =
+                                self.inline_span_claims(node_id, NodeId::from_u64(ibox.id));
+                            for candidate in output.oof_candidates.iter() {
+                                if span_claims.for_position(candidate.position) {
+                                    span_oof_candidates[span_claims.fixed as usize]
+                                        .push(*candidate);
+                                } else {
+                                    oof_candidates.push(*candidate);
+                                }
+                            }
                         }
                     }
                 }
@@ -1065,6 +1095,8 @@ impl LayoutPassState<'_> {
             .downcast_element_mut()
             .unwrap()
             .inline_layout_data = Some(inline_layout);
+
+        self.span_oof_candidates = span_oof_candidates;
 
         let oof_position_inset = taffy::Rect {
             left: border.left,
@@ -1105,6 +1137,35 @@ impl LayoutPassState<'_> {
                 },
             }),
         }
+    }
+}
+
+impl LayoutPassState<'_> {
+    /// Which out-of-flow boxes within the inline box `box_id` have an inline span of the inline
+    /// root `root_id` as their containing block.
+    fn inline_span_claims(&self, root_id: NodeId, box_id: NodeId) -> ContainingBlockClaims {
+        let root = &self.nodes[root_id];
+        let root_parent = root.is_anonymous().then_some(root.parent).flatten();
+
+        let mut claims = ContainingBlockClaims::NONE;
+        let mut current = self.nodes[box_id].parent;
+        while let Some(id) = current {
+            if id == root_id || Some(id) == root_parent {
+                return claims;
+            }
+            let ancestor = &self.nodes[id];
+            let is_span = ancestor.display_style().is_some_and(|display| {
+                display.outside() == DisplayOutside::Inline
+                    && display.inside() == DisplayInside::Flow
+            });
+            if is_span {
+                let span_claims = ancestor.layout_style().is_containing_block();
+                claims.absolute |= span_claims.absolute;
+                claims.fixed |= span_claims.fixed;
+            }
+            current = ancestor.parent;
+        }
+        ContainingBlockClaims::NONE
     }
 }
 
