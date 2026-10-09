@@ -284,15 +284,6 @@ pub(crate) fn compute_layout_damage(old: &ComputedValues, new: &ComputedValues) 
             return true;
         }
 
-        // An inline root caches the containing block claims of its inline spans
-        if new_box.display.outside() == DisplayOutside::Inline
-            && new_box.display.inside() == DisplayInside::Flow
-            && stylo_taffy::convert::inline_containing_block_claims(old)
-                != stylo_taffy::convert::inline_containing_block_claims(new)
-        {
-            return true;
-        }
-
         if new_box.display.outside() == DisplayOutside::Block
             && new_box.display.inside() == DisplayInside::Flow
         {

@@ -18,6 +18,8 @@ use parley::YieldData;
 #[cfg(feature = "floats")]
 use taffy::{BlockItemStyle as _, Clear, Float, prelude::TaffyMaxContent};
 
+use stylo_taffy::StyleFlags;
+
 use super::resolve_calc_value;
 use crate::layout::LayoutPassState;
 use crate::stylo_to_parley;
@@ -190,6 +192,39 @@ impl LayoutPassState<'_> {
                 )
             }
         }
+    }
+
+    /// The out-of-flow positions for which an inline span between the inline box `box_id` and its
+    /// inline root `root_id` is a containing block (as `SPAN_*_CB` flags)
+    fn inline_span_cb_flags(&self, root_id: NodeId, box_id: NodeId) -> StyleFlags {
+        let root = &self.nodes[root_id];
+        // The spans of an anonymous inline root are descendants of its parent
+        let root_parent = root.is_anonymous().then_some(root.parent).flatten();
+
+        let mut flags = StyleFlags::empty();
+        let mut current = self.nodes[box_id].parent;
+        while let Some(id) = current {
+            if id == root_id || Some(id) == root_parent {
+                return flags;
+            }
+            let ancestor = &self.nodes[id];
+            if let Some(style) = ancestor.primary_styles() {
+                let display = style.clone_display();
+                if display.outside() == DisplayOutside::Inline
+                    && display.inside() == DisplayInside::Flow
+                {
+                    let claims = stylo_taffy::convert::inline_containing_block_claims(&style);
+                    if claims.absolute {
+                        flags |= StyleFlags::SPAN_ABSOLUTE_CB;
+                    }
+                    if claims.fixed {
+                        flags |= StyleFlags::SPAN_FIXED_CB;
+                    }
+                }
+            }
+            current = ancestor.parent;
+        }
+        StyleFlags::empty()
     }
 
     fn compute_inline_layout_inner(
@@ -870,11 +905,16 @@ impl LayoutPassState<'_> {
 
         // Store sizes and positions of inline boxes
         let mut ibox_order: u32 = 0;
+        let mut span_cb_flags = StyleFlags::empty();
         for line in inline_layout.layout.lines() {
             for item in line.items() {
                 if let parley::layout::PositionedLayoutItem::InlineBox(ibox) = item {
                     let order = ibox_order;
                     ibox_order += 1;
+                    if inputs.run_mode == RunMode::PerformLayout {
+                        span_cb_flags |=
+                            self.inline_span_cb_flags(node_id, NodeId::from_u64(ibox.id));
+                    }
                     let node = &self.nodes[NodeId::from_u64(ibox.id)];
                     let style = self.child_layout_style(node);
                     let padding = style
@@ -1058,6 +1098,10 @@ impl LayoutPassState<'_> {
             .then(|| last_line_index.and_then(|i| inline_layout.layout.get(i)))
             .flatten()
             .map(line_baseline);
+
+        if inputs.run_mode == RunMode::PerformLayout {
+            inline_layout.span_cb_flags = span_cb_flags;
+        }
 
         // Put layout back
         self.nodes[node_id]
