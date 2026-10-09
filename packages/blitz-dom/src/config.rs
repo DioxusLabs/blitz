@@ -69,4 +69,12 @@ pub struct DocumentConfig {
     /// How deeply this document is nested within other documents
     /// (0 for a root document). Used to limit `<iframe>` nesting depth.
     pub subdocument_depth: usize,
+    /// How long a password field shows the character typed last in the clear before masking it,
+    /// as iOS and Android do. `None`, the default, masks it at once, as desktop browsers do.
+    ///
+    /// Only one typed grapheme is shown; pasted text and text an input method commits in more than
+    /// one grapheme stay masked. Any other edit, a move of the caret, a change of the value from
+    /// script and a change of focus mask it before its time. A shell wakes for the deadline that
+    /// [`BaseDocument::text_input_deadline`](crate::BaseDocument::text_input_deadline) gives.
+    pub reveal_typed_password_character: Option<web_time::Duration>,
 }

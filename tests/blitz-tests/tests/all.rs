@@ -40,6 +40,7 @@ mod outset_box_shadow_shape;
 mod paint_order;
 mod paint_tree_bench;
 mod paint_tree_incremental;
+mod password_input;
 mod pointer_events;
 mod pre_overflow_scroll;
 mod pseudo_element_update;

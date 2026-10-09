@@ -11,7 +11,10 @@ use crate::scrolling::ScrollAnimationState;
 use crate::selection::TextSelection;
 use crate::stylo_device::{DeviceChanges, make_device};
 use crate::stylo_to_cursor_icon::stylo_to_cursor_icon;
-use crate::text::{DocumentText as _, InlineText as _, TextContext, TextInputDriver};
+use crate::text::{
+    DocumentText as _, Edit, EditEngine as _, EditableText as _, InlineText as _, TextContext,
+    TextInputDriver,
+};
 use crate::traversal::TreeTraverser;
 use crate::url::DocumentUrl;
 use crate::util::ImageType;
@@ -269,6 +272,13 @@ pub struct BaseDocument {
     /// When each scroll container's overlay scrollbars were last shown
     /// (scrolled, or the pointer left the thumb); drives their fade-out
     pub(crate) scrollbar_activity: HashMap<NodeId, Instant>,
+    /// How long a password field shows the character typed last in the clear
+    /// ([`DocumentConfig::reveal_typed_password_character`]).
+    pub(crate) reveal_typed_password: Option<web_time::Duration>,
+    /// The password field showing a character in the clear, and when it masks it.
+    pub(crate) password_reveal: Option<(NodeId, Instant)>,
+    /// When a password field in a subdocument next masks the character it shows in the clear.
+    pub(crate) subdoc_text_input_deadline: Option<Instant>,
     /// Whether and what kind of scroll animation is currently in progress
     pub(crate) scroll_animation: ScrollAnimationState,
 
@@ -462,6 +472,9 @@ impl BaseDocument {
             drag_mode: DragMode::None,
             hovered_scrollbar: None,
             scrollbar_activity: HashMap::new(),
+            reveal_typed_password: config.reveal_typed_password_character,
+            password_reveal: None,
+            subdoc_text_input_deadline: None,
             scroll_animation: ScrollAnimationState::None,
             text_selection: TextSelection::default(),
         };
@@ -1585,6 +1598,7 @@ impl BaseDocument {
 
     /// Clear the focussed node
     pub fn clear_focus(&mut self) {
+        self.conceal_password();
         if let Some(id) = self.focus_node_id {
             let shell_provider = self.shell_provider.clone();
             self.snapshot_node_and(id, ElementState::FOCUS | ElementState::FOCUSRING, |node| {
@@ -1611,6 +1625,7 @@ impl BaseDocument {
         let shell_provider = self.shell_provider.clone();
 
         // Remove focus from the old node
+        self.conceal_password();
         if let Some(id) = self.focus_node_id {
             self.snapshot_node_and(id, ElementState::FOCUS | ElementState::FOCUSRING, |node| {
                 node.blur(shell_provider.clone())
@@ -1950,6 +1965,62 @@ impl BaseDocument {
         self.get_node_mut(node_id)
             .and_then(|node| node.element_data_mut())
             .and_then(|el| el.sub_doc_data_mut())
+    }
+
+    /// Returns when a password field next masks the character it shows in the clear
+    /// ([`DocumentConfig::reveal_typed_password_character`]), for a shell to wake and redraw at.
+    /// Redrawing runs [`expire_text_input_timers`](Self::expire_text_input_timers).
+    pub fn text_input_deadline(&self) -> Option<Instant> {
+        let own = self.password_reveal.map(|(_, deadline)| deadline);
+        match (own, self.subdoc_text_input_deadline) {
+            (Some(own), Some(subdoc)) => Some(own.min(subdoc)),
+            (own, subdoc) => own.or(subdoc),
+        }
+    }
+
+    /// Masks the character a password field shows in the clear where its time is up at `now`,
+    /// and returns whether it did.
+    pub fn expire_text_input_timers(&mut self, now: Instant) -> bool {
+        let expired = self
+            .password_reveal
+            .is_some_and(|(_, deadline)| deadline <= now);
+        if expired {
+            self.conceal_password();
+        }
+        expired
+    }
+
+    /// Records when the password field `node_id` masks the character it shows in the clear, after
+    /// an edit at `now`: none where it shows none.
+    pub(crate) fn note_password_reveal(&mut self, node_id: NodeId, now: Instant) {
+        let revealed = self
+            .get_node(node_id)
+            .and_then(|node| node.element_data())
+            .and_then(|element| element.text_input_data())
+            .is_some_and(|input| input.editor.revealed_range().is_some());
+        self.password_reveal = self
+            .reveal_typed_password
+            .filter(|_| revealed)
+            .map(|duration| (node_id, now + duration));
+    }
+
+    /// Masks the character a password field shows in the clear, where one does.
+    pub(crate) fn conceal_password(&mut self) {
+        let Some((node_id, _)) = self.password_reveal.take() else {
+            return;
+        };
+        let Some(input) = self
+            .nodes
+            .get_mut(node_id)
+            .and_then(|node| node.element_data_mut())
+            .and_then(|element| element.text_input_data_mut())
+        else {
+            return;
+        };
+        if input.editor.revealed_range().is_some() {
+            input.editor.edit(&mut self.text, Edit::Conceal);
+            self.shell_provider.request_redraw();
+        }
     }
 
     pub fn is_animating(&self) -> bool {

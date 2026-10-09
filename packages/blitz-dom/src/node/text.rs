@@ -46,6 +46,9 @@ pub struct TextInputData {
     pub editor: Box<TextEditor>,
     /// Whether the input is a singleline or multiline input
     pub is_multiline: bool,
+    /// Whether the input is `<input type=password>`, whose text is never copied and whose word
+    /// motions and double clicks take the whole text, as in Chrome.
+    pub is_password: bool,
     /// The scroll offset of the text content within the input, in CSS (unscaled) pixels.
     ///
     /// For single-line inputs this is a horizontal offset; for multi-line inputs it is a
@@ -67,7 +70,32 @@ impl TextInputData {
         Self {
             editor,
             is_multiline,
+            is_password: false,
             scroll_offset: 0.0,
+        }
+    }
+
+    /// Returns `motion` as the input takes it: in a password field, Chrome moves a word to the
+    /// text's start or end, since it shows no words.
+    pub(crate) fn motion(&self, motion: Motion) -> Motion {
+        match motion {
+            Motion::WordLeft if self.is_password => Motion::TextStart,
+            Motion::WordRight if self.is_password => Motion::TextEnd,
+            motion => motion,
+        }
+    }
+
+    /// Returns `edit` as the input takes it: in a password field, Chrome selects the whole text
+    /// at a double or triple click, and moves by words as [`motion`](Self::motion) says.
+    pub(crate) fn edit<'e>(&self, edit: Edit<'e>) -> Edit<'e> {
+        if !self.is_password {
+            return edit;
+        }
+        match edit {
+            Edit::SelectWordAtPoint(..) | Edit::SelectHardLineAtPoint(..) => Edit::SelectAll,
+            Edit::Move(motion) => Edit::Move(self.motion(motion)),
+            Edit::Extend(motion) => Edit::Extend(self.motion(motion)),
+            edit => edit,
         }
     }
 
@@ -171,11 +199,14 @@ impl TextInputData {
         delta - consumed
     }
 
+    /// Applies a key press. Where `reveals`, a password field shows the character typed in the
+    /// clear.
     pub(crate) fn apply_keypress_event(
         &mut self,
         cx: &mut TextContext,
         shell_provider: &dyn ShellProvider,
         event: BlitzKeyEvent,
+        reveals: bool,
     ) -> Option<GeneratedTextInputEvent> {
         // Do nothing if it is a keyup event
         if !event.state.is_pressed() {
@@ -187,11 +218,19 @@ impl TextInputData {
         let action_mod = mods.contains(ACTION_MOD);
 
         let is_multiline = self.is_multiline;
+        let is_password = self.is_password;
+        let word_left = self.motion(Motion::WordLeft);
+        let word_right = self.motion(Motion::WordRight);
+        let reveals = reveals && self.is_password;
         let mut driver = TextInputDriver {
             editor: &mut self.editor,
             cx,
         };
         match event.key {
+            // Chrome neither copies nor cuts a password field's text, and fires no event for it.
+            Key::Character(c) if action_mod && is_password && matches!(c.as_str(), "c" | "x") => {
+                return None;
+            }
             Key::Character(c) if action_mod && matches!(c.as_str(), "c" | "x" | "v") => {
                 match c.to_lowercase().as_str() {
                     "c" => {
@@ -235,9 +274,9 @@ impl TextInputData {
             Key::ArrowLeft => {
                 if action_mod {
                     if shift {
-                        driver.edit(Edit::Extend(Motion::WordLeft))
+                        driver.edit(Edit::Extend(word_left))
                     } else {
-                        driver.edit(Edit::Move(Motion::WordLeft))
+                        driver.edit(Edit::Move(word_left))
                     }
                 } else if shift {
                     driver.edit(Edit::Extend(Motion::Left))
@@ -249,9 +288,9 @@ impl TextInputData {
             Key::ArrowRight => {
                 if action_mod {
                     if shift {
-                        driver.edit(Edit::Extend(Motion::WordRight))
+                        driver.edit(Edit::Extend(word_right))
                     } else {
-                        driver.edit(Edit::Move(Motion::WordRight))
+                        driver.edit(Edit::Move(word_right))
                     }
                 } else if shift {
                     driver.edit(Edit::Extend(Motion::Right))
@@ -306,7 +345,7 @@ impl TextInputData {
             }
             Key::Delete => {
                 if action_mod {
-                    driver.edit(Edit::DeleteWord)
+                    delete_word(&mut driver, is_password, true)
                 } else {
                     driver.edit(Edit::Delete)
                 }
@@ -317,7 +356,7 @@ impl TextInputData {
             #[cfg(not(target_os = "macos"))]
             Key::Backspace => {
                 if action_mod {
-                    driver.edit(Edit::BackdeleteWord)
+                    delete_word(&mut driver, is_password, false)
                 } else {
                     driver.edit(Edit::Backdelete)
                 }
@@ -343,7 +382,7 @@ impl TextInputData {
             Key::Character(s)
                 if !mods.contains(Modifiers::CONTROL) && !mods.contains(Modifiers::SUPER) =>
             {
-                driver.edit(Edit::Insert(&s));
+                driver.edit(insert(&s, reveals));
                 return Some(GeneratedTextInputEvent::Input);
             }
             _ => {}
@@ -359,6 +398,9 @@ impl TextInputData {
         command: &str,
     ) -> Option<GeneratedTextInputEvent> {
         let is_multiline = self.is_multiline;
+        let is_password = self.is_password;
+        let word_left = self.motion(Motion::WordLeft);
+        let word_right = self.motion(Motion::WordRight);
         let mut driver = TextInputDriver {
             editor: &mut self.editor,
             cx,
@@ -457,17 +499,17 @@ impl TextInputData {
             }
             // Deletes content from the insertion point to the end of the current paragraph.
             "deleteWordBackward:" => {
-                driver.edit(Edit::BackdeleteWord);
+                delete_word(&mut driver, is_password, false);
                 return Some(GeneratedTextInputEvent::Input);
             }
             // Deletes the word preceding the current insertion point.
             "deleteWordForward:" => {
-                driver.edit(Edit::DeleteWord);
+                delete_word(&mut driver, is_password, true);
                 return Some(GeneratedTextInputEvent::Input);
             }
             // Deletes the current selection, placing it in a temporary buffer, such as the Clipboard.
             "yank:" => {
-                if let Some(text) = driver.editor.selected_text() {
+                if let Some(text) = driver.editor.selected_text().filter(|_| !is_password) {
                     let _ = shell_provider.set_clipboard_text(text.to_owned());
                     driver.edit(Edit::DeleteSelection);
                     return Some(GeneratedTextInputEvent::Input);
@@ -633,35 +675,35 @@ impl TextInputData {
 
             // Moving the Selection by Word Boundaries
             "moveWordBackward:" => {
-                driver.edit(Edit::Move(Motion::WordLeft));
+                driver.edit(Edit::Move(word_left));
                 return Some(GeneratedTextInputEvent::Select);
             }
             "moveWordBackwardAndModifySelection:" => {
-                driver.edit(Edit::Extend(Motion::WordLeft));
+                driver.edit(Edit::Extend(word_left));
                 return Some(GeneratedTextInputEvent::Select);
             }
             "moveWordForward:" => {
-                driver.edit(Edit::Move(Motion::WordRight));
+                driver.edit(Edit::Move(word_right));
                 return Some(GeneratedTextInputEvent::Select);
             }
             "moveWordForwardAndModifySelection:" => {
-                driver.edit(Edit::Extend(Motion::WordRight));
+                driver.edit(Edit::Extend(word_right));
                 return Some(GeneratedTextInputEvent::Select);
             }
             "moveWordLeft:" => {
-                driver.edit(Edit::Move(Motion::WordLeft));
+                driver.edit(Edit::Move(word_left));
                 return Some(GeneratedTextInputEvent::Select);
             }
             "moveWordLeftAndModifySelection:" => {
-                driver.edit(Edit::Extend(Motion::WordLeft));
+                driver.edit(Edit::Extend(word_left));
                 return Some(GeneratedTextInputEvent::Select);
             }
             "moveWordRight:" => {
-                driver.edit(Edit::Move(Motion::WordRight));
+                driver.edit(Edit::Move(word_right));
                 return Some(GeneratedTextInputEvent::Select);
             }
             "moveWordRightAndModifySelection:" => {
-                driver.edit(Edit::Extend(Motion::WordRight));
+                driver.edit(Edit::Extend(word_right));
                 return Some(GeneratedTextInputEvent::Select);
             }
 
@@ -742,11 +784,15 @@ impl TextInputData {
         None
     }
 
+    /// Applies an input method's event. Where `reveals`, a password field shows a committed
+    /// character in the clear.
     pub(crate) fn apply_ime_event(
         &mut self,
         cx: &mut TextContext,
         event: BlitzImeEvent,
+        reveals: bool,
     ) -> Option<GeneratedTextInputEvent> {
+        let reveals = reveals && self.is_password;
         let mut driver = TextInputDriver {
             editor: &mut self.editor,
             cx,
@@ -762,7 +808,7 @@ impl TextInputData {
                 Some(GeneratedTextInputEvent::PreEditChange)
             }
             BlitzImeEvent::Commit(text) => {
-                driver.edit(Edit::Insert(&text));
+                driver.edit(insert(&text, reveals));
                 Some(GeneratedTextInputEvent::Input)
             }
             BlitzImeEvent::Preedit(text, cursor) => {
@@ -784,6 +830,46 @@ impl TextInputData {
             }
         }
     }
+}
+
+/// Returns the edit that inserts `text`, which a password field that `reveals` what is typed
+/// shows in the clear where it is one grapheme.
+fn insert(text: &str, reveals: bool) -> Edit<'_> {
+    if reveals && is_one_grapheme(text) {
+        Edit::InsertRevealed(text)
+    } else {
+        Edit::Insert(text)
+    }
+}
+
+/// Returns whether `text` is one grapheme.
+fn is_one_grapheme(text: &str) -> bool {
+    // The segmenter gives the text's start, then the end of each grapheme.
+    icu_segmenter::GraphemeClusterSegmenter::new()
+        .segment_str(text)
+        .count()
+        == 2
+}
+
+/// Deletes the selection or the word before or after the caret; in a password field, which shows
+/// no words, the text before or after it, as in Chrome.
+fn delete_word(driver: &mut TextInputDriver<'_>, is_password: bool, forward: bool) {
+    if !is_password {
+        driver.edit(if forward {
+            Edit::DeleteWord
+        } else {
+            Edit::BackdeleteWord
+        });
+        return;
+    }
+    if driver.editor.is_selection_collapsed() {
+        driver.edit(Edit::Extend(if forward {
+            Motion::TextEnd
+        } else {
+            Motion::TextStart
+        }));
+    }
+    driver.edit(Edit::DeleteSelection);
 }
 
 /// Applies an [`Edit::Undo`] or an [`Edit::Redo`], which changes the text only where the text

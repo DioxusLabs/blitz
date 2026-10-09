@@ -586,6 +586,10 @@ pub trait EditableText {
     /// Whether the selection is a caret.
     fn is_selection_collapsed(&self) -> bool;
 
+    /// The text a password field shows in the clear, in bytes of
+    /// [`raw_text`](Self::raw_text), where it shows any.
+    fn revealed_range(&self) -> Option<Range<usize>>;
+
     /// The size and scale of the laid-out text, or `None` where it is not laid out.
     fn metrics(&self) -> Option<EditorMetrics>;
 
@@ -651,6 +655,11 @@ pub(crate) trait MarkerEngine: Sized {
 pub enum Edit<'a> {
     /// Replaces the selection with the text.
     Insert(&'a str),
+    /// Replaces the selection with the text, which a password field shows in the clear until the
+    /// next edit, where the backend masks password fields.
+    InsertRevealed(&'a str),
+    /// Masks the text a password field shows in the clear.
+    Conceal,
     /// Deletes the selection, or the character after the caret.
     Delete,
     /// Deletes the selection, or the character before the caret.

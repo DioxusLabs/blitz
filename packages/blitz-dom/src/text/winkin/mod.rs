@@ -65,6 +65,17 @@ pub const MARKER_KEY: u64 = 1 << 61;
 /// `<textarea>`, which has no node of its own: the control's node with this bit set.
 pub const COMPOSE_KEY: u64 = 1 << 60;
 
+/// The bits that number the pieces an `<input>` or a `<textarea>` lays its text out in.
+///
+/// The editor lays the text out in up to three pieces: before, inside and after the text an input
+/// method is composing or a password field shows in the clear. Each piece is a text node keyed
+/// by the control's node with its number in these bits, so that offsets in each map back to the
+/// text. The box of a password's character shown in the clear is keyed by both bits.
+pub const PIECE_KEYS: u64 = 3 << 58;
+
+/// The number [`PIECE_KEYS`] gives the first piece of an editor's text.
+const PIECE_SHIFT: u32 = 58;
+
 /// What a document keeps for its text under winkin: the fonts winkin chooses from, and the
 /// context it builds and breaks in.
 ///
@@ -225,8 +236,9 @@ impl TextLayout {
             }
             return self.styles.marker.clone();
         }
-        // The composing text's box is set in the control's style.
-        let node = doc.get_node(NodeId::from_u64(key & !COMPOSE_KEY))?;
+        // The composing text's box, and each piece of an editor's text, are set in the control's
+        // style.
+        let node = doc.get_node(NodeId::from_u64(key & !(COMPOSE_KEY | PIECE_KEYS)))?;
         let styled = match &node.data {
             NodeData::Text(_) => doc.get_node(node.parent?)?,
             _ => node,
@@ -1179,7 +1191,7 @@ pub(crate) fn relative_shift_of(
     use ::style::computed_values::position::T as Position;
     use ::style::values::computed::{CSSPixelLength, Inset};
     let mut shift = kurbo::Vec2::ZERO;
-    if key & (FIRST_LETTER_KEY | MARKER_KEY | COMPOSE_KEY) != 0 {
+    if key & (FIRST_LETTER_KEY | MARKER_KEY | COMPOSE_KEY | PIECE_KEYS) != 0 {
         return shift;
     }
     let resolve = |inset: &Inset, basis: f64| match inset {
@@ -2010,9 +2022,14 @@ impl<E: LineExclusions> Exclusions for ExclusionsOf<'_, E> {
 
 /// Builds `content`, the value of the `<input>` or `<textarea>` `node`, into `text`: set in
 /// `computed`, its computed style, with white space preserved (as `break-spaces` where the style
-/// asks for it) and no text transform, so that offsets in the layout's text are offsets in
-/// `content`. The lines wrap at `width` device pixels as the style wraps them, or not at all
-/// where it is `None`.
+/// asks for it) and no text transform. The lines wrap at `width` device pixels as the style wraps
+/// them, or not at all where it is `None`.
+///
+/// The text is laid out in up to three pieces, keyed as [`PIECE_KEYS`] says: before, inside and
+/// after `composition`, the text an input method is composing, which is underlined, or else
+/// `revealed`, the text a password field shows in the clear. Where the style masks the text
+/// (`-webkit-text-security`), the layout maps each piece's offsets back to `content`, and this
+/// returns true. Otherwise offsets in the layout's text are offsets in `content`.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn build_plain_text(
     cx: &mut TextContext,
@@ -2021,9 +2038,10 @@ pub(crate) fn build_plain_text(
     computed: &ComputedValues,
     content: &str,
     composition: Option<std::ops::Range<usize>>,
+    revealed: Option<std::ops::Range<usize>>,
     scale: f32,
     width: Option<f32>,
-) {
+) -> bool {
     let feature_values = style::FeatureValues::default();
     let lists = style::FontLists::of(computed, &feature_values);
     let own = style::computed_style(&lists, computed, scale, &style::Basis::new(0.0), None);
@@ -2044,6 +2062,7 @@ pub(crate) fn build_plain_text(
         },
         ..own
     };
+    let masked = own.text.security != winkin::style::TextSecurity::None;
     let block = style::block_style(&own, None, computed, computed, scale);
     let key = NodeKey(node.as_u64());
     text.built = false;
@@ -2056,24 +2075,46 @@ pub(crate) fn build_plain_text(
     text.styles.first_letter = None;
     text.styles.marker = None;
     text.styles.marks.clear();
-    let mut builder = text.layout.builder(key, &block, BuildOptions::default());
-    match composition {
-        // The composing text is in a box of its own, which the renderer underlines.
-        Some(range) => {
-            let composing = ComputedStyle {
+    let mut options = BuildOptions::default();
+    options.map_source = masked;
+    let mut builder = text.layout.builder(key, &block, options);
+    let piece = |number: u64| NodeKey(node.as_u64() | number << PIECE_SHIFT);
+    // The piece in the middle, in a box of its own: the composing text, which the renderer
+    // underlines, or the text shown in the clear.
+    let middle = match (composition, revealed.filter(|_| masked)) {
+        (Some(range), _) => Some((
+            range,
+            NodeKey(COMPOSE_KEY | node.as_u64()),
+            ComputedStyle {
                 decorates: true,
                 ..unboxed(own)
-            };
-            for (part, boxed) in [
-                (&content[..range.start], false),
-                (&content[range.clone()], true),
-                (&content[range.end..], false),
+            },
+        )),
+        (None, Some(range)) => Some((
+            range,
+            NodeKey(PIECE_KEYS | node.as_u64()),
+            ComputedStyle {
+                text: winkin::style::TextGroup {
+                    security: winkin::style::TextSecurity::None,
+                    ..own.text
+                },
+                ..unboxed(own)
+            },
+        )),
+        (None, None) => None,
+    };
+    match middle {
+        Some((range, box_key, box_style)) => {
+            for (number, part, boxed) in [
+                (0, &content[..range.start], false),
+                (1, &content[range.clone()], true),
+                (2, &content[range.end..], false),
             ] {
                 if boxed {
-                    builder.open_box(NodeKey(COMPOSE_KEY | node.as_u64()), &composing, None);
+                    builder.open_box(box_key, &box_style, None);
                 }
                 if !part.is_empty() {
-                    builder.text(key, part);
+                    builder.text(piece(number), part);
                 }
                 if boxed {
                     builder.close_box();
@@ -2086,6 +2127,7 @@ pub(crate) fn build_plain_text(
     text.built = true;
     let area = Area::new(width.unwrap_or(f32::MAX / 4.0));
     text.lay_out(&mut cx.cx, area, &mut winkin::NoExclusions);
+    masked
 }
 
 impl MarkerEngine for TextLayout {

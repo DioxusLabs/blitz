@@ -72,6 +72,7 @@ pub(crate) fn handle_key_or_input_event<F: FnMut(DomEvent)>(
             return;
         }
 
+        let reveals = doc.reveal_typed_password.is_some();
         let node = &mut doc.nodes[node_id];
         let Some(element_data) = node.element_data_mut() else {
             return;
@@ -80,12 +81,18 @@ pub(crate) fn handle_key_or_input_event<F: FnMut(DomEvent)>(
         if let Some(input_data) = element_data.text_input_data_mut() {
             let generated_event = match event {
                 KeyboardOrTextInputEvent::KeyPress(blitz_key_event) => input_data
-                    .apply_keypress_event(&mut doc.text, &*doc.shell_provider, blitz_key_event),
+                    .apply_keypress_event(
+                        &mut doc.text,
+                        &*doc.shell_provider,
+                        blitz_key_event,
+                        reveals,
+                    ),
                 KeyboardOrTextInputEvent::AppleStandardKeyBinding(command) => input_data
                     .apply_apple_standard_keybinding(&mut doc.text, &*doc.shell_provider, &command),
             };
 
             if let Some(generated_event) = generated_event {
+                doc.note_password_reveal(node_id, web_time::Instant::now());
                 doc.apply_generated_text_input_event(node_id, generated_event, dispatch_event);
             }
         }

@@ -839,6 +839,10 @@ fn collect_complex_layout_children(
 fn create_text_editor(doc: &mut BaseDocument, input_element_id: NodeId, is_multiline: bool) {
     let node = &mut doc.nodes[input_element_id];
     let style = node.primary_styles().map(|s| (*s).clone());
+    let is_password = !is_multiline
+        && node
+            .attr(local_name!("type"))
+            .is_some_and(|kind| kind.eq_ignore_ascii_case("password"));
 
     let initial_text = if is_multiline {
         node.text_content()
@@ -855,6 +859,7 @@ fn create_text_editor(doc: &mut BaseDocument, input_element_id: NodeId, is_multi
     let SpecialElementData::TextInput(text_input_data) = &mut element.special_data else {
         unreachable!();
     };
+    text_input_data.is_password = is_password;
 
     text_input_data.editor.set_style(
         input_element_id,

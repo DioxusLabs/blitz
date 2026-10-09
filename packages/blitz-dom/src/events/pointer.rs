@@ -541,6 +541,7 @@ pub(crate) fn handle_pointerdown(
                     2 => Edit::SelectWordAtPoint(tx, ty),
                     _ => Edit::SelectHardLineAtPoint(tx, ty),
                 };
+                let edit = text_input_data.edit(edit);
                 text_input_data.editor.edit(&mut doc.text, edit);
             }
 
