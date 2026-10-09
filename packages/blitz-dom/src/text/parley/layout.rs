@@ -9,7 +9,9 @@ use style::values::{computed::CSSPixelLength, generics::text::GenericTextIndent}
 use parley::YieldData;
 
 use super::{TextLayout, style as stylo_to_parley};
-use crate::text::{BoxMeasure, ContentWidths, LineFloats, LinesExtent, Placement};
+#[cfg(feature = "floats")]
+use crate::text::FloatRequest;
+use crate::text::{BoxMeasure, ContentWidths, LineExclusions, LinesExtent, Placement};
 
 impl TextLayout {
     /// Whether the content holds no text and no inline boxes.
@@ -20,6 +22,16 @@ impl TextLayout {
     /// Gives the inline boxes their sizes, and sets the first line's indent.
     pub(super) fn prepare_lines(&mut self, sizes: &[BoxMeasure], style: Option<&ComputedValues>) {
         let scale = self.layout.scale();
+        self.floats.clear();
+        self.floats.extend(sizes.iter().filter_map(|measured| {
+            let margin = measured.margin;
+            Some((
+                measured.node.as_u64(),
+                measured.float?,
+                (margin.left + margin.right + measured.size.width) * scale,
+                (margin.top + margin.bottom + measured.size.height) * scale,
+            ))
+        }));
         // The boxes are measured in the order the content holds them.
         let mut next = 0;
         for ibox in self.layout.inline_boxes_mut() {
@@ -101,56 +113,35 @@ impl TextLayout {
         &mut self,
         width: f32,
         style: Option<&ComputedValues>,
-        floats: &mut impl LineFloats,
+        exclusions: &mut impl LineExclusions,
     ) {
         // Percentage indents are of the content box the lines are broken in.
         self.set_indent(style, width / self.layout.scale());
 
         #[cfg(not(feature = "floats"))]
         {
-            let _ = floats;
+            let _ = exclusions;
             self.layout.break_all_lines(Some(width));
         }
 
         #[cfg(feature = "floats")]
         {
             let mut breaker = self.layout.break_lines();
-            let initial_slot = floats.slot(0.0);
-            let mut has_active_floats = initial_slot.narrowed;
+            let (left, right) = exclusions.band(0.0, 0.0);
             let state = breaker.state_mut();
             state.set_layout_max_advance(width);
-            state.set_line_max_advance(initial_slot.width);
-            state.set_line_x(initial_slot.x);
-            state.set_line_y(initial_slot.y);
-
-            // TODO: revert state and retry layout if a line doesn't fit
-            //
-            // Save initial state. Saved state is used to revert the layout to a previous state if needed
-            // (e.g. to revert a line that doesn't fit in the space it was laid out into)
-            //
-            // let mut saved_state = breaker.state().clone();
+            state.set_line_max_advance(right - left);
+            state.set_line_x(left);
+            state.set_line_y(0.0);
 
             while let Some(yield_data) = breaker.break_next() {
                 match yield_data {
                     YieldData::LineBreak(_line_break_data) => {
                         let state = breaker.state_mut();
-
-                        if has_active_floats {
-                            // TODO: revert state and retry layout if a line doesn't fit
-                            // saved_state = state.clone();
-
-                            let next_slot = floats.slot(state.line_y());
-                            has_active_floats = next_slot.narrowed;
-
-                            state.set_line_max_advance(next_slot.width);
-                            state.set_line_x(next_slot.x);
-                            state.set_line_y(next_slot.y);
-                        } else {
-                            state.set_line_x(0.0);
-                            state.set_line_max_advance(width);
-                        }
-
-                        continue;
+                        let top = state.line_y() as f32;
+                        let (left, right) = exclusions.band(top, top);
+                        state.set_line_max_advance(right - left);
+                        state.set_line_x(left);
                     }
                     YieldData::MaxHeightExceeded(_data) => {
                         // TODO
@@ -159,16 +150,22 @@ impl TextLayout {
                     YieldData::InlineBoxBreak(box_break_data) => {
                         // Only floats break the lines at their boxes.
                         let state = breaker.state_mut();
-                        floats.place_float(
-                            NodeId::from_u64(box_break_data.inline_box_id),
-                            state.line_y(),
-                        );
-
-                        let next_slot = floats.slot(state.line_y());
-                        has_active_floats = next_slot.narrowed;
-                        state.set_line_max_advance(next_slot.width);
-                        state.set_line_x(next_slot.x);
-                        state.set_line_y(next_slot.y);
+                        let top = state.line_y() as f32;
+                        let key = box_break_data.inline_box_id;
+                        if let Some(&(_, side, inline_size, block_size)) =
+                            self.floats.iter().find(|(id, ..)| *id == key)
+                        {
+                            exclusions.place(FloatRequest {
+                                key,
+                                side,
+                                inline_size,
+                                block_size,
+                                block_start: top,
+                            });
+                        }
+                        let (left, right) = exclusions.band(top, top);
+                        state.set_line_max_advance(right - left);
+                        state.set_line_x(left);
 
                         // Floats are out-of-flow and must not contribute to the line's height.
                         state.append_inline_box_to_line(
