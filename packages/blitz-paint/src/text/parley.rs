@@ -3,9 +3,7 @@
 use anyrender::PaintScene;
 use blitz_dom::node::Marker;
 use blitz_dom::text::InlineText as _;
-use blitz_dom::text::parley::parley::{
-    Affinity, Cursor, Layout, Line, PositionedLayoutItem, Selection,
-};
+use blitz_dom::text::parley::parley::{Line, PositionedLayoutItem};
 use blitz_dom::text::parley::{MarkerLayout, TextBrush, TextEditor, TextLayout};
 use blitz_dom::{BaseDocument, NodeId};
 use kurbo::{Affine, Point, Rect};
@@ -13,7 +11,7 @@ use peniko::Fill;
 
 use super::{
     DecorationRunGeometry, DrawTextContext, LineDecoration, flush_line_decorations,
-    resolve_decoration_entry,
+    paint_selection, resolve_decoration_entry,
 };
 use crate::color::{Color, ToColorColor as _};
 use crate::{FONT_EMBOLDEN_ENABLED, SELECTION_COLOR};
@@ -40,7 +38,7 @@ pub(crate) fn paint_inline_layout(
 
     // Render text selection highlight (if any) using cached selection ranges
     if let Some((sel_start, sel_end)) = selection {
-        draw_text_selection(scene, &text_layout.layout, transform, sel_start, sel_end);
+        paint_selection(scene, text_layout, transform, sel_start, sel_end);
     }
 
     // Render text
@@ -95,9 +93,12 @@ pub(crate) fn paint_text_input(
     }
 
     // Render text
+    let Some(layout) = editor.try_layout() else {
+        return;
+    };
     stroke_text(
         scene,
-        editor.try_layout().unwrap().lines(),
+        layout.lines(),
         doc,
         transform,
         scale,
@@ -138,15 +139,12 @@ pub(crate) fn paint_marker(
         + item_layout.border.left);
 
     // Align the marker with the baseline of the first line of text in the list item
-    let y_offset = if let Some((text_layout, first_text_line)) = &text_layout
-        .and_then(|text_layout| Some((text_layout, text_layout.layout.lines().next()?)))
-    {
-        (first_text_line.metrics().baseline - layout.lines().next().unwrap().metrics().baseline)
-            / layout.scale()
-            + text_layout.block_offset()
-    } else {
-        0.0
-    };
+    let y_offset = text_layout
+        .and_then(|text_layout| text_layout.first_baseline())
+        .zip(layout.lines().next())
+        .map_or(0.0, |(baseline, marker_line)| {
+            baseline - marker_line.metrics().baseline / layout.scale()
+        });
 
     let pos = Point {
         x: pos.x + x_offset as f64,
@@ -388,23 +386,4 @@ fn stroke_text<'a>(
             line.metrics().baseline,
         );
     }
-}
-
-/// Draw selection highlight rectangles for the given byte range in a layout.
-/// Uses Parley's Selection type for accurate geometry calculation.
-fn draw_text_selection(
-    scene: &mut impl PaintScene,
-    layout: &Layout<TextBrush>,
-    transform: Affine,
-    selection_start: usize,
-    selection_end: usize,
-) {
-    let anchor = Cursor::from_byte_index(layout, selection_start, Affinity::Downstream);
-    let focus = Cursor::from_byte_index(layout, selection_end, Affinity::Downstream);
-    let selection = Selection::new(anchor, focus);
-
-    selection.geometry_with(layout, |rect, _line_idx| {
-        let rect = kurbo::Rect::new(rect.x0, rect.y0, rect.x1, rect.y1);
-        scene.fill(Fill::NonZero, transform, SELECTION_COLOR, None, &rect);
-    });
 }
