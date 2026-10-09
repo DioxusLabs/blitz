@@ -738,15 +738,12 @@ impl LayoutPassState<'_> {
                         // coordinates and collect candidates bubbled from the float's subtree
                         if !output.oof_candidates.is_empty() {
                             output.oof_candidates.translate(location);
-                            let span_claims = self.inline_span_claims(root_id, node_id);
-                            for candidate in output.oof_candidates.iter() {
-                                if span_claims.for_position(candidate.position) {
-                                    span_oof_candidates[span_claims.fixed as usize]
-                                        .push(*candidate);
-                                } else {
-                                    oof_candidates.push(*candidate);
-                                }
-                            }
+                            collect_oof_candidates(
+                                output.oof_candidates.as_slice(),
+                                self.inline_span_claims(root_id, node_id),
+                                &mut span_oof_candidates,
+                                &mut oof_candidates,
+                            );
                         }
 
                         // dbg!(&layout.size);
@@ -979,14 +976,7 @@ impl LayoutPassState<'_> {
                             )
                         };
 
-                        let span_claims =
-                            self.inline_span_claims(node_id, NodeId::from_u64(ibox.id));
-                        let candidates = if span_claims.for_position(position) {
-                            &mut span_oof_candidates[span_claims.fixed as usize]
-                        } else {
-                            &mut oof_candidates
-                        };
-                        candidates.push(OofCandidate {
+                        let candidate = OofCandidate {
                             node: taffy::NodeId::from(ibox.id),
                             order,
                             position,
@@ -1010,7 +1000,13 @@ impl LayoutPassState<'_> {
                                     false,
                                 ),
                             },
-                        });
+                        };
+                        collect_oof_candidates(
+                            &[candidate],
+                            self.inline_span_claims(node_id, NodeId::from_u64(ibox.id)),
+                            &mut span_oof_candidates,
+                            &mut oof_candidates,
+                        );
                     } else if is_floated {
                         let layout = self.nodes[NodeId::from_u64(ibox.id)].unrounded_layout_mut();
                         layout.padding = padding; //.map(|p| p / scale);
@@ -1057,16 +1053,12 @@ impl LayoutPassState<'_> {
                         if !output.oof_candidates.is_empty() {
                             let location = layout.location;
                             output.oof_candidates.translate(location);
-                            let span_claims =
-                                self.inline_span_claims(node_id, NodeId::from_u64(ibox.id));
-                            for candidate in output.oof_candidates.iter() {
-                                if span_claims.for_position(candidate.position) {
-                                    span_oof_candidates[span_claims.fixed as usize]
-                                        .push(*candidate);
-                                } else {
-                                    oof_candidates.push(*candidate);
-                                }
-                            }
+                            collect_oof_candidates(
+                                output.oof_candidates.as_slice(),
+                                self.inline_span_claims(node_id, NodeId::from_u64(ibox.id)),
+                                &mut span_oof_candidates,
+                                &mut oof_candidates,
+                            );
                         }
                     }
                 }
@@ -1206,6 +1198,23 @@ impl LayoutPassState<'_> {
             current = ancestor.parent;
         }
         ContainingBlockClaims::NONE
+    }
+}
+
+/// Add `candidates` to the list for their containing block: `span_candidates` if it is an
+/// inline span (as given by `span_claims`), `root_candidates` otherwise.
+fn collect_oof_candidates(
+    candidates: &[OofCandidate],
+    span_claims: ContainingBlockClaims,
+    span_candidates: &mut [OofCandidates; 2],
+    root_candidates: &mut OofCandidates,
+) {
+    for candidate in candidates {
+        if span_claims.for_position(candidate.position) {
+            span_candidates[span_claims.fixed as usize].push(*candidate);
+        } else {
+            root_candidates.push(*candidate);
+        }
     }
 }
 
