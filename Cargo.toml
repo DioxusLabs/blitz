@@ -11,6 +11,7 @@ members = [
     "packages/blitz-shell",
     "packages/blitz",
     "packages/stylo_taffy",
+    "packages/stylo_web_animations",
     "packages/dioxus-native",
     "packages/dioxus-native-dom",
     "packages/blitz-test-harness",
