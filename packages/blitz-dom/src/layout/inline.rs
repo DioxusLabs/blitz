@@ -1096,6 +1096,7 @@ impl LayoutPassState<'_> {
                 && measured_size.height == 0.0,
             oof_candidates,
             oof_positioning_area: Some(OofPositioningArea {
+                scrollable_overflow_reversed: Point { x: false, y: false },
                 size: final_size - oof_position_inset.sum_axes(),
                 offset: Point {
                     x: oof_position_inset.left,
