@@ -457,6 +457,8 @@ impl ElementData {
                 });
         }
 
+        data.flush_open_state();
+
         data
     }
 
@@ -502,6 +504,14 @@ impl ElementData {
         if self.is_link() {
             self.element_state.insert(ElementState::UNVISITED);
         }
+    }
+
+    pub fn flush_open_state(&mut self) {
+        let is_open = matches!(
+            self.name.local,
+            local_name!("details") | local_name!("dialog")
+        ) && self.has_attr(local_name!("open"));
+        self.element_state.set(ElementState::OPEN, is_open);
     }
 
     pub fn image_data(&self) -> Option<&ImageData> {

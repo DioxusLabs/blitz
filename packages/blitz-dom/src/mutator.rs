@@ -340,6 +340,10 @@ impl DocumentMutator<'_> {
             element.flush_link_state();
         }
 
+        if name.local == local_name!("open") {
+            element.flush_open_state();
+        }
+
         let tag = &element.name.local;
         let attr = &name.local;
 
@@ -463,6 +467,10 @@ impl DocumentMutator<'_> {
 
         if name.local == local_name!("href") {
             element.flush_link_state();
+        }
+
+        if name.local == local_name!("open") {
+            element.flush_open_state();
         }
 
         // Update text input value
