@@ -461,6 +461,8 @@ pub fn content_alignment(
         || (is_block_container && !primary.flags().contains(stylo::AlignFlags::UNSAFE));
     if safe {
         align.safety = taffy::AlignmentSafety::Safe;
+    } else if primary.flags().contains(stylo::AlignFlags::UNSAFE) {
+        align.safety = taffy::AlignmentSafety::Unsafe;
     }
     align
 }
@@ -1072,5 +1074,42 @@ pub fn to_taffy_style(style: &stylo::ComputedValues) -> taffy::Style<Atom> {
             start: self::grid_line(&pos.grid_column_start),
             end: self::grid_line(&pos.grid_column_end),
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{content_alignment, stylo};
+    use taffy::{AlignContent, AlignmentSafety};
+
+    #[test]
+    fn content_alignment_preserves_explicit_safety() {
+        for (display, default_safety) in [
+            (stylo::Display::Block, AlignmentSafety::Safe),
+            (stylo::Display::InlineBlock, AlignmentSafety::Safe),
+            (stylo::Display::TableCell, AlignmentSafety::Safe),
+            (stylo::Display::Flex, AlignmentSafety::Default),
+            (stylo::Display::Grid, AlignmentSafety::Default),
+        ] {
+            for (position, alignment) in [
+                (stylo::AlignFlags::END, AlignContent::END),
+                (stylo::AlignFlags::FLEX_END, AlignContent::FLEX_END),
+                (stylo::AlignFlags::CENTER, AlignContent::CENTER),
+            ] {
+                for (modifier, safety) in [
+                    (stylo::AlignFlags::empty(), default_safety),
+                    (stylo::AlignFlags::SAFE, AlignmentSafety::Safe),
+                    (stylo::AlignFlags::UNSAFE, AlignmentSafety::Unsafe),
+                ] {
+                    assert_eq!(
+                        content_alignment(
+                            stylo::ContentDistribution::new(position | modifier),
+                            display
+                        ),
+                        alignment.with_safety(safety)
+                    );
+                }
+            }
+        }
     }
 }
