@@ -1,0 +1,140 @@
+name: Compare WPT with Taffy
+
+on:
+  workflow_call:
+    inputs:
+      run-info:
+        description: Resolved Taffy, Blitz and WPT commits for the comparison
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  wpt:
+    name: WPT (${{ matrix.name }})
+    runs-on: warp-ubuntu-latest-arm64-16x
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: base
+            blitz: ${{ fromJSON(inputs.run-info).blitz_base }}
+            taffy: ${{ fromJSON(inputs.run-info).taffy_base }}
+          - name: candidate
+            blitz: ${{ fromJSON(inputs.run-info).blitz_head }}
+            taffy: ${{ fromJSON(inputs.run-info).taffy_head }}
+    env:
+      WPT_DIR: ${{ github.workspace }}/wpt-tests
+      CARGO_REGISTRIES_CRATES_IO_PROTOCOL: sparse
+    steps:
+      - name: Checkout Blitz
+        uses: actions/checkout@v5
+        with:
+          repository: DioxusLabs/blitz
+          ref: ${{ matrix.blitz }}
+          path: blitz
+          persist-credentials: false
+      - name: Checkout Taffy
+        uses: actions/checkout@v5
+        with:
+          repository: DioxusLabs/taffy
+          ref: ${{ matrix.taffy }}
+          path: taffy
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: blitz-wpt-linux
+          workspaces: blitz
+          cache-all-crates: "true"
+          cache-workspace-crates: "true"
+          cache-provider: warpbuild
+      - name: Install Fontconfig and fonts
+        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev fonts-tlwg-loma-otf
+      - name: Clone WPT tests
+        env:
+          WPT_REVISION: ${{ fromJSON(inputs.run-info).wpt_revision }}
+        run: git clone --depth 1 --revision "$WPT_REVISION" https://github.com/web-platform-tests/wpt "$WPT_DIR"
+      - name: Run WPT with the Taffy checkout
+        working-directory: blitz
+        run: cargo --config "patch.\"https://github.com/DioxusLabs/taffy\".taffy.path=\"$GITHUB_WORKSPACE/taffy\"" run -rp wpt css svg
+      - name: Compress report
+        run: zstd -19 -o wptreport.json.zst blitz/wpt/output/wptreport.json
+      - uses: actions/upload-artifact@v7
+        with:
+          name: wpt-report-${{ matrix.name }}
+          path: wptreport.json.zst
+
+  compare:
+    name: Compare WPT results
+    needs: wpt
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout comparison tools
+        uses: actions/checkout@v5
+        with:
+          repository: DioxusLabs/blitz
+          ref: ${{ fromJSON(inputs.run-info).blitz_base }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v7
+        with:
+          name: wpt-report-base
+          path: reports/base
+      - uses: actions/download-artifact@v7
+        with:
+          name: wpt-report-candidate
+          path: reports/candidate
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install WPT comparison CLI
+        run: cargo install --locked wpt@0.0.14
+      - name: Diff WPT results
+        run: |
+          mkdir -p comparison
+          zstd -d reports/base/wptreport.json.zst -o reports/base/wptreport.json
+          zstd -d reports/candidate/wptreport.json.zst -o reports/candidate/wptreport.json
+          wpt diff reports/base/wptreport.json reports/candidate/wptreport.json | tee comparison/wptdiff.txt
+          wpt diff --format json reports/base/wptreport.json reports/candidate/wptreport.json > comparison/wptdiff.json
+          python3 .github/scripts/wpt_area_changes.py reports/base/wptreport.json reports/candidate/wptreport.json > comparison/wptareas.json
+      - name: Render comparison summary
+        env:
+          RUN_INFO: ${{ inputs.run-info }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          python3 .github/scripts/wpt_diff_to_pr.py --dry-run --areas comparison/wptareas.json comparison/wptdiff.json > comparison/summary.md
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          info = json.loads(os.environ["RUN_INFO"])
+          Path("comparison/run-info.json").write_text(json.dumps(info, indent=2) + "\n")
+          def commit(repo, sha):
+              return f"[{sha[:12]}](https://github.com/{repo}/commit/{sha})"
+          provenance = [
+              "### Revisions",
+              "",
+              "| Dependency | Base | Candidate |",
+              "| --- | --- | --- |",
+              f"| Taffy | {commit('DioxusLabs/taffy', info['taffy_base'])} | {commit('DioxusLabs/taffy', info['taffy_head'])} |",
+              f"| Blitz | {commit('DioxusLabs/blitz', info['blitz_base'])} | {commit('DioxusLabs/blitz', info['blitz_head'])} |",
+              "",
+              f"WPT: {commit('web-platform-tests/wpt', info['wpt_revision'])} (`css` + `svg`).",
+              "Base: Taffy PR merge-base. Both runs use the same WPT revision.",
+          ]
+          if info["blitz_base"] != info["blitz_head"]:
+              provenance += ["", "**Includes Blitz compatibility changes**, not only Taffy changes."]
+          summary_path = Path("comparison/summary.md")
+          summary = summary_path.read_text().replace("compared to `main`", "compared to the Taffy PR merge-base")
+          summary = summary.replace("<!-- wpt-results-end -->", "\n".join(provenance) + "\n<!-- wpt-results-end -->")
+          summary_path.write_text(summary)
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as output:
+              output.write(summary)
+          PY
+      - uses: actions/upload-artifact@v7
+        with:
+          name: wpt-diff
+          path: comparison/
