@@ -2,8 +2,8 @@
 //! for every text backend.
 
 use blitz_traits::node_id::NodeId;
-use style::values::specified::box_::BaselineSource;
-use style::values::specified::box_::{DisplayInside, DisplayOutside};
+use style::values::computed::Float as StyloFloat;
+use style::values::specified::box_::{BaselineSource, DisplayInside, DisplayOutside};
 use taffy::{
     AvailableSpace, AxisStaticPosition, BlockContainerStyle, BlockContext, CollapsibleMarginSet,
     CoreStyle as _, Direction, LayoutOutput, LayoutPartialTree as _, MaybeMath as _,
@@ -14,13 +14,15 @@ use taffy::{
 #[cfg(feature = "floats")]
 use taffy::{BlockItemStyle as _, Clear, Float};
 
-use super::floats::TaffyFloats;
+use super::floats::FloatRoom;
+#[cfg(feature = "floats")]
+use super::floats::Floated;
 use super::{Frame, f32_max, float_box_inputs, inline_box_inputs};
 use crate::layout::LayoutPassState;
 use crate::layout::replaced::is_replaced_element;
 use crate::layout::resolve_calc_value;
 use crate::node::TextLayout;
-use crate::text::{BoxMeasure, InlineLayoutEngine as _, InlineText as _, LastBaseline};
+use crate::text::{BoxMeasure, FloatSide, InlineLayoutEngine as _, InlineText as _, LastBaseline};
 
 impl LayoutPassState<'_> {
     /// Measures the inline formatting context's boxes, breaks its lines and places them and what
@@ -132,12 +134,10 @@ impl LayoutPassState<'_> {
 
         // Create sub-context to account for the inline layout's padding/border
         #[cfg(feature = "floats")]
-        let outer_block_ctx = block_ctx;
-        #[cfg(feature = "floats")]
         let mut block_ctx =
-            outer_block_ctx.sub_context(container_pb.top, [container_pb.left, container_pb.right]);
-        #[cfg(feature = "floats")]
-        let block_ctx = &mut block_ctx;
+            block_ctx.sub_context(container_pb.top, [container_pb.left, container_pb.right]);
+        #[cfg(not(feature = "floats"))]
+        let _ = block_ctx;
 
         if inputs.run_mode == taffy::RunMode::ComputeSize
             && inputs.axis == RequestedAxis::Horizontal
@@ -164,45 +164,44 @@ impl LayoutPassState<'_> {
         // These are laid out by the out-of-flow positioning pass (`compute_oof_layout`).
         let mut oof_candidates = OofCandidates::new();
 
-        {
+        // Each float's `clear`, which the floats it reaches below are placed under.
+        #[cfg(feature = "floats")]
+        let clears: Vec<(u64, Clear)> = sizes
+            .iter()
+            .filter(|measured| measured.float.is_some())
+            .map(|measured| {
+                let style = self.child_layout_style(&self.nodes[measured.node]);
+                (measured.node.as_u64(), style.clear())
+            })
+            .collect();
+        let floats = {
             let style = self.nodes[node_id].primary_styles().map(|s| (*s).clone());
-            let mut floats = TaffyFloats {
-                state: self,
-                block_ctx,
+            let mut room = FloatRoom {
+                #[cfg(feature = "floats")]
+                outer: Some(&block_ctx),
+                #[cfg(not(feature = "floats"))]
+                outer: core::marker::PhantomData,
+                width,
                 scale,
-                float_inputs: match pass {
-                    Measure::Layout => child_inputs,
-                    _ => taffy::LayoutInput {
-                        run_mode: RunMode::ComputeSize,
-                        ..child_inputs
-                    },
-                },
-                basis,
-                parent_size: child_inputs.parent_size,
-                container_pb,
-                oof_candidates: &mut oof_candidates,
+                #[cfg(feature = "floats")]
+                clears: &clears,
+                placed: Vec::new(),
             };
-            inline_layout.break_lines(width, style.as_deref(), &mut floats);
-        }
-
-        // Propagate the height consumed by floats placed within this container to the
-        // enclosing block context (so that the BFC root can contain them)
-        #[cfg(feature = "floats")]
-        let float_height_contribution = block_ctx.floated_content_height_contribution();
-        #[cfg(feature = "floats")]
-        outer_block_ctx.add_child_floated_content_height_contribution(
-            container_pb.top + float_height_contribution,
-        );
+            inline_layout.break_lines(width, style.as_deref(), &mut room);
+            room.placed
+        };
 
         let extent = inline_layout.extent();
         #[cfg_attr(not(feature = "floats"), allow(unused_mut))]
         let mut height = extent.height;
 
+        // A block formatting context's root holds its floats.
         #[cfg(feature = "floats")]
-        {
-            if is_bfc_root {
-                height = height.max(float_height_contribution * scale)
-            };
+        if is_bfc_root {
+            height = floats
+                .iter()
+                .map(|float| float.bottom)
+                .fold(height, f32::max);
         }
 
         // Note: `width` and `height` are content-box measurements of the inline content.
@@ -372,10 +371,7 @@ impl LayoutPassState<'_> {
                     },
                 });
             } else if is_floated {
-                let layout = self.nodes[placed.node].unrounded_layout_mut();
-                layout.padding = padding;
-                layout.border = border;
-                layout.margin = margin;
+                // Placed below, where the lines flowed around it.
             } else {
                 // Re-measure the box to get its border-box size (this hits the layout
                 // cache). The size cannot be recovered from the room the line reserves for it,
@@ -420,6 +416,43 @@ impl LayoutPassState<'_> {
                 }
             }
         }
+
+        // Each float goes where the lines flowed around it, and into the block formatting context
+        // for the blocks after this one.
+        #[cfg(feature = "floats")]
+        if inputs.run_mode == RunMode::PerformLayout {
+            for float in &floats {
+                let direction = match float.side {
+                    FloatSide::Left => taffy::FloatDirection::Left,
+                    FloatSide::Right => taffy::FloatDirection::Right,
+                };
+                let clear = clears
+                    .iter()
+                    .find(|(node, _)| *node == float.key)
+                    .map_or(Clear::None, |(_, clear)| *clear);
+                block_ctx.place_floated_box(
+                    Size {
+                        width: (float.right - float.left) / scale,
+                        height: (float.bottom - float.top) / scale,
+                    },
+                    float.top / scale,
+                    direction,
+                    clear,
+                    false,
+                );
+                self.place_float(
+                    NodeId::from_u64(float.key),
+                    float,
+                    child_inputs,
+                    basis,
+                    container_pb,
+                    scale,
+                    &mut oof_candidates,
+                );
+            }
+        }
+        #[cfg(not(feature = "floats"))]
+        let _ = floats;
 
         let line_baseline = |baseline: f32| (baseline / scale) + line_box_top;
         let first_baseline = extent.first_baseline.map(line_baseline);
@@ -468,6 +501,52 @@ impl LayoutPassState<'_> {
         }
     }
 
+    /// Sets where a float the lines flowed around goes, and hands on the absolutely positioned
+    /// boxes it holds.
+    #[cfg(feature = "floats")]
+    #[allow(clippy::too_many_arguments)]
+    fn place_float(
+        &mut self,
+        node: NodeId,
+        float: &Floated,
+        child_inputs: taffy::LayoutInput,
+        basis: f32,
+        container_pb: taffy::Rect<f32>,
+        scale: f32,
+        oof_candidates: &mut OofCandidates,
+    ) {
+        let (margin, padding, border) = {
+            let style = self.child_layout_style(&self.nodes[node]);
+            (
+                style
+                    .margin()
+                    .resolve_or_zero(child_inputs.parent_size, resolve_calc_value),
+                style
+                    .padding()
+                    .resolve_or_zero(child_inputs.parent_size, resolve_calc_value),
+                style
+                    .border()
+                    .resolve_or_zero(child_inputs.parent_size, resolve_calc_value),
+            )
+        };
+        let mut output = self.compute_child_layout(
+            crate::taffy_node_id(node),
+            float_box_inputs(child_inputs, basis, margin),
+        );
+        let layout = self.nodes[node].unrounded_layout_mut();
+        layout.size = output.size;
+        layout.location.x = (float.left / scale) + margin.left + container_pb.left;
+        layout.location.y = (float.top / scale) + margin.top + container_pb.top;
+        layout.padding = padding;
+        layout.border = border;
+        layout.margin = margin;
+        // The candidates the float holds, from its own corner to this block's.
+        if !output.oof_candidates.is_empty() {
+            output.oof_candidates.translate(layout.location);
+            oof_candidates.append(&mut output.oof_candidates);
+        }
+    }
+
     /// Hands the inline layout back to its node.
     pub(crate) fn put_inline_layout(&mut self, node_id: NodeId, inline_layout: Box<TextLayout>) {
         self.nodes[node_id]
@@ -502,6 +581,9 @@ impl LayoutPassState<'_> {
     ) -> Vec<BoxMeasure> {
         let children = self.nodes[node_id].layout_children.borrow().clone();
         let mut sizes = Vec::with_capacity(children.as_ref().map_or(0, |children| children.len()));
+        let rtl = self.nodes[node_id].primary_styles().is_some_and(|style| {
+            style.get_inherited_box().direction == style::computed_values::direction::T::Rtl
+        });
         for node in children.iter().flatten().copied() {
             let held = &self.nodes[node];
             let style = self.child_layout_style(held);
@@ -518,6 +600,14 @@ impl LayoutPassState<'_> {
                 continue;
             }
             if is_floated {
+                // `inline-start` and `inline-end` are the containing block's sides, as its
+                // direction has them.
+                let float_side = match (held.primary_styles().map(|s| s.clone_float()), rtl) {
+                    (Some(StyloFloat::Right), _)
+                    | (Some(StyloFloat::InlineStart), true)
+                    | (Some(StyloFloat::InlineEnd), false) => FloatSide::Right,
+                    _ => FloatSide::Left,
+                };
                 let pass_inputs = match pass {
                     Measure::Layout => child_inputs,
                     Measure::Sizes => taffy::LayoutInput {
@@ -540,6 +630,7 @@ impl LayoutPassState<'_> {
                     size: output.size,
                     margin,
                     baseline: None,
+                    float: Some(float_side),
                 });
                 continue;
             }
@@ -615,6 +706,7 @@ impl LayoutPassState<'_> {
                 size: output.size,
                 margin,
                 baseline,
+                float: None,
             });
         }
         sizes
@@ -714,13 +806,10 @@ impl LayoutPassState<'_> {
         let mut right_band: f32 = 0.0;
         let mut width: f32 = 0.0;
         for measured in sizes {
-            let (float, clear) = {
-                let style = self.child_layout_style(&self.nodes[measured.node]);
-                (style.float(), style.clear())
-            };
-            if !float.is_floated() {
+            let Some(side) = measured.float else {
                 continue;
-            }
+            };
+            let clear = self.child_layout_style(&self.nodes[measured.node]).clear();
             let box_width = measured.size.width + measured.margin.left + measured.margin.right;
             if available_width == AvailableSpace::MinContent {
                 width = width.max(box_width);
@@ -732,10 +821,9 @@ impl LayoutPassState<'_> {
             if matches!(clear, Clear::Right | Clear::Both) {
                 right_band = 0.0;
             }
-            match float {
-                Float::Left => left_band += box_width,
-                Float::Right => right_band += box_width,
-                Float::None => {}
+            match side {
+                FloatSide::Left => left_band += box_width,
+                FloatSide::Right => right_band += box_width,
             }
             width = width.max(left_band + right_band);
         }
