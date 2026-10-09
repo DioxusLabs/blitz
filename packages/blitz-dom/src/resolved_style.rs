@@ -23,7 +23,6 @@ use style::stylesheets::{CssRuleType, Origin, OriginSet, UrlExtraData};
 use style::stylist::RegisterCustomPropertyResult;
 use style::values::computed::length::CSSPixelLength;
 use style::values::computed::{GridTemplateAreas, GridTemplateComponent, LengthPercentage};
-use style::values::generics::length::GenericMargin;
 use style::values::generics::position::{Inset as GenericInset, PreferredRatio};
 use style::values::resolved;
 use style::values::specified::box_::{DisplayInside, DisplayOutside};
@@ -493,20 +492,14 @@ impl BaseDocument {
                 // Used value: the margin resolved by layout (percentages and
                 // `auto` margins resolved to lengths)
                 let layout = node.final_layout();
-                let margin_styles = styles.get_margin();
-                let (computed, used) = match property_name {
-                    "margin-top" => (&margin_styles.margin_top, layout.margin.top),
-                    "margin-right" => (&margin_styles.margin_right, layout.margin.right),
-                    "margin-bottom" => (&margin_styles.margin_bottom, layout.margin.bottom),
-                    "margin-left" => (&margin_styles.margin_left, layout.margin.left),
+                let margin = match property_name {
+                    "margin-top" => layout.margin.top,
+                    "margin-right" => layout.margin.right,
+                    "margin-bottom" => layout.margin.bottom,
+                    "margin-left" => layout.margin.left,
                     _ => unreachable!(),
                 };
-                // A length margin resolves to its computed value: the margin
-                // recorded by layout can include margins collapsed into it
-                let is_length = matches!(computed, GenericMargin::LengthPercentage(lp) if lp.to_length().is_some());
-                if !is_length {
-                    return format_used_px(used);
-                }
+                return format_used_px(margin);
             }
             "padding-top" | "padding-right" | "padding-bottom" | "padding-left"
                 if has_layout_box =>

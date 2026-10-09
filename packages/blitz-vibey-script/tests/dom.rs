@@ -797,6 +797,7 @@ fn computed_style_used_values() {
                     border: 2px solid; position: relative; top: 10%; left: 5%;
                     perspective-origin: 25% 75%;"></div>
                 <div id="none" style="display: none; padding: 10%;"></div>
+                <span id="inline-block" style="display: inline-block; margin: 11px 12px;">x</span>
             </div>
             <div id="out"></div>
             <script>
@@ -809,6 +810,7 @@ fn computed_style_used_values() {
                 ];
                 const values = names.map((name) => style.getPropertyValue(name));
                 values.push(getComputedStyle(document.getElementById("none")).paddingTop);
+                values.push(getComputedStyle(document.getElementById("inline-block")).margin);
                 document.getElementById("out").textContent = values.join("|");
             </script>
         </body></html>
@@ -817,6 +819,6 @@ fn computed_style_used_values() {
     assert_eq!(
         text_of_selector(&doc, "#out"),
         "20px|10px|10px|20px|20px 10px|20px|10px 38px|38px|100px|50px|10px|-10px|\
-         10px -10px -10px 10px|62px 47px|31px 70.5px|10%"
+         10px -10px -10px 10px|62px 47px|31px 70.5px|10%|11px 12px"
     );
 }
