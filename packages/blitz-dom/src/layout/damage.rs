@@ -411,7 +411,11 @@ impl BaseDocument {
                     node.insert_damage(ALL_DAMAGE);
                 }
             } else if let Some(input) = element.text_input_data_mut() {
-                input.editor.set_scale(text, scale);
+                input.editor.set_scale(scale);
+                // A textarea's text is laid out again once layout knows its width.
+                if !input.is_multiline {
+                    input.editor.refresh(text);
+                }
                 node.insert_damage(ONLY_RELAYOUT);
             }
         }

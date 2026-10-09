@@ -2552,13 +2552,14 @@ impl BaseDocument {
             let element_data = node.element_data()?;
             let inline_layout = element_data.inline_layout_data.as_ref()?;
 
-            let Some(selected) = inline_layout.selected_text(*start, *end) else {
+            let mut pieces = inline_layout.selected_text(*start, *end).peekable();
+            if pieces.peek().is_none() {
                 continue;
-            };
+            }
             if !result.is_empty() {
                 result.push(' ');
             }
-            result.push_str(&selected);
+            result.extend(pieces);
         }
 
         if result.is_empty() {

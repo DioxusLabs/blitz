@@ -590,6 +590,10 @@ impl LayoutPassState<'_> {
             // Onto the content box: the top left of what reaches `along` the
             // lines and `across` the block, in device pixels.
             let content = (final_size - content_box_inset.sum_axes()).map(|size| size * scale);
+            inline_layout.winkin.set_content_size(kurbo::Size::new(
+                f64::from(content.width),
+                f64::from(content.height),
+            ));
             let page = |[left, right, start, end]: [f32; 4]| match writing_mode {
                 WritingMode::VerticalRl | WritingMode::SidewaysRl => (content.width - end, left),
                 WritingMode::VerticalLr => (start, left),
@@ -847,6 +851,11 @@ impl LayoutPassState<'_> {
             taffy::compute_block_align_content_offset(align_content, free_space)
         };
         inline_layout.block_offset = block_offset;
+        let content = (final_size - content_box_inset.sum_axes()).map(|size| size * scale);
+        inline_layout.winkin.set_content_size(kurbo::Size::new(
+            f64::from(content.width),
+            f64::from(content.height),
+        ));
         let lines_pb = Rect {
             top: container_pb.top + block_offset,
             ..container_pb

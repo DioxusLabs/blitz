@@ -22,6 +22,7 @@ use anyrender::{PaintScene, Scene};
 use blitz_dom::node::{
     ListItemLayout, ListItemLayoutPosition, NodeData, RasterImageData, TextInputData, TextNodeData,
 };
+use blitz_dom::text::InlineText as _;
 use blitz_dom::{BaseDocument, ElementData, Node, NodeId, local_name};
 use blitz_traits::devtools::DevtoolSettings;
 
@@ -842,7 +843,7 @@ impl ElementCx<'_, '_> {
 
             let pos = Point {
                 x: pos.x,
-                y: pos.y + text_layout.block_offset as f64,
+                y: pos.y + text_layout.block_offset() as f64,
             };
             let transform =
                 self.transform * Affine::translate((pos.x * self.scale, pos.y * self.scale));
@@ -877,10 +878,6 @@ impl ElementCx<'_, '_> {
                 text_layout,
                 self.context.dom,
                 transform,
-                Size::new(
-                    self.frame.content_box.width(),
-                    self.frame.content_box.height(),
-                ),
                 self.scale,
                 self.node.id,
                 self.context.selection_ranges.get(&self.node.id).copied(),

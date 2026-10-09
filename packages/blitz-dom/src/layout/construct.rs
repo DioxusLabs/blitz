@@ -857,11 +857,15 @@ fn create_text_editor(doc: &mut BaseDocument, input_element_id: NodeId, is_multi
     };
 
     text_input_data.editor.set_style(
-        &mut doc.text,
         input_element_id,
         style.as_deref(),
         doc.viewport.scale_f64() as f32,
     );
+    // A single-line input never wraps, so its text is laid out now. A textarea's is laid out once
+    // layout knows its width.
+    if !is_multiline {
+        text_input_data.editor.refresh(&mut doc.text);
+    }
 }
 
 fn create_checkbox_input(doc: &mut BaseDocument, input_element_id: NodeId) {

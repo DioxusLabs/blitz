@@ -1,6 +1,6 @@
 use crate::Document;
 use crate::layout::paint_tree::{HoistedPaintChild, StackingContext};
-use crate::text::{EditableText as _, InlineLayoutEngine as _, InlineText as _};
+use crate::text::{EditableText as _, InlineText as _};
 use bitflags::bitflags;
 use blitz_traits::events::{
     BlitzPointerEvent, BlitzPointerId, DomEventData, HitResult, PointerCoords,
@@ -231,17 +231,9 @@ impl Node {
         }
     }
 
-    /// Clear this node's taffy layout cache and any cached inline
-    /// `content_widths`, forcing a full relayout of it on the next pass.
+    /// Clear this node's taffy layout cache, forcing a full relayout of it on the next pass.
     pub fn invalidate_layout_cache(&mut self) {
         self.clear_layout_cache();
-        if let Some(inline_layout) = self
-            .data
-            .downcast_element_mut()
-            .and_then(|el| el.inline_layout_data.as_mut())
-        {
-            inline_layout.invalidate_content_widths();
-        }
     }
 
     #[inline]
@@ -820,7 +812,10 @@ impl Node {
         {
             if !input_data.is_multiline {
                 let content_box_height = self.final_layout().content_box_height();
-                let input_height = input_data.editor.size().unwrap().height as f32 / scale as f32;
+                let Some(metrics) = input_data.editor.metrics() else {
+                    return 0.0;
+                };
+                let input_height = metrics.size.height as f32 / scale as f32;
                 let y_offset = ((content_box_height - input_height) / 2.0).max(0.0);
 
                 return y_offset as f64;
@@ -1562,8 +1557,7 @@ impl Node {
         if self.flags.is_inline_root() {
             let element_data = &self.element_data().unwrap();
             if let Some(ild) = element_data.inline_layout_data.as_ref() {
-                if let Some(hit) =
-                    ild.hit_test(x, y, self.inline_text_content_size(), scale as f32, true)
+                if let Some(hit) = ild.hit_test(x, y, true)
                     && let Some(text_node) = self.tree().get(hit.node_id)
                 {
                     let hit_node = if matches!(text_node.data, NodeData::Text(_)) {
@@ -1627,36 +1621,8 @@ impl Node {
         let element_data = self.element_data()?;
         let inline_layout = element_data.inline_layout_data.as_ref()?;
         inline_layout
-            .hit_test(
-                x,
-                y,
-                self.inline_text_content_size(),
-                inline_layout.scale(),
-                false,
-            )
+            .hit_test(x, y, false)
             .map(|hit| hit.byte_offset)
-    }
-
-    fn inline_text_content_size(&self) -> kurbo::Size {
-        let layout = self.final_layout();
-        kurbo::Size::new(
-            f64::from(
-                (layout.size.width
-                    - layout.padding.left
-                    - layout.padding.right
-                    - layout.border.left
-                    - layout.border.right)
-                    .max(0.0),
-            ),
-            f64::from(
-                (layout.size.height
-                    - layout.padding.top
-                    - layout.padding.bottom
-                    - layout.border.top
-                    - layout.border.bottom)
-                    .max(0.0),
-            ),
-        )
     }
 
     /// Whether this node is a non-atomic inline element: one that has no layout box of its

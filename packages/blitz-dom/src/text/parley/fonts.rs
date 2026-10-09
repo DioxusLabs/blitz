@@ -1,6 +1,7 @@
 //! Parley's fonts: the collection documents lay text out with, `@font-face` registration, and
 //! the font metrics Stylo resolves font-relative units with.
 
+use std::borrow::Cow;
 #[cfg(feature = "parallel-construct")]
 use std::cell::RefCell;
 use std::sync::{Arc, Mutex};
@@ -44,54 +45,6 @@ use super::{TextContext, style as stylo_to_parley};
 use crate::net::FontFaceOverrides;
 use crate::text::{DocumentText, TextFonts};
 
-/// An `@font-face` rule's descriptors that Parley registers a face by, beyond its family name.
-#[derive(Clone, Debug, Default)]
-pub struct FaceDescriptors {
-    /// `font-weight` descriptor as a single CSS weight (100–900). Stylo
-    /// parses this as a range; we record the lower bound, which equals the
-    /// upper bound in the common single-value case.
-    pub weight: Option<f32>,
-    /// `font-style` descriptor mapped to fontique's `FontStyle`.
-    pub style: Option<parley::fontique::FontStyle>,
-}
-
-/// The descriptors of an `@font-face` rule that Parley registers a face by.
-pub(crate) fn face_descriptors(descriptor: &style::font_face::Descriptors) -> FaceDescriptors {
-    FaceDescriptors {
-        weight: descriptor
-            .font_weight
-            .as_ref()
-            .and_then(|range| range.0.compute().map(|w| w.value())),
-        style: descriptor.font_style.as_ref().map(stylo_to_fontique_style),
-    }
-}
-
-/// Translate stylo's `@font-face` `font-style` descriptor into the fontique
-/// `FontStyle` enum used by parley. Stylo encodes Italic and Oblique-with-
-/// angle distinctly; CSS's bare `normal` is parsed as `Oblique(0deg, 0deg)`
-/// by stylo (see the `FontStyle::parse` impl in stylo's `font_face.rs`), so
-/// that pattern is treated as `Normal` here.
-fn stylo_to_fontique_style(
-    style: &style::font_face::FontStyleRange,
-) -> parley::fontique::FontStyle {
-    use parley::fontique::FontStyle as Fq;
-    use style::font_face::FontStyleRange;
-    match style {
-        FontStyleRange::Italic => Fq::Italic,
-        FontStyleRange::Oblique(min, max) => {
-            let angle = min.degrees();
-            // Stylo emits `Oblique(0deg, 0deg)` for the literal CSS `normal`
-            // keyword. Map that back to `Normal` so parley's font matching
-            // doesn't misclassify upright fonts.
-            if angle.is_none_or(|a| a == 0.0) && max.degrees().is_none_or(|a| a == 0.0) {
-                Fq::Normal
-            } else {
-                Fq::Oblique(angle)
-            }
-        }
-    }
-}
-
 impl TextFonts for FontContext {
     fn with_single_font(font_data: &[u8]) -> Self {
         let mut ctx = FontContext {
@@ -118,10 +71,13 @@ impl TextFonts for FontContext {
         ctx
     }
 
-    fn add_fonts(&mut self, font_data: &[u8]) {
-        let decoded = crate::decode_font_bytes(font_data).into_owned();
-        self.collection
-            .register_fonts(Blob::new(Arc::new(decoded) as _), None);
+    fn add_fonts(&mut self, font_data: impl Into<Bytes>) {
+        let font_data = font_data.into();
+        let blob = match crate::decode_font_bytes(&font_data) {
+            Cow::Owned(decoded) => Blob::new(Arc::new(decoded) as _),
+            Cow::Borrowed(_) => Blob::new(Arc::new(font_data) as _),
+        };
+        self.collection.register_fonts(blob, None);
     }
 }
 
@@ -168,15 +124,12 @@ impl DocumentText for TextContext {
         // captured during stylesheet parsing. Without this, parley
         // reads the family name from the TTF's own metadata, which
         // means CSS `font-family: 'Avenir Book'` won't match a font
-        // file that internally identifies as `Avenir 45 Book`.
-        let weight_override = overrides
-            .descriptors
-            .weight
-            .map(parley::fontique::FontWeight::new);
+        // file that internally identifies as `Avenir 45 Book`. fontique takes one weight and one
+        // style, so a range registers as its lowest.
         let info_override = parley::fontique::FontInfoOverride {
             family_name: overrides.family_name.as_deref(),
-            weight: weight_override,
-            style: overrides.descriptors.style,
+            weight: overrides.descriptors.weight.map(|(min, _)| min),
+            style: overrides.descriptors.style.map(|(min, _)| min),
             ..Default::default()
         };
 
@@ -353,9 +306,9 @@ impl FontMetricsProvider for BlitzFontMetricsProvider {
 #[cfg(test)]
 mod font_face_override_tests {
     use crate::net::{FontFaceOverrides, Resource, ResourceLoadResponse};
+    use crate::text::FaceDescriptors;
+    use crate::text::parlance::{FontStyle, FontWeight};
     use crate::{BaseDocument, DocumentConfig};
-
-    use super::FaceDescriptors;
 
     /// Regression-pin for the `@font-face` descriptor-honouring fix.
     ///
@@ -400,8 +353,8 @@ mod font_face_override_tests {
                 FontFaceOverrides {
                     family_name: Some(String::from(ALIAS)),
                     descriptors: FaceDescriptors {
-                        weight: Some(800.0),
-                        style: Some(parley::fontique::FontStyle::Italic),
+                        weight: Some((FontWeight::new(800.0), FontWeight::new(800.0))),
+                        style: Some((FontStyle::Italic, FontStyle::Italic)),
                     },
                     #[cfg(feature = "winkin")]
                     winkin_descriptors: Default::default(),
@@ -425,49 +378,6 @@ mod font_face_override_tests {
             resolved_name, ALIAS,
             "registered family should report the CSS-declared name, \
              not the font file's internal `name` table entry",
-        );
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::stylo_to_fontique_style;
-    use parley::fontique::FontStyle as Fq;
-    use style::font_face::FontStyleRange;
-    use style::values::specified::Angle;
-
-    fn oblique(min_deg: f32, max_deg: f32) -> FontStyleRange {
-        FontStyleRange::Oblique(Angle::from_degrees(min_deg), Angle::from_degrees(max_deg))
-    }
-
-    #[test]
-    fn italic_maps_to_italic() {
-        assert_eq!(stylo_to_fontique_style(&FontStyleRange::Italic), Fq::Italic,);
-    }
-
-    #[test]
-    fn oblique_zero_zero_maps_to_normal() {
-        // Stylo parses bare CSS `normal` as `Oblique(0deg, 0deg)`; the
-        // helper must round-trip that back to `FontStyle::Normal` so
-        // parley's matching doesn't misclassify upright fonts.
-        assert_eq!(stylo_to_fontique_style(&oblique(0.0, 0.0)), Fq::Normal);
-    }
-
-    #[test]
-    fn oblique_single_angle_maps_to_oblique_with_min() {
-        assert_eq!(
-            stylo_to_fontique_style(&oblique(14.0, 14.0)),
-            Fq::Oblique(Some(14.0)),
-        );
-    }
-
-    #[test]
-    fn oblique_range_uses_min_angle() {
-        // For a range, fontique's single-angle representation takes the
-        // lower bound — confirm `min` (not `max`) is what gets through.
-        assert_eq!(
-            stylo_to_fontique_style(&oblique(10.0, 20.0)),
-            Fq::Oblique(Some(10.0)),
         );
     }
 }

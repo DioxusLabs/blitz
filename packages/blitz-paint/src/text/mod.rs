@@ -2,6 +2,8 @@
 //! backend that paints its own layouts.
 
 use anyrender::PaintScene;
+use blitz_dom::node::TextLayout;
+use blitz_dom::text::InlineText as _;
 use blitz_dom::{BaseDocument, NodeId, util::ToColorColor};
 use kurbo::{Affine, BezPath, Cap, Circle, Rect, Stroke};
 use peniko::{Fill, FontData};
@@ -12,6 +14,7 @@ use style::values::computed::{
 };
 use style::values::generics::text::{GenericTextDecorationInset, GenericTextDecorationLength};
 
+use crate::SELECTION_COLOR;
 use crate::color::Color;
 
 blitz_dom::cfg_text_backend! {
@@ -19,6 +22,23 @@ blitz_dom::cfg_text_backend! {
         mod parley;
         pub(crate) use self::parley::{paint_inline_layout, paint_marker, paint_text_input};
     }
+}
+
+/// Paints the highlight of the selected text between byte offsets `start` and `end` of an inline
+/// formatting context.
+///
+/// `transform` takes the content box's device pixels, moved down by the layout's block offset,
+/// onto the scene.
+fn paint_selection(
+    scene: &mut impl PaintScene,
+    layout: &TextLayout,
+    transform: Affine,
+    start: usize,
+    end: usize,
+) {
+    layout.for_each_selection_rect(start, end, |rect| {
+        scene.fill(Fill::NonZero, transform, SELECTION_COLOR, None, &rect);
+    });
 }
 
 /// Per-font-face cache of the OS/2 `usWinAscent / unitsPerEm` ratio, keyed by the font

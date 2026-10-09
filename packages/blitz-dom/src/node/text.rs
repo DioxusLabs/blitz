@@ -6,7 +6,8 @@ use blitz_traits::{
 use keyboard_types::{Key, Modifiers};
 
 use crate::text::{
-    Edit, EditEngine as _, EditableText as _, Motion, TextContext, TextEditor, TextInputDriver,
+    Edit, EditEngine as _, EditableText as _, EditorMetrics, Motion, TextContext, TextEditor,
+    TextInputDriver,
 };
 use crate::util::ACTION_MOD;
 
@@ -21,13 +22,12 @@ pub struct InlineTextHit {
 
 /// A piece of an inline root's laid-out content, in logical order.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum InlineContent<'a> {
-    /// Text of node `node_id`, starting `start` bytes into the layout text. The node is the
-    /// text node under winkin and its parent element under Parley.
+pub enum InlineContent {
+    /// Text of node `node_id`: the bytes `range` of the layout text. The node is the text node,
+    /// or the element it is in, as the text backend maps the text.
     Text {
         node_id: NodeId,
-        start: usize,
-        text: std::borrow::Cow<'a, str>,
+        range: std::ops::Range<usize>,
     },
     /// An inline box.
     Box(NodeId),
@@ -71,8 +71,10 @@ impl TextInputData {
         }
     }
 
+    /// Sets the text, and lays it out again where it changed.
     pub(crate) fn set_text(&mut self, cx: &mut TextContext, text: &str) {
-        self.editor.set_text(cx, text);
+        self.editor.set_text(text);
+        self.editor.refresh(cx);
     }
 
     /// Recompute [`Self::scroll_offset`] so that the caret stays visible within the input's
@@ -81,12 +83,11 @@ impl TextInputData {
     /// `content_box_width` and `content_box_height` are the dimensions of the input's content
     /// box in CSS (unscaled) pixels.
     pub fn clamp_scroll_offset(&mut self, content_box_width: f32, content_box_height: f32) {
-        let Some(size) = self.editor.size() else {
-            return;
-        };
         // The editor lays out at its scale, so its geometry is in scaled (device) pixels.
         // We convert into CSS (unscaled) pixels to match `scroll_offset` and the content box.
-        let scale = self.editor.scale();
+        let Some(EditorMetrics { size, scale }) = self.editor.metrics() else {
+            return;
+        };
 
         // The caret geometry relative to the start of the text content.
         let Some(caret) = self.editor.caret_rect() else {
@@ -134,10 +135,9 @@ impl TextInputData {
     /// `content_box_width` and `content_box_height` are the dimensions of the input's content
     /// box in CSS (unscaled) pixels.
     pub fn max_scroll_offset(&self, content_box_width: f32, content_box_height: f32) -> f32 {
-        let Some(size) = self.editor.size() else {
+        let Some(EditorMetrics { size, scale }) = self.editor.metrics() else {
             return 0.0;
         };
-        let scale = self.editor.scale();
         let (content, viewport) = if self.is_multiline {
             (size.height as f32 / scale, content_box_height)
         } else {
@@ -538,13 +538,11 @@ impl TextInputData {
                 return Some(GeneratedTextInputEvent::Select);
             }
             "selectLine:" => {
-                driver.edit(Edit::Move(Motion::LineStart));
-                driver.edit(Edit::Extend(Motion::LineEnd));
+                driver.edit(Edit::Select(Motion::LineStart, Motion::LineEnd));
                 return Some(GeneratedTextInputEvent::Select);
             }
             "selectParagraph:" => {
-                driver.edit(Edit::Move(Motion::HardLineStart));
-                driver.edit(Edit::Extend(Motion::HardLineEnd));
+                driver.edit(Edit::Select(Motion::HardLineStart, Motion::HardLineEnd));
                 return Some(GeneratedTextInputEvent::Select);
             }
             "selectWord:" => {

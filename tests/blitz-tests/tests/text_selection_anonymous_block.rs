@@ -137,8 +137,8 @@ fn text_hit_follows_selection_geometry_in_vertical_writing_mode() {
         .inline_layout_data
         .as_ref()
         .unwrap();
-    let content_size = kurbo::Size::new(100.0, 100.0);
-    let rectangles = layout.selection_rects(0, layout.text_len(), content_size, layout.scale());
+    let mut rectangles = Vec::new();
+    layout.for_each_selection_rect(0, layout.text_len(), |rect| rectangles.push(rect));
     let first = rectangles
         .first()
         .expect("text should have selection geometry");
@@ -179,29 +179,9 @@ fn drag_selection_within_anonymous_block_wrapped_text() {
         .inline_layout_data
         .as_ref()
         .unwrap();
-    let box_layout = root.final_layout();
-    let content_size = kurbo::Size::new(
-        f64::from(
-            box_layout.size.width
-                - box_layout.padding.left
-                - box_layout.padding.right
-                - box_layout.border.left
-                - box_layout.border.right,
-        ),
-        f64::from(
-            box_layout.size.height
-                - box_layout.padding.top
-                - box_layout.padding.bottom
-                - box_layout.border.top
-                - box_layout.border.bottom,
-        ),
-    );
-    assert!(
-        !layout
-            .selection_rects(start, end, content_size, layout.scale())
-            .is_empty(),
-        "selected text should have highlight geometry"
-    );
+    let mut rects = 0;
+    layout.for_each_selection_rect(start, end, |_| rects += 1);
+    assert!(rects > 0, "selected text should have highlight geometry");
 }
 
 /// Dragging from the anonymous-block-wrapped "Outer" into the "Inner" div
