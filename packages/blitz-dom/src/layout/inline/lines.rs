@@ -4,6 +4,7 @@
 use blitz_traits::node_id::NodeId;
 use style::values::computed::Float as StyloFloat;
 use style::values::specified::box_::{BaselineSource, DisplayInside, DisplayOutside};
+use stylo_taffy::StyleFlags;
 use taffy::{
     AvailableSpace, AxisStaticPosition, BlockContainerStyle, BlockContext, CollapsibleMarginSet,
     CoreStyle as _, Direction, LayoutOutput, LayoutPartialTree as _, MaybeMath as _,
@@ -321,8 +322,13 @@ impl LayoutPassState<'_> {
             container_direction,
             scale,
         };
+        let mut span_cb_flags = StyleFlags::empty();
         for (order, placed) in placements {
+            span_cb_flags |= self.inline_span_cb_flags(node_id, placed.node);
             self.place_inline_box(&placed, order as u32, &frame_at, &mut oof_candidates);
+        }
+        if pass == Measure::Layout {
+            inline_layout.span_cb_flags = span_cb_flags;
         }
 
         // Each float goes where the lines flowed around it, and into the block formatting context
@@ -811,9 +817,12 @@ impl LayoutPassState<'_> {
                 container_direction,
                 scale,
             };
+            let mut span_cb_flags = StyleFlags::empty();
             for (order, placed) in placements.iter().enumerate() {
+                span_cb_flags |= self.inline_span_cb_flags(node_id, placed.node);
                 self.place_inline_box(placed, order as u32, &frame_at, &mut oof_candidates);
             }
+            inline_layout.span_cb_flags = span_cb_flags;
             #[cfg(feature = "floats")]
             for float in &floats {
                 let Some(node) = TextLayout::float_node(float.key) else {
@@ -1010,6 +1019,39 @@ impl LayoutPassState<'_> {
                     )
             })
         })
+    }
+
+    /// The out-of-flow positions for which an inline span between the inline box `box_id` and its
+    /// inline root `root_id` is a containing block (as `SPAN_*_CB` flags)
+    fn inline_span_cb_flags(&self, root_id: NodeId, box_id: NodeId) -> StyleFlags {
+        let root = &self.nodes[root_id];
+        // The spans of an anonymous inline root are descendants of its parent
+        let root_parent = root.is_anonymous().then_some(root.parent).flatten();
+
+        let mut flags = StyleFlags::empty();
+        let mut current = self.nodes[box_id].parent;
+        while let Some(id) = current {
+            if id == root_id || Some(id) == root_parent {
+                return flags;
+            }
+            let ancestor = &self.nodes[id];
+            if let Some(style) = ancestor.primary_styles() {
+                let display = style.slow_clone_display();
+                if display.outside() == DisplayOutside::Inline
+                    && display.inside() == DisplayInside::Flow
+                {
+                    let claims = stylo_taffy::convert::inline_containing_block_claims(&style);
+                    if claims.absolute {
+                        flags |= StyleFlags::SPAN_ABSOLUTE_CB;
+                    }
+                    if claims.fixed {
+                        flags |= StyleFlags::SPAN_FIXED_CB;
+                    }
+                }
+            }
+            current = ancestor.parent;
+        }
+        StyleFlags::empty()
     }
 
     /// Hands the inline layout back to its node.
