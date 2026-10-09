@@ -22,8 +22,8 @@ use parley::{
 use thread_local::ThreadLocal;
 
 use super::{
-    BoxMeasure, ContentWidths, InlineLayoutEngine, InlineText, LastBaseline, LineFloats,
-    LinesExtent, Placement,
+    BoxMeasure, ContentWidths, FloatSide, InlineLayoutEngine, InlineText, LastBaseline,
+    LineExclusions, LinesExtent, Placement,
 };
 use crate::node::{InlineContent, InlineTextHit, Node};
 
@@ -79,6 +79,9 @@ pub struct TextLayout {
     /// containing block (as `SPAN_*_CB` flags). The inline root claims those boxes in its place.
     /// Set by each `RunMode::PerformLayout` run of inline layout.
     pub(crate) span_cb_flags: stylo_taffy::StyleFlags,
+    /// The floats, as the lines place them: each one's node, side and margin box's size in device
+    /// pixels.
+    floats: Vec<(u64, FloatSide, f32, f32)>,
 }
 
 impl std::fmt::Debug for TextLayout {
@@ -439,9 +442,9 @@ impl InlineLayoutEngine for TextLayout {
         &mut self,
         width: f32,
         style: Option<&::style::properties::ComputedValues>,
-        floats: &mut impl LineFloats,
+        exclusions: &mut impl LineExclusions,
     ) {
-        self.break_into_lines(width, style, floats);
+        self.break_into_lines(width, style, exclusions);
     }
 
     #[inline]
