@@ -98,7 +98,7 @@ dioxus-cli-config = { version = "0.7.3" }
 dioxus-core-macro = { version = "0.7.3" }
 
 # Taffy + Parley + Fontations
-taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "2d936b7701f64b0fe95e50f1bfdcfc65a9f88f6f", default-features = false, features = [
+taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "f88223fcd60e3a4d36035b5dad329bc6ad603978", default-features = false, features = [
     "std",
     "flexbox",
     "flexbox_balance",
@@ -108,7 +108,7 @@ taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "2d936b7701f64b0fe9
     "calc",
     "detailed_layout_info",
 ] }
-parley = { git = "https://github.com/linebender/parley", rev = "62790943af982ad3388a3ff96cef6f90ac80a8bb", default-features = false, features = ["std"] }
+parley = { git = "https://github.com/DioxusLabs/parley", rev = "b9d050dde2af51e3d201870a38e147993cb56368", default-features = false, features = ["std"] }
 skrifa = { version = "0.44", default-features = false, features = [
     "std",
 ] } # Should match parley and vello versions
