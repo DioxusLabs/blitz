@@ -697,18 +697,23 @@ fn text_group(computed: &ComputedValues, scale: f32, language: Option<Language>)
             StyloTextWrapMode::Wrap => TextWrapMode::Wrap,
             StyloTextWrapMode::Nowrap => TextWrapMode::NoWrap,
         },
-        transform: TextTransform {
-            case: if transform.contains(StyloTextTransform::UPPERCASE) {
-                TextCase::Uppercase
-            } else if transform.contains(StyloTextTransform::LOWERCASE) {
-                TextCase::Lowercase
-            } else if transform.contains(StyloTextTransform::CAPITALIZE) {
-                TextCase::Capitalize
-            } else {
-                TextCase::None
-            },
-            full_width: transform.contains(StyloTextTransform::FULL_WIDTH),
-            full_size_kana: transform.contains(StyloTextTransform::FULL_SIZE_KANA),
+        // math-auto excludes the other transforms.
+        transform: if transform.contains(StyloTextTransform::MATH_AUTO) {
+            TextTransform::MATH_AUTO
+        } else {
+            TextTransform {
+                case: if transform.contains(StyloTextTransform::UPPERCASE) {
+                    TextCase::Uppercase
+                } else if transform.contains(StyloTextTransform::LOWERCASE) {
+                    TextCase::Lowercase
+                } else if transform.contains(StyloTextTransform::CAPITALIZE) {
+                    TextCase::Capitalize
+                } else {
+                    TextCase::None
+                },
+                full_width: transform.contains(StyloTextTransform::FULL_WIDTH),
+                full_size_kana: transform.contains(StyloTextTransform::FULL_SIZE_KANA),
+            }
         },
         word_break: match text.word_break {
             style::values::computed::WordBreak::Normal => WordBreak::Normal,
