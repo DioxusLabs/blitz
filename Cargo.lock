@@ -48,7 +48,7 @@ dependencies = [
  "accesskit",
  "accesskit_consumer",
  "atspi-common",
- "phf 0.14.0",
+ "phf",
  "serde",
  "zvariant",
 ]
@@ -1271,7 +1271,7 @@ dependencies = [
  "hashbrown 0.17.1",
  "indexmap",
  "once_cell",
- "phf 0.14.0",
+ "phf",
  "rustc-hash 2.1.3",
  "static_assertions",
 ]
@@ -1808,16 +1808,16 @@ dependencies = [
 
 [[package]]
 name = "comrak"
-version = "0.55.0"
+version = "0.56.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "daa3d1ea6b01ce72405fa3f826768f51c7a44917527c89b37856ffdd17ee57e4"
+checksum = "2544c4d6b6da7d54e95ac2833b464bf3dffa0666237868f2bf4ec5e11c9ba8cc"
 dependencies = [
  "caseless",
  "entities",
  "finl_unicode",
- "jetscii",
- "phf 0.13.1",
- "phf_codegen 0.13.1",
+ "memchr-n",
+ "phf",
+ "phf_codegen",
  "rustc-hash 2.1.3",
  "smallvec",
  "typed-arena",
@@ -2120,7 +2120,7 @@ dependencies = [
  "cssparser-macros",
  "dtoa-short",
  "itoa",
- "phf 0.14.0",
+ "phf",
  "serde",
  "smallvec",
 ]
@@ -3162,6 +3162,23 @@ name = "fearless_simd"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f4beca3cb2444e3304ac30843cc091f44ed58932353cd492ce740067bfce6b12"
+
+[[package]]
+name = "fearless_simd"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3296eb97d869113eaf148a6bdf01884e90b3828ad7ae2340b0f93362fc158611"
+
+[[package]]
+name = "fearless_simd_macros"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3e91d94c6885390b81782d7ee60fd6583b33907333a8b340de25ccf468353315"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.6",
+]
 
 [[package]]
 name = "filetime"
@@ -4428,12 +4445,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4d3667095d64c3ecffc96463a21157b04bf3e252f6e8d5750b20c02e33c194e3"
 
 [[package]]
-name = "jetscii"
-version = "0.5.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "47f142fe24a9c9944451e8349de0a56af5f3e7226dc46f3ed4d4ecc0b85af75e"
-
-[[package]]
 name = "jiff"
 version = "0.2.38"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5044,6 +5055,16 @@ name = "memchr"
 version = "2.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
+
+[[package]]
+name = "memchr-n"
+version = "0.1.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1805571b8e7b1284ad43f27c88477840c1c0e5807c150021ac83d2228806540e"
+dependencies = [
+ "fearless_simd 1.1.0",
+ "fearless_simd_macros",
+]
 
 [[package]]
 name = "memfd"
@@ -6121,16 +6142,6 @@ dependencies = [
 
 [[package]]
 name = "phf"
-version = "0.13.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c1562dc717473dbaa4c1f85a36410e03c047b2e7df7f45ee938fbef64ae7fadf"
-dependencies = [
- "phf_shared 0.13.1",
- "serde",
-]
-
-[[package]]
-name = "phf"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "010378780309880b08997fae13be7834dba947d36393bd372f2b1556deb2a2f6"
@@ -6142,32 +6153,12 @@ dependencies = [
 
 [[package]]
 name = "phf_codegen"
-version = "0.13.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "49aa7f9d80421bca176ca8dbfebe668cc7a2684708594ec9f3c0db0805d5d6e1"
-dependencies = [
- "phf_generator 0.13.1",
- "phf_shared 0.13.1",
-]
-
-[[package]]
-name = "phf_codegen"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "41b585a510fb76fdebead6897982ef2a03a21d8e6cbcca904999742a4afc6ffe"
 dependencies = [
- "phf_generator 0.14.0",
+ "phf_generator",
  "phf_shared 0.14.0",
-]
-
-[[package]]
-name = "phf_generator"
-version = "0.13.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "135ace3a761e564ec88c03a77317a7c6b80bb7f7135ef2544dbe054243b89737"
-dependencies = [
- "fastrand",
- "phf_shared 0.13.1",
 ]
 
 [[package]]
@@ -6186,7 +6177,7 @@ version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5fa8d0ca26d424d27630da600c6624696e7dec8bf7b3b492b383c5dc49e5e085"
 dependencies = [
- "phf_generator 0.14.0",
+ "phf_generator",
  "phf_shared 0.14.0",
  "proc-macro2",
  "quote",
@@ -6198,15 +6189,6 @@ name = "phf_shared"
 version = "0.11.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "67eabc2ef2a60eb7faa00097bd1ffdb5bd28e62bf39990626a582201b7a754e5"
-dependencies = [
- "siphasher",
-]
-
-[[package]]
-name = "phf_shared"
-version = "0.13.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e57fef6bc5981e38c2ce2d63bfa546861309f875b8a75f092d1d54ae2d64f266"
 dependencies = [
  "siphasher",
 ]
@@ -7720,7 +7702,7 @@ version = "0.11.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "928dcdf75e47626b3617a976ec205d9f057584c371c1f23b782129268d0e6edc"
 dependencies = [
- "phf_generator 0.14.0",
+ "phf_generator",
  "phf_shared 0.14.0",
  "proc-macro2",
  "quote",
@@ -8894,7 +8876,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "73c2fbe53548bcd25c8ff42f75a93770a8611a16b37bee56d7ef7b44e36027f1"
 dependencies = [
  "bytemuck",
- "fearless_simd",
+ "fearless_simd 0.7.0",
  "guillotiere",
  "log",
  "peniko",
@@ -9311,8 +9293,8 @@ version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7572660c8890448ba236b7376f27e389c6a7e1c70195622faced601f855c0ada"
 dependencies = [
- "phf 0.14.0",
- "phf_codegen 0.14.0",
+ "phf",
+ "phf_codegen",
  "string_cache 0.11.0",
  "string_cache_codegen",
 ]
