@@ -6,6 +6,10 @@
 //! whole text, and points are hit tested against the lines. Text an input method is composing is
 //! laid out in place of the selection, underlined, until it is committed or cancelled. Every
 //! change to the text can be undone and redone.
+//!
+//! Where the style masks the text (`-webkit-text-security`, which a password field has), the
+//! layout holds a mask for each grapheme, and the editor maps positions between the text and the
+//! layout through winkin's offset map. The selection and the composition stay in the text.
 
 use std::borrow::Cow;
 use std::ops::Range;
@@ -14,10 +18,11 @@ use blitz_traits::node_id::NodeId;
 use kurbo::{Rect, Size};
 use style::properties::ComputedValues;
 use style::servo_arc::Arc as ServoArc;
+use winkin::NodeKey;
 use winkin::config::PastLines;
-use winkin::selection::{Granularity, MotionDirection, Position, Selection};
+use winkin::selection::{Affinity, Granularity, MotionDirection, Position, Selection};
 
-use super::{TextContext, TextLayout};
+use super::{PIECE_KEYS, PIECE_SHIFT, TextContext, TextLayout};
 use crate::text::{Edit, EditEngine, EditableText, EditorMetrics, Motion};
 
 /// How many changes can be undone.
@@ -41,6 +46,31 @@ struct Composition {
     caret_visible: bool,
 }
 
+/// Where the pieces of the text the layout was built in start: the text before, inside and after
+/// the composing text or the text shown in the clear.
+#[derive(Clone, Copy, Debug, Default)]
+struct Pieces {
+    starts: [usize; 3],
+    len: usize,
+}
+
+impl Pieces {
+    /// The pieces of text `len` bytes long around `middle`, or the whole text as the first.
+    fn new(len: usize, middle: Option<Range<usize>>) -> Self {
+        let middle = middle.unwrap_or(len..len);
+        Self {
+            starts: [0, middle.start, middle.end],
+            len,
+        }
+    }
+
+    /// The bytes of the text piece `piece` holds.
+    fn range(&self, piece: usize) -> Range<usize> {
+        let end = self.starts.get(piece + 1).copied().unwrap_or(self.len);
+        self.starts[piece]..end
+    }
+}
+
 /// The text of an `<input>` or `<textarea>`, laid out by winkin.
 pub struct TextEditor {
     /// The text, with any text an input method is composing.
@@ -58,6 +88,14 @@ pub struct TextEditor {
     undo: Vec<Snapshot>,
     redo: Vec<Snapshot>,
     composition: Option<Composition>,
+    /// The text a password field shows in the clear: the character typed last.
+    revealed: Option<Range<usize>>,
+    /// Whether the layout masks the text, and so maps its positions through its offset map.
+    masked: bool,
+    /// The pieces the layout was built in.
+    pieces: Pieces,
+    /// How many times the text has been laid out.
+    builds: u64,
 }
 
 impl TextEditor {
@@ -69,6 +107,66 @@ impl TextEditor {
     /// The selection, in bytes of the text.
     pub fn selection_range(&self) -> Range<usize> {
         self.selection.range()
+    }
+
+    /// The selection, in bytes of the layout's text, which differs from the text where the layout
+    /// masks it.
+    pub fn layout_selection_range(&self) -> Range<usize> {
+        let Some(layout) = self.layout.layout() else {
+            return self.selection.range();
+        };
+        let range = self.selection.range();
+        let start = self
+            .layout_position(layout, Position::from(range.start))
+            .offset;
+        let end = self
+            .layout_position(layout, Position::new(range.end, Affinity::Upstream))
+            .offset;
+        start..end.max(start)
+    }
+
+    /// Where `position` in the text is in `layout`, the layout of the text.
+    fn layout_position(&self, layout: &winkin::Layout, position: Position) -> Position {
+        if !self.masked {
+            return position;
+        }
+        let offset = position.offset.min(self.pieces.len);
+        // At a boundary between pieces, upstream takes the piece before it and downstream the
+        // one after. A piece holding no text has no node.
+        let mut holding = (0..3).filter(|&piece| {
+            let range = self.pieces.range(piece);
+            !range.is_empty() && range.start <= offset && offset <= range.end
+        });
+        let piece = match position.affinity {
+            Affinity::Upstream => holding.next(),
+            Affinity::Downstream => holding.next_back(),
+        };
+        let Some(piece) = piece else {
+            return Position::new(0, position.affinity);
+        };
+        let key = NodeKey(self.node_key() | (piece as u64) << PIECE_SHIFT);
+        let start = self.pieces.starts[piece];
+        layout
+            .position(key, offset - start, position.affinity)
+            .unwrap_or(Position::new(0, position.affinity))
+    }
+
+    /// Where `position` in `layout`, the layout of the text, is in the text.
+    fn text_position(&self, layout: &winkin::Layout, position: Position) -> Position {
+        if !self.masked {
+            return position;
+        }
+        let Some(source) = layout.node_position(position) else {
+            return Position::new(0, position.affinity);
+        };
+        let piece = ((source.key.0 & PIECE_KEYS) >> PIECE_SHIFT).min(2) as usize;
+        let offset = (self.pieces.starts[piece] + source.offset).min(self.text.len());
+        Position::new(offset, position.affinity)
+    }
+
+    /// The key the layout gives the control's node, without a piece's number.
+    fn node_key(&self) -> u64 {
+        self.style.as_ref().map_or(0, |(node, _)| node.as_u64())
     }
 
     /// Where the text an input method is composing is, in bytes of the text, while it composes.
@@ -86,13 +184,17 @@ impl TextEditor {
         };
         let width = if self.is_multiline { self.width } else { None };
         let composition = self.composition_range();
-        super::build_plain_text(
+        let revealed = self.revealed.clone().filter(|_| composition.is_none());
+        self.pieces = Pieces::new(self.text.len(), composition.clone().or(revealed.clone()));
+        self.builds += 1;
+        self.masked = super::build_plain_text(
             cx,
             &mut self.layout,
             *node,
             style,
             &self.text,
             composition,
+            revealed,
             self.scale,
             width,
         );
@@ -245,15 +347,33 @@ impl TextEditor {
     }
 
     /// Moves or extends the selection by `motion`, where the text is laid out.
+    ///
+    /// Where the layout masks the text, the selection moves in the layout and is mapped back, so
+    /// it keeps no column for line motion.
     fn modify(&mut self, motion: winkin::selection::Motion) {
-        if let Some(layout) = self.layout.layout() {
+        let Some(layout) = self.layout.layout() else {
+            return;
+        };
+        if !self.masked {
             self.selection.modify(layout, motion);
+            return;
         }
+        let mut selection = Selection::new(
+            self.layout_position(layout, self.selection.anchor()),
+            self.layout_position(layout, self.selection.focus()),
+        );
+        selection.modify(layout, motion);
+        self.selection = Selection::new(
+            self.text_position(layout, selection.anchor()),
+            self.text_position(layout, selection.focus()),
+        );
     }
 
     /// The text position nearest the point, where the text is laid out.
     fn hit(&self, x: f32, y: f32) -> Option<Position> {
-        self.layout.layout()?.hit_test(x, y, PastLines::Column)
+        let layout = self.layout.layout()?;
+        let position = layout.hit_test(x, y, PastLines::Column)?;
+        Some(self.text_position(layout, position))
     }
 
     /// The byte range of what is around `offset` up to the nearest boundaries `is_boundary`
@@ -325,6 +445,10 @@ impl EditableText for TextEditor {
         self.selection.is_collapsed()
     }
 
+    fn revealed_range(&self) -> Option<Range<usize>> {
+        self.revealed.clone()
+    }
+
     fn metrics(&self) -> Option<EditorMetrics> {
         let layout = self.layout.layout().filter(|_| !self.dirty)?;
         let width = layout
@@ -349,7 +473,7 @@ impl EditableText for TextEditor {
             return None;
         }
         let layout = self.layout.layout().filter(|_| !self.dirty)?;
-        let caret = layout.caret(self.selection.focus())?;
+        let caret = layout.caret(self.layout_position(layout, self.selection.focus()))?;
         let metrics = layout.line(caret.line)?.metrics();
         let x = f64::from(metrics.left + caret.inline.left);
         Some(Rect::new(
@@ -375,6 +499,10 @@ impl EditEngine for TextEditor {
             undo: Vec::new(),
             redo: Vec::new(),
             composition: None,
+            revealed: None,
+            masked: false,
+            pieces: Pieces::default(),
+            builds: 0,
         }
     }
 
@@ -382,10 +510,14 @@ impl EditEngine for TextEditor {
         self.text = text.to_string();
         self.selection = Selection::from(Position::from(text.len()));
         self.composition = None;
+        self.revealed = None;
         self.forget();
     }
 
     fn set_text(&mut self, text: &str) {
+        if self.revealed.take().is_some() {
+            self.dirty = true;
+        }
         if self.text != text {
             self.text = text.to_string();
             self.composition = None;
@@ -428,8 +560,18 @@ impl EditEngine for TextEditor {
         if !matches!(edit, Edit::SetCompose(..)) {
             self.cancel_composition(cx);
         }
+        // Any change masks the text shown in the clear. The edit lays the text out again without
+        // it, or else it is laid out again after the edit, which reads the layout it was in.
+        let concealed = self.revealed.take().is_some();
+        let builds = self.builds;
         match edit {
             Edit::Insert(text) => self.replace_selection(cx, text),
+            Edit::InsertRevealed(text) => {
+                let start = self.selection.range().start;
+                self.revealed = (!text.is_empty()).then_some(start..start + text.len());
+                self.replace_selection(cx, text);
+            }
+            Edit::Conceal => {}
             Edit::Delete => self.delete(cx, MotionDirection::Forward, Granularity::Character),
             Edit::Backdelete => self.delete(cx, MotionDirection::Backward, Granularity::Character),
             Edit::DeleteWord => self.delete(cx, MotionDirection::Forward, Granularity::Word),
@@ -480,6 +622,9 @@ impl EditEngine for TextEditor {
                         Selection::new(Position::from(range.start), Position::from(range.end));
                 }
             }
+        }
+        if concealed && self.builds == builds {
+            self.relayout(cx);
         }
     }
 }
