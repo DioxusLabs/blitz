@@ -423,7 +423,7 @@ pub(crate) fn fetch_font_face_rules<'a>(
                 // weight / style) rather than whatever metadata the TTF reports.
                 let overrides = FontFaceOverrides {
                     family_name: Some(family.name.to_string()),
-                    descriptors: crate::text::face_descriptors(descriptor),
+                    descriptors: crate::text::FaceDescriptors::from_rule(descriptor),
                     #[cfg(feature = "winkin")]
                     winkin_descriptors: face_descriptors(descriptor),
                 };
