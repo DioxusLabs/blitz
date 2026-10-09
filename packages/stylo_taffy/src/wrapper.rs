@@ -752,9 +752,8 @@ impl<T: Deref<Target = ComputedValues>> taffy::GridContainerStyle for TaffyStylo
                 }))
             }
 
-            // TODO: Implement subgrid and masonry
+            // TODO: Implement subgrid
             stylo::GenericGridTemplateComponent::Subgrid(_) => None,
-            stylo::GenericGridTemplateComponent::Masonry => None,
         }
     }
 
@@ -773,9 +772,8 @@ impl<T: Deref<Target = ComputedValues>> taffy::GridContainerStyle for TaffyStylo
                 }))
             }
 
-            // TODO: Implement subgrid and masonry
+            // TODO: Implement subgrid
             stylo::GenericGridTemplateComponent::Subgrid(_) => None,
-            stylo::GenericGridTemplateComponent::Masonry => None,
         }
     }
 
@@ -818,9 +816,8 @@ impl<T: Deref<Target = ComputedValues>> taffy::GridContainerStyle for TaffyStylo
             stylo::GenericGridTemplateComponent::TrackList(list) => {
                 Some(StyloLineNameIter::new(&list.line_names))
             }
-            // TODO: Implement subgrid and masonry
+            // TODO: Implement subgrid
             stylo::GenericGridTemplateComponent::Subgrid(_) => None,
-            stylo::GenericGridTemplateComponent::Masonry => None,
         }
     }
 
@@ -830,15 +827,27 @@ impl<T: Deref<Target = ComputedValues>> taffy::GridContainerStyle for TaffyStylo
             stylo::GenericGridTemplateComponent::TrackList(list) => {
                 Some(StyloLineNameIter::new(&list.line_names))
             }
-            // TODO: Implement subgrid and masonry
+            // TODO: Implement subgrid
             stylo::GenericGridTemplateComponent::Subgrid(_) => None,
-            stylo::GenericGridTemplateComponent::Masonry => None,
         }
     }
 
     #[inline]
     fn grid_auto_flow(&self) -> taffy::GridAutoFlow {
         convert::grid_auto_flow(self.style.get_position().grid_auto_flow)
+    }
+
+    #[cfg(feature = "grid-lanes")]
+    #[inline]
+    fn grid_lanes_direction(&self) -> taffy::GridLanesDirection {
+        convert::grid_lanes_direction(self.style.get_position())
+    }
+
+    #[cfg(feature = "grid-lanes")]
+    #[inline]
+    fn fit_tolerance(&self) -> taffy::LengthPercentage {
+        let font_size = self.style.clone_font_size().used_size().px();
+        convert::fit_tolerance(&self.style.get_position().fit_tolerance, font_size)
     }
 
     #[inline]

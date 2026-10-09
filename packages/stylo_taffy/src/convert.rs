@@ -50,6 +50,8 @@ pub(crate) mod stylo {
     pub(crate) use style::values::computed::text::TextAlign;
     #[cfg(feature = "block")]
     pub(crate) use style::values::computed::{AlignmentBaseline, BaselineShift};
+    #[cfg(feature = "grid-lanes")]
+    pub(crate) use style::values::computed::{GridLanesDirection, length::FitTolerance};
     #[cfg(feature = "block")]
     pub(crate) use style::values::generics::box_::BaselineShiftKeyword;
     #[cfg(feature = "grid")]
@@ -219,6 +221,8 @@ pub fn display(input: stylo::Display) -> taffy::Display {
         stylo::DisplayInside::Flex => taffy::Display::Flex,
         #[cfg(feature = "grid")]
         stylo::DisplayInside::Grid => taffy::Display::Grid,
+        #[cfg(feature = "grid-lanes")]
+        stylo::DisplayInside::GridLanes => taffy::Display::GridLanes,
         #[cfg(feature = "block")]
         stylo::DisplayInside::Flow => taffy::Display::Block,
         #[cfg(feature = "block")]
@@ -710,6 +714,45 @@ pub fn clear(input: stylo::Clear) -> taffy::Clear {
 // ===============
 
 #[inline]
+#[cfg(feature = "grid-lanes")]
+/// Resolves `grid-lanes-direction`. `normal` establishes rows only when `grid-template-columns`
+/// is `none` and `grid-template-rows` is not (css-grid-3 §2.3).
+pub fn grid_lanes_direction(
+    position: &style::properties::style_structs::Position,
+) -> taffy::GridLanesDirection {
+    match position.grid_lanes_direction {
+        stylo::GridLanesDirection::Row => taffy::GridLanesDirection::Row,
+        stylo::GridLanesDirection::Column => taffy::GridLanesDirection::Column,
+        stylo::GridLanesDirection::Normal => {
+            let columns_none = matches!(
+                position.grid_template_columns,
+                stylo::GenericGridTemplateComponent::None
+            );
+            let rows_none = matches!(
+                position.grid_template_rows,
+                stylo::GenericGridTemplateComponent::None
+            );
+            if columns_none && !rows_none {
+                taffy::GridLanesDirection::Row
+            } else {
+                taffy::GridLanesDirection::Column
+            }
+        }
+    }
+}
+
+/// `normal` is 1em (css-grid-3 §4.2), so the container's font size is resolved here.
+#[inline]
+#[cfg(feature = "grid-lanes")]
+pub fn fit_tolerance(input: &stylo::FitTolerance, font_size: f32) -> taffy::LengthPercentage {
+    match input {
+        stylo::FitTolerance::Normal => taffy::LengthPercentage::length(font_size),
+        stylo::FitTolerance::LengthPercentage(lp) => length_percentage(&lp.0),
+        stylo::FitTolerance::Infinite => taffy::LengthPercentage::length(f32::INFINITY),
+    }
+}
+
+#[inline]
 #[cfg(feature = "grid")]
 pub fn grid_auto_flow(input: stylo::GridAutoFlow) -> taffy::GridAutoFlow {
     let is_row = input.contains(stylo::GridAutoFlow::ROW);
@@ -776,9 +819,8 @@ pub fn grid_template_tracks(
             })
             .collect(),
 
-        // TODO: Implement subgrid and masonry
+        // TODO: Implement subgrid
         stylo::GenericGridTemplateComponent::Subgrid(_) => Vec::new(),
-        stylo::GenericGridTemplateComponent::Masonry => Vec::new(),
     }
 }
 
@@ -793,9 +835,8 @@ pub fn grid_template_line_names(
             Some(crate::wrapper::StyloLineNameIter::new(&list.line_names))
         }
 
-        // TODO: Implement subgrid and masonry
+        // TODO: Implement subgrid
         stylo::GenericGridTemplateComponent::Subgrid(_) => None,
-        stylo::GenericGridTemplateComponent::Masonry => None,
     }
 }
 
@@ -1037,6 +1078,13 @@ pub fn to_taffy_style(style: &stylo::ComputedValues) -> taffy::Style<Atom> {
         // Grid
         #[cfg(feature = "grid")]
         grid_auto_flow: self::grid_auto_flow(pos.grid_auto_flow),
+        #[cfg(feature = "grid-lanes")]
+        grid_lanes_direction: grid_lanes_direction(pos),
+        #[cfg(feature = "grid-lanes")]
+        fit_tolerance: fit_tolerance(
+            &style.clone_fit_tolerance(),
+            style.clone_font_size().used_size().px(),
+        ),
         #[cfg(feature = "grid")]
         grid_template_rows: self::grid_template_tracks(&pos.grid_template_rows),
         #[cfg(feature = "grid")]

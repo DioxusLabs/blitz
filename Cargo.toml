@@ -98,11 +98,12 @@ dioxus-cli-config = { version = "0.7.3" }
 dioxus-core-macro = { version = "0.7.3" }
 
 # Taffy + Parley + Fontations
-taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "2d936b7701f64b0fe95e50f1bfdcfc65a9f88f6f", default-features = false, features = [
+taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "243d109c", default-features = false, features = [
     "std",
     "flexbox",
     "flexbox_balance",
     "grid",
+    "grid_lanes",
     "block_layout",
     "content_size",
     "calc",
@@ -326,3 +327,17 @@ rustc-hash = { workspace = true }
 # [patch."https://github.com/linebender/parley"]
 # parley = { path = "../parley/parley" }
 # fontique = { path = "../parley/fontique" }
+
+[patch.crates-io]
+# Stylo with grid-lanes-direction and flow-tolerance (servo/stylo PR pending)
+stylo = { git = "https://github.com/DioxusLabs/stylo", rev = "ee927b58c0ddb84c1f8eb7e4abe669d69ed3f345" }
+stylo_traits = { git = "https://github.com/DioxusLabs/stylo", rev = "ee927b58c0ddb84c1f8eb7e4abe669d69ed3f345" }
+stylo_atoms = { git = "https://github.com/DioxusLabs/stylo", rev = "ee927b58c0ddb84c1f8eb7e4abe669d69ed3f345" }
+stylo_static_prefs = { git = "https://github.com/DioxusLabs/stylo", rev = "ee927b58c0ddb84c1f8eb7e4abe669d69ed3f345" }
+stylo_dom = { git = "https://github.com/DioxusLabs/stylo", rev = "ee927b58c0ddb84c1f8eb7e4abe669d69ed3f345" }
+stylo_derive = { git = "https://github.com/DioxusLabs/stylo", rev = "ee927b58c0ddb84c1f8eb7e4abe669d69ed3f345" }
+stylo_malloc_size_of = { git = "https://github.com/DioxusLabs/stylo", rev = "ee927b58c0ddb84c1f8eb7e4abe669d69ed3f345" }
+selectors = { git = "https://github.com/DioxusLabs/stylo", rev = "ee927b58c0ddb84c1f8eb7e4abe669d69ed3f345" }
+servo_arc = { git = "https://github.com/DioxusLabs/stylo", rev = "ee927b58c0ddb84c1f8eb7e4abe669d69ed3f345" }
+to_shmem = { git = "https://github.com/DioxusLabs/stylo", rev = "ee927b58c0ddb84c1f8eb7e4abe669d69ed3f345" }
+to_shmem_derive = { git = "https://github.com/DioxusLabs/stylo", rev = "ee927b58c0ddb84c1f8eb7e4abe669d69ed3f345" }

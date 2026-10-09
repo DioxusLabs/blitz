@@ -531,7 +531,7 @@ fn collect_layout_children_with_wrap(
             // parent, recursing only through nested contents nodes.
             push_hoisted_children_and_pseudos(doc, container_node_id, out, wrap);
         }
-        DisplayInside::Flex | DisplayInside::Grid => {
+        DisplayInside::Flex | DisplayInside::Grid | DisplayInside::GridLanes => {
             // ::before/::after pseudos must be checked too: a pseudo with
             // display:contents hoists its text content into the container.
             let container = &doc.nodes[container_node_id];

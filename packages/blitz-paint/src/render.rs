@@ -1215,7 +1215,9 @@ impl ElementCx<'_, '_> {
                     Color::new([1.0, 0.0, 0.0, 1.0])
                 }
                 taffy::Display::Flex => Color::new([0.0, 1.0, 0.0, 1.0]),
-                taffy::Display::Grid => Color::new([0.0, 0.0, 1.0, 1.0]),
+                taffy::Display::Grid | taffy::Display::GridLanes => {
+                    Color::new([0.0, 0.0, 1.0, 1.0])
+                }
                 taffy::Display::None => Color::new([0.0, 0.0, 1.0, 1.0]),
             };
 
