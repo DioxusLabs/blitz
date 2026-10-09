@@ -21,7 +21,8 @@ use parley::{LayoutContext, PositionedLayoutItem};
 use thread_local::ThreadLocal;
 
 use super::{
-    BoxMeasure, ContentWidths, InlineLayoutEngine, InlineText, LineFloats, LinesExtent, Placement,
+    BoxMeasure, ContentWidths, InlineLayoutEngine, InlineText, LastBaseline, LineFloats,
+    LinesExtent, Placement,
 };
 use crate::node::{InlineContent, InlineTextHit, Node};
 
@@ -535,5 +536,12 @@ impl InlineLayoutEngine for TextLayout {
 
     fn placements(&self) -> impl Iterator<Item = Placement> {
         self.box_placements()
+    }
+
+    fn last_line_baseline(&self) -> LastBaseline {
+        match self.lines_extent().last_baseline {
+            Some(baseline) => LastBaseline::At(baseline),
+            None => LastBaseline::None,
+        }
     }
 }

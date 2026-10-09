@@ -292,6 +292,21 @@ pub(crate) trait InlineLayoutEngine: InlineText {
 
     /// Returns where the lines put each inline box, in the order they are on the lines.
     fn placements(&self) -> impl Iterator<Item = Placement>;
+
+    /// Returns where the last line put its baseline when the lines were last broken, in device
+    /// pixels from the content box's top, before `align-content` moved them.
+    fn last_line_baseline(&self) -> LastBaseline;
+}
+
+/// Where a block container's last line box puts its baseline.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum LastBaseline {
+    /// This far down.
+    At(f32),
+    /// It has no line box.
+    None,
+    /// Something in it the walk does not read, which Taffy answers for.
+    Unknown,
 }
 
 /// An atomic inline as Taffy measured it, which the lines are broken with.

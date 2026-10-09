@@ -2,7 +2,7 @@
 //! for every text backend.
 
 use blitz_traits::node_id::NodeId;
-use style::values::computed::Contain;
+use style::values::specified::box_::BaselineSource;
 use style::values::specified::box_::{DisplayInside, DisplayOutside};
 use taffy::{
     AvailableSpace, AxisStaticPosition, BlockContainerStyle, BlockContext, CollapsibleMarginSet,
@@ -19,9 +19,10 @@ use super::floats::TaffyFloats;
 use super::subtract_margins;
 use super::{Frame, f32_max, inline_box_inputs};
 use crate::layout::LayoutPassState;
+use crate::layout::replaced::is_replaced_element;
 use crate::layout::resolve_calc_value;
 use crate::node::TextLayout;
-use crate::text::{BoxMeasure, InlineLayoutEngine as _};
+use crate::text::{BoxMeasure, InlineLayoutEngine as _, InlineText as _, LastBaseline};
 
 impl LayoutPassState<'_> {
     /// Measures the inline formatting context's boxes, breaks its lines and places them and what
@@ -451,16 +452,13 @@ impl LayoutPassState<'_> {
     }
 
     /// Lays out each atomic inline of the inline formatting context rooted at `node_id` as its
-    /// line holds it. Absolutely positioned boxes and floats take no room in the lines, and are
-    /// not measured.
+    /// line holds it: its border box, and its baseline down from its top. Absolutely positioned
+    /// boxes and floats take no room in the lines, and are not measured.
     ///
-    /// The baseline of an inline-block is the baseline of its last in-flow line box, unless it
-    /// has no line boxes or it is a block-axis scroll container, in which case it is the bottom
-    /// margin edge (CSS 2 §10.8.1, css-align-3 §9.1 `baseline-source: auto`; `overflow: clip` is
-    /// not a scroll container). Other atomic inlines (flex, grid, table) export a baseline
-    /// regardless of `overflow`, clamped to their border box if they are scroll containers
-    /// (css-align-3 §9.1). A layout-contained box is treated as having no baseline
-    /// (css-contain-1 §3.3).
+    /// `baseline-source: auto` is the last baseline for an inline-block and the first otherwise.
+    /// An inline-block's last baseline is its last line box's, and a flex, grid or table box's
+    /// first baseline its first; a replaced element, or an inline-block that clips its overflow
+    /// and takes its last baseline, has none, and sits on its margin box's bottom.
     fn measure_inline_boxes(
         &mut self,
         node_id: NodeId,
@@ -470,7 +468,8 @@ impl LayoutPassState<'_> {
         let children = self.nodes[node_id].layout_children.borrow().clone();
         let mut sizes = Vec::with_capacity(children.as_ref().map_or(0, |children| children.len()));
         for node in children.iter().flatten().copied() {
-            let style = self.child_layout_style(&self.nodes[node]);
+            let held = &self.nodes[node];
+            let style = self.child_layout_style(held);
             let margin = style
                 .margin()
                 .resolve_or_zero(parent_size, resolve_calc_value);
@@ -483,34 +482,56 @@ impl LayoutPassState<'_> {
             if style.position().is_out_of_flow() || is_floated {
                 continue;
             }
-            let overflow = style.overflow();
-            let box_style = style.style.get_box();
-            let is_flow = matches!(
-                box_style.display.inside(),
-                DisplayInside::Flow | DisplayInside::FlowRoot
-            );
-            let is_scroll_container = !matches!(overflow.y, Overflow::Visible | Overflow::Clip);
-            let is_block_axis_scroll_container = is_flow && is_scroll_container;
-            let contain_layout = box_style.clone_contain().contains(Contain::LAYOUT);
-            let exports_baseline = !is_block_axis_scroll_container && !contain_layout;
+            let replaced = held
+                .data
+                .downcast_element()
+                .is_some_and(|element| is_replaced_element(&element.name.local));
+            let inside = held.display_style().map(|display| display.inside());
+            let source = held
+                .primary_styles()
+                .map_or(BaselineSource::Auto, |computed| {
+                    computed.clone_baseline_source()
+                });
+            let uses_last = match source {
+                BaselineSource::First => false,
+                BaselineSource::Last => true,
+                BaselineSource::Auto => {
+                    matches!(inside, Some(DisplayInside::Flow | DisplayInside::FlowRoot))
+                }
+            };
+            // Only `baseline-source: auto` lets an inline-block that clips sit on its margin
+            // box's bottom.
+            let clips = source == BaselineSource::Auto && {
+                let overflow = style.overflow();
+                overflow.x != Overflow::Visible || overflow.y != Overflow::Visible
+            };
+            let has_baseline = !replaced && !(uses_last && clips);
             let box_inputs = inline_box_inputs(style.size().width, margin, child_inputs);
             drop(style);
 
             let output = self.compute_child_layout(crate::taffy_node_id(node), box_inputs);
-            let baseline = if exports_baseline {
-                output
-                    .baselines
-                    .last
-                    .or(output.baselines.first)
-                    .map(|baseline| {
-                        if is_scroll_container {
-                            baseline.clamp(0.0, output.size.height)
-                        } else {
-                            baseline
-                        }
-                    })
-            } else {
+            let reads_baseline =
+                has_baseline && box_inputs.run_mode == taffy::RunMode::PerformLayout;
+            let baseline = if !reads_baseline {
                 None
+            } else if uses_last {
+                // An inline formatting context's own baseline is its layout's; a block
+                // container's is found among its children.
+                let inline_root = self.nodes[node]
+                    .element_data()
+                    .is_some_and(|element| element.inline_layout_data.is_some());
+                let walked = if inline_root {
+                    LastBaseline::Unknown
+                } else {
+                    self.last_line_baseline(node)
+                };
+                match walked {
+                    LastBaseline::At(baseline) => Some(baseline),
+                    LastBaseline::None => None,
+                    LastBaseline::Unknown => output.baselines.last.or(output.baselines.first),
+                }
+            } else {
+                output.baselines.first.or(output.baselines.last)
             };
             sizes.push(BoxMeasure {
                 node,
@@ -520,6 +541,80 @@ impl LayoutPassState<'_> {
             });
         }
         sizes
+    }
+
+    /// An inline-block's baseline, its last line box's, down from the border box's top of
+    /// `node`, a block container laid out already, in CSS pixels. The last in-flow child in its
+    /// writing mode that has one gives it, and a child that is a scroll container gives its margin
+    /// box's bottom edge.
+    fn last_line_baseline(&self, node: NodeId) -> LastBaseline {
+        let held = &self.nodes[node];
+        let vertical = held
+            .primary_styles()
+            .is_some_and(|computed| computed.writing_mode.is_vertical());
+        if let Some(text) = held
+            .element_data()
+            .and_then(|element| element.inline_layout_data.as_ref())
+        {
+            // Lines that run down the page have no baseline across them.
+            if vertical {
+                return LastBaseline::Unknown;
+            }
+            return match text.last_line_baseline() {
+                LastBaseline::At(baseline) => {
+                    let edges = held.unrounded_layout();
+                    LastBaseline::At(
+                        (baseline / text.scale()) + edges.border.top + edges.padding.top,
+                    )
+                }
+                other => other,
+            };
+        }
+        let children = held.layout_children.borrow();
+        let Some(children) = children.as_ref() else {
+            return LastBaseline::None;
+        };
+        for &child in children.iter().rev() {
+            let child_node = &self.nodes[child];
+            let Some(computed) = child_node.primary_styles() else {
+                continue;
+            };
+            // An orthogonal flow gives no baseline across this one's lines.
+            if computed.get_box().display.is_none()
+                || computed.writing_mode.is_vertical() != vertical
+                || computed.clone_position().is_absolutely_positioned()
+                || !matches!(computed.clone_float(), style::values::computed::Float::None)
+            {
+                continue;
+            }
+            let scrolls = !matches!(
+                computed.clone_overflow_x(),
+                style::values::computed::Overflow::Visible
+            ) || !matches!(
+                computed.clone_overflow_y(),
+                style::values::computed::Overflow::Visible
+            );
+            let inside = child_node.display_style().map(|display| display.inside());
+            let flows = matches!(inside, Some(DisplayInside::Flow | DisplayInside::FlowRoot));
+            drop(computed);
+            let placed = child_node.unrounded_layout();
+            if scrolls && flows {
+                return LastBaseline::At(
+                    placed.location.y + placed.size.height + placed.margin.bottom,
+                );
+            }
+            if !flows {
+                return LastBaseline::Unknown;
+            }
+            match self.last_line_baseline(child) {
+                LastBaseline::At(baseline) => {
+                    return LastBaseline::At(placed.location.y + baseline);
+                }
+                LastBaseline::None => continue,
+                LastBaseline::Unknown => return LastBaseline::Unknown,
+            }
+        }
+        LastBaseline::None
     }
 
     /// How wide the floats of the inline formatting context rooted at `node_id` make its content,
