@@ -32,6 +32,7 @@ impl TextLayout {
                 }
                 _ => sizes.iter().find(|measured| measured.node == node),
             };
+            let measured = measured.filter(|_| ibox.kind == parley::InlineBoxKind::InFlow);
             let Some(measured) = measured else {
                 // An absolutely positioned box or a float takes no room in the line.
                 ibox.width = 0.0;
