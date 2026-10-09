@@ -63,6 +63,8 @@ input[type="checkbox"] {
     width: 14px;
     height: 14px;
     margin: 3px 3px 3px 4px;
+    padding: 0;
+    border: none;
 }
 
 input[type="radio"] {
@@ -71,6 +73,7 @@ input[type="radio"] {
     border-radius: 14px;
     border: none;
     margin: 3px 3px 3px 4px;
+    padding: 0;
 }
 
 input,
