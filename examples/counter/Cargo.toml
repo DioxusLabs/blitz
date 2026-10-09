@@ -9,7 +9,9 @@ publish = false
 crate-type = ["cdylib"]
 
 [features]
-default = ["hybrid"]
+default = ["hybrid", "parley"]
+# The text backend, which is Parley: on by default, and required.
+parley = ["dioxus-native/parley", "blitz-dom/parley", "blitz-paint/parley"]
 system-fonts = ["blitz-dom/system-fonts"]
 vello = ["dioxus-native/vello"]
 cpu = ["cpu-pixels"]

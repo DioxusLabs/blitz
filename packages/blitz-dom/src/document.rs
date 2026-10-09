@@ -6,11 +6,12 @@ use crate::mutator::ViewportMut;
 use crate::net::{
     Resource, ResourceHandler, ResourceLoadResponse, StylesheetHandler, StylesheetLoader,
 };
-use crate::node::{ImageData, NodeFlags, RasterImageData, SpecialElementData, Status, TextBrush};
+use crate::node::{ImageData, NodeFlags, RasterImageData, SpecialElementData, Status};
 use crate::scrolling::ScrollAnimationState;
 use crate::selection::TextSelection;
 use crate::stylo_device::{DeviceChanges, make_device};
 use crate::stylo_to_cursor_icon::stylo_to_cursor_icon;
+use crate::text::{DocumentText as _, InlineText as _, TextContext, TextInputDriver};
 use crate::traversal::TreeTraverser;
 use crate::url::DocumentUrl;
 use crate::util::ImageType;
@@ -26,9 +27,7 @@ use blitz_traits::net::{AbortSignal, DummyNetProvider, NetProvider, Request};
 use blitz_traits::node_id::NodeId;
 use blitz_traits::shell::{DummyShellProvider, ShellProvider, Viewport};
 use cursor_icon::CursorIcon;
-use linebender_resource_handle::Blob;
 use markup5ever::{LocalName, local_name};
-use parley::{FontContext, PlainEditorDriver};
 use selectors::{Element, matching::QuirksMode};
 use smallvec::SmallVec;
 use std::any::Any;
@@ -39,7 +38,7 @@ use std::rc::Rc;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
-use std::sync::{Arc, Mutex, MutexGuard, OnceLock, RwLockReadGuard, RwLockWriteGuard};
+use std::sync::{Arc, MutexGuard, OnceLock, RwLockReadGuard, RwLockWriteGuard};
 use std::task::{Context as TaskContext, Waker};
 use style::Atom;
 use style::animation::DocumentAnimationSet;
@@ -68,9 +67,6 @@ use style_dom::ElementState;
 use thin_vec::ThinVec;
 use url::Url;
 use web_time::Instant;
-
-#[cfg(feature = "parallel-construct")]
-use thread_local::ThreadLocal;
 
 pub enum DocGuard<'a> {
     Ref(&'a BaseDocument),
@@ -239,14 +235,8 @@ pub struct BaseDocument {
     /// Stylo invalidation map. We insert into this map prior to mutating nodes.
     pub(crate) snapshots: SnapshotMap,
 
-    // Parley contexts
-    /// A Parley font context
-    pub(crate) font_ctx: Arc<Mutex<parley::FontContext>>,
-    #[cfg(feature = "parallel-construct")]
-    /// Thread-and-document-local copies to the font context
-    pub(crate) thread_font_contexts: ThreadLocal<RefCell<Box<FontContext>>>,
-    /// A Parley layout context
-    pub(crate) layout_ctx: parley::LayoutContext<TextBrush>,
+    /// The document's fonts, and the contexts the text backend lays out text in
+    pub(crate) text: TextContext,
 
     /// The real (non-anonymous) node which is currently hovered (if any).
     /// This is never a layout-generated (anonymous) node, so it remains valid
@@ -366,31 +356,7 @@ impl BaseDocument {
 
         let id = ID_GENERATOR.fetch_add(1, Ordering::SeqCst);
 
-        let font_ctx = config
-            .font_ctx
-            .map(|mut font_ctx| {
-                font_ctx.source_cache.make_shared();
-                // font_ctx.collection.make_shared();
-                font_ctx
-            })
-            .unwrap_or_else(|| {
-                use parley::fontique::{Collection, CollectionOptions, SourceCache};
-                let mut font_ctx = FontContext {
-                    source_cache: SourceCache::new_shared(),
-                    collection: Collection::new(CollectionOptions {
-                        shared: false,
-                        system_fonts: cfg!(all(
-                            feature = "system-fonts",
-                            not(target_arch = "wasm32")
-                        )),
-                    }),
-                };
-                font_ctx
-                    .collection
-                    .register_fonts(Blob::new(Arc::new(crate::BULLET_FONT) as _), None);
-                font_ctx
-            });
-        let font_ctx = Arc::new(Mutex::new(font_ctx));
+        let text = TextContext::new(config.font_ctx);
 
         // Make sure we turn on stylo features *before* creating the Stylist
         style_config::set_pref!("layout.grid.enabled", true);
@@ -407,7 +373,7 @@ impl BaseDocument {
 
         let viewport = config.viewport.unwrap_or_default();
         let media_type = config.media_type.unwrap_or_else(MediaType::screen);
-        let device = make_device(&viewport, media_type.clone(), font_ctx.clone());
+        let device = make_device(&viewport, media_type.clone(), text.font_metrics_provider());
         let stylist = Stylist::new(device, QuirksMode::NoQuirks);
         let snapshots = SnapshotMap::new();
         let nodes = Box::new(NodeTree::new());
@@ -457,10 +423,7 @@ impl BaseDocument {
             ua_stylesheets: HashMap::new(),
             nodes_to_stylesheet: BTreeMap::new(),
             stylesheet_generation: 0,
-            font_ctx,
-            #[cfg(feature = "parallel-construct")]
-            thread_font_contexts: ThreadLocal::new(),
-            layout_ctx: parley::LayoutContext::new(),
+            text,
 
             hover_node_id: None,
             hover_hit_node_id: None,
@@ -1318,40 +1281,7 @@ impl BaseDocument {
                 self.apply_iframe_html(node_id, res.request_id, res.resolved_url, &html);
             }
             Resource::Font(bytes, overrides) => {
-                let font = Blob::new(Arc::new(bytes));
-
-                // Build a `FontInfoOverride` from the `@font-face` descriptors
-                // captured during stylesheet parsing. Without this, parley
-                // reads the family name from the TTF's own metadata, which
-                // means CSS `font-family: 'Avenir Book'` won't match a font
-                // file that internally identifies as `Avenir 45 Book`.
-                let weight_override = overrides.weight.map(parley::fontique::FontWeight::new);
-                let info_override = parley::fontique::FontInfoOverride {
-                    family_name: overrides.family_name.as_deref(),
-                    weight: weight_override,
-                    style: overrides.style,
-                    ..Default::default()
-                };
-
-                // TODO: Investigate eliminating double-box
-                let mut global_font_ctx = self.font_ctx.lock().unwrap();
-                global_font_ctx
-                    .collection
-                    .register_fonts(font.clone(), Some(info_override));
-
-                #[cfg(feature = "parallel-construct")]
-                {
-                    rayon::broadcast(|_ctx| {
-                        let mut font_ctx = self
-                            .thread_font_contexts
-                            .get_or(|| RefCell::new(Box::new(global_font_ctx.clone())))
-                            .borrow_mut();
-                        font_ctx
-                            .collection
-                            .register_fonts(font.clone(), Some(info_override));
-                    });
-                }
-                drop(global_font_ctx);
+                self.text.add_web_font(bytes, &overrides);
 
                 // TODO: see if we can only invalidate if resolved fonts may have changed
                 self.invalidate_inline_contexts();
@@ -2061,7 +1991,7 @@ impl BaseDocument {
         self.set_stylist_device(make_device(
             &self.viewport,
             self.media_type.clone(),
-            self.font_ctx.clone(),
+            self.text.font_metrics_provider(),
         ));
         self.scroll_viewport_by(0.0, 0.0); // Clamp scroll offset
 
@@ -2404,11 +2334,8 @@ impl BaseDocument {
         self.find_element_by_tag_name(&local_name!("title"))
     }
 
-    pub fn with_text_input(
-        &mut self,
-        node_id: NodeId,
-        cb: impl FnOnce(PlainEditorDriver<TextBrush>),
-    ) {
+    /// Calls `cb` with the editor of the text input at `node_id`, if it is one.
+    pub fn with_text_input(&mut self, node_id: NodeId, cb: impl FnOnce(TextInputDriver<'_>)) {
         let Some(node) = self.nodes.get_mut(node_id) else {
             return;
         };
@@ -2417,10 +2344,10 @@ impl BaseDocument {
             .element_data_mut()
             .and_then(|el| el.text_input_data_mut())
         {
-            let mut font_ctx = self.font_ctx.lock().unwrap();
-            let layout_ctx = &mut self.layout_ctx;
-            let driver = text_input.editor.driver(&mut font_ctx, layout_ctx);
-            cb(driver)
+            cb(TextInputDriver {
+                editor: &mut text_input.editor,
+                cx: &mut self.text,
+            })
         }
     }
 
@@ -2599,14 +2526,13 @@ impl BaseDocument {
             let element_data = node.element_data()?;
             let inline_layout = element_data.inline_layout_data.as_ref()?;
 
-            if *end > inline_layout.text.len() {
+            let Some(selected) = inline_layout.selected_text(*start, *end) else {
                 continue;
-            }
-
+            };
             if !result.is_empty() {
                 result.push(' ');
             }
-            result.push_str(&inline_layout.text[*start..*end]);
+            result.push_str(&selected);
         }
 
         if result.is_empty() {
@@ -2702,7 +2628,7 @@ impl BaseDocument {
                 continue;
             };
 
-            let text_len = inline_layout.text.len();
+            let text_len = inline_layout.text_len();
 
             if node_id == first_node && node_id == last_node {
                 let start = first_offset.min(last_offset);
@@ -3252,79 +3178,6 @@ mod hover_invalidation_tests {
             background_image_url(&doc, div).as_deref(),
             Some("https://example.com/a.png"),
             "unhover should flush the restored background image"
-        );
-    }
-}
-
-#[cfg(test)]
-mod font_face_override_tests {
-    use super::*;
-    use crate::net::{FontFaceOverrides, Resource, ResourceLoadResponse};
-
-    /// Regression-pin for the `@font-face` descriptor-honouring fix.
-    ///
-    /// The bug was that `Resource::Font` carried only the raw font bytes,
-    /// so `load_resource` registered fonts with `info_override = None` and
-    /// parley fell back to the TTF's internal `name` table. After the fix,
-    /// `Resource::Font` carries `FontFaceOverrides` and `load_resource`
-    /// builds a `FontInfoOverride` from them — meaning a CSS-declared
-    /// `font-family` alias wins over the file's own metadata.
-    ///
-    /// We drive `load_resource` directly with a fabricated response rather
-    /// than go through HTML parsing → `fetch_font_face`, because the
-    /// downstream HTML parser lives in `blitz-html` (would be a circular
-    /// crate dependency). The mapping from `@font-face` descriptors into
-    /// `FontFaceOverrides` is covered by the unit tests in `net.rs`; this
-    /// test pins the load-side of the pipeline.
-    #[test]
-    fn font_face_overrides_alias_family_name() {
-        const ALIAS: &str = "AliasedFamily";
-
-        let mut document = BaseDocument::new(DocumentConfig::default());
-
-        // Sanity: the alias name is not registered before we feed the font.
-        {
-            let mut ctx = document.font_ctx.lock().unwrap();
-            assert!(
-                ctx.collection.family_id(ALIAS).is_none(),
-                "alias must not exist before registration",
-            );
-        }
-
-        // Drive `load_resource` with a `Resource::Font` whose overrides
-        // assert the CSS-side family name. We use the bullet font as a
-        // valid font payload — its internal `name` table is irrelevant to
-        // the assertion; what matters is whether the override wins.
-        let response = ResourceLoadResponse {
-            request_id: 0,
-            node_id: None,
-            resolved_url: Some(String::from("test://aliased-family")),
-            result: Ok(Resource::Font(
-                blitz_traits::net::Bytes::from_static(crate::BULLET_FONT),
-                FontFaceOverrides {
-                    family_name: Some(String::from(ALIAS)),
-                    weight: Some(800.0),
-                    style: Some(parley::fontique::FontStyle::Italic),
-                },
-            )),
-        };
-        document.load_resource(response);
-
-        // The override must have taken effect: parley's `Collection` now
-        // resolves the CSS-declared alias to a registered family.
-        let mut ctx = document.font_ctx.lock().unwrap();
-        let family_id = ctx
-            .collection
-            .family_id(ALIAS)
-            .expect("CSS-declared family name should be registered as a family alias");
-        let resolved_name = ctx
-            .collection
-            .family_name(family_id)
-            .expect("family id should resolve back to a name");
-        assert_eq!(
-            resolved_name, ALIAS,
-            "registered family should report the CSS-declared name, \
-             not the font file's internal `name` table entry",
         );
     }
 }

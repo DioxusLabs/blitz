@@ -1,5 +1,6 @@
 use crate::Document;
 use crate::layout::paint_tree::{HoistedPaintChild, StackingContext};
+use crate::text::{EditableText as _, InlineLayoutEngine as _, InlineText as _};
 use bitflags::bitflags;
 use blitz_traits::events::{
     BlitzPointerEvent, BlitzPointerId, DomEventData, HitResult, PointerCoords,
@@ -10,7 +11,6 @@ use euclid::{Point2D, Rect, Size2D};
 use keyboard_types::Modifiers;
 use kurbo::{Affine, Rect as KurboRect};
 use markup5ever::{LocalName, local_name};
-use parley::{BreakReason, Cluster, ClusterSide};
 use selectors::matching::ElementSelectorFlags;
 use std::cell::{Cell, RefCell};
 use std::fmt::Write;
@@ -240,7 +240,7 @@ impl Node {
             .downcast_element_mut()
             .and_then(|el| el.inline_layout_data.as_mut())
         {
-            inline_layout.content_widths = None;
+            inline_layout.invalidate_content_widths();
         }
     }
 
@@ -816,7 +816,7 @@ impl Node {
         {
             if !input_data.is_multiline {
                 let content_box_height = self.final_layout().content_box_height();
-                let input_height = input_data.editor.try_layout().unwrap().height() / scale as f32;
+                let input_height = input_data.editor.size().unwrap().height as f32 / scale as f32;
                 let y_offset = ((content_box_height - input_height) / 2.0).max(0.0);
 
                 return y_offset as f64;
@@ -1502,14 +1502,11 @@ impl Node {
         if self.flags.is_inline_root() {
             let element_data = &self.element_data().unwrap();
             if let Some(ild) = element_data.inline_layout_data.as_ref() {
-                let layout = &ild.layout;
-                let scale = layout.scale();
-                let y = y - ild.block_offset;
+                let hit = ild.hit_test(x, y, self.inline_text_content_size(), scale as f32, true);
+                let y = y - ild.block_offset();
 
-                if let Some((cluster, _side)) =
-                    Cluster::from_point_exact(layout, x * scale, y * scale)
-                {
-                    let node_id = cluster.style().brush.id;
+                if let Some(hit) = hit {
+                    let node_id = hit.node_id;
                     let text_pointer_events_none = self
                         .with(node_id)
                         .primary_styles()
@@ -1562,34 +1559,37 @@ impl Node {
 
         let element_data = self.element_data()?;
         let inline_layout = element_data.inline_layout_data.as_ref()?;
-        let layout = &inline_layout.layout;
-        let scale = layout.scale();
-        let y = y - inline_layout.block_offset;
+        inline_layout
+            .hit_test(
+                x,
+                y,
+                self.inline_text_content_size(),
+                inline_layout.scale(),
+                false,
+            )
+            .map(|hit| hit.byte_offset)
+    }
 
-        // Use Parley's cluster hit testing (from_point is more forgiving than from_point_exact)
-        let (cluster, side) = Cluster::from_point(layout, x * scale, y * scale)?;
-
-        // Determine byte offset based on which side of the cluster was clicked
-        // For LTR text: left side = start of cluster, right side = end of cluster
-        // For RTL text: left side = end of cluster, right side = start of cluster
-        // Also, explicit line breaks should always use start to avoid cursor appearing on next line
-        let is_leading = side == ClusterSide::Left;
-        let offset = if cluster.is_rtl() {
-            if is_leading {
-                cluster.text_range().end
-            } else {
-                cluster.text_range().start
-            }
-        } else {
-            // LTR text
-            if is_leading || cluster.is_line_break() == Some(BreakReason::Explicit) {
-                cluster.text_range().start
-            } else {
-                cluster.text_range().end
-            }
-        };
-
-        Some(offset)
+    fn inline_text_content_size(&self) -> kurbo::Size {
+        let layout = self.final_layout();
+        kurbo::Size::new(
+            f64::from(
+                (layout.size.width
+                    - layout.padding.left
+                    - layout.padding.right
+                    - layout.border.left
+                    - layout.border.right)
+                    .max(0.0),
+            ),
+            f64::from(
+                (layout.size.height
+                    - layout.padding.top
+                    - layout.padding.bottom
+                    - layout.border.top
+                    - layout.border.bottom)
+                    .max(0.0),
+            ),
+        )
     }
 
     /// Whether this node is a non-atomic inline element: one that has no layout box of its
@@ -1671,103 +1671,13 @@ impl Node {
     ///
     /// Returns `None` for nodes that have their own layout box.
     pub fn inline_fragment_boxes(&self) -> Option<impl Iterator<Item = taffy::Rect<f32>> + '_> {
-        use parley::PositionedLayoutItem;
-
         if !self.is_non_atomic_inline() {
             return None;
         }
 
         let inline_root = self.inline_root_ancestor()?;
         let inline_layout = inline_root.element_data()?.inline_layout_data.as_ref()?;
-        let layout = &inline_layout.layout;
-        let scale = layout.scale();
-
-        // Walk up the DOM parent chain from `id` to check whether it is (or is
-        // inside) the target node, stopping at the inline root.
-        let inline_root_id = inline_root.id;
-        let is_in_target = move |mut id: NodeId| -> bool {
-            loop {
-                if id == self.id {
-                    return true;
-                }
-                if id == inline_root_id {
-                    return false;
-                }
-                match self.with(id).parent {
-                    Some(parent) => id = parent,
-                    None => return false,
-                }
-            }
-        };
-
-        let root_layout = inline_root.unrounded_layout();
-        let content_box_inset = root_layout.padding + root_layout.border;
-        let origin_x = content_box_inset.left;
-        let origin_y = content_box_inset.top + inline_layout.block_offset;
-
-        fn union(acc: &mut Option<taffy::Rect<f32>>, left: f32, top: f32, right: f32, bottom: f32) {
-            *acc = Some(match *acc {
-                Some(rect) => taffy::Rect {
-                    left: rect.left.min(left),
-                    top: rect.top.min(top),
-                    right: rect.right.max(right),
-                    bottom: rect.bottom.max(bottom),
-                },
-                None => taffy::Rect {
-                    left,
-                    top,
-                    right,
-                    bottom,
-                },
-            });
-        }
-
-        // One rect per line box: the union of all of the target's fragments on that line
-        Some(layout.lines().filter_map(move |line| {
-            let line_metrics = line.metrics();
-            let mut line_rect: Option<taffy::Rect<f32>> = None;
-
-            for item in line.items() {
-                match item {
-                    PositionedLayoutItem::GlyphRun(glyph_run) => {
-                        if !is_in_target(glyph_run.style().brush.id) {
-                            continue;
-                        }
-                        let x0 = glyph_run.offset();
-                        let x1 = x0 + glyph_run.advance();
-                        // Use the line box's block extent rather than the
-                        // run's font ascent/descent: fonts with small
-                        // typographic metrics would otherwise produce rects
-                        // that clip the rendered glyphs. This matches the
-                        // geometry used for text selection highlights.
-                        let y0 = line_metrics.block_min_coord;
-                        let y1 = line_metrics.block_max_coord;
-                        union(&mut line_rect, x0, y0, x1, y1);
-                    }
-                    PositionedLayoutItem::InlineBox(inline_box) => {
-                        if !is_in_target(NodeId::from_u64(inline_box.id)) {
-                            continue;
-                        }
-                        let x0 = inline_box.x;
-                        let y0 = inline_box.y;
-                        union(
-                            &mut line_rect,
-                            x0,
-                            y0,
-                            x0 + inline_box.width,
-                            y0 + inline_box.height,
-                        );
-                    }
-                }
-            }
-
-            line_rect.map(|rect| taffy::Rect {
-                left: origin_x + rect.left / scale,
-                top: origin_y + rect.top / scale,
-                right: origin_x + rect.right / scale,
-                bottom: origin_y + rect.bottom / scale,
-            })
-        }))
+        Some(inline_layout.fragment_rects(inline_root, self).into_iter())
     }
 
     /// CSSOM View's `offsetLeft`/`offsetTop`: the offset of this node's border box from the

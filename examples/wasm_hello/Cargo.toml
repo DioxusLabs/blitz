@@ -10,7 +10,8 @@ crate-type = ["cdylib"]
 
 [dependencies]
 anyrender_vello_hybrid = { workspace = true, features = ["webgl"] }
-blitz-dom = { workspace = true, features = ["woff"] }
+# This example builds Parley's font context itself.
+blitz-dom = { workspace = true, features = ["woff", "parley"] }
 blitz-html = { workspace = true }
 blitz-shell = { workspace = true, default-features = false, features = ["tracing"]}
 

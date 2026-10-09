@@ -1,22 +1,11 @@
 //! Resolve style and layout
 
 use blitz_traits::node_id::NodeId;
-use std::cell::RefCell;
 
 use debug_timer::debug_timer;
 use kurbo::{Affine, Rect};
-use parley::LayoutContext;
 use selectors::Element as _;
 use style::dom::TDocument;
-
-#[cfg(feature = "parallel-construct")]
-use rayon::prelude::*;
-
-// FIXME: static thread_local FontCtx isn't necessarily correct in multi-document context.
-// Should use thread_local crate with ThreadLocal value store in the Document.
-thread_local! {
-    pub(crate) static LAYOUT_CTX: RefCell<Option<Box<LayoutContext<TextBrush>>>> = const { RefCell::new(None) };
-}
 
 use taffy::AvailableSpace;
 
@@ -24,14 +13,11 @@ use crate::{
     BaseDocument,
     layout::{
         LayoutPassState,
-        construct::{
-            ConstructionTask, ConstructionTaskData, ConstructionTaskResult,
-            ConstructionTaskResultData, LayoutChildren, build_inline_layout_into,
-            collect_layout_children,
-        },
+        construct::{ConstructionTaskData, LayoutChildren, collect_layout_children},
         damage::{ALL_DAMAGE, CONSTRUCT_BOX, CONSTRUCT_DESCENDENT, CONSTRUCT_FC},
     },
-    node::TextBrush,
+    node::TextLayout,
+    text::InlineLayoutEngine as _,
 };
 
 impl BaseDocument {
@@ -354,73 +340,25 @@ impl BaseDocument {
         deferred_construction_nodes.sort_unstable_by_key(|task| task.node_id);
         deferred_construction_nodes.dedup_by_key(|task| task.node_id);
 
-        #[cfg(feature = "parallel-construct")]
-        let iter = deferred_construction_nodes.into_par_iter();
-        #[cfg(not(feature = "parallel-construct"))]
-        let iter = deferred_construction_nodes.into_iter();
-
-        let results: Vec<ConstructionTaskResult> = iter
-            .map(|task: ConstructionTask| match task.data {
-                ConstructionTaskData::InlineLayout(mut layout) => {
-                    #[cfg(feature = "parallel-construct")]
-                    let mut layout_ctx = LAYOUT_CTX
-                        .take()
-                        .unwrap_or_else(|| Box::new(LayoutContext::new()));
-                    #[cfg(feature = "parallel-construct")]
-                    let layout_ctx_mut = &mut layout_ctx;
-
-                    #[cfg(feature = "parallel-construct")]
-                    let mut font_ctx = self
-                        .thread_font_contexts
-                        .get_or(|| RefCell::new(Box::new(self.font_ctx.lock().unwrap().clone())))
-                        .borrow_mut();
-                    #[cfg(feature = "parallel-construct")]
-                    let font_ctx_mut = &mut *font_ctx;
-
-                    #[cfg(not(feature = "parallel-construct"))]
-                    let layout_ctx_mut = &mut self.layout_ctx;
-                    #[cfg(not(feature = "parallel-construct"))]
-                    let font_ctx_mut = &mut *self.font_ctx.lock().unwrap();
-
-                    layout.content_widths = None;
-                    build_inline_layout_into(
-                        &self.nodes,
-                        layout_ctx_mut,
-                        font_ctx_mut,
-                        &mut layout,
-                        self.viewport.scale(),
-                        task.node_id,
-                    );
-
-                    #[cfg(feature = "parallel-construct")]
-                    {
-                        LAYOUT_CTX.set(Some(layout_ctx));
-                    }
-
-                    // If layout doesn't contain any inline boxes, then it is safe to populate the content_widths
-                    // cache during this parallelized stage.
-                    // if layout.layout.inline_boxes().is_empty() {
-                    //     layout.content_widths();
-                    // }
-
-                    ConstructionTaskResult {
-                        node_id: task.node_id,
-                        data: ConstructionTaskResultData::InlineLayout(layout),
-                    }
-                }
+        let mut layouts: Vec<(NodeId, Box<TextLayout>)> = deferred_construction_nodes
+            .into_iter()
+            .map(|task| match task.data {
+                ConstructionTaskData::InlineLayout(layout) => (task.node_id, layout),
             })
             .collect();
+        TextLayout::build_layouts(
+            &mut self.text,
+            &self.nodes,
+            self.viewport.scale(),
+            &mut layouts,
+        );
 
-        for result in results {
-            match result.data {
-                ConstructionTaskResultData::InlineLayout(layout) => {
-                    self.nodes[result.node_id].clear_layout_cache();
-                    self.nodes[result.node_id]
-                        .element_data_mut()
-                        .unwrap()
-                        .inline_layout_data = Some(layout);
-                }
-            }
+        for (node_id, layout) in layouts {
+            self.nodes[node_id].clear_layout_cache();
+            self.nodes[node_id]
+                .element_data_mut()
+                .unwrap()
+                .inline_layout_data = Some(layout);
         }
 
         self.deferred_construction_nodes.clear();

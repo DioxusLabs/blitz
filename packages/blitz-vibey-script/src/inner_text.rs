@@ -2,7 +2,8 @@
 //!
 //! Self-contained so that it can move into `blitz-dom` later.
 
-use blitz_dom::node::{ListItemLayoutPosition, Marker, TextBrush, TextLayout};
+use blitz_dom::node::{InlineContent, ListItemLayoutPosition, Marker, TextLayout};
+use blitz_dom::text::InlineText as _;
 use blitz_dom::{Node, NodeId};
 use markup5ever::local_name;
 use style::computed_values::visibility::T as Visibility;
@@ -184,53 +185,60 @@ impl InnerTextCollector {
     }
 
     fn visit_inline_layout(&mut self, root: &Node, layout: &TextLayout, filter: Option<NodeId>) {
-        let text = layout.text.as_str();
-        let marker_len = inside_marker_len(root, text);
+        let marker_len = inside_marker_len(root, layout.text());
 
-        let mut cached_brush: Option<(NodeId, bool)> = None;
-        let mut include = |brush: &TextBrush| -> bool {
-            if let Some((id, included)) = cached_brush {
-                if id == brush.id {
+        let mut cached_node: Option<(NodeId, bool)> = None;
+        let mut include = |id: NodeId| -> bool {
+            if let Some((cached, included)) = cached_node {
+                if cached == id {
                     return included;
                 }
             }
-            let node = root.with(brush.id);
+            // Text is attributed to a text node or to the element holding it.
+            let mut node = root.with(id);
+            if node.is_text_node() {
+                if let Some(parent) = node.parent {
+                    node = root.with(parent);
+                }
+            }
             let included = !is_generated_pseudo(node)
                 && filter.is_none_or(|target| is_inclusive_descendant_of(node, target))
                 && node
                     .primary_styles()
                     .is_none_or(|s| s.clone_visibility() == Visibility::Visible);
-            cached_brush = Some((brush.id, included));
+            cached_node = Some((id, included));
             included
         };
 
-        let mut boxes = layout.layout.inline_boxes().peekable();
-        let mut runs = Vec::new();
-        for line in layout.layout.lines() {
-            // Runs are stored in visual order: restore logical order for bidi text
-            runs.clear();
-            runs.extend(line.runs());
-            runs.sort_by_key(|run| run.text_range().start);
-
-            for run in &runs {
-                for cluster in run.clusters() {
-                    let range = cluster.text_range();
-                    while let Some(ibox) = boxes.next_if(|ibox| ibox.index <= range.start) {
-                        self.visit_inline_box(root, ibox.id, filter);
-                    }
-                    if range.start >= marker_len && include(&cluster.style().brush) {
-                        self.push_str(&text[range]);
+        let mut visited_boxes = Vec::new();
+        for content in layout.logical_content() {
+            match content {
+                InlineContent::Box(id) => {
+                    visited_boxes.push(id);
+                    self.visit_inline_box(root, id, filter);
+                }
+                InlineContent::Text {
+                    node_id,
+                    start,
+                    text,
+                } => {
+                    if start >= marker_len && include(node_id) {
+                        self.push_str(&text);
                     }
                 }
             }
         }
-        for ibox in boxes {
-            self.visit_inline_box(root, ibox.id, filter);
+        // Boxes the lines do not place follow the text.
+        let children = root.layout_children.borrow();
+        for &id in children.iter().flatten() {
+            if !visited_boxes.contains(&id) {
+                self.visit_inline_box(root, id, filter);
+            }
         }
     }
 
-    fn visit_inline_box(&mut self, root: &Node, id: u64, filter: Option<NodeId>) {
-        let node = root.with(NodeId::from_u64(id));
+    fn visit_inline_box(&mut self, root: &Node, id: NodeId, filter: Option<NodeId>) {
+        let node = root.with(id);
         if filter.is_none_or(|target| is_inclusive_descendant_of(node, target)) {
             self.visit(node, None);
         }
