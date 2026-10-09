@@ -747,6 +747,7 @@ fn text_group(computed: &ComputedValues, scale: f32, language: Option<Language>)
             style::values::computed::WordBreak::Normal => WordBreak::Normal,
             style::values::computed::WordBreak::BreakAll => WordBreak::BreakAll,
             style::values::computed::WordBreak::KeepAll => WordBreak::KeepAll,
+            style::values::computed::WordBreak::BreakWord => WordBreak::Normal,
         },
         line_break: match computed.slow_clone_line_break() {
             style::values::computed::LineBreak::Auto
@@ -755,10 +756,12 @@ fn text_group(computed: &ComputedValues, scale: f32, language: Option<Language>)
             style::values::computed::LineBreak::Strict => LineBreak::Strict,
             style::values::computed::LineBreak::Anywhere => LineBreak::Anywhere,
         },
-        overflow_wrap: match text.overflow_wrap {
-            style::values::computed::OverflowWrap::Normal => OverflowWrap::Normal,
-            style::values::computed::OverflowWrap::BreakWord => OverflowWrap::BreakWord,
-            style::values::computed::OverflowWrap::Anywhere => OverflowWrap::Anywhere,
+        // `word-break: break-word` is `word-break: normal` with `overflow-wrap: anywhere`.
+        overflow_wrap: match (text.word_break, text.overflow_wrap) {
+            (style::values::computed::WordBreak::BreakWord, _) => OverflowWrap::Anywhere,
+            (_, style::values::computed::OverflowWrap::Normal) => OverflowWrap::Normal,
+            (_, style::values::computed::OverflowWrap::BreakWord) => OverflowWrap::BreakWord,
+            (_, style::values::computed::OverflowWrap::Anywhere) => OverflowWrap::Anywhere,
         },
         hyphens: match computed.slow_clone_hyphens() {
             StyloHyphens::None => Hyphens::None,
