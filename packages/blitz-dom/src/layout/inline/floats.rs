@@ -18,8 +18,10 @@ pub(crate) struct TaffyFloats<'s, 'a, 'c, 'bfc> {
     pub(crate) block_ctx: &'c mut BlockContext<'bfc>,
     /// Device pixels per CSS pixel.
     pub(crate) scale: f32,
-    /// The inputs a float is laid out with.
+    /// The inputs of the pass, which a float is laid out with.
     pub(crate) float_inputs: LayoutInput,
+    /// The containing block's inline size, which a float's room is taken of.
+    pub(crate) basis: f32,
     /// What a float's margin percentages are of.
     pub(crate) parent_size: Size<Option<f32>>,
     /// The inline root's padding and border, which its content box is inside.
@@ -45,9 +47,10 @@ impl LineFloats for TaffyFloats<'_, '_, '_, '_> {
     }
 
     fn place_float(&mut self, node_id: NodeId, y: f64) {
+        use taffy::ResolveOrZero as _;
         use taffy::{BlockItemStyle as _, CoreStyle as _, Float, LayoutPartialTree as _};
-        use taffy::{ResolveOrZero as _, prelude::TaffyMaxContent as _};
 
+        use super::float_box_inputs;
         use crate::layout::resolve_calc_value;
 
         let state = &mut *self.state;
@@ -72,10 +75,7 @@ impl LineFloats for TaffyFloats<'_, '_, '_, '_> {
 
         let mut output = state.compute_child_layout(
             crate::taffy_node_id(node_id),
-            LayoutInput {
-                available_space: Size::MAX_CONTENT,
-                ..self.float_inputs
-            },
+            float_box_inputs(self.float_inputs, self.basis, margin),
         );
         let min_y = y as f32 / self.scale;
 
