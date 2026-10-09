@@ -8,7 +8,7 @@ use taffy::{
     AvailableSpace, AxisStaticPosition, BlockContainerStyle, BlockContext, CollapsibleMarginSet,
     CoreStyle as _, Direction, LayoutOutput, LayoutPartialTree as _, MaybeMath as _,
     MaybeResolve as _, OofCandidate, OofCandidates, OofItemStyle, OofPositioningArea, Overflow,
-    Point, RequestedAxis, ResolveOrZero as _, Size,
+    Point, RequestedAxis, ResolveOrZero as _, RunMode, Size,
 };
 
 #[cfg(feature = "floats")]
@@ -60,7 +60,23 @@ impl LayoutPassState<'_> {
             );
         }
 
-        let sizes = self.measure_inline_boxes(node_id, inputs.parent_size, child_inputs);
+        // What the pass needs of the atomic inlines, which says how far each is laid out to
+        // measure it. A pass that places them lays them out.
+        let pass = match inputs.run_mode {
+            RunMode::ComputeSize if inputs.axis == RequestedAxis::Horizontal => {
+                Measure::InlineSizes
+            }
+            RunMode::ComputeSize => Measure::Sizes,
+            _ => Measure::Layout,
+        };
+        // Where the boxes are placed, they are laid out. The requested axis means nothing to a
+        // full layout, so every pass asks for one alike.
+        let child_inputs = taffy::LayoutInput {
+            run_mode: RunMode::PerformLayout,
+            axis: RequestedAxis::Both,
+            ..child_inputs
+        };
+        let sizes = self.measure_inline_boxes(node_id, child_inputs, pass);
         inline_layout.prepare(
             &sizes,
             self.nodes[node_id]
@@ -230,8 +246,13 @@ impl LayoutPassState<'_> {
         inline_layout.set_block_offset(block_offset);
         let line_box_top = container_pb.top + block_offset;
 
-        // Store sizes and positions of inline boxes
-        for (order, placed) in inline_layout.placements().enumerate() {
+        // Store sizes and positions of inline boxes. A pass that only sizes the block places
+        // nothing.
+        let placements = inline_layout
+            .placements()
+            .filter(|_| pass == Measure::Layout)
+            .enumerate();
+        for (order, placed) in placements {
             let order = order as u32;
             let node = &self.nodes[placed.node];
             let style = self.child_layout_style(node);
@@ -455,6 +476,10 @@ impl LayoutPassState<'_> {
     /// line holds it: its border box, and its baseline down from its top. Absolutely positioned
     /// boxes and floats take no room in the lines, and are not measured.
     ///
+    /// `pass` says how far each box is laid out: where its baseline is not read or the pass needs
+    /// no baseline, it is only measured, along the line alone in an inline-size pass.
+    /// `child_inputs` are the inputs of a full layout.
+    ///
     /// `baseline-source: auto` is the last baseline for an inline-block and the first otherwise.
     /// An inline-block's last baseline is its last line box's, and a flex, grid or table box's
     /// first baseline its first; a replaced element, or an inline-block that clips its overflow
@@ -462,8 +487,8 @@ impl LayoutPassState<'_> {
     fn measure_inline_boxes(
         &mut self,
         node_id: NodeId,
-        parent_size: Size<Option<f32>>,
         child_inputs: taffy::LayoutInput,
+        pass: Measure,
     ) -> Vec<BoxMeasure> {
         let children = self.nodes[node_id].layout_children.borrow().clone();
         let mut sizes = Vec::with_capacity(children.as_ref().map_or(0, |children| children.len()));
@@ -472,7 +497,7 @@ impl LayoutPassState<'_> {
             let style = self.child_layout_style(held);
             let margin = style
                 .margin()
-                .resolve_or_zero(parent_size, resolve_calc_value);
+                .resolve_or_zero(child_inputs.parent_size, resolve_calc_value);
 
             #[cfg(feature = "floats")]
             let is_floated = style.float().is_floated();
@@ -506,12 +531,28 @@ impl LayoutPassState<'_> {
                 overflow.x != Overflow::Visible || overflow.y != Overflow::Visible
             };
             let has_baseline = !replaced && !(uses_last && clips);
-            let box_inputs = inline_box_inputs(style.size().width, margin, child_inputs);
+            let reads_baseline = has_baseline
+                && held
+                    .primary_styles()
+                    .is_none_or(|computed| reads_own_baseline(&computed));
+            let pass_inputs = match pass {
+                Measure::Layout => child_inputs,
+                Measure::Sizes if reads_baseline => child_inputs,
+                Measure::Sizes => taffy::LayoutInput {
+                    run_mode: RunMode::ComputeSize,
+                    ..child_inputs
+                },
+                Measure::InlineSizes => taffy::LayoutInput {
+                    run_mode: RunMode::ComputeSize,
+                    axis: RequestedAxis::Horizontal,
+                    ..child_inputs
+                },
+            };
+            let box_inputs = inline_box_inputs(style.size().width, margin, pass_inputs);
             drop(style);
 
             let output = self.compute_child_layout(crate::taffy_node_id(node), box_inputs);
-            let reads_baseline =
-                has_baseline && box_inputs.run_mode == taffy::RunMode::PerformLayout;
+            let reads_baseline = reads_baseline && pass_inputs.run_mode == RunMode::PerformLayout;
             let baseline = if !reads_baseline {
                 None
             } else if uses_last {
@@ -681,4 +722,45 @@ impl LayoutPassState<'_> {
         }
         width
     }
+}
+
+/// What a pass needs of an inline formatting context's atomic inlines, which says how far each is
+/// laid out to measure it.
+#[derive(Copy, Clone, PartialEq, Eq)]
+pub(super) enum Measure {
+    /// How far each reaches along the line: an intrinsic inline-size pass.
+    InlineSizes,
+    /// Each one's size, and the baselines the lines read: a pass that sets the lines to size the
+    /// block but places nothing.
+    Sizes,
+    /// Each one laid out, as the pass that places them lays them out.
+    Layout,
+}
+
+/// Whether the lines read the own baseline of an atomic inline set in `style` to set it on its
+/// line. A pass that sets the lines lays such a box out to measure it, since Taffy gives a
+/// baseline only with a layout.
+///
+/// A box aligned by its edges, `top`, `bottom`, `text-top` or `text-bottom`, is not: its margin
+/// box's edge goes where the alignment says, wherever its baseline is.
+fn reads_own_baseline(style: &style::properties::ComputedValues) -> bool {
+    use style::values::computed::AlignmentBaseline;
+    use style::values::computed::length_percentage::Unpacked;
+    use style::values::generics::box_::{BaselineShiftKeyword, GenericBaselineShift};
+    let box_style = style.get_box();
+    match box_style.clone_baseline_shift() {
+        GenericBaselineShift::Keyword(BaselineShiftKeyword::Top | BaselineShiftKeyword::Bottom) => {
+            return false;
+        }
+        GenericBaselineShift::Keyword(_) => return true,
+        GenericBaselineShift::Length(shift) => match shift.unpack() {
+            Unpacked::Length(length) if length.px() != 0.0 => return true,
+            Unpacked::Percentage(percentage) if percentage.0 != 0.0 => return true,
+            _ => {}
+        },
+    }
+    !matches!(
+        box_style.clone_alignment_baseline(),
+        AlignmentBaseline::TextTop | AlignmentBaseline::TextBottom
+    )
 }
