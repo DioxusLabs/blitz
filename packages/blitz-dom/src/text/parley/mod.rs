@@ -514,7 +514,7 @@ impl InlineLayoutEngine for TextLayout {
     }
 
     #[inline]
-    fn content_widths(&self) -> ContentWidths {
+    fn content_widths(&mut self) -> ContentWidths {
         self.widths()
     }
 

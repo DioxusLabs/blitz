@@ -95,21 +95,13 @@ impl LayoutPassState<'_> {
             .width
             .map(|w| (w * scale) - pbw)
             .unwrap_or_else(|| {
-                let content_sizes = inline_layout.content_widths();
-                let min_content_width = content_sizes.min;
-                let max_content_width = content_sizes.max;
-
-                #[cfg(feature = "floats")]
-                let float_width = self.float_widths(&sizes, available_space.width) * scale;
-                #[cfg(not(feature = "floats"))]
-                let float_width = 0.0;
-
+                let widths = inline_layout.content_widths();
                 let computed_width = match available_space.width {
-                    AvailableSpace::MinContent => min_content_width.max(float_width),
-                    AvailableSpace::MaxContent => max_content_width + float_width,
-                    AvailableSpace::Definite(limit) => (limit * scale)
-                        .min(max_content_width + float_width)
-                        .max(min_content_width),
+                    AvailableSpace::MinContent => widths.min,
+                    AvailableSpace::MaxContent => widths.max,
+                    AvailableSpace::Definite(limit) => {
+                        (limit * scale).min(widths.max).max(widths.min)
+                    }
                 }
                 .ceil();
 
@@ -784,50 +776,6 @@ impl LayoutPassState<'_> {
             }
         }
         LastBaseline::None
-    }
-
-    /// How wide the floats among `sizes` make an inline formatting context's content, in CSS
-    /// pixels, under an intrinsic sizing constraint: the widest of them at min-content, and at
-    /// max-content those that share a band side by side.
-    #[cfg(feature = "floats")]
-    fn float_widths(&self, sizes: &[BoxMeasure], available_width: AvailableSpace) -> f32 {
-        if let AvailableSpace::Definite(_) = available_width {
-            return 0.0;
-        }
-        // When computing a max-content size the available width is effectively
-        // infinite, so floats never wrap onto a new "band" due to a lack of
-        // horizontal space. They only move below preceding floats when the `clear`
-        // property forces them to.
-        //
-        // Floats that share a band sit side-by-side and so their widths sum, whereas
-        // floats pushed onto a new band (via `clear`) stack vertically and so we
-        // take the maximum extent across bands rather than summing.
-        let mut left_band: f32 = 0.0;
-        let mut right_band: f32 = 0.0;
-        let mut width: f32 = 0.0;
-        for measured in sizes {
-            let Some(side) = measured.float else {
-                continue;
-            };
-            let clear = self.child_layout_style(&self.nodes[measured.node]).clear();
-            let box_width = measured.size.width + measured.margin.left + measured.margin.right;
-            if available_width == AvailableSpace::MinContent {
-                width = width.max(box_width);
-                continue;
-            }
-            if matches!(clear, Clear::Left | Clear::Both) {
-                left_band = 0.0;
-            }
-            if matches!(clear, Clear::Right | Clear::Both) {
-                right_band = 0.0;
-            }
-            match side {
-                FloatSide::Left => left_band += box_width,
-                FloatSide::Right => right_band += box_width,
-            }
-            width = width.max(left_band + right_band);
-        }
-        width
     }
 }
 
