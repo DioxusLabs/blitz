@@ -8,9 +8,10 @@ use style::values::{
 use taffy::{
     AvailableSpace, AxisStaticPosition, BlockContainerStyle, BlockContext, BlockFormattingContext,
     BoxSizing, CollapsibleMarginSet, CompactLength, ContainingBlockClaims, CoreStyle as _,
-    Direction, LayoutInput, LayoutOutput, LayoutPartialTree as _, MaybeMath as _,
-    MaybeResolve as _, OofCandidate, OofCandidates, OofItemStyle, OofPositioningArea, Overflow,
-    Point, RequestedAxis, ResolveOrZero as _, RunMode, Size, SizingMode,
+    Direction, LayoutContainingBlock as _, LayoutInput, LayoutOutput, LayoutPartialTree as _,
+    MaybeMath as _, MaybeResolve as _, OofCandidate, OofCandidates, OofItemStyle,
+    OofPositioningArea, Overflow, Point, RequestedAxis, ResolveOrZero as _, RunMode, Size,
+    SizingMode,
 };
 
 #[cfg(feature = "floats")]
@@ -1096,8 +1097,6 @@ impl LayoutPassState<'_> {
             .unwrap()
             .inline_layout_data = Some(inline_layout);
 
-        self.span_oof_candidates = span_oof_candidates;
-
         let oof_position_inset = taffy::Rect {
             left: border.left,
             right: border.right + scrollbar_gutter.x,
@@ -1105,7 +1104,7 @@ impl LayoutPassState<'_> {
             bottom: border.bottom + scrollbar_gutter.y,
         };
 
-        LayoutOutput {
+        let mut output = LayoutOutput {
             size: final_size,
             scrollable_overflow_rect: {
                 let content_extent = taffy::Size {
@@ -1136,7 +1135,47 @@ impl LayoutPassState<'_> {
                     y: oof_position_inset.top,
                 },
             }),
+        };
+
+        // Lay out the candidates whose containing block is an inline span against this
+        // container's padding box. This container's own out-of-flow pass is also run here
+        // (rather than by `compute_oof_layout`) so that it sees the boxes those leave unclaimed.
+        let [absolute_span_candidates, fixed_span_candidates] = span_oof_candidates;
+        if inputs.run_mode == RunMode::PerformLayout
+            && !(absolute_span_candidates.is_empty() && fixed_span_candidates.is_empty())
+            && let Some(area) = output.oof_positioning_area.take()
+        {
+            let taffy_id = crate::taffy_node_id(node_id);
+            let absolute_only = ContainingBlockClaims {
+                absolute: true,
+                fixed: false,
+            };
+            let own_claims = self.nodes[node_id].layout_style().is_containing_block();
+            self.clear_hoisted_children(taffy_id);
+            // `None`: the candidates left unclaimed so far
+            for (candidates, claims) in [
+                (Some(absolute_span_candidates), absolute_only),
+                (Some(fixed_span_candidates), ContainingBlockClaims::ALL),
+                (None, own_claims),
+            ] {
+                let candidates = candidates.unwrap_or_else(|| output.oof_candidates.take());
+                let mut result = taffy::compute_oof_layout_for_area(
+                    self,
+                    taffy_id,
+                    candidates,
+                    area,
+                    container_direction,
+                    claims,
+                );
+                self.add_hoisted_children(taffy_id, &result.hoisted);
+                output.oof_candidates.append(&mut result.unclaimed);
+                output.scrollable_overflow_rect = output
+                    .scrollable_overflow_rect
+                    .union(result.scrollable_overflow_rect);
+            }
         }
+
+        output
     }
 }
 

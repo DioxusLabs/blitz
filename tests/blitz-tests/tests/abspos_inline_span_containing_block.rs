@@ -132,3 +132,14 @@ fn fixed_child_of_transformed_span() {
     assert_eq!((rect.x, rect.y), (0.0, 0.0));
     assert!(rect.width > ROOT_PADDING_BOX.width);
 }
+
+#[test]
+fn fixed_descendant_unclaimed_by_span_is_claimed_by_root() {
+    let html = format!(
+        "<style>{STYLE} #root {{ filter: blur(1px) }}</style><div id='root'>before \
+         <span class='rel'>text<div style='position: absolute'>\
+         <div id='fixed' class='fill' style='position: fixed'></div></div></span></div>"
+    );
+    let rect = Harness::from_html(&html).layout_rect("#fixed");
+    assert_rect_eq(rect, ROOT_PADDING_BOX);
+}

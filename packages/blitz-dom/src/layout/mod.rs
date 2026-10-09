@@ -15,11 +15,11 @@ use style::values::computed::CSSPixelLength;
 use style::values::computed::length_percentage::CalcLengthPercentage;
 use stylo_taffy::TaffyStyloStyle;
 use taffy::{
-    AxisStaticEdge, AxisStaticPosition, BlockContext, ContainingBlockClaims, CoreStyle as _,
-    DetailedLayoutInfo, FlexDirection, LayoutContainingBlock, LayoutPartialTree, MaybeMath as _,
-    NodeId, OofCandidate, ResolveOrZero, RoundTree, RunMode, TraversePartialTree, TraverseTree,
-    compute_block_layout, compute_cached_layout, compute_flexbox_layout, compute_grid_layout,
-    compute_leaf_layout, compute_oof_layout, compute_oof_layout_for_area, prelude::*,
+    AxisStaticEdge, AxisStaticPosition, BlockContext, CoreStyle as _, DetailedLayoutInfo,
+    FlexDirection, LayoutContainingBlock, LayoutPartialTree, MaybeMath as _, NodeId, OofCandidate,
+    ResolveOrZero, RoundTree, RunMode, TraversePartialTree, TraverseTree, compute_block_layout,
+    compute_cached_layout, compute_flexbox_layout, compute_grid_layout, compute_leaf_layout,
+    compute_oof_layout, prelude::*,
 };
 
 pub(crate) mod construct;
@@ -83,9 +83,6 @@ pub(crate) fn resolve_calc_value(calc_ptr: *const (), parent_size: f32) -> f32 {
 /// the Taffy tree trait implementations. Derefs to [`BaseDocument`].
 pub(crate) struct LayoutPassState<'doc> {
     doc: &'doc mut BaseDocument,
-    /// Out-of-flow candidates of the inline root that was just laid out whose containing block is
-    /// one of its inline spans, indexed by whether that span also claims `position: fixed` boxes.
-    pub(crate) span_oof_candidates: [taffy::OofCandidates; 2],
     /// The writing mode of the box whose layout algorithm is currently running (see
     /// `layout::writing_mode`). Child styles read during that algorithm are expressed in its axes.
     #[cfg(feature = "writing-mode")]
@@ -132,7 +129,6 @@ impl<'doc> LayoutPassState<'doc> {
                 doc.root_layout_wm(id)
             }),
             doc,
-            span_oof_candidates: Default::default(),
             #[cfg(feature = "writing-mode")]
             root_id,
             #[cfg(feature = "writing-mode")]
@@ -195,29 +191,8 @@ impl LayoutPassState<'_> {
         block_ctx: Option<&mut BlockContext<'_>>,
     ) -> taffy::tree::LayoutOutput {
         let mut output = self.dispatch_child_layout(node_id, inputs, block_ctx);
-        let span_oof_candidates = std::mem::take(&mut self.span_oof_candidates);
         if inputs.run_mode == RunMode::PerformLayout {
             compute_oof_layout(self, node_id, &mut output);
-            if let Some(area) = output.oof_positioning_area {
-                let direction = self.node_from_id(node_id).layout_style().direction();
-                for (candidates, fixed) in span_oof_candidates.into_iter().zip([false, true]) {
-                    if candidates.is_empty() {
-                        continue;
-                    }
-                    let claims = ContainingBlockClaims {
-                        absolute: true,
-                        fixed,
-                    };
-                    let mut result = compute_oof_layout_for_area(
-                        self, node_id, candidates, area, direction, claims,
-                    );
-                    self.add_hoisted_children(node_id, &result.hoisted);
-                    output.oof_candidates.append(&mut result.unclaimed);
-                    output.scrollable_overflow_rect = output
-                        .scrollable_overflow_rect
-                        .union(result.scrollable_overflow_rect);
-                }
-            }
         }
         output
     }
