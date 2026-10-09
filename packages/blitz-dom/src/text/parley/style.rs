@@ -493,14 +493,12 @@ pub(crate) fn style(
         stylo::LineBreak::Auto | stylo::LineBreak::Strict => parley::LineBreak::Strict,
         stylo::LineBreak::Anywhere => parley::LineBreak::Anywhere,
     };
-    // `word-break: break-word` implies `overflow-wrap: anywhere`
-    let overflow_wrap = match itext_styles.overflow_wrap {
-        _ if itext_styles.word_break == stylo::WordBreak::BreakWord => {
-            parley::OverflowWrap::Anywhere
-        }
-        stylo::OverflowWrap::Normal => parley::OverflowWrap::Normal,
-        stylo::OverflowWrap::BreakWord => parley::OverflowWrap::BreakWord,
-        stylo::OverflowWrap::Anywhere => parley::OverflowWrap::Anywhere,
+    // `word-break: break-word` is `word-break: normal` with `overflow-wrap: anywhere`.
+    let overflow_wrap = match (itext_styles.word_break, itext_styles.overflow_wrap) {
+        (stylo::WordBreak::BreakWord, _) => parley::OverflowWrap::Anywhere,
+        (_, stylo::OverflowWrap::Normal) => parley::OverflowWrap::Normal,
+        (_, stylo::OverflowWrap::BreakWord) => parley::OverflowWrap::BreakWord,
+        (_, stylo::OverflowWrap::Anywhere) => parley::OverflowWrap::Anywhere,
     };
     let text_wrap_mode = text_wrap_mode(itext_styles.text_wrap_mode);
 
