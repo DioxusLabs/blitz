@@ -956,7 +956,10 @@ impl LayoutPassState<'_> {
                     let box_inputs = inline_box_inputs(style.size().width, margin, child_inputs);
                     drop(style);
 
-                    if is_absolute {
+                    // The out-of-flow candidates surfaced by this inline box
+                    let abspos_candidate: OofCandidate;
+                    let mut output: LayoutOutput;
+                    let box_candidates: &[OofCandidate] = if is_absolute {
                         // The static-position rectangle
                         // (https://www.w3.org/TR/css-position-3/#staticpos-rect):
                         // - An inline-level box's rectangle is zero-width at its position
@@ -989,7 +992,7 @@ impl LayoutPassState<'_> {
                             )
                         };
 
-                        let candidate = OofCandidate {
+                        abspos_candidate = OofCandidate {
                             node: taffy::NodeId::from(ibox.id),
                             order,
                             position,
@@ -1014,34 +1017,18 @@ impl LayoutPassState<'_> {
                                 ),
                             },
                         };
-                        let span_claims = if performs_oof_layout {
-                            self.inline_span_claims(node_id, NodeId::from_u64(ibox.id))
-                        } else {
-                            ContainingBlockClaims::NONE
-                        };
-                        if span_claims.for_position(position) {
-                            let overflow_rect = self.compute_inline_oof_layout(
-                                node_id,
-                                &[candidate],
-                                oof_positioning_area,
-                                container_direction,
-                                span_claims,
-                                &mut oof_candidates,
-                            );
-                            oof_overflow_rect = oof_overflow_rect.union(overflow_rect);
-                        } else {
-                            oof_candidates.push(candidate);
-                        }
+                        core::slice::from_ref(&abspos_candidate)
                     } else if is_floated {
                         let layout = self.nodes[NodeId::from_u64(ibox.id)].unrounded_layout_mut();
                         layout.padding = padding; //.map(|p| p / scale);
                         layout.border = border; //.map(|p| p / scale);
                         layout.margin = margin;
+                        &[]
                     } else {
                         // Re-measure the box to get its border-box size (this hits the layout
                         // cache). The size cannot be recovered from `ibox` dimensions as the
                         // space reserved in the line is clamped to be non-negative.
-                        let mut output =
+                        output =
                             self.compute_child_layout(taffy::NodeId::from(ibox.id), box_inputs);
                         let size = output.size;
                         let node = &mut self.nodes[NodeId::from_u64(ibox.id)];
@@ -1074,28 +1061,34 @@ impl LayoutPassState<'_> {
                         layout.margin = margin;
 
                         // Translate anchors from item-relative to container-relative
-                        // coordinates and collect candidates bubbled from the box's subtree
-                        if !output.oof_candidates.is_empty() {
-                            let location = layout.location;
-                            output.oof_candidates.translate(location);
-                            let span_claims = if performs_oof_layout {
-                                self.inline_span_claims(node_id, NodeId::from_u64(ibox.id))
-                            } else {
-                                ContainingBlockClaims::NONE
-                            };
-                            if span_claims == ContainingBlockClaims::NONE {
-                                oof_candidates.append(&mut output.oof_candidates);
-                            } else {
-                                let overflow_rect = self.compute_inline_oof_layout(
-                                    node_id,
-                                    output.oof_candidates.as_slice(),
-                                    oof_positioning_area,
-                                    container_direction,
-                                    span_claims,
-                                    &mut oof_candidates,
-                                );
-                                oof_overflow_rect = oof_overflow_rect.union(overflow_rect);
+                        // coordinates
+                        let location = layout.location;
+                        output.oof_candidates.translate(location);
+                        output.oof_candidates.as_slice()
+                    };
+
+                    // Lay out the candidates whose containing block is an inline span. The rest
+                    // are collected in `oof_candidates`.
+                    if !box_candidates.is_empty() {
+                        let span_claims = if performs_oof_layout {
+                            self.inline_span_claims(node_id, NodeId::from_u64(ibox.id))
+                        } else {
+                            ContainingBlockClaims::NONE
+                        };
+                        if span_claims == ContainingBlockClaims::NONE {
+                            for candidate in box_candidates {
+                                oof_candidates.push(*candidate);
                             }
+                        } else {
+                            let overflow_rect = self.compute_inline_oof_layout(
+                                node_id,
+                                box_candidates,
+                                oof_positioning_area,
+                                container_direction,
+                                span_claims,
+                                &mut oof_candidates,
+                            );
+                            oof_overflow_rect = oof_overflow_rect.union(overflow_rect);
                         }
                     }
                 }
