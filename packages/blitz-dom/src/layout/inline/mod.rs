@@ -1,3 +1,5 @@
+mod build;
+
 use blitz_traits::node_id::NodeId;
 use taffy::{
     AvailableSpace, BlockContext, BlockFormattingContext, BoxSizing, CompactLength, CoreStyle as _,
@@ -9,6 +11,8 @@ use super::resolve_calc_value;
 use crate::layout::LayoutPassState;
 use crate::node::TextLayout;
 use crate::text::InlineLayoutEngine as _;
+
+pub(crate) use build::push_inline_content;
 
 /// What `compute_inline_layout_inner` has resolved from the container's styles and inputs
 /// before the text backend measures the inline boxes and breaks lines.

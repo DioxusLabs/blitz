@@ -177,6 +177,74 @@ pub trait InlineText: Default + Clone + std::fmt::Debug {
     fn debug_print(&self);
 }
 
+/// What an element pushed as an inline span is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SpanKind {
+    /// A non-atomic inline box.
+    Span,
+    /// A `display: contents` element, which has no box but whose children inherit from it, or an
+    /// annotation container that holds `<rt>`s of its own.
+    Contents,
+    /// A ruby container, `<ruby>`, where the backend sets ruby.
+    Ruby,
+    /// A ruby annotation, `<rt>` or an `<rtc>` holding no `<rt>`, where the backend sets ruby.
+    /// `in_container` where it is an `<rt>` inside an `<rtc>`.
+    Annotation { in_container: bool },
+}
+
+/// What a box pushed whole into the content of an inline formatting context is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum InlineBoxKind {
+    /// An atomic inline, which Taffy lays out and the lines place.
+    Atomic,
+    /// A float, which the lines flow around.
+    Float,
+    /// An absolutely positioned box, whose static position the lines find.
+    Absolute,
+}
+
+/// The content of one inline formatting context as a text backend builds it, pushed in content
+/// order by the walk of the DOM that Blitz runs for every backend.
+///
+/// Every span pushed is popped. The [`PushedText`](crate::layout::text_transform::PushedText)
+/// methods are read only where the backend does not apply `text-transform` itself.
+pub(crate) trait InlineBuilder: crate::layout::text_transform::PushedText {
+    /// Whether the backend applies `text-transform` itself. Where it does, text is pushed as the
+    /// DOM holds it; where it does not, Blitz transforms it first.
+    const TRANSFORMS_TEXT: bool;
+
+    /// Whether the backend sets ruby. Where it does, `<ruby>`, `<rt>` and `<rtc>` are pushed as
+    /// ruby and the fallback `<rp>` is dropped; where it does not, they are spans.
+    const SETS_RUBY: bool;
+
+    /// Pushes the marker of a list item whose marker is inside it, before its content.
+    fn push_marker(&mut self, marker: &crate::node::Marker);
+
+    /// Opens a span for the element `node`, set in its computed style `style`.
+    fn push_span(&mut self, node: &Node, style: &style::properties::ComputedValues, kind: SpanKind);
+
+    /// Closes the span opened last, which was opened as `kind`.
+    fn pop_span(&mut self, kind: SpanKind);
+
+    /// Pushes the text of text node `node`.
+    fn push_text(&mut self, node: &Node, text: &str);
+
+    /// Pushes the element `node`, set in its computed style `style`, as a box of its own.
+    fn push_inline_box(
+        &mut self,
+        node: &Node,
+        style: &style::properties::ComputedValues,
+        kind: InlineBoxKind,
+    );
+
+    /// Pushes the forced line break of the `<br>` element `node`, set in `style`.
+    fn push_line_break(&mut self, node: &Node, style: &style::properties::ComputedValues);
+
+    /// Pushes the line break opportunity of the `<wbr>` element `node`, and returns whether the
+    /// backend took it. Where it did not, the element is pushed as a span.
+    fn push_break_opportunity(&mut self, node: &Node) -> bool;
+}
+
 /// Building, measuring and placing an inline formatting context: the part of [`InlineText`]
 /// layout runs.
 pub(crate) trait InlineLayoutEngine: InlineText {
