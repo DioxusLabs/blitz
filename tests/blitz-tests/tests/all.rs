@@ -57,6 +57,7 @@ mod style_property_invalidation;
 mod svg_attr_sizing;
 mod svg_background_size;
 mod text_selection_anonymous_block;
+mod text_indent;
 mod text_transform;
 mod touch_action;
 mod touch_events;

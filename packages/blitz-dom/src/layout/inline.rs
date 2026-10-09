@@ -431,24 +431,18 @@ impl LayoutPassState<'_> {
             }
         }
 
-        // TODO: Resolve against style widths as well as known dimensions
         let text_indent = self.nodes[node_id]
             .primary_styles()
             .map(|s| s.clone_text_indent())
             .unwrap_or_else(GenericTextIndent::zero);
-        let resolved_text_indent = text_indent
-            .length
-            .resolve(CSSPixelLength::new(known_dimensions.width.unwrap_or(0.0)))
-            .px();
+        let indent_options = IndentOptions {
+            each_line: text_indent.each_line,
+            hanging: text_indent.hanging,
+        };
+        // Percentage indents do not contribute to intrinsic widths.
         inline_layout.layout.set_text_indent(
-            resolved_text_indent,
-            // NOTE: hanging and each_line don't current work because parsing them is cfg'd out in Stylo
-            // due to Servo not yet supporting those features. They should start to "just work" in Blitz
-            // once support is enabled in Stylo.
-            IndentOptions {
-                each_line: text_indent.each_line,
-                hanging: text_indent.hanging,
-            },
+            text_indent.length.resolve(CSSPixelLength::new(0.0)).px() * scale,
+            indent_options,
         );
 
         let pbw = container_pb.horizontal_components().sum() * scale;
@@ -612,6 +606,14 @@ impl LayoutPassState<'_> {
 
             return LayoutOutput::from_outer_size(clamped_size);
         }
+
+        let resolved_text_indent = text_indent
+            .length
+            .resolve(CSSPixelLength::new((width / scale).max(0.0)))
+            .px();
+        inline_layout
+            .layout
+            .set_text_indent(resolved_text_indent * scale, indent_options);
 
         #[cfg(not(feature = "floats"))]
         {
