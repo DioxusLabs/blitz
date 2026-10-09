@@ -10,11 +10,13 @@ pub(crate) mod style;
 use std::cell::RefCell;
 use std::sync::{Arc, Mutex};
 
+use std::ops::Range;
+
 use blitz_traits::node_id::NodeId;
-use kurbo::{Rect, Size};
+use kurbo::Rect;
 use parley::{
-    Affinity, BreakReason, Cluster, ClusterSide, ContentWidths, Cursor, LayoutContext,
-    PositionedLayoutItem, Run, Selection,
+    Affinity, BreakReason, Cluster, ClusterSide, Cursor, LayoutContext, PositionedLayoutItem, Run,
+    Selection,
 };
 #[cfg(feature = "parallel-construct")]
 use thread_local::ThreadLocal;
@@ -26,8 +28,6 @@ use crate::node::{InlineContent, InlineTextHit, Node};
 pub use ::parley;
 pub use ::parley::FontContext;
 pub use editor::TextEditor;
-pub use fonts::FaceDescriptors;
-pub(crate) use fonts::face_descriptors;
 
 /// Parley Brush type for Blitz which contains the Blitz node id
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
@@ -66,28 +66,16 @@ thread_local! {
 /// An inline formatting context laid out by Parley.
 #[derive(Clone, Default)]
 pub struct TextLayout {
-    pub text: String,
-    pub content_widths: Option<ContentWidths>,
+    pub(crate) text: String,
+    /// Parley's layout of the text and inline boxes, which the renderer paints.
     pub layout: parley::Layout<TextBrush>,
     /// Block-axis offset (in CSS px) of the line boxes from the top of the container's content
     /// box, as applied by `align-content`.
-    pub block_offset: f32,
+    pub(crate) block_offset: f32,
     /// The out-of-flow positions for which some inline span with an inline box below it is a
     /// containing block (as `SPAN_*_CB` flags). The inline root claims those boxes in its place.
     /// Set by each `RunMode::PerformLayout` run of inline layout.
-    pub span_cb_flags: stylo_taffy::StyleFlags,
-}
-
-impl TextLayout {
-    pub fn new() -> Self {
-        Default::default()
-    }
-
-    pub fn content_widths(&mut self) -> ContentWidths {
-        *self
-            .content_widths
-            .get_or_insert_with(|| self.layout.calculate_content_widths())
-    }
+    pub(crate) span_cb_flags: stylo_taffy::StyleFlags,
 }
 
 impl std::fmt::Debug for TextLayout {
@@ -97,90 +85,123 @@ impl std::fmt::Debug for TextLayout {
 }
 
 impl InlineText for TextLayout {
+    #[inline]
     fn scale(&self) -> f32 {
         self.layout.scale()
     }
 
+    #[inline]
     fn block_offset(&self) -> f32 {
         self.block_offset
     }
 
+    #[inline]
     fn text(&self) -> &str {
         &self.text
     }
 
+    #[inline]
     fn text_len(&self) -> usize {
         self.text.len()
     }
 
-    fn selected_text(&self, start: usize, end: usize) -> Option<String> {
-        self.text.get(start..end).map(str::to_owned)
+    #[inline]
+    fn selected_text(&self, start: usize, end: usize) -> impl Iterator<Item = &str> {
+        self.text.get(start..end).into_iter()
     }
 
-    fn logical_content(&self) -> impl Iterator<Item = InlineContent<'_>> {
-        let text = self.text.as_str();
+    fn logical_content(&self) -> impl Iterator<Item = InlineContent> {
         let mut lines = self.layout.lines();
         let mut boxes = self.layout.inline_boxes().peekable();
         // The current line's runs, sorted from visual into logical order for bidi text
         let mut runs: Vec<Run<'_, TextBrush>> = Vec::new();
         let mut next_run = 0;
         let mut clusters = None;
+        // The node of the last cluster's style, which the clusters after it mostly share
+        let mut style = None;
+        // A cluster read but not yet taken in, which waits for the items before it
+        let mut held: Option<(NodeId, Range<usize>)> = None;
+        // The text taken in since the last item, all of one node
+        let mut pending: Option<(NodeId, Range<usize>)> = None;
+        let text = |(node_id, range)| InlineContent::Text { node_id, range };
         std::iter::from_fn(move || {
             loop {
-                if clusters.is_none() {
-                    while next_run == runs.len() {
-                        let Some(line) = lines.next() else {
-                            // The boxes after the last line's text
-                            let ibox = boxes.next()?;
-                            return Some(InlineContent::Box(NodeId::from_u64(ibox.id)));
+                let (node_id, range) = match held.take() {
+                    Some(cluster) => cluster,
+                    None => {
+                        let Some(cluster) = clusters.as_mut().and_then(Iterator::next) else {
+                            while next_run >= runs.len() {
+                                let Some(line) = lines.next() else {
+                                    // The text read last, then the boxes after the last line
+                                    if let Some(read) = pending.take() {
+                                        return Some(text(read));
+                                    }
+                                    let ibox = boxes.next()?;
+                                    return Some(InlineContent::Box(NodeId::from_u64(ibox.id)));
+                                };
+                                runs.clear();
+                                runs.extend(line.runs());
+                                runs.sort_by_key(|run| run.text_range().start);
+                                next_run = 0;
+                            }
+                            clusters = runs.get(next_run).map(Run::clusters);
+                            next_run += 1;
+                            continue;
                         };
-                        runs.clear();
-                        runs.extend(line.runs());
-                        runs.sort_by_key(|run| run.text_range().start);
-                        next_run = 0;
+                        let index = cluster.style_index();
+                        let node_id = match style {
+                            Some((styled, node_id)) if styled == index => node_id,
+                            _ => {
+                                let node_id = cluster.style().brush.id;
+                                style = Some((index, node_id));
+                                node_id
+                            }
+                        };
+                        (node_id, cluster.text_range())
                     }
-                    clusters = Some(runs[next_run].clusters().peekable());
-                    next_run += 1;
-                }
-                let run_clusters = clusters.as_mut()?;
-                let Some(cluster) = run_clusters.peek() else {
-                    clusters = None;
-                    continue;
                 };
-                // The boxes before the cluster come first
-                let range = cluster.text_range();
-                if let Some(ibox) = boxes.next_if(|ibox| ibox.index <= range.start) {
-                    return Some(InlineContent::Box(NodeId::from_u64(ibox.id)));
+                // The boxes before the cluster come first, after the text read before them
+                if boxes.peek().is_some_and(|ibox| ibox.index <= range.start) {
+                    held = Some((node_id, range));
+                    if let Some(read) = pending.take() {
+                        return Some(text(read));
+                    }
+                    if let Some(ibox) = boxes.next() {
+                        return Some(InlineContent::Box(NodeId::from_u64(ibox.id)));
+                    }
+                    continue;
                 }
-                let node_id = cluster.style().brush.id;
-                run_clusters.next();
-                return Some(InlineContent::Text {
-                    node_id,
-                    start: range.start,
-                    text: text[range].into(),
-                });
+                match &mut pending {
+                    Some((read_id, read)) if *read_id == node_id && read.end == range.start => {
+                        read.end = range.end;
+                    }
+                    _ => {
+                        if let Some(read) = pending.replace((node_id, range)) {
+                            return Some(text(read));
+                        }
+                    }
+                }
             }
         })
     }
 
+    #[inline]
     fn source_offset(&self, node_id: NodeId, offset: usize) -> Option<usize> {
         let _ = (node_id, offset);
         None
     }
 
+    #[inline]
     fn maps_source(&self) -> bool {
         false
     }
 
-    fn hit_test(
-        &self,
-        x: f32,
-        y: f32,
-        content_size: Size,
-        scale: f32,
-        exact: bool,
-    ) -> Option<InlineTextHit> {
-        let _ = (content_size, scale);
+    fn first_baseline(&self) -> Option<f32> {
+        let line = self.layout.lines().next()?;
+        Some(line.metrics().baseline / self.layout.scale() + self.block_offset)
+    }
+
+    fn hit_test(&self, x: f32, y: f32, exact: bool) -> Option<InlineTextHit> {
         let layout = &self.layout;
         let point = (x * layout.scale(), (y - self.block_offset) * layout.scale());
         let (cluster, side) = if exact {
@@ -206,23 +227,14 @@ impl InlineText for TextLayout {
         })
     }
 
-    fn selection_rects(
-        &self,
-        start: usize,
-        end: usize,
-        content_size: Size,
-        scale: f32,
-    ) -> Vec<Rect> {
-        let _ = (content_size, scale);
+    fn for_each_selection_rect(&self, start: usize, end: usize, mut f: impl FnMut(Rect)) {
         let layout = &self.layout;
         let anchor = Cursor::from_byte_index(layout, start, Affinity::Downstream);
         let focus = Cursor::from_byte_index(layout, end, Affinity::Downstream);
         let selection = Selection::new(anchor, focus);
-        let mut rects = Vec::new();
         selection.geometry_with(layout, |rect, _| {
-            rects.push(Rect::new(rect.x0, rect.y0, rect.x1, rect.y1));
+            f(Rect::new(rect.x0, rect.y0, rect.x1, rect.y1));
         });
-        rects
     }
 
     fn fragment_rects(&self, root: &Node, node: &Node) -> impl Iterator<Item = taffy::Rect<f32>> {
@@ -360,10 +372,6 @@ impl InlineText for TextLayout {
 }
 
 impl InlineLayoutEngine for TextLayout {
-    fn invalidate_content_widths(&mut self) {
-        self.content_widths = None;
-    }
-
     fn build_layouts(
         cx: &mut TextContext,
         nodes: &crate::NodeTree,
@@ -382,7 +390,6 @@ impl InlineLayoutEngine for TextLayout {
                     .thread_font_contexts
                     .get_or(|| RefCell::new(Box::new(cx.font_ctx.lock().unwrap().clone())))
                     .borrow_mut();
-                layout.content_widths = None;
                 build::build_inline_layout_into(
                     nodes,
                     &mut layout_ctx,
@@ -396,7 +403,6 @@ impl InlineLayoutEngine for TextLayout {
         }
         #[cfg(not(feature = "parallel-construct"))]
         for (node_id, layout) in layouts {
-            layout.content_widths = None;
             build::build_inline_layout_into(
                 nodes,
                 &mut cx.layout_ctx,
