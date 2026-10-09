@@ -15,9 +15,7 @@ use taffy::{
 use taffy::{BlockItemStyle as _, Clear, Float};
 
 use super::floats::TaffyFloats;
-#[cfg(feature = "floats")]
-use super::subtract_margins;
-use super::{Frame, f32_max, inline_box_inputs};
+use super::{Frame, f32_max, float_box_inputs, inline_box_inputs};
 use crate::layout::LayoutPassState;
 use crate::layout::replaced::is_replaced_element;
 use crate::layout::resolve_calc_value;
@@ -76,7 +74,12 @@ impl LayoutPassState<'_> {
             axis: RequestedAxis::Both,
             ..child_inputs
         };
-        let sizes = self.measure_inline_boxes(node_id, child_inputs, pass);
+        // The containing block's inline size, which a float's room is taken of.
+        let basis = match available_space.width {
+            AvailableSpace::Definite(width) => width,
+            _ => 0.0,
+        };
+        let sizes = self.measure_inline_boxes(node_id, child_inputs, pass, basis);
         inline_layout.prepare(
             &sizes,
             self.nodes[node_id]
@@ -95,12 +98,7 @@ impl LayoutPassState<'_> {
                 let max_content_width = content_sizes.max;
 
                 #[cfg(feature = "floats")]
-                let float_width = self.float_widths(
-                    node_id,
-                    available_space.width,
-                    inputs.parent_size,
-                    child_inputs,
-                ) * scale;
+                let float_width = self.float_widths(&sizes, available_space.width) * scale;
                 #[cfg(not(feature = "floats"))]
                 let float_width = 0.0;
 
@@ -172,8 +170,15 @@ impl LayoutPassState<'_> {
                 state: self,
                 block_ctx,
                 scale,
-                float_inputs: child_inputs,
-                parent_size: inputs.parent_size,
+                float_inputs: match pass {
+                    Measure::Layout => child_inputs,
+                    _ => taffy::LayoutInput {
+                        run_mode: RunMode::ComputeSize,
+                        ..child_inputs
+                    },
+                },
+                basis,
+                parent_size: child_inputs.parent_size,
                 container_pb,
                 oof_candidates: &mut oof_candidates,
             };
@@ -473,8 +478,12 @@ impl LayoutPassState<'_> {
     }
 
     /// Lays out each atomic inline of the inline formatting context rooted at `node_id` as its
-    /// line holds it: its border box, and its baseline down from its top. Absolutely positioned
-    /// boxes and floats take no room in the lines, and are not measured.
+    /// line holds it, and each float as the lines flow around it: its border box, and an atomic
+    /// inline's baseline down from its top. Absolutely positioned boxes take no room in the lines,
+    /// and are not measured.
+    ///
+    /// A float is sized in the room beside nothing, less its margins, `basis` being the containing
+    /// block's inline size.
     ///
     /// `pass` says how far each box is laid out: where its baseline is not read or the pass needs
     /// no baseline, it is only measured, along the line alone in an inline-size pass.
@@ -489,6 +498,7 @@ impl LayoutPassState<'_> {
         node_id: NodeId,
         child_inputs: taffy::LayoutInput,
         pass: Measure,
+        basis: f32,
     ) -> Vec<BoxMeasure> {
         let children = self.nodes[node_id].layout_children.borrow().clone();
         let mut sizes = Vec::with_capacity(children.as_ref().map_or(0, |children| children.len()));
@@ -504,7 +514,33 @@ impl LayoutPassState<'_> {
             #[cfg(not(feature = "floats"))]
             let is_floated = false;
 
-            if style.position().is_out_of_flow() || is_floated {
+            if style.position().is_out_of_flow() {
+                continue;
+            }
+            if is_floated {
+                let pass_inputs = match pass {
+                    Measure::Layout => child_inputs,
+                    Measure::Sizes => taffy::LayoutInput {
+                        run_mode: RunMode::ComputeSize,
+                        ..child_inputs
+                    },
+                    Measure::InlineSizes => taffy::LayoutInput {
+                        run_mode: RunMode::ComputeSize,
+                        axis: RequestedAxis::Horizontal,
+                        ..child_inputs
+                    },
+                };
+                drop(style);
+                let output = self.compute_child_layout(
+                    crate::taffy_node_id(node),
+                    float_box_inputs(pass_inputs, basis, margin),
+                );
+                sizes.push(BoxMeasure {
+                    node,
+                    size: output.size,
+                    margin,
+                    baseline: None,
+                });
                 continue;
             }
             let replaced = held
@@ -658,21 +694,14 @@ impl LayoutPassState<'_> {
         LastBaseline::None
     }
 
-    /// How wide the floats of the inline formatting context rooted at `node_id` make its content,
-    /// in CSS pixels, under an intrinsic sizing constraint: the widest of them at min-content, and
-    /// at max-content those that share a band side by side.
+    /// How wide the floats among `sizes` make an inline formatting context's content, in CSS
+    /// pixels, under an intrinsic sizing constraint: the widest of them at min-content, and at
+    /// max-content those that share a band side by side.
     #[cfg(feature = "floats")]
-    fn float_widths(
-        &mut self,
-        node_id: NodeId,
-        available_width: AvailableSpace,
-        parent_size: Size<Option<f32>>,
-        child_inputs: taffy::LayoutInput,
-    ) -> f32 {
+    fn float_widths(&self, sizes: &[BoxMeasure], available_width: AvailableSpace) -> f32 {
         if let AvailableSpace::Definite(_) = available_width {
             return 0.0;
         }
-        let children = self.nodes[node_id].layout_children.borrow().clone();
         // When computing a max-content size the available width is effectively
         // infinite, so floats never wrap onto a new "band" due to a lack of
         // horizontal space. They only move below preceding floats when the `clear`
@@ -684,25 +713,15 @@ impl LayoutPassState<'_> {
         let mut left_band: f32 = 0.0;
         let mut right_band: f32 = 0.0;
         let mut width: f32 = 0.0;
-        for node in children.iter().flatten().copied() {
-            let (float, clear, margin) = {
-                let style = self.child_layout_style(&self.nodes[node]);
-                (
-                    style.float(),
-                    style.clear(),
-                    style
-                        .margin()
-                        .resolve_or_zero(parent_size, resolve_calc_value),
-                )
+        for measured in sizes {
+            let (float, clear) = {
+                let style = self.child_layout_style(&self.nodes[measured.node]);
+                (style.float(), style.clear())
             };
             if !float.is_floated() {
                 continue;
             }
-            let output = self.compute_child_layout(
-                crate::taffy_node_id(node),
-                subtract_margins(child_inputs, margin),
-            );
-            let box_width = output.size.width + margin.left + margin.right;
+            let box_width = measured.size.width + measured.margin.left + measured.margin.right;
             if available_width == AvailableSpace::MinContent {
                 width = width.max(box_width);
                 continue;
