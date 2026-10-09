@@ -23,6 +23,12 @@ bitflags! {
     pub struct StyleFlags: u8 {
         /// Whether the node is a replaced element (e.g. an image or form control)
         const IS_REPLACED = 1 << 0;
+        /// Whether an inline span laid out by the node (an inline root) is a containing block
+        /// for `position: absolute` boxes
+        const SPAN_ABSOLUTE_CB = 1 << 1;
+        /// Whether an inline span laid out by the node (an inline root) is a containing block
+        /// for `position: fixed` boxes
+        const SPAN_FIXED_CB = 1 << 2;
     }
 }
 
@@ -212,7 +218,10 @@ impl<T: Deref<Target = ComputedValues>> taffy::CoreStyle for TaffyStyloStyle<T> 
 
     #[inline]
     fn is_containing_block(&self) -> taffy::ContainingBlockClaims {
-        convert::containing_block_claims(&self.style)
+        let mut claims = convert::containing_block_claims(&self.style);
+        claims.absolute |= self.flags.contains(StyleFlags::SPAN_ABSOLUTE_CB);
+        claims.fixed |= self.flags.contains(StyleFlags::SPAN_FIXED_CB);
+        claims
     }
 
     #[inline]

@@ -29,6 +29,9 @@ pub struct TextLayout {
     /// Block-axis offset (in CSS px) of the line boxes from the top of the container's content
     /// box, as applied by `align-content`.
     pub block_offset: f32,
+    /// The out-of-flow positions for which some inline span with an inline box below it is a
+    /// containing block (as `SPAN_*_CB` flags). The inline root claims those boxes in its place.
+    pub span_cb_flags: stylo_taffy::StyleFlags,
 }
 
 impl TextLayout {

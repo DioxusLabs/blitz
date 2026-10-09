@@ -30,6 +30,7 @@ use crate::{
     qual_name, stylo_to_parley,
     traversal::{iter_children, iter_children_and_pseudos},
 };
+use stylo_taffy::StyleFlags;
 
 use super::{
     damage::ALL_DAMAGE,
@@ -1098,6 +1099,8 @@ pub(crate) fn build_inline_layout_into(
     let mut text_transformer = TextTransformer::default();
     text_transformer.word_break(&builder);
 
+    let mut span_cb_flags = StyleFlags::empty();
+
     if let Some(before_id) = root_node.before() {
         build_inline_layout_recursive(
             &mut builder,
@@ -1105,6 +1108,8 @@ pub(crate) fn build_inline_layout_into(
             nodes,
             before_id,
             &text_transform,
+            StyleFlags::empty(),
+            &mut span_cb_flags,
         );
     }
     for child_id in root_node.children.iter().copied() {
@@ -1114,6 +1119,8 @@ pub(crate) fn build_inline_layout_into(
             nodes,
             child_id,
             &text_transform,
+            StyleFlags::empty(),
+            &mut span_cb_flags,
         );
     }
     if let Some(after_id) = root_node.after() {
@@ -1123,10 +1130,13 @@ pub(crate) fn build_inline_layout_into(
             nodes,
             after_id,
             &text_transform,
+            StyleFlags::empty(),
+            &mut span_cb_flags,
         );
     }
 
     text_layout.text = builder.build_into(&mut text_layout.layout);
+    text_layout.span_cb_flags = span_cb_flags;
     return;
 
     fn build_inline_layout_recursive(
@@ -1135,6 +1145,10 @@ pub(crate) fn build_inline_layout_into(
         nodes: &crate::NodeTree,
         node_id: NodeId,
         parent_text_transform: &CaseTransform,
+        // The containing block flags of the inline spans between the node and the inline root
+        span_cb_flags: StyleFlags,
+        // Accumulates `span_cb_flags` of every inline box
+        root_cb_flags: &mut StyleFlags,
     ) {
         let node = &nodes[node_id];
 
@@ -1197,6 +1211,8 @@ pub(crate) fn build_inline_layout_into(
                                 nodes,
                                 child_id,
                                 &text_transform,
+                                span_cb_flags,
+                                root_cb_flags,
                             );
                         }
                         builder.pop_style_span();
@@ -1208,6 +1224,7 @@ pub(crate) fn build_inline_layout_into(
                             if box_kind == InlineBoxKind::InFlow {
                                 text_transformer.word_break(builder);
                             }
+                            *root_cb_flags |= span_cb_flags;
                             builder.push_inline_box(InlineBox {
                                 id: node_id.as_u64(),
                                 kind: box_kind,
@@ -1245,6 +1262,18 @@ pub(crate) fn build_inline_layout_into(
 
                             builder.push_style_span(style);
 
+                            let mut span_cb_flags = span_cb_flags;
+                            if let Some(style) = node.primary_styles() {
+                                let claims =
+                                    stylo_taffy::convert::inline_containing_block_claims(&style);
+                                if claims.absolute {
+                                    span_cb_flags |= StyleFlags::SPAN_ABSOLUTE_CB;
+                                }
+                                if claims.fixed {
+                                    span_cb_flags |= StyleFlags::SPAN_FIXED_CB;
+                                }
+                            }
+
                             if let Some(before_id) = node.before() {
                                 build_inline_layout_recursive(
                                     builder,
@@ -1252,6 +1281,8 @@ pub(crate) fn build_inline_layout_into(
                                     nodes,
                                     before_id,
                                     &text_transform,
+                                    span_cb_flags,
+                                    root_cb_flags,
                                 );
                             }
 
@@ -1262,6 +1293,8 @@ pub(crate) fn build_inline_layout_into(
                                     nodes,
                                     child_id,
                                     &text_transform,
+                                    span_cb_flags,
+                                    root_cb_flags,
                                 );
                             }
                             if let Some(after_id) = node.after() {
@@ -1271,6 +1304,8 @@ pub(crate) fn build_inline_layout_into(
                                     nodes,
                                     after_id,
                                     &text_transform,
+                                    span_cb_flags,
+                                    root_cb_flags,
                                 );
                             }
 
@@ -1282,6 +1317,7 @@ pub(crate) fn build_inline_layout_into(
                         if box_kind == InlineBoxKind::InFlow {
                             text_transformer.word_break(builder);
                         }
+                        *root_cb_flags |= span_cb_flags;
                         builder.push_inline_box(InlineBox {
                             id: node_id.as_u64(),
                             kind: box_kind,
