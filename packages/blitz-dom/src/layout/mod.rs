@@ -18,8 +18,8 @@ use taffy::{
     AxisStaticEdge, AxisStaticPosition, BlockContext, CoreStyle as _, DetailedLayoutInfo,
     FlexDirection, LayoutContainingBlock, LayoutPartialTree, MaybeMath as _, NodeId, OofCandidate,
     ResolveOrZero, RoundTree, RunMode, TraversePartialTree, TraverseTree, compute_block_layout,
-    compute_cached_layout, compute_flexbox_layout, compute_grid_layout, compute_leaf_layout,
-    compute_oof_layout, prelude::*,
+    compute_cached_block_child_layout, compute_cached_layout, compute_flexbox_layout,
+    compute_grid_layout, compute_leaf_layout, compute_oof_layout, prelude::*,
 };
 
 pub(crate) mod construct;
@@ -786,9 +786,15 @@ impl taffy::LayoutBlockContainer for LayoutPassState<'_> {
         inputs: taffy::LayoutInput,
         block_ctx: Option<&mut BlockContext<'_>>,
     ) -> taffy::LayoutOutput {
-        compute_cached_layout(self, node_id, inputs, |tree, node_id, inputs| {
-            tree.compute_child_layout_internal(node_id, inputs, block_ctx)
-        })
+        compute_cached_block_child_layout(
+            self,
+            node_id,
+            inputs,
+            block_ctx,
+            |tree, node_id, inputs, block_ctx| {
+                tree.compute_child_layout_internal(node_id, inputs, block_ctx)
+            },
+        )
     }
 }
 
