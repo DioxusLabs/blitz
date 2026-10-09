@@ -185,7 +185,8 @@ impl InnerTextCollector {
     }
 
     fn visit_inline_layout(&mut self, root: &Node, layout: &TextLayout, filter: Option<NodeId>) {
-        let marker_len = inside_marker_len(root, layout.text());
+        let text = layout.text();
+        let marker_len = inside_marker_len(root, text);
 
         let mut cached_node: Option<(NodeId, bool)> = None;
         let mut include = |id: NodeId| -> bool {
@@ -213,13 +214,13 @@ impl InnerTextCollector {
         for content in layout.logical_content() {
             match content {
                 InlineContent::Box(id) => self.visit_inline_box(root, id, filter),
-                InlineContent::Text {
-                    node_id,
-                    start,
-                    text,
-                } => {
-                    if start >= marker_len && include(node_id) {
-                        self.push_str(&text);
+                InlineContent::Text { node_id, range } => {
+                    // The inside marker's text is not the element's
+                    let start = range.start.max(marker_len);
+                    if start < range.end && include(node_id) {
+                        if let Some(text) = text.get(start..range.end) {
+                            self.push_str(text);
+                        }
                     }
                 }
             }
