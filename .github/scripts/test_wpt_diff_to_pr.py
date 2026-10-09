@@ -47,6 +47,59 @@ ENTRIES = [
     },
 ]
 
+# As produced by `wpt diff --verbose`, which lists the subtests that changed.
+VERBOSE_ENTRIES = [
+    {
+        "kind": "changed",
+        "test": "/css/mixed.html",
+        "before": "FAIL",
+        "after": "FAIL",
+        "counts_before": {"pass": 2, "total": 4},
+        "counts_after": {"pass": 2, "total": 4},
+        "subtests": [
+            {"kind": "changed", "name": "a", "before": "FAIL", "after": "PASS"},
+            {"kind": "added", "name": "b", "status": "PASS"},
+            {"kind": "changed", "name": "c", "before": "PASS", "after": "FAIL"},
+            {"kind": "removed", "name": "d", "status": "PASS"},
+        ],
+    },
+    {
+        "kind": "changed",
+        "test": "/css/more-gained.html",
+        "before": "FAIL",
+        "after": "FAIL",
+        "counts_before": {"pass": 1, "total": 4},
+        "counts_after": {"pass": 2, "total": 4},
+        "subtests": [
+            {"kind": "changed", "name": "a", "before": "FAIL", "after": "PASS"},
+            {"kind": "changed", "name": "b", "before": "TIMEOUT", "after": "PASS"},
+            {"kind": "changed", "name": "c", "before": "PASS", "after": "NOTRUN"},
+        ],
+    },
+    {
+        "kind": "changed",
+        "test": "/css/no-pass-change.html",
+        "before": "FAIL",
+        "after": "FAIL",
+        "counts_before": {"pass": 0, "total": 2},
+        "counts_after": {"pass": 0, "total": 2},
+        "subtests": [
+            {"kind": "changed", "name": "a", "before": "FAIL", "after": "TIMEOUT"},
+            {"kind": "removed", "name": "b", "status": "FAIL"},
+            {"kind": "added", "name": "c", "status": "FAIL"},
+        ],
+    },
+    {
+        "kind": "changed",
+        "test": "/css/ref.html",
+        "before": "FAIL",
+        "after": "PASS",
+        "counts_before": {"pass": 0, "total": 1},
+        "counts_after": {"pass": 1, "total": 1},
+        "subtests": [],
+    },
+]
+
 
 class FormatLinesTest(unittest.TestCase):
     def test_sorted_aligned_and_marked(self):
@@ -61,8 +114,23 @@ class FormatLinesTest(unittest.TestCase):
             ],
         )
 
+    def test_subtests_changing_in_both_directions(self):
+        self.assertEqual(
+            format_lines(Diff(VERBOSE_ENTRIES)),
+            [
+                "! FAIL => FAIL  [2/4]  +2/-2  /css/mixed.html",
+                "! FAIL => FAIL  [2/4]  +2/-1  /css/more-gained.html",
+                "+ FAIL => PASS  [1/1]     +1  /css/ref.html",
+            ],
+        )
+
 
 class RenderTest(unittest.TestCase):
+    def test_headline_counts_each_direction(self):
+        section = render(Diff(VERBOSE_ENTRIES), run_url=None)
+        self.assertIn("Subtests: **5** newly passing, **3** newly failing (net +2).", section)
+        self.assertIn("<summary>Full diff (3 changed tests)</summary>", section)
+
     def test_headline_counts_subtests(self):
         section = render(Diff(ENTRIES), run_url=None)
         self.assertIn(

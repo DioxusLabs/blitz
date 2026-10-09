@@ -15,7 +15,17 @@ START_MARKER = "<!-- wpt-results-start -->"
 END_MARKER = "<!-- wpt-results-end -->"
 
 PASSING_STATUSES = {"PASS", "OK"}
+SUBTEST_PASS = "PASS"
 MAX_DIFF_LINES = 400
+
+
+def subtest_passes(subtest):
+    """Whether a changed subtest passed (before, after)."""
+    if subtest["kind"] == "added":
+        return False, subtest["status"] == SUBTEST_PASS
+    if subtest["kind"] == "removed":
+        return subtest["status"] == SUBTEST_PASS, False
+    return subtest["before"] == SUBTEST_PASS, subtest["after"] == SUBTEST_PASS
 
 
 class Change:
@@ -41,6 +51,16 @@ class Change:
             self.counts = entry["counts_after"]
             self.delta = self.counts["pass"] - entry["counts_before"]["pass"]
 
+        # The net change hides subtests that moved in opposite directions, so
+        # count each direction from the individual subtest changes if present.
+        subtests = entry.get("subtests") or []
+        if subtests:
+            passes = [subtest_passes(subtest) for subtest in subtests]
+            self.gained = sum(1 for before, after in passes if after and not before)
+            self.lost = sum(1 for before, after in passes if before and not after)
+        else:
+            self.gained, self.lost = max(self.delta, 0), max(-self.delta, 0)
+
         self.newly_passing = self.kind == "changed" and (
             self.before not in PASSING_STATUSES and self.after in PASSING_STATUSES
         )
@@ -49,22 +69,40 @@ class Change:
         )
 
     @property
+    def is_relevant(self):
+        """False if only non-passing subtest statuses changed (e.g. FAIL to TIMEOUT)."""
+        return bool(
+            self.kind != "changed"
+            or self.before != self.after
+            or self.delta
+            or self.gained
+            or self.lost
+        )
+
+    @property
     def marker(self):
         if self.newly_passing or self.kind == "added":
             return "+"
         if self.newly_failing or self.kind == "removed":
             return "-"
-        if self.before == self.after:
+        if self.before == self.after and not (self.gained and self.lost):
             if self.delta > 0:
                 return "+"
             if self.delta < 0:
                 return "-"
         return "!"
 
+    @property
+    def delta_text(self):
+        if self.gained and self.lost:
+            return f"+{self.gained}/-{self.lost}"
+        return f"{self.delta:+}"
+
 
 class Diff:
     def __init__(self, entries):
-        self.changes = sorted((Change(entry) for entry in entries), key=lambda c: c.test)
+        changes = (Change(entry) for entry in entries)
+        self.changes = sorted((c for c in changes if c.is_relevant), key=lambda c: c.test)
 
     @property
     def is_empty(self):
@@ -75,11 +113,11 @@ class Diff:
 
     @property
     def subtests_gained(self):
-        return sum(change.delta for change in self.changes if change.delta > 0)
+        return sum(change.gained for change in self.changes)
 
     @property
     def subtests_lost(self):
-        return -sum(change.delta for change in self.changes if change.delta < 0)
+        return sum(change.lost for change in self.changes)
 
     def status_delta(self, status):
         """The change in the number of tests with the given status."""
@@ -96,7 +134,7 @@ def format_lines(diff):
 
     status_width = max(len(change.status) for change in diff.changes)
     counts_width = max(len(counts_of(change)) for change in diff.changes)
-    delta_width = max(len(f"{change.delta:+}") for change in diff.changes)
+    delta_width = max(len(change.delta_text) for change in diff.changes)
 
     return [
         "{} {:<{}}  {:>{}}  {:>{}}  {}".format(
@@ -105,7 +143,7 @@ def format_lines(diff):
             status_width,
             counts_of(change),
             counts_width,
-            f"{change.delta:+}",
+            change.delta_text,
             delta_width,
             change.test,
         )
