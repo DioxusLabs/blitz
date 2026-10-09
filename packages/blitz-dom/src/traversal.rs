@@ -5,18 +5,6 @@ use style::dom::TNode as _;
 
 use crate::{BaseDocument, Node};
 
-macro_rules! iter_children {
-    ($node_expr:expr, $cb:expr) => {{
-        let node = &mut $node_expr;
-        let children = core::mem::take(&mut node.children);
-        for child_id in children.iter().copied() {
-            $cb(child_id)
-        }
-        $node_expr.children = children;
-    }};
-}
-pub(crate) use iter_children;
-
 macro_rules! iter_children_and_pseudos {
     ($node_expr:expr, $cb:expr) => {{
         // Load node

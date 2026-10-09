@@ -112,9 +112,7 @@ impl Walk<'_> {
             (DisplayOutside::None, DisplayInside::Contents) => {
                 let text_transform = case_transform::<B>(Some(&**style));
                 builder.push_span(node, &style, SpanKind::Contents);
-                for &child in &node.children {
-                    self.node(builder, &self.nodes[child], &text_transform);
-                }
+                self.children_and_pseudos(builder, node, &text_transform);
                 builder.pop_span(SpanKind::Contents);
             }
             _ if style.clone_position().is_absolutely_positioned() => {

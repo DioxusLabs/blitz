@@ -22,7 +22,7 @@ use crate::{
     node::{NodeFlags, NodeKind, SpecialElementData, TextInputData, TextLayout},
     qual_name,
     text::EditEngine as _,
-    traversal::{iter_children, iter_children_and_pseudos},
+    traversal::iter_children_and_pseudos,
 };
 
 use super::{
@@ -943,7 +943,7 @@ pub(crate) fn find_inline_layout_embedded_boxes(
                     }
                     (DisplayOutside::None, DisplayInside::Contents) => {
                         node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
-                        iter_children!(nodes[node_id], |child_id| {
+                        iter_children_and_pseudos!(nodes[node_id], |child_id| {
                             find_inline_layout_embedded_boxes_recursive(
                                 nodes,
                                 parent_id,
