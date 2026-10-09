@@ -174,3 +174,88 @@ fn sibling_of_text_only_span_is_not_claimed_by_root() {
         },
     );
 }
+
+/// Adding or removing a containing-block-establishing property on a span updates the root's
+/// claims
+fn assert_span_cb_toggle(cb_prop: &str, position: &str) {
+    use markup5ever::{QualName, local_name, ns};
+
+    let html = format!(
+        "<style>{STYLE}</style><div id='root'>before <span id='span'>text\
+         <div id='abs' class='fill' style='position: {position}'></div></span></div>"
+    );
+    let mut harness = Harness::from_html(&html);
+    let span = harness.node("#span");
+    let viewport = harness.layout_rect("#abs");
+    assert!(
+        viewport.width > ROOT_PADDING_BOX.width,
+        "initially unclaimed"
+    );
+
+    let mut set_style = |harness: &mut Harness, style: &str| {
+        let name = QualName::new(None, ns!(), local_name!("style"));
+        harness.base_mut().mutate().set_attribute(span, name, style);
+        harness.pump();
+    };
+
+    set_style(&mut harness, cb_prop);
+    assert_rect_eq(harness.layout_rect("#abs"), ROOT_PADDING_BOX);
+
+    set_style(&mut harness, "");
+    assert_rect_eq(harness.layout_rect("#abs"), viewport);
+}
+
+#[test]
+fn dynamic_position_on_span() {
+    assert_span_cb_toggle("position: relative", "absolute");
+}
+
+#[test]
+fn dynamic_filter_on_span() {
+    assert_span_cb_toggle("filter: blur(1px)", "fixed");
+}
+
+#[test]
+fn dynamic_will_change_on_span() {
+    assert_span_cb_toggle("will-change: filter", "fixed");
+    assert_span_cb_toggle("will-change: position", "absolute");
+}
+
+/// As `assert_span_cb_toggle`, but through `:hover`, which damages the span through its style
+/// change alone
+fn assert_span_cb_hover_toggle(cb_prop: &str, position: &str) {
+    let html = format!(
+        "<style>{STYLE} #span:hover {{ {cb_prop} }}</style><div id='root'><span id='span'>text\
+         <div id='abs' class='fill' style='position: {position}'></div></span></div>"
+    );
+    let mut harness = Harness::from_html(&html);
+    let viewport = harness.layout_rect("#abs");
+    assert!(
+        viewport.width > ROOT_PADDING_BOX.width,
+        "initially unclaimed"
+    );
+
+    harness.base_mut().set_hover_to(60.0, 50.0);
+    harness.pump();
+    assert_rect_eq(harness.layout_rect("#abs"), ROOT_PADDING_BOX);
+
+    harness.base_mut().set_hover_to(700.0, 500.0);
+    harness.pump();
+    assert_rect_eq(harness.layout_rect("#abs"), viewport);
+}
+
+#[test]
+fn hover_position_on_span() {
+    assert_span_cb_hover_toggle("position: relative", "absolute");
+}
+
+#[test]
+fn hover_filter_on_span() {
+    assert_span_cb_hover_toggle("filter: blur(1px)", "fixed");
+}
+
+#[test]
+fn hover_will_change_on_span() {
+    assert_span_cb_hover_toggle("will-change: filter", "fixed");
+    assert_span_cb_hover_toggle("will-change: position", "absolute");
+}
