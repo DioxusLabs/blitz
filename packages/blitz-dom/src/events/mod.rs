@@ -84,6 +84,10 @@ fn map_dom_event_to_ui_event(
         DomEventData::ContextMenu(_) => None,
         DomEventData::DoubleClick(_) => None,
         DomEventData::Input(_) => None,
+        // Sub-documents generate these from the forwarded IME default action.
+        DomEventData::CompositionStart(_)
+        | DomEventData::CompositionUpdate(_)
+        | DomEventData::CompositionEnd(_) => None,
         DomEventData::Wheel(data) => Some(UiEvent::Wheel(data)),
         DomEventData::Scroll(_) => None,
         DomEventData::Focus(_) => None,
@@ -233,7 +237,10 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
         DomEventData::Ime(event) => {
             handle_ime_event(doc, event.clone(), dispatch_event);
         }
-        DomEventData::Input(_) => {
+        DomEventData::Input(_)
+        | DomEventData::CompositionStart(_)
+        | DomEventData::CompositionUpdate(_)
+        | DomEventData::CompositionEnd(_) => {
             // Do nothing (no default action)
         }
         DomEventData::ContextMenu(_) => {

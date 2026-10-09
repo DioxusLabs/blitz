@@ -8,8 +8,8 @@ use blitz_traits::events::{
 };
 use dioxus_html::{
     AnimationData, CancelData, ClipboardData, CompositionData, DragData, FocusData, FormData,
-    FormValue, HasFileData, HasFocusData, HasFormData, HasKeyboardData, HasMouseData,
-    HasPointerData, HasScrollData, HasTouchData, HasTouchPointData, HasWheelData,
+    FormValue, HasCompositionData, HasFileData, HasFocusData, HasFormData, HasKeyboardData,
+    HasMouseData, HasPointerData, HasScrollData, HasTouchData, HasTouchPointData, HasWheelData,
     HtmlEventConverter, ImageData, KeyboardData, MediaData, MountedData, MountedError,
     MountedResult, MouseData, PlatformEventData, PointerData, RenderedElementBacking, ResizeData,
     ScrollBehavior, ScrollData, ScrollLogicalPosition, ScrollToOptions, SelectionData, ToggleData,
@@ -75,8 +75,12 @@ impl HtmlEventConverter for NativeConverter {
         unimplemented!("todo: convert_clipboard_data in dioxus-native. requires support in blitz")
     }
 
-    fn convert_composition_data(&self, _event: &PlatformEventData) -> CompositionData {
-        unimplemented!("todo: convert_composition_data in dioxus-native. requires support in blitz")
+    fn convert_composition_data(&self, event: &PlatformEventData) -> CompositionData {
+        event
+            .downcast::<NativeCompositionData>()
+            .unwrap()
+            .clone()
+            .into()
     }
 
     fn convert_drag_data(&self, _event: &PlatformEventData) -> DragData {
@@ -539,6 +543,20 @@ impl HasTouchPointData for NativeTouchPointData {
     fn rotation(&self) -> f64 {
         // TODO: expose real touch rotation once blitz tracks it
         0.0
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self as &dyn Any
+    }
+}
+
+#[derive(Clone)]
+pub struct NativeCompositionData {
+    pub data: String,
+}
+impl HasCompositionData for NativeCompositionData {
+    fn data(&self) -> String {
+        self.data.clone()
     }
 
     fn as_any(&self) -> &dyn Any {

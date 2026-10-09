@@ -3,7 +3,7 @@ use crate::{BaseDocument, node::GeneratedTextInputEvent, util::ACTION_MOD};
 use blitz_traits::node_id::NodeId;
 use blitz_traits::{
     SmolStr,
-    events::{BlitzInputEvent, BlitzKeyEvent, DomEvent, DomEventData},
+    events::{BlitzCompositionEvent, BlitzInputEvent, BlitzKeyEvent, DomEvent, DomEventData},
 };
 use keyboard_types::{Key, Modifiers};
 use markup5ever::local_name;
@@ -124,6 +124,20 @@ impl BaseDocument {
                 ));
                 self.shell_provider.request_redraw();
             }
+            GeneratedTextInputEvent::CompositionStart => dispatch_event(DomEvent::new(
+                node_id,
+                DomEventData::CompositionStart(BlitzCompositionEvent {
+                    data: String::new(),
+                }),
+            )),
+            GeneratedTextInputEvent::CompositionUpdate(data) => dispatch_event(DomEvent::new(
+                node_id,
+                DomEventData::CompositionUpdate(BlitzCompositionEvent { data }),
+            )),
+            GeneratedTextInputEvent::CompositionEnd(data) => dispatch_event(DomEvent::new(
+                node_id,
+                DomEventData::CompositionEnd(BlitzCompositionEvent { data }),
+            )),
             GeneratedTextInputEvent::Select | GeneratedTextInputEvent::PreEditChange => {
                 self.shell_provider.request_redraw();
             }
