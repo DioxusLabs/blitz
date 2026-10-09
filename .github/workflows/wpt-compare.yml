@@ -108,7 +108,7 @@ jobs:
           zstd -d reports/base/wptreport.json.zst -o reports/base/wptreport.json
           zstd -d reports/candidate/wptreport.json.zst -o reports/candidate/wptreport.json
           wpt diff reports/base/wptreport.json reports/candidate/wptreport.json | tee comparison/wptdiff.txt
-          wpt diff --format json reports/base/wptreport.json reports/candidate/wptreport.json > comparison/wptdiff.json
+          wpt diff --verbose --format json reports/base/wptreport.json reports/candidate/wptreport.json > comparison/wptdiff.json
           python3 .github/scripts/wpt_area_changes.py reports/base/wptreport.json reports/candidate/wptreport.json > comparison/wptareas.json
       - name: Render comparison summary
         env:
