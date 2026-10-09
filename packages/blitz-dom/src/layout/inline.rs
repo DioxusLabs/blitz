@@ -333,7 +333,15 @@ impl LayoutPassState<'_> {
             known_dimensions: Size::NONE,
             available_space,
             sizing_mode: SizingMode::InherentSize,
-            parent_size: available_space.into_options(),
+            parent_size: Size {
+                width: available_space.width.into_option(),
+                // Anonymous blocks do not establish the containing block for percentages.
+                height: if self.nodes[node_id].is_anonymous() {
+                    parent_size.height
+                } else {
+                    available_space.height.into_option()
+                },
+            },
             // Atomic inlines (e.g. inline-block) establish independent formatting
             // contexts: their margins never collapse with their children's margins.
             vertical_margins_are_collapsible: taffy::Line::FALSE,

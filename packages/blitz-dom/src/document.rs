@@ -2212,7 +2212,14 @@ impl BaseDocument {
         // Nodes with their own layout box: use it directly
         let Some(rects) = self.inline_fragment_rects(node_id) else {
             let pos = node.offset_top_left();
-            let size = node.final_layout().size;
+            let size = node.unrounded_layout().size;
+            #[cfg(feature = "writing-mode")]
+            let size = match node.containing_block() {
+                Some(parent) if self.nodes[parent].layout_data().writing_mode.is_vertical() => {
+                    size.transpose()
+                }
+                _ => size,
+            };
             return Some(BoundingRect {
                 x: pos.x as f64,
                 y: pos.y as f64,

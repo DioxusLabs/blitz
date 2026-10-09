@@ -2,8 +2,9 @@
 //! `getComputedStyle()`.
 //!
 //! For most properties the resolved value is the stylo computed value. For
-//! layout-dependent properties (`width`/`height`, grid track sizes) it is the
-//! *used* value, computed from the most recent layout.
+//! layout-dependent properties (`width`/`height`, margins, padding, insets,
+//! `transform-origin`, grid track sizes) it is the *used* value, computed from
+//! the most recent layout.
 
 use cssparser::Parser;
 use selectors::matching::QuirksMode;
@@ -12,8 +13,9 @@ use style::computed_values::position::T as Position;
 use style::parser::ParserContext;
 use style::properties::declaration_block::{Importance, parse_style_attribute};
 use style::properties::{
-    ComputedValues, NonCustomPropertyId, PropertyDeclaration, PropertyDeclarationBlock, PropertyId,
-    ShorthandId, SourcePropertyDeclaration, parse_one_declaration_into,
+    ComputedValues, NonCustomPropertyId, PropertyDeclaration, PropertyDeclarationBlock,
+    PropertyDeclarationId, PropertyId, ShorthandId, SourcePropertyDeclaration,
+    parse_one_declaration_into,
 };
 use style::servo_arc::Arc as ServoArc;
 use style::stylesheets::supports_rule::parse_condition_or_declaration;
@@ -335,8 +337,8 @@ impl BaseDocument {
     /// by `getComputedStyle()`. Returns an empty string for unknown properties and
     /// for nodes without styles.
     ///
-    /// Layout-dependent properties (`width`/`height`, `grid-template-rows`/`columns`)
-    /// resolve to *used* values, so [`resolve`](Self::resolve) should be called
+    /// Layout-dependent properties (`width`/`height`, margins, padding, insets,
+    /// `transform-origin`, `grid-template-rows`/`columns`) resolve to *used* values, so [`resolve`](Self::resolve) should be called
     /// before this method to ensure layout is up to date.
     pub fn resolved_style_value(&self, node_id: NodeId, property_name: &str) -> String {
         let Some(node) = self.get_node(node_id) else {
@@ -379,8 +381,36 @@ impl BaseDocument {
             node.flags.is_in_document() && !display.is_none() && stored_styles.is_some();
         let has_layout_box = generates_box && !is_non_atomic_inline;
 
+        let Ok(property_id) = PropertyId::parse_enabled_for_all_content(property_name) else {
+            return String::new();
+        };
+        // Logical longhands resolve as the physical longhand they map to
+        let property_name = match property_id.as_shorthand() {
+            Err(PropertyDeclarationId::Longhand(longhand)) => {
+                longhand.to_physical(styles.writing_mode).name()
+            }
+            _ => property_name,
+        };
+
+        // Used lengths are serialized unzoomed, like computed lengths
+        let zoom = styles.effective_zoom.value();
+        let format_used_px = |px: f32| format_px(px / zoom);
+
         // Layout-dependent "used value" special cases
         match property_name {
+            // Shorthands of longhands that resolve to used values
+            "margin" | "margin-block" | "margin-inline" | "padding" | "padding-block"
+            | "padding-inline" | "inset" | "inset-block" | "inset-inline"
+                if has_layout_box =>
+            {
+                if let Ok(shorthand) = property_id.as_shorthand() {
+                    let sides: Vec<String> = shorthand
+                        .longhands()
+                        .map(|longhand| self.resolved_style_value(node_id, longhand.name()))
+                        .collect();
+                    return serialize_sides(&sides);
+                }
+            }
             "grid-template-columns" | "grid-template-rows"
                 if display.inside() == DisplayInside::Grid =>
             {
@@ -392,9 +422,9 @@ impl BaseDocument {
                         })
                 {
                     return if property_name == "grid-template-columns" {
-                        info.grid_template_columns()
+                        info.grid_template_columns(zoom)
                     } else {
-                        info.grid_template_rows()
+                        info.grid_template_rows(zoom)
                     };
                 }
             }
@@ -420,12 +450,12 @@ impl BaseDocument {
                     && matches!(pos_styles.grid_template_areas, GridTemplateAreas::None)
                 {
                     let rows = if rows_are_none {
-                        info.grid_template_rows()
+                        info.grid_template_rows(zoom)
                     } else {
                         pos_styles.grid_template_rows.to_css_string()
                     };
                     let columns = if columns_are_none {
-                        info.grid_template_columns()
+                        info.grid_template_columns(zoom)
                     } else {
                         pos_styles.grid_template_columns.to_css_string()
                     };
@@ -456,7 +486,7 @@ impl BaseDocument {
                         - layout.padding.top
                         - layout.padding.bottom
                 };
-                return format_px(size.max(0.0));
+                return format_used_px(size.max(0.0));
             }
             "margin-top" | "margin-right" | "margin-bottom" | "margin-left" if has_layout_box => {
                 // Used value: the margin resolved by layout (percentages and
@@ -469,7 +499,45 @@ impl BaseDocument {
                     "margin-left" => layout.margin.left,
                     _ => unreachable!(),
                 };
-                return format_px(margin);
+                return format_used_px(margin);
+            }
+            "padding-top" | "padding-right" | "padding-bottom" | "padding-left"
+                if has_layout_box =>
+            {
+                // Used value: the padding resolved by layout (percentages
+                // resolved to lengths)
+                let layout = self.physical_unrounded_geometry(node_id).1;
+                let padding = match property_name {
+                    "padding-top" => layout.padding.top,
+                    "padding-right" => layout.padding.right,
+                    "padding-bottom" => layout.padding.bottom,
+                    "padding-left" => layout.padding.left,
+                    _ => unreachable!(),
+                };
+                return format_used_px(padding);
+            }
+            "transform-origin" | "perspective-origin" if has_layout_box => {
+                // Used value: percentages resolved against the border box
+                let layout = self.physical_unrounded_geometry(node_id).1;
+                let resolve = |value: &LengthPercentage, basis: f32| {
+                    format_used_px(value.resolve(CSSPixelLength::new(basis)).px())
+                };
+                let box_styles = styles.get_box();
+                return if property_name == "transform-origin" {
+                    let origin = &box_styles.transform_origin;
+                    let x = resolve(&origin.horizontal, layout.size.width);
+                    let y = resolve(&origin.vertical, layout.size.height);
+                    if origin.depth.px() == 0.0 {
+                        format!("{x} {y}")
+                    } else {
+                        format!("{x} {y} {}", format_used_px(origin.depth.px()))
+                    }
+                } else {
+                    let origin = &box_styles.perspective_origin;
+                    let x = resolve(&origin.horizontal, layout.size.width);
+                    let y = resolve(&origin.vertical, layout.size.height);
+                    format!("{x} {y}")
+                };
             }
             "top" | "right" | "bottom" | "left" if has_layout_box => {
                 let position = styles.clone_position();
@@ -539,7 +607,7 @@ impl BaseDocument {
                             }
                             (None, None) => 0.0,
                         };
-                        return format_px(used);
+                        return format_used_px(used);
                     }
                     // A specified (non-`auto`) inset resolves as-is (with
                     // percentages resolved against the containing block), even
@@ -560,7 +628,7 @@ impl BaseDocument {
                                 _ => unreachable!(),
                             };
                             if let Some(value) = resolve_inset(inset, basis) {
-                                return format_px(value);
+                                return format_used_px(value);
                             }
 
                             let layout = node.final_layout();
@@ -579,7 +647,7 @@ impl BaseDocument {
                                 "right" => cb_width - margin_box_left - margin_box_width,
                                 _ => unreachable!(),
                             };
-                            return format_px(used);
+                            return format_used_px(used);
                         }
                     }
                     // `static` and `sticky` boxes resolve to the computed value
@@ -628,9 +696,6 @@ impl BaseDocument {
         }
 
         // General case: serialize the stylo computed value
-        let Ok(property_id) = PropertyId::parse_enabled_for_all_content(property_name) else {
-            return String::new();
-        };
         let css = match property_id.as_shorthand() {
             // Serialize shorthands from the resolved values of their longhands
             Ok(shorthand) => serialize_resolved_shorthand(styles, shorthand),
@@ -657,6 +722,25 @@ impl BaseDocument {
         }
         false
     }
+}
+
+/// Serialize the values of a two-sided (start, end) or four-sided (top, right,
+/// bottom, left) shorthand, omitting sides that repeat the opposite side.
+fn serialize_sides(sides: &[String]) -> String {
+    let len = match sides {
+        [start, end] if start == end => 1,
+        [top, right, bottom, left] if right == left => {
+            if top != bottom {
+                3
+            } else if top != right {
+                2
+            } else {
+                1
+            }
+        }
+        _ => sides.len(),
+    };
+    sides[..len].join(" ")
 }
 
 /// Serialize the resolved value of a shorthand property by resolving each of
