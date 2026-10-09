@@ -94,14 +94,42 @@ impl TextLayout {
         );
     }
 
-    /// The content's min-content and max-content widths.
-    pub(super) fn widths(&self) -> ContentWidths {
+    /// The content's min-content and max-content widths, with its floats.
+    pub(super) fn widths(&mut self) -> ContentWidths {
         // TODO: Cache content widths.
         //
         // This is a little tricky as the size of the inline boxes may depend on whether we are sizing under
         // and a min-content or max-content constraint. So if we want to compute both widths in one pass then
         // we need to store both a min-content and max-content size on each box.
+        //
+        // A float takes room along the line only as the content is measured: with a soft wrap
+        // opportunity either side, the widest float is as wide as the content gets at
+        // min-content, and at max-content each paragraph is as wide as its text and its floats.
+        let floats = &self.floats;
+        let measured_as_floats = |ibox: &parley::InlineBox| {
+            floats
+                .iter()
+                .find(|(id, ..)| *id == ibox.id)
+                .map(|(_, _, width, _)| *width)
+        };
+        if !floats.is_empty() {
+            for ibox in self.layout.inline_boxes_mut() {
+                if let Some(width) = measured_as_floats(ibox) {
+                    ibox.kind = parley::InlineBoxKind::InFlow;
+                    ibox.width = width;
+                }
+            }
+        }
         let widths = self.layout.calculate_content_widths();
+        if !self.floats.is_empty() {
+            let floats = &self.floats;
+            for ibox in self.layout.inline_boxes_mut() {
+                if floats.iter().any(|(id, ..)| *id == ibox.id) {
+                    ibox.kind = parley::InlineBoxKind::CustomOutOfFlow;
+                    ibox.width = 0.0;
+                }
+            }
+        }
         ContentWidths {
             min: widths.min,
             max: widths.max,

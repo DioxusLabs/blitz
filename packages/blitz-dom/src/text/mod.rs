@@ -270,8 +270,10 @@ pub(crate) trait InlineLayoutEngine: InlineText {
     /// count as zero until the lines are broken, and are then of the width they are broken in.
     fn prepare(&mut self, sizes: &[BoxMeasure], style: Option<&style::properties::ComputedValues>);
 
-    /// Returns the content's min-content and max-content widths, in device pixels.
-    fn content_widths(&self) -> ContentWidths;
+    /// Returns the content's min-content and max-content widths, in device pixels, with its
+    /// floats: the widest of them is as wide as the content gets at min-content, and at
+    /// max-content each paragraph is as wide as its text and the floats anchored in it.
+    fn content_widths(&mut self) -> ContentWidths;
 
     /// Breaks the content into lines `width` device pixels wide, or as narrow as `exclusions`
     /// leaves them, placing each float into it as a line reaches it, and aligns them as `style`,
