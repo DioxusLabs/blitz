@@ -127,7 +127,7 @@ pub struct Node {
     /// For element nodes this holds the [`ElementData`], which stores most of
     /// the per-node style/layout state. For the document node it holds the
     /// [`DocumentData`]. Access the moved fields through the forwarding methods
-    /// on [`Node`] (e.g. [`Node::style`], [`Node::final_layout`]).
+    /// on [`Node`] (e.g. [`Node::primary_styles`], [`Node::final_layout`]).
     pub data: NodeData,
 }
 
@@ -1719,8 +1719,7 @@ impl Node {
                 .is_some_and(|styles| styles.get_box().position == Position::Static)
     }
 
-    /// The nearest layout ancestor that [is an offset parent](Self::is_offset_parent), as in
-    /// CSSOM View's `offsetParent`.
+    /// The nearest layout ancestor that is an offset parent, as in CSSOM View's `offsetParent`.
     pub fn offset_parent(&self) -> Option<&Node> {
         let mut node = self;
         loop {
