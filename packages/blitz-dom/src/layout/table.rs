@@ -167,6 +167,20 @@ fn side_width(width: app_units::Au, style: BorderStyle) -> f32 {
     }
 }
 
+/// The width of the collapsed border grid, which Blitz takes from the first cell's border.
+fn collapsed_grid_width(border: &Border) -> taffy::Size<f32> {
+    taffy::Size {
+        width: side_width(border.border_left_width.0, border.border_left_style).max(side_width(
+            border.border_right_width.0,
+            border.border_right_style,
+        )),
+        height: side_width(border.border_top_width.0, border.border_top_style).max(side_width(
+            border.border_bottom_width.0,
+            border.border_bottom_style,
+        )),
+    }
+}
+
 /// Build a `calc(<percent> + <length>)` track sizing function. The calc value is
 /// boxed and stored in `calc_values` so that the raw pointer Taffy holds stays valid.
 fn percent_plus_length(
@@ -385,20 +399,10 @@ pub(crate) fn build_table_context(
             }
         }
         BorderCollapse::Collapse => first_cell_border
-            .as_ref()
-            .map(|border| {
-                let x = side_width(border.border_left_width.0, border.border_left_style).max(
-                    side_width(border.border_right_width.0, border.border_right_style),
-                );
-                let y = side_width(border.border_top_width.0, border.border_top_style).max(
-                    side_width(border.border_bottom_width.0, border.border_bottom_style),
-                );
-                taffy::Size {
-                    width: style_helpers::length(x),
-                    height: style_helpers::length(y),
-                }
-            })
-            .unwrap_or(taffy::Size::ZERO.map(style_helpers::length)),
+            .as_deref()
+            .map(collapsed_grid_width)
+            .unwrap_or(taffy::Size::ZERO)
+            .map(style_helpers::length),
     };
 
     if border_collapse == BorderCollapse::Collapse {
@@ -635,14 +639,26 @@ fn collect_table_cells(
             let mut style = table_taffy_style(stylo_style, wm);
             let col = cursor.next_free();
 
-            // In the collapsed borders model the borders are laid out as gutters between
-            // the cells (see the table's `gap`) rather than as part of the cells
-            if border_collapse == BorderCollapse::Collapse {
-                style.border = taffy::Rect::ZERO.map(style_helpers::length);
-            }
-
             if first_cell_border.is_none() {
                 *first_cell_border = Some(stylo_style.clone_border());
+            }
+
+            // In the collapsed borders model the borders are laid out as gutters between
+            // the cells (see the table's `gap`) rather than as part of the cells. When that
+            // grid has no width (the first cell has no border), there are no gutters to
+            // carry any border, so cells keep their own and paint them as in the separated
+            // model with zero spacing. That keeps a rule authored on a single cell instead
+            // of dropping it; adjacent cell borders then sit side by side rather than
+            // collapsing into one (#504). This is decided here, before the cell's width
+            // sizes a column, so the column only counts borders the cell keeps.
+            if border_collapse == BorderCollapse::Collapse {
+                let grid = first_cell_border
+                    .as_deref()
+                    .map(collapsed_grid_width)
+                    .unwrap_or(taffy::Size::ZERO);
+                if grid.width > 0.0 || grid.height > 0.0 {
+                    style.border = taffy::Rect::ZERO.map(style_helpers::length);
+                }
             }
 
             // In the fixed table layout algorithm the widths of columns are not
