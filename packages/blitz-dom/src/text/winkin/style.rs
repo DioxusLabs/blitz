@@ -39,7 +39,8 @@ use style::stylesheets::font_feature_values_rule::{FFVDeclaration, PairValues, S
 use style::stylist::Stylist;
 use style::values::CustomIdent;
 use style::values::computed::font::{
-    FontStyle as StyloFontStyle, GenericFontFamily as StyloGenericFontFamily,
+    FontFamily as StyloFontFamily, FontStyle as StyloFontStyle,
+    GenericFontFamily as StyloGenericFontFamily,
 };
 use style::values::computed::font::{
     FontSynthesis as StyloFontSynthesis, FontSynthesisStyle as StyloFontSynthesisStyle,
@@ -275,13 +276,19 @@ impl<'a> FontLists<'a> {
     /// The lists `computed` asks for, borrowing its family names.
     pub(crate) fn of(computed: &'a ComputedValues, values: &FeatureValues) -> Self {
         let font = computed.get_font();
-        let families = font
-            .font_family
-            .families
-            .list
-            .iter()
-            .map(font_family_name)
-            .collect();
+        // The initial `font-family` names no family: winkin then sets the text in the language's
+        // standard font, as Chrome sets it, where `serif` would take the serif setting, which
+        // differs for Chinese, Japanese and Korean.
+        let families = if is_initial_family(&font.font_family) {
+            Vec::new()
+        } else {
+            font.font_family
+                .families
+                .list
+                .iter()
+                .map(font_family_name)
+                .collect()
+        };
         let mut features = Vec::new();
         values.resolve(computed, &mut features);
         features.extend(font.font_feature_settings.0.iter().map(|setting| {
@@ -312,6 +319,20 @@ impl<'a> FontLists<'a> {
         self.families = first.iter().cloned().chain(rest).collect();
         self
     }
+}
+
+/// Whether `family` is the initial `font-family`.
+///
+/// Stylo's initial value is `serif`, held in one shared list that inheriting and `initial` keep;
+/// a `serif` a style sheet names is parsed into a list of its own.
+fn is_initial_family(family: &StyloFontFamily) -> bool {
+    std::ptr::eq(
+        family.families.list.as_ptr(),
+        StyloFontFamily::generic(StyloGenericFontFamily::Serif)
+            .families
+            .list
+            .as_ptr(),
+    )
 }
 
 /// A family of `font-family`, as fontwich names it.
@@ -1130,5 +1151,29 @@ fn generic_family(generic: StyloGenericFontFamily) -> GenericFamily {
         StyloGenericFontFamily::Cursive => GenericFamily::Cursive,
         StyloGenericFontFamily::Fantasy => GenericFamily::Fantasy,
         StyloGenericFontFamily::SystemUi => GenericFamily::SystemUi,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use style::ArcSlice;
+    use style::values::computed::font::{FontFamilyList, SingleFontFamily};
+
+    use super::{StyloFontFamily, StyloGenericFontFamily, is_initial_family};
+
+    #[test]
+    fn only_the_initial_family_is_the_initial_family() {
+        assert!(is_initial_family(&StyloFontFamily::serif()));
+        // A style sheet's `serif`, in a list of its own as Stylo parses it.
+        let named = StyloFontFamily {
+            families: FontFamilyList {
+                list: ArcSlice::from_iter(std::iter::once(SingleFontFamily::Generic(
+                    StyloGenericFontFamily::Serif,
+                ))),
+            },
+            is_system_font: false,
+            is_initial: false,
+        };
+        assert!(!is_initial_family(&named));
     }
 }
