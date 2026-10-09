@@ -319,9 +319,8 @@ impl LayoutPassState<'_> {
                             .downcast_element_mut()
                             .and_then(|el| el.text_input_data_mut())
                         {
-                            input
-                                .editor
-                                .set_width(&mut doc.text, Some(content_width * scale));
+                            input.editor.set_width(Some(content_width * scale));
+                            input.editor.refresh(&mut doc.text);
                         }
                     }
                     return output;

@@ -339,17 +339,19 @@ pub(crate) fn handle_pointermove<F: FnMut(DomEvent)>(
             return changed;
         }
 
+        text_input_data.editor.refresh(&mut doc.text);
         let mut content_box_offset = taffy::Point {
             x: final_layout.padding.left + final_layout.border.left,
             y: final_layout.padding.top + final_layout.border.top,
         };
         if !text_input_data.is_multiline {
-            let editor = &text_input_data.editor;
-            let content_box_height = final_layout.content_box_height();
-            let input_height = editor.size().unwrap().height as f32 / editor.scale();
-            let y_offset = ((content_box_height - input_height) / 2.0).max(0.0);
+            if let Some(metrics) = text_input_data.editor.metrics() {
+                let content_box_height = final_layout.content_box_height();
+                let input_height = metrics.size.height as f32 / metrics.scale;
+                let y_offset = ((content_box_height - input_height) / 2.0).max(0.0);
 
-            content_box_offset.y += y_offset;
+                content_box_offset.y += y_offset;
+            }
         }
 
         // Account for the input's scroll offset (stored in CSS pixels, scaled here to device
@@ -463,11 +465,12 @@ pub(crate) fn handle_pointerdown(
                         y: node.final_layout().padding.top + node.final_layout().border.top,
                     };
                     if !text_input_data.is_multiline {
-                        let editor = &text_input_data.editor;
-                        let content_box_height = node.final_layout().content_box_height();
-                        let input_height = editor.size().unwrap().height as f32 / editor.scale();
-                        let y_offset = ((content_box_height - input_height) / 2.0).max(0.0);
-                        content_box_offset.y += y_offset;
+                        if let Some(metrics) = text_input_data.editor.metrics() {
+                            let content_box_height = node.final_layout().content_box_height();
+                            let input_height = metrics.size.height as f32 / metrics.scale;
+                            let y_offset = ((content_box_height - input_height) / 2.0).max(0.0);
+                            content_box_offset.y += y_offset;
+                        }
                     }
                     // `scroll_offset` is stored in CSS pixels; scale it to device pixels to
                     // match the editor's coordinate space.
