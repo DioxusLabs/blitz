@@ -3318,7 +3318,7 @@ dependencies = [
 [[package]]
 name = "fontwich"
 version = "0.0.1"
-source = "git+https://github.com/dfrg/winkin?rev=8906e07a7c776fda04830a44b8cbbc84110e3ccd#8906e07a7c776fda04830a44b8cbbc84110e3ccd"
+source = "git+https://github.com/dfrg/winkin?rev=20cfd61d6afe435cc66a93d358d956f62e0c6ba6#20cfd61d6afe435cc66a93d358d956f62e0c6ba6"
 dependencies = [
  "hashbrown 0.17.1",
  "objc2-core-foundation",
@@ -10436,7 +10436,7 @@ dependencies = [
 [[package]]
 name = "winkin"
 version = "0.0.1"
-source = "git+https://github.com/dfrg/winkin?rev=8906e07a7c776fda04830a44b8cbbc84110e3ccd#8906e07a7c776fda04830a44b8cbbc84110e3ccd"
+source = "git+https://github.com/dfrg/winkin?rev=20cfd61d6afe435cc66a93d358d956f62e0c6ba6#20cfd61d6afe435cc66a93d358d956f62e0c6ba6"
 dependencies = [
  "fontwich",
  "harfrust 0.14.0",
