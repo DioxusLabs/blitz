@@ -55,6 +55,7 @@ use style::values::computed::{
 };
 use style::values::computed::{
     HangingPunctuation as StyloHangingPunctuation, TextCombineUpright as StyloTextCombineUpright,
+    TextSecurity as StyloTextSecurity,
 };
 use style::values::generics::box_::{BaselineShiftKeyword, GenericBaselineShift};
 use style::values::generics::font::GenericFontSizeAdjust;
@@ -714,6 +715,12 @@ fn text_group(computed: &ComputedValues, scale: f32, language: Option<Language>)
                 full_width: transform.contains(StyloTextTransform::FULL_WIDTH),
                 full_size_kana: transform.contains(StyloTextTransform::FULL_SIZE_KANA),
             }
+        },
+        security: match text._webkit_text_security {
+            StyloTextSecurity::None => winkin::style::TextSecurity::None,
+            StyloTextSecurity::Disc => winkin::style::TextSecurity::Disc,
+            StyloTextSecurity::Circle => winkin::style::TextSecurity::Circle,
+            StyloTextSecurity::Square => winkin::style::TextSecurity::Square,
         },
         word_break: match text.word_break {
             style::values::computed::WordBreak::Normal => WordBreak::Normal,

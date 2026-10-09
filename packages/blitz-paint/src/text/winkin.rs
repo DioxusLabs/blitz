@@ -987,7 +987,7 @@ pub(crate) fn paint_text_input(
         return;
     };
     let size = editor.metrics().map(|metrics| metrics.size).unwrap_or_default();
-    let selection = editor.selection_range();
+    let selection = editor.layout_selection_range();
     let selection = (focussed && !selection.is_empty()).then_some((selection.start, selection.end));
     paint(
         scene,
