@@ -20,7 +20,7 @@ jobs:
 
   licenses:
     name: Dependency licenses
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v4
       - uses: EmbarkStudios/cargo-deny-action@v2
@@ -37,7 +37,7 @@ jobs:
   # version. Building is likely sufficient as runtime errors varying between rust versions is very unlikely.
   build-msrv:
     name: "MSRV Build [Rust 1.91]"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
@@ -48,7 +48,7 @@ jobs:
 
   build-features-default:
     name: "Build [default features]"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -59,7 +59,7 @@ jobs:
   # members with a [lib] crate-type = ["cdylib"] target for wasm.
   build-wasm-examples:
     name: "Build wasm examples"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
@@ -76,7 +76,7 @@ jobs:
 
   fmt:
     name: Rustfmt
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
@@ -87,7 +87,7 @@ jobs:
 
   clippy:
     name: Clippy
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
@@ -100,14 +100,14 @@ jobs:
 
   ci-scripts:
     name: "Test CI scripts"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v4
       - run: python3 -m unittest discover -s .github/scripts
 
   doc:
     name: Documentation
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -141,7 +141,7 @@ jobs:
           - {
               name: linux,
               target: x86_64-unknown-linux-gnu,
-              os: ubuntu-latest,
+              os: ubuntu-26.04,
               cross: false,
               command: "test",
               args: "--workspace",
@@ -157,7 +157,7 @@ jobs:
           - {
               name: android,
               target: aarch64-linux-android,
-              os: ubuntu-latest,
+              os: ubuntu-26.04,
               cross: true,
               command: "build",
               args: "--all",
@@ -196,7 +196,7 @@ jobs:
           cache-bin: ${{ matrix.platform.os != 'macos-latest' }} # works around https://github.com/Swatinem/rust-cache/issues/341
 
       - name: Install apt deps
-        if: ${{ matrix.platform.os == 'ubuntu-latest' }}
+        if: ${{ matrix.platform.os == 'ubuntu-26.04' }}
         run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
 
       - name: Setup
