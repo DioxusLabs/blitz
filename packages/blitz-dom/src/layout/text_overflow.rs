@@ -61,7 +61,7 @@ impl<B: Brush> Marker<B> {
             if let PositionedLayoutItem::GlyphRun(run) = item {
                 let glyphs = run.positioned_glyphs().map(|g| (g.id, g.x)).collect();
                 runs.push(MarkerRun {
-                    font: run.run().font().font.clone(),
+                    font: run.run().font().clone(),
                     font_size: run.run().font_size(),
                     normalized_coords: run
                         .run()

@@ -23,6 +23,7 @@ use stylo_taffy::StyleFlags;
 
 use super::resolve_calc_value;
 use super::text_overflow::{self, Marker, TextOverflowLayout};
+use crate::BaseDocument;
 use crate::layout::LayoutPassState;
 use crate::node::TextBrush;
 use crate::stylo_to_parley;
