@@ -273,6 +273,15 @@ pub(crate) trait InlineBuilder: crate::layout::text_transform::PushedText {
     fn push_break_opportunity(&mut self, node: &Node) -> bool;
 }
 
+/// What restyles an element for a block's first formatted line: the document's stylist and the
+/// guards its stylesheets are read under.
+#[derive(Copy, Clone)]
+#[cfg_attr(not(feature = "winkin"), allow(dead_code))]
+pub(crate) struct DocumentCascade<'a> {
+    pub(crate) stylist: &'a style::stylist::Stylist,
+    pub(crate) guards: &'a style::shared_lock::StylesheetGuards<'a>,
+}
+
 /// Building, measuring and placing an inline formatting context: the part of [`InlineText`]
 /// layout runs.
 pub(crate) trait InlineLayoutEngine: InlineText {
@@ -286,9 +295,20 @@ pub(crate) trait InlineLayoutEngine: InlineText {
     fn build_layouts(
         cx: &mut TextContext,
         nodes: &crate::NodeTree,
+        cascade: DocumentCascade<'_>,
         scale: f32,
         layouts: &mut [(NodeId, Box<Self>)],
     );
+
+    /// Whether an element's style changing from `old` to `new` changes what the backend built
+    /// from it, beyond what Blitz's own damage rebuilds for: then the inline formatting context
+    /// it is in is built again.
+    fn style_change_rebuilds(
+        _old: &::style::properties::ComputedValues,
+        _new: &::style::properties::ComputedValues,
+    ) -> bool {
+        false
+    }
 
     /// Whether the backend's lines take room over the first line for ruby annotations and
     /// emphasis marks, which the blocks before lend them: then [`LineArea::room_above`] is worked
