@@ -4,8 +4,10 @@ use markup5ever::local_name;
 use stylo_taffy::CopyStyleGetters;
 
 use crate::net::ResourceHandler;
+use crate::node::TextLayout;
 use crate::node::{Node, NodeFlags};
 use crate::text::EditEngine as _;
+use crate::text::InlineLayoutEngine as _;
 use crate::tree::NodeTree;
 use crate::{
     BaseDocument, net::ImageHandler, node::ImageResourceData, node::Status, util::ImageLayerKind,
@@ -465,7 +467,7 @@ pub(crate) fn compute_layout_damage(old: &ComputedValues, new: &ComputedValues) 
     )]
     if box_tree_needs_rebuild() {
         ALL_DAMAGE
-    } else if text_shaping_needs_recollect() {
+    } else if text_shaping_needs_recollect() || TextLayout::style_change_rebuilds(old, new) {
         ALL_DAMAGE
     } else if table_needs_rebuild() {
         ALL_DAMAGE
