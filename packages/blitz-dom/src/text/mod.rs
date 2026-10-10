@@ -315,6 +315,12 @@ pub(crate) trait InlineLayoutEngine: InlineText {
     /// out from those blocks, and [`room_below`](Self::room_below) read from them.
     const READS_ROOM_ABOVE: bool;
 
+    /// Whether the content's first line may take room above it, where the backend reads room
+    /// above: it holds ruby annotations or emphasis marks. Without them the room is not worked out.
+    fn takes_room_above(&self) -> bool {
+        Self::READS_ROOM_ABOVE
+    }
+
     /// Whether the content is known to hold no text and no inline boxes before it is laid out.
     fn is_empty(&self) -> bool;
 
@@ -992,4 +998,5 @@ mod tests {
 }
 
 #[doc(hidden)]
-pub static PERF_COUNTS: [core::sync::atomic::AtomicUsize; 2] = [const { core::sync::atomic::AtomicUsize::new(0) }; 2];
+pub static PERF_COUNTS: [core::sync::atomic::AtomicUsize; 2] =
+    [const { core::sync::atomic::AtomicUsize::new(0) }; 2];
