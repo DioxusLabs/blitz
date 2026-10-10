@@ -114,6 +114,8 @@ pub struct TextLayout {
     built: bool,
     /// Whether the content has been broken into lines since it was built.
     laid: bool,
+    /// The layout pass its lines were last placed in.
+    placed_in: Option<u64>,
     /// What the atomic inlines and floats were last measured at, in content
     /// order, and the width in device pixels that percentages of the
     /// containing block were last taken of.
@@ -428,6 +430,7 @@ pub(crate) fn build(
     scale: f32,
     root_id: NodeId,
 ) {
+    crate::text::PERF_COUNTS[0].fetch_add(1, core::sync::atomic::Ordering::Relaxed);
     let root = &nodes[root_id];
     let key = NodeKey(root_id.as_u64());
     text.built = false;
@@ -1751,16 +1754,28 @@ impl InlineLayoutEngine for TextLayout {
     fn break_lines(
         &mut self,
         cx: &mut TextContext,
-        area: LineArea,
+        line_area: LineArea,
         _style: Option<&ComputedValues>,
         exclusions: &mut impl LineExclusions,
     ) {
         let area = Area {
-            room_above: area.room_above,
-            block_end: area.block_end,
-            ..Area::new(area.width)
+            room_above: line_area.room_above,
+            block_end: line_area.block_end,
+            ..Area::new(line_area.width)
         };
-        self.lay_out(&mut cx.cx, area, &mut ExclusionsOf(exclusions));
+        // A pass that only sizes the block breaks without placing, unless the block was placed in
+        // this pass already: its lines then stay placed for painting.
+        let pass = Some(line_area.pass);
+        if line_area.sizes_only && self.placed_in != pass {
+            if self.built {
+                self.layout
+                    .size_lines(&mut cx.cx, area, &mut ExclusionsOf(exclusions));
+                self.laid = true;
+            }
+        } else {
+            self.lay_out(&mut cx.cx, area, &mut ExclusionsOf(exclusions));
+            self.placed_in = pass;
+        }
     }
 
     fn extent(&self, end_padding: f32) -> LinesExtent {

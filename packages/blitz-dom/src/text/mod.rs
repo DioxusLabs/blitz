@@ -425,6 +425,10 @@ pub(crate) struct LineArea {
     pub(crate) room_above: f32,
     /// Where the content box ends, which `line-clamp: auto` keeps the lines within.
     pub(crate) block_end: Option<f32>,
+    /// Whether the pass only sizes the block, so that its lines need no positions.
+    pub(crate) sizes_only: bool,
+    /// The layout pass, which a block placed in it is placed through to its end.
+    pub(crate) pass: u64,
 }
 
 /// Which way an inline formatting context's lines run, and the way they stack.
@@ -986,3 +990,6 @@ mod tests {
         assert_eq!(BACKEND, expected);
     }
 }
+
+#[doc(hidden)]
+pub static PERF_COUNTS: [core::sync::atomic::AtomicUsize; 2] = [const { core::sync::atomic::AtomicUsize::new(0) }; 2];
