@@ -10,9 +10,13 @@
 
 mod application;
 mod convert_events;
+mod dnd;
 mod event;
 mod net;
 mod window;
+
+/// exported for downcasting so you can use platform specific event types
+pub use dnd::WinitDataTransferItems;
 
 #[cfg(feature = "accessibility")]
 mod accessibility;
@@ -150,6 +154,30 @@ impl ShellProvider for BlitzShellProvider {
     }
     fn drag_window(&self) {
         let _ = self.window.drag_window();
+    }
+
+    fn set_datatransfer(
+        &self,
+        items: Box<dyn blitz_traits::events::BlitzDataTransferItemsTrait>,
+        effect_allowed: Option<blitz_traits::events::BlitzDragOperations>,
+        drop_effect: blitz_traits::events::BlitzDragOperation,
+        node: Option<blitz_traits::NodeId>,
+    ) {
+        use atomic_refcell::AtomicRefCell;
+        use blitz_traits::events::{BlitzDataTransfer, BlitzDragDataStoreMode};
+
+        let data = Arc::new(AtomicRefCell::new(BlitzDataTransfer {
+            items,
+            effect_allowed,
+            drop_effect,
+            mode: BlitzDragDataStoreMode::ReadWrite,
+        }));
+
+        self.proxy.send_event(BlitzShellEvent::StartDataTransfer {
+            window_id: self.window.id(),
+            data,
+            node,
+        });
     }
 
     #[cfg(all(

@@ -2,6 +2,11 @@
 
 use cursor_icon::CursorIcon;
 
+use crate::{
+    NodeId,
+    events::{BlitzDataTransferItemsTrait, BlitzDragOperation, BlitzDragOperations},
+};
+
 /// Type representing an error performing a clipboard operation
 // TODO: fill out with meaningful errors
 pub struct ClipboardError;
@@ -31,6 +36,18 @@ pub trait ShellProvider: Send + Sync + 'static {
     fn set_clipboard_text(&self, text: String) -> Result<(), ClipboardError> {
         let _ = text;
         Err(ClipboardError)
+    }
+    fn set_datatransfer(
+        &self,
+        items: Box<dyn BlitzDataTransferItemsTrait>,
+        effect_allowed: Option<BlitzDragOperations>,
+        drop_effect: BlitzDragOperation,
+        node: Option<NodeId>,
+    ) {
+        let _ = items;
+        let _ = effect_allowed;
+        let _ = drop_effect;
+        let _ = node;
     }
     fn open_file_dialog(
         &self,
