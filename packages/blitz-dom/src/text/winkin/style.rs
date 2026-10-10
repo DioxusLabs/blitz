@@ -1,18 +1,16 @@
 //! Conversion from Stylo computed values to winkin's styles.
 //!
 //! Every length is in device pixels, which is what Blitz lays text out in.
-//! A percentage of the containing block is resolved against `basis`, its
-//! inline size in CSS pixels, as the cascade would have were it to know it;
-//! one only layout can resolve -- a `word-spacing` percentage of the space it
-//! widens, a `text-indent` percentage of the line -- is passed on as a
-//! fraction.
+//! A percentage only layout can resolve is passed on as a fraction: a
+//! margin's or padding's of the containing block, a `word-spacing`
+//! percentage of the space it widens, a `text-indent` percentage of the
+//! line.
 //!
 //! What Stylo does not compute stays at winkin's initial value:
 //! `white-space-trim`, `text-emphasis-skip`, `line-padding`,
 //! `line-fit-edge`, `initial-letter-align` and `text-group-align`.
 
 use std::borrow::Cow;
-use std::cell::Cell;
 
 use style::Atom;
 use style::computed_values::box_decoration_break::T as StyloBoxDecorationBreak;
@@ -367,52 +365,16 @@ fn length_percentage(value: &StyloLengthPercentage, scale: f32) -> LengthPercent
     }
 }
 
-/// The containing block's inline size, in CSS pixels, that percentages of it
-/// are resolved against, and whether any was.
-pub(crate) struct Basis {
-    px: f32,
-    read: Cell<bool>,
-}
-
-impl Basis {
-    /// A basis `px` CSS pixels wide, which nothing has read yet.
-    pub(crate) fn new(px: f32) -> Self {
-        Self {
-            px,
-            read: Cell::new(false),
-        }
-    }
-
-    /// Its size in CSS pixels.
-    pub(crate) fn px(&self) -> f32 {
-        self.px
-    }
-
-    /// Whether a percentage was resolved against it.
-    pub(crate) fn is_read(&self) -> bool {
-        self.read.get()
-    }
-}
-
-/// A length-percentage of the containing block, `basis` wide, in device
-/// pixels.
-fn of_basis(value: &StyloLengthPercentage, basis: &Basis, scale: f32) -> f32 {
-    if value.has_percentage() {
-        basis.read.set(true);
-    }
-    value.resolve(Length::new(basis.px)).px() * scale
-}
-
 /// Converts an element's computed style, its lists borrowed from `lists`.
 ///
-/// Lengths are scaled by `scale` into device pixels, and percentages of the
-/// containing block resolved against `basis`. `language` is the
-/// content language from the nearest `lang`.
+/// Lengths are scaled by `scale` into device pixels. Percentages of the
+/// containing block stay percentages, which winkin resolves against the
+/// basis each measure gives it. `language` is the content language from the
+/// nearest `lang`.
 pub(crate) fn computed_style<'a>(
     lists: &'a FontLists<'_>,
     computed: &'a ComputedValues,
     scale: f32,
-    basis: &Basis,
     language: Option<Language>,
 ) -> ComputedStyle<'a> {
     ComputedStyle {
@@ -441,7 +403,7 @@ pub(crate) fn computed_style<'a>(
                 StyloTextCombineUpright::Digits(count) => TextCombineUpright::Digits(count),
             },
         },
-        edges: edges_group(computed, scale, basis),
+        edges: edges_group(computed, scale),
         ruby: RubyGroup {
             position: ruby_position(computed),
             align: match computed.slow_clone_ruby_align() {
@@ -944,13 +906,13 @@ fn text_box_edge(edge: StyloTextBoxEdge) -> TextBoxEdge {
 ///
 /// A border width is snapped as CSS snaps it, in device pixels: one under a
 /// pixel to a pixel, and any other down to a whole one.
-fn edges_group(computed: &ComputedValues, scale: f32, basis: &Basis) -> EdgesGroup {
+fn edges_group(computed: &ComputedValues, scale: f32) -> EdgesGroup {
     let margin = computed.get_margin();
     let padding = computed.get_padding();
     let border = computed.get_border();
     let margin_side = |value: &GenericMargin<StyloLengthPercentage>| match value {
-        GenericMargin::LengthPercentage(length) => of_basis(length, basis, scale),
-        _ => 0.0,
+        GenericMargin::LengthPercentage(length) => length_percentage(length, scale),
+        _ => LengthPercentage::default(),
     };
     let border_side = |width: &BorderSideWidth, style: BorderStyle| {
         let width = width.0.to_f32_px() * scale;
@@ -974,10 +936,10 @@ fn edges_group(computed: &ComputedValues, scale: f32, basis: &Basis) -> EdgesGro
             left: border_side(&border.border_left_width, border.border_left_style),
         },
         padding: Sides {
-            top: of_basis(&padding.padding_top.0, basis, scale),
-            right: of_basis(&padding.padding_right.0, basis, scale),
-            bottom: of_basis(&padding.padding_bottom.0, basis, scale),
-            left: of_basis(&padding.padding_left.0, basis, scale),
+            top: length_percentage(&padding.padding_top.0, scale),
+            right: length_percentage(&padding.padding_right.0, scale),
+            bottom: length_percentage(&padding.padding_bottom.0, scale),
+            left: length_percentage(&padding.padding_left.0, scale),
         },
         decoration_break: match computed.slow_clone_box_decoration_break() {
             StyloBoxDecorationBreak::Slice => BoxDecorationBreak::Slice,

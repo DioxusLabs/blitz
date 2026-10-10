@@ -106,11 +106,11 @@ pub struct TextLayout {
     built: bool,
     /// Whether the content has been broken into lines since it was built.
     laid: bool,
-    /// What the atomic inlines and floats were built at, in content order,
-    /// and what percentages of the containing block were resolved against,
-    /// where any were.
+    /// What the atomic inlines and floats were last measured at, in content
+    /// order, and the width in device pixels that percentages of the
+    /// containing block were last taken of.
     boxes: Vec<BuiltBox>,
-    basis: Option<f32>,
+    basis: f32,
     /// The computed styles painted with that no node of the content's is
     /// styled in.
     styles: PaintStyles,
@@ -151,7 +151,7 @@ struct PaintStyles {
     marks: Vec<(u64, Layout)>,
 }
 
-/// An atomic inline or a float as the content was built with it.
+/// An atomic inline or a float as the content was last measured with it.
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub(crate) struct BuiltBox {
     pub(crate) node: u64,
@@ -166,13 +166,6 @@ impl std::fmt::Debug for TextLayout {
 }
 
 impl TextLayout {
-    /// Drops the built content, keeping its allocations, so that it is built
-    /// again.
-    pub(crate) fn invalidate(&mut self) {
-        self.built = false;
-        self.laid = false;
-    }
-
     /// Whether the content, as it was last built, has lines that run down the
     /// page.
     pub(crate) fn is_vertical(&self) -> bool {
@@ -259,59 +252,24 @@ impl TextLayout {
             .map(|(_, style)| style)
     }
 
-    /// Whether the content is built, with atomic inlines and floats
-    /// measured as `sizes` are and percentages taken of `basis`.
-    pub(crate) fn is_built_with(&self, sizes: &[BuiltBox], basis: f32) -> bool {
-        self.built && self.boxes == sizes && self.is_built_at(basis)
-    }
-
-    /// Whether the content is built with atomic inlines and floats that
-    /// reach as far along the line as `sizes` do, and percentages taken of
-    /// `basis`: all the content's intrinsic inline sizes depend on.
-    pub(crate) fn is_built_along(&self, sizes: &[BuiltBox], basis: f32) -> bool {
-        self.built
-            && self.is_built_at(basis)
-            && self.boxes.len() == sizes.len()
-            && self.boxes.iter().zip(sizes).all(|(built, size)| {
-                built.node == size.node && built.size.inline == size.size.inline
-            })
-    }
-
-    /// Whether the content is built as it is with percentages taken of
-    /// `basis`: it resolved none, or resolved them against `basis`.
-    fn is_built_at(&self, basis: f32) -> bool {
-        self.basis.is_none_or(|built| built == basis)
-    }
-
-    /// Gives the atomic inlines the block sizes and baselines of `sizes`
-    /// without building the content again, and returns whether it could.
+    /// Measures the content again with its atomic inlines and floats
+    /// measured as `sizes` are, and percentages of the containing block
+    /// taken of `basis` device pixels.
     ///
-    /// It could where the content is built with boxes as long as `sizes`
-    /// and percentages taken of `basis`, and every box whose size changed
-    /// is an atomic inline winkin sets the size of in place. Where it could
-    /// not, nothing changes and the content must be built again.
-    pub(crate) fn set_box_extents(&mut self, sizes: &[BuiltBox], basis: f32) -> bool {
-        if !self.is_built_along(sizes, basis) {
-            return false;
+    /// winkin keeps the content's analysis, fonts and shaping, and keeps the
+    /// lines where nothing changed.
+    pub(crate) fn measure(&mut self, cx: &mut Context, sizes: &[BuiltBox], basis: f32) {
+        let pairs = sizes.iter().map(|built| (NodeKey(built.node), built.size));
+        if self.layout.measure(cx, basis, pairs) {
+            self.laid = false;
         }
-        let changed = self
-            .boxes
-            .iter()
-            .zip(sizes)
-            .filter(|(built, size)| built.size != size.size)
-            .map(|(_, size)| (NodeKey(size.node), size.size));
-        if !self.layout.set_atomic_sizes(changed) {
-            return false;
-        }
-        self.laid = false;
-        for (built, size) in self.boxes.iter_mut().zip(sizes) {
-            built.size = size.size;
-        }
-        true
+        self.boxes.clear();
+        self.boxes.extend_from_slice(sizes);
+        self.basis = basis;
     }
 
     /// Gives each of `sizes`, measured along the line alone, the block size
-    /// and baseline its box was last built with, where it was.
+    /// and baseline its box was last measured with, where it was.
     pub(crate) fn keep_built_extents(&self, sizes: &mut [BuiltBox]) {
         for (at, size) in sizes.iter_mut().enumerate() {
             // The boxes keep their order, so a box is mostly where it was.
@@ -451,28 +409,21 @@ const BULLET_FAMILIES: [FontFamilyName<'static>; 2] = [
 
 /// Builds the content of the inline formatting context rooted at `root_id`.
 ///
-/// `sizes` are the atomic inlines and floats as taffy measured them, in
-/// device pixels, and `basis` is the containing block's inline size in CSS
-/// pixels, which percentages of it are taken of.
-#[allow(clippy::too_many_arguments)]
+/// The atomic inlines and floats take the sizes `text` last measured them
+/// at, and percentages of the containing block its last basis: none before
+/// the first measure, which then sets them.
 pub(crate) fn build(
     nodes: &crate::NodeTree,
     cascade: Cascade<'_>,
     cx: &mut Context,
     text: &mut TextLayout,
     scale: f32,
-    basis: f32,
     root_id: NodeId,
-    sizes: &[BuiltBox],
 ) {
     let root = &nodes[root_id];
     let key = NodeKey(root_id.as_u64());
     text.built = false;
     text.laid = false;
-    text.boxes.clear();
-    text.boxes.extend_from_slice(sizes);
-    text.basis = None;
-    let basis = style::Basis::new(basis);
     text.scale = scale;
     text.styles.first_line.clear();
     text.styles.first_letter = None;
@@ -511,8 +462,7 @@ pub(crate) fn build(
     let language = language_of(nodes, Some(root_id));
     let feature_values = style::FeatureValues::of(cascade.stylist);
     let root_lists = style::FontLists::of(&root_computed, &feature_values);
-    let mut root_style =
-        style::computed_style(&root_lists, &root_computed, scale, &basis, language);
+    let mut root_style = style::computed_style(&root_lists, &root_computed, scale, language);
     // An anonymous block's lines are the element's around it, whose
     // `unicode-bidi` applies to them: an override, or `plaintext`.
     if matches!(root.data, NodeData::AnonymousBlock(_)) {
@@ -528,9 +478,9 @@ pub(crate) fn build(
         .as_deref()
         .map(|computed| style::FontLists::of(computed, &feature_values));
     let first_line_style = match (&first_line_computed, &first_line_lists) {
-        (Some(computed), Some(lists)) => Some(style::computed_style(
-            lists, computed, scale, &basis, language,
-        )),
+        (Some(computed), Some(lists)) => {
+            Some(style::computed_style(lists, computed, scale, language))
+        }
         _ => None,
     };
     let first_letter_computed = root
@@ -580,21 +530,27 @@ pub(crate) fn build(
     }
     text.writing_mode = block.writing_mode;
 
-    let TextLayout { layout, styles, .. } = text;
+    let TextLayout {
+        layout,
+        styles,
+        boxes,
+        basis,
+        ..
+    } = text;
     let mut options = BuildOptions::default();
+    options.percentage_basis = *basis;
     // Hit testing needs to map a layout position back to its DOM node.
     options.map_source = true;
     let mut builder = WinkinBuilder {
         builder: layout.builder(key, &block, options),
         cascade,
         root,
-        boxes: sizes,
+        boxes: boxes.as_slice(),
         styles,
         first_letter: first_letter_computed,
         feature_values,
         marked: Vec::new(),
         scale,
-        basis: &basis,
         parents: vec![Parent {
             computed: root_computed,
             first_line: first_line_computed,
@@ -612,12 +568,10 @@ pub(crate) fn build(
     } = builder;
     builder.finish(cx);
     for (node, computed, language) in marked {
-        if let Some(layout) = emphasis_mark(cx, &computed, &feature_values, scale, &basis, language)
-        {
+        if let Some(layout) = emphasis_mark(cx, &computed, &feature_values, scale, language) {
             styles.marks.push((node, layout));
         }
     }
-    text.basis = basis.is_read().then_some(basis.px());
     text.built = true;
 }
 
@@ -629,14 +583,11 @@ fn emphasis_mark(
     computed: &ComputedValues,
     feature_values: &style::FeatureValues,
     scale: f32,
-    basis: &style::Basis,
     language: Option<Language>,
 ) -> Option<Layout> {
     let string = style::emphasis_mark_string(computed)?;
     let lists = style::FontLists::of(computed, feature_values);
-    let own = unboxed(style::computed_style(
-        &lists, computed, scale, basis, language,
-    ));
+    let own = unboxed(style::computed_style(&lists, computed, scale, language));
     let mark = ComputedStyle {
         font: winkin::style::FontGroup {
             size: (own.font.size / 2.0).round(),
@@ -713,7 +664,6 @@ struct WinkinBuilder<'a, 'b> {
     /// languages their marks are set in.
     marked: Vec<(u64, ServoArc<ComputedValues>, Option<Language>)>,
     scale: f32,
-    basis: &'a style::Basis,
     /// The boxes open around what is pushed next, the block's first.
     parents: Vec<Parent>,
 }
@@ -742,7 +692,7 @@ impl WinkinBuilder<'_, '_> {
         computed: &'s ComputedValues,
         language: Option<Language>,
     ) -> ComputedStyle<'s> {
-        let own = style::computed_style(lists, computed, self.scale, self.basis, language);
+        let own = style::computed_style(lists, computed, self.scale, language);
         ComputedStyle {
             edges: EdgesGroup {
                 border: EdgesGroup::INITIAL.border,
@@ -779,14 +729,14 @@ impl WinkinBuilder<'_, '_> {
         let language = parent.language;
         {
             let lists = style::FontLists::of(&letter, &self.feature_values);
-            let style = style::computed_style(&lists, &letter, self.scale, self.basis, language);
+            let style = style::computed_style(&lists, &letter, self.scale, language);
             let first_line_lists = letter_first_line
                 .as_deref()
                 .map(|computed| style::FontLists::of(computed, &self.feature_values));
             let first_line_style = match (&letter_first_line, &first_line_lists) {
-                (Some(computed), Some(lists)) => Some(style::computed_style(
-                    lists, computed, self.scale, self.basis, language,
-                )),
+                (Some(computed), Some(lists)) => {
+                    Some(style::computed_style(lists, computed, self.scale, language))
+                }
                 _ => None,
             };
             self.builder.set_first_letter(
@@ -837,7 +787,6 @@ impl InlineBuilder for WinkinBuilder<'_, '_> {
                     &lists,
                     &root_computed,
                     self.scale,
-                    self.basis,
                     language,
                 ));
                 self.builder.open_box(marker_key, &bullet, None);
@@ -881,14 +830,14 @@ impl InlineBuilder for WinkinBuilder<'_, '_> {
         }
         {
             let lists = style::FontLists::of(&computed, &self.feature_values);
-            let own = style::computed_style(&lists, &computed, self.scale, self.basis, language);
+            let own = style::computed_style(&lists, &computed, self.scale, language);
             let first_line_lists = first_line
                 .as_deref()
                 .map(|computed| style::FontLists::of(computed, &self.feature_values));
             let first_line_style = match (&first_line, &first_line_lists) {
-                (Some(computed), Some(lists)) => Some(style::computed_style(
-                    lists, computed, self.scale, self.basis, language,
-                )),
+                (Some(computed), Some(lists)) => {
+                    Some(style::computed_style(lists, computed, self.scale, language))
+                }
                 _ => None,
             };
             let builder = &mut self.builder;
@@ -1663,16 +1612,43 @@ impl InlineLayoutEngine for TextLayout {
     const SETS_WRITING_MODES: bool = true;
     const READS_ROOM_ABOVE: bool = true;
 
+    fn style_change_rebuilds(old: &ComputedValues, new: &ComputedValues) -> bool {
+        // The build reads every inherited text and box property, the text
+        // properties that do not inherit, and an inline-level element's box,
+        // margins, borders and padding; measuring takes only the boxes'
+        // sizes and the basis percentages are taken of.
+        if old.get_inherited_text() != new.get_inherited_text()
+            || old.get_inherited_box() != new.get_inherited_box()
+            || old.get_text() != new.get_text()
+        {
+            return true;
+        }
+        let inline = |style: &ComputedValues| {
+            style.get_box().display.outside()
+                == ::style::values::specified::box_::DisplayOutside::Inline
+        };
+        (inline(old) || inline(new))
+            && (old.get_box() != new.get_box()
+                || old.get_margin() != new.get_margin()
+                || old.get_border() != new.get_border()
+                || old.get_padding() != new.get_padding())
+    }
+
     fn build_layouts(
-        _cx: &mut TextContext,
-        _nodes: &crate::NodeTree,
-        _scale: f32,
+        cx: &mut TextContext,
+        nodes: &crate::NodeTree,
+        cascade: crate::text::DocumentCascade<'_>,
+        scale: f32,
         layouts: &mut [(NodeId, Box<Self>)],
     ) {
-        // winkin builds the content when the context is next laid out, once
-        // its atomic inlines are measured.
-        for (_, layout) in layouts {
-            layout.invalidate();
+        // Each atomic inline and float takes the size it was last measured
+        // at, which the first measure in layout replaces.
+        let cascade = Cascade {
+            stylist: cascade.stylist,
+            guards: cascade.guards,
+        };
+        for (node, layout) in layouts {
+            build(nodes, cascade, &mut cx.cx, layout, scale, *node);
         }
     }
 
@@ -1707,37 +1683,28 @@ impl InlineLayoutEngine for TextLayout {
             })
             .collect();
         // An inline-size pass reads only how far each box reaches along the
-        // line. Where the content was built with boxes as long, it serves;
-        // where it is built again, each box keeps the block size and baseline
-        // it was last built with, which a later pass that sets the lines
-        // checks. Where only atomic inlines' block sizes and baselines differ,
-        // it sets them in place; otherwise it builds again.
-        let built = match lines.pass {
-            Measure::InlineSizes => self.is_built_along(&sizes, lines.basis),
-            _ => {
-                self.is_built_with(&sizes, lines.basis) || self.set_box_extents(&sizes, lines.basis)
-            }
-        };
-        if built {
-            return;
-        }
+        // line: each box keeps the block size and baseline it was last
+        // measured with, which a later pass that sets the lines checks.
         if lines.pass == Measure::InlineSizes {
             self.keep_built_extents(&mut sizes);
         }
-        let guard = doc.guard.read();
-        build(
-            &doc.nodes,
-            Cascade {
-                stylist: &doc.stylist,
-                guards: &StylesheetGuards::same(&guard),
-            },
-            &mut doc.text.cx,
-            self,
-            scale,
-            lines.basis,
-            root,
-            &sizes,
-        );
+        // Box construction builds the content. A context it left unbuilt is
+        // built here.
+        if !self.built {
+            let guard = doc.guard.read();
+            build(
+                &doc.nodes,
+                Cascade {
+                    stylist: &doc.stylist,
+                    guards: &StylesheetGuards::same(&guard),
+                },
+                &mut doc.text.cx,
+                self,
+                scale,
+                root,
+            );
+        }
+        self.measure(&mut doc.text.cx, &sizes, lines.basis * scale);
     }
 
     fn content_widths(&mut self) -> ContentWidths {
@@ -2044,7 +2011,7 @@ pub(crate) fn build_plain_text(
 ) -> bool {
     let feature_values = style::FeatureValues::default();
     let lists = style::FontLists::of(computed, &feature_values);
-    let own = style::computed_style(&lists, computed, scale, &style::Basis::new(0.0), None);
+    let own = style::computed_style(&lists, computed, scale, None);
     let own = ComputedStyle {
         text: winkin::style::TextGroup {
             white_space_collapse: match own.text.white_space_collapse {
@@ -2068,7 +2035,7 @@ pub(crate) fn build_plain_text(
     text.built = false;
     text.laid = false;
     text.boxes.clear();
-    text.basis = None;
+    text.basis = 0.0;
     text.scale = scale;
     text.writing_mode = block.writing_mode;
     text.styles.first_line.clear();
@@ -2150,13 +2117,7 @@ impl MarkerEngine for TextLayout {
         if bullet {
             lists = lists.with_families_first(&BULLET_FAMILIES);
         }
-        let own = unboxed(style::computed_style(
-            &lists,
-            computed,
-            scale,
-            &style::Basis::new(0.0),
-            None,
-        ));
+        let own = unboxed(style::computed_style(&lists, computed, scale, None));
         let block = ComputedBlockStyle {
             writing_mode: WritingMode::HorizontalTb,
             ..ComputedBlockStyle::new(&own)

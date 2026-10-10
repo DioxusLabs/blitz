@@ -352,12 +352,19 @@ impl BaseDocument {
                 ConstructionTaskData::InlineLayout(layout) => (task.node_id, layout),
             })
             .collect();
+        let guard = self.guard.read();
+        let guards = style::shared_lock::StylesheetGuards::same(&guard);
         TextLayout::build_layouts(
             &mut self.text,
             &self.nodes,
+            crate::text::DocumentCascade {
+                stylist: &self.stylist,
+                guards: &guards,
+            },
             self.viewport.scale(),
             &mut layouts,
         );
+        drop(guard);
 
         for (node_id, layout) in layouts {
             self.nodes[node_id].clear_layout_cache();

@@ -380,6 +380,7 @@ impl InlineLayoutEngine for TextLayout {
     fn build_layouts(
         cx: &mut TextContext,
         nodes: &crate::NodeTree,
+        _cascade: crate::text::DocumentCascade<'_>,
         scale: f32,
         layouts: &mut [(NodeId, Box<Self>)],
     ) {
