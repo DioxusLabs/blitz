@@ -84,8 +84,16 @@ const PIECE_SHIFT: u32 = 58;
 /// above them, which a face joins as it loads, the context being handed
 /// the new collection.
 pub struct TextContext {
-    /// What every layout is built and broken with.
+    /// What every layout is broken with, and built with outside box
+    /// construction.
     pub(crate) cx: Context,
+    /// How many times the context's collection has changed, which a
+    /// thread's context catches up with before it builds.
+    pub(crate) generation: u64,
+    /// The context each thread builds with in box construction, and the
+    /// generation of its collection.
+    #[cfg(feature = "parallel-construct")]
+    pub(crate) threads: thread_local::ThreadLocal<std::cell::RefCell<(u64, Context)>>,
     /// The fonts the document was handed, which its iframes are handed too.
     given: FontContext,
     /// The installed and shipped fonts.
@@ -1647,6 +1655,31 @@ impl InlineLayoutEngine for TextLayout {
             stylist: cascade.stylist,
             guards: cascade.guards,
         };
+        #[cfg(feature = "parallel-construct")]
+        {
+            use rayon::prelude::*;
+            // Each thread builds with a context of its own, which takes the
+            // document's collection and configuration. Its caches stay warm
+            // from one construction to the next.
+            let (generation, threads) = (cx.generation, &cx.threads);
+            let (collection, config) = (cx.cx.collection(), *cx.cx.config());
+            layouts.par_iter_mut().for_each(|(node, layout)| {
+                let mut thread = threads
+                    .get_or(|| {
+                        let mut own = Context::new(collection.clone());
+                        own.set_config(config);
+                        std::cell::RefCell::new((generation, own))
+                    })
+                    .borrow_mut();
+                let (held, own) = &mut *thread;
+                if *held != generation {
+                    own.set_collection(collection.clone());
+                    *held = generation;
+                }
+                build(nodes, cascade, own, layout, scale, *node);
+            });
+        }
+        #[cfg(not(feature = "parallel-construct"))]
         for (node, layout) in layouts {
             build(nodes, cascade, &mut cx.cx, layout, scale, *node);
         }
