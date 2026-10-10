@@ -37,6 +37,9 @@ tracing = ["dioxus-native/tracing", "blitz-html/tracing", "blitz-net/tracing", "
 hot-reload = ["dioxus-native/hot-reload"]
 accessibility = ["dioxus-native/accessibility"]
 scrollbars = ["blitz-dom/scrollbars", "blitz-paint/scrollbars"]
+# PROTOTYPE: lay out sibling subtrees in parallel
+parallel-layout = ["blitz-dom/parallel-layout"]
+simd-rounding = ["blitz-dom/simd-rounding"]
 mimalloc = ["dep:mimalloc"]
 font-embolden = ["dioxus-native/font-embolden"]
 apple-font-embolden = ["dioxus-native/apple-font-embolden"]

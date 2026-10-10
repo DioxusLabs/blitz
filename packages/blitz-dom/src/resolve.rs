@@ -247,20 +247,40 @@ impl BaseDocument {
     }
 
     /// Ensure that the layout_children field is populated for all nodes
+    ///
+    /// With the `parallel-layout` feature this also computes the weight of each subtree of the
+    /// layout tree and whether it contains floats (see `layout::parallel`).
     pub fn resolve_layout_children(&mut self) {
         resolve_layout_children_recursive(self, self.root_node().id);
+        #[cfg(feature = "parallel-layout")]
+        self.set_layout_subtree_info_is_current();
 
-        fn resolve_layout_children_recursive(doc: &mut BaseDocument, node_id: NodeId) {
+        /// The weight of a subtree of the layout tree and whether it contains floats
+        /// (only computed with the `parallel-layout` feature)
+        type SubtreeInfo = (u32, bool);
+
+        #[inline(always)]
+        fn add_child_info(children: &mut SubtreeInfo, child: SubtreeInfo) {
+            children.0 = children.0.saturating_add(child.0);
+            children.1 |= child.1;
+        }
+
+        fn resolve_layout_children_recursive(
+            doc: &mut BaseDocument,
+            node_id: NodeId,
+        ) -> SubtreeInfo {
             // Anonymous blocks and pseudo-elements can be removed from the slab
             // between render passes. Bail out rather than panicking on a stale key.
             if doc.nodes.get(node_id).is_none() {
-                return;
+                return (0, false);
             }
 
             let mut damage = doc.nodes[node_id].damage().unwrap_or(ALL_DAMAGE);
             let _flags = doc.nodes[node_id].flags;
+            let mut children_info: SubtreeInfo = (0, false);
+            let construct_box = damage.intersects(CONSTRUCT_FC | CONSTRUCT_BOX);
 
-            if damage.intersects(CONSTRUCT_FC | CONSTRUCT_BOX) {
+            if construct_box {
                 //} || flags.contains(NodeFlags::IS_INLINE_ROOT) {
 
                 // Deallocate the anonymous blocks created for this node in the
@@ -279,7 +299,8 @@ impl BaseDocument {
 
                 // Recurse into newly collected layout children
                 for child_id in layout_children.iter().copied() {
-                    resolve_layout_children_recursive(doc, child_id);
+                    let child_info = resolve_layout_children_recursive(doc, child_id);
+                    add_child_info(&mut children_info, child_info);
                     doc.nodes[child_id].layout_parent.set(Some(node_id));
                     if let Some(mut data) = doc.nodes[child_id]
                         .try_stylo_element_data_mut()
@@ -305,7 +326,8 @@ impl BaseDocument {
                         if !doc.nodes.contains_key(child_id) {
                             continue;
                         }
-                        resolve_layout_children_recursive(doc, child_id);
+                        let child_info = resolve_layout_children_recursive(doc, child_id);
+                        add_child_info(&mut children_info, child_info);
                         doc.nodes[child_id].layout_parent.set(Some(node_id));
                     }
 
@@ -317,6 +339,12 @@ impl BaseDocument {
             }
 
             doc.nodes[node_id].set_damage(damage);
+
+            #[cfg(feature = "parallel-layout")]
+            let subtree_info = doc.set_layout_subtree_info(node_id, children_info, construct_box);
+            #[cfg(not(feature = "parallel-layout"))]
+            let (subtree_info, _) = (children_info, construct_box);
+            subtree_info
         }
     }
 
@@ -442,21 +470,52 @@ impl BaseDocument {
 
         // println!("\n\nRESOLVE LAYOUT\n===========\n");
 
-        let mut state = LayoutPassState::new(self);
-        #[cfg(feature = "writing-mode")]
-        let available_space = {
-            state.layout_wm = state.layout_wm_of(crate::dom_node_id(root_element_id));
-            if state.layout_wm.is_vertical() {
-                available_space.transpose()
-            } else {
-                available_space
+        #[cfg(feature = "parallel-layout")]
+        use crate::layout::parallel::LAYOUT_PHASE_NS;
+        #[cfg(feature = "parallel-layout")]
+        use std::sync::atomic::Ordering::Relaxed;
+
+        #[cfg(feature = "parallel-layout")]
+        {
+            let start = std::time::Instant::now();
+            // Normally computed by `resolve_layout_children`
+            if !self.layout_subtree_info_is_current() {
+                self.compute_layout_subtree_info(self.root_element().id);
             }
+            LAYOUT_PHASE_NS[0].store(start.elapsed().as_nanos() as u64, Relaxed);
+        }
+
+        let layout_pass = move |doc: &mut BaseDocument| {
+            let mut state = LayoutPassState::new(doc);
+            #[cfg(feature = "writing-mode")]
+            let available_space = {
+                state.layout_wm = state.layout_wm_of(crate::dom_node_id(root_element_id));
+                if state.layout_wm.is_vertical() {
+                    available_space.transpose()
+                } else {
+                    available_space
+                }
+            };
+
+            #[cfg(feature = "parallel-layout")]
+            let start = std::time::Instant::now();
+            taffy::compute_root_layout(&mut state, root_element_id, available_space);
+            #[cfg(feature = "parallel-layout")]
+            LAYOUT_PHASE_NS[1].store(start.elapsed().as_nanos() as u64, Relaxed);
+
+            #[cfg(feature = "parallel-layout")]
+            let start = std::time::Instant::now();
+            #[cfg(feature = "writing-mode")]
+            state.physicalise_and_round_layout(root_element_id);
+            #[cfg(not(feature = "writing-mode"))]
+            taffy::round_layout(&mut state, root_element_id);
+            #[cfg(feature = "parallel-layout")]
+            LAYOUT_PHASE_NS[2].store(start.elapsed().as_nanos() as u64, Relaxed);
         };
-        taffy::compute_root_layout(&mut state, root_element_id, available_space);
-        #[cfg(feature = "writing-mode")]
-        state.physicalise_and_round_layout(root_element_id);
-        #[cfg(not(feature = "writing-mode"))]
-        taffy::round_layout(&mut state, root_element_id);
+        #[cfg(feature = "parallel-layout")]
+        self.run_layout_pass(root_element_id, layout_pass);
+        #[cfg(not(feature = "parallel-layout"))]
+        layout_pass(self);
 
         // println!("\n\n");
         // taffy::print_tree(self, root_node_id)

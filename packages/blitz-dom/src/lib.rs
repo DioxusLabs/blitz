@@ -156,3 +156,14 @@ pub fn build_single_font_ctx(font_data: &[u8]) -> FontContext {
     }
     ctx
 }
+
+#[cfg(feature = "parallel-layout")]
+#[doc(hidden)]
+pub use layout::parallel::ParallelLayoutWeights;
+#[cfg(feature = "parallel-layout")]
+#[doc(hidden)]
+pub use layout::parallel::{
+    ENTER_LAYOUT_POOL, LAYOUT_PHASE_NS, MIN_ROUND_BATCH_WEIGHT, PROFILE_INLINE_WHATIF,
+    ParallelLayoutBatchRule, SPLIT_BY_WEIGHT, profile_begin, profile_end,
+    set_parallel_layout_batch_rule,
+};

@@ -27,6 +27,8 @@ pub(crate) mod damage;
 pub(crate) mod inline;
 pub(crate) mod list;
 pub(crate) mod paint_tree;
+#[cfg(feature = "parallel-layout")]
+pub(crate) mod parallel;
 pub(crate) mod replaced;
 pub(crate) mod table;
 pub(crate) mod text_transform;
@@ -163,11 +165,48 @@ impl LayoutPassState<'_> {
     }
 }
 
+impl BaseDocument {
+    /// Clear the layout cache of every node, so that the next layout pass lays out the whole document
+    #[doc(hidden)]
+    pub fn invalidate_all_layout_caches(&mut self) {
+        for (_, node) in self.nodes.iter_mut() {
+            node.invalidate_layout_cache();
+        }
+    }
+
+    /// Clear the layout cache of a node and of each of its ancestors in the layout tree, as a
+    /// change to the node would. With `include_descendants` the caches of all of the nodes in
+    /// the node's subtree are cleared too, as if every node in it had changed.
+    #[doc(hidden)]
+    pub fn invalidate_layout_caches_for(
+        &mut self,
+        node_id: crate::NodeId,
+        include_descendants: bool,
+    ) {
+        let mut stack = vec![node_id];
+        while let Some(node_id) = stack.pop() {
+            let node = &mut self.nodes[node_id];
+            node.invalidate_layout_cache();
+            if include_descendants {
+                if let Some(children) = node.layout_children.borrow().as_ref() {
+                    stack.extend(children.iter().copied());
+                }
+            }
+        }
+
+        let mut ancestor = self.nodes[node_id].layout_parent.get();
+        while let Some(ancestor_id) = ancestor {
+            self.nodes[ancestor_id].invalidate_layout_cache();
+            ancestor = self.nodes[ancestor_id].layout_parent.get();
+        }
+    }
+}
+
 impl LayoutPassState<'_> {
     /// Run the node's layout algorithm, then lay out the out-of-flow (absolute/fixed)
     /// boxes for which it is the containing block. Must be called inside the layout
     /// cache wrapper so that cache hits do not re-run the out-of-flow pass.
-    fn compute_child_layout_internal(
+    pub(crate) fn compute_child_layout_internal(
         &mut self,
         node_id: NodeId,
         inputs: taffy::tree::LayoutInput,
@@ -190,9 +229,16 @@ impl LayoutPassState<'_> {
         inputs: taffy::tree::LayoutInput,
         block_ctx: Option<&mut BlockContext<'_>>,
     ) -> taffy::tree::LayoutOutput {
+        #[cfg(feature = "parallel-layout")]
+        let profiling =
+            parallel::profile_node_enter(self.nodes[dom_node_id(node_id)].flags.is_inline_root());
         let mut output = self.dispatch_child_layout(node_id, inputs, block_ctx);
         if inputs.run_mode == RunMode::PerformLayout {
             compute_oof_layout(self, node_id, &mut output);
+        }
+        #[cfg(feature = "parallel-layout")]
+        if profiling {
+            parallel::profile_node_exit();
         }
         output
     }
@@ -317,6 +363,19 @@ impl LayoutPassState<'_> {
                             .and_then(|el| el.text_input_data_mut())
                         {
                             input.editor.set_width(Some(content_width * scale));
+                            // The document's layout context cannot be used here if subtrees are
+                            // laid out in parallel, so the thread's layout context is used instead
+                            #[cfg(feature = "parallel-layout")]
+                            {
+                                use crate::resolve::LAYOUT_CTX;
+                                let mut layout_ctx = LAYOUT_CTX.take().unwrap_or_default();
+                                input.editor.refresh_layout(
+                                    &mut doc.font_ctx.lock().unwrap(),
+                                    &mut layout_ctx,
+                                );
+                                LAYOUT_CTX.set(Some(layout_ctx));
+                            }
+                            #[cfg(not(feature = "parallel-layout"))]
                             input.editor.refresh_layout(
                                 &mut doc.font_ctx.lock().unwrap(),
                                 &mut doc.layout_ctx,
@@ -681,6 +740,18 @@ impl LayoutPartialTree for LayoutPassState<'_> {
             tree.compute_child_layout_internal(node_id, inputs, None)
         })
     }
+
+    #[cfg(feature = "parallel-layout")]
+    const COMPUTES_CHILD_LAYOUTS_IN_PARALLEL: bool = true;
+
+    #[cfg(feature = "parallel-layout")]
+    fn compute_child_layouts(
+        &mut self,
+        _parent_node_id: NodeId,
+        jobs: &mut [taffy::ChildLayoutJob],
+    ) {
+        self.compute_layout_batch(jobs.iter_mut());
+    }
 }
 
 impl LayoutContainingBlock for LayoutPassState<'_> {
@@ -790,6 +861,20 @@ impl taffy::LayoutBlockContainer for LayoutPassState<'_> {
             tree.compute_child_layout_internal(node_id, inputs, block_ctx)
         })
     }
+
+    #[cfg(feature = "parallel-layout")]
+    fn bfc_may_contain_floats(&self, bfc_root_node_id: NodeId) -> bool {
+        self.subtree_may_contain_floats(bfc_root_node_id)
+    }
+
+    #[cfg(feature = "parallel-layout")]
+    fn compute_block_child_layouts(
+        &mut self,
+        _parent_node_id: NodeId,
+        jobs: &mut [taffy::ChildLayoutJob],
+    ) {
+        self.compute_layout_batch(jobs.iter_mut());
+    }
 }
 
 impl taffy::LayoutFlexboxContainer for LayoutPassState<'_> {
@@ -862,6 +947,22 @@ impl RoundTree for LayoutPassState<'_> {
 
     fn get_hoisted_child_id(&self, node_id: NodeId, index: usize) -> NodeId {
         taffy_node_id(self.node_from_id(node_id).hoisted_children.borrow()[index])
+    }
+
+    #[cfg(feature = "parallel-layout")]
+    fn round_child_subtrees(
+        &mut self,
+        node_id: NodeId,
+        cumulative_x: f32,
+        cumulative_y: f32,
+        round_subtree: impl Fn(&mut Self, NodeId, f32, f32) + Copy + Send + Sync,
+    ) {
+        self.round_child_subtrees_maybe_in_parallel(
+            node_id,
+            cumulative_x,
+            cumulative_y,
+            round_subtree,
+        );
     }
 }
 
