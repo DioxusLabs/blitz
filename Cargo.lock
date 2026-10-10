@@ -3321,6 +3321,7 @@ version = "0.0.1"
 source = "git+https://github.com/dfrg/winkin?rev=6c6fad7b19b99d14dc3bfdd308759bcdee2cefe6#6c6fad7b19b99d14dc3bfdd308759bcdee2cefe6"
 dependencies = [
  "hashbrown 0.17.1",
+ "memmap2 0.9.11",
  "objc2-core-foundation",
  "objc2-core-text",
  "parlance",
