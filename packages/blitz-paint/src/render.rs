@@ -10,6 +10,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use super::kurbo_css::CssBox;
+use crate::CustomWidgetSceneMap;
 use crate::color::{Color, ToColorColor};
 use crate::debug_overlay::render_debug_overlay;
 use crate::filters::convert_filters;
@@ -17,12 +18,11 @@ use crate::kurbo_css::NonUniformRoundedRectRadii;
 use crate::layers::LayerManager;
 use crate::sizing::compute_object_fit;
 use crate::text::DrawTextContext;
-use crate::{CustomWidgetSceneMap, SELECTION_COLOR};
 use anyrender::{PaintScene, Scene};
 use blitz_dom::node::{
-    ListItemLayout, ListItemLayoutPosition, Marker, NodeData, RasterImageData, TextInputData,
-    TextNodeData,
+    ListItemLayout, ListItemLayoutPosition, NodeData, RasterImageData, TextInputData, TextNodeData,
 };
+use blitz_dom::text::InlineText as _;
 use blitz_dom::{BaseDocument, ElementData, Node, NodeId, local_name};
 use blitz_traits::devtools::DevtoolSettings;
 
@@ -193,7 +193,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         let background_color = {
             let html_color = root_element
                 .primary_styles()
-                .map(|s| s.clone_background_color())
+                .map(|s| s.slow_clone_background_color())
                 .unwrap_or(GenericColor::TRANSPARENT_BLACK);
             if html_color == GenericColor::TRANSPARENT_BLACK {
                 root_element
@@ -207,13 +207,13 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                     })
                     .and_then(|body| body.primary_styles())
                     .map(|style| {
-                        let current_color = style.clone_color();
+                        let current_color = style.slow_clone_color();
                         style
-                            .clone_background_color()
+                            .slow_clone_background_color()
                             .resolve_to_absolute(&current_color)
                     })
             } else {
-                let current_color = root_element.primary_styles().unwrap().clone_color();
+                let current_color = root_element.primary_styles().unwrap().slow_clone_color();
                 Some(html_color.resolve_to_absolute(&current_color))
             }
         };
@@ -327,13 +327,17 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         // `contain: paint` (and stronger values like `strict`/`content`) clips the element's
         // contents to its padding box. Paint containment does not apply to non-atomic inlines
         // or internal table boxes other than table-cell.
-        let contain_paint = styles.get_box().clone_contain().contains(Contain::PAINT) && {
-            let display = styles.clone_display();
-            let is_internal_table_box_other_than_cell = display.outside()
-                == DisplayOutside::InternalTable
-                && display.inside() != DisplayInside::TableCell;
-            !display.is_inline_flow() && !is_internal_table_box_other_than_cell
-        };
+        let contain_paint = styles
+            .get_box()
+            .slow_clone_contain()
+            .contains(Contain::PAINT)
+            && {
+                let display = styles.slow_clone_display();
+                let is_internal_table_box_other_than_cell = display.outside()
+                    == DisplayOutside::InternalTable
+                    && display.inside() != DisplayInside::TableCell;
+                !display.is_inline_flow() && !is_internal_table_box_other_than_cell
+            };
         let is_image = node
             .element_data()
             .and_then(|e| e.raster_image_data())
@@ -706,11 +710,6 @@ struct ElementCx<'dom, 'a> {
     custom_widget_scene: Option<&'a Scene>,
 }
 
-/// Converts parley BoundingBox into peniko Rect
-fn convert_rect(rect: &parley::BoundingBox) -> kurbo::Rect {
-    peniko::kurbo::Rect::new(rect.x0, rect.y0, rect.x1, rect.y1)
-}
-
 impl ElementCx<'_, '_> {
     /// Paint overlay scrollbar thumbs for scroll containers: `overflow:
     /// scroll`, or `auto` when the content overflows (never `hidden`/`clip`,
@@ -848,41 +847,24 @@ impl ElementCx<'_, '_> {
 
             let pos = Point {
                 x: pos.x,
-                y: pos.y + text_layout.block_offset as f64,
+                y: pos.y + text_layout.block_offset() as f64,
             };
             let transform =
                 self.transform * Affine::translate((pos.x * self.scale, pos.y * self.scale));
 
-            // Render inline element backgrounds (e.g. `<span style="background: ...">`)
-            // behind the text and selection highlight.
-            crate::text::draw_inline_backgrounds(
-                scene,
-                text_layout.layout.lines(),
-                self.context.dom,
-                transform,
-                self.node.id,
-            );
-
-            // Render text selection highlight (if any) using cached selection ranges
-            if let Some(&(sel_start, sel_end)) = self.context.selection_ranges.get(&self.node.id) {
-                crate::text::draw_text_selection(
-                    scene,
-                    &text_layout.layout,
-                    transform,
-                    sel_start,
-                    sel_end,
-                );
-            }
-
-            // Render text
             let mut draw_text_context = self.context.draw_text_context.borrow_mut();
-            crate::text::stroke_text(
+            crate::text::paint_inline_layout(
                 scene,
-                text_layout.layout.lines(),
+                text_layout,
                 self.context.dom,
                 transform,
+                Size::new(
+                    self.frame.content_box.width(),
+                    self.frame.content_box.height(),
+                ),
                 self.scale,
                 self.node.id,
+                self.context.selection_ranges.get(&self.node.id).copied(),
                 &mut draw_text_context,
             );
         }
@@ -912,39 +894,18 @@ impl ElementCx<'_, '_> {
             let transform = self.transform
                 * Affine::translate((pos.x * self.scale - scroll_x, pos.y * self.scale - scroll_y));
 
-            if self.node.is_focussed() {
-                // Render selection/caret
-                for (rect, _line_idx) in input_data.editor.selection_geometry().iter() {
-                    scene.fill(
-                        Fill::NonZero,
-                        transform,
-                        SELECTION_COLOR,
-                        None,
-                        &convert_rect(rect),
-                    );
-                }
-                if let Some(cursor) = input_data.editor.cursor_geometry(1.5) {
-                    let color = self.style.get_inherited_text().color;
-                    let caret_color = match &self.style.get_inherited_ui().caret_color.0 {
-                        ColorOrAuto::Auto => color,
-                        ColorOrAuto::Color(caret_color) => caret_color.resolve_to_absolute(&color),
-                    };
+            let color = self.style.get_inherited_text().color;
+            let caret_color = match &self.style.get_inherited_ui().caret_color.0 {
+                ColorOrAuto::Auto => color,
+                ColorOrAuto::Color(caret_color) => caret_color.resolve_to_absolute(&color),
+            };
 
-                    scene.fill(
-                        Fill::NonZero,
-                        transform,
-                        caret_color.as_srgb_color(),
-                        None,
-                        &convert_rect(&cursor),
-                    );
-                };
-            }
-
-            // Render text
             let mut draw_text_context = self.context.draw_text_context.borrow_mut();
-            crate::text::stroke_text(
+            crate::text::paint_text_input(
                 scene,
-                input_data.editor.try_layout().unwrap().lines(),
+                &input_data.editor,
+                self.node.is_focussed(),
+                caret_color.as_srgb_color(),
                 self.context.dom,
                 transform,
                 self.scale,
@@ -960,48 +921,16 @@ impl ElementCx<'_, '_> {
             position: ListItemLayoutPosition::Outside(layout),
         }) = self.list_item
         {
-            // Right align and pad the bullet when rendering outside
-            let x_padding = match marker {
-                Marker::Char(_) => 8.0,
-                Marker::String(_) => 0.0,
-            };
-            // Outside markers are placed outside the list item's border box
-            // (`pos` is the origin of its content box)
-            let item_layout = self.node.final_layout();
-            let x_offset = -(layout.full_width() / layout.scale()
-                + x_padding
-                + item_layout.padding.left
-                + item_layout.border.left);
-
-            // Align the marker with the baseline of the first line of text in the list item
-            let y_offset = if let Some((text_layout, first_text_line)) = &self
-                .element
-                .inline_layout_data
-                .as_ref()
-                .and_then(|text_layout| Some((text_layout, text_layout.layout.lines().next()?)))
-            {
-                (first_text_line.metrics().baseline
-                    - layout.lines().next().unwrap().metrics().baseline)
-                    / layout.scale()
-                    + text_layout.block_offset
-            } else {
-                0.0
-            };
-
-            let pos = Point {
-                x: pos.x + x_offset as f64,
-                y: pos.y + y_offset as f64,
-            };
-
-            let transform =
-                self.transform * Affine::translate((pos.x * self.scale, pos.y * self.scale));
-
             let mut draw_text_context = self.context.draw_text_context.borrow_mut();
-            crate::text::stroke_text(
+            crate::text::paint_marker(
                 scene,
-                layout.lines(),
+                marker,
+                layout,
+                self.element.inline_layout_data.as_deref(),
+                self.node.final_layout(),
                 self.context.dom,
-                transform,
+                pos,
+                self.transform,
                 self.scale,
                 self.node.id,
                 &mut draw_text_context,
@@ -1089,8 +1018,8 @@ impl ElementCx<'_, '_> {
         let x = self.frame.content_box.origin().x;
         let y = self.frame.content_box.origin().y;
 
-        // let object_fit = self.style.clone_object_fit();
-        let object_position = self.style.clone_object_position();
+        // let object_fit = self.style.slow_clone_object_fit();
+        let object_position = self.style.slow_clone_object_position();
 
         // Apply object-fit algorithm
         let container_size = taffy::Size {
@@ -1131,9 +1060,9 @@ impl ElementCx<'_, '_> {
             let x = self.frame.content_box.origin().x;
             let y = self.frame.content_box.origin().y;
 
-            let object_fit = self.style.clone_object_fit();
-            let object_position = self.style.clone_object_position();
-            let image_rendering = self.style.clone_image_rendering();
+            let object_fit = self.style.slow_clone_object_fit();
+            let object_position = self.style.slow_clone_object_position();
+            let image_rendering = self.style.slow_clone_image_rendering();
             let quality = to_image_quality(image_rendering);
 
             // Apply object-fit algorithm

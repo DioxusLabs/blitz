@@ -4,7 +4,7 @@ use std::borrow::Cow;
 
 use style::values::computed::Length;
 
-use crate::node::TextBrush;
+use super::TextBrush;
 
 // Module of type aliases so we can refer to stylo types with nicer names
 pub(crate) mod stylo {
@@ -174,9 +174,22 @@ pub(crate) fn font_variant_ligatures(
 
 /// Map the `font-variant-caps` property to OpenType features.
 pub(crate) fn font_variant_caps(input: stylo::FontVariantCaps, out: &mut Vec<parley::FontFeature>) {
+    // The stylo fork computes every value, where Servo's computes the first
+    // two. Parley synthesizes none of them: each is its font feature.
     match input {
         stylo::FontVariantCaps::Normal => {}
         stylo::FontVariantCaps::SmallCaps => out.push(feature(b"smcp", 1)),
+        stylo::FontVariantCaps::AllSmallCaps => {
+            out.push(feature(b"c2sc", 1));
+            out.push(feature(b"smcp", 1));
+        }
+        stylo::FontVariantCaps::PetiteCaps => out.push(feature(b"pcap", 1)),
+        stylo::FontVariantCaps::AllPetiteCaps => {
+            out.push(feature(b"c2pc", 1));
+            out.push(feature(b"pcap", 1));
+        }
+        stylo::FontVariantCaps::Unicase => out.push(feature(b"unic", 1)),
+        stylo::FontVariantCaps::TitlingCaps => out.push(feature(b"titl", 1)),
     }
 }
 
@@ -342,6 +355,9 @@ pub(crate) fn white_space_collapse(input: stylo::WhiteSpaceCollapse) -> parley::
 
         stylo::WhiteSpaceCollapse::PreserveBreaks => parley::WhiteSpaceCollapse::PreserveBreaks,
         stylo::WhiteSpaceCollapse::BreakSpaces => parley::WhiteSpaceCollapse::BreakSpaces,
+        // Parley has no mode that keeps spaces but turns segment breaks
+        // into spaces.
+        stylo::WhiteSpaceCollapse::PreserveSpaces => parley::WhiteSpaceCollapse::Preserve,
     }
 }
 
@@ -351,13 +367,13 @@ pub(crate) fn white_space_collapse(input: stylo::WhiteSpaceCollapse) -> parley::
 /// Percentages are resolved against the element's own `line-height`.
 pub(crate) fn vertical_align(style: &stylo::ComputedValues) -> parley::VerticalAlign {
     let box_styles = style.get_box();
-    let alignment = match box_styles.clone_alignment_baseline() {
+    let alignment = match box_styles.slow_clone_alignment_baseline() {
         stylo::AlignmentBaseline::Baseline => parley::AlignmentBaseline::Baseline,
         stylo::AlignmentBaseline::TextTop => parley::AlignmentBaseline::TextTop,
         stylo::AlignmentBaseline::TextBottom => parley::AlignmentBaseline::TextBottom,
         stylo::AlignmentBaseline::Middle => parley::AlignmentBaseline::Middle,
     };
-    let shift = match box_styles.clone_baseline_shift() {
+    let shift = match box_styles.slow_clone_baseline_shift() {
         stylo::BaselineShift::Keyword(stylo::BaselineShiftKeyword::Sub) => {
             parley::BaselineShift::Sub
         }
@@ -469,6 +485,7 @@ pub(crate) fn style(
         stylo::WordBreak::Normal => parley::WordBreak::Normal,
         stylo::WordBreak::BreakAll => parley::WordBreak::BreakAll,
         stylo::WordBreak::KeepAll => parley::WordBreak::KeepAll,
+        stylo::WordBreak::BreakWord => parley::WordBreak::Normal,
     };
     let line_break = match itext_styles.line_break {
         stylo::LineBreak::Loose => parley::LineBreak::Loose,
@@ -476,10 +493,12 @@ pub(crate) fn style(
         stylo::LineBreak::Auto | stylo::LineBreak::Strict => parley::LineBreak::Strict,
         stylo::LineBreak::Anywhere => parley::LineBreak::Anywhere,
     };
-    let overflow_wrap = match itext_styles.overflow_wrap {
-        stylo::OverflowWrap::Normal => parley::OverflowWrap::Normal,
-        stylo::OverflowWrap::BreakWord => parley::OverflowWrap::BreakWord,
-        stylo::OverflowWrap::Anywhere => parley::OverflowWrap::Anywhere,
+    // `word-break: break-word` is `word-break: normal` with `overflow-wrap: anywhere`.
+    let overflow_wrap = match (itext_styles.word_break, itext_styles.overflow_wrap) {
+        (stylo::WordBreak::BreakWord, _) => parley::OverflowWrap::Anywhere,
+        (_, stylo::OverflowWrap::Normal) => parley::OverflowWrap::Normal,
+        (_, stylo::OverflowWrap::BreakWord) => parley::OverflowWrap::BreakWord,
+        (_, stylo::OverflowWrap::Anywhere) => parley::OverflowWrap::Anywhere,
     };
     let text_wrap_mode = text_wrap_mode(itext_styles.text_wrap_mode);
 
@@ -542,8 +561,7 @@ mod tests {
                     tag: FontTag(u32::from_be_bytes(**tag)),
                     value: *value,
                 })
-                .collect::<Vec<_>>()
-                .into_boxed_slice(),
+                .collect(),
         )
     }
 

@@ -7,6 +7,7 @@
 //! pointer event's target is the canonicalized DOM node (the body). The
 //! selection drag path must not require these to be the same node.
 
+use blitz_dom::text::InlineText as _;
 use blitz_dom::{Document, DocumentConfig, NodeId};
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::{
@@ -27,16 +28,36 @@ const HTML: &str = r#"<!DOCTYPE html>
 const OUTER_POS: (f32, f32) = (2.0, 8.0);
 
 fn make_doc() -> HtmlDocument {
+    make_doc_with_scale(1.0)
+}
+
+fn make_doc_with_scale(scale: f32) -> HtmlDocument {
     let mut doc = HtmlDocument::from_html(
         HTML,
         DocumentConfig {
-            viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
+            viewport: Some(Viewport::new(400, 300, scale, ColorScheme::Light)),
             html_parser_provider: Some(Arc::new(HtmlProvider) as _),
             ..Default::default()
         },
     );
     doc.resolve(0.0);
     doc
+}
+
+#[test]
+fn drag_selection_at_double_scale() {
+    let mut doc = make_doc_with_scale(2.0);
+    if !hit_is_text_in_anonymous_block(&doc) {
+        eprintln!("skipping: no usable font (text measures 0x0)");
+        return;
+    }
+
+    drag(&mut doc, OUTER_POS, (35.0, OUTER_POS.1));
+    let selected = doc.get_selected_text().expect("expected selected text");
+    assert!(
+        !selected.is_empty() && "Outer".contains(&selected),
+        "expected part of \"Outer\" at 2x scale, got {selected:?}"
+    );
 }
 
 fn pointer_event(x: f32, y: f32, buttons: MouseEventButtons) -> BlitzPointerEvent {
@@ -97,6 +118,36 @@ fn node_center(doc: &HtmlDocument, node_id: NodeId) -> (f32, f32) {
     )
 }
 
+#[test]
+fn text_hit_follows_selection_geometry_in_vertical_writing_mode() {
+    let mut doc = HtmlDocument::from_html(
+        "<style>body{margin:0}#vertical{writing-mode:vertical-rl;width:100px;height:100px}</style><div id='vertical'>Vertical</div>",
+        DocumentConfig {
+            viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
+            html_parser_provider: Some(Arc::new(HtmlProvider) as _),
+            ..Default::default()
+        },
+    );
+    doc.resolve(0.0);
+    let root_id = doc.query_selector("#vertical").unwrap().unwrap();
+    let root = doc.get_node(root_id).unwrap();
+    let layout = root
+        .element_data()
+        .unwrap()
+        .inline_layout_data
+        .as_ref()
+        .unwrap();
+    let mut rectangles = Vec::new();
+    layout.for_each_selection_rect(0, layout.text_len(), |rect| rectangles.push(rect));
+    let first = rectangles
+        .first()
+        .expect("text should have selection geometry");
+    let bounds = doc.get_client_bounding_rect(root_id).unwrap();
+    let x = (bounds.x + (first.x0 + first.x1) / 2.0) as f32;
+    let y = (bounds.y + (first.y0 + first.y1) / 2.0) as f32;
+    assert!(doc.find_text_position(x, y).is_some());
+}
+
 /// Regression test: dragging across "Outer" (wrapped in an anonymous block)
 /// must extend the selection, even though the pointer event's canonical
 /// target (the body) differs from the precise hit node (the anonymous block).
@@ -119,6 +170,18 @@ fn drag_selection_within_anonymous_block_wrapped_text() {
         !selected.is_empty() && "Outer".contains(&selected),
         "expected a non-empty part of \"Outer\" to be selected, got {selected:?}"
     );
+
+    let (root_id, start, end) = doc.get_text_selection_ranges()[0];
+    let root = doc.get_node(root_id).unwrap();
+    let layout = root
+        .element_data()
+        .unwrap()
+        .inline_layout_data
+        .as_ref()
+        .unwrap();
+    let mut rects = 0;
+    layout.for_each_selection_rect(start, end, |_| rects += 1);
+    assert!(rects > 0, "selected text should have highlight geometry");
 }
 
 /// Dragging from the anonymous-block-wrapped "Outer" into the "Inner" div

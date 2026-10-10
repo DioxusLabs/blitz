@@ -4,6 +4,9 @@ use markup5ever::local_name;
 
 use crate::net::ResourceHandler;
 use crate::node::NodeFlags;
+use crate::node::TextLayout;
+use crate::text::EditEngine as _;
+use crate::text::InlineLayoutEngine as _;
 use crate::tree::NodeTree;
 use crate::{
     BaseDocument, net::ImageHandler, node::ImageResourceData, node::Status, util::ImageLayerKind,
@@ -240,7 +243,7 @@ impl BaseDocument {
 }
 
 // fn is_fc_root(style: &ComputedValues) -> bool {
-//     let display = style.clone_display();
+//     let display = style.slow_clone_display();
 //     let display_inside = display.inside();
 
 //     match display_inside {
@@ -275,7 +278,7 @@ pub(crate) fn compute_layout_damage(old: &ComputedValues, new: &ComputedValues) 
             || old_box.float != new_box.float
             || old_box.position != new_box.position
             || old_box.contain != new_box.contain
-            || old.clone_visibility() != new.clone_visibility()
+            || old.slow_clone_visibility() != new.slow_clone_visibility()
         {
             return true;
         }
@@ -323,8 +326,8 @@ pub(crate) fn compute_layout_damage(old: &ComputedValues, new: &ComputedValues) 
     };
 
     let text_shaping_needs_recollect = || {
-        if old.clone_direction() != new.clone_direction()
-            || old.clone_unicode_bidi() != new.clone_unicode_bidi()
+        if old.slow_clone_direction() != new.slow_clone_direction()
+            || old.slow_clone_unicode_bidi() != new.slow_clone_unicode_bidi()
         {
             return true;
         }
@@ -353,7 +356,7 @@ pub(crate) fn compute_layout_damage(old: &ComputedValues, new: &ComputedValues) 
     )]
     if box_tree_needs_rebuild() {
         ALL_DAMAGE
-    } else if text_shaping_needs_recollect() {
+    } else if text_shaping_needs_recollect() || TextLayout::style_change_rebuilds(old, new) {
         ALL_DAMAGE
     } else if old.get_position().order != new.get_position().order
         // `position` is unchanged here (else the box tree would be rebuilt), so
@@ -390,8 +393,7 @@ impl BaseDocument {
     pub(crate) fn invalidate_inline_contexts(&mut self) {
         let scale = self.viewport.scale();
 
-        let font_ctx = &self.font_ctx;
-        let layout_ctx = &mut self.layout_ctx;
+        let text = &mut self.text;
 
         let mut anon_nodes = Vec::new();
 
@@ -412,8 +414,10 @@ impl BaseDocument {
                 }
             } else if let Some(input) = element.text_input_data_mut() {
                 input.editor.set_scale(scale);
-                let mut font_ctx = font_ctx.lock().unwrap();
-                input.editor.refresh_layout(&mut font_ctx, layout_ctx);
+                // A textarea's text is laid out again once layout knows its width.
+                if !input.is_multiline {
+                    input.editor.refresh(text);
+                }
                 node.insert_damage(ONLY_RELAYOUT);
             }
         }

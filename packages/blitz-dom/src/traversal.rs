@@ -5,18 +5,6 @@ use style::dom::TNode as _;
 
 use crate::{BaseDocument, Node};
 
-macro_rules! iter_children {
-    ($node_expr:expr, $cb:expr) => {{
-        let node = &mut $node_expr;
-        let children = core::mem::take(&mut node.children);
-        for child_id in children.iter().copied() {
-            $cb(child_id)
-        }
-        $node_expr.children = children;
-    }};
-}
-pub(crate) use iter_children;
-
 macro_rules! iter_children_and_pseudos {
     ($node_expr:expr, $cb:expr) => {{
         // Load node
@@ -44,7 +32,7 @@ macro_rules! iter_children_and_pseudos {
 pub(crate) use iter_children_and_pseudos;
 
 #[derive(Clone)]
-/// An pre-order tree traverser for a [BaseDocument](crate::document::BaseDocument).
+/// An pre-order tree traverser for a [BaseDocument].
 pub struct TreeTraverser<'a> {
     doc: &'a BaseDocument,
     stack: Vec<NodeId>,
@@ -75,7 +63,7 @@ impl Iterator for TreeTraverser<'_> {
 }
 
 #[derive(Clone)]
-/// An ancestor traverser for a [BaseDocument](crate::document::BaseDocument).
+/// An ancestor traverser for a [BaseDocument].
 pub struct AncestorTraverser<'a> {
     doc: &'a BaseDocument,
     current: NodeId,

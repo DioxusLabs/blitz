@@ -72,7 +72,7 @@ fn transition_does_not_start_from_pre_stylesheet_styles() {
     let node = doc.get_node(node_id).unwrap();
     let styles = node.primary_styles().unwrap();
     assert_eq!(
-        styles.get_inherited_box().clone_visibility(),
+        styles.get_inherited_box().slow_clone_visibility(),
         Visibility::Hidden,
         "transitioned property should have its stylesheet value, not the pre-stylesheet value"
     );

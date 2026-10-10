@@ -17,8 +17,8 @@
  * spec's bidi rendering section rather than Gecko's internal pseudo-classes
  * (:-moz-dir-attr-rtl and friends), which this engine's selector parser
  * does not know: it dropped these rules, and the dir attribute did nothing.
- * dir=auto keeps its isolation but not the content-based direction, which
- * needs bidi analysis no selector can express.
+ * dir=auto takes its content-based direction from a presentational hint,
+ * which needs bidi analysis no selector can express.
  */
 
 [dir="ltr" i] {
@@ -57,6 +57,11 @@ input {
 /* https://html.spec.whatwg.org/#hidden-elements */
 input[type="hidden" i] {
     display: none !important;
+}
+
+/* Password fields draw a disc for each character, as Chrome's UA sheet has them. */
+input[type="password" i] {
+    -webkit-text-security: disc !important;
 }
 
 input[type="checkbox"] {
@@ -236,9 +241,26 @@ bdo:-moz-has-dir-attr {
     unicode-bidi: isolate-override;
 }
 
-textarea:-moz-dir-attr-like-auto,
-pre:-moz-dir-attr-like-auto {
+/* The rule above is dropped where `:-moz-has-dir-attr` does not parse, and
+   "bdo[dir]" outweighs the "[dir]" rules the way that selector did. */
+bdo,
+bdo[dir] {
+    unicode-bidi: isolate-override;
+}
+
+/* The HTML spec's form: `:-moz-dir-attr-like-auto` does not parse here. */
+textarea[dir="auto" i],
+pre[dir="auto" i] {
     unicode-bidi: plaintext;
+}
+
+/* CSS Text 4's default style sheet: no autospace in code. */
+pre,
+code,
+kbd,
+samp,
+tt {
+    text-autospace: no-autospace;
 }
 
 /* blocks */

@@ -55,6 +55,33 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
       - run: cargo build --workspace
 
+  # The text backend features: Parley (the default), winkin alone, both (Parley wins),
+  # and neither, which must fail to compile.
+  check-text-backends:
+    name: "Check text backends"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
+      - name: Parley (default)
+        run: cargo check -p blitz-dom -p blitz-paint -p blitz -p wpt
+      - name: winkin alone
+        run: |
+          cargo check -p blitz-dom --no-default-features --features winkin,system-fonts,svg
+          cargo check -p blitz-paint --no-default-features --features winkin,svg
+          cargo check -p blitz --no-default-features --features winkin,net
+          cargo check -p browser --no-default-features --features winkin,hybrid
+          cargo check -p wpt --no-default-features --features winkin,cpu
+      - name: Both (Parley is used)
+        run: cargo test -p blitz-dom --features winkin --lib text::tests
+      - name: Neither fails to compile
+        run: |
+          if cargo check -p blitz-dom --no-default-features --features svg 2> neither.log; then
+            echo "blitz-dom built without a text backend"; exit 1
+          fi
+          grep -q "Enable one of the \`parley\` or \`winkin\` features" neither.log
+
   # wasm_hello is a standalone workspace; seven_guis and todomvc are workspace
   # members with a [lib] crate-type = ["cdylib"] target for wasm.
   build-wasm-examples:
@@ -70,9 +97,9 @@ jobs:
         run: cargo build --target wasm32-unknown-unknown
         working-directory: examples/wasm_hello
       - name: Build seven_guis (wasm)
-        run: cargo build -p seven_guis --lib --target wasm32-unknown-unknown --no-default-features --features hybrid
+        run: cargo build -p seven_guis --lib --target wasm32-unknown-unknown --no-default-features --features hybrid,parley
       - name: Build todomvc (wasm)
-        run: cargo build -p todomvc --lib --target wasm32-unknown-unknown --no-default-features --features hybrid
+        run: cargo build -p todomvc --lib --target wasm32-unknown-unknown --no-default-features --features hybrid,parley
 
   fmt:
     name: Rustfmt
@@ -96,7 +123,7 @@ jobs:
           components: clippy
       - run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
       - run: cargo clippy --workspace -- -D warnings
-      - run: cargo clippy -p blitz-dom --no-default-features --features svg,woff,accessibility,system-fonts,file-input,custom-widget --all-targets -- -D warnings
+      - run: cargo clippy -p blitz-dom --no-default-features --features parley,svg,woff,accessibility,system-fonts,file-input,custom-widget --all-targets -- -D warnings
 
   ci-scripts:
     name: "Test CI scripts"

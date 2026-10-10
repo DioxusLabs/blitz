@@ -320,6 +320,41 @@ fn input_value_property() {
     assert_eq!(text_of_selector(&doc, "#out"), "initial|updated");
 }
 
+/// A password field's `value` is the text typed into it, which it draws masked.
+#[test]
+fn password_value_is_the_typed_text() {
+    use blitz_traits::events::{BlitzKeyEvent, KeyState, UiEvent};
+    use keyboard_types::{Code, Key, Location};
+
+    let mut doc = doc_from_html(
+        r#"
+        <html><body>
+            <input id="field" type="password">
+            <div id="out"></div>
+        </body></html>
+        "#,
+    );
+    doc.inner_mut().resolve(0.0);
+    let field = doc.inner().query_selector("#field").unwrap().unwrap();
+    doc.inner_mut().set_focus_to(field);
+    for ch in ["a", "b", "c", "\u{e9}"] {
+        doc.handle_ui_event(UiEvent::KeyDown(BlitzKeyEvent {
+            key: Key::Character(ch.into()),
+            code: Code::KeyC,
+            modifiers: Modifiers::empty(),
+            location: Location::Standard,
+            is_auto_repeating: false,
+            is_composing: false,
+            state: KeyState::Pressed,
+            text: Some(ch.into()),
+        }));
+    }
+    doc.eval(
+        r#"document.getElementById("out").textContent = document.getElementById("field").value;"#,
+    );
+    assert_eq!(text_of_selector(&doc, "#out"), "abc\u{e9}");
+}
+
 #[test]
 fn checkbox_click_fires_input_and_change_events() {
     let mut doc = doc_from_html(
@@ -696,7 +731,7 @@ fn cssom_font_face_and_keyframes() {
     );
     assert_eq!(
         text_of_selector(&doc, "#out"),
-        "CSSFontFaceRule|5|\"Foo\"|true|\"Foo\"\
+        "CSSFontFaceRule|5|Foo|true|Foo\
          |CSSKeyframesRule|spin|2|0%|1\
          |3|50% { opacity: 0.5; }|2|100%"
     );

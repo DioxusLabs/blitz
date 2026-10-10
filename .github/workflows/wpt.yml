@@ -24,7 +24,7 @@ jobs:
   wpt:
     name: "Run WPT Tests"
     runs-on: warp-ubuntu-latest-arm64-16x
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
@@ -43,9 +43,9 @@ jobs:
       - name: Clone WPT tests
         run: git clone --depth 1 --revision "$(cat ./wpt/WPT_COMMIT)" https://github.com/web-platform-tests/wpt ./wpt/tests
       - name: Build WPT runner
-        run: cargo build -rp wpt
+        run: cargo build -rp wpt --no-default-features --features cpu,winkin
       - name: Run WPT tests
-        run: cargo run -rp wpt css svg
+        run: cargo run -rp wpt --no-default-features --features cpu,winkin css svg
       - name: Compress report (zstd)
         run: zstd -22 --ultra -o ./wpt/output/wptreport.json.zst ./wpt/output/wptreport.json
       - uses: actions/upload-artifact@v7

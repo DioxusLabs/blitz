@@ -1,5 +1,6 @@
 use crate::Document;
 use crate::layout::paint_tree::{HoistedPaintChild, StackingContext};
+use crate::text::{EditableText as _, InlineText as _};
 use bitflags::bitflags;
 use blitz_traits::events::{
     BlitzPointerEvent, BlitzPointerId, DomEventData, HitResult, PointerCoords,
@@ -10,7 +11,6 @@ use euclid::{Point2D, Rect, Size2D};
 use keyboard_types::Modifiers;
 use kurbo::{Affine, Rect as KurboRect};
 use markup5ever::{LocalName, local_name};
-use parley::{BreakReason, Cluster, ClusterSide};
 use selectors::matching::ElementSelectorFlags;
 use std::cell::{Cell, RefCell};
 use std::fmt::Write;
@@ -128,7 +128,7 @@ pub struct Node {
     /// For element nodes this holds the [`ElementData`], which stores most of
     /// the per-node style/layout state. For the document node it holds the
     /// [`DocumentData`]. Access the moved fields through the forwarding methods
-    /// on [`Node`] (e.g. [`Node::style`], [`Node::final_layout`]).
+    /// on [`Node`] (e.g. [`Node::primary_styles`], [`Node::final_layout`]).
     pub data: NodeData,
 }
 
@@ -231,17 +231,9 @@ impl Node {
         }
     }
 
-    /// Clear this node's taffy layout cache and any cached inline
-    /// `content_widths`, forcing a full relayout of it on the next pass.
+    /// Clear this node's taffy layout cache, forcing a full relayout of it on the next pass.
     pub fn invalidate_layout_cache(&mut self) {
         self.clear_layout_cache();
-        if let Some(inline_layout) = self
-            .data
-            .downcast_element_mut()
-            .and_then(|el| el.inline_layout_data.as_mut())
-        {
-            inline_layout.content_widths = None;
-        }
     }
 
     #[inline]
@@ -470,7 +462,7 @@ impl Node {
     }
 
     pub(crate) fn display_style(&self) -> Option<StyloDisplay> {
-        Some(self.primary_styles().as_ref()?.clone_display())
+        Some(self.primary_styles().as_ref()?.slow_clone_display())
     }
 
     pub fn is_or_contains_block(&self) -> bool {
@@ -479,7 +471,7 @@ impl Node {
 
         // Ignore out-of-flow items
         let position = style
-            .map(|s| s.clone_position())
+            .map(|s| s.slow_clone_position())
             .unwrap_or(Position::Relative);
         let is_in_flow = matches!(
             position,
@@ -491,13 +483,13 @@ impl Node {
         // Floated boxes do not break up the inline flow: they participate in the
         // inline formatting context as out-of-flow inline boxes
         let is_floating = style
-            .map(|s| s.clone_float().is_floating())
+            .map(|s| s.slow_clone_float().is_floating())
             .unwrap_or(false);
         if is_floating {
             return false;
         }
         let display = style
-            .map(|s| s.clone_display())
+            .map(|s| s.slow_clone_display())
             .unwrap_or(StyloDisplay::inline());
         match display.outside() {
             DisplayOutside::None => false,
@@ -537,9 +529,13 @@ impl Node {
         let white_space_collapse = self
             .parent
             .and_then(|parent_id| self.with(parent_id).primary_styles())
-            .map(|style| style.clone_white_space_collapse());
+            .map(|style| style.slow_clone_white_space_collapse());
         match white_space_collapse {
-            Some(WhiteSpaceCollapse::Preserve | WhiteSpaceCollapse::BreakSpaces) => false,
+            Some(
+                WhiteSpaceCollapse::Preserve
+                | WhiteSpaceCollapse::BreakSpaces
+                | WhiteSpaceCollapse::PreserveSpaces,
+            ) => false,
             Some(WhiteSpaceCollapse::PreserveBreaks) => !data.content.contains('\n'),
             Some(WhiteSpaceCollapse::Collapse) | None => true,
         }
@@ -816,7 +812,10 @@ impl Node {
         {
             if !input_data.is_multiline {
                 let content_box_height = self.final_layout().content_box_height();
-                let input_height = input_data.editor.try_layout().unwrap().height() / scale as f32;
+                let Some(metrics) = input_data.editor.metrics() else {
+                    return 0.0;
+                };
+                let input_height = metrics.size.height as f32 / scale as f32;
                 let y_offset = ((content_box_height - input_height) / 2.0).max(0.0);
 
                 return y_offset as f64;
@@ -1128,7 +1127,7 @@ impl Node {
         #[cfg(feature = "writing-mode")]
         {
             // Own-layout_wm by default: the node's own algorithm reads its style in its own axes
-            let layout_wm = styles.writing_mode;
+            let layout_wm = self.layout_frame_wm();
             stylo_taffy::TaffyStyloStyle::new_in(styles, flags, layout_wm)
         }
         #[cfg(not(feature = "writing-mode"))]
@@ -1154,7 +1153,7 @@ impl Node {
     #[cfg(feature = "writing-mode")]
     pub(crate) fn has_containment(&self) -> bool {
         self.primary_styles()
-            .is_some_and(|style| !style.clone_contain().is_empty())
+            .is_some_and(|style| !style.slow_clone_contain().is_empty())
     }
 
     /// Whether the node is a flex container with a column `flex-direction`, i.e. aligns its
@@ -1162,7 +1161,7 @@ impl Node {
     #[cfg(feature = "writing-mode")]
     pub(crate) fn is_column_flex_container(&self) -> bool {
         self.primary_styles().is_some_and(|s| {
-            s.clone_display().inside() == style::values::specified::box_::DisplayInside::Flex
+            s.slow_clone_display().inside() == style::values::specified::box_::DisplayInside::Flex
                 && matches!(
                     s.get_position().flex_direction,
                     FlexDirection::Column | FlexDirection::ColumnReverse
@@ -1178,11 +1177,24 @@ impl Node {
             .unwrap_or(stylo_taffy::WritingMode::empty())
     }
 
+    /// The writing mode in whose axes the node's own layout algorithm runs. winkin turns an
+    /// inline formatting context's lines onto the page itself, so such a box runs in physical
+    /// axes, and its writing mode only meets Taffy's at its edges.
+    #[cfg(feature = "writing-mode")]
+    pub(crate) fn layout_frame_wm(&self) -> stylo_taffy::WritingMode {
+        if <crate::text::TextLayout as crate::text::InlineLayoutEngine>::SETS_WRITING_MODES
+            && self.flags.is_inline_root()
+        {
+            return stylo_taffy::WritingMode::empty();
+        }
+        self.writing_mode()
+    }
+
     /// The node's `display` as a [`taffy::Display`]. Returns [`taffy::Display::Block`]
     /// for nodes without computed styles (e.g. text nodes).
     pub fn taffy_display(&self) -> taffy::Display {
         self.primary_styles()
-            .map(|s| stylo_taffy::convert::display(s.clone_display()))
+            .map(|s| stylo_taffy::convert::display(s.slow_clone_display()))
             .unwrap_or(taffy::Display::Block)
     }
 
@@ -1203,6 +1215,49 @@ impl Node {
             stylo_taffy::convert::position(box_style.position).is_out_of_flow()
                 && stylo_taffy::convert::display(box_style.display) != taffy::Display::None
         })
+    }
+
+    /// The direction `dir=auto` gives the element from its text: `Some(true)`
+    /// where the first strong character is right-to-left, `Some(false)` where
+    /// it is left-to-right, and `None` where it has none, as HTML's "auto
+    /// directionality" finds it. Text inside `bdi`, `script`, `style` and
+    /// `textarea`, and inside an element with a valid `dir` of its own, is
+    /// skipped.
+    pub fn auto_direction_is_rtl(&self) -> Option<bool> {
+        use icu_properties::{CodePointMapData, props::BidiClass};
+        let classes = CodePointMapData::<BidiClass>::new();
+        let mut stack: Vec<NodeId> = self.children.iter().rev().copied().collect();
+        while let Some(id) = stack.pop() {
+            let node = self.with(id);
+            match &node.data {
+                NodeData::Text(data) => {
+                    for c in data.content.chars() {
+                        match classes.get(c) {
+                            BidiClass::LeftToRight => return Some(false),
+                            BidiClass::RightToLeft | BidiClass::ArabicLetter => return Some(true),
+                            _ => {}
+                        }
+                    }
+                }
+                NodeData::Element(element) => {
+                    let name = &element.name.local;
+                    let skipped = *name == local_name!("bdi")
+                        || *name == local_name!("script")
+                        || *name == local_name!("style")
+                        || *name == local_name!("textarea")
+                        || element.attr(local_name!("dir")).is_some_and(|dir| {
+                            ["ltr", "rtl", "auto"]
+                                .iter()
+                                .any(|valid| dir.eq_ignore_ascii_case(valid))
+                        });
+                    if !skipped {
+                        stack.extend(node.children.iter().rev().copied());
+                    }
+                }
+                _ => {}
+            }
+        }
+        None
     }
 
     pub fn text_content(&self) -> String {
@@ -1245,13 +1300,13 @@ impl Node {
     pub fn order(&self) -> i32 {
         self.primary_styles()
             .filter(|s| !matches!(s.get_box().position, Position::Absolute | Position::Fixed))
-            .map(|s| s.clone_order())
+            .map(|s| s.slow_clone_order())
             .unwrap_or(0)
     }
 
     pub fn z_index(&self) -> i32 {
         self.primary_styles()
-            .map(|s| s.clone_z_index().integer_or(0))
+            .map(|s| s.slow_clone_z_index().integer_or(0))
             .unwrap_or(0)
     }
 
@@ -1261,10 +1316,10 @@ impl Node {
             return false;
         };
 
-        let position = style.clone_position();
-        let has_z_index = !style.clone_z_index().is_auto();
+        let position = style.slow_clone_position();
+        let has_z_index = !style.slow_clone_z_index().is_auto();
 
-        if style.clone_opacity() != 1.0 {
+        if style.slow_clone_opacity() != 1.0 {
             return true;
         }
 
@@ -1310,7 +1365,7 @@ impl Node {
             return false;
         };
 
-        if style.clone_opacity() != 1.0 {
+        if style.slow_clone_opacity() != 1.0 {
             return true;
         }
 
@@ -1319,7 +1374,7 @@ impl Node {
             return true;
         }
 
-        if !matches!(style.clone_clip_path(), ClipPath::None) {
+        if !matches!(style.slow_clone_clip_path(), ClipPath::None) {
             return true;
         }
 
@@ -1360,7 +1415,7 @@ impl Node {
         // Don't hit on visbility:hidden elements
         if let Some(style) = self.primary_styles() {
             if matches!(
-                style.clone_visibility(),
+                style.slow_clone_visibility(),
                 Visibility::Hidden | Visibility::Collapse
             ) {
                 return None;
@@ -1371,7 +1426,7 @@ impl Node {
         // descendants are still tested (one may restore pointer-events:auto).
         let pointer_events_none = self
             .primary_styles()
-            .is_some_and(|style| style.clone_pointer_events() == PointerEvents::None);
+            .is_some_and(|style| style.slow_clone_pointer_events() == PointerEvents::None);
 
         let mut x = x - self.final_layout().location.x + self.scroll_offset().x as f32;
         let mut y = y - self.final_layout().location.y + self.scroll_offset().y as f32;
@@ -1505,21 +1560,24 @@ impl Node {
         if self.flags.is_inline_root() {
             let element_data = &self.element_data().unwrap();
             if let Some(ild) = element_data.inline_layout_data.as_ref() {
-                let layout = &ild.layout;
-                let scale = layout.scale();
-                let y = y - ild.block_offset;
-
-                if let Some((cluster, _side)) =
-                    Cluster::from_point_exact(layout, x * scale, y * scale)
+                if let Some(hit) = ild.hit_test(x, y, true)
+                    && let Some(text_node) = self.tree().get(hit.node_id)
                 {
-                    let node_id = cluster.style().brush.id;
-                    let text_pointer_events_none = self
-                        .with(node_id)
-                        .primary_styles()
-                        .is_some_and(|style| style.clone_pointer_events() == PointerEvents::None);
+                    let hit_node = if matches!(text_node.data, NodeData::Text(_)) {
+                        text_node
+                            .layout_parent
+                            .get()
+                            .and_then(|parent| self.tree().get(parent))
+                            .unwrap_or(self)
+                    } else {
+                        text_node
+                    };
+                    let text_pointer_events_none = hit_node.primary_styles().is_some_and(|style| {
+                        style.slow_clone_pointer_events() == PointerEvents::None
+                    });
                     if !text_pointer_events_none {
                         return Some(HitResult {
-                            node_id,
+                            node_id: hit_node.id,
                             x,
                             y,
                             is_text: true,
@@ -1565,34 +1623,9 @@ impl Node {
 
         let element_data = self.element_data()?;
         let inline_layout = element_data.inline_layout_data.as_ref()?;
-        let layout = &inline_layout.layout;
-        let scale = layout.scale();
-        let y = y - inline_layout.block_offset;
-
-        // Use Parley's cluster hit testing (from_point is more forgiving than from_point_exact)
-        let (cluster, side) = Cluster::from_point(layout, x * scale, y * scale)?;
-
-        // Determine byte offset based on which side of the cluster was clicked
-        // For LTR text: left side = start of cluster, right side = end of cluster
-        // For RTL text: left side = end of cluster, right side = start of cluster
-        // Also, explicit line breaks should always use start to avoid cursor appearing on next line
-        let is_leading = side == ClusterSide::Left;
-        let offset = if cluster.is_rtl() {
-            if is_leading {
-                cluster.text_range().end
-            } else {
-                cluster.text_range().start
-            }
-        } else {
-            // LTR text
-            if is_leading || cluster.is_line_break() == Some(BreakReason::Explicit) {
-                cluster.text_range().start
-            } else {
-                cluster.text_range().end
-            }
-        };
-
-        Some(offset)
+        inline_layout
+            .hit_test(x, y, false)
+            .map(|hit| hit.byte_offset)
     }
 
     /// Whether this node is a non-atomic inline element: one that has no layout box of its
@@ -1608,7 +1641,7 @@ impl Node {
             return false;
         }
         self.primary_styles().is_some_and(|styles| {
-            let display = styles.clone_display();
+            let display = styles.slow_clone_display();
             display.outside() == DisplayOutside::Inline && display.inside() == DisplayInside::Flow
         })
     }
@@ -1657,8 +1690,7 @@ impl Node {
                 .is_some_and(|styles| styles.get_box().position == Position::Static)
     }
 
-    /// The nearest layout ancestor that [is an offset parent](Self::is_offset_parent), as in
-    /// CSSOM View's `offsetParent`.
+    /// The nearest layout ancestor that is an offset parent, as in CSSOM View's `offsetParent`.
     pub fn offset_parent(&self) -> Option<&Node> {
         let mut node = self;
         loop {
@@ -1674,103 +1706,13 @@ impl Node {
     ///
     /// Returns `None` for nodes that have their own layout box.
     pub fn inline_fragment_boxes(&self) -> Option<impl Iterator<Item = taffy::Rect<f32>> + '_> {
-        use parley::PositionedLayoutItem;
-
         if !self.is_non_atomic_inline() {
             return None;
         }
 
         let inline_root = self.inline_root_ancestor()?;
         let inline_layout = inline_root.element_data()?.inline_layout_data.as_ref()?;
-        let layout = &inline_layout.layout;
-        let scale = layout.scale();
-
-        // Walk up the DOM parent chain from `id` to check whether it is (or is
-        // inside) the target node, stopping at the inline root.
-        let inline_root_id = inline_root.id;
-        let is_in_target = move |mut id: NodeId| -> bool {
-            loop {
-                if id == self.id {
-                    return true;
-                }
-                if id == inline_root_id {
-                    return false;
-                }
-                match self.with(id).parent {
-                    Some(parent) => id = parent,
-                    None => return false,
-                }
-            }
-        };
-
-        let root_layout = inline_root.unrounded_layout();
-        let content_box_inset = root_layout.padding + root_layout.border;
-        let origin_x = content_box_inset.left;
-        let origin_y = content_box_inset.top + inline_layout.block_offset;
-
-        fn union(acc: &mut Option<taffy::Rect<f32>>, left: f32, top: f32, right: f32, bottom: f32) {
-            *acc = Some(match *acc {
-                Some(rect) => taffy::Rect {
-                    left: rect.left.min(left),
-                    top: rect.top.min(top),
-                    right: rect.right.max(right),
-                    bottom: rect.bottom.max(bottom),
-                },
-                None => taffy::Rect {
-                    left,
-                    top,
-                    right,
-                    bottom,
-                },
-            });
-        }
-
-        // One rect per line box: the union of all of the target's fragments on that line
-        Some(layout.lines().filter_map(move |line| {
-            let line_metrics = line.metrics();
-            let mut line_rect: Option<taffy::Rect<f32>> = None;
-
-            for item in line.items() {
-                match item {
-                    PositionedLayoutItem::GlyphRun(glyph_run) => {
-                        if !is_in_target(glyph_run.style().brush.id) {
-                            continue;
-                        }
-                        let x0 = glyph_run.offset();
-                        let x1 = x0 + glyph_run.advance();
-                        // Use the line box's block extent rather than the
-                        // run's font ascent/descent: fonts with small
-                        // typographic metrics would otherwise produce rects
-                        // that clip the rendered glyphs. This matches the
-                        // geometry used for text selection highlights.
-                        let y0 = line_metrics.block_min_coord;
-                        let y1 = line_metrics.block_max_coord;
-                        union(&mut line_rect, x0, y0, x1, y1);
-                    }
-                    PositionedLayoutItem::InlineBox(inline_box) => {
-                        if !is_in_target(NodeId::from_u64(inline_box.id)) {
-                            continue;
-                        }
-                        let x0 = inline_box.x;
-                        let y0 = inline_box.y;
-                        union(
-                            &mut line_rect,
-                            x0,
-                            y0,
-                            x0 + inline_box.width,
-                            y0 + inline_box.height,
-                        );
-                    }
-                }
-            }
-
-            line_rect.map(|rect| taffy::Rect {
-                left: origin_x + rect.left / scale,
-                top: origin_y + rect.top / scale,
-                right: origin_x + rect.right / scale,
-                bottom: origin_y + rect.bottom / scale,
-            })
-        }))
+        Some(inline_layout.fragment_rects(inline_root, self))
     }
 
     /// CSSOM View's `offsetLeft`/`offsetTop`: the offset of this node's border box from the

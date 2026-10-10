@@ -10,6 +10,7 @@ use blitz_traits::shell::ShellProvider;
 
 use crate::document::DocumentEvent;
 use crate::net::{DocumentSrcHandler, ResourceHandler, stamped_request};
+use crate::text::DocumentText as _;
 use crate::{BaseDocument, DocumentConfig, local_name};
 
 /// Maximum nesting depth of documents-within-documents. Iframes nested deeper
@@ -66,12 +67,13 @@ impl BaseDocument {
             })),
             shell_provider: Some(self.shell_provider.clone()),
             html_parser_provider: Some(self.html_parser_provider.clone()),
-            font_ctx: Some(self.font_ctx.lock().unwrap().clone()),
+            font_ctx: Some(self.text.fonts()),
             media_type: Some(self.media_type.clone()),
             style_threading: self.style_threading,
             incremental: Some(self.incremental_layout),
             abort_signal: Some(abort_signal),
             subdocument_depth: self.subdocument_depth + 1,
+            reveal_typed_password_character: self.reveal_typed_password,
         }
     }
 

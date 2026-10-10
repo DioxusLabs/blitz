@@ -19,12 +19,6 @@ use anyrender::{PaintScene, Scene};
 use blitz_dom::{BaseDocument, NodeId, util::Color};
 use render::BlitzDomPainter;
 
-const FONT_EMBOLDEN_ENABLED: bool = cfg!(any(
-    feature = "font-embolden",
-    all(feature = "apple-font-embolden", target_os = "macos"),
-    all(feature = "apple-font-embolden", target_os = "ios"),
-));
-
 /// The default color for text selection highlights
 const SELECTION_COLOR: Color = Color::from_rgb8(180, 213, 255);
 

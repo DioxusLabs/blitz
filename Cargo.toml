@@ -55,7 +55,7 @@ dioxus-native-dom = { version = "0.7.0", path = "./packages/dioxus-native-dom", 
 debug_timer = { version = "0.1.2", path = "./packages/debug_timer" }
 accesskit_xplat = { version = "0.2", path = "./packages/accesskit_xplat", default-features = false }
 browser-persistence = { path = "./apps/browser/persistence" }
-blitz-test-harness = { path = "./packages/blitz-test-harness" }
+blitz-test-harness = { path = "./packages/blitz-test-harness", default-features = false }
 
 # Servo dependencies
 style = { version = "0.22.0", package = "stylo" }
@@ -108,7 +108,15 @@ taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "7d33901cc383489d99
     "calc",
     "detailed_layout_info",
 ] }
+# The font value types shared by the text backends, from Parley's revision
+parlance = { version = "0.1", default-features = false, features = ["std"] }
 parley = { version = "0.12", default-features = false, features = ["std"] }
+# Its `dictionaries` feature, ICU's line and word dictionaries, is blitz-dom's
+# `complex-scripts`.
+winkin = { git = "https://github.com/dfrg/winkin", rev = "25350c1265beccba79121ab24177e73e918fe23e", default-features = false, features = ["std"] }
+# The fonts winkin chooses from. Its `system` feature, the platform's font
+# APIs, is blitz-dom's `system-fonts`.
+fontwich = { git = "https://github.com/dfrg/winkin", rev = "25350c1265beccba79121ab24177e73e918fe23e", default-features = false, features = ["std"] }
 skrifa = { version = "0.44", default-features = false, features = [
     "std",
 ] } # Should match parley and vello versions
@@ -257,13 +265,17 @@ publish = false
 log-times = ["log-frame-times", "log-phase-times"]
 log-frame-times = ["dioxus-native/log-frame-times"]
 log-phase-times = ["dioxus-native/log-phase-times"]
+# The text backend: Parley (the default) or winkin. With both, Parley is used.
+default = ["parley"]
+parley = ["blitz-dom/parley", "blitz-paint/parley", "dioxus-native/parley"]
+winkin = ["blitz-dom/winkin", "blitz-paint/winkin", "dioxus-native/winkin"]
 
 [dev-dependencies]
 anyrender = { workspace = true }
 anyrender_vello = { workspace = true }
 anyrender_vello_cpu = { workspace = true, features = ["multithreading"] }
 anyrender_vello_hybrid = { workspace = true }
-blitz-dom = { workspace = true, features = ["default"] }
+blitz-dom = { workspace = true, features = ["svg", "woff", "accessibility", "system-fonts", "file-input", "custom-widget", "text-transform-icu"] }
 blitz-html = { workspace = true }
 blitz-traits = { workspace = true }
 blitz-paint = { workspace = true }
@@ -295,6 +307,26 @@ vello_common = "0.3"
 wgpu = { workspace = true }
 wgpu_context = { workspace = true }
 rustc-hash = { workspace = true }
+
+# The stylo fork with the gates relaxed on properties its servo build
+# declines to compute. They are gated because servo's layout does not
+# implement them, not because they need gecko: the values are plain Rust.
+# Un-gating them is what lets winkin lay out, and the WPT suites reach,
+# writing modes, ruby, emphasis marks, line clamping and the rest of the
+# text properties winkin implements. Every crate of the stylo family is
+# patched together, or Blitz would see two `Atom` types.
+[patch.crates-io]
+stylo = { git = "https://github.com/dfrg/stylo", branch = "style-more" }
+stylo_traits = { git = "https://github.com/dfrg/stylo", branch = "style-more" }
+stylo_atoms = { git = "https://github.com/dfrg/stylo", branch = "style-more" }
+stylo_dom = { git = "https://github.com/dfrg/stylo", branch = "style-more" }
+stylo_static_prefs = { git = "https://github.com/dfrg/stylo", branch = "style-more" }
+stylo_derive = { git = "https://github.com/dfrg/stylo", branch = "style-more" }
+stylo_malloc_size_of = { git = "https://github.com/dfrg/stylo", branch = "style-more" }
+selectors = { git = "https://github.com/dfrg/stylo", branch = "style-more" }
+servo_arc = { git = "https://github.com/dfrg/stylo", branch = "style-more" }
+to_shmem = { git = "https://github.com/dfrg/stylo", branch = "style-more" }
+to_shmem_derive = { git = "https://github.com/dfrg/stylo", branch = "style-more" }
 
 # [patch.crates-io]
 # anyrender = { path = "../anyrender/crates/anyrender" }

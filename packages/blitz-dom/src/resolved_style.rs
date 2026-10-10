@@ -298,7 +298,7 @@ impl BaseDocument {
         };
 
         let url_data = self.url.url_extra_data();
-        let context = ParserContext::new(
+        let mut context = ParserContext::new(
             Origin::Author,
             &url_data,
             Some(CssRuleType::Style),
@@ -309,7 +309,7 @@ impl BaseDocument {
             None,
             Default::default(),
         );
-        condition.eval(&context)
+        condition.eval(&mut context)
     }
 
     /// Register a custom property via script (`CSS.registerProperty()`).
@@ -363,7 +363,7 @@ impl BaseDocument {
             },
         };
 
-        let display = styles.clone_display();
+        let display = styles.slow_clone_display();
         // Non-atomic inline elements are laid out as style spans within their
         // inline root's text layout rather than as boxes of their own, so their
         // layout-dependent properties resolve to computed (not used) values.
@@ -540,7 +540,7 @@ impl BaseDocument {
                 };
             }
             "top" | "right" | "bottom" | "left" if has_layout_box => {
-                let position = styles.clone_position();
+                let position = styles.slow_clone_position();
                 let parent_layout = node
                     .containing_block()
                     .and_then(|id| self.get_node(id))
@@ -713,7 +713,7 @@ impl BaseDocument {
             let Some(parent_styles) = parent.primary_styles() else {
                 return false;
             };
-            let display = parent_styles.clone_display();
+            let display = parent_styles.slow_clone_display();
             if display.is_contents() {
                 parent_id = parent.parent;
                 continue;

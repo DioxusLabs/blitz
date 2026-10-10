@@ -5,6 +5,7 @@
 //! This is slower, yes, but happens fast enough that it's not a huge issue.
 
 use crate::node::{ComputedStyleRef, ImageData, NodeData, SpecialElementData};
+use crate::text::EditEngine as _;
 use crate::{document::BaseDocument, dom_node_id, node::Node, taffy_node_id};
 use markup5ever::{LocalName, local_name};
 use std::cell::Ref;
@@ -29,6 +30,8 @@ pub(crate) mod list;
 pub(crate) mod paint_tree;
 pub(crate) mod replaced;
 pub(crate) mod table;
+// winkin applies `text-transform` itself: only Parley's builder runs the transformer.
+#[cfg_attr(text_winkin, allow(dead_code))]
 pub(crate) mod text_transform;
 #[cfg(feature = "writing-mode")]
 pub(crate) mod writing_mode;
@@ -82,7 +85,7 @@ pub(crate) fn resolve_calc_value(calc_ptr: *const (), parent_size: f32) -> f32 {
 /// Per-pass layout state: wraps the document for the duration of a layout pass and carries
 /// the Taffy tree trait implementations. Derefs to [`BaseDocument`].
 pub(crate) struct LayoutPassState<'doc> {
-    doc: &'doc mut BaseDocument,
+    pub(crate) doc: &'doc mut BaseDocument,
     /// The writing mode of the box whose layout algorithm is currently running (see
     /// `layout::writing_mode`). Child styles read during that algorithm are expressed in its axes.
     #[cfg(feature = "writing-mode")]
@@ -228,8 +231,8 @@ impl LayoutPassState<'_> {
         let font_styles = node.primary_styles().map(|style| {
             use style::values::computed::font::LineHeight;
 
-            let font_size = style.clone_font_size().used_size().px();
-            let line_height = match style.clone_line_height() {
+            let font_size = style.slow_clone_font_size().used_size().px();
+            let line_height = match style.slow_clone_line_height() {
                 LineHeight::Normal => font_size * 1.2,
                 LineHeight::Number(num) => font_size * num.0,
                 LineHeight::Length(value) => value.0.px(),
@@ -317,10 +320,7 @@ impl LayoutPassState<'_> {
                             .and_then(|el| el.text_input_data_mut())
                         {
                             input.editor.set_width(Some(content_width * scale));
-                            input.editor.refresh_layout(
-                                &mut doc.font_ctx.lock().unwrap(),
-                                &mut doc.layout_ctx,
-                            );
+                            input.editor.refresh(&mut doc.text);
                         }
                     }
                     return output;

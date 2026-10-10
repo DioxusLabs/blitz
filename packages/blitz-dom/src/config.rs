@@ -1,10 +1,10 @@
 use crate::HtmlParserProvider;
+use crate::text::FontContext;
 use blitz_traits::{
     navigation::NavigationProvider,
     net::{AbortSignal, NetProvider},
     shell::{ShellProvider, Viewport},
 };
-use parley::FontContext;
 use std::sync::Arc;
 use style::media_queries::MediaType;
 
@@ -45,7 +45,10 @@ pub struct DocumentConfig {
     pub shell_provider: Option<Arc<dyn ShellProvider>>,
     /// HTML parser provider. Used to parse HTML for setInnerHTML
     pub html_parser_provider: Option<Arc<dyn HtmlParserProvider>>,
-    /// Parley `FontContext`
+    /// The fonts the document lays out text with. Defaults to the platform's fonts, where Blitz
+    /// is built to read them (`system-fonts`), and Blitz's bullet font. Clones share loaded
+    /// fonts, so hand a clone of one to every document rather than listing the platform's fonts
+    /// for each.
     pub font_ctx: Option<FontContext>,
     /// The CSS media type used to evaluate `@media` rules.
     /// Defaults to [`MediaType::screen`].
@@ -66,4 +69,12 @@ pub struct DocumentConfig {
     /// How deeply this document is nested within other documents
     /// (0 for a root document). Used to limit `<iframe>` nesting depth.
     pub subdocument_depth: usize,
+    /// How long a password field shows the character typed last in the clear before masking it,
+    /// as iOS and Android do. `None`, the default, masks it at once, as desktop browsers do.
+    ///
+    /// Only one typed grapheme is shown; pasted text and text an input method commits in more than
+    /// one grapheme stay masked. Any other edit, a move of the caret, a change of the value from
+    /// script and a change of focus mask it before its time. A shell wakes for the deadline that
+    /// [`BaseDocument::text_input_deadline`](crate::BaseDocument::text_input_deadline) gives.
+    pub reveal_typed_password_character: Option<web_time::Duration>,
 }

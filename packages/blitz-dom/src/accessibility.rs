@@ -91,7 +91,7 @@ impl BlitzDomNode {
             .and_then(|s| s.get())
             .map(|s| {
                 s.styles.is_display_none()
-                    || s.styles.primary().clone_visibility()
+                    || s.styles.primary().slow_clone_visibility()
                         == visibility::computed_value::T::Hidden
             })
             .unwrap_or(false)
