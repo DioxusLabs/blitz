@@ -106,6 +106,9 @@ impl DocumentText for TextContext {
         let collection = base.clone().with_layer(document.snapshot());
         Self {
             cx: Context::new(collection.clone()),
+            generation: 0,
+            #[cfg(feature = "parallel-construct")]
+            threads: thread_local::ThreadLocal::new(),
             metrics: Arc::new(RwLock::new(collection)),
             given,
             base,
@@ -135,6 +138,7 @@ impl DocumentText for TextContext {
         if added {
             let collection = self.base.clone().with_layer(self.document.snapshot());
             self.cx.set_collection(collection.clone());
+            self.generation += 1;
             *self.metrics.write().unwrap() = collection;
         }
     }
