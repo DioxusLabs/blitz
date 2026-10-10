@@ -228,6 +228,8 @@ impl LayoutPassState<'_> {
             width,
             room_above,
             block_end,
+            sizes_only: pass != Measure::Layout,
+            pass: self.nodes.geometry_generation(),
         };
         let floats = {
             let style = self.nodes[node_id].primary_styles().map(|s| (*s).clone());
@@ -242,6 +244,7 @@ impl LayoutPassState<'_> {
                 clears: &clears,
                 placed: Vec::new(),
             };
+            crate::text::PERF_COUNTS[1].fetch_add(1, core::sync::atomic::Ordering::Relaxed);
             inline_layout.break_lines(&mut self.text, area, style.as_deref(), &mut room);
             room.placed
         };
@@ -763,6 +766,8 @@ impl LayoutPassState<'_> {
             width: along,
             room_above: start_padding * scale,
             block_end: None,
+            sizes_only: pass != Measure::Layout,
+            pass: self.nodes.geometry_generation(),
         };
         let floats = {
             let style = self.nodes[node_id].primary_styles().map(|s| (*s).clone());
@@ -777,6 +782,7 @@ impl LayoutPassState<'_> {
                 clears: lines.clears,
                 placed: Vec::new(),
             };
+            crate::text::PERF_COUNTS[1].fetch_add(1, core::sync::atomic::Ordering::Relaxed);
             inline_layout.break_lines(&mut self.text, area, style.as_deref(), &mut room);
             room.placed
         };
