@@ -113,10 +113,10 @@ parlance = { version = "0.1", default-features = false, features = ["std"] }
 parley = { version = "0.12", default-features = false, features = ["std"] }
 # Its `dictionaries` feature, ICU's line and word dictionaries, is blitz-dom's
 # `complex-scripts`.
-winkin = { git = "https://github.com/dfrg/winkin", rev = "6b3c1ab851e2387c38b26ea8a1513bf600ed271d", default-features = false, features = ["std"] }
+winkin = { git = "https://github.com/dfrg/winkin", rev = "6c6fad7b19b99d14dc3bfdd308759bcdee2cefe6", default-features = false, features = ["std"] }
 # The fonts winkin chooses from. Its `system` feature, the platform's font
 # APIs, is blitz-dom's `system-fonts`.
-fontwich = { git = "https://github.com/dfrg/winkin", rev = "6b3c1ab851e2387c38b26ea8a1513bf600ed271d", default-features = false, features = ["std"] }
+fontwich = { git = "https://github.com/dfrg/winkin", rev = "6c6fad7b19b99d14dc3bfdd308759bcdee2cefe6", default-features = false, features = ["std"] }
 skrifa = { version = "0.44", default-features = false, features = [
     "std",
 ] } # Should match parley and vello versions
