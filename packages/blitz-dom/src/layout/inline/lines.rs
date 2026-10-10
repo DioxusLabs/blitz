@@ -212,7 +212,7 @@ impl LayoutPassState<'_> {
             .or(node_size.height)
             .or(node_max_size.height)
             .map(|height| (height - inset_height).max(0.0) * scale);
-        let room_above = if TextLayout::READS_ROOM_ABOVE {
+        let room_above = if inline_layout.takes_room_above() {
             let margin = self.nodes[node_id]
                 .layout_style()
                 .margin()

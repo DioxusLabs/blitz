@@ -1645,6 +1645,10 @@ impl InlineLayoutEngine for TextLayout {
                 || old.get_padding() != new.get_padding())
     }
 
+    fn takes_room_above(&self) -> bool {
+        self.built && self.layout.has_annotations()
+    }
+
     fn build_layouts(
         cx: &mut TextContext,
         nodes: &crate::NodeTree,
@@ -1783,8 +1787,15 @@ impl InlineLayoutEngine for TextLayout {
             return LinesExtent::default();
         };
         let metrics = layout.metrics();
+        // Only annotations reaching under the last line reach into the padding, so with none
+        // there is nothing to work out.
+        let into_padding = if end_padding > 0.0 && layout.has_annotations() {
+            into_end_padding(layout.room_below(), end_padding)
+        } else {
+            0.0
+        };
         LinesExtent {
-            height: metrics.block_end - into_end_padding(layout.room_below(), end_padding),
+            height: metrics.block_end - into_padding,
             width: layout
                 .lines()
                 .map(|line| {
