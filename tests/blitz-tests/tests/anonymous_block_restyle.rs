@@ -48,9 +48,8 @@ fn anonymous_children(doc: &HtmlDocument, owner: NodeId) -> Vec<NodeId> {
 fn color(doc: &HtmlDocument, node: NodeId) -> [u8; 3] {
     let styles = doc.get_node(node).unwrap().primary_styles().unwrap();
     let color = styles.clone_color().into_srgb_legacy();
-    color
-        .raw_components()
-        .map(|component| (component * 255.0).round() as u8)
+    let [r, g, b, _] = color.raw_components();
+    [r, g, b].map(|component| (component * 255.0).round() as u8)
 }
 
 fn hover(doc: &mut HtmlDocument, selector: &str) {
