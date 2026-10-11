@@ -3,14 +3,16 @@ use blitz_traits::node_id::NodeId;
 use markup5ever::local_name;
 
 use crate::net::ResourceHandler;
-use crate::node::NodeFlags;
+use crate::node::{Node, NodeFlags};
 use crate::tree::NodeTree;
 use crate::{
     BaseDocument, net::ImageHandler, node::ImageResourceData, node::Status, util::ImageLayerKind,
 };
+use style::matching::StyleChange;
 use style::properties::ComputedValues;
 use style::properties::generated::longhands::position::computed_value::T as Position;
-use style::selector_parser::RestyleDamage;
+use style::selector_parser::{PseudoElement, RestyleDamage};
+use style::shared_lock::StylesheetGuards;
 use style::url::ComputedUrl;
 use style::values::generics::image::Image as StyloImage;
 use style::values::specified::align::AlignFlags;
@@ -48,11 +50,11 @@ impl BaseDocument {
     /// Damage is stored on (styled) DOM nodes, so this pass walks the DOM tree
     /// (`children` + `::before`/`::after`): `display:contents` nodes and the
     /// inline descendants of inline roots carry damage but are not layout
-    /// children. Anonymous boxes only exist in the layout tree and are
-    /// therefore never visited; their caches are invalidated by walking
-    /// `layout_parent` upward from each damaged node instead.
+    /// children. Owned anonymous boxes are refreshed through `anonymous_blocks`,
+    /// without revisiting their DOM children. Damage inside an anonymous box
+    /// also invalidates its cache by walking `layout_parent` upward.
     pub(crate) fn propagate_damage_flags(&mut self, node_id: NodeId) -> RestyleDamage {
-        let mut damage = if let Some(data) = self.nodes[node_id]
+        let own_damage = if let Some(data) = self.nodes[node_id]
             .try_stylo_element_data_mut()
             .and_then(|s| s.get_mut())
         {
@@ -60,6 +62,7 @@ impl BaseDocument {
         } else {
             return RestyleDamage::empty();
         };
+        let mut damage = own_damage;
 
         // Skip subtrees which contain no damage. Anonymous nodes are never
         // skipped themselves because damage marking walks the DOM parent
@@ -98,10 +101,8 @@ impl BaseDocument {
         damage_from_children.remove(REORDER_CHILDREN);
         damage |= damage_from_children;
 
-        let node = &mut self.nodes[node_id];
-
         // Put children back
-        node.children = children;
+        self.nodes[node_id].children = children;
 
         if damage.contains(CONSTRUCT_BOX) {
             damage.insert(RestyleDamage::RELAYOUT);
@@ -115,6 +116,27 @@ impl BaseDocument {
             damage_for_parent.insert(CONSTRUCT_DESCENDENT);
         }
 
+        // An inline `<svg>` is rendered from a snapshot of its subtree (with
+        // `currentColor` resolved) taken during box construction, so it must be
+        // rebuilt whenever the style of the `<svg>` or any descendant changes.
+        #[cfg(feature = "svg")]
+        if !damage.is_empty()
+            && self.nodes[node_id]
+                .data
+                .is_element_with_tag_name(&local_name!("svg"))
+        {
+            damage.insert(CONSTRUCT_BOX);
+        }
+
+        // Reconstruction replaces the anonymous boxes with freshly styled ones.
+        if !own_damage.is_empty() && !damage.intersects(CONSTRUCT_BOX | CONSTRUCT_FC) {
+            let anonymous_damage = self.refresh_anonymous_block_styles(node_id);
+            damage |= anonymous_damage;
+            damage_for_parent |= anonymous_damage;
+        }
+
+        let node = &mut self.nodes[node_id];
+
         // If the node or any of it's children have been mutated or their layout styles
         // have changed, then we should clear it's layout cache.
         let mut invalidate_anonymous_ancestors = false;
@@ -122,14 +144,6 @@ impl BaseDocument {
             node.invalidate_layout_cache();
             invalidate_anonymous_ancestors = true;
             damage.remove(ONLY_RELAYOUT);
-        }
-
-        // An inline `<svg>` is rendered from a snapshot of its subtree (with
-        // `currentColor` resolved) taken during box construction, so it must be
-        // rebuilt whenever the style of the `<svg>` or any descendant changes.
-        #[cfg(feature = "svg")]
-        if !damage.is_empty() && node.data.is_element_with_tag_name(&local_name!("svg")) {
-            damage.insert(CONSTRUCT_BOX);
         }
 
         // Store damage for current node
@@ -177,6 +191,84 @@ impl BaseDocument {
         // }
 
         // Propagate damage to parent
+        damage_for_parent
+    }
+
+    /// Refresh owned anonymous boxes without revisiting their DOM children.
+    fn refresh_anonymous_block_styles(&mut self, node_id: NodeId) -> RestyleDamage {
+        // Skip owners with no anonymous boxes to refresh.
+        if self.nodes[node_id].anonymous_blocks.is_empty() {
+            return RestyleDamage::empty();
+        }
+
+        // Cascade once from the owner, sharing the result across its anonymous boxes.
+        let style = {
+            let Some(parent_style) = self.nodes[node_id].primary_styles() else {
+                return RestyleDamage::empty();
+            };
+            let read_guard = self.guard.read();
+            let guards = StylesheetGuards::same(&read_guard);
+            self.stylist.style_for_anonymous::<&Node>(
+                &guards,
+                &PseudoElement::ServoAnonymousBox,
+                &parent_style,
+            )
+        };
+
+        // Take the ownership list so we can mutate nodes without copying it.
+        let anonymous_blocks = std::mem::take(&mut self.nodes[node_id].anonymous_blocks);
+        let mut damage_for_parent = RestyleDamage::empty();
+        for &anonymous_id in &anonymous_blocks {
+            let (mut damage, changed) = {
+                // Skip boxes whose node, style data, or previous style is unavailable.
+                let Some(node) = self.nodes.get_mut(anonymous_id) else {
+                    continue;
+                };
+                let Some(mut data) = node.try_stylo_element_data_mut().and_then(|s| s.get_mut())
+                else {
+                    continue;
+                };
+                let Some(old_style) = data.styles.primary.as_ref() else {
+                    continue;
+                };
+
+                // Compute precise damage, retaining the old style allocation if unchanged.
+                let diff = RestyleDamage::compute_style_difference::<&Node>(old_style, &style);
+                let changed = matches!(diff.change, StyleChange::Changed { .. });
+                if changed {
+                    data.styles.primary = Some(style.clone());
+                    data.set_restyled();
+                }
+                (data.damage | diff.damage, changed)
+            };
+
+            // Refresh nested owned boxes unless reconstruction will replace them.
+            if changed && !damage.intersects(CONSTRUCT_BOX | CONSTRUCT_FC) {
+                damage |= self.refresh_anonymous_block_styles(anonymous_id);
+            }
+
+            // Reconstruction also requires relayout; propagate all damage to the owner.
+            if damage.contains(CONSTRUCT_BOX) {
+                damage.insert(RestyleDamage::RELAYOUT);
+            }
+            damage_for_parent |= damage;
+
+            // Invalidate cached layout and consume only the relayout bit.
+            let node = &mut self.nodes[anonymous_id];
+            if damage.intersects(ONLY_RELAYOUT | CONSTRUCT_BOX) {
+                node.invalidate_layout_cache();
+                damage.remove(ONLY_RELAYOUT);
+            }
+
+            // Store remaining damage and mark the ancestor path when needed.
+            node.set_damage(damage);
+            if !damage.is_empty() {
+                node.mark_damaged();
+            }
+        }
+
+        // Restore the ownership list and return the combined damage.
+        self.nodes[node_id].anonymous_blocks = anonymous_blocks;
         damage_for_parent
     }
 
