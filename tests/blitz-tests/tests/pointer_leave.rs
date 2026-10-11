@@ -216,3 +216,22 @@ fn finger_cancel_ends_hover_with_leave_events() {
         "pointercancel",
     );
 }
+
+#[test]
+fn cursor_is_set_after_sub_document_handles_event() {
+    let window = Arc::new(Window::default());
+    let (mut parent, _host) = hosted_doc(&window);
+    let cursors = || window.cursors.lock().unwrap().clone();
+
+    // Entering the child's link must not hide the cursor first because the
+    // child has not seen the move yet when the parent's hover changes
+    send(&mut parent, UiEvent::PointerMove(mouse_event(100.0, 25.0)));
+    assert!(!cursors().contains(&None), "{:?}", cursors());
+    assert_eq!(cursors().last(), Some(&Some(CursorIcon::Pointer)));
+
+    // Leaving the host for a parent element must not let the child (which
+    // has lost its hover) hide the cursor
+    send(&mut parent, UiEvent::PointerMove(mouse_event(100.0, 250.0)));
+    assert!(!cursors().contains(&None), "{:?}", cursors());
+    assert_eq!(cursors().last(), Some(&Some(CursorIcon::Pointer)));
+}
