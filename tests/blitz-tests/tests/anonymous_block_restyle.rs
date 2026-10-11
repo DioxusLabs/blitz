@@ -26,13 +26,25 @@ fn color_only_restyle_repaints_anonymous_text() {
         )
     };
     let before = render(&mut doc);
-    assert!(before.chunks_exact(4).any(|px| px == [0, 0, 0, 255]));
-    assert!(!before.chunks_exact(4).any(|px| px[..3] == [255, 0, 0]));
+    assert!(before.as_chunks::<4>().0.contains(&[0, 0, 0, 255]));
+    assert!(
+        !before
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .any(|px| px[..3] == [255, 0, 0])
+    );
     hover(&mut doc, "#owner");
     doc.resolve(0.0);
     let after = render(&mut doc);
-    assert!(after.chunks_exact(4).any(|px| px[..3] == [255, 0, 0]));
-    assert!(!after.chunks_exact(4).any(|px| px == [0, 0, 0, 255]));
+    assert!(
+        after
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .any(|px| px[..3] == [255, 0, 0])
+    );
+    assert!(!after.as_chunks::<4>().0.contains(&[0, 0, 0, 255]));
 }
 
 fn make_doc(css: &str, body: &str, incremental: bool) -> HtmlDocument {
