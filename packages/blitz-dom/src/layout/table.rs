@@ -820,6 +820,27 @@ impl taffy::LayoutPartialTree for TableTreeWrapper<'_, '_> {
         let node_id = crate::taffy_node_id(cell.node_id);
         self.doc.compute_child_layout(node_id, inputs)
     }
+
+    #[cfg(feature = "parallel-layout")]
+    const COMPUTES_CHILD_LAYOUTS_IN_PARALLEL: bool = true;
+
+    #[cfg(feature = "parallel-layout")]
+    fn compute_child_layouts(
+        &mut self,
+        _parent_node_id: taffy::NodeId,
+        jobs: &mut [taffy::ChildLayoutJob],
+    ) {
+        // The table's children are identified by their index in the list of cells. So map the jobs
+        // to the nodes of the cells for the document to compute, and then map them back.
+        let cell_indexes: Vec<taffy::NodeId> = jobs.iter().map(|job| job.node).collect();
+        for job in jobs.iter_mut() {
+            job.node = crate::taffy_node_id(self.ctx.cells[usize::from(job.node)].node_id);
+        }
+        self.doc.compute_layout_batch(jobs.iter_mut());
+        for (job, cell_index) in jobs.iter_mut().zip(cell_indexes) {
+            job.node = cell_index;
+        }
+    }
 }
 
 impl taffy::LayoutGridContainer for TableTreeWrapper<'_, '_> {

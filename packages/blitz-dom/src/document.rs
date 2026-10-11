@@ -247,6 +247,13 @@ pub struct BaseDocument {
     pub(crate) thread_font_contexts: ThreadLocal<RefCell<Box<FontContext>>>,
     /// A Parley layout context
     pub(crate) layout_ctx: parley::LayoutContext<TextBrush>,
+    /// Per-node data used to decide which subtrees are laid out in parallel
+    #[cfg(feature = "parallel-layout")]
+    pub(crate) layout_subtree_info: crate::layout::parallel::LayoutSubtreeInfo,
+    /// The minimum weight of a batch of child layouts for it to be computed in parallel.
+    /// `None` disables parallel layout.
+    #[cfg(feature = "parallel-layout")]
+    pub(crate) parallel_layout_min_batch_weight: Option<u32>,
 
     /// The real (non-anonymous) node which is currently hovered (if any).
     /// This is never a layout-generated (anonymous) node, so it remains valid
@@ -461,6 +468,10 @@ impl BaseDocument {
             #[cfg(feature = "parallel-construct")]
             thread_font_contexts: ThreadLocal::new(),
             layout_ctx: parley::LayoutContext::new(),
+            #[cfg(feature = "parallel-layout")]
+            layout_subtree_info: Default::default(),
+            #[cfg(feature = "parallel-layout")]
+            parallel_layout_min_batch_weight: crate::layout::parallel::initial_min_batch_weight(),
 
             hover_node_id: None,
             hover_hit_node_id: None,
