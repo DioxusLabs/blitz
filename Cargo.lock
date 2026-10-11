@@ -3319,7 +3319,7 @@ dependencies = [
 [[package]]
 name = "fontwich"
 version = "0.0.1"
-source = "git+https://github.com/dfrg/winkin?rev=42e749f68a47706ddf0bca658ff0294243d2451a#42e749f68a47706ddf0bca658ff0294243d2451a"
+source = "git+https://github.com/dfrg/winkin?rev=bc02d80c44474728b041f5cefe675ffe7b40dfa1#bc02d80c44474728b041f5cefe675ffe7b40dfa1"
 dependencies = [
  "hashbrown 0.17.1",
  "memmap2 0.9.11",
@@ -10429,7 +10429,7 @@ dependencies = [
 [[package]]
 name = "winkin"
 version = "0.0.1"
-source = "git+https://github.com/dfrg/winkin?rev=42e749f68a47706ddf0bca658ff0294243d2451a#42e749f68a47706ddf0bca658ff0294243d2451a"
+source = "git+https://github.com/dfrg/winkin?rev=bc02d80c44474728b041f5cefe675ffe7b40dfa1#bc02d80c44474728b041f5cefe675ffe7b40dfa1"
 dependencies = [
  "fontwich",
  "harfrust 0.14.0",
