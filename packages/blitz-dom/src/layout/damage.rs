@@ -128,6 +128,7 @@ impl BaseDocument {
             damage.insert(CONSTRUCT_BOX);
         }
 
+        // Reconstruction replaces the anonymous boxes with freshly styled ones.
         if !own_damage.is_empty() && !damage.intersects(CONSTRUCT_BOX | CONSTRUCT_FC) {
             let anonymous_damage = self.refresh_anonymous_block_styles(node_id);
             damage |= anonymous_damage;
