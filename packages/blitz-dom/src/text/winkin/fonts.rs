@@ -17,19 +17,20 @@ use style::font_metrics::FontMetrics;
 use style::properties::style_structs::Font as FontStyles;
 use style::values::computed::font::{FontStyle as StyloFontStyle, QueryFontMetricsFlags};
 use style::values::computed::{CSSPixelLength, Length};
-use winkin::Context;
+use winkin::{Context, SharedFonts};
 use winkin::style::FontFamilyName;
 
 use super::TextContext;
 use crate::net::FontFaceOverrides;
 use crate::text::{DocumentText, TextFonts};
 
-/// The fonts documents lay text out with: a fontwich collection. Clones share loaded fonts and
-/// fallback answers, so hand a clone of one to every document rather than listing the platform's
-/// fonts for each.
+/// The fonts documents lay text out with: a fontwich collection and the parsed fonts every
+/// context shares. Clones share loaded fonts, fallback answers and parsed fonts, so hand a clone
+/// of one to every document rather than listing the platform's fonts for each.
 #[derive(Clone)]
 pub struct FontContext {
     collection: Collection,
+    shared: SharedFonts,
 }
 
 impl FontContext {
@@ -40,17 +41,25 @@ impl FontContext {
         let collection = Collection::system();
         #[cfg(not(all(feature = "system-fonts", not(target_arch = "wasm32"))))]
         let collection = Collection::new();
-        Self { collection }
+        Self::from_collection(collection)
     }
 
     /// The fonts in `collection`.
     pub fn from_collection(collection: Collection) -> Self {
-        Self { collection }
+        Self {
+            collection,
+            shared: SharedFonts::default(),
+        }
     }
 
     /// The fontwich collection.
     pub fn collection(&self) -> &Collection {
         &self.collection
+    }
+
+    /// The parsed fonts every context made from this one shares.
+    pub(crate) fn shared_fonts(&self) -> &SharedFonts {
+        &self.shared
     }
 }
 
@@ -105,7 +114,7 @@ impl DocumentText for TextContext {
         let document = LayerBuilder::new(Role::Document);
         let collection = base.clone().with_layer(document.snapshot());
         Self {
-            cx: Context::new(collection.clone()),
+            cx: Context::with_shared_fonts(collection.clone(), given.shared.clone()),
             generation: 0,
             #[cfg(feature = "parallel-construct")]
             threads: thread_local::ThreadLocal::new(),
