@@ -48,6 +48,9 @@ use style::values::computed::font::{
 use style::values::computed::length_percentage::Unpacked;
 use style::values::computed::text::TextAlignLast as StyloTextAlignLast;
 use style::values::computed::text::TextEmphasisStyle as StyloTextEmphasisStyle;
+use style::values::computed::text::{
+    TextFit as StyloTextFit, TextFitKind as StyloTextFitKind, TextFitTarget as StyloTextFitTarget,
+};
 use style::values::computed::{
     BorderSideWidth, Length, LengthPercentage as StyloLengthPercentage,
     TextTransform as StyloTextTransform,
@@ -87,7 +90,9 @@ use winkin::style::{
     TextOverflow, TextSpacingTrim, TextTransform, TextWrapMode, TextWrapStyle, UnicodeBidi,
     VerticalAlign, WhiteSpaceCollapse, WordBreak, WritingMode,
 };
-use winkin::style::{FontStyle, FontWeight, FontWidth, GenericFamily};
+use winkin::style::{
+    FontStyle, FontWeight, FontWidth, GenericFamily, TextFit, TextFitKind, TextFitTarget,
+};
 use winkin::{ComputedBlockStyle, ComputedStyle};
 
 /// The document's `@font-feature-values` rules, which name the values
@@ -662,7 +667,6 @@ fn variants(computed: &ComputedValues) -> FontVariants {
 
 fn text_group(computed: &ComputedValues, scale: f32, language: Option<Language>) -> TextGroup<'_> {
     let text = computed.get_inherited_text();
-    let css_size = computed.get_font().font_size.used_size.0.px();
     let transform = computed.slow_clone_text_transform();
     TextGroup {
         language,
@@ -734,8 +738,8 @@ fn text_group(computed: &ComputedValues, scale: f32, language: Option<Language>)
             StyloLengthOrNumber::Number(spaces) => TabSize::Spaces(spaces.0),
             StyloLengthOrNumber::Length(length) => TabSize::Px(length.0.px() * scale),
         },
-        // A percentage is of the font size.
-        letter_spacing: text.letter_spacing.0.resolve(Length::new(css_size)).px() * scale,
+        // A percentage is of the font size, which layout takes it of.
+        letter_spacing: length_percentage(&text.letter_spacing.0, scale),
         // A percentage is of the font size, which layout takes it of.
         word_spacing: length_percentage(&text.word_spacing, scale),
         autospace: {
@@ -1088,7 +1092,25 @@ pub(crate) fn block_style<'a>(
         },
         text_box_trim: text_box_trim(computed.slow_clone_text_box_trim()),
         text_box_edge: text_box_edge(computed.slow_clone_text_box_edge()),
+        text_fit: text_fit(&text.text_fit),
         ..ComputedBlockStyle::new(style)
+    }
+}
+
+/// `text-fit`, its limit as a fraction.
+fn text_fit(fit: &StyloTextFit) -> TextFit {
+    TextFit {
+        kind: match fit.kind {
+            StyloTextFitKind::None => TextFitKind::None,
+            StyloTextFitKind::Grow => TextFitKind::Grow,
+            StyloTextFitKind::Shrink => TextFitKind::Shrink,
+        },
+        target: match fit.target {
+            StyloTextFitTarget::Consistent => TextFitTarget::Consistent,
+            StyloTextFitTarget::PerLine => TextFitTarget::PerLine,
+            StyloTextFitTarget::PerLineAll => TextFitTarget::PerLineAll,
+        },
+        limit: fit.limit.map(|limit| limit.0.0),
     }
 }
 
