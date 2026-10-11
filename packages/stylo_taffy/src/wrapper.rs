@@ -182,6 +182,7 @@ impl<T: Deref<Target = ComputedValues>> taffy::CoreStyle for TaffyStyloStyle<T> 
 
     #[inline]
     fn is_block(&self) -> bool {
+        // Button inputs always establish an independent formatting context.
         !self.flags.contains(StyleFlags::IS_BUTTON_INPUT)
             && convert::is_block(self.effective_display())
     }

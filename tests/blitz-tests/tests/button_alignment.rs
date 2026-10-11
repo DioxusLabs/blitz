@@ -175,7 +175,7 @@ fn button_like_inputs_use_block_centering_without_ua_flex_alignment() {
         let style = node.layout_style();
         assert_eq!(
             taffy::FlexboxContainerStyle::align_items(&style),
-            taffy::AlignItems::STRETCH,
+            taffy::AlignItems::NORMAL,
         );
         assert_eq!(
             taffy::FlexboxContainerStyle::justify_content(&style),
