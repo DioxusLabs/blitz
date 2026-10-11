@@ -44,6 +44,19 @@ fn default_button_centers_text() {
 }
 
 #[test]
+fn scrollable_buttons_export_their_content_baseline() {
+    let harness = Harness::from_html(
+        r#"<!DOCTYPE html><style>
+            button { width: 100px; height: 100px; border: 0; padding: 0; font: 16px/20px sans-serif; }
+        </style><button id="visible">Text</button><button id="hidden" style="overflow: hidden">Text</button><button id="auto" style="overflow: auto">Text</button>"#,
+    );
+    let visible = harness.layout_rect("#visible");
+    for selector in ["#hidden", "#auto"] {
+        assert_eq!(harness.layout_rect(selector).y, visible.y);
+    }
+}
+
+#[test]
 fn block_button_centers_block_children() {
     for css in ["", "display: block;", "display: flow-root;"] {
         let harness = button(css, "display: block;");
@@ -109,9 +122,11 @@ fn block_alignment_overrides_button_default() {
 }
 
 #[test]
-fn reset_block_button_still_centers_content() {
-    let harness = button("all: unset; display: inline-block;", "display: block;");
-    assert_offset(&harness, 0.0, 40.0);
+fn reset_button_still_centers_content() {
+    for css in ["all: unset;", "all: unset; display: inline-block;"] {
+        let harness = button(css, "display: block;");
+        assert_offset(&harness, 0.0, 40.0);
+    }
 }
 
 #[test]

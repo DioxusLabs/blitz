@@ -408,7 +408,7 @@ impl LayoutPassState<'_> {
 
             let is_out_of_flow = style.position().is_out_of_flow();
             // The baseline of an inline-block is the baseline of its last in-flow line box,
-            // unless it has no line boxes or it is a block-axis scroll container, in which
+            // unless it has no line boxes or it is a block-axis scroll container (except buttons), in which
             // case it is the bottom margin edge (CSS 2 §10.8.1, css-align-3 §9.1
             // `baseline-source: auto`; `overflow: clip` is not a scroll container). Other
             // atomic inlines (flex, grid, table) export a baseline regardless of `overflow`,
@@ -421,7 +421,9 @@ impl LayoutPassState<'_> {
                 DisplayInside::Flow | DisplayInside::FlowRoot
             );
             let is_scroll_container = !matches!(overflow.y, Overflow::Visible | Overflow::Clip);
-            let is_block_axis_scroll_container = is_flow && is_scroll_container;
+            let is_block_axis_scroll_container = is_flow
+                && is_scroll_container
+                && !style.flags.contains(stylo_taffy::StyleFlags::IS_BUTTON);
             let contain_layout = box_style.clone_contain().contains(Contain::LAYOUT);
             let exports_baseline = !is_block_axis_scroll_container && !contain_layout;
             let box_inputs = inline_box_inputs(style.size().width, margin, child_inputs);
