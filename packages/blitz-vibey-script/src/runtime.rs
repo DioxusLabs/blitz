@@ -418,6 +418,18 @@ const BOOTSTRAP_JS: &str = r#"
                         write(list);
                         return shouldHave;
                     },
+                    replace(token, newToken) {
+                        token = String(token);
+                        newToken = String(newToken);
+                        const list = classes();
+                        if (!list.includes(token)) return false;
+                        const first = list.findIndex((name) => name === token || name === newToken);
+                        write(list.flatMap((name, index) => {
+                            if (index === first) return [newToken];
+                            return name === token || name === newToken ? [] : [name];
+                        }));
+                        return true;
+                    },
                     contains(name) {
                         return classes().includes(String(name));
                     },
