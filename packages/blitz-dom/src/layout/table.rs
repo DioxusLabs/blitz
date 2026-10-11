@@ -448,7 +448,7 @@ fn collect_columns(
     if !node.is_element() {
         return;
     }
-    let Some(display) = node.primary_styles().map(|s| s.clone_display()) else {
+    let Some(display) = node.display_style() else {
         return;
     };
 
@@ -532,7 +532,7 @@ fn collect_table_cells(
         return;
     }
 
-    let Some(display) = node.primary_styles().map(|s| s.clone_display()) else {
+    let Some(display) = node.display_style() else {
         #[cfg(feature = "tracing")]
         tracing::info!("Ignoring table descendent because it has no styles");
         return;

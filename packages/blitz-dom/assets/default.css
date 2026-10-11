@@ -105,9 +105,7 @@ input[type="button"] {
     color: black;
     background-color: #EFEFEF;
     text-align: center;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
+    display: inline-block;
 }
 
 /* Button-flavored inputs clip their contents to the border box and never

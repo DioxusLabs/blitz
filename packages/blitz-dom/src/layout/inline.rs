@@ -325,6 +325,7 @@ impl LayoutPassState<'_> {
             }
         };
 
+        let suppresses_baseline = style.contain().suppresses_baseline();
         drop(style);
 
         // Short circuit if inline context contains no text or inline boxes
@@ -408,7 +409,7 @@ impl LayoutPassState<'_> {
 
             let is_out_of_flow = style.position().is_out_of_flow();
             // The baseline of an inline-block is the baseline of its last in-flow line box,
-            // unless it has no line boxes or it is a block-axis scroll container, in which
+            // unless it has no line boxes or it is a block-axis scroll container (except buttons), in which
             // case it is the bottom margin edge (CSS 2 §10.8.1, css-align-3 §9.1
             // `baseline-source: auto`; `overflow: clip` is not a scroll container). Other
             // atomic inlines (flex, grid, table) export a baseline regardless of `overflow`,
@@ -417,11 +418,15 @@ impl LayoutPassState<'_> {
             let overflow = style.overflow();
             let box_style = style.style.get_box();
             let is_flow = matches!(
-                box_style.display.inside(),
+                style.effective_display().inside(),
                 DisplayInside::Flow | DisplayInside::FlowRoot
             );
             let is_scroll_container = !matches!(overflow.y, Overflow::Visible | Overflow::Clip);
-            let is_block_axis_scroll_container = is_flow && is_scroll_container;
+            let is_block_axis_scroll_container = is_flow
+                && is_scroll_container
+                && !style
+                    .flags
+                    .intersects(StyleFlags::IS_BUTTON | StyleFlags::IS_BUTTON_INPUT);
             let contain_layout = box_style.clone_contain().contains(Contain::LAYOUT);
             let exports_baseline = !is_block_axis_scroll_container && !contain_layout;
             let box_inputs = inline_box_inputs(style.size().width, margin, child_inputs);
@@ -1090,11 +1095,12 @@ impl LayoutPassState<'_> {
 
         let line_baseline =
             |line: parley::Line<'_, _>| (line.metrics().baseline / scale) + line_box_top;
-        let first_baseline = has_inline_content
+        let exports_baseline = has_inline_content && !suppresses_baseline;
+        let first_baseline = exports_baseline
             .then(|| inline_layout.layout.lines().next().map(line_baseline))
             .flatten();
         let last_line_index = trailing_empty_line.unwrap_or(line_count).checked_sub(1);
-        let last_baseline = has_inline_content
+        let last_baseline = exports_baseline
             .then(|| last_line_index.and_then(|i| inline_layout.layout.get(i)))
             .flatten()
             .map(line_baseline);

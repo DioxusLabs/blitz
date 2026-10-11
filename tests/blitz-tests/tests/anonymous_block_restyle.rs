@@ -145,9 +145,9 @@ fn color_only_restyle_updates_flex_grid_and_block_text() {
 }
 
 #[test]
-fn color_only_restyle_updates_default_button_text() {
+fn color_only_restyle_updates_flex_button_text() {
     let mut doc = make_doc(
-        "#owner:hover { color: red; }",
+        "#owner { display: inline-flex; } #owner:hover { color: red; }",
         r#"<button id="owner">label</button>"#,
         true,
     );

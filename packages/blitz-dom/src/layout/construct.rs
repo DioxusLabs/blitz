@@ -351,9 +351,7 @@ fn classify_flow_children(
         // Unwraps on Text and SVG nodes
         let style = child.primary_styles();
         let style = style.as_ref();
-        let display = style
-            .map(|s| s.clone_display())
-            .unwrap_or(Display::inline());
+        let display = child.display_style().unwrap_or(Display::inline());
         if matches!(display.inside(), DisplayInside::Contents) {
             // Transparent for box generation: the contents node casts
             // no vote itself — its children decide.
