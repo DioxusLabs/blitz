@@ -1040,23 +1040,34 @@ impl<'a> TElement for BlitzNode<'a> {
         let accepts_lang = elem.name.ns == ns!(html) || elem.name.ns == ns!(svg);
         let mut lang = None;
 
+        // `dir=auto`, and a `bdi` with no valid `dir`, take their direction
+        // from the first strong character of their text, as HTML's bidi
+        // rendering maps them; with none, the inherited direction stands.
+        let dir = elem
+            .attrs()
+            .iter()
+            .find(|attr| attr.name.local == local_name!("dir"))
+            .map(|attr| attr.value.as_str());
+        let dir_is = |keyword: &str| dir.is_some_and(|dir| dir.eq_ignore_ascii_case(keyword));
+        let dir_auto = dir_is("auto")
+            || (*tag == local_name!("bdi")
+                && elem.name.ns == ns!(html)
+                && !dir_is("ltr")
+                && !dir_is("rtl"));
+        if dir_auto {
+            if let Some(rtl) = self.auto_direction_is_rtl() {
+                use style::properties::longhands::direction::SpecifiedValue as Direction;
+                push_style(PropertyDeclaration::Direction(if rtl {
+                    Direction::Rtl
+                } else {
+                    Direction::Ltr
+                }));
+            }
+        }
+
         for attr in elem.attrs() {
             let name = &attr.name.local;
             let value = attr.value.as_str();
-
-            // `dir=auto` takes its direction from the first strong character
-            // of its text, as HTML's bidi rendering maps it; with none, the
-            // inherited direction stands.
-            if *name == local_name!("dir") && value.eq_ignore_ascii_case("auto") {
-                if let Some(rtl) = self.auto_direction_is_rtl() {
-                    use style::properties::longhands::direction::SpecifiedValue as Direction;
-                    push_style(PropertyDeclaration::Direction(if rtl {
-                        Direction::Rtl
-                    } else {
-                        Direction::Ltr
-                    }));
-                }
-            }
 
             if *name == local_name!("lang") {
                 if attr.name.ns == ns!(xml) {
