@@ -1787,7 +1787,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "117725a109d387c937a1533ce01b450cbde6b88abceea8473c4d7a85853cda3c"
 dependencies = [
  "lazy_static",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -2786,7 +2786,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users",
- "windows-sys 0.59.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -3080,7 +3080,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -3319,7 +3319,7 @@ dependencies = [
 [[package]]
 name = "fontwich"
 version = "0.0.1"
-source = "git+https://github.com/dfrg/winkin?rev=f8d249c8f5dcecd0edcdcf846f5b14c1e2711275#f8d249c8f5dcecd0edcdcf846f5b14c1e2711275"
+source = "git+https://github.com/dfrg/winkin?rev=9e2c1d8abd86239bf775d246d7b3afce55b56e40#9e2c1d8abd86239bf775d246d7b3afce55b56e40"
 dependencies = [
  "hashbrown 0.17.1",
  "memmap2 0.9.11",
@@ -5450,7 +5450,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -7071,7 +7071,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.4.15",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -7084,7 +7084,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -7216,7 +7216,7 @@ dependencies = [
 [[package]]
 name = "selectors"
 version = "0.41.0"
-source = "git+https://github.com/dfrg/stylo?branch=style-more#afa3045e0d5bb52ec8ca117587ee75ee0733973e"
+source = "git+https://github.com/dfrg/stylo?branch=style-more#58490d7b0b50cf915b510383512f1ce062dbd17b"
 dependencies = [
  "bitflags 2.13.2",
  "cssparser",
@@ -7356,7 +7356,7 @@ dependencies = [
 [[package]]
 name = "servo_arc"
 version = "0.5.0"
-source = "git+https://github.com/dfrg/stylo?branch=style-more#afa3045e0d5bb52ec8ca117587ee75ee0733973e"
+source = "git+https://github.com/dfrg/stylo?branch=style-more#58490d7b0b50cf915b510383512f1ce062dbd17b"
 dependencies = [
  "serde",
  "stable_deref_trait",
@@ -7822,7 +7822,7 @@ dependencies = [
 [[package]]
 name = "stylo"
 version = "0.22.0"
-source = "git+https://github.com/dfrg/stylo?branch=style-more#afa3045e0d5bb52ec8ca117587ee75ee0733973e"
+source = "git+https://github.com/dfrg/stylo?branch=style-more#58490d7b0b50cf915b510383512f1ce062dbd17b"
 dependencies = [
  "app_units",
  "arrayvec",
@@ -7880,7 +7880,7 @@ dependencies = [
 [[package]]
 name = "stylo_atoms"
 version = "0.22.0"
-source = "git+https://github.com/dfrg/stylo?branch=style-more#afa3045e0d5bb52ec8ca117587ee75ee0733973e"
+source = "git+https://github.com/dfrg/stylo?branch=style-more#58490d7b0b50cf915b510383512f1ce062dbd17b"
 dependencies = [
  "string_cache 0.11.0",
  "string_cache_codegen",
@@ -7889,7 +7889,7 @@ dependencies = [
 [[package]]
 name = "stylo_derive"
 version = "0.22.0"
-source = "git+https://github.com/dfrg/stylo?branch=style-more#afa3045e0d5bb52ec8ca117587ee75ee0733973e"
+source = "git+https://github.com/dfrg/stylo?branch=style-more#58490d7b0b50cf915b510383512f1ce062dbd17b"
 dependencies = [
  "darling 0.20.11",
  "proc-macro2",
@@ -7901,7 +7901,7 @@ dependencies = [
 [[package]]
 name = "stylo_dom"
 version = "0.22.0"
-source = "git+https://github.com/dfrg/stylo?branch=style-more#afa3045e0d5bb52ec8ca117587ee75ee0733973e"
+source = "git+https://github.com/dfrg/stylo?branch=style-more#58490d7b0b50cf915b510383512f1ce062dbd17b"
 dependencies = [
  "bitflags 2.13.2",
  "stylo_malloc_size_of",
@@ -7910,7 +7910,7 @@ dependencies = [
 [[package]]
 name = "stylo_malloc_size_of"
 version = "0.22.0"
-source = "git+https://github.com/dfrg/stylo?branch=style-more#afa3045e0d5bb52ec8ca117587ee75ee0733973e"
+source = "git+https://github.com/dfrg/stylo?branch=style-more#58490d7b0b50cf915b510383512f1ce062dbd17b"
 dependencies = [
  "app_units",
  "cssparser",
@@ -7929,7 +7929,7 @@ dependencies = [
 [[package]]
 name = "stylo_static_prefs"
 version = "0.22.0"
-source = "git+https://github.com/dfrg/stylo?branch=style-more#afa3045e0d5bb52ec8ca117587ee75ee0733973e"
+source = "git+https://github.com/dfrg/stylo?branch=style-more#58490d7b0b50cf915b510383512f1ce062dbd17b"
 dependencies = [
  "toml",
 ]
@@ -7947,7 +7947,7 @@ dependencies = [
 [[package]]
 name = "stylo_traits"
 version = "0.22.0"
-source = "git+https://github.com/dfrg/stylo?branch=style-more#afa3045e0d5bb52ec8ca117587ee75ee0733973e"
+source = "git+https://github.com/dfrg/stylo?branch=style-more#58490d7b0b50cf915b510383512f1ce062dbd17b"
 dependencies = [
  "app_units",
  "bitflags 2.13.2",
@@ -8137,7 +8137,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix 1.1.5",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -8172,7 +8172,7 @@ version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d8c27177b12a6399ffc08b98f76f7c9a1f4fe9fc967c784c5a071fa8d93cf7e1"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -8371,7 +8371,7 @@ checksum = "fd3ca314f692efd6c868f8408f53fe444634a845f96c028b97d35f6a1f79f0ee"
 [[package]]
 name = "to_shmem"
 version = "0.6.0"
-source = "git+https://github.com/dfrg/stylo?branch=style-more#afa3045e0d5bb52ec8ca117587ee75ee0733973e"
+source = "git+https://github.com/dfrg/stylo?branch=style-more#58490d7b0b50cf915b510383512f1ce062dbd17b"
 dependencies = [
  "cssparser",
  "hashbrown 0.17.1",
@@ -8385,7 +8385,7 @@ dependencies = [
 [[package]]
 name = "to_shmem_derive"
 version = "0.2.0"
-source = "git+https://github.com/dfrg/stylo?branch=style-more#afa3045e0d5bb52ec8ca117587ee75ee0733973e"
+source = "git+https://github.com/dfrg/stylo?branch=style-more#58490d7b0b50cf915b510383512f1ce062dbd17b"
 dependencies = [
  "darling 0.20.11",
  "proc-macro2",
@@ -9859,7 +9859,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -9977,15 +9977,6 @@ name = "windows-sys"
 version = "0.52.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "282be5f36a8ce781fad8c8ae18fa3f9beff57ec1b52cb3de0789201425d9a33d"
-dependencies = [
- "windows-targets 0.52.6",
-]
-
-[[package]]
-name = "windows-sys"
-version = "0.59.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e38bc4d79ed67fd075bcc251a1c39b32a1776bbe92e5bef1f0bf1f8c531853b"
 dependencies = [
  "windows-targets 0.52.6",
 ]
@@ -10439,7 +10430,7 @@ dependencies = [
 [[package]]
 name = "winkin"
 version = "0.0.1"
-source = "git+https://github.com/dfrg/winkin?rev=f8d249c8f5dcecd0edcdcf846f5b14c1e2711275#f8d249c8f5dcecd0edcdcf846f5b14c1e2711275"
+source = "git+https://github.com/dfrg/winkin?rev=9e2c1d8abd86239bf775d246d7b3afce55b56e40#9e2c1d8abd86239bf775d246d7b3afce55b56e40"
 dependencies = [
  "fontwich",
  "harfrust 0.14.0",
