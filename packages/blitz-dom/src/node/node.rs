@@ -1120,6 +1120,9 @@ impl Node {
             if crate::layout::replaced::is_replaced_element(&el.name.local) {
                 flags |= stylo_taffy::StyleFlags::IS_REPLACED;
             }
+            if el.name.local == local_name!("button") {
+                flags |= stylo_taffy::StyleFlags::IS_BUTTON;
+            }
             if let Some(inline_layout) = el.inline_layout_data.as_deref() {
                 flags |= inline_layout.span_cb_flags;
             }

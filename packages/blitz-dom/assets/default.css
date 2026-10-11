@@ -105,6 +105,15 @@ input[type="button"] {
     color: black;
     background-color: #EFEFEF;
     text-align: center;
+}
+
+button {
+    display: inline-block;
+}
+
+input[type="submit"],
+input[type="reset"],
+input[type="button"] {
     display: inline-flex;
     align-items: center;
     justify-content: center;

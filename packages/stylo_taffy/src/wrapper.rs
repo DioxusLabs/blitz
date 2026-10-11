@@ -29,6 +29,8 @@ bitflags! {
         /// Whether an inline span laid out by the node (an inline root) is a containing block
         /// for `position: fixed` boxes
         const SPAN_FIXED_CB = 1 << 2;
+        /// Whether the node is a button element
+        const IS_BUTTON = 1 << 3;
     }
 }
 
@@ -337,6 +339,11 @@ impl<T: Deref<Target = ComputedValues>> taffy::BlockContainerStyle for TaffyStyl
         let align_content =
             convert::content_alignment(self.style.get_position().align_content, display);
         if align_content.keyword() == taffy::AlignContentKeyword::Normal
+            && self.flags.contains(StyleFlags::IS_BUTTON)
+            && matches!(display.inside(), stylo::DisplayInside::Flow | stylo::DisplayInside::FlowRoot)
+        {
+            taffy::AlignContent::CENTER.with_safety(taffy::AlignmentSafety::Safe)
+        } else if align_content.keyword() == taffy::AlignContentKeyword::Normal
             && display.inside() == stylo::DisplayInside::TableCell
         {
             convert::table_cell_vertical_align(&self.style).unwrap_or(align_content)
