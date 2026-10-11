@@ -202,6 +202,15 @@ pub fn inset(val: &stylo::InsetVal) -> taffy::LengthPercentageAuto {
 }
 
 #[inline]
+pub fn button_input_display(input: stylo::Display) -> stylo::Display {
+    match input.outside() {
+        stylo::DisplayOutside::None => input,
+        stylo::DisplayOutside::Inline => stylo::Display::InlineBlock,
+        _ => stylo::Display::Block,
+    }
+}
+
+#[inline]
 pub fn is_block(input: stylo::Display) -> bool {
     self::display(input) == taffy::Display::Block
 }

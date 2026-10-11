@@ -470,7 +470,14 @@ impl Node {
     }
 
     pub(crate) fn display_style(&self) -> Option<StyloDisplay> {
-        Some(self.primary_styles().as_ref()?.clone_display())
+        let display = self.primary_styles().as_ref()?.clone_display();
+        Some(
+            if self.element_data().is_some_and(|el| el.is_button_input()) {
+                stylo_taffy::convert::button_input_display(display)
+            } else {
+                display
+            },
+        )
     }
 
     pub fn is_or_contains_block(&self) -> bool {
@@ -496,9 +503,7 @@ impl Node {
         if is_floating {
             return false;
         }
-        let display = style
-            .map(|s| s.clone_display())
-            .unwrap_or(StyloDisplay::inline());
+        let display = self.display_style().unwrap_or(StyloDisplay::inline());
         match display.outside() {
             DisplayOutside::None => false,
             DisplayOutside::Block => true,
@@ -1123,6 +1128,9 @@ impl Node {
             if el.name.local == local_name!("button") {
                 flags |= stylo_taffy::StyleFlags::IS_BUTTON;
             }
+            if el.is_button_input() {
+                flags |= stylo_taffy::StyleFlags::IS_BUTTON_INPUT;
+            }
             if let Some(inline_layout) = el.inline_layout_data.as_deref() {
                 flags |= inline_layout.span_cb_flags;
             }
@@ -1165,7 +1173,8 @@ impl Node {
     #[cfg(feature = "writing-mode")]
     pub(crate) fn is_column_flex_container(&self) -> bool {
         self.primary_styles().is_some_and(|s| {
-            s.clone_display().inside() == style::values::specified::box_::DisplayInside::Flex
+            self.display_style()
+                .is_some_and(|display| display.inside() == DisplayInside::Flex)
                 && matches!(
                     s.get_position().flex_direction,
                     FlexDirection::Column | FlexDirection::ColumnReverse
@@ -1184,8 +1193,19 @@ impl Node {
     /// The node's `display` as a [`taffy::Display`]. Returns [`taffy::Display::Block`]
     /// for nodes without computed styles (e.g. text nodes).
     pub fn taffy_display(&self) -> taffy::Display {
-        self.primary_styles()
-            .map(|s| stylo_taffy::convert::display(s.clone_display()))
+        self.display_style()
+            .map(|display| {
+                if self.element_data().is_some_and(|el| el.is_button_input())
+                    && !matches!(
+                        display.inside(),
+                        DisplayInside::None | DisplayInside::Contents
+                    )
+                {
+                    taffy::Display::FlowRoot
+                } else {
+                    stylo_taffy::convert::display(display)
+                }
+            })
             .unwrap_or(taffy::Display::Block)
     }
 

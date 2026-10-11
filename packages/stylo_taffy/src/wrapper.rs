@@ -31,6 +31,8 @@ bitflags! {
         const SPAN_FIXED_CB = 1 << 2;
         /// Whether the node is a button element
         const IS_BUTTON = 1 << 3;
+        /// Whether the node is a button-type input whose label always uses block layout
+        const IS_BUTTON_INPUT = 1 << 4;
     }
 }
 
@@ -58,6 +60,17 @@ pub struct TaffyStyloStyle<T: Deref<Target = ComputedValues>> {
 }
 
 impl<T: Deref<Target = ComputedValues>> TaffyStyloStyle<T> {
+    /// The display used for contents layout, including button-input fixups.
+    #[inline]
+    pub fn effective_display(&self) -> stylo::Display {
+        let display = self.style.clone_display();
+        if self.flags.contains(StyleFlags::IS_BUTTON_INPUT) {
+            convert::button_input_display(display)
+        } else {
+            display
+        }
+    }
+
     /// Create a new [`TaffyStyloStyle`] from a stylo style and [`StyleFlags`], expressed in the
     /// style's own writing mode
     pub fn new(style: T, flags: StyleFlags) -> Self {
@@ -169,7 +182,8 @@ impl<T: Deref<Target = ComputedValues>> taffy::CoreStyle for TaffyStyloStyle<T> 
 
     #[inline]
     fn is_block(&self) -> bool {
-        convert::is_block(self.style.get_box().display)
+        !self.flags.contains(StyleFlags::IS_BUTTON_INPUT)
+            && convert::is_block(self.effective_display())
     }
 
     #[inline]
@@ -210,7 +224,7 @@ impl<T: Deref<Target = ComputedValues>> taffy::CoreStyle for TaffyStyloStyle<T> 
     #[inline]
     fn contain(&self) -> taffy::Contain {
         let box_styles = self.style.get_box();
-        convert::contain(box_styles.contain, box_styles.display)
+        convert::contain(box_styles.contain, self.effective_display())
     }
 
     #[inline]
@@ -335,11 +349,13 @@ impl<T: Deref<Target = ComputedValues>> taffy::BlockContainerStyle for TaffyStyl
 
     #[inline]
     fn align_content(&self) -> taffy::AlignContent {
-        let display = self.style.clone_display();
+        let display = self.effective_display();
         let align_content =
             convert::content_alignment(self.style.get_position().align_content, display);
         if align_content.keyword() == taffy::AlignContentKeyword::Normal
-            && self.flags.contains(StyleFlags::IS_BUTTON)
+            && self
+                .flags
+                .intersects(StyleFlags::IS_BUTTON | StyleFlags::IS_BUTTON_INPUT)
             && matches!(
                 display.inside(),
                 stylo::DisplayInside::Flow | stylo::DisplayInside::FlowRoot
@@ -463,7 +479,7 @@ impl<T: Deref<Target = ComputedValues>> TaffyStyloStyle<T> {
 impl<T: Deref<Target = ComputedValues>> taffy::BlockItemStyle for TaffyStyloStyle<T> {
     #[inline]
     fn is_table(&self) -> bool {
-        convert::is_table(self.style.clone_display())
+        convert::is_table(self.effective_display())
     }
 
     #[inline]
@@ -954,7 +970,7 @@ impl<T: Deref<Target = ComputedValues>> taffy::OofItemStyle for TaffyStyloStyle<
 
     #[inline]
     fn is_table(&self) -> bool {
-        convert::is_table(self.style.clone_display())
+        convert::is_table(self.effective_display())
     }
 
     #[inline]

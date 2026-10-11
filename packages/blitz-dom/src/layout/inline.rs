@@ -418,13 +418,15 @@ impl LayoutPassState<'_> {
             let overflow = style.overflow();
             let box_style = style.style.get_box();
             let is_flow = matches!(
-                box_style.display.inside(),
+                style.effective_display().inside(),
                 DisplayInside::Flow | DisplayInside::FlowRoot
             );
             let is_scroll_container = !matches!(overflow.y, Overflow::Visible | Overflow::Clip);
             let is_block_axis_scroll_container = is_flow
                 && is_scroll_container
-                && !style.flags.contains(stylo_taffy::StyleFlags::IS_BUTTON);
+                && !style
+                    .flags
+                    .intersects(StyleFlags::IS_BUTTON | StyleFlags::IS_BUTTON_INPUT);
             let contain_layout = box_style.clone_contain().contains(Contain::LAYOUT);
             let exports_baseline = !is_block_axis_scroll_container && !contain_layout;
             let box_inputs = inline_box_inputs(style.size().width, margin, child_inputs);

@@ -164,22 +164,125 @@ fn ordinary_blocks_keep_normal_alignment() {
 }
 
 #[test]
-fn button_like_inputs_keep_ua_flex_alignment() {
+fn button_like_inputs_use_block_centering_without_ua_flex_alignment() {
     for input_type in ["button", "submit", "reset"] {
         let harness = Harness::from_html(&format!(
-            r#"<!DOCTYPE html><input id="input" type="{input_type}" value="Text">"#
+            r#"<!DOCTYPE html><input id="input" type="{input_type}" value="Text"
+                style="width: 100px; height: 100px; padding: 0; border: 0; font: 16px/20px sans-serif;">"#
         ));
         let doc = harness.base();
-        let style = doc.get_node(harness.node("#input")).unwrap().layout_style();
+        let node = doc.get_node(harness.node("#input")).unwrap();
+        let style = node.layout_style();
         assert_eq!(
             taffy::FlexboxContainerStyle::align_items(&style),
-            taffy::AlignItems::CENTER,
+            taffy::AlignItems::STRETCH,
         );
         assert_eq!(
             taffy::FlexboxContainerStyle::justify_content(&style),
-            taffy::JustifyContent::CENTER,
+            taffy::JustifyContent::NORMAL,
         );
+        assert_eq!(node.taffy_display(), taffy::Display::FlowRoot);
+        let layout = node
+            .element_data()
+            .unwrap()
+            .inline_layout_data
+            .as_ref()
+            .unwrap();
+        assert_eq!(layout.layout.height(), 20.0);
+        assert_eq!(layout.block_offset, 40.0);
     }
+}
+
+#[test]
+fn author_flex_and_grid_inputs_still_block_layout_their_labels() {
+    for input_type in ["button", "submit", "reset"] {
+        for display in [
+            "inline",
+            "block",
+            "flex",
+            "inline-flex",
+            "grid",
+            "inline-grid",
+            "table-cell",
+        ] {
+            let harness = Harness::from_html(&format!(
+                r#"<!DOCTYPE html><input id="input" type="{input_type}" value="Text"
+                    style="display: {display}; width: 100px; height: 100px; padding: 0; border: 0;
+                        font: 16px/20px sans-serif; flex-direction: column; justify-content: end;
+                        align-items: start; grid-template: 20px / 20px;">"#
+            ));
+            let node = harness.base().get_node(harness.node("#input")).unwrap();
+            assert_eq!(
+                node.taffy_display(),
+                taffy::Display::FlowRoot,
+                "{input_type}, {display}"
+            );
+            let layout = node
+                .element_data()
+                .unwrap()
+                .inline_layout_data
+                .as_ref()
+                .unwrap();
+            assert_eq!(layout.layout.height(), 20.0);
+            assert_eq!(layout.block_offset, 40.0, "{input_type}, {display}");
+            let line = layout.layout.lines().next().unwrap();
+            assert!(line.metrics().offset > 0.0, "{input_type}, {display}");
+        }
+    }
+}
+
+#[test]
+fn button_input_block_alignment_overrides_and_overflow() {
+    for input_type in ["button", "submit", "reset"] {
+        for (alignment, height, y) in [
+            ("normal", 100, 40.0),
+            ("start", 100, 0.0),
+            ("end", 100, 80.0),
+            ("normal", 10, 0.0),
+        ] {
+            let harness = Harness::from_html(&format!(
+                r#"<!DOCTYPE html><input id="input" type="{input_type}" value="Text"
+                    style="display: flex; align-content: {alignment}; width: 100px; height: {height}px;
+                        padding: 0; border: 0; font: 16px/20px sans-serif;">"#
+            ));
+            let node = harness.base().get_node(harness.node("#input")).unwrap();
+            let layout = node
+                .element_data()
+                .unwrap()
+                .inline_layout_data
+                .as_ref()
+                .unwrap();
+            assert_eq!(
+                layout.block_offset, y,
+                "{input_type}, {alignment}, {height}"
+            );
+        }
+    }
+}
+
+#[test]
+fn button_input_display_restyle_preserves_label_centering() {
+    let mut harness = Harness::from_html(
+        r#"<!DOCTYPE html><style>
+            #input { width: 100px; height: 100px; border: 0; padding: 0; font: 16px/20px sans-serif; }
+            #input:hover { display: flex; justify-content: end; }
+        </style><input id="input" type="button" value="Text">"#,
+    );
+    harness.base_mut().set_incremental_layout(true);
+    let rect = harness.layout_rect("#input");
+    assert!(harness.base_mut().set_hover_to(rect.x + 1.0, rect.y + 1.0));
+    harness.pump();
+    let node = harness.base().get_node(harness.node("#input")).unwrap();
+    assert_eq!(node.taffy_display(), taffy::Display::FlowRoot);
+    assert_eq!(
+        node.element_data()
+            .unwrap()
+            .inline_layout_data
+            .as_ref()
+            .unwrap()
+            .block_offset,
+        40.0
+    );
 }
 
 #[test]
