@@ -1080,6 +1080,7 @@ dependencies = [
  "blitz-paint",
  "blitz-test-harness",
  "blitz-traits",
+ "cursor-icon",
  "dioxus",
  "dioxus-core",
  "dioxus-native-dom",

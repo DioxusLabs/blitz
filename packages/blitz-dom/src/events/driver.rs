@@ -57,6 +57,28 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
             return prev_hover_node_id;
         }
 
+        self.dispatch_hover_change(prev_hover_node_id, hover_node_id, event);
+
+        hover_node_id
+    }
+
+    /// End hover when the pointer leaves the document, dispatching out/leave
+    /// events to the previously hovered chain
+    pub fn handle_pointer_leave(&mut self, event: &BlitzPointerEvent) {
+        let mut doc = self.doc.inner_mut();
+        let prev_hover_node_id = doc.hover_node_id;
+        doc.clear_hover();
+        drop(doc);
+
+        self.dispatch_hover_change(prev_hover_node_id, None, event);
+    }
+
+    fn dispatch_hover_change(
+        &mut self,
+        prev_hover_node_id: Option<NodeId>,
+        hover_node_id: Option<NodeId>,
+        event: &BlitzPointerEvent,
+    ) {
         let doc = self.doc.inner();
         let mut old_chain = prev_hover_node_id
             .map(|id| doc.node_chain(id))
@@ -141,11 +163,15 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
                 }
             }
         }
-
-        hover_node_id
     }
 
     pub fn handle_ui_event(&mut self, event: UiEvent) {
+        // Leaving the document only ends hover: there is no target to dispatch to
+        if let UiEvent::PointerLeave(event) = &event {
+            self.handle_pointer_leave(event);
+            return;
+        }
+
         let doc = self.doc.inner();
 
         let mut should_clear_hover = false;
@@ -190,6 +216,7 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
             UiEvent::PointerUp(_) => hover_node_id,
             UiEvent::PointerDown(_) => hover_node_id,
             UiEvent::PointerCancel(_) => hover_node_id,
+            UiEvent::PointerLeave(_) => unreachable!("handled above"),
             UiEvent::Wheel(_) => hover_node_id,
             UiEvent::KeyUp(_) => focussed_node_id,
             UiEvent::KeyDown(_) => focussed_node_id,
@@ -242,6 +269,7 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
                     DomEventData::TouchCancel,
                 );
             }
+            UiEvent::PointerLeave(_) => unreachable!("handled above"),
             UiEvent::Wheel(data) => {
                 self.handle_dom_event(DomEvent::new(target, DomEventData::Wheel(data)))
             }
