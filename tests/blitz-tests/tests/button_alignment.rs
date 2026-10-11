@@ -211,7 +211,8 @@ fn author_flex_and_grid_inputs_still_block_layout_their_labels() {
                         font: 16px/20px sans-serif; flex-direction: column; justify-content: end;
                         align-items: start; grid-template: 20px / 20px;">"#
             ));
-            let node = harness.base().get_node(harness.node("#input")).unwrap();
+            let doc = harness.base();
+            let node = doc.get_node(harness.node("#input")).unwrap();
             assert_eq!(
                 node.taffy_display(),
                 taffy::Display::FlowRoot,
@@ -245,7 +246,8 @@ fn button_input_block_alignment_overrides_and_overflow() {
                     style="display: flex; align-content: {alignment}; width: 100px; height: {height}px;
                         padding: 0; border: 0; font: 16px/20px sans-serif;">"#
             ));
-            let node = harness.base().get_node(harness.node("#input")).unwrap();
+            let doc = harness.base();
+            let node = doc.get_node(harness.node("#input")).unwrap();
             let layout = node
                 .element_data()
                 .unwrap()
@@ -272,7 +274,8 @@ fn button_input_display_restyle_preserves_label_centering() {
     let rect = harness.layout_rect("#input");
     assert!(harness.base_mut().set_hover_to(rect.x + 1.0, rect.y + 1.0));
     harness.pump();
-    let node = harness.base().get_node(harness.node("#input")).unwrap();
+    let doc = harness.base();
+    let node = doc.get_node(harness.node("#input")).unwrap();
     assert_eq!(node.taffy_display(), taffy::Display::FlowRoot);
     assert_eq!(
         node.element_data()

@@ -1173,8 +1173,8 @@ impl Node {
     #[cfg(feature = "writing-mode")]
     pub(crate) fn is_column_flex_container(&self) -> bool {
         self.primary_styles().is_some_and(|s| {
-            self.display_style()
-                .is_some_and(|display| display.inside() == DisplayInside::Flex)
+            s.clone_display().inside() == DisplayInside::Flex
+                && !self.element_data().is_some_and(|el| el.is_button_input())
                 && matches!(
                     s.get_position().flex_direction,
                     FlexDirection::Column | FlexDirection::ColumnReverse
@@ -1193,8 +1193,9 @@ impl Node {
     /// The node's `display` as a [`taffy::Display`]. Returns [`taffy::Display::Block`]
     /// for nodes without computed styles (e.g. text nodes).
     pub fn taffy_display(&self) -> taffy::Display {
-        self.display_style()
-            .map(|display| {
+        self.primary_styles()
+            .map(|style| {
+                let display = style.clone_display();
                 if self.element_data().is_some_and(|el| el.is_button_input())
                     && !matches!(
                         display.inside(),
