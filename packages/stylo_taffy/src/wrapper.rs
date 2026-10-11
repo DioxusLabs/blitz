@@ -340,9 +340,12 @@ impl<T: Deref<Target = ComputedValues>> taffy::BlockContainerStyle for TaffyStyl
             convert::content_alignment(self.style.get_position().align_content, display);
         if align_content.keyword() == taffy::AlignContentKeyword::Normal
             && self.flags.contains(StyleFlags::IS_BUTTON)
-            && matches!(display.inside(), stylo::DisplayInside::Flow | stylo::DisplayInside::FlowRoot)
+            && matches!(
+                display.inside(),
+                stylo::DisplayInside::Flow | stylo::DisplayInside::FlowRoot
+            )
         {
-            taffy::AlignContent::CENTER.with_safety(taffy::AlignmentSafety::Safe)
+            taffy::AlignContent::SAFE_CENTER
         } else if align_content.keyword() == taffy::AlignContentKeyword::Normal
             && display.inside() == stylo::DisplayInside::TableCell
         {

@@ -11,6 +11,7 @@ mod anonymous_block_restyle;
 mod autofocus_attribute;
 mod background_size;
 mod br_trailing_line;
+mod button_alignment;
 mod comment_layout;
 mod custom_widget_layout;
 mod detached_attribute;
