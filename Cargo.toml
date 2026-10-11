@@ -98,17 +98,18 @@ dioxus-cli-config = { version = "0.7.3" }
 dioxus-core-macro = { version = "0.7.3" }
 
 # Taffy + Parley + Fontations
-taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "7d33901cc383489d9945ae796a1ceed0a935ef66", default-features = false, features = [
+taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "f1e93fe9", default-features = false, features = [
     "std",
     "flexbox",
     "flexbox_balance",
     "grid",
+    "grid_lanes",
     "block_layout",
     "content_size",
     "calc",
     "detailed_layout_info",
 ] }
-parley = { version = "0.12", default-features = false, features = ["std"] }
+parley = { git = "https://github.com/linebender/parley", rev = "62790943af982ad3388a3ff96cef6f90ac80a8bb", default-features = false, features = ["std"] }
 skrifa = { version = "0.44", default-features = false, features = [
     "std",
 ] } # Should match parley and vello versions
@@ -326,3 +327,17 @@ rustc-hash = { workspace = true }
 # [patch."https://github.com/linebender/parley"]
 # parley = { path = "../parley/parley" }
 # fontique = { path = "../parley/fontique" }
+
+[patch.crates-io]
+# Stylo with grid-lanes-direction and flow-tolerance (servo/stylo PR pending)
+stylo = { git = "https://github.com/DioxusLabs/stylo", rev = "ee927b58c0ddb84c1f8eb7e4abe669d69ed3f345" }
+stylo_traits = { git = "https://github.com/DioxusLabs/stylo", rev = "ee927b58c0ddb84c1f8eb7e4abe669d69ed3f345" }
+stylo_atoms = { git = "https://github.com/DioxusLabs/stylo", rev = "ee927b58c0ddb84c1f8eb7e4abe669d69ed3f345" }
+stylo_static_prefs = { git = "https://github.com/DioxusLabs/stylo", rev = "ee927b58c0ddb84c1f8eb7e4abe669d69ed3f345" }
+stylo_dom = { git = "https://github.com/DioxusLabs/stylo", rev = "ee927b58c0ddb84c1f8eb7e4abe669d69ed3f345" }
+stylo_derive = { git = "https://github.com/DioxusLabs/stylo", rev = "ee927b58c0ddb84c1f8eb7e4abe669d69ed3f345" }
+stylo_malloc_size_of = { git = "https://github.com/DioxusLabs/stylo", rev = "ee927b58c0ddb84c1f8eb7e4abe669d69ed3f345" }
+selectors = { git = "https://github.com/DioxusLabs/stylo", rev = "ee927b58c0ddb84c1f8eb7e4abe669d69ed3f345" }
+servo_arc = { git = "https://github.com/DioxusLabs/stylo", rev = "ee927b58c0ddb84c1f8eb7e4abe669d69ed3f345" }
+to_shmem = { git = "https://github.com/DioxusLabs/stylo", rev = "ee927b58c0ddb84c1f8eb7e4abe669d69ed3f345" }
+to_shmem_derive = { git = "https://github.com/DioxusLabs/stylo", rev = "ee927b58c0ddb84c1f8eb7e4abe669d69ed3f345" }

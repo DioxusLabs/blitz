@@ -18,8 +18,8 @@ use taffy::{
     AxisStaticEdge, AxisStaticPosition, BlockContext, CoreStyle as _, DetailedLayoutInfo,
     FlexDirection, LayoutContainingBlock, LayoutPartialTree, MaybeMath as _, NodeId, OofCandidate,
     ResolveOrZero, RoundTree, RunMode, TraversePartialTree, TraverseTree, compute_block_layout,
-    compute_cached_layout, compute_flexbox_layout, compute_grid_layout, compute_leaf_layout,
-    compute_oof_layout, prelude::*,
+    compute_cached_layout, compute_flexbox_layout, compute_grid_lanes_layout, compute_grid_layout,
+    compute_leaf_layout, compute_oof_layout, prelude::*,
 };
 
 pub(crate) mod construct;
@@ -595,6 +595,7 @@ impl LayoutPassState<'_> {
                         compute_flexbox_layout(self, node_id, inputs)
                     }
                     Display::Grid => compute_grid_layout(self, node_id, inputs),
+                    Display::GridLanes => compute_grid_lanes_layout(self, node_id, inputs),
                     Display::None => taffy::LayoutOutput::HIDDEN,
                 }
             }
@@ -926,6 +927,7 @@ impl PrintTree for TaffyDebugTree<'_> {
                         FlexDirection::Column | FlexDirection::ColumnReverse => "FLEX COL",
                     },
                     Display::Grid => "GRID",
+                    Display::GridLanes => "GRID LANES",
                     Display::Block => "BLOCK",
                     Display::FlowRoot => "FLOW ROOT",
                     Display::None => "NONE",

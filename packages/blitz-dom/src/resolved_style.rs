@@ -412,7 +412,10 @@ impl BaseDocument {
                 }
             }
             "grid-template-columns" | "grid-template-rows"
-                if display.inside() == DisplayInside::Grid =>
+                if matches!(
+                    display.inside(),
+                    DisplayInside::Grid | DisplayInside::GridLanes
+                ) =>
             {
                 if let Some(info) =
                     node.element_data()
@@ -431,7 +434,12 @@ impl BaseDocument {
             // Browsers serialize the `grid-template` shorthand from the computed
             // track lists, except that a `none` track list on a grid container
             // is replaced by the used (implicit) track sizes.
-            "grid-template" if display.inside() == DisplayInside::Grid => {
+            "grid-template"
+                if matches!(
+                    display.inside(),
+                    DisplayInside::Grid | DisplayInside::GridLanes
+                ) =>
+            {
                 let pos_styles = styles.get_position();
                 let rows_are_none =
                     matches!(pos_styles.grid_template_rows, GridTemplateComponent::None);
