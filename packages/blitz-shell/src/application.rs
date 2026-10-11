@@ -105,6 +105,18 @@ impl<Rend: WindowRenderer> BlitzApplication<Rend> {
                     window.apply_pending_resize_if_settled();
                 }
             }
+            BlitzShellEvent::StartDataTransfer {
+                window_id,
+                data,
+                node,
+            } => {
+                if let Some(view) = self.windows.get_mut(&window_id)
+                    && let Err(err) = view.start_internal_drag(data, node, event_loop)
+                {
+                    #[cfg(feature = "tracing")]
+                    tracing::error!("{}", err);
+                }
+            }
         }
     }
 }
@@ -160,7 +172,7 @@ impl<Rend: WindowRenderer> ApplicationHandler for BlitzApplication<Rend> {
         }
 
         if let Some(window) = self.windows.get_mut(&window_id) {
-            window.handle_winit_event(event);
+            window.handle_winit_event(event, event_loop);
         }
         self.proxy.send_event(BlitzShellEvent::Poll { window_id });
     }

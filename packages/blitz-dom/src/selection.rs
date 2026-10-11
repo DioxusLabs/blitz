@@ -119,4 +119,30 @@ impl TextSelection {
     pub fn set_focus(&mut self, node: NodeId, offset: usize) {
         self.focus.set_node(node, offset);
     }
+
+    pub fn is_selected(&self, parent: NodeId, sibling_index: Option<usize>, offset: usize) -> bool {
+        if !self.is_active() {
+            return false;
+        }
+
+        let anchor_key = (
+            self.anchor.node_or_parent,
+            self.anchor.sibling_index,
+            self.anchor.offset,
+        );
+        let focus_key = (
+            self.focus.node_or_parent,
+            self.focus.sibling_index,
+            self.focus.offset,
+        );
+        let this_key = (Some(parent), sibling_index, offset);
+
+        let (start, end) = if anchor_key <= focus_key {
+            (anchor_key, focus_key)
+        } else {
+            (focus_key, anchor_key)
+        };
+
+        start <= this_key && this_key <= end
+    }
 }
