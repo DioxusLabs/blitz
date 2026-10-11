@@ -7,6 +7,34 @@ use blitz_traits::node_id::NodeId;
 use blitz_traits::shell::{ColorScheme, Viewport};
 use std::sync::Arc;
 
+#[test]
+fn color_only_restyle_repaints_anonymous_text() {
+    use anyrender::render_to_buffer;
+    use anyrender_vello_cpu::VelloCpuImageRenderer;
+    use blitz_paint::paint_scene;
+
+    let mut doc = make_doc(
+        "#owner { display: flex; background: white; } #owner:hover { color: red; }",
+        r#"<div id="owner">painted</div>"#,
+        true,
+    );
+    let render = |doc: &mut HtmlDocument| {
+        render_to_buffer::<VelloCpuImageRenderer, _>(
+            |scene| paint_scene(scene, doc, 1.0, 400, 600, 0, 0),
+            400,
+            600,
+        )
+    };
+    let before = render(&mut doc);
+    assert!(before.chunks_exact(4).any(|px| px == [0, 0, 0, 255]));
+    assert!(!before.chunks_exact(4).any(|px| px[..3] == [255, 0, 0]));
+    hover(&mut doc, "#owner");
+    doc.resolve(0.0);
+    let after = render(&mut doc);
+    assert!(after.chunks_exact(4).any(|px| px[..3] == [255, 0, 0]));
+    assert!(!after.chunks_exact(4).any(|px| px == [0, 0, 0, 255]));
+}
+
 fn make_doc(css: &str, body: &str, incremental: bool) -> HtmlDocument {
     let html = format!(
         r#"<!DOCTYPE html><html><head><style>
