@@ -166,15 +166,10 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
     }
 
     pub fn handle_ui_event(&mut self, event: UiEvent) {
-        // Leaving the document only ends hover: there is no target to dispatch to
-        if let UiEvent::PointerLeave(event) = &event {
-            self.handle_pointer_leave(event);
-            return;
-        }
-
         let doc = self.doc.inner();
 
-        let mut should_clear_hover = false;
+        // A non-hovering pointer (finger) ends hover once it is lifted or cancelled
+        let mut hover_end_event = None;
         let mut hover_node_id = doc.hover_node_id;
         let focussed_node_id = doc.focus_node_id;
         drop(doc);
@@ -196,7 +191,7 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
                 doc.unactive_node();
 
                 if event.is_primary && matches!(event.id, BlitzPointerId::Finger(_)) {
-                    should_clear_hover = true;
+                    hover_end_event = Some(event.clone());
                 }
             }
             UiEvent::PointerCancel(event) => {
@@ -205,8 +200,12 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
                 doc.unactive_node();
 
                 if event.is_primary && matches!(event.id, BlitzPointerId::Finger(_)) {
-                    should_clear_hover = true;
+                    hover_end_event = Some(event.clone());
                 }
+            }
+            UiEvent::PointerLeave(event) => {
+                self.handle_pointer_leave(event);
+                hover_node_id = None;
             }
             _ => {}
         };
@@ -216,7 +215,7 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
             UiEvent::PointerUp(_) => hover_node_id,
             UiEvent::PointerDown(_) => hover_node_id,
             UiEvent::PointerCancel(_) => hover_node_id,
-            UiEvent::PointerLeave(_) => unreachable!("handled above"),
+            UiEvent::PointerLeave(_) => hover_node_id,
             UiEvent::Wheel(_) => hover_node_id,
             UiEvent::KeyUp(_) => focussed_node_id,
             UiEvent::KeyDown(_) => focussed_node_id,
@@ -269,7 +268,8 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
                     DomEventData::TouchCancel,
                 );
             }
-            UiEvent::PointerLeave(_) => unreachable!("handled above"),
+            // Out/leave events were dispatched by `handle_pointer_leave`
+            UiEvent::PointerLeave(_) => {}
             UiEvent::Wheel(data) => {
                 self.handle_dom_event(DomEvent::new(target, DomEventData::Wheel(data)))
             }
@@ -291,8 +291,8 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
         };
 
         // Update document input state (hover, focus, active, etc)
-        if should_clear_hover {
-            self.doc.inner_mut().clear_hover();
+        if let Some(event) = hover_end_event {
+            self.handle_pointer_leave(&event);
         }
     }
 

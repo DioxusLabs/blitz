@@ -162,3 +162,57 @@ fn leaving_window_clears_sub_document_hover() {
     assert_eq!(parent.0.get_hover_node_id(), None);
     assert_eq!(child_hover(&parent, host), None);
 }
+
+fn finger_event(x: f32, y: f32) -> blitz_traits::events::BlitzPointerEvent {
+    pointer_event(
+        BlitzPointerId::Finger(0),
+        x,
+        y,
+        MouseEventButton::Main,
+        MouseEventButtons::from(MouseEventButton::Main),
+        Modifiers::default(),
+    )
+}
+
+fn assert_finger_ends_hover(end: UiEvent, end_name: &str) {
+    let mut harness = Harness::from_html_with(
+        r#"<html><body style="margin:0"><div id="target" style="width:100px;height:100px"></div></body></html>"#,
+        HarnessOptions {
+            width: 200,
+            height: 200,
+            ..Default::default()
+        },
+    );
+    let target = harness.node("#target");
+    let events = harness.dispatch_recorded([UiEvent::PointerDown(finger_event(50.0, 50.0)), end]);
+    harness.pump();
+
+    // A finger can't hover, so lifting or cancelling it ends hover with out/leave events
+    let end_index = events.iter().position(|name| name == end_name).unwrap();
+    let mut after: Vec<_> = events[end_index..]
+        .iter()
+        .filter(|name| name.starts_with("pointer"))
+        .collect();
+    // One pointerleave per element in the hovered chain
+    after.dedup();
+    assert_eq!(
+        after,
+        [end_name, "pointerout", "pointerleave"],
+        "{events:?}"
+    );
+    assert_eq!(harness.hovered(), None);
+    assert!(!harness.base().get_node(target).unwrap().is_hovered());
+}
+
+#[test]
+fn finger_up_ends_hover_with_leave_events() {
+    assert_finger_ends_hover(UiEvent::PointerUp(finger_event(50.0, 50.0)), "pointerup");
+}
+
+#[test]
+fn finger_cancel_ends_hover_with_leave_events() {
+    assert_finger_ends_hover(
+        UiEvent::PointerCancel(finger_event(50.0, 50.0)),
+        "pointercancel",
+    );
+}
