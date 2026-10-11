@@ -24,6 +24,26 @@ fn default_button_centers_inline_content() {
 }
 
 #[test]
+fn default_button_centers_text() {
+    let harness = Harness::from_html(
+        r#"<!DOCTYPE html><button id="button"
+            style="width: 100px; height: 100px; padding: 0; border: 0; font: 16px/20px sans-serif;">Text</button>"#,
+    );
+    let doc = harness.base();
+    let layout = doc
+        .get_node(harness.node("#button"))
+        .unwrap()
+        .element_data()
+        .unwrap()
+        .inline_layout_data
+        .as_ref()
+        .unwrap();
+    assert!(layout.layout.width() > 0.0);
+    assert_eq!(layout.layout.height(), 20.0);
+    assert_eq!(layout.block_offset, 40.0);
+}
+
+#[test]
 fn block_button_centers_block_children() {
     for css in ["", "display: block;", "display: flow-root;"] {
         let harness = button(css, "display: block;");
@@ -105,6 +125,25 @@ fn ordinary_blocks_keep_normal_alignment() {
 }
 
 #[test]
+fn button_like_inputs_keep_ua_flex_alignment() {
+    for input_type in ["button", "submit", "reset"] {
+        let harness = Harness::from_html(&format!(
+            r#"<!DOCTYPE html><input id="input" type="{input_type}" value="Text">"#
+        ));
+        let doc = harness.base();
+        let style = doc.get_node(harness.node("#input")).unwrap().layout_style();
+        assert_eq!(
+            taffy::FlexboxContainerStyle::align_items(&style),
+            taffy::AlignItems::CENTER,
+        );
+        assert_eq!(
+            taffy::FlexboxContainerStyle::justify_content(&style),
+            taffy::JustifyContent::CENTER,
+        );
+    }
+}
+
+#[test]
 fn hover_alignment_override_updates_button_layout() {
     let mut harness = Harness::from_html(
         r#"<!DOCTYPE html><style>
@@ -113,6 +152,7 @@ fn hover_alignment_override_updates_button_layout() {
             #child { display: block; width: 20px; height: 20px; }
         </style><button id="button"><span id="child"></span></button>"#,
     );
+    harness.base_mut().set_incremental_layout(true);
     assert_offset(&harness, 0.0, 40.0);
     let rect = harness.layout_rect("#button");
     assert!(harness.base_mut().set_hover_to(rect.x + 1.0, rect.y + 1.0));
