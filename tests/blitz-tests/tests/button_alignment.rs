@@ -57,6 +57,30 @@ fn scrollable_buttons_export_their_content_baseline() {
 }
 
 #[test]
+fn layout_containment_suppresses_button_and_block_text_baselines() {
+    for tag in ["button", "div"] {
+        for contain in ["layout", "content", "strict", "paint", "none"] {
+            let harness = Harness::from_html(&format!(
+                r#"<!DOCTYPE html><style>
+                    #parent {{ display: flex; align-items: baseline; }}
+                    #anchor {{ width: 20px; height: 50px; }}
+                    #control {{ contain: {contain}; width: 100px; height: 40px;
+                        border: 0; padding: 0; font: 16px/20px sans-serif; }}
+                </style><div id="parent"><div id="anchor"></div><{tag} id="control">Text</{tag}></div>"#,
+            ));
+            let anchor = harness.layout_rect("#anchor");
+            let control = harness.layout_rect("#control");
+            let bottoms_align = control.y + control.height == anchor.y + anchor.height;
+            assert_eq!(
+                bottoms_align,
+                matches!(contain, "layout" | "content" | "strict"),
+                "{tag}, contain: {contain}",
+            );
+        }
+    }
+}
+
+#[test]
 fn block_button_centers_block_children() {
     for css in ["", "display: block;", "display: flow-root;"] {
         let harness = button(css, "display: block;");

@@ -325,6 +325,7 @@ impl LayoutPassState<'_> {
             }
         };
 
+        let suppresses_baseline = style.contain().suppresses_baseline();
         drop(style);
 
         // Short circuit if inline context contains no text or inline boxes
@@ -1092,11 +1093,12 @@ impl LayoutPassState<'_> {
 
         let line_baseline =
             |line: parley::Line<'_, _>| (line.metrics().baseline / scale) + line_box_top;
-        let first_baseline = has_inline_content
+        let exports_baseline = has_inline_content && !suppresses_baseline;
+        let first_baseline = exports_baseline
             .then(|| inline_layout.layout.lines().next().map(line_baseline))
             .flatten();
         let last_line_index = trailing_empty_line.unwrap_or(line_count).checked_sub(1);
-        let last_baseline = has_inline_content
+        let last_baseline = exports_baseline
             .then(|| last_line_index.and_then(|i| inline_layout.layout.get(i)))
             .flatten()
             .map(line_baseline);
