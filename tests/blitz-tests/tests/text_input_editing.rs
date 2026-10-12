@@ -127,6 +127,26 @@ const WORD: Modifiers = if cfg!(target_os = "macos") {
     Modifiers::CONTROL
 };
 
+/// Moves the caret a word left, extending the selection where `extend`. macOS takes word motion
+/// through its standard key bindings instead.
+fn word_left(harness: &mut Harness, extend: bool) {
+    if cfg!(target_os = "macos") {
+        let command = if extend {
+            "moveWordLeftAndModifySelection:"
+        } else {
+            "moveWordLeft:"
+        };
+        harness.dispatch(blitz_traits::events::UiEvent::AppleStandardKeybinding(
+            command.into(),
+        ));
+        harness.pump();
+    } else if extend {
+        harness.press_with(Key::ArrowLeft, WORD | Modifiers::SHIFT);
+    } else {
+        harness.press_with(Key::ArrowLeft, WORD);
+    }
+}
+
 #[test]
 fn typing_inserts_at_the_caret() {
     let (mut harness, node, _) = input("world");
@@ -180,11 +200,11 @@ fn backspace_after_a_combining_mark() {
 #[test]
 fn word_motion_moves_by_words() {
     let (mut harness, node, _) = input("one two three");
-    harness.press_with(Key::ArrowLeft, WORD);
+    word_left(&mut harness, false);
     assert_eq!(selection(&harness, node), 8..8);
-    harness.press_with(Key::ArrowLeft, WORD);
+    word_left(&mut harness, false);
     assert_eq!(selection(&harness, node), 4..4);
-    harness.press_with(Key::ArrowLeft, WORD | Modifiers::SHIFT);
+    word_left(&mut harness, true);
     assert_eq!(selected(&harness, node).as_deref(), Some("one "));
 }
 
@@ -218,7 +238,7 @@ fn select_all_selects_the_whole_text() {
 #[test]
 fn copy_cut_and_paste_go_through_the_clipboard() {
     let (mut harness, node, clipboard) = input("hello world");
-    harness.press_with(Key::ArrowLeft, WORD | Modifiers::SHIFT);
+    word_left(&mut harness, true);
     harness.press_with(Key::Character("c".into()), ACTION);
     assert_eq!(*clipboard.0.lock().unwrap(), "world");
     assert_eq!(value(&harness, node), "hello world");
