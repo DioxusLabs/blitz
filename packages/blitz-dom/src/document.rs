@@ -1851,19 +1851,11 @@ impl BaseDocument {
         let hover_node_id = hit_node_id.and_then(|id| self.nearest_non_anonymous_ancestor(id));
         let new_is_text = hit.map(|hit| hit.is_text).unwrap_or(false);
 
-        let hit_changed =
-            hit_node_id != self.hover_hit_node_id || new_is_text != self.hover_node_is_text;
         self.hover_hit_node_id = hit_node_id;
         self.hover_node_is_text = new_is_text;
 
         // Return early if the new node is the same as the already-hovered node
         if hover_node_id == self.hover_node_id {
-            if hit_changed {
-                // The canonical target is unchanged (so no restyle is needed)
-                // but the precise hit node changed, which can change the cursor
-                // (e.g. moving between text and non-text within one element).
-                self.shell_provider.set_cursor(self.get_cursor());
-            }
             return scrollbar_changed;
         }
 
@@ -1882,9 +1874,6 @@ impl BaseDocument {
         }
 
         self.hover_node_id = hover_node_id;
-
-        // Update the cursor
-        self.shell_provider.set_cursor(self.get_cursor());
 
         // Request redraw
         self.shell_provider.request_redraw();
@@ -1910,9 +1899,6 @@ impl BaseDocument {
         self.hover_node_id = None;
         self.hover_node_is_text = false;
 
-        // Update the cursor
-        self.shell_provider.set_cursor(self.get_cursor());
-
         // Request redraw
         self.shell_provider.request_redraw();
 
@@ -1930,7 +1916,30 @@ impl BaseDocument {
         };
         let x = pos.x + self.viewport_scroll().x as f32;
         let y = pos.y + self.viewport_scroll().y as f32;
-        self.set_hover_to(x, y)
+        let prev_hover = self.hover_state();
+        let changed = self.set_hover_to(x, y);
+        if self.hover_state() != prev_hover {
+            self.update_cursor();
+        }
+        changed
+    }
+
+    /// The hover state that determines the cursor: the hovered node, the precise hit
+    /// node and whether the hit is text
+    pub(crate) fn hover_state(&self) -> (Option<NodeId>, Option<NodeId>, bool) {
+        (
+            self.hover_node_id,
+            self.hover_hit_node_id,
+            self.hover_node_is_text,
+        )
+    }
+
+    /// Send the current cursor to the shell.
+    ///
+    /// Hover updates don't send the cursor themselves: the cursor of a node hosting a
+    /// sub-document is only known once the sub-document has handled the event.
+    pub(crate) fn update_cursor(&self) {
+        self.shell_provider.set_cursor(self.get_cursor());
     }
 
     pub fn get_hover_node_id(&self) -> Option<NodeId> {
@@ -2160,7 +2169,9 @@ impl BaseDocument {
             .or(self.get_hover_node_id())?;
         let node = &self.nodes[node_id];
 
-        if let Some(subdoc) = node.subdoc().map(|doc| doc.inner()) {
+        if let Some(subdoc) = node.subdoc().map(|doc| doc.inner())
+            && subdoc.get_hover_node_id().is_some()
+        {
             return subdoc.get_cursor();
         }
 

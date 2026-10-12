@@ -172,7 +172,11 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
         let mut hover_end_event = None;
         let mut hover_node_id = doc.hover_node_id;
         let focussed_node_id = doc.focus_node_id;
+        let prev_hover = doc.hover_state();
         drop(doc);
+
+        // A document the pointer has left has no say over the cursor
+        let is_leave = matches!(event, UiEvent::PointerLeave(_));
 
         // Update document input state (hover, focus, active, etc)
         match &event {
@@ -293,6 +297,13 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
         // Update document input state (hover, focus, active, etc)
         if let Some(event) = hover_end_event {
             self.handle_pointer_leave(&event);
+        }
+
+        // Update the cursor once the event (including any forwarding to a
+        // sub-document) has been fully handled
+        let doc = self.doc.inner();
+        if !is_leave && doc.hover_state() != prev_hover {
+            doc.update_cursor();
         }
     }
 
