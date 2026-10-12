@@ -141,7 +141,7 @@ fn bidi_text() {
 
 #[test]
 fn inline_box_split_across_lines() {
-    let html = "<div id=t style=\"width:40px\">aaa <span id=s>bbb ccc ddd</span> eee</div>";
+    let html = "<div id=t style=\"width:40px; line-height:18px\">aaa <span id=s>bbb ccc ddd</span> eee</div>";
     assert_eq!(inner_text(html, "t"), "aaa bbb ccc ddd eee");
     assert_eq!(inner_text(html, "s"), "bbb ccc ddd");
     // The span has a box on each of three lines, and its offset is its first box's.
