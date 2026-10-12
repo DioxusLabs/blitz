@@ -234,4 +234,9 @@ fn cursor_is_set_after_sub_document_handles_event() {
     send(&mut parent, UiEvent::PointerMove(mouse_event(100.0, 250.0)));
     assert!(!cursors().contains(&None), "{:?}", cursors());
     assert_eq!(cursors().last(), Some(&Some(CursorIcon::Pointer)));
+
+    // Events that don't change hover don't touch the cursor
+    let count = cursors().len();
+    send(&mut parent, UiEvent::PointerMove(mouse_event(100.0, 250.0)));
+    assert_eq!(cursors().len(), count, "{:?}", cursors());
 }
