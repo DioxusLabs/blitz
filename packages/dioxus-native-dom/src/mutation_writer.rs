@@ -107,6 +107,28 @@ impl MutationWriter<'_> {
         self.state.stack.push(node_id);
     }
 
+    /// Remove a node from the document and drop it along with all of its descendants.
+    ///
+    /// The mappings of every dropped node are cleared to prevent them dangling.
+    fn remove_and_drop_node(&mut self, node_id: NodeId) {
+        let state = &mut *self.state;
+        self.docm
+            .remove_and_drop_node_with(node_id, &mut |dropped_node_id| {
+                if let Some(element_id) = state.element_id_mapping.remove(&dropped_node_id)
+                    && state.node_id_mapping.get(element_id.0).copied().flatten()
+                        == Some(dropped_node_id)
+                {
+                    state.node_id_mapping[element_id.0] = None;
+                }
+            });
+    }
+
+    /// Insert `new_node_ids` in place of `node_id`, which is dropped.
+    fn replace_and_drop_node(&mut self, node_id: NodeId, new_node_ids: &[NodeId]) {
+        self.docm.insert_nodes_before(node_id, new_node_ids);
+        self.remove_and_drop_node(node_id);
+    }
+
     /// Find a child in the document by child index path
     fn load_child(&self, path: &[u8]) -> NodeId {
         let top_of_stack_node_id = *self.state.stack.last().unwrap();
@@ -173,7 +195,7 @@ impl WriteMutations for MutationWriter<'_> {
     fn replace_node_with(&mut self, id: ElementId, m: usize) {
         trace!("replace_node_with id:{} m:{}", id.0, m);
         let (anchor_node_id, new_node_ids) = self.state.anchor_and_nodes(id, m);
-        self.docm.replace_node_with(anchor_node_id, &new_node_ids);
+        self.replace_and_drop_node(anchor_node_id, &new_node_ids);
     }
 
     fn replace_placeholder_with_nodes(&mut self, path: &'static [u8], m: usize) {
@@ -183,13 +205,13 @@ impl WriteMutations for MutationWriter<'_> {
         // the stack and then "load_child" reads from the top of the stack.
         let new_node_ids = self.state.m_stack_nodes(m);
         let anchor_node_id = self.load_child(path);
-        self.docm.replace_node_with(anchor_node_id, &new_node_ids);
+        self.replace_and_drop_node(anchor_node_id, &new_node_ids);
     }
 
     fn remove_node(&mut self, id: ElementId) {
         trace!("remove_node id:{}", id.0);
         let node_id = self.state.element_to_node_id(id);
-        self.docm.remove_node(node_id);
+        self.remove_and_drop_node(node_id);
     }
 
     fn push_root(&mut self, id: ElementId) {
