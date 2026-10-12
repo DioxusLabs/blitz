@@ -258,8 +258,6 @@ pub struct BaseDocument {
     pub(crate) hover_hit_node_id: Option<NodeId>,
     /// Whether the node which is currently hovered is a text node/span
     pub(crate) hover_node_is_text: bool,
-    /// Whether hover has changed since the cursor was last sent to the shell
-    pub(crate) cursor_needs_update: bool,
     /// The last known pointer position in client coordinates (viewport-relative, unscrolled).
     pub(crate) last_client_pointer_position: Option<taffy::Point<f32>>,
     /// The node which is currently focussed (if any)
@@ -467,7 +465,6 @@ impl BaseDocument {
             hover_node_id: None,
             hover_hit_node_id: None,
             hover_node_is_text: false,
-            cursor_needs_update: false,
             last_client_pointer_position: None,
             focus_node_id: None,
             active_node_id: None,
@@ -1854,11 +1851,6 @@ impl BaseDocument {
         let hover_node_id = hit_node_id.and_then(|id| self.nearest_non_anonymous_ancestor(id));
         let new_is_text = hit.map(|hit| hit.is_text).unwrap_or(false);
 
-        // The precise hit node can change the cursor even when the hovered node is
-        // unchanged (e.g. moving between text and non-text within one element)
-        if hit_node_id != self.hover_hit_node_id || new_is_text != self.hover_node_is_text {
-            self.cursor_needs_update = true;
-        }
         self.hover_hit_node_id = hit_node_id;
         self.hover_node_is_text = new_is_text;
 
@@ -1882,7 +1874,6 @@ impl BaseDocument {
         }
 
         self.hover_node_id = hover_node_id;
-        self.cursor_needs_update = true;
 
         // Request redraw
         self.shell_provider.request_redraw();
@@ -1907,7 +1898,6 @@ impl BaseDocument {
 
         self.hover_node_id = None;
         self.hover_node_is_text = false;
-        self.cursor_needs_update = true;
 
         // Request redraw
         self.shell_provider.request_redraw();
@@ -1926,17 +1916,28 @@ impl BaseDocument {
         };
         let x = pos.x + self.viewport_scroll().x as f32;
         let y = pos.y + self.viewport_scroll().y as f32;
+        let prev_hover = self.hover_state();
         let changed = self.set_hover_to(x, y);
-        self.update_cursor();
+        self.update_cursor(prev_hover);
         changed
     }
 
-    /// Send the cursor to the shell if hover has changed since it was last sent.
+    /// The hover state that determines the cursor: the hovered node, the precise hit
+    /// node and whether the hit is text
+    pub(crate) fn hover_state(&self) -> (Option<NodeId>, Option<NodeId>, bool) {
+        (
+            self.hover_node_id,
+            self.hover_hit_node_id,
+            self.hover_node_is_text,
+        )
+    }
+
+    /// Send the cursor to the shell if hover has changed since `prev_hover` was taken.
     ///
     /// Hover updates don't send the cursor themselves: the cursor of a node hosting a
     /// sub-document is only known once the sub-document has handled the event.
-    pub(crate) fn update_cursor(&mut self) {
-        if std::mem::take(&mut self.cursor_needs_update) {
+    pub(crate) fn update_cursor(&self, prev_hover: (Option<NodeId>, Option<NodeId>, bool)) {
+        if self.hover_state() != prev_hover {
             self.shell_provider.set_cursor(self.get_cursor());
         }
     }
