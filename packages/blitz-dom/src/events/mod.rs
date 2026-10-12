@@ -50,10 +50,16 @@ fn map_dom_event_to_ui_event(
             Some(UiEvent::PointerCancel(event))
         }
 
-        // Enter/leave events will be recreated by sub-document's event driver
+        // The sub-document receives no further move events once the pointer
+        // has left it, so the leave must be forwarded for it to end its hover
+        DomEventData::PointerLeave(mut event) => {
+            adjust_coords_for_subdocument(&mut event.coords, node_offset, viewport_scroll);
+            Some(UiEvent::PointerLeave(event))
+        }
+
+        // Enter/over/out events will be recreated by sub-document's event driver
         // based move events
         DomEventData::PointerEnter(_) => None,
-        DomEventData::PointerLeave(_) => None,
         DomEventData::PointerOver(_) => None,
         DomEventData::PointerOut(_) => None,
 
