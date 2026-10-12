@@ -455,11 +455,12 @@ pub(crate) fn build(
         let initial = ComputedStyle::initial();
         text.layout
             .builder(
+                cx,
                 key,
                 &ComputedBlockStyle::new(&initial),
                 BuildOptions::default(),
             )
-            .finish(cx);
+            .finish();
         text.built = true;
         return;
     };
@@ -553,7 +554,7 @@ pub(crate) fn build(
     // Hit testing needs to map a layout position back to its DOM node.
     options.map_source = true;
     let mut builder = WinkinBuilder {
-        builder: layout.builder(key, &block, options),
+        builder: layout.builder(cx, key, &block, options),
         cascade,
         root,
         boxes: boxes.as_slice(),
@@ -570,14 +571,16 @@ pub(crate) fn build(
         }],
     };
     push_inline_content(nodes, root, &mut builder);
+    // Moving the builder whole drops its other fields here, ending its
+    // borrow of `cx`.
     let WinkinBuilder {
         builder,
         marked,
         feature_values,
         styles,
         ..
-    } = builder;
-    builder.finish(cx);
+    } = { builder };
+    builder.finish();
     for (node, computed, language) in marked {
         if let Some(layout) = emphasis_mark(cx, &computed, &feature_values, scale, language) {
             styles.marks.push((node, layout));
@@ -673,9 +676,9 @@ fn emphasis_mark(
     };
     let mut layout = Layout::default();
     let key = NodeKey(0);
-    let mut builder = layout.builder(key, &block, BuildOptions::default());
+    let mut builder = layout.builder(cx, key, &block, BuildOptions::default());
     builder.text(key, &string);
-    builder.finish(cx);
+    builder.finish();
     layout.break_lines(cx, Area::new(f32::MAX / 4.0), &mut winkin::NoExclusions);
     Some(layout)
 }
@@ -712,8 +715,8 @@ struct Parent {
 }
 
 /// A winkin layout builder, as the walk of the DOM pushes into it.
-struct WinkinBuilder<'a, 'b> {
-    builder: LayoutBuilder<'b>,
+struct WinkinBuilder<'a, 'b, 'c> {
+    builder: LayoutBuilder<'c>,
     cascade: Cascade<'a>,
     /// The block the content is for.
     root: &'a Node,
@@ -731,7 +734,7 @@ struct WinkinBuilder<'a, 'b> {
     parents: Vec<Parent>,
 }
 
-impl WinkinBuilder<'_, '_> {
+impl WinkinBuilder<'_, '_, '_> {
     /// The box what is pushed next is in.
     fn parent(&self) -> &Parent {
         // The block itself is never popped.
@@ -819,7 +822,7 @@ impl WinkinBuilder<'_, '_> {
 }
 
 /// winkin reads no text back: it applies `text-transform` itself.
-impl PushedText for WinkinBuilder<'_, '_> {
+impl PushedText for WinkinBuilder<'_, '_, '_> {
     fn text(&self) -> &str {
         ""
     }
@@ -829,7 +832,7 @@ impl PushedText for WinkinBuilder<'_, '_> {
     }
 }
 
-impl InlineBuilder for WinkinBuilder<'_, '_> {
+impl InlineBuilder for WinkinBuilder<'_, '_, '_> {
     const TRANSFORMS_TEXT: bool = true;
     const SETS_RUBY: bool = true;
 
@@ -2179,7 +2182,7 @@ pub(crate) fn build_plain_text(
     text.styles.marks.clear();
     let mut options = BuildOptions::default();
     options.map_source = masked;
-    let mut builder = text.layout.builder(key, &block, options);
+    let mut builder = text.layout.builder(&mut cx.cx, key, &block, options);
     let piece = |number: u64| NodeKey(node.as_u64() | number << PIECE_SHIFT);
     // The piece in the middle, in a box of its own: the composing text, which the renderer
     // underlines, or the text shown in the clear.
@@ -2225,7 +2228,7 @@ pub(crate) fn build_plain_text(
         }
         None => builder.text(key, content),
     }
-    builder.finish(&mut cx.cx);
+    builder.finish();
     text.built = true;
     let area = Area::new(width.unwrap_or(f32::MAX / 4.0));
     text.lay_out(&mut cx.cx, area, &mut winkin::NoExclusions);
@@ -2257,12 +2260,14 @@ impl MarkerEngine for TextLayout {
             writing_mode: WritingMode::HorizontalTb,
             ..ComputedBlockStyle::new(&own)
         };
-        let mut builder = text.layout.builder(key, &block, BuildOptions::default());
+        let mut builder = text
+            .layout
+            .builder(&mut cx.cx, key, &block, BuildOptions::default());
         match marker {
             Marker::Char(char) => builder.text(key, char.encode_utf8(&mut [0; 4])),
             Marker::String(string) => builder.text(key, string),
         }
-        builder.finish(&mut cx.cx);
+        builder.finish();
         text.built = true;
         text.lay_out(
             &mut cx.cx,
