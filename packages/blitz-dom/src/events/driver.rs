@@ -301,8 +301,9 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
 
         // Update the cursor once the event (including any forwarding to a
         // sub-document) has been fully handled
-        if !is_leave {
-            self.doc.inner().update_cursor(prev_hover);
+        let doc = self.doc.inner();
+        if !is_leave && doc.hover_state() != prev_hover {
+            doc.update_cursor();
         }
     }
 

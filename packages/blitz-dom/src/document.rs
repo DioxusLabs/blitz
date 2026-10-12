@@ -1918,7 +1918,9 @@ impl BaseDocument {
         let y = pos.y + self.viewport_scroll().y as f32;
         let prev_hover = self.hover_state();
         let changed = self.set_hover_to(x, y);
-        self.update_cursor(prev_hover);
+        if self.hover_state() != prev_hover {
+            self.update_cursor();
+        }
         changed
     }
 
@@ -1932,14 +1934,12 @@ impl BaseDocument {
         )
     }
 
-    /// Send the cursor to the shell if hover has changed since `prev_hover` was taken.
+    /// Send the current cursor to the shell.
     ///
     /// Hover updates don't send the cursor themselves: the cursor of a node hosting a
     /// sub-document is only known once the sub-document has handled the event.
-    pub(crate) fn update_cursor(&self, prev_hover: (Option<NodeId>, Option<NodeId>, bool)) {
-        if self.hover_state() != prev_hover {
-            self.shell_provider.set_cursor(self.get_cursor());
-        }
+    pub(crate) fn update_cursor(&self) {
+        self.shell_provider.set_cursor(self.get_cursor());
     }
 
     pub fn get_hover_node_id(&self) -> Option<NodeId> {
