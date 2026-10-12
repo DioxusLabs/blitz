@@ -17,8 +17,8 @@ use style::font_metrics::FontMetrics;
 use style::properties::style_structs::Font as FontStyles;
 use style::values::computed::font::{FontStyle as StyloFontStyle, QueryFontMetricsFlags};
 use style::values::computed::{CSSPixelLength, Length};
-use winkin::{Context, SharedFonts};
 use winkin::style::FontFamilyName;
+use winkin::{Context, SharedFonts};
 
 use super::TextContext;
 use crate::net::FontFaceOverrides;
