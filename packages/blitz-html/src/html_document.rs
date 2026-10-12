@@ -2,9 +2,7 @@ use std::ops::{Deref, DerefMut};
 
 use crate::DocumentHtmlParser;
 
-use blitz_dom::{
-    BaseDocument, DocGuard, DocGuardMut, Document, DocumentConfig, UserAgentStylesheet,
-};
+use blitz_dom::{BaseDocument, DocGuard, DocGuardMut, Document, DocumentConfig};
 
 pub struct HtmlDocument {
     inner: BaseDocument,
@@ -55,14 +53,9 @@ impl HtmlDocument {
 
     fn parse_with(
         content: &str,
-        mut config: DocumentConfig,
+        config: DocumentConfig,
         parse: impl for<'a, 'd> Fn(&'a mut blitz_dom::DocumentMutator<'d>, &str),
     ) -> Self {
-        let default_sheet = UserAgentStylesheet::default_sheet();
-        let sheets = &mut config.ua_stylesheets;
-        if !sheets.contains(&default_sheet) {
-            sheets.insert(0, default_sheet);
-        }
         let mut doc = BaseDocument::new(config);
         let mut mutr = doc.mutate();
         parse(&mut mutr, content);

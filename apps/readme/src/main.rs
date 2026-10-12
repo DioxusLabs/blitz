@@ -45,6 +45,7 @@ use anyrender_vello_cpu::VelloCpuWindowRenderer as WindowRenderer;
 use anyrender_vello_hybrid::VelloHybridWindowRenderer as WindowRenderer;
 
 use blitz_dom::DocumentConfig;
+use blitz_dom::UserAgentStylesheet;
 use blitz_html::HtmlDocument;
 use blitz_net::Provider;
 use blitz_traits::navigation::{NavigationOptions, NavigationProvider};
@@ -103,10 +104,10 @@ fn main() {
     // Process markdown if necessary
     let mut title = base_url.clone();
     let mut html = contents;
-    let mut stylesheets = Vec::new();
+    let mut stylesheets = vec![UserAgentStylesheet::default_sheet()];
     if is_md {
         html = markdown_to_html(html);
-        stylesheets = markdown_stylesheets();
+        stylesheets.extend(markdown_stylesheets());
         title = format!(
             "README for {}",
             base_url.rsplit("/").find(|s| !s.is_empty()).unwrap()

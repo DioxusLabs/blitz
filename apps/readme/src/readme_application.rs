@@ -17,6 +17,7 @@ use winit::window::{Theme, WindowId};
 
 use crate::fetch;
 use crate::markdown::{markdown_stylesheets, markdown_to_html};
+use blitz_dom::UserAgentStylesheet;
 
 pub struct ReadmeEvent;
 
@@ -100,10 +101,10 @@ impl ReadmeApplication {
         is_md: bool,
     ) {
         let mut html = contents;
-        let mut stylesheets = Vec::new();
+        let mut stylesheets = vec![UserAgentStylesheet::default_sheet()];
         if is_md {
             html = markdown_to_html(html);
-            stylesheets = markdown_stylesheets();
+            stylesheets.extend(markdown_stylesheets());
         }
 
         let doc = HtmlDocument::from_html(

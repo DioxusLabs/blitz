@@ -8,7 +8,7 @@ use crate::mutation_writer::{DioxusState, MutationWriter};
 use crate::qual_name;
 use blitz_dom::{
     Attribute, BaseDocument, DocGuard, DocGuardMut, Document, DocumentConfig, EventDriver,
-    EventHandler, Node, UserAgentStylesheet,
+    EventHandler, Node,
 };
 use blitz_traits::events::{DomEvent, DomEventData, EventState, UiEvent};
 use dioxus_core::{ElementId, Event, VirtualDom};
@@ -90,11 +90,6 @@ impl DioxusDocument {
                 .base_url
                 .unwrap_or_else(|| String::from("dioxus://index.html")),
         );
-        let default_sheet = UserAgentStylesheet::default_sheet();
-        let sheets = &mut config.ua_stylesheets;
-        if !sheets.contains(&default_sheet) {
-            sheets.insert(0, default_sheet);
-        }
         let mut doc = BaseDocument::new(config);
 
         // Create some minimal HTML to render the app into.

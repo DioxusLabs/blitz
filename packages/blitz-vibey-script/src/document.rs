@@ -6,9 +6,7 @@ use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, channel};
 use std::sync::{Arc, Mutex};
 use std::task::{Context as TaskContext, Waker};
 
-use blitz_dom::{
-    BaseDocument, DocGuard, DocGuardMut, Document, DocumentConfig, EventDriver, UserAgentStylesheet,
-};
+use blitz_dom::{BaseDocument, DocGuard, DocGuardMut, Document, DocumentConfig, EventDriver};
 use blitz_html::{DocumentHtmlParser, HtmlProvider};
 use blitz_traits::events::{DomEvent, UiEvent};
 use url::Url;
@@ -55,11 +53,6 @@ impl ScriptDocument {
     /// [`execute_scripts`](Self::execute_scripts) to do so (or rely on the
     /// first `poll` doing it automatically).
     pub fn from_html(html: &str, mut config: DocumentConfig) -> Self {
-        let default_sheet = UserAgentStylesheet::default_sheet();
-        let sheets = &mut config.ua_stylesheets;
-        if !sheets.contains(&default_sheet) {
-            sheets.insert(0, default_sheet);
-        }
         if config.html_parser_provider.is_none() {
             config.html_parser_provider = Some(Arc::new(HtmlProvider));
         }
