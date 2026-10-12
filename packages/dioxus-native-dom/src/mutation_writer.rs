@@ -403,7 +403,8 @@ fn set_attribute_inner(
     match value {
         None => docm.clear_attribute(node_id, name),
         Some(value) => {
-            if local_name == "checked" && is_falsy {
+            // Presence alone makes these boolean attributes true, so a falsy value must remove them
+            if matches!(local_name, "checked" | "disabled") && is_falsy {
                 docm.clear_attribute(node_id, name);
             } else if local_name == "dangerous_inner_html" {
                 docm.set_inner_html(node_id, value);
