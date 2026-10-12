@@ -14,7 +14,7 @@
 use std::sync::Arc;
 
 use anyrender_vello::VelloWindowRenderer as WindowRenderer;
-use blitz_dom::DocumentConfig;
+use blitz_dom::{DocumentConfig, UserAgentStylesheet};
 use blitz_html::HtmlDocument;
 use blitz_shell::{
     BlitzApplication, BlitzShellProxy, Config, EventLoop, WindowConfig, create_default_event_loop,
@@ -114,7 +114,12 @@ fn launch_internal(
         html,
         DocumentConfig {
             base_url: cfg.base_url,
-            ua_stylesheets: Some(cfg.stylesheets),
+            ua_stylesheets: Some(
+                cfg.stylesheets
+                    .iter()
+                    .map(|css| UserAgentStylesheet::parse(css))
+                    .collect(),
+            ),
             net_provider: Some(net_provider),
             ..Default::default()
         },

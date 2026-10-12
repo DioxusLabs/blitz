@@ -7,8 +7,7 @@ use std::sync::{Arc, Mutex};
 use std::task::{Context as TaskContext, Waker};
 
 use blitz_dom::{
-    BaseDocument, DEFAULT_CSS, DocGuard, DocGuardMut, Document, DocumentConfig, EventDriver,
-    default_ua_stylesheet,
+    BaseDocument, DocGuard, DocGuardMut, Document, DocumentConfig, EventDriver, UserAgentStylesheet,
 };
 use blitz_html::{DocumentHtmlParser, HtmlProvider};
 use blitz_traits::events::{DomEvent, UiEvent};
@@ -59,14 +58,14 @@ impl ScriptDocument {
         let add_default_css = config
             .ua_stylesheets
             .as_ref()
-            .is_some_and(|ss| !ss.iter().any(|s| s == DEFAULT_CSS));
+            .is_some_and(|ss| !ss.contains(&UserAgentStylesheet::default_sheet()));
         if config.html_parser_provider.is_none() {
             config.html_parser_provider = Some(Arc::new(HtmlProvider));
         }
 
         let mut doc = BaseDocument::new(config);
         if add_default_css {
-            doc.add_user_agent_stylesheet(default_ua_stylesheet());
+            doc.add_user_agent_stylesheet(UserAgentStylesheet::default_sheet());
         }
         let mut mutr = doc.mutate();
         DocumentHtmlParser::parse_into_mutator(&mut mutr, html);

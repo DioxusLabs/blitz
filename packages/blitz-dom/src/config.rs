@@ -1,4 +1,4 @@
-use crate::HtmlParserProvider;
+use crate::{HtmlParserProvider, UserAgentStylesheet};
 use blitz_traits::{
     navigation::NavigationProvider,
     net::{AbortSignal, NetProvider},
@@ -36,7 +36,7 @@ pub struct DocumentConfig {
     /// The base url which relative URLs are resolved against
     pub base_url: Option<String>,
     /// User Agent stylesheets
-    pub ua_stylesheets: Option<Vec<String>>,
+    pub ua_stylesheets: Option<Vec<UserAgentStylesheet>>,
     /// Net provider to handle network requests for resources
     pub net_provider: Option<Arc<dyn NetProvider>>,
     /// Navigation provider to handle link clicks and form submissions

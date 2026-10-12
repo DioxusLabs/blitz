@@ -3,8 +3,8 @@
 //! leaves its host.
 
 use blitz_dom::{
-    BaseDocument, DEFAULT_CSS, DocumentConfig, EventDriver, LocalName, NodeId, NoopEventHandler,
-    PlainDocument, QualName, ns,
+    BaseDocument, DocumentConfig, EventDriver, LocalName, NodeId, NoopEventHandler, PlainDocument,
+    QualName, UserAgentStylesheet, ns,
 };
 use blitz_html::HtmlDocument;
 use blitz_test_harness::{Harness, HarnessOptions, pointer_event};
@@ -76,7 +76,7 @@ body{margin:0}
 fn document(html: &str, window: &Arc<Window>) -> BaseDocument {
     let config = DocumentConfig {
         shell_provider: Some(window.clone()),
-        ua_stylesheets: Some(vec![DEFAULT_CSS.to_string()]),
+        ua_stylesheets: Some(vec![UserAgentStylesheet::default_sheet()]),
         ..Default::default()
     };
     HtmlDocument::from_html(html, config).into_inner()

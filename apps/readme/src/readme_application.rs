@@ -16,7 +16,7 @@ use winit::platform::macos::ApplicationHandlerExtMacOS;
 use winit::window::{Theme, WindowId};
 
 use crate::fetch;
-use crate::markdown::{BLITZ_MD_STYLES, GITHUB_MD_STYLES, markdown_to_html};
+use crate::markdown::{markdown_stylesheets, markdown_to_html};
 
 pub struct ReadmeEvent;
 
@@ -103,8 +103,7 @@ impl ReadmeApplication {
         let mut stylesheets = Vec::new();
         if is_md {
             html = markdown_to_html(html);
-            stylesheets.push(String::from(GITHUB_MD_STYLES));
-            stylesheets.push(String::from(BLITZ_MD_STYLES));
+            stylesheets = markdown_stylesheets();
         }
 
         let doc = HtmlDocument::from_html(

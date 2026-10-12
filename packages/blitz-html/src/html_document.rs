@@ -3,8 +3,7 @@ use std::ops::{Deref, DerefMut};
 use crate::DocumentHtmlParser;
 
 use blitz_dom::{
-    BaseDocument, DEFAULT_CSS, DocGuard, DocGuardMut, Document, DocumentConfig,
-    default_ua_stylesheet,
+    BaseDocument, DocGuard, DocGuardMut, Document, DocumentConfig, UserAgentStylesheet,
 };
 
 pub struct HtmlDocument {
@@ -62,10 +61,10 @@ impl HtmlDocument {
         let add_default_css = config
             .ua_stylesheets
             .as_ref()
-            .is_some_and(|ss| !ss.iter().any(|s| s == DEFAULT_CSS));
+            .is_some_and(|ss| !ss.contains(&UserAgentStylesheet::default_sheet()));
         let mut doc = BaseDocument::new(config);
         if add_default_css {
-            doc.add_user_agent_stylesheet(default_ua_stylesheet());
+            doc.add_user_agent_stylesheet(UserAgentStylesheet::default_sheet());
         }
         let mut mutr = doc.mutate();
         parse(&mut mutr, content);
