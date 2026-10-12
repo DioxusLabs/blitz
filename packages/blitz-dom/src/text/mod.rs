@@ -651,6 +651,17 @@ pub(crate) trait EditEngine: EditableText + Sized {
         scale: f32,
     );
 
+    /// Takes `style`, `node`'s computed style after a restyle that kept the control's box, where
+    /// the text is set in properties such a restyle changes. Returns whether the text is to be laid
+    /// out again.
+    fn restyle(
+        &mut self,
+        _node: NodeId,
+        _style: &style::servo_arc::Arc<style::properties::ComputedValues>,
+    ) -> bool {
+        false
+    }
+
     /// Sets the scale.
     fn set_scale(&mut self, scale: f32);
 
