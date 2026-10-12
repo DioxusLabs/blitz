@@ -72,6 +72,30 @@ use web_time::Instant;
 #[cfg(feature = "parallel-construct")]
 use thread_local::ThreadLocal;
 
+/// The default user-agent stylesheet ([`DEFAULT_CSS`]), parsed once and shared by all documents.
+///
+/// It uses a read-only lock, so it can be read with any document's guard but never mutated.
+pub fn default_ua_stylesheet() -> DocumentStyleSheet {
+    static SHEET: OnceLock<DocumentStyleSheet> = OnceLock::new();
+    SHEET
+        .get_or_init(|| {
+            let lock = SharedRwLock::read_only();
+            let data = Stylesheet::from_str(
+                DEFAULT_CSS,
+                DocumentUrl::default().url_extra_data(),
+                Origin::UserAgent,
+                ServoArc::new(lock.wrap(MediaList::empty())),
+                lock,
+                None,
+                None,
+                QuirksMode::NoQuirks,
+                AllowImportRules::No,
+            );
+            DocumentStyleSheet(ServoArc::new(data))
+        })
+        .clone()
+}
+
 pub enum DocGuard<'a> {
     Ref(&'a BaseDocument),
     RefCell(std::cell::Ref<'a, BaseDocument>),
@@ -303,9 +327,8 @@ pub struct BaseDocument {
     /// added, replaced or removed), so that CSSOM wrappers can detect that
     /// their cached rule data is stale.
     pub(crate) stylesheet_generation: u64,
-    /// Stylesheets added by the useragent
-    /// where the key is the hashed CSS
-    pub(crate) ua_stylesheets: HashMap<String, DocumentStyleSheet>,
+    /// Stylesheets added by the useragent, in cascade order
+    pub(crate) ua_stylesheets: Vec<DocumentStyleSheet>,
     /// Map from form control node ID's to their associated forms node ID's
     pub(crate) controls_to_form: HashMap<NodeId, NodeId>,
     /// Nodes that contain sub documents
@@ -454,7 +477,7 @@ impl BaseDocument {
             subdocument_depth: config.subdocument_depth,
             devtool_settings: DevtoolSettings::default(),
             url: base_url,
-            ua_stylesheets: HashMap::new(),
+            ua_stylesheets: Vec::new(),
             nodes_to_stylesheet: BTreeMap::new(),
             stylesheet_generation: 0,
             font_ctx,
@@ -509,10 +532,11 @@ impl BaseDocument {
         match config.ua_stylesheets {
             Some(stylesheets) => {
                 for ss in &stylesheets {
-                    doc.add_user_agent_stylesheet(ss);
+                    let sheet = doc.make_stylesheet(ss, Origin::UserAgent);
+                    doc.add_user_agent_stylesheet(sheet);
                 }
             }
-            None => doc.add_user_agent_stylesheet(DEFAULT_CSS),
+            None => doc.add_user_agent_stylesheet(default_ua_stylesheet()),
         }
 
         // Stylo data on the root node container is needed to render the node
@@ -1125,8 +1149,9 @@ impl BaseDocument {
         self.add_stylesheet_for_node(sheet, target_id);
     }
 
-    pub fn remove_user_agent_stylesheet(&mut self, contents: &str) {
-        if let Some(sheet) = self.ua_stylesheets.remove(contents) {
+    pub fn remove_user_agent_stylesheet(&mut self, sheet: &DocumentStyleSheet) {
+        if let Some(idx) = self.ua_stylesheets.iter().position(|s| s == sheet) {
+            let sheet = self.ua_stylesheets.remove(idx);
             self.stylist.remove_stylesheet(sheet, &self.guard.read());
         }
     }
@@ -1144,12 +1169,15 @@ impl BaseDocument {
 
     /// Iterate over the user-agent stylesheets currently associated with this document
     pub fn useragent_stylesheets(&self) -> impl Iterator<Item = &DocumentStyleSheet> {
-        self.ua_stylesheets.values()
+        self.ua_stylesheets.iter()
     }
 
-    pub fn add_user_agent_stylesheet(&mut self, css: &str) {
-        let sheet = self.make_stylesheet(css, Origin::UserAgent);
-        self.ua_stylesheets.insert(css.to_string(), sheet.clone());
+    /// Append a user-agent stylesheet. Adding a sheet that is already present is a no-op.
+    pub fn add_user_agent_stylesheet(&mut self, sheet: DocumentStyleSheet) {
+        if self.ua_stylesheets.contains(&sheet) {
+            return;
+        }
+        self.ua_stylesheets.push(sheet.clone());
         self.stylist.append_stylesheet(sheet, &self.guard.read());
     }
 
@@ -2919,9 +2947,11 @@ mod hover_invalidation_tests {
             viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
             ..Default::default()
         });
-        doc.add_user_agent_stylesheet(
+        let sheet = doc.make_stylesheet(
             "div:hover { background-color: rgb(255, 0, 0); } div:hover span { color: rgb(0, 255, 0); }",
+            Origin::UserAgent,
         );
+        doc.add_user_agent_stylesheet(sheet);
         let root_id = doc.root_node().id;
         let style = |value: &str| Attribute {
             name: qual_name!("style"),
@@ -3006,9 +3036,11 @@ mod hover_invalidation_tests {
             viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
             ..Default::default()
         });
-        doc.add_user_agent_stylesheet(
+        let sheet = doc.make_stylesheet(
             ".promo:link:hover .headline, .promo:visited:hover .headline { color: rgb(184, 0, 0); text-decoration-line: underline; }",
+            Origin::UserAgent,
         );
+        doc.add_user_agent_stylesheet(sheet);
         let root_id = doc.root_node().id;
         let attr = |name: QualName, value: &str| Attribute {
             name,
@@ -3075,9 +3107,11 @@ mod hover_invalidation_tests {
             viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
             ..Default::default()
         });
-        doc.add_user_agent_stylesheet(
+        let sheet = doc.make_stylesheet(
             "input:checked { color: rgb(184, 0, 0); } input:checked + label { color: rgb(0, 184, 0); }",
+            Origin::UserAgent,
         );
+        doc.add_user_agent_stylesheet(sheet);
         let root_id = doc.root_node().id;
         let attr = |name: QualName, value: &str| Attribute {
             name,
@@ -3154,10 +3188,12 @@ mod hover_invalidation_tests {
             viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
             ..Default::default()
         });
-        doc.add_user_agent_stylesheet(
+        let sheet = doc.make_stylesheet(
             "div::before { content: \"x\"; color: rgb(1, 2, 3); } \
              div:hover::before { color: rgb(0, 0, 255); }",
+            Origin::UserAgent,
         );
+        doc.add_user_agent_stylesheet(sheet);
         let root_id = doc.root_node().id;
         let style = |value: &str| Attribute {
             name: qual_name!("style"),
@@ -3210,10 +3246,12 @@ mod hover_invalidation_tests {
             viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
             ..Default::default()
         });
-        doc.add_user_agent_stylesheet(
+        let sheet = doc.make_stylesheet(
             "div { background-image: url(\"https://example.com/a.png\"); } \
              div:hover { background-image: url(\"https://example.com/b.png\"); }",
+            Origin::UserAgent,
         );
+        doc.add_user_agent_stylesheet(sheet);
         let root_id = doc.root_node().id;
         let style = |value: &str| Attribute {
             name: qual_name!("style"),

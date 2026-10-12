@@ -8,6 +8,7 @@ use std::task::{Context as TaskContext, Waker};
 
 use blitz_dom::{
     BaseDocument, DEFAULT_CSS, DocGuard, DocGuardMut, Document, DocumentConfig, EventDriver,
+    default_ua_stylesheet,
 };
 use blitz_html::{DocumentHtmlParser, HtmlProvider};
 use blitz_traits::events::{DomEvent, UiEvent};
@@ -55,18 +56,18 @@ impl ScriptDocument {
     /// [`execute_scripts`](Self::execute_scripts) to do so (or rely on the
     /// first `poll` doing it automatically).
     pub fn from_html(html: &str, mut config: DocumentConfig) -> Self {
-        if let Some(ss) = &mut config.ua_stylesheets {
-            if !ss.iter().any(|s| s == DEFAULT_CSS) {
-                ss.push(String::from(DEFAULT_CSS));
-            }
-        } else {
-            config.ua_stylesheets = Some(vec![String::from(DEFAULT_CSS)]);
-        }
+        let add_default_css = config
+            .ua_stylesheets
+            .as_ref()
+            .is_some_and(|ss| !ss.iter().any(|s| s == DEFAULT_CSS));
         if config.html_parser_provider.is_none() {
             config.html_parser_provider = Some(Arc::new(HtmlProvider));
         }
 
         let mut doc = BaseDocument::new(config);
+        if add_default_css {
+            doc.add_user_agent_stylesheet(default_ua_stylesheet());
+        }
         let mut mutr = doc.mutate();
         DocumentHtmlParser::parse_into_mutator(&mut mutr, html);
         drop(mutr);
