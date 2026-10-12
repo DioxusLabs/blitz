@@ -57,8 +57,14 @@ impl EditableText for TextEditor {
 
     fn metrics(&self) -> Option<EditorMetrics> {
         let layout = self.editor.try_layout()?;
+        // The white space a wrapped line ends in hangs past the width, and takes no room.
+        let width = if self.width.is_some() {
+            layout.width()
+        } else {
+            layout.full_width()
+        };
         Some(EditorMetrics {
-            size: Size::new(f64::from(layout.full_width()), f64::from(layout.height())),
+            size: Size::new(f64::from(width), f64::from(layout.height())),
             scale: layout.scale(),
         })
     }
