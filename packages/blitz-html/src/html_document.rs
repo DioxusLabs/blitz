@@ -55,17 +55,15 @@ impl HtmlDocument {
 
     fn parse_with(
         content: &str,
-        config: DocumentConfig,
+        mut config: DocumentConfig,
         parse: impl for<'a, 'd> Fn(&'a mut blitz_dom::DocumentMutator<'d>, &str),
     ) -> Self {
-        let add_default_css = config
-            .ua_stylesheets
-            .as_ref()
-            .is_some_and(|ss| !ss.contains(&UserAgentStylesheet::default_sheet()));
-        let mut doc = BaseDocument::new(config);
-        if add_default_css {
-            doc.add_user_agent_stylesheet(UserAgentStylesheet::default_sheet());
+        let default_sheet = UserAgentStylesheet::default_sheet();
+        let sheets = config.ua_stylesheets.get_or_insert_with(Vec::new);
+        if !sheets.contains(&default_sheet) {
+            sheets.insert(0, default_sheet);
         }
+        let mut doc = BaseDocument::new(config);
         let mut mutr = doc.mutate();
         parse(&mut mutr, content);
         drop(mutr);

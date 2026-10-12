@@ -90,10 +90,12 @@ impl DioxusDocument {
                 .base_url
                 .unwrap_or_else(|| String::from("dioxus://index.html")),
         );
+        let default_sheet = UserAgentStylesheet::default_sheet();
+        let sheets = config.ua_stylesheets.get_or_insert_with(Vec::new);
+        if !sheets.contains(&default_sheet) {
+            sheets.insert(0, default_sheet);
+        }
         let mut doc = BaseDocument::new(config);
-
-        // Include default stylesheet
-        doc.add_user_agent_stylesheet(UserAgentStylesheet::default_sheet());
 
         // Create some minimal HTML to render the app into.
         // HTML is equivalent to:

@@ -55,18 +55,16 @@ impl ScriptDocument {
     /// [`execute_scripts`](Self::execute_scripts) to do so (or rely on the
     /// first `poll` doing it automatically).
     pub fn from_html(html: &str, mut config: DocumentConfig) -> Self {
-        let add_default_css = config
-            .ua_stylesheets
-            .as_ref()
-            .is_some_and(|ss| !ss.contains(&UserAgentStylesheet::default_sheet()));
+        let default_sheet = UserAgentStylesheet::default_sheet();
+        let sheets = config.ua_stylesheets.get_or_insert_with(Vec::new);
+        if !sheets.contains(&default_sheet) {
+            sheets.insert(0, default_sheet);
+        }
         if config.html_parser_provider.is_none() {
             config.html_parser_provider = Some(Arc::new(HtmlProvider));
         }
 
         let mut doc = BaseDocument::new(config);
-        if add_default_css {
-            doc.add_user_agent_stylesheet(UserAgentStylesheet::default_sheet());
-        }
         let mut mutr = doc.mutate();
         DocumentHtmlParser::parse_into_mutator(&mut mutr, html);
         drop(mutr);
