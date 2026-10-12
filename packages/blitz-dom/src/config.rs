@@ -34,8 +34,10 @@ pub struct DocumentConfig {
     pub viewport: Option<Viewport>,
     /// The base url which relative URLs are resolved against
     pub base_url: Option<String>,
-    /// User Agent stylesheets, in cascade order.
-    /// Defaults to [`UserAgentStylesheet::default_sheet`].
+    /// User Agent stylesheets, in cascade order. Defaults to `vec![UserAgentStylesheet::default_sheet()]`.
+    ///
+    /// The list is used as given, so replacing it removes the default sheet unless it is
+    /// included, e.g. `vec![UserAgentStylesheet::default_sheet(), custom]`.
     pub ua_stylesheets: Vec<UserAgentStylesheet>,
     /// Net provider to handle network requests for resources
     pub net_provider: Option<Arc<dyn NetProvider>>,
