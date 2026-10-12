@@ -327,8 +327,6 @@ pub struct BaseDocument {
     /// added, replaced or removed), so that CSSOM wrappers can detect that
     /// their cached rule data is stale.
     pub(crate) stylesheet_generation: u64,
-    /// Stylesheets added by the useragent, in cascade order
-    pub(crate) ua_stylesheets: Vec<DocumentStyleSheet>,
     /// Map from form control node ID's to their associated forms node ID's
     pub(crate) controls_to_form: HashMap<NodeId, NodeId>,
     /// Nodes that contain sub documents
@@ -477,7 +475,6 @@ impl BaseDocument {
             subdocument_depth: config.subdocument_depth,
             devtool_settings: DevtoolSettings::default(),
             url: base_url,
-            ua_stylesheets: Vec::new(),
             nodes_to_stylesheet: BTreeMap::new(),
             stylesheet_generation: 0,
             font_ctx,
@@ -1150,9 +1147,9 @@ impl BaseDocument {
     }
 
     pub fn remove_user_agent_stylesheet(&mut self, sheet: &DocumentStyleSheet) {
-        if let Some(idx) = self.ua_stylesheets.iter().position(|s| s == sheet) {
-            let sheet = self.ua_stylesheets.remove(idx);
-            self.stylist.remove_stylesheet(sheet, &self.guard.read());
+        if self.useragent_stylesheets().any(|s| s == sheet) {
+            self.stylist
+                .remove_stylesheet(sheet.clone(), &self.guard.read());
         }
     }
 
@@ -1169,15 +1166,15 @@ impl BaseDocument {
 
     /// Iterate over the user-agent stylesheets currently associated with this document
     pub fn useragent_stylesheets(&self) -> impl Iterator<Item = &DocumentStyleSheet> {
-        self.ua_stylesheets.iter()
+        (0..self.stylist.sheet_count(Origin::UserAgent))
+            .filter_map(|i| self.stylist.sheet_at(Origin::UserAgent, i))
     }
 
     /// Append a user-agent stylesheet. Adding a sheet that is already present is a no-op.
     pub fn add_user_agent_stylesheet(&mut self, sheet: DocumentStyleSheet) {
-        if self.ua_stylesheets.contains(&sheet) {
+        if self.useragent_stylesheets().any(|s| *s == sheet) {
             return;
         }
-        self.ua_stylesheets.push(sheet.clone());
         self.stylist.append_stylesheet(sheet, &self.guard.read());
     }
 
