@@ -76,7 +76,7 @@ body{margin:0}
 fn document(html: &str, window: &Arc<Window>) -> BaseDocument {
     let config = DocumentConfig {
         shell_provider: Some(window.clone()),
-        ua_stylesheets: Some(vec![UserAgentStylesheet::default_sheet()]),
+        ua_stylesheets: vec![UserAgentStylesheet::default_sheet()],
         ..Default::default()
     };
     HtmlDocument::from_html(html, config).into_inner()

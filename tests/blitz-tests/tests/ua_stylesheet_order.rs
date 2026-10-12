@@ -8,7 +8,7 @@ const HTML: &str = "<html><body><div style='height: 10px'></div></body></html>";
 
 fn body_x(ua_stylesheets: Vec<UserAgentStylesheet>) -> f32 {
     let config = DocumentConfig {
-        ua_stylesheets: Some(ua_stylesheets),
+        ua_stylesheets,
         ..Default::default()
     };
     let mut doc = HtmlDocument::from_html(HTML, config).into_inner();
@@ -21,7 +21,7 @@ fn body_x(ua_stylesheets: Vec<UserAgentStylesheet>) -> f32 {
 fn default_sheet_is_inserted_first() {
     let custom = UserAgentStylesheet::parse("body { margin: 0 }");
     let config = DocumentConfig {
-        ua_stylesheets: Some(vec![custom.clone()]),
+        ua_stylesheets: vec![custom.clone()],
         ..Default::default()
     };
     let doc = HtmlDocument::from_html(HTML, config).into_inner();

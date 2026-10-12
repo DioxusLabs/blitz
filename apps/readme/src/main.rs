@@ -124,7 +124,7 @@ fn main() {
         &html,
         DocumentConfig {
             base_url: Some(base_url),
-            ua_stylesheets: Some(stylesheets),
+            ua_stylesheets: stylesheets,
             net_provider: Some(net_provider.clone()),
             navigation_provider: Some(navigation_provider.clone()),
             ..Default::default()

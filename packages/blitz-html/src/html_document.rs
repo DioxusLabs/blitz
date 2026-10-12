@@ -59,7 +59,7 @@ impl HtmlDocument {
         parse: impl for<'a, 'd> Fn(&'a mut blitz_dom::DocumentMutator<'d>, &str),
     ) -> Self {
         let default_sheet = UserAgentStylesheet::default_sheet();
-        let sheets = config.ua_stylesheets.get_or_insert_with(Vec::new);
+        let sheets = &mut config.ua_stylesheets;
         if !sheets.contains(&default_sheet) {
             sheets.insert(0, default_sheet);
         }

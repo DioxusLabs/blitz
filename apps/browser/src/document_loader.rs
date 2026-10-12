@@ -52,7 +52,6 @@ pub fn make_doc_config(
     DocumentConfig {
         viewport: None,
         base_url,
-        ua_stylesheets: None,
         net_provider: Some(net_provider as _),
         navigation_provider: Some(Arc::new(BrowserNavProvider { history })),
         shell_provider: Some(consume_context::<Arc<dyn ShellProvider>>()),

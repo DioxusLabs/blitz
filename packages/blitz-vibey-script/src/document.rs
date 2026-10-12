@@ -56,7 +56,7 @@ impl ScriptDocument {
     /// first `poll` doing it automatically).
     pub fn from_html(html: &str, mut config: DocumentConfig) -> Self {
         let default_sheet = UserAgentStylesheet::default_sheet();
-        let sheets = config.ua_stylesheets.get_or_insert_with(Vec::new);
+        let sheets = &mut config.ua_stylesheets;
         if !sheets.contains(&default_sheet) {
             sheets.insert(0, default_sheet);
         }

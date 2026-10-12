@@ -114,12 +114,11 @@ fn launch_internal(
         html,
         DocumentConfig {
             base_url: cfg.base_url,
-            ua_stylesheets: Some(
-                cfg.stylesheets
-                    .iter()
-                    .map(|css| UserAgentStylesheet::parse(css))
-                    .collect(),
-            ),
+            ua_stylesheets: cfg
+                .stylesheets
+                .iter()
+                .map(|css| UserAgentStylesheet::parse(css))
+                .collect(),
             net_provider: Some(net_provider),
             ..Default::default()
         },

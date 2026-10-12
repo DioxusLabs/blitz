@@ -110,7 +110,7 @@ impl ReadmeApplication {
             &html,
             DocumentConfig {
                 base_url: Some(url),
-                ua_stylesheets: Some(stylesheets),
+                ua_stylesheets: stylesheets,
                 net_provider: Some(self.net_provider.clone()),
                 navigation_provider: Some(self.navigation_provider.clone()),
                 ..Default::default()

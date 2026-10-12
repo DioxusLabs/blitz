@@ -537,13 +537,8 @@ impl BaseDocument {
         doc.root_node_id = doc.create_node(NodeData::Document(Box::default()));
         doc.root_node_mut().flags.insert(NodeFlags::IS_IN_DOCUMENT);
 
-        match config.ua_stylesheets {
-            Some(stylesheets) => {
-                for sheet in stylesheets {
-                    doc.add_user_agent_stylesheet(sheet);
-                }
-            }
-            None => doc.add_user_agent_stylesheet(UserAgentStylesheet::default_sheet()),
+        for sheet in config.ua_stylesheets {
+            doc.add_user_agent_stylesheet(sheet);
         }
 
         // Stylo data on the root node container is needed to render the node
