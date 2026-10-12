@@ -71,7 +71,7 @@ def compare(before, after):
 
     return [
         {"area": area, **counts}
-        for area, counts in sorted(totals.items())
+        for area, counts in sorted(totals.items(), key=lambda item: item[0].split("/"))
         if counts["gained"] or counts["lost"]
     ]
 

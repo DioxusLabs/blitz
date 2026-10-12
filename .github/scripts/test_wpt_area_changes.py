@@ -58,6 +58,15 @@ class CompareTest(unittest.TestCase):
             ],
         )
 
+    def test_nested_areas_sort_before_sibling_with_same_prefix(self):
+        tests = ("css/css-text/a/x.html", "css/css-text-decor/y.html")
+        before = {test: {None: "FAIL"} for test in tests}
+        after = {test: {None: "PASS"} for test in tests}
+        self.assertEqual(
+            [area["area"] for area in compare(before, after)],
+            ["css", "css/css-text", "css/css-text/a", "css/css-text-decor"],
+        )
+
     def test_no_changes(self):
         self.assertEqual(compare(BEFORE, BEFORE), [])
 
