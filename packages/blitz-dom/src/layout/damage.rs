@@ -131,6 +131,12 @@ impl BaseDocument {
             damage.insert(CONSTRUCT_BOX);
         }
 
+        // An `<input>` or a `<textarea>` takes its style when its box is built, and from a
+        // restyle that keeps the box.
+        if !own_damage.is_empty() && !damage.contains(CONSTRUCT_BOX) {
+            self.restyle_text_input(node_id);
+        }
+
         // Reconstruction replaces the anonymous boxes with freshly styled ones.
         if !own_damage.is_empty() && !damage.intersects(CONSTRUCT_BOX | CONSTRUCT_FC) {
             let anonymous_damage = self.refresh_anonymous_block_styles(node_id);
@@ -195,6 +201,26 @@ impl BaseDocument {
 
         // Propagate damage to parent
         damage_for_parent
+    }
+
+    /// Hands a text input's editor its restyled style, and lays a single-line input's text out
+    /// again where the editor takes it.
+    fn restyle_text_input(&mut self, node_id: NodeId) {
+        let node = &mut self.nodes[node_id];
+        let Some(style) = node.primary_styles().map(|style| (*style).clone()) else {
+            return;
+        };
+        let Some(input) = node
+            .data
+            .downcast_element_mut()
+            .and_then(|element| element.text_input_data_mut())
+        else {
+            return;
+        };
+        // A textarea's text is laid out again once layout knows its width.
+        if input.editor.restyle(node_id, &style) && !input.is_multiline {
+            input.editor.refresh(&mut self.text);
+        }
     }
 
     /// Refresh owned anonymous boxes without revisiting their DOM children.

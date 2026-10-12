@@ -112,6 +112,9 @@ pub struct TextLayout {
     layout: Layout,
     /// Whether the layout holds content built for the node as it is now.
     built: bool,
+    /// The computed style the content was last built in, which its
+    /// alignment and the block's other text properties were read from.
+    built_style: Option<ServoArc<ComputedValues>>,
     /// Whether the content has been broken into lines since it was built.
     laid: bool,
     /// The layout pass its lines were last placed in.
@@ -445,15 +448,8 @@ pub(crate) fn build(
     text.styles.marker = None;
     text.styles.marks.clear();
 
-    // An anonymous block has no style of its own worth reading: its text is
-    // set in the box around it.
-    let root_computed = root
-        .primary_styles()
-        .map(|style| (*style).clone())
-        .or_else(|| {
-            root.parent
-                .and_then(|parent| nodes[parent].primary_styles().map(|style| (*style).clone()))
-        });
+    let root_computed = root_style(nodes, root);
+    text.built_style = root_computed.clone();
     let Some(root_computed) = root_computed else {
         // Nothing styled: an empty layout, so that reading it reads nothing.
         let initial = ComputedStyle::initial();
@@ -588,6 +584,49 @@ pub(crate) fn build(
         }
     }
     text.built = true;
+}
+
+/// The computed style the content of the inline formatting context rooted at
+/// `root` is built in.
+///
+/// An anonymous block has no style of its own worth reading: its text is set
+/// in the box around it.
+fn root_style(nodes: &crate::NodeTree, root: &Node) -> Option<ServoArc<ComputedValues>> {
+    root.primary_styles()
+        .map(|style| (*style).clone())
+        .or_else(|| {
+            root.parent
+                .and_then(|parent| nodes[parent].primary_styles().map(|style| (*style).clone()))
+        })
+}
+
+/// Whether `old` and `new` differ in the inherited text properties winkin
+/// reads only into the block's facts, from the root of the inline formatting
+/// context: its alignment, indent, wrap style and fit.
+fn block_text_differs(old: &ComputedValues, new: &ComputedValues) -> bool {
+    let (old, new) = (old.get_inherited_text(), new.get_inherited_text());
+    old.text_align != new.text_align
+        || old.text_align_last != new.text_align_last
+        || old.text_indent != new.text_indent
+        || old.text_wrap_style != new.text_wrap_style
+        || old.text_fit != new.text_fit
+}
+
+/// Whether `old` and `new` differ in an inherited text property other than
+/// those [`block_text_differs`] compares.
+fn inline_text_differs(old: &ComputedValues, new: &ComputedValues) -> bool {
+    let new = new.get_inherited_text();
+    let old = old.get_inherited_text();
+    if old == new {
+        return false;
+    }
+    let mut masked = old.clone();
+    masked.text_align = new.text_align;
+    masked.text_align_last = new.text_align_last;
+    masked.text_indent = new.text_indent.clone();
+    masked.text_wrap_style = new.text_wrap_style;
+    masked.text_fit = new.text_fit;
+    masked != *new
 }
 
 /// The emphasis mark of text set in `computed`, laid out on one line: the
@@ -1631,8 +1670,10 @@ impl InlineLayoutEngine for TextLayout {
         // The build reads every inherited text and box property, the text
         // properties that do not inherit, and an inline-level element's box,
         // margins, borders and padding; measuring takes only the boxes'
-        // sizes and the basis percentages are taken of.
-        if old.get_inherited_text() != new.get_inherited_text()
+        // sizes and the basis percentages are taken of. The properties read
+        // only into the block's facts are the root's alone, which `prepare`
+        // compares and builds again for in place.
+        if inline_text_differs(old, new)
             || old.get_inherited_box() != new.get_inherited_box()
             || old.get_text() != new.get_text()
         {
@@ -1735,7 +1776,16 @@ impl InlineLayoutEngine for TextLayout {
             self.keep_built_extents(&mut sizes);
         }
         // Box construction builds the content. A context it left unbuilt is
-        // built here.
+        // built here, as is one whose root's alignment, indent, wrap style or
+        // fit changed since it was built, which keeps its box.
+        if self.built
+            && let Some(built) = &self.built_style
+            && let Some(now) = root_style(&doc.nodes, &doc.nodes[root])
+            && !ServoArc::ptr_eq(built, &now)
+            && block_text_differs(built, &now)
+        {
+            self.built = false;
+        }
         if !self.built {
             let guard = doc.guard.read();
             build(

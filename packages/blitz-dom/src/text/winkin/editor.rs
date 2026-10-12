@@ -534,6 +534,18 @@ impl EditEngine for TextEditor {
         self.dirty = true;
     }
 
+    fn restyle(&mut self, node: NodeId, style: &ServoArc<ComputedValues>) -> bool {
+        // The alignment, indent, wrap style and fit change without a new box.
+        let changed = self.style.as_ref().is_some_and(|(_, held)| {
+            !ServoArc::ptr_eq(held, style) && super::block_text_differs(held, style)
+        });
+        if changed {
+            self.style = Some((node, style.clone()));
+            self.dirty = true;
+        }
+        changed
+    }
+
     fn set_scale(&mut self, scale: f32) {
         if self.scale != scale {
             self.scale = scale;
