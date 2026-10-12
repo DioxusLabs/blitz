@@ -612,6 +612,15 @@ fn block_text_differs(old: &ComputedValues, new: &ComputedValues) -> bool {
         || old.text_fit != new.text_fit
 }
 
+/// Whether, of the properties [`block_text_differs`] compares, `old` and
+/// `new` differ only in `text-align` and `text-align-last`.
+fn alignment_alone_differs(old: &ComputedValues, new: &ComputedValues) -> bool {
+    let (old, new) = (old.get_inherited_text(), new.get_inherited_text());
+    old.text_indent == new.text_indent
+        && old.text_wrap_style == new.text_wrap_style
+        && old.text_fit == new.text_fit
+}
+
 /// Whether `old` and `new` differ in an inherited text property other than
 /// those [`block_text_differs`] compares.
 fn inline_text_differs(old: &ComputedValues, new: &ComputedValues) -> bool {
@@ -1776,15 +1785,26 @@ impl InlineLayoutEngine for TextLayout {
             self.keep_built_extents(&mut sizes);
         }
         // Box construction builds the content. A context it left unbuilt is
-        // built here, as is one whose root's alignment, indent, wrap style or
-        // fit changed since it was built, which keeps its box.
+        // built here, as is one whose root's indent, wrap style or fit changed
+        // since it was built, which keeps its box. A change to the alignment
+        // alone is set on the built content, whose lines are then broken
+        // again.
         if self.built
             && let Some(built) = &self.built_style
             && let Some(now) = root_style(&doc.nodes, &doc.nodes[root])
             && !ServoArc::ptr_eq(built, &now)
             && block_text_differs(built, &now)
         {
-            self.built = false;
+            if alignment_alone_differs(built, &now) {
+                let (align, last) = style::text_align(&now);
+                if self.layout.set_text_align(align, last) {
+                    self.laid = false;
+                    self.placed_in = None;
+                }
+                self.built_style = Some(now);
+            } else {
+                self.built = false;
+            }
         }
         if !self.built {
             let guard = doc.guard.read();

@@ -1007,6 +1007,28 @@ pub(crate) fn writing_mode(computed: &ComputedValues) -> WritingMode {
     }
 }
 
+/// The block's `text-align` and `text-align-last`, read from `computed`.
+pub(crate) fn text_align(computed: &ComputedValues) -> (TextAlign, TextAlignLast) {
+    let align = match computed.slow_clone_text_align() {
+        TextAlignKeyword::Start => TextAlign::Start,
+        TextAlignKeyword::End => TextAlign::End,
+        TextAlignKeyword::Left | TextAlignKeyword::MozLeft => TextAlign::Left,
+        TextAlignKeyword::Right | TextAlignKeyword::MozRight => TextAlign::Right,
+        TextAlignKeyword::Center | TextAlignKeyword::MozCenter => TextAlign::Center,
+        TextAlignKeyword::Justify => TextAlign::Justify,
+    };
+    let last = match computed.get_inherited_text().text_align_last {
+        StyloTextAlignLast::Auto => TextAlignLast::Auto,
+        StyloTextAlignLast::Start => TextAlignLast::Start,
+        StyloTextAlignLast::End => TextAlignLast::End,
+        StyloTextAlignLast::Left => TextAlignLast::Left,
+        StyloTextAlignLast::Right => TextAlignLast::Right,
+        StyloTextAlignLast::Center => TextAlignLast::Center,
+        StyloTextAlignLast::Justify => TextAlignLast::Justify,
+    };
+    (align, last)
+}
+
 /// The block's styling: its own style and its `::first-line` style, and the
 /// properties with one value per block container, read from `computed`.
 ///
@@ -1021,14 +1043,7 @@ pub(crate) fn block_style<'a>(
     scale: f32,
 ) -> ComputedBlockStyle<'a> {
     let text = computed.get_inherited_text();
-    let text_align = match computed.slow_clone_text_align() {
-        TextAlignKeyword::Start => TextAlign::Start,
-        TextAlignKeyword::End => TextAlign::End,
-        TextAlignKeyword::Left | TextAlignKeyword::MozLeft => TextAlign::Left,
-        TextAlignKeyword::Right | TextAlignKeyword::MozRight => TextAlign::Right,
-        TextAlignKeyword::Center | TextAlignKeyword::MozCenter => TextAlign::Center,
-        TextAlignKeyword::Justify => TextAlign::Justify,
-    };
+    let (text_align, text_align_last) = text_align(computed);
     let indent = computed.slow_clone_text_indent();
     // `plaintext` on the block takes each paragraph's direction from its own
     // first strong character.
@@ -1058,15 +1073,7 @@ pub(crate) fn block_style<'a>(
         direction,
         writing_mode: writing_mode(computed),
         text_align,
-        text_align_last: match text.text_align_last {
-            StyloTextAlignLast::Auto => TextAlignLast::Auto,
-            StyloTextAlignLast::Start => TextAlignLast::Start,
-            StyloTextAlignLast::End => TextAlignLast::End,
-            StyloTextAlignLast::Left => TextAlignLast::Left,
-            StyloTextAlignLast::Right => TextAlignLast::Right,
-            StyloTextAlignLast::Center => TextAlignLast::Center,
-            StyloTextAlignLast::Justify => TextAlignLast::Justify,
-        },
+        text_align_last,
         text_indent: TextIndent {
             amount: length_percentage(&indent.length, scale),
             hanging: indent.hanging,
