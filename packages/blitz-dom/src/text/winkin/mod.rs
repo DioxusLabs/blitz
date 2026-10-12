@@ -1678,7 +1678,8 @@ impl InlineLayoutEngine for TextLayout {
             layouts.par_iter_mut().for_each(|(node, layout)| {
                 let mut thread = threads
                     .get_or(|| {
-                        let mut own = Context::with_shared_fonts(collection.clone(), shared.clone());
+                        let mut own =
+                            Context::with_shared_fonts(collection.clone(), shared.clone());
                         own.set_config(config);
                         std::cell::RefCell::new((generation, own))
                     })
