@@ -824,9 +824,8 @@ fn emphasis(computed: &ComputedValues, language: Option<&Language>) -> TextEmpha
         position: EmphasisPosition {
             side: if position.contains(StyloTextEmphasisPosition::UNDER)
                 || (position.contains(StyloTextEmphasisPosition::AUTO)
-                    && language.is_some_and(|language| {
-                        language.language().eq_ignore_ascii_case("zh")
-                    }))
+                    && language
+                        .is_some_and(|language| language.language().eq_ignore_ascii_case("zh")))
             {
                 EmphasisSide::Under
             } else {

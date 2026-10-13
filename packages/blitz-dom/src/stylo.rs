@@ -1310,7 +1310,9 @@ impl<'a> TElement for BlitzNode<'a> {
                 && let Some(size) = parse_legacy_font_size(value)
             {
                 use style::values::specified::FontSize;
-                push_style(PropertyDeclaration::FontSize(FontSize::from_html_size(size)));
+                push_style(PropertyDeclaration::FontSize(FontSize::from_html_size(
+                    size,
+                )));
             }
 
             if *name == local_name!("bgcolor") {
