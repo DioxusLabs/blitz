@@ -322,6 +322,8 @@ pub(crate) struct BoxMeasure {
     pub(crate) baseline: Option<f32>,
     /// The side it floats to, where it is a float.
     pub(crate) float: Option<FloatSide>,
+    /// The sides it clears, where it is a float.
+    pub(crate) clear: FloatClear,
 }
 
 /// The min-content and max-content widths of an inline formatting context's content.
@@ -370,6 +372,17 @@ pub(crate) enum FloatSide {
     Right,
 }
 
+/// The sides whose earlier floats a float goes below: its `clear`.
+#[cfg_attr(not(feature = "floats"), allow(dead_code))]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum FloatClear {
+    #[default]
+    None,
+    Left,
+    Right,
+    Both,
+}
+
 /// A float the lines reached, to be placed: its margin box's size and the line's top, in device
 /// pixels.
 #[cfg_attr(not(feature = "floats"), allow(dead_code))]
@@ -378,6 +391,7 @@ pub(crate) struct FloatRequest {
     /// The key the content holds the float by.
     pub(crate) key: u64,
     pub(crate) side: FloatSide,
+    pub(crate) clear: FloatClear,
     pub(crate) inline_size: f32,
     pub(crate) block_size: f32,
     /// The top of the line that reached it, which it goes no higher than.
@@ -398,16 +412,41 @@ pub(crate) struct PlacedFloat {
 /// text reaches. Positions are in device pixels from the content box's top left.
 #[cfg_attr(not(feature = "floats"), allow(dead_code))]
 pub(crate) trait LineExclusions {
-    /// Returns the left and right edges of the room a line has that reaches across the block from
-    /// `start` to `end`.
-    fn band(&self, start: f32, end: f32) -> (f32, f32);
+    /// Returns the room floats leave a line whose top is at or below `top`: where its top goes,
+    /// and its left and right edges. `None` where no float is in the way.
+    fn slot(&self, top: f32) -> Option<LineSlot>;
 
-    /// Returns the next position below `top` where the room changes, or `None` where it never
-    /// does.
-    fn below(&self, top: f32) -> Option<f32>;
-
-    /// Places a float, which later bands account for, and returns where it went.
+    /// Places a float, which later slots account for, and returns where it went.
     fn place(&mut self, float: FloatRequest) -> PlacedFloat;
+}
+
+/// No floats: every line has the full width. What the lines are broken with where Blitz is built
+/// without float layout.
+#[cfg_attr(feature = "floats", allow(dead_code))]
+pub(crate) struct NoLineExclusions;
+
+impl LineExclusions for NoLineExclusions {
+    fn slot(&self, _top: f32) -> Option<LineSlot> {
+        None
+    }
+
+    fn place(&mut self, float: FloatRequest) -> PlacedFloat {
+        PlacedFloat {
+            left: 0.0,
+            right: float.inline_size,
+            top: float.block_start,
+            bottom: float.block_start + float.block_size,
+        }
+    }
+}
+
+/// The room a line has beside the floats, in device pixels from the content box's top left.
+#[cfg_attr(not(feature = "floats"), allow(dead_code))]
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct LineSlot {
+    pub(crate) top: f32,
+    pub(crate) left: f32,
+    pub(crate) right: f32,
 }
 
 /// The size and scale of the laid-out text of an `<input>` or `<textarea>`.
