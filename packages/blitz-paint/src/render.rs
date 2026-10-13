@@ -672,6 +672,13 @@ fn to_image_quality(image_rendering: ImageRendering) -> peniko::ImageQuality {
     }
 }
 
+/// The transform from an SVG's rendered tree to a viewport of the given size.
+#[cfg(feature = "svg")]
+fn svg_viewport_affine(svg: &blitz_dom::node::SvgImageData, width: f32, height: f32) -> Affine {
+    let t = svg.viewport_transform(width, height);
+    Affine::new([t.sx, t.ky, t.kx, t.sy, t.tx, t.ty].map(f64::from))
+}
+
 /// Ensure that the `resized_image` field has a correctly sized image
 fn to_peniko_image(image: &RasterImageData, quality: peniko::ImageQuality) -> peniko::ImageBrush {
     peniko::ImageBrush {
@@ -1127,13 +1134,8 @@ impl ElementCx<'_, '_> {
         let x = x + x_offset.px() as f64;
         let y = y + y_offset.px() as f64;
 
-        let x_scale = paint_size.width as f64 / object_size.width as f64;
-        let y_scale = paint_size.height as f64 / object_size.height as f64;
-
-        let transform = self
-            .transform
-            .pre_scale_non_uniform(x_scale, y_scale)
-            .then_translate(Vec2 { x, y });
+        let viewport = svg_viewport_affine(svg, paint_size.width, paint_size.height);
+        let transform = (self.transform * viewport).then_translate(Vec2 { x, y });
 
         anyrender_svg::render_svg_tree(scene, &svg.tree, transform);
     }
