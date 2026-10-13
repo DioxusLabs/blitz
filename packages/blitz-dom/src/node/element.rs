@@ -11,6 +11,7 @@ use std::sync::atomic::AtomicBool;
 use style::Atom;
 use style::parser::ParserContext;
 use style::properties::{Importance, PropertyDeclaration, PropertyId, SourcePropertyDeclaration};
+use style::servo::attr::parse_unsigned_integer;
 use style::stylesheets::{DocumentStyleSheet, Origin, UrlExtraData};
 use style::values::computed::Display as StyloDisplay;
 use style::{
@@ -573,6 +574,24 @@ impl ElementData {
             SpecialElementData::TextInput(data) => Some(data),
             _ => None,
         }
+    }
+
+    /// The maximum allowed value length (in UTF-16 code units) set by the `maxlength`
+    /// attribute, if this is a text control to which it applies and its value is valid.
+    ///
+    /// <https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#attr-fe-maxlength>
+    pub fn text_input_max_length(&self) -> Option<usize> {
+        let max_length =
+            parse_unsigned_integer(self.attr(local_name!("maxlength"))?.chars()).ok()? as usize;
+        let applies = match self.name.local {
+            local_name!("textarea") => true,
+            local_name!("input") => matches!(
+                self.attr(local_name!("type")),
+                None | Some("text" | "search" | "url" | "tel" | "email" | "password")
+            ),
+            _ => false,
+        };
+        applies.then_some(max_length)
     }
 
     #[cfg(feature = "custom-widget")]
