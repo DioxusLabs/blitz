@@ -509,6 +509,8 @@ impl Painter<'_> {
             descent: bar.descent(),
             underline_gap: bar.underline_gap(),
             thickness: bar.underline_thickness(),
+            font_underline_gap: bar.underline_gap_from_font(),
+            font_thickness: bar.underline_thickness_from_font(),
             font_size: bar.font_size(),
             centered: self.centered,
         };
@@ -1090,7 +1092,12 @@ pub(crate) struct WinkinDecoration {
     /// an `auto` line is: Chrome's, as winkin works them out.
     pub(crate) underline_gap: f32,
     pub(crate) thickness: f32,
-    /// Its box's used font size.
+    /// The font's own underline: where its top is under the baseline, and
+    /// how thick it is, for `from-font`. Each is the `auto` one where the
+    /// font gives none.
+    pub(crate) font_underline_gap: f32,
+    pub(crate) font_thickness: f32,
+    /// Its box's computed font size, scaled where `text-fit` scales its line.
     pub(crate) font_size: f32,
     /// Whether the metrics are measured about a central baseline, as a
     /// vertical line's are.
@@ -1158,6 +1165,11 @@ impl DrawTextContext {
         bar: WinkinDecoration,
         after_text: bool,
     ) {
+        let underline_offset = if deco.underline_from_font {
+            -bar.font_underline_gap
+        } else {
+            -bar.underline_gap
+        };
         self.deco_boxes.clear();
         self.deco_boxes.push(LineDecoration {
             node_id: NodeId::from_u64(0),
@@ -1169,10 +1181,12 @@ impl DrawTextContext {
                 ascent: bar.ascent,
                 descent: bar.descent,
                 // Placed from the baseline, up: an underline's top is its gap
-                // under it.
-                underline_offset: -bar.underline_gap,
-                underline_size: bar.thickness,
-                strikethrough_size: bar.thickness,
+                // under it. `from-font` takes the font's own place.
+                underline_offset,
+                // Read only for `from-font` thickness: `auto` and lengths are
+                // worked out from the font size.
+                underline_size: bar.font_thickness,
+                strikethrough_size: bar.font_thickness,
                 // winkin's ascent is already the one the platform's browser
                 // draws an overline against: its line metrics are.
                 font: None,
