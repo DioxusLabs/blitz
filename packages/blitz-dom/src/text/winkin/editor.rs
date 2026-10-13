@@ -90,7 +90,8 @@ pub struct TextEditor {
     composition: Option<Composition>,
     /// The text a password field shows in the clear: the character typed last.
     revealed: Option<Range<usize>>,
-    /// Whether the layout masks the text, and so maps its positions through its offset map.
+    /// Whether the layout masks or transforms the text, and so maps its positions through its
+    /// offset map.
     masked: bool,
     /// The pieces the layout was built in.
     pieces: Pieces,
