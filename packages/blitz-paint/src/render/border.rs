@@ -149,7 +149,7 @@ impl ElementCx<'_, '_> {
     pub(crate) fn draw_border(&self, scene: &mut impl PaintScene) {
         let style = &*self.style;
         let border = style.get_border();
-        let current_color = style.clone_color();
+        let current_color = style.slow_clone_color();
 
         // Fast path: a uniform-width, single-color solid border whose corners are
         // all circular arcs (equal x and y radius — sharp rectangles, ordinary
@@ -531,7 +531,7 @@ impl ElementCx<'_, '_> {
         let rows = PhysicalTracks::from_tracks(&grid_info.rows);
 
         // TODO: support different colors for different borders
-        let current_color = self.style.clone_color();
+        let current_color = self.style.slow_clone_color();
         let border_color = border_style
             .border_top_color
             .resolve_to_absolute(&current_color)
@@ -601,7 +601,7 @@ impl ElementCx<'_, '_> {
     pub(crate) fn draw_outline(&self, scene: &mut impl PaintScene) {
         let outline = self.style.get_outline();
 
-        let current_color = self.style.clone_color();
+        let current_color = self.style.slow_clone_color();
         let color = outline
             .outline_color
             .resolve_to_absolute(&current_color)

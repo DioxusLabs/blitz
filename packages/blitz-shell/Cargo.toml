@@ -11,7 +11,10 @@ edition.workspace = true
 rust-version.workspace = true
 
 [features]
-default = ["accessibility", "clipboard", "file-dialog"]
+default = ["accessibility", "clipboard", "file-dialog", "parley"]
+# The text backend: Parley (the default) or winkin. With both, Parley is used.
+parley = ["blitz-dom/parley", "blitz-paint/parley"]
+winkin = ["blitz-dom/winkin", "blitz-paint/winkin"]
 accessibility = [
     "dep:accesskit",
     "dep:accesskit_xplat",

@@ -20,6 +20,7 @@ use crate::{
     BaseDocument,
     node::{ScrollbarRef, SpecialElementData},
     scrolling::{FlingState, ScrollAnimationState},
+    text::{Edit, EditEngine as _, EditableText as _},
 };
 
 use super::focus::generate_focus_events;
@@ -178,7 +179,7 @@ fn touch_action_pan_axes(doc: &BaseDocument, node_id: NodeId) -> (bool, bool) {
     while let Some(id) = current {
         let node = &doc.nodes[id];
         if let Some(style) = node.primary_styles() {
-            let touch_action = style.clone_touch_action();
+            let touch_action = style.slow_clone_touch_action();
             if !done_x {
                 allow_x &= touch_action.intersects(pan_x_flags);
             }
@@ -186,10 +187,14 @@ fn touch_action_pan_axes(doc: &BaseDocument, node_id: NodeId) -> (bool, bool) {
                 allow_y &= touch_action.intersects(pan_y_flags);
             }
 
-            let scrolls_x = matches!(style.clone_overflow_x(), Overflow::Scroll | Overflow::Auto)
-                && node.final_layout().scroll_width() > 0.0;
-            let scrolls_y = matches!(style.clone_overflow_y(), Overflow::Scroll | Overflow::Auto)
-                && node.final_layout().scroll_height() > 0.0;
+            let scrolls_x = matches!(
+                style.slow_clone_overflow_x(),
+                Overflow::Scroll | Overflow::Auto
+            ) && node.final_layout().scroll_width() > 0.0;
+            let scrolls_y = matches!(
+                style.slow_clone_overflow_y(),
+                Overflow::Scroll | Overflow::Auto
+            ) && node.final_layout().scroll_height() > 0.0;
             done_x |= scrolls_x;
             done_y |= scrolls_y;
 
@@ -225,14 +230,14 @@ pub(crate) fn handle_pointermove<F: FnMut(DomEvent)>(
                     if let Some(mousedown_node_id) = doc.mousedown_node_id {
                         let node = &doc.nodes[mousedown_node_id];
                         if let Some(style) = node.primary_styles() {
-                            let user_select = style.clone_user_select();
+                            let user_select = style.slow_clone_user_select();
                             if user_select == UserSelect::None {
                                 // Do nothing. Continue with rest of function
                             } else if user_select == UserSelect::Auto {
                                 if let Some(parent) = node.parent {
                                     let node = &doc.nodes[parent];
                                     if let Some(style) = node.primary_styles() {
-                                        let user_select = style.clone_user_select();
+                                        let user_select = style.slow_clone_user_select();
                                         if user_select == UserSelect::None {
                                             // Do nothing. Continue with rest of function
                                         } else {
@@ -338,17 +343,19 @@ pub(crate) fn handle_pointermove<F: FnMut(DomEvent)>(
             return changed;
         }
 
+        text_input_data.editor.refresh(&mut doc.text);
         let mut content_box_offset = taffy::Point {
             x: final_layout.padding.left + final_layout.border.left,
             y: final_layout.padding.top + final_layout.border.top,
         };
         if !text_input_data.is_multiline {
-            let layout = text_input_data.editor.try_layout().unwrap();
-            let content_box_height = final_layout.content_box_height();
-            let input_height = layout.height() / layout.scale();
-            let y_offset = ((content_box_height - input_height) / 2.0).max(0.0);
+            if let Some(metrics) = text_input_data.editor.metrics() {
+                let content_box_height = final_layout.content_box_height();
+                let input_height = metrics.size.height as f32 / metrics.scale;
+                let y_offset = ((content_box_height - input_height) / 2.0).max(0.0);
 
-            content_box_offset.y += y_offset;
+                content_box_offset.y += y_offset;
+            }
         }
 
         // Account for the input's scroll offset (stored in CSS pixels, scaled here to device
@@ -363,10 +370,10 @@ pub(crate) fn handle_pointermove<F: FnMut(DomEvent)>(
         let x = (hit.x - content_box_offset.x) as f64 * doc.viewport.scale_f64() + scroll_x;
         let y = (hit.y - content_box_offset.y) as f64 * doc.viewport.scale_f64() + scroll_y;
 
-        text_input_data
-            .editor
-            .driver(&mut doc.font_ctx.lock().unwrap(), &mut doc.layout_ctx)
-            .extend_selection_to_point(x as f32, y as f32);
+        text_input_data.editor.edit(
+            &mut doc.text,
+            Edit::ExtendSelectionToPoint(x as f32, y as f32),
+        );
 
         changed = true;
     } else if event.is_mouse()
@@ -462,11 +469,12 @@ pub(crate) fn handle_pointerdown(
                         y: node.final_layout().padding.top + node.final_layout().border.top,
                     };
                     if !text_input_data.is_multiline {
-                        let layout = text_input_data.editor.try_layout().unwrap();
-                        let content_box_height = node.final_layout().content_box_height();
-                        let input_height = layout.height() / layout.scale();
-                        let y_offset = ((content_box_height - input_height) / 2.0).max(0.0);
-                        content_box_offset.y += y_offset;
+                        if let Some(metrics) = text_input_data.editor.metrics() {
+                            let content_box_height = node.final_layout().content_box_height();
+                            let input_height = metrics.size.height as f32 / metrics.scale;
+                            let y_offset = ((content_box_height - input_height) / 2.0).max(0.0);
+                            content_box_offset.y += y_offset;
+                        }
                     }
                     // `scroll_offset` is stored in CSS pixels; scale it to device pixels to
                     // match the editor's coordinate space.
@@ -521,24 +529,20 @@ pub(crate) fn handle_pointerdown(
             let node = &mut doc.nodes[actual_target];
             let el = node.data.downcast_element_mut().unwrap();
             if let SpecialElementData::TextInput(ref mut text_input_data) = el.special_data {
-                let mut font_ctx = doc.font_ctx.lock().unwrap();
-                let mut driver = text_input_data
-                    .editor
-                    .driver(&mut font_ctx, &mut doc.layout_ctx);
-
-                match click_count {
+                let (tx, ty) = (tx as f32, ty as f32);
+                let edit = match click_count {
                     1 => {
                         if mods.shift() {
-                            driver.shift_click_extension(tx as f32, ty as f32);
+                            Edit::ShiftClickExtension(tx, ty)
                         } else {
-                            driver.move_to_point(tx as f32, ty as f32);
+                            Edit::MoveToPoint(tx, ty)
                         }
                     }
-                    2 => driver.select_word_at_point(tx as f32, ty as f32),
-                    _ => driver.select_hard_line_at_point(tx as f32, ty as f32),
-                }
-
-                drop(font_ctx);
+                    2 => Edit::SelectWordAtPoint(tx, ty),
+                    _ => Edit::SelectHardLineAtPoint(tx, ty),
+                };
+                let edit = text_input_data.edit(edit);
+                text_input_data.editor.edit(&mut doc.text, edit);
             }
 
             generate_focus_events(

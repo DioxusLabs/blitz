@@ -9,7 +9,10 @@ license = "MIT"
 publish = false
 
 [features]
-default = ["vello-hybrid"]
+default = ["vello-hybrid", "parley"]
+# The text backend: Parley (the default) or winkin. With both, Parley is used.
+parley = ["dioxus-native/parley", "blitz-dom/parley", "blitz-paint/parley", "blitz-html/parley", "blitz-shell/parley"]
+winkin = ["dioxus-native/winkin", "blitz-dom/winkin", "blitz-paint/winkin", "blitz-html/winkin", "blitz-shell/winkin"]
 vello = ["dep:anyrender_vello", "dioxus-native/vello"]
 vello-hybrid = ["dep:anyrender_vello_hybrid", "dioxus-native/vello-hybrid"]
 

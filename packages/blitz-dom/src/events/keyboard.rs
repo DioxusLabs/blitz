@@ -1,5 +1,7 @@
 use crate::events::focus::generate_focus_events;
-use crate::{BaseDocument, node::GeneratedTextInputEvent, util::ACTION_MOD};
+use crate::{
+    BaseDocument, node::GeneratedTextInputEvent, text::EditableText as _, util::ACTION_MOD,
+};
 use blitz_traits::node_id::NodeId;
 use blitz_traits::{
     SmolStr,
@@ -70,6 +72,7 @@ pub(crate) fn handle_key_or_input_event<F: FnMut(DomEvent)>(
             return;
         }
 
+        let reveals = doc.reveal_typed_password.is_some();
         let node = &mut doc.nodes[node_id];
         let Some(element_data) = node.element_data_mut() else {
             return;
@@ -79,21 +82,17 @@ pub(crate) fn handle_key_or_input_event<F: FnMut(DomEvent)>(
             let generated_event = match event {
                 KeyboardOrTextInputEvent::KeyPress(blitz_key_event) => input_data
                     .apply_keypress_event(
-                        &mut doc.font_ctx.lock().unwrap(),
-                        &mut doc.layout_ctx,
+                        &mut doc.text,
                         &*doc.shell_provider,
                         blitz_key_event,
+                        reveals,
                     ),
                 KeyboardOrTextInputEvent::AppleStandardKeyBinding(command) => input_data
-                    .apply_apple_standard_keybinding(
-                        &mut doc.font_ctx.lock().unwrap(),
-                        &mut doc.layout_ctx,
-                        &*doc.shell_provider,
-                        &command,
-                    ),
+                    .apply_apple_standard_keybinding(&mut doc.text, &*doc.shell_provider, &command),
             };
 
             if let Some(generated_event) = generated_event {
+                doc.note_password_reveal(node_id, web_time::Instant::now());
                 doc.apply_generated_text_input_event(node_id, generated_event, dispatch_event);
             }
         }

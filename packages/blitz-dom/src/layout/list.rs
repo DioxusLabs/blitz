@@ -1,6 +1,5 @@
 use blitz_traits::node_id::NodeId;
 use markup5ever::local_name;
-use parley::FontFamily;
 use style::computed_values::list_style_type::T as ListStyleType;
 use style::{
     computed_values::list_style_position::T as ListStylePosition, counter_style::CounterStyle,
@@ -9,10 +8,8 @@ use style::{
 use crate::{
     BaseDocument,
     node::{ListItemLayout, ListItemLayoutPosition, Marker},
-    stylo_to_parley,
+    text::{MarkerEngine as _, MarkerLayout},
 };
-
-pub(super) const BULLET_FONT_FAMILY: &str = "Bullet, monospace, sans-serif";
 
 pub(super) fn collect_list_item_children(
     doc: &mut BaseDocument,
@@ -71,40 +68,22 @@ fn node_list_item_child(
     };
 
     let styles = node.primary_styles().unwrap();
-    let list_style_type = styles.clone_list_style_type();
-    let list_style_position = styles.clone_list_style_position();
+    let list_style_type = styles.slow_clone_list_style_type();
+    let list_style_position = styles.slow_clone_list_style_position();
     let marker = marker_for_style(list_style_type.clone(), index)?;
 
     let position = match list_style_position {
         ListStylePosition::Inside => ListItemLayoutPosition::Inside,
         ListStylePosition::Outside => {
-            let mut parley_style = stylo_to_parley::style(child_id, &styles);
-
-            if let Some(font_family) = font_for_bullet_style(list_style_type) {
-                parley_style.font_family = font_family;
-            }
-
-            // Create a parley tree builder
-            let mut font_ctx = doc.font_ctx.lock().unwrap();
-            let mut builder = doc.layout_ctx.tree_builder(
-                &mut font_ctx,
+            let bullet = list_style_type.0.is_bullet();
+            let layout = MarkerLayout::build(
+                &mut doc.text,
+                child_id,
+                &styles,
+                &marker,
+                bullet,
                 doc.viewport.scale(),
-                true,
-                &parley_style,
             );
-
-            match &marker {
-                Marker::Char(char) => {
-                    let mut buf = [0u8; 4];
-                    builder.push_text(char.encode_utf8(&mut buf));
-                }
-                Marker::String(str) => builder.push_text(str),
-            };
-
-            let mut layout = builder.build().0;
-            let width = layout.calculate_content_widths().max;
-            layout.break_all_lines(Some(width));
-
             ListItemLayoutPosition::Outside(Box::new(layout))
         }
     };
@@ -155,15 +134,6 @@ fn marker_for_style(list_style_type: ListStyleType, index: usize) -> Option<Mark
             }
         }
     })
-}
-
-// Override the font to our specific bullet font when rendering bullets
-fn font_for_bullet_style(list_style_type: ListStyleType) -> Option<FontFamily<'static>> {
-    if list_style_type.0.is_bullet() {
-        return Some(BULLET_FONT_FAMILY.into());
-    }
-
-    None
 }
 
 const ALPHABET: [char; 26] = [

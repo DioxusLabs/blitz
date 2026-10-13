@@ -2,7 +2,8 @@
 //!
 //! Self-contained so that it can move into `blitz-dom` later.
 
-use blitz_dom::node::{ListItemLayoutPosition, Marker, TextBrush, TextLayout};
+use blitz_dom::node::{InlineContent, ListItemLayoutPosition, Marker, TextLayout};
+use blitz_dom::text::InlineText as _;
 use blitz_dom::{Node, NodeId};
 use markup5ever::local_name;
 use style::computed_values::visibility::T as Visibility;
@@ -48,7 +49,7 @@ pub(crate) fn inner_text(element: &Node) -> String {
 }
 
 fn display(node: &Node) -> Option<Display> {
-    Some(node.primary_styles()?.clone_display())
+    Some(node.primary_styles()?.slow_clone_display())
 }
 
 /// Whether `element` has a box. Stylo drops the styles of `display: none` subtrees, so the
@@ -138,7 +139,7 @@ impl InnerTextCollector {
 
         let is_visible = node
             .primary_styles()
-            .is_some_and(|s| s.clone_visibility() == Visibility::Visible);
+            .is_some_and(|s| s.slow_clone_visibility() == Visibility::Visible);
         let line_breaks = match (display.outside(), display.inside()) {
             _ if !is_visible => 0,
             _ if node.data.is_element_with_tag_name(&local_name!("p")) => 2,
@@ -184,53 +185,50 @@ impl InnerTextCollector {
     }
 
     fn visit_inline_layout(&mut self, root: &Node, layout: &TextLayout, filter: Option<NodeId>) {
-        let text = layout.text.as_str();
+        let text = layout.text();
         let marker_len = inside_marker_len(root, text);
 
-        let mut cached_brush: Option<(NodeId, bool)> = None;
-        let mut include = |brush: &TextBrush| -> bool {
-            if let Some((id, included)) = cached_brush {
-                if id == brush.id {
+        let mut cached_node: Option<(NodeId, bool)> = None;
+        let mut include = |id: NodeId| -> bool {
+            if let Some((cached, included)) = cached_node {
+                if cached == id {
                     return included;
                 }
             }
-            let node = root.with(brush.id);
+            // Text is attributed to a text node or to the element holding it.
+            let mut node = root.with(id);
+            if node.is_text_node() {
+                if let Some(parent) = node.parent {
+                    node = root.with(parent);
+                }
+            }
             let included = !is_generated_pseudo(node)
                 && filter.is_none_or(|target| is_inclusive_descendant_of(node, target))
                 && node
                     .primary_styles()
-                    .is_none_or(|s| s.clone_visibility() == Visibility::Visible);
-            cached_brush = Some((brush.id, included));
+                    .is_none_or(|s| s.slow_clone_visibility() == Visibility::Visible);
+            cached_node = Some((id, included));
             included
         };
 
-        let mut boxes = layout.layout.inline_boxes().peekable();
-        let mut runs = Vec::new();
-        for line in layout.layout.lines() {
-            // Runs are stored in visual order: restore logical order for bidi text
-            runs.clear();
-            runs.extend(line.runs());
-            runs.sort_by_key(|run| run.text_range().start);
-
-            for run in &runs {
-                for cluster in run.clusters() {
-                    let range = cluster.text_range();
-                    while let Some(ibox) = boxes.next_if(|ibox| ibox.index <= range.start) {
-                        self.visit_inline_box(root, ibox.id, filter);
-                    }
-                    if range.start >= marker_len && include(&cluster.style().brush) {
-                        self.push_str(&text[range]);
+        for content in layout.logical_content() {
+            match content {
+                InlineContent::Box(id) => self.visit_inline_box(root, id, filter),
+                InlineContent::Text { node_id, range } => {
+                    // The inside marker's text is not the element's
+                    let start = range.start.max(marker_len);
+                    if start < range.end && include(node_id) {
+                        if let Some(text) = text.get(start..range.end) {
+                            self.push_str(text);
+                        }
                     }
                 }
             }
         }
-        for ibox in boxes {
-            self.visit_inline_box(root, ibox.id, filter);
-        }
     }
 
-    fn visit_inline_box(&mut self, root: &Node, id: u64, filter: Option<NodeId>) {
-        let node = root.with(NodeId::from_u64(id));
+    fn visit_inline_box(&mut self, root: &Node, id: NodeId, filter: Option<NodeId>) {
+        let node = root.with(id);
         if filter.is_none_or(|target| is_inclusive_descendant_of(node, target)) {
             self.visit(node, None);
         }
