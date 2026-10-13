@@ -1,3 +1,5 @@
+pub(crate) mod utf16;
+
 use crate::node::{Node, NodeData};
 use color::{AlphaColor, Srgb};
 use keyboard_types::Modifiers;
