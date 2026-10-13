@@ -1092,8 +1092,8 @@ impl ElementCx<'_, '_> {
             return;
         };
 
-        let width = self.frame.content_box.width() as u32;
-        let height = self.frame.content_box.height() as u32;
+        let width = self.frame.content_box.width() as f32;
+        let height = self.frame.content_box.height() as f32;
         let svg_size = svg.tree.size();
 
         let x = self.frame.content_box.origin().x;
@@ -1114,10 +1114,7 @@ impl ElementCx<'_, '_> {
         let object_position = self.style.clone_object_position();
 
         // Apply object-fit algorithm
-        let container_size = taffy::Size {
-            width: width as f32,
-            height: height as f32,
-        };
+        let container_size = taffy::Size { width, height };
         let object_size = taffy::Size {
             width: svg_size.width(),
             height: svg_size.height(),
