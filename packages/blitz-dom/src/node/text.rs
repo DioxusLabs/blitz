@@ -4,7 +4,7 @@ use blitz_traits::{
     shell::ShellProvider,
 };
 use keyboard_types::{Key, Modifiers};
-use parley::{ContentWidths, FontContext, LayoutContext};
+use parley::{ContentWidths, FontContext, LayoutContext, PlainEditorDriver};
 
 use crate::util::ACTION_MOD;
 
@@ -204,6 +204,7 @@ impl TextInputData {
         font_ctx: &mut FontContext,
         layout_ctx: &mut LayoutContext<TextBrush>,
         shell_provider: &dyn ShellProvider,
+        max_length: Option<usize>,
         event: BlitzKeyEvent,
     ) -> Option<GeneratedTextInputEvent> {
         // Do nothing if it is a keyup event
@@ -234,7 +235,7 @@ impl TextInputData {
                     }
                     "v" => {
                         let text = shell_provider.get_clipboard_text().unwrap_or_default();
-                        driver.insert_or_replace_selection(&text)
+                        return insert_within_max_length(&mut driver, &text, max_length);
                     }
                     _ => unreachable!(),
                 }
@@ -343,16 +344,14 @@ impl TextInputData {
 
             Key::Character(c) if c == "\n" => {
                 if is_multiline {
-                    driver.insert_or_replace_selection("\n");
-                    return Some(GeneratedTextInputEvent::Input);
+                    return insert_within_max_length(&mut driver, "\n", max_length);
                 } else {
                     return Some(GeneratedTextInputEvent::Submit);
                 }
             }
             Key::Enter => {
                 if is_multiline {
-                    driver.insert_or_replace_selection("\n");
-                    return Some(GeneratedTextInputEvent::Input);
+                    return insert_within_max_length(&mut driver, "\n", max_length);
                 } else {
                     return Some(GeneratedTextInputEvent::Submit);
                 }
@@ -360,8 +359,7 @@ impl TextInputData {
             Key::Character(s)
                 if !mods.contains(Modifiers::CONTROL) && !mods.contains(Modifiers::SUPER) =>
             {
-                driver.insert_or_replace_selection(&s);
-                return Some(GeneratedTextInputEvent::Input);
+                return insert_within_max_length(&mut driver, &s, max_length);
             }
             _ => {}
         };
@@ -374,6 +372,7 @@ impl TextInputData {
         font_ctx: &mut FontContext,
         layout_ctx: &mut LayoutContext<TextBrush>,
         shell_provider: &dyn ShellProvider,
+        max_length: Option<usize>,
         command: &str,
     ) -> Option<GeneratedTextInputEvent> {
         let editor = &mut self.editor;
@@ -389,36 +388,30 @@ impl TextInputData {
             "insertContainerBreak:" => {}
             // Inserts a double quotation mark without substituting a curly quotation mark.
             "insertDoubleQuoteIgnoringSubstitution:" => {
-                driver.insert_or_replace_selection("\"");
-                return Some(GeneratedTextInputEvent::Input);
+                return insert_within_max_length(&mut driver, "\"", max_length);
             }
             // Inserts a line break character.
             "insertLineBreak:" => {
-                driver.insert_or_replace_selection("\n");
-                return Some(GeneratedTextInputEvent::Input);
+                return insert_within_max_length(&mut driver, "\n", max_length);
             }
             // Inserts a newline character.
             "insertNewline:" => {
                 if is_multiline {
-                    driver.insert_or_replace_selection("\n");
-                    return Some(GeneratedTextInputEvent::Input);
+                    return insert_within_max_length(&mut driver, "\n", max_length);
                 } else {
                     return Some(GeneratedTextInputEvent::Submit);
                 }
             }
             // Inserts a newline character without invoking the field editor’s normal handling to end editing.
             "insertNewlineIgnoringFieldEditor:" => {
-                driver.insert_or_replace_selection("\n");
-                return Some(GeneratedTextInputEvent::Input);
+                return insert_within_max_length(&mut driver, "\n", max_length);
             }
             // Inserts a paragraph separator.
             "insertParagraphSeparator:" => {
-                driver.insert_or_replace_selection("\n");
-                return Some(GeneratedTextInputEvent::Input);
+                return insert_within_max_length(&mut driver, "\n", max_length);
             }
             "insertSingleQuoteIgnoringSubstitution:" => {
-                driver.insert_or_replace_selection("'");
-                return Some(GeneratedTextInputEvent::Input);
+                return insert_within_max_length(&mut driver, "'", max_length);
             }
             // Inserts a tab character.
             "insertTab:" | "insertTabIgnoringFieldEditor:" => {
@@ -764,6 +757,7 @@ impl TextInputData {
         &mut self,
         font_ctx: &mut FontContext,
         layout_ctx: &mut LayoutContext<TextBrush>,
+        max_length: Option<usize>,
         event: BlitzImeEvent,
     ) -> Option<GeneratedTextInputEvent> {
         let editor = &mut self.editor;
@@ -778,10 +772,7 @@ impl TextInputData {
                 driver.clear_compose();
                 Some(GeneratedTextInputEvent::PreEditChange)
             }
-            BlitzImeEvent::Commit(text) => {
-                driver.insert_or_replace_selection(&text);
-                Some(GeneratedTextInputEvent::Input)
-            }
+            BlitzImeEvent::Commit(text) => insert_within_max_length(&mut driver, &text, max_length),
             BlitzImeEvent::Preedit(text, cursor) => {
                 if text.is_empty() {
                     driver.clear_compose();
@@ -801,4 +792,50 @@ impl TextInputData {
             }
         }
     }
+}
+
+/// Insert `text` at the selection, truncated so that the value's length does not exceed
+/// `max_length` (the `maxlength` attribute). Returns `None` if this leaves the value unchanged.
+fn insert_within_max_length(
+    driver: &mut PlainEditorDriver<'_, TextBrush>,
+    text: &str,
+    max_length: Option<usize>,
+) -> Option<GeneratedTextInputEvent> {
+    let text = match max_length {
+        Some(max_length) => {
+            let editor = &driver.editor;
+            let selected_length = editor.selected_text().map_or(0, value_length);
+            let base_length = value_length(editor.raw_text()).saturating_sub(selected_length);
+            truncate_to_value_length(text, max_length.saturating_sub(base_length))
+        }
+        None => text,
+    };
+    if text.is_empty() && driver.editor.raw_selection().is_collapsed() {
+        return None;
+    }
+    driver.insert_or_replace_selection(text);
+    Some(GeneratedTextInputEvent::Input)
+}
+
+/// The length of a text control's value as measured by `maxlength`: UTF-16 code units, with
+/// each CRLF pair counted once.
+fn value_length(text: &str) -> usize {
+    text.encode_utf16().count() - text.matches("\r\n").count()
+}
+
+/// The longest prefix of `text` whose [`value_length`] is at most `max_length`, never splitting
+/// a character.
+fn truncate_to_value_length(text: &str, max_length: usize) -> &str {
+    let mut length = 0;
+    let mut prev = None;
+    for (idx, c) in text.char_indices() {
+        if !(c == '\n' && prev == Some('\r')) {
+            length += c.len_utf16();
+        }
+        if length > max_length {
+            return &text[..idx];
+        }
+        prev = Some(c);
+    }
+    text
 }

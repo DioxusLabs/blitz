@@ -75,6 +75,7 @@ pub(crate) fn handle_key_or_input_event<F: FnMut(DomEvent)>(
             return;
         };
 
+        let max_length = element_data.text_input_max_length();
         if let Some(input_data) = element_data.text_input_data_mut() {
             let generated_event = match event {
                 KeyboardOrTextInputEvent::KeyPress(blitz_key_event) => input_data
@@ -82,6 +83,7 @@ pub(crate) fn handle_key_or_input_event<F: FnMut(DomEvent)>(
                         &mut doc.font_ctx.lock().unwrap(),
                         &mut doc.layout_ctx,
                         &*doc.shell_provider,
+                        max_length,
                         blitz_key_event,
                     ),
                 KeyboardOrTextInputEvent::AppleStandardKeyBinding(command) => input_data
@@ -89,6 +91,7 @@ pub(crate) fn handle_key_or_input_event<F: FnMut(DomEvent)>(
                         &mut doc.font_ctx.lock().unwrap(),
                         &mut doc.layout_ctx,
                         &*doc.shell_provider,
+                        max_length,
                         &command,
                     ),
             };
