@@ -24,7 +24,7 @@ use crate::layout::resolve_calc_value;
 use crate::node::TextLayout;
 #[cfg(not(feature = "floats"))]
 use crate::text::NoLineExclusions;
-use crate::text::{BoxMeasure, FloatClear, FloatSide, InlineLayoutEngine as _, InlineText as _};
+use crate::text::{BoxMeasure, FloatClear, FloatSide, InlineLayoutEngine as _};
 
 impl LayoutPassState<'_> {
     /// Measures the inline formatting context's boxes, breaks its lines and places them and what
