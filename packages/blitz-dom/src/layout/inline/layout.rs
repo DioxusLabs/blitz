@@ -25,28 +25,17 @@ pub(crate) fn subtract_margins(
     child_inputs
 }
 
-/// Layout inputs for a float in an inline formatting context, from `inputs`, those of the pass: it
-/// is sized in the room beside nothing, `basis` CSS pixels less its margins where that room is
-/// definite, and as tall as it needs.
+/// Layout inputs for a float in an inline formatting context, from `child_inputs`, those of the
+/// pass: sized in the containing block's inline room less its margins, with any sizing keyword on
+/// its `width` style resolved, and as tall as it needs.
 pub(crate) fn float_box_inputs(
-    inputs: LayoutInput,
-    basis: f32,
+    width_style: taffy::Dimension,
     margin: taffy::Rect<f32>,
+    child_inputs: LayoutInput,
 ) -> LayoutInput {
-    LayoutInput {
-        known_dimensions: Size::NONE,
-        sizing_mode: SizingMode::InherentSize,
-        available_space: Size {
-            width: match inputs.available_space.width {
-                AvailableSpace::Definite(_) => {
-                    AvailableSpace::Definite((basis - margin.left - margin.right).max(0.0))
-                }
-                other => other,
-            },
-            height: AvailableSpace::MaxContent,
-        },
-        ..inputs
-    }
+    let mut inputs = inline_box_inputs(width_style, margin, child_inputs);
+    inputs.available_space.height = AvailableSpace::MaxContent;
+    inputs
 }
 
 /// Layout inputs for an atomic inline box, with any sizing keyword on its `width` style

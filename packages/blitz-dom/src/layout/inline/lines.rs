@@ -79,12 +79,7 @@ impl LayoutPassState<'_> {
             axis: RequestedAxis::Both,
             ..child_inputs
         };
-        // The containing block's inline size, which a float's room is taken of.
-        let basis = match available_space.width {
-            AvailableSpace::Definite(width) => width,
-            _ => 0.0,
-        };
-        let sizes = self.measure_inline_boxes(node_id, child_inputs, pass, basis);
+        let sizes = self.measure_inline_boxes(node_id, child_inputs, pass);
         inline_layout.prepare(
             &sizes,
             self.nodes[node_id]
@@ -414,7 +409,6 @@ impl LayoutPassState<'_> {
                     NodeId::from_u64(key),
                     pos,
                     child_inputs,
-                    basis,
                     container_pb,
                     &mut oof_candidates,
                 );
@@ -493,13 +487,13 @@ impl LayoutPassState<'_> {
         node: NodeId,
         pos: taffy::Point<f32>,
         child_inputs: taffy::LayoutInput,
-        basis: f32,
         container_pb: taffy::Rect<f32>,
         oof_candidates: &mut OofCandidates,
     ) {
-        let (margin, padding, border) = {
+        let (width_style, margin, padding, border) = {
             let style = self.child_layout_style(&self.nodes[node]);
             (
+                style.size().width,
                 style
                     .margin()
                     .resolve_or_zero(child_inputs.parent_size, resolve_calc_value),
@@ -513,10 +507,11 @@ impl LayoutPassState<'_> {
         };
         let mut output = self.compute_child_layout(
             crate::taffy_node_id(node),
-            float_box_inputs(child_inputs, basis, margin),
+            float_box_inputs(width_style, margin, child_inputs),
         );
         let layout = self.nodes[node].unrounded_layout_mut();
         layout.size = output.size;
+        layout.scrollable_overflow_rect = output.scrollable_overflow_rect;
         layout.location.x = pos.x + margin.left + container_pb.left;
         layout.location.y = pos.y + margin.top + container_pb.top;
         layout.padding = padding;
@@ -543,8 +538,7 @@ impl LayoutPassState<'_> {
     /// inline's baseline down from its top. Absolutely positioned boxes take no room in the lines,
     /// and are not measured.
     ///
-    /// A float is sized in the room beside nothing, less its margins, `basis` being the containing
-    /// block's inline size.
+    /// A float is sized in the room beside nothing, less its margins.
     ///
     /// `pass` says how far each box is laid out: where its baseline is not read or the pass needs
     /// no baseline, it is only measured, along the line alone in an inline-size pass.
@@ -560,7 +554,6 @@ impl LayoutPassState<'_> {
         node_id: NodeId,
         child_inputs: taffy::LayoutInput,
         pass: Measure,
-        basis: f32,
     ) -> Vec<BoxMeasure> {
         let children = self.nodes[node_id].layout_children.borrow().clone();
         let mut sizes = Vec::with_capacity(children.as_ref().map_or(0, |children| children.len()));
@@ -612,11 +605,9 @@ impl LayoutPassState<'_> {
                         ..child_inputs
                     },
                 };
+                let box_inputs = float_box_inputs(style.size().width, margin, pass_inputs);
                 drop(style);
-                let output = self.compute_child_layout(
-                    crate::taffy_node_id(node),
-                    float_box_inputs(pass_inputs, basis, margin),
-                );
+                let output = self.compute_child_layout(crate::taffy_node_id(node), box_inputs);
                 sizes.push(BoxMeasure {
                     node,
                     size: output.size,
