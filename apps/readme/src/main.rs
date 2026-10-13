@@ -2,22 +2,20 @@ mod readme_application;
 
 mod markdown {
     use blitz_dom::UserAgentStylesheet;
-    use std::sync::OnceLock;
+    use std::sync::LazyLock;
 
     const GITHUB_MD_STYLES: &str = include_str!("../assets/github-markdown.css");
     const BLITZ_MD_STYLES: &str = include_str!("../assets/blitz-markdown-overrides.css");
 
     /// The user-agent stylesheets for rendered markdown, parsed once.
     pub(crate) fn markdown_stylesheets() -> Vec<UserAgentStylesheet> {
-        static SHEETS: OnceLock<[UserAgentStylesheet; 2]> = OnceLock::new();
-        SHEETS
-            .get_or_init(|| {
-                [
-                    UserAgentStylesheet::parse(GITHUB_MD_STYLES),
-                    UserAgentStylesheet::parse(BLITZ_MD_STYLES),
-                ]
-            })
-            .to_vec()
+        static SHEETS: LazyLock<[UserAgentStylesheet; 2]> = LazyLock::new(|| {
+            [
+                UserAgentStylesheet::parse(GITHUB_MD_STYLES),
+                UserAgentStylesheet::parse(BLITZ_MD_STYLES),
+            ]
+        });
+        SHEETS.to_vec()
     }
 
     #[cfg(feature = "comrak")]

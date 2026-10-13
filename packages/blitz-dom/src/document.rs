@@ -39,7 +39,7 @@ use std::rc::Rc;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
-use std::sync::{Arc, Mutex, MutexGuard, OnceLock, RwLockReadGuard, RwLockWriteGuard};
+use std::sync::{Arc, LazyLock, Mutex, MutexGuard, OnceLock, RwLockReadGuard, RwLockWriteGuard};
 use std::task::{Context as TaskContext, Waker};
 use style::Atom;
 use style::animation::DocumentAnimationSet;
@@ -98,8 +98,9 @@ impl UserAgentStylesheet {
 
     /// The default user-agent stylesheet ([`DEFAULT_CSS`]), parsed once.
     pub fn default_sheet() -> Self {
-        static SHEET: OnceLock<UserAgentStylesheet> = OnceLock::new();
-        SHEET.get_or_init(|| Self::parse(DEFAULT_CSS)).clone()
+        static SHEET: LazyLock<UserAgentStylesheet> =
+            LazyLock::new(|| UserAgentStylesheet::parse(DEFAULT_CSS));
+        SHEET.clone()
     }
 
     pub fn sheet(&self) -> &DocumentStyleSheet {
