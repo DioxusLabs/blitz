@@ -689,8 +689,10 @@ impl Node {
         let input_data = self.element_data()?.text_input_data()?;
         let layout = self.final_layout();
         let pos = self.absolute_position(0.0, 0.0);
-        let content_x = pos.x + layout.content_box_x();
-        let content_y = pos.y + layout.content_box_y();
+        // `absolute_position` already includes this node's own location, so only add the
+        // border and padding (`content_box_x/y` would add the location a second time).
+        let content_x = pos.x + layout.border.left + layout.padding.left;
+        let content_y = pos.y + layout.border.top + layout.padding.top;
 
         let caret = input_data
             .editor

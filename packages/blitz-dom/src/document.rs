@@ -3388,4 +3388,42 @@ mod ime_focus_tests {
         doc.clear_focus();
         assert_eq!(*shell.enabled.lock().unwrap(), vec![true, false]);
     }
+
+    /// The reported area must be in viewport coordinates for a text input that is not at the
+    /// origin: its own offset within its parent is counted once, plus its border and padding.
+    #[test]
+    fn ime_cursor_area_of_offset_textarea() {
+        let shell = Arc::new(RecordingShell::default());
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
+            shell_provider: Some(shell.clone()),
+            ..Default::default()
+        });
+        doc.add_user_agent_stylesheet(
+            "html, body { display: block; margin: 0 } \
+             div { display: block; height: 50px } \
+             textarea { display: block; margin-left: 30px; width: 200px; height: 100px; \
+                        border: 2px solid; padding: 3px }",
+        );
+        let root_id = doc.root_node().id;
+        let mut mutator = doc.mutate();
+        let html = mutator.create_element(qual_name!("html"), vec![]);
+        let body = mutator.create_element(qual_name!("body"), vec![]);
+        let spacer = mutator.create_element(qual_name!("div"), vec![]);
+        let textarea = mutator.create_element(qual_name!("textarea"), vec![]);
+        mutator.append_children(body, &[spacer, textarea]);
+        mutator.append_children(html, &[body]);
+        mutator.append_children(root_id, &[html]);
+        drop(mutator);
+
+        doc.set_focus_to(textarea);
+        doc.resolve(0.0);
+
+        // Content box starts at x = 30 (margin) + 2 (border) + 3 (padding) = 35 and
+        // y = 50 (spacer) + 2 + 3 = 55; the caret of the empty textarea sits at its top-left.
+        let (x, y, _, h) = shell.areas.lock().unwrap()[0];
+        assert_eq!(x, 35.0);
+        assert!((55.0..60.0).contains(&y), "caret y {y}");
+        assert!(y + h <= 155.0, "caret y {y} height {h}");
+    }
 }
