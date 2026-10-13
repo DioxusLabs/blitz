@@ -42,7 +42,7 @@ font-embolden = ["dioxus-native/font-embolden"]
 apple-font-embolden = ["dioxus-native/apple-font-embolden"]
 writing-mode = ["blitz-dom/writing-mode", "dioxus-native/writing-mode"]
 # The text backend, which is Parley: on by default, and required.
-parley = ["dioxus-native/parley", "blitz-dom/parley", "blitz-html/parley", "blitz-paint?/parley", "blitz-vibey-script?/parley"]
+parley = ["dioxus-native/parley", "blitz-html/parley", "blitz-vibey-script?/parley"]
 
 [dependencies]
 dioxus-native = { workspace = true, features = [
