@@ -793,12 +793,9 @@ impl Painter<'_> {
                 .resolve_to_absolute(&styles.slow_clone_color())
                 .as_srgb_color()
         };
-        let upright = run.is_some_and(|run| {
-            matches!(
-                run.orientation(),
-                RunOrientation::Upright | RunOrientation::Combined
-            )
-        });
+        // A mark on combined text turns with the line, as Chrome draws it: the unit is set
+        // upright, but its mark is the line's.
+        let upright = run.is_some_and(|run| run.orientation() == RunOrientation::Upright);
         let baseline = metrics.baseline - metrics.top;
         let half = metrics.width / 2.0;
         // Where the mark's own line's origin goes, and what it is drawn
