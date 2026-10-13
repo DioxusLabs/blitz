@@ -691,6 +691,7 @@ fn unboxed(style: ComputedStyle<'_>) -> ComputedStyle<'_> {
     ComputedStyle {
         edges: EdgesGroup::INITIAL,
         paints: false,
+        decorates: false,
         line: LineGroup {
             vertical_align: VerticalAlign::Baseline,
             ..style.line
