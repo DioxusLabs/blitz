@@ -433,8 +433,3 @@ impl LayoutPassState<'_> {
         self.lay_out_lines(node_id, inline_layout, frame, block_ctx)
     }
 }
-
-#[inline(always)]
-pub(crate) fn f32_max(a: f32, b: f32) -> f32 {
-    a.max(b)
-}
