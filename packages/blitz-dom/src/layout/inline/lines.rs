@@ -346,6 +346,7 @@ impl LayoutPassState<'_> {
                     .find(|(node, _)| *node == float.key)
                     .map_or(Clear::None, |(_, clear)| *clear);
                 block_ctx.place_floated_box(
+                    float.key,
                     Size {
                         width: (float.right - float.left) / scale,
                         height: (float.bottom - float.top) / scale,
