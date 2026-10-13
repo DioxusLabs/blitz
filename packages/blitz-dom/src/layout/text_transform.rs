@@ -546,7 +546,7 @@ fn ceil_char_boundary(s: &str, mut index: usize) -> usize {
     index
 }
 
-#[cfg(all(test, text_parley))]
+#[cfg(all(test, feature = "parley"))]
 mod tests {
     use super::*;
     use parley::{FontContext, LayoutContext, TextStyle, TreeBuilder};
