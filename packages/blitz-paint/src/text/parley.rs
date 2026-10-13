@@ -86,9 +86,12 @@ fn paint_selection(
 /// `transform` takes the content box's device pixels, moved down by the layout's block offset,
 /// onto the scene. `content_size` is the content box's size in device pixels, which every text
 /// backend's painter is handed and Parley's does not need.
+///
+/// Parley's painter leaves atomic inlines to be painted after the text, so `_paint_atomic` is
+/// never called.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn paint_inline_layout(
-    scene: &mut impl PaintScene,
+pub(crate) fn paint_inline_layout<S: PaintScene>(
+    scene: &mut S,
     text_layout: &TextLayout,
     doc: &BaseDocument,
     transform: Affine,
@@ -96,8 +99,10 @@ pub(crate) fn paint_inline_layout(
     scale: f64,
     root: NodeId,
     selection: Option<(usize, usize)>,
-    context: &mut DrawTextContext,
+    context: &std::cell::RefCell<DrawTextContext>,
+    _paint_atomic: &mut impl FnMut(&mut S, NodeId),
 ) {
+    let context = &mut *context.borrow_mut();
     // Render inline element backgrounds (e.g. `<span style="background: ...">`)
     // behind the text and selection highlight.
     draw_inline_backgrounds(scene, text_layout.layout.lines(), doc, transform, root);
