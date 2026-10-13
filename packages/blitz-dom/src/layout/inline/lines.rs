@@ -16,15 +16,18 @@ use taffy::{BlockItemStyle as _, Clear, Float};
 
 use stylo_taffy::StyleFlags;
 
-use super::floats::FloatRoom;
 #[cfg(feature = "floats")]
-use super::floats::Floated;
+use super::floats::TaffyFloats;
 use super::{Frame, float_box_inputs, inline_box_inputs};
 use crate::layout::LayoutPassState;
 use crate::layout::replaced::is_replaced_element;
 use crate::layout::resolve_calc_value;
 use crate::node::TextLayout;
-use crate::text::{BoxMeasure, FloatSide, InlineLayoutEngine as _, InlineText as _, LastBaseline};
+#[cfg(not(feature = "floats"))]
+use crate::text::NoLineExclusions;
+use crate::text::{
+    BoxMeasure, FloatClear, FloatSide, InlineLayoutEngine as _, InlineText as _, LastBaseline,
+};
 
 impl LayoutPassState<'_> {
     /// Measures the inline formatting context's boxes, breaks its lines and places them and what
@@ -129,8 +132,10 @@ impl LayoutPassState<'_> {
 
         // Create sub-context to account for the inline layout's padding/border
         #[cfg(feature = "floats")]
+        let outer_block_ctx = block_ctx;
+        #[cfg(feature = "floats")]
         let mut block_ctx =
-            block_ctx.sub_context(container_pb.top, [container_pb.left, container_pb.right]);
+            outer_block_ctx.sub_context(container_pb.top, [container_pb.left, container_pb.right]);
         #[cfg(not(feature = "floats"))]
         let _ = block_ctx;
 
@@ -159,44 +164,33 @@ impl LayoutPassState<'_> {
         // These are laid out by the out-of-flow positioning pass (`compute_oof_layout`).
         let mut oof_candidates = OofCandidates::new();
 
-        // Each float's `clear`, which the floats it reaches below are placed under.
+        let style = self.nodes[node_id].primary_styles().map(|s| (*s).clone());
+        // The floats the lines place are read back from the block formatting context.
         #[cfg(feature = "floats")]
-        let clears: Vec<(u64, Clear)> = sizes
-            .iter()
-            .filter(|measured| measured.float.is_some())
-            .map(|measured| {
-                let style = self.child_layout_style(&self.nodes[measured.node]);
-                (measured.node.as_u64(), style.clear())
-            })
-            .collect();
-        let floats = {
-            let style = self.nodes[node_id].primary_styles().map(|s| (*s).clone());
-            let mut room = FloatRoom {
-                #[cfg(feature = "floats")]
-                outer: Some(&block_ctx),
-                #[cfg(not(feature = "floats"))]
-                outer: core::marker::PhantomData,
-                width,
+        let float_mark = block_ctx.float_mark();
+        #[cfg(feature = "floats")]
+        inline_layout.break_lines(
+            width,
+            style.as_deref(),
+            &mut TaffyFloats {
+                ctx: &mut block_ctx,
                 scale,
-                #[cfg(feature = "floats")]
-                clears: &clears,
-                placed: Vec::new(),
-            };
-            inline_layout.break_lines(width, style.as_deref(), &mut room);
-            room.placed
-        };
+            },
+        );
+        #[cfg(not(feature = "floats"))]
+        inline_layout.break_lines(width, style.as_deref(), &mut NoLineExclusions);
+        drop(style);
 
         let extent = inline_layout.extent();
         #[cfg_attr(not(feature = "floats"), allow(unused_mut))]
         let mut height = extent.height;
 
+        #[cfg(feature = "floats")]
+        let float_height_contribution = block_ctx.floated_content_height_contribution();
         // A block formatting context's root holds its floats.
         #[cfg(feature = "floats")]
         if is_bfc_root {
-            height = floats
-                .iter()
-                .map(|float| float.bottom)
-                .fold(height, f32::max);
+            height = height.max(float_height_contribution * scale);
         }
 
         // Note: `width` and `height` are content-box measurements of the inline content.
@@ -415,42 +409,27 @@ impl LayoutPassState<'_> {
             }
         }
 
-        // Each float goes where the lines flowed around it, and into the block formatting context
-        // for the blocks after this one.
+        // Each float goes where Taffy placed it as the lines reached it.
         #[cfg(feature = "floats")]
         if inputs.run_mode == RunMode::PerformLayout {
-            for float in &floats {
-                let direction = match float.side {
-                    FloatSide::Left => taffy::FloatDirection::Left,
-                    FloatSide::Right => taffy::FloatDirection::Right,
-                };
-                let clear = clears
-                    .iter()
-                    .find(|(node, _)| *node == float.key)
-                    .map_or(Clear::None, |(_, clear)| *clear);
-                block_ctx.place_floated_box(
-                    Size {
-                        width: (float.right - float.left) / scale,
-                        height: (float.bottom - float.top) / scale,
-                    },
-                    float.top / scale,
-                    direction,
-                    clear,
-                    false,
-                );
+            for (key, pos) in block_ctx.floats_placed_since(float_mark) {
                 self.place_float(
-                    NodeId::from_u64(float.key),
-                    float,
+                    NodeId::from_u64(key),
+                    pos,
                     child_inputs,
                     basis,
                     container_pb,
-                    scale,
                     &mut oof_candidates,
                 );
             }
         }
-        #[cfg(not(feature = "floats"))]
-        let _ = floats;
+
+        // Propagate the height consumed by floats placed within this container to the
+        // enclosing block context (so that the BFC root can contain them)
+        #[cfg(feature = "floats")]
+        outer_block_ctx.add_child_floated_content_height_contribution(
+            container_pb.top + float_height_contribution,
+        );
 
         let line_baseline = |baseline: f32| (baseline / scale) + line_box_top;
         let first_baseline = extent
@@ -512,15 +491,13 @@ impl LayoutPassState<'_> {
     /// Sets where a float the lines flowed around goes, and hands on the absolutely positioned
     /// boxes it holds.
     #[cfg(feature = "floats")]
-    #[allow(clippy::too_many_arguments)]
     fn place_float(
         &mut self,
         node: NodeId,
-        float: &Floated,
+        pos: taffy::Point<f32>,
         child_inputs: taffy::LayoutInput,
         basis: f32,
         container_pb: taffy::Rect<f32>,
-        scale: f32,
         oof_candidates: &mut OofCandidates,
     ) {
         let (margin, padding, border) = {
@@ -543,8 +520,8 @@ impl LayoutPassState<'_> {
         );
         let layout = self.nodes[node].unrounded_layout_mut();
         layout.size = output.size;
-        layout.location.x = (float.left / scale) + margin.left + container_pb.left;
-        layout.location.y = (float.top / scale) + margin.top + container_pb.top;
+        layout.location.x = pos.x + margin.left + container_pb.left;
+        layout.location.y = pos.y + margin.top + container_pb.top;
         layout.padding = padding;
         layout.border = border;
         layout.margin = margin;
@@ -617,6 +594,15 @@ impl LayoutPassState<'_> {
                     | (Some(StyloFloat::InlineEnd), false) => FloatSide::Right,
                     _ => FloatSide::Left,
                 };
+                #[cfg(feature = "floats")]
+                let clear = match style.clear() {
+                    Clear::None => FloatClear::None,
+                    Clear::Left => FloatClear::Left,
+                    Clear::Right => FloatClear::Right,
+                    Clear::Both => FloatClear::Both,
+                };
+                #[cfg(not(feature = "floats"))]
+                let clear = FloatClear::None;
                 let pass_inputs = match pass {
                     Measure::Layout => child_inputs,
                     Measure::Sizes => taffy::LayoutInput {
@@ -640,6 +626,7 @@ impl LayoutPassState<'_> {
                     margin,
                     baseline: None,
                     float: Some(float_side),
+                    clear,
                 });
                 continue;
             }
@@ -718,6 +705,7 @@ impl LayoutPassState<'_> {
                 margin,
                 baseline,
                 float: None,
+                clear: FloatClear::None,
             });
         }
         sizes

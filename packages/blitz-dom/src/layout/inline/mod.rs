@@ -1,4 +1,5 @@
 mod build;
+#[cfg(feature = "floats")]
 mod floats;
 mod layout;
 mod lines;
