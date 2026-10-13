@@ -395,7 +395,11 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             x: -self.initial_x,
             y: -self.initial_y,
         }) * transform;
-        let screen_bbox = screen_transform.transform_rect_bbox(overflow.union(border_box));
+        // A thick or offset decoration's ink reaches past the overflow.
+        let reach = crate::text::decoration_reach(&styles) * self.scale;
+        let screen_bbox = screen_transform
+            .transform_rect_bbox(overflow.union(border_box))
+            .inflate(reach, reach);
 
         // Cull elements that fall entirely outside the current clip rectangle. In addition to
         // the viewport, `clip_rect` is narrowed by any ancestor scrollport (see below), so this
