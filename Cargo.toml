@@ -261,7 +261,7 @@ log-frame-times = ["dioxus-native/log-frame-times"]
 log-phase-times = ["dioxus-native/log-phase-times"]
 # The text backend, which is Parley: on by default, and required.
 default = ["parley"]
-parley = ["blitz-dom/parley", "blitz-paint/parley", "dioxus-native/parley"]
+parley = ["dioxus-native/parley"]
 
 [dev-dependencies]
 anyrender = { workspace = true }

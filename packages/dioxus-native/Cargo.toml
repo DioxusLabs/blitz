@@ -15,7 +15,7 @@ prelude = ["dep:dioxus-core-macro", "dep:dioxus-hooks", "dep:dioxus-signals", "d
 
 # DOM features
 # The text backend, which is Parley: on by default, and required.
-parley = ["blitz-dom/parley", "blitz-paint?/parley", "blitz-shell/parley", "blitz-html?/parley", "dioxus-native-dom/parley"]
+parley = ["blitz-shell/parley", "blitz-html?/parley", "dioxus-native-dom/parley"]
 svg = ["blitz-dom/svg", "blitz-paint/svg"]
 floats = ["blitz-dom/floats"]
 autofocus = ["blitz-dom/autofocus"]

@@ -13,7 +13,7 @@ rust-version.workspace = true
 [features]
 default = ["accessibility", "clipboard", "file-dialog", "parley"]
 # The text backend, which is Parley: on by default, and required.
-parley = ["blitz-dom/parley", "blitz-paint/parley"]
+parley = ["blitz-paint/parley"]
 accessibility = [
     "dep:accesskit",
     "dep:accesskit_xplat",
