@@ -555,7 +555,8 @@ impl LayoutPassState<'_> {
         child_inputs: taffy::LayoutInput,
         pass: Measure,
     ) -> Vec<BoxMeasure> {
-        let children = self.nodes[node_id].layout_children.borrow().clone();
+        // Taken for the loop, which lays the children out, and put back after it.
+        let children = self.nodes[node_id].layout_children.borrow_mut().take();
         let mut sizes = Vec::with_capacity(children.as_ref().map_or(0, |children| children.len()));
         let rtl = self.nodes[node_id].primary_styles().is_some_and(|style| {
             style.get_inherited_box().direction == style::computed_values::direction::T::Rtl
@@ -692,6 +693,7 @@ impl LayoutPassState<'_> {
                 clear: FloatClear::None,
             });
         }
+        *self.nodes[node_id].layout_children.borrow_mut() = children;
         sizes
     }
 }
