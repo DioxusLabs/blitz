@@ -233,9 +233,10 @@ impl LayoutPassState<'_> {
         // Store sizes and positions of inline boxes. A pass that only sizes the block places
         // nothing.
         let mut span_cb_flags = StyleFlags::empty();
-        let placements = inline_layout
-            .placements()
-            .filter(|_| pass == Measure::Layout)
+        let placements = (pass == Measure::Layout)
+            .then(|| inline_layout.placements())
+            .into_iter()
+            .flatten()
             .enumerate();
         for (order, placed) in placements {
             let order = order as u32;
