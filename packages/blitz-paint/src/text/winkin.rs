@@ -418,6 +418,16 @@ impl Painter<'_> {
         if border_box.width() <= 0.0 && border_box.height() <= 0.0 {
             return;
         }
+        // Snapped to whole device pixels, as Chrome snaps a box's decorations, where the
+        // transform only moves and scales.
+        let transform = self.transform(key) * frame;
+        let [_, skew_y, skew_x, ..] = transform.as_coeffs();
+        let border_box = if skew_x == 0.0 && skew_y == 0.0 && transform.determinant() != 0.0 {
+            let snapped = transform.transform_rect_bbox(border_box).round();
+            transform.inverse().transform_rect_bbox(snapped)
+        } else {
+            border_box
+        };
         let open_left = fragment.is_open_left();
         let open_right = fragment.is_open_right();
         let insets = Insets {
@@ -464,7 +474,6 @@ impl Painter<'_> {
             bottom_left: radius(left_under, open_left),
         };
         let css_box = CssBox::new(border_box, insets, Insets::ZERO, 0.0, radii);
-        let transform = self.transform(key) * frame;
         if background.components[3] > 0.0 {
             scene.fill(
                 Fill::NonZero,
@@ -474,16 +483,46 @@ impl Painter<'_> {
                 &css_box.border_box_path(),
             );
         }
-        for (edge, width, color) in [
+        let edges = [
             (Edge::Top, insets.y0, colors.over),
             (Edge::Right, insets.x1, colors.right),
             (Edge::Bottom, insets.y1, colors.under),
             (Edge::Left, insets.x0, colors.left),
-        ] {
-            if width > 0.0 {
-                let color = color.resolve_to_absolute(&current).as_srgb_color();
-                let shape = css_box.border_edge_shape(edge);
-                scene.fill(Fill::NonZero, transform, color, None, &shape);
+        ]
+        .map(|(edge, width, color)| (edge, width, color.resolve_to_absolute(&current).as_srgb_color()));
+        // Edges of one color around square corners are one ring, so no seam shows where two meet.
+        let drawn = edges.iter().filter(|(_, width, _)| *width > 0.0);
+        let mut colors_drawn = drawn.clone().map(|(_, _, color)| *color);
+        let one_color = colors_drawn
+            .next()
+            .filter(|first| colors_drawn.all(|color| color == *first));
+        match one_color {
+            Some(color) if !css_box.has_border_radius() => {
+                let mut ring = css_box.border_box_path();
+                ring.extend(css_box.padding_box_path());
+                scene.fill(Fill::EvenOdd, transform, color, None, &ring);
+            }
+            _ => {
+                for (edge, _, color) in drawn {
+                    let shape = css_box.border_edge_shape(*edge);
+                    scene.fill(Fill::NonZero, transform, *color, None, &shape);
+                }
+            }
+        }
+        // The outline round the stretch's border box, as a block's is drawn. Chrome draws one
+        // round an empty inline box too.
+        let outline = styles.get_outline();
+        if let style::values::computed::OutlineStyle::BorderStyle(outline_style) =
+            outline.outline_style
+        {
+            let outline_width = width(&outline.outline_width, outline_style);
+            if outline_width > 0.0 {
+                let color = outline
+                    .outline_color
+                    .resolve_to_absolute(&current)
+                    .as_srgb_color();
+                let outlined = CssBox::new(border_box, insets, Insets::ZERO, outline_width, radii);
+                scene.fill(Fill::NonZero, transform, color, None, &outlined.outline());
             }
         }
     }
