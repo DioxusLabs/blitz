@@ -355,7 +355,24 @@ impl LayoutPassState<'_> {
                                 },
                             );
                         }
-                        None | Some("text" | "password" | "email" | "tel" | "url" | "search") => {
+                        // A slider is 129px along its inline axis and 16px across it, as Chrome
+                        // sizes one.
+                        Some("range") => {
+                            return compute_leaf_layout(
+                                inputs,
+                                &node.layout_style(),
+                                resolve_calc_value,
+                                |_known_size, _available_space| taffy::Size {
+                                    width: 129.0,
+                                    height: 16.0,
+                                },
+                            );
+                        }
+                        None
+                        | Some(
+                            "text" | "password" | "email" | "tel" | "url" | "search" | "number"
+                            | "date" | "month" | "week" | "time" | "datetime-local",
+                        ) => {
                             return compute_leaf_layout(
                                 inputs,
                                 &node.layout_style(),

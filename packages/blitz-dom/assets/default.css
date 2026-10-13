@@ -106,7 +106,8 @@ input[type="reset"],
 input[type="button"] {
     border: 1px solid #999;
     border-radius: 1px;
-    padding: 1px 6px;
+    padding-block: 1px;
+    padding-inline: 6px;
     color: black;
     background-color: #EFEFEF;
     text-align: center;
@@ -121,6 +122,55 @@ input[type="submit"],
 input[type="reset"],
 input[type="button"] {
     overflow: clip !important;
+    white-space: pre;
+}
+
+/* Form controls draw their platform look unless `appearance: none` asks for
+ * the look their CSS gives them, as Chrome's UA stylesheet sets it. */
+input,
+textarea,
+select,
+button,
+progress,
+meter {
+    appearance: auto;
+}
+
+input[type="file"] {
+    appearance: none;
+}
+
+/* A color well is 50px by 27px along the inline and block axes, as in Chrome. */
+input[type="color"] {
+    box-sizing: border-box;
+    inline-size: 50px;
+    block-size: 27px;
+    padding: 1px 2px;
+    background-color: #EFEFEF;
+}
+
+input[type="range"] {
+    border: none;
+    padding: 0;
+    margin: 2px;
+}
+
+/* https://html.spec.whatwg.org/#the-progress-element-2 and
+ * https://html.spec.whatwg.org/#the-meter-element-2, with Chrome's sizes */
+progress,
+meter {
+    display: inline-block;
+    box-sizing: border-box;
+    block-size: 1em;
+    vertical-align: -0.2em;
+}
+
+progress {
+    inline-size: 10em;
+}
+
+meter {
+    inline-size: 5em;
 }
 
 input[type="file"] {
