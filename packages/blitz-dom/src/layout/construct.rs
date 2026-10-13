@@ -820,7 +820,8 @@ fn contents_holds_only_inlines(doc: &BaseDocument, node_id: NodeId) -> bool {
                     return false;
                 }
             } else if display.outside() != DisplayOutside::None {
-                if child.is_or_contains_block() {
+                // A table part is not inline content: the container wraps it in a table.
+                if child.is_or_contains_block() || display.outside() != DisplayOutside::Inline {
                     return false;
                 }
                 *found = true;
