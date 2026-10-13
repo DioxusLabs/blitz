@@ -444,7 +444,7 @@ pub struct EditorMetrics {
 }
 
 /// The text of an `<input>` or `<textarea>`, as it is read back.
-pub trait EditableText {
+pub trait EditableText: Clone {
     /// The text, with any text an input method is composing, which the selection indexes.
     fn raw_text(&self) -> &str;
 
