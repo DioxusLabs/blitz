@@ -12,6 +12,8 @@ pub(crate) struct Floated {
     /// The key the content holds it by.
     pub(crate) key: u64,
     pub(crate) side: FloatSide,
+    /// Whether it is the room a block's initial letter takes.
+    pub(crate) initial_letter: bool,
     pub(crate) left: f32,
     pub(crate) right: f32,
     pub(crate) top: f32,
@@ -178,15 +180,36 @@ impl LineExclusions for FloatRoom<'_, '_> {
     /// Places a float as CSS 2.1 §9.5.1 does: no higher than the line that reached it or any
     /// float before it, below what it clears, and as high as it fits, then as far to its side as
     /// it goes.
+    ///
+    /// An initial letter's room is placed as Chrome's `CreateExclusionSpaceForInitialLetterBox`
+    /// places it: at its line's top, even above an earlier float, and below any initial letter
+    /// before it. A float after it on its side goes below it, whatever the float clears.
     fn place(&mut self, float: FloatRequest) -> PlacedFloat {
         let width = float.inline_size.max(0.0);
         let height = float.block_size.max(0.0);
-        let earlier = self
-            .placed
-            .iter()
-            .map(|placed| placed.top)
-            .fold(f32::NEG_INFINITY, f32::max);
-        let mut top = float.block_start.max(earlier).max(self.cleared(float.key));
+        let below_letters = |side: Option<FloatSide>| {
+            self.placed
+                .iter()
+                .filter(|placed| {
+                    placed.initial_letter && side.is_none_or(|side| placed.side == side)
+                })
+                .map(|placed| placed.bottom)
+                .fold(f32::NEG_INFINITY, f32::max)
+        };
+        let mut top = if float.initial_letter {
+            float.block_start.max(below_letters(None))
+        } else {
+            let earlier = self
+                .placed
+                .iter()
+                .map(|placed| placed.top)
+                .fold(f32::NEG_INFINITY, f32::max);
+            float
+                .block_start
+                .max(earlier)
+                .max(self.cleared(float.key))
+                .max(below_letters(Some(float.side)))
+        };
         let mut band = self.room(top, top + height);
         for _ in 0..256 {
             // It fits, or nothing narrows the room it does not fit in.
@@ -206,6 +229,7 @@ impl LineExclusions for FloatRoom<'_, '_> {
         self.placed.push(Floated {
             key: float.key,
             side: float.side,
+            initial_letter: float.initial_letter,
             left,
             right: left + width,
             top,

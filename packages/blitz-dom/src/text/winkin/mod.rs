@@ -2103,6 +2103,7 @@ impl<E: LineExclusions> Exclusions for ExclusionsOf<'_, E> {
             inline_size: float.inline_size,
             block_size: float.block_size,
             block_start: float.block_start,
+            initial_letter: float.key.0 & FIRST_LETTER_KEY != 0,
         });
         PlacedFloat {
             inline: InlineExtents {

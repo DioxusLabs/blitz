@@ -189,6 +189,7 @@ impl TextLayout {
                                 inline_size,
                                 block_size,
                                 block_start: top,
+                                initial_letter: false,
                             });
                         }
                         let (left, right) = exclusions.band(top, top);
