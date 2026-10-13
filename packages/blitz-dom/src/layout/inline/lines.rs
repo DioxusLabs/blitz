@@ -2,8 +2,8 @@
 //! for every text backend.
 
 use blitz_traits::node_id::NodeId;
-use style::values::computed::Float as StyloFloat;
-use style::values::specified::box_::{BaselineSource, DisplayInside, DisplayOutside};
+use style::values::computed::{BaselineSource, Contain, Float as StyloFloat};
+use style::values::specified::box_::{DisplayInside, DisplayOutside};
 use taffy::{
     AvailableSpace, AxisStaticPosition, BlockContainerStyle, BlockContext, CollapsibleMarginSet,
     CoreStyle as _, Direction, LayoutOutput, LayoutPartialTree as _, MaybeMath as _,
@@ -20,14 +20,11 @@ use stylo_taffy::StyleFlags;
 use super::floats::TaffyFloats;
 use super::{Frame, float_box_inputs, inline_box_inputs};
 use crate::layout::LayoutPassState;
-use crate::layout::replaced::is_replaced_element;
 use crate::layout::resolve_calc_value;
 use crate::node::TextLayout;
 #[cfg(not(feature = "floats"))]
 use crate::text::NoLineExclusions;
-use crate::text::{
-    BoxMeasure, FloatClear, FloatSide, InlineLayoutEngine as _, InlineText as _, LastBaseline,
-};
+use crate::text::{BoxMeasure, FloatClear, FloatSide, InlineLayoutEngine as _, InlineText as _};
 
 impl LayoutPassState<'_> {
     /// Measures the inline formatting context's boxes, breaks its lines and places them and what
@@ -630,33 +627,35 @@ impl LayoutPassState<'_> {
                 });
                 continue;
             }
-            let replaced = held
-                .data
-                .downcast_element()
-                .is_some_and(|element| is_replaced_element(&element.name.local));
-            let inside = held.display_style().map(|display| display.inside());
-            let source = held
-                .primary_styles()
-                .map_or(BaselineSource::Auto, |computed| {
-                    computed.clone_baseline_source()
-                });
-            let uses_last = match source {
+            // `baseline-source: auto` selects the last baseline for inline-blocks and the first
+            // for other atomic inlines. A block-axis scroll-container inline-block (except buttons)
+            // instead uses its bottom margin edge, but only with `auto` (css-align-3 §9.1).
+            // `overflow: clip` is not a scroll container. Exported scroll-container baselines
+            // are clamped to the border box.
+            // A layout-contained box is treated as having no baseline (css-contain-1 §3.3).
+            let overflow = style.overflow();
+            let box_style = style.style.get_box();
+            let is_flow = matches!(
+                style.effective_display().inside(),
+                DisplayInside::Flow | DisplayInside::FlowRoot
+            );
+            let baseline_source = box_style.clone_baseline_source();
+            let uses_last_baseline = match baseline_source {
+                BaselineSource::Auto => is_flow,
                 BaselineSource::First => false,
                 BaselineSource::Last => true,
-                BaselineSource::Auto => {
-                    matches!(inside, Some(DisplayInside::Flow | DisplayInside::FlowRoot))
-                }
             };
-            // Only `baseline-source: auto` lets a scrollable inline-block sit on its margin
-            // box's bottom, and buttons keep their content's baseline.
-            let is_button = style
-                .flags
-                .intersects(StyleFlags::IS_BUTTON | StyleFlags::IS_BUTTON_INPUT);
-            let is_scroll_container = source == BaselineSource::Auto
-                && !is_button
-                && !matches!(style.overflow().y, Overflow::Visible | Overflow::Clip);
-            let has_baseline = !replaced && !(uses_last && is_scroll_container);
-            let reads_baseline = has_baseline
+            let is_scroll_container = !matches!(overflow.y, Overflow::Visible | Overflow::Clip);
+            let is_block_axis_scroll_container = is_flow
+                && is_scroll_container
+                && !style
+                    .flags
+                    .intersects(StyleFlags::IS_BUTTON | StyleFlags::IS_BUTTON_INPUT);
+            let contain_layout = box_style.clone_contain().contains(Contain::LAYOUT);
+            let exports_baseline = !(baseline_source == BaselineSource::Auto
+                && is_block_axis_scroll_container)
+                && !contain_layout;
+            let reads_baseline = exports_baseline
                 && held
                     .primary_styles()
                     .is_none_or(|computed| reads_own_baseline(&computed));
@@ -677,27 +676,21 @@ impl LayoutPassState<'_> {
             drop(style);
 
             let output = self.compute_child_layout(crate::taffy_node_id(node), box_inputs);
-            let reads_baseline = reads_baseline && pass_inputs.run_mode == RunMode::PerformLayout;
-            let baseline = if !reads_baseline {
-                None
-            } else if uses_last {
-                // An inline formatting context's own baseline is its layout's; a block
-                // container's is found among its children.
-                let inline_root = self.nodes[node]
-                    .element_data()
-                    .is_some_and(|element| element.inline_layout_data.is_some());
-                let walked = if inline_root {
-                    LastBaseline::Unknown
+            let baseline = if exports_baseline {
+                let baseline = if uses_last_baseline {
+                    output.baselines.last.or(output.baselines.first)
                 } else {
-                    self.last_line_baseline(node)
+                    output.baselines.first.or(output.baselines.last)
                 };
-                match walked {
-                    LastBaseline::At(baseline) => Some(baseline),
-                    LastBaseline::None => None,
-                    LastBaseline::Unknown => output.baselines.last.or(output.baselines.first),
-                }
+                baseline.map(|baseline| {
+                    if is_scroll_container {
+                        baseline.clamp(0.0, output.size.height)
+                    } else {
+                        baseline
+                    }
+                })
             } else {
-                output.baselines.first.or(output.baselines.last)
+                None
             };
             sizes.push(BoxMeasure {
                 node,
@@ -709,80 +702,6 @@ impl LayoutPassState<'_> {
             });
         }
         sizes
-    }
-
-    /// An inline-block's baseline, its last line box's, down from the border box's top of
-    /// `node`, a block container laid out already, in CSS pixels. The last in-flow child in its
-    /// writing mode that has one gives it, and a child that is a scroll container gives its margin
-    /// box's bottom edge.
-    fn last_line_baseline(&self, node: NodeId) -> LastBaseline {
-        let held = &self.nodes[node];
-        let vertical = held
-            .primary_styles()
-            .is_some_and(|computed| computed.writing_mode.is_vertical());
-        if let Some(text) = held
-            .element_data()
-            .and_then(|element| element.inline_layout_data.as_ref())
-        {
-            // Lines that run down the page have no baseline across them.
-            if vertical {
-                return LastBaseline::Unknown;
-            }
-            return match text.last_line_baseline() {
-                LastBaseline::At(baseline) => {
-                    let edges = held.unrounded_layout();
-                    LastBaseline::At(
-                        (baseline / text.scale()) + edges.border.top + edges.padding.top,
-                    )
-                }
-                other => other,
-            };
-        }
-        let children = held.layout_children.borrow();
-        let Some(children) = children.as_ref() else {
-            return LastBaseline::None;
-        };
-        for &child in children.iter().rev() {
-            let child_node = &self.nodes[child];
-            let Some(computed) = child_node.primary_styles() else {
-                continue;
-            };
-            // An orthogonal flow gives no baseline across this one's lines.
-            if computed.get_box().display.is_none()
-                || computed.writing_mode.is_vertical() != vertical
-                || computed.clone_position().is_absolutely_positioned()
-                || !matches!(computed.clone_float(), style::values::computed::Float::None)
-            {
-                continue;
-            }
-            let scrolls = !matches!(
-                computed.clone_overflow_x(),
-                style::values::computed::Overflow::Visible
-            ) || !matches!(
-                computed.clone_overflow_y(),
-                style::values::computed::Overflow::Visible
-            );
-            let inside = child_node.display_style().map(|display| display.inside());
-            let flows = matches!(inside, Some(DisplayInside::Flow | DisplayInside::FlowRoot));
-            drop(computed);
-            let placed = child_node.unrounded_layout();
-            if scrolls && flows {
-                return LastBaseline::At(
-                    placed.location.y + placed.size.height + placed.margin.bottom,
-                );
-            }
-            if !flows {
-                return LastBaseline::Unknown;
-            }
-            match self.last_line_baseline(child) {
-                LastBaseline::At(baseline) => {
-                    return LastBaseline::At(placed.location.y + baseline);
-                }
-                LastBaseline::None => continue,
-                LastBaseline::Unknown => return LastBaseline::Unknown,
-            }
-        }
-        LastBaseline::None
     }
 }
 
