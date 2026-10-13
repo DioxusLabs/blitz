@@ -29,6 +29,7 @@ impl TextLayout {
             Some((
                 measured.node.as_u64(),
                 measured.float?,
+                measured.clear,
                 (margin.left + margin.right + measured.size.width) * scale,
                 (margin.top + margin.bottom + measured.size.height) * scale,
             ))
@@ -111,7 +112,7 @@ impl TextLayout {
             floats
                 .iter()
                 .find(|(id, ..)| *id == ibox.id)
-                .map(|(_, _, width, _)| *width)
+                .map(|(_, _, _, width, _)| *width)
         };
         if !floats.is_empty() {
             for ibox in self.layout.inline_boxes_mut() {
@@ -156,21 +157,36 @@ impl TextLayout {
         #[cfg(feature = "floats")]
         {
             let mut breaker = self.layout.break_lines();
-            let (left, right) = exclusions.band(0.0, 0.0);
+            // Moves the line being set into the room the floats leave at or below its top.
+            fn enter_slot(
+                state: &mut parley::BreakerState,
+                exclusions: &impl LineExclusions,
+                width: f32,
+            ) {
+                let top = state.line_y() as f32;
+                match exclusions.slot(top) {
+                    Some(slot) => {
+                        state.set_line_max_advance(slot.right - slot.left);
+                        state.set_line_x(slot.left);
+                        if slot.top > top {
+                            state.set_line_y(slot.top as f64);
+                        }
+                    }
+                    None => {
+                        state.set_line_max_advance(width);
+                        state.set_line_x(0.0);
+                    }
+                }
+            }
             let state = breaker.state_mut();
             state.set_layout_max_advance(width);
-            state.set_line_max_advance(right - left);
-            state.set_line_x(left);
             state.set_line_y(0.0);
+            enter_slot(state, exclusions, width);
 
             while let Some(yield_data) = breaker.break_next() {
                 match yield_data {
                     YieldData::LineBreak(_line_break_data) => {
-                        let state = breaker.state_mut();
-                        let top = state.line_y() as f32;
-                        let (left, right) = exclusions.band(top, top);
-                        state.set_line_max_advance(right - left);
-                        state.set_line_x(left);
+                        enter_slot(breaker.state_mut(), exclusions, width);
                     }
                     YieldData::MaxHeightExceeded(_data) => {
                         // TODO
@@ -181,20 +197,19 @@ impl TextLayout {
                         let state = breaker.state_mut();
                         let top = state.line_y() as f32;
                         let key = box_break_data.inline_box_id;
-                        if let Some(&(_, side, inline_size, block_size)) =
+                        if let Some(&(_, side, clear, inline_size, block_size)) =
                             self.floats.iter().find(|(id, ..)| *id == key)
                         {
                             exclusions.place(FloatRequest {
                                 key,
                                 side,
+                                clear,
                                 inline_size,
                                 block_size,
                                 block_start: top,
                             });
                         }
-                        let (left, right) = exclusions.band(top, top);
-                        state.set_line_max_advance(right - left);
-                        state.set_line_x(left);
+                        enter_slot(state, exclusions, width);
 
                         // Floats are out-of-flow and must not contribute to the line's height.
                         state.append_inline_box_to_line(
