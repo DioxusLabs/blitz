@@ -652,7 +652,10 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             element,
             transform,
             #[cfg(feature = "svg")]
-            svg: element.svg_data(),
+            svg: match element.image_data() {
+                Some(blitz_dom::node::ImageData::Svg(svg)) => Some(svg),
+                _ => None,
+            },
             text_input: element.text_input_data(),
             list_item: element.list_item_data.as_deref(),
             devtools: self.dom.devtools(),
@@ -698,7 +701,7 @@ struct ElementCx<'dom, 'a> {
     element: &'dom ElementData,
     transform: Affine,
     #[cfg(feature = "svg")]
-    svg: Option<&'dom usvg::Tree>,
+    svg: Option<&'dom blitz_dom::node::SvgImageData>,
     text_input: Option<&'dom TextInputData>,
     list_item: Option<&'dom ListItemLayout>,
     devtools: &'dom DevtoolSettings,
@@ -1076,18 +1079,31 @@ impl ElementCx<'_, '_> {
 
     #[cfg(feature = "svg")]
     fn draw_svg(&self, scene: &mut impl PaintScene) {
+        use style::properties::generated::longhands::object_fit::computed_value::T as ObjectFit;
+
         let Some(svg) = self.svg else {
             return;
         };
 
         let width = self.frame.content_box.width() as u32;
         let height = self.frame.content_box.height() as u32;
-        let svg_size = svg.size();
+        let svg_size = svg.tree.size();
 
         let x = self.frame.content_box.origin().x;
         let y = self.frame.content_box.origin().y;
 
-        let object_fit = self.style.clone_object_fit();
+        // An SVG with an aspect ratio but no natural size is sized by the default sizing
+        // algorithm, which for `none` and `scale-down` contains it within the content box.
+        let object_fit = match self.style.clone_object_fit() {
+            ObjectFit::None | ObjectFit::ScaleDown
+                if svg.intrinsic_width().is_none()
+                    && svg.intrinsic_height().is_none()
+                    && svg.viewbox_aspect_ratio().is_some() =>
+            {
+                ObjectFit::Contain
+            }
+            object_fit => object_fit,
+        };
         let object_position = self.style.clone_object_position();
 
         // Apply object-fit algorithm
@@ -1119,7 +1135,7 @@ impl ElementCx<'_, '_> {
             .pre_scale_non_uniform(x_scale, y_scale)
             .then_translate(Vec2 { x, y });
 
-        anyrender_svg::render_svg_tree(scene, svg, transform);
+        anyrender_svg::render_svg_tree(scene, &svg.tree, transform);
     }
 
     fn draw_image(&self, scene: &mut impl PaintScene) {
