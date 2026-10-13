@@ -19,6 +19,9 @@ struct SerializeOpts {
     resolve_current_color: bool,
     /// Declare the `xlink` prefix on the root element so that the output is well-formed XML
     declare_xlink_ns: bool,
+    /// Serialize as XML (for usvg) rather than with the HTML fragment serialization
+    /// algorithm: empty elements are self-closing and there are no void elements.
+    xml: bool,
 }
 
 impl SerializeOpts {
@@ -27,6 +30,7 @@ impl SerializeOpts {
             style,
             resolve_current_color: false,
             declare_xlink_ns: false,
+            xml: false,
         }
     }
 }
@@ -62,7 +66,7 @@ impl Node {
     /// Example output:
     ///
     /// ```text
-    /// <html><head /><body><main id="main"><div class="arbitrary-class" /></main></body></html>
+    /// <html><head></head><body><main id="main"><div class="arbitrary-class"></div></main></body></html>
     /// ```
     pub fn outer_html(&self) -> String {
         let mut output = String::new();
@@ -77,10 +81,12 @@ impl Node {
     ///
     /// ```text
     /// <html>
-    ///   <head />
+    ///   <head>
+    ///   </head>
     ///   <body>
     ///     <main id="main">
-    ///       <div class="arbitrary-class" />
+    ///       <div class="arbitrary-class">
+    ///       </div>
     ///     </main>
     ///   </body>
     /// </html>
@@ -108,6 +114,7 @@ impl Node {
             style: OutputStyle::Normal,
             resolve_current_color: true,
             declare_xlink_ns: true,
+            xml: true,
         };
         self.write_outer_html_in_style(&mut output, opts, 0);
         output
@@ -154,8 +161,17 @@ impl Node {
                     });
                 if in_raw_text_element {
                     writer.push_str(data.content.as_str());
-                } else {
+                } else if opts.xml {
                     encode_text_to_string(data.content.as_str(), writer);
+                } else {
+                    // U+00A0 is `&nbsp;` in HTML; inside foreign content (SVG,
+                    // which is also serialized to be parsed as XML) the numeric
+                    // reference, as XML has no `nbsp` entity.
+                    let in_html = self
+                        .parent
+                        .and_then(|id| self.tree()[id].data.downcast_element())
+                        .is_none_or(|el| el.name.ns == ns!(html));
+                    escape_text(data.content.as_str(), in_html, writer);
                 }
                 if matches!(style, OutputStyle::Pretty) {
                     writer.push('\n');
@@ -194,7 +210,12 @@ impl Node {
                     }
                     writer.push('"');
                 }
-                if !has_children {
+                // In XML an empty element is self-closing. In HTML a void element
+                // has no end tag (and no children), and every other element has
+                // one, even when it is empty: `<div />` is not self-closing in
+                // HTML and would swallow the following siblings when parsed back.
+                let self_closing = opts.xml && !has_children;
+                if self_closing {
                     writer.push_str(" /");
                 }
                 writer.push('>');
@@ -202,7 +223,9 @@ impl Node {
                     writer.push('\n');
                 }
 
-                if has_children {
+                let is_void =
+                    !opts.xml && data.name.ns == ns!(html) && is_void_element(&data.name.local);
+                if !self_closing && !is_void {
                     for &child_id in &self.children {
                         self.tree()[child_id].write_outer_html_in_style(writer, opts, nesting + 1);
                     }
@@ -220,6 +243,45 @@ impl Node {
                     }
                 }
             }
+        }
+    }
+}
+
+/// The void elements of the HTML fragment serialization algorithm, which have no end tag.
+fn is_void_element(local: &str) -> bool {
+    matches!(
+        local,
+        "area"
+            | "base"
+            | "basefont"
+            | "bgsound"
+            | "br"
+            | "col"
+            | "embed"
+            | "frame"
+            | "hr"
+            | "img"
+            | "input"
+            | "keygen"
+            | "link"
+            | "meta"
+            | "param"
+            | "source"
+            | "track"
+            | "wbr"
+    )
+}
+
+/// Escape text for HTML fragment serialization: `&`, `<`, `>` and U+00A0.
+fn escape_text(text: &str, in_html: bool, writer: &mut String) {
+    for c in text.chars() {
+        match c {
+            '&' => writer.push_str("&amp;"),
+            '<' => writer.push_str("&lt;"),
+            '>' => writer.push_str("&gt;"),
+            '\u{a0}' if in_html => writer.push_str("&nbsp;"),
+            '\u{a0}' => writer.push_str("&#160;"),
+            c => writer.push(c),
         }
     }
 }
