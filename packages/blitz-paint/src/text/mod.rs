@@ -418,7 +418,9 @@ fn flush_line_decorations(
             } else {
                 geom.underline_offset
             };
-            let offset = base_offset - extra_underline_offset as f32;
+            // The underline sits on a whole device pixel from the baseline, as
+            // Chrome's `TextDecorationOffset` rounds its offset.
+            let offset = (base_offset - extra_underline_offset as f32).round();
 
             // A `double` underline extends downward, away from the text.
             draw_decoration_line(
