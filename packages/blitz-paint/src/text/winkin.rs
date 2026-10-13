@@ -713,6 +713,13 @@ impl Painter<'_> {
             inline,
             Some(color),
             |scene, placed, color| {
+                // Transparent text draws nothing, colour glyphs included, as
+                // Chrome takes a colour glyph's alpha from its paint's. Its
+                // shadows still draw.
+                let color = color.unwrap_or(Color::BLACK);
+                if color.components[3] <= 0.0 {
+                    return;
+                }
                 scene.draw_glyphs(
                     &data,
                     font.size,
@@ -720,7 +727,7 @@ impl Painter<'_> {
                     font.coords,
                     embolden(&font),
                     Fill::NonZero,
-                    &anyrender::Paint::from(color.unwrap_or(Color::BLACK)),
+                    &anyrender::Paint::from(color),
                     1.0,
                     if upright { placed } else { placed * frame },
                     glyph_transform,
