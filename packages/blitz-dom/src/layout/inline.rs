@@ -2,7 +2,7 @@ use blitz_traits::node_id::NodeId;
 use parley::{AlignmentOptions, BreakReason, IndentOptions};
 use style::values::specified::box_::{DisplayInside, DisplayOutside};
 use style::values::{
-    computed::{CSSPixelLength, Contain},
+    computed::{BaselineSource, CSSPixelLength, Contain},
     generics::text::GenericTextIndent,
 };
 use taffy::{
@@ -408,12 +408,11 @@ impl LayoutPassState<'_> {
             let is_floated = false;
 
             let is_out_of_flow = style.position().is_out_of_flow();
-            // The baseline of an inline-block is the baseline of its last in-flow line box,
-            // unless it has no line boxes or it is a block-axis scroll container (except buttons), in which
-            // case it is the bottom margin edge (CSS 2 §10.8.1, css-align-3 §9.1
-            // `baseline-source: auto`; `overflow: clip` is not a scroll container). Other
-            // atomic inlines (flex, grid, table) export a baseline regardless of `overflow`,
-            // clamped to their border box if they are scroll containers (css-align-3 §9.1).
+            // `baseline-source: auto` selects the last baseline for inline-blocks and the first
+            // for other atomic inlines. A block-axis scroll-container inline-block (except buttons)
+            // instead uses its bottom margin edge, but only with `auto` (css-align-3 §9.1).
+            // `overflow: clip` is not a scroll container. Exported scroll-container baselines
+            // are clamped to the border box.
             // A layout-contained box is treated as having no baseline (css-contain-1 §3.3).
             let overflow = style.overflow();
             let box_style = style.style.get_box();
@@ -421,6 +420,12 @@ impl LayoutPassState<'_> {
                 style.effective_display().inside(),
                 DisplayInside::Flow | DisplayInside::FlowRoot
             );
+            let baseline_source = box_style.clone_baseline_source();
+            let uses_last_baseline = match baseline_source {
+                BaselineSource::Auto => is_flow,
+                BaselineSource::First => false,
+                BaselineSource::Last => true,
+            };
             let is_scroll_container = !matches!(overflow.y, Overflow::Visible | Overflow::Clip);
             let is_block_axis_scroll_container = is_flow
                 && is_scroll_container
@@ -428,7 +433,9 @@ impl LayoutPassState<'_> {
                     .flags
                     .intersects(StyleFlags::IS_BUTTON | StyleFlags::IS_BUTTON_INPUT);
             let contain_layout = box_style.clone_contain().contains(Contain::LAYOUT);
-            let exports_baseline = !is_block_axis_scroll_container && !contain_layout;
+            let exports_baseline = !(baseline_source == BaselineSource::Auto
+                && is_block_axis_scroll_container)
+                && !contain_layout;
             let box_inputs = inline_box_inputs(style.size().width, margin, child_inputs);
             drop(style);
 
@@ -440,18 +447,19 @@ impl LayoutPassState<'_> {
                 let output = self.compute_child_layout(taffy::NodeId::from(ibox.id), box_inputs);
                 ibox.width = (margin.left + margin.right + output.size.width) * scale;
                 ibox.baseline = if exports_baseline {
-                    output
-                        .baselines
-                        .last
-                        .or(output.baselines.first)
-                        .map(|baseline| {
-                            let baseline = if is_scroll_container {
-                                baseline.clamp(0.0, output.size.height)
-                            } else {
-                                baseline
-                            };
-                            (margin.top + baseline) * scale
-                        })
+                    let baseline = if uses_last_baseline {
+                        output.baselines.last.or(output.baselines.first)
+                    } else {
+                        output.baselines.first.or(output.baselines.last)
+                    };
+                    baseline.map(|baseline| {
+                        let baseline = if is_scroll_container {
+                            baseline.clamp(0.0, output.size.height)
+                        } else {
+                            baseline
+                        };
+                        (margin.top + baseline) * scale
+                    })
                 } else {
                     None
                 };
