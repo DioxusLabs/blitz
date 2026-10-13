@@ -15,8 +15,7 @@ parley = ["blitz-dom/parley", "blitz-paint/parley", "blitz-html/parley", "blitz-
 winkin = ["blitz-dom/winkin", "blitz-paint/winkin", "blitz-html/winkin", "blitz-vibey-script/winkin"]
 
 [dependencies]
-mimalloc = "0.1.48"
-blitz-dom = { workspace = true, features = ["svg", "floats", "system-fonts", "woff", "complex-scripts", "text-transform-icu", "writing-mode"] }
+blitz-dom = { workspace = true, features = ["svg", "floats", "system-fonts", "woff", "complex-scripts", "text-transform-icu", "writing-mode", "file-input"] }
 blitz-html = {workspace = true }
 blitz-vibey-script = { workspace = true }
 blitz-traits = { workspace = true }
