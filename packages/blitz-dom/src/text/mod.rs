@@ -553,6 +553,8 @@ pub(crate) struct FloatRequest {
     pub(crate) block_size: f32,
     /// The top of the line that reached it, which it goes no higher than.
     pub(crate) block_start: f32,
+    /// Whether it is the room a block's initial letter takes rather than a float.
+    pub(crate) initial_letter: bool,
 }
 
 /// Where a float was placed: its margin box, in device pixels from the content box's top left.
