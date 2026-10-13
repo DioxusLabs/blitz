@@ -1076,8 +1076,6 @@ impl ElementCx<'_, '_> {
 
     #[cfg(feature = "svg")]
     fn draw_svg(&self, scene: &mut impl PaintScene) {
-        use style::properties::generated::longhands::object_fit::computed_value::T as ObjectFit;
-
         let Some(svg) = self.svg else {
             return;
         };
@@ -1089,7 +1087,7 @@ impl ElementCx<'_, '_> {
         let x = self.frame.content_box.origin().x;
         let y = self.frame.content_box.origin().y;
 
-        // let object_fit = self.style.clone_object_fit();
+        let object_fit = self.style.clone_object_fit();
         let object_position = self.style.clone_object_position();
 
         // Apply object-fit algorithm
@@ -1101,7 +1099,7 @@ impl ElementCx<'_, '_> {
             width: svg_size.width(),
             height: svg_size.height(),
         };
-        let paint_size = compute_object_fit(container_size, Some(object_size), ObjectFit::Contain);
+        let paint_size = compute_object_fit(container_size, Some(object_size), object_fit);
 
         // Compute object-position
         let x_offset = object_position.horizontal.resolve(
