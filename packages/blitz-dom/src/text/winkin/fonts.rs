@@ -15,7 +15,9 @@ use skrifa::metrics::{GlyphMetrics, Metrics};
 use style::device::servo::FontMetricsProvider;
 use style::font_metrics::FontMetrics;
 use style::properties::style_structs::Font as FontStyles;
-use style::values::computed::font::{FontStyle as StyloFontStyle, QueryFontMetricsFlags};
+use style::values::computed::font::{
+    FontSizeAdjust, FontStyle as StyloFontStyle, QueryFontMetricsFlags,
+};
 use style::values::computed::{CSSPixelLength, Length};
 use winkin::style::FontFamilyName;
 use winkin::{Context, SharedFonts};
@@ -268,12 +270,30 @@ impl FontMetricsProvider for WinkinFontMetricsProvider {
         let ic_advance = advance_of('\u{6C34}');
         let (ascent, x_height, cap_height) = metrics_of(' ').unwrap_or((0.0, None, None));
 
+        let x_height = x_height.filter(|xh| *xh != 0.0);
+        // `font-size-adjust` scales the font to its used size, which the font-relative units
+        // measure: the metric it names, over the size, is set to its value.
+        let metric = match font_styles.font_size_adjust {
+            FontSizeAdjust::None => None,
+            FontSizeAdjust::ExHeight(value) => x_height.map(|metric| (value, metric)),
+            FontSizeAdjust::CapHeight(value) => cap_height.map(|metric| (value, metric)),
+            FontSizeAdjust::ChWidth(value) => zero_advance.map(|metric| (value, metric)),
+            FontSizeAdjust::IcWidth(value) | FontSizeAdjust::IcHeight(value) => {
+                ic_advance.map(|metric| (value, metric))
+            }
+        };
+        let scale = metric
+            .map(|(value, metric)| value.0 * font_size.px() / metric)
+            .filter(|scale| scale.is_finite() && *scale >= 0.0)
+            .unwrap_or(1.0);
+        let scaled = |metric: f32| CSSPixelLength::new(metric * scale);
+
         FontMetrics {
-            ascent: CSSPixelLength::new(ascent),
-            x_height: x_height.filter(|xh| *xh != 0.0).map(CSSPixelLength::new),
-            cap_height: cap_height.map(CSSPixelLength::new),
-            zero_advance_measure: zero_advance.map(CSSPixelLength::new),
-            ic_width: ic_advance.map(CSSPixelLength::new),
+            ascent: scaled(ascent),
+            x_height: x_height.map(scaled),
+            cap_height: cap_height.map(scaled),
+            zero_advance_measure: zero_advance.map(scaled),
+            ic_width: ic_advance.map(scaled),
             script_percent_scale_down: None,
             script_script_percent_scale_down: None,
         }
