@@ -433,9 +433,9 @@ impl LayoutPassState<'_> {
                     .flags
                     .intersects(StyleFlags::IS_BUTTON | StyleFlags::IS_BUTTON_INPUT);
             let contain_layout = box_style.clone_contain().contains(Contain::LAYOUT);
-            let exports_baseline =
-                !(baseline_source == BaselineSource::Auto && is_block_axis_scroll_container)
-                    && !contain_layout;
+            let exports_baseline = !(baseline_source == BaselineSource::Auto
+                && is_block_axis_scroll_container)
+                && !contain_layout;
             let box_inputs = inline_box_inputs(style.size().width, margin, child_inputs);
             drop(style);
 
