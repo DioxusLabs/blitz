@@ -877,10 +877,12 @@ fn propagated_decorations(doc: &BaseDocument, root: NodeId) -> Vec<ServoArc<Comp
         let atomic = display.outside() == DisplayOutside::Inline
             && display.inside() != DisplayInside::Flow
             && !display.is_contents();
-        if atomic
-            || styles.slow_clone_position().is_absolutely_positioned()
-            || styles.slow_clone_float() != style::values::computed::Float::None
-        {
+        // A `display: contents` element generates no box, so its `float` and `position`
+        // take nothing out of the flow.
+        let out_of_flow = !display.is_contents()
+            && (styles.slow_clone_position().is_absolutely_positioned()
+                || styles.slow_clone_float() != style::values::computed::Float::None);
+        if atomic || out_of_flow {
             break;
         }
         at = node.parent.and_then(|parent| doc.get_node(parent));
