@@ -1019,6 +1019,80 @@ impl ElementCx<'_, '_> {
         }
     }
 
+    /// The clip a hoisted box inherits from the boxes between it and this
+    /// element. A z-indexed box is painted by its stacking context, but
+    /// `overflow` clipping follows the containing block chain (CSS 2.1
+    /// §11.1.1), so every clipping box on the way up still clips it. The
+    /// rectangle is in this element's (scrolled) coordinate space, unscaled.
+    fn hoisted_clip(&self, node_id: NodeId) -> Option<Rect> {
+        let tree = self.context.dom.as_ref().tree();
+        let mut chain = Vec::new();
+        let mut at = tree.get(node_id)?.containing_block()?;
+        while at != self.node.id {
+            chain.push(at);
+            at = tree.get(at)?.containing_block()?;
+        }
+        let mut origin = kurbo::Vec2::ZERO;
+        let mut clip: Option<Rect> = None;
+        for &id in chain.iter().rev() {
+            let node = tree.get(id)?;
+            let layout = node.final_layout();
+            let position =
+                origin + kurbo::Vec2::new(layout.location.x as f64, layout.location.y as f64);
+            let clips = node.primary_styles().is_some_and(|style| {
+                !matches!(style.clone_overflow_x(), Overflow::Visible)
+                    || !matches!(style.clone_overflow_y(), Overflow::Visible)
+            });
+            if clips {
+                let border = layout.border;
+                let rect = Rect::new(
+                    position.x + border.left as f64,
+                    position.y + border.top as f64,
+                    position.x + layout.size.width as f64 - border.right as f64,
+                    position.y + layout.size.height as f64 - border.bottom as f64,
+                );
+                clip = Some(clip.map_or(rect, |clip| clip.intersect(rect)));
+            }
+            let scroll = node.scroll_offset();
+            origin = position - kurbo::Vec2::new(scroll.x, scroll.y);
+        }
+        clip
+    }
+
+    /// Paint a hoisted box, under the clip of the boxes it was hoisted past.
+    fn render_hoisted(
+        &self,
+        scene: &mut impl PaintScene,
+        hoisted_child: &blitz_dom::HoistedPaintChild,
+        parent_style_transform: Affine,
+        clip_rect: Rect,
+    ) {
+        let position = hoisted_child.position(self.node.tree(), self.node.id);
+        let pos = kurbo::Vec2 {
+            x: position.x as f64 * self.scale,
+            y: position.y as f64 * self.scale,
+        };
+        let clip = self.hoisted_clip(hoisted_child.node_id);
+        let shape = clip.map(|clip| clip.scale_from_origin(self.scale));
+        self.context.layer_manager.maybe_with_layer(
+            scene,
+            shape.is_some(),
+            1.0,
+            parent_style_transform,
+            &shape.unwrap_or(Rect::ZERO),
+            None,
+            None,
+            |scene| {
+                self.render_node(
+                    scene,
+                    hoisted_child.node_id,
+                    parent_style_transform.pre_translate(pos),
+                    clip_rect,
+                );
+            },
+        );
+    }
+
     fn draw_children(
         &self,
         scene: &mut impl PaintScene,
@@ -1029,17 +1103,7 @@ impl ElementCx<'_, '_> {
 
         if let Some(hoisted) = &self.node.stacking_context {
             for hoisted_child in hoisted.neg_z_hoisted_children() {
-                let position = hoisted_child.position(self.node.tree(), self.node.id);
-                let pos = kurbo::Vec2 {
-                    x: position.x as f64 * self.scale,
-                    y: position.y as f64 * self.scale,
-                };
-                self.render_node(
-                    scene,
-                    hoisted_child.node_id,
-                    parent_style_transform.pre_translate(pos),
-                    clip_rect,
-                );
+                self.render_hoisted(scene, hoisted_child, parent_style_transform, clip_rect);
             }
         }
 
@@ -1069,17 +1133,7 @@ impl ElementCx<'_, '_> {
         // Positive z_index hoisted nodes
         if let Some(hoisted) = &self.node.stacking_context {
             for hoisted_child in hoisted.pos_z_hoisted_children() {
-                let position = hoisted_child.position(self.node.tree(), self.node.id);
-                let pos = kurbo::Vec2 {
-                    x: position.x as f64 * self.scale,
-                    y: position.y as f64 * self.scale,
-                };
-                self.render_node(
-                    scene,
-                    hoisted_child.node_id,
-                    parent_style_transform.pre_translate(pos),
-                    clip_rect,
-                );
+                self.render_hoisted(scene, hoisted_child, parent_style_transform, clip_rect);
             }
         }
     }
