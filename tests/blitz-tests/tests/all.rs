@@ -66,6 +66,7 @@ mod touch_action;
 mod touch_events;
 mod transform_2d_subset;
 mod transform_viewport_scale;
+mod ua_stylesheet_order;
 mod whitespace_modes;
 
 #[test]

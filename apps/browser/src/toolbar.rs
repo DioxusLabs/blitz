@@ -194,7 +194,6 @@ pub fn Toolbar(
         let config = DocumentConfig {
             viewport: None,
             base_url: None,
-            ua_stylesheets: None,
             net_provider: None,
             navigation_provider: None,
             shell_provider: None,

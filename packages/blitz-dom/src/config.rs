@@ -1,4 +1,4 @@
-use crate::HtmlParserProvider;
+use crate::{HtmlParserProvider, UserAgentStylesheet};
 use blitz_traits::{
     navigation::NavigationProvider,
     net::{AbortSignal, NetProvider},
@@ -29,14 +29,16 @@ pub enum StyleThreading {
 }
 
 /// Options used when constructing a [`BaseDocument`](crate::BaseDocument)
-#[derive(Default)]
 pub struct DocumentConfig {
     /// The initial `Viewport`
     pub viewport: Option<Viewport>,
     /// The base url which relative URLs are resolved against
     pub base_url: Option<String>,
-    /// User Agent stylesheets
-    pub ua_stylesheets: Option<Vec<String>>,
+    /// User Agent stylesheets, in cascade order. Defaults to `vec![UserAgentStylesheet::default_sheet()]`.
+    ///
+    /// The list is used as given, so replacing it removes the default sheet unless it is
+    /// included, e.g. `vec![UserAgentStylesheet::default_sheet(), custom]`.
+    pub ua_stylesheets: Vec<UserAgentStylesheet>,
     /// Net provider to handle network requests for resources
     pub net_provider: Option<Arc<dyn NetProvider>>,
     /// Navigation provider to handle link clicks and form submissions
@@ -66,4 +68,24 @@ pub struct DocumentConfig {
     /// How deeply this document is nested within other documents
     /// (0 for a root document). Used to limit `<iframe>` nesting depth.
     pub subdocument_depth: usize,
+}
+
+impl Default for DocumentConfig {
+    fn default() -> Self {
+        Self {
+            viewport: None,
+            base_url: None,
+            ua_stylesheets: vec![UserAgentStylesheet::default_sheet()],
+            net_provider: None,
+            navigation_provider: None,
+            shell_provider: None,
+            html_parser_provider: None,
+            font_ctx: None,
+            media_type: None,
+            style_threading: StyleThreading::default(),
+            incremental: None,
+            abort_signal: None,
+            subdocument_depth: 0,
+        }
+    }
 }

@@ -1,8 +1,22 @@
 mod readme_application;
 
 mod markdown {
-    pub(crate) const GITHUB_MD_STYLES: &str = include_str!("../assets/github-markdown.css");
-    pub(crate) const BLITZ_MD_STYLES: &str = include_str!("../assets/blitz-markdown-overrides.css");
+    use blitz_dom::UserAgentStylesheet;
+    use std::sync::LazyLock;
+
+    const GITHUB_MD_STYLES: &str = include_str!("../assets/github-markdown.css");
+    const BLITZ_MD_STYLES: &str = include_str!("../assets/blitz-markdown-overrides.css");
+
+    /// The user-agent stylesheets for rendered markdown, parsed once.
+    pub(crate) fn markdown_stylesheets() -> Vec<UserAgentStylesheet> {
+        static SHEETS: LazyLock<[UserAgentStylesheet; 2]> = LazyLock::new(|| {
+            [
+                UserAgentStylesheet::parse(GITHUB_MD_STYLES),
+                UserAgentStylesheet::parse(BLITZ_MD_STYLES),
+            ]
+        });
+        SHEETS.to_vec()
+    }
 
     #[cfg(feature = "comrak")]
     mod comrak;
@@ -29,11 +43,12 @@ use anyrender_vello_cpu::VelloCpuWindowRenderer as WindowRenderer;
 use anyrender_vello_hybrid::VelloHybridWindowRenderer as WindowRenderer;
 
 use blitz_dom::DocumentConfig;
+use blitz_dom::UserAgentStylesheet;
 use blitz_html::HtmlDocument;
 use blitz_net::Provider;
 use blitz_traits::navigation::{NavigationOptions, NavigationProvider};
 use blitz_traits::net::Request;
-use markdown::{BLITZ_MD_STYLES, GITHUB_MD_STYLES, markdown_to_html};
+use markdown::{markdown_stylesheets, markdown_to_html};
 use notify::{Error as NotifyError, Event as NotifyEvent, RecursiveMode, Watcher as _};
 use readme_application::{ReadmeApplication, ReadmeEvent};
 
@@ -87,11 +102,10 @@ fn main() {
     // Process markdown if necessary
     let mut title = base_url.clone();
     let mut html = contents;
-    let mut stylesheets = Vec::new();
+    let mut stylesheets = vec![UserAgentStylesheet::default_sheet()];
     if is_md {
         html = markdown_to_html(html);
-        stylesheets.push(String::from(GITHUB_MD_STYLES));
-        stylesheets.push(String::from(BLITZ_MD_STYLES));
+        stylesheets.extend(markdown_stylesheets());
         title = format!(
             "README for {}",
             base_url.rsplit("/").find(|s| !s.is_empty()).unwrap()
@@ -109,7 +123,7 @@ fn main() {
         &html,
         DocumentConfig {
             base_url: Some(base_url),
-            ua_stylesheets: Some(stylesheets),
+            ua_stylesheets: stylesheets,
             net_provider: Some(net_provider.clone()),
             navigation_provider: Some(navigation_provider.clone()),
             ..Default::default()
