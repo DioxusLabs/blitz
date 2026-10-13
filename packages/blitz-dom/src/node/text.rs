@@ -41,6 +41,7 @@ pub enum GeneratedTextInputEvent {
     Submit,
 }
 
+#[derive(Clone)]
 pub struct TextInputData {
     /// The text backend's editor
     pub editor: Box<TextEditor>,
@@ -52,13 +53,6 @@ pub struct TextInputData {
     /// vertical offset. It is kept up to date so that the caret remains visible within the
     /// input's content box.
     pub scroll_offset: f32,
-}
-
-// FIXME: Implement Clone for the editor
-impl Clone for TextInputData {
-    fn clone(&self) -> Self {
-        TextInputData::new(self.is_multiline)
-    }
 }
 
 impl TextInputData {

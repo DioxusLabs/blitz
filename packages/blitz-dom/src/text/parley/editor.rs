@@ -12,6 +12,7 @@ use super::{TextBrush, TextContext, style as stylo_to_parley};
 use crate::text::{Edit, EditEngine, EditableText, EditorMetrics, Motion};
 
 /// The text of an `<input>` or `<textarea>`, edited and laid out by Parley.
+#[derive(Clone)]
 pub struct TextEditor {
     editor: PlainEditor<TextBrush>,
     /// The width lines wrap at, in device pixels, as last set.
