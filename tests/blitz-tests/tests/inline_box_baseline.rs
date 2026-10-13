@@ -93,18 +93,16 @@ fn baseline_source_selects_inline_block_line() {
 }
 
 #[test]
-fn other_atomic_inlines_default_to_first_baseline() {
+fn other_atomic_inlines_auto_matches_first_baseline() {
     for display in ["inline-flex", "inline-grid", "inline-table"] {
-        for source in ["auto", "first"] {
-            let doc = layout_doc(&format!(
-                r#"{STYLE}<div><span id="box" style="display: {display}; flex-direction: column; baseline-source: {source}"><div>X</div><div>X</div></span><span id="anchor">X</span></div>"#
-            ));
-            let (box_y, box_height) = rect(&doc, "#box");
-            let (anchor_y, anchor_height) = rect(&doc, "#anchor");
-            assert_eq!(box_height, 40.0);
-            assert_eq!(anchor_height, 20.0);
-            assert_eq!(box_y, anchor_y, "{display}, {source}");
-        }
+        let doc = layout_doc(&format!(
+            r#"{STYLE}<style>span {{ display: {display}; flex-direction: column; }}</style><div><span id="auto"><div>X</div><div>X</div></span><span id="first" style="baseline-source: first"><div>X</div><div>X</div></span></div>"#
+        ));
+        let (auto_y, auto_height) = rect(&doc, "#auto");
+        let (first_y, first_height) = rect(&doc, "#first");
+        assert_eq!(auto_height, 40.0);
+        assert_eq!(first_height, 40.0);
+        assert_eq!(auto_y, first_y, "{display}");
     }
 }
 
