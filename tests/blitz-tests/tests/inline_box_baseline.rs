@@ -95,13 +95,18 @@ fn baseline_source_selects_inline_block_line() {
 #[test]
 fn other_atomic_inlines_auto_matches_first_baseline() {
     for display in ["inline-flex", "inline-grid", "inline-table"] {
+        let content = if display == "inline-table" {
+            r#"<div style="display: table-row"><div style="display: table-cell">X<br>X</div></div>"#
+        } else {
+            "<div>X</div><div>X</div>"
+        };
         let doc = layout_doc(&format!(
-            r#"{STYLE}<style>span {{ display: {display}; flex-direction: column; }}</style><div><span id="auto"><div>X</div><div>X</div></span><span id="first" style="baseline-source: first"><div>X</div><div>X</div></span></div>"#
+            r#"{STYLE}<style>span {{ display: {display}; flex-direction: column; }}</style><div><span id="auto">{content}</span><span id="first" style="baseline-source: first">{content}</span></div>"#
         ));
         let (auto_y, auto_height) = rect(&doc, "#auto");
         let (first_y, first_height) = rect(&doc, "#first");
-        assert_eq!(auto_height, 40.0);
-        assert_eq!(first_height, 40.0);
+        assert_eq!(auto_height, 40.0, "{display}");
+        assert_eq!(first_height, 40.0, "{display}");
         assert_eq!(auto_y, first_y, "{display}");
     }
 }
