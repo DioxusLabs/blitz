@@ -668,6 +668,7 @@ fn variants(computed: &ComputedValues) -> FontVariants {
 fn text_group(computed: &ComputedValues, scale: f32, language: Option<Language>) -> TextGroup<'_> {
     let text = computed.get_inherited_text();
     let transform = computed.slow_clone_text_transform();
+    let emphasis = emphasis(computed, language.as_ref());
     TextGroup {
         language,
         hyphenate_character: match &text.hyphenate_character {
@@ -779,7 +780,7 @@ fn text_group(computed: &ComputedValues, scale: f32, language: Option<Language>)
                 },
             }
         },
-        emphasis: emphasis(computed),
+        emphasis,
         ..TextGroup::INITIAL
     }
 }
@@ -809,8 +810,10 @@ pub(crate) fn emphasis_mark_string(computed: &ComputedValues) -> Option<String> 
 }
 
 /// `text-emphasis` as far as layout reads it: whether marks are set, and on
-/// which side. `auto` is `over right`, which is Chrome's initial value.
-fn emphasis(computed: &ComputedValues) -> TextEmphasis {
+/// which side. `auto` is `under right` where the content `language` is
+/// Chinese and `over right` otherwise, as CSS Text Decoration 4 and Chrome
+/// have it.
+fn emphasis(computed: &ComputedValues, language: Option<&Language>) -> TextEmphasis {
     let marks = !matches!(
         computed.slow_clone_text_emphasis_style(),
         StyloTextEmphasisStyle::None
@@ -819,7 +822,12 @@ fn emphasis(computed: &ComputedValues) -> TextEmphasis {
     TextEmphasis {
         marks,
         position: EmphasisPosition {
-            side: if position.contains(StyloTextEmphasisPosition::UNDER) {
+            side: if position.contains(StyloTextEmphasisPosition::UNDER)
+                || (position.contains(StyloTextEmphasisPosition::AUTO)
+                    && language.is_some_and(|language| {
+                        language.language().eq_ignore_ascii_case("zh")
+                    }))
+            {
                 EmphasisSide::Under
             } else {
                 EmphasisSide::Over
