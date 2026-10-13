@@ -158,11 +158,12 @@ impl TextLayout {
         {
             let mut breaker = self.layout.break_lines();
             // Moves the line being set into the room the floats leave at or below its top.
+            // Returns whether a float is in the way.
             fn enter_slot(
                 state: &mut parley::BreakerState,
                 exclusions: &impl LineExclusions,
                 width: f32,
-            ) {
+            ) -> bool {
                 let top = state.line_y() as f32;
                 match exclusions.slot(top) {
                     Some(slot) => {
@@ -171,22 +172,32 @@ impl TextLayout {
                         if slot.top > top {
                             state.set_line_y(slot.top as f64);
                         }
+                        true
                     }
                     None => {
                         state.set_line_max_advance(width);
                         state.set_line_x(0.0);
+                        false
                     }
                 }
             }
             let state = breaker.state_mut();
             state.set_layout_max_advance(width);
             state.set_line_y(0.0);
-            enter_slot(state, exclusions, width);
+            // Floats only end as the lines go down, so once none is in the way the slots are
+            // not asked after again until the lines place one.
+            let mut has_active_floats = enter_slot(state, exclusions, width);
 
             while let Some(yield_data) = breaker.break_next() {
                 match yield_data {
                     YieldData::LineBreak(_line_break_data) => {
-                        enter_slot(breaker.state_mut(), exclusions, width);
+                        let state = breaker.state_mut();
+                        if has_active_floats {
+                            has_active_floats = enter_slot(state, exclusions, width);
+                        } else {
+                            state.set_line_max_advance(width);
+                            state.set_line_x(0.0);
+                        }
                     }
                     YieldData::MaxHeightExceeded(_data) => {
                         // TODO
@@ -209,7 +220,7 @@ impl TextLayout {
                                 block_start: top,
                             });
                         }
-                        enter_slot(state, exclusions, width);
+                        has_active_floats = enter_slot(state, exclusions, width);
 
                         // Floats are out-of-flow and must not contribute to the line's height.
                         state.append_inline_box_to_line(
