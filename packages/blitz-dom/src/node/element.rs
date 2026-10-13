@@ -11,6 +11,7 @@ use std::sync::atomic::AtomicBool;
 use style::Atom;
 use style::parser::ParserContext;
 use style::properties::{Importance, PropertyDeclaration, PropertyId, SourcePropertyDeclaration};
+use style::servo::attr::parse_unsigned_integer;
 use style::stylesheets::{DocumentStyleSheet, Origin, UrlExtraData};
 use style::values::computed::Display as StyloDisplay;
 use style::{
@@ -580,7 +581,8 @@ impl ElementData {
     ///
     /// <https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#attr-fe-maxlength>
     pub fn text_input_max_length(&self) -> Option<usize> {
-        let max_length = parse_non_negative_integer(self.attr(local_name!("maxlength"))?)?;
+        let max_length =
+            parse_unsigned_integer(self.attr(local_name!("maxlength"))?.chars()).ok()? as usize;
         let applies = match self.name.local {
             local_name!("textarea") => true,
             local_name!("input") => matches!(
@@ -985,27 +987,6 @@ mod file_data {
 }
 #[cfg(feature = "file-input")]
 pub use file_data::FileData;
-
-/// <https://html.spec.whatwg.org/multipage/common-microsyntaxes.html#rules-for-parsing-non-negative-integers>
-fn parse_non_negative_integer(value: &str) -> Option<usize> {
-    let value = value.trim_start_matches(|c: char| c.is_ascii_whitespace());
-    let (negative, value) = match value.as_bytes().first() {
-        Some(b'-') => (true, &value[1..]),
-        Some(b'+') => (false, &value[1..]),
-        _ => (false, value),
-    };
-    let digits_end = value
-        .find(|c: char| !c.is_ascii_digit())
-        .unwrap_or(value.len());
-    let digits = &value[..digits_end];
-    if digits.is_empty() {
-        return None;
-    }
-    if negative {
-        return digits.bytes().all(|b| b == b'0').then_some(0);
-    }
-    Some(digits.parse().unwrap_or(usize::MAX))
-}
 
 #[cfg(test)]
 mod tests {
