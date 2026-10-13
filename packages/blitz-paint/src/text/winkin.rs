@@ -23,6 +23,7 @@ use style::properties::generated::longhands::text_decoration_style::computed_val
 use style::values::computed::{BorderCornerRadius, CSSPixelLength, TextDecorationLine};
 use style::values::generics::text::{GenericTextDecorationInset, GenericTextDecorationLength};
 use winkin::paint::{Decorates, Decoration, EmphasisMark, Paint};
+use winkin::selection::{SelectionRect, SelectionRectKind};
 use winkin::style::WritingMode;
 use winkin::{BoxFragment, FontInstance, Layout, NodeKey, RunOrientation, TextRun};
 
@@ -151,6 +152,12 @@ pub(crate) fn paint<S: PaintScene>(
         line: Cell::new((Affine::IDENTITY, 0.0)),
     };
     let mut items = Vec::new();
+    // Where each key's bars on the line start and end, which its
+    // `text-decoration-inset` is taken from.
+    let mut spans: Vec<(u64, f64, f64)> = Vec::new();
+    // The line's selection rectangles, each with the run it is painted
+    // under, where it selects a run's text.
+    let mut highlights: Vec<(SelectionRect, Option<usize>)> = Vec::new();
     for line in layout.lines() {
         // The block's first formatted line is set in its `::first-line`
         // styles, where it has them.
@@ -160,69 +167,159 @@ pub(crate) fn paint<S: PaintScene>(
         painter.line.set((frame, f64::from(metrics.height())));
         items.clear();
         items.extend(line.paints(|key| painter.decorates(key, first)));
-        // Text shadows go under everything the line paints, the last of each
-        // list lowest, then the line is painted over them.
-        let shadows = items
-            .iter()
-            .filter_map(|item| painter.shadows_of(item, first))
-            .max()
-            .unwrap_or(0);
-        for pass in (0..shadows).rev().map(Some).chain([None]) {
-            // The run whose marks follow it, and whose font they are set in.
-            let mut marked: Option<TextRun<'_>> = None;
-            let mut selection_drawn = false;
-            for item in &items {
-                // Backgrounds precede the highlight; glyphs follow it.
-                if pass.is_none()
-                    && !selection_drawn
-                    && !matches!(item, Paint::Background(_) | Paint::Box(_))
-                {
-                    paint_selection(scene, &selection_rects, line.index(), frame, transform);
-                    selection_drawn = true;
-                }
-                match *item {
-                    Paint::Background(background) if pass.is_none() => {
-                        painter.paint_first_line_background(scene, frame, first, background);
+        spans.clear();
+        for item in &items {
+            if let Paint::DecorationBeforeText(bar) | Paint::DecorationAfterText(bar) = item {
+                let (key, inline) = (bar.key().0, bar.inline());
+                let (left, right) = (f64::from(inline.left), f64::from(inline.right));
+                match spans.iter_mut().find(|span| span.0 == key) {
+                    Some(span) => {
+                        span.1 = span.1.min(left);
+                        span.2 = span.2.max(right);
                     }
-                    Paint::Box(fragment) if pass.is_none() => {
-                        painter.paint_box(scene, frame, &fragment, first);
-                    }
-                    Paint::DecorationBeforeText(bar) => context.lend(|context| {
-                        painter.paint_decoration(scene, frame, &bar, first, false, pass, context)
-                    }),
-                    Paint::DecorationAfterText(bar) => context.lend(|context| {
-                        painter.paint_decoration(scene, frame, &bar, first, true, pass, context)
-                    }),
-                    Paint::Atomic(atomic) if pass.is_none() => {
-                        paint_atomic(scene, NodeId::from_u64(atomic.key().0));
-                    }
-                    Paint::Annotation(run) | Paint::Text(run) => {
-                        painter.draw_run(scene, frame, &run, first, pass);
-                        marked = Some(run);
-                    }
-                    Paint::Generated(run) => painter.draw_run(scene, frame, &run, first, pass),
-                    Paint::Emphasis(mark) => {
-                        painter.draw_emphasis(scene, frame, &mark, marked.as_ref(), first, pass);
-                    }
-                    // Anything else draws nothing in a shadow pass.
-                    _ => {}
+                    None => spans.push((key, left, right)),
                 }
             }
-            if pass.is_none() && !selection_drawn {
-                paint_selection(scene, &selection_rects, line.index(), frame, transform);
+        }
+        highlights.clear();
+        highlights.extend(
+            selection_rects
+                .iter()
+                .filter(|rect| rect.line == line.index())
+                .map(|rect| {
+                    let under = (rect.kind == SelectionRectKind::Text)
+                        .then(|| {
+                            items.iter().position(|item| {
+                                text_run(item).is_some_and(|run| {
+                                    let inline = run.inline();
+                                    inline.left <= rect.inline.left
+                                        && rect.inline.right <= inline.right
+                                })
+                            })
+                        })
+                        .flatten();
+                    (*rect, under)
+                }),
+        );
+        // The run whose marks follow it, and whose font they are set in.
+        let mut marked: Option<TextRun<'_>> = None;
+        // Whether the highlight that selects no run's text is painted: over
+        // the backgrounds, under the rest.
+        let mut highlighted = false;
+        let mut at = 0;
+        while let Some(&item) = items.get(at) {
+            if !highlighted && !matches!(item, Paint::Background(_) | Paint::Box(_)) {
+                paint_selection(scene, &highlights, None, frame, transform);
+                highlighted = true;
             }
+            match item {
+                Paint::Background(background) => {
+                    painter.paint_first_line_background(scene, frame, first, background);
+                }
+                Paint::Box(fragment) => painter.paint_box(scene, frame, &fragment, first),
+                Paint::Atomic(atomic) => paint_atomic(scene, NodeId::from_u64(atomic.key().0)),
+                _ => {
+                    // A run of text with its bars and marks: its highlight,
+                    // then its text shadows and its decorations' shadows, the
+                    // last of each list lowest, then it.
+                    let end = run_end(&items, at);
+                    let run = &items[at..end];
+                    if let Some(index) = run.iter().position(|item| text_run(item).is_some()) {
+                        paint_selection(scene, &highlights, Some(at + index), frame, transform);
+                    }
+                    let shadows = run
+                        .iter()
+                        .filter_map(|item| painter.shadows_of(item, first))
+                        .max()
+                        .unwrap_or(0);
+                    for pass in (0..shadows).rev().map(Some).chain([None]) {
+                        for item in run {
+                            match *item {
+                                Paint::DecorationBeforeText(bar)
+                                | Paint::DecorationAfterText(bar) => {
+                                    let after = matches!(item, Paint::DecorationAfterText(_));
+                                    let key = bar.key().0;
+                                    let span = spans
+                                        .iter()
+                                        .find(|span| span.0 == key)
+                                        .map_or((0.0, 0.0), |span| (span.1, span.2));
+                                    context.lend(|context| {
+                                        painter.paint_decoration(
+                                            scene, frame, &bar, span, first, after, pass, context,
+                                        )
+                                    });
+                                }
+                                Paint::Annotation(run) | Paint::Text(run) => {
+                                    painter.draw_run(scene, frame, &run, first, pass);
+                                    marked = Some(run);
+                                }
+                                Paint::Generated(run) => {
+                                    painter.draw_run(scene, frame, &run, first, pass);
+                                }
+                                Paint::Emphasis(mark) => {
+                                    painter.draw_emphasis(
+                                        scene,
+                                        frame,
+                                        &mark,
+                                        marked.as_ref(),
+                                        first,
+                                        pass,
+                                    );
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                    at = end;
+                    continue;
+                }
+            }
+            at += 1;
+        }
+        if !highlighted {
+            paint_selection(scene, &highlights, None, frame, transform);
         }
     }
 }
 
+/// The run of text `item` draws, where it draws one.
+fn text_run<'a>(item: &Paint<'a>) -> Option<TextRun<'a>> {
+    match *item {
+        Paint::Text(run) | Paint::Annotation(run) | Paint::Generated(run) => Some(run),
+        _ => None,
+    }
+}
+
+/// Where the run of text that starts at `items[start]` ends: after its
+/// underlines and overlines, its text, its emphasis marks and its lines
+/// through.
+fn run_end(items: &[Paint<'_>], start: usize) -> usize {
+    let mut end = start;
+    while matches!(items.get(end), Some(Paint::DecorationBeforeText(_))) {
+        end += 1;
+    }
+    if items.get(end).is_some_and(|item| text_run(item).is_some()) {
+        end += 1;
+    }
+    while matches!(
+        items.get(end),
+        Some(Paint::Emphasis(_) | Paint::DecorationAfterText(_))
+    ) {
+        end += 1;
+    }
+    end.max(start + 1)
+}
+
+/// Paints the selection rectangles of `highlights` painted under the item at
+/// `under`, or, where it is `None`, those painted under no run.
 fn paint_selection(
     scene: &mut impl PaintScene,
-    rects: &[winkin::selection::SelectionRect],
-    line: usize,
+    highlights: &[(SelectionRect, Option<usize>)],
+    under: Option<usize>,
     frame: Affine,
     transform: Affine,
 ) {
-    for rect in rects.iter().filter(|rect| rect.line == line) {
+    for (rect, _) in highlights.iter().filter(|(_, held)| *held == under) {
         let shape = Rect::new(
             f64::from(rect.inline.left),
             f64::from(rect.block.over),
@@ -552,11 +649,14 @@ impl Painter<'_> {
     }
 
     /// Draws one bar of a decoration, with the decoration `bar`'s box sets.
+    /// `span` is where that box's bars on the line start and end.
+    #[allow(clippy::too_many_arguments)]
     fn paint_decoration(
         &self,
         scene: &mut impl PaintScene,
         frame: Affine,
         bar: &Decoration,
+        span: (f64, f64),
         first: bool,
         after_text: bool,
         pass: Option<usize>,
@@ -567,6 +667,7 @@ impl Painter<'_> {
         let geometry = WinkinDecoration {
             left: f64::from(inline.left),
             right: f64::from(inline.right),
+            span,
             baseline: bar.baseline(),
             ascent: bar.ascent(),
             descent: bar.descent(),
@@ -1158,6 +1259,9 @@ pub(crate) struct WinkinDecoration {
     /// Where it starts and ends along the line.
     pub(crate) left: f64,
     pub(crate) right: f64,
+    /// Where its box's bars on the line start and end, which
+    /// `text-decoration-inset` is taken from.
+    pub(crate) span: (f64, f64),
     /// Its box's baseline, and its primary font's ascent and descent about it.
     pub(crate) baseline: f32,
     pub(crate) ascent: f32,
@@ -1259,8 +1363,9 @@ impl DrawTextContext {
         self.deco_boxes.push(LineDecoration {
             node_id: NodeId::from_u64(0),
             deco,
-            min_x: bar.left,
-            max_x: bar.right,
+            min_x: bar.span.0,
+            max_x: bar.span.1,
+            piece: Some((bar.left, bar.right)),
             own: Some(DecorationRunGeometry {
                 baseline: bar.baseline,
                 ascent: bar.ascent,

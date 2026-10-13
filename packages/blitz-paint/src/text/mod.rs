@@ -174,6 +174,10 @@ struct LineDecoration {
     deco: ResolvedDecoration,
     min_x: f64,
     max_x: f64,
+    /// The part of `min_x..max_x` drawn, where only a part is: the line is
+    /// inset and patterned as the whole is, and drawn over that part and past
+    /// an end it holds.
+    piece: Option<(f64, f64)>,
     /// Geometry from a run whose innermost node is the decorating box itself.
     own: Option<DecorationRunGeometry>,
     /// Geometry from the first run the box covers (fallback when it has no own text on
@@ -246,6 +250,9 @@ fn decoration_size(
 ///
 /// `double_dir` points away from the text (`+1` = down, `-1` = up) and is used to place the
 /// second line of a `double` decoration.
+///
+/// Only what lies between the ends of `clip` is drawn: of a solid or double line, that part;
+/// of a pattern, the dots centred and the dashes and waves starting there.
 #[allow(clippy::too_many_arguments)]
 fn draw_decoration_line(
     scene: &mut impl PaintScene,
@@ -261,7 +268,9 @@ fn draw_decoration_line(
     deco_style: TextDecorationStyle,
     inset_start: f64,
     inset_end: f64,
+    clip: (f64, f64),
 ) {
+    let within = |at: f64| clip.0 <= at && at < clip.1;
     // Inset the line from the box's start/end edges (assumes LTR: start is the left edge).
     // Negative insets extend the line past the text.
     let x = x0 + inset_start;
@@ -279,8 +288,11 @@ fn draw_decoration_line(
         }
         // `solid`
         TextDecorationStyle::Solid => {
-            let line = kurbo::Line::new((x, y), (x + w, y));
-            scene.stroke(&butt_stroke, transform, brush, None, &line);
+            let (from, to) = (x.max(clip.0), (x + w).min(clip.1));
+            if from < to {
+                let line = kurbo::Line::new((from, y), (to, y));
+                scene.stroke(&butt_stroke, transform, brush, None, &line);
+            }
         }
         // Two lines, each `size` thick, separated by a 1px (CSS) gap. This
         // matches Chrome, where the second line is offset by `thickness + 1px`
@@ -288,9 +300,12 @@ fn draw_decoration_line(
         // overline).
         TextDecorationStyle::Double => {
             let one_css_px = scale;
-            for cy in [y, y + double_dir * (size + one_css_px)] {
-                let line = kurbo::Line::new((x, cy), (x + w, cy));
-                scene.stroke(&butt_stroke, transform, brush, None, &line);
+            let (from, to) = (x.max(clip.0), (x + w).min(clip.1));
+            if from < to {
+                for cy in [y, y + double_dir * (size + one_css_px)] {
+                    let line = kurbo::Line::new((from, cy), (to, cy));
+                    scene.stroke(&butt_stroke, transform, brush, None, &line);
+                }
             }
         }
         // Round dots (diameter = line thickness) spaced one dot apart.
@@ -299,8 +314,10 @@ fn draw_decoration_line(
             let step = 2.0 * size;
             let mut cx = x + radius;
             while cx <= x + w - radius {
-                let dot = Circle::new((cx, y), radius);
-                scene.fill(Fill::NonZero, transform, brush, None, &dot);
+                if within(cx) {
+                    let dot = Circle::new((cx, y), radius);
+                    scene.fill(Fill::NonZero, transform, brush, None, &dot);
+                }
                 cx += step;
             }
         }
@@ -319,9 +336,11 @@ fn draw_decoration_line(
             };
             let mut dx = x;
             while dx < x + w {
-                let end = (dx + dash).min(x + w);
-                let rect = Rect::new(dx, y - size / 2.0, end, y + size / 2.0);
-                scene.fill(Fill::NonZero, transform, brush, None, &rect);
+                if within(dx) {
+                    let end = (dx + dash).min(x + w);
+                    let rect = Rect::new(dx, y - size / 2.0, end, y + size / 2.0);
+                    scene.fill(Fill::NonZero, transform, brush, None, &rect);
+                }
                 dx += dash + gap;
             }
         }
@@ -330,24 +349,32 @@ fn draw_decoration_line(
             let amplitude = size;
             let half_wave = (2.0 * size).max(1.0);
             let mut path = BezPath::new();
-            path.move_to((x, y));
             let mut px = x;
             let mut up = true;
+            let mut open = false;
             while px < x + w {
                 let nx = (px + half_wave).min(x + w);
-                // A quad Bézier reaches half the control-point offset at its
-                // midpoint, so use `2 * amplitude` to hit the target peak.
-                let ctrl_y = if up {
-                    y - 2.0 * amplitude
-                } else {
-                    y + 2.0 * amplitude
-                };
-                path.quad_to(((px + nx) / 2.0, ctrl_y), (nx, y));
+                if within(px) {
+                    if !open {
+                        path.move_to((px, y));
+                        open = true;
+                    }
+                    // A quad Bézier reaches half the control-point offset at its
+                    // midpoint, so use `2 * amplitude` to hit the target peak.
+                    let ctrl_y = if up {
+                        y - 2.0 * amplitude
+                    } else {
+                        y + 2.0 * amplitude
+                    };
+                    path.quad_to(((px + nx) / 2.0, ctrl_y), (nx, y));
+                }
                 px = nx;
                 up = !up;
             }
-            let stroke = Stroke::new(size).with_caps(Cap::Round);
-            scene.stroke(&stroke, transform, brush, None, &path);
+            if open {
+                let stroke = Stroke::new(size).with_caps(Cap::Round);
+                scene.stroke(&stroke, transform, brush, None, &path);
+            }
         }
     }
 }
@@ -407,6 +434,24 @@ fn flush_line_decorations(
             }
             GenericTextDecorationInset::Auto => (0.0, 0.0),
         };
+        // A piece draws what of the whole line lies over it, and past an end
+        // of the span it holds. Its ends inside the span are on whole pixels,
+        // where the piece beside it starts or ends too.
+        let clip = match acc.piece {
+            Some((left, right)) => (
+                if left > acc.min_x {
+                    left.round()
+                } else {
+                    f64::NEG_INFINITY
+                },
+                if right < acc.max_x {
+                    right.round()
+                } else {
+                    f64::INFINITY
+                },
+            ),
+            None => (f64::NEG_INFINITY, f64::INFINITY),
+        };
 
         let lines = deco.line & drawn;
         if lines.contains(TextDecorationLine::UNDERLINE) {
@@ -458,6 +503,7 @@ fn flush_line_decorations(
                 deco.style,
                 inset_start,
                 inset_end,
+                clip,
             );
         }
         if lines.contains(TextDecorationLine::OVERLINE) {
@@ -498,6 +544,7 @@ fn flush_line_decorations(
                 deco.style,
                 inset_start,
                 inset_end,
+                clip,
             );
         }
         if lines.contains(TextDecorationLine::LINE_THROUGH) {
@@ -539,6 +586,7 @@ fn flush_line_decorations(
                 deco.style,
                 inset_start,
                 inset_end,
+                clip,
             );
         }
     }
