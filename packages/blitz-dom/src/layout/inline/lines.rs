@@ -417,9 +417,13 @@ impl LayoutPassState<'_> {
             },
             top_margin: CollapsibleMarginSet::ZERO,
             bottom_margin: CollapsibleMarginSet::ZERO,
+            // A line of no height still stops the margins collapsing through: only phantom lines,
+            // which make no line box, let them (CSS 2, section 8.3.1; CSS Inline 3, "invisible
+            // line boxes").
             margins_can_collapse_through: !collapses_through
                 && final_size.height == 0.0
-                && measured_size.height == 0.0,
+                && measured_size.height == 0.0
+                && extent.first_baseline.is_none(),
             oof_candidates,
             oof_positioning_area: Some(OofPositioningArea {
                 size: final_size - oof_position_inset.sum_axes(),
