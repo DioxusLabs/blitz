@@ -1138,8 +1138,8 @@ impl ElementCx<'_, '_> {
             scene,
             container_size,
             paint_size,
-            x_offset,
-            y_offset,
+            x_offset.px(),
+            y_offset.px(),
             |scene| {
                 anyrender_svg::render_svg_tree(scene, &svg.tree, transform);
             },
@@ -1153,14 +1153,14 @@ impl ElementCx<'_, '_> {
         scene: &mut S,
         container_size: taffy::Size<f32>,
         paint_size: taffy::Size<f32>,
-        x_offset: CSSPixelLength,
-        y_offset: CSSPixelLength,
+        x_offset: f32,
+        y_offset: f32,
         paint: impl FnOnce(&mut S),
     ) {
-        let overflows = x_offset.px() < 0.0
-            || y_offset.px() < 0.0
-            || x_offset.px() + paint_size.width > container_size.width
-            || y_offset.px() + paint_size.height > container_size.height;
+        let overflows = x_offset < 0.0
+            || y_offset < 0.0
+            || x_offset + paint_size.width > container_size.width
+            || y_offset + paint_size.height > container_size.height;
         self.context.layer_manager.maybe_with_layer(
             scene,
             overflows,
@@ -1217,8 +1217,8 @@ impl ElementCx<'_, '_> {
                 scene,
                 container_size,
                 paint_size,
-                x_offset,
-                y_offset,
+                x_offset.px(),
+                y_offset.px(),
                 |scene| {
                     scene.draw_image(to_peniko_image(image, quality).as_ref(), transform);
                 },
