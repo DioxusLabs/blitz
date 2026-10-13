@@ -200,6 +200,27 @@ pub(crate) struct DrawTextContext {
 ///
 /// The result is floored to a whole number of device pixels (minimum 1), matching
 /// browsers, which snap decoration thickness to whole pixels.
+/// How far, in CSS pixels, the decorations an element draws may reach past its box: its font
+/// size, as far as a decoration sits from the text, plus its thickness and underline offset. The
+/// overflow the culling reads leaves this ink out.
+pub(crate) fn decoration_reach(styles: &style::properties::ComputedValues) -> f64 {
+    let text = styles.get_text();
+    if text.text_decoration_line.is_empty() {
+        return 0.0;
+    }
+    let font_size = Length::new(styles.get_font().font_size.computed_size().px());
+    let thickness = match &text.text_decoration_thickness {
+        GenericTextDecorationLength::LengthPercentage(lp) => lp.resolve(font_size).px().abs(),
+        GenericTextDecorationLength::FromFont | GenericTextDecorationLength::Auto => 0.0,
+    };
+    let offset = styles
+        .get_inherited_text()
+        .text_underline_offset
+        .non_auto()
+        .map_or(0.0, |lp| lp.resolve(font_size).px().abs());
+    f64::from(font_size.px() + thickness + offset)
+}
+
 fn decoration_size(
     thickness: &TextDecorationLength,
     metric_size: f32,
