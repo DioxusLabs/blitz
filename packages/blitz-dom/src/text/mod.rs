@@ -15,7 +15,7 @@
 //! Painting is the renderer's part: blitz-paint paints each backend's types in a module of its own,
 //! which [`cfg_text_backend!`](crate::cfg_text_backend) selects.
 
-#[cfg(not(text_parley))]
+#[cfg(not(feature = "parley"))]
 compile_error!("Enable the `parley` feature: Blitz needs a text backend");
 
 use std::borrow::Cow;
@@ -29,10 +29,10 @@ use parlance::{FontStyle, FontWeight};
 
 use crate::node::{InlineContent, InlineTextHit, Node};
 
-#[cfg(text_parley)]
+#[cfg(feature = "parley")]
 pub mod parley;
 
-#[cfg(text_parley)]
+#[cfg(feature = "parley")]
 use self::parley as backend;
 
 /// The fonts documents lay out text with. Clones share their fonts.
@@ -58,7 +58,7 @@ pub enum TextBackend {
 }
 
 /// The text backend this build of Blitz lays out text with.
-#[cfg(text_parley)]
+#[cfg(feature = "parley")]
 pub const BACKEND: TextBackend = TextBackend::Parley;
 
 /// Expands the arm for the text backend in use, and drops the others, so that a crate which
@@ -81,7 +81,7 @@ macro_rules! cfg_text_backend {
 }
 
 /// Expands the arm of [`cfg_text_backend!`] named for the text backend in use.
-#[cfg(text_parley)]
+#[cfg(feature = "parley")]
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __text_backend_arms {
