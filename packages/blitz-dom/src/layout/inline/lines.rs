@@ -959,8 +959,9 @@ impl LayoutPassState<'_> {
     /// The room over the block's first line its ruby annotations and emphasis marks may take
     /// before the line moves down for them, in CSS pixels, as Chrome's block layout lends it
     /// (`ComputeInitialBlockStartAnnotationSpace`): the block's padding over the line, and where
-    /// no border is in the way, the margin collapsed between it and the block before it, that
-    /// block's end padding, and the room that block's last line left under its content.
+    /// no border is in the way and its margins collapse, the margin collapsed between it and the
+    /// block before it, that block's end padding, and the room that block's last line left under
+    /// its content.
     fn room_above(
         &self,
         node_id: NodeId,
@@ -970,7 +971,9 @@ impl LayoutPassState<'_> {
         inputs: taffy::LayoutInput,
     ) -> f32 {
         let mut room = padding_top;
-        if padding_border_top > padding_top {
+        // A block that starts a formatting context of its own (`overflow: hidden`, `flow-root`)
+        // is lent no margin, as Chrome lends none to a new formatting context.
+        if padding_border_top > padding_top || !inputs.vertical_margins_are_collapsible.start {
             return room;
         }
         let own = margin_top.max(0.0);
