@@ -204,7 +204,7 @@ impl WinkinFontMetricsProvider {
 impl FontMetricsProvider for WinkinFontMetricsProvider {
     fn query_font_metrics(
         &self,
-        _vertical: bool,
+        vertical: bool,
         font_styles: &FontStyles,
         font_size: CSSPixelLength,
         _flags: QueryFontMetricsFlags,
@@ -239,7 +239,9 @@ impl FontMetricsProvider for WinkinFontMetricsProvider {
             .collect();
 
         // The advance of `ch`, scaled as winkin scales a shaped advance: font units times size
-        // over units per em.
+        // over units per em. Text set upright in a vertical line advances down it: by the
+        // glyph's `vmtx` height, or else by the font's ascent and descent, as HarfBuzz
+        // advances a glyph vertically without one.
         let advance_of = |ch: char| -> Option<f32> {
             let (bytes, index) = Self::font_for(&fonts, &families, attributes, ch)?;
             let font = skrifa::FontRef::from_index(bytes.data(), index).ok()?;
@@ -250,8 +252,18 @@ impl FontMetricsProvider for WinkinFontMetricsProvider {
                 return None;
             }
             let glyph = font.charmap().map(ch)?;
-            let advance =
-                GlyphMetrics::new(&font, Size::unscaled(), location).advance_width(glyph)?;
+            let advance = if vertical {
+                use skrifa::raw::TableProvider as _;
+                match font.vmtx().ok().and_then(|vmtx| vmtx.advance(glyph)) {
+                    Some(advance) => f32::from(advance),
+                    None => {
+                        let metrics = Metrics::new(&font, Size::unscaled(), location);
+                        metrics.ascent - metrics.descent
+                    }
+                }
+            } else {
+                GlyphMetrics::new(&font, Size::unscaled(), location).advance_width(glyph)?
+            };
             Some(advance * (font_size.px() / f32::from(upem)))
         };
         let metrics_of = |ch: char| -> Option<(f32, Option<f32>, Option<f32>)> {
