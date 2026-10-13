@@ -2128,14 +2128,15 @@ impl<E: LineExclusions> Exclusions for ExclusionsOf<'_, E> {
 
 /// Builds `content`, the value of the `<input>` or `<textarea>` `node`, into `text`: set in
 /// `computed`, its computed style, with white space preserved (as `break-spaces` where the style
-/// asks for it) and no text transform. The lines wrap at `width` device pixels as the style wraps
-/// them, or not at all where it is `None`.
+/// asks for it). The lines wrap at `width` device pixels as the style wraps them, or not at all
+/// where it is `None`.
 ///
 /// The text is laid out in up to three pieces, keyed as [`PIECE_KEYS`] says: before, inside and
 /// after `composition`, the text an input method is composing, which is underlined, or else
 /// `revealed`, the text a password field shows in the clear. Where the style masks the text
-/// (`-webkit-text-security`), the layout maps each piece's offsets back to `content`, and this
-/// returns true. Otherwise offsets in the layout's text are offsets in `content`.
+/// (`-webkit-text-security`) or transforms it (`text-transform`), the layout maps each piece's
+/// offsets back to `content`, and this returns true. Otherwise offsets in the layout's text are
+/// offsets in `content`.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn build_plain_text(
     cx: &mut TextContext,
@@ -2163,12 +2164,12 @@ pub(crate) fn build_plain_text(
                 Some(_) => own.text.wrap_mode,
                 None => winkin::style::TextWrapMode::NoWrap,
             },
-            transform: winkin::style::TextGroup::INITIAL.transform,
             ..own.text
         },
         ..own
     };
     let masked = own.text.security != winkin::style::TextSecurity::None;
+    let mapped = masked || own.text.transform != winkin::style::TextGroup::INITIAL.transform;
     let block = style::block_style(&own, None, computed, computed, scale);
     let key = NodeKey(node.as_u64());
     text.built = false;
@@ -2182,7 +2183,7 @@ pub(crate) fn build_plain_text(
     text.styles.marker = None;
     text.styles.marks.clear();
     let mut options = BuildOptions::default();
-    options.map_source = masked;
+    options.map_source = mapped;
     let mut builder = text.layout.builder(&mut cx.cx, key, &block, options);
     let piece = |number: u64| NodeKey(node.as_u64() | number << PIECE_SHIFT);
     // The piece in the middle, in a box of its own: the composing text, which the renderer
@@ -2233,7 +2234,7 @@ pub(crate) fn build_plain_text(
     text.built = true;
     let area = Area::new(width.unwrap_or(f32::MAX / 4.0));
     text.lay_out(&mut cx.cx, area, &mut winkin::NoExclusions);
-    masked
+    mapped
 }
 
 impl MarkerEngine for TextLayout {
