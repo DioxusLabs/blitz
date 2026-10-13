@@ -185,14 +185,16 @@ pub trait InlineText: Default + Clone + std::fmt::Debug {
 pub(crate) enum SpanKind {
     /// A non-atomic inline box.
     Span,
-    /// A `display: contents` element, which has no box but whose children inherit from it, or an
-    /// annotation container that holds `<rt>`s of its own.
+    /// A `display: contents` element, which has no box but whose children inherit from it.
     Contents,
-    /// A ruby container, `<ruby>`, where the backend sets ruby.
+    /// A ruby container, `<ruby>`. A span to a backend that does not set ruby.
     Ruby,
-    /// A ruby annotation, `<rt>` or an `<rtc>` holding no `<rt>`, where the backend sets ruby.
-    /// `in_container` where it is an `<rt>` inside an `<rtc>`.
+    /// A ruby annotation, `<rt>` or an `<rtc>` holding no `<rt>`. `in_container` where it is an
+    /// `<rt>` inside an `<rtc>`. A span to a backend that does not set ruby.
     Annotation { in_container: bool },
+    /// An annotation container, `<rtc>`, that holds `<rt>`s of its own, each an annotation. A
+    /// span to a backend that does not set ruby.
+    AnnotationContainer,
 }
 
 /// What a box pushed whole into the content of an inline formatting context is.
@@ -215,10 +217,6 @@ pub(crate) trait InlineBuilder: crate::layout::text_transform::PushedText {
     /// Whether the backend applies `text-transform` itself. Where it does, text is pushed as the
     /// DOM holds it; where it does not, Blitz transforms it first.
     const TRANSFORMS_TEXT: bool;
-
-    /// Whether the backend sets ruby. Where it does, `<ruby>`, `<rt>` and `<rtc>` are pushed as
-    /// ruby and the fallback `<rp>` is dropped; where it does not, they are spans.
-    const SETS_RUBY: bool;
 
     /// Pushes the marker of a list item whose marker is inside it, before its content.
     fn push_marker(&mut self, marker: &crate::node::Marker);

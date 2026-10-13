@@ -127,12 +127,8 @@ impl Walk<'_> {
                     builder.push_line_break(node, &style);
                     self.transformer.word_break(builder);
                 } else if *tag == local_name!("wbr") && builder.push_break_opportunity(node) {
-                } else if B::SETS_RUBY && *tag == local_name!("rp") {
-                    // The fallback parentheses, for a renderer that cannot set ruby.
                 } else {
-                    let kind = if !B::SETS_RUBY {
-                        SpanKind::Span
-                    } else if *tag == local_name!("ruby") {
+                    let kind = if *tag == local_name!("ruby") {
                         SpanKind::Ruby
                     } else if *tag == local_name!("rt") {
                         SpanKind::Annotation {
@@ -151,7 +147,7 @@ impl Walk<'_> {
                                 .is_element_with_tag_name(&local_name!("rt"))
                         });
                         if holds_annotation {
-                            SpanKind::Contents
+                            SpanKind::AnnotationContainer
                         } else {
                             SpanKind::Annotation {
                                 in_container: false,

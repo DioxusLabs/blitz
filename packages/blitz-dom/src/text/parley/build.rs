@@ -93,7 +93,6 @@ impl PushedText for ParleyBuilder<'_, '_> {
 
 impl InlineBuilder for ParleyBuilder<'_, '_> {
     const TRANSFORMS_TEXT: bool = false;
-    const SETS_RUBY: bool = false;
 
     fn push_marker(&mut self, marker: &Marker) {
         match marker {
