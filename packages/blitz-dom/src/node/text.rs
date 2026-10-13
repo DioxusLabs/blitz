@@ -821,35 +821,38 @@ fn insert_within_max_length(
 
 /// The length of a text control's value as measured by `maxlength`: UTF-16 code units, with
 /// each CRLF pair counted once.
-///
-/// Counted directly from the UTF-8 bytes: one unit per non-continuation byte, plus one more
-/// for each 4-byte sequence (a surrogate pair).
 fn value_length(text: &str) -> usize {
-    let mut length = 0;
-    let mut prev = 0;
-    for byte in text.bytes() {
-        length += (byte & 0xC0 != 0x80) as usize + (byte >= 0xF0) as usize;
-        length -= (byte == b'\n' && prev == b'\r') as usize;
-        prev = byte;
-    }
-    length
+    scan_value_length(text, usize::MAX).expect("usize::MAX cannot be exceeded")
 }
 
 /// The longest prefix of `text` whose [`value_length`] is at most `max_length`, never splitting
 /// a character.
 fn truncate_to_value_length(text: &str, max_length: usize) -> &str {
-    let mut length = 0;
-    let mut prev = None;
-    for (idx, c) in text.char_indices() {
-        if !(c == '\n' && prev == Some('\r')) {
-            length += c.len_utf16();
-        }
-        if length > max_length {
-            return &text[..idx];
-        }
-        prev = Some(c);
+    match scan_value_length(text, max_length) {
+        Ok(_) => text,
+        Err(idx) => &text[..idx],
     }
-    text
+}
+
+/// Counts the [`value_length`] of `text`, stopping at the first character that would take it
+/// over `max_length` and returning that character's byte index instead.
+///
+/// Works directly on the UTF-8 bytes without decoding: each non-continuation byte starts a
+/// character worth one UTF-16 unit, or two for a 4-byte sequence (a surrogate pair).
+fn scan_value_length(text: &str, max_length: usize) -> Result<usize, usize> {
+    let mut length = 0;
+    let mut prev = 0;
+    for (idx, byte) in text.bytes().enumerate() {
+        let is_char_start = byte & 0xC0 != 0x80;
+        let units =
+            (is_char_start && !(byte == b'\n' && prev == b'\r')) as usize + (byte >= 0xF0) as usize;
+        if length + units > max_length {
+            return Err(idx);
+        }
+        length += units;
+        prev = byte;
+    }
+    Ok(length)
 }
 
 #[cfg(test)]
