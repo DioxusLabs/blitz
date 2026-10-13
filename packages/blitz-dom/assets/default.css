@@ -202,6 +202,26 @@ option {
     display: none;
 }
 
+/* A list box shows its options, one to a row along its block axis, and
+ * scrolls through them: https://html.spec.whatwg.org/#the-select-element-2.
+ * Its block size is its display size in rows of 1.2em, a presentational
+ * hint. */
+select:is([multiple], [size]:not([size="0"], [size="1"])) {
+    display: inline-block;
+    overflow: auto;
+    border: 1px solid #767676;
+    border-radius: 2px;
+    background-color: white;
+    vertical-align: text-bottom;
+    white-space: nowrap;
+}
+
+select:is([multiple], [size]:not([size="0"], [size="1"])) option {
+    display: block;
+    padding-inline: 2px;
+    line-height: 1.2;
+}
+
 source {
     display: none;
 }
