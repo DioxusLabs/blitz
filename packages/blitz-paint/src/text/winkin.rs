@@ -4,7 +4,7 @@
 //! it: each line's [`Line::paints`] walks what the line paints in Chrome's
 //! order, and this draws each with what the node it names is styled in.
 
-use core::cell::Cell;
+use core::cell::{Cell, RefCell};
 
 use anyrender::{Glyph, PaintScene};
 use blitz_dom::node::Marker;
@@ -71,14 +71,35 @@ impl<T> LineSides<T> {
     }
 }
 
+/// Lends the painter the shared text context for one draw at a time, so that
+/// an atomic inline painted between two draws can use it too.
+pub(crate) trait LendContext {
+    /// Calls `f` with the context.
+    fn lend<R>(&mut self, f: impl FnOnce(&mut DrawTextContext) -> R) -> R;
+}
+
+impl LendContext for &mut DrawTextContext {
+    fn lend<R>(&mut self, f: impl FnOnce(&mut DrawTextContext) -> R) -> R {
+        f(self)
+    }
+}
+
+impl LendContext for &RefCell<DrawTextContext> {
+    fn lend<R>(&mut self, f: impl FnOnce(&mut DrawTextContext) -> R) -> R {
+        f(&mut self.borrow_mut())
+    }
+}
+
 /// Paints every line of `layout`: the boxes, decorations, ruby annotations,
 /// text, emphasis marks and generated text of each, in Chrome's order.
 ///
 /// `transform` takes the content box's device pixels onto the scene, and
-/// `root` is the block the layout was built for.
+/// `root` is the block the layout was built for. `paint_atomic` paints an
+/// atomic inline where the line paints it, after what comes before it in
+/// tree order and under what comes after.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn paint(
-    scene: &mut impl PaintScene,
+pub(crate) fn paint<S: PaintScene>(
+    scene: &mut S,
     text: &TextLayout,
     layout: &Layout,
     doc: &BaseDocument,
@@ -87,8 +108,9 @@ pub(crate) fn paint(
     content_height: f64,
     scale: f64,
     root: NodeId,
-    context: &mut DrawTextContext,
+    mut context: impl LendContext,
     selection: Option<(usize, usize)>,
+    paint_atomic: &mut impl FnMut(&mut S, NodeId),
 ) {
     let writing_mode = text.writing_mode();
     let page = page(writing_mode, content_width, content_height);
@@ -165,11 +187,14 @@ pub(crate) fn paint(
                     Paint::Box(fragment) if pass.is_none() => {
                         painter.paint_box(scene, frame, &fragment, first);
                     }
-                    Paint::DecorationBeforeText(bar) => {
-                        painter.paint_decoration(scene, frame, &bar, first, false, pass, context);
-                    }
-                    Paint::DecorationAfterText(bar) => {
-                        painter.paint_decoration(scene, frame, &bar, first, true, pass, context);
+                    Paint::DecorationBeforeText(bar) => context.lend(|context| {
+                        painter.paint_decoration(scene, frame, &bar, first, false, pass, context)
+                    }),
+                    Paint::DecorationAfterText(bar) => context.lend(|context| {
+                        painter.paint_decoration(scene, frame, &bar, first, true, pass, context)
+                    }),
+                    Paint::Atomic(atomic) if pass.is_none() => {
+                        paint_atomic(scene, NodeId::from_u64(atomic.key().0));
                     }
                     Paint::Annotation(run) | Paint::Text(run) => {
                         painter.draw_run(scene, frame, &run, first, pass);
@@ -179,8 +204,7 @@ pub(crate) fn paint(
                     Paint::Emphasis(mark) => {
                         painter.draw_emphasis(scene, frame, &mark, marked.as_ref(), first, pass);
                     }
-                    // Anything else winkin paints draws nothing here: atomic
-                    // inlines are painted as boxes of their own.
+                    // Anything else draws nothing in a shadow pass.
                     _ => {}
                 }
             }
@@ -983,9 +1007,10 @@ fn embolden(font: &FontInstance<'_>) -> Vec2 {
 ///
 /// `transform` takes the content box's device pixels, moved down by the layout's block offset,
 /// onto the scene, and `content_size` is the content box's size in device pixels.
+/// `paint_atomic` paints each atomic inline in its place in the line's paint order.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn paint_inline_layout(
-    scene: &mut impl PaintScene,
+pub(crate) fn paint_inline_layout<S: PaintScene>(
+    scene: &mut S,
     text_layout: &TextLayout,
     doc: &BaseDocument,
     transform: Affine,
@@ -993,7 +1018,8 @@ pub(crate) fn paint_inline_layout(
     scale: f64,
     root: NodeId,
     selection: Option<(usize, usize)>,
-    context: &mut DrawTextContext,
+    context: &RefCell<DrawTextContext>,
+    paint_atomic: &mut impl FnMut(&mut S, NodeId),
 ) {
     let Some(layout) = text_layout.layout() else {
         return;
@@ -1010,6 +1036,7 @@ pub(crate) fn paint_inline_layout(
         root,
         context,
         selection,
+        paint_atomic,
     );
 }
 
@@ -1048,6 +1075,7 @@ pub(crate) fn paint_text_input(
         node_id,
         context,
         selection,
+        &mut |_, _| {},
     );
     if focussed
         && editor.is_selection_collapsed()
@@ -1119,6 +1147,7 @@ pub(crate) fn paint_marker(
         node_id,
         context,
         None,
+        &mut |_, _| {},
     );
 }
 
