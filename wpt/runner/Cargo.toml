@@ -11,7 +11,7 @@ default = ["cpu", "parley"]
 gpu = ["dep:anyrender_vello"]
 cpu = ["dep:anyrender_vello_cpu"]
 # The text backend, which is Parley: on by default, and required.
-parley = ["blitz-dom/parley", "blitz-paint/parley", "blitz-html/parley", "blitz-vibey-script/parley"]
+parley = ["blitz-paint/parley", "blitz-vibey-script/parley"]
 
 [dependencies]
 blitz-dom = { workspace = true, features = ["svg", "floats", "system-fonts", "woff", "complex-scripts", "text-transform-icu", "writing-mode"] }

@@ -14,7 +14,7 @@ publish = false
 [features]
 default = ["parley"]
 # The text backend, which is Parley: on by default, and required.
-parley = ["blitz-dom/parley", "blitz-html/parley"]
+parley = ["blitz-html/parley"]
 tracing = ["dep:tracing", "blitz-dom/tracing"]
 
 [dependencies]

@@ -11,7 +11,7 @@ crate-type = ["cdylib"]
 [features]
 default = ["hybrid", "parley"]
 # The text backend, which is Parley: on by default, and required.
-parley = ["dioxus-native/parley", "blitz-dom/parley", "blitz-paint/parley"]
+parley = ["dioxus-native/parley"]
 system-fonts = ["blitz-dom/system-fonts"]
 vello = ["dioxus-native/vello"]
 cpu = ["cpu-pixels"]

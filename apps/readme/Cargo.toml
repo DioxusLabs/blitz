@@ -12,7 +12,7 @@ publish = true
 [features]
 default = ["hybrid", "comrak", "floats", "scrollbars", "parley"]
 # The text backend, which is Parley: on by default, and required.
-parley = ["blitz-dom/parley", "blitz-html/parley", "blitz-paint/parley", "blitz-shell/parley"]
+parley = ["blitz-html/parley", "blitz-shell/parley"]
 
 # Renderers
 gpu = ["dep:anyrender_vello"]
