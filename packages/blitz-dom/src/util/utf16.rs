@@ -29,27 +29,29 @@ pub(crate) fn value_length(text: &str) -> usize {
 pub(crate) fn truncate_to_value_length(text: &str, max_length: usize) -> &str {
     match scan_value_length(text, max_length) {
         Ok(_) => text,
-        Err(idx) => &text[..idx],
+        Err(byte_idx) => &text[..byte_idx],
     }
 }
 
-/// Counts the [`value_length`] of `text` as long as it stays within `max_length`.
+/// Counts the [`value_length`] of `text` as long as it stays within `max_length` (both in
+/// UTF-16 code units, with each CRLF pair counted once).
 ///
-/// Returns `Ok(length)` if all of `text` fits, where `length` is its [`value_length`], or
-/// `Err(idx)` with the byte index of the first character that would take the length over
-/// `max_length`, so that `&text[..idx]` is the longest prefix that fits.
+/// Returns `Ok(length)` if all of `text` fits, where `length` is its [`value_length`] in UTF-16
+/// code units, or `Err(byte_idx)` where `byte_idx` is the UTF-8 byte index into `text` of the
+/// first character that would take the length over `max_length`, so that `&text[..byte_idx]`
+/// is the longest prefix that fits.
 ///
 /// Works directly on the UTF-8 bytes without decoding: each non-continuation byte starts a
 /// character worth one UTF-16 unit, or two for a 4-byte sequence (a surrogate pair).
 fn scan_value_length(text: &str, max_length: usize) -> Result<usize, usize> {
     let mut length = 0;
     let mut prev = 0;
-    for (idx, byte) in text.bytes().enumerate() {
+    for (byte_idx, byte) in text.bytes().enumerate() {
         let is_char_start = byte & 0xC0 != 0x80;
         let units =
             (is_char_start && !(byte == b'\n' && prev == b'\r')) as usize + (byte >= 0xF0) as usize;
         if length + units > max_length {
-            return Err(idx);
+            return Err(byte_idx);
         }
         length += units;
         prev = byte;
