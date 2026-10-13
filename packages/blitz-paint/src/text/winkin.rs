@@ -1165,10 +1165,21 @@ impl DrawTextContext {
         bar: WinkinDecoration,
         after_text: bool,
     ) {
+        // An `auto` underline's gap is half its thickness, rounded up and at
+        // least a pixel, as Chrome's `ComputeUnderlineOffsetAuto` takes it:
+        // the thickness drawn, not the `auto` one, where the two differ.
         let underline_offset = if deco.underline_from_font {
             -bar.font_underline_gap
-        } else {
+        } else if matches!(deco.thickness, GenericTextDecorationLength::Auto) {
             -bar.underline_gap
+        } else {
+            let size = super::decoration_size(
+                &deco.thickness,
+                bar.font_thickness,
+                f64::from(bar.font_size) / scale,
+                scale,
+            );
+            -(size / 2.0).ceil().max(1.0)
         };
         self.deco_boxes.clear();
         self.deco_boxes.push(LineDecoration {
