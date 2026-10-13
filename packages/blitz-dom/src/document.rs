@@ -3362,13 +3362,68 @@ mod ime_focus_tests {
         assert!(shell.areas.lock().unwrap().is_empty());
 
         doc.resolve(0.0);
-        assert_eq!(*shell.areas.lock().unwrap(), vec![(0.0, 0.0, 100.0, 20.0)]);
+        // The area is the caret rect: at the start of the (empty) input, caret-width wide,
+        // vertically centred within the 20px content box.
+        let (x, y, w, h) = shell.areas.lock().unwrap()[0];
+        assert_eq!(x, 0.0);
+        assert!(w > 0.0 && w < 5.0, "caret width {w}");
+        assert!(h > 0.0 && h <= 20.0, "caret height {h}");
+        assert!(y >= 0.0 && y + h <= 20.0, "caret y {y} height {h}");
+        assert_eq!(shell.areas.lock().unwrap().len(), 1);
 
-        // Unchanged layout does not re-report the area
+        // Unchanged caret does not re-report the area
         doc.resolve(0.0);
         assert_eq!(shell.areas.lock().unwrap().len(), 1);
 
+        // Typing moves the caret, so the area is re-reported further right
+        doc.with_text_input(input, |mut driver| {
+            driver.insert_or_replace_selection("abc")
+        });
+        doc.resolve(0.0);
+        let areas = shell.areas.lock().unwrap();
+        assert_eq!(areas.len(), 2);
+        assert!(areas[1].0 > x, "caret should move right: {:?}", areas[1]);
+        drop(areas);
+
         doc.clear_focus();
         assert_eq!(*shell.enabled.lock().unwrap(), vec![true, false]);
+    }
+
+    /// The reported area must be in viewport coordinates for a text input that is not at the
+    /// origin: its own offset within its parent is counted once, plus its border and padding.
+    #[test]
+    fn ime_cursor_area_of_offset_textarea() {
+        let shell = Arc::new(RecordingShell::default());
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
+            shell_provider: Some(shell.clone()),
+            ..Default::default()
+        });
+        doc.add_user_agent_stylesheet(
+            "html, body { display: block; margin: 0 } \
+             div { display: block; height: 50px } \
+             textarea { display: block; margin-left: 30px; width: 200px; height: 100px; \
+                        border: 2px solid; padding: 3px }",
+        );
+        let root_id = doc.root_node().id;
+        let mut mutator = doc.mutate();
+        let html = mutator.create_element(qual_name!("html"), vec![]);
+        let body = mutator.create_element(qual_name!("body"), vec![]);
+        let spacer = mutator.create_element(qual_name!("div"), vec![]);
+        let textarea = mutator.create_element(qual_name!("textarea"), vec![]);
+        mutator.append_children(body, &[spacer, textarea]);
+        mutator.append_children(html, &[body]);
+        mutator.append_children(root_id, &[html]);
+        drop(mutator);
+
+        doc.set_focus_to(textarea);
+        doc.resolve(0.0);
+
+        // Content box starts at x = 30 (margin) + 2 (border) + 3 (padding) = 35 and
+        // y = 50 (spacer) + 2 + 3 = 55; the caret of the empty textarea sits at its top-left.
+        let (x, y, _, h) = shell.areas.lock().unwrap()[0];
+        assert_eq!(x, 35.0);
+        assert!((55.0..60.0).contains(&y), "caret y {y}");
+        assert!(y + h <= 155.0, "caret y {y} height {h}");
     }
 }
