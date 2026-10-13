@@ -580,6 +580,7 @@ impl ElementData {
     ///
     /// <https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#attr-fe-maxlength>
     pub fn text_input_max_length(&self) -> Option<usize> {
+        let max_length = parse_non_negative_integer(self.attr(local_name!("maxlength"))?)?;
         let applies = match self.name.local {
             local_name!("textarea") => true,
             local_name!("input") => matches!(
@@ -588,10 +589,7 @@ impl ElementData {
             ),
             _ => false,
         };
-        if !applies {
-            return None;
-        }
-        parse_non_negative_integer(self.attr(local_name!("maxlength"))?)
+        applies.then_some(max_length)
     }
 
     #[cfg(feature = "custom-widget")]

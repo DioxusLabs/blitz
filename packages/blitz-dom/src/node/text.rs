@@ -801,16 +801,18 @@ fn insert_within_max_length(
     text: &str,
     max_length: Option<usize>,
 ) -> Option<GeneratedTextInputEvent> {
+    let editor = &driver.editor;
     let text = match max_length {
-        Some(max_length) => {
-            let editor = &driver.editor;
+        // A value's length never exceeds its UTF-8 byte length, so the byte lengths prove the
+        // insertion fits without counting anything.
+        Some(max_length) if editor.raw_text().len() + text.len() > max_length => {
             let selected_length = editor.selected_text().map_or(0, value_length);
             let base_length = value_length(editor.raw_text()).saturating_sub(selected_length);
             truncate_to_value_length(text, max_length.saturating_sub(base_length))
         }
-        None => text,
+        _ => text,
     };
-    if text.is_empty() && driver.editor.raw_selection().is_collapsed() {
+    if text.is_empty() && editor.raw_selection().is_collapsed() {
         return None;
     }
     driver.insert_or_replace_selection(text);
@@ -819,8 +821,18 @@ fn insert_within_max_length(
 
 /// The length of a text control's value as measured by `maxlength`: UTF-16 code units, with
 /// each CRLF pair counted once.
+///
+/// Counted directly from the UTF-8 bytes: one unit per non-continuation byte, plus one more
+/// for each 4-byte sequence (a surrogate pair).
 fn value_length(text: &str) -> usize {
-    text.encode_utf16().count() - text.matches("\r\n").count()
+    let mut length = 0;
+    let mut prev = 0;
+    for byte in text.bytes() {
+        length += (byte & 0xC0 != 0x80) as usize + (byte >= 0xF0) as usize;
+        length -= (byte == b'\n' && prev == b'\r') as usize;
+        prev = byte;
+    }
+    length
 }
 
 /// The longest prefix of `text` whose [`value_length`] is at most `max_length`, never splitting
@@ -838,4 +850,35 @@ fn truncate_to_value_length(text: &str, max_length: usize) -> &str {
         prev = Some(c);
     }
     text
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{truncate_to_value_length, value_length};
+
+    #[test]
+    fn value_length_counts_utf16_units_with_crlf_as_one() {
+        for text in [
+            "",
+            "abc",
+            "caf\u{e9}",
+            "\u{20ac}",
+            "\u{1F600}",
+            "a\r\nb\n\r",
+            "\r\n\r\n",
+        ] {
+            let expected = text.encode_utf16().count() - text.matches("\r\n").count();
+            assert_eq!(value_length(text), expected, "{text:?}");
+        }
+    }
+
+    #[test]
+    fn truncate_never_splits_a_character() {
+        assert_eq!(truncate_to_value_length("abc", 5), "abc");
+        assert_eq!(truncate_to_value_length("abc", 0), "");
+        assert_eq!(truncate_to_value_length("a\u{1F600}b", 2), "a");
+        assert_eq!(truncate_to_value_length("a\u{1F600}b", 3), "a\u{1F600}");
+        assert_eq!(truncate_to_value_length("a\r\nb", 2), "a\r\n");
+        assert_eq!(truncate_to_value_length("a\r\nb", 1), "a");
+    }
 }
