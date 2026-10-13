@@ -661,16 +661,15 @@ impl LayoutPassState<'_> {
                     matches!(inside, Some(DisplayInside::Flow | DisplayInside::FlowRoot))
                 }
             };
-            // Only `baseline-source: auto` lets an inline-block that clips sit on its margin
+            // Only `baseline-source: auto` lets a scrollable inline-block sit on its margin
             // box's bottom, and buttons keep their content's baseline.
             let is_button = style
                 .flags
                 .intersects(StyleFlags::IS_BUTTON | StyleFlags::IS_BUTTON_INPUT);
-            let clips = source == BaselineSource::Auto && !is_button && {
-                let overflow = style.overflow();
-                overflow.x != Overflow::Visible || overflow.y != Overflow::Visible
-            };
-            let has_baseline = !replaced && !(uses_last && clips);
+            let is_scroll_container = source == BaselineSource::Auto
+                && !is_button
+                && !matches!(style.overflow().y, Overflow::Visible | Overflow::Clip);
+            let has_baseline = !replaced && !(uses_last && is_scroll_container);
             let reads_baseline = has_baseline
                 && held
                     .primary_styles()

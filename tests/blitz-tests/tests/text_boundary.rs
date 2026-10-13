@@ -71,6 +71,32 @@ fn first_baseline_is_on_the_first_line() {
 }
 
 #[test]
+fn overflow_clip_preserves_inline_block_baseline() {
+    for overflow in ["clip", "clip visible", "visible clip"] {
+        let harness = page(&format!(
+            r#"<style>span {{ display:inline-block; width:100px; height:40px }}</style>
+            <div><span id="visible">text</span><span id="clip" style="overflow:{overflow}">text</span></div>"#
+        ));
+        let visible = harness.layout_rect("#visible");
+        let clip = harness.layout_rect("#clip");
+        assert_eq!(visible.y, clip.y, "overflow: {overflow}");
+    }
+}
+
+#[test]
+fn scrollable_inline_block_uses_bottom_margin_baseline() {
+    for overflow in ["hidden", "auto", "scroll"] {
+        let harness = page(&format!(
+            r#"<style>span {{ display:inline-block; width:100px; height:40px; margin-bottom:7px }}</style>
+            <div><span id="empty"></span><span id="scrollable" style="overflow:{overflow}">text</span></div>"#
+        ));
+        let empty = harness.layout_rect("#empty");
+        let scrollable = harness.layout_rect("#scrollable");
+        assert_eq!(empty.y, scrollable.y, "overflow: {overflow}");
+    }
+}
+
+#[test]
 fn text_input_metrics_follow_its_value() {
     let mut harness = page(r#"<input id="field" value="hello" style="width:400px">"#);
     let node = harness.node("#field");
