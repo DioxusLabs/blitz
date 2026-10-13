@@ -336,7 +336,7 @@ impl Painter<'_> {
         scene: &mut impl PaintScene,
         frame: Affine,
         first: bool,
-        background: winkin::paint::Background,
+        background: winkin::paint::Background<'_>,
     ) {
         if !first {
             return;
