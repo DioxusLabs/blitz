@@ -78,8 +78,27 @@ use web_time::Instant;
 #[derive(Clone, Debug, PartialEq)]
 pub struct UserAgentStylesheet(DocumentStyleSheet);
 
+/// Turns on the Stylo features Blitz supports. A property behind a pref that is off is dropped
+/// when a stylesheet is parsed, so this runs before any sheet is: a user-agent sheet may be
+/// parsed (for a `DocumentConfig`) before the first document is created.
+fn enable_stylo_prefs() {
+    style_config::set_pref!("layout.flexbox.balance", true);
+    style_config::set_pref!("layout.unimplemented", true);
+    style_config::set_pref!("layout.columns.enabled", true);
+    style_config::set_pref!("layout.css.basic-shape-shape.enabled", true);
+    style_config::set_pref!("layout.css.tree-counting-functions.enabled", true);
+    style_config::set_pref!("layout.css.progress-function.enabled", true);
+    style_config::set_pref!("layout.variable_fonts.enabled", true);
+    // The `writing-mode` feature lays out vertical boxes and winkin
+    // vertical lines; without either the property stays unparsed.
+    #[cfg(any(feature = "writing-mode", text_winkin))]
+    style_config::set_pref!("layout.writing-mode.enabled", true);
+    style_config::set_pref!("layout.threads", -1);
+}
+
 impl UserAgentStylesheet {
     pub fn parse(css: &str) -> Self {
+        enable_stylo_prefs();
         let lock = SharedRwLock::read_only();
         let data = Stylesheet::from_str(
             css,
@@ -402,18 +421,7 @@ impl BaseDocument {
         let text = TextContext::new(config.font_ctx);
 
         // Make sure we turn on stylo features *before* creating the Stylist
-        style_config::set_pref!("layout.flexbox.balance", true);
-        style_config::set_pref!("layout.unimplemented", true);
-        style_config::set_pref!("layout.columns.enabled", true);
-        style_config::set_pref!("layout.css.basic-shape-shape.enabled", true);
-        style_config::set_pref!("layout.css.tree-counting-functions.enabled", true);
-        style_config::set_pref!("layout.css.progress-function.enabled", true);
-        style_config::set_pref!("layout.variable_fonts.enabled", true);
-        // The `writing-mode` feature lays out vertical boxes and winkin
-        // vertical lines; without either the property stays unparsed.
-        #[cfg(any(feature = "writing-mode", text_winkin))]
-        style_config::set_pref!("layout.writing-mode.enabled", true);
-        style_config::set_pref!("layout.threads", -1);
+        enable_stylo_prefs();
 
         let viewport = config.viewport.unwrap_or_default();
         let media_type = config.media_type.unwrap_or_else(MediaType::screen);
