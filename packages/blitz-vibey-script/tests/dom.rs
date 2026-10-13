@@ -260,6 +260,34 @@ fn microtasks_run_after_script_execution() {
 }
 
 #[test]
+fn url_search_params_parse_and_serialize_a_query() {
+    let doc = doc_from_html(
+        r#"
+        <html><body>
+            <div id="out"></div>
+            <script>
+                const params = new URLSearchParams("?class=a+b&x=%41&x=2&flag");
+                params.append("y", "c d");
+                params.set("x", "3");
+                document.getElementById("out").textContent = [
+                    params.get("class"),
+                    params.getAll("x").join(","),
+                    params.has("flag"),
+                    params.get("missing"),
+                    params.size,
+                    params.toString(),
+                ].join("|");
+            </script>
+        </body></html>
+        "#,
+    );
+    assert_eq!(
+        text_of_selector(&doc, "#out"),
+        "a b|3|true||4|class=a+b&x=3&flag=&y=c+d"
+    );
+}
+
+#[test]
 fn timers_run_on_poll() {
     let mut doc = doc_from_html(
         r#"
