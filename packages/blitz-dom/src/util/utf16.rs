@@ -33,8 +33,11 @@ pub(crate) fn truncate_to_value_length(text: &str, max_length: usize) -> &str {
     }
 }
 
-/// Counts the [`value_length`] of `text`, stopping at the first character that would take it
-/// over `max_length` and returning that character's byte index instead.
+/// Counts the [`value_length`] of `text` as long as it stays within `max_length`.
+///
+/// Returns `Ok(length)` if all of `text` fits, where `length` is its [`value_length`], or
+/// `Err(idx)` with the byte index of the first character that would take the length over
+/// `max_length`, so that `&text[..idx]` is the longest prefix that fits.
 ///
 /// Works directly on the UTF-8 bytes without decoding: each non-continuation byte starts a
 /// character worth one UTF-16 unit, or two for a 4-byte sequence (a surrogate pair).
