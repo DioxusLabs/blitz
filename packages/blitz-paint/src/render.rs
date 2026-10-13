@@ -1134,7 +1134,43 @@ impl ElementCx<'_, '_> {
         let viewport = svg_viewport_affine(svg, paint_size.width, paint_size.height);
         let transform = (self.transform * viewport).then_translate(Vec2 { x, y });
 
-        anyrender_svg::render_svg_tree(scene, &svg.tree, transform);
+        self.with_replaced_content_clip(
+            scene,
+            container_size,
+            paint_size,
+            x_offset,
+            y_offset,
+            |scene| {
+                anyrender_svg::render_svg_tree(scene, &svg.tree, transform);
+            },
+        );
+    }
+
+    /// Clip replaced content to the content box when its object-fit/object-position
+    /// rect overflows it.
+    fn with_replaced_content_clip<S: PaintScene>(
+        &self,
+        scene: &mut S,
+        container_size: taffy::Size<f32>,
+        paint_size: taffy::Size<f32>,
+        x_offset: CSSPixelLength,
+        y_offset: CSSPixelLength,
+        paint: impl FnOnce(&mut S),
+    ) {
+        let overflows = x_offset.px() < 0.0
+            || y_offset.px() < 0.0
+            || x_offset.px() + paint_size.width > container_size.width
+            || y_offset.px() + paint_size.height > container_size.height;
+        self.context.layer_manager.maybe_with_layer(
+            scene,
+            overflows,
+            1.0,
+            self.transform,
+            &self.frame.content_box_path(),
+            None,
+            None,
+            paint,
+        );
     }
 
     fn draw_image(&self, scene: &mut impl PaintScene) {
@@ -1177,7 +1213,16 @@ impl ElementCx<'_, '_> {
                 .pre_translate(Vec2 { x, y })
                 .pre_scale_non_uniform(x_scale, y_scale);
 
-            scene.draw_image(to_peniko_image(image, quality).as_ref(), transform);
+            self.with_replaced_content_clip(
+                scene,
+                container_size,
+                paint_size,
+                x_offset,
+                y_offset,
+                |scene| {
+                    scene.draw_image(to_peniko_image(image, quality).as_ref(), transform);
+                },
+            );
         }
     }
 
