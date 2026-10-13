@@ -541,6 +541,23 @@ impl BaseDocument {
         self.shell_provider = shell_provider;
     }
 
+    /// Re-send the IME state of the focussed text input (if any) to the current shell provider.
+    ///
+    /// A text input focussed before the shell provider was set (e.g. via `autofocus` while
+    /// parsing) will have sent its IME requests to the previous (typically dummy) provider.
+    /// Shells should call this after setting the provider of the document they are displaying.
+    pub fn resend_ime_state(&mut self) {
+        let focussed_text_input = self
+            .focus_node_id
+            .and_then(|id| self.get_node(id))
+            .is_some_and(|node| node.is_text_input());
+        if focussed_text_input {
+            self.shell_provider.set_ime_enabled(true);
+            self.last_ime_cursor_area = None;
+            self.sync_ime_cursor_area();
+        }
+    }
+
     /// Set the Document's html parser provider
     pub fn set_html_parser_provider(&mut self, html_parser_provider: Arc<dyn HtmlParserProvider>) {
         self.html_parser_provider = html_parser_provider;
