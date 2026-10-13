@@ -19,7 +19,7 @@ use stylo_taffy::StyleFlags;
 use super::floats::FloatRoom;
 #[cfg(feature = "floats")]
 use super::floats::Floated;
-use super::{Frame, f32_max, float_box_inputs, inline_box_inputs};
+use super::{Frame, float_box_inputs, inline_box_inputs};
 use crate::layout::LayoutPassState;
 use crate::layout::replaced::is_replaced_element;
 use crate::layout::resolve_calc_value;
@@ -211,7 +211,7 @@ impl LayoutPassState<'_> {
         // Unbreakable content (e.g. `white-space: pre` text) may overflow the max advance the
         // lines were broken at. `width` is the advance the lines were broken at, so the actual
         // extent of the line boxes must be taken from the laid-out lines for `content_size`.
-        let content_width = f32_max(width, extent.width) / scale;
+        let content_width = width.max(extent.width) / scale;
 
         let clamped_size = inputs
             .known_dimensions
@@ -220,8 +220,7 @@ impl LayoutPassState<'_> {
             .maybe_clamp(node_min_size, node_max_size);
         let final_size = Size {
             width: clamped_size.width,
-            height: f32_max(
-                clamped_size.height,
+            height: clamped_size.height.max(
                 aspect_ratio
                     .map(|ratio| clamped_size.width / ratio)
                     .unwrap_or(0.0),
