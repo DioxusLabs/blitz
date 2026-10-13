@@ -431,6 +431,7 @@ fn stroke_text<'a>(
                                 deco: entry.decoration.clone().unwrap(),
                                 min_x: f64::INFINITY,
                                 max_x: f64::NEG_INFINITY,
+                                piece: None,
                                 own: None,
                                 first: None,
                             });
@@ -457,6 +458,7 @@ fn stroke_text<'a>(
                         deco: composition_underline(text_color),
                         min_x: f64::INFINITY,
                         max_x: f64::NEG_INFINITY,
+                        piece: None,
                         own: None,
                         first: None,
                     });
