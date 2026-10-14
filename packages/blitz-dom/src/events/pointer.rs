@@ -10,7 +10,6 @@ use blitz_traits::{
     },
     navigation::NavigationOptions,
 };
-use keyboard_types::Modifiers;
 use markup5ever::local_name;
 use style::values::computed::{Overflow, TouchAction, UserSelect};
 use style_dom::ElementState;
@@ -382,13 +381,16 @@ pub(crate) fn handle_pointermove<F: FnMut(DomEvent)>(
 
 pub(crate) fn handle_pointerdown(
     doc: &mut BaseDocument,
-    _target: NodeId,
-    x: f32,
-    y: f32,
-    button: MouseEventButton,
-    mods: Modifiers,
+    target: NodeId,
+    event: &BlitzPointerEvent,
     dispatch_event: &mut dyn FnMut(DomEvent),
 ) {
+    let (x, y) = (event.page_x(), event.page_y());
+    let (button, mods) = (event.button, event.mods);
+
+    // A finger only moves focus once it is lifted without panning (see `handle_pointerup`)
+    let moves_focus = button == MouseEventButton::Main && !event.is_finger();
+
     // Compute click count using the previous mousedown position (before updating)
     // This handles both double-click detection and text input word/line selection
     // TODO: For text inputs, only increment click count if click maps to the same/similar caret position
@@ -413,6 +415,9 @@ pub(crate) fn handle_pointerdown(
     let Some(hit) = doc.hit(x, y) else {
         // Clear text selection when clicking outside any element
         doc.clear_text_selection();
+        if moves_focus {
+            generate_focus_events(doc, &mut |doc| doc.clear_focus(), dispatch_event);
+        }
         return;
     };
 
@@ -504,6 +509,10 @@ pub(crate) fn handle_pointerdown(
                 doc.shell_provider.request_redraw();
             } else {
                 doc.clear_text_selection();
+            }
+
+            if moves_focus {
+                update_focus_for_press(doc, target, dispatch_event);
             }
         }
         ClickTarget::TextInput {
@@ -599,6 +608,9 @@ pub(crate) fn handle_pointerup<F: FnMut(DomEvent)>(
 
     // Dispatch a click event
     if do_click && event.button == MouseEventButton::Main {
+        if event.is_finger() {
+            update_focus_for_press(doc, target, &mut dispatch_event);
+        }
         dispatch_event(DomEvent::new(target, DomEventData::Click(event.clone())));
     }
 
@@ -611,6 +623,38 @@ pub(crate) fn handle_pointerup<F: FnMut(DomEvent)>(
     }
 }
 
+/// Focus the nearest inclusive ancestor of `target` that is focusable (including
+/// `tabindex="-1"` elements), or clear focus if there is none. A disabled element
+/// ends the search without changing focus.
+fn update_focus_for_press(
+    doc: &mut BaseDocument,
+    target: NodeId,
+    dispatch_event: &mut dyn FnMut(DomEvent),
+) {
+    let mut maybe_node_id = Some(target);
+    while let Some(node_id) = maybe_node_id {
+        let node = &doc.nodes[node_id];
+        if let Some(el) = node.element_data() {
+            if el.has_attr(local_name!("disabled")) {
+                return;
+            }
+            if el.is_focussable || el.attr_parsed::<i32>(local_name!("tabindex")).is_some() {
+                generate_focus_events(
+                    doc,
+                    &mut |doc| {
+                        doc.set_focus_to(node_id);
+                    },
+                    dispatch_event,
+                );
+                return;
+            }
+        }
+        maybe_node_id = node.parent;
+    }
+
+    generate_focus_events(doc, &mut |doc| doc.clear_focus(), dispatch_event);
+}
+
 pub(crate) fn handle_click(
     doc: &mut BaseDocument,
     target: NodeId,
@@ -620,7 +664,7 @@ pub(crate) fn handle_click(
     let double_click_event = event.clone();
 
     let mut maybe_node_id = Some(target);
-    let matched = 'matched: {
+    'matched: {
         while let Some(node_id) = maybe_node_id {
             let maybe_element = {
                 let node = &mut doc.nodes[node_id];
@@ -634,11 +678,11 @@ pub(crate) fn handle_click(
 
             let disabled = el.attr(local_name!("disabled")).is_some();
             if disabled {
-                break 'matched true;
+                break 'matched;
             }
 
             if let SpecialElementData::TextInput(_) = el.special_data {
-                break 'matched true;
+                break 'matched;
             }
 
             match el.name.local {
@@ -662,7 +706,7 @@ pub(crate) fn handle_click(
                         },
                         dispatch_event,
                     );
-                    break 'matched true;
+                    break 'matched;
                 }
                 local_name!("input") if el.attr(local_name!("type")) == Some("radio") => {
                     if let Some(radio_set) = el.attr(local_name!("name")).map(str::to_string) {
@@ -691,7 +735,7 @@ pub(crate) fn handle_click(
                         dispatch_event,
                     );
 
-                    break 'matched true;
+                    break 'matched;
                 }
                 // Activating the first <summary> of a <details> element toggles
                 // the details' `open` attribute (expand/collapse).
@@ -716,7 +760,7 @@ pub(crate) fn handle_click(
                                 },
                                 dispatch_event,
                             );
-                            break 'matched true;
+                            break 'matched;
                         }
                     }
                 }
@@ -729,7 +773,14 @@ pub(crate) fn handle_click(
                         let target_node = doc.get_node_mut(target_node_id).unwrap();
                         let syn_event = target_node.synthetic_click_event_data(event.mods);
                         handle_click(doc, target_node_id, &syn_event, dispatch_event);
-                        break 'matched true;
+                        generate_focus_events(
+                            doc,
+                            &mut |doc| {
+                                doc.set_focus_to(target_node_id);
+                            },
+                            dispatch_event,
+                        );
+                        break 'matched;
                     }
                 }
                 local_name!("a") => {
@@ -752,7 +803,7 @@ pub(crate) fn handle_click(
                             #[cfg(feature = "tracing")]
                             tracing::warn!("{href} is not parseable as a url. : {:?}", *doc.url);
                         }
-                        break 'matched true;
+                        break 'matched;
                     } else {
                         #[cfg(feature = "tracing")]
                         tracing::info!("Clicked link without href: {:?}", el.attrs());
@@ -806,14 +857,6 @@ pub(crate) fn handle_click(
             // No match. Recurse up to parent.
             maybe_node_id = doc.nodes[node_id].parent;
         }
-
-        // Didn't match anything
-        false
-    };
-
-    // If nothing is matched then clear focus
-    if !matched {
-        generate_focus_events(doc, &mut |doc| doc.clear_focus(), dispatch_event);
     }
 
     // Dispatch double-click event if this is the second click in quick succession
