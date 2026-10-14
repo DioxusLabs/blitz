@@ -691,6 +691,7 @@ fn unboxed(style: ComputedStyle<'_>) -> ComputedStyle<'_> {
     ComputedStyle {
         edges: EdgesGroup::INITIAL,
         paints: false,
+        outlines: false,
         decorates: false,
         line: LineGroup {
             vertical_align: VerticalAlign::Baseline,
@@ -767,6 +768,7 @@ impl WinkinBuilder<'_, '_, '_> {
                 ..own.edges
             },
             paints: false,
+            outlines: false,
             ..own
         }
     }
