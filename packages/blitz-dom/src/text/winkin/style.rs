@@ -423,6 +423,7 @@ pub(crate) fn computed_style<'a>(
             },
         },
         paints: paints(computed),
+        outlines: outlines(computed),
         decorates: decorates(computed),
     }
 }
@@ -439,10 +440,10 @@ pub(crate) fn unicode_bidi(computed: &ComputedValues) -> UnicodeBidi {
     }
 }
 
-/// Whether the box draws something of its own -- a background, a border,
-/// an outline -- which is what keeps its fragment in the layout. A
-/// decoration line doesn't count. What it draws is read from the node when
-/// painting.
+/// Whether the box paints a background, a border or a box shadow, which keeps
+/// its fragment in the layout and makes a line ending in its text end exactly.
+/// An outline and a decoration line don't count. What it draws is read from
+/// the node when painting.
 fn paints(computed: &ComputedValues) -> bool {
     let current_color = computed.slow_clone_color();
     let background = computed.get_background();
@@ -465,10 +466,14 @@ fn paints(computed: &ComputedValues) -> bool {
     ]
     .into_iter()
     .any(|(width, style)| !style.none_or_hidden() && width.0.to_f32_px() > 0.0);
+    let shadowed = !computed.get_effects().box_shadow.0.is_empty();
+    fills || images || bordered || shadowed
+}
+
+/// Whether the box draws an outline, which keeps its fragment in the layout.
+fn outlines(computed: &ComputedValues) -> bool {
     let outline = computed.get_outline();
-    let outlined =
-        !outline.outline_style.none_or_hidden() && outline.outline_width.0.to_f32_px() > 0.0;
-    fills || images || bordered || outlined
+    !outline.outline_style.none_or_hidden() && outline.outline_width.0.to_f32_px() > 0.0
 }
 
 /// Whether the element sets a decoration line that is drawn.
