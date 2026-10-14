@@ -3,9 +3,9 @@
 //!
 //! <https://drafts.csswg.org/css-text/#text-transform-property>
 
-#[cfg(feature = "text-transform-icu")]
+#[cfg(all(feature = "parley", feature = "text-transform-icu"))]
 use icu_casemap::options::{LeadingAdjustment, TitlecaseOptions, TrailingCase};
-#[cfg(feature = "text-transform-icu")]
+#[cfg(all(feature = "parley", feature = "text-transform-icu"))]
 use icu_casemap::{CaseMapper, CaseMapperBorrowed, TitlecaseMapper, TitlecaseMapperBorrowed};
 use icu_locale_core::LanguageIdentifier;
 use icu_properties::props::{GeneralCategory, GeneralCategoryGroup};
@@ -15,13 +15,12 @@ use style::computed_values::white_space_collapse::T as WhiteSpaceCollapse;
 use style::properties::ComputedValues;
 use style::values::computed::TextTransform;
 use style::values::specified::text::TextTransformCase;
-use stylo_taffy::CopyStyleGetters;
-#[cfg(feature = "text-transform-icu")]
+#[cfg(all(feature = "parley", feature = "text-transform-icu"))]
 use writeable::Writeable;
 
-#[cfg(feature = "text-transform-icu")]
+#[cfg(all(feature = "parley", feature = "text-transform-icu"))]
 const CASE_MAPPER: CaseMapperBorrowed<'static> = CaseMapper::new();
-#[cfg(feature = "text-transform-icu")]
+#[cfg(all(feature = "parley", feature = "text-transform-icu"))]
 const TITLECASE_MAPPER: TitlecaseMapperBorrowed<'static> = TitlecaseMapper::new();
 const WORD_SEGMENTER: WordSegmenterBorrowed<'static> =
     WordSegmenter::new_for_non_complex_scripts(WordBreakInvariantOptions::default());
@@ -72,7 +71,8 @@ impl CaseTransform {
     /// Whether the language has case mappings for ASCII characters that differ from the
     /// default ones (`i` ↔ `İ` and `ı` ↔ `I`).
     fn has_turkic_casing(&self) -> bool {
-        cfg!(feature = "text-transform-icu") && matches!(self.lang.language.as_str(), "tr" | "az")
+        cfg!(all(feature = "parley", feature = "text-transform-icu"))
+            && matches!(self.lang.language.as_str(), "tr" | "az")
     }
 }
 
@@ -410,7 +410,7 @@ impl<'a> OutputSink<'a> {
         self.buffer.push_str(s);
     }
 
-    #[cfg(feature = "text-transform-icu")]
+    #[cfg(all(feature = "parley", feature = "text-transform-icu"))]
     fn write(&mut self, writeable: impl Writeable) {
         // Writing to an `OutputSink` is infallible.
         let _ = writeable.write_to(self);
@@ -424,7 +424,7 @@ impl<'a> OutputSink<'a> {
     }
 }
 
-#[cfg(feature = "text-transform-icu")]
+#[cfg(all(feature = "parley", feature = "text-transform-icu"))]
 impl std::fmt::Write for OutputSink<'_> {
     fn write_str(&mut self, s: &str) -> std::fmt::Result {
         self.push_str(s);
@@ -476,19 +476,19 @@ fn capitalize(
     }
 }
 
-#[cfg(feature = "text-transform-icu")]
+#[cfg(all(feature = "parley", feature = "text-transform-icu"))]
 fn uppercase(text: &str, lang: &LanguageIdentifier, output: &mut OutputSink<'_>) {
     output.write(CASE_MAPPER.uppercase(text, lang));
 }
 
-#[cfg(feature = "text-transform-icu")]
+#[cfg(all(feature = "parley", feature = "text-transform-icu"))]
 fn lowercase(text: &str, lang: &LanguageIdentifier, output: &mut OutputSink<'_>) {
     output.write(CASE_MAPPER.lowercase(text, lang));
 }
 
 /// Titlecases the first character of `text`, which must start with a typographic letter unit,
 /// leaving the rest unchanged.
-#[cfg(feature = "text-transform-icu")]
+#[cfg(all(feature = "parley", feature = "text-transform-icu"))]
 fn titlecase_segment(text: &str, lang: &LanguageIdentifier, output: &mut OutputSink<'_>) {
     let mut options = TitlecaseOptions::default();
     options.leading_adjustment = Some(LeadingAdjustment::None);
@@ -496,14 +496,14 @@ fn titlecase_segment(text: &str, lang: &LanguageIdentifier, output: &mut OutputS
     output.write(TITLECASE_MAPPER.titlecase_segment(text, lang, options));
 }
 
-#[cfg(not(feature = "text-transform-icu"))]
+#[cfg(not(all(feature = "parley", feature = "text-transform-icu")))]
 fn uppercase(text: &str, _lang: &LanguageIdentifier, output: &mut OutputSink<'_>) {
     for c in text.chars() {
         push_chars(output, c.to_uppercase());
     }
 }
 
-#[cfg(not(feature = "text-transform-icu"))]
+#[cfg(not(all(feature = "parley", feature = "text-transform-icu")))]
 fn lowercase(text: &str, _lang: &LanguageIdentifier, output: &mut OutputSink<'_>) {
     // Only `str::to_lowercase` implements the context-sensitive final sigma rule.
     if text.contains('Σ') {
@@ -516,7 +516,7 @@ fn lowercase(text: &str, _lang: &LanguageIdentifier, output: &mut OutputSink<'_>
 }
 
 /// Approximates titlecasing with uppercasing, as the standard library has no titlecase mapping.
-#[cfg(not(feature = "text-transform-icu"))]
+#[cfg(not(all(feature = "parley", feature = "text-transform-icu")))]
 fn titlecase_segment(text: &str, _lang: &LanguageIdentifier, output: &mut OutputSink<'_>) {
     let mut chars = text.chars();
     if let Some(first) = chars.next() {
@@ -525,7 +525,7 @@ fn titlecase_segment(text: &str, _lang: &LanguageIdentifier, output: &mut Output
     output.push_str(chars.as_str());
 }
 
-#[cfg(not(feature = "text-transform-icu"))]
+#[cfg(not(all(feature = "parley", feature = "text-transform-icu")))]
 fn push_chars(output: &mut OutputSink<'_>, chars: impl Iterator<Item = char>) {
     for c in chars {
         output.push_str(c.encode_utf8(&mut [0; 4]));
@@ -610,7 +610,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "text-transform-icu")]
+    #[cfg(all(feature = "parley", feature = "text-transform-icu"))]
     fn capitalize_uses_titlecase() {
         assert_eq!(capitalize(&["ǆǆ"]), ["ǅǆ"]);
         assert_eq!(capitalize(&["ßa"]), ["Ssa"]);
@@ -678,7 +678,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "text-transform-icu")]
+    #[cfg(all(feature = "parley", feature = "text-transform-icu"))]
     fn capitalize_language_sensitive() {
         assert_eq!(
             transform(TextTransform::CAPITALIZE, "nl", &["ijsland"]),
@@ -712,7 +712,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "text-transform-icu")]
+    #[cfg(all(feature = "parley", feature = "text-transform-icu"))]
     fn ascii_fast_path_matches_icu() {
         let ascii: String = (0..128u8).map(char::from).collect();
         for lang in ["und", "en", "lt", "nl", "el", "tr", "az"] {
@@ -973,7 +973,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "text-transform-icu")]
+    #[cfg(all(feature = "parley", feature = "text-transform-icu"))]
     fn uppercase_and_lowercase_language_sensitive() {
         assert_eq!(transform(TextTransform::UPPERCASE, "tr", &["i"]), ["İ"]);
         assert_eq!(transform(TextTransform::LOWERCASE, "tr", &["I"]), ["ı"]);

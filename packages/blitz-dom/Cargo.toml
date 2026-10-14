@@ -23,7 +23,7 @@ default = [
 ]
 # The text backend that lays out, edits and reads back text: Parley or winkin.
 # One of them must be enabled; with both, Parley is used.
-parley = ["dep:parley"]
+parley = ["dep:parley", "dep:icu_casemap", "dep:writeable"]
 winkin = ["dep:winkin", "dep:fontwich"]
 custom-widget = ["dep:anyrender", "accessibility"]
 tracing = ["dep:tracing"]
@@ -35,8 +35,9 @@ system-fonts = ["parley?/system", "fontwich?/system", "fontwich?/mmap"]
 # complex-scripts: enable dictionary-based line-breaking
 complex-scripts = ["parley?/complex-scripts", "winkin?/dictionaries"]
 # text-transform-icu: language-aware, Unicode-complete case mapping for `text-transform`
-# (otherwise falls back to the standard library's case mapping)
-text-transform-icu = ["dep:icu_casemap", "dep:writeable"]
+# (otherwise falls back to the standard library's case mapping). It applies to Parley only:
+# winkin maps case itself, so a build without Parley does not compile ICU's case mapper.
+text-transform-icu = []
 autofocus = []
 floats = ["taffy/float_layout", "stylo_taffy/floats"]
 # CSS vertical `writing-mode` support (layout runs in each box's writing-mode frame; see layout/writing_mode.rs)
