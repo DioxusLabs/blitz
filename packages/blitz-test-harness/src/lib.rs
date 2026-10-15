@@ -10,13 +10,17 @@
 //! - DOM inspection helpers (selectors, layout rects, hit-testing, tree dumps)
 //! - Programmatic input synthesis (clicks, taps, drags, wheel, keyboard, IME) that routes
 //!   through the real event-dispatch pipeline, without requiring a window
+//! - CPU rendering to RGBA buffers/PNGs ([`Harness::screenshot`]) and reference-image
+//!   assertions with on-disk failure artifacts ([`Harness::assert_screenshot_matches`])
 //!
 //! No window, GPU, or compositor is required, so tests run headless.
 
 mod harness;
 mod input;
 mod inspect;
+mod render;
 
 pub use harness::{Harness, HarnessOptions};
 pub use input::{key_event, mouse_pointer_event, pointer_event, touch_pointer_event};
 pub use inspect::Rect;
+pub use render::{Screenshot, ScreenshotDiff, artifacts_dir, compare_screenshots};

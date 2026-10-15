@@ -14,11 +14,18 @@ rust-version.workspace = true
 # Blitz dependencies
 blitz-dom = { workspace = true, features = ["accessibility", "system-fonts"] }
 blitz-html = { workspace = true }
+blitz-paint = { workspace = true, features = ["default"] }
 blitz-traits = { workspace = true }
 dioxus-native-dom = { workspace = true }
 
 # DioxusLabs dependencies
 dioxus-core = { workspace = true }
+
+# Rendering dependencies
+anyrender = { workspace = true }
+anyrender_vello_cpu = { workspace = true }
+peniko = { workspace = true }
+png = { workspace = true }
 
 # Other dependencies
 keyboard-types = { workspace = true }
