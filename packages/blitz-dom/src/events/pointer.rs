@@ -727,7 +727,8 @@ pub(crate) fn handle_click(
                     {
                         // Apply default click event action for target node
                         let target_node = doc.get_node_mut(target_node_id).unwrap();
-                        let syn_event = target_node.synthetic_click_event_data(event.mods);
+                        let syn_event =
+                            target_node.synthetic_click_event_data(event.mods, event.timestamp);
                         handle_click(doc, target_node_id, &syn_event, dispatch_event);
                         break 'matched true;
                     }

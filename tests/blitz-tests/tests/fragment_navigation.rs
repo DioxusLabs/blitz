@@ -61,6 +61,7 @@ fn pointer_event(x: f32, y: f32) -> BlitzPointerEvent {
         details: PointerDetails::default(),
         element: Point::default(),
         active_pointers: Default::default(),
+        timestamp: Timestamp::ZERO,
     }
 }
 
@@ -81,6 +82,7 @@ fn wheel_at(doc: &mut HtmlDocument, x: f32, y: f32, delta_x: f64, delta_y: f64) 
         buttons: MouseEventButtons::empty(),
         mods: Default::default(),
         element: Point::default(),
+        timestamp: Timestamp::ZERO,
     }));
 }
 

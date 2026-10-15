@@ -3,6 +3,11 @@
 //! Free functions construct raw Blitz input events; methods on [`Harness`] synthesize
 //! complete interactions (click, tap, drag, typing) and dispatch them through the
 //! document's real event pipeline.
+//!
+//! Events built by the free functions are stamped at [`Timestamp::ZERO`]. The
+//! [`Harness`] methods stamp the events they synthesize with the harness's current
+//! [`time`](Harness::time), so input time and frame time share one deterministic
+//! clock; set `timestamp` yourself when constructing events by hand.
 
 use blitz_dom::Document;
 use blitz_traits::events::{
@@ -10,6 +15,7 @@ use blitz_traits::events::{
     BlitzWheelEvent, KeyState, MouseEventButton, MouseEventButtons, Point, PointerCoords,
     PointerDetails, UiEvent,
 };
+use blitz_traits::time::Timestamp;
 use keyboard_types::{Code, Key, Location, Modifiers};
 use smol_str::SmolStr;
 
@@ -45,6 +51,7 @@ pub fn pointer_event(
         details: PointerDetails::default(),
         element: Point::default(),
         active_pointers: Default::default(),
+        timestamp: Timestamp::ZERO,
     }
 }
 
@@ -89,10 +96,29 @@ pub fn key_event(key: Key, state: KeyState, modifiers: Modifiers) -> BlitzKeyEve
         is_composing: false,
         state,
         text,
+        timestamp: Timestamp::ZERO,
     }
 }
 
 impl<D: Document> Harness<D> {
+    fn mouse_event(&self, x: f32, y: f32) -> BlitzPointerEvent {
+        let mut event = mouse_pointer_event(x, y);
+        event.timestamp = self.time();
+        event
+    }
+
+    fn touch_event(&self, finger: u64, x: f32, y: f32) -> BlitzPointerEvent {
+        let mut event = touch_pointer_event(finger, x, y);
+        event.timestamp = self.time();
+        event
+    }
+
+    fn key(&self, key: Key, state: KeyState, modifiers: Modifiers) -> BlitzKeyEvent {
+        let mut event = key_event(key, state, modifiers);
+        event.timestamp = self.time();
+        event
+    }
+
     /// Click (pointer down + up) the center of the first element matching `selector`
     pub fn click(&mut self, selector: &str) {
         let (x, y) = self.center_of(selector);
@@ -101,7 +127,7 @@ impl<D: Document> Harness<D> {
 
     /// Click (pointer down + up) at page coordinates `(x, y)`
     pub fn click_at(&mut self, x: f32, y: f32) {
-        let event = mouse_pointer_event(x, y);
+        let event = self.mouse_event(x, y);
         self.dispatch(UiEvent::PointerDown(event.clone()));
         self.dispatch(UiEvent::PointerUp(event));
         self.pump();
@@ -109,19 +135,19 @@ impl<D: Document> Harness<D> {
 
     /// Press the main mouse button at page coordinates `(x, y)`
     pub fn mouse_down_at(&mut self, x: f32, y: f32) {
-        self.dispatch(UiEvent::PointerDown(mouse_pointer_event(x, y)));
+        self.dispatch(UiEvent::PointerDown(self.mouse_event(x, y)));
         self.pump();
     }
 
     /// Release the main mouse button at page coordinates `(x, y)`
     pub fn mouse_up_at(&mut self, x: f32, y: f32) {
-        self.dispatch(UiEvent::PointerUp(mouse_pointer_event(x, y)));
+        self.dispatch(UiEvent::PointerUp(self.mouse_event(x, y)));
         self.pump();
     }
 
     /// Move the mouse (no buttons pressed) to page coordinates `(x, y)`
     pub fn move_mouse_to(&mut self, x: f32, y: f32) {
-        let event = pointer_event(
+        let mut event = pointer_event(
             BlitzPointerId::Mouse,
             x,
             y,
@@ -129,6 +155,7 @@ impl<D: Document> Harness<D> {
             MouseEventButtons::empty(),
             Modifiers::default(),
         );
+        event.timestamp = self.time();
         self.dispatch(UiEvent::PointerMove(event));
         self.pump();
     }
@@ -137,14 +164,14 @@ impl<D: Document> Harness<D> {
     /// pressed, moving in `steps` increments
     pub fn drag(&mut self, from: (f32, f32), to: (f32, f32), steps: u32) {
         let steps = steps.max(1);
-        self.dispatch(UiEvent::PointerDown(mouse_pointer_event(from.0, from.1)));
+        self.dispatch(UiEvent::PointerDown(self.mouse_event(from.0, from.1)));
         for i in 1..=steps {
             let t = i as f32 / steps as f32;
             let x = from.0 + (to.0 - from.0) * t;
             let y = from.1 + (to.1 - from.1) * t;
-            self.dispatch(UiEvent::PointerMove(mouse_pointer_event(x, y)));
+            self.dispatch(UiEvent::PointerMove(self.mouse_event(x, y)));
         }
-        self.dispatch(UiEvent::PointerUp(mouse_pointer_event(to.0, to.1)));
+        self.dispatch(UiEvent::PointerUp(self.mouse_event(to.0, to.1)));
         self.pump();
     }
 
@@ -156,7 +183,7 @@ impl<D: Document> Harness<D> {
 
     /// Tap (touch down + up) at page coordinates `(x, y)`
     pub fn tap_at(&mut self, x: f32, y: f32) {
-        let event = touch_pointer_event(0, x, y);
+        let event = self.touch_event(0, x, y);
         self.dispatch(UiEvent::PointerDown(event.clone()));
         self.dispatch(UiEvent::PointerUp(event));
         self.pump();
@@ -164,19 +191,19 @@ impl<D: Document> Harness<D> {
 
     /// Press `finger` down at page coordinates `(x, y)`
     pub fn touch_down(&mut self, finger: u64, x: f32, y: f32) {
-        self.dispatch(UiEvent::PointerDown(touch_pointer_event(finger, x, y)));
+        self.dispatch(UiEvent::PointerDown(self.touch_event(finger, x, y)));
         self.pump();
     }
 
     /// Move `finger` to page coordinates `(x, y)`
     pub fn touch_move(&mut self, finger: u64, x: f32, y: f32) {
-        self.dispatch(UiEvent::PointerMove(touch_pointer_event(finger, x, y)));
+        self.dispatch(UiEvent::PointerMove(self.touch_event(finger, x, y)));
         self.pump();
     }
 
     /// Lift `finger` at page coordinates `(x, y)`
     pub fn touch_up(&mut self, finger: u64, x: f32, y: f32) {
-        self.dispatch(UiEvent::PointerUp(touch_pointer_event(finger, x, y)));
+        self.dispatch(UiEvent::PointerUp(self.touch_event(finger, x, y)));
         self.pump();
     }
 
@@ -192,6 +219,7 @@ impl<D: Document> Harness<D> {
             buttons: MouseEventButtons::empty(),
             mods: Modifiers::default(),
             element: Point::default(),
+            timestamp: self.time(),
         };
         self.dispatch(UiEvent::Wheel(event));
         self.pump();
@@ -204,16 +232,12 @@ impl<D: Document> Harness<D> {
 
     /// Press and release `key` with `modifiers` held
     pub fn press_with(&mut self, key: Key, modifiers: Modifiers) {
-        self.dispatch(UiEvent::KeyDown(key_event(
+        self.dispatch(UiEvent::KeyDown(self.key(
             key.clone(),
             KeyState::Pressed,
             modifiers,
         )));
-        self.dispatch(UiEvent::KeyUp(key_event(
-            key,
-            KeyState::Released,
-            modifiers,
-        )));
+        self.dispatch(UiEvent::KeyUp(self.key(key, KeyState::Released, modifiers)));
         self.pump();
     }
 

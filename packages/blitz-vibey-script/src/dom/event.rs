@@ -3,6 +3,7 @@
 use std::cell::Cell;
 
 use blitz_traits::events::{BlitzKeyEvent, BlitzPointerEvent, BlitzWheelDelta, DomEventData};
+use blitz_traits::time::Timestamp;
 use boa_engine::object::JsObject;
 use boa_engine::value::JsValue;
 use boa_engine::{Context, Finalize, JsData, JsResult, Trace};
@@ -107,12 +108,29 @@ pub(crate) fn create_event(
     target: &JsValue,
     context: &mut Context,
 ) -> JsObject {
+    let timestamp = ctx.state.borrow().clock.now();
+    create_event_at(
+        ctx, event_type, bubbles, cancelable, target, timestamp, context,
+    )
+}
+
+/// Create a JS event object with the standard `Event` fields. `timestamp` is
+/// when the event occurred and is exposed as `timeStamp`.
+#[allow(clippy::too_many_arguments)]
+fn create_event_at(
+    ctx: &DomCtx,
+    event_type: &str,
+    bubbles: bool,
+    cancelable: bool,
+    target: &JsValue,
+    timestamp: Timestamp,
+    context: &mut Context,
+) -> JsObject {
     let (proto, time_stamp) = {
         let state = ctx.state.borrow();
-        let now = state.clock.now();
         (
             state.protos().event.clone(),
-            state.clock.high_res_millis(now),
+            state.clock.high_res_millis(timestamp),
         )
     };
     let event = JsObject::from_proto_and_data(Some(proto), EventRef::default());
@@ -242,7 +260,18 @@ pub(crate) fn create_event_for_dom_event(
     target: &JsValue,
     context: &mut Context,
 ) -> JsObject {
-    let event = create_event(ctx, data.name(), bubbles, cancelable, target, context);
+    let event = match data.timestamp() {
+        Some(timestamp) => create_event_at(
+            ctx,
+            data.name(),
+            bubbles,
+            cancelable,
+            target,
+            timestamp,
+            context,
+        ),
+        None => create_event(ctx, data.name(), bubbles, cancelable, target, context),
+    };
 
     match data {
         DomEventData::PointerMove(pointer)

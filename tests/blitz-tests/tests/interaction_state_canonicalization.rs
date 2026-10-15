@@ -56,6 +56,7 @@ fn pointer_event(x: f32, y: f32, buttons: MouseEventButtons) -> BlitzPointerEven
         details: PointerDetails::default(),
         element: Point::default(),
         active_pointers: Default::default(),
+        timestamp: Timestamp::ZERO,
     }
 }
 
