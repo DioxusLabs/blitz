@@ -1108,9 +1108,10 @@ rtc {
     display: ruby-text-container;
 }
 
+/* An annotation wraps, as in Chrome, so a base broken across lines splits
+ * its annotation with it. */
 rtc,
 rt {
-    white-space: nowrap;
     font-size: 50%;
     -moz-min-font-size-ratio: 50%;
     line-height: 1;
