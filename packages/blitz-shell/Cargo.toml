@@ -17,7 +17,7 @@ accessibility = [
     "dep:accesskit_xplat",
     "blitz-dom/accessibility",
 ]
-clipboard = ["dep:arboard"]
+clipboard = ["dep:arboard", "arboard/wayland-data-control"]
 tracing = ["dep:tracing", "blitz-dom/tracing"]
 file-dialog = ["dep:rfd"]
 # Enables a data-uri-only NetProvider. Only needed if you aren't using the regular NetProvider
