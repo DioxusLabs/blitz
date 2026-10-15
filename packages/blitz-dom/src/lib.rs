@@ -89,6 +89,7 @@ pub use crate::layout::text_transform::{full_size_kana, full_width};
 #[cfg(feature = "custom-widget")]
 pub use crate::node::Widget;
 
+pub use blitz_traits::Timestamp;
 pub use blitz_traits::node_id::NodeId;
 // Re-export taffy: it is part of blitz-dom's public API (e.g. `Node::style`,
 // `Node::final_layout`)

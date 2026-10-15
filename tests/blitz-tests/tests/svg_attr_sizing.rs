@@ -12,6 +12,7 @@
 use blitz_dom::DocumentConfig;
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::shell::{ColorScheme, Viewport};
+use blitz_traits::time::Timestamp;
 use std::sync::Arc;
 
 fn layout_doc(html: &str) -> HtmlDocument {
@@ -23,7 +24,7 @@ fn layout_doc(html: &str) -> HtmlDocument {
             ..Default::default()
         },
     );
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
     doc
 }
 

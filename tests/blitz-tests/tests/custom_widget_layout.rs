@@ -7,6 +7,7 @@
 use blitz_dom::{DocumentConfig, IntrinsicSizes, Widget};
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::shell::{ColorScheme, Viewport};
+use blitz_traits::time::Timestamp;
 use std::sync::Arc;
 
 struct Probe;
@@ -38,7 +39,7 @@ fn widget_size(html: &str, widget: Box<dyn Widget>) -> (f32, f32) {
         .unwrap()
         .expect("#widget not found");
     doc.mutate().set_custom_widget(node_id, widget);
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
 
     let layout = doc.get_node(node_id).unwrap().final_layout();
     (layout.size.width, layout.size.height)

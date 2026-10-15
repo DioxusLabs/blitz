@@ -9,6 +9,7 @@
 use blitz_dom::DocumentConfig;
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::shell::{ColorScheme, Viewport};
+use blitz_traits::time::Timestamp;
 use std::sync::Arc;
 
 // A block container ("outer") whose children are a bare text node and a block
@@ -42,7 +43,7 @@ fn anonymous_blocks_do_not_leak_across_reconstructions() {
     // (and previously leaked) the anonymous blocks.
     doc.set_incremental_layout(false);
 
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
 
     let anon_after_first = count_anonymous_blocks(&doc);
     let nodes_after_first = doc.tree().len();
@@ -57,7 +58,7 @@ fn anonymous_blocks_do_not_leak_across_reconstructions() {
     // Reconstruct many times. Without deallocating stale anonymous blocks the
     // slab would grow unbounded.
     for _ in 0..20 {
-        doc.resolve(0.0);
+        doc.resolve(Timestamp::ZERO);
     }
 
     let anon_after_many = count_anonymous_blocks(&doc);
@@ -86,7 +87,7 @@ fn anonymous_blocks_are_freed_when_owner_is_removed_from_dom() {
         },
     );
 
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
 
     let outer_id = doc
         .query_selector("#outer")

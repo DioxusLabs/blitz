@@ -5,6 +5,7 @@ use std::path::PathBuf;
 
 use blitz_dom::{Document, DocumentConfig, NodeId};
 use blitz_traits::events::{BlitzKeyEvent, DomEvent, KeyState, UiEvent};
+use blitz_traits::time::Timestamp;
 use blitz_vibey_script::ScriptDocument;
 use keyboard_types::{Code, Key, Location, Modifiers};
 use url::Url;
@@ -37,7 +38,7 @@ fn load_todomvc() -> ScriptDocument {
 /// editors, checkbox state, ...) as would happen before rendering each frame
 /// in a windowed application.
 fn resolve(doc: &mut ScriptDocument) {
-    doc.inner_mut().resolve(0.0);
+    doc.inner_mut().resolve(Timestamp::ZERO);
 }
 
 fn query(doc: &ScriptDocument, selector: &str) -> Option<NodeId> {

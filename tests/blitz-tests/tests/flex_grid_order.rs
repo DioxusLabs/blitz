@@ -7,6 +7,7 @@ use blitz_dom::{DocumentConfig, QualName, ns};
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::node_id::NodeId;
 use blitz_traits::shell::{ColorScheme, Viewport};
+use blitz_traits::time::Timestamp;
 use std::sync::Arc;
 
 fn attr(name: &str) -> QualName {
@@ -23,7 +24,7 @@ fn make_doc(html: &str, incremental: bool) -> HtmlDocument {
         },
     );
     doc.set_incremental_layout(incremental);
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
     doc
 }
 
@@ -199,7 +200,7 @@ fn changing_order_via_restyle_resorts_without_ancestor_reconstruction() {
 
     // Hover the container: c -> -1, a -> 1.
     doc.set_hover_to(5.0, 5.0);
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
 
     let hovered = layout_children(&doc, "#flex");
     assert_eq!(ids_of(&doc, &hovered), ["c", "b", "<anon>", "a"]);
@@ -215,12 +216,12 @@ fn changing_order_via_restyle_resorts_without_ancestor_reconstruction() {
     );
 
     // Steady state: resolving again with no changes keeps the list.
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
     assert_eq!(layout_children(&doc, "#flex"), hovered);
 
     // Unhover: back to source order.
     doc.set_hover_to(200.0, 200.0);
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
 
     assert_eq!(
         ids_of(&doc, &layout_children(&doc, "#flex")),
@@ -249,7 +250,7 @@ fn changing_order_via_attribute_resorts() {
     let e = id(&doc, "#e");
     doc.mutate()
         .set_attribute(e, attr("style"), "width:10px; height:10px; order: -2");
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
 
     assert_eq!(
         ids_of(&doc, &layout_children(&doc, "#flex")),
@@ -296,7 +297,7 @@ fn pseudo_elements_honour_order_in_flex_container() {
 
         // Hover: a -> 2, b -> 0. ::after (-1), b (0), ::before (1), a (2).
         doc.set_hover_to(5.0, 5.0);
-        doc.resolve(0.0);
+        doc.resolve(Timestamp::ZERO);
         assert_eq!(
             layout_children(&doc, "#flex"),
             [after, id(&doc, "#b"), before, id(&doc, "#a")]
@@ -306,7 +307,7 @@ fn pseudo_elements_honour_order_in_flex_container() {
 
         // Unhover: ties (::before, b) are back in source order.
         doc.set_hover_to(200.0, 200.0);
-        doc.resolve(0.0);
+        doc.resolve(Timestamp::ZERO);
         assert_eq!(
             layout_children(&doc, "#flex"),
             [after, id(&doc, "#a"), before, id(&doc, "#b")]

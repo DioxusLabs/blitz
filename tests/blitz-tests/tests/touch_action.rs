@@ -4,6 +4,7 @@
 
 use blitz_dom::{Document, DocumentConfig};
 use blitz_html::{HtmlDocument, HtmlProvider};
+use blitz_traits::time::Timestamp;
 use blitz_traits::{
     events::{
         BlitzPointerEvent, BlitzPointerId, MouseEventButton, MouseEventButtons, Point,
@@ -22,7 +23,7 @@ fn doc(html: &str) -> HtmlDocument {
             ..Default::default()
         },
     );
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
     doc
 }
 

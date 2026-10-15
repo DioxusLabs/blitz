@@ -14,6 +14,7 @@
 use blitz_dom::{BaseDocument, DocumentConfig};
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::shell::{ColorScheme, Viewport};
+use blitz_traits::time::Timestamp;
 use std::sync::Arc;
 
 const HTML: &str = r#"<!DOCTYPE html>
@@ -38,7 +39,7 @@ fn make_doc() -> HtmlDocument {
             ..Default::default()
         },
     );
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
     doc
 }
 
@@ -62,7 +63,7 @@ fn set_style_property_restyles_node() {
     let inner_id = doc.query_selector("#inner").unwrap().unwrap();
 
     doc.set_style_property(inner_id, "color", "rgb(255, 0, 0)");
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
     assert_eq!(color_of(&doc, "#inner"), [255, 0, 0]);
 }
 
@@ -78,21 +79,21 @@ fn set_style_property_inside_display_none_subtree() {
     let inner_id = doc.query_selector("#inner").unwrap().unwrap();
 
     doc.set_style_property(outer_id, "display", "none");
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
 
     // #inner is display:none and unstyled; this sets its dirty_descendants
     // flag, which the traversal never clears.
     doc.set_style_property(inner_id, "color", "rgb(0, 255, 0)");
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
 
     doc.set_style_property(outer_id, "display", "block");
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
     assert_eq!(color_of(&doc, "#inner"), [0, 255, 0]);
 
     // Mutating a node below the (potentially stale) #inner bit must still
     // trigger a restyle.
     doc.set_style_property(inner_id, "color", "rgb(255, 0, 0)");
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
     assert_eq!(color_of(&doc, "#inner"), [255, 0, 0]);
 }
 
@@ -109,12 +110,12 @@ fn set_style_property_after_undamaged_style_attr_update() {
     // computed style: the style attribute changes but the restyle produces
     // no damage in the #outer subtree.
     doc.set_style_property(outer_id, "color", "rgb(0, 0, 0)");
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
     assert_eq!(color_of(&doc, "#outer"), [0, 0, 0]);
 
     // Now change a descendant. The restyle must still run.
     doc.set_style_property(inner_id, "color", "rgb(255, 0, 0)");
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
     assert_eq!(
         color_of(&doc, "#inner"),
         [255, 0, 0],
