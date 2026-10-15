@@ -97,7 +97,8 @@ fn default_prevented(this: &JsValue, _: &[JsValue], _: &mut Context) -> JsResult
     ))
 }
 
-/// Create a JS event object with the standard `Event` fields
+/// Create a JS event object with the standard `Event` fields, stamped with the
+/// current time on the document's clock
 pub(crate) fn create_event(
     ctx: &DomCtx,
     event_type: &str,
@@ -106,7 +107,14 @@ pub(crate) fn create_event(
     target: &JsValue,
     context: &mut Context,
 ) -> JsObject {
-    let proto = ctx.state.borrow().protos().event.clone();
+    let (proto, time_stamp) = {
+        let state = ctx.state.borrow();
+        let now = state.clock.now();
+        (
+            state.protos().event.clone(),
+            state.clock.high_res_millis(now),
+        )
+    };
     let event = JsObject::from_proto_and_data(Some(proto), EventRef::default());
     define_value(&event, "type", js_str(event_type), context);
     define_value(&event, "target", target.clone(), context);
@@ -117,11 +125,7 @@ pub(crate) fn create_event(
     define_value(&event, "composed", JsValue::from(false), context);
     define_value(&event, "isTrusted", JsValue::from(true), context);
     define_value(&event, "eventPhase", JsValue::from(2), context);
-    let timestamp = web_time::SystemTime::now()
-        .duration_since(web_time::UNIX_EPOCH)
-        .map(|duration| duration.as_secs_f64() * 1000.0)
-        .unwrap_or(0.0);
-    define_value(&event, "timeStamp", JsValue::from(timestamp), context);
+    define_value(&event, "timeStamp", JsValue::from(time_stamp), context);
     event
 }
 

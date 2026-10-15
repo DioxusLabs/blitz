@@ -1,7 +1,6 @@
 //! A minimal `CSSStyleDeclaration` binding (`element.style`).
 
 use blitz_dom::NodeId;
-use blitz_traits::time::Timestamp;
 use boa_engine::object::JsObject;
 use boa_engine::value::JsValue;
 use boa_engine::{Context, JsResult};
@@ -81,7 +80,7 @@ fn get_resolved_property_value(
     let mut doc = ctx.doc.borrow_mut();
     // Resolved values of layout-dependent properties are used values, so make
     // sure style and layout are up to date before reading.
-    doc.resolve(Timestamp::ZERO);
+    doc.resolve(ctx.now());
     let value = doc.resolved_style_value(node_id, &name);
     Ok(js_str(&value))
 }
