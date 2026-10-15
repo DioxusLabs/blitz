@@ -122,7 +122,9 @@ impl Node {
             .then(|| self.primary_styles())
             .flatten()
             .map(|style| style.clone_color())
-            .map(|color| color.to_css_string());
+            // usvg only understands sRGB colours; Stylo keeps `oklch()`, `lab()` …
+            // in the space they were written in, so convert before serialising.
+            .map(|color| color.into_srgb_legacy().to_css_string());
 
         match &self.data {
             NodeData::Document(_) => {}
