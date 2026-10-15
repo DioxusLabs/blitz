@@ -211,7 +211,7 @@ pub(crate) enum SpanKind {
     /// A non-atomic inline box.
     Span,
     /// A `display: contents` element, which has no box but whose children inherit from it, or an
-    /// annotation container that holds `<rt>`s of its own.
+    /// annotation container outside ruby that holds `<rt>`s of its own.
     Contents,
     /// A ruby container, `<ruby>`, where the backend sets ruby.
     Ruby,
@@ -271,6 +271,19 @@ pub(crate) trait InlineBuilder: crate::layout::text_transform::PushedText {
     /// Pushes the line break opportunity of the `<wbr>` element `node`, and returns whether the
     /// backend took it. Where it did not, the element is pushed as a span.
     fn push_break_opportunity(&mut self, node: &Node) -> bool;
+
+    /// Opens an anonymous ruby container or annotation, `kind`, which CSS Ruby's box fixup makes:
+    /// a box with no edges, set in the style of `container`, an `<rtc>`, or else of the span
+    /// opened last. Close it with [`pop_span`](Self::pop_span). Only a backend that sets ruby is
+    /// asked.
+    fn push_anonymous_span(&mut self, container: Option<&Node>, kind: SpanKind) {
+        let _ = (container, kind);
+    }
+
+    /// Starts the next column of the ruby container opened last, so that an annotation pushed
+    /// next, with no base content since the last annotation, goes over an empty base of its own.
+    /// Only a backend that sets ruby is asked.
+    fn start_ruby_column(&mut self) {}
 }
 
 /// What restyles an element for a block's first formatted line: the document's stylist and the

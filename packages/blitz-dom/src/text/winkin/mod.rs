@@ -65,6 +65,10 @@ pub const MARKER_KEY: u64 = 1 << 61;
 /// `<textarea>`, which has no node of its own: the control's node with this bit set.
 pub const COMPOSE_KEY: u64 = 1 << 60;
 
+/// The key of an anonymous ruby container or annotation, which CSS Ruby's box fixup makes and
+/// which has no node.
+pub const ANONYMOUS_KEY: u64 = 1 << 57;
+
 /// The bits that number the pieces an `<input>` or a `<textarea>` lays its text out in.
 ///
 /// The editor lays the text out in up to three pieces: before, inside and after the text an input
@@ -884,9 +888,10 @@ impl InlineBuilder for WinkinBuilder<'_, '_, '_> {
         // An `<rt>` in an `<rtc>` takes the side of its container, which
         // `ruby-position` applies to.
         let position = match kind {
-            SpanKind::Annotation { in_container: true } => {
-                Some(style::ruby_position(&parent.computed))
-            }
+            SpanKind::Annotation { in_container: true } => node
+                .parent
+                .and_then(|container| node.tree().get(container)?.primary_styles())
+                .map(|container| style::ruby_position(&container)),
             _ => None,
         };
         if kind == SpanKind::Ruby {
@@ -932,6 +937,67 @@ impl InlineBuilder for WinkinBuilder<'_, '_, '_> {
             language,
             is_root: false,
         });
+    }
+
+    /// Opens an anonymous ruby container or annotation, keyed by no node, with
+    /// no edges, in the style of `container` or else of the box it is in.
+    fn push_anonymous_span(&mut self, container: Option<&Node>, kind: SpanKind) {
+        let parent = self.parent();
+        let (computed, first_line, language) =
+            match container.and_then(|node| Some((node, node.primary_styles()?))) {
+                Some((node, computed)) => {
+                    let computed = (*computed).clone();
+                    let first_line = parent
+                        .first_line
+                        .as_ref()
+                        .map(|first_line| self.cascade.reparent(node, &computed, first_line));
+                    let language = own_language(node).unwrap_or(parent.language);
+                    (computed, first_line, language)
+                }
+                None => (
+                    parent.computed.clone(),
+                    parent.first_line.clone(),
+                    parent.language,
+                ),
+            };
+        let key = NodeKey(ANONYMOUS_KEY);
+        let position = container.map(|_| style::ruby_position(&computed));
+        {
+            let lists = style::FontLists::of(&computed, &self.feature_values);
+            let own = unboxed(style::computed_style(
+                &lists, &computed, self.scale, language,
+            ));
+            let first_line_lists = first_line
+                .as_deref()
+                .map(|computed| style::FontLists::of(computed, &self.feature_values));
+            let first_line_style = match (&first_line, &first_line_lists) {
+                (Some(computed), Some(lists)) => Some(unboxed(style::computed_style(
+                    lists, computed, self.scale, language,
+                ))),
+                _ => None,
+            };
+            let builder = &mut self.builder;
+            match (kind, position) {
+                (SpanKind::Ruby, _) => builder.open_ruby(key, &own, first_line_style.as_ref()),
+                (_, Some(position)) => builder.open_annotation_with_position(
+                    key,
+                    &own,
+                    first_line_style.as_ref(),
+                    position,
+                ),
+                (_, None) => builder.open_annotation(key, &own, first_line_style.as_ref()),
+            }
+        }
+        self.parents.push(Parent {
+            computed,
+            first_line,
+            language,
+            is_root: false,
+        });
+    }
+
+    fn start_ruby_column(&mut self) {
+        self.builder.start_column();
     }
 
     fn pop_span(&mut self, kind: SpanKind) {
@@ -1209,7 +1275,7 @@ pub(crate) fn relative_shift_of(
     use ::style::computed_values::position::T as Position;
     use ::style::values::computed::{CSSPixelLength, Inset};
     let mut shift = kurbo::Vec2::ZERO;
-    if key & (FIRST_LETTER_KEY | MARKER_KEY | COMPOSE_KEY | PIECE_KEYS) != 0 {
+    if key & (FIRST_LETTER_KEY | MARKER_KEY | COMPOSE_KEY | PIECE_KEYS | ANONYMOUS_KEY) != 0 {
         return shift;
     }
     let resolve = |inset: &Inset, basis: f64| match inset {
