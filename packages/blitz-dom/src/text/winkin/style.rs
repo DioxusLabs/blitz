@@ -57,7 +57,7 @@ use style::values::computed::{
 };
 use style::values::computed::{
     HangingPunctuation as StyloHangingPunctuation, TextCombineUpright as StyloTextCombineUpright,
-    TextSecurity as StyloTextSecurity,
+    TextDecorationSkipSpaces as StyloTextDecorationSkipSpaces, TextSecurity as StyloTextSecurity,
 };
 use style::values::generics::box_::{BaselineShiftKeyword, GenericBaselineShift};
 use style::values::generics::font::GenericFontSizeAdjust;
@@ -91,7 +91,8 @@ use winkin::style::{
     VerticalAlign, WhiteSpaceCollapse, WordBreak, WritingMode,
 };
 use winkin::style::{
-    FontStyle, FontWeight, FontWidth, GenericFamily, TextFit, TextFitKind, TextFitTarget,
+    FontStyle, FontWeight, FontWidth, GenericFamily, TextDecorationSkipSpaces, TextFit,
+    TextFitKind, TextFitTarget,
 };
 use winkin::{ComputedBlockStyle, ComputedStyle};
 
@@ -786,7 +787,26 @@ fn text_group(computed: &ComputedValues, scale: f32, language: Option<Language>)
             }
         },
         emphasis,
+        decoration_skip_spaces: decoration_skip_spaces(
+            computed.slow_clone_text_decoration_skip_spaces(),
+        ),
         ..TextGroup::INITIAL
+    }
+}
+
+/// `text-decoration-skip-spaces`, whose `all` holds both edges.
+fn decoration_skip_spaces(skip: StyloTextDecorationSkipSpaces) -> TextDecorationSkipSpaces {
+    if skip.contains(StyloTextDecorationSkipSpaces::ALL) {
+        return TextDecorationSkipSpaces::All;
+    }
+    match (
+        skip.contains(StyloTextDecorationSkipSpaces::START),
+        skip.contains(StyloTextDecorationSkipSpaces::END),
+    ) {
+        (true, true) => TextDecorationSkipSpaces::StartEnd,
+        (true, false) => TextDecorationSkipSpaces::Start,
+        (false, true) => TextDecorationSkipSpaces::End,
+        (false, false) => TextDecorationSkipSpaces::None,
     }
 }
 
