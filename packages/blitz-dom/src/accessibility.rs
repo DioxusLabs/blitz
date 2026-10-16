@@ -1,4 +1,4 @@
-use crate::{BaseDocument, ElementData, Node as BlitzDomNode, local_name};
+use crate::{BaseDocument, ElementData, Node as BlitzDomNode, NodeData, local_name};
 use accesskit::{Node as AccessKitNode, NodeId, Role, TreeId, TreeInfo, TreeUpdate};
 use style::properties::longhands::visibility;
 
@@ -7,7 +7,7 @@ impl BaseDocument {
         let mut nodes = std::collections::HashMap::new();
         let mut window = AccessKitNode::new(Role::Window);
         let mut hidden_nodes = std::collections::HashSet::new();
-        let mut labelled_by_nodes = std::collections::HashMap::new();
+        let mut labelled_by_nodes = Vec::new();
 
         self.visit(|node_id, node| {
             if node.is_hidden_from_accessibility_tree()
@@ -24,29 +24,49 @@ impl BaseDocument {
                 .and_then(|parent_id| nodes.get_mut(&parent_id))
                 .map(|(_, parent)| parent)
                 .unwrap_or(&mut window);
-            let (id, builder) = self.build_accessibility_node(node, parent, &mut labelled_by_nodes);
+            let (id, builder) = self.build_accessibility_node(node, parent);
 
+            if node.attr(local_name!("aria-labelledby")).is_some() {
+                labelled_by_nodes.push(node_id);
+            }
             nodes.insert(node_id, (id, builder));
         });
+
+        let mut label = FlatText::default();
+        for node_id in labelled_by_nodes {
+            let Some(id_refs) = self.nodes[node_id].attr(local_name!("aria-labelledby")) else {
+                continue;
+            };
+            let Some((id, mut builder)) = nodes.remove(&node_id) else {
+                continue;
+            };
+            let mut has_target = false;
+            label.clear();
+            for target in id_refs
+                .split_ascii_whitespace()
+                .filter_map(|dom_id| self.nodes_to_id.get(dom_id)?.first().copied())
+            {
+                if !has_target {
+                    builder.clear_labelled_by();
+                    has_target = true;
+                }
+                if target == node_id || nodes.contains_key(&target) {
+                    builder.push_labelled_by(NodeId(target.as_u64()));
+                }
+                self.nodes[target].write_text_alternative(&mut label);
+                label.break_word();
+            }
+            if !label.text.is_empty() {
+                builder.set_label(label.text.as_str());
+            }
+            nodes.insert(node_id, (id, builder));
+        }
 
         let mut nodes: Vec<_> = nodes
             .into_iter()
             .map(|(_, (id, node))| (id, node))
             .collect();
         nodes.push((NodeId(u64::MAX), window));
-
-        for (node_id, node) in nodes.iter_mut() {
-            let Some(labelled_by) = labelled_by_nodes.get(node_id) else {
-                continue;
-            };
-            for dom_id in labelled_by.split_ascii_whitespace() {
-                if let Some(labelled_by_node_id) = self.nodes_to_id.get(dom_id)
-                    && let Some(labelled_by_node_id) = labelled_by_node_id.first()
-                {
-                    node.push_labelled_by(NodeId(labelled_by_node_id.as_u64()));
-                }
-            }
-        }
 
         let tree = TreeInfo::new(NodeId(u64::MAX));
         TreeUpdate {
@@ -61,7 +81,6 @@ impl BaseDocument {
         &self,
         node: &BlitzDomNode,
         parent: &mut AccessKitNode,
-        labelled_by_nodes: &mut std::collections::HashMap<NodeId, String>,
     ) -> (NodeId, AccessKitNode) {
         let id = NodeId(node.id.as_u64());
 
@@ -90,9 +109,6 @@ impl BaseDocument {
             if let Some(aria_label) = element_data.attr(local_name!("aria-label")) {
                 builder.set_label(aria_label);
             }
-            if let Some(aria_labelled_by) = element_data.attr(local_name!("aria-labelledby")) {
-                labelled_by_nodes.insert(id, aria_labelled_by.to_string());
-            }
         } else if node.is_text_node() {
             builder.set_role(Role::TextRun);
             builder.set_value(node.text_content());
@@ -117,6 +133,59 @@ impl BlitzDomNode {
                         == visibility::computed_value::T::Hidden
             })
             .unwrap_or(false)
+    }
+
+    fn write_text_alternative(&self, out: &mut FlatText) {
+        match self
+            .attr(local_name!("aria-label"))
+            .filter(|aria_label| !aria_label.trim_ascii().is_empty())
+        {
+            Some(aria_label) => out.push(aria_label),
+            None => self.write_flat_text_content(out),
+        }
+    }
+
+    fn write_flat_text_content(&self, out: &mut FlatText) {
+        match &self.data {
+            NodeData::Text(data) => out.push(&data.content),
+            NodeData::Element(..) | NodeData::AnonymousBlock(..) => {
+                for &child_id in &self.children {
+                    self.with(child_id).write_flat_text_content(out);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+#[derive(Default)]
+struct FlatText {
+    text: String,
+    pending_space: bool,
+}
+
+impl FlatText {
+    fn push(&mut self, text: &str) {
+        for (i, word) in text.split(|c: char| c.is_ascii_whitespace()).enumerate() {
+            self.pending_space |= i > 0;
+            if word.is_empty() {
+                continue;
+            }
+            if self.pending_space && !self.text.is_empty() {
+                self.text.push(' ');
+            }
+            self.pending_space = false;
+            self.text.push_str(word);
+        }
+    }
+
+    fn break_word(&mut self) {
+        self.pending_space = true;
+    }
+
+    fn clear(&mut self) {
+        self.text.clear();
+        self.pending_space = false;
     }
 }
 
