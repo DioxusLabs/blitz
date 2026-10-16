@@ -750,6 +750,7 @@ impl LayoutPassState<'_> {
 
                         // Note: `pos` is content-box relative
                         let pos = block_ctx.place_floated_box(
+                            crate::taffy_node_id(node_id).into(),
                             output.size + margin_sum,
                             min_y,
                             direction,

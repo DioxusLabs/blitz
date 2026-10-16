@@ -8002,8 +8002,7 @@ dependencies = [
 [[package]]
 name = "taffy"
 version = "0.15.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3c8480887e8803986d96a7173729565520d4bbb721ad6b7ad6941a22897207aa"
+source = "git+https://github.com/DioxusLabs/taffy?rev=7a9f4212b89842120ba0f3a866eb9791ddf07edc#7a9f4212b89842120ba0f3a866eb9791ddf07edc"
 dependencies = [
  "serde",
  "slotmap",
