@@ -69,12 +69,15 @@ impl BaseDocument {
             let Some(id_refs) = self.nodes[node_id].attr(local_name!("aria-describedby")) else {
                 continue;
             };
-            let Some((_, builder)) = nodes.get_mut(&node_id) else {
+            let Some((id, mut builder)) = nodes.remove(&node_id) else {
                 continue;
             };
             for target in self.referenced_dom_ids_to_node_ids(id_refs) {
-                builder.push_described_by(NodeId(target.as_u64()));
+                if target == node_id || nodes.contains_key(&target) {
+                    builder.push_described_by(NodeId(target.as_u64()));
+                }
             }
+            nodes.insert(node_id, (id, builder));
         }
 
         let mut nodes: Vec<_> = nodes
