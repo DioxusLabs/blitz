@@ -226,7 +226,10 @@ impl<Rend: WindowRenderer> View<Rend> {
             #[cfg(target_arch = "wasm32")]
             resize_timer_scheduled: false,
             pointer_pos: Default::default(),
-            is_visible: winit_window.is_visible().unwrap_or(true),
+            // `is_visible` tracks occlusion. A window created hidden (to show it once
+            // the first frame is ready) must still be painted: showing it doesn't
+            // send `WindowEvent::Occluded` on every platform (never on Windows).
+            is_visible: true,
             #[cfg(feature = "accessibility")]
             accessibility,
 
