@@ -48,7 +48,6 @@ type ConicGradient<'a> = (
 pub(crate) fn to_peniko_gradient(
     gradient: &StyloGradient,
     origin_rect: Rect,
-    bounding_box: Rect,
     scale: f64,
     current_color: &AbsoluteColor,
 ) -> (peniko::Gradient, Option<Affine>) {
@@ -63,7 +62,6 @@ pub(crate) fn to_peniko_gradient(
         } => linear_gradient(
             (direction, items, *flags),
             origin_rect,
-            bounding_box,
             scale,
             current_color,
         ),
@@ -88,13 +86,12 @@ pub(crate) fn to_peniko_gradient(
 fn linear_gradient(
     gradient: LinearGradient,
     rect: Rect,
-    bounding_box: Rect,
     scale: f64,
     current_color: &AbsoluteColor,
 ) -> (peniko::Gradient, Option<Affine>) {
     let (direction, items, flags) = gradient;
 
-    let center = bounding_box.center();
+    let center = rect.center();
     let (start, end) = match direction {
         LineDirection::Angle(angle) => {
             let angle = -angle.radians64() + std::f64::consts::PI;
