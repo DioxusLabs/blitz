@@ -105,6 +105,12 @@ impl<Rend: WindowRenderer> BlitzApplication<Rend> {
                     window.apply_pending_resize_if_settled();
                 }
             }
+            #[cfg(target_os = "windows")]
+            BlitzShellEvent::RequestWindowRedraw { window_id } => {
+                if let Some(window) = self.windows.get_mut(&window_id) {
+                    window.request_redraw();
+                }
+            }
         }
     }
 }
