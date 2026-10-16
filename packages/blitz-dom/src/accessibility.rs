@@ -99,16 +99,45 @@ impl BaseDocument {
                 .unwrap_or(Role::Unknown);
 
             builder.set_role(role);
-            builder.set_html_tag(name);
 
             // https://www.w3.org/TR/wai-aria-1.2/#tree_exclusion
             if element_data.attr(local_name!("aria-hidden")) == Some("true") {
                 builder.set_hidden();
             }
 
+            if let Some(aria_expanded) = element_data.attr(local_name!("aria-expanded"))
+                && let Ok(aria_expanded) = aria_expanded.parse()
+            {
+                builder.set_expanded(aria_expanded);
+            }
+
+            if element_data.attr(local_name!("aria-disabled")) == Some("true") {
+                builder.set_disabled();
+            }
+
+            if let Some(aria_selected) = element_data.attr(local_name!("aria-selected"))
+                && let Ok(aria_selected) = aria_selected.parse()
+            {
+                builder.set_selected(aria_selected);
+            }
+
             if let Some(aria_label) = element_data.attr(local_name!("aria-label")) {
                 builder.set_label(aria_label);
             }
+            if let Some(aria_level) = element_data.attr(local_name!("aria-level"))
+                && let Ok(aria_level) = aria_level.parse::<usize>()
+                // Accesskit levels are 0-based, while ARIA levels are 1-based
+                // See https://docs.rs/accesskit/latest/accesskit/struct.Node.html#method.level
+                && let Some(aria_level) = aria_level.checked_sub(1)
+            {
+                builder.set_level(aria_level);
+            } else if let Some(default_level) = default_level_for_tag(&name) {
+                builder.set_level(default_level);
+            } else if let Some(default_level) = default_level_for_role(role) {
+                builder.set_level(default_level);
+            }
+
+            builder.set_html_tag(name);
         } else if node.is_text_node() {
             builder.set_role(Role::TextRun);
             builder.set_value(node.text_content());
@@ -249,6 +278,29 @@ fn role_from_name(name: &str) -> Option<Role> {
         "main" => Some(Role::Main),
         "navigation" => Some(Role::Navigation),
         "search" => Some(Role::Search),
+        _ => None,
+    }
+}
+
+fn default_level_for_tag(name: &str) -> Option<usize> {
+    // Accesskit levels are 0-based, while ARIA levels are 1-based
+    // See https://docs.rs/accesskit/latest/accesskit/struct.Node.html#method.level
+    match name {
+        "h1" => Some(0),
+        "h2" => Some(1),
+        "h3" => Some(2),
+        "h4" => Some(3),
+        "h5" => Some(4),
+        "h6" => Some(5),
+        _ => None,
+    }
+}
+
+fn default_level_for_role(role: Role) -> Option<usize> {
+    match role {
+        // ARIA specifies an implicit level of 2 for the heading role. Accesskit levels are 0-based,
+        // so this turns into level 1
+        Role::Heading => Some(1),
         _ => None,
     }
 }
