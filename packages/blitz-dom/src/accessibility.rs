@@ -1,4 +1,6 @@
-use crate::{BaseDocument, ElementData, Node as BlitzDomNode, NodeData, local_name};
+use crate::{
+    BaseDocument, ElementData, Node as BlitzDomNode, NodeData, NodeId as BlitzDomNodeId, local_name,
+};
 use accesskit::{Node as AccessKitNode, NodeId, Role, TreeId, TreeInfo, TreeUpdate};
 use style::properties::longhands::visibility;
 
@@ -8,6 +10,7 @@ impl BaseDocument {
         let mut window = AccessKitNode::new(Role::Window);
         let mut hidden_nodes = std::collections::HashSet::new();
         let mut labelled_by_nodes = Vec::new();
+        let mut described_by_nodes = Vec::new();
 
         self.visit(|node_id, node| {
             if node.is_hidden_from_accessibility_tree()
@@ -29,6 +32,9 @@ impl BaseDocument {
             if node.attr(local_name!("aria-labelledby")).is_some() {
                 labelled_by_nodes.push(node_id);
             }
+            if node.attr(local_name!("aria-describedby")).is_some() {
+                described_by_nodes.push(node_id);
+            }
             nodes.insert(node_id, (id, builder));
         });
 
@@ -42,10 +48,7 @@ impl BaseDocument {
             };
             let mut has_target = false;
             label.clear();
-            for target in id_refs
-                .split_ascii_whitespace()
-                .filter_map(|dom_id| self.nodes_to_id.get(dom_id)?.first().copied())
-            {
+            for target in self.referenced_dom_ids_to_node_ids(id_refs) {
                 if !has_target {
                     builder.clear_labelled_by();
                     has_target = true;
@@ -58,6 +61,21 @@ impl BaseDocument {
             }
             if !label.text.is_empty() {
                 builder.set_label(label.text.as_str());
+            }
+            nodes.insert(node_id, (id, builder));
+        }
+
+        for node_id in described_by_nodes {
+            let Some(id_refs) = self.nodes[node_id].attr(local_name!("aria-describedby")) else {
+                continue;
+            };
+            let Some((id, mut builder)) = nodes.remove(&node_id) else {
+                continue;
+            };
+            for target in self.referenced_dom_ids_to_node_ids(id_refs) {
+                if target == node_id || nodes.contains_key(&target) {
+                    builder.push_described_by(NodeId(target.as_u64()));
+                }
             }
             nodes.insert(node_id, (id, builder));
         }
@@ -75,6 +93,15 @@ impl BaseDocument {
             tree: Some(tree),
             focus: NodeId(self.focus_node_id.map(|id| id.as_u64()).unwrap_or(u64::MAX)),
         }
+    }
+
+    fn referenced_dom_ids_to_node_ids<'a>(
+        &'a self,
+        nodes_reference: &'a str,
+    ) -> impl Iterator<Item = BlitzDomNodeId> + 'a {
+        nodes_reference
+            .split_ascii_whitespace()
+            .filter_map(|dom_id| self.nodes_to_id.get(dom_id)?.first().copied())
     }
 
     fn build_accessibility_node(
@@ -123,6 +150,9 @@ impl BaseDocument {
 
             if let Some(aria_label) = element_data.attr(local_name!("aria-label")) {
                 builder.set_label(aria_label);
+            }
+            if let Some(aria_description) = element_data.attr(local_name!("aria-description")) {
+                builder.set_description(aria_description);
             }
             if let Some(aria_level) = element_data.attr(local_name!("aria-level"))
                 && let Ok(aria_level) = aria_level.parse::<usize>()
