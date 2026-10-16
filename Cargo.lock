@@ -8127,7 +8127,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c904b7cc989dce908d83a5918c4b91415d7d05cd8638f8db84b13d529e46fc16"
 dependencies = [
  "quote",
- "syn 3.0.4",
+ "syn 3.0.6",
 ]
 
 [[package]]
