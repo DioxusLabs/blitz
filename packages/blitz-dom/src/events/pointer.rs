@@ -729,6 +729,18 @@ pub(crate) fn handle_click(
                         let target_node = doc.get_node_mut(target_node_id).unwrap();
                         let syn_event = target_node.synthetic_click_event_data(event.mods);
                         handle_click(doc, target_node_id, &syn_event, dispatch_event);
+
+                        // And focus it. A click on a text input has no default action
+                        // (pointerdown focuses it), so a label would never focus one.
+                        if doc.nodes[target_node_id].is_focussable() {
+                            generate_focus_events(
+                                doc,
+                                &mut |doc| {
+                                    doc.set_focus_to(target_node_id);
+                                },
+                                dispatch_event,
+                            );
+                        }
                         break 'matched true;
                     }
                 }
