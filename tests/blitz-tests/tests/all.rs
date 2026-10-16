@@ -2,6 +2,7 @@
 //! one binary per file dominates build time. New test files must be added here.
 
 mod accessibility_hidden;
+mod accessibility_label;
 mod accessibility_roles;
 mod animations;
 mod anonymous_block_cache_invalidation;
