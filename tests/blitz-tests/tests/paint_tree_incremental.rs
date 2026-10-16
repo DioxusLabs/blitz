@@ -7,6 +7,7 @@ use blitz_dom::{DocumentConfig, hoisted_child_position};
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::node_id::NodeId;
 use blitz_traits::shell::{ColorScheme, Viewport};
+use blitz_traits::time::Timestamp;
 use std::sync::Arc;
 
 fn make_doc(html: &str, incremental: bool) -> HtmlDocument {
@@ -19,7 +20,7 @@ fn make_doc(html: &str, incremental: bool) -> HtmlDocument {
             ..Default::default()
         },
     );
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
     doc
 }
 
@@ -74,12 +75,12 @@ fn hoisted_entry(doc: &HtmlDocument, sc_root: NodeId, child: NodeId) -> Option<(
 fn hover(doc: &mut HtmlDocument, selector: &str) {
     let (x, y) = center(doc, selector);
     assert!(doc.set_hover_to(x, y), "hover {selector}");
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
 }
 
 fn unhover(doc: &mut HtmlDocument) {
     assert!(doc.set_hover_to(399.0, 399.0));
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
 }
 
 const STALE_POSITION: &str = r#"<html><head><style>
@@ -109,7 +110,7 @@ fn hoisted_position_follows_layout_in_same_frame() {
 
         // Hover A (single resolve): A is 60px tall, B starts at y=60.
         assert!(doc.set_hover_to(50.0, 10.0));
-        doc.resolve(0.0);
+        doc.resolve(Timestamp::ZERO);
         assert_eq!(doc.get_node(a).unwrap().final_layout().size.height, 60.0);
         assert_eq!(abs_pos(&doc, b), (0.0, 60.0));
 
@@ -226,7 +227,7 @@ fn viewport_resize_moves_hoisted_box_without_rebuild() {
         assert_eq!(hit(&doc, 210.0, 10.0), b);
 
         doc.set_viewport(Viewport::new(200, 400, 1.0, ColorScheme::Light));
-        doc.resolve(0.0);
+        doc.resolve(Timestamp::ZERO);
         assert_eq!(abs_pos(&doc, b), (100.0, 0.0));
         assert_eq!(hit(&doc, 110.0, 10.0), b, "incremental={incremental}");
         assert_ne!(hit(&doc, 90.0, 10.0), b, "incremental={incremental}");
@@ -267,7 +268,7 @@ fn scroll_moves_hoisted_box_without_resolve() {
         assert_eq!(hit(&doc, 50.0, 20.0), b, "incremental={incremental}");
         assert_eq!(hoisted_entry(&doc, root, b), Some((1, (0.0, 10.0))));
 
-        doc.resolve(0.0);
+        doc.resolve(Timestamp::ZERO);
         assert_eq!(hit(&doc, 50.0, 20.0), b);
     }
 }
@@ -303,7 +304,7 @@ fn hoisted_position_is_memoised_per_generation() {
     assert!(entry(&doc));
 
     // Layout ran: the cache is stale until next use.
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
     assert!(!entry(&doc));
     let _ = doc.hit(50.0, 20.0);
     assert!(entry(&doc));
@@ -395,7 +396,7 @@ fn reparent_from_flex_to_block_rebuilds_child() {
         assert_eq!(hit(&doc, 50.0, 50.0), inner);
 
         doc.mutate().append_children(block, &[item]);
-        doc.resolve(0.0);
+        doc.resolve(Timestamp::ZERO);
 
         assert!(
             doc.get_node(item).unwrap().stacking_context.is_none(),
@@ -456,7 +457,7 @@ fn hoisted_children_of_scrolled_sc_root_are_hit() {
         // B now spans y=10..30 within the 50px scroller.
         assert_eq!(hit(&doc, 50.0, 20.0), b, "incremental={incremental}");
 
-        doc.resolve(0.0);
+        doc.resolve(Timestamp::ZERO);
         assert_eq!(hit(&doc, 50.0, 20.0), b, "incremental={incremental}");
     }
 }

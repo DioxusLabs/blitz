@@ -13,6 +13,7 @@ use blitz_dom::node::{ImageData, SvgImageData};
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_paint::paint_scene;
 use blitz_traits::shell::{ColorScheme, Viewport};
+use blitz_traits::time::Timestamp;
 use std::sync::Arc;
 
 /// Renders a 100x100 div whose `background` is set to the given shorthand and
@@ -32,7 +33,7 @@ fn pixel(background: &str, svg_src: &str, x: usize, y: usize) -> [u8; 3] {
             ..Default::default()
         },
     );
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
     let box_id = doc.query_selector("#box").unwrap().expect("#box");
     {
         let svg = SvgImageData::from_data(svg_src.as_bytes(), &usvg::Options::default())
@@ -44,7 +45,7 @@ fn pixel(background: &str, svg_src: &str, x: usize, y: usize) -> [u8; 3] {
             layer.image = ImageData::Svg(svg.clone());
         }
     }
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
     let buffer = render_to_buffer::<VelloCpuImageRenderer, _>(
         |scene| paint_scene(scene, doc.as_mut(), 1.0, 100, 100, 0, 0),
         100,

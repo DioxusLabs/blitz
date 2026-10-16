@@ -1,5 +1,6 @@
 use blitz_dom::DocumentConfig;
 use blitz_html::HtmlDocument;
+use blitz_traits::time::Timestamp;
 
 /// Regression test for https://github.com/DioxusLabs/blitz/issues/407
 ///
@@ -16,7 +17,7 @@ fn resolve_does_not_panic_after_removing_animated_node() {
     "#;
 
     let mut doc = HtmlDocument::from_html(html, DocumentConfig::default());
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
 
     let pulse_id = doc.get_element_by_id("pulse-node");
     if let Some(id) = pulse_id {
@@ -24,5 +25,5 @@ fn resolve_does_not_panic_after_removing_animated_node() {
     }
 
     // Must not panic: stale animation entry should be skipped safely.
-    doc.resolve(0.1);
+    doc.resolve(Timestamp::from_secs_f64(0.1));
 }

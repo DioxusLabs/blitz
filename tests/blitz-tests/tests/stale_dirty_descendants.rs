@@ -22,6 +22,7 @@
 use blitz_dom::{BaseDocument, DocumentConfig};
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::shell::{ColorScheme, Viewport};
+use blitz_traits::time::Timestamp;
 use std::sync::Arc;
 
 const HTML: &str = r#"<!DOCTYPE html>
@@ -71,7 +72,7 @@ fn hover_keeps_working_after_undamaged_subtree_restyle() {
             ..Default::default()
         },
     );
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
 
     // Hover #nav-link.
     let nav_link_id = doc.query_selector("#nav-link").unwrap().unwrap();
@@ -80,7 +81,7 @@ fn hover_keeps_working_after_undamaged_subtree_restyle() {
         .unwrap()
         .absolute_position(5.0, 5.0);
     doc.set_hover_to(pos.x, pos.y);
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
     assert_eq!(color_of(&doc, "#nav-link"), [255, 0, 0]);
 
     // Hover #branch's padding area. This restyles .foo (via `#branch:hover
@@ -89,7 +90,7 @@ fn hover_keeps_working_after_undamaged_subtree_restyle() {
     let branch_id = doc.query_selector("#branch").unwrap().unwrap();
     let pos = doc.get_node(branch_id).unwrap().absolute_position(5.0, 5.0);
     doc.set_hover_to(pos.x, pos.y);
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
     assert_eq!(color_of(&doc, "#nav-link"), [0, 0, 0]);
 
     // Hover #menu-link (inside #branch). The hover restyle must still run.
@@ -99,7 +100,7 @@ fn hover_keeps_working_after_undamaged_subtree_restyle() {
         .unwrap()
         .absolute_position(5.0, 5.0);
     doc.set_hover_to(pos.x, pos.y);
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
     assert_eq!(
         color_of(&doc, "#menu-link"),
         [255, 0, 0],

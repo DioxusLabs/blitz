@@ -3,6 +3,7 @@
 
 use blitz_dom::{Document, DocumentConfig, FontContext, ScrollBehavior, ScrollLogicalPosition};
 use blitz_html::{HtmlDocument, HtmlProvider};
+use blitz_traits::time::Timestamp;
 use blitz_traits::{
     events::{
         BlitzPointerEvent, BlitzPointerId, BlitzWheelDelta, BlitzWheelEvent, MouseEventButton,
@@ -24,7 +25,7 @@ fn layout_doc(html: &str) -> HtmlDocument {
             ..Default::default()
         },
     );
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
     doc
 }
 
@@ -34,7 +35,7 @@ fn drive_until_settled(doc: &mut HtmlDocument) {
     let start = Instant::now();
     while doc.is_animating() {
         std::thread::sleep(Duration::from_millis(8));
-        doc.resolve(0.0);
+        doc.resolve(Timestamp::ZERO);
         assert!(
             start.elapsed() < Duration::from_secs(5),
             "scroll animation did not settle within 5s"
@@ -367,7 +368,7 @@ fn wheel_scroll_cancels_smooth_scroll() {
     assert_eq!(doc.get_node(scroller).unwrap().scroll_offset().y, 20.0);
 
     std::thread::sleep(Duration::from_millis(50));
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
     assert_eq!(doc.get_node(scroller).unwrap().scroll_offset().y, 20.0);
 }
 

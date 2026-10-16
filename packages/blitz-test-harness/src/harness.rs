@@ -1,10 +1,12 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use blitz_dom::{DocGuard, DocGuardMut, Document, DocumentConfig};
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::events::UiEvent;
 use blitz_traits::net::NetProvider;
 use blitz_traits::shell::{ColorScheme, Viewport};
+use blitz_traits::time::Timestamp;
 use dioxus_core::{Element, VirtualDom};
 use dioxus_native_dom::DioxusDocument;
 
@@ -53,7 +55,7 @@ impl HarnessOptions {
 /// A headless wrapper around a [`Document`] for driving it programmatically in tests.
 pub struct Harness<D: Document = HtmlDocument> {
     pub doc: D,
-    time: f64,
+    time: Timestamp,
 }
 
 impl Harness<HtmlDocument> {
@@ -88,7 +90,10 @@ impl Harness<DioxusDocument> {
 impl<D: Document> Harness<D> {
     /// Wrap an already-constructed document. Does not [`pump`](Self::pump).
     pub fn wrap(doc: D) -> Self {
-        Self { doc, time: 0.0 }
+        Self {
+            doc,
+            time: Timestamp::ZERO,
+        }
     }
 
     pub fn into_inner(self) -> D {
@@ -105,8 +110,14 @@ impl<D: Document> Harness<D> {
         self.doc.inner_mut()
     }
 
-    /// The current time (in seconds) of the harness's animation clock
-    pub fn time(&self) -> f64 {
+    /// The current time of the harness's clock.
+    ///
+    /// The harness is the document's only source of time: the clock starts at
+    /// [`Timestamp::ZERO`], advances only via [`tick`](Self::tick), and is used both
+    /// as the frame time passed to `resolve` and as the timestamp of every input
+    /// event the harness synthesizes, so time-dependent behaviour (smooth scrolling,
+    /// scrollbar fades, double-click detection, CSS animations) is deterministic.
+    pub fn time(&self) -> Timestamp {
         self.time
     }
 
@@ -116,9 +127,9 @@ impl<D: Document> Harness<D> {
         self.doc.inner_mut().resolve(self.time);
     }
 
-    /// Advance the animation clock by `dt_seconds` and [`pump`](Self::pump)
-    pub fn tick(&mut self, dt_seconds: f64) {
-        self.time += dt_seconds;
+    /// Advance the clock by `dt` and [`pump`](Self::pump)
+    pub fn tick(&mut self, dt: Duration) {
+        self.time += dt;
         self.pump();
     }
 
