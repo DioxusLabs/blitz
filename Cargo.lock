@@ -881,7 +881,7 @@ dependencies = [
 
 [[package]]
 name = "blitz"
-version = "0.3.0-beta.3"
+version = "0.3.0-beta.4"
 dependencies = [
  "anyrender_vello",
  "blitz-dom",
@@ -897,7 +897,7 @@ dependencies = [
 
 [[package]]
 name = "blitz-dom"
-version = "0.3.0-beta.3"
+version = "0.3.0-beta.4"
 dependencies = [
  "accesskit",
  "anyrender",
@@ -984,7 +984,7 @@ dependencies = [
 
 [[package]]
 name = "blitz-html"
-version = "0.3.0-beta.3"
+version = "0.3.0-beta.4"
 dependencies = [
  "blitz-dom",
  "blitz-traits",
@@ -995,7 +995,7 @@ dependencies = [
 
 [[package]]
 name = "blitz-net"
-version = "0.3.0-beta.3"
+version = "0.3.0-beta.4"
 dependencies = [
  "blitz-traits",
  "data-url",
@@ -1011,7 +1011,7 @@ dependencies = [
 
 [[package]]
 name = "blitz-paint"
-version = "0.3.0-beta.3"
+version = "0.3.0-beta.4"
 dependencies = [
  "anyrender",
  "anyrender_svg",
@@ -1033,7 +1033,7 @@ dependencies = [
 
 [[package]]
 name = "blitz-shell"
-version = "0.3.0-beta.3"
+version = "0.3.0-beta.4"
 dependencies = [
  "accesskit",
  "accesskit_xplat",
@@ -1057,7 +1057,7 @@ dependencies = [
 
 [[package]]
 name = "blitz-test-harness"
-version = "0.3.0-beta.3"
+version = "0.3.0-beta.4"
 dependencies = [
  "blitz-dom",
  "blitz-html",
@@ -1070,7 +1070,7 @@ dependencies = [
 
 [[package]]
 name = "blitz-tests"
-version = "0.3.0-beta.3"
+version = "0.3.0-beta.4"
 dependencies = [
  "accesskit",
  "anyrender",
@@ -1094,7 +1094,7 @@ dependencies = [
 
 [[package]]
 name = "blitz-traits"
-version = "0.3.0-beta.3"
+version = "0.3.0-beta.4"
 dependencies = [
  "atomic_refcell",
  "bitflags 2.13.2",
@@ -1109,7 +1109,7 @@ dependencies = [
 
 [[package]]
 name = "blitz-vibey-script"
-version = "0.3.0-beta.3"
+version = "0.3.0-beta.4"
 dependencies = [
  "blitz-dom",
  "blitz-html",
@@ -7855,7 +7855,7 @@ dependencies = [
 
 [[package]]
 name = "stylo_taffy"
-version = "0.3.0-beta.3"
+version = "0.3.0-beta.4"
 dependencies = [
  "bitflags 2.13.2",
  "stylo",
