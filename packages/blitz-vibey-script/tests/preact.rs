@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use blitz_dom::{Document, DocumentConfig, NodeId};
 use blitz_traits::events::{BlitzKeyEvent, DomEvent, KeyState, UiEvent};
 use blitz_vibey_script::ScriptDocument;
-use keyboard_types::{Code, Key, Location, Modifiers};
+use keyboard_types::{Code, Key, Location, Modifiers, NamedKey};
 use url::Url;
 
 fn preact_example_dir() -> PathBuf {
@@ -54,7 +54,7 @@ fn text_of(doc: &ScriptDocument, node_id: NodeId) -> String {
 
 fn enter_key() -> BlitzKeyEvent {
     BlitzKeyEvent {
-        key: Key::Enter,
+        key: Key::Named(NamedKey::Enter),
         code: Code::Enter,
         modifiers: Modifiers::empty(),
         location: Location::Standard,

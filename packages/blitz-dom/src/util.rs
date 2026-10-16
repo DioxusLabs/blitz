@@ -5,7 +5,7 @@ use std::borrow::Cow;
 use style::color::AbsoluteColor;
 
 #[cfg(target_os = "macos")]
-pub(crate) const ACTION_MOD: Modifiers = Modifiers::SUPER;
+pub(crate) const ACTION_MOD: Modifiers = Modifiers::META;
 #[cfg(not(target_os = "macos"))]
 pub(crate) const ACTION_MOD: Modifiers = Modifiers::CONTROL;
 

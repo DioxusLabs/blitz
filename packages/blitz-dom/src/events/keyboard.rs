@@ -5,7 +5,7 @@ use blitz_traits::{
     SmolStr,
     events::{BlitzInputEvent, BlitzKeyEvent, DomEvent, DomEventData},
 };
-use keyboard_types::{Key, Modifiers};
+use keyboard_types::{Key, Modifiers, NamedKey};
 use markup5ever::local_name;
 
 pub(super) enum KeyboardOrTextInputEvent {
@@ -20,7 +20,7 @@ pub(crate) fn handle_key_or_input_event<F: FnMut(DomEvent)>(
     mut dispatch_event: F,
 ) {
     if let KeyboardOrTextInputEvent::KeyPress(event) = &event {
-        if event.key == Key::Tab {
+        if event.key == Key::Named(NamedKey::Tab) {
             let backwards = event.modifiers.contains(Modifiers::SHIFT);
             let old_focus = doc.focus_node_id;
             generate_focus_events(

@@ -916,7 +916,7 @@ dependencies = [
  "icu_properties",
  "icu_segmenter",
  "image",
- "keyboard-types 0.7.0",
+ "keyboard-types 0.8.3",
  "kurbo",
  "linebender_resource_handle",
  "markup5ever",
@@ -1046,7 +1046,7 @@ dependencies = [
  "blitz-traits",
  "data-url",
  "futures-util",
- "keyboard-types 0.7.0",
+ "keyboard-types 0.8.3",
  "rfd",
  "tracing",
  "wasm-bindgen",
@@ -1064,7 +1064,7 @@ dependencies = [
  "blitz-traits",
  "dioxus-core",
  "dioxus-native-dom",
- "keyboard-types 0.7.0",
+ "keyboard-types 0.8.3",
  "smol_str",
 ]
 
@@ -1084,7 +1084,7 @@ dependencies = [
  "dioxus",
  "dioxus-core",
  "dioxus-native-dom",
- "keyboard-types 0.7.0",
+ "keyboard-types 0.8.3",
  "markup5ever",
  "stylo",
  "taffy",
@@ -1101,7 +1101,7 @@ dependencies = [
  "bytes",
  "cursor-icon",
  "http",
- "keyboard-types 0.7.0",
+ "keyboard-types 0.8.3",
  "serde",
  "smol_str",
  "url",
@@ -1119,7 +1119,7 @@ dependencies = [
  "boa_runtime",
  "data-url",
  "icu_properties",
- "keyboard-types 0.7.0",
+ "keyboard-types 0.8.3",
  "log",
  "markup5ever",
  "stylo",
@@ -2652,7 +2652,7 @@ dependencies = [
  "dioxus-signals",
  "dioxus-stores",
  "futures-util",
- "keyboard-types 0.7.0",
+ "keyboard-types 0.8.3",
  "manganis",
  "peniko",
  "rustc-hash 2.1.3",
@@ -2674,7 +2674,7 @@ dependencies = [
  "dioxus-core",
  "dioxus-html",
  "futures-util",
- "keyboard-types 0.7.0",
+ "keyboard-types 0.8.3",
  "rustc-hash 2.1.3",
  "tracing",
 ]
@@ -4594,7 +4594,6 @@ checksum = "b750dcadc39a09dbadd74e118f6dd6598df77fa01df0cfcdc52c28dece74528a"
 dependencies = [
  "bitflags 2.13.2",
  "serde",
- "unicode-segmentation",
 ]
 
 [[package]]

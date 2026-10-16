@@ -24,7 +24,7 @@ use dioxus_html::{
         InteractionElementOffset, InteractionLocation, ModifiersInteraction, PointerInteraction,
     },
 };
-use keyboard_types::{Code, Key, Location, Modifiers};
+use dioxus_html::{Code, Key, Location, Modifiers};
 use std::{
     any::Any,
     cell::{Ref, RefCell, RefMut},
@@ -35,6 +35,7 @@ use std::{
 };
 
 use crate::NodeId;
+use crate::keyboard_compat::{convert_code, convert_key, convert_location, convert_modifiers};
 
 pub struct NativeConverter {}
 
@@ -340,21 +341,21 @@ pub(crate) struct BlitzKeyboardData(pub(crate) BlitzKeyEvent);
 
 impl ModifiersInteraction for BlitzKeyboardData {
     fn modifiers(&self) -> Modifiers {
-        self.0.modifiers
+        convert_modifiers(self.0.modifiers)
     }
 }
 
 impl HasKeyboardData for BlitzKeyboardData {
     fn key(&self) -> Key {
-        self.0.key.clone()
+        convert_key(&self.0.key)
     }
 
     fn code(&self) -> Code {
-        self.0.code
+        convert_code(self.0.code)
     }
 
     fn location(&self) -> Location {
-        self.0.location
+        convert_location(self.0.location)
     }
 
     fn is_auto_repeating(&self) -> bool {
@@ -395,7 +396,7 @@ impl InteractionElementOffset for NativePointerData {
 
 impl ModifiersInteraction for NativePointerData {
     fn modifiers(&self) -> Modifiers {
-        self.0.mods
+        convert_modifiers(self.0.mods)
     }
 }
 
@@ -481,7 +482,7 @@ pub struct NativeTouchData(pub(crate) BlitzPointerEvent);
 
 impl ModifiersInteraction for NativeTouchData {
     fn modifiers(&self) -> Modifiers {
-        self.0.mods
+        convert_modifiers(self.0.mods)
     }
 }
 
@@ -633,7 +634,7 @@ impl PointerInteraction for NativeWheelData {
 
 impl ModifiersInteraction for NativeWheelData {
     fn modifiers(&self) -> Modifiers {
-        self.0.mods
+        convert_modifiers(self.0.mods)
     }
 }
 
@@ -657,7 +658,7 @@ impl InteractionLocation for NativeWheelData {
     }
 }
 
-pub fn synthetic_click_event(node: &Node, modifiers: Modifiers) -> Box<dyn Any> {
+pub fn synthetic_click_event(node: &Node, modifiers: keyboard_types::Modifiers) -> Box<dyn Any> {
     Box::new(NativePointerData(
         node.synthetic_click_event_data(modifiers),
     ))
