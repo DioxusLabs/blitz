@@ -17,7 +17,6 @@ members = [
     "apps/browser",
     "apps/browser/persistence",
     "apps/readme",
-    "apps/bump",
     "wpt/runner",
     "tests/blitz-tests",
     "examples/counter",
