@@ -2159,6 +2159,207 @@ fn omits_value_of_label_element_without_text() -> TestResult<()> {
     )
 }
 
+#[test]
+fn uses_content_as_label_of_elements_named_from_content() -> TestResult<()> {
+    let mut document = HtmlDocument::from_html(
+        r#"<html>
+          <button>Click <b>me</b></button>
+          <a href="arbitrary">Link text</a>
+          <h1>Heading text</h1>
+          <div role="tab">Tab text</div>
+          <div role="menuitem">Item text</div>
+          <div role="gridcell">Cell text</div>
+          <div role="columnheader">Column text</div>
+        </html>"#,
+        default_document_config(),
+    );
+    document.resolve(0.0);
+
+    let tree_update = document.build_accessibility_tree();
+
+    verify_that!(
+        tree_update.nodes,
+        all!(
+            contains((
+                anything(),
+                matches_pattern!(AccessKitNode {
+                    role(): eq(Role::Button),
+                    label(): some(eq("Click me")),
+                })
+            )),
+            contains((
+                anything(),
+                matches_pattern!(AccessKitNode {
+                    role(): eq(Role::Link),
+                    label(): some(eq("Link text")),
+                })
+            )),
+            contains((
+                anything(),
+                matches_pattern!(AccessKitNode {
+                    role(): eq(Role::Heading),
+                    label(): some(eq("Heading text")),
+                })
+            )),
+            contains((
+                anything(),
+                matches_pattern!(AccessKitNode {
+                    role(): eq(Role::Tab),
+                    label(): some(eq("Tab text")),
+                })
+            )),
+            contains((
+                anything(),
+                matches_pattern!(AccessKitNode {
+                    role(): eq(Role::MenuItem),
+                    label(): some(eq("Item text")),
+                })
+            )),
+            contains((
+                anything(),
+                matches_pattern!(AccessKitNode {
+                    role(): eq(Role::GridCell),
+                    label(): some(eq("Cell text")),
+                })
+            )),
+            contains((
+                anything(),
+                matches_pattern!(AccessKitNode {
+                    role(): eq(Role::ColumnHeader),
+                    label(): some(eq("Column text")),
+                })
+            ))
+        )
+    )
+}
+
+#[test]
+fn includes_img_alt_in_label_from_content() -> TestResult<()> {
+    let mut document = HtmlDocument::from_html(
+        r#"<html><button><img alt="Save"> Draft</button></html>"#,
+        default_document_config(),
+    );
+    document.resolve(0.0);
+
+    let tree_update = document.build_accessibility_tree();
+
+    verify_that!(
+        tree_update.nodes,
+        contains((
+            anything(),
+            matches_pattern!(AccessKitNode {
+                role(): eq(Role::Button),
+                label(): some(eq("Save Draft")),
+            })
+        ))
+    )
+}
+
+#[test]
+fn excludes_hidden_descendants_from_label_from_content() -> TestResult<()> {
+    let mut document = HtmlDocument::from_html(
+        r#"<html>
+          <button>Visible <span style="display: none">secret</span> <span aria-hidden="true">hidden</span>text</button>
+        </html>"#,
+        default_document_config(),
+    );
+    document.resolve(0.0);
+
+    let tree_update = document.build_accessibility_tree();
+
+    verify_that!(
+        tree_update.nodes,
+        contains((
+            anything(),
+            matches_pattern!(AccessKitNode {
+                role(): eq(Role::Button),
+                label(): some(eq("Visible text")),
+            })
+        ))
+    )
+}
+
+#[test]
+fn aria_label_takes_precedence_over_content() -> TestResult<()> {
+    let mut document = HtmlDocument::from_html(
+        r#"<html>
+          <button aria-label="Aria label">Content</button>
+          <a href="arbitrary" aria-label="  ">Blank aria-label</a>
+        </html>"#,
+        default_document_config(),
+    );
+    document.resolve(0.0);
+
+    let tree_update = document.build_accessibility_tree();
+
+    verify_that!(
+        tree_update.nodes,
+        all!(
+            contains((
+                anything(),
+                matches_pattern!(AccessKitNode {
+                    role(): eq(Role::Button),
+                    label(): some(eq("Aria label")),
+                })
+            )),
+            contains((
+                anything(),
+                matches_pattern!(AccessKitNode {
+                    role(): eq(Role::Link),
+                    label(): some(eq("Blank aria-label")),
+                })
+            ))
+        )
+    )
+}
+
+#[test]
+fn does_not_use_content_as_label_of_elements_not_named_from_content() -> TestResult<()> {
+    let mut document = HtmlDocument::from_html(
+        r#"<html>
+          <p>Paragraph text</p>
+          <span>Span text</span>
+          <div>Div text</div>
+          <table><tr><th>Header text</th><td>Cell text</td></tr></table>
+          <button></button>
+        </html>"#,
+        default_document_config(),
+    );
+    document.resolve(0.0);
+
+    let tree_update = document.build_accessibility_tree();
+
+    verify_that!(
+        tree_update
+            .nodes
+            .iter()
+            .filter(|(_, node)| node.role() != Role::TextRun)
+            .map(|(_, node)| node.label())
+            .collect::<Vec<_>>(),
+        each(none())
+    )
+}
+
+#[test]
+fn does_not_populate_labelled_by_from_text_content() -> TestResult<()> {
+    let mut document = HtmlDocument::from_html(
+        r#"<html><p>Paragraph text</p><button>Click</button><h1>Heading</h1></html>"#,
+        default_document_config(),
+    );
+    document.resolve(0.0);
+
+    let tree_update = document.build_accessibility_tree();
+
+    verify_that!(
+        tree_update
+            .nodes
+            .iter()
+            .map(|(_, node)| node.labelled_by().len())
+            .collect::<Vec<_>>(),
+        each(eq(0))
+    )
+}
+
 /// The ID of the node with the role `Role::Label` which has the given value, which is its text.
 fn label_node_id_with_value(tree_update: &TreeUpdate, value: &str) -> NodeId {
     tree_update
