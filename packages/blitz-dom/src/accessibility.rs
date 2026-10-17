@@ -2,6 +2,8 @@ use crate::{
     BaseDocument, ElementData, Node as BlitzDomNode, NodeData, NodeId as BlitzDomNodeId, local_name,
 };
 use accesskit::{Node as AccessKitNode, NodeId, Role, TreeId, TreeInfo, TreeUpdate};
+use markup5ever::LocalName;
+use std::borrow::Cow;
 use style::properties::longhands::visibility;
 
 impl BaseDocument {
@@ -32,7 +34,8 @@ impl BaseDocument {
             if let Some(id_refs) = node.attr(local_name!("aria-labelledby")) {
                 labelled_by_nodes.push((
                     node_id,
-                    self.referenced_dom_ids_to_node_ids(id_refs).collect::<Vec<_>>(),
+                    self.referenced_dom_ids_to_node_ids(id_refs)
+                        .collect::<Vec<_>>(),
                 ));
             } else if let Some(element_data) = node.element_data()
                 && element_data.name.local == local_name!("label")
@@ -48,11 +51,11 @@ impl BaseDocument {
                     .attr(local_name!("aria-label"))
                     .is_none_or(|aria_label| aria_label.trim_ascii().is_empty())
             {
-                match labelled_by_nodes
-                    .iter_mut()
-                    .find(|(labelled, _): &&mut (BlitzDomNodeId, Vec<BlitzDomNodeId>)| {
+                match labelled_by_nodes.iter_mut().find(
+                    |(labelled, _): &&mut (BlitzDomNodeId, Vec<BlitzDomNodeId>)| {
                         *labelled == target
-                    }) {
+                    },
+                ) {
                     Some((_, labels)) => labels.push(node_id),
                     None => labelled_by_nodes.push((target, vec![node_id])),
                 }
@@ -175,8 +178,8 @@ impl BaseDocument {
                 .filter(|aria_label| !aria_label.trim_ascii().is_empty())
             {
                 builder.set_label(aria_label);
-            } else if let Some(host_language_text) = host_language_text(element_data) {
-                builder.set_label(host_language_text);
+            } else if let Some(host_language_label) = node.host_language_label(element_data) {
+                builder.set_label(host_language_label);
             }
             if let Some(aria_description) = element_data.attr(local_name!("aria-description")) {
                 builder.set_description(aria_description);
@@ -234,6 +237,13 @@ impl BlitzDomNode {
     fn write_flat_text_content(&self, out: &mut FlatText) {
         match &self.data {
             NodeData::Text(data) => out.push(&data.content),
+            NodeData::Element(element_data) if element_data.name.local == local_name!("img") => {
+                if let Some(text) = non_blank(element_data.attr(local_name!("aria-label")))
+                    .or_else(|| non_blank(element_data.attr(local_name!("alt"))))
+                {
+                    out.push(text);
+                }
+            }
             NodeData::Element(..) | NodeData::AnonymousBlock(..) => {
                 for &child_id in &self.children {
                     self.with(child_id).write_flat_text_content(out);
@@ -242,6 +252,89 @@ impl BlitzDomNode {
             _ => {}
         }
     }
+
+    /// The text alternative provided by the host language markup of this element itself, such as
+    /// the `alt` text of an `img`.
+    ///
+    /// https://www.w3.org/TR/html-aam-1.0/#img-element-accessible-name-computation
+    fn host_language_label<'a>(&'a self, element_data: &'a ElementData) -> Option<Cow<'a, str>> {
+        match &*element_data.name.local {
+            "img" => match element_data.attr(local_name!("alt")) {
+                // An explicit `alt` attribute, even an empty one, rules out the other sources.
+                Some(alt) => non_blank(Some(alt)).map(Cow::Borrowed),
+                // Per HTML-AAM, the order of sources is `alt`, then `title`, then `figcaption`.
+                // `title` is deliberately not exposed as the label here: AccessKit expects a name
+                // which comes only from a tooltip in `Node::tooltip`, not `Node::label`. Its
+                // presence still has to be checked, because it ranks above `figcaption`: with a
+                // `title`, the `figcaption` is not the name, so it must not become the label.
+                None if element_data.attr(local_name!("title")).is_none() => {
+                    self.figcaption_text().map(Cow::Owned)
+                }
+                None => None,
+            },
+            _ => None,
+        }
+    }
+
+    /// The text of the `figcaption` of the closest `figure` ancestor of this element, provided
+    /// that this element and the `figcaption` are the only non-whitespace content of that `figure`.
+    fn figcaption_text(&self) -> Option<String> {
+        let mut path_to_figure = Vec::new();
+        let mut current = self.parent;
+        let figure = loop {
+            let ancestor = self.with(current?);
+            if ancestor.is_element_named(local_name!("figure")) {
+                break ancestor;
+            }
+            path_to_figure.push(ancestor.id);
+            current = ancestor.parent;
+        };
+        let figcaption = figure
+            .children
+            .iter()
+            .map(|&child_id| self.with(child_id))
+            .find(|child| child.is_element_named(local_name!("figcaption")))?;
+        if figure.has_content_other_than(self.id, figcaption.id, &path_to_figure) {
+            return None;
+        }
+
+        let mut text = FlatText::default();
+        figcaption.write_flat_text_content(&mut text);
+        (!text.text.is_empty()).then_some(text.text)
+    }
+
+    /// Whether the subtree of this node has non-whitespace text or elements besides `exempt` and
+    /// `exempt_caption`. Elements in `ancestors_of_exempt` are searched rather than counted.
+    fn has_content_other_than(
+        &self,
+        exempt: BlitzDomNodeId,
+        exempt_caption: BlitzDomNodeId,
+        ancestors_of_exempt: &[BlitzDomNodeId],
+    ) -> bool {
+        self.children.iter().any(|&child_id| {
+            let child = self.with(child_id);
+            if child_id == exempt || child_id == exempt_caption {
+                false
+            } else if ancestors_of_exempt.contains(&child_id) {
+                child.has_content_other_than(exempt, exempt_caption, ancestors_of_exempt)
+            } else {
+                match &child.data {
+                    NodeData::Text(data) => !data.content.trim_ascii().is_empty(),
+                    NodeData::Element(..) => true,
+                    _ => false,
+                }
+            }
+        })
+    }
+
+    fn is_element_named(&self, name: LocalName) -> bool {
+        self.element_data()
+            .is_some_and(|element_data| element_data.name.local == name)
+    }
+}
+
+fn non_blank(text: Option<&str>) -> Option<&str> {
+    text.filter(|text| !text.trim_ascii().is_empty())
 }
 
 #[derive(Default)]
@@ -450,13 +543,6 @@ fn role_from_element_data(element_data: &ElementData) -> Option<Role> {
                 _ => Some(Role::TextInput),
             }
         }
-        _ => None,
-    }
-}
-
-fn host_language_text(element_data: &ElementData) -> Option<&str> {
-    match &*element_data.name.local {
-        "img" => element_data.attr(local_name!("alt")),
         _ => None,
     }
 }

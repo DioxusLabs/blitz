@@ -822,10 +822,7 @@ fn aria_labelledby_takes_precedence_over_img_alt() -> TestResult<()> {
 
 #[test]
 fn img_without_alt_has_no_label() -> TestResult<()> {
-    let mut document = HtmlDocument::from_html(
-        r#"<html><img></html>"#,
-        default_document_config(),
-    );
+    let mut document = HtmlDocument::from_html(r#"<html><img></html>"#, default_document_config());
     document.resolve(0.0);
 
     let tree_update = document.build_accessibility_tree();
@@ -1024,6 +1021,301 @@ fn falls_back_to_img_alt_when_aria_label_is_blank() -> TestResult<()> {
             matches_pattern!(AccessKitNode {
                 role(): eq(Role::Image),
                 label(): some(eq("Alt text")),
+            })
+        ))
+    )
+}
+
+#[test]
+fn ignores_empty_and_blank_img_alt() -> TestResult<()> {
+    let mut document = HtmlDocument::from_html(
+        r#"<html><img alt=""><img alt="   "></html>"#,
+        default_document_config(),
+    );
+    document.resolve(0.0);
+
+    let tree_update = document.build_accessibility_tree();
+
+    let imgs: Vec<_> = tree_update
+        .nodes
+        .iter()
+        .filter(|(_, node)| node.html_tag() == Some("img"))
+        .collect();
+    verify_that!(imgs, len(eq(2)))?;
+    verify_that!(
+        imgs.iter()
+            .map(|(_, node)| node.label())
+            .collect::<Vec<_>>(),
+        each(none())
+    )
+}
+
+#[test]
+fn uses_figcaption_as_label_of_img_without_alt() -> TestResult<()> {
+    let mut document = HtmlDocument::from_html(
+        r#"<html>
+          <figure>
+            <img>
+            <figcaption>Caption <b>text</b></figcaption>
+          </figure>
+        </html>"#,
+        default_document_config(),
+    );
+    document.resolve(0.0);
+
+    let tree_update = document.build_accessibility_tree();
+
+    verify_that!(
+        tree_update.nodes,
+        contains((
+            anything(),
+            matches_pattern!(AccessKitNode {
+                role(): eq(Role::Image),
+                label(): some(eq("Caption text")),
+            })
+        ))
+    )
+}
+
+#[test]
+fn uses_figcaption_as_label_of_img_nested_in_figure_content() -> TestResult<()> {
+    let mut document = HtmlDocument::from_html(
+        r#"<html>
+          <figure>
+            <div><a href="arbitrary"><img></a></div>
+            <figcaption>Caption</figcaption>
+          </figure>
+        </html>"#,
+        default_document_config(),
+    );
+    document.resolve(0.0);
+
+    let tree_update = document.build_accessibility_tree();
+
+    verify_that!(
+        tree_update.nodes,
+        contains((
+            anything(),
+            matches_pattern!(AccessKitNode {
+                role(): eq(Role::Image),
+                label(): some(eq("Caption")),
+            })
+        ))
+    )
+}
+
+#[test]
+fn img_alt_takes_precedence_over_figcaption() -> TestResult<()> {
+    let mut document = HtmlDocument::from_html(
+        r#"<html>
+          <figure>
+            <img alt="Alt text">
+            <figcaption>Caption</figcaption>
+          </figure>
+        </html>"#,
+        default_document_config(),
+    );
+    document.resolve(0.0);
+
+    let tree_update = document.build_accessibility_tree();
+
+    verify_that!(
+        tree_update.nodes,
+        contains((
+            anything(),
+            matches_pattern!(AccessKitNode {
+                role(): eq(Role::Image),
+                label(): some(eq("Alt text")),
+            })
+        ))
+    )
+}
+
+#[test]
+fn does_not_use_figcaption_for_img_with_empty_alt() -> TestResult<()> {
+    let mut document = HtmlDocument::from_html(
+        r#"<html>
+          <figure>
+            <img alt="">
+            <figcaption>Caption</figcaption>
+          </figure>
+        </html>"#,
+        default_document_config(),
+    );
+    document.resolve(0.0);
+
+    let tree_update = document.build_accessibility_tree();
+
+    verify_that!(
+        tree_update.nodes,
+        contains((
+            anything(),
+            matches_pattern!(AccessKitNode {
+                html_tag(): some(eq("img")),
+                label(): none(),
+            })
+        ))
+    )
+}
+
+#[test]
+fn does_not_use_figcaption_for_img_with_title() -> TestResult<()> {
+    let mut document = HtmlDocument::from_html(
+        r#"<html>
+          <figure>
+            <img title="Title text">
+            <figcaption>Caption</figcaption>
+          </figure>
+        </html>"#,
+        default_document_config(),
+    );
+    document.resolve(0.0);
+
+    let tree_update = document.build_accessibility_tree();
+
+    verify_that!(
+        tree_update.nodes,
+        contains((
+            anything(),
+            matches_pattern!(AccessKitNode {
+                html_tag(): some(eq("img")),
+                label(): none(),
+            })
+        ))
+    )
+}
+
+#[test]
+fn does_not_use_figcaption_for_img_in_figure_with_other_content() -> TestResult<()> {
+    let mut document = HtmlDocument::from_html(
+        r#"<html>
+          <figure>
+            <img>
+            <p>Other content</p>
+            <figcaption>Caption</figcaption>
+          </figure>
+          <figure>
+            <img>
+            <img>
+            <figcaption>Another caption</figcaption>
+          </figure>
+        </html>"#,
+        default_document_config(),
+    );
+    document.resolve(0.0);
+
+    let tree_update = document.build_accessibility_tree();
+
+    let imgs: Vec<_> = tree_update
+        .nodes
+        .iter()
+        .filter(|(_, node)| node.html_tag() == Some("img"))
+        .collect();
+    verify_that!(imgs, len(eq(3)))?;
+    verify_that!(
+        imgs.iter()
+            .map(|(_, node)| node.label())
+            .collect::<Vec<_>>(),
+        each(none())
+    )
+}
+
+#[test]
+fn does_not_use_figcaption_for_img_outside_figure_with_figcaption() -> TestResult<()> {
+    let mut document = HtmlDocument::from_html(
+        r#"<html>
+          <img>
+          <figure><figcaption>Caption</figcaption></figure>
+        </html>"#,
+        default_document_config(),
+    );
+    document.resolve(0.0);
+
+    let tree_update = document.build_accessibility_tree();
+
+    verify_that!(
+        tree_update.nodes,
+        contains((
+            anything(),
+            matches_pattern!(AccessKitNode {
+                role(): eq(Role::Image),
+                label(): none(),
+            })
+        ))
+    )
+}
+
+#[test]
+fn includes_img_alt_in_label_element_text() -> TestResult<()> {
+    let mut document = HtmlDocument::from_html(
+        r#"<html>
+          <button id="arbitrary-button"></button>
+          <label for="arbitrary-button">Save <img alt="the file"> now</label>
+        </html>"#,
+        default_document_config(),
+    );
+    document.resolve(0.0);
+
+    let tree_update = document.build_accessibility_tree();
+
+    verify_that!(
+        tree_update.nodes,
+        contains((
+            anything(),
+            matches_pattern!(AccessKitNode {
+                role(): eq(Role::Button),
+                label(): some(eq("Save the file now")),
+            })
+        ))
+    )
+}
+
+#[test]
+fn includes_img_alt_in_aria_labelledby_target_text() -> TestResult<()> {
+    let mut document = HtmlDocument::from_html(
+        r#"<html>
+          <div role="button" aria-labelledby="nested-img direct-img"></div>
+          <span id="nested-img">Save <img alt="logo"></span>
+          <img id="direct-img" alt="now" aria-label="">
+        </html>"#,
+        default_document_config(),
+    );
+    document.resolve(0.0);
+
+    let tree_update = document.build_accessibility_tree();
+
+    verify_that!(
+        tree_update.nodes,
+        contains((
+            anything(),
+            matches_pattern!(AccessKitNode {
+                role(): eq(Role::Button),
+                label(): some(eq("Save logo now")),
+            })
+        ))
+    )
+}
+
+#[test]
+fn prefers_img_aria_label_over_alt_in_label_element_text() -> TestResult<()> {
+    let mut document = HtmlDocument::from_html(
+        r#"<html>
+          <button id="arbitrary-button"></button>
+          <label for="arbitrary-button"><img alt="Alt text" aria-label="Aria label"></label>
+        </html>"#,
+        default_document_config(),
+    );
+    document.resolve(0.0);
+
+    let tree_update = document.build_accessibility_tree();
+
+    verify_that!(
+        tree_update.nodes,
+        contains((
+            anything(),
+            matches_pattern!(AccessKitNode {
+                role(): eq(Role::Button),
+                label(): some(eq("Aria label")),
             })
         ))
     )
