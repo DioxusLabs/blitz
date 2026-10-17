@@ -638,6 +638,102 @@ fn listeners_can_dispatch_events_synchronously() {
 }
 
 #[test]
+fn queued_events_for_removed_nodes_are_discarded() {
+    let mut doc = document(
+        r#"<html><body><input id="a" type="text"><input id="b" type="text"></body></html>"#,
+    );
+    let a = node_id(&doc, "#a");
+    let b = node_id(&doc, "#b");
+    let focus_b = EventListenerId(1);
+    assert!(doc.add_event_listener(b, DomEventKind::Focus, focus_b, Default::default()));
+
+    // Queue focus events for a, then remove it before the events are dispatched
+    doc.set_focus_to(a);
+    let mut mutr = doc.mutate();
+    mutr.remove_and_drop_node(a);
+    drop(mutr);
+    doc.set_focus_to(b);
+
+    // The events targeting the removed node are skipped (rather than panicking in
+    // their default action); later events are still dispatched
+    let handler = RecordingHandler::default();
+    EventDriver::new(&mut doc, handler.clone()).flush_pending_events();
+    assert_eq!(handler.invoked_listeners(), vec![focus_b]);
+    assert!(!doc.has_pending_events());
+}
+
+#[test]
+fn synchronous_focus_events_for_removed_nodes_are_discarded() {
+    /// A handler which logs `<name>@<target>` for every invocation, and removes
+    /// `remove_on_blur` from the document from within a blur listener
+    struct RemovingHandler {
+        log: Rc<RefCell<Vec<String>>>,
+        remove_on_blur: NodeId,
+    }
+
+    impl EventHandler for RemovingHandler {
+        fn handle_event_listener(
+            &self,
+            _listener: EventListenerId,
+            event: &mut DomEvent,
+            ctx: &mut EventContext<'_>,
+            _event_state: &mut EventState,
+        ) {
+            self.log
+                .borrow_mut()
+                .push(format!("{}@{}", event.name(), event.target));
+            if event.data.kind() == DomEventKind::Blur {
+                let mut doc = ctx.doc_mut().inner_mut();
+                let mut mutr = doc.mutate();
+                mutr.remove_and_drop_node(self.remove_on_blur);
+            }
+        }
+    }
+
+    let mut doc = document(
+        r#"<html><body><input id="a" type="text"><input id="b" type="text"></body></html>"#,
+    );
+    let a = node_id(&doc, "#a");
+    let b = node_id(&doc, "#b");
+    let body = node_id(&doc, "body");
+    assert!(doc.add_event_listener(
+        a,
+        DomEventKind::Blur,
+        EventListenerId(1),
+        Default::default()
+    ));
+    assert!(doc.add_event_listener(
+        body,
+        DomEventKind::FocusOut,
+        EventListenerId(2),
+        Default::default()
+    ));
+    assert!(doc.add_event_listener(
+        body,
+        DomEventKind::FocusIn,
+        EventListenerId(3),
+        Default::default()
+    ));
+
+    doc.set_focus_to(a);
+    let log = Rc::new(RefCell::new(Vec::new()));
+    let handler = RemovingHandler {
+        log: log.clone(),
+        remove_on_blur: b,
+    };
+    let mut driver = EventDriver::new(&mut doc, handler);
+    driver.flush_pending_events();
+    log.borrow_mut().clear();
+
+    // The blur listener on a removes b, so the focus/focusin events for b are skipped
+    driver.set_focus(b);
+    assert_eq!(
+        *log.borrow(),
+        vec![format!("blur@{a}"), format!("focusout@{a}")]
+    );
+}
+
+#[test]
 fn focus_listener_can_move_focus_synchronously() {
     /// A handler which logs `<name>@<target>` for every invocation, and moves the focus
     /// to `refocus_target` from within the focus listener of `initial_target`

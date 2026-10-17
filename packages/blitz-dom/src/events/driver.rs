@@ -535,7 +535,10 @@ impl EventContext<'_> {
             doc.pending_events.split_off(queued_len)
         };
         for event in generated_events {
-            self.dispatch_event(event);
+            // A listener for an earlier event may have removed this event's target
+            if self.doc.inner().get_node(event.target).is_some() {
+                self.dispatch_event(event);
+            }
         }
     }
 }

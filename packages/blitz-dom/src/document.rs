@@ -685,9 +685,15 @@ impl BaseDocument {
         self.pending_events.push_back(event);
     }
 
-    /// Take the next pending event from the queue (see [`queue_event`](Self::queue_event))
+    /// Take the next pending event from the queue (see [`queue_event`](Self::queue_event)).
+    /// Events whose target node has been removed since they were queued are discarded.
     pub fn pop_pending_event(&mut self) -> Option<DomEvent> {
-        self.pending_events.pop_front()
+        loop {
+            let event = self.pending_events.pop_front()?;
+            if self.nodes.contains_key(event.target) {
+                return Some(event);
+            }
+        }
     }
 
     /// Whether there are pending events waiting to be dispatched
