@@ -40,18 +40,14 @@ fn includes_aria_labelledby_as_labelled_by_for_one_node() -> TestResult<()> {
 
     let tree_update = document.build_accessibility_tree();
 
-    let (label_node_id, _) = tree_update
-        .nodes
-        .iter()
-        .find(|(_, node)| node.role() == Role::Label)
-        .expect("Label must be present in accessibility tree");
+    let label_node_id = node_id_with_role(&tree_update, Role::Label);
     verify_that!(
         tree_update.nodes,
         contains((
             anything(),
             matches_pattern!(AccessKitNode {
                 role(): eq(Role::Button),
-                *labelled_by(): container_eq(vec![*label_node_id]),
+                *labelled_by(): container_eq(vec![label_node_id]),
             })
         ))
     )
@@ -71,26 +67,12 @@ fn includes_aria_labelledby_as_labelled_by_for_two_nodes() -> TestResult<()> {
 
     let tree_update = document.build_accessibility_tree();
 
-    // This awkward construction is due to having to fetch the node IDs for the label
-    // elements in the same order they appear in the aria-labelledby attribute. The
-    // order is also important to the assertion.
-    let mut expected_node_ids = Vec::new();
-    expected_node_ids.push(
-        tree_update
-            .nodes
-            .iter()
-            .find(|(_, node)| node.role() == Role::Navigation)
-            .expect("Expected to find label arbitrary-element in the tree")
-            .0,
-    );
-    expected_node_ids.push(
-        tree_update
-            .nodes
-            .iter()
-            .find(|(_, node)| node.role() == Role::Label)
-            .expect("Expected to find label another-element in the tree")
-            .0,
-    );
+    // The order of the IDs is the order of the IDs in the aria-labelledby attribute, which is
+    // important to the assertion.
+    let expected_node_ids = [
+        node_id_with_role(&tree_update, Role::Navigation),
+        node_id_with_role(&tree_update, Role::Label),
+    ];
     verify_that!(
         tree_update.nodes,
         contains((
@@ -165,11 +147,7 @@ fn aria_labelledby_takes_precedence_over_aria_label_and_content() -> TestResult<
 
     let tree_update = document.build_accessibility_tree();
 
-    let (span_node_id, _) = tree_update
-        .nodes
-        .iter()
-        .find(|(_, node)| node.html_tag() == Some("span"))
-        .expect("Span must be present in accessibility tree");
+    let span_node_id = node_id_with_tag(&tree_update, "span");
     verify_that!(
         tree_update.nodes,
         contains((
@@ -177,7 +155,7 @@ fn aria_labelledby_takes_precedence_over_aria_label_and_content() -> TestResult<
             matches_pattern!(AccessKitNode {
                 role(): eq(Role::Button),
                 label(): some(eq("Save")),
-                *labelled_by(): container_eq(vec![*span_node_id]),
+                *labelled_by(): container_eq(vec![span_node_id]),
             })
         ))
     )
@@ -196,16 +174,8 @@ fn includes_self_reference_and_nested_text_in_aria_labelledby() -> TestResult<()
 
     let tree_update = document.build_accessibility_tree();
 
-    let (button_node_id, _) = tree_update
-        .nodes
-        .iter()
-        .find(|(_, node)| node.role() == Role::Button)
-        .expect("Button must be present in accessibility tree");
-    let (span_node_id, _) = tree_update
-        .nodes
-        .iter()
-        .find(|(_, node)| node.html_tag() == Some("span"))
-        .expect("Span must be present in accessibility tree");
+    let button_node_id = node_id_with_role(&tree_update, Role::Button);
+    let span_node_id = node_id_with_tag(&tree_update, "span");
     verify_that!(
         tree_update.nodes,
         contains((
@@ -213,7 +183,7 @@ fn includes_self_reference_and_nested_text_in_aria_labelledby() -> TestResult<()
             matches_pattern!(AccessKitNode {
                 role(): eq(Role::Button),
                 label(): some(eq("Delete filename")),
-                *labelled_by(): container_eq(vec![*button_node_id, *span_node_id]),
+                *labelled_by(): container_eq(vec![button_node_id, span_node_id]),
             })
         ))
     )
@@ -333,18 +303,14 @@ fn populates_labelled_by_from_label_element() -> TestResult<()> {
 
     let tree_update = document.build_accessibility_tree();
 
-    let (label_node_id, _) = tree_update
-        .nodes
-        .iter()
-        .find(|(_, node)| node.role() == Role::Label)
-        .expect("Label must be present in accessibility tree");
+    let label_node_id = node_id_with_role(&tree_update, Role::Label);
     verify_that!(
         tree_update.nodes,
         contains((
             anything(),
             matches_pattern!(AccessKitNode {
                 role(): eq(Role::Button),
-                *labelled_by(): container_eq([*label_node_id]),
+                *labelled_by(): container_eq([label_node_id]),
             })
         ))
     )
@@ -388,18 +354,14 @@ fn populates_labelled_by_when_label_element_precedes_target() -> TestResult<()> 
 
     let tree_update = document.build_accessibility_tree();
 
-    let (label_node_id, _) = tree_update
-        .nodes
-        .iter()
-        .find(|(_, node)| node.role() == Role::Label)
-        .expect("Label must be present in accessibility tree");
+    let label_node_id = node_id_with_role(&tree_update, Role::Label);
     verify_that!(
         tree_update.nodes,
         contains((
             anything(),
             matches_pattern!(AccessKitNode {
                 role(): eq(Role::Button),
-                *labelled_by(): container_eq([*label_node_id]),
+                *labelled_by(): container_eq([label_node_id]),
                 label(): some(eq("Button label")),
             })
         ))
@@ -509,11 +471,7 @@ fn label_element_takes_precedence_over_content_of_target() -> TestResult<()> {
 
     let tree_update = document.build_accessibility_tree();
 
-    let (label_node_id, _) = tree_update
-        .nodes
-        .iter()
-        .find(|(_, node)| node.role() == Role::Label)
-        .expect("Label must be present in accessibility tree");
+    let label_node_id = node_id_with_role(&tree_update, Role::Label);
     verify_that!(
         tree_update.nodes,
         contains((
@@ -521,7 +479,7 @@ fn label_element_takes_precedence_over_content_of_target() -> TestResult<()> {
             matches_pattern!(AccessKitNode {
                 role(): eq(Role::Button),
                 label(): some(eq("Label")),
-                *labelled_by(): container_eq([*label_node_id]),
+                *labelled_by(): container_eq([label_node_id]),
             })
         ))
     )
@@ -541,11 +499,7 @@ fn aria_labelledby_takes_precedence_over_label_element() -> TestResult<()> {
 
     let tree_update = document.build_accessibility_tree();
 
-    let (span_node_id, _) = tree_update
-        .nodes
-        .iter()
-        .find(|(_, node)| node.html_tag() == Some("span"))
-        .expect("Span must be present in accessibility tree");
+    let span_node_id = node_id_with_tag(&tree_update, "span");
     verify_that!(
         tree_update.nodes,
         contains((
@@ -553,7 +507,7 @@ fn aria_labelledby_takes_precedence_over_label_element() -> TestResult<()> {
             matches_pattern!(AccessKitNode {
                 role(): eq(Role::Button),
                 label(): some(eq("Referenced")),
-                *labelled_by(): container_eq([*span_node_id]),
+                *labelled_by(): container_eq([span_node_id]),
             })
         ))
     )
@@ -743,11 +697,7 @@ fn blank_aria_label_does_not_take_precedence_over_label_element() -> TestResult<
 
     let tree_update = document.build_accessibility_tree();
 
-    let (label_node_id, _) = tree_update
-        .nodes
-        .iter()
-        .find(|(_, node)| node.role() == Role::Label)
-        .expect("Label must be present in accessibility tree");
+    let label_node_id = node_id_with_role(&tree_update, Role::Label);
     verify_that!(
         tree_update.nodes,
         contains((
@@ -755,7 +705,7 @@ fn blank_aria_label_does_not_take_precedence_over_label_element() -> TestResult<
             matches_pattern!(AccessKitNode {
                 role(): eq(Role::Button),
                 label(): some(eq("Label element")),
-                *labelled_by(): container_eq([*label_node_id]),
+                *labelled_by(): container_eq([label_node_id]),
             })
         ))
     )
@@ -796,11 +746,7 @@ fn aria_labelledby_takes_precedence_over_img_alt() -> TestResult<()> {
 
     let tree_update = document.build_accessibility_tree();
 
-    let (span_node_id, _) = tree_update
-        .nodes
-        .iter()
-        .find(|(_, node)| node.html_tag() == Some("span"))
-        .expect("Span must be present in accessibility tree");
+    let span_node_id = node_id_with_tag(&tree_update, "span");
     verify_that!(
         tree_update.nodes,
         contains((
@@ -808,7 +754,7 @@ fn aria_labelledby_takes_precedence_over_img_alt() -> TestResult<()> {
             matches_pattern!(AccessKitNode {
                 role(): eq(Role::Image),
                 label(): some(eq("Referenced")),
-                *labelled_by(): container_eq([*span_node_id]),
+                *labelled_by(): container_eq([span_node_id]),
             })
         ))
     )
@@ -895,11 +841,7 @@ fn ignores_invalid_idrefs_among_valid_aria_labelledby_idrefs() -> TestResult<()>
 
     let tree_update = document.build_accessibility_tree();
 
-    let (span_node_id, _) = tree_update
-        .nodes
-        .iter()
-        .find(|(_, node)| node.html_tag() == Some("span"))
-        .expect("Span must be present in accessibility tree");
+    let span_node_id = node_id_with_tag(&tree_update, "span");
     verify_that!(
         tree_update.nodes,
         contains((
@@ -907,7 +849,7 @@ fn ignores_invalid_idrefs_among_valid_aria_labelledby_idrefs() -> TestResult<()>
             matches_pattern!(AccessKitNode {
                 role(): eq(Role::Button),
                 label(): some(eq("First")),
-                *labelled_by(): container_eq([*span_node_id]),
+                *labelled_by(): container_eq([span_node_id]),
             })
         ))
     )
@@ -1429,11 +1371,7 @@ fn populates_label_from_label_element_wrapping_the_target() -> TestResult<()> {
 
     let tree_update = document.build_accessibility_tree();
 
-    let (label_node_id, _) = tree_update
-        .nodes
-        .iter()
-        .find(|(_, node)| node.role() == Role::Label)
-        .expect("Label must be present in accessibility tree");
+    let label_node_id = node_id_with_role(&tree_update, Role::Label);
     verify_that!(
         tree_update.nodes,
         contains((
@@ -1441,7 +1379,7 @@ fn populates_label_from_label_element_wrapping_the_target() -> TestResult<()> {
             matches_pattern!(AccessKitNode {
                 role(): eq(Role::TextInput),
                 label(): some(eq("Name")),
-                *labelled_by(): container_eq([*label_node_id]),
+                *labelled_by(): container_eq([label_node_id]),
             })
         ))
     )
@@ -2360,16 +2298,52 @@ fn does_not_populate_labelled_by_from_text_content() -> TestResult<()> {
     )
 }
 
-/// The ID of the node with the role `Role::Label` which has the given value, which is its text.
+/// The ID of the only node in the tree with the role.
+fn node_id_with_role(tree_update: &TreeUpdate, role: Role) -> NodeId {
+    node_id_where(tree_update, &format!("Node with role {role:?}"), |node| {
+        node.role() == role
+    })
+}
+
+/// The ID of the only node in the tree with the HTML tag.
+fn node_id_with_tag(tree_update: &TreeUpdate, html_tag: &str) -> NodeId {
+    node_id_where(
+        tree_update,
+        &format!("Node with tag {html_tag:?}"),
+        |node| node.html_tag() == Some(html_tag),
+    )
+}
+
+/// The ID of the only node in the tree with the role `Role::Label` which has the given value,
+/// which is its text.
 fn label_node_id_with_value(tree_update: &TreeUpdate, value: &str) -> NodeId {
-    tree_update
+    node_id_where(
+        tree_update,
+        &format!("Label with value {value:?}"),
+        |node| node.role() == Role::Label && node.value() == Some(value),
+    )
+}
+
+/// The ID of the only node in the tree which satisfies the predicate. Panics, naming
+/// `description`, if there is no such node or more than one.
+fn node_id_where(
+    tree_update: &TreeUpdate,
+    description: &str,
+    predicate: impl Fn(&AccessKitNode) -> bool,
+) -> NodeId {
+    let mut ids = tree_update
         .nodes
         .iter()
-        .find(|(_, node)| node.role() == Role::Label && node.value() == Some(value))
-        .unwrap_or_else(|| {
-            panic!("Label with value {value:?} must be present in accessibility tree")
-        })
-        .0
+        .filter(|(_, node)| predicate(node))
+        .map(|(id, _)| *id);
+    let id = ids
+        .next()
+        .unwrap_or_else(|| panic!("{description} must be present in accessibility tree"));
+    assert!(
+        ids.next().is_none(),
+        "{description} must be unique in accessibility tree"
+    );
+    id
 }
 
 /// The labels of the nodes with the given HTML tag in the tree, in no particular order.
