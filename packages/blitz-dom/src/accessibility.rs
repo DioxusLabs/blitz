@@ -45,6 +45,9 @@ impl BaseDocument {
                     .nodes_to_id
                     .get(for_id)
                     .and_then(|targets| targets.first())
+                // Only labelable elements can be labelled by a <label for>. If the first element
+                // with the id is not labelable, no later element with the same id is used.
+                && self.nodes[target].is_labelable()
                 // aria-labelledby on the target takes precedence over <label for>.
                 && self.nodes[target].attr(local_name!("aria-labelledby")).is_none()
                 // So does aria-label.
@@ -331,6 +334,22 @@ impl BlitzDomNode {
     fn is_element_named(&self, name: LocalName) -> bool {
         self.element_data()
             .is_some_and(|element_data| element_data.name.local == name)
+    }
+
+    /// Whether a `<label>` can be associated with this element.
+    ///
+    /// Form-associated custom elements are also labelable per the HTML specification, but cannot
+    /// be recognized here. `input type="hidden"` is not labelable either, but it is never exposed
+    /// in the accessibility tree, so it needs no handling.
+    ///
+    /// https://html.spec.whatwg.org/multipage/forms.html#category-label
+    fn is_labelable(&self) -> bool {
+        self.element_data().is_some_and(|element_data| {
+            matches!(
+                &*element_data.name.local,
+                "button" | "input" | "meter" | "output" | "progress" | "select" | "textarea"
+            )
+        })
     }
 }
 
