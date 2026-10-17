@@ -973,6 +973,62 @@ fn uses_text_of_aria_hidden_aria_labelledby_target_as_label() -> TestResult<()> 
     )
 }
 
+#[test]
+fn ignores_blank_aria_label() -> TestResult<()> {
+    let mut document = HtmlDocument::from_html(
+        r#"<html>
+          <div role="button" aria-label=""></div>
+          <div role="checkbox" aria-label="   "></div>
+        </html>"#,
+        default_document_config(),
+    );
+    document.resolve(0.0);
+
+    let tree_update = document.build_accessibility_tree();
+
+    verify_that!(
+        tree_update.nodes,
+        all!(
+            contains((
+                anything(),
+                matches_pattern!(AccessKitNode {
+                    role(): eq(Role::Button),
+                    label(): none(),
+                })
+            )),
+            contains((
+                anything(),
+                matches_pattern!(AccessKitNode {
+                    role(): eq(Role::CheckBox),
+                    label(): none(),
+                })
+            ))
+        )
+    )
+}
+
+#[test]
+fn falls_back_to_img_alt_when_aria_label_is_blank() -> TestResult<()> {
+    let mut document = HtmlDocument::from_html(
+        r#"<html><img alt="Alt text" aria-label="  "></html>"#,
+        default_document_config(),
+    );
+    document.resolve(0.0);
+
+    let tree_update = document.build_accessibility_tree();
+
+    verify_that!(
+        tree_update.nodes,
+        contains((
+            anything(),
+            matches_pattern!(AccessKitNode {
+                role(): eq(Role::Image),
+                label(): some(eq("Alt text")),
+            })
+        ))
+    )
+}
+
 fn default_document_config() -> DocumentConfig {
     DocumentConfig {
         viewport: Some(Viewport::new(800, 600, 1.0, ColorScheme::Light)),

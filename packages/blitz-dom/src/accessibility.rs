@@ -170,7 +170,10 @@ impl BaseDocument {
                 builder.set_selected(aria_selected);
             }
 
-            if let Some(aria_label) = element_data.attr(local_name!("aria-label")) {
+            if let Some(aria_label) = element_data
+                .attr(local_name!("aria-label"))
+                .filter(|aria_label| !aria_label.trim_ascii().is_empty())
+            {
                 builder.set_label(aria_label);
             } else if let Some(host_language_text) = host_language_text(element_data) {
                 builder.set_label(host_language_text);
