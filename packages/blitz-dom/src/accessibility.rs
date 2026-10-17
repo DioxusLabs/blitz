@@ -14,6 +14,16 @@ struct LabelSources {
     from_label_elements: bool,
 }
 
+/// How the text alternative of a subtree is written.
+#[derive(Clone, Copy, Default)]
+struct TextContext {
+    /// A node whose content is left out.
+    skip: Option<BlitzDomNodeId>,
+    /// Whether hidden nodes are included. This is the case when the root of the computation is
+    /// itself hidden.
+    include_hidden: bool,
+}
+
 impl BaseDocument {
     pub fn build_accessibility_tree(&self) -> TreeUpdate {
         let mut nodes = std::collections::HashMap::new();
@@ -173,14 +183,9 @@ impl BaseDocument {
             builder.set_role(Role::Window)
         } else if let Some(element_data) = node.element_data() {
             let name = element_data.name.local.to_string();
-            let role_attr = element_data.attr(local_name!("role"));
-
             // TODO: The roles of elements with strong native semantics cannot be overridden; see
             // https://www.w3.org/TR/wai-aria-1.2/#host_general_conflict.
-            let role = role_attr
-                .and_then(role_from_name)
-                .or_else(|| role_from_element_data(element_data))
-                .unwrap_or(Role::Unknown);
+            let role = element_role(element_data);
 
             builder.set_role(role);
 
@@ -256,37 +261,162 @@ impl BlitzDomNode {
             .unwrap_or(false)
     }
 
-    /// Writes the text alternative of this node, leaving out the content of the node `skip`.
-    fn write_text_alternative(&self, out: &mut FlatText, skip: Option<BlitzDomNodeId>) {
-        match self
-            .attr(local_name!("aria-label"))
-            .filter(|aria_label| !aria_label.trim_ascii().is_empty())
-        {
-            Some(aria_label) => out.push(aria_label),
-            None => self.write_flat_text_content(out, skip),
+    // https://www.w3.org/TR/accname-1.2/#comp_hidden_not_referenced
+    fn is_hidden_for_naming(&self) -> bool {
+        self.is_hidden_from_accessibility_tree()
+            || self.attr(local_name!("aria-hidden")) == Some("true")
+    }
+
+    fn is_in_hidden_subtree(&self) -> bool {
+        let mut node = self;
+        loop {
+            if node.is_hidden_for_naming() {
+                return true;
+            }
+            match node.parent {
+                Some(parent_id) => node = self.with(parent_id),
+                None => return false,
+            }
         }
     }
 
-    fn write_flat_text_content(&self, out: &mut FlatText, skip: Option<BlitzDomNodeId>) {
-        if skip == Some(self.id) {
+    /// Writes the text alternative of this node, leaving out the content of the node `skip`.
+    ///
+    /// If this node is itself hidden, as is possible when it is referenced by `aria-labelledby`,
+    /// its whole subtree is included, hidden parts and all.
+    fn write_text_alternative(&self, out: &mut FlatText, skip: Option<BlitzDomNodeId>) {
+        let context = TextContext {
+            skip,
+            include_hidden: self.is_in_hidden_subtree(),
+        };
+        self.write_flat_text_content(out, context);
+    }
+
+    /// Writes the text alternative of this node, following the steps of
+    /// https://www.w3.org/TR/accname-1.2/#computation-steps which apply to a node reached by
+    /// `aria-labelledby` or by name from content.
+    fn write_flat_text_content(&self, out: &mut FlatText, context: TextContext) {
+        if context.skip == Some(self.id) {
             return;
         }
-        match &self.data {
-            NodeData::Text(data) => out.push(&data.content),
-            NodeData::Element(element_data) if element_data.name.local == local_name!("img") => {
-                if let Some(text) = non_blank(element_data.attr(local_name!("aria-label")))
-                    .or_else(|| non_blank(element_data.attr(local_name!("alt"))))
-                {
-                    out.push(text);
-                }
+        let element_data = match &self.data {
+            NodeData::Text(data) => {
+                out.push(&data.content);
+                return;
             }
-            NodeData::Element(..) | NodeData::AnonymousBlock(..) => {
-                for &child_id in &self.children {
-                    self.with(child_id).write_flat_text_content(out, skip);
-                }
+            NodeData::Element(element_data) | NodeData::AnonymousBlock(element_data) => {
+                element_data
             }
-            _ => {}
+            _ => return,
+        };
+        if !context.include_hidden && self.is_hidden_for_naming() {
+            return;
         }
+        if self.write_embedded_control_text(element_data, out) {
+            return;
+        }
+        if let Some(aria_label) = non_blank(element_data.attr(local_name!("aria-label"))) {
+            out.push(aria_label);
+            return;
+        }
+        if element_data.name.local == local_name!("img") {
+            if let Some(alt) = non_blank(element_data.attr(local_name!("alt"))) {
+                out.push(alt);
+            }
+            return;
+        }
+
+        // Generated content is part of the content of the element: `::before` comes before the
+        // children and `::after` after them, without a space.
+        if let Some(before_id) = self.before() {
+            self.with(before_id).write_flat_text_content(out, context);
+        }
+        for &child_id in &self.children {
+            self.with(child_id).write_flat_text_content(out, context);
+        }
+        if let Some(after_id) = self.after() {
+            self.with(after_id).write_flat_text_content(out, context);
+        }
+    }
+
+    /// Writes the value of this element, if it is a control the user can adjust, in place of
+    /// its content. Returns whether it did.
+    ///
+    /// Password inputs are deliberately not included, so as not to expose their value.
+    ///
+    /// https://www.w3.org/TR/accname-1.2/#comp_embedded_control
+    fn write_embedded_control_text(&self, element_data: &ElementData, out: &mut FlatText) -> bool {
+        let role = element_role(element_data);
+        match role {
+            Role::TextInput
+            | Role::MultilineTextInput
+            | Role::EmailInput
+            | Role::SearchInput
+            | Role::PhoneNumberInput => {
+                // Only native controls have a value distinct from their content.
+                let Some(text_input) = element_data.text_input_data() else {
+                    return false;
+                };
+                out.push(&text_input.editor.text().to_string());
+                true
+            }
+            Role::Slider | Role::SpinButton | Role::NumberInput => {
+                let value = element_data
+                    .attr(local_name!("aria-valuetext"))
+                    .or_else(|| element_data.attr(local_name!("aria-valuenow")))
+                    .or_else(|| element_data.attr(local_name!("value")));
+                if let Some(value) = value {
+                    out.push(value);
+                }
+                true
+            }
+            Role::ComboBox | Role::ListBox => {
+                let options = self.option_descendants();
+                let mut chosen: Vec<_> = options
+                    .iter()
+                    .filter(|option| {
+                        option.attr(local_name!("selected")).is_some()
+                            || option.attr(local_name!("aria-selected")) == Some("true")
+                    })
+                    .collect();
+                // A drop-down `select` always has a chosen option, which is the first one unless
+                // another is marked as selected.
+                let is_single_select = element_data.name.local == local_name!("select")
+                    && element_data.attr(local_name!("multiple")).is_none();
+                if chosen.is_empty() && is_single_select {
+                    chosen.extend(options.first());
+                }
+                for option in chosen {
+                    // The options of a collapsed `select` are not rendered, but the chosen one is
+                    // still the value of the control.
+                    let context = TextContext {
+                        skip: None,
+                        include_hidden: true,
+                    };
+                    option.write_flat_text_content(out, context);
+                }
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// The `option` elements in the subtree of this node, in tree order.
+    fn option_descendants(&self) -> Vec<&BlitzDomNode> {
+        let mut options = Vec::new();
+        let mut pending: Vec<_> = self.children.iter().rev().copied().collect();
+        while let Some(node_id) = pending.pop() {
+            let node = self.with(node_id);
+            if node
+                .element_data()
+                .is_some_and(|element_data| element_role(element_data) == Role::ListBoxOption)
+            {
+                options.push(node);
+            } else {
+                pending.extend(node.children.iter().rev().copied());
+            }
+        }
+        options
     }
 
     /// The text alternative provided by the host language markup of this element itself, such as
@@ -335,7 +465,7 @@ impl BlitzDomNode {
         }
 
         let mut text = FlatText::default();
-        figcaption.write_flat_text_content(&mut text, None);
+        figcaption.write_flat_text_content(&mut text, TextContext::default());
         (!text.text.is_empty()).then_some(text.text)
     }
 
@@ -399,6 +529,15 @@ impl BlitzDomNode {
 
 fn non_blank(text: Option<&str>) -> Option<&str> {
     text.filter(|text| !text.trim_ascii().is_empty())
+}
+
+/// The role of an element: its `role` attribute if it has a valid one, or else its native role.
+fn element_role(element_data: &ElementData) -> Role {
+    element_data
+        .attr(local_name!("role"))
+        .and_then(role_from_name)
+        .or_else(|| role_from_element_data(element_data))
+        .unwrap_or(Role::Unknown)
 }
 
 #[derive(Default)]
