@@ -944,18 +944,22 @@ pub(crate) fn find_inline_layout_embedded_boxes(
         );
     });
 
+    /// Only inline (and display:contents) children contribute their pseudo-elements
+    /// to this inline formatting context. The pseudo-elements of an atomic inline
+    /// (e.g. an inline-block) are part of that box's own contents, and are synced
+    /// when that box itself is constructed.
     fn flush_inline_pseudos_recursive(doc: &mut BaseDocument, node_id: NodeId) {
         doc.iter_children_mut(node_id, |child_id, doc| {
-            flush_pseudo_elements(doc, child_id);
-            let display = doc.nodes[node_id]
+            let display = doc.nodes[child_id]
                 .display_style()
                 .unwrap_or(Display::inline());
-            let do_recurse = match (display.outside(), display.inside()) {
+            let is_inline_content = match (display.outside(), display.inside()) {
                 (DisplayOutside::None, DisplayInside::Contents) => true,
                 (DisplayOutside::Inline, DisplayInside::Flow) => true,
                 (_, _) => false,
             };
-            if do_recurse {
+            if is_inline_content {
+                flush_pseudo_elements(doc, child_id);
                 flush_inline_pseudos_recursive(doc, child_id);
             }
         });
@@ -1310,5 +1314,109 @@ pub(crate) fn build_inline_layout_into(
             }
             NodeData::Document(_) => unreachable!(),
         }
+    }
+}
+
+#[cfg(test)]
+mod inline_pseudo_tests {
+    use crate::{Attribute, BaseDocument, DocumentConfig, qual_name};
+    use blitz_traits::shell::{ColorScheme, Viewport};
+
+    fn attr(name: &str, value: &str) -> Attribute {
+        Attribute {
+            name: crate::QualName::new(None, markup5ever::ns!(), name.into()),
+            value: value.to_string(),
+        }
+    }
+
+    fn line_count(doc: &BaseDocument, node_id: crate::NodeId) -> usize {
+        doc.nodes[node_id]
+            .element_data()
+            .and_then(|el| el.inline_layout_data.as_ref())
+            .map(|layout| layout.layout.lines().count())
+            .unwrap_or(0)
+    }
+
+    /// Pseudo-elements of inline elements nested inside other inline elements are
+    /// part of the surrounding inline formatting context too.
+    #[test]
+    fn nested_inline_pseudo_elements_are_generated() {
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
+            ..Default::default()
+        });
+        doc.add_user_agent_stylesheet(crate::UserAgentStylesheet::parse(
+            ".row { display: block } span, b { display: inline } \
+             .tag::before { content: \"A\" }",
+        ));
+        let root_id = doc.root_node().id;
+        let mut mutator = doc.mutate();
+        let html = mutator.create_element(qual_name!("html"), vec![]);
+        let body = mutator.create_element(qual_name!("body"), vec![]);
+        let row = mutator.create_element(qual_name!("div"), vec![attr("class", "row")]);
+        let span = mutator.create_element(qual_name!("span"), vec![]);
+        let tag = mutator.create_element(qual_name!("b"), vec![attr("class", "tag")]);
+        let text = mutator.create_text_node("text");
+        mutator.append_children(span, &[tag]);
+        mutator.append_children(row, &[span, text]);
+        mutator.append_children(body, &[row]);
+        mutator.append_children(html, &[body]);
+        mutator.append_children(root_id, &[html]);
+        drop(mutator);
+        doc.resolve(0.0);
+
+        assert!(doc.nodes[tag].before().is_some());
+        let text = doc.nodes[row]
+            .element_data()
+            .and_then(|el| el.inline_layout_data.as_ref())
+            .map(|layout| layout.text.clone())
+            .unwrap_or_default();
+        assert!(text.contains('A'), "inline text was {text:?}");
+    }
+
+    /// The `::before` of an inline-block belongs to the inline-block's own
+    /// formatting context. Rebuilding the surrounding inline formatting
+    /// context (here: because a sibling was appended) must not leave that
+    /// pseudo-element's text rebuilt but never laid out.
+    #[test]
+    fn rebuilding_an_inline_context_keeps_inline_block_pseudo_text() {
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
+            ..Default::default()
+        });
+        doc.add_user_agent_stylesheet(crate::UserAgentStylesheet::parse(
+            ".row { display: block } \
+             .icon { display: inline-block; width: 77px; height: 26px } \
+             .icon::before { content: \"NEW\" }",
+        ));
+        let root_id = doc.root_node().id;
+        let mut mutator = doc.mutate();
+        let html = mutator.create_element(qual_name!("html"), vec![]);
+        let body = mutator.create_element(qual_name!("body"), vec![]);
+        let row = mutator.create_element(qual_name!("div"), vec![attr("class", "row")]);
+        let icon = mutator.create_element(qual_name!("div"), vec![attr("class", "icon")]);
+        mutator.append_children(row, &[icon]);
+        mutator.append_children(body, &[row]);
+        mutator.append_children(html, &[body]);
+        mutator.append_children(root_id, &[html]);
+        drop(mutator);
+        doc.resolve(0.0);
+
+        let before = doc.nodes[icon]
+            .before()
+            .expect("::before node should exist");
+        assert_eq!(line_count(&doc, before), 1);
+
+        let mut mutator = doc.mutate();
+        let text = mutator.create_text_node("x");
+        mutator.append_children(row, &[text]);
+        drop(mutator);
+        doc.resolve(0.0);
+
+        assert_eq!(
+            line_count(&doc, before),
+            1,
+            "the ::before text must still be laid out after the row is rebuilt"
+        );
     }
 }
