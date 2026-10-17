@@ -7,12 +7,20 @@ use std::borrow::Cow;
 use style::properties::longhands::visibility;
 use stylo_taffy::CopyStyleGetters;
 
+/// An element together with the nodes which provide its label.
+struct LabelSources {
+    labelled: BlitzDomNodeId,
+    labels: Vec<BlitzDomNodeId>,
+    /// Whether `labels` are `<label>` elements, as opposed to targets of `aria-labelledby`.
+    from_label_elements: bool,
+}
+
 impl BaseDocument {
     pub fn build_accessibility_tree(&self) -> TreeUpdate {
         let mut nodes = std::collections::HashMap::new();
         let mut window = AccessKitNode::new(Role::Window);
         let mut hidden_nodes = std::collections::HashSet::new();
-        let mut labelled_by_nodes = Vec::new();
+        let mut labelled_by_nodes: Vec<LabelSources> = Vec::new();
         let mut described_by_nodes = Vec::new();
 
         self.visit(|node_id, node| {
@@ -33,35 +41,30 @@ impl BaseDocument {
             let (id, builder) = self.build_accessibility_node(node, parent);
 
             if let Some(id_refs) = node.attr(local_name!("aria-labelledby")) {
-                labelled_by_nodes.push((
-                    node_id,
-                    self.referenced_dom_ids_to_node_ids(id_refs)
-                        .collect::<Vec<_>>(),
-                ));
-            } else if let Some(element_data) = node.element_data()
-                && element_data.name.local == local_name!("label")
-                && let Some(for_id) = element_data.attr(local_name!("for"))
-                && let Some(&target) = self
-                    .nodes_to_id
-                    .get(for_id)
-                    .and_then(|targets| targets.first())
-                // Only labelable elements can be labelled by a <label for>. If the first element
-                // with the id is not labelable, no later element with the same id is used.
-                && self.nodes[target].is_labelable()
-                // aria-labelledby on the target takes precedence over <label for>.
+                labelled_by_nodes.push(LabelSources {
+                    labelled: node_id,
+                    labels: self.referenced_dom_ids_to_node_ids(id_refs).collect(),
+                    from_label_elements: false,
+                });
+            } else if node.is_element_named(local_name!("label"))
+                && let Some(target) = self.label_control(node)
+                // aria-labelledby on the target takes precedence over <label>.
                 && self.nodes[target].attr(local_name!("aria-labelledby")).is_none()
                 // So does aria-label.
                 && self.nodes[target]
                     .attr(local_name!("aria-label"))
                     .is_none_or(|aria_label| aria_label.trim_ascii().is_empty())
             {
-                match labelled_by_nodes.iter_mut().find(
-                    |(labelled, _): &&mut (BlitzDomNodeId, Vec<BlitzDomNodeId>)| {
-                        *labelled == target
-                    },
-                ) {
-                    Some((_, labels)) => labels.push(node_id),
-                    None => labelled_by_nodes.push((target, vec![node_id])),
+                match labelled_by_nodes
+                    .iter_mut()
+                    .find(|sources| sources.labelled == target)
+                {
+                    Some(sources) => sources.labels.push(node_id),
+                    None => labelled_by_nodes.push(LabelSources {
+                        labelled: target,
+                        labels: vec![node_id],
+                        from_label_elements: true,
+                    }),
                 }
             }
             if node.attr(local_name!("aria-describedby")).is_some() {
@@ -71,13 +74,18 @@ impl BaseDocument {
         });
 
         let mut label = FlatText::default();
-        for (node_id, label_node_ids) in labelled_by_nodes {
+        for LabelSources {
+            labelled: node_id,
+            labels,
+            from_label_elements,
+        } in labelled_by_nodes
+        {
             let Some((id, mut builder)) = nodes.remove(&node_id) else {
                 continue;
             };
             let mut has_target = false;
             label.clear();
-            for target in label_node_ids {
+            for target in labels {
                 if !has_target {
                     builder.clear_labelled_by();
                     has_target = true;
@@ -85,7 +93,11 @@ impl BaseDocument {
                 if target == node_id || nodes.contains_key(&target) {
                     builder.push_labelled_by(NodeId(target.as_u64()));
                 }
-                self.nodes[target].write_text_alternative(&mut label);
+                self.nodes[target].write_text_alternative(
+                    &mut label,
+                    // A <label> does not contribute the content of the element it labels.
+                    from_label_elements.then_some(node_id),
+                );
                 label.break_word();
             }
             if !label.text.is_empty() {
@@ -121,6 +133,23 @@ impl BaseDocument {
             nodes,
             tree: Some(tree),
             focus: NodeId(self.focus_node_id.map(|id| id.as_u64()).unwrap_or(u64::MAX)),
+        }
+    }
+
+    /// The element labelled by the given `<label>` element, if any.
+    ///
+    /// https://html.spec.whatwg.org/multipage/forms.html#dom-label-control
+    fn label_control(&self, label: &BlitzDomNode) -> Option<BlitzDomNodeId> {
+        match label.attr(local_name!("for")) {
+            // The spec restricts which elements can be labelled. If the first element with the id
+            // is not labelable, no later element with the same id is used and the descendants of
+            // the label are not considered either.
+            Some(for_id) => self
+                .nodes_to_id
+                .get(for_id)
+                .and_then(|targets| targets.first().copied())
+                .filter(|&target| self.nodes[target].is_labelable()),
+            None => label.first_labelable_descendant(),
         }
     }
 
@@ -228,17 +257,21 @@ impl BlitzDomNode {
             .unwrap_or(false)
     }
 
-    fn write_text_alternative(&self, out: &mut FlatText) {
+    /// Writes the text alternative of this node, leaving out the content of the node `skip`.
+    fn write_text_alternative(&self, out: &mut FlatText, skip: Option<BlitzDomNodeId>) {
         match self
             .attr(local_name!("aria-label"))
             .filter(|aria_label| !aria_label.trim_ascii().is_empty())
         {
             Some(aria_label) => out.push(aria_label),
-            None => self.write_flat_text_content(out),
+            None => self.write_flat_text_content(out, skip),
         }
     }
 
-    fn write_flat_text_content(&self, out: &mut FlatText) {
+    fn write_flat_text_content(&self, out: &mut FlatText, skip: Option<BlitzDomNodeId>) {
+        if skip == Some(self.id) {
+            return;
+        }
         match &self.data {
             NodeData::Text(data) => out.push(&data.content),
             NodeData::Element(element_data) if element_data.name.local == local_name!("img") => {
@@ -250,7 +283,7 @@ impl BlitzDomNode {
             }
             NodeData::Element(..) | NodeData::AnonymousBlock(..) => {
                 for &child_id in &self.children {
-                    self.with(child_id).write_flat_text_content(out);
+                    self.with(child_id).write_flat_text_content(out, skip);
                 }
             }
             _ => {}
@@ -303,7 +336,7 @@ impl BlitzDomNode {
         }
 
         let mut text = FlatText::default();
-        figcaption.write_flat_text_content(&mut text);
+        figcaption.write_flat_text_content(&mut text, None);
         (!text.text.is_empty()).then_some(text.text)
     }
 
@@ -349,6 +382,18 @@ impl BlitzDomNode {
                 &*element_data.name.local,
                 "button" | "input" | "meter" | "output" | "progress" | "select" | "textarea"
             )
+        })
+    }
+
+    /// The first labelable element in the subtree of this node, in tree order.
+    fn first_labelable_descendant(&self) -> Option<BlitzDomNodeId> {
+        self.children.iter().find_map(|&child_id| {
+            let child = self.with(child_id);
+            if child.is_labelable() {
+                Some(child_id)
+            } else {
+                child.first_labelable_descendant()
+            }
         })
     }
 }
