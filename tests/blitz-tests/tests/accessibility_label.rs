@@ -2080,6 +2080,97 @@ fn uses_subtree_of_first_summary_child_of_details_as_label() -> TestResult<()> {
     )
 }
 
+#[test]
+fn provides_text_of_label_element_as_value() -> TestResult<()> {
+    let mut document = HtmlDocument::from_html(
+        r#"<html>
+          <label for="arbitrary-button">  Save <span>the   file</span> </label>
+          <button id="arbitrary-button"></button>
+        </html>"#,
+        default_document_config(),
+    );
+    document.resolve(0.0);
+
+    let tree_update = document.build_accessibility_tree();
+
+    verify_that!(
+        tree_update.nodes,
+        contains((
+            anything(),
+            matches_pattern!(AccessKitNode {
+                role(): eq(Role::Label),
+                value(): some(eq("Save the file")),
+            })
+        ))
+    )
+}
+
+#[test]
+fn excludes_wrapped_control_from_value_of_label_element() -> TestResult<()> {
+    let mut document = HtmlDocument::from_html(
+        r#"<html><label>Notes <textarea>Draft</textarea> here</label></html>"#,
+        default_document_config(),
+    );
+    document.resolve(0.0);
+
+    let tree_update = document.build_accessibility_tree();
+
+    verify_that!(
+        tree_update.nodes,
+        contains((
+            anything(),
+            matches_pattern!(AccessKitNode {
+                role(): eq(Role::Label),
+                value(): some(eq("Notes here")),
+            })
+        ))
+    )
+}
+
+#[test]
+fn provides_text_of_legend_element_as_value() -> TestResult<()> {
+    let mut document = HtmlDocument::from_html(
+        r#"<html><fieldset><legend>Group <b>name</b></legend></fieldset></html>"#,
+        default_document_config(),
+    );
+    document.resolve(0.0);
+
+    let tree_update = document.build_accessibility_tree();
+
+    verify_that!(
+        tree_update.nodes,
+        contains((
+            anything(),
+            matches_pattern!(AccessKitNode {
+                role(): eq(Role::Label),
+                value(): some(eq("Group name")),
+            })
+        ))
+    )
+}
+
+#[test]
+fn omits_value_of_label_element_without_text() -> TestResult<()> {
+    let mut document = HtmlDocument::from_html(
+        r#"<html><label for="arbitrary-button"></label><button id="arbitrary-button"></button></html>"#,
+        default_document_config(),
+    );
+    document.resolve(0.0);
+
+    let tree_update = document.build_accessibility_tree();
+
+    verify_that!(
+        tree_update.nodes,
+        contains((
+            anything(),
+            matches_pattern!(AccessKitNode {
+                role(): eq(Role::Label),
+                value(): none(),
+            })
+        ))
+    )
+}
+
 /// The labels of the nodes with the given HTML tag in the tree, in no particular order.
 fn labels_of_elements_with_tag<'a>(
     tree_update: &'a TreeUpdate,
