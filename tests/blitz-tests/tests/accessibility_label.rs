@@ -1,4 +1,4 @@
-use accesskit::{Node as AccessKitNode, Role, TreeUpdate};
+use accesskit::{Node as AccessKitNode, NodeId, Role, TreeUpdate};
 use blitz_dom::DocumentConfig;
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::shell::{ColorScheme, Viewport};
@@ -420,21 +420,15 @@ fn includes_all_label_elements_referencing_the_same_target_in_document_order() -
 
     let tree_update = document.build_accessibility_tree();
 
-    let mut label_node_ids: Vec<_> = tree_update
-        .nodes
-        .iter()
-        .filter(|(_, node)| node.role() == Role::Label)
-        .map(|(id, _)| *id)
-        .collect();
-    label_node_ids.sort_by_key(|id| id.0);
-    verify_that!(label_node_ids, len(eq(2)))?;
+    let first_label_id = label_node_id_with_value(&tree_update, "First");
+    let second_label_id = label_node_id_with_value(&tree_update, "Second");
     verify_that!(
         tree_update.nodes,
         contains((
             anything(),
             matches_pattern!(AccessKitNode {
                 role(): eq(Role::Button),
-                *labelled_by(): container_eq(label_node_ids),
+                *labelled_by(): container_eq([first_label_id, second_label_id]),
                 label(): some(eq("First Second")),
             })
         ))
@@ -1600,14 +1594,8 @@ fn combines_wrapping_and_for_label_elements_in_document_order() -> TestResult<()
 
     let tree_update = document.build_accessibility_tree();
 
-    let mut label_node_ids: Vec<_> = tree_update
-        .nodes
-        .iter()
-        .filter(|(_, node)| node.role() == Role::Label)
-        .map(|(id, _)| *id)
-        .collect();
-    label_node_ids.sort_by_key(|id| id.0);
-    verify_that!(label_node_ids, len(eq(2)))?;
+    let outer_label_id = label_node_id_with_value(&tree_update, "Outer");
+    let second_label_id = label_node_id_with_value(&tree_update, "Second");
     verify_that!(
         tree_update.nodes,
         contains((
@@ -1615,7 +1603,7 @@ fn combines_wrapping_and_for_label_elements_in_document_order() -> TestResult<()
             matches_pattern!(AccessKitNode {
                 role(): eq(Role::TextInput),
                 label(): some(eq("Outer Second")),
-                *labelled_by(): container_eq(label_node_ids),
+                *labelled_by(): container_eq([outer_label_id, second_label_id]),
             })
         ))
     )
@@ -2169,6 +2157,18 @@ fn omits_value_of_label_element_without_text() -> TestResult<()> {
             })
         ))
     )
+}
+
+/// The ID of the node with the role `Role::Label` which has the given value, which is its text.
+fn label_node_id_with_value(tree_update: &TreeUpdate, value: &str) -> NodeId {
+    tree_update
+        .nodes
+        .iter()
+        .find(|(_, node)| node.role() == Role::Label && node.value() == Some(value))
+        .unwrap_or_else(|| {
+            panic!("Label with value {value:?} must be present in accessibility tree")
+        })
+        .0
 }
 
 /// The labels of the nodes with the given HTML tag in the tree, in no particular order.
