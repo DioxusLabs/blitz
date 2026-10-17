@@ -190,6 +190,21 @@ impl BaseDocument {
 
             builder.set_role(role);
 
+            // AccessKit expects the text of a node with this role in its value, not its label.
+            // This is also what `accesskit_consumer` reads when the node labels another node.
+            if role == Role::Label {
+                let mut text = FlatText::default();
+                // A control wrapped by a <label> is not part of the text of the label.
+                let skip = node
+                    .is_element_named(local_name!("label"))
+                    .then(|| self.label_control(node))
+                    .flatten();
+                node.write_text_alternative(&mut text, skip);
+                if !text.text.is_empty() {
+                    builder.set_value(text.text);
+                }
+            }
+
             // https://www.w3.org/TR/wai-aria-1.2/#tree_exclusion
             if element_data.attr(local_name!("aria-hidden")) == Some("true") {
                 builder.set_hidden();
