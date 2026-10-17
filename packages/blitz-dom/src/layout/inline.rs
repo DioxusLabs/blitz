@@ -445,7 +445,10 @@ impl LayoutPassState<'_> {
                 ibox.baseline = None;
             } else {
                 let output = self.compute_child_layout(taffy::NodeId::from(ibox.id), box_inputs);
-                ibox.width = (margin.left + margin.right + output.size.width) * scale;
+                // On the same layout-unit grid as the line's available width, so a box that
+                // exactly fits its line is not a hair wider than it.
+                ibox.width =
+                    snap_to_layout_unit((margin.left + margin.right + output.size.width) * scale);
                 ibox.baseline = if exports_baseline {
                     let baseline = if uses_last_baseline {
                         output.baselines.last.or(output.baselines.first)
@@ -1288,6 +1291,73 @@ mod layout_unit_tests {
         assert!(
             failed.is_empty(),
             "{} wrapped: {:?}",
+            failed.len(),
+            &failed[..failed.len().min(8)]
+        );
+    }
+
+    /// The number of lines of a 304px wide inline-block holding one atomic inline of
+    /// `inner` (its width and margins).
+    fn atomic_lines(scale: f32, inner: &str) -> usize {
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(1920, 1080, scale, ColorScheme::Light)),
+            ..Default::default()
+        });
+        let root_id = doc.root_node().id;
+        let style = |value: &str| Attribute {
+            name: qual_name!("style"),
+            value: value.to_string(),
+        };
+        let mut mutator = doc.mutate();
+        let html = mutator.create_element(qual_name!("html"), vec![style("display:block")]);
+        let body = mutator.create_element(
+            qual_name!("body"),
+            vec![style("display:block;margin:0;font-size:0")],
+        );
+        let outer = mutator.create_element(
+            qual_name!("div"),
+            vec![style("display:inline-block;width:304px;height:140px")],
+        );
+        let atomic = mutator.create_element(
+            qual_name!("span"),
+            vec![style(&format!(
+                "display:inline-block;height:140px;vertical-align:top;{inner}"
+            ))],
+        );
+        mutator.append_children(outer, &[atomic]);
+        mutator.append_children(body, &[outer]);
+        mutator.append_children(html, &[body]);
+        mutator.append_children(root_id, &[html]);
+        drop(mutator);
+        doc.resolve(0.0);
+        doc.nodes[outer]
+            .element_data()
+            .and_then(|el| el.inline_layout_data.as_ref())
+            .map(|layout| layout.layout.lines().count())
+            .unwrap_or(0)
+    }
+
+    /// An atomic inline that exactly fits its line stays on one line, with no empty line
+    /// after it (which would move the container's last baseline down a whole line).
+    #[test]
+    fn atomic_inline_that_exactly_fits_its_line_does_not_add_a_line() {
+        let mut failed = Vec::new();
+        for scale in [
+            0.5, 0.67, 0.792, 0.8, 0.915625, 1.0, 1.1, 1.25, 1.33, 1.5, 2.25,
+        ] {
+            for inner in [
+                "width:304px",
+                "width:308px;margin:0 -2px",
+                "width:302.5px;margin:0 0.75px",
+            ] {
+                if atomic_lines(scale, inner) != 1 {
+                    failed.push(format!("scale={scale} {inner}"));
+                }
+            }
+        }
+        assert!(
+            failed.is_empty(),
+            "{} added a line: {:?}",
             failed.len(),
             &failed[..failed.len().min(8)]
         );
