@@ -30,8 +30,29 @@ impl BaseDocument {
                 .unwrap_or(&mut window);
             let (id, builder) = self.build_accessibility_node(node, parent);
 
-            if node.attr(local_name!("aria-labelledby")).is_some() {
-                labelled_by_nodes.push(node_id);
+            if let Some(id_refs) = node.attr(local_name!("aria-labelledby")) {
+                labelled_by_nodes.push((
+                    node_id,
+                    self.referenced_dom_ids_to_node_ids(id_refs).collect::<Vec<_>>(),
+                ));
+            } else if let Some(element_data) = node.element_data()
+                && element_data.name.local == local_name!("label")
+                && let Some(for_id) = element_data.attr(local_name!("for"))
+                && let Some(&target) = self
+                    .nodes_to_id
+                    .get(for_id)
+                    .and_then(|targets| targets.first())
+                // aria-labelledby on the target takes precedence over <label for>.
+                && self.nodes[target].attr(local_name!("aria-labelledby")).is_none()
+            {
+                match labelled_by_nodes
+                    .iter_mut()
+                    .find(|(labelled, _): &&mut (BlitzDomNodeId, Vec<BlitzDomNodeId>)| {
+                        *labelled == target
+                    }) {
+                    Some((_, labels)) => labels.push(node_id),
+                    None => labelled_by_nodes.push((target, vec![node_id])),
+                }
             }
             if node.attr(local_name!("aria-describedby")).is_some() {
                 described_by_nodes.push(node_id);
@@ -40,16 +61,13 @@ impl BaseDocument {
         });
 
         let mut label = FlatText::default();
-        for node_id in labelled_by_nodes {
-            let Some(id_refs) = self.nodes[node_id].attr(local_name!("aria-labelledby")) else {
-                continue;
-            };
+        for (node_id, label_node_ids) in labelled_by_nodes {
             let Some((id, mut builder)) = nodes.remove(&node_id) else {
                 continue;
             };
             let mut has_target = false;
             label.clear();
-            for target in self.referenced_dom_ids_to_node_ids(id_refs) {
+            for target in label_node_ids {
                 if !has_target {
                     builder.clear_labelled_by();
                     has_target = true;
@@ -151,6 +169,8 @@ impl BaseDocument {
 
             if let Some(aria_label) = element_data.attr(local_name!("aria-label")) {
                 builder.set_label(aria_label);
+            } else if let Some(host_language_text) = host_language_text(element_data) {
+                builder.set_label(host_language_text);
             }
             if let Some(aria_description) = element_data.attr(local_name!("aria-description")) {
                 builder.set_description(aria_description);
@@ -424,6 +444,13 @@ fn role_from_element_data(element_data: &ElementData) -> Option<Role> {
                 _ => Some(Role::TextInput),
             }
         }
+        _ => None,
+    }
+}
+
+fn host_language_text(element_data: &ElementData) -> Option<&str> {
+    match &*element_data.name.local {
+        "img" => element_data.attr(local_name!("alt")),
         _ => None,
     }
 }
