@@ -2193,11 +2193,15 @@ impl BaseDocument {
         // Prefer the precise hit node: `cursor` and `user-select` may be set on
         // a pseudo-element or resolved on an anonymous box, and text hits carry
         // is_text via the hit node. Fall back to the canonical hover node if
-        // the hit node has been removed (it is transient across resolves).
-        let node_id = self
+        // the hit node has been removed (it is transient across resolves), and
+        // to the default cursor if the pointer is over no box.
+        let Some(node_id) = self
             .hover_hit_node_id
             .filter(|&id| self.nodes.contains_key(id))
-            .or(self.get_hover_node_id())?;
+            .or(self.get_hover_node_id())
+        else {
+            return Some(CursorIcon::Default);
+        };
         let node = &self.nodes[node_id];
 
         if let Some(subdoc) = node.subdoc().map(|doc| doc.inner())
@@ -2933,6 +2937,16 @@ mod hover_state_tests {
         doc.set_hover_to(250.0, 8.0);
         assert!(!doc.hover_node_is_text);
         assert_eq!(doc.get_hover_node_id(), Some(container));
+        assert_eq!(doc.get_cursor(), Some(CursorIcon::Default));
+    }
+
+    /// Hovering below the content hits no box: default cursor (`None` would hide it).
+    #[test]
+    fn hovering_below_content_reports_default_cursor() {
+        let (mut doc, _) = make_doc();
+
+        doc.set_hover_to(5.0, 250.0);
+        assert_eq!(doc.get_hover_node_id(), None);
         assert_eq!(doc.get_cursor(), Some(CursorIcon::Default));
     }
 }
