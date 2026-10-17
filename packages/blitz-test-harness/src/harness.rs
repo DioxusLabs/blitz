@@ -136,8 +136,10 @@ impl<D: Document> Harness<D> {
     /// so document-specific event handling (e.g. forwarding to a Dioxus VirtualDom) is
     /// bypassed. Does not [`pump`](Self::pump).
     pub fn dispatch_recorded(&mut self, events: impl IntoIterator<Item = UiEvent>) -> Vec<String> {
-        use blitz_dom::{EventDriver, EventHandler};
-        use blitz_traits::events::{DomEvent, EventState};
+        use blitz_dom::{
+            EventContext, EventDriver, EventHandler, EventListenerId, EventListenerOptions,
+        };
+        use blitz_traits::events::{DomEvent, DomEventKind, EventState};
         use std::cell::RefCell;
         use std::rc::Rc;
 
@@ -147,11 +149,11 @@ impl<D: Document> Harness<D> {
         }
 
         impl EventHandler for RecordingHandler {
-            fn handle_event(
-                &mut self,
-                _chain: &[blitz_traits::node_id::NodeId],
+            fn handle_event_listener(
+                &self,
+                _listener: EventListenerId,
                 event: &mut DomEvent,
-                _doc: &mut dyn Document,
+                _ctx: &mut EventContext<'_>,
                 _event_state: &mut EventState,
             ) {
                 self.events.borrow_mut().push(event.name().to_string());
@@ -161,9 +163,26 @@ impl<D: Document> Harness<D> {
         let handler = RecordingHandler::default();
         let recorded = handler.events.clone();
         let mut doc = self.doc.inner_mut();
+
+        // A capturing listener on the root element is invoked exactly once for every event
+        // of its kind, whichever node the event targets and whether or not it bubbles.
+        let root_id = doc.root_element().id;
+        let listener = EventListenerId(u64::MAX);
+        let options = EventListenerOptions {
+            capture: true,
+            ..Default::default()
+        };
+        for kind in DomEventKind::ALL {
+            doc.add_event_listener(root_id, kind, listener, options);
+        }
+
         let mut driver = EventDriver::new(&mut *doc, handler);
         for event in events {
             driver.handle_ui_event(event);
+        }
+
+        for kind in DomEventKind::ALL {
+            doc.remove_event_listener(root_id, kind, listener, true);
         }
         drop(doc);
         recorded.borrow().clone()

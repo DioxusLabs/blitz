@@ -1,5 +1,7 @@
 use crate::NodeTree;
-use crate::events::{DragMode, handle_dom_event};
+use crate::events::{
+    DragMode, EventListenerId, EventListenerOptions, EventListenerRegistry, handle_dom_event,
+};
 use crate::layout::construct::ConstructionTask;
 use crate::layout::damage::ALL_DAMAGE;
 use crate::mutator::ViewportMut;
@@ -20,7 +22,9 @@ use crate::{
     TextNodeData,
 };
 use blitz_traits::devtools::DevtoolSettings;
-use blitz_traits::events::{DomEvent, HitResult, UiEvent};
+use blitz_traits::events::{
+    BlitzFocusEvent, DomEvent, DomEventData, DomEventKind, HitResult, UiEvent,
+};
 use blitz_traits::navigation::{DummyNavigationProvider, NavigationProvider};
 use blitz_traits::net::{AbortSignal, DummyNetProvider, NetProvider, Request};
 use blitz_traits::node_id::NodeId;
@@ -32,8 +36,8 @@ use parley::{FontContext, PlainEditorDriver};
 use selectors::{Element, matching::QuirksMode};
 use smallvec::SmallVec;
 use std::any::Any;
-use std::cell::RefCell;
-use std::collections::{BTreeMap, Bound, HashMap, HashSet};
+use std::cell::{Cell, RefCell};
+use std::collections::{BTreeMap, Bound, HashMap, HashSet, VecDeque};
 use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
 use std::str::FromStr;
@@ -321,6 +325,20 @@ pub struct BaseDocument {
     /// Text selection state (for non-input text)
     pub(crate) text_selection: TextSelection,
 
+    /// Event listeners registered on the nodes of this document
+    /// (via [`add_event_listener`](Self::add_event_listener))
+    pub(crate) event_listeners: EventListenerRegistry,
+
+    /// Events which have been generated (by default actions, state changes such as focus
+    /// changes, or embedder code) but not yet dispatched to event listeners. Drained by
+    /// [`EventDriver`] in a run-to-completion loop.
+    pub(crate) pending_events: VecDeque<DomEvent>,
+
+    /// The current depth of nested (reentrant) event dispatches. Lives on the document
+    /// (rather than on the [`EventDriver`]) so that the recursion bound holds even when
+    /// dispatches recurse through freshly-constructed drivers.
+    pub(crate) dispatch_depth: Cell<u32>,
+
     // TODO: collapse animating state into a bitflags
     /// Whether there are active CSS animations/transitions (so we should re-render every frame)
     pub(crate) has_active_animations: bool,
@@ -532,6 +550,9 @@ impl BaseDocument {
             scrollbar_activity: HashMap::new(),
             scroll_animation: ScrollAnimationState::None,
             text_selection: TextSelection::default(),
+            event_listeners: EventListenerRegistry::default(),
+            pending_events: VecDeque::new(),
+            dispatch_depth: Cell::new(0),
         };
 
         // Initialise document with root Document node
@@ -641,12 +662,44 @@ impl BaseDocument {
         DocumentMutator::new(self)
     }
 
-    pub fn handle_dom_event<F: FnMut(DomEvent)>(
-        &mut self,
-        event: &mut DomEvent,
-        dispatch_event: F,
-    ) {
-        handle_dom_event(self, event, dispatch_event)
+    /// Run the default action for an event. Any events generated in the process
+    /// (e.g. focus events, input events) are queued via [`queue_event`](Self::queue_event).
+    pub fn handle_dom_event(&mut self, event: &mut DomEvent) {
+        handle_dom_event(self, event)
+    }
+
+    /// Queue an event for dispatch.
+    ///
+    /// Queued events are dispatched to event listeners (and have their default actions run)
+    /// by an [`EventDriver`] in a run-to-completion loop. Events are queued rather than
+    /// dispatched immediately so that any code with access to the document (state-changing
+    /// document APIs such as [`set_focus_to`](Self::set_focus_to), default actions, or
+    /// embedder code) can generate events without needing access to the driver.
+    pub fn queue_event(&mut self, event: DomEvent) {
+        // Cap the queue length so that events cannot accumulate without bound if events
+        // are generated outside of an event driver and the embedder never drains them.
+        const MAX_PENDING_EVENTS: usize = 1024;
+        if self.pending_events.len() >= MAX_PENDING_EVENTS {
+            self.pending_events.pop_front();
+        }
+        self.pending_events.push_back(event);
+    }
+
+    /// Take the next pending event from the queue (see [`queue_event`](Self::queue_event)).
+    /// Events whose target node has been removed since they were queued are discarded.
+    pub fn pop_pending_event(&mut self) -> Option<DomEvent> {
+        loop {
+            let event = self.pending_events.pop_front()?;
+            if self.nodes.contains_key(event.target) {
+                return Some(event);
+            }
+        }
+    }
+
+    /// Whether there are pending events waiting to be dispatched
+    /// (see [`queue_event`](Self::queue_event))
+    pub fn has_pending_events(&self) -> bool {
+        !self.pending_events.is_empty()
     }
 
     pub fn as_any_mut(&mut self) -> &mut dyn Any {
@@ -888,6 +941,7 @@ impl BaseDocument {
     /// it so that stale NodeIds are never dereferenced after the slot is freed.
     pub(crate) fn remove_node_from_tree(&mut self, node_id: NodeId) -> Option<Node> {
         self.clear_interaction_state_for_removed_node(node_id);
+        self.event_listeners.remove_all_for_node(node_id);
         self.nodes.remove(node_id)
     }
 
@@ -1022,6 +1076,45 @@ impl BaseDocument {
         }
 
         self.remove_node_from_tree(anon_id);
+    }
+
+    /// Register an event listener on a node.
+    ///
+    /// This is the equivalent of the DOM `addEventListener` API, except that instead of a
+    /// callback an opaque embedder-allocated [`EventListenerId`] is registered. When a matching
+    /// event is dispatched by an [`EventDriver`], the driver's [`EventHandler`] is invoked with
+    /// the listener's id and is responsible for mapping it back to actual behaviour.
+    ///
+    /// Returns `false` (and does nothing) if a listener with the same event kind, id and
+    /// capture flag is already registered on the node (mirroring `addEventListener` semantics).
+    ///
+    /// [`EventDriver`]: crate::EventDriver
+    /// [`EventHandler`]: crate::EventHandler
+    pub fn add_event_listener(
+        &mut self,
+        node_id: NodeId,
+        kind: DomEventKind,
+        listener: EventListenerId,
+        options: EventListenerOptions,
+    ) -> bool {
+        self.event_listeners.add(node_id, kind, listener, options)
+    }
+
+    /// Remove an event listener from a node.
+    ///
+    /// This is the equivalent of the DOM `removeEventListener` API. The listener to remove is
+    /// identified by the (event kind, listener id, capture flag) triple it was registered with.
+    ///
+    /// Returns `false` if no matching listener was registered.
+    pub fn remove_event_listener(
+        &mut self,
+        node_id: NodeId,
+        kind: DomEventKind,
+        listener: EventListenerId,
+        capture: bool,
+    ) -> bool {
+        self.event_listeners
+            .remove(node_id, kind, listener, capture)
     }
 
     /// Whether the document has been mutated
@@ -1683,7 +1776,8 @@ impl BaseDocument {
         Some(id)
     }
 
-    /// Clear the focussed node
+    /// Clear the focussed node, queueing blur/focusout events for the previously
+    /// focussed node (if any)
     pub fn clear_focus(&mut self) {
         if let Some(id) = self.focus_node_id {
             let shell_provider = self.shell_provider.clone();
@@ -1691,12 +1785,19 @@ impl BaseDocument {
                 node.blur(shell_provider)
             });
             self.focus_node_id = None;
+            self.queue_event(DomEvent::new(id, DomEventData::Blur(BlitzFocusEvent)));
+            self.queue_event(DomEvent::new(id, DomEventData::FocusOut(BlitzFocusEvent)));
         }
     }
 
     pub fn set_mousedown_node_id(&mut self, node_id: Option<NodeId>) {
         self.mousedown_node_id = node_id.and_then(|id| self.nearest_non_anonymous_ancestor(id));
     }
+
+    /// Focus the given node, queueing blur/focusout events for the previously focussed
+    /// node (if any) and focus/focusin events for the newly focussed node.
+    ///
+    /// Does nothing (and queues no events) if the node is already focussed.
     pub fn set_focus_to(&mut self, focus_node_id: NodeId) -> bool {
         let Some(focus_node_id) = self.nearest_non_anonymous_ancestor(focus_node_id) else {
             return false;
@@ -1715,6 +1816,8 @@ impl BaseDocument {
             self.snapshot_node_and(id, ElementState::FOCUS | ElementState::FOCUSRING, |node| {
                 node.blur(shell_provider.clone())
             });
+            self.queue_event(DomEvent::new(id, DomEventData::Blur(BlitzFocusEvent)));
+            self.queue_event(DomEvent::new(id, DomEventData::FocusOut(BlitzFocusEvent)));
         }
 
         // Focus the new node
@@ -1725,6 +1828,14 @@ impl BaseDocument {
         );
 
         self.focus_node_id = Some(focus_node_id);
+        self.queue_event(DomEvent::new(
+            focus_node_id,
+            DomEventData::Focus(BlitzFocusEvent),
+        ));
+        self.queue_event(DomEvent::new(
+            focus_node_id,
+            DomEventData::FocusIn(BlitzFocusEvent),
+        ));
 
         true
     }
