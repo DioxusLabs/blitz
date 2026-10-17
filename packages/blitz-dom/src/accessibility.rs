@@ -423,7 +423,13 @@ impl BlitzDomNode {
     /// The text alternative provided by the host language markup of this element itself, such as
     /// the `alt` text of an `img`.
     ///
-    /// https://www.w3.org/TR/html-aam-1.0/#img-element-accessible-name-computation
+    /// Sources which AccessKit exposes through other properties than `label`, namely `title` and
+    /// `placeholder`, are not covered, nor are the strings which user agents supply for
+    /// `input` elements of the submit, reset and image types lacking any other source. `area`
+    /// elements, whose `alt` is also a source, are never exposed in the accessibility tree
+    /// because the user agent stylesheet hides them.
+    ///
+    /// https://www.w3.org/TR/html-aam-1.0/#accessible-name-and-description-computation
     fn host_language_label<'a>(&'a self, element_data: &'a ElementData) -> Option<Cow<'a, str>> {
         match &*element_data.name.local {
             "img" => match element_data.attr(local_name!("alt")) {
@@ -439,6 +445,29 @@ impl BlitzDomNode {
                 }
                 None => None,
             },
+            "input" => {
+                let input_type = element_data.attr(local_name!("type")).unwrap_or_default();
+                let source = if ["button", "submit", "reset"]
+                    .iter()
+                    .any(|button_type| input_type.eq_ignore_ascii_case(button_type))
+                {
+                    local_name!("value")
+                } else if input_type.eq_ignore_ascii_case("image") {
+                    local_name!("alt")
+                } else {
+                    return None;
+                };
+                non_blank(element_data.attr(source)).map(Cow::Borrowed)
+            }
+            "fieldset" => self
+                .first_child_named(local_name!("legend"))?
+                .subtree_text()
+                .map(Cow::Owned),
+            "table" => self
+                .first_child_named(local_name!("caption"))?
+                .subtree_text()
+                .map(Cow::Owned),
+            "summary" if self.is_first_summary_of_details() => self.subtree_text().map(Cow::Owned),
             _ => None,
         }
     }
@@ -456,17 +485,34 @@ impl BlitzDomNode {
             path_to_figure.push(ancestor.id);
             current = ancestor.parent;
         };
-        let figcaption = figure
-            .children
-            .iter()
-            .map(|&child_id| self.with(child_id))
-            .find(|child| child.is_element_named(local_name!("figcaption")))?;
+        let figcaption = figure.first_child_named(local_name!("figcaption"))?;
         if figure.has_content_other_than(self.id, figcaption.id, &path_to_figure) {
             return None;
         }
+        figcaption.subtree_text()
+    }
 
+    /// The first child of this node which is an element with the given name.
+    fn first_child_named(&self, name: LocalName) -> Option<&BlitzDomNode> {
+        self.children
+            .iter()
+            .map(|&child_id| self.with(child_id))
+            .find(|child| child.is_element_named(name.clone()))
+    }
+
+    /// Whether this is the first `summary` child of a `details` element.
+    fn is_first_summary_of_details(&self) -> bool {
+        self.parent
+            .map(|parent_id| self.with(parent_id))
+            .filter(|parent| parent.is_element_named(local_name!("details")))
+            .and_then(|details| details.first_child_named(local_name!("summary")))
+            .is_some_and(|summary| summary.id == self.id)
+    }
+
+    /// The text alternative of the subtree of this node, if it is not empty.
+    fn subtree_text(&self) -> Option<String> {
         let mut text = FlatText::default();
-        figcaption.write_flat_text_content(&mut text, TextContext::default());
+        self.write_flat_text_content(&mut text, TextContext::default());
         (!text.text.is_empty()).then_some(text.text)
     }
 

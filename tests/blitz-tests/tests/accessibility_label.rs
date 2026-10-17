@@ -1,4 +1,4 @@
-use accesskit::{Node as AccessKitNode, Role};
+use accesskit::{Node as AccessKitNode, Role, TreeUpdate};
 use blitz_dom::DocumentConfig;
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::shell::{ColorScheme, Viewport};
@@ -1036,17 +1036,9 @@ fn ignores_empty_and_blank_img_alt() -> TestResult<()> {
 
     let tree_update = document.build_accessibility_tree();
 
-    let imgs: Vec<_> = tree_update
-        .nodes
-        .iter()
-        .filter(|(_, node)| node.html_tag() == Some("img"))
-        .collect();
-    verify_that!(imgs, len(eq(2)))?;
     verify_that!(
-        imgs.iter()
-            .map(|(_, node)| node.label())
-            .collect::<Vec<_>>(),
-        each(none())
+        labels_of_elements_with_tag(&tree_update, "img"),
+        {none(), none()}
     )
 }
 
@@ -1206,17 +1198,9 @@ fn does_not_use_figcaption_for_img_in_figure_with_other_content() -> TestResult<
 
     let tree_update = document.build_accessibility_tree();
 
-    let imgs: Vec<_> = tree_update
-        .nodes
-        .iter()
-        .filter(|(_, node)| node.html_tag() == Some("img"))
-        .collect();
-    verify_that!(imgs, len(eq(3)))?;
     verify_that!(
-        imgs.iter()
-            .map(|(_, node)| node.label())
-            .collect::<Vec<_>>(),
-        each(none())
+        labels_of_elements_with_tag(&tree_update, "img"),
+        {none(), none(), none()}
     )
 }
 
@@ -1957,6 +1941,156 @@ fn includes_generated_content_of_aria_labelledby_target_and_descendants() -> Tes
             })
         ))
     )
+}
+
+#[test]
+fn uses_alt_of_image_input_as_label() -> TestResult<()> {
+    let mut document = HtmlDocument::from_html(
+        r#"<html>
+          <input type="image" alt="Image button">
+          <input type="image" alt="  ">
+          <input type="text" alt="Ignored on other types">
+        </html>"#,
+        default_document_config(),
+    );
+    document.resolve(0.0);
+
+    let tree_update = document.build_accessibility_tree();
+
+    verify_that!(
+        labels_of_elements_with_tag(&tree_update, "input"),
+        {some(eq("Image button")), none(), none()}
+    )
+}
+
+#[test]
+fn uses_value_of_button_inputs_as_label() -> TestResult<()> {
+    let mut document = HtmlDocument::from_html(
+        r#"<html>
+          <input type="button" value="Click">
+          <input type="submit" value="Send">
+          <input type="reset" value="Clear">
+          <input type="button">
+          <input type="text" value="Not a label">
+        </html>"#,
+        default_document_config(),
+    );
+    document.resolve(0.0);
+
+    let tree_update = document.build_accessibility_tree();
+
+    verify_that!(
+        labels_of_elements_with_tag(&tree_update, "input"),
+        {
+            some(eq("Click")),
+            some(eq("Send")),
+            some(eq("Clear")),
+            none(),
+            none()
+        }
+    )
+}
+
+#[test]
+fn label_element_and_aria_label_take_precedence_over_input_value_and_alt() -> TestResult<()> {
+    let mut document = HtmlDocument::from_html(
+        r#"<html>
+          <input id="button-input" type="button" value="Value">
+          <label for="button-input">Label element</label>
+          <input id="image-input" type="image" alt="Alt" aria-label="Aria label">
+          <label for="image-input">Ignored label element</label>
+        </html>"#,
+        default_document_config(),
+    );
+    document.resolve(0.0);
+
+    let tree_update = document.build_accessibility_tree();
+
+    verify_that!(
+        labels_of_elements_with_tag(&tree_update, "input"),
+        {some(eq("Label element")), some(eq("Aria label"))}
+    )
+}
+
+#[test]
+fn uses_first_legend_child_as_label_of_fieldset() -> TestResult<()> {
+    let mut document = HtmlDocument::from_html(
+        r#"<html>
+          <fieldset>
+            <div><legend>Nested legend</legend></div>
+            <legend>Group <b>name</b></legend>
+            <legend>Second legend</legend>
+          </fieldset>
+          <fieldset><div>No legend</div></fieldset>
+        </html>"#,
+        default_document_config(),
+    );
+    document.resolve(0.0);
+
+    let tree_update = document.build_accessibility_tree();
+
+    verify_that!(
+        labels_of_elements_with_tag(&tree_update, "fieldset"),
+        {some(eq("Group name")), none()}
+    )
+}
+
+#[test]
+fn uses_first_caption_child_as_label_of_table() -> TestResult<()> {
+    let mut document = HtmlDocument::from_html(
+        r#"<html>
+          <table>
+            <caption>Sales <i>figures</i></caption>
+            <tr><td>1</td></tr>
+          </table>
+          <table><tr><td>No caption</td></tr></table>
+        </html>"#,
+        default_document_config(),
+    );
+    document.resolve(0.0);
+
+    let tree_update = document.build_accessibility_tree();
+
+    verify_that!(
+        labels_of_elements_with_tag(&tree_update, "table"),
+        {some(eq("Sales figures")), none()}
+    )
+}
+
+#[test]
+fn uses_subtree_of_first_summary_child_of_details_as_label() -> TestResult<()> {
+    let mut document = HtmlDocument::from_html(
+        r#"<html>
+          <details open>
+            <summary>More <i>info</i></summary>
+            <summary>Second summary</summary>
+            Details content
+          </details>
+          <div><summary>Not in details</summary></div>
+        </html>"#,
+        default_document_config(),
+    );
+    document.resolve(0.0);
+
+    let tree_update = document.build_accessibility_tree();
+
+    verify_that!(
+        labels_of_elements_with_tag(&tree_update, "summary"),
+        {some(eq("More info")), none(), none()}
+    )
+}
+
+/// The labels of the nodes with the given HTML tag in the tree, in no particular order.
+fn labels_of_elements_with_tag<'a>(
+    tree_update: &'a TreeUpdate,
+    html_tag: &str,
+) -> Vec<Option<&'a str>> {
+    tree_update
+        .nodes
+        .iter()
+        .filter(|(_, node)| node.html_tag() == Some(html_tag))
+        .map(|(_, node)| node.label())
+        .collect()
 }
 
 fn default_document_config() -> DocumentConfig {
