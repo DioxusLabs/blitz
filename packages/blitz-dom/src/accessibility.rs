@@ -92,13 +92,8 @@ impl BaseDocument {
             let Some((id, mut builder)) = nodes.remove(&node_id) else {
                 continue;
             };
-            let mut has_target = false;
             label.clear();
             for target in labels {
-                if !has_target {
-                    builder.clear_labelled_by();
-                    has_target = true;
-                }
                 if target == node_id || nodes.contains_key(&target) {
                     builder.push_labelled_by(NodeId(target.as_u64()));
                 }
@@ -232,6 +227,10 @@ impl BaseDocument {
                 builder.set_label(aria_label);
             } else if let Some(host_language_label) = node.host_language_label(element_data) {
                 builder.set_label(host_language_label);
+            } else if names_from_content(role, element_data)
+                && let Some(content) = node.subtree_text()
+            {
+                builder.set_label(content);
             }
             if let Some(aria_description) = element_data.attr(local_name!("aria-description")) {
                 builder.set_description(aria_description);
@@ -253,7 +252,6 @@ impl BaseDocument {
         } else if node.is_text_node() {
             builder.set_role(Role::TextRun);
             builder.set_value(node.text_content());
-            parent.push_labelled_by(id)
         }
 
         parent.push_child(id);
@@ -599,6 +597,44 @@ fn element_role(element_data: &ElementData) -> Role {
         .and_then(role_from_name)
         .or_else(|| role_from_element_data(element_data))
         .unwrap_or(Role::Unknown)
+}
+
+/// Whether the name of an element with the given role is computed from its content.
+///
+/// https://www.w3.org/TR/wai-aria-1.2/#namefromcontent
+///
+/// HTML-AAM names the native `tr`, `td` and `th` elements from their `title` only, so they are
+/// exceptions unless a `role` attribute gives them a role.
+fn names_from_content(role: Role, element_data: &ElementData) -> bool {
+    let is_native_table_part = matches!(&*element_data.name.local, "tr" | "td" | "th")
+        && element_data
+            .attr(local_name!("role"))
+            .and_then(role_from_name)
+            .is_none();
+    !is_native_table_part
+        && matches!(
+            role,
+            Role::Button
+                | Role::Cell
+                | Role::CheckBox
+                | Role::ColumnHeader
+                | Role::DefaultButton
+                | Role::GridCell
+                | Role::Heading
+                | Role::Link
+                | Role::ListBoxOption
+                | Role::MenuItem
+                | Role::MenuItemCheckBox
+                | Role::MenuItemRadio
+                | Role::MenuListOption
+                | Role::RadioButton
+                | Role::Row
+                | Role::RowHeader
+                | Role::Switch
+                | Role::Tab
+                | Role::Tooltip
+                | Role::TreeItem
+        )
 }
 
 #[derive(Default)]
