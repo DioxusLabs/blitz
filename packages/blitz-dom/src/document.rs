@@ -360,7 +360,7 @@ pub struct BaseDocument {
 
     /// Cache of loaded images, keyed by URL. Allows reusing images across multiple
     /// elements without re-fetching from the network.
-    pub(crate) image_cache: HashMap<String, ImageData>,
+    pub(crate) image_cache: crate::image_cache::ImageCache,
 
     /// Tracks in-flight image requests. When an image is being fetched, additional
     /// requests for the same URL are queued here instead of starting new fetches.
@@ -514,7 +514,7 @@ impl BaseDocument {
 
             changed_nodes: HashSet::new(),
             deferred_construction_nodes: Vec::new(),
-            image_cache: HashMap::new(),
+            image_cache: Default::default(),
             pending_images: HashMap::new(),
             pending_style_image_nodes: Vec::new(),
             pending_critical_resources: HashSet::new(),
@@ -1443,6 +1443,30 @@ impl BaseDocument {
                 }
             }
         }
+
+        let in_use = self.images_in_use();
+        self.image_cache.evict_unused(&in_use);
+    }
+
+    /// The images (see [`crate::image_cache::identity`]) that some node shows, as an
+    /// `<img>` or as a `background-image` or `mask-image` layer.
+    fn images_in_use(&self) -> HashSet<u64> {
+        let mut in_use = HashSet::new();
+        for (_, node) in self.nodes.iter() {
+            let Some(element) = node.element_data() else {
+                continue;
+            };
+            let layers = element
+                .background_images
+                .iter()
+                .chain(element.mask_images.iter())
+                .flatten()
+                .map(|layer| &layer.image);
+            for image in element.image_data().into_iter().chain(layers) {
+                in_use.extend(crate::image_cache::identity(image));
+            }
+        }
+        in_use
     }
 
     /// Snapshot the node's pre-mutation state (element state and attributes) ahead of
@@ -3314,6 +3338,88 @@ mod hover_invalidation_tests {
             Some("https://example.com/a.png"),
             "unhover should flush the restored background image"
         );
+    }
+}
+
+#[cfg(test)]
+mod image_cache_tests {
+    use super::*;
+    use crate::node::RasterImageData;
+    use crate::qual_name;
+
+    /// A 512x512 image (a MiB of pixels).
+    fn image() -> ImageData {
+        ImageData::Raster(RasterImageData::new(
+            512,
+            512,
+            Arc::new(vec![0; 512 * 512 * 4]),
+        ))
+    }
+
+    /// `<img>` elements in the document, each loaded with its own image.
+    fn doc_with_images(count: usize) -> (BaseDocument, Vec<NodeId>) {
+        let mut doc = BaseDocument::new(DocumentConfig::default());
+        let root_id = doc.root_node().id;
+        let mut mutator = doc.mutate();
+        let imgs: Vec<NodeId> = (0..count)
+            .map(|_| mutator.create_element(qual_name!("img"), vec![]))
+            .collect();
+        mutator.append_children(root_id, &imgs);
+        drop(mutator);
+        for (n, img) in imgs.iter().enumerate() {
+            show(&mut doc, *img, n);
+        }
+        (doc, imgs)
+    }
+
+    /// Points `img` at the `n`th image and loads it.
+    fn show(doc: &mut BaseDocument, img: NodeId, n: usize) {
+        let url = format!("https://example.com/{n}.png");
+        doc.mutate().set_attribute(img, qual_name!("src"), &url);
+        doc.apply_loaded_image(&url, image());
+    }
+
+    fn shown(doc: &BaseDocument, img: NodeId) -> Option<u64> {
+        doc.nodes[img]
+            .element_data()
+            .and_then(|element| element.image_data())
+            .and_then(crate::image_cache::identity)
+    }
+
+    /// An `<img>` that keeps being pointed at new images does not keep every image it
+    /// has shown, and the one it shows stays cached.
+    #[test]
+    fn images_no_node_shows_any_more_are_dropped() {
+        let (mut doc, imgs) = doc_with_images(1);
+        for n in 1..100 {
+            show(&mut doc, imgs[0], n);
+        }
+        assert!(
+            doc.image_cache.len() <= 33,
+            "{} images cached",
+            doc.image_cache.len()
+        );
+        let cached = doc
+            .image_cache
+            .get("https://example.com/99.png")
+            .and_then(crate::image_cache::identity);
+        assert!(cached.is_some());
+        assert_eq!(cached, shown(&doc, imgs[0]));
+    }
+
+    /// Images that nodes show are kept however many there are.
+    #[test]
+    fn images_nodes_show_are_kept() {
+        let (mut doc, imgs) = doc_with_images(48);
+        assert_eq!(doc.image_cache.len(), 48);
+        for (n, img) in imgs.iter().enumerate() {
+            let url = format!("https://example.com/{n}.png");
+            let cached = doc
+                .image_cache
+                .get(&url)
+                .and_then(crate::image_cache::identity);
+            assert_eq!(cached, shown(&doc, *img));
+        }
     }
 }
 
