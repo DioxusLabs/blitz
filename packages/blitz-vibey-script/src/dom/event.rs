@@ -282,6 +282,12 @@ pub(crate) fn create_event_for_dom_event(
             add_modifiers(&event, wheel.mods, context);
         }
 
+        DomEventData::CompositionStart(composition)
+        | DomEventData::CompositionUpdate(composition)
+        | DomEventData::CompositionEnd(composition) => {
+            define_value(&event, "data", js_str(&composition.data), context);
+        }
+
         DomEventData::Input(input) => {
             define_value(&event, "data", js_str(&input.value), context);
             define_value(&event, "inputType", js_str("insertText"), context);
