@@ -43,6 +43,11 @@ pub(crate) fn draw_inline_backgrounds<'a>(
             let Some(styles) = doc.get_node(node_id).and_then(|node| node.primary_styles()) else {
                 continue;
             };
+            if styles.get_inherited_box().visibility
+                != style::computed_values::visibility::T::Visible
+            {
+                continue;
+            }
 
             let current_color = styles.clone_color();
             let bg_color = styles
@@ -150,6 +155,23 @@ struct DecorationStackEntry {
     text_color: Color,
     /// The decoration this node introduces as a decorating box, if any.
     decoration: Option<ResolvedDecoration>,
+}
+
+/// Whether a glyph run is visible: the `visibility` of the nearest node with
+/// computed styles (a text node has none and inherits from its parent).
+fn run_is_visible(doc: &BaseDocument, node_id: NodeId) -> bool {
+    let mut walk = Some(node_id);
+    while let Some(id) = walk {
+        let Some(node) = doc.get_node(id) else {
+            return true;
+        };
+        if let Some(styles) = node.primary_styles() {
+            return styles.get_inherited_box().visibility
+                == style::computed_values::visibility::T::Visible;
+        }
+        walk = node.parent;
+    }
+    true
 }
 
 /// Resolve the cached style values for a single node into a [`DecorationStackEntry`].
@@ -631,6 +653,14 @@ pub(crate) fn stroke_text<'a>(
                 stack.truncate(shared);
                 for &node_id in &path_scratch[shared..] {
                     stack.push(resolve_decoration_entry(doc, node_id));
+                }
+
+                // `visibility` (CSS Display §4): an invisible run paints nothing -- no
+                // glyphs, shadows or decorations -- while visible runs in the same
+                // inline formatting context still paint. It inherits, so the nearest
+                // styled node (a text node has none) gives the run's value.
+                if !run_is_visible(doc, style.brush.id) {
+                    continue;
                 }
 
                 // The glyph colour comes from the run's own node (the stack top): `color`
