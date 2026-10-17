@@ -43,6 +43,10 @@ impl BaseDocument {
                     .and_then(|targets| targets.first())
                 // aria-labelledby on the target takes precedence over <label for>.
                 && self.nodes[target].attr(local_name!("aria-labelledby")).is_none()
+                // So does aria-label.
+                && self.nodes[target]
+                    .attr(local_name!("aria-label"))
+                    .is_none_or(|aria_label| aria_label.trim_ascii().is_empty())
             {
                 match labelled_by_nodes
                     .iter_mut()
