@@ -1022,7 +1022,9 @@ fn blur(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValu
 
 /// Look up a node and compute a geometry value from its layout, resolving
 /// style/layout first so that the values reflect any recent DOM mutations.
-/// Returns 0.0 if the node does not exist.
+/// Returns 0.0 if the node does not exist or generates no box (CSSOM View:
+/// `offsetWidth`, `clientWidth`, ... are 0 for an element with no associated
+/// box, e.g. inside a `display: none` subtree, whose layout is stale).
 fn layout_value(
     this: &JsValue,
     context: &mut Context,
@@ -1032,7 +1034,11 @@ fn layout_value(
     let node_id = this_node_id(this)?;
     let mut doc = ctx.doc.borrow_mut();
     doc.resolve(0.0);
-    let value = doc.get_node(node_id).map(f).unwrap_or(0.0);
+    let value = doc
+        .get_node(node_id)
+        .filter(|node| node.has_boxes())
+        .map(f)
+        .unwrap_or(0.0);
     Ok(JsValue::from(value as f64))
 }
 
@@ -1084,7 +1090,11 @@ fn client_size(
     let Some(node) = doc.get_node(node_id) else {
         return Ok(JsValue::from(0.0));
     };
-    let value = if node_id == doc.root_element().id {
+    let is_root = node_id == doc.root_element().id;
+    if !is_root && !node.has_boxes() {
+        return Ok(JsValue::from(0.0));
+    }
+    let value = if is_root {
         let viewport = doc.viewport();
         let scale = viewport.scale();
         let size = (
@@ -1413,7 +1423,13 @@ fn get_bounding_client_rect(
     let ctx = dom_ctx(context)?;
     let node_id = this_node_id(this)?;
     ctx.doc.borrow_mut().resolve(0.0);
-    let rect = ctx.doc.borrow().get_client_bounding_rect(node_id);
+    // An element with no associated box has an all-zero rect (CSSOM View)
+    let rect = {
+        let doc = ctx.doc.borrow();
+        node_has_boxes(&doc, node_id)
+            .then(|| doc.get_client_bounding_rect(node_id))
+            .flatten()
+    };
     let (x, y, width, height) = match rect {
         Some(rect) => (rect.x, rect.y, rect.width, rect.height),
         None => (0.0, 0.0, 0.0, 0.0),
