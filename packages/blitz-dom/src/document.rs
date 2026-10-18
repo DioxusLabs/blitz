@@ -1725,6 +1725,10 @@ impl BaseDocument {
         if Some(focus_node_id) == self.focus_node_id {
             return false;
         }
+        // A node that is not in the document cannot be focused
+        if !self.nodes[focus_node_id].flags.is_in_document() {
+            return false;
+        }
 
         #[cfg(feature = "tracing")]
         tracing::info!("Focussed node {focus_node_id}");

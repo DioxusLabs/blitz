@@ -169,3 +169,24 @@ fn moving_the_focused_subtree_out_of_the_document_clears_the_state() {
     assert!(!matches(&doc, "#wrapper:focus-within"));
     assert!(!matches(&doc, "body:focus-within"));
 }
+
+#[test]
+fn a_node_outside_the_document_cannot_be_focused() {
+    let mut doc = make_doc(
+        "<html><body><div id=wrapper><input id=input></div>\
+         <input id=other></body></html>",
+    );
+    doc.resolve(0.0);
+
+    let other = node_id(&doc, "#other");
+    doc.set_focus_to(other);
+    let input = node_id(&doc, "#input");
+    let wrapper = node_id(&doc, "#wrapper");
+    doc.mutate().remove_node(wrapper);
+
+    assert!(!doc.set_focus_to(input));
+    assert_eq!(doc.get_focussed_node_id(), Some(other));
+    let wrapper = doc.get_node(wrapper).unwrap();
+    assert!(!wrapper.contains_focus());
+    assert!(!doc.get_node(input).unwrap().is_focussed());
+}
