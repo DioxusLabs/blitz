@@ -15,6 +15,7 @@ use blitz_traits::shell::Viewport;
 use style::Atom;
 use style::invalidation::element::restyle_hints::RestyleHint;
 use style::stylesheets::OriginSet;
+use style_dom::ElementState;
 use thin_vec::ThinVec;
 
 macro_rules! tag_and_attr {
@@ -670,6 +671,9 @@ impl DocumentMutator<'_> {
     ) {
         let new_parent_is_in_document = self.doc.nodes[parent_id].flags.is_in_document();
         self.mutations_occurred |= new_parent_is_in_document && !child_ids.is_empty();
+        let mut hover_old_chain: Option<Vec<NodeId>> = None;
+        let mut active_old_chain: Option<Vec<NodeId>> = None;
+
         // Detach the children from their old parents *before* inserting them into
         // the new parent (matching DOM `insertBefore` semantics). If a child is
         // being moved within the same parent then detaching it after insertion
@@ -677,6 +681,24 @@ impl DocumentMutator<'_> {
         // parent's child list, and anchor indices would be computed against a
         // child list that still contains the moved nodes.
         for child_id in child_ids.iter().copied() {
+            // Hover/active inside a moved subtree would otherwise stay set on the
+            // ancestors it is detached from. Record them while the parent links are
+            // still intact; the state is transferred after the children are reattached.
+            let child = &self.doc.nodes[child_id];
+            if !child.flags.is_in_document() {
+                // A subtree outside the document has no hover/active state
+            } else if !new_parent_is_in_document {
+                self.doc
+                    .retarget_hover_and_active_for_detached_node(child_id);
+            } else {
+                if child.is_hovered() {
+                    hover_old_chain = Some(self.doc.maybe_node_element_ancestors(child.parent));
+                }
+                if child.is_active() {
+                    active_old_chain = Some(self.doc.maybe_node_element_ancestors(child.parent));
+                }
+            }
+
             let child = &mut self.doc.nodes[child_id];
             let child_was_in_doc = child.flags.is_in_document();
             self.mutations_occurred |= child_was_in_doc;
@@ -732,7 +754,40 @@ impl DocumentMutator<'_> {
             }
         }
 
+        if let Some(old_chain) = hover_old_chain {
+            let (set, unset) = (Node::hover, Node::unhover);
+            self.move_ancestor_state(&old_chain, parent_id, ElementState::HOVER, set, unset);
+        }
+        if let Some(old_chain) = active_old_chain {
+            let (set, unset) = (Node::active, Node::unactive);
+            self.move_ancestor_state(&old_chain, parent_id, ElementState::ACTIVE, set, unset);
+        }
+
         self.maybe_record_node(parent_id);
+    }
+
+    /// Move `state` from `old_chain` (the element ancestors a subtree was detached
+    /// from) to the element ancestors of its new parent. The shared prefix is untouched.
+    fn move_ancestor_state(
+        &mut self,
+        old_chain: &[NodeId],
+        new_parent_id: NodeId,
+        state: ElementState,
+        set: fn(&mut Node),
+        unset: fn(&mut Node),
+    ) {
+        let new_chain = self.doc.node_element_ancestors(new_parent_id);
+        let same_count = old_chain
+            .iter()
+            .zip(&new_chain)
+            .take_while(|(o, n)| o == n)
+            .count();
+        for &id in old_chain.iter().skip(same_count) {
+            self.doc.snapshot_node_and(id, state, unset);
+        }
+        for &id in new_chain.iter().skip(same_count) {
+            self.doc.snapshot_node_and(id, state, set);
+        }
     }
 
     // Tree mutation methods (that defer to other methods)

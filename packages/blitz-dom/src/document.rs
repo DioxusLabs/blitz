@@ -972,6 +972,45 @@ impl BaseDocument {
         self.scrollbar_activity.remove(&node_id);
     }
 
+    /// Retarget hover and active to the nearest element ancestor of `node_id`, which is
+    /// about to be moved out of the document, if either is inside its subtree. The old
+    /// ancestors keep their state and the moved subtree loses it, as when a hovered or
+    /// active node is removed; hover is re-resolved by [`Self::refresh_hover`].
+    pub(crate) fn retarget_hover_and_active_for_detached_node(&mut self, node_id: NodeId) {
+        let node = &self.nodes[node_id];
+        let (is_hovered, is_active) = (node.is_hovered(), node.is_active());
+        if !is_hovered && !is_active {
+            return;
+        }
+
+        let new_target = self.nearest_surviving_element_ancestor(node_id);
+        if is_hovered {
+            let old_target = std::mem::replace(&mut self.hover_node_id, new_target);
+            self.hover_hit_node_id = None;
+            self.hover_node_is_text = false;
+            self.clear_state_up_to(old_target, node_id, ElementState::HOVER, Node::unhover);
+        }
+        if is_active {
+            let old_target = std::mem::replace(&mut self.active_node_id, new_target);
+            self.clear_state_up_to(old_target, node_id, ElementState::ACTIVE, Node::unactive);
+        }
+    }
+
+    /// Clear `state` from `start` and its ancestors, up to and including `end`.
+    fn clear_state_up_to(
+        &mut self,
+        start: Option<NodeId>,
+        end: NodeId,
+        state: ElementState,
+        clear: fn(&mut Node),
+    ) {
+        let mut maybe_id = start;
+        while let Some(id) = maybe_id {
+            maybe_id = self.nodes[id].parent.filter(|_| id != end);
+            self.snapshot_node_and(id, state, clear);
+        }
+    }
+
     pub(crate) fn drop_node_ignoring_parent(&mut self, node_id: NodeId) -> Option<Node> {
         self.drop_node_ignoring_parent_with(node_id, &mut |_| {})
     }
