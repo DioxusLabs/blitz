@@ -721,7 +721,7 @@ impl Node {
         if let Some(data) = self.element_data_mut() {
             data.element_state.insert(ElementState::FOCUS_WITHIN);
         }
-        self.set_restyle_hint(RestyleHint::restyle_subtree());
+        self.mark_ancestors_dirty();
     }
 
     /// Mark this node as no longer containing focus (`:focus-within`).
@@ -729,7 +729,7 @@ impl Node {
         if let Some(data) = self.element_data_mut() {
             data.element_state.remove(ElementState::FOCUS_WITHIN);
         }
-        self.set_restyle_hint(RestyleHint::restyle_subtree());
+        self.mark_ancestors_dirty();
     }
 
     pub fn focus(&mut self, shell_provider: Arc<dyn ShellProvider>) {
