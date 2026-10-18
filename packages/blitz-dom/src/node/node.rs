@@ -732,6 +732,12 @@ impl Node {
         self.mark_ancestors_dirty();
     }
 
+    /// Whether this node is the focused node or one of its DOM ancestors (`:focus-within`).
+    pub fn contains_focus(&self) -> bool {
+        self.element_data()
+            .is_some_and(|data| data.element_state.contains(ElementState::FOCUS_WITHIN))
+    }
+
     pub fn focus(&mut self, shell_provider: Arc<dyn ShellProvider>) {
         if let Some(data) = self.element_data_mut() {
             data.element_state

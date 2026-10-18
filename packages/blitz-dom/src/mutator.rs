@@ -675,9 +675,6 @@ impl DocumentMutator<'_> {
         // If one of the moved subtrees contains the focused node, the ancestors it is
         // detached from stop matching :focus-within. Record them while the parent links
         // are still intact; the state is transferred after the children are reattached.
-        let focus_chain = self
-            .doc
-            .maybe_node_element_ancestors(self.doc.focus_node_id);
         let mut focus_within_old_chain: Option<Vec<NodeId>> = None;
 
         // Detach the children from their old parents *before* inserting them into
@@ -687,10 +684,9 @@ impl DocumentMutator<'_> {
         // parent's child list, and anchor indices would be computed against a
         // child list that still contains the moved nodes.
         for child_id in child_ids.iter().copied() {
-            if focus_within_old_chain.is_none() {
-                if let Some(pos) = focus_chain.iter().position(|&id| id == child_id) {
-                    focus_within_old_chain = Some(focus_chain[..pos].to_vec());
-                }
+            let child = &self.doc.nodes[child_id];
+            if child.contains_focus() {
+                focus_within_old_chain = Some(self.doc.maybe_node_element_ancestors(child.parent));
             }
 
             let child = &mut self.doc.nodes[child_id];
