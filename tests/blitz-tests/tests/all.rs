@@ -27,6 +27,7 @@ mod display_contents;
 mod drag_and_drop;
 mod event_queue;
 mod fixed_position;
+mod fixed_position_client_rect;
 mod flex_br;
 mod flex_grid_order;
 mod focus_redraw;
