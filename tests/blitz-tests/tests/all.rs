@@ -24,6 +24,7 @@ mod device_coalescing;
 mod dir_attribute;
 mod display_contents;
 mod fixed_position;
+mod fixed_position_client_rect;
 mod flex_grid_order;
 mod focus_redraw;
 mod focus_within;

@@ -1070,6 +1070,17 @@ impl Node {
                 .is_some_and(|parent| matches!(self.with(parent).data, NodeData::Document(_)))
     }
 
+    /// Whether the viewport positions this box rather than the page: a fixed box whose
+    /// containing block is the root element, or a box inside one. Such a box does not move
+    /// when the page scrolls.
+    pub fn is_viewport_anchored(&self) -> bool {
+        let Some(containing_block) = self.containing_block().map(|id| self.with(id)) else {
+            return false;
+        };
+        (self.taffy_position() == taffy::Position::Fixed && containing_block.is_root_element())
+            || containing_block.is_viewport_anchored()
+    }
+
     pub fn is_anonymous(&self) -> bool {
         matches!(self.data, NodeData::AnonymousBlock { .. })
     }
