@@ -715,6 +715,29 @@ impl Node {
             .is_some_and(|data| data.element_state.contains(ElementState::HOVER))
     }
 
+    /// Mark this node as containing focus (`:focus-within`). Set on the
+    /// focused element and all of its DOM ancestors.
+    pub fn add_focus_within(&mut self) {
+        if let Some(data) = self.element_data_mut() {
+            data.element_state.insert(ElementState::FOCUS_WITHIN);
+        }
+        self.mark_ancestors_dirty();
+    }
+
+    /// Mark this node as no longer containing focus (`:focus-within`).
+    pub fn remove_focus_within(&mut self) {
+        if let Some(data) = self.element_data_mut() {
+            data.element_state.remove(ElementState::FOCUS_WITHIN);
+        }
+        self.mark_ancestors_dirty();
+    }
+
+    /// Whether this node is the focused node or one of its DOM ancestors (`:focus-within`).
+    pub fn contains_focus(&self) -> bool {
+        self.element_data()
+            .is_some_and(|data| data.element_state.contains(ElementState::FOCUS_WITHIN))
+    }
+
     pub fn focus(&mut self, shell_provider: Arc<dyn ShellProvider>) {
         if let Some(data) = self.element_data_mut() {
             data.element_state
