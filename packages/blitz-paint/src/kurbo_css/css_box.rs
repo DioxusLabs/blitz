@@ -35,6 +35,7 @@ pub struct CssBox {
     pub border_width: Insets,
     pub padding_width: Insets,
     pub outline_width: f64,
+    pub outline_offset: f64,
 
     /// Outer (border-box) radii, already scaled down so adjacent corners don't overlap.
     pub border_radii: NonUniformRoundedRectRadii,
@@ -75,6 +76,7 @@ impl CssBox {
             border_width: border,
             padding_width: padding,
             outline_width,
+            outline_offset: 0.0,
             border_radii,
         }
     }
@@ -88,12 +90,20 @@ impl CssBox {
     }
 
     pub fn outline_box(&self) -> Rect {
-        self.border_box.inset(self.outline_width)
+        self.border_box
+            .inset(self.outline_offset + self.outline_width)
+    }
+
+    /// The inner edge of the outline: the border box moved out by `outline-offset`, or in when
+    /// the offset is negative.
+    fn outline_inner_box(&self) -> Rect {
+        self.border_box.inset(self.outline_offset)
     }
 
     fn rect(&self, kind: CssBoxKind) -> Rect {
         match kind {
             CssBoxKind::OutlineBox => self.outline_box(),
+            CssBoxKind::OutlineInnerBox => self.outline_inner_box(),
             CssBoxKind::BorderBox => self.border_box,
             CssBoxKind::PaddingBox => self.padding_box(),
             CssBoxKind::ContentBox => self.content_box(),
@@ -209,16 +219,27 @@ impl CssBox {
         )
     }
 
+    /// Move the outline away from the border box by `offset` (`outline-offset`), or into it
+    /// when the offset is negative.
+    pub fn with_outline_offset(mut self, offset: f64) -> Self {
+        self.outline_offset = offset;
+        self
+    }
+
     /// Construct a bezpath drawing the outline
     pub fn outline(&self) -> BezPath {
         let mut path = BezPath::new();
 
         // TODO: this has been known to produce quirky outputs with hugely rounded edges
         self.shape(&mut path, CssBoxKind::OutlineBox, Direction::Clockwise);
-        path.move_to(self.corner(Corner::TopLeft, CssBoxKind::BorderBox));
+        path.move_to(self.corner(Corner::TopLeft, CssBoxKind::OutlineInnerBox));
 
-        self.shape(&mut path, CssBoxKind::BorderBox, Direction::Anticlockwise);
-        path.move_to(self.corner(Corner::TopLeft, CssBoxKind::BorderBox));
+        self.shape(
+            &mut path,
+            CssBoxKind::OutlineInnerBox,
+            Direction::Anticlockwise,
+        );
+        path.move_to(self.corner(Corner::TopLeft, CssBoxKind::OutlineInnerBox));
 
         path
     }
@@ -522,7 +543,12 @@ impl CssBox {
         }
 
         let css_box: Insets = match side {
-            OutlineBox => return false,
+            // The outline's edges round the border box's corners at a distance, so a negative
+            // offset can shrink a corner's radius away entirely.
+            OutlineBox | OutlineInnerBox => {
+                let (_, radii) = self.ellipse(corner, side);
+                return radii.x <= 0.0 || radii.y <= 0.0;
+            }
             BorderBox => return false,
             PaddingBox => self.border_width,
             ContentBox => add_insets(self.border_width, self.padding_width),
@@ -581,7 +607,8 @@ impl CssBox {
 
         let radii: Vec2 = match side {
             BorderBox => corner_radii,
-            OutlineBox => corner_radii + Vec2::new(self.outline_width, self.outline_width),
+            OutlineBox => grow_radii(corner_radii, self.outline_offset + self.outline_width),
+            OutlineInnerBox => grow_radii(corner_radii, self.outline_offset),
             PaddingBox => corner_radii - get_corner_insets(*border_width, corner),
             ContentBox => {
                 corner_radii - get_corner_insets(add_insets(*border_width, *padding_width), corner)
@@ -672,6 +699,12 @@ fn start_angle(bt_width: f64, br_width: f64, radii: Vec2) -> f64 {
     let sqrt_x = x.sqrt();
     let s = sqrt_x / (sqrt_x + SQRT_2);
     s.atan() * 2.0
+}
+
+/// The radii of a corner `by` away from the border box's edge, around the same centre: a
+/// rounded corner keeps its centre and grows or shrinks with the distance, never below zero.
+fn grow_radii(radii: Vec2, by: f64) -> Vec2 {
+    Vec2::new((radii.x + by).max(0.0), (radii.y + by).max(0.0))
 }
 
 #[cfg(test)]
