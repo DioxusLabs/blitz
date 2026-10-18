@@ -671,6 +671,12 @@ impl DocumentMutator<'_> {
     ) {
         let new_parent_is_in_document = self.doc.nodes[parent_id].flags.is_in_document();
         self.mutations_occurred |= new_parent_is_in_document && !child_ids.is_empty();
+
+        // If one of the moved subtrees contains the focused node, the ancestors it is
+        // detached from stop matching :focus-within. Record them while the parent links
+        // are still intact; the state is transferred after the children are reattached.
+        let mut focus_within_old_chain: Option<Vec<NodeId>> = None;
+
         let mut hover_old_chain: Option<Vec<NodeId>> = None;
         let mut active_old_chain: Option<Vec<NodeId>> = None;
 
@@ -681,6 +687,11 @@ impl DocumentMutator<'_> {
         // parent's child list, and anchor indices would be computed against a
         // child list that still contains the moved nodes.
         for child_id in child_ids.iter().copied() {
+            let child = &self.doc.nodes[child_id];
+            if child.contains_focus() {
+                focus_within_old_chain = Some(self.doc.maybe_node_element_ancestors(child.parent));
+            }
+
             // Hover/active inside a moved subtree would otherwise stay set on the
             // ancestors it is detached from. Record them while the parent links are
             // still intact; the state is transferred after the children are reattached.
@@ -751,6 +762,33 @@ impl DocumentMutator<'_> {
                 self.process_added_subtree(child_id);
             } else if !new_parent_is_in_document && child_was_in_doc {
                 self.process_removed_subtree(child_id);
+            }
+        }
+
+        // Transfer :focus-within from the old ancestor chain to the new one (the
+        // shared prefix stays). If the subtree left the document, the focus was
+        // cleared with it and only the old chain needs the state removed.
+        if let Some(old_chain) = focus_within_old_chain {
+            let new_chain = match self.doc.focus_node_id {
+                Some(_) => self.doc.node_element_ancestors(parent_id),
+                None => Vec::new(),
+            };
+            let same_count = old_chain
+                .iter()
+                .zip(&new_chain)
+                .take_while(|(o, n)| o == n)
+                .count();
+            for &id in old_chain.iter().skip(same_count) {
+                self.doc
+                    .snapshot_node_and(id, ElementState::FOCUS_WITHIN, |node| {
+                        node.remove_focus_within()
+                    });
+            }
+            for &id in new_chain.iter().skip(same_count) {
+                self.doc
+                    .snapshot_node_and(id, ElementState::FOCUS_WITHIN, |node| {
+                        node.add_focus_within()
+                    });
             }
         }
 

@@ -945,6 +945,21 @@ impl BaseDocument {
         if self.focus_node_id == Some(node_id) {
             let shell_provider = self.shell_provider.clone();
             self.nodes[node_id].blur(shell_provider);
+            // Nothing on the chain contains the focus anymore. Only the surviving
+            // ancestors need a snapshot for restyling: nodes in the removed subtree had
+            // theirs dropped already and may be freed entirely.
+            let mut maybe_id = Some(node_id);
+            while let Some(node) = maybe_id.and_then(|id| self.get_node(id)) {
+                let id = node.id;
+                maybe_id = node.parent;
+                if node.flags.is_in_document() {
+                    self.snapshot_node_and(id, ElementState::FOCUS_WITHIN, |node| {
+                        node.remove_focus_within()
+                    });
+                } else {
+                    self.nodes[id].remove_focus_within();
+                }
+            }
             self.focus_node_id = None;
         }
         if self.mousedown_node_id == Some(node_id) {
@@ -1729,7 +1744,13 @@ impl BaseDocument {
             self.snapshot_node_and(id, ElementState::FOCUS | ElementState::FOCUSRING, |node| {
                 node.blur(shell_provider)
             });
+            for &ancestor in self.node_element_ancestors(id).iter() {
+                self.snapshot_node_and(ancestor, ElementState::FOCUS_WITHIN, |node| {
+                    node.remove_focus_within()
+                });
+            }
             self.focus_node_id = None;
+            self.shell_provider.request_redraw();
         }
     }
 
@@ -1741,6 +1762,10 @@ impl BaseDocument {
             return false;
         };
         if Some(focus_node_id) == self.focus_node_id {
+            return false;
+        }
+        // A node that is not in the document cannot be focused
+        if !self.nodes[focus_node_id].flags.is_in_document() {
             return false;
         }
 
@@ -1763,7 +1788,31 @@ impl BaseDocument {
             |node| node.focus(shell_provider),
         );
 
+        // Update :focus-within on the ancestor chains (shared prefix stays)
+        let old_node_path = self.maybe_node_element_ancestors(self.focus_node_id);
+        let new_node_path = self.node_element_ancestors(focus_node_id);
+        let same_count = old_node_path
+            .iter()
+            .zip(&new_node_path)
+            .take_while(|(o, n)| o == n)
+            .count();
+        for &id in old_node_path.iter().skip(same_count) {
+            self.snapshot_node_and(id, ElementState::FOCUS_WITHIN, |node| {
+                node.remove_focus_within()
+            });
+        }
+        for &id in new_node_path.iter().skip(same_count) {
+            self.snapshot_node_and(id, ElementState::FOCUS_WITHIN, |node| {
+                node.add_focus_within()
+            });
+        }
+
         self.focus_node_id = Some(focus_node_id);
+
+        // The focus is styled (:focus, :focus-visible, :focus-within), so
+        // moving it changes what is on screen. Nothing else asks for the
+        // frame: a keyboard focus change touches no layout and no content.
+        self.shell_provider.request_redraw();
 
         true
     }

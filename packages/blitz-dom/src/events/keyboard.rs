@@ -22,7 +22,6 @@ pub(crate) fn handle_key_or_input_event<F: FnMut(DomEvent)>(
     if let KeyboardOrTextInputEvent::KeyPress(event) = &event {
         if event.key == Key::Named(NamedKey::Tab) {
             let backwards = event.modifiers.contains(Modifiers::SHIFT);
-            let old_focus = doc.focus_node_id;
             generate_focus_events(
                 doc,
                 &mut |doc| {
@@ -34,9 +33,6 @@ pub(crate) fn handle_key_or_input_event<F: FnMut(DomEvent)>(
                 },
                 &mut dispatch_event,
             );
-            if doc.focus_node_id != old_focus {
-                doc.shell_provider.request_redraw();
-            }
             return;
         }
 
