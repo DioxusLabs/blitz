@@ -8,7 +8,7 @@ pub(crate) mod style;
 
 #[cfg(feature = "parallel-construct")]
 use std::cell::RefCell;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use std::ops::Range;
 
@@ -18,6 +18,7 @@ use parley::{
     Affinity, BreakReason, Cluster, ClusterSide, Cursor, LayoutContext, PositionedLayoutItem, Run,
     Selection,
 };
+use smallvec::SmallVec;
 #[cfg(feature = "parallel-construct")]
 use thread_local::ThreadLocal;
 
@@ -82,11 +83,229 @@ pub struct TextLayout {
     /// The floats, as the lines place them: each one's node, side and margin box's size in device
     /// pixels.
     floats: Vec<(u64, FloatSide, f32, f32)>,
+    /// Each node's own fragments on the lines, indexed the first time a fragment is asked for.
+    /// Taken whenever the layout is built or its lines are broken again.
+    fragments: OnceLock<FragmentIndex>,
+}
+
+/// The fragments of each node that the layout's items are of: the glyph runs of the node's own
+/// style span, or the node's inline box, and nothing of the nodes inside it. It is made from the
+/// lines alone, so the DOM can change under it: which nodes are inside the one asked about is
+/// read from the live DOM when it is asked.
+#[derive(Clone, Default)]
+struct FragmentIndex {
+    /// Sorted by node, and then by line.
+    fragments: Vec<Fragment>,
+}
+
+/// The union of a node's own items on one line.
+#[derive(Clone, Copy)]
+struct Fragment {
+    node: u64,
+    line: usize,
+    /// In device pixels relative to the layout.
+    rect: taffy::Rect<f32>,
+    /// Whether the items are the node's inline box, whose contents are laid out apart.
+    inline_box: bool,
+}
+
+impl FragmentIndex {
+    /// `node`'s own fragments, first line first.
+    fn of(&self, node: NodeId) -> &[Fragment] {
+        let node = node.as_u64();
+        let start = self
+            .fragments
+            .partition_point(|fragment| fragment.node < node);
+        let len = self.fragments[start..].partition_point(|fragment| fragment.node == node);
+        &self.fragments[start..start + len]
+    }
+}
+
+/// Grows `acc` to take in `rect`.
+fn union(acc: &mut taffy::Rect<f32>, rect: taffy::Rect<f32>) {
+    acc.left = acc.left.min(rect.left);
+    acc.top = acc.top.min(rect.top);
+    acc.right = acc.right.max(rect.right);
+    acc.bottom = acc.bottom.max(rect.bottom);
 }
 
 impl std::fmt::Debug for TextLayout {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "TextLayout")
+    }
+}
+
+impl TextLayout {
+    /// Each node's own items on the lines, in one walk of the lines.
+    fn index_fragments(&self) -> FragmentIndex {
+        let mut fragments: Vec<Fragment> = Vec::new();
+        for (line_index, line) in self.layout.lines().enumerate() {
+            let line_metrics = line.metrics();
+            for item in line.items() {
+                let (node, rect, inline_box) = match item {
+                    // A run's brush is that of the style span it is set in: the element whose
+                    // text it is, or the inline root for text directly inside it. A text node
+                    // has no span, so it has no fragments of its own.
+                    PositionedLayoutItem::GlyphRun(glyph_run) => {
+                        let x0 = glyph_run.offset();
+                        // Use the line box's block extent rather than the
+                        // run's font ascent/descent: fonts with small
+                        // typographic metrics would otherwise produce rects
+                        // that clip the rendered glyphs. This matches the
+                        // geometry used for text selection highlights.
+                        let rect = taffy::Rect {
+                            left: x0,
+                            top: line_metrics.block_min_coord,
+                            right: x0 + glyph_run.advance(),
+                            bottom: line_metrics.block_max_coord,
+                        };
+                        (glyph_run.style().brush.id.as_u64(), rect, false)
+                    }
+                    PositionedLayoutItem::InlineBox(inline_box) => {
+                        let rect = taffy::Rect {
+                            left: inline_box.x,
+                            top: inline_box.y,
+                            right: inline_box.x + inline_box.width,
+                            bottom: inline_box.y + inline_box.height,
+                        };
+                        (inline_box.id, rect, true)
+                    }
+                };
+                match fragments.last_mut() {
+                    Some(last) if last.node == node && last.line == line_index => {
+                        union(&mut last.rect, rect);
+                    }
+                    _ => fragments.push(Fragment {
+                        node,
+                        line: line_index,
+                        rect,
+                        inline_box,
+                    }),
+                }
+            }
+        }
+        // A stable sort, so a node's items on a line are united in the order they are in.
+        fragments.sort_by_key(|fragment| (fragment.node, fragment.line));
+        fragments.dedup_by(|fragment, kept| {
+            let same = fragment.node == kept.node && fragment.line == kept.line;
+            if same {
+                union(&mut kept.rect, fragment.rect);
+                kept.inline_box |= fragment.inline_box;
+            }
+            same
+        });
+        FragmentIndex { fragments }
+    }
+
+    /// The boxes `node` has on each line, first line first, in device pixels relative to the
+    /// layout: on each line, the union of the items of `node` and of every node inside it in
+    /// the live DOM, up to the inline root `root`, and not inside a node that is laid out apart.
+    fn folded_fragments<'a>(&'a self, root: &Node, node: &Node) -> FoldedFragments<'a> {
+        let index = self.fragments.get_or_init(|| self.index_fragments());
+        // Whether a node's subtree is laid out apart from these lines: an inline box, which
+        // is laid out on its own, or a node with lines of its own.
+        let laid_out_apart = |node: &Node, fragments: &[Fragment]| {
+            node.id != root.id
+                && (fragments.iter().any(|fragment| fragment.inline_box)
+                    || node.flags.is_inline_root())
+        };
+
+        // The first node found with fragments is borrowed; a second one starts a list of all of
+        // them, which is sorted by line and folded into one rect per line at the end.
+        let mut first: &[Fragment] = &[];
+        let mut merged: Option<SmallVec<[Fragment; 8]>> = None;
+        let mut take = |fragments: &'a [Fragment]| {
+            if fragments.is_empty() {
+                return;
+            }
+            if let Some(merged) = &mut merged {
+                merged.extend_from_slice(fragments);
+            } else if first.is_empty() {
+                first = fragments;
+            } else {
+                let mut list = SmallVec::with_capacity(first.len() + fragments.len());
+                list.extend_from_slice(first);
+                list.extend_from_slice(fragments);
+                merged = Some(list);
+            }
+        };
+
+        // The node and every node whose DOM parent chain reaches it before the inline root:
+        // its children and pseudo-elements whose parent it is, and theirs, read from the DOM as
+        // it is now. Iterative, as an inline formatting context can be deep.
+        let fragments = index.of(node.id);
+        take(fragments);
+        let mut stack: SmallVec<[NodeId; 16]> = SmallVec::new();
+        if !laid_out_apart(node, fragments) {
+            stack.push(node.id);
+        }
+        while let Some(id) = stack.pop() {
+            let parent = node.with(id);
+            let children = parent
+                .before()
+                .into_iter()
+                .chain(parent.children.iter().copied())
+                .chain(parent.after());
+            for child_id in children {
+                let child = node.with(child_id);
+                // Text is set in its parent's style span, so a text node has no items of its
+                // own, nor any children.
+                if child.is_text_node() || child.parent != Some(id) || child_id == root.id {
+                    continue;
+                }
+                let fragments = index.of(child_id);
+                take(fragments);
+                if !laid_out_apart(child, fragments)
+                    && (!child.children.is_empty()
+                        || child.before().is_some()
+                        || child.after().is_some())
+                {
+                    stack.push(child_id);
+                }
+            }
+        }
+
+        match merged {
+            None => FoldedFragments {
+                own: first.iter(),
+                merged: SmallVec::new().into_iter(),
+            },
+            Some(mut merged) => {
+                // A min/max union is exact, so the rects are the same in any order.
+                merged.sort_unstable_by_key(|fragment| fragment.line);
+                merged.dedup_by(|fragment, kept| {
+                    let same_line = fragment.line == kept.line;
+                    if same_line {
+                        union(&mut kept.rect, fragment.rect);
+                    }
+                    same_line
+                });
+                FoldedFragments {
+                    own: [].iter(),
+                    merged: merged.into_iter(),
+                }
+            }
+        }
+    }
+}
+
+/// A node's boxes on the lines, as [`TextLayout::folded_fragments`] finds them: borrowed from
+/// the index where only one node has items, or else united from those of several.
+struct FoldedFragments<'a> {
+    own: std::slice::Iter<'a, Fragment>,
+    merged: smallvec::IntoIter<[Fragment; 8]>,
+}
+
+impl Iterator for FoldedFragments<'_> {
+    type Item = taffy::Rect<f32>;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        self.own
+            .next()
+            .copied()
+            .or_else(|| self.merged.next())
+            .map(|fragment| fragment.rect)
     }
 }
 
@@ -244,95 +463,19 @@ impl InlineText for TextLayout {
     }
 
     fn fragment_rects(&self, root: &Node, node: &Node) -> impl Iterator<Item = taffy::Rect<f32>> {
-        let layout = &self.layout;
-        let scale = layout.scale();
-
-        // Walk up the DOM parent chain from `id` to check whether it is (or is
-        // inside) the target node, stopping at the inline root.
-        let root_id = root.id;
-        let is_in_target = move |mut id: NodeId| -> bool {
-            loop {
-                if id == node.id {
-                    return true;
-                }
-                if id == root_id {
-                    return false;
-                }
-                match node.with(id).parent {
-                    Some(parent) => id = parent,
-                    None => return false,
-                }
-            }
-        };
-
+        let scale = self.layout.scale();
         let root_layout = root.unrounded_layout();
         let content_box_inset = root_layout.padding + root_layout.border;
         let origin_x = content_box_inset.left;
         let origin_y = content_box_inset.top + self.block_offset;
 
-        fn union(acc: &mut Option<taffy::Rect<f32>>, left: f32, top: f32, right: f32, bottom: f32) {
-            *acc = Some(match *acc {
-                Some(rect) => taffy::Rect {
-                    left: rect.left.min(left),
-                    top: rect.top.min(top),
-                    right: rect.right.max(right),
-                    bottom: rect.bottom.max(bottom),
-                },
-                None => taffy::Rect {
-                    left,
-                    top,
-                    right,
-                    bottom,
-                },
-            });
-        }
-
-        // One rect per line box: the union of all of the target's fragments on that line
-        layout.lines().filter_map(move |line| {
-            let line_metrics = line.metrics();
-            let mut line_rect: Option<taffy::Rect<f32>> = None;
-
-            for item in line.items() {
-                match item {
-                    PositionedLayoutItem::GlyphRun(glyph_run) => {
-                        if !is_in_target(glyph_run.style().brush.id) {
-                            continue;
-                        }
-                        let x0 = glyph_run.offset();
-                        let x1 = x0 + glyph_run.advance();
-                        // Use the line box's block extent rather than the
-                        // run's font ascent/descent: fonts with small
-                        // typographic metrics would otherwise produce rects
-                        // that clip the rendered glyphs. This matches the
-                        // geometry used for text selection highlights.
-                        let y0 = line_metrics.block_min_coord;
-                        let y1 = line_metrics.block_max_coord;
-                        union(&mut line_rect, x0, y0, x1, y1);
-                    }
-                    PositionedLayoutItem::InlineBox(inline_box) => {
-                        if !is_in_target(NodeId::from_u64(inline_box.id)) {
-                            continue;
-                        }
-                        let x0 = inline_box.x;
-                        let y0 = inline_box.y;
-                        union(
-                            &mut line_rect,
-                            x0,
-                            y0,
-                            x0 + inline_box.width,
-                            y0 + inline_box.height,
-                        );
-                    }
-                }
-            }
-
-            line_rect.map(|rect| taffy::Rect {
+        self.folded_fragments(root, node)
+            .map(move |rect| taffy::Rect {
                 left: origin_x + rect.left / scale,
                 top: origin_y + rect.top / scale,
                 right: origin_x + rect.right / scale,
                 bottom: origin_y + rect.bottom / scale,
             })
-        })
     }
 
     fn debug_print(&self) {
@@ -498,5 +641,341 @@ impl InlineLayoutEngine for TextLayout {
         _rtl: bool,
     ) -> taffy::Point<f32> {
         taffy::Point::ZERO
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Attribute, BaseDocument, DocumentConfig, NodeData, local_name, qual_name};
+    use blitz_traits::shell::{ColorScheme, Viewport};
+
+    /// The fragments of `node` as found by walking every item of the layout and the DOM parent
+    /// chain of each, which the index replaces.
+    fn scanned_fragment_rects(
+        text: &TextLayout,
+        root: &Node,
+        node: &Node,
+    ) -> Vec<taffy::Rect<f32>> {
+        let layout = &text.layout;
+        let scale = layout.scale();
+        let is_in_target = |mut id: NodeId| loop {
+            if id == node.id {
+                return true;
+            }
+            if id == root.id {
+                return false;
+            }
+            match node.with(id).parent {
+                Some(parent) => id = parent,
+                None => return false,
+            }
+        };
+        let root_layout = root.unrounded_layout();
+        let content_box_inset = root_layout.padding + root_layout.border;
+        let origin_x = content_box_inset.left;
+        let origin_y = content_box_inset.top + text.block_offset;
+        let mut rects = Vec::new();
+        for line in layout.lines() {
+            let metrics = line.metrics();
+            let mut line_rect: Option<taffy::Rect<f32>> = None;
+            for item in line.items() {
+                let (id, rect) = match item {
+                    PositionedLayoutItem::GlyphRun(run) => (
+                        run.style().brush.id,
+                        taffy::Rect {
+                            left: run.offset(),
+                            top: metrics.block_min_coord,
+                            right: run.offset() + run.advance(),
+                            bottom: metrics.block_max_coord,
+                        },
+                    ),
+                    PositionedLayoutItem::InlineBox(ibox) => (
+                        NodeId::from_u64(ibox.id),
+                        taffy::Rect {
+                            left: ibox.x,
+                            top: ibox.y,
+                            right: ibox.x + ibox.width,
+                            bottom: ibox.y + ibox.height,
+                        },
+                    ),
+                };
+                if !is_in_target(id) {
+                    continue;
+                }
+                line_rect = Some(match line_rect {
+                    Some(acc) => taffy::Rect {
+                        left: acc.left.min(rect.left),
+                        top: acc.top.min(rect.top),
+                        right: acc.right.max(rect.right),
+                        bottom: acc.bottom.max(rect.bottom),
+                    },
+                    None => rect,
+                });
+            }
+            rects.extend(line_rect.map(|rect| taffy::Rect {
+                left: origin_x + rect.left / scale,
+                top: origin_y + rect.top / scale,
+                right: origin_x + rect.right / scale,
+                bottom: origin_y + rect.bottom / scale,
+            }));
+        }
+        rects
+    }
+
+    /// Line room that no float takes from: the whole of the width.
+    struct NoFloats(f32);
+
+    impl LineExclusions for NoFloats {
+        fn band(&self, _start: f32, _end: f32) -> (f32, f32) {
+            (0.0, self.0)
+        }
+
+        fn below(&self, _top: f32) -> Option<f32> {
+            None
+        }
+
+        fn place(&mut self, _float: crate::text::FloatRequest) -> crate::text::PlacedFloat {
+            unreachable!("the content holds no floats")
+        }
+
+        fn checkpoint(&self) -> usize {
+            0
+        }
+
+        fn rewind(&mut self, _to: usize) {}
+    }
+
+    /// `<style>div > span::before { content: "> " }</style>` and `<div style="width:120px">aaaa
+    /// <span>bbbb bbbb <a>cccc cccc cccc cccc cccc cccc cccc cccc</a> dddd <i></i>
+    /// <span style="display:inline-block"></span> eeee<br>ffff <b>gggg<br>hhhh</b></span>
+    /// iiii</div>`, built without the HTML parser, which lives in blitz-html.
+    fn make_doc() -> (BaseDocument, NodeId, Vec<NodeId>) {
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
+            ..Default::default()
+        });
+        let root_id = doc.root_node().id;
+        let style = |value: &str| Attribute {
+            name: qual_name!("style"),
+            value: value.to_string(),
+        };
+
+        let mut mutator = doc.mutate();
+        let html = mutator.create_element(qual_name!("html", html), vec![]);
+        let head = mutator.create_element(qual_name!("head", html), vec![]);
+        let stylesheet = mutator.create_element(qual_name!("style", html), vec![]);
+        let css = mutator.create_text_node("div > span::before { content: \"> \" }");
+        mutator.append_children(stylesheet, &[css]);
+        mutator.append_children(head, &[stylesheet]);
+        let body = mutator.create_element(qual_name!("body", html), vec![style("margin:0")]);
+        let div = mutator.create_element(qual_name!("div", html), vec![style("width:120px")]);
+        let span = mutator.create_element(qual_name!("span", html), vec![]);
+        let link = mutator.create_element(qual_name!("a", html), vec![]);
+        let empty = mutator.create_element(qual_name!("i", html), vec![]);
+        let inline_block = mutator.create_element(
+            qual_name!("span", html),
+            vec![style("display:inline-block;width:30px;height:10px")],
+        );
+        let br = mutator.create_element(qual_name!("br", html), vec![]);
+        let bold = mutator.create_element(qual_name!("b", html), vec![]);
+        let bold_br = mutator.create_element(qual_name!("br", html), vec![]);
+
+        let texts = [
+            "aaaa ",
+            "bbbb bbbb ",
+            // Long enough to wrap in the 120px div with any platform's default font.
+            "cccc cccc cccc cccc cccc cccc cccc cccc",
+            " dddd ",
+            " ",
+            " eeee",
+            "ffff ",
+            "gggg",
+            "hhhh",
+            " iiii",
+        ]
+        .map(|text| mutator.create_text_node(text));
+        mutator.append_children(link, &[texts[2]]);
+        mutator.append_children(bold, &[texts[7], bold_br, texts[8]]);
+        mutator.append_children(
+            span,
+            &[
+                texts[1],
+                link,
+                texts[3],
+                empty,
+                texts[4],
+                inline_block,
+                texts[5],
+                br,
+                texts[6],
+                bold,
+            ],
+        );
+        mutator.append_children(div, &[texts[0], span, texts[9]]);
+        mutator.append_children(body, &[div]);
+        mutator.append_children(html, &[head, body]);
+        mutator.append_children(root_id, &[html]);
+        drop(mutator);
+
+        doc.resolve(0.0);
+        (doc, div, vec![span, link, empty, bold])
+    }
+
+    /// The inline layout of the inline root `div`.
+    fn inline_layout(doc: &BaseDocument, div: NodeId) -> &TextLayout {
+        doc.nodes[div]
+            .element_data()
+            .and_then(|element| element.inline_layout_data.as_deref())
+            .expect("the div is an inline root")
+    }
+
+    /// Checks that the inline root `div` and every node inside it in the live DOM, text,
+    /// pseudo-elements and atomic inlines included, have the fragments the scan finds, and
+    /// returns how many nodes were checked.
+    fn assert_indexed_rects_match_the_scan(doc: &BaseDocument, div: NodeId) -> usize {
+        let root = &doc.nodes[div];
+        let text = inline_layout(doc, div);
+        let mut stack = vec![div];
+        let mut checked = 0;
+        while let Some(id) = stack.pop() {
+            let node = &doc.nodes[id];
+            stack.extend(node.before().into_iter().chain(node.after()));
+            stack.extend(node.children.iter().copied());
+            let indexed: Vec<_> = text.fragment_rects(root, node).collect();
+            assert_eq!(
+                indexed,
+                scanned_fragment_rects(text, root, node),
+                "node {id:?}"
+            );
+            checked += 1;
+        }
+        checked
+    }
+
+    #[test]
+    fn indexed_fragment_rects_match_a_scan_of_the_layout() {
+        let (doc, div, inlines) = make_doc();
+        let root = &doc.nodes[div];
+        let text = inline_layout(&doc, div);
+        assert!(
+            text.layout.lines().count() >= 4,
+            "the content should wrap and break onto several lines"
+        );
+
+        assert!(assert_indexed_rects_match_the_scan(&doc, div) >= 20);
+
+        let [span, link, empty, bold] = inlines[..] else {
+            unreachable!()
+        };
+        assert!(
+            doc.nodes[span].before().is_some(),
+            "the span has a ::before"
+        );
+        let rects = |id: NodeId| doc.nodes[id].inline_fragment_boxes().unwrap().count();
+        assert!(rects(span) >= 4, "the span is on several lines");
+        assert!(rects(link) >= 2, "the link wraps");
+        assert!(rects(bold) >= 2, "the <br> in the <b> breaks it");
+        assert_eq!(rects(empty), 0, "an empty inline has no items");
+
+        // A query after the lines are broken again is answered from the new lines.
+        let mut text = text.clone();
+        assert!(text.fragments.get().is_some());
+        let width = 60.0 * text.layout.scale();
+        text.break_into_lines(width, None, &mut NoFloats(width));
+        assert!(text.fragments.get().is_none());
+        let node = &doc.nodes[span];
+        let indexed: Vec<_> = text.fragment_rects(root, node).collect();
+        assert_eq!(indexed, scanned_fragment_rects(&text, root, node));
+    }
+
+    /// The index holds only what the lines say; which nodes are inside which is read from the
+    /// DOM as it is when asked, as the scan read it, so moving nodes about without laying the
+    /// document out again changes the answers the same way.
+    #[test]
+    fn indexed_fragment_rects_follow_the_dom_without_a_relayout() {
+        let (mut doc, div, inlines) = make_doc();
+        let [span, link, empty, bold] = inlines[..] else {
+            unreachable!()
+        };
+        assert_indexed_rects_match_the_scan(&doc, div);
+        assert!(inline_layout(&doc, div).fragments.get().is_some());
+        let rects = |doc: &BaseDocument, id: NodeId| {
+            let root = &doc.nodes[div];
+            inline_layout(doc, div)
+                .fragment_rects(root, &doc.nodes[id])
+                .collect::<Vec<_>>()
+        };
+        let span_before = rects(&doc, span);
+        let bold_before = rects(&doc, bold);
+
+        // Out of the span, to the end of the div; the <b> into the empty <i>; and the
+        // inline-block out of the document.
+        let inline_block = doc.nodes[span]
+            .children
+            .iter()
+            .copied()
+            .find(|&id| {
+                doc.nodes[id]
+                    .data
+                    .is_element_with_tag_name(&local_name!("span"))
+            })
+            .unwrap();
+        let mut mutator = doc.mutate();
+        mutator.append_children(div, &[link]);
+        mutator.append_children(empty, &[bold]);
+        mutator.remove_node(inline_block);
+        drop(mutator);
+
+        // Nothing has been laid out again: the lines, and the index of them, are the old ones.
+        let text = inline_layout(&doc, div);
+        assert!(text.fragments.get().is_some());
+        assert_eq!(doc.nodes[link].parent, Some(div));
+        assert_ne!(rects(&doc, span), span_before, "the span lost the link");
+        assert_eq!(rects(&doc, empty), bold_before, "the <i> holds the <b>");
+        assert!(assert_indexed_rects_match_the_scan(&doc, div) >= 15);
+        // The removed box is found by neither, the scan's walk up from it ending outside the
+        // inline root.
+        let root = &doc.nodes[div];
+        let removed = &doc.nodes[inline_block];
+        assert_eq!(
+            text.fragment_rects(root, removed).collect::<Vec<_>>(),
+            scanned_fragment_rects(text, root, removed),
+        );
+    }
+
+    /// An anonymous block's inline content keeps the block it is in as its DOM parent, so the
+    /// scan never reaches the anonymous block from its children's items, and the walk down
+    /// from it follows only the children whose parent it is.
+    #[test]
+    fn indexed_fragment_rects_match_a_scan_in_an_anonymous_block() {
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
+            ..Default::default()
+        });
+        let root_id = doc.root_node().id;
+        let mut mutator = doc.mutate();
+        let html = mutator.create_element(qual_name!("html", html), vec![]);
+        let body = mutator.create_element(qual_name!("body", html), vec![]);
+        let div = mutator.create_element(qual_name!("div", html), vec![]);
+        let span = mutator.create_element(qual_name!("span", html), vec![]);
+        let block = mutator.create_element(qual_name!("p", html), vec![]);
+        let texts = ["aaaa ", "bbbb", "cccc"].map(|text| mutator.create_text_node(text));
+        mutator.append_children(span, &[texts[1]]);
+        mutator.append_children(block, &[texts[2]]);
+        mutator.append_children(div, &[texts[0], span, block]);
+        mutator.append_children(body, &[div]);
+        mutator.append_children(html, &[body]);
+        mutator.append_children(root_id, &[html]);
+        drop(mutator);
+        doc.resolve(0.0);
+
+        let anonymous = doc.nodes[span].inline_root_ancestor().unwrap().id;
+        assert!(matches!(
+            doc.nodes[anonymous].data,
+            NodeData::AnonymousBlock(_)
+        ));
+        assert_eq!(doc.nodes[span].parent, Some(div));
+        assert_eq!(assert_indexed_rects_match_the_scan(&doc, anonymous), 4);
     }
 }

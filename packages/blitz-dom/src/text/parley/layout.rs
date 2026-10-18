@@ -145,6 +145,7 @@ impl TextLayout {
     ) {
         // Percentage indents are of the content box the lines are broken in.
         self.set_indent(style, width / self.layout.scale());
+        self.fragments.take();
 
         #[cfg(not(feature = "floats"))]
         {

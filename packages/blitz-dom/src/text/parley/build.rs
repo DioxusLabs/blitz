@@ -70,6 +70,7 @@ pub(super) fn build_inline_layout_into(
     };
     push_inline_content(nodes, root_node, &mut builder);
     text_layout.text = builder.tree.build_into(&mut text_layout.layout);
+    text_layout.fragments.take();
 }
 
 /// A Parley tree builder, as the walk of the DOM pushes into it.
