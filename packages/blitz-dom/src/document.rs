@@ -948,13 +948,16 @@ impl BaseDocument {
             // Nothing on the chain contains the focus anymore. Only the surviving
             // ancestors need a snapshot for restyling: nodes in the removed subtree had
             // theirs dropped already and may be freed entirely.
-            for ancestor in self.node_ancestors(node_id) {
-                if self.nodes[ancestor].flags.is_in_document() {
-                    self.snapshot_node_and(ancestor, ElementState::FOCUS_WITHIN, |node| {
+            let mut maybe_id = Some(node_id);
+            while let Some(node) = maybe_id.and_then(|id| self.get_node(id)) {
+                let id = node.id;
+                maybe_id = node.parent;
+                if node.flags.is_in_document() {
+                    self.snapshot_node_and(id, ElementState::FOCUS_WITHIN, |node| {
                         node.remove_focus_within()
                     });
                 } else {
-                    self.nodes[ancestor].remove_focus_within();
+                    self.nodes[id].remove_focus_within();
                 }
             }
             self.focus_node_id = None;
@@ -1702,7 +1705,7 @@ impl BaseDocument {
             self.snapshot_node_and(id, ElementState::FOCUS | ElementState::FOCUSRING, |node| {
                 node.blur(shell_provider)
             });
-            for &ancestor in self.node_ancestors(id).iter() {
+            for &ancestor in self.node_element_ancestors(id).iter() {
                 self.snapshot_node_and(ancestor, ElementState::FOCUS_WITHIN, |node| {
                     node.remove_focus_within()
                 });
@@ -1743,8 +1746,8 @@ impl BaseDocument {
         );
 
         // Update :focus-within on the ancestor chains (shared prefix stays)
-        let old_node_path = self.maybe_node_ancestors(self.focus_node_id);
-        let new_node_path = self.maybe_node_ancestors(Some(focus_node_id));
+        let old_node_path = self.maybe_node_element_ancestors(self.focus_node_id);
+        let new_node_path = self.node_element_ancestors(focus_node_id);
         let same_count = old_node_path
             .iter()
             .zip(&new_node_path)
