@@ -100,7 +100,8 @@ impl Walk<'_> {
                     builder.push_inline_box(node, &style, InlineBoxKind::Atomic);
                 } else if *tag == local_name!("br") {
                     builder.push_line_break(node, &style);
-                } else if *tag == local_name!("wbr") && builder.push_break_opportunity(node) {
+                } else if *tag == local_name!("wbr") {
+                    builder.push_break_opportunity(node);
                 } else {
                     let kind = if *tag == local_name!("ruby") {
                         SpanKind::Ruby
