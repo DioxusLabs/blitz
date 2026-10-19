@@ -3274,7 +3274,7 @@ dependencies = [
 [[package]]
 name = "fontwich"
 version = "0.0.1"
-source = "git+https://github.com/dfrg/winkin?rev=e64e9ad50ba4375894bc891aadf697818c271e09#e64e9ad50ba4375894bc891aadf697818c271e09"
+source = "git+https://github.com/dfrg/winkin?rev=13c9b1008fea9809be673c430464ba9b21be82ac#13c9b1008fea9809be673c430464ba9b21be82ac"
 dependencies = [
  "hashbrown 0.17.1",
  "memmap2 0.9.11",
@@ -10308,7 +10308,7 @@ dependencies = [
 [[package]]
 name = "winkin"
 version = "0.0.1"
-source = "git+https://github.com/dfrg/winkin?rev=e64e9ad50ba4375894bc891aadf697818c271e09#e64e9ad50ba4375894bc891aadf697818c271e09"
+source = "git+https://github.com/dfrg/winkin?rev=13c9b1008fea9809be673c430464ba9b21be82ac#13c9b1008fea9809be673c430464ba9b21be82ac"
 dependencies = [
  "fontwich",
  "harfrust 0.14.0",
@@ -10884,54 +10884,54 @@ dependencies = [
 [[patch.unused]]
 name = "selectors"
 version = "0.41.0"
-source = "git+https://github.com/dfrg/stylo?branch=style-more#9feabcf46c67e0a9fc0e5854d5428129621b4460"
+source = "git+https://github.com/dfrg/stylo?branch=style-more#3431688367496a72ed0f5de0b2500bbec561e232"
 
 [[patch.unused]]
 name = "servo_arc"
 version = "0.5.0"
-source = "git+https://github.com/dfrg/stylo?branch=style-more#9feabcf46c67e0a9fc0e5854d5428129621b4460"
+source = "git+https://github.com/dfrg/stylo?branch=style-more#3431688367496a72ed0f5de0b2500bbec561e232"
 
 [[patch.unused]]
 name = "stylo"
 version = "0.22.0"
-source = "git+https://github.com/dfrg/stylo?branch=style-more#9feabcf46c67e0a9fc0e5854d5428129621b4460"
+source = "git+https://github.com/dfrg/stylo?branch=style-more#3431688367496a72ed0f5de0b2500bbec561e232"
 
 [[patch.unused]]
 name = "stylo_atoms"
 version = "0.22.0"
-source = "git+https://github.com/dfrg/stylo?branch=style-more#9feabcf46c67e0a9fc0e5854d5428129621b4460"
+source = "git+https://github.com/dfrg/stylo?branch=style-more#3431688367496a72ed0f5de0b2500bbec561e232"
 
 [[patch.unused]]
 name = "stylo_derive"
 version = "0.22.0"
-source = "git+https://github.com/dfrg/stylo?branch=style-more#9feabcf46c67e0a9fc0e5854d5428129621b4460"
+source = "git+https://github.com/dfrg/stylo?branch=style-more#3431688367496a72ed0f5de0b2500bbec561e232"
 
 [[patch.unused]]
 name = "stylo_dom"
 version = "0.22.0"
-source = "git+https://github.com/dfrg/stylo?branch=style-more#9feabcf46c67e0a9fc0e5854d5428129621b4460"
+source = "git+https://github.com/dfrg/stylo?branch=style-more#3431688367496a72ed0f5de0b2500bbec561e232"
 
 [[patch.unused]]
 name = "stylo_malloc_size_of"
 version = "0.22.0"
-source = "git+https://github.com/dfrg/stylo?branch=style-more#9feabcf46c67e0a9fc0e5854d5428129621b4460"
+source = "git+https://github.com/dfrg/stylo?branch=style-more#3431688367496a72ed0f5de0b2500bbec561e232"
 
 [[patch.unused]]
 name = "stylo_static_prefs"
 version = "0.22.0"
-source = "git+https://github.com/dfrg/stylo?branch=style-more#9feabcf46c67e0a9fc0e5854d5428129621b4460"
+source = "git+https://github.com/dfrg/stylo?branch=style-more#3431688367496a72ed0f5de0b2500bbec561e232"
 
 [[patch.unused]]
 name = "stylo_traits"
 version = "0.22.0"
-source = "git+https://github.com/dfrg/stylo?branch=style-more#9feabcf46c67e0a9fc0e5854d5428129621b4460"
+source = "git+https://github.com/dfrg/stylo?branch=style-more#3431688367496a72ed0f5de0b2500bbec561e232"
 
 [[patch.unused]]
 name = "to_shmem"
 version = "0.6.0"
-source = "git+https://github.com/dfrg/stylo?branch=style-more#9feabcf46c67e0a9fc0e5854d5428129621b4460"
+source = "git+https://github.com/dfrg/stylo?branch=style-more#3431688367496a72ed0f5de0b2500bbec561e232"
 
 [[patch.unused]]
 name = "to_shmem_derive"
 version = "0.2.0"
-source = "git+https://github.com/dfrg/stylo?branch=style-more#9feabcf46c67e0a9fc0e5854d5428129621b4460"
+source = "git+https://github.com/dfrg/stylo?branch=style-more#3431688367496a72ed0f5de0b2500bbec561e232"
