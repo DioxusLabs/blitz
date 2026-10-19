@@ -25,7 +25,7 @@ const REPLACED: u32 = 1 << 31;
 /// The content either keeps its byte offsets, or is replaced as a whole: offsets within it then
 /// fall after what replaced it. Each node's last unit holds its content's length and where it
 /// ends.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 struct Unit {
     /// The byte offset in the node's content, and [`REPLACED`].
     source: u32,
@@ -124,7 +124,16 @@ impl<'a> SourceMapRecorder<'a> {
             if !source.is_empty() {
                 self.map.units.push(Unit::new(0, start, false));
             }
-        } else {
+        } else if !transform.is_empty()
+            || !record_collapsed_units(
+                &mut self.map.units,
+                source,
+                rendered,
+                start,
+                collapse,
+                was_pending,
+            )
+        {
             record_units(
                 &mut self.map.units,
                 source,
@@ -222,6 +231,64 @@ fn is_collapsing(collapse: WhiteSpaceCollapse) -> bool {
     )
 }
 
+/// Records the units of `source`, which was appended as `rendered` at `start` with nothing but
+/// white space collapsing between them. Returns `false`, recording nothing, where there was more.
+fn record_collapsed_units(
+    units: &mut Vec<Unit>,
+    source: &str,
+    rendered: &str,
+    start: usize,
+    collapse: WhiteSpaceCollapse,
+    mut in_white_space: bool,
+) -> bool {
+    let (source, rendered) = (source.as_bytes(), rendered.as_bytes());
+    let is_collapsible = |byte: &u8| match collapse {
+        WhiteSpaceCollapse::Collapse => byte.is_ascii_whitespace(),
+        WhiteSpaceCollapse::PreserveBreaks => matches!(byte, b' ' | b'\t'),
+        _ => false,
+    };
+
+    let first_unit = units.len();
+    let (mut offset, mut cursor) = (0, 0);
+    let mut in_kept_unit = false;
+    while offset < source.len() {
+        let mut kept = source[offset..]
+            .iter()
+            .zip(&rendered[cursor..])
+            .take_while(|(source, rendered)| source == rendered)
+            .count();
+        if kept > 0 {
+            in_white_space = is_collapsible(&source[offset + kept - 1]);
+        } else if !is_collapsible(&source[offset]) {
+            units.truncate(first_unit);
+            return false;
+        } else if !in_white_space && rendered.get(cursor) == Some(&b' ') {
+            // The first of a white space sequence, kept as a space.
+            in_white_space = true;
+            kept = 1;
+        }
+
+        if kept > 0 {
+            if !in_kept_unit {
+                units.push(Unit::new(offset, start + cursor, false));
+                in_kept_unit = true;
+            }
+            offset += kept;
+            cursor += kept;
+        } else {
+            // White space that was removed, as is the white space after it.
+            units.push(Unit::new(offset, start + cursor, true));
+            in_kept_unit = false;
+            in_white_space = true;
+            offset += source[offset..]
+                .iter()
+                .take_while(|byte| is_collapsible(byte))
+                .count();
+        }
+    }
+    true
+}
+
 /// Records the units of `source`, which was appended as `rendered` at `start`.
 fn record_units(
     units: &mut Vec<Unit>,
@@ -289,6 +356,14 @@ fn rendered_len(
     let original = c.encode_utf8(&mut bytes);
     if rendered.starts_with(&*original) {
         return original.len();
+    }
+    if c.is_ascii()
+        && rendered
+            .as_bytes()
+            .first()
+            .is_some_and(|b| b.eq_ignore_ascii_case(&bytes[0]))
+    {
+        return 1;
     }
     // Case expansions count only where they are in the laid-out text.
     let map_width = |c| {
@@ -458,6 +533,33 @@ mod tests {
         let (actual_text, actual_nodes) = offsets(pushes);
         assert_eq!(actual_text, text);
         assert_eq!(actual_nodes, nodes);
+    }
+
+    #[test]
+    fn collapsed_units_match_the_units_recorded_per_character() {
+        use WhiteSpaceCollapse::{Collapse, PreserveBreaks};
+        for (source, rendered, collapse, pending) in [
+            ("a  b\n\t c ", "a b c", Collapse, false),
+            ("  a b", "a b", Collapse, false),
+            ("  a b", "a b", Collapse, true),
+            ("\n", "", Collapse, false),
+            ("\n", " ", Collapse, false),
+            ("é \n ü  ", "é ü", Collapse, false),
+            ("a \n b\tc", "a\nb c", PreserveBreaks, false),
+        ] {
+            let (mut fast, mut slow) = (Vec::new(), Vec::new());
+            assert!(record_collapsed_units(
+                &mut fast, source, rendered, 7, collapse, pending
+            ));
+            let none = TextTransform::NONE;
+            record_units(&mut slow, source, rendered, 7, none, collapse, pending);
+            assert_eq!(fast, slow, "{source:?}");
+        }
+        let mut units = Vec::new();
+        assert!(!record_collapsed_units(
+            &mut units, "ab", "xb", 0, Collapse, false
+        ));
+        assert!(units.is_empty());
     }
 
     #[test]
