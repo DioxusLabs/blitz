@@ -5,6 +5,7 @@ mod editor;
 mod fonts;
 mod layout;
 pub(crate) mod style;
+pub(crate) mod text_transform;
 
 #[cfg(feature = "parallel-construct")]
 use std::cell::RefCell;
