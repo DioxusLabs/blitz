@@ -52,8 +52,7 @@ use style::values::computed::text::{
     TextFit as StyloTextFit, TextFitKind as StyloTextFitKind, TextFitTarget as StyloTextFitTarget,
 };
 use style::values::computed::{
-    BorderSideWidth, Length, LengthPercentage as StyloLengthPercentage,
-    TextTransform as StyloTextTransform,
+    BorderSideWidth, LengthPercentage as StyloLengthPercentage, TextTransform as StyloTextTransform,
 };
 use style::values::computed::{
     HangingPunctuation as StyloHangingPunctuation, TextCombineUpright as StyloTextCombineUpright,
@@ -81,18 +80,20 @@ use winkin::style::{
     FontFeature, FontGroup, FontKerning, FontLanguageOverride, FontOpticalSizing, FontSizeAdjust,
     FontSynthesis, FontVariantCaps, FontVariantEmoji, FontVariantPosition, FontVariants,
     FontVariation, HangEnd, HangingPunctuation, Hyphens, InitialLetter, InitialLetterAlign,
-    Language, LengthPercentage, LineBreak, LineClamp, LineGroup, LineHeight, OrientationGroup,
-    OverflowWrap, RubyAlign, RubyGroup, RubyOverhang, RubyPosition, Sides, TabSize, Tag, TextAlign,
-    TextAlignLast, TextAutospace, TextBoxEdge, TextBoxTrim, TextCase, TextCombineUpright,
-    TextEdgeOver, TextEdgeUnder, TextEmphasis, TextGroup, TextIndent, TextJustify, TextOrientation,
-    TextOverflow, TextSpacingTrim, TextTransform, TextWrapMode, TextWrapStyle, UnicodeBidi,
-    VerticalAlign, WhiteSpaceCollapse, WordBreak, WritingMode,
+    Language, LengthPercentage, LengthPercentageOrCalc, LineBreak, LineClamp, LineGroup,
+    LineHeight, OrientationGroup, OverflowWrap, RubyAlign, RubyGroup, RubyOverhang, RubyPosition,
+    Sides, TabSize, Tag, TextAlign, TextAlignLast, TextAutospace, TextBoxEdge, TextBoxTrim,
+    TextCase, TextCombineUpright, TextEdgeOver, TextEdgeUnder, TextEmphasis, TextGroup, TextIndent,
+    TextJustify, TextOrientation, TextOverflow, TextSpacingTrim, TextTransform, TextWrapMode,
+    TextWrapStyle, UnicodeBidi, VerticalAlign, WhiteSpaceCollapse, WordBreak, WritingMode,
 };
 use winkin::style::{
     FontStyle, FontWeight, FontWidth, GenericFamily, TextDecorationSkipSpaces, TextFit,
     TextFitKind, TextFitTarget,
 };
 use winkin::{ComputedBlockStyle, ComputedStyle};
+
+use super::calc::{self, CalcValues};
 
 /// The document's `@font-feature-values` rules, which name the values
 /// `font-variant-alternates` asks for, the least precedent first.
@@ -355,29 +356,34 @@ fn family_name(name: &str) -> FontFamilyName<'_> {
     FontFamilyName::Named(Cow::Borrowed(name))
 }
 
-/// A length-percentage as a length in device pixels and a fraction of
-/// whatever layout resolves it against.
+/// A `letter-spacing` or `word-spacing` as a length in device pixels and a
+/// fraction of the font size.
 ///
-/// `calc()` mixing the two is split by resolving it against two bases: the
-/// value is linear in its basis.
-fn length_percentage(value: &StyloLengthPercentage, scale: f32) -> LengthPercentage {
-    let at_zero = value.resolve(Length::new(0.0)).px();
-    let at_hundred = value.resolve(Length::new(100.0)).px();
-    LengthPercentage {
-        px: at_zero * scale,
-        fraction: (at_hundred - at_zero) / 100.0,
+/// A `calc()` that is not linear in the font size is resolved against it
+/// here, since winkin takes spacing only as a length and a fraction.
+fn spacing(
+    value: &StyloLengthPercentage,
+    computed: &ComputedValues,
+    scale: f32,
+) -> LengthPercentage {
+    if calc::is_linear(value) {
+        return calc::linear(value, scale);
     }
+    let font_size = computed.get_font().font_size.computed_size();
+    LengthPercentage::from_px(value.resolve(font_size).px() * scale)
 }
 
 /// Converts an element's computed style, its lists borrowed from `lists`.
 ///
 /// Lengths are scaled by `scale` into device pixels. Percentages of the
 /// containing block stay percentages, which winkin resolves against the
-/// basis each measure gives it. `language` is the content language from the
-/// nearest `lang`.
+/// basis each measure gives it; a margin's or padding's `calc()` that is not
+/// linear in that basis is kept in `calcs`. `language` is the content
+/// language from the nearest `lang`.
 pub(crate) fn computed_style<'a>(
     lists: &'a FontLists<'_>,
     computed: &'a ComputedValues,
+    calcs: &CalcValues,
     scale: f32,
     language: Option<Language>,
 ) -> ComputedStyle<'a> {
@@ -407,7 +413,7 @@ pub(crate) fn computed_style<'a>(
                 StyloTextCombineUpright::Digits(count) => TextCombineUpright::Digits(count),
             },
         },
-        edges: edges_group(computed, scale),
+        edges: edges_group(computed, calcs, scale),
         ruby: RubyGroup {
             position: ruby_position(computed),
             align: match computed.slow_clone_ruby_align() {
@@ -744,9 +750,9 @@ fn text_group(computed: &ComputedValues, scale: f32, language: Option<Language>)
             StyloLengthOrNumber::Length(length) => TabSize::Px(length.0.px() * scale),
         },
         // A percentage is of the font size, which layout takes it of.
-        letter_spacing: length_percentage(&text.letter_spacing.0, scale),
+        letter_spacing: spacing(&text.letter_spacing.0, computed, scale),
         // A percentage is of the font size, which layout takes it of.
-        word_spacing: length_percentage(&text.word_spacing, scale),
+        word_spacing: spacing(&text.word_spacing, computed, scale),
         autospace: {
             let autospace = computed.slow_clone_text_autospace();
             if autospace.intersects(StyloTextAutospace::NORMAL | StyloTextAutospace::AUTO) {
@@ -939,14 +945,16 @@ fn text_box_edge(edge: StyloTextBoxEdge) -> TextBoxEdge {
 /// Margin, border and padding, and `box-decoration-break`.
 ///
 /// A border width is snapped as CSS snaps it, in device pixels: one under a
-/// pixel to a pixel, and any other down to a whole one.
-fn edges_group(computed: &ComputedValues, scale: f32) -> EdgesGroup {
+/// pixel to a pixel, and any other down to a whole one. A `calc()` that is
+/// not linear in its basis is kept in `calcs`.
+fn edges_group(computed: &ComputedValues, calcs: &CalcValues, scale: f32) -> EdgesGroup {
     let margin = computed.get_margin();
     let padding = computed.get_padding();
     let border = computed.get_border();
+    let length_percentage = |value: &StyloLengthPercentage| calcs.length_percentage(value, scale);
     let margin_side = |value: &GenericMargin<StyloLengthPercentage>| match value {
-        GenericMargin::LengthPercentage(length) => length_percentage(length, scale),
-        _ => LengthPercentage::default(),
+        GenericMargin::LengthPercentage(length) => length_percentage(length),
+        _ => LengthPercentageOrCalc::ZERO,
     };
     let border_side = |width: &BorderSideWidth, style: BorderStyle| {
         let width = width.0.to_f32_px() * scale;
@@ -970,10 +978,10 @@ fn edges_group(computed: &ComputedValues, scale: f32) -> EdgesGroup {
             left: border_side(&border.border_left_width, border.border_left_style),
         },
         padding: Sides {
-            top: length_percentage(&padding.padding_top.0, scale),
-            right: length_percentage(&padding.padding_right.0, scale),
-            bottom: length_percentage(&padding.padding_bottom.0, scale),
-            left: length_percentage(&padding.padding_left.0, scale),
+            top: length_percentage(&padding.padding_top.0),
+            right: length_percentage(&padding.padding_right.0),
+            bottom: length_percentage(&padding.padding_bottom.0),
+            left: length_percentage(&padding.padding_left.0),
         },
         decoration_break: match computed.slow_clone_box_decoration_break() {
             StyloBoxDecorationBreak::Slice => BoxDecorationBreak::Slice,
@@ -1059,12 +1067,14 @@ pub(crate) fn text_align(computed: &ComputedValues) -> (TextAlign, TextAlignLast
 ///
 /// `container` is the box whose overflow decides whether `text-overflow`
 /// applies, which is the block itself or, for an anonymous block, the box
-/// around it.
+/// around it. A `text-indent` `calc()` that is not linear in the line width
+/// is kept in `calcs`.
 pub(crate) fn block_style<'a>(
     style: &'a ComputedStyle<'a>,
     first_line: Option<&'a ComputedStyle<'a>>,
     computed: &ComputedValues,
     container: &ComputedValues,
+    calcs: &CalcValues,
     scale: f32,
 ) -> ComputedBlockStyle<'a> {
     let text = computed.get_inherited_text();
@@ -1100,7 +1110,7 @@ pub(crate) fn block_style<'a>(
         text_align,
         text_align_last,
         text_indent: TextIndent {
-            amount: length_percentage(&indent.length, scale),
+            amount: calcs.length_percentage(&indent.length, scale),
             hanging: indent.hanging,
             each_line: indent.each_line,
         },
