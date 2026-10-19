@@ -445,7 +445,10 @@ impl LayoutPassState<'_> {
                 ibox.baseline = None;
             } else {
                 let output = self.compute_child_layout(taffy::NodeId::from(ibox.id), box_inputs);
-                ibox.width = (margin.left + margin.right + output.size.width) * scale;
+                // On the same layout-unit grid as the line's available width, so a box that
+                // exactly fits its line is not a hair wider than it.
+                ibox.width =
+                    snap_to_layout_unit((margin.left + margin.right + output.size.width) * scale);
                 ibox.baseline = if exports_baseline {
                     let baseline = if uses_last_baseline {
                         output.baselines.last.or(output.baselines.first)
@@ -494,9 +497,12 @@ impl LayoutPassState<'_> {
         );
 
         let pbw = container_pb.horizontal_components().sum() * scale;
+        // A box sized to its own max-content gets that width back here, as
+        // (content + padding + border) − (padding + border), so it is snapped to
+        // a layout unit (see [`snap_to_layout_unit`]).
         let width = known_dimensions
             .width
-            .map(|w| (w * scale) - pbw)
+            .map(|w| snap_to_layout_unit((w * scale) - pbw))
             .unwrap_or_else(|| {
                 // TODO: Cache content widths.
                 //
@@ -680,7 +686,7 @@ impl LayoutPassState<'_> {
             let mut has_active_floats = initial_slot.segment_id.is_some();
             let state = breaker.state_mut();
             state.set_layout_max_advance(width);
-            state.set_line_max_advance(initial_slot.width * scale);
+            state.set_line_max_advance(snap_to_layout_unit(initial_slot.width * scale));
             state.set_line_x(initial_slot.x * scale);
             state.set_line_y((initial_slot.y * scale) as f64);
 
@@ -705,7 +711,8 @@ impl LayoutPassState<'_> {
                                 block_ctx.find_content_slot(min_y as f32, Clear::None, None);
                             has_active_floats = next_slot.segment_id.is_some();
 
-                            state.set_line_max_advance(next_slot.width * scale);
+                            state
+                                .set_line_max_advance(snap_to_layout_unit(next_slot.width * scale));
                             state.set_line_x(next_slot.x * scale);
                             state.set_line_y((next_slot.y * scale) as f64);
                         } else {
@@ -763,7 +770,7 @@ impl LayoutPassState<'_> {
                             block_ctx.find_content_slot(min_y as f32, Clear::None, None);
                         has_active_floats = next_slot.segment_id.is_some();
 
-                        state.set_line_max_advance(next_slot.width * scale);
+                        state.set_line_max_advance(snap_to_layout_unit(next_slot.width * scale));
                         state.set_line_x(next_slot.x * scale);
                         state.set_line_y((next_slot.y * scale) as f64);
 
@@ -1170,4 +1177,190 @@ impl LayoutPassState<'_> {
 #[inline(always)]
 fn f32_max(a: f32, b: f32) -> f32 {
     a.max(b)
+}
+
+/// Snap a length in device pixels to the layout unit, 1/64 of a device pixel.
+///
+/// Browsers lay out in fixed-point units (1/64 px in Blink, 1/60 px in Gecko),
+/// so a width given back to the box it was measured from is exactly its
+/// max-content width. In `f32` the round trip through CSS pixels and the
+/// subtraction of padding and border comes out a hair under it, and content
+/// that exactly fits its line would then wrap. Snapping the available inline
+/// size to the same grid as the (whole device pixel) max-content width keeps
+/// the two equal.
+fn snap_to_layout_unit(length: f32) -> f32 {
+    const LAYOUT_UNITS_PER_PX: f32 = 64.0;
+    (length * LAYOUT_UNITS_PER_PX).round() / LAYOUT_UNITS_PER_PX
+}
+
+#[cfg(test)]
+mod layout_unit_tests {
+    use crate::{Attribute, BaseDocument, DocumentConfig, NodeId, qual_name};
+    use blitz_traits::shell::{ColorScheme, Viewport};
+
+    /// The number of lines of a box sized to its own max-content (`sizing` makes
+    /// it shrink-to-fit), with the given padding and border, holding `content`.
+    fn lines(scale: f32, sizing: &str, padding: &str, border: &str, text: bool) -> usize {
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(800, 600, scale, ColorScheme::Light)),
+            ..Default::default()
+        });
+        let root_id = doc.root_node().id;
+        let style = |value: &str| Attribute {
+            name: qual_name!("style"),
+            value: value.to_string(),
+        };
+        let mut mutator = doc.mutate();
+        let html = mutator.create_element(qual_name!("html"), vec![style("display:block")]);
+        let body = mutator.create_element(
+            qual_name!("body"),
+            vec![style("display:block;margin:0;position:relative")],
+        );
+        let (outer, boxed) = if sizing == "flex" {
+            let flex = mutator.create_element(qual_name!("div"), vec![style("display:flex")]);
+            let item = mutator.create_element(
+                qual_name!("div"),
+                vec![style(&format!(
+                    "display:block;word-break:break-all;font-size:16px;\
+                     padding:0 {padding};border:{border} solid black"
+                ))],
+            );
+            mutator.append_children(flex, &[item]);
+            (flex, item)
+        } else {
+            let item = mutator.create_element(
+                qual_name!("div"),
+                vec![style(&format!(
+                    "{sizing};word-break:break-all;font-size:16px;\
+                     padding:0 {padding};border:{border} solid black"
+                ))],
+            );
+            (item, item)
+        };
+        let items: Vec<NodeId> = if text {
+            vec![mutator.create_text_node("ABCDEFGHIJKLMNOPQRST")]
+        } else {
+            (0..7)
+                .map(|_| {
+                    mutator.create_element(
+                        qual_name!("div"),
+                        vec![style("display:inline-block;width:13px;height:10px")],
+                    )
+                })
+                .collect()
+        };
+        mutator.append_children(boxed, &items);
+        mutator.append_children(body, &[outer]);
+        mutator.append_children(html, &[body]);
+        mutator.append_children(root_id, &[html]);
+        drop(mutator);
+        doc.resolve(0.0);
+        doc.nodes[boxed]
+            .element_data()
+            .and_then(|el| el.inline_layout_data.as_ref())
+            .map(|layout| layout.layout.lines().count())
+            .unwrap_or(0)
+    }
+
+    /// A box sized to its own max-content gets that width back as its available
+    /// width: the content fits on one line at any scale factor and with any
+    /// padding and border, as it does in browsers (whose layout units make the
+    /// round trip exact).
+    #[test]
+    fn content_sized_to_its_max_content_does_not_wrap() {
+        let mut failed = Vec::new();
+        for sizing in [
+            "display:inline-block",
+            "display:block;float:left",
+            "display:block;position:absolute",
+            "flex",
+        ] {
+            for text in [true, false] {
+                for scale in [0.5, 0.67, 0.8, 1.0, 1.1, 1.25, 1.33, 1.5, 1.75, 2.0, 2.25] {
+                    for padding in ["0px", "0.3px", "0.7px", "1.1px", "3.3px"] {
+                        for border in ["0px", "0.5px", "1px", "1.3px", "2.6px"] {
+                            if lines(scale, sizing, padding, border, text) != 1 {
+                                failed.push(format!(
+                                    "{sizing} text={text} scale={scale} padding={padding} border={border}"
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert!(
+            failed.is_empty(),
+            "{} wrapped: {:?}",
+            failed.len(),
+            &failed[..failed.len().min(8)]
+        );
+    }
+
+    /// The number of lines of a 304px wide inline-block holding one atomic inline of
+    /// `inner` (its width and margins).
+    fn atomic_lines(scale: f32, inner: &str) -> usize {
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(1920, 1080, scale, ColorScheme::Light)),
+            ..Default::default()
+        });
+        let root_id = doc.root_node().id;
+        let style = |value: &str| Attribute {
+            name: qual_name!("style"),
+            value: value.to_string(),
+        };
+        let mut mutator = doc.mutate();
+        let html = mutator.create_element(qual_name!("html"), vec![style("display:block")]);
+        let body = mutator.create_element(
+            qual_name!("body"),
+            vec![style("display:block;margin:0;font-size:0")],
+        );
+        let outer = mutator.create_element(
+            qual_name!("div"),
+            vec![style("display:inline-block;width:304px;height:140px")],
+        );
+        let atomic = mutator.create_element(
+            qual_name!("span"),
+            vec![style(&format!(
+                "display:inline-block;height:140px;vertical-align:top;{inner}"
+            ))],
+        );
+        mutator.append_children(outer, &[atomic]);
+        mutator.append_children(body, &[outer]);
+        mutator.append_children(html, &[body]);
+        mutator.append_children(root_id, &[html]);
+        drop(mutator);
+        doc.resolve(0.0);
+        doc.nodes[outer]
+            .element_data()
+            .and_then(|el| el.inline_layout_data.as_ref())
+            .map(|layout| layout.layout.lines().count())
+            .unwrap_or(0)
+    }
+
+    /// An atomic inline that exactly fits its line stays on one line, with no empty line
+    /// after it (which would move the container's last baseline down a whole line).
+    #[test]
+    fn atomic_inline_that_exactly_fits_its_line_does_not_add_a_line() {
+        let mut failed = Vec::new();
+        for scale in [
+            0.5, 0.67, 0.792, 0.8, 0.915625, 1.0, 1.1, 1.25, 1.33, 1.5, 2.25,
+        ] {
+            for inner in [
+                "width:304px",
+                "width:308px;margin:0 -2px",
+                "width:302.5px;margin:0 0.75px",
+            ] {
+                if atomic_lines(scale, inner) != 1 {
+                    failed.push(format!("scale={scale} {inner}"));
+                }
+            }
+        }
+        assert!(
+            failed.is_empty(),
+            "{} added a line: {:?}",
+            failed.len(),
+            &failed[..failed.len().min(8)]
+        );
+    }
 }
