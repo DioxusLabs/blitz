@@ -238,9 +238,9 @@ pub(crate) trait InlineBuilder {
     /// Pushes the forced line break of the `<br>` element `node`, set in `style`.
     fn push_line_break(&mut self, node: &Node, style: &style::properties::ComputedValues);
 
-    /// Pushes the line break opportunity of the `<wbr>` element `node`, and returns whether the
-    /// backend took it. Where it did not, the element is pushed as a span.
-    fn push_break_opportunity(&mut self, node: &Node) -> bool;
+    /// Pushes the line break opportunity of the `<wbr>` element `node`, which contributes
+    /// nothing else: its pseudo-elements are not pushed.
+    fn push_break_opportunity(&mut self, node: &Node);
 }
 
 /// Building, measuring and placing an inline formatting context: the part of [`InlineText`]

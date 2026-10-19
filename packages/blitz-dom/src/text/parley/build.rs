@@ -201,8 +201,8 @@ impl InlineBuilder for ParleyBuilder<'_, '_> {
     }
 
     #[inline]
-    fn push_break_opportunity(&mut self, _node: &Node) -> bool {
-        false
+    fn push_break_opportunity(&mut self, _node: &Node) {
+        // TODO: `<wbr>` is not implemented.
     }
 }
 
