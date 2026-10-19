@@ -36,7 +36,6 @@ markup5ever = { workspace = true }
 style = { workspace = true }
 
 # Other dependencies
-icu_properties = { workspace = true }
 keyboard-types = { workspace = true }
 log = "0.4"
 url = { workspace = true }

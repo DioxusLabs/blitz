@@ -257,7 +257,7 @@ fn is_collapsible(white_space_collapse: WhiteSpaceCollapse, c: char) -> bool {
 /// Maps `c` to its full-width form: the reverse of its `<wide>` decomposition mapping or its
 /// `<narrow>` decomposition mapping, if any.
 /// <https://drafts.csswg.org/css-text-3/#text-transform-mapping>
-pub fn full_width(c: char) -> char {
+pub(crate) fn full_width(c: char) -> char {
     const HALFWIDTH_KATAKANA: [char; 63] = [
         '\u{3002}', '\u{300C}', '\u{300D}', '\u{3001}', '\u{30FB}', '\u{30F2}', '\u{30A1}',
         '\u{30A3}', '\u{30A5}', '\u{30A7}', '\u{30A9}', '\u{30E3}', '\u{30E5}', '\u{30E7}',
@@ -300,7 +300,7 @@ pub fn full_width(c: char) -> char {
 
 /// Maps small kana to full-size kana.
 /// <https://drafts.csswg.org/css-text-3/#small-kana>
-pub fn full_size_kana(c: char) -> char {
+pub(crate) fn full_size_kana(c: char) -> char {
     const SMALL_KATAKANA_EXTENSIONS: [char; 16] = [
         '\u{30AF}', '\u{30B7}', '\u{30B9}', '\u{30C8}', '\u{30CC}', '\u{30CF}', '\u{30D2}',
         '\u{30D5}', '\u{30D8}', '\u{30DB}', '\u{30E0}', '\u{30E9}', '\u{30EA}', '\u{30EB}',
