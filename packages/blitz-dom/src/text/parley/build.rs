@@ -126,8 +126,13 @@ impl InlineBuilder for ParleyBuilder<'_, '_> {
 
     #[inline]
     fn push_text(&mut self, _node: &Node, text: &str, style: Option<&ComputedValues>) {
-        let transform = style.map_or(CaseTransform::NONE, CaseTransform::from_style);
-        let text = self.transformer.transform(text, &transform, &self.tree);
+        let text = match style {
+            Some(style) if !style.clone_text_transform().is_empty() => {
+                let transform = CaseTransform::from_style(style);
+                self.transformer.transform(text, &transform, &self.tree)
+            }
+            _ => text,
+        };
         self.tree.push_text(text);
     }
 
