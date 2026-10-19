@@ -1,5 +1,5 @@
 use accesskit::{Node as AccessKitNode, NodeId, Role, TreeUpdate};
-use blitz_dom::DocumentConfig;
+use blitz_dom::{DocumentConfig, QualName, local_name, ns};
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::shell::{ColorScheme, Viewport};
 use std::sync::Arc;
@@ -2358,6 +2358,93 @@ fn separates_selected_options_of_embedded_listbox() -> TestResult<()> {
             })
         ))
     )
+}
+
+#[test]
+fn aria_labelledby_references_first_element_in_tree_order_with_duplicate_id() -> TestResult<()> {
+    let mut document = HtmlDocument::from_html(
+        r#"<html>
+          <div role="button" aria-labelledby="duplicate"></div>
+          <span id="first">First</span>
+          <span id="second">Second</span>
+        </html>"#,
+        default_document_config(),
+    );
+    assign_duplicate_id_in_reverse_tree_order(&mut document, "duplicate", "#first", "#second");
+    document.resolve(0.0);
+
+    let tree_update = document.build_accessibility_tree();
+
+    verify_that!(
+        tree_update.nodes,
+        contains((
+            anything(),
+            matches_pattern!(AccessKitNode {
+                role(): eq(Role::Button),
+                label(): some(eq("First")),
+            })
+        ))
+    )
+}
+
+#[test]
+fn label_element_labels_first_element_in_tree_order_with_duplicate_id() -> TestResult<()> {
+    let mut document = HtmlDocument::from_html(
+        r#"<html>
+          <label for="duplicate">Label</label>
+          <button id="first"></button>
+          <textarea id="second"></textarea>
+        </html>"#,
+        default_document_config(),
+    );
+    assign_duplicate_id_in_reverse_tree_order(&mut document, "duplicate", "#first", "#second");
+    document.resolve(0.0);
+
+    let tree_update = document.build_accessibility_tree();
+
+    verify_that!(
+        tree_update.nodes,
+        all!(
+            contains((
+                anything(),
+                matches_pattern!(AccessKitNode {
+                    role(): eq(Role::Button),
+                    label(): some(eq("Label")),
+                })
+            )),
+            contains((
+                anything(),
+                matches_pattern!(AccessKitNode {
+                    role(): eq(Role::MultilineTextInput),
+                    label(): none(),
+                    *labelled_by(): is_empty(),
+                })
+            ))
+        )
+    )
+}
+
+/// Gives the elements matching the two selectors the same id, assigning it to the one which is
+/// later in tree order first. This makes the order in which the document records the elements
+/// differ from the tree order.
+fn assign_duplicate_id_in_reverse_tree_order(
+    document: &mut HtmlDocument,
+    id: &str,
+    first_in_tree_order: &str,
+    second_in_tree_order: &str,
+) {
+    let first = document
+        .query_selector(first_in_tree_order)
+        .unwrap()
+        .expect(first_in_tree_order);
+    let second = document
+        .query_selector(second_in_tree_order)
+        .unwrap()
+        .expect(second_in_tree_order);
+    let id_attribute = QualName::new(None, ns!(), local_name!("id"));
+    let mut mutator = document.mutate();
+    mutator.set_attribute(second, id_attribute.clone(), id);
+    mutator.set_attribute(first, id_attribute, id);
 }
 
 /// The ID of the only node in the tree with the role.
