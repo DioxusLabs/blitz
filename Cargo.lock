@@ -1100,7 +1100,6 @@ dependencies = [
  "boa_gc",
  "boa_runtime",
  "data-url",
- "icu_properties",
  "keyboard-types",
  "log",
  "markup5ever",

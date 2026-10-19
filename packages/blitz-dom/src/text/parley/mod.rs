@@ -200,11 +200,6 @@ impl InlineText for TextLayout {
         self.source_map.layout_offset(node_id, offset)
     }
 
-    #[inline]
-    fn maps_source(&self) -> bool {
-        false
-    }
-
     fn first_baseline(&self) -> Option<f32> {
         let line = self.layout.lines().next()?;
         Some(line.metrics().baseline / self.layout.scale() + self.block_offset)

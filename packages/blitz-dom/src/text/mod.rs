@@ -150,13 +150,9 @@ pub trait InlineText: Default + Clone + std::fmt::Debug {
     /// [`text`](Self::text), and each inline box comes once.
     fn logical_content(&self) -> impl Iterator<Item = InlineContent>;
 
-    /// Where byte `offset` of text node `node_id`'s content falls in the laid-out text, where
-    /// [`maps_source`](Self::maps_source).
+    /// Where byte `offset` of text node `node_id`'s content falls in the laid-out text. `None`
+    /// where the layout holds none of that node's content.
     fn source_offset(&self, node_id: NodeId, offset: usize) -> Option<usize>;
-
-    /// Whether the backend maps a text node's offsets into the laid-out text. Where it does not,
-    /// callers follow white space collapsing and text transforms themselves.
-    fn maps_source(&self) -> bool;
 
     /// The baseline of the first line, in CSS pixels below the top of the inline root's content
     /// box, or `None` where the layout has no lines.
