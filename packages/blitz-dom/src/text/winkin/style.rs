@@ -59,7 +59,7 @@ use style::values::computed::{
     HangingPunctuation as StyloHangingPunctuation, TextCombineUpright as StyloTextCombineUpright,
     TextDecorationSkipSpaces as StyloTextDecorationSkipSpaces, TextSecurity as StyloTextSecurity,
 };
-use style::values::generics::box_::{BaselineShiftKeyword, GenericBaselineShift};
+use style::values::generics::box_::{GenericVerticalAlign, VerticalAlignKeyword};
 use style::values::generics::font::GenericFontSizeAdjust;
 use style::values::generics::length::GenericLengthOrNumber as StyloLengthOrNumber;
 use style::values::generics::length::GenericMargin;
@@ -67,9 +67,7 @@ use style::values::generics::text::InitialLetterSink as StyloInitialLetterSink;
 use style::values::specified::HyphenateCharacter;
 use style::values::specified::TextAlignKeyword;
 use style::values::specified::border::BorderStyle;
-use style::values::specified::box_::{
-    AlignmentBaseline, DominantBaseline as StyloDominantBaseline,
-};
+use style::values::specified::box_::DominantBaseline as StyloDominantBaseline;
 use style::values::specified::font::VariantAlternates;
 use style::values::specified::text::{
     RubyPosition as StyloRubyPosition, TextAutospace as StyloTextAutospace,
@@ -984,34 +982,29 @@ fn edges_group(computed: &ComputedValues, scale: f32) -> EdgesGroup {
     }
 }
 
-/// `vertical-align`, which Stylo keeps as its two longhands.
+/// `vertical-align`. `alignment-baseline` and `baseline-shift` apply in SVG
+/// only, as in Chrome, so HTML boxes never read them.
 fn vertical_align(computed: &ComputedValues, scale: f32) -> VerticalAlign {
-    match computed.slow_clone_baseline_shift() {
-        GenericBaselineShift::Keyword(BaselineShiftKeyword::Sub) => return VerticalAlign::Sub,
-        GenericBaselineShift::Keyword(BaselineShiftKeyword::Super) => return VerticalAlign::Super,
-        GenericBaselineShift::Keyword(BaselineShiftKeyword::Top) => return VerticalAlign::Top,
-        GenericBaselineShift::Keyword(BaselineShiftKeyword::Bottom) => {
-            return VerticalAlign::Bottom;
-        }
-        GenericBaselineShift::Keyword(BaselineShiftKeyword::Center) => {
-            return VerticalAlign::Middle;
-        }
-        GenericBaselineShift::Length(shift) => match shift.unpack() {
+    match computed.get_box().slow_clone__servo_vertical_align() {
+        GenericVerticalAlign::Keyword(keyword) => match keyword {
+            VerticalAlignKeyword::Baseline => VerticalAlign::Baseline,
+            VerticalAlignKeyword::Sub => VerticalAlign::Sub,
+            VerticalAlignKeyword::Super => VerticalAlign::Super,
+            VerticalAlignKeyword::Top => VerticalAlign::Top,
+            VerticalAlignKeyword::TextTop => VerticalAlign::TextTop,
+            VerticalAlignKeyword::Middle => VerticalAlign::Middle,
+            VerticalAlignKeyword::Bottom => VerticalAlign::Bottom,
+            VerticalAlignKeyword::TextBottom => VerticalAlign::TextBottom,
+        },
+        GenericVerticalAlign::Length(shift) => match shift.unpack() {
             Unpacked::Length(length) if length.px() != 0.0 => {
-                return VerticalAlign::Px(length.px() * scale);
+                VerticalAlign::Px(length.px() * scale)
             }
             Unpacked::Percentage(percentage) if percentage.0 != 0.0 => {
-                return VerticalAlign::Fraction(percentage.0);
+                VerticalAlign::Fraction(percentage.0)
             }
-            _ => {}
+            _ => VerticalAlign::Baseline,
         },
-    }
-    #[allow(unreachable_patterns)]
-    match computed.slow_clone_alignment_baseline() {
-        AlignmentBaseline::TextTop => VerticalAlign::TextTop,
-        AlignmentBaseline::TextBottom => VerticalAlign::TextBottom,
-        AlignmentBaseline::Middle => VerticalAlign::Middle,
-        _ => VerticalAlign::Baseline,
     }
 }
 

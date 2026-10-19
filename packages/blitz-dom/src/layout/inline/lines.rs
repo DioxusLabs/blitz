@@ -1294,24 +1294,15 @@ impl LayoutPassState<'_> {
 /// A box aligned by its edges, `top`, `bottom`, `text-top` or `text-bottom`, is not: its margin
 /// box's edge goes where the alignment says, wherever its baseline is.
 fn reads_own_baseline(style: &style::properties::ComputedValues) -> bool {
-    use style::values::computed::AlignmentBaseline;
-    use style::values::computed::length_percentage::Unpacked;
-    use style::values::generics::box_::{BaselineShiftKeyword, GenericBaselineShift};
-    let box_style = style.get_box();
-    match box_style.slow_clone_baseline_shift() {
-        GenericBaselineShift::Keyword(BaselineShiftKeyword::Top | BaselineShiftKeyword::Bottom) => {
-            return false;
-        }
-        GenericBaselineShift::Keyword(_) => return true,
-        GenericBaselineShift::Length(shift) => match shift.unpack() {
-            Unpacked::Length(length) if length.px() != 0.0 => return true,
-            Unpacked::Percentage(percentage) if percentage.0 != 0.0 => return true,
-            _ => {}
-        },
-    }
+    use style::values::generics::box_::{GenericVerticalAlign, VerticalAlignKeyword};
     !matches!(
-        box_style.slow_clone_alignment_baseline(),
-        AlignmentBaseline::TextTop | AlignmentBaseline::TextBottom
+        style.get_box().slow_clone__servo_vertical_align(),
+        GenericVerticalAlign::Keyword(
+            VerticalAlignKeyword::Top
+                | VerticalAlignKeyword::Bottom
+                | VerticalAlignKeyword::TextTop
+                | VerticalAlignKeyword::TextBottom
+        )
     )
 }
 

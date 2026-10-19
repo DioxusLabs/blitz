@@ -16,10 +16,9 @@ pub(crate) mod stylo {
     pub(crate) use style::computed_values::white_space_collapse::T as WhiteSpaceCollapse;
     pub(crate) use style::properties::ComputedValues;
     pub(crate) use style::properties::style_structs::Font;
-    pub(crate) use style::values::computed::AlignmentBaseline;
-    pub(crate) use style::values::computed::BaselineShift;
     pub(crate) use style::values::computed::LineBreak;
     pub(crate) use style::values::computed::OverflowWrap;
+    pub(crate) use style::values::computed::VerticalAlign;
     pub(crate) use style::values::computed::WordBreak;
     pub(crate) use style::values::computed::font::FontFeatureSettings;
     pub(crate) use style::values::computed::font::FontStyle;
@@ -32,7 +31,7 @@ pub(crate) mod stylo {
     pub(crate) use style::values::computed::font::GenericFontFamily;
     pub(crate) use style::values::computed::font::LineHeight;
     pub(crate) use style::values::computed::font::SingleFontFamily;
-    pub(crate) use style::values::generics::box_::BaselineShiftKeyword;
+    pub(crate) use style::values::generics::box_::VerticalAlignKeyword;
     pub(crate) use style::values::specified::TextAlignKeyword;
     pub(crate) use style::values::specified::TextAlignLast;
 }
@@ -361,37 +360,28 @@ pub(crate) fn white_space_collapse(input: stylo::WhiteSpaceCollapse) -> parley::
     }
 }
 
-/// Map the css-inline-3 `alignment-baseline` and `baseline-shift` longhands (which Stylo
-/// stores in place of the `vertical-align` shorthand) to Parley's `VerticalAlign`.
+/// Map `vertical-align` to Parley's `VerticalAlign`. `alignment-baseline` and `baseline-shift`
+/// apply in SVG only, as in Chrome, so HTML boxes never read them.
 ///
 /// Percentages are resolved against the element's own `line-height`.
 pub(crate) fn vertical_align(style: &stylo::ComputedValues) -> parley::VerticalAlign {
-    let box_styles = style.get_box();
-    let alignment = match box_styles.slow_clone_alignment_baseline() {
-        stylo::AlignmentBaseline::Baseline => parley::AlignmentBaseline::Baseline,
-        stylo::AlignmentBaseline::TextTop => parley::AlignmentBaseline::TextTop,
-        stylo::AlignmentBaseline::TextBottom => parley::AlignmentBaseline::TextBottom,
-        stylo::AlignmentBaseline::Middle => parley::AlignmentBaseline::Middle,
-    };
-    let shift = match box_styles.slow_clone_baseline_shift() {
-        stylo::BaselineShift::Keyword(stylo::BaselineShiftKeyword::Sub) => {
-            parley::BaselineShift::Sub
-        }
-        stylo::BaselineShift::Keyword(stylo::BaselineShiftKeyword::Super) => {
-            parley::BaselineShift::Super
-        }
-        stylo::BaselineShift::Keyword(stylo::BaselineShiftKeyword::Top) => {
-            parley::BaselineShift::Top
-        }
-        stylo::BaselineShift::Keyword(stylo::BaselineShiftKeyword::Bottom) => {
-            parley::BaselineShift::Bottom
-        }
-        // TODO: `center` (align the aligned subtree's centre with the line box's centre) is not
-        // representable in Parley yet. Approximate it with `middle`.
-        stylo::BaselineShift::Keyword(stylo::BaselineShiftKeyword::Center) => {
-            return parley::VerticalAlign::MIDDLE;
-        }
-        stylo::BaselineShift::Length(lp) => {
+    let align = |alignment, shift| parley::VerticalAlign::new(alignment, shift);
+    let baseline = parley::AlignmentBaseline::Baseline;
+    let none = parley::BaselineShift::Length(0.0);
+    match style.get_box().slow_clone__servo_vertical_align() {
+        stylo::VerticalAlign::Keyword(keyword) => match keyword {
+            stylo::VerticalAlignKeyword::Baseline => align(baseline, none),
+            stylo::VerticalAlignKeyword::Sub => align(baseline, parley::BaselineShift::Sub),
+            stylo::VerticalAlignKeyword::Super => align(baseline, parley::BaselineShift::Super),
+            stylo::VerticalAlignKeyword::Top => align(baseline, parley::BaselineShift::Top),
+            stylo::VerticalAlignKeyword::Bottom => align(baseline, parley::BaselineShift::Bottom),
+            stylo::VerticalAlignKeyword::TextTop => align(parley::AlignmentBaseline::TextTop, none),
+            stylo::VerticalAlignKeyword::TextBottom => {
+                align(parley::AlignmentBaseline::TextBottom, none)
+            }
+            stylo::VerticalAlignKeyword::Middle => align(parley::AlignmentBaseline::Middle, none),
+        },
+        stylo::VerticalAlign::Length(lp) => {
             let shift = if lp.has_percentage() {
                 let font_styles = style.get_font();
                 let font_size = font_styles.font_size.used_size.0.px();
@@ -406,10 +396,9 @@ pub(crate) fn vertical_align(style: &stylo::ComputedValues) -> parley::VerticalA
             } else {
                 lp.resolve(Length::new(0.0)).px()
             };
-            parley::BaselineShift::Length(shift)
+            align(baseline, parley::BaselineShift::Length(shift))
         }
-    };
-    parley::VerticalAlign::new(alignment, shift)
+    }
 }
 
 pub(crate) fn style(

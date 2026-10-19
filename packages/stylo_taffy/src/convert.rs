@@ -47,11 +47,11 @@ pub(crate) mod stylo {
     pub(crate) type FlexBasis = GenericFlexBasis<Size>;
 
     #[cfg(feature = "block")]
+    pub(crate) use style::values::computed::VerticalAlign;
+    #[cfg(feature = "block")]
     pub(crate) use style::values::computed::text::TextAlign;
     #[cfg(feature = "block")]
-    pub(crate) use style::values::computed::{AlignmentBaseline, BaselineShift};
-    #[cfg(feature = "block")]
-    pub(crate) use style::values::generics::box_::BaselineShiftKeyword;
+    pub(crate) use style::values::generics::box_::VerticalAlignKeyword;
     #[cfg(feature = "grid")]
     pub(crate) use style::{
         computed_values::grid_auto_flow::T as GridAutoFlow,
@@ -506,18 +506,16 @@ pub fn content_alignment(
 #[cfg(feature = "block")]
 #[inline]
 pub fn table_cell_vertical_align(style: &stylo::ComputedValues) -> Option<taffy::AlignContent> {
-    let box_styles = style.get_box();
-    let mut align = match (
-        box_styles.slow_clone_alignment_baseline(),
-        box_styles.slow_clone_baseline_shift(),
-    ) {
-        (_, stylo::BaselineShift::Keyword(stylo::BaselineShiftKeyword::Top)) => {
+    let mut align = match style.get_box().slow_clone__servo_vertical_align() {
+        stylo::VerticalAlign::Keyword(stylo::VerticalAlignKeyword::Top) => {
             taffy::AlignContent::START
         }
-        (_, stylo::BaselineShift::Keyword(stylo::BaselineShiftKeyword::Bottom)) => {
+        stylo::VerticalAlign::Keyword(stylo::VerticalAlignKeyword::Bottom) => {
             taffy::AlignContent::END
         }
-        (stylo::AlignmentBaseline::Middle, _) => taffy::AlignContent::CENTER,
+        stylo::VerticalAlign::Keyword(stylo::VerticalAlignKeyword::Middle) => {
+            taffy::AlignContent::CENTER
+        }
         _ => return None,
     };
     align.safety = taffy::AlignmentSafety::Safe;
