@@ -5,7 +5,7 @@ use crate::events::{
     NativeScrollData, NativeTouchData, NativeWheelData, NodeHandle,
 };
 use crate::mutation_writer::{DioxusState, MutationWriter};
-use crate::qual_name;
+use crate::{qual_name, qual_name_attr};
 use blitz_dom::{
     Attribute, BaseDocument, DocGuard, DocGuardMut, Document, DocumentConfig, EventDriver,
     EventHandler, Node,
@@ -119,7 +119,7 @@ impl DioxusDocument {
 
         // Create another virtual element to hold the root <div id="main"></div> under the html element
         let main_attr = blitz_dom::Attribute {
-            name: qual_name("id", None),
+            name: qual_name_attr("id", None),
             value: "main".to_string(),
         };
         let main_element_id = mutr.create_element(qual_name("main", None), vec![main_attr]);
@@ -164,7 +164,7 @@ impl DioxusDocument {
         let attributes = attributes
             .iter()
             .map(|(name, value)| Attribute {
-                name: qual_name(name, None),
+                name: qual_name_attr(name, None),
                 value: value.clone(),
             })
             .collect();
@@ -720,5 +720,41 @@ mod tests {
         assert!(is_err(
             mounted.scroll(Default::default(), ScrollBehavior::Instant)
         ));
+    }
+
+    #[test]
+    fn attribute_namespace_and_selector_matching() {
+        use blitz_dom::ns;
+
+        fn app() -> Element {
+            rsx! {
+                div {
+                    id: "target",
+                    "data-x": "1",
+                }
+            }
+        }
+
+        let vdom = VirtualDom::new(app);
+        let mut doc = DioxusDocument::new(vdom, DocumentConfig::default());
+        doc.initial_build();
+
+        let inner = doc.inner.borrow();
+        let target_node = inner
+            .query_selector("[data-x=\"1\"]")
+            .expect("valid selector")
+            .expect("element found");
+        let node = inner.get_node(target_node).unwrap();
+        let elem = node.element_data().unwrap();
+
+        let id_attr = elem.attrs.iter().find(|a| &a.name.local == "id").unwrap();
+        assert_eq!(id_attr.name.ns, ns!());
+
+        let data_attr = elem
+            .attrs
+            .iter()
+            .find(|a| &a.name.local == "data-x")
+            .unwrap();
+        assert_eq!(data_attr.name.ns, ns!());
     }
 }

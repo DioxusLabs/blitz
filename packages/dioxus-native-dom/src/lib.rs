@@ -30,6 +30,14 @@ pub(crate) fn qual_name(local_name: &str, namespace: Option<&str>) -> QualName {
     }
 }
 
+pub(crate) fn qual_name_attr(local_name: &str, namespace: Option<&str>) -> QualName {
+    QualName {
+        prefix: None,
+        ns: namespace.map(Namespace::from).unwrap_or(ns!()),
+        local: LocalName::from(local_name),
+    }
+}
+
 // Syntax sugar to make tracing calls less noisy in function below
 macro_rules! trace {
     ($pattern:literal) => {{
