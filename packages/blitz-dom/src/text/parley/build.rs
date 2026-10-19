@@ -5,9 +5,12 @@ use blitz_traits::node_id::NodeId;
 use parley::{
     Brush, FontContext, FontFamily, InlineBox, LayoutContext, TreeBuilder, WhiteSpaceCollapse,
 };
+use style::computed_values::white_space_collapse::T as StyloWhiteSpaceCollapse;
 use style::properties::ComputedValues;
+use style::values::computed::TextTransform;
 use stylo_taffy::CopyStyleGetters;
 
+use super::source_map::SourceMapRecorder;
 use super::text_transform::{CaseTransform, PushedText, TextTransformer};
 use super::{MarkerLayout, TextBrush, TextContext, TextLayout, style as stylo_to_parley};
 use crate::Node;
@@ -68,6 +71,7 @@ pub(super) fn build_inline_layout_into(
         tree,
         root_style: &parley_style,
         transformer: TextTransformer::default(),
+        source_map: SourceMapRecorder::new(&mut text_layout.source_map),
     };
     push_inline_content(nodes, root_node, &mut builder);
     text_layout.text = builder.tree.build_into(&mut text_layout.layout);
@@ -80,6 +84,24 @@ struct ParleyBuilder<'a, 'b> {
     root_style: &'a parley::TextStyle<'static, 'static, TextBrush>,
     /// Applies `text-transform` to text before it is pushed to the tree.
     transformer: TextTransformer,
+    /// Records where each text node's content is in the tree's text.
+    source_map: SourceMapRecorder<'a>,
+}
+
+impl ParleyBuilder<'_, '_> {
+    /// Pushes text that no text node holds.
+    fn push_generated_text(&mut self, text: &str, collapsing: bool) {
+        self.source_map
+            .push_generated_text(&mut self.tree, text, collapsing);
+    }
+
+    /// Whether the root's style collapses white space, as an inside list marker's text does.
+    fn root_is_collapsing(&self) -> bool {
+        matches!(
+            self.root_style.white_space_collapse,
+            WhiteSpaceCollapse::Collapse | WhiteSpaceCollapse::PreserveBreaks
+        )
+    }
 }
 
 impl InlineBuilder for ParleyBuilder<'_, '_> {
@@ -93,10 +115,10 @@ impl InlineBuilder for ParleyBuilder<'_, '_> {
                 let mut marker_style = self.root_style.clone();
                 marker_style.font_family = BULLET_FONT_FAMILY.into();
                 self.tree.push_style_span(marker_style);
-                self.tree.push_text(&format!("{char} "));
+                self.push_generated_text(&format!("{char} "), self.root_is_collapsing());
                 self.tree.pop_style_span();
             }
-            Marker::String(str) => self.tree.push_text(str),
+            Marker::String(str) => self.push_generated_text(str, self.root_is_collapsing()),
         }
         // The marker is a box of its own, so the content's words do not continue from it.
         self.transformer.word_break(&self.tree);
@@ -125,22 +147,32 @@ impl InlineBuilder for ParleyBuilder<'_, '_> {
     }
 
     #[inline]
-    fn push_text(&mut self, _node: &Node, text: &str, style: Option<&ComputedValues>) {
-        let text = match style {
-            Some(style) if !style.clone_text_transform().is_empty() => {
+    fn push_text(&mut self, node: &Node, text: &str, style: Option<&ComputedValues>) {
+        let text_transform = style.map_or(TextTransform::NONE, |s| s.clone_text_transform());
+        let pushed = match style {
+            Some(style) if !text_transform.is_empty() => {
                 let transform = CaseTransform::from_style(style);
                 self.transformer.transform(text, &transform, &self.tree)
             }
             _ => text,
         };
-        self.tree.push_text(text);
+        self.source_map.push_text(
+            &mut self.tree,
+            node.id,
+            text,
+            pushed,
+            text_transform,
+            style.map_or(StyloWhiteSpaceCollapse::Collapse, |s| {
+                s.clone_white_space_collapse()
+            }),
+        );
     }
 
     fn push_inline_box(&mut self, node: &Node, style: &ComputedValues, kind: InlineBoxKind) {
         if kind == InlineBoxKind::Atomic {
             self.transformer.word_break(&self.tree);
         }
-        self.tree.push_inline_box(InlineBox {
+        let inline_box = InlineBox {
             id: node.id.as_u64(),
             kind: match kind {
                 InlineBoxKind::Atomic => parley::InlineBoxKind::InFlow,
@@ -154,7 +186,8 @@ impl InlineBuilder for ParleyBuilder<'_, '_> {
             height: 0.0,
             baseline: None,
             vertical_align: stylo_to_parley::vertical_align(style),
-        });
+        };
+        self.source_map.push_inline_box(&mut self.tree, inline_box);
     }
 
     fn push_line_break(&mut self, _node: &Node, _style: &ComputedValues) {
@@ -162,10 +195,7 @@ impl InlineBuilder for ParleyBuilder<'_, '_> {
             .push_style_modification_span(&[parley::StyleProperty::WhiteSpaceCollapse(
                 WhiteSpaceCollapse::Preserve,
             )]);
-        self.tree.push_text(
-            "
-",
-        );
+        self.push_generated_text("\n", false);
         self.tree.pop_style_span();
         self.transformer.word_break(&self.tree);
     }

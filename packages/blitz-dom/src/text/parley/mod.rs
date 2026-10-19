@@ -4,6 +4,7 @@ mod build;
 mod editor;
 mod fonts;
 mod layout;
+mod source_map;
 pub(crate) mod style;
 pub(crate) mod text_transform;
 
@@ -71,6 +72,8 @@ thread_local! {
 #[derive(Clone, Default)]
 pub struct TextLayout {
     pub(crate) text: String,
+    /// Where each text node's content is in `text`.
+    source_map: source_map::SourceMap,
     /// Parley's layout of the text and inline boxes, which the renderer paints.
     pub layout: parley::Layout<TextBrush>,
     /// Block-axis offset (in CSS px) of the line boxes from the top of the container's content
@@ -194,8 +197,7 @@ impl InlineText for TextLayout {
 
     #[inline]
     fn source_offset(&self, node_id: NodeId, offset: usize) -> Option<usize> {
-        let _ = (node_id, offset);
-        None
+        self.source_map.layout_offset(node_id, offset)
     }
 
     #[inline]
