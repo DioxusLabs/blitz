@@ -849,6 +849,9 @@ impl LayoutPassState<'_> {
         // content ends the final line box without starting a new one. Parley still emits an
         // empty line after it (so that editors have a line to place the cursor on), so that
         // line is excluded from the measured height (and from the last baseline).
+        // Parley also ends the line right after an inline box too wide for an empty line
+        // (an emergency break), and when that box is the last content it leaves the same
+        // empty line behind. Parley already leaves a line without items out of its height.
         let line_count = inline_layout.layout.len();
         let mut trailing_empty_line = None;
         if line_count >= 2
@@ -856,11 +859,16 @@ impl LayoutPassState<'_> {
                 inline_layout.layout.get(line_count - 2),
                 inline_layout.layout.get(line_count - 1),
             )
-            && prev_line.break_reason() == BreakReason::Explicit
+            && matches!(
+                prev_line.break_reason(),
+                BreakReason::Explicit | BreakReason::Emergency
+            )
             && last_line.text_range().is_empty()
             && last_line.items().next().is_none()
         {
-            height -= last_line.metrics().line_height;
+            if !last_line.is_empty() {
+                height -= last_line.metrics().line_height;
+            }
             trailing_empty_line = Some(line_count - 1);
         }
 
@@ -1170,4 +1178,78 @@ impl LayoutPassState<'_> {
 #[inline(always)]
 fn f32_max(a: f32, b: f32) -> f32 {
     a.max(b)
+}
+
+#[cfg(test)]
+mod trailing_line_tests {
+    use crate::{Attribute, BaseDocument, DocumentConfig, qual_name};
+    use blitz_traits::shell::{ColorScheme, Viewport};
+
+    /// The height of a block (with 20px lines) holding a 304px wide inline-block, which
+    /// holds `text` and then one 140px tall atomic inline of `inner` (its width and
+    /// margins). The inline-block sits on the block's baseline by its last line's baseline.
+    fn atomic_container_height(scale: f32, text: &str, inner: &str) -> f32 {
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(1920, 1080, scale, ColorScheme::Light)),
+            ..Default::default()
+        });
+        let root_id = doc.root_node().id;
+        let style = |value: &str| Attribute {
+            name: qual_name!("style"),
+            value: value.to_string(),
+        };
+        let mut mutator = doc.mutate();
+        let html = mutator.create_element(qual_name!("html"), vec![style("display:block")]);
+        let body =
+            mutator.create_element(qual_name!("body"), vec![style("display:block;margin:0")]);
+        let block = mutator.create_element(
+            qual_name!("div"),
+            vec![style("display:block;font-size:16px;line-height:20px")],
+        );
+        let outer = mutator.create_element(
+            qual_name!("div"),
+            vec![style("display:inline-block;width:304px")],
+        );
+        let atomic = mutator.create_element(
+            qual_name!("span"),
+            vec![style(&format!(
+                "display:inline-block;height:140px;vertical-align:top;{inner}"
+            ))],
+        );
+        let mut children = Vec::new();
+        if !text.is_empty() {
+            children.push(mutator.create_text_node(text));
+        }
+        children.push(atomic);
+        mutator.append_children(outer, &children);
+        mutator.append_children(block, &[outer]);
+        mutator.append_children(body, &[block]);
+        mutator.append_children(html, &[body]);
+        mutator.append_children(root_id, &[html]);
+        drop(mutator);
+        doc.resolve(0.0);
+        doc.nodes[block].final_layout().size.height
+    }
+
+    /// An atomic inline wider than its line overflows it, with no empty line after it.
+    #[test]
+    fn atomic_inline_wider_than_its_line_does_not_add_a_line() {
+        let mut failed = Vec::new();
+        for scale in [0.5, 0.792, 0.915625, 1.0, 1.33, 2.25] {
+            for (text, expected) in [("", 140.0), ("A ", 160.0)] {
+                for inner in ["width:306px", "width:400px", "width:304px;margin:0 2px"] {
+                    let height = atomic_container_height(scale, text, inner);
+                    if (height - expected).abs() > 0.5 {
+                        failed.push(format!("scale={scale} {text:?} {inner} height={height}"));
+                    }
+                }
+            }
+        }
+        assert!(
+            failed.is_empty(),
+            "{} added a line: {:?}",
+            failed.len(),
+            &failed[..failed.len().min(8)]
+        );
+    }
 }
