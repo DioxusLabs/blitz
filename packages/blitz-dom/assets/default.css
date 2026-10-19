@@ -1101,7 +1101,6 @@ ruby {
 
 rb {
     display: ruby-base;
-    white-space: nowrap;
 }
 
 rt {
@@ -1112,8 +1111,8 @@ rtc {
     display: ruby-text-container;
 }
 
-/* An annotation wraps, as in Chrome, so a base broken across lines splits
- * its annotation with it. */
+/* A base and an annotation wrap, as in Chrome, so a base broken across
+ * lines splits its annotation with it. */
 rtc,
 rt {
     font-size: 50%;
