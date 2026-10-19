@@ -16,7 +16,7 @@ use std::cell::{Cell, RefCell};
 use std::fmt::Write;
 use std::ops::Deref;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 #[cfg(feature = "writing-mode")]
 use style::computed_values::flex_direction::T as FlexDirection;
 use style::computed_values::isolation::T as Isolation;
@@ -93,6 +93,9 @@ pub struct Node {
     pub parent: Option<NodeId>,
     // What are our children?
     pub children: ThinVec<NodeId>,
+    /// Where this node was last found in its parent's `children`. A hint, checked before
+    /// use (see [`Node::child_index`]), so it is never wrong, only stale.
+    child_index_hint: AtomicUsize,
     /// Our parent in the layout hierachy: a separate list that includes anonymous collections of inline elements
     pub layout_parent: Cell<Option<NodeId>>,
     /// A separate child list that includes anonymous collections of inline elements
@@ -408,6 +411,7 @@ impl Node {
             id,
             parent: None,
             children: ThinVec::new(),
+            child_index_hint: AtomicUsize::new(0),
             layout_parent: Cell::new(None),
             oof_containing_block: Cell::new(None),
             layout_children: RefCell::new(None),
@@ -1002,38 +1006,65 @@ impl Node {
         }
     }
 
-    // Get the index of the current node in the parents child list
+    /// The index of `child_id` in this node's child list, through the child's own index
+    /// hint when it is one of our children (see [`Node::child_index`]).
     pub fn index_of_child(&self, child_id: NodeId) -> Option<usize> {
-        self.children.iter().position(|id| *id == child_id)
+        match self.tree().get(child_id) {
+            Some(child) if child.parent == Some(self.id) => child.child_index(),
+            _ => self.children.iter().position(|id| *id == child_id),
+        }
     }
 
-    // Get the index of the current node in the parents child list
+    /// The index of this node in its parent's child list.
+    ///
+    /// Usually O(1): the last index found is kept as a hint and checked against the
+    /// parent's `children` (ids in a child list are unique, so a match is proof). The
+    /// hint goes stale when siblings before this node are inserted or removed, which
+    /// costs one scan to refresh; a shift by one (the common single insertion or
+    /// removal) is caught without a scan. Sibling walks through [`Node::forward`] and
+    /// [`Node::backward`] prime the hint of the node they reach, so walking a wide
+    /// parent's children is linear, not quadratic. Nothing that edits `children` has to
+    /// maintain the hint.
     pub fn child_index(&self) -> Option<usize> {
-        self.tree()[self.parent?]
-            .children
-            .iter()
-            .position(|id| *id == self.id)
+        let children = &self.tree()[self.parent?].children;
+        let hint = self.child_index_hint.load(Ordering::Relaxed);
+        let is_me = |idx: usize| children.get(idx) == Some(&self.id);
+        if is_me(hint) {
+            return Some(hint);
+        }
+        let idx = if is_me(hint + 1) {
+            hint + 1
+        } else if hint > 0 && is_me(hint - 1) {
+            hint - 1
+        } else {
+            children.iter().position(|id| *id == self.id)?
+        };
+        self.child_index_hint.store(idx, Ordering::Relaxed);
+        Some(idx)
     }
 
-    // Get the nth node in the parents child list
+    /// The sibling `n` places after this node, if any (`forward(0)` is this node).
     pub fn forward(&self, n: usize) -> Option<&Node> {
         let child_idx = self.child_index().unwrap_or(0);
-        self.tree()[self.parent?]
-            .children
-            .get(child_idx + n)
-            .map(|id| self.with(*id))
+        self.sibling_at(child_idx + n)
     }
 
+    /// The sibling `n` places before this node, if any.
     pub fn backward(&self, n: usize) -> Option<&Node> {
         let child_idx = self.child_index().unwrap_or(0);
         if child_idx < n {
             return None;
         }
+        self.sibling_at(child_idx - n)
+    }
 
-        self.tree()[self.parent?]
-            .children
-            .get(child_idx - n)
-            .map(|id| self.with(*id))
+    /// The node at `idx` in the parent's child list, with its index hint primed so that
+    /// its own sibling lookups need no scan.
+    fn sibling_at(&self, idx: usize) -> Option<&Node> {
+        let id = *self.tree()[self.parent?].children.get(idx)?;
+        let node = self.with(id);
+        node.child_index_hint.store(idx, Ordering::Relaxed);
+        Some(node)
     }
 
     pub fn is_element(&self) -> bool {
@@ -1975,6 +2006,54 @@ mod test {
     use style_dom::ElementState;
 
     use crate::{Attribute, BaseDocument, DocumentConfig, ElementData, NodeData, qual_name};
+
+    #[test]
+    fn child_index_survives_insertions_and_removals() {
+        let mut doc = BaseDocument::new(DocumentConfig::default());
+        let mut element = |doc: &mut BaseDocument, name| {
+            doc.create_node(NodeData::Element(Box::new(ElementData::new(name, vec![]))))
+        };
+        let parent = element(&mut doc, qual_name!("div"));
+        let ids: Vec<_> = (0..5)
+            .map(|_| element(&mut doc, qual_name!("span")))
+            .collect();
+        doc.mutate().append_children(parent, &ids);
+        let index = |doc: &BaseDocument, id| doc.get_node(id).unwrap().child_index();
+        for (i, id) in ids.iter().enumerate() {
+            assert_eq!(index(&doc, *id), Some(i));
+        }
+
+        // A sibling walk primes the hint of each node it reaches.
+        let mut node = doc.get_node(ids[0]).unwrap();
+        for (i, id) in ids.iter().enumerate().skip(1) {
+            node = node.forward(1).unwrap();
+            assert_eq!(node.id, *id);
+            assert_eq!(node.child_index(), Some(i));
+        }
+        assert!(node.forward(1).is_none());
+        assert_eq!(node.backward(2).map(|n| n.id), Some(ids[2]));
+
+        // Inserting at the front leaves every hint stale by one.
+        let first = element(&mut doc, qual_name!("span"));
+        doc.mutate().insert_nodes_before(ids[0], &[first]);
+        assert_eq!(index(&doc, first), Some(0));
+        for (i, id) in ids.iter().enumerate() {
+            assert_eq!(index(&doc, *id), Some(i + 1));
+        }
+
+        // Removing several leaves them stale by more than one.
+        let mut mutator = doc.mutate();
+        mutator.remove_node(first);
+        mutator.remove_node(ids[0]);
+        mutator.remove_node(ids[1]);
+        drop(mutator);
+        assert_eq!(index(&doc, ids[2]), Some(0));
+        assert_eq!(index(&doc, ids[4]), Some(2));
+        assert_eq!(index(&doc, ids[0]), None, "a removed node has no parent");
+        let parent = doc.get_node(parent).unwrap();
+        assert_eq!(parent.index_of_child(ids[3]), Some(1));
+        assert_eq!(parent.index_of_child(ids[0]), None);
+    }
 
     #[test]
     fn create_node_with_disabled_attr() {
