@@ -400,7 +400,12 @@ impl BlitzDomNode {
                 if chosen.is_empty() && is_single_select {
                     chosen.extend(options.first());
                 }
-                for option in chosen {
+                for (index, option) in chosen.into_iter().enumerate() {
+                    // The specification only describes a single chosen option. Several are
+                    // separated by a space, as browsers do.
+                    if index > 0 {
+                        out.break_word();
+                    }
                     // The options of a collapsed `select` are not rendered, but the chosen one is
                     // still the value of the control.
                     let context = TextContext {

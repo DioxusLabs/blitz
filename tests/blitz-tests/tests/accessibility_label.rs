@@ -2298,6 +2298,68 @@ fn does_not_populate_labelled_by_from_text_content() -> TestResult<()> {
     )
 }
 
+#[test]
+fn separates_chosen_options_of_embedded_multiple_select() -> TestResult<()> {
+    let mut document = HtmlDocument::from_html(
+        r#"<html>
+          <div role="button" aria-labelledby="target"></div>
+          <span id="target">Pick
+            <select multiple>
+              <option selected>One</option>
+              <option>Two</option>
+              <option selected>Three</option>
+            </select>
+            now</span>
+        </html>"#,
+        default_document_config(),
+    );
+    document.resolve(0.0);
+
+    let tree_update = document.build_accessibility_tree();
+
+    verify_that!(
+        tree_update.nodes,
+        contains((
+            anything(),
+            matches_pattern!(AccessKitNode {
+                role(): eq(Role::Button),
+                label(): some(eq("Pick One Three now")),
+            })
+        ))
+    )
+}
+
+#[test]
+fn separates_selected_options_of_embedded_listbox() -> TestResult<()> {
+    let mut document = HtmlDocument::from_html(
+        r#"<html>
+          <div role="button" aria-labelledby="target"></div>
+          <span id="target">Pick
+            <div role="listbox">
+              <div role="option" aria-selected="true">One</div>
+              <div role="option" aria-selected="false">Two</div>
+              <div role="option" aria-selected="true">Three</div>
+            </div>
+            now</span>
+        </html>"#,
+        default_document_config(),
+    );
+    document.resolve(0.0);
+
+    let tree_update = document.build_accessibility_tree();
+
+    verify_that!(
+        tree_update.nodes,
+        contains((
+            anything(),
+            matches_pattern!(AccessKitNode {
+                role(): eq(Role::Button),
+                label(): some(eq("Pick One Three now")),
+            })
+        ))
+    )
+}
+
 /// The ID of the only node in the tree with the role.
 fn node_id_with_role(tree_update: &TreeUpdate, role: Role) -> NodeId {
     node_id_where(tree_update, &format!("Node with role {role:?}"), |node| {
