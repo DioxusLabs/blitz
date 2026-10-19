@@ -7,6 +7,7 @@ use blitz_dom::{BaseDocument, DocumentConfig, NodeId};
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::shell::{ColorScheme, Viewport};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 const HTML: &str = r#"<!DOCTYPE html>
 <html><head><style>
@@ -147,4 +148,39 @@ fn offset_sizes_use_unrounded_border_box() {
         assert_eq!(rect.width.round(), 13.0, "{writing_mode}");
         assert_eq!(rect.height.round(), 11.0, "{writing_mode}");
     }
+}
+
+/// Asking every inline element of one inline formatting context for its rects reads each
+/// element's own fragments, and does not walk the whole of the context's lines once an element,
+/// as it did when this took minutes in a debug build.
+#[test]
+fn rects_of_every_inline_element_in_one_block_scale_linearly() {
+    let mut html = String::from("<!DOCTYPE html><body><div id=\"run\">");
+    for i in 0..4000 {
+        html.push_str(&format!("<label>Label <b>{i}</b></label><input> "));
+    }
+    html.push_str("</div></body>");
+    let mut doc = HtmlDocument::from_html(
+        &html,
+        DocumentConfig {
+            viewport: Some(Viewport::new(800, 600, 1.0, ColorScheme::Light)),
+            html_parser_provider: Some(Arc::new(HtmlProvider) as _),
+            ..Default::default()
+        },
+    );
+    doc.resolve(0.0);
+    let labels = doc.query_selector_all("#run label, #run b").unwrap();
+    assert_eq!(labels.len(), 8000);
+
+    let start = Instant::now();
+    for &label in &labels {
+        let bounding = doc.get_client_bounding_rect(label).unwrap();
+        assert!(bounding.width > 0.0, "{bounding:?}");
+        assert!(!doc.node_client_rects(label).is_empty());
+    }
+    let elapsed = start.elapsed();
+    assert!(
+        elapsed < Duration::from_secs(5),
+        "querying the rects of 8000 inline elements took {elapsed:?}"
+    );
 }
