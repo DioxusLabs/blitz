@@ -119,21 +119,30 @@ impl<'a> SourceMapRecorder<'a> {
         let rendered = &tree.text()[start..];
 
         self.map.nodes.push((node, self.map.units.len() as u32));
-        if transform.is_empty() && rendered.len() == source.len() {
+        // What white space collapsing was applied to, where it has the content's byte offsets:
+        // ASCII of the content's length is the content with each character mapped to one byte.
+        let collapsed = if transform.is_empty() {
+            Some(source)
+        } else if pushed.len() == source.len() && source.is_ascii() && pushed.is_ascii() {
+            Some(pushed)
+        } else {
+            None
+        };
+        if collapsed.is_some() && rendered.len() == source.len() {
             // Nothing was removed, so every byte is where it was.
             if !source.is_empty() {
                 self.map.units.push(Unit::new(0, start, false));
             }
-        } else if !transform.is_empty()
-            || !record_collapsed_units(
+        } else if !collapsed.is_some_and(|collapsed| {
+            record_collapsed_units(
                 &mut self.map.units,
-                source,
+                collapsed,
                 rendered,
                 start,
                 collapse,
                 was_pending,
             )
-        {
+        }) {
             record_units(
                 &mut self.map.units,
                 source,
@@ -642,6 +651,16 @@ mod tests {
     fn text_follows_a_marker() {
         check(&[Marker("• "), Text(" a")], "• a", &[&[4, 4, 5]]);
         check(&[Marker("1."), Text(" a")], "1. a", &[&[2, 3, 4]]);
+    }
+
+    #[test]
+    fn ascii_case_mapping_keeps_its_offsets() {
+        check(&[Uppercase("ab", "AB")], "AB", &[&[0, 1, 2]]);
+        check(
+            &[Uppercase(" a  b ", " A  B "), Text("c")],
+            "A B c",
+            &[&[0, 0, 1, 2, 2, 3, 4], &[4, 5]],
+        );
     }
 
     #[test]
