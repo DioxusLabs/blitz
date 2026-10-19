@@ -721,8 +721,8 @@ fn text_group(computed: &ComputedValues, scale: f32, language: Option<Language>)
             style::values::computed::WordBreak::BreakWord => WordBreak::Normal,
         },
         line_break: match computed.slow_clone_line_break() {
-            style::values::computed::LineBreak::Auto
-            | style::values::computed::LineBreak::Normal => LineBreak::Normal,
+            style::values::computed::LineBreak::Auto => LineBreak::Auto,
+            style::values::computed::LineBreak::Normal => LineBreak::Normal,
             style::values::computed::LineBreak::Loose => LineBreak::Loose,
             style::values::computed::LineBreak::Strict => LineBreak::Strict,
             style::values::computed::LineBreak::Anywhere => LineBreak::Anywhere,
