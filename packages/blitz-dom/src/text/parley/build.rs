@@ -11,7 +11,7 @@ use stylo_taffy::CopyStyleGetters;
 use super::{MarkerLayout, TextBrush, TextContext, TextLayout, style as stylo_to_parley};
 use crate::Node;
 use crate::layout::inline::push_inline_content;
-use crate::layout::text_transform::PushedText;
+use crate::layout::text_transform::{CaseTransform, PushedText, TextTransformer};
 use crate::node::Marker;
 use crate::text::{InlineBoxKind, InlineBuilder, MarkerEngine, SpanKind};
 
@@ -67,6 +67,7 @@ pub(super) fn build_inline_layout_into(
     let mut builder = ParleyBuilder {
         tree,
         root_style: &parley_style,
+        transformer: TextTransformer::default(),
     };
     push_inline_content(nodes, root_node, &mut builder);
     text_layout.text = builder.tree.build_into(&mut text_layout.layout);
@@ -77,23 +78,11 @@ struct ParleyBuilder<'a, 'b> {
     tree: TreeBuilder<'b, TextBrush>,
     /// The style of the inline formatting context's root, which an inside list marker is set in.
     root_style: &'a parley::TextStyle<'static, 'static, TextBrush>,
-}
-
-impl PushedText for ParleyBuilder<'_, '_> {
-    #[inline]
-    fn text(&self) -> &str {
-        self.tree.text()
-    }
-
-    #[inline]
-    fn has_pending_whitespace(&self) -> bool {
-        self.tree.has_pending_whitespace()
-    }
+    /// Applies `text-transform` to text before it is pushed to the tree.
+    transformer: TextTransformer,
 }
 
 impl InlineBuilder for ParleyBuilder<'_, '_> {
-    const TRANSFORMS_TEXT: bool = false;
-
     fn push_marker(&mut self, marker: &Marker) {
         match marker {
             // Bullet glyphs live in the bundled bullet font. The position-outside
@@ -109,6 +98,8 @@ impl InlineBuilder for ParleyBuilder<'_, '_> {
             }
             Marker::String(str) => self.tree.push_text(str),
         }
+        // The marker is a box of its own, so the content's words do not continue from it.
+        self.transformer.word_break(&self.tree);
     }
 
     fn push_span(&mut self, node: &Node, style: &ComputedValues, kind: SpanKind) {
@@ -134,11 +125,16 @@ impl InlineBuilder for ParleyBuilder<'_, '_> {
     }
 
     #[inline]
-    fn push_text(&mut self, _node: &Node, text: &str) {
+    fn push_text(&mut self, _node: &Node, text: &str, style: Option<&ComputedValues>) {
+        let transform = style.map_or(CaseTransform::NONE, CaseTransform::from_style);
+        let text = self.transformer.transform(text, &transform, &self.tree);
         self.tree.push_text(text);
     }
 
     fn push_inline_box(&mut self, node: &Node, style: &ComputedValues, kind: InlineBoxKind) {
+        if kind == InlineBoxKind::Atomic {
+            self.transformer.word_break(&self.tree);
+        }
         self.tree.push_inline_box(InlineBox {
             id: node.id.as_u64(),
             kind: match kind {
@@ -166,6 +162,7 @@ impl InlineBuilder for ParleyBuilder<'_, '_> {
 ",
         );
         self.tree.pop_style_span();
+        self.transformer.word_break(&self.tree);
     }
 
     #[inline]

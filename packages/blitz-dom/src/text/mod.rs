@@ -211,13 +211,8 @@ pub(crate) enum InlineBoxKind {
 /// The content of one inline formatting context as a text backend builds it, pushed in content
 /// order by the walk of the DOM that Blitz runs for every backend.
 ///
-/// Every span pushed is popped. The [`PushedText`](crate::layout::text_transform::PushedText)
-/// methods are read only where the backend does not apply `text-transform` itself.
-pub(crate) trait InlineBuilder: crate::layout::text_transform::PushedText {
-    /// Whether the backend applies `text-transform` itself. Where it does, text is pushed as the
-    /// DOM holds it; where it does not, Blitz transforms it first.
-    const TRANSFORMS_TEXT: bool;
-
+/// Every span pushed is popped.
+pub(crate) trait InlineBuilder {
     /// Pushes the marker of a list item whose marker is inside it, before its content.
     fn push_marker(&mut self, marker: &crate::node::Marker);
 
@@ -227,8 +222,14 @@ pub(crate) trait InlineBuilder: crate::layout::text_transform::PushedText {
     /// Closes the span opened last, which was opened as `kind`.
     fn pop_span(&mut self, kind: SpanKind);
 
-    /// Pushes the text of text node `node`.
-    fn push_text(&mut self, node: &Node, text: &str);
+    /// Pushes the text of text node `node` as the DOM holds it, set in its parent's computed
+    /// style `style`. The backend applies `text-transform`.
+    fn push_text(
+        &mut self,
+        node: &Node,
+        text: &str,
+        style: Option<&style::properties::ComputedValues>,
+    );
 
     /// Pushes the element `node`, set in its computed style `style`, as a box of its own.
     fn push_inline_box(

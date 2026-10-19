@@ -6,7 +6,6 @@ use style::values::computed::Display;
 use style::values::specified::box_::{DisplayInside, DisplayOutside};
 
 use crate::layout::replaced::is_inline_box_element;
-use crate::layout::text_transform::{CaseTransform, TextTransformer};
 use crate::node::{ListItemLayout, ListItemLayoutPosition};
 use crate::text::{InlineBoxKind, InlineBuilder, SpanKind};
 use crate::{Node, NodeData, NodeTree};
@@ -24,8 +23,6 @@ pub(crate) fn push_inline_content<B: InlineBuilder>(
         root.parent
             .and_then(|parent| nodes[parent].primary_styles())
     });
-    let text_transform = case_transform::<B>(root_style.as_deref().map(|style| &**style));
-    drop(root_style);
 
     if let Some(ListItemLayout {
         marker,
@@ -36,65 +33,45 @@ pub(crate) fn push_inline_content<B: InlineBuilder>(
     {
         builder.push_marker(marker);
     }
-    let mut walk = Walk {
-        nodes,
-        // The marker is a box of its own, so the content's words do not continue from it.
-        transformer: TextTransformer::default(),
-    };
-    walk.transformer.word_break(builder);
-    walk.children_and_pseudos(builder, root, &text_transform);
-}
-
-/// The text transform text inside an element set in `style` is pushed with, where Blitz
-/// transforms text for the backend.
-fn case_transform<B: InlineBuilder>(style: Option<&ComputedValues>) -> CaseTransform {
-    match style {
-        Some(style) if !B::TRANSFORMS_TEXT => CaseTransform::from_style(style),
-        _ => CaseTransform::NONE,
-    }
+    let walk = Walk { nodes };
+    walk.children_and_pseudos(builder, root, root_style.as_deref().map(|style| &**style));
 }
 
 /// The walk of an inline formatting context's DOM.
 struct Walk<'a> {
     nodes: &'a NodeTree,
-    /// Transforms text where the backend does not.
-    transformer: TextTransformer,
 }
 
 impl Walk<'_> {
-    /// Pushes `parent`'s `::before`, children and `::after`, whose text is transformed by
-    /// `text_transform`.
+    /// Pushes `parent`'s `::before`, children and `::after`, whose text is set in `style`.
     fn children_and_pseudos<B: InlineBuilder>(
-        &mut self,
+        &self,
         builder: &mut B,
         parent: &Node,
-        text_transform: &CaseTransform,
+        style: Option<&ComputedValues>,
     ) {
         if let Some(before) = parent.before() {
-            self.node(builder, &self.nodes[before], text_transform);
+            self.node(builder, &self.nodes[before], style);
         }
         for &child in &parent.children {
-            self.node(builder, &self.nodes[child], text_transform);
+            self.node(builder, &self.nodes[child], style);
         }
         if let Some(after) = parent.after() {
-            self.node(builder, &self.nodes[after], text_transform);
+            self.node(builder, &self.nodes[after], style);
         }
     }
 
-    /// Pushes `node`, whose text is transformed by its parent's `parent_transform`.
+    /// Pushes `node`, whose text is set in its parent's `parent_style`.
     fn node<B: InlineBuilder>(
-        &mut self,
+        &self,
         builder: &mut B,
         node: &Node,
-        parent_transform: &CaseTransform,
+        parent_style: Option<&ComputedValues>,
     ) {
         let element = match &node.data {
             NodeData::Element(element) | NodeData::AnonymousBlock(element) => element,
             NodeData::Text(data) => {
-                let text = self
-                    .transformer
-                    .transform(&data.content, parent_transform, builder);
-                builder.push_text(node, text);
+                builder.push_text(node, &data.content, parent_style);
                 return;
             }
             NodeData::Comment { .. } | NodeData::Document(_) => return,
@@ -110,9 +87,8 @@ impl Walk<'_> {
             (DisplayOutside::None, DisplayInside::None) => {}
             // No box, but its children inherit from it.
             (DisplayOutside::None, DisplayInside::Contents) => {
-                let text_transform = case_transform::<B>(Some(&**style));
                 builder.push_span(node, &style, SpanKind::Contents);
-                self.children_and_pseudos(builder, node, &text_transform);
+                self.children_and_pseudos(builder, node, Some(&**style));
                 builder.pop_span(SpanKind::Contents);
             }
             _ if style.clone_position().is_absolutely_positioned() => {
@@ -121,11 +97,9 @@ impl Walk<'_> {
             (DisplayOutside::Inline, DisplayInside::Flow) => {
                 let tag = &element.name.local;
                 if is_inline_box_element(tag) {
-                    self.transformer.word_break(builder);
                     builder.push_inline_box(node, &style, InlineBoxKind::Atomic);
                 } else if *tag == local_name!("br") {
                     builder.push_line_break(node, &style);
-                    self.transformer.word_break(builder);
                 } else if *tag == local_name!("wbr") && builder.push_break_opportunity(node) {
                 } else {
                     let kind = if *tag == local_name!("ruby") {
@@ -156,9 +130,8 @@ impl Walk<'_> {
                     } else {
                         SpanKind::Span
                     };
-                    let text_transform = case_transform::<B>(Some(&**style));
                     builder.push_span(node, &style, kind);
-                    self.children_and_pseudos(builder, node, &text_transform);
+                    self.children_and_pseudos(builder, node, Some(&**style));
                     builder.pop_span(kind);
                 }
             }
@@ -166,7 +139,6 @@ impl Walk<'_> {
                 builder.push_inline_box(node, &style, InlineBoxKind::Float);
             }
             _ => {
-                self.transformer.word_break(builder);
                 builder.push_inline_box(node, &style, InlineBoxKind::Atomic);
             }
         }
