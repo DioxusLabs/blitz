@@ -150,9 +150,7 @@ impl BaseDocument {
             // is not labelable, no later element with the same id is used and the descendants of
             // the label are not considered either.
             Some(for_id) => self
-                .nodes_to_id
-                .get(for_id)
-                .and_then(|targets| targets.first().copied())
+                .get_element_by_id(for_id)
                 .filter(|&target| self.nodes[target].is_labelable()),
             None => label.first_labelable_descendant(),
         }
@@ -164,7 +162,7 @@ impl BaseDocument {
     ) -> impl Iterator<Item = BlitzDomNodeId> + 'a {
         nodes_reference
             .split_ascii_whitespace()
-            .filter_map(|dom_id| self.nodes_to_id.get(dom_id)?.first().copied())
+            .filter_map(|dom_id| self.get_element_by_id(dom_id))
     }
 
     fn build_accessibility_node(
