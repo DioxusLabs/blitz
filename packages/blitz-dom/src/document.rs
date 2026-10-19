@@ -82,17 +82,64 @@ pub struct UserAgentStylesheet(DocumentStyleSheet);
 pub(crate) fn init_stylo_prefs() {
     static INIT: Once = Once::new();
     INIT.call_once(|| {
-        style_config::set_pref!("layout.flexbox.balance", true);
-        style_config::set_pref!("layout.unimplemented", true);
-        style_config::set_pref!("layout.columns.enabled", true);
+        style_config::set_pref!("layout.css.flexbox-balance.enabled", true);
+        style_config::set_pref!("layout.css.columns.enabled", true);
         style_config::set_pref!("layout.css.basic-shape-shape.enabled", true);
         style_config::set_pref!("layout.css.tree-counting-functions.enabled", true);
         style_config::set_pref!("layout.css.progress-function.enabled", true);
-        style_config::set_pref!("layout.variable_fonts.enabled", true);
+        style_config::set_pref!("layout.css.font-variations.enabled", true);
+        // The properties Stylo once gated together as unimplemented.
+        style_config::set_pref!("layout.css.appearance.enabled", true);
+        style_config::set_pref!("layout.css.backdrop-filter.enabled", true);
+        style_config::set_pref!("layout.css.contain.enabled", true);
+        style_config::set_pref!("layout.css.corner-shape.enabled", true);
+        style_config::set_pref!("layout.css.counters.enabled", true);
+        style_config::set_pref!("layout.css.font-size-adjust.enabled", true);
+        style_config::set_pref!("layout.css.forced-color-adjust.enabled", true);
+        style_config::set_pref!("layout.css.masking.enabled", true);
+        style_config::set_pref!("layout.css.math-properties.enabled", true);
+        style_config::set_pref!("layout.css.motion-path.enabled", true);
+        style_config::set_pref!("layout.css.overscroll-behavior.enabled", true);
+        style_config::set_pref!("layout.css.scroll-behavior.enabled", true);
+        style_config::set_pref!("layout.css.scrollbar-styling.enabled", true);
+        style_config::set_pref!("layout.css.text-decoration-inset.enabled", true);
+        style_config::set_pref!("layout.css.text-overflow.enabled", true);
+        style_config::set_pref!("layout.css.text-underline.enabled", true);
+        style_config::set_pref!("layout.css.view-transitions.enabled", true);
+        style_config::set_pref!("layout.css.writing-mode.text-orientation.enabled", true);
+        style_config::set_pref!("layout.css.zoom.enabled", true);
+        // Text properties and values both text backends compute.
+        style_config::set_pref!("layout.css.dominant-baseline.enabled", true);
+        style_config::set_pref!("layout.css.font-synthesis.enabled", true);
+        style_config::set_pref!("layout.css.font-variant-caps.all-values.enabled", true);
+        style_config::set_pref!("layout.css.font-variant-emoji.enabled", true);
+        style_config::set_pref!("layout.css.hyphens.enabled", true);
+        style_config::set_pref!("layout.css.initial-letter.enabled", true);
+        style_config::set_pref!("layout.css.ruby.enabled", true);
+        style_config::set_pref!("layout.css.text-box.enabled", true);
+        style_config::set_pref!("layout.css.text-combine-upright.enabled", true);
+        style_config::set_pref!("layout.css.text-emphasis.enabled", true);
+        style_config::set_pref!("layout.css.text-indent-keywords.enabled", true);
+        style_config::set_pref!("layout.css.text-wrap-style.balance.enabled", true);
+        style_config::set_pref!("layout.css.text-wrap-style.pretty.enabled", true);
+        style_config::set_pref!(
+            "layout.css.white-space-collapse.preserve-spaces.enabled",
+            true
+        );
+        style_config::set_pref!("layout.css.word-break.break-word.enabled", true);
         // The `writing-mode` feature lays out vertical boxes and winkin
         // vertical lines; without either the property stays unparsed.
         #[cfg(any(feature = "writing-mode", text_winkin))]
-        style_config::set_pref!("layout.writing-mode.enabled", true);
+        {
+            style_config::set_pref!("layout.css.writing-mode.enabled", true);
+            style_config::set_pref!("layout.css.writing-mode.sideways.enabled", true);
+        }
+        // The text properties only winkin lays out.
+        #[cfg(text_winkin)]
+        {
+            style_config::set_pref!("layout.css.line-clamp.enabled", true);
+            style_config::set_pref!("layout.css.text-autospace.enabled", true);
+        }
         style_config::set_pref!("layout.threads", -1);
     });
 }
