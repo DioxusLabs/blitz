@@ -110,6 +110,10 @@ pub struct ElementData {
     /// Whether this node or any of its descendants may carry `RestyleDamage`.
     /// Used by the damage propagation pass to skip unchanged subtrees.
     pub damaged_descendants: AtomicBool,
+    /// Whether an animation or transition set has ever been stored for this
+    /// element (or its pseudo-elements). Lets Stylo skip the animation lookups
+    /// for elements that have never animated.
+    pub may_have_animations: AtomicBool,
 
     // Pseudo element nodes
     pub before: Option<NodeId>,
@@ -330,6 +334,7 @@ impl Clone for ElementData {
             snapshot_handled: AtomicBool::new(false),
             dirty_descendants: AtomicBool::new(true),
             damaged_descendants: AtomicBool::new(true),
+            may_have_animations: AtomicBool::new(false),
             before: None,
             after: None,
             detailed_layout_info: taffy::DetailedLayoutInfo::None,
@@ -443,6 +448,7 @@ impl ElementData {
             snapshot_handled: AtomicBool::new(false),
             dirty_descendants: AtomicBool::new(true),
             damaged_descendants: AtomicBool::new(true),
+            may_have_animations: AtomicBool::new(false),
             before: None,
             after: None,
             detailed_layout_info: taffy::DetailedLayoutInfo::None,

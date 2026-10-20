@@ -765,11 +765,27 @@ impl<'a> TElement for BlitzNode<'a> {
     }
 
     fn may_have_animations(&self) -> bool {
-        true
+        self.element_data()
+            .is_some_and(|data| data.may_have_animations.load(Ordering::Relaxed))
+    }
+
+    fn note_may_have_animations(&self) {
+        if let Some(data) = self.element_data() {
+            data.may_have_animations.store(true, Ordering::Relaxed);
+        }
     }
 
     fn has_animations(&self, context: &SharedStyleContext) -> bool {
-        self.has_css_animations(context, None) || self.has_css_transitions(context, None)
+        if !self.may_have_animations() {
+            return false;
+        }
+        let key = AnimationSetKey::new_for_non_pseudo(TNode::opaque(&TElement::as_node(self)));
+        context
+            .animations
+            .sets
+            .read()
+            .get(&key)
+            .is_some_and(|set| set.has_active_animation() || set.has_active_transition())
     }
 
     fn has_css_animations(
@@ -777,6 +793,9 @@ impl<'a> TElement for BlitzNode<'a> {
         context: &SharedStyleContext,
         pseudo_element: Option<PseudoElement>,
     ) -> bool {
+        if !self.may_have_animations() {
+            return false;
+        }
         let key = AnimationSetKey::new(TNode::opaque(&TElement::as_node(self)), pseudo_element);
         context.animations.has_active_animations(&key)
     }
@@ -786,6 +805,9 @@ impl<'a> TElement for BlitzNode<'a> {
         context: &SharedStyleContext,
         pseudo_element: Option<PseudoElement>,
     ) -> bool {
+        if !self.may_have_animations() {
+            return false;
+        }
         let key = AnimationSetKey::new(TNode::opaque(&TElement::as_node(self)), pseudo_element);
         context.animations.has_active_transitions(&key)
     }
