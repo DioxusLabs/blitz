@@ -584,7 +584,28 @@ impl LayoutPassState<'_> {
                 }
 
                 // The default CSS file will set
-                match node.taffy_display() {
+                let display = node.taffy_display();
+
+                // A container without layout children has nothing to size: skip the
+                // block/flex/grid algorithms, as Taffy's `TaffyTree` does.
+                if display != Display::None
+                    && node
+                        .layout_children
+                        .borrow()
+                        .as_ref()
+                        .is_none_or(|children| children.is_empty())
+                {
+                    let mut style = node.layout_style();
+                    style.set_percent_basis(orthogonal_percent_basis);
+                    return compute_leaf_layout(
+                        inputs,
+                        &style,
+                        resolve_calc_value,
+                        |_known_size, _available_space| taffy::Size::ZERO,
+                    );
+                }
+
+                match display {
                     Display::Block => compute_block_layout(self, node_id, inputs, block_ctx),
                     Display::FlowRoot => compute_block_layout(self, node_id, inputs, None),
                     Display::Flex => {
