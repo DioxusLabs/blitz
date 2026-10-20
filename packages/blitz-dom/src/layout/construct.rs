@@ -926,14 +926,28 @@ pub(crate) fn find_inline_layout_embedded_boxes(
 ) {
     flush_inline_pseudos_recursive(doc, inline_context_root_node_id);
 
+    let mut former_containers = Vec::new();
     iter_children_and_pseudos!(doc.nodes[inline_context_root_node_id], |child_id| {
         find_inline_layout_embedded_boxes_recursive(
             &mut doc.nodes,
             inline_context_root_node_id,
             child_id,
             layout_children,
+            &mut former_containers,
         );
     });
+
+    // An inline element that was a layout container before, a flex container say, still holds
+    // the layout children and anonymous blocks it was built with. Laid out as part of the
+    // inline content now, it has neither, and its old ones may already be gone from the slab,
+    // as a pseudo-element that no longer exists is.
+    for node_id in former_containers {
+        doc.nodes[node_id].layout_children.borrow_mut().take();
+        let anonymous_blocks = std::mem::take(&mut doc.nodes[node_id].anonymous_blocks);
+        for anon_id in anonymous_blocks {
+            doc.deallocate_anonymous_block(anon_id);
+        }
+    }
 
     fn flush_inline_pseudos_recursive(doc: &mut BaseDocument, node_id: NodeId) {
         doc.iter_children_mut(node_id, |child_id, doc| {
@@ -957,6 +971,7 @@ pub(crate) fn find_inline_layout_embedded_boxes(
         parent_id: NodeId,
         node_id: NodeId,
         layout_children: &mut ThinVec<NodeId>,
+        former_containers: &mut Vec<NodeId>,
     ) {
         let node = &mut nodes[node_id];
 
@@ -986,6 +1001,7 @@ pub(crate) fn find_inline_layout_embedded_boxes(
                                 parent_id,
                                 child_id,
                                 layout_children,
+                                former_containers,
                             );
                         });
                     }
@@ -998,12 +1014,18 @@ pub(crate) fn find_inline_layout_embedded_boxes(
                             node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
                         } else {
                             node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
+                            if node.layout_children.borrow().is_some()
+                                || !node.anonymous_blocks.is_empty()
+                            {
+                                former_containers.push(node_id);
+                            }
                             iter_children_and_pseudos!(nodes[node_id], |child_id| {
                                 find_inline_layout_embedded_boxes_recursive(
                                     nodes,
                                     node_id,
                                     child_id,
                                     layout_children,
+                                    former_containers,
                                 );
                             });
                         }
