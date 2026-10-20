@@ -1,13 +1,9 @@
 mod build;
-#[cfg(feature = "floats")]
-mod floats;
 mod layout;
-mod lines;
 
 use taffy::{AvailableSpace, LayoutInput, Point, Rect, Size};
 
 pub(crate) use build::push_inline_content;
-pub(crate) use layout::{float_box_inputs, inline_box_inputs};
 
 /// What `compute_inline_layout_inner` has resolved from the container's styles and inputs
 /// before the inline boxes are measured and the lines broken.
