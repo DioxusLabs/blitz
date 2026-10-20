@@ -571,18 +571,11 @@ impl selectors::Element for BlitzNode<'_> {
         search_name: &<Self::Impl as selectors::SelectorImpl>::Identifier,
         case_sensitivity: selectors::attr::CaseSensitivity,
     ) -> bool {
-        let class_attr = self.data.attr(local_name!("class"));
-        if let Some(class_attr) = class_attr {
-            // split the class attribute
-            for pheme in class_attr.split_ascii_whitespace() {
-                let atom = Atom::from(pheme);
-                if case_sensitivity.eq_atom(&atom, search_name) {
-                    return true;
-                }
-            }
-        }
-
-        false
+        self.element_data().is_some_and(|data| {
+            data.classes
+                .iter()
+                .any(|class| case_sensitivity.eq_atom(class, search_name))
+        })
     }
 
     fn imported_part(
@@ -689,12 +682,9 @@ impl<'a> TElement for BlitzNode<'a> {
     where
         F: FnMut(&style::values::AtomIdent),
     {
-        let class_attr = self.data.attr(local_name!("class"));
-        if let Some(class_attr) = class_attr {
-            // split the class attribute
-            for pheme in class_attr.split_ascii_whitespace() {
-                let atom = Atom::from(pheme); // interns the string
-                callback(AtomIdent::cast(&atom));
+        if let Some(data) = self.element_data() {
+            for class in &data.classes {
+                callback(AtomIdent::cast(class));
             }
         }
     }
@@ -705,7 +695,7 @@ impl<'a> TElement for BlitzNode<'a> {
     {
         if let Some(attrs) = self.data.attrs() {
             for attr in attrs.iter() {
-                callback(&GenericAtomIdent(attr.name.local.clone()));
+                callback(GenericAtomIdent::cast(&attr.name.local));
             }
         }
     }

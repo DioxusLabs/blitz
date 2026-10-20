@@ -348,6 +348,10 @@ impl DocumentMutator<'_> {
             element.id = Some(Atom::from(value))
         }
 
+        if *attr == local_name!("class") {
+            element.classes = crate::node::parse_classes(value);
+        }
+
         if *attr == local_name!("value") {
             if let Some(input_data) = element.text_input_data_mut() {
                 // Update text input value
@@ -451,6 +455,10 @@ impl DocumentMutator<'_> {
 
         if name.local == local_name!("id") {
             element.id = None;
+        }
+
+        if name.local == local_name!("class") {
+            element.classes.clear();
         }
 
         // As in `set_attribute`: taking one of these away can make the element
