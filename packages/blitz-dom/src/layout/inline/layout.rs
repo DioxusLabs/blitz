@@ -20,8 +20,8 @@ use taffy::{BlockItemStyle as _, Clear, Float, prelude::TaffyMaxContent};
 
 use stylo_taffy::StyleFlags;
 
-use super::resolve_calc_value;
 use crate::layout::LayoutPassState;
+use crate::layout::resolve_calc_value;
 use crate::stylo_to_parley;
 
 /// Subtract a child's margins from the definite axes of the available space it is laid out in.
