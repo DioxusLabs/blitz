@@ -2,6 +2,7 @@
 //!
 //! Self-contained so that it can move into `blitz-dom` later.
 
+use blitz_dom::CopyStyleGetters;
 use blitz_dom::node::{ListItemLayoutPosition, Marker, TextBrush, TextLayout};
 use blitz_dom::{Node, NodeId};
 use markup5ever::local_name;
@@ -48,7 +49,7 @@ pub(crate) fn inner_text(element: &Node) -> String {
 }
 
 fn display(node: &Node) -> Option<Display> {
-    Some(node.primary_styles()?.slow_clone_display())
+    Some(node.primary_styles()?.clone_display())
 }
 
 /// Whether `element` has a box. Stylo drops the styles of `display: none` subtrees, so the
@@ -138,7 +139,7 @@ impl InnerTextCollector {
 
         let is_visible = node
             .primary_styles()
-            .is_some_and(|s| s.slow_clone_visibility() == Visibility::Visible);
+            .is_some_and(|s| s.clone_visibility() == Visibility::Visible);
         let line_breaks = match (display.outside(), display.inside()) {
             _ if !is_visible => 0,
             _ if node.data.is_element_with_tag_name(&local_name!("p")) => 2,
@@ -199,7 +200,7 @@ impl InnerTextCollector {
                 && filter.is_none_or(|target| is_inclusive_descendant_of(node, target))
                 && node
                     .primary_styles()
-                    .is_none_or(|s| s.slow_clone_visibility() == Visibility::Visible);
+                    .is_none_or(|s| s.clone_visibility() == Visibility::Visible);
             cached_brush = Some((brush.id, included));
             included
         };

@@ -1,5 +1,6 @@
 //! Selection API bindings and DOM-to-rendered text offset mapping.
 
+use blitz_dom::CopyStyleGetters;
 use std::cell::Cell;
 
 use blitz_dom::{BaseDocument, Node, NodeId, node::NodeData};
@@ -271,9 +272,10 @@ impl OffsetMapper<'_> {
         let Some(node) = self.doc.get_node(id) else {
             return;
         };
-        if node.primary_styles().is_some_and(|style| {
-            style.slow_clone_display() == style::values::computed::Display::None
-        }) {
+        if node
+            .primary_styles()
+            .is_some_and(|style| style.clone_display() == style::values::computed::Display::None)
+        {
             return;
         }
         if id != self.root
@@ -288,13 +290,13 @@ impl OffsetMapper<'_> {
                 .parent
                 .and_then(|id| self.doc.get_node(id))
                 .and_then(Node::primary_styles);
-            let transform = style.as_ref().map_or(TextTransform::NONE, |style| {
-                style.slow_clone_text_transform()
-            });
+            let transform = style
+                .as_ref()
+                .map_or(TextTransform::NONE, |style| style.clone_text_transform());
             let whitespace = style
                 .as_ref()
                 .map_or(WhiteSpaceCollapse::Collapse, |style| {
-                    style.slow_clone_white_space_collapse()
+                    style.clone_white_space_collapse()
                 });
             let mut units = 0;
             for c in data.content.chars() {

@@ -11,6 +11,7 @@
 //! the stale bit, the root was never marked dirty, and the style traversal
 //! was skipped entirely.
 
+use blitz_dom::CopyStyleGetters;
 use blitz_dom::{BaseDocument, DocumentConfig};
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::shell::{ColorScheme, Viewport};
@@ -46,7 +47,7 @@ fn color_of(doc: &BaseDocument, selector: &str) -> [u8; 3] {
     let node_id = doc.query_selector(selector).unwrap().unwrap();
     let node = doc.get_node(node_id).unwrap();
     let styles = node.primary_styles().unwrap();
-    let color = styles.slow_clone_color().into_srgb_legacy();
+    let color = styles.clone_color().into_srgb_legacy();
     let srgb = color.raw_components();
     [
         (srgb[0] * 255.0).round() as u8,

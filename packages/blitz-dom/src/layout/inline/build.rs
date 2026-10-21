@@ -10,6 +10,7 @@ use style::{
         specified::box_::{DisplayInside, DisplayOutside},
     },
 };
+use stylo_taffy::CopyStyleGetters;
 
 use crate::{
     NodeData,
@@ -48,8 +49,8 @@ pub(crate) fn build_inline_layout_into(
     let mut builder = layout_ctx.tree_builder(font_ctx, scale, true, &parley_style);
     if let Some(style) = root_node_style.as_deref() {
         builder.set_base_direction(stylo_to_parley::base_direction(
-            style.slow_clone_direction(),
-            style.slow_clone_unicode_bidi(),
+            style.clone_direction(),
+            style.clone_unicode_bidi(),
         ));
     }
 
@@ -143,9 +144,9 @@ pub(crate) fn build_inline_layout_into(
 
                 let display = node.display_style().unwrap_or(Display::inline());
                 let position = style
-                    .map(|s| s.slow_clone_position())
+                    .map(|s| s.clone_position())
                     .unwrap_or(PositionProperty::Static);
-                let float = style.map(|s| s.slow_clone_float()).unwrap_or(Float::None);
+                let float = style.map(|s| s.clone_float()).unwrap_or(Float::None);
                 let box_kind = if position.is_absolutely_positioned() {
                     InlineBoxKind::OutOfFlow
                 } else if float.is_floating() {
@@ -163,11 +164,11 @@ pub(crate) fn build_inline_layout_into(
                             [
                                 parley::StyleProperty::WhiteSpaceCollapse(
                                     stylo_to_parley::white_space_collapse(
-                                        s.slow_clone_white_space_collapse(),
+                                        s.clone_white_space_collapse(),
                                     ),
                                 ),
                                 parley::StyleProperty::TextWrapMode(
-                                    stylo_to_parley::text_wrap_mode(s.slow_clone_text_wrap_mode()),
+                                    stylo_to_parley::text_wrap_mode(s.clone_text_wrap_mode()),
                                 ),
                             ]
                         });

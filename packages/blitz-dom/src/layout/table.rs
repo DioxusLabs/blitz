@@ -2,6 +2,7 @@ use blitz_traits::node_id::NodeId;
 use std::{ops::Range, sync::Arc};
 use style::logical_geometry::WritingMode;
 use style::properties::ComputedValues;
+use stylo_taffy::CopyStyleGetters;
 
 use atomic_refcell::AtomicRefCell;
 use markup5ever::local_name;
@@ -230,13 +231,13 @@ pub(crate) fn build_table_context(
     style.grid_auto_rows = Vec::new();
 
     // The fixed table layout algorithm only applies when the table has a non-auto width
-    let is_fixed = match stylo_styles.slow_clone_table_layout() {
+    let is_fixed = match stylo_styles.clone_table_layout() {
         TableLayout::Fixed => !style.size.width.is_auto(),
         TableLayout::Auto => false,
     };
 
-    let border_collapse = stylo_styles.slow_clone_border_collapse();
-    let border_spacing = stylo_styles.slow_clone_border_spacing().0;
+    let border_collapse = stylo_styles.clone_border_collapse();
+    let border_spacing = stylo_styles.clone_border_spacing().0;
 
     drop(stylo_styles);
 
@@ -261,7 +262,7 @@ pub(crate) fn build_table_context(
     let row_group_order = |doc: &BaseDocument, child_id: NodeId| -> u8 {
         let display = doc.nodes[child_id]
             .primary_styles()
-            .map(|s| s.slow_clone_display());
+            .map(|s| s.clone_display());
         match display.map(|d| d.inside()) {
             Some(DisplayInside::TableHeaderGroup) => 0,
             Some(DisplayInside::TableFooterGroup) => 2,
@@ -545,7 +546,7 @@ fn collect_table_cells(
 
     // Absolutely positioned boxes are out-of-flow: they are laid out by their containing
     // block rather than as part of the table grid.
-    let position = node.primary_styles().unwrap().slow_clone_position();
+    let position = node.primary_styles().unwrap().clone_position();
     if position.is_absolutely_positioned() {
         oof_children.push((node_id, stylo_taffy::convert::position(position)));
         return;

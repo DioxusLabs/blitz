@@ -4,6 +4,7 @@
 use blitz_traits::events::{BlitzScrollEvent, DomEvent, DomEventData};
 use blitz_traits::node_id::NodeId;
 use style::values::computed::Overflow;
+use stylo_taffy::CopyStyleGetters;
 use web_time::{SystemTime, UNIX_EPOCH};
 
 use crate::BaseDocument;
@@ -487,8 +488,8 @@ impl BaseDocument {
                     .primary_styles()
                     .map(|styles| {
                         (
-                            scrollable(styles.slow_clone_overflow_x()),
-                            scrollable(styles.slow_clone_overflow_y()),
+                            scrollable(styles.clone_overflow_x()),
+                            scrollable(styles.clone_overflow_y()),
                         )
                     })
                     .unwrap_or((false, false));
@@ -538,7 +539,7 @@ impl BaseDocument {
                 };
                 styled_node.is_some_and(|node| {
                     node.primary_styles().is_some_and(|style| {
-                        style.slow_clone_scroll_behavior()
+                        style.clone_scroll_behavior()
                             == style::computed_values::scroll_behavior::T::Smooth
                     })
                 })

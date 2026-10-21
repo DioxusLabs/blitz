@@ -1,6 +1,7 @@
 use super::ElementCx;
 use crate::color::{Color, ToColorColor as _};
 use anyrender::PaintScene;
+use blitz_dom::CopyStyleGetters;
 use blitz_dom::local_name;
 use kurbo::{Affine, BezPath, Cap, Circle, Join, Point, RoundedRect, Stroke, Vec2};
 use peniko::Fill;
@@ -22,7 +23,7 @@ impl ElementCx<'_, '_> {
         let accent_color = if disabled {
             Color::from_rgba8(209, 209, 209, 255)
         } else {
-            self.style.slow_clone_color().as_srgb_color()
+            self.style.clone_color().as_srgb_color()
         };
 
         let width = self.frame.border_box.width();

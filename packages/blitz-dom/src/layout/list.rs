@@ -5,6 +5,7 @@ use style::computed_values::list_style_type::T as ListStyleType;
 use style::{
     computed_values::list_style_position::T as ListStylePosition, counter_style::CounterStyle,
 };
+use stylo_taffy::CopyStyleGetters;
 
 use crate::{
     BaseDocument,
@@ -72,7 +73,7 @@ fn node_list_item_child(
 
     let styles = node.primary_styles().unwrap();
     let list_style_type = styles.slow_clone_list_style_type();
-    let list_style_position = styles.slow_clone_list_style_position();
+    let list_style_position = styles.clone_list_style_position();
     let marker = marker_for_style(list_style_type.clone(), index)?;
 
     let position = match list_style_position {

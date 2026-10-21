@@ -7,6 +7,7 @@
 //! incremental layout enabled the popup appeared but never animated, and its
 //! text stayed at the transition's start color (transparent).
 
+use blitz_dom::CopyStyleGetters;
 use blitz_dom::DocumentConfig;
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::shell::{ColorScheme, Viewport};
@@ -59,7 +60,7 @@ fn after_pseudo_styles_after_hover(incremental: bool) -> (f32, f32) {
     let styles = after
         .primary_styles()
         .expect("::after node should have styles");
-    let color_alpha = styles.slow_clone_color().alpha;
+    let color_alpha = styles.clone_color().alpha;
     let x = after.final_layout().location.x;
     (color_alpha, x)
 }

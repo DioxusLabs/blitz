@@ -1,4 +1,5 @@
 use anyrender::PaintScene;
+use blitz_dom::CopyStyleGetters;
 use blitz_dom::{BaseDocument, NodeId, node::TextBrush, util::ToColorColor};
 use kurbo::{Affine, BezPath, Cap, Circle, Rect, Stroke};
 use parley::{Affinity, Cursor, Layout, Line, PositionedLayoutItem, Selection};
@@ -44,7 +45,7 @@ pub(crate) fn draw_inline_backgrounds<'a>(
                 continue;
             };
 
-            let current_color = styles.slow_clone_color();
+            let current_color = styles.clone_color();
             let bg_color = styles
                 .get_background()
                 .background_color
@@ -172,7 +173,7 @@ fn resolve_decoration_entry(doc: &BaseDocument, node_id: NodeId) -> DecorationSt
     let line = text.text_decoration_line;
     // Decorations propagate through the box tree, and a `display: contents` element
     // generates no box, so its decorations have no effect on descendants.
-    let is_contents = styles.slow_clone_display().is_contents();
+    let is_contents = styles.clone_display().is_contents();
     let decoration = (!is_contents && line.intersects(drawn_lines)).then(|| {
         // `text-decoration-color: currentColor` (the initial value) resolves against
         // the decorating box's own colour, not the descendant run's.

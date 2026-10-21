@@ -63,6 +63,7 @@ pub(crate) mod stylo {
     };
 }
 
+use crate::CopyStyleGetters;
 use stylo::Atom;
 use taffy::CompactLength;
 use taffy::style_helpers::*;
@@ -955,7 +956,7 @@ pub fn to_taffy_style_in(
 }
 
 pub fn to_taffy_style(style: &stylo::ComputedValues) -> taffy::Style<Atom> {
-    let display = style.slow_clone_display();
+    let display = style.clone_display();
     let pos = style.get_position();
     let margin = style.get_margin();
     let padding = style.get_padding();
@@ -964,23 +965,23 @@ pub fn to_taffy_style(style: &stylo::ComputedValues) -> taffy::Style<Atom> {
     taffy::Style {
         dummy: core::marker::PhantomData,
         display: self::display(display),
-        box_sizing: self::box_sizing(style.slow_clone_box_sizing()),
+        box_sizing: self::box_sizing(style.clone_box_sizing()),
         item_is_table: display.inside() == stylo::DisplayInside::Table,
         item_is_replaced: false,
         item_is_compressible_replaced: false,
-        position: self::position(style.slow_clone_position()),
+        position: self::position(style.clone_position()),
         overflow: taffy::Point {
-            x: self::overflow(style.slow_clone_overflow_x()),
-            y: self::overflow(style.slow_clone_overflow_y()),
+            x: self::overflow(style.clone_overflow_x()),
+            y: self::overflow(style.clone_overflow_y()),
         },
-        direction: self::direction(style.slow_clone_direction()),
+        direction: self::direction(style.clone_direction()),
         scrollbar_width: 0.0,
-        contain: self::contain(style.slow_clone_contain(), style.slow_clone_display()),
+        contain: self::contain(style.clone_contain(), style.clone_display()),
 
         #[cfg(feature = "floats")]
-        float: self::float(style.slow_clone_float()),
+        float: self::float(style.clone_float()),
         #[cfg(feature = "floats")]
-        clear: self::clear(style.slow_clone_clear()),
+        clear: self::clear(style.clone_clear()),
 
         size: taffy::Size {
             width: self::dimension(&pos.width),
@@ -1030,7 +1031,7 @@ pub fn to_taffy_style(style: &stylo::ComputedValues) -> taffy::Style<Atom> {
         justify_content: self::justify_content(
             pos.justify_content,
             pos.flex_direction,
-            style.slow_clone_direction(),
+            style.clone_direction(),
             display,
         ),
         #[cfg(any(feature = "flexbox", feature = "grid"))]
@@ -1040,15 +1041,15 @@ pub fn to_taffy_style(style: &stylo::ComputedValues) -> taffy::Style<Atom> {
         #[cfg(feature = "grid")]
         justify_items: self::default_item_alignment(
             (pos.justify_items.computed.0).0,
-            style.slow_clone_direction() == stylo::Direction::Rtl,
+            style.clone_direction() == stylo::Direction::Rtl,
         ),
         #[cfg(feature = "grid")]
         justify_self: self::item_alignment(
             pos.justify_self.0,
-            style.slow_clone_direction() == stylo::Direction::Rtl,
+            style.clone_direction() == stylo::Direction::Rtl,
         ),
         #[cfg(feature = "block")]
-        text_align: self::text_align(style.slow_clone_text_align()),
+        text_align: self::text_align(style.clone_text_align()),
 
         // Flexbox
         #[cfg(feature = "flexbox")]

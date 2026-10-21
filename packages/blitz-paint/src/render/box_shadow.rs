@@ -1,6 +1,7 @@
 use super::ElementCx;
 use crate::color::{Color, ToColorColor as _};
 use anyrender::PaintScene;
+use blitz_dom::CopyStyleGetters;
 use kurbo::{Rect, Vec2};
 use peniko::{Compose, Fill, Mix};
 
@@ -12,7 +13,7 @@ impl ElementCx<'_, '_> {
             return;
         }
 
-        let current_color = self.style.slow_clone_color();
+        let current_color = self.style.clone_color();
         let opacity = self.style.get_effects().opacity;
         let bg_color = self
             .style
@@ -87,7 +88,7 @@ impl ElementCx<'_, '_> {
     }
 
     pub(super) fn draw_inset_box_shadow(&self, scene: &mut impl PaintScene) {
-        let current_color = self.style.slow_clone_color();
+        let current_color = self.style.clone_color();
         let box_shadow = &self.style.get_effects().box_shadow.0;
         let has_inset_shadow = box_shadow.iter().any(|s| s.inset);
         if !has_inset_shadow {

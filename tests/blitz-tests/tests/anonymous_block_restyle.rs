@@ -1,6 +1,7 @@
 //! Repaint- and relayout-only restyles must update surviving anonymous boxes.
 //! Use hover rather than attribute mutation, which would reconstruct them.
 
+use blitz_dom::CopyStyleGetters;
 use blitz_dom::DocumentConfig;
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::node_id::NodeId;
@@ -87,7 +88,7 @@ fn anonymous_children(doc: &HtmlDocument, owner: NodeId) -> Vec<NodeId> {
 
 fn color(doc: &HtmlDocument, node: NodeId) -> [u8; 3] {
     let styles = doc.get_node(node).unwrap().primary_styles().unwrap();
-    let color = styles.slow_clone_color().into_srgb_legacy();
+    let color = styles.clone_color().into_srgb_legacy();
     let [r, g, b, _] = color.raw_components();
     [r, g, b].map(|component| (component * 255.0).round() as u8)
 }

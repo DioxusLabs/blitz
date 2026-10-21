@@ -5,6 +5,7 @@ use style::values::{
     computed::{BaselineSource, CSSPixelLength, Contain},
     generics::text::GenericTextIndent,
 };
+use stylo_taffy::CopyStyleGetters;
 use taffy::{
     AvailableSpace, AxisStaticPosition, BlockContainerStyle, BlockContext, BlockFormattingContext,
     BoxSizing, CollapsibleMarginSet, CompactLength, CoreStyle as _, Direction, LayoutInput,
@@ -209,7 +210,7 @@ impl LayoutPassState<'_> {
             }
             let ancestor = &self.nodes[id];
             if let Some(style) = ancestor.primary_styles() {
-                let display = style.slow_clone_display();
+                let display = style.clone_display();
                 if display.outside() == DisplayOutside::Inline
                     && display.inside() == DisplayInside::Flow
                 {
@@ -819,8 +820,8 @@ impl LayoutPassState<'_> {
             .primary_styles()
             .map(|s| {
                 (
-                    stylo_to_parley::text_align(s.slow_clone_text_align()),
-                    stylo_to_parley::text_align_last(s.slow_clone_text_align_last()),
+                    stylo_to_parley::text_align(s.clone_text_align()),
+                    stylo_to_parley::text_align_last(s.clone_text_align_last()),
                 )
             })
             .unwrap_or((parley::layout::Alignment::Start, None));

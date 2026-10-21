@@ -3,6 +3,7 @@
 use html_escape::{encode_quoted_attribute_to_string, encode_text_to_string};
 use markup5ever::{QualName, ns};
 use style_traits::values::ToCss;
+use stylo_taffy::CopyStyleGetters;
 
 use super::{Node, NodeData};
 
@@ -121,7 +122,7 @@ impl Node {
             .resolve_current_color
             .then(|| self.primary_styles())
             .flatten()
-            .map(|style| style.slow_clone_color())
+            .map(|style| style.clone_color())
             .map(|color| color.to_css_string());
 
         match &self.data {

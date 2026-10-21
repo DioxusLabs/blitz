@@ -65,6 +65,7 @@ use style::{
     stylist::Stylist,
 };
 use style_dom::ElementState;
+use stylo_taffy::CopyStyleGetters;
 use thin_vec::ThinVec;
 use url::Url;
 use web_time::Instant;
@@ -2279,7 +2280,7 @@ impl BaseDocument {
         }
 
         let style = node.primary_styles()?;
-        let user_select = style.slow_clone_user_select();
+        let user_select = style.clone_user_select();
         let keyword = style.slow_clone_cursor().keyword;
 
         // Return cursor from style if it is non-auto
@@ -3074,7 +3075,7 @@ mod hover_invalidation_tests {
     fn text_color(doc: &BaseDocument, id: NodeId) -> String {
         format!(
             "{:?}",
-            doc.nodes[id].primary_styles().unwrap().slow_clone_color()
+            doc.nodes[id].primary_styles().unwrap().clone_color()
         )
     }
 
