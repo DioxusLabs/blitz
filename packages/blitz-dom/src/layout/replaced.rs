@@ -141,10 +141,8 @@ pub fn compute_replaced_layout(
     // element get no preferred aspect ratio at all.
     let is_usable_ratio = |ratio: &f32| ratio.is_finite() && *ratio > 0.0;
     let intrinsic = context.intrinsic_sizes;
-    let aspect_ratio: Option<f32> = style
-        .aspect_ratio()
-        .filter(is_usable_ratio)
-        .or(intrinsic.ratio.filter(is_usable_ratio));
+    let style_aspect_ratio = style.aspect_ratio().filter(is_usable_ratio);
+    let aspect_ratio: Option<f32> = style_aspect_ratio.or(intrinsic.ratio.filter(is_usable_ratio));
 
     // Concrete object size per the CSS default sizing algorithm with no
     // specified size (https://drafts.csswg.org/css-images/#default-sizing):
@@ -199,6 +197,17 @@ pub fn compute_replaced_layout(
             }
             None => default_size,
         },
+    };
+    // The `aspect-ratio` property coerces the natural height to match the natural width, in the
+    // box-sizing box (https://github.com/w3c/csswg-drafts/issues/11236).
+    let inherent_size = match style_aspect_ratio {
+        Some(ratio) => Size {
+            width: inherent_size.width,
+            height: ((inherent_size.width + box_sizing_adjustment.width) / ratio
+                - box_sizing_adjustment.height)
+                .max(0.0),
+        },
+        None => inherent_size,
     };
 
     // Percentages are only resolved against zero in the inline axis.
