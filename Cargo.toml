@@ -310,18 +310,19 @@ rustc-hash = { workspace = true }
 # vello_common = { path = "../vello/sparse_strips/vello_common" }
 # glifo = { path = "../vello/glifo" }
 
+# servo/stylo main (633f43ad) plus a fix for building on wasm32-unknown-unknown (disables rand's getrandom dependency)
 [patch.crates-io]
-stylo = { git = "https://github.com/servo/stylo", rev = "633f43ad86de1372fd7106d265c00ffcdf022c35" }
-stylo_traits = { git = "https://github.com/servo/stylo", rev = "633f43ad86de1372fd7106d265c00ffcdf022c35" }
-stylo_atoms = { git = "https://github.com/servo/stylo", rev = "633f43ad86de1372fd7106d265c00ffcdf022c35" }
-stylo_static_prefs = { git = "https://github.com/servo/stylo", rev = "633f43ad86de1372fd7106d265c00ffcdf022c35" }
-stylo_dom = { git = "https://github.com/servo/stylo", rev = "633f43ad86de1372fd7106d265c00ffcdf022c35" }
-stylo_derive = { git = "https://github.com/servo/stylo", rev = "633f43ad86de1372fd7106d265c00ffcdf022c35" }
-stylo_malloc_size_of = { git = "https://github.com/servo/stylo", rev = "633f43ad86de1372fd7106d265c00ffcdf022c35" }
-selectors = { git = "https://github.com/servo/stylo", rev = "633f43ad86de1372fd7106d265c00ffcdf022c35" }
-servo_arc = { git = "https://github.com/servo/stylo", rev = "633f43ad86de1372fd7106d265c00ffcdf022c35" }
-to_shmem = { git = "https://github.com/servo/stylo", rev = "633f43ad86de1372fd7106d265c00ffcdf022c35" }
-to_shmem_derive = { git = "https://github.com/servo/stylo", rev = "633f43ad86de1372fd7106d265c00ffcdf022c35" }
+stylo = { git = "https://github.com/DioxusLabs/stylo", rev = "d6502e0002e9c40c43a0a4776f9e7eb93be360e3" }
+stylo_traits = { git = "https://github.com/DioxusLabs/stylo", rev = "d6502e0002e9c40c43a0a4776f9e7eb93be360e3" }
+stylo_atoms = { git = "https://github.com/DioxusLabs/stylo", rev = "d6502e0002e9c40c43a0a4776f9e7eb93be360e3" }
+stylo_static_prefs = { git = "https://github.com/DioxusLabs/stylo", rev = "d6502e0002e9c40c43a0a4776f9e7eb93be360e3" }
+stylo_dom = { git = "https://github.com/DioxusLabs/stylo", rev = "d6502e0002e9c40c43a0a4776f9e7eb93be360e3" }
+stylo_derive = { git = "https://github.com/DioxusLabs/stylo", rev = "d6502e0002e9c40c43a0a4776f9e7eb93be360e3" }
+stylo_malloc_size_of = { git = "https://github.com/DioxusLabs/stylo", rev = "d6502e0002e9c40c43a0a4776f9e7eb93be360e3" }
+selectors = { git = "https://github.com/DioxusLabs/stylo", rev = "d6502e0002e9c40c43a0a4776f9e7eb93be360e3" }
+servo_arc = { git = "https://github.com/DioxusLabs/stylo", rev = "d6502e0002e9c40c43a0a4776f9e7eb93be360e3" }
+to_shmem = { git = "https://github.com/DioxusLabs/stylo", rev = "d6502e0002e9c40c43a0a4776f9e7eb93be360e3" }
+to_shmem_derive = { git = "https://github.com/DioxusLabs/stylo", rev = "d6502e0002e9c40c43a0a4776f9e7eb93be360e3" }
 
 # [patch.crates-io]
 # style = { path = "../stylo/style", package = "stylo" }
