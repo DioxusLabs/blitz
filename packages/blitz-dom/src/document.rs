@@ -226,6 +226,12 @@ pub enum DocumentEvent {
     },
 }
 
+#[derive(Debug, Clone)]
+pub struct QueuedAnimationEvent {
+    pub node_id: NodeId,
+    pub event: blitz_traits::events::DomEventData,
+}
+
 pub struct BaseDocument {
     /// ID of the document
     id: usize,
@@ -372,6 +378,10 @@ pub struct BaseDocument {
     /// dedicated storage on the node because their style changed (populated by
     /// the style traversal and by pseudo-element box construction).
     pub(crate) pending_style_image_nodes: Vec<NodeId>,
+
+    /// Pending CSS animation and transition events queued during style resolution
+    #[allow(dead_code)]
+    pub(crate) pending_animation_events: Vec<QueuedAnimationEvent>,
 
     // Tracks in-flight "critical" resources (e.g. stylesheets linked from the `<head>`),
     // keyed by request id
@@ -541,6 +551,7 @@ impl BaseDocument {
             image_cache: HashMap::new(),
             pending_images: HashMap::new(),
             pending_style_image_nodes: Vec::new(),
+            pending_animation_events: Vec::new(),
             pending_critical_resources: HashSet::new(),
             controls_to_form: HashMap::new(),
             net_provider,
