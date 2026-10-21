@@ -138,6 +138,8 @@ pub fn check_node_layout(node: &Node) -> Vec<String> {
         return Vec::new();
     }
     let layout = node.final_layout();
+    // `offsetWidth`/`offsetHeight` round the unrounded size, not the pixel-snapped edges
+    let unrounded_size = node.unrounded_layout().size;
 
     let client_width =
         layout.size.width - layout.border.left - layout.border.right - layout.scrollbar_size.width;
@@ -154,8 +156,12 @@ pub fn check_node_layout(node: &Node) -> Vec<String> {
                     let name = attr.name.local.as_ref();
                     let value = &attr.value;
                     match name {
-                        "data-expected-width" => check_attr(name, value, layout.size.width),
-                        "data-expected-height" => check_attr(name, value, layout.size.height),
+                        "data-expected-width" => {
+                            check_attr(name, value, unrounded_size.width.round())
+                        }
+                        "data-expected-height" => {
+                            check_attr(name, value, unrounded_size.height.round())
+                        }
                         "data-expected-padding-top" => check_attr(name, value, layout.padding.top),
                         "data-expected-padding-bottom" => {
                             check_attr(name, value, layout.padding.bottom)
