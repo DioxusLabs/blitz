@@ -12,6 +12,7 @@ gpu = ["dep:anyrender_vello"]
 cpu = ["dep:anyrender_vello_cpu"]
 
 [dependencies]
+mimalloc = "0.1.48"
 blitz-dom = { workspace = true, features = ["svg", "floats", "system-fonts", "woff", "complex-scripts", "text-transform-icu", "writing-mode"] }
 blitz-html = {workspace = true }
 blitz-vibey-script = { workspace = true }
