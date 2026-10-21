@@ -1685,7 +1685,9 @@ impl BaseDocument {
 
     pub fn focus_next_node(&mut self) -> Option<NodeId> {
         let focussed_node_id = self.get_focussed_node_id()?;
-        let id = self.next_node(&self.nodes[focussed_node_id], |node| node.is_focussable())?;
+        let id = self.next_node(&self.nodes[focussed_node_id], |node| {
+            self.is_in_tab_order(node)
+        })?;
         self.set_focus_to(id);
         Some(id)
     }
@@ -1693,9 +1695,31 @@ impl BaseDocument {
     /// Move focus to the previous focussable node in the document
     pub fn focus_prev_node(&mut self) -> Option<NodeId> {
         let focussed_node_id = self.get_focussed_node_id()?;
-        let id = self.prev_node(&self.nodes[focussed_node_id], |node| node.is_focussable())?;
+        let id = self.prev_node(&self.nodes[focussed_node_id], |node| {
+            self.is_in_tab_order(node)
+        })?;
         self.set_focus_to(id);
         Some(id)
+    }
+
+    fn is_in_tab_order(&self, node: &Node) -> bool {
+        if !node.is_focussable() {
+            return false;
+        }
+        // Focusability is cached from attributes. A display:none ancestor
+        // suppresses the whole subtree even when the control's own cached
+        // focusability (or styles from an earlier layout) is unchanged.
+        let mut ancestor = Some(node);
+        while let Some(node) = ancestor {
+            if node
+                .primary_styles()
+                .is_some_and(|styles| styles.clone_display().is_none())
+            {
+                return false;
+            }
+            ancestor = node.parent_node();
+        }
+        true
     }
 
     /// Clear the focussed node
