@@ -1979,6 +1979,15 @@ impl std::fmt::Debug for Node {
     }
 }
 
+/// Whether a box with `style` is out of flow: Taffy positions it from its containing
+/// block's hoisted child list rather than from its parent (`display: none` boxes generate
+/// no box and are never hoisted).
+pub(crate) fn style_is_out_of_flow(style: &ComputedValues) -> bool {
+    let box_style = style.get_box();
+    stylo_taffy::convert::position(box_style.position).is_out_of_flow()
+        && stylo_taffy::convert::display(box_style.display) != taffy::Display::None
+}
+
 #[cfg(test)]
 mod test {
     use style_dom::ElementState;
@@ -2065,13 +2074,4 @@ mod test {
             "Button should be enabled by default"
         );
     }
-}
-
-/// Whether a box with `style` is out of flow: Taffy positions it from its containing
-/// block's hoisted child list rather than from its parent (`display: none` boxes generate
-/// no box and are never hoisted).
-pub(crate) fn style_is_out_of_flow(style: &ComputedValues) -> bool {
-    let box_style = style.get_box();
-    stylo_taffy::convert::position(box_style.position).is_out_of_flow()
-        && stylo_taffy::convert::display(box_style.display) != taffy::Display::None
 }
