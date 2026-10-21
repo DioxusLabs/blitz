@@ -402,6 +402,13 @@ impl DocumentMutator<'_> {
         {
             self.load_iframe(node_id);
         }
+        // A button-type `<input>` is identified by its `type` attribute
+        if name.local == local_name!("type") {
+            let node = &mut self.doc.nodes[node_id];
+            if let Some(style_flags) = node.element_data().map(|el| el.layout_style_flags()) {
+                node.style_flags = style_flags;
+            }
+        }
     }
 
     pub fn clear_attribute(&mut self, node_id: NodeId, name: QualName) {
@@ -505,6 +512,13 @@ impl DocumentMutator<'_> {
         } else if (tag, attr) == tag_and_attr!("iframe", "srcdoc") && node_is_in_document {
             // Fall back to loading from the `src` attribute (if any)
             self.load_iframe(node_id);
+        }
+        // A button-type `<input>` is identified by its `type` attribute
+        if name.local == local_name!("type") {
+            let node = &mut self.doc.nodes[node_id];
+            if let Some(style_flags) = node.element_data().map(|el| el.layout_style_flags()) {
+                node.style_flags = style_flags;
+            }
         }
     }
 

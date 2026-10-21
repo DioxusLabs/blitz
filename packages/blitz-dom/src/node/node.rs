@@ -126,6 +126,10 @@ pub struct Node {
     /// Written by the style traversal from the node's new primary style, so that layout
     /// passes can test it without reading styles.
     pub out_of_flow: AtomicBool,
+    /// The [`stylo_taffy::StyleFlags`] that follow from the element's name and attributes
+    /// (see [`ElementData::layout_style_flags`]); kept on the node so that `layout_style()`
+    /// does not have to read the boxed element data for them.
+    pub style_flags: stylo_taffy::StyleFlags,
 
     /// Node type (Element, TextNode, etc) specific data.
     ///
@@ -406,6 +410,11 @@ impl Node {
             _ => {}
         }
 
+        let style_flags = match &data {
+            NodeData::Element(el) => el.layout_style_flags(),
+            _ => stylo_taffy::StyleFlags::empty(),
+        };
+
         Self {
             tree,
 
@@ -423,6 +432,7 @@ impl Node {
 
             flags: NodeFlags::empty(),
             out_of_flow: AtomicBool::new(false),
+            style_flags,
             data,
         }
     }
@@ -1148,18 +1158,14 @@ impl Node {
             .and_then(|stylo| stylo.computed_styles())
             .expect("layout_style() called on a node without computed styles");
 
-        let mut flags = stylo_taffy::StyleFlags::empty();
-        if let Some(el) = self.data.downcast_element() {
-            if crate::layout::replaced::is_replaced_element(&el.name.local) {
-                flags |= stylo_taffy::StyleFlags::IS_REPLACED;
-            }
-            if el.name.local == local_name!("button") {
-                flags |= stylo_taffy::StyleFlags::IS_BUTTON;
-            }
-            if el.is_button_input() {
-                flags |= stylo_taffy::StyleFlags::IS_BUTTON_INPUT;
-            }
-            if let Some(inline_layout) = el.inline_layout_data.as_deref() {
+        let mut flags = self.style_flags;
+        // Only inline roots carry inline layout data (and so span containing-block flags)
+        if self.flags.is_inline_root() {
+            if let Some(inline_layout) = self
+                .data
+                .downcast_element()
+                .and_then(|el| el.inline_layout_data.as_deref())
+            {
                 flags |= inline_layout.span_cb_flags;
             }
         }
