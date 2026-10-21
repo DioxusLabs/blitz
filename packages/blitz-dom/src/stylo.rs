@@ -26,6 +26,13 @@ use style::bloom::each_relevant_element_hash;
 use style::color::AbsoluteColor;
 use style::data::{ElementDataMut, ElementDataRef};
 use style::global_style_data::STYLE_THREAD_POOL;
+
+/// Serialises `Parallel` style traversals across documents. Stylo's per-worker
+/// caches (`StyleSharingCache`, `StyleBloom`) live in native thread-locals that
+/// a traversal borrows mutably for its whole duration, so two traversals in
+/// flight on the shared pool at once panic with `already mutably borrowed`
+/// (<https://github.com/DioxusLabs/blitz/issues/430>).
+static PARALLEL_TRAVERSAL_LOCK: Mutex<()> = Mutex::new(());
 use style::invalidation::element::restyle_hints::RestyleHint;
 use style::properties::ComputedValues;
 use style::properties::{Importance, PropertyDeclaration};
@@ -147,8 +154,13 @@ impl crate::document::BaseDocument {
             // Style the elements, resolving their data
             let mut traverser = RecalcStyle::new(context);
             // `Sequential` bypasses Stylo's global pool. See `StyleThreading`.
-            let pool_guard = matches!(self.style_threading, StyleThreading::Parallel)
-                .then(|| STYLE_THREAD_POOL.pool());
+            let parallel = matches!(self.style_threading, StyleThreading::Parallel);
+            let _traversal_lock = parallel.then(|| {
+                PARALLEL_TRAVERSAL_LOCK
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+            });
+            let pool_guard = parallel.then(|| STYLE_THREAD_POOL.pool());
             let rayon_pool = pool_guard.as_ref().and_then(|g| g.as_ref());
             style::driver::traverse_dom(&traverser, token, rayon_pool);
             nodes_needing_style_image_flush =

@@ -10,20 +10,18 @@ use style::media_queries::MediaType;
 
 /// Strategy for Stylo's style traversal during `resolve`.
 ///
-/// Two `Document`s resolving on [`StyleThreading::Parallel`] concurrently
-/// share Stylo's global thread pool and can panic with
-/// `already mutably borrowed` — see
-/// <https://github.com/DioxusLabs/blitz/issues/430>. Set
-/// [`StyleThreading::Sequential`] on documents that may resolve from a
-/// user thread while another `Parallel` resolve is in flight.
+/// `Parallel` traversals are serialised process-wide (Stylo's global pool can
+/// only run one traversal at a time), so documents resolving from several
+/// threads never run their style traversals concurrently but also never
+/// overlap: it only pays off when a single thread resolves all documents
+/// (e.g. a UI thread, including nested sub-documents).
 #[derive(Default, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum StyleThreading {
     /// Use Stylo's parallel traversal via its global rayon thread pool.
-    /// Fastest for a single document; panics if another `Parallel` resolve
-    /// is in flight on a different thread.
     Parallel,
     /// Run style traversal sequentially on the calling thread, bypassing
-    /// the global pool. Safe to use from many user threads concurrently.
+    /// the global pool and its lock. Threads resolving their own documents
+    /// run independently of each other.
     #[default]
     Sequential,
 }
@@ -53,7 +51,7 @@ pub struct DocumentConfig {
     /// Defaults to [`MediaType::screen`].
     pub media_type: Option<MediaType>,
     /// Strategy for Stylo's style traversal.
-    /// Defaults to [`StyleThreading::Parallel`].
+    /// Defaults to [`StyleThreading::Sequential`].
     pub style_threading: StyleThreading,
     /// Whether incremental layout is enabled. Defaults to `true`.
     ///

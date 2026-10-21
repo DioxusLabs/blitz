@@ -60,6 +60,7 @@ pub use {
     wgpu_context::DeviceHandle,
 };
 
+use blitz_dom::StyleThreading;
 pub use blitz_dom::{FontContext, Widget, build_single_font_ctx};
 pub use config::Config;
 pub use event_handlers::WinitEventHandlerId;
@@ -218,6 +219,7 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
             html_parser_provider,
             navigation_provider,
             font_ctx: config.font_ctx,
+            style_threading: StyleThreading::Parallel,
             ..Default::default()
         },
     );
