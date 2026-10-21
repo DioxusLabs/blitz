@@ -4,7 +4,7 @@ use std::time::Duration;
 use std::{fs, sync::Arc, time::Instant};
 
 use blitz_dom::traversal::TreeTraverser;
-use blitz_dom::{BaseDocument, Document as _, DocumentConfig};
+use blitz_dom::{BaseDocument, Document as _, DocumentConfig, StyleThreading};
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_vibey_script::ScriptDocument;
 use log::{debug, warn};
@@ -360,6 +360,9 @@ fn parse_and_resolve_document(
         // Required for `innerHTML` support when the document is upgraded to
         // a `ScriptDocument` (harness tests and ref tests with scripts)
         html_parser_provider: Some(Arc::new(HtmlProvider)),
+        // Each runner thread resolves its own documents; serialised parallel
+        // traversals would only contend with each other.
+        style_threading: StyleThreading::Sequential,
         ..Default::default()
     };
 

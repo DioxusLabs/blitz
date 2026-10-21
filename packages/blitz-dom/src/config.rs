@@ -10,21 +10,20 @@ use style::media_queries::MediaType;
 
 /// Strategy for Stylo's style traversal during `resolve`.
 ///
-/// Two `Document`s resolving on [`StyleThreading::Parallel`] concurrently
-/// share Stylo's global thread pool and can panic with
-/// `already mutably borrowed` — see
-/// <https://github.com/DioxusLabs/blitz/issues/430>. Set
-/// [`StyleThreading::Sequential`] on documents that may resolve from a
-/// user thread while another `Parallel` resolve is in flight.
+/// `Parallel` traversals are serialised process-wide (Stylo's global pool can
+/// only run one traversal at a time), so documents resolving from several
+/// threads never run their style traversals concurrently. Use
+/// [`StyleThreading::Sequential`] when many threads each resolve their own
+/// documents and already saturate the CPU (e.g. a test runner).
 #[derive(Default, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum StyleThreading {
     /// Use Stylo's parallel traversal via its global rayon thread pool.
-    /// Fastest for a single document; panics if another `Parallel` resolve
-    /// is in flight on a different thread.
+    /// Fastest for documents resolved from a single thread, including nested
+    /// sub-documents.
+    #[default]
     Parallel,
     /// Run style traversal sequentially on the calling thread, bypassing
-    /// the global pool. Safe to use from many user threads concurrently.
-    #[default]
+    /// the global pool and its lock.
     Sequential,
 }
 
