@@ -716,6 +716,7 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: NodeId) {
                 doc.nodes[new_node_id].children.push(text_node_id);
             }
 
+            doc.nodes[new_node_id].record_out_of_flow(pe_style);
             let mut element_data = StyloElementData::default();
             element_data.styles.primary = Some(pe_style.clone());
             element_data.set_restyled();
@@ -770,6 +771,7 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: NodeId) {
                 (None, None) => {}
             }
 
+            doc.nodes[pe_node_id].record_out_of_flow(&pe_style);
             let mut node_styles = doc.nodes[pe_node_id]
                 .try_stylo_element_data_mut()
                 .and_then(|s| s.get_mut());

@@ -1327,6 +1327,9 @@ impl<'dom> DomTraversal<BlitzNode<'dom>> for RecalcStyle<'_> {
             recalc_style_at(self, context, el, &mut data, note_child);
 
             sync_pseudo_element_styles(el, &data, &self.nodes_needing_style_image_flush);
+            if let Some(style) = data.styles.get_primary() {
+                el.record_out_of_flow(style);
+            }
 
             if !data.damage.is_empty() {
                 // Mark the ancestor chain so that the damage propagation pass
@@ -1441,6 +1444,7 @@ fn sync_pseudo_element_styles(
                     .push(pe_node_id);
             }
         }
+        pe_node.record_out_of_flow(&pe_style);
         pe_data.styles.primary = Some(pe_style);
         pe_data.set_restyled();
     }
