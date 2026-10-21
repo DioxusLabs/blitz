@@ -295,7 +295,7 @@ wgpu = { workspace = true }
 wgpu_context = { workspace = true }
 rustc-hash = { workspace = true }
 
-# Temporary: pins Stylo to a 0.22.0 branch carrying `TElement::note_may_have_animations`
+# Temporary: pins Stylo to a 0.22.0 branch carrying `TElement::set_may_have_animations`
 # (upstream: https://github.com/servo/stylo/compare/main...nicoburns:stylo:note-may-have-animations) until it is in a Stylo release.
 [patch.crates-io]
 style = { git = "https://github.com/DioxusLabs/stylo", branch = "note-may-have-animations-0.22", package = "stylo" }

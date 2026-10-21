@@ -769,7 +769,7 @@ impl<'a> TElement for BlitzNode<'a> {
             .is_some_and(|data| data.may_have_animations.load(Ordering::Relaxed))
     }
 
-    fn note_may_have_animations(&self) {
+    fn set_may_have_animations(&self) {
         if let Some(data) = self.element_data() {
             data.may_have_animations.store(true, Ordering::Relaxed);
         }
