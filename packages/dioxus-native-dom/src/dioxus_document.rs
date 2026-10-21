@@ -791,4 +791,252 @@ mod tests {
             mounted.scroll(Default::default(), ScrollBehavior::Instant)
         ));
     }
+
+    use blitz_dom::QueuedAnimationEvent;
+    use blitz_traits::events::{
+        BlitzAnimationEvent, BlitzTransitionEvent, DomEventData, DomEventKind,
+    };
+    use blitz_traits::shell::{ColorScheme, Viewport};
+    use dioxus_html::HasTransitionData;
+
+    #[allow(dead_code)]
+    trait TransitionDataExt {
+        fn property_name(&self) -> String;
+        fn pseudo_element(&self) -> String;
+        fn elapsed_time(&self) -> f32;
+    }
+
+    impl TransitionDataExt for dioxus_html::TransitionData {
+        fn property_name(&self) -> String {
+            self.downcast::<NativeTransitionData>()
+                .map(|d| d.property_name())
+                .unwrap_or_default()
+        }
+
+        fn pseudo_element(&self) -> String {
+            self.downcast::<NativeTransitionData>()
+                .map(|d| d.pseudo_element())
+                .unwrap_or_default()
+        }
+
+        fn elapsed_time(&self) -> f32 {
+            self.downcast::<NativeTransitionData>()
+                .map(|d| d.elapsed_time())
+                .unwrap_or_default()
+        }
+    }
+
+    #[test]
+    fn animation_and_transition_events_reach_vdom_handlers() {
+        #[derive(Default, Clone)]
+        struct EventLog {
+            anim_start: Rc<RefCell<Vec<(String, f32)>>>,
+            anim_iter: Rc<RefCell<Vec<(String, f32)>>>,
+            anim_end: Rc<RefCell<Vec<(String, f32)>>>,
+            trans_end: Rc<RefCell<Vec<(String, f32)>>>,
+        }
+
+        fn app() -> Element {
+            let log = consume_context::<EventLog>();
+            let log_start = log.anim_start.clone();
+            let log_iter = log.anim_iter.clone();
+            let log_end = log.anim_end.clone();
+            let log_trans = log.trans_end.clone();
+
+            rsx! {
+                div {
+                    onanimationstart: move |evt| {
+                        log_start.borrow_mut().push((evt.animation_name(), evt.elapsed_time()));
+                    },
+                    onanimationiteration: move |evt| {
+                        log_iter.borrow_mut().push((evt.animation_name(), evt.elapsed_time()));
+                    },
+                    onanimationend: move |evt| {
+                        log_end.borrow_mut().push((evt.animation_name(), evt.elapsed_time()));
+                    },
+                    ontransitionend: move |evt| {
+                        log_trans.borrow_mut().push((evt.property_name(), evt.elapsed_time()));
+                    },
+                    "animated node"
+                }
+            }
+        }
+
+        let log = EventLog::default();
+        let vdom = VirtualDom::new(app).with_root_context(log.clone());
+        let mut doc = DioxusDocument::new(vdom, DocumentConfig::default());
+        doc.initial_build();
+
+        let node_id = doc
+            .inner
+            .borrow()
+            .get_node(doc.main_element_id)
+            .unwrap()
+            .children[0];
+
+        doc.inner
+            .borrow_mut()
+            .pending_animation_events
+            .push(QueuedAnimationEvent {
+                node_id,
+                event: DomEventData::AnimationStart(BlitzAnimationEvent {
+                    animation_name: "bounce".into(),
+                    elapsed_time: 0.0,
+                    pseudo_element: Default::default(),
+                }),
+            });
+        doc.inner
+            .borrow_mut()
+            .pending_animation_events
+            .push(QueuedAnimationEvent {
+                node_id,
+                event: DomEventData::AnimationIteration(BlitzAnimationEvent {
+                    animation_name: "bounce".into(),
+                    elapsed_time: 0.5,
+                    pseudo_element: Default::default(),
+                }),
+            });
+        doc.inner
+            .borrow_mut()
+            .pending_animation_events
+            .push(QueuedAnimationEvent {
+                node_id,
+                event: DomEventData::AnimationEnd(BlitzAnimationEvent {
+                    animation_name: "bounce".into(),
+                    elapsed_time: 1.0,
+                    pseudo_element: Default::default(),
+                }),
+            });
+        doc.inner
+            .borrow_mut()
+            .pending_animation_events
+            .push(QueuedAnimationEvent {
+                node_id,
+                event: DomEventData::TransitionEnd(BlitzTransitionEvent {
+                    property_name: "opacity".into(),
+                    elapsed_time: 0.25,
+                    pseudo_element: Default::default(),
+                }),
+            });
+
+        doc.flush_animation_events();
+
+        assert_eq!(*log.anim_start.borrow(), vec![("bounce".to_string(), 0.0)]);
+        assert_eq!(*log.anim_iter.borrow(), vec![("bounce".to_string(), 0.5)]);
+        assert_eq!(*log.anim_end.borrow(), vec![("bounce".to_string(), 1.0)]);
+        assert_eq!(*log.trans_end.borrow(), vec![("opacity".to_string(), 0.25)]);
+
+        // Second flush to confirm queue was drained and no re-dispatch occurs
+        doc.flush_animation_events();
+        assert_eq!(log.anim_start.borrow().len(), 1);
+        assert_eq!(log.anim_iter.borrow().len(), 1);
+        assert_eq!(log.anim_end.borrow().len(), 1);
+        assert_eq!(log.trans_end.borrow().len(), 1);
+        assert!(doc.inner.borrow().pending_animation_events.is_empty());
+    }
+
+    #[test]
+    fn animation_events_skipped_when_no_listeners() {
+        fn app() -> Element {
+            rsx! {
+                div { "static" }
+            }
+        }
+
+        let vdom = VirtualDom::new(app);
+        let mut doc = DioxusDocument::new(vdom, DocumentConfig::default());
+        doc.initial_build();
+
+        let node_id = doc
+            .inner
+            .borrow()
+            .get_node(doc.main_element_id)
+            .unwrap()
+            .children[0];
+
+        // Ensure handler count is 0
+        let anim_start_kind = DomEventKind::AnimationStart.discriminant() as usize;
+        assert_eq!(doc.vdom_state.event_handler_counts[anim_start_kind], 0);
+
+        doc.inner
+            .borrow_mut()
+            .pending_animation_events
+            .push(QueuedAnimationEvent {
+                node_id,
+                event: DomEventData::AnimationStart(BlitzAnimationEvent {
+                    animation_name: "bounce".into(),
+                    elapsed_time: 0.0,
+                    pseudo_element: Default::default(),
+                }),
+            });
+
+        assert_eq!(doc.inner.borrow().pending_animation_events.len(), 1);
+        doc.flush_animation_events();
+        assert!(doc.inner.borrow().pending_animation_events.is_empty());
+    }
+
+    #[derive(Clone, Default)]
+    struct TransitionLog(Rc<RefCell<Vec<String>>>);
+    impl TransitionLog {
+        fn push(&self, prop: String) {
+            self.0.borrow_mut().push(prop);
+        }
+    }
+
+    #[test]
+    fn real_css_transition_with_vdom_callback() {
+        fn app() -> Element {
+            let log = consume_context::<TransitionLog>();
+            rsx! {
+                div {
+                    style: "transition: opacity 0.1s linear; opacity: 1;",
+                    ontransitionend: move |evt| {
+                        log.push(evt.property_name());
+                    },
+                    "hello"
+                }
+            }
+        }
+
+        let log = TransitionLog::default();
+        let vdom = VirtualDom::new(app).with_root_context(log.clone());
+        let mut doc = DioxusDocument::new(
+            vdom,
+            DocumentConfig {
+                viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
+                ..Default::default()
+            },
+        );
+        doc.initial_build();
+
+        let div_id = doc
+            .inner
+            .borrow()
+            .get_node(doc.main_element_id)
+            .unwrap()
+            .children[0];
+
+        // Settle initial style at t=0.0
+        doc.inner.borrow_mut().resolve(0.0);
+        doc.flush_animation_events();
+        assert!(log.0.borrow().is_empty());
+
+        // Trigger transition via mutate().set_style_property
+        doc.inner
+            .borrow_mut()
+            .mutate()
+            .set_style_property(div_id, "opacity", "0");
+
+        // Resolve at t=0.0: transition begins
+        doc.inner.borrow_mut().resolve(0.0);
+        doc.flush_animation_events();
+        assert!(log.0.borrow().is_empty());
+
+        // Resolve at t=0.1: transition finishes
+        doc.inner.borrow_mut().resolve(0.1);
+        doc.flush_animation_events();
+
+        // Verify ontransitionend callback received "opacity"
+        assert_eq!(*log.0.borrow(), vec!["opacity".to_string()]);
+    }
 }

@@ -388,7 +388,7 @@ pub struct BaseDocument {
 
     /// Pending CSS animation and transition events queued during style resolution
     #[allow(dead_code)]
-    pub(crate) pending_animation_events: Vec<QueuedAnimationEvent>,
+    pub pending_animation_events: Vec<QueuedAnimationEvent>,
     pub(crate) completed_zero_duration_animations: HashSet<(NodeId, String)>,
 
     // Tracks in-flight "critical" resources (e.g. stylesheets linked from the `<head>`),
