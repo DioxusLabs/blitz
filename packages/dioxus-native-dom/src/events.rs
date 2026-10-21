@@ -3,17 +3,18 @@ use blitz_dom::{
     ScrollLogicalPosition as BlitzScrollLogicalPosition,
 };
 use blitz_traits::events::{
-    BlitzKeyEvent, BlitzPointerEvent, BlitzPointerId, BlitzScrollEvent, BlitzWheelDelta,
-    BlitzWheelEvent, MouseEventButton,
+    BlitzAnimationEvent, BlitzKeyEvent, BlitzPointerEvent, BlitzPointerId, BlitzScrollEvent,
+    BlitzTransitionEvent, BlitzWheelDelta, BlitzWheelEvent, MouseEventButton,
 };
 use dioxus_html::{
     AnimationData, BeforeInputData, CancelData, ClipboardData, CompositionData, DragData,
-    FocusData, FormData, FormValue, HasFileData, HasFocusData, HasFormData, HasKeyboardData,
-    HasMouseData, HasPointerData, HasScrollData, HasTouchData, HasTouchPointData, HasWheelData,
-    HtmlEventConverter, ImageData, KeyboardData, MediaData, MountedData, MountedError,
-    MountedResult, MouseData, PlatformEventData, PointerData, RenderedElementBacking, ResizeData,
-    ScrollBehavior, ScrollData, ScrollLogicalPosition, ScrollToOptions, SelectionData, ToggleData,
-    TouchData, TouchPoint, TransitionData, VisibleData, WheelData,
+    FocusData, FormData, FormValue, HasAnimationData, HasFileData, HasFocusData, HasFormData,
+    HasKeyboardData, HasMouseData, HasPointerData, HasScrollData, HasTouchData, HasTouchPointData,
+    HasTransitionData, HasWheelData, HtmlEventConverter, ImageData, KeyboardData, MediaData,
+    MountedData, MountedError, MountedResult, MouseData, PlatformEventData, PointerData,
+    RenderedElementBacking, ResizeData, ScrollBehavior, ScrollData, ScrollLogicalPosition,
+    ScrollToOptions, SelectionData, ToggleData, TouchData, TouchPoint, TransitionData, VisibleData,
+    WheelData,
     geometry::{
         ClientPoint, ElementPoint, PagePoint, PixelsRect, PixelsSize, PixelsVector2D, ScreenPoint,
         WheelDelta,
@@ -67,8 +68,12 @@ impl HtmlEventConverter for NativeConverter {
         NativeFocusData {}.into()
     }
 
-    fn convert_animation_data(&self, _event: &PlatformEventData) -> AnimationData {
-        unimplemented!("todo: convert_animation_data in dioxus-native. requires support in blitz")
+    fn convert_animation_data(&self, event: &PlatformEventData) -> AnimationData {
+        event
+            .downcast::<NativeAnimationData>()
+            .unwrap()
+            .clone()
+            .into()
     }
 
     fn convert_before_input_data(&self, _event: &PlatformEventData) -> BeforeInputData {
@@ -125,8 +130,12 @@ impl HtmlEventConverter for NativeConverter {
         event.downcast::<NativeTouchData>().unwrap().clone().into()
     }
 
-    fn convert_transition_data(&self, _event: &PlatformEventData) -> TransitionData {
-        unimplemented!("todo: convert_transition_data in dioxus-native. requires support in blitz")
+    fn convert_transition_data(&self, event: &PlatformEventData) -> TransitionData {
+        event
+            .downcast::<NativeTransitionData>()
+            .unwrap()
+            .clone()
+            .into()
     }
 
     fn convert_wheel_data(&self, event: &PlatformEventData) -> WheelData {
@@ -660,6 +669,48 @@ impl InteractionLocation for NativeWheelData {
 
     fn page_coordinates(&self) -> PagePoint {
         PagePoint::new(self.0.page_x() as f64, self.0.page_y() as f64)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct NativeAnimationData(pub(crate) BlitzAnimationEvent);
+
+impl HasAnimationData for NativeAnimationData {
+    fn as_any(&self) -> &dyn Any {
+        self as &dyn Any
+    }
+
+    fn animation_name(&self) -> String {
+        self.0.animation_name.clone()
+    }
+
+    fn pseudo_element(&self) -> String {
+        self.0.pseudo_element.to_string()
+    }
+
+    fn elapsed_time(&self) -> f32 {
+        self.0.elapsed_time
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct NativeTransitionData(pub(crate) BlitzTransitionEvent);
+
+impl HasTransitionData for NativeTransitionData {
+    fn as_any(&self) -> &dyn Any {
+        self as &dyn Any
+    }
+
+    fn property_name(&self) -> String {
+        self.0.property_name.clone()
+    }
+
+    fn pseudo_element(&self) -> String {
+        self.0.pseudo_element.to_string()
+    }
+
+    fn elapsed_time(&self) -> f32 {
+        self.0.elapsed_time
     }
 }
 
