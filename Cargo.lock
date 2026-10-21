@@ -967,8 +967,10 @@ dependencies = [
  "env_logger",
  "euclid",
  "image",
+ "mimalloc",
  "peniko",
  "png 0.18.1",
+ "rayon",
  "reqwest",
  "rustc-hash 2.1.3",
  "tokio",
@@ -7993,8 +7995,9 @@ dependencies = [
 [[package]]
 name = "taffy"
 version = "0.15.0"
-source = "git+https://github.com/DioxusLabs/taffy?rev=efb06f4b9aa4749a309430376488f483cdbbe618#efb06f4b9aa4749a309430376488f483cdbbe618"
+source = "git+https://github.com/DioxusLabs/taffy?rev=eb19d6201737e159c5031912ca786ff16e413b09#eb19d6201737e159c5031912ca786ff16e413b09"
 dependencies = [
+ "fearless_simd 1.1.0",
  "serde",
  "slotmap",
  "smallvec",
