@@ -986,8 +986,8 @@ mod tests {
             );
             assert_eq!(data.name(), expected_name);
             assert_eq!(data.kind(), expected_kind);
-            assert_eq!(data.cancelable(), false);
-            assert_eq!(data.bubbles(), true);
+            assert!(!data.cancelable());
+            assert!(data.bubbles());
         }
     }
 }

@@ -1,8 +1,9 @@
 //! Integration between Dioxus and Blitz
 use crate::NodeId;
 use crate::events::{
-    BlitzKeyboardData, NativeConverter, NativeFocusData, NativeFormData, NativePointerData,
-    NativeScrollData, NativeTouchData, NativeWheelData, NodeHandle,
+    BlitzKeyboardData, NativeAnimationData, NativeConverter, NativeFocusData, NativeFormData,
+    NativePointerData, NativeScrollData, NativeTouchData, NativeTransitionData, NativeWheelData,
+    NodeHandle,
 };
 use crate::mutation_writer::DioxusState;
 use crate::qual_name;
@@ -198,6 +199,11 @@ impl DioxusDocument {
 
         self.vdom_state.queued_mounted_events = queued_mounted_events;
     }
+
+    /// Flush and dispatch any pending animation or transition events to the VirtualDom
+    pub fn flush_animation_events(&mut self) {
+        <Self as Document>::flush_animation_events(self);
+    }
 }
 
 // Implement DocumentLike and required traits for DioxusDocument
@@ -254,6 +260,15 @@ impl Document for DioxusDocument {
         };
         let mut driver = EventDriver::new(&mut self.inner, handler);
         driver.handle_ui_event(event);
+    }
+
+    fn flush_animation_events(&mut self) {
+        let handler = DioxusEventHandler {
+            vdom: &mut self.vdom,
+            vdom_state: &mut self.vdom_state,
+        };
+        let mut driver = EventDriver::new(&mut self.inner, handler);
+        driver.flush_animation_events();
     }
 }
 
@@ -331,6 +346,20 @@ impl EventHandler for DioxusEventHandler<'_> {
 
             // AppleStandardKeybinding events are not exposed to script
             DomEventData::AppleStandardKeybinding(_) => None,
+
+            DomEventData::AnimationStart(e)
+            | DomEventData::AnimationEnd(e)
+            | DomEventData::AnimationIteration(e)
+            | DomEventData::AnimationCancel(e) => {
+                Some(wrap_event_data(NativeAnimationData(e.clone())))
+            }
+
+            DomEventData::TransitionRun(e)
+            | DomEventData::TransitionStart(e)
+            | DomEventData::TransitionEnd(e)
+            | DomEventData::TransitionCancel(e) => {
+                Some(wrap_event_data(NativeTransitionData(e.clone())))
+            }
         };
 
         let Some(event_data) = event_data else {
