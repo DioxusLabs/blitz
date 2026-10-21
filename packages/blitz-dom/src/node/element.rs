@@ -42,12 +42,22 @@ macro_rules! local_names {
     };
 }
 
+pub(crate) fn parse_classes(value: &str) -> ThinVec<Atom> {
+    value.split_ascii_whitespace().map(Atom::from).collect()
+}
+
 pub struct ElementData {
     /// The elements tag name, namespace and prefix
     pub name: QualName,
 
     /// The elements id attribute parsed as an atom (if it has one)
     pub id: Option<Atom>,
+
+    /// The elements class attribute split into atoms (empty if it has none).
+    /// Kept in sync with `attrs` by `ElementData::new` and the mutator's
+    /// `set_attribute`/`remove_attribute`, so selector matching can compare
+    /// atoms instead of re-splitting and re-interning the attribute string.
+    pub classes: ThinVec<Atom>,
 
     /// The element's attributes
     pub attrs: Attributes,
@@ -300,6 +310,7 @@ impl Clone for ElementData {
         Self {
             name: self.name.clone(),
             id: self.id.clone(),
+            classes: self.classes.clone(),
             attrs: self.attrs.clone(),
             is_focussable: self.is_focussable,
             style_attribute: self.style_attribute.clone(),
@@ -404,10 +415,16 @@ impl ElementData {
             .find(|attr| &attr.name.local == "id")
             .map(|attr| attr.value.as_ref())
             .map(|value: &str| Atom::from(value));
+        let classes = attrs
+            .iter()
+            .find(|attr| &attr.name.local == "class")
+            .map(|attr| parse_classes(&attr.value))
+            .unwrap_or_default();
 
         let mut data = ElementData {
             name,
             id: id_attr_atom,
+            classes,
             attrs: Attributes::new(attrs),
             is_focussable: false,
             style_attribute: Default::default(),
