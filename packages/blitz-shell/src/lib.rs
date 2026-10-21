@@ -87,10 +87,68 @@ pub fn current_android_app() -> android_activity::AndroidApp {
 pub struct BlitzShellProvider {
     window: Arc<dyn Window>,
     proxy: BlitzShellProxy,
+    /// On X11 and Wayland the application that copied text has to serve it to whoever pastes it,
+    /// so the clipboard is kept alive with the window instead of being dropped after each copy.
+    #[cfg(all(
+        feature = "clipboard",
+        any(
+            target_os = "windows",
+            target_os = "macos",
+            target_os = "linux",
+            target_os = "dragonfly",
+            target_os = "freebsd",
+            target_os = "netbsd",
+            target_os = "openbsd"
+        )
+    ))]
+    clipboard: std::sync::Mutex<Option<arboard::Clipboard>>,
 }
 impl BlitzShellProvider {
     pub fn new(window: Arc<dyn Window>, proxy: BlitzShellProxy) -> Self {
-        Self { window, proxy }
+        Self {
+            window,
+            proxy,
+            #[cfg(all(
+                feature = "clipboard",
+                any(
+                    target_os = "windows",
+                    target_os = "macos",
+                    target_os = "linux",
+                    target_os = "dragonfly",
+                    target_os = "freebsd",
+                    target_os = "netbsd",
+                    target_os = "openbsd"
+                )
+            ))]
+            clipboard: std::sync::Mutex::new(None),
+        }
+    }
+
+    #[cfg(all(
+        feature = "clipboard",
+        any(
+            target_os = "windows",
+            target_os = "macos",
+            target_os = "linux",
+            target_os = "dragonfly",
+            target_os = "freebsd",
+            target_os = "netbsd",
+            target_os = "openbsd"
+        )
+    ))]
+    fn with_clipboard<T>(
+        &self,
+        f: impl FnOnce(&mut arboard::Clipboard) -> Result<T, arboard::Error>,
+    ) -> Result<T, blitz_traits::shell::ClipboardError> {
+        let mut clipboard = self
+            .clipboard
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if clipboard.is_none() {
+            *clipboard =
+                Some(arboard::Clipboard::new().map_err(|_| blitz_traits::shell::ClipboardError)?);
+        }
+        f(clipboard.as_mut().unwrap()).map_err(|_| blitz_traits::shell::ClipboardError)
     }
 }
 
@@ -165,9 +223,7 @@ impl ShellProvider for BlitzShellProvider {
         )
     ))]
     fn get_clipboard_text(&self) -> Result<String, blitz_traits::shell::ClipboardError> {
-        let mut cb = arboard::Clipboard::new().unwrap();
-        cb.get_text()
-            .map_err(|_| blitz_traits::shell::ClipboardError)
+        self.with_clipboard(|cb| cb.get_text())
     }
 
     #[cfg(all(
@@ -183,9 +239,7 @@ impl ShellProvider for BlitzShellProvider {
         )
     ))]
     fn set_clipboard_text(&self, text: String) -> Result<(), blitz_traits::shell::ClipboardError> {
-        let mut cb = arboard::Clipboard::new().unwrap();
-        cb.set_text(text.to_owned())
-            .map_err(|_| blitz_traits::shell::ClipboardError)
+        self.with_clipboard(|cb| cb.set_text(text))
     }
 
     #[cfg(all(
