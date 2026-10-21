@@ -28,6 +28,7 @@ mod focus_redraw;
 mod focus_within;
 mod focusability_updates;
 mod fragment_navigation;
+mod gradient_color_stop_fixup;
 mod harness_smoke;
 mod hit_test_dropped_nodes;
 mod hover_dom_ancestors;
