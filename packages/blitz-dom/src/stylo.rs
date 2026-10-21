@@ -187,7 +187,25 @@ impl crate::document::BaseDocument {
                 transition.is_new = false;
             }
         }
-        sets.retain(|_, state| !state.is_empty());
+        let mut finished = Vec::new();
+        sets.retain(|key, state| {
+            let keep = !state.is_empty();
+            if !keep {
+                finished.push(key.node);
+            }
+            keep
+        });
+        // Clear `may_have_animations` on elements whose last set (including
+        // their pseudo-elements' sets) was just removed.
+        for node in finished {
+            if sets.keys().any(|key| key.node == node) {
+                continue;
+            }
+            let node_id = NodeId::from_u64(node.id() as u64);
+            if let Some(data) = self.nodes.get(node_id).and_then(|node| node.element_data()) {
+                data.may_have_animations.store(false, Ordering::Relaxed);
+            }
+        }
         self.has_active_animations = sets.values().any(|state| state.needs_animation_ticks());
 
         // Maybe run garbage collection. Stylo has internal to determine whether to run or not.
