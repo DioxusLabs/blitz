@@ -42,7 +42,7 @@ macro_rules! local_names {
     };
 }
 
-pub(crate) fn parse_classes(value: &str) -> Vec<Atom> {
+pub(crate) fn parse_classes(value: &str) -> ThinVec<Atom> {
     value.split_ascii_whitespace().map(Atom::from).collect()
 }
 
@@ -57,7 +57,7 @@ pub struct ElementData {
     /// Kept in sync with `attrs` by `ElementData::new` and the mutator's
     /// `set_attribute`/`remove_attribute`, so selector matching can compare
     /// atoms instead of re-splitting and re-interning the attribute string.
-    pub classes: Vec<Atom>,
+    pub classes: ThinVec<Atom>,
 
     /// The element's attributes
     pub attrs: Attributes,
