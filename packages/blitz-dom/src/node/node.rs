@@ -1984,8 +1984,8 @@ impl std::fmt::Debug for Node {
 /// no box and are never hoisted).
 pub(crate) fn style_is_out_of_flow(style: &ComputedValues) -> bool {
     let box_style = style.get_box();
-    stylo_taffy::convert::position(box_style.position).is_out_of_flow()
-        && stylo_taffy::convert::display(box_style.display) != taffy::Display::None
+    matches!(box_style.position, Position::Absolute | Position::Fixed)
+        && !box_style.display.is_none()
 }
 
 #[cfg(test)]
