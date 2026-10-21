@@ -323,6 +323,9 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
             std::mem::take(&mut doc.pending_animation_events)
         };
         for queued in events {
+            if self.doc.inner().get_node(queued.node_id).is_none() {
+                continue;
+            }
             let dom_event = DomEvent::new(queued.node_id, queued.event);
             self.handle_dom_event(dom_event);
         }
