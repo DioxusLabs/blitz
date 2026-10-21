@@ -122,7 +122,7 @@ impl LayoutPassState<'_> {
                 (node_size, node_min_size, node_max_size, None)
             }
             SizingMode::InherentSize => {
-                let aspect_ratio = style.aspect_ratio();
+                let aspect_ratio = style.aspect_ratio().ratio();
                 let style_size = style
                     .size()
                     .maybe_resolve(parent_size, resolve_calc_value)
@@ -303,7 +303,7 @@ impl LayoutPassState<'_> {
                 (node_size, node_min_size, node_max_size, None)
             }
             SizingMode::InherentSize => {
-                let aspect_ratio = style.aspect_ratio();
+                let aspect_ratio = style.aspect_ratio().ratio();
                 let style_size = style
                     .size()
                     .maybe_resolve(parent_size, resolve_calc_value)

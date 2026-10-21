@@ -65,7 +65,7 @@ pub trait WritingModeExt: Copy {
     fn logical_point<T>(self, physical: taffy::Point<T>) -> taffy::Point<T>;
 
     /// Map a physical aspect ratio (width / height) into Taffy's axes.
-    fn logical_aspect_ratio(self, physical: Option<f32>) -> Option<f32>;
+    fn logical_aspect_ratio(self, physical: taffy::AspectRatio) -> taffy::AspectRatio;
 
     /// Map a line-relative `float` into Taffy's axes.
     #[cfg(feature = "floats")]
@@ -206,11 +206,13 @@ impl WritingModeExt for WritingMode {
     }
 
     #[inline(always)]
-    fn logical_aspect_ratio(self, physical: Option<f32>) -> Option<f32> {
-        if self.swaps_axes() {
-            physical.map(|ratio| 1.0 / ratio)
-        } else {
-            physical
+    fn logical_aspect_ratio(self, physical: taffy::AspectRatio) -> taffy::AspectRatio {
+        match physical.ratio() {
+            Some(ratio) if self.swaps_axes() && physical.is_auto() => {
+                taffy::AspectRatio::auto_and(1.0 / ratio)
+            }
+            Some(ratio) if self.swaps_axes() => taffy::AspectRatio::new(1.0 / ratio),
+            _ => physical,
         }
     }
 

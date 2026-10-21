@@ -274,7 +274,7 @@ impl<T: Deref<Target = ComputedValues>> taffy::CoreStyle for TaffyStyloStyle<T> 
     }
 
     #[inline]
-    fn aspect_ratio(&self) -> Option<f32> {
+    fn aspect_ratio(&self) -> taffy::AspectRatio {
         let ratio = convert::aspect_ratio(self.style.get_position().aspect_ratio);
         self.layout_wm().logical_aspect_ratio(ratio)
     }
