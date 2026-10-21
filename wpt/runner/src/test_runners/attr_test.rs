@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use blitz_dom::{BaseDocument, Document as _, Node};
+use blitz_dom::{BaseDocument, Document as _, Node, NodeId};
 use log::warn;
 use style_traits::ToCss;
 
@@ -94,8 +94,7 @@ fn check_layout(
         .map(|(idx, root_id)| {
             let mut errors = Vec::new();
             document.iter_subtree_mut(root_id, |node_id, doc| {
-                let node = doc.get_node(node_id).unwrap();
-                errors.extend_from_slice(&check_node_layout(node));
+                errors.extend_from_slice(&check_node_layout(doc, node_id));
             });
 
             let has_error = !errors.is_empty();
@@ -133,13 +132,19 @@ fn check_layout(
     (status, subtest_counts, subtest_results)
 }
 
-pub fn check_node_layout(node: &Node) -> Vec<String> {
+pub fn check_node_layout(doc: &BaseDocument, node_id: NodeId) -> Vec<String> {
+    let node = doc.get_node(node_id).unwrap();
     if node.element_data().is_none() {
         return Vec::new();
     }
     let layout = node.final_layout();
-    // `offsetWidth`/`offsetHeight` round the unrounded size, not the pixel-snapped edges
-    let unrounded_size = node.unrounded_layout().size;
+    // Width and height are checked against `offsetWidth`/`offsetHeight`, which round the
+    // unrounded physical size rather than the pixel-snapped edges
+    let (offset_width, offset_height) = doc
+        .offset_rect(node_id)
+        .map_or((layout.size.width, layout.size.height), |rect| {
+            (rect.width.round() as f32, rect.height.round() as f32)
+        });
 
     let client_width =
         layout.size.width - layout.border.left - layout.border.right - layout.scrollbar_size.width;
@@ -156,12 +161,8 @@ pub fn check_node_layout(node: &Node) -> Vec<String> {
                     let name = attr.name.local.as_ref();
                     let value = &attr.value;
                     match name {
-                        "data-expected-width" => {
-                            check_attr(name, value, unrounded_size.width.round())
-                        }
-                        "data-expected-height" => {
-                            check_attr(name, value, unrounded_size.height.round())
-                        }
+                        "data-expected-width" => check_attr(name, value, offset_width),
+                        "data-expected-height" => check_attr(name, value, offset_height),
                         "data-expected-padding-top" => check_attr(name, value, layout.padding.top),
                         "data-expected-padding-bottom" => {
                             check_attr(name, value, layout.padding.bottom)
