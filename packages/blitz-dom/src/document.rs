@@ -174,6 +174,13 @@ pub trait Document: Any + 'static {
         driver.handle_ui_event(event);
     }
 
+    /// Flush and dispatch any queued animation or transition events
+    fn flush_animation_events(&mut self) {
+        let mut doc = self.inner_mut();
+        let mut driver = EventDriver::new(&mut *doc, NoopEventHandler);
+        driver.flush_animation_events();
+    }
+
     /// Poll any pending async operations, and flush changes to the underlying [`BaseDocument`]
     fn poll(&mut self, task_context: Option<TaskContext>) -> bool {
         // Default implementation does nothing
@@ -682,6 +689,15 @@ impl BaseDocument {
         dispatch_event: F,
     ) {
         handle_dom_event(self, event, dispatch_event)
+    }
+
+    /// Flush and dispatch any pending animation and transition events using lock-free `std::mem::take`.
+    pub fn flush_animation_events<F: FnMut(DomEvent)>(&mut self, mut dispatch: F) {
+        let events = std::mem::take(&mut self.pending_animation_events);
+        for queued in events {
+            let dom_event = DomEvent::new(queued.node_id, queued.event);
+            dispatch(dom_event);
+        }
     }
 
     pub fn as_any_mut(&mut self) -> &mut dyn Any {
@@ -3471,5 +3487,232 @@ mod font_face_override_tests {
             "registered family should report the CSS-declared name, \
              not the font file's internal `name` table entry",
         );
+    }
+}
+
+#[cfg(test)]
+mod animation_tests {
+    use super::*;
+    use blitz_traits::SmolStr;
+    use blitz_traits::events::{
+        BlitzAnimationEvent, BlitzTransitionEvent, DomEventData, EventState,
+    };
+
+    #[test]
+    fn test_flush_animation_events_lock_free_drain() {
+        let mut doc = BaseDocument::new(DocumentConfig::default());
+        let target = doc.root_node().id;
+        let anim_data = BlitzAnimationEvent {
+            animation_name: "fade-in".to_string(),
+            elapsed_time: 1.0,
+            pseudo_element: SmolStr::default(),
+        };
+        doc.pending_animation_events.push(QueuedAnimationEvent {
+            node_id: target,
+            event: DomEventData::AnimationStart(anim_data),
+        });
+
+        assert_eq!(doc.pending_animation_events.len(), 1);
+
+        let mut received = Vec::new();
+        doc.flush_animation_events(|evt| {
+            received.push(evt);
+        });
+
+        assert_eq!(doc.pending_animation_events.len(), 0);
+        assert_eq!(received.len(), 1);
+        assert_eq!(received[0].target, target);
+        assert!(received[0].bubbles);
+        assert!(!received[0].cancelable);
+        assert_eq!(received[0].data.name(), "animationstart");
+    }
+
+    #[derive(Default, Clone)]
+    struct EventCollector {
+        events: Rc<RefCell<Vec<DomEvent>>>,
+    }
+
+    impl crate::events::EventHandler for EventCollector {
+        fn handle_event(
+            &mut self,
+            _chain: &[NodeId],
+            event: &mut DomEvent,
+            _doc: &mut dyn Document,
+            _event_state: &mut EventState,
+        ) {
+            self.events.borrow_mut().push(event.clone());
+        }
+    }
+
+    #[test]
+    fn test_event_driver_animation_dispatch() {
+        let mut doc = BaseDocument::new(DocumentConfig::default());
+        let target = doc.root_node().id;
+        doc.pending_animation_events.push(QueuedAnimationEvent {
+            node_id: target,
+            event: DomEventData::AnimationStart(BlitzAnimationEvent {
+                animation_name: "slide".to_string(),
+                elapsed_time: 0.0,
+                pseudo_element: SmolStr::default(),
+            }),
+        });
+        doc.pending_animation_events.push(QueuedAnimationEvent {
+            node_id: target,
+            event: DomEventData::TransitionEnd(BlitzTransitionEvent {
+                property_name: "opacity".to_string(),
+                elapsed_time: 0.3,
+                pseudo_element: SmolStr::default(),
+            }),
+        });
+
+        let collector = EventCollector::default();
+        let mut driver = EventDriver::new(&mut doc, collector.clone());
+        driver.flush_animation_events();
+
+        let events = collector.events.borrow();
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].data.name(), "animationstart");
+        assert_eq!(events[1].data.name(), "transitionend");
+        assert_eq!(events[0].target, target);
+        assert_eq!(events[1].target, target);
+        assert!(events[0].bubbles);
+        assert!(!events[0].cancelable);
+        assert!(events[1].bubbles);
+        assert!(!events[1].cancelable);
+    }
+
+    #[test]
+    fn test_zero_duration_sequencing() {
+        let mut doc = BaseDocument::new(DocumentConfig::default());
+        let target = doc.root_node().id;
+        doc.pending_animation_events.push(QueuedAnimationEvent {
+            node_id: target,
+            event: DomEventData::AnimationStart(BlitzAnimationEvent {
+                animation_name: "instant-fade".to_string(),
+                elapsed_time: 0.0,
+                pseudo_element: SmolStr::default(),
+            }),
+        });
+        doc.pending_animation_events.push(QueuedAnimationEvent {
+            node_id: target,
+            event: DomEventData::AnimationEnd(BlitzAnimationEvent {
+                animation_name: "instant-fade".to_string(),
+                elapsed_time: 0.0,
+                pseudo_element: SmolStr::default(),
+            }),
+        });
+
+        let mut dispatched = Vec::new();
+        doc.flush_animation_events(|evt| dispatched.push(evt));
+
+        assert_eq!(dispatched.len(), 2);
+        assert_eq!(dispatched[0].data.name(), "animationstart");
+        if let DomEventData::AnimationStart(ref start) = dispatched[0].data {
+            assert_eq!(start.elapsed_time, 0.0);
+            assert_eq!(start.animation_name, "instant-fade");
+        } else {
+            panic!("Expected AnimationStart");
+        }
+
+        assert_eq!(dispatched[1].data.name(), "animationend");
+        if let DomEventData::AnimationEnd(ref end) = dispatched[1].data {
+            assert_eq!(end.elapsed_time, 0.0);
+            assert_eq!(end.animation_name, "instant-fade");
+        } else {
+            panic!("Expected AnimationEnd");
+        }
+    }
+
+    #[test]
+    fn test_negative_delay_elapsed_time() {
+        let mut doc = BaseDocument::new(DocumentConfig::default());
+        let target = doc.root_node().id;
+        let elapsed = 0.5;
+        doc.pending_animation_events.push(QueuedAnimationEvent {
+            node_id: target,
+            event: DomEventData::AnimationStart(BlitzAnimationEvent {
+                animation_name: "delayed-anim".to_string(),
+                elapsed_time: elapsed,
+                pseudo_element: SmolStr::default(),
+            }),
+        });
+
+        let mut dispatched = Vec::new();
+        doc.flush_animation_events(|evt| dispatched.push(evt));
+
+        assert_eq!(dispatched.len(), 1);
+        if let DomEventData::AnimationStart(ref data) = dispatched[0].data {
+            assert_eq!(data.elapsed_time, 0.5);
+            assert_eq!(data.animation_name, "delayed-anim");
+        } else {
+            panic!("Expected AnimationStart");
+        }
+    }
+
+    #[test]
+    fn test_cancellation_event() {
+        let mut doc = BaseDocument::new(DocumentConfig::default());
+        let target = doc.root_node().id;
+        doc.pending_animation_events.push(QueuedAnimationEvent {
+            node_id: target,
+            event: DomEventData::AnimationCancel(BlitzAnimationEvent {
+                animation_name: "cancelled-anim".to_string(),
+                elapsed_time: 1.5,
+                pseudo_element: SmolStr::new("::after"),
+            }),
+        });
+        doc.pending_animation_events.push(QueuedAnimationEvent {
+            node_id: target,
+            event: DomEventData::TransitionCancel(BlitzTransitionEvent {
+                property_name: "transform".to_string(),
+                elapsed_time: 0.8,
+                pseudo_element: SmolStr::default(),
+            }),
+        });
+
+        let mut dispatched = Vec::new();
+        doc.flush_animation_events(|evt| dispatched.push(evt));
+
+        assert_eq!(dispatched.len(), 2);
+        assert_eq!(dispatched[0].data.name(), "animationcancel");
+        assert!(dispatched[0].bubbles);
+        assert!(!dispatched[0].cancelable);
+        if let DomEventData::AnimationCancel(ref data) = dispatched[0].data {
+            assert_eq!(data.animation_name, "cancelled-anim");
+            assert_eq!(data.elapsed_time, 1.5);
+            assert_eq!(data.pseudo_element.as_str(), "::after");
+        } else {
+            panic!("Expected AnimationCancel");
+        }
+
+        assert_eq!(dispatched[1].data.name(), "transitioncancel");
+        assert!(dispatched[1].bubbles);
+        assert!(!dispatched[1].cancelable);
+        if let DomEventData::TransitionCancel(ref data) = dispatched[1].data {
+            assert_eq!(data.property_name, "transform");
+            assert_eq!(data.elapsed_time, 0.8);
+            assert_eq!(data.pseudo_element.as_str(), "");
+        } else {
+            panic!("Expected TransitionCancel");
+        }
+    }
+
+    #[test]
+    fn test_trait_flush_animation_events_drains_buffer() {
+        let mut doc = BaseDocument::new(DocumentConfig::default());
+        let target = doc.root_node().id;
+        doc.pending_animation_events.push(QueuedAnimationEvent {
+            node_id: target,
+            event: DomEventData::AnimationStart(BlitzAnimationEvent {
+                animation_name: "test-anim".to_string(),
+                elapsed_time: 0.0,
+                pseudo_element: SmolStr::default(),
+            }),
+        });
+        assert_eq!(doc.pending_animation_events.len(), 1);
+
+        Document::flush_animation_events(&mut doc);
+
+        assert_eq!(doc.pending_animation_events.len(), 0);
     }
 }

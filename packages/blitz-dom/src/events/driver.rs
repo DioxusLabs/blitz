@@ -316,6 +316,18 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
         }
     }
 
+    /// Flush and dispatch all pending animation and transition events queued on the document.
+    pub fn flush_animation_events(&mut self) {
+        let events = {
+            let mut doc = self.doc.inner_mut();
+            std::mem::take(&mut doc.pending_animation_events)
+        };
+        for queued in events {
+            let dom_event = DomEvent::new(queued.node_id, queued.event);
+            self.handle_dom_event(dom_event);
+        }
+    }
+
     pub fn handle_dom_event(&mut self, event: DomEvent) {
         self.queue.push_back(event);
         self.process_queue();
