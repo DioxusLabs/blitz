@@ -108,6 +108,53 @@ impl crate::document::BaseDocument {
                 .get(node_id)
                 .is_some_and(|node| node.flags.is_in_document());
             if !in_document {
+                if self.get_node(node_id).is_some() {
+                    let pseudo = match &key.pseudo_element {
+                        Some(p) => SmolStr::new(p.to_css_string()),
+                        None => SmolStr::default(),
+                    };
+                    for animation in set.animations.iter() {
+                        if animation.state == AnimationState::Running
+                            || animation.state == AnimationState::Pending
+                        {
+                            let current_iteration = match animation.iteration_state {
+                                KeyframesIterationState::Finite(current, _) => current,
+                                KeyframesIterationState::Infinite(current) => current,
+                            };
+                            let elapsed = ((current_iteration * animation.duration)
+                                + (now - animation.started_at).max(0.0))
+                                as f32;
+                            self.pending_animation_events.push(QueuedAnimationEvent {
+                                node_id,
+                                event: DomEventData::AnimationCancel(BlitzAnimationEvent {
+                                    animation_name: animation.name.as_str().to_string(),
+                                    elapsed_time: elapsed,
+                                    pseudo_element: pseudo.clone(),
+                                }),
+                            });
+                        }
+                    }
+                    for transition in set.transitions.iter() {
+                        if transition.state == AnimationState::Running
+                            || transition.state == AnimationState::Pending
+                        {
+                            let property_name =
+                                transition.property_animation.property_id().to_css_string();
+                            let elapsed = (now - transition.start_time)
+                                .max(0.0)
+                                .min(transition.property_animation.duration)
+                                as f32;
+                            self.pending_animation_events.push(QueuedAnimationEvent {
+                                node_id,
+                                event: DomEventData::TransitionCancel(BlitzTransitionEvent {
+                                    property_name,
+                                    elapsed_time: elapsed,
+                                    pseudo_element: pseudo.clone(),
+                                }),
+                            });
+                        }
+                    }
+                }
                 set.animations.clear();
                 set.transitions.clear();
                 continue;
@@ -125,7 +172,13 @@ impl crate::document::BaseDocument {
                     animation.state = AnimationState::Running;
                     let active_duration = match animation.iteration_state {
                         KeyframesIterationState::Finite(_, max) => max * animation.duration,
-                        KeyframesIterationState::Infinite(_) => f64::INFINITY,
+                        KeyframesIterationState::Infinite(_) => {
+                            if animation.duration == 0.0 {
+                                0.0
+                            } else {
+                                f64::INFINITY
+                            }
+                        }
                     };
                     let elapsed = (-animation.delay).max(0.0).min(active_duration) as f32;
                     self.pending_animation_events.push(QueuedAnimationEvent {
@@ -143,7 +196,7 @@ impl crate::document::BaseDocument {
                             node_id,
                             event: DomEventData::AnimationEnd(BlitzAnimationEvent {
                                 animation_name: animation.name.as_str().to_string(),
-                                elapsed_time: (active_duration.max(0.0) as f32),
+                                elapsed_time: active_duration.max(0.0) as f32,
                                 pseudo_element: pseudo.clone(),
                             }),
                         });
@@ -151,37 +204,42 @@ impl crate::document::BaseDocument {
                     }
                 }
 
-                if animation.state == AnimationState::Running && animation.iterate_if_necessary(now)
-                {
-                    let current_iteration = match animation.iteration_state {
-                        KeyframesIterationState::Finite(current, _) => current,
-                        KeyframesIterationState::Infinite(current) => current,
-                    };
-                    let elapsed = (current_iteration * animation.duration) as f32;
-                    self.pending_animation_events.push(QueuedAnimationEvent {
-                        node_id,
-                        event: DomEventData::AnimationIteration(BlitzAnimationEvent {
-                            animation_name: animation.name.as_str().to_string(),
-                            elapsed_time: elapsed,
-                            pseudo_element: pseudo.clone(),
-                        }),
-                    });
-                }
+                if animation.state == AnimationState::Running {
+                    let mut iterations_crossed = 0;
+                    let mut last_iteration_elapsed = 0.0f32;
+                    while animation.duration > 0.0 && animation.iterate_if_necessary(now) {
+                        iterations_crossed += 1;
+                        let current_iteration = match animation.iteration_state {
+                            KeyframesIterationState::Finite(current, _) => current,
+                            KeyframesIterationState::Infinite(current) => current,
+                        };
+                        last_iteration_elapsed = (current_iteration * animation.duration) as f32;
+                    }
 
-                if animation.state == AnimationState::Running && animation.has_ended(now) {
-                    animation.state = AnimationState::Finished;
-                    let active_duration = match animation.iteration_state {
-                        KeyframesIterationState::Finite(_, max) => max * animation.duration,
-                        KeyframesIterationState::Infinite(_) => 0.0,
-                    };
-                    self.pending_animation_events.push(QueuedAnimationEvent {
-                        node_id,
-                        event: DomEventData::AnimationEnd(BlitzAnimationEvent {
-                            animation_name: animation.name.as_str().to_string(),
-                            elapsed_time: active_duration as f32,
-                            pseudo_element: pseudo.clone(),
-                        }),
-                    });
+                    if animation.has_ended(now) {
+                        animation.state = AnimationState::Finished;
+                        let active_duration = match animation.iteration_state {
+                            KeyframesIterationState::Finite(_, max) => max * animation.duration,
+                            KeyframesIterationState::Infinite(_) => 0.0,
+                        };
+                        self.pending_animation_events.push(QueuedAnimationEvent {
+                            node_id,
+                            event: DomEventData::AnimationEnd(BlitzAnimationEvent {
+                                animation_name: animation.name.as_str().to_string(),
+                                elapsed_time: active_duration as f32,
+                                pseudo_element: pseudo.clone(),
+                            }),
+                        });
+                    } else if iterations_crossed > 0 {
+                        self.pending_animation_events.push(QueuedAnimationEvent {
+                            node_id,
+                            event: DomEventData::AnimationIteration(BlitzAnimationEvent {
+                                animation_name: animation.name.as_str().to_string(),
+                                elapsed_time: last_iteration_elapsed,
+                                pseudo_element: pseudo.clone(),
+                            }),
+                        });
+                    }
                 }
             }
 
@@ -298,12 +356,39 @@ impl crate::document::BaseDocument {
                     self.pending_animation_events.push(QueuedAnimationEvent {
                         node_id,
                         event: DomEventData::TransitionRun(BlitzTransitionEvent {
-                            property_name,
+                            property_name: property_name.clone(),
                             elapsed_time: elapsed,
                             pseudo_element: pseudo.clone(),
                         }),
                     });
                     transition.is_new = false;
+
+                    // Newly created transition with delay <= 0: promote to Running and check Finished at creation pass t0
+                    if transition.state == AnimationState::Pending && transition.start_time <= now {
+                        transition.state = AnimationState::Running;
+                        self.pending_animation_events.push(QueuedAnimationEvent {
+                            node_id,
+                            event: DomEventData::TransitionStart(BlitzTransitionEvent {
+                                property_name: property_name.clone(),
+                                elapsed_time: elapsed,
+                                pseudo_element: pseudo.clone(),
+                            }),
+                        });
+
+                        if transition.property_animation.duration == 0.0
+                            || transition.has_ended(now)
+                        {
+                            transition.state = AnimationState::Finished;
+                            self.pending_animation_events.push(QueuedAnimationEvent {
+                                node_id,
+                                event: DomEventData::TransitionEnd(BlitzTransitionEvent {
+                                    property_name,
+                                    elapsed_time: transition.property_animation.duration as f32,
+                                    pseudo_element: pseudo.clone(),
+                                }),
+                            });
+                        }
+                    }
                 }
 
                 if transition.state == AnimationState::Canceled {
@@ -324,6 +409,46 @@ impl crate::document::BaseDocument {
             }
 
             for animation in set.animations.iter_mut() {
+                if animation.is_new {
+                    animation.is_new = false;
+
+                    // Newly created animation with delay <= 0: promote to Running and check Finished at creation pass t0
+                    if animation.state == AnimationState::Pending && animation.started_at <= now {
+                        animation.state = AnimationState::Running;
+                        let active_duration = match animation.iteration_state {
+                            KeyframesIterationState::Finite(_, max) => max * animation.duration,
+                            KeyframesIterationState::Infinite(_) => {
+                                if animation.duration == 0.0 {
+                                    0.0
+                                } else {
+                                    f64::INFINITY
+                                }
+                            }
+                        };
+                        let elapsed = (-animation.delay).max(0.0).min(active_duration) as f32;
+                        self.pending_animation_events.push(QueuedAnimationEvent {
+                            node_id,
+                            event: DomEventData::AnimationStart(BlitzAnimationEvent {
+                                animation_name: animation.name.as_str().to_string(),
+                                elapsed_time: elapsed,
+                                pseudo_element: pseudo.clone(),
+                            }),
+                        });
+
+                        if animation.duration == 0.0 || animation.has_ended(now) {
+                            animation.state = AnimationState::Finished;
+                            self.pending_animation_events.push(QueuedAnimationEvent {
+                                node_id,
+                                event: DomEventData::AnimationEnd(BlitzAnimationEvent {
+                                    animation_name: animation.name.as_str().to_string(),
+                                    elapsed_time: active_duration.max(0.0) as f32,
+                                    pseudo_element: pseudo.clone(),
+                                }),
+                            });
+                        }
+                    }
+                }
+
                 if animation.state == AnimationState::Canceled {
                     let current_iteration = match animation.iteration_state {
                         KeyframesIterationState::Finite(current, _) => current,
@@ -341,7 +466,6 @@ impl crate::document::BaseDocument {
                         }),
                     });
                 }
-                animation.is_new = false;
             }
 
             set.clear_canceled_animations();
