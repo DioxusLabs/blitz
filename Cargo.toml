@@ -57,12 +57,13 @@ browser-persistence = { path = "./apps/browser/persistence" }
 blitz-test-harness = { path = "./packages/blitz-test-harness" }
 
 # Servo dependencies
-style = { version = "0.22.0", package = "stylo" }
-style_traits = { version = "0.22.0", package = "stylo_traits" }
-style_atoms = { version = "0.22.0", package = "stylo_atoms" }
-style_config = { version = "0.22.0", package = "stylo_static_prefs" }
-style_dom = { version = "0.22.0", package = "stylo_dom" }
-selectors = { version = "0.41.0", package = "selectors" }
+# servo/stylo main (633f43ad) plus a fix for building on wasm32-unknown-unknown (disables rand's getrandom dependency)
+style = { version = "0.22.0", git = "https://github.com/DioxusLabs/stylo", rev = "d6502e0002e9c40c43a0a4776f9e7eb93be360e3", package = "stylo" }
+style_traits = { version = "0.22.0", git = "https://github.com/DioxusLabs/stylo", rev = "d6502e0002e9c40c43a0a4776f9e7eb93be360e3", package = "stylo_traits" }
+style_atoms = { version = "0.22.0", git = "https://github.com/DioxusLabs/stylo", rev = "d6502e0002e9c40c43a0a4776f9e7eb93be360e3", package = "stylo_atoms" }
+style_config = { version = "0.22.0", git = "https://github.com/DioxusLabs/stylo", rev = "d6502e0002e9c40c43a0a4776f9e7eb93be360e3", package = "stylo_static_prefs" }
+style_dom = { version = "0.22.0", git = "https://github.com/DioxusLabs/stylo", rev = "d6502e0002e9c40c43a0a4776f9e7eb93be360e3", package = "stylo_dom" }
+selectors = { version = "0.41.0", git = "https://github.com/DioxusLabs/stylo", rev = "d6502e0002e9c40c43a0a4776f9e7eb93be360e3", package = "selectors" }
 cssparser = { version = "0.38.0" }
 
 # HTML5ever dependencies
@@ -309,20 +310,6 @@ rustc-hash = { workspace = true }
 # vello_gpu = { path = "../vello/sparse_strips/vello_gpu" }
 # vello_common = { path = "../vello/sparse_strips/vello_common" }
 # glifo = { path = "../vello/glifo" }
-
-# servo/stylo main (633f43ad) plus a fix for building on wasm32-unknown-unknown (disables rand's getrandom dependency)
-[patch.crates-io]
-stylo = { git = "https://github.com/DioxusLabs/stylo", rev = "d6502e0002e9c40c43a0a4776f9e7eb93be360e3" }
-stylo_traits = { git = "https://github.com/DioxusLabs/stylo", rev = "d6502e0002e9c40c43a0a4776f9e7eb93be360e3" }
-stylo_atoms = { git = "https://github.com/DioxusLabs/stylo", rev = "d6502e0002e9c40c43a0a4776f9e7eb93be360e3" }
-stylo_static_prefs = { git = "https://github.com/DioxusLabs/stylo", rev = "d6502e0002e9c40c43a0a4776f9e7eb93be360e3" }
-stylo_dom = { git = "https://github.com/DioxusLabs/stylo", rev = "d6502e0002e9c40c43a0a4776f9e7eb93be360e3" }
-stylo_derive = { git = "https://github.com/DioxusLabs/stylo", rev = "d6502e0002e9c40c43a0a4776f9e7eb93be360e3" }
-stylo_malloc_size_of = { git = "https://github.com/DioxusLabs/stylo", rev = "d6502e0002e9c40c43a0a4776f9e7eb93be360e3" }
-selectors = { git = "https://github.com/DioxusLabs/stylo", rev = "d6502e0002e9c40c43a0a4776f9e7eb93be360e3" }
-servo_arc = { git = "https://github.com/DioxusLabs/stylo", rev = "d6502e0002e9c40c43a0a4776f9e7eb93be360e3" }
-to_shmem = { git = "https://github.com/DioxusLabs/stylo", rev = "d6502e0002e9c40c43a0a4776f9e7eb93be360e3" }
-to_shmem_derive = { git = "https://github.com/DioxusLabs/stylo", rev = "d6502e0002e9c40c43a0a4776f9e7eb93be360e3" }
 
 # [patch.crates-io]
 # style = { path = "../stylo/style", package = "stylo" }
