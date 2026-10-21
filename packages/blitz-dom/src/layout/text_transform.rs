@@ -3,6 +3,7 @@
 //!
 //! <https://drafts.csswg.org/css-text/#text-transform-property>
 
+#[cfg(feature = "text-transform-icu")]
 use icu_casemap::options::{LeadingAdjustment, TitlecaseOptions, TrailingCase};
 #[cfg(feature = "text-transform-icu")]
 use icu_casemap::{CaseMapper, CaseMapperBorrowed, TitlecaseMapper, TitlecaseMapperBorrowed};
@@ -15,7 +16,6 @@ use style::computed_values::white_space_collapse::T as WhiteSpaceCollapse;
 use style::properties::ComputedValues;
 use style::values::computed::TextTransform;
 use style::values::specified::text::TextTransformCase;
-#[cfg(feature = "text-transform-icu")]
 use stylo_taffy::CopyStyleGetters;
 #[cfg(feature = "text-transform-icu")]
 use writeable::Writeable;
