@@ -1430,10 +1430,16 @@ impl Node {
         }
 
         let size = self.final_layout().size;
-        let matches_self = !(x < 0.0
-            || x > size.width + self.scroll_offset().x as f32
-            || y < 0.0
-            || y > size.height + self.scroll_offset().y as f32);
+        let scroll_x = self.scroll_offset().x as f32;
+        let scroll_y = self.scroll_offset().y as f32;
+        // The point is in this node's unscrolled content coordinates, where
+        // the node's own box spans [scroll, size + scroll] on each axis — a
+        // lower bound of 0 would also accept points above/left of the box,
+        // over neighbours that scrolled-out content is clipped over on paint.
+        let matches_self = !(x < scroll_x
+            || x > size.width + scroll_x
+            || y < scroll_y
+            || y > size.height + scroll_y);
 
         let overflow_rect = self.final_layout().scrollable_overflow_rect;
         let matches_content = !(x < 0.0
@@ -1461,6 +1467,26 @@ impl Node {
             && y <= (overflow.y1 / scale) as f32;
 
         if !matches_self && !matches_content && !matches_hoisted_content && !matches_overflow {
+            return None;
+        }
+
+        // An overflow that clips (any value but `visible` on an axis)
+        // confines hits to the node's box on that axis: what the clip removes
+        // from paint it removes from hit-testing too. Points over hoisted
+        // stacking-context content are exempt — positioned descendants can
+        // escape a clip whose box isn't their containing block.
+        let clips = self.primary_styles().map(|style| {
+            use style::values::computed::Overflow;
+            (
+                !matches!(style.clone_overflow_x(), Overflow::Visible),
+                !matches!(style.clone_overflow_y(), Overflow::Visible),
+            )
+        });
+        let clip_misses = clips.is_some_and(|(clips_x, clips_y)| {
+            (clips_x && (x < scroll_x || x > size.width + scroll_x))
+                || (clips_y && (y < scroll_y || y > size.height + scroll_y))
+        });
+        if clip_misses && !matches_hoisted_content {
             return None;
         }
 
@@ -1502,32 +1528,38 @@ impl Node {
         }
 
         // Call `.hit()` on each child in turn. If any return `Some` then return that value. Else return `Some(self.id).
-        for child_id in self.paint_children.borrow().iter().flatten().rev() {
-            let child = self.with(*child_id);
-            let child_position = child.taffy_position();
-            let mut child_x = x;
-            let mut child_y = y;
-            if child_position.is_out_of_flow() {
-                // Out-of-flow children's layout location is relative to this node's
-                // border box, so undo the inline-root content-box offset applied above
-                if self.flags.is_inline_root() {
-                    child_x += content_box_offset.x;
-                    child_y += content_box_offset.y;
+        // Skipped when the point fell outside a clipping axis: in-flow
+        // children are clipped away there — only hoisted (positioned)
+        // descendants, tested above and below, can still be hit.
+        if !clip_misses {
+            for child_id in self.paint_children.borrow().iter().flatten().rev() {
+                let child = self.with(*child_id);
+                let child_position = child.taffy_position();
+                let mut child_x = x;
+                let mut child_y = y;
+                if child_position.is_out_of_flow() {
+                    // Out-of-flow children's layout location is relative to this node's
+                    // border box, so undo the inline-root content-box offset applied above
+                    if self.flags.is_inline_root() {
+                        child_x += content_box_offset.x;
+                        child_y += content_box_offset.y;
+                    }
+                    // Fixed-position children of the root element are positioned
+                    // against the viewport and do not scroll with it. (A fixed box
+                    // whose containing block is a transformed ancestor scrolls with
+                    // that ancestor like any other out-of-flow box.)
+                    if child_position == taffy::Position::Fixed && self.containing_block().is_none()
+                    {
+                        child_x -= self.scroll_offset().x as f32;
+                        child_y -= self.scroll_offset().y as f32;
+                        let viewport_scroll = self.tree().viewport_scroll();
+                        child_x -= viewport_scroll.x as f32;
+                        child_y -= viewport_scroll.y as f32;
+                    }
                 }
-                // Fixed-position children of the root element are positioned
-                // against the viewport and do not scroll with it. (A fixed box
-                // whose containing block is a transformed ancestor scrolls with
-                // that ancestor like any other out-of-flow box.)
-                if child_position == taffy::Position::Fixed && self.containing_block().is_none() {
-                    child_x -= self.scroll_offset().x as f32;
-                    child_y -= self.scroll_offset().y as f32;
-                    let viewport_scroll = self.tree().viewport_scroll();
-                    child_x -= viewport_scroll.x as f32;
-                    child_y -= viewport_scroll.y as f32;
+                if let Some(hit) = child.hit_inner(child_x, child_y, scale, scrollbar) {
+                    return Some(hit);
                 }
-            }
-            if let Some(hit) = child.hit_inner(child_x, child_y, scale, scrollbar) {
-                return Some(hit);
             }
         }
 
@@ -1549,7 +1581,7 @@ impl Node {
         }
 
         // Inline children
-        if self.flags.is_inline_root() {
+        if !clip_misses && self.flags.is_inline_root() {
             let element_data = &self.element_data().unwrap();
             if let Some(ild) = element_data.inline_layout_data.as_ref() {
                 let layout = &ild.layout;
