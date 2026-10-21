@@ -1,3 +1,6 @@
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 use anyrender::ImageRenderer as _;
 #[cfg(feature = "gpu")]
 use anyrender_vello::VelloImageRenderer;

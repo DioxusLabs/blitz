@@ -10,7 +10,7 @@ name = "blitz"
 path = "src/main.rs"
 
 [features]
-default = ["hybrid", "cookies", "cache", "screenshot", "apple-font-embolden", "scrollbars"]
+default = ["hybrid", "cookies", "cache", "screenshot", "apple-font-embolden", "scrollbars", "mimalloc"]
 android-defaults = ["skia", "cookies"]
 
 screenshot = ["dep:anyrender_vello_cpu", "dep:blitz-paint", "dep:png", "dep:peniko", "dep:rfd"]
