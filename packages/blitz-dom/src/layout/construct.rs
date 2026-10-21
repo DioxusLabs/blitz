@@ -353,9 +353,9 @@ fn classify_flow_children(
             continue;
         } else {
             let position = style
-                .map(|s| s.clone_position())
+                .map(|s| s.slow_clone_position())
                 .unwrap_or(PositionProperty::Static);
-            let float = style.map(|s| s.clone_float()).unwrap_or(Float::None);
+            let float = style.map(|s| s.slow_clone_float()).unwrap_or(Float::None);
 
             // Ignore nodes whose whitespace is entirely collapsed away
             if child.is_collapsible_whitespace_node() {
@@ -854,11 +854,13 @@ fn create_text_editor(doc: &mut BaseDocument, input_element_id: NodeId, is_multi
         .unwrap_or_default();
     let alignment = node
         .primary_styles()
-        .map(|s| stylo_to_parley::text_align(s.clone_text_align()))
+        .map(|s| stylo_to_parley::text_align(s.slow_clone_text_align()))
         .unwrap_or(parley::layout::Alignment::Start);
     let base_direction = node
         .primary_styles()
-        .map(|s| stylo_to_parley::base_direction(s.clone_direction(), s.clone_unicode_bidi()))
+        .map(|s| {
+            stylo_to_parley::base_direction(s.slow_clone_direction(), s.slow_clone_unicode_bidi())
+        })
         .unwrap_or(parley::BaseDirection::Auto);
 
     let initial_text = if is_multiline {

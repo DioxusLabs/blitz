@@ -59,7 +59,7 @@ fn after_pseudo_styles_after_hover(incremental: bool) -> (f32, f32) {
     let styles = after
         .primary_styles()
         .expect("::after node should have styles");
-    let color_alpha = styles.clone_color().alpha;
+    let color_alpha = styles.slow_clone_color().alpha;
     let x = after.final_layout().location.x;
     (color_alpha, x)
 }

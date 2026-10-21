@@ -193,7 +193,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         let background_color = {
             let html_color = root_element
                 .primary_styles()
-                .map(|s| s.clone_background_color())
+                .map(|s| s.slow_clone_background_color())
                 .unwrap_or(GenericColor::TRANSPARENT_BLACK);
             if html_color == GenericColor::TRANSPARENT_BLACK {
                 root_element
@@ -207,13 +207,13 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                     })
                     .and_then(|body| body.primary_styles())
                     .map(|style| {
-                        let current_color = style.clone_color();
+                        let current_color = style.slow_clone_color();
                         style
-                            .clone_background_color()
+                            .slow_clone_background_color()
                             .resolve_to_absolute(&current_color)
                     })
             } else {
-                let current_color = root_element.primary_styles().unwrap().clone_color();
+                let current_color = root_element.primary_styles().unwrap().slow_clone_color();
                 Some(html_color.resolve_to_absolute(&current_color))
             }
         };
@@ -327,13 +327,17 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         // `contain: paint` (and stronger values like `strict`/`content`) clips the element's
         // contents to its padding box. Paint containment does not apply to non-atomic inlines
         // or internal table boxes other than table-cell.
-        let contain_paint = styles.get_box().clone_contain().contains(Contain::PAINT) && {
-            let display = styles.clone_display();
-            let is_internal_table_box_other_than_cell = display.outside()
-                == DisplayOutside::InternalTable
-                && display.inside() != DisplayInside::TableCell;
-            !display.is_inline_flow() && !is_internal_table_box_other_than_cell
-        };
+        let contain_paint = styles
+            .get_box()
+            .slow_clone_contain()
+            .contains(Contain::PAINT)
+            && {
+                let display = styles.slow_clone_display();
+                let is_internal_table_box_other_than_cell = display.outside()
+                    == DisplayOutside::InternalTable
+                    && display.inside() != DisplayInside::TableCell;
+                !display.is_inline_flow() && !is_internal_table_box_other_than_cell
+            };
         let is_image = node
             .element_data()
             .and_then(|e| e.raster_image_data())
@@ -1101,7 +1105,7 @@ impl ElementCx<'_, '_> {
 
         // An SVG with an aspect ratio but no natural size is sized by the default sizing
         // algorithm, which for `none` and `scale-down` contains it within the content box.
-        let object_fit = match self.style.clone_object_fit() {
+        let object_fit = match self.style.slow_clone_object_fit() {
             ObjectFit::None | ObjectFit::ScaleDown
                 if svg.intrinsic_width().is_none()
                     && svg.intrinsic_height().is_none()
@@ -1111,7 +1115,7 @@ impl ElementCx<'_, '_> {
             }
             object_fit => object_fit,
         };
-        let object_position = self.style.clone_object_position();
+        let object_position = self.style.slow_clone_object_position();
 
         // Apply object-fit algorithm
         let container_size = taffy::Size { width, height };
@@ -1180,9 +1184,9 @@ impl ElementCx<'_, '_> {
             let x = self.frame.content_box.origin().x;
             let y = self.frame.content_box.origin().y;
 
-            let object_fit = self.style.clone_object_fit();
-            let object_position = self.style.clone_object_position();
-            let image_rendering = self.style.clone_image_rendering();
+            let object_fit = self.style.slow_clone_object_fit();
+            let object_position = self.style.slow_clone_object_position();
+            let image_rendering = self.style.slow_clone_image_rendering();
             let quality = to_image_quality(image_rendering);
 
             // Apply object-fit algorithm

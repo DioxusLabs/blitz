@@ -310,6 +310,19 @@ rustc-hash = { workspace = true }
 # vello_common = { path = "../vello/sparse_strips/vello_common" }
 # glifo = { path = "../vello/glifo" }
 
+[patch.crates-io]
+stylo = { git = "https://github.com/servo/stylo", rev = "633f43ad86de1372fd7106d265c00ffcdf022c35" }
+stylo_traits = { git = "https://github.com/servo/stylo", rev = "633f43ad86de1372fd7106d265c00ffcdf022c35" }
+stylo_atoms = { git = "https://github.com/servo/stylo", rev = "633f43ad86de1372fd7106d265c00ffcdf022c35" }
+stylo_static_prefs = { git = "https://github.com/servo/stylo", rev = "633f43ad86de1372fd7106d265c00ffcdf022c35" }
+stylo_dom = { git = "https://github.com/servo/stylo", rev = "633f43ad86de1372fd7106d265c00ffcdf022c35" }
+stylo_derive = { git = "https://github.com/servo/stylo", rev = "633f43ad86de1372fd7106d265c00ffcdf022c35" }
+stylo_malloc_size_of = { git = "https://github.com/servo/stylo", rev = "633f43ad86de1372fd7106d265c00ffcdf022c35" }
+selectors = { git = "https://github.com/servo/stylo", rev = "633f43ad86de1372fd7106d265c00ffcdf022c35" }
+servo_arc = { git = "https://github.com/servo/stylo", rev = "633f43ad86de1372fd7106d265c00ffcdf022c35" }
+to_shmem = { git = "https://github.com/servo/stylo", rev = "633f43ad86de1372fd7106d265c00ffcdf022c35" }
+to_shmem_derive = { git = "https://github.com/servo/stylo", rev = "633f43ad86de1372fd7106d265c00ffcdf022c35" }
+
 # [patch.crates-io]
 # style = { path = "../stylo/style", package = "stylo" }
 # style_traits = { path = "../stylo/style_traits", package = "stylo_traits" }
