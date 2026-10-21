@@ -1,6 +1,6 @@
 use std::{cell::RefCell, rc::Rc, sync::Arc};
 
-use blitz_dom::{BaseDocument, DocumentConfig};
+use blitz_dom::{BaseDocument, DocumentConfig, StyleThreading};
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::net::{Request, Url};
 use dioxus_native::{NodeHandle, SubDocumentAttr, prelude::*};
@@ -200,6 +200,7 @@ pub fn Toolbar(
             html_parser_provider: Some(Arc::new(HtmlProvider)),
             font_ctx: Some(tab.loader_rc().font_ctx.clone()),
             media_type: None,
+            style_threading: StyleThreading::Parallel,
             ..Default::default()
         };
         let mut document = HtmlDocument::from_html(view_source_html, config).into_inner();
