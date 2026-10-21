@@ -1,10 +1,10 @@
 use super::{ElementCx, to_image_quality, to_peniko_image};
 use crate::color::{Color, ToColorColor};
 use crate::gradient::to_peniko_gradient;
-use anyrender::PaintScene;
+use anyrender::{NonUniformRoundedRect, PaintScene};
 use blitz_dom::NodeId;
 use blitz_dom::node::{ImageData, ImageResourceData, SpecialElementData};
-use kurbo::{self, Affine, BezPath, Point, Rect, Shape, Size, Vec2};
+use kurbo::{self, Affine, Point, Rect, Shape, Size, Vec2};
 use peniko::{self, Fill};
 use style::{
     computed_values::border_collapse::T as BorderCollapse,
@@ -169,11 +169,11 @@ impl ElementCx<'_, '_> {
     }
 
     /// The path of the given CSS box model box for this element
-    pub(super) fn box_path(&self, css_box: BoxModelBox) -> BezPath {
+    pub(super) fn box_path(&self, css_box: BoxModelBox) -> NonUniformRoundedRect {
         match css_box {
-            BoxModelBox::BorderBox => self.frame.border_box_path(),
-            BoxModelBox::PaddingBox => self.frame.padding_box_path(),
-            BoxModelBox::ContentBox => self.frame.content_box_path(),
+            BoxModelBox::BorderBox => self.frame.border_box_shape(),
+            BoxModelBox::PaddingBox => self.frame.padding_box_shape(),
+            BoxModelBox::ContentBox => self.frame.content_box_shape(),
         }
     }
 
@@ -330,7 +330,7 @@ impl ElementCx<'_, '_> {
         }
     }
 
-    fn draw_solid_bg(&self, scene: &mut impl PaintScene, shape: &BezPath) {
+    fn draw_solid_bg(&self, scene: &mut impl PaintScene, shape: &impl Shape) {
         let current_color = self.style.clone_color();
         let background_color = &self.style.get_background().background_color;
         let bg_color = background_color

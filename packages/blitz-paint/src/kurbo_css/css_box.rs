@@ -1,3 +1,4 @@
+use anyrender::NonUniformRoundedRect;
 use kurbo::{Arc, BezPath, Insets, PathEl, Point, Rect, Shape as _, Vec2};
 use std::{f64::consts::FRAC_PI_2, f64::consts::PI};
 
@@ -209,6 +210,47 @@ impl CssBox {
         path
     }
 
+    /// The frame's border box as a shape that backends can recognise as a (rounded) rect
+    pub fn border_box_shape(&self) -> NonUniformRoundedRect {
+        self.box_shape(CssBoxKind::BorderBox)
+    }
+
+    /// The frame's padding box as a shape that backends can recognise as a (rounded) rect
+    pub fn padding_box_shape(&self) -> NonUniformRoundedRect {
+        self.box_shape(CssBoxKind::PaddingBox)
+    }
+
+    /// The frame's content box as a shape that backends can recognise as a (rounded) rect
+    pub fn content_box_shape(&self) -> NonUniformRoundedRect {
+        self.box_shape(CssBoxKind::ContentBox)
+    }
+
+    fn box_shape(&self, kind: CssBoxKind) -> NonUniformRoundedRect {
+        use Corner::*;
+        let rect = match kind {
+            CssBoxKind::OutlineBox => self.outline_box,
+            CssBoxKind::BorderBox => self.border_box,
+            CssBoxKind::PaddingBox => self.padding_box,
+            CssBoxKind::ContentBox => self.content_box,
+        };
+        let radii = |corner| {
+            if self.is_sharp(corner, kind) {
+                Vec2::ZERO
+            } else {
+                self.ellipse(corner, kind).1
+            }
+        };
+        NonUniformRoundedRect::new(
+            rect,
+            anyrender::NonUniformRoundedRectRadii {
+                top_left: radii(TopLeft),
+                top_right: radii(TopRight),
+                bottom_right: radii(BottomRight),
+                bottom_left: radii(BottomLeft),
+            },
+        )
+    }
+
     /// Construct a bezpath drawing the frame border
     pub fn border_box_path(&self) -> BezPath {
         let mut path = BezPath::new();
@@ -286,42 +328,6 @@ impl CssBox {
         }
     }
 
-    /// Construct a bezpath drawing the frame
-    pub fn shadow_clip(&self, shadow_rect: Rect) -> BezPath {
-        let mut path = BezPath::new();
-        self.shadow_clip_shape(&mut path, shadow_rect);
-        path
-    }
-
-    fn shadow_clip_shape(&self, path: &mut BezPath, shadow_rect: Rect) {
-        use Corner::*;
-
-        for corner in [TopLeft, TopRight, BottomRight, BottomLeft] {
-            path.insert_point(self.shadow_clip_corner(corner, shadow_rect));
-        }
-
-        if self.is_sharp(TopLeft, CssBoxKind::BorderBox) {
-            path.move_to(self.corner(TopLeft, CssBoxKind::BorderBox));
-        } else {
-            const TOLERANCE: f64 = 0.1;
-            let arc = self.corner_arc(TopLeft, CssBoxKind::BorderBox, Direction::Anticlockwise);
-            let elements = arc.path_elements(TOLERANCE);
-            path.extend(elements);
-        }
-
-        for corner in [/*TopLeft, */ BottomLeft, BottomRight, TopRight] {
-            if self.is_sharp(corner, CssBoxKind::BorderBox) {
-                path.insert_point(self.corner(corner, CssBoxKind::BorderBox));
-            } else {
-                path.insert_arc(self.corner_arc(
-                    corner,
-                    CssBoxKind::BorderBox,
-                    Direction::Anticlockwise,
-                ));
-            }
-        }
-    }
-
     fn corner(&self, corner: Corner, css_box: CssBoxKind) -> Point {
         let Rect { x0, y0, x1, y1 } = match css_box {
             CssBoxKind::OutlineBox => self.outline_box,
@@ -335,17 +341,6 @@ impl CssBox {
             Corner::BottomLeft => Point { x: x0, y: y1 },
             Corner::BottomRight => Point { x: x1, y: y1 },
         }
-    }
-
-    fn shadow_clip_corner(&self, corner: Corner, shadow_rect: Rect) -> Point {
-        let (x, y) = match corner {
-            Corner::TopLeft => (shadow_rect.x0, shadow_rect.y0),
-            Corner::TopRight => (shadow_rect.x1, shadow_rect.y0),
-            Corner::BottomRight => (shadow_rect.x1, shadow_rect.y1),
-            Corner::BottomLeft => (shadow_rect.x0, shadow_rect.y1),
-        };
-
-        Point { x, y }
     }
 
     /// Check if the corner width is smaller than the radius.
