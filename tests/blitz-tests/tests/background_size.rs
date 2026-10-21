@@ -7,6 +7,7 @@ use blitz_dom::node::{ImageData, RasterImageData};
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_paint::paint_scene;
 use blitz_traits::shell::{ColorScheme, Viewport};
+use blitz_traits::time::Timestamp;
 use std::sync::Arc;
 
 /// Renders a 100x100 div with the given background shorthand, injecting a
@@ -26,7 +27,7 @@ fn pixel(background: &str, x: usize, y: usize) -> [u8; 3] {
             ..Default::default()
         },
     );
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
     let box_id = doc.query_selector("#box").unwrap().expect("#box");
     {
         // 200x100 solid red RGBA
@@ -41,7 +42,7 @@ fn pixel(background: &str, x: usize, y: usize) -> [u8; 3] {
             layer.image = ImageData::Raster(RasterImageData::new(200, 100, Arc::new(data.clone())));
         }
     }
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
     let buffer = render_to_buffer::<VelloCpuImageRenderer, _>(
         |scene| paint_scene(scene, doc.as_mut(), 1.0, 100, 100, 0, 0),
         100,

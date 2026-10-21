@@ -6,6 +6,7 @@
 use blitz_dom::DocumentConfig;
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::shell::{ColorScheme, Viewport};
+use blitz_traits::time::Timestamp;
 use std::sync::Arc;
 
 #[test]
@@ -27,7 +28,7 @@ fn inline_flex_scroller_reports_overflowing_items() {
             ..Default::default()
         },
     );
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
 
     let scroll_size = |sel: &str| {
         let id = doc.query_selector(sel).unwrap().expect(sel);

@@ -16,6 +16,7 @@ use blitz_html::HtmlDocument;
 use blitz_net::Provider;
 use blitz_paint::paint_scene;
 use blitz_traits::shell::{ColorScheme, Viewport};
+use blitz_traits::time::Timestamp;
 use reqwest::Url;
 use rustc_hash::FxHashMap;
 use std::sync::Arc;
@@ -103,12 +104,12 @@ async fn main() {
 
     // Wait for assets
     loop {
-        document.resolve(0.0);
+        document.resolve(Timestamp::ZERO);
         if net.is_empty() {
             break;
         }
     }
-    document.as_mut().resolve(0.0);
+    document.as_mut().resolve(Timestamp::ZERO);
 
     println!(
         "Loaded {url_string} at {width}x{height}@{scale}x; running {iters} paint iterations ({backend} backend)"

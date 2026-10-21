@@ -7,6 +7,7 @@ use blitz_dom::DocumentConfig;
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_paint::paint_scene;
 use blitz_traits::shell::{ColorScheme, Viewport};
+use blitz_traits::time::Timestamp;
 use std::sync::Arc;
 
 fn center_pixel(html: &str) -> [u8; 3] {
@@ -18,7 +19,7 @@ fn center_pixel(html: &str) -> [u8; 3] {
             ..Default::default()
         },
     );
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
     let buffer = render_to_buffer::<VelloCpuImageRenderer, _>(
         |scene| paint_scene(scene, &mut doc, 1.0, 100, 100, 0, 0),
         100,

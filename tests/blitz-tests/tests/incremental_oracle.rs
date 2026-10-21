@@ -22,6 +22,7 @@ use blitz_dom::{DocumentConfig, LocalName, QualName, ns};
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::node_id::NodeId;
 use blitz_traits::shell::{ColorScheme, Viewport};
+use blitz_traits::time::Timestamp;
 use std::sync::Arc;
 
 fn qname(local: &str) -> QualName {
@@ -46,7 +47,7 @@ fn make_doc(html: &str, incremental: bool) -> HtmlDocument {
             ..Default::default()
         },
     );
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
     doc
 }
 
@@ -340,7 +341,7 @@ impl Oracle {
     fn step(&mut self, name: &str, mutation: impl Fn(&mut HtmlDocument)) {
         for doc in [&mut self.inc, &mut self.non] {
             mutation(doc);
-            doc.resolve(0.0);
+            doc.resolve(Timestamp::ZERO);
         }
         self.check(name);
     }
@@ -689,9 +690,9 @@ fn paint_tree_z_index_and_stacking_contexts() {
 fn non_incremental_resolve_clears_all_damage() {
     let mut doc = make_doc(FIXTURE, false);
     assert_no_damage(&doc, "initial");
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
     assert_no_damage(&doc, "idle resolve");
     set_style(&mut doc, "#block", "width: 100px;");
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
     assert_no_damage(&doc, "after mutation");
 }

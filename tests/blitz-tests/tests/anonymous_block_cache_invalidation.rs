@@ -12,6 +12,7 @@ use blitz_dom::DocumentConfig;
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::node_id::NodeId;
 use blitz_traits::shell::{ColorScheme, Viewport};
+use blitz_traits::time::Timestamp;
 use std::sync::Arc;
 
 fn make_doc(html: &str, incremental: bool) -> HtmlDocument {
@@ -24,7 +25,7 @@ fn make_doc(html: &str, incremental: bool) -> HtmlDocument {
         },
     );
     doc.set_incremental_layout(incremental);
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
     doc
 }
 
@@ -68,7 +69,7 @@ fn hover(doc: &mut HtmlDocument, x: f32, y: f32, expected: &str, incremental: bo
         Some(id(doc, expected)),
         "hover target (incremental={incremental})"
     );
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
 }
 
 /// Hovering `#ib` changes only its height: a RELAYOUT-only style change on

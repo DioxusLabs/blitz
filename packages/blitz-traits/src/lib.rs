@@ -7,6 +7,8 @@ pub mod navigation;
 pub mod net;
 pub mod node_id;
 pub mod shell;
+pub mod time;
 
 pub use node_id::NodeId;
 pub use smol_str::SmolStr;
+pub use time::{Clock, SystemClock, Timestamp};

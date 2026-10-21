@@ -1,3 +1,4 @@
+use blitz_traits::time::Timestamp;
 use std::sync::Arc;
 
 use blitz_dom::{DocumentConfig, LocalName, QualName, ns};
@@ -36,5 +37,5 @@ fn detached_attribute_before_insertion_resolves_with_descendant_selector() {
     mutator.append_children(body_id, &[header]);
     drop(mutator);
 
-    doc.resolve(0.0);
+    doc.resolve(Timestamp::ZERO);
 }
