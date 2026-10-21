@@ -389,6 +389,7 @@ pub struct BaseDocument {
     /// Pending CSS animation and transition events queued during style resolution
     #[allow(dead_code)]
     pub(crate) pending_animation_events: Vec<QueuedAnimationEvent>,
+    pub(crate) completed_zero_duration_animations: HashSet<(NodeId, String)>,
 
     // Tracks in-flight "critical" resources (e.g. stylesheets linked from the `<head>`),
     // keyed by request id
@@ -559,6 +560,7 @@ impl BaseDocument {
             pending_images: HashMap::new(),
             pending_style_image_nodes: Vec::new(),
             pending_animation_events: Vec::new(),
+            completed_zero_duration_animations: HashSet::new(),
             pending_critical_resources: HashSet::new(),
             controls_to_form: HashMap::new(),
             net_provider,
@@ -695,6 +697,9 @@ impl BaseDocument {
     pub fn flush_animation_events<F: FnMut(DomEvent)>(&mut self, mut dispatch: F) {
         let events = std::mem::take(&mut self.pending_animation_events);
         for queued in events {
+            if self.get_node(queued.node_id).is_none() {
+                continue;
+            }
             let dom_event = DomEvent::new(queued.node_id, queued.event);
             dispatch(dom_event);
         }
@@ -3493,10 +3498,12 @@ mod font_face_override_tests {
 #[cfg(test)]
 mod animation_tests {
     use super::*;
+    use crate::{Attribute, qual_name};
     use blitz_traits::SmolStr;
     use blitz_traits::events::{
         BlitzAnimationEvent, BlitzTransitionEvent, DomEventData, EventState,
     };
+    use blitz_traits::shell::ColorScheme;
 
     #[test]
     fn test_flush_animation_events_lock_free_drain() {
@@ -3582,119 +3589,37 @@ mod animation_tests {
     }
 
     #[test]
-    fn test_zero_duration_sequencing() {
+    fn test_missing_node_panic_guard() {
         let mut doc = BaseDocument::new(DocumentConfig::default());
-        let target = doc.root_node().id;
+        let non_existent_node_id = NodeId::from_u64(99999);
         doc.pending_animation_events.push(QueuedAnimationEvent {
-            node_id: target,
+            node_id: non_existent_node_id,
             event: DomEventData::AnimationStart(BlitzAnimationEvent {
-                animation_name: "instant-fade".to_string(),
-                elapsed_time: 0.0,
-                pseudo_element: SmolStr::default(),
-            }),
-        });
-        doc.pending_animation_events.push(QueuedAnimationEvent {
-            node_id: target,
-            event: DomEventData::AnimationEnd(BlitzAnimationEvent {
-                animation_name: "instant-fade".to_string(),
+                animation_name: "ghost".to_string(),
                 elapsed_time: 0.0,
                 pseudo_element: SmolStr::default(),
             }),
         });
 
-        let mut dispatched = Vec::new();
-        doc.flush_animation_events(|evt| dispatched.push(evt));
+        // Test BaseDocument::flush_animation_events
+        let mut received = Vec::new();
+        doc.flush_animation_events(|evt| received.push(evt));
+        assert!(received.is_empty());
+        assert!(doc.pending_animation_events.is_empty());
 
-        assert_eq!(dispatched.len(), 2);
-        assert_eq!(dispatched[0].data.name(), "animationstart");
-        if let DomEventData::AnimationStart(ref start) = dispatched[0].data {
-            assert_eq!(start.elapsed_time, 0.0);
-            assert_eq!(start.animation_name, "instant-fade");
-        } else {
-            panic!("Expected AnimationStart");
-        }
-
-        assert_eq!(dispatched[1].data.name(), "animationend");
-        if let DomEventData::AnimationEnd(ref end) = dispatched[1].data {
-            assert_eq!(end.elapsed_time, 0.0);
-            assert_eq!(end.animation_name, "instant-fade");
-        } else {
-            panic!("Expected AnimationEnd");
-        }
-    }
-
-    #[test]
-    fn test_negative_delay_elapsed_time() {
-        let mut doc = BaseDocument::new(DocumentConfig::default());
-        let target = doc.root_node().id;
-        let elapsed = 0.5;
+        // Test EventDriver::flush_animation_events
         doc.pending_animation_events.push(QueuedAnimationEvent {
-            node_id: target,
+            node_id: non_existent_node_id,
             event: DomEventData::AnimationStart(BlitzAnimationEvent {
-                animation_name: "delayed-anim".to_string(),
-                elapsed_time: elapsed,
+                animation_name: "ghost".to_string(),
+                elapsed_time: 0.0,
                 pseudo_element: SmolStr::default(),
             }),
         });
-
-        let mut dispatched = Vec::new();
-        doc.flush_animation_events(|evt| dispatched.push(evt));
-
-        assert_eq!(dispatched.len(), 1);
-        if let DomEventData::AnimationStart(ref data) = dispatched[0].data {
-            assert_eq!(data.elapsed_time, 0.5);
-            assert_eq!(data.animation_name, "delayed-anim");
-        } else {
-            panic!("Expected AnimationStart");
-        }
-    }
-
-    #[test]
-    fn test_cancellation_event() {
-        let mut doc = BaseDocument::new(DocumentConfig::default());
-        let target = doc.root_node().id;
-        doc.pending_animation_events.push(QueuedAnimationEvent {
-            node_id: target,
-            event: DomEventData::AnimationCancel(BlitzAnimationEvent {
-                animation_name: "cancelled-anim".to_string(),
-                elapsed_time: 1.5,
-                pseudo_element: SmolStr::new("::after"),
-            }),
-        });
-        doc.pending_animation_events.push(QueuedAnimationEvent {
-            node_id: target,
-            event: DomEventData::TransitionCancel(BlitzTransitionEvent {
-                property_name: "transform".to_string(),
-                elapsed_time: 0.8,
-                pseudo_element: SmolStr::default(),
-            }),
-        });
-
-        let mut dispatched = Vec::new();
-        doc.flush_animation_events(|evt| dispatched.push(evt));
-
-        assert_eq!(dispatched.len(), 2);
-        assert_eq!(dispatched[0].data.name(), "animationcancel");
-        assert!(dispatched[0].bubbles);
-        assert!(!dispatched[0].cancelable);
-        if let DomEventData::AnimationCancel(ref data) = dispatched[0].data {
-            assert_eq!(data.animation_name, "cancelled-anim");
-            assert_eq!(data.elapsed_time, 1.5);
-            assert_eq!(data.pseudo_element.as_str(), "::after");
-        } else {
-            panic!("Expected AnimationCancel");
-        }
-
-        assert_eq!(dispatched[1].data.name(), "transitioncancel");
-        assert!(dispatched[1].bubbles);
-        assert!(!dispatched[1].cancelable);
-        if let DomEventData::TransitionCancel(ref data) = dispatched[1].data {
-            assert_eq!(data.property_name, "transform");
-            assert_eq!(data.elapsed_time, 0.8);
-            assert_eq!(data.pseudo_element.as_str(), "");
-        } else {
-            panic!("Expected TransitionCancel");
-        }
+        let collector = EventCollector::default();
+        let mut driver = EventDriver::new(&mut doc, collector.clone());
+        driver.flush_animation_events();
+        assert!(collector.events.borrow().is_empty());
     }
 
     #[test]
@@ -3714,5 +3639,284 @@ mod animation_tests {
         Document::flush_animation_events(&mut doc);
 
         assert_eq!(doc.pending_animation_events.len(), 0);
+    }
+
+    #[test]
+    fn test_real_css_transition_lifecycle() {
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
+            ..Default::default()
+        });
+        let root_id = doc.root_node().id;
+        let style = |value: &str| Attribute {
+            name: qual_name!("style"),
+            value: value.to_string(),
+        };
+        let div_id = {
+            let mut mutator = doc.mutate();
+            let div = mutator.create_element(
+                qual_name!("div"),
+                vec![style("transition: opacity 0.2s linear; opacity: 1;")],
+            );
+            mutator.append_children(root_id, &[div]);
+            div
+        };
+        // Initial resolve
+        doc.resolve(0.0);
+        let mut events = Vec::new();
+        doc.flush_animation_events(|e| events.push(e));
+        assert!(events.is_empty());
+
+        // Change opacity to trigger transition
+        {
+            let mut mutator = doc.mutate();
+            mutator.set_style_property(div_id, "opacity", "0");
+        }
+        doc.resolve(0.0);
+        doc.flush_animation_events(|e| events.push(e));
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].data.name(), "transitionrun");
+        assert_eq!(events[1].data.name(), "transitionstart");
+
+        // Advance to 0.2s: transition finishes
+        events.clear();
+        doc.resolve(0.2);
+        doc.flush_animation_events(|e| events.push(e));
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].data.name(), "transitionend");
+        if let DomEventData::TransitionEnd(ref end) = events[0].data {
+            assert_eq!(end.property_name, "opacity");
+            assert_eq!(end.elapsed_time, 0.2);
+        } else {
+            panic!("Expected TransitionEnd");
+        }
+    }
+
+    #[test]
+    fn test_real_css_transition_negative_delay() {
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
+            ..Default::default()
+        });
+        let root_id = doc.root_node().id;
+        let style = |value: &str| Attribute {
+            name: qual_name!("style"),
+            value: value.to_string(),
+        };
+        let div_id = {
+            let mut mutator = doc.mutate();
+            let div = mutator.create_element(
+                qual_name!("div"),
+                vec![style("transition: opacity 0.2s linear -0.05s; opacity: 1;")],
+            );
+            mutator.append_children(root_id, &[div]);
+            div
+        };
+        doc.resolve(0.0);
+
+        {
+            let mut mutator = doc.mutate();
+            mutator.set_style_property(div_id, "opacity", "0");
+        }
+        doc.resolve(0.0);
+        let mut events = Vec::new();
+        doc.flush_animation_events(|e| events.push(e));
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].data.name(), "transitionrun");
+        assert_eq!(events[1].data.name(), "transitionstart");
+        if let DomEventData::TransitionStart(ref start) = events[1].data {
+            assert!((start.elapsed_time - 0.05).abs() < 1e-4);
+        } else {
+            panic!("Expected TransitionStart");
+        }
+    }
+
+    #[test]
+    fn test_real_css_transition_cancellation_on_detach() {
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
+            ..Default::default()
+        });
+        let root_id = doc.root_node().id;
+        let style = |value: &str| Attribute {
+            name: qual_name!("style"),
+            value: value.to_string(),
+        };
+        let div_id = {
+            let mut mutator = doc.mutate();
+            let div = mutator.create_element(
+                qual_name!("div"),
+                vec![style("transition: opacity 1.0s linear; opacity: 1;")],
+            );
+            mutator.append_children(root_id, &[div]);
+            div
+        };
+        doc.resolve(0.0);
+
+        {
+            let mut mutator = doc.mutate();
+            mutator.set_style_property(div_id, "opacity", "0");
+        }
+        doc.resolve(0.0);
+        let mut events = Vec::new();
+        doc.flush_animation_events(|e| events.push(e));
+        assert_eq!(events.len(), 2); // run and start
+
+        // Detach div from tree
+        {
+            let mut mutator = doc.mutate();
+            mutator.remove_node(div_id);
+        }
+        events.clear();
+        doc.resolve(0.5);
+        doc.flush_animation_events(|e| events.push(e));
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].data.name(), "transitioncancel");
+        if let DomEventData::TransitionCancel(ref cancel) = events[0].data {
+            assert_eq!(cancel.property_name, "opacity");
+            assert!((cancel.elapsed_time - 0.5).abs() < 1e-4);
+        } else {
+            panic!("Expected TransitionCancel");
+        }
+    }
+
+    #[test]
+    fn test_real_css_animation_zero_duration_sequencing() {
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
+            ..Default::default()
+        });
+        let sheet = UserAgentStylesheet::parse(
+            "@keyframes instant-fade { from { opacity: 0; } to { opacity: 1; } }",
+        );
+        doc.add_user_agent_stylesheet(sheet);
+        let root_id = doc.root_node().id;
+        let style = |value: &str| Attribute {
+            name: qual_name!("style"),
+            value: value.to_string(),
+        };
+        {
+            let mut mutator = doc.mutate();
+            let div = mutator.create_element(
+                qual_name!("div"),
+                vec![style("animation: instant-fade 0s;")],
+            );
+            mutator.append_children(root_id, &[div]);
+        }
+
+        doc.resolve(0.0);
+        let mut events = Vec::new();
+        doc.flush_animation_events(|e| events.push(e));
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].data.name(), "animationstart");
+        assert_eq!(events[1].data.name(), "animationend");
+        if let DomEventData::AnimationStart(ref start) = events[0].data {
+            assert_eq!(start.animation_name, "instant-fade");
+            assert_eq!(start.elapsed_time, 0.0);
+        }
+        if let DomEventData::AnimationEnd(ref end) = events[1].data {
+            assert_eq!(end.animation_name, "instant-fade");
+            assert_eq!(end.elapsed_time, 0.0);
+        }
+    }
+
+    #[test]
+    fn test_real_css_animation_multi_iteration_coalescing() {
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
+            ..Default::default()
+        });
+        let sheet = UserAgentStylesheet::parse(
+            "@keyframes pulse { from { opacity: 0; } to { opacity: 1; } }",
+        );
+        doc.add_user_agent_stylesheet(sheet);
+        let root_id = doc.root_node().id;
+        let style = |value: &str| Attribute {
+            name: qual_name!("style"),
+            value: value.to_string(),
+        };
+        {
+            let mut mutator = doc.mutate();
+            let div = mutator.create_element(
+                qual_name!("div"),
+                vec![style("animation: pulse 0.1s linear 2;")],
+            );
+            mutator.append_children(root_id, &[div]);
+        }
+
+        // Creation at t=0.0
+        doc.resolve(0.0);
+        let mut events = Vec::new();
+        doc.flush_animation_events(|e| events.push(e));
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].data.name(), "animationstart");
+
+        // Advance to t=0.1 (iteration 1 completes, iteration 2 begins)
+        events.clear();
+        doc.resolve(0.1);
+        doc.flush_animation_events(|e| events.push(e));
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].data.name(), "animationiteration");
+        if let DomEventData::AnimationIteration(ref iter) = events[0].data {
+            assert!((iter.elapsed_time - 0.1).abs() < 1e-4);
+        }
+
+        // Advance to t=0.2 (iteration 2 completes and animation finishes)
+        // Per W3C spec, animationend fires and animationiteration MUST BE SUPPRESSED!
+        events.clear();
+        doc.resolve(0.2);
+        doc.flush_animation_events(|e| events.push(e));
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].data.name(), "animationend");
+        if let DomEventData::AnimationEnd(ref end) = events[0].data {
+            assert!((end.elapsed_time - 0.2).abs() < 1e-4);
+        }
+    }
+
+    #[test]
+    fn test_real_css_animation_cancellation_on_detach() {
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
+            ..Default::default()
+        });
+        let sheet = UserAgentStylesheet::parse(
+            "@keyframes inf-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }",
+        );
+        doc.add_user_agent_stylesheet(sheet);
+        let root_id = doc.root_node().id;
+        let style = |value: &str| Attribute {
+            name: qual_name!("style"),
+            value: value.to_string(),
+        };
+        let div_id = {
+            let mut mutator = doc.mutate();
+            let div = mutator.create_element(
+                qual_name!("div"),
+                vec![style("animation: inf-spin 1.0s linear infinite;")],
+            );
+            mutator.append_children(root_id, &[div]);
+            div
+        };
+
+        doc.resolve(0.0);
+        let mut events = Vec::new();
+        doc.flush_animation_events(|e| events.push(e));
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].data.name(), "animationstart");
+
+        // Detach div
+        {
+            let mut mutator = doc.mutate();
+            mutator.remove_node(div_id);
+        }
+        events.clear();
+        doc.resolve(0.5);
+        doc.flush_animation_events(|e| events.push(e));
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].data.name(), "animationcancel");
+        if let DomEventData::AnimationCancel(ref cancel) = events[0].data {
+            assert_eq!(cancel.animation_name, "inf-spin");
+            assert!((cancel.elapsed_time - 0.5).abs() < 1e-4);
+        }
     }
 }

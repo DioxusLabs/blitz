@@ -6,8 +6,6 @@ use std::cell::RefCell;
 use debug_timer::debug_timer;
 use kurbo::{Affine, Rect};
 use parley::LayoutContext;
-use selectors::Element as _;
-use style::dom::TDocument;
 
 #[cfg(feature = "parallel-construct")]
 use rayon::prelude::*;
@@ -37,15 +35,6 @@ use crate::{
 impl BaseDocument {
     /// Restyle the tree and then relayout it
     pub fn resolve(&mut self, current_time_for_animations: f64) {
-        if TDocument::as_node(&self.root_node())
-            .first_element_child()
-            .is_none()
-        {
-            #[cfg(feature = "tracing")]
-            tracing::warn!("No DOM - not resolving");
-            return;
-        }
-
         // Process messages that have been sent to our message channel (e.g. loaded resource)
         self.handle_messages();
 
@@ -72,7 +61,6 @@ impl BaseDocument {
                 .retain(|_, last| last.elapsed() < FADE_DELAY + FADE_DURATION);
         }
 
-        let root_node_id = self.root_element().id;
         debug_timer!(timer, feature = "log-phase-times");
 
         // Apply any device changes (viewport resize, zoom, color-scheme, etc)
@@ -82,6 +70,13 @@ impl BaseDocument {
         // we need to resolve stylist first since it will need to drive our layout bits
         self.resolve_stylist(current_time_for_animations);
         timer.record_time("style");
+
+        let Some(root_node) = self.try_root_element() else {
+            #[cfg(feature = "tracing")]
+            tracing::warn!("No DOM - not resolving layout");
+            return;
+        };
+        let root_node_id = root_node.id;
 
         // Non-incremental mode is "every node is damaged every frame": mark the
         // whole tree and let the same damage pipeline reconstruct and relayout
