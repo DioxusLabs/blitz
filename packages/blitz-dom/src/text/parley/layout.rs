@@ -278,7 +278,11 @@ impl TextLayout {
 
     /// Where the lines put each inline box.
     pub(super) fn box_placements(&self) -> impl Iterator<Item = Placement> + '_ {
-        self.layout.lines().flat_map(|line| {
+        // Walking a line's items builds every glyph run on it, so lines are only walked
+        // when there are boxes to find.
+        let has_inline_boxes = self.layout.inline_boxes().len() > 0;
+        let lines = has_inline_boxes.then(|| self.layout.lines());
+        lines.into_iter().flatten().flat_map(|line| {
             let metrics = *line.metrics();
             line.items().filter_map(move |item| match item {
                 parley::layout::PositionedLayoutItem::InlineBox(ibox) => Some(Placement {
