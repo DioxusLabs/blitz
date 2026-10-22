@@ -117,6 +117,10 @@ impl DocumentText for TextContext {
         let collection = base.clone().with_layer(document.snapshot());
         let mut cx = Context::with_shared_fonts(collection.clone(), given.shared.clone());
         cx.set_calc_resolver(Some(Box::new(super::calc::StyloCalc)));
+        // `dominant-baseline` aligns inline boxes, as CSS Inline 3 has it.
+        let mut config = *cx.config();
+        config.dominant_baseline = winkin::config::DominantBaselines::Applied;
+        cx.set_config(config);
         Self {
             cx,
             generation: 0,

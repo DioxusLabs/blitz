@@ -882,15 +882,7 @@ fn line_group(computed: &ComputedValues, scale: f32) -> LineGroup {
             StyloLineHeight::Length(length) => LineHeight::Px(length.0.px() * scale),
         },
         vertical_align: vertical_align(computed, scale),
-        dominant_baseline: match computed.slow_clone_dominant_baseline() {
-            StyloDominantBaseline::Alphabetic => DominantBaseline::Alphabetic,
-            StyloDominantBaseline::Ideographic => DominantBaseline::Ideographic,
-            StyloDominantBaseline::Central | StyloDominantBaseline::Middle => {
-                DominantBaseline::Central
-            }
-            StyloDominantBaseline::Mathematical => DominantBaseline::Mathematical,
-            _ => DominantBaseline::Auto,
-        },
+        dominant_baseline: dominant_baseline(computed),
         // A sink left out, or `drop`, is the size, floored; `raise` is 1.
         initial_letter: if initial_letter.size > 0.0 {
             InitialLetter {
@@ -1020,6 +1012,20 @@ fn vertical_align(computed: &ComputedValues, scale: f32) -> VerticalAlign {
         AlignmentBaseline::TextBottom => VerticalAlign::TextBottom,
         AlignmentBaseline::Middle => VerticalAlign::Middle,
         _ => VerticalAlign::Baseline,
+    }
+}
+
+/// `dominant-baseline`, apart from the baselines `vertical-align` cannot name.
+///
+/// Servo builds of Stylo parse `alignment-baseline` as `baseline`,
+/// `text-bottom`, `middle` and `text-top` only, so the other baselines count
+/// as `auto` here too: a box aligns by no baseline its children could not.
+fn dominant_baseline(computed: &ComputedValues) -> DominantBaseline {
+    match computed.slow_clone_dominant_baseline() {
+        StyloDominantBaseline::TextBottom => DominantBaseline::TextBottom,
+        StyloDominantBaseline::Middle => DominantBaseline::Middle,
+        StyloDominantBaseline::TextTop => DominantBaseline::TextTop,
+        _ => DominantBaseline::Auto,
     }
 }
 
