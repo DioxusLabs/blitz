@@ -437,9 +437,11 @@ impl BaseDocument {
         style_config::set_pref!("layout.css.writing-mode.enabled", true);
 
         // Properties that were previously enabled by the `layout.unimplemented` pref
+        style_config::set_pref!("layout.css.anchor-positioning.enabled", true);
         style_config::set_pref!("layout.css.appearance.enabled", true);
         style_config::set_pref!("layout.css.backdrop-filter.enabled", true);
         style_config::set_pref!("layout.css.contain.enabled", true);
+        style_config::set_pref!("layout.css.content.alt-text.enabled", true);
         style_config::set_pref!("layout.css.corner-shape.enabled", true);
         style_config::set_pref!("layout.css.counters.enabled", true);
         style_config::set_pref!("layout.css.font-size-adjust.enabled", true);
@@ -448,6 +450,7 @@ impl BaseDocument {
         style_config::set_pref!("layout.css.math-properties.enabled", true);
         style_config::set_pref!("layout.css.motion-path.enabled", true);
         style_config::set_pref!("layout.css.overscroll-behavior.enabled", true);
+        style_config::set_pref!("layout.css.scroll-driven-animations.enabled", true);
         style_config::set_pref!("layout.css.scroll-behavior.enabled", true);
         style_config::set_pref!("layout.css.scrollbar-styling.enabled", true);
         style_config::set_pref!("layout.css.text-decoration-inset.enabled", true);
