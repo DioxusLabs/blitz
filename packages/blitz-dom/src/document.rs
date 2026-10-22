@@ -92,6 +92,7 @@ pub(crate) fn init_stylo_prefs() {
         style_config::set_pref!("layout.css.appearance.enabled", true);
         style_config::set_pref!("layout.css.backdrop-filter.enabled", true);
         style_config::set_pref!("layout.css.contain.enabled", true);
+        style_config::set_pref!("layout.css.content.alt-text.enabled", true);
         style_config::set_pref!("layout.css.corner-shape.enabled", true);
         style_config::set_pref!("layout.css.counters.enabled", true);
         style_config::set_pref!("layout.css.font-size-adjust.enabled", true);
@@ -100,6 +101,7 @@ pub(crate) fn init_stylo_prefs() {
         style_config::set_pref!("layout.css.math-properties.enabled", true);
         style_config::set_pref!("layout.css.motion-path.enabled", true);
         style_config::set_pref!("layout.css.overscroll-behavior.enabled", true);
+        style_config::set_pref!("layout.css.scroll-driven-animations.enabled", true);
         style_config::set_pref!("layout.css.scroll-behavior.enabled", true);
         style_config::set_pref!("layout.css.scrollbar-styling.enabled", true);
         style_config::set_pref!("layout.css.text-decoration-inset.enabled", true);
@@ -2329,8 +2331,8 @@ impl BaseDocument {
         }
 
         let style = node.primary_styles()?;
-        let user_select = style.slow_clone_user_select();
-        let keyword = style.slow_clone_cursor().keyword;
+        let user_select = style.clone_user_select();
+        let keyword = style.get_cursor().keyword;
 
         // Return cursor from style if it is non-auto
         if keyword != CursorKind::Auto {

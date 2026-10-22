@@ -1,7 +1,6 @@
 use blitz_traits::node_id::NodeId;
 use core::str;
 use std::sync::Arc;
-use stylo_taffy::CopyStyleGetters;
 
 use markup5ever::{QualName, local_name, ns};
 use style::{

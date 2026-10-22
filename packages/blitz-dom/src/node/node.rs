@@ -34,7 +34,6 @@ use style::values::generics::transform::{Scale, Translate};
 use style::values::specified::box_::{DisplayInside, DisplayOutside};
 use style_dom::ElementState;
 use style_traits::values::ToCss;
-use stylo_taffy::CopyStyleGetters;
 use stylo_taffy::WritingModeExt;
 use taffy::{Cache, prelude::Layout};
 use thin_vec::ThinVec;
@@ -1444,7 +1443,7 @@ impl Node {
             return true;
         }
 
-        if !matches!(style.slow_clone_clip_path(), ClipPath::None) {
+        if !matches!(style.get_clip_path(), ClipPath::None) {
             return true;
         }
 
@@ -1522,7 +1521,7 @@ impl Node {
         // Not `layout_style()`: hit testing also reaches elements that have no computed styles
         // yet (a pointer event before the first resolve). Those count as left-to-right.
         let is_rtl = self.primary_styles().is_some_and(|style| {
-            style.clone_direction() == style::computed_values::direction::T::Rtl
+            style.slow_clone_direction() == style::computed_values::direction::T::Rtl
         });
         let (gutter_left, gutter_top) = (is_rtl, false);
         #[cfg(feature = "writing-mode")]

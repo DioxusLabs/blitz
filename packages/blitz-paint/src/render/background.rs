@@ -227,7 +227,7 @@ impl ElementCx<'_, '_> {
         let background_color = |node_id: NodeId| -> Option<Color> {
             let node = self.context.dom.get_node(node_id)?;
             let style = node.primary_styles()?;
-            let current_color = style.slow_clone_color();
+            let current_color = style.clone_color();
             let color = style
                 .get_background()
                 .background_color
@@ -323,7 +323,7 @@ impl ElementCx<'_, '_> {
     }
 
     fn draw_solid_bg(&self, scene: &mut impl PaintScene, shape: &BezPath) {
-        let current_color = self.style.slow_clone_color();
+        let current_color = self.style.clone_color();
         let background_color = &self.style.get_background().background_color;
         let bg_color = background_color
             .resolve_to_absolute(&current_color)
@@ -455,7 +455,7 @@ impl ElementCx<'_, '_> {
             return;
         };
 
-        let image_rendering = self.style.slow_clone_image_rendering();
+        let image_rendering = self.style.clone_image_rendering();
         let quality = to_image_quality(image_rendering);
 
         let (origin_rect, base_transform) = if self.layer_is_fixed(layer) {
@@ -585,7 +585,7 @@ impl ElementCx<'_, '_> {
 
         let tile_rect = Rect::new(0.0, 0.0, x.rect_len, y.rect_len);
         let bounding_box = self.frame.border_box.bounding_box();
-        let current_color = self.style.slow_clone_color();
+        let current_color = self.style.clone_color();
 
         let (gradient, gradient_transform) = to_peniko_gradient(
             gradient,

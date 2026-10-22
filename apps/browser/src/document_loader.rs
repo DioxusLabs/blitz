@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use blitz_dom::text::TextFonts as _;
-use blitz_dom::{DocumentConfig, FontContext};
+use blitz_dom::{DocumentConfig, FontContext, StyleThreading};
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::{
     net::{AbortController, AbortSignal, Request, Url},
@@ -76,6 +76,7 @@ impl DocumentLoader {
             font_ctx: Some(self.font_ctx.clone()),
             media_type: None,
             abort_signal,
+            style_threading: StyleThreading::Parallel,
             ..Default::default()
         }
     }

@@ -314,18 +314,13 @@ rustc-hash = { workspace = true }
 # writing modes, ruby, emphasis marks, line clamping and the rest of the
 # text properties winkin implements. Every crate of the stylo family is
 # patched together, or Blitz would see two `Atom` types.
-[patch.crates-io]
+[patch."https://github.com/DioxusLabs/stylo"]
 stylo = { git = "https://github.com/dfrg/stylo", branch = "style-more" }
 stylo_traits = { git = "https://github.com/dfrg/stylo", branch = "style-more" }
 stylo_atoms = { git = "https://github.com/dfrg/stylo", branch = "style-more" }
 stylo_dom = { git = "https://github.com/dfrg/stylo", branch = "style-more" }
 stylo_static_prefs = { git = "https://github.com/dfrg/stylo", branch = "style-more" }
-stylo_derive = { git = "https://github.com/dfrg/stylo", branch = "style-more" }
-stylo_malloc_size_of = { git = "https://github.com/dfrg/stylo", branch = "style-more" }
 selectors = { git = "https://github.com/dfrg/stylo", branch = "style-more" }
-servo_arc = { git = "https://github.com/dfrg/stylo", branch = "style-more" }
-to_shmem = { git = "https://github.com/dfrg/stylo", branch = "style-more" }
-to_shmem_derive = { git = "https://github.com/dfrg/stylo", branch = "style-more" }
 
 # [patch.crates-io]
 # anyrender = { path = "../anyrender/crates/anyrender" }
