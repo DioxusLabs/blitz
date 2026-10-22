@@ -34,10 +34,12 @@ pub struct CssBox {
     pub padding_box: Rect,
     pub content_box: Rect,
     pub outline_box: Rect,
+    pub outline_inner_box: Rect,
 
     pub padding_width: Insets,
     pub border_width: Insets,
     pub outline_width: f64,
+    pub outline_offset: f64,
 
     pub border_radii: NonUniformRoundedRectRadii,
 }
@@ -79,7 +81,9 @@ impl CssBox {
             border_box,
             content_box,
             outline_box,
+            outline_inner_box: border_box,
             outline_width,
+            outline_offset: 0.0,
             padding_width: padding,
             border_width: border,
             border_radii,
@@ -195,16 +199,29 @@ impl CssBox {
         )
     }
 
+    /// Move the outline away from the border box by `offset` (`outline-offset`), or into it
+    /// when the offset is negative.
+    pub fn with_outline_offset(mut self, offset: f64) -> Self {
+        self.outline_offset = offset;
+        self.outline_inner_box = self.border_box.inset(offset);
+        self.outline_box = self.border_box.inset(offset + self.outline_width);
+        self
+    }
+
     /// Construct a bezpath drawing the outline
     pub fn outline(&self) -> BezPath {
         let mut path = BezPath::new();
 
         // TODO: this has been known to produce quirky outputs with hugely rounded edges
         self.shape(&mut path, CssBoxKind::OutlineBox, Direction::Clockwise);
-        path.move_to(self.corner(Corner::TopLeft, CssBoxKind::BorderBox));
+        path.move_to(self.corner(Corner::TopLeft, CssBoxKind::OutlineInnerBox));
 
-        self.shape(&mut path, CssBoxKind::BorderBox, Direction::Anticlockwise);
-        path.move_to(self.corner(Corner::TopLeft, CssBoxKind::BorderBox));
+        self.shape(
+            &mut path,
+            CssBoxKind::OutlineInnerBox,
+            Direction::Anticlockwise,
+        );
+        path.move_to(self.corner(Corner::TopLeft, CssBoxKind::OutlineInnerBox));
 
         path
     }
@@ -325,6 +342,7 @@ impl CssBox {
     fn corner(&self, corner: Corner, css_box: CssBoxKind) -> Point {
         let Rect { x0, y0, x1, y1 } = match css_box {
             CssBoxKind::OutlineBox => self.outline_box,
+            CssBoxKind::OutlineInnerBox => self.outline_inner_box,
             CssBoxKind::BorderBox => self.border_box,
             CssBoxKind::PaddingBox => self.padding_box,
             CssBoxKind::ContentBox => self.content_box,
@@ -506,7 +524,12 @@ impl CssBox {
         }
 
         let css_box: Insets = match side {
-            OutlineBox => return false,
+            // The outline's edges round the border box's corners at a distance, so a negative
+            // offset can shrink a corner's radius away entirely.
+            OutlineBox | OutlineInnerBox => {
+                let (_, radii) = self.ellipse(corner, side);
+                return radii.x <= 0.0 || radii.y <= 0.0;
+            }
             BorderBox => return false,
             PaddingBox => self.border_width,
             ContentBox => add_insets(self.border_width, self.padding_width),
@@ -565,7 +588,8 @@ impl CssBox {
 
         let radii: Vec2 = match side {
             BorderBox => corner_radii,
-            OutlineBox => corner_radii + Vec2::new(self.outline_width, self.outline_width),
+            OutlineBox => grow_radii(corner_radii, self.outline_offset + self.outline_width),
+            OutlineInnerBox => grow_radii(corner_radii, self.outline_offset),
             PaddingBox => corner_radii - get_corner_insets(*border_width, corner),
             ContentBox => {
                 corner_radii - get_corner_insets(add_insets(*border_width, *padding_width), corner)
@@ -656,6 +680,12 @@ fn start_angle(bt_width: f64, br_width: f64, radii: Vec2) -> f64 {
     let sqrt_x = x.sqrt();
     let s = sqrt_x / (sqrt_x + SQRT_2);
     s.atan() * 2.0
+}
+
+/// The radii of a corner `by` away from the border box's edge, around the same centre: a
+/// rounded corner keeps its centre and grows or shrinks with the distance, never below zero.
+fn grow_radii(radii: Vec2, by: f64) -> Vec2 {
+    Vec2::new((radii.x + by).max(0.0), (radii.y + by).max(0.0))
 }
 
 #[cfg(test)]
