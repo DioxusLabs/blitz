@@ -16,7 +16,7 @@ use parley::YieldData;
 
 #[cfg(feature = "parallel-construct")]
 use super::super::TextBrush;
-use super::super::{TextContext, style as stylo_to_parley};
+use super::super::{TextContext, stylo_to_parley};
 use super::{TextLayout, build};
 #[cfg(feature = "floats")]
 use crate::text::FloatRequest;
