@@ -2281,7 +2281,7 @@ impl BaseDocument {
 
         let style = node.primary_styles()?;
         let user_select = style.clone_user_select();
-        let keyword = style.slow_clone_cursor().keyword;
+        let keyword = style.get_cursor().keyword;
 
         // Return cursor from style if it is non-auto
         if keyword != CursorKind::Auto {

@@ -192,11 +192,13 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         let bg_height = (self.height as f32).max(root_element.final_layout().size.height);
 
         let background_color = {
-            let html_color = root_element
-                .primary_styles()
-                .map(|s| s.slow_clone_background_color())
-                .unwrap_or(GenericColor::TRANSPARENT_BLACK);
-            if html_color == GenericColor::TRANSPARENT_BLACK {
+            let html_styles = root_element.primary_styles();
+            let html_color = html_styles
+                .as_ref()
+                .map_or(&GenericColor::TRANSPARENT_BLACK, |s| {
+                    s.get_background_color()
+                });
+            if *html_color == GenericColor::TRANSPARENT_BLACK {
                 root_element
                     .children
                     .iter()
@@ -210,11 +212,11 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                     .map(|style| {
                         let current_color = style.clone_color();
                         style
-                            .slow_clone_background_color()
+                            .get_background_color()
                             .resolve_to_absolute(&current_color)
                     })
             } else {
-                let current_color = root_element.primary_styles().unwrap().clone_color();
+                let current_color = html_styles.as_ref().unwrap().clone_color();
                 Some(html_color.resolve_to_absolute(&current_color))
             }
         };
@@ -1116,7 +1118,7 @@ impl ElementCx<'_, '_> {
             }
             object_fit => object_fit,
         };
-        let object_position = self.style.slow_clone_object_position();
+        let object_position = self.style.get_object_position();
 
         // Apply object-fit algorithm
         let container_size = taffy::Size { width, height };
@@ -1186,7 +1188,7 @@ impl ElementCx<'_, '_> {
             let y = self.frame.content_box.origin().y;
 
             let object_fit = self.style.clone_object_fit();
-            let object_position = self.style.slow_clone_object_position();
+            let object_position = self.style.get_object_position();
             let image_rendering = self.style.clone_image_rendering();
             let quality = to_image_quality(image_rendering);
 

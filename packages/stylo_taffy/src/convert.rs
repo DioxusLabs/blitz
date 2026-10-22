@@ -509,7 +509,7 @@ pub fn table_cell_vertical_align(style: &stylo::ComputedValues) -> Option<taffy:
     let box_styles = style.get_box();
     let mut align = match (
         box_styles.slow_clone_alignment_baseline(),
-        box_styles.slow_clone_baseline_shift(),
+        box_styles.get_baseline_shift(),
     ) {
         (_, stylo::BaselineShift::Keyword(stylo::BaselineShiftKeyword::Top)) => {
             taffy::AlignContent::START

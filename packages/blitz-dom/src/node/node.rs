@@ -1380,7 +1380,7 @@ impl Node {
             return true;
         }
 
-        if !matches!(style.slow_clone_clip_path(), ClipPath::None) {
+        if !matches!(style.get_clip_path(), ClipPath::None) {
             return true;
         }
 

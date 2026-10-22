@@ -44,19 +44,18 @@ impl ElementCx<'_, '_> {
     /// Compute the clip-path BezPath (if any) for this element.
     /// Returns `None` if clip-path is `none` or unsupported.
     pub(super) fn clip_path_shape(&self) -> Option<BezPath> {
-        let clip_path = self.style.slow_clone_clip_path();
-        match clip_path {
+        match self.style.get_clip_path() {
             ClipPath::None => None,
             ClipPath::Url(_) => {
                 // URL references (e.g. `clip-path: url(#myClip)`) are not yet supported
                 None
             }
             ClipPath::Shape(basic_shape, geometry_box) => {
-                let reference_box = self.resolve_geometry_box(&geometry_box);
-                self.basic_shape_to_path(&basic_shape, reference_box)
+                let reference_box = self.resolve_geometry_box(geometry_box);
+                self.basic_shape_to_path(basic_shape, reference_box)
             }
             ClipPath::Box(geometry_box) => {
-                let reference_box = self.resolve_geometry_box(&geometry_box);
+                let reference_box = self.resolve_geometry_box(geometry_box);
                 Some(Rect::from(reference_box).into_path(0.1))
             }
         }

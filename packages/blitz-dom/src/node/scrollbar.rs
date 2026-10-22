@@ -63,7 +63,7 @@ impl Node {
             return ScrollbarColor::Auto;
         };
         let current_color = style.clone_color();
-        match style.slow_clone_scrollbar_color() {
+        match style.get_scrollbar_color() {
             style::values::computed::ScrollbarColor::Auto => ScrollbarColor::Auto,
             style::values::computed::ScrollbarColor::Colors { thumb, track } => {
                 ScrollbarColor::Colors {

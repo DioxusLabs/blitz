@@ -591,7 +591,7 @@ fn collect_table_cells(
             cursor.start_row();
 
             let height = node.primary_styles().and_then(|style| {
-                let height = stylo_taffy::convert::dimension(&style.slow_clone_height());
+                let height = stylo_taffy::convert::dimension(style.get_height());
                 (height.tag() == taffy::CompactLength::LENGTH_TAG).then(|| height.value())
             });
             rows.push(TableRow {
