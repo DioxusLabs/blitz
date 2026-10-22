@@ -15,7 +15,6 @@ use crate::{
         LayoutPassState,
         construct::{ConstructionTaskData, LayoutChildren, collect_layout_children},
         damage::{ALL_DAMAGE, CONSTRUCT_BOX, CONSTRUCT_DESCENDENT, CONSTRUCT_FC},
-        inline::build_inline_layout_into,
     },
     node::TextLayout,
     text::InlineLayoutEngine as _,

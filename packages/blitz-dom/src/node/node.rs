@@ -35,7 +35,6 @@ use style::values::generics::transform::{Scale, Translate};
 use style::values::specified::box_::{DisplayInside, DisplayOutside};
 use style_dom::ElementState;
 use style_traits::values::ToCss;
-use stylo_taffy::CopyStyleGetters;
 use taffy::{Cache, prelude::Layout};
 use thin_vec::ThinVec;
 
@@ -1431,7 +1430,7 @@ impl Node {
             return true;
         }
 
-        if !matches!(style.slow_clone_clip_path(), ClipPath::None) {
+        if !matches!(style.get_clip_path(), ClipPath::None) {
             return true;
         }
 
