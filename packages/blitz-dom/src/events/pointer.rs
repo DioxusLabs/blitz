@@ -1,5 +1,6 @@
 use blitz_traits::node_id::NodeId;
 use std::collections::VecDeque;
+use stylo_taffy::CopyStyleGetters;
 
 use web_time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 

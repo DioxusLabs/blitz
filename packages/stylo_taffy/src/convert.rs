@@ -63,6 +63,7 @@ pub(crate) mod stylo {
     };
 }
 
+use crate::CopyStyleGetters;
 use stylo::Atom;
 use taffy::CompactLength;
 use taffy::style_helpers::*;
@@ -507,8 +508,8 @@ pub fn content_alignment(
 pub fn table_cell_vertical_align(style: &stylo::ComputedValues) -> Option<taffy::AlignContent> {
     let box_styles = style.get_box();
     let mut align = match (
-        box_styles.clone_alignment_baseline(),
-        box_styles.clone_baseline_shift(),
+        box_styles.slow_clone_alignment_baseline(),
+        box_styles.get_baseline_shift(),
     ) {
         (_, stylo::BaselineShift::Keyword(stylo::BaselineShiftKeyword::Top)) => {
             taffy::AlignContent::START
@@ -808,9 +809,8 @@ pub fn grid_template_tracks(
             })
             .collect(),
 
-        // TODO: Implement subgrid and masonry
+        // TODO: Implement subgrid
         stylo::GenericGridTemplateComponent::Subgrid(_) => Vec::new(),
-        stylo::GenericGridTemplateComponent::Masonry => Vec::new(),
     }
 }
 
@@ -825,9 +825,8 @@ pub fn grid_template_line_names(
             Some(crate::wrapper::StyloLineNameIter::new(&list.line_names))
         }
 
-        // TODO: Implement subgrid and masonry
+        // TODO: Implement subgrid
         stylo::GenericGridTemplateComponent::Subgrid(_) => None,
-        stylo::GenericGridTemplateComponent::Masonry => None,
     }
 }
 

@@ -1,6 +1,7 @@
 //! Repaint- and relayout-only restyles must update surviving anonymous boxes.
 //! Use hover rather than attribute mutation, which would reconstruct them.
 
+use blitz_dom::CopyStyleGetters;
 use blitz_dom::DocumentConfig;
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::node_id::NodeId;

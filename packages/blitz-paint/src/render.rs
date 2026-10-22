@@ -5,6 +5,7 @@ mod clip_path;
 mod form_controls;
 mod mask;
 
+use blitz_dom::CopyStyleGetters;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -191,11 +192,13 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         let bg_height = (self.height as f32).max(root_element.final_layout().size.height);
 
         let background_color = {
-            let html_color = root_element
-                .primary_styles()
-                .map(|s| s.clone_background_color())
-                .unwrap_or(GenericColor::TRANSPARENT_BLACK);
-            if html_color == GenericColor::TRANSPARENT_BLACK {
+            let html_styles = root_element.primary_styles();
+            let html_color = html_styles
+                .as_ref()
+                .map_or(&GenericColor::TRANSPARENT_BLACK, |s| {
+                    s.get_background_color()
+                });
+            if *html_color == GenericColor::TRANSPARENT_BLACK {
                 root_element
                     .children
                     .iter()
@@ -209,11 +212,11 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                     .map(|style| {
                         let current_color = style.clone_color();
                         style
-                            .clone_background_color()
+                            .get_background_color()
                             .resolve_to_absolute(&current_color)
                     })
             } else {
-                let current_color = root_element.primary_styles().unwrap().clone_color();
+                let current_color = html_styles.as_ref().unwrap().clone_color();
                 Some(html_color.resolve_to_absolute(&current_color))
             }
         };
@@ -327,13 +330,17 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         // `contain: paint` (and stronger values like `strict`/`content`) clips the element's
         // contents to its padding box. Paint containment does not apply to non-atomic inlines
         // or internal table boxes other than table-cell.
-        let contain_paint = styles.get_box().clone_contain().contains(Contain::PAINT) && {
-            let display = styles.clone_display();
-            let is_internal_table_box_other_than_cell = display.outside()
-                == DisplayOutside::InternalTable
-                && display.inside() != DisplayInside::TableCell;
-            !display.is_inline_flow() && !is_internal_table_box_other_than_cell
-        };
+        let contain_paint = styles
+            .get_box()
+            .slow_clone_contain()
+            .contains(Contain::PAINT)
+            && {
+                let display = styles.clone_display();
+                let is_internal_table_box_other_than_cell = display.outside()
+                    == DisplayOutside::InternalTable
+                    && display.inside() != DisplayInside::TableCell;
+                !display.is_inline_flow() && !is_internal_table_box_other_than_cell
+            };
         let is_image = node
             .element_data()
             .and_then(|e| e.raster_image_data())
@@ -1111,7 +1118,7 @@ impl ElementCx<'_, '_> {
             }
             object_fit => object_fit,
         };
-        let object_position = self.style.clone_object_position();
+        let object_position = self.style.get_object_position();
 
         // Apply object-fit algorithm
         let container_size = taffy::Size { width, height };
@@ -1181,7 +1188,7 @@ impl ElementCx<'_, '_> {
             let y = self.frame.content_box.origin().y;
 
             let object_fit = self.style.clone_object_fit();
-            let object_position = self.style.clone_object_position();
+            let object_position = self.style.get_object_position();
             let image_rendering = self.style.clone_image_rendering();
             let quality = to_image_quality(image_rendering);
 

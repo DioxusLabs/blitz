@@ -65,6 +65,7 @@ use style::{
     stylist::Stylist,
 };
 use style_dom::ElementState;
+use stylo_taffy::CopyStyleGetters;
 use thin_vec::ThinVec;
 use url::Url;
 use web_time::Instant;
@@ -426,16 +427,37 @@ impl BaseDocument {
         let font_ctx = Arc::new(Mutex::new(font_ctx));
 
         // Make sure we turn on stylo features *before* creating the Stylist
-        style_config::set_pref!("layout.grid.enabled", true);
-        style_config::set_pref!("layout.flexbox.balance", true);
-        style_config::set_pref!("layout.unimplemented", true);
-        style_config::set_pref!("layout.columns.enabled", true);
+        style_config::set_pref!("layout.css.flexbox-balance.enabled", true);
+        style_config::set_pref!("layout.css.columns.enabled", true);
         style_config::set_pref!("layout.css.basic-shape-shape.enabled", true);
         style_config::set_pref!("layout.css.tree-counting-functions.enabled", true);
         style_config::set_pref!("layout.css.progress-function.enabled", true);
-        style_config::set_pref!("layout.variable_fonts.enabled", true);
+        style_config::set_pref!("layout.css.font-variations.enabled", true);
         #[cfg(feature = "writing-mode")]
-        style_config::set_pref!("layout.writing-mode.enabled", true);
+        style_config::set_pref!("layout.css.writing-mode.enabled", true);
+
+        // Properties that were previously enabled by the `layout.unimplemented` pref
+        style_config::set_pref!("layout.css.appearance.enabled", true);
+        style_config::set_pref!("layout.css.backdrop-filter.enabled", true);
+        style_config::set_pref!("layout.css.contain.enabled", true);
+        style_config::set_pref!("layout.css.content.alt-text.enabled", true);
+        style_config::set_pref!("layout.css.corner-shape.enabled", true);
+        style_config::set_pref!("layout.css.counters.enabled", true);
+        style_config::set_pref!("layout.css.font-size-adjust.enabled", true);
+        style_config::set_pref!("layout.css.forced-color-adjust.enabled", true);
+        style_config::set_pref!("layout.css.masking.enabled", true);
+        style_config::set_pref!("layout.css.math-properties.enabled", true);
+        style_config::set_pref!("layout.css.motion-path.enabled", true);
+        style_config::set_pref!("layout.css.overscroll-behavior.enabled", true);
+        style_config::set_pref!("layout.css.scroll-driven-animations.enabled", true);
+        style_config::set_pref!("layout.css.scroll-behavior.enabled", true);
+        style_config::set_pref!("layout.css.scrollbar-styling.enabled", true);
+        style_config::set_pref!("layout.css.text-decoration-inset.enabled", true);
+        style_config::set_pref!("layout.css.text-overflow.enabled", true);
+        style_config::set_pref!("layout.css.text-underline.enabled", true);
+        style_config::set_pref!("layout.css.view-transitions.enabled", true);
+        style_config::set_pref!("layout.css.writing-mode.text-orientation.enabled", true);
+        style_config::set_pref!("layout.css.zoom.enabled", true);
         style_config::set_pref!("layout.threads", -1);
 
         let viewport = config.viewport.unwrap_or_default();
@@ -2184,7 +2206,7 @@ impl BaseDocument {
             device.set_root_style(root_style);
 
             let font = root_style.get_font();
-            let font_size = font.clone_font_size().computed_size();
+            let font_size = font.slow_clone_font_size().computed_size();
             device.set_root_font_size(root_style.effective_zoom.unzoom(font_size.px()));
 
             let line_height = device
@@ -2261,7 +2283,7 @@ impl BaseDocument {
 
         let style = node.primary_styles()?;
         let user_select = style.clone_user_select();
-        let keyword = style.clone_cursor().keyword;
+        let keyword = style.get_cursor().keyword;
 
         // Return cursor from style if it is non-auto
         if keyword != CursorKind::Auto {

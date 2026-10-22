@@ -1,4 +1,5 @@
 use anyrender::PaintScene;
+use blitz_dom::CopyStyleGetters;
 use blitz_dom::{BaseDocument, NodeId, node::TextBrush, util::ToColorColor};
 use kurbo::{Affine, BezPath, Cap, Circle, Rect, Stroke};
 use parley::{Affinity, Cursor, Layout, Line, PositionedLayoutItem, Selection};
@@ -312,7 +313,7 @@ fn draw_decoration_line(
     let butt_stroke = Stroke::new(size).with_caps(Cap::Butt);
 
     match deco_style {
-        TextDecorationStyle::MozNone => {
+        TextDecorationStyle::None => {
             // no line. Equivalent to `text-decoration-line: none`
         }
         // `solid`

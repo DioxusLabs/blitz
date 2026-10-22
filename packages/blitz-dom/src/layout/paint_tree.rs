@@ -11,6 +11,7 @@
 use blitz_traits::node_id::NodeId;
 use std::cell::Cell;
 use std::ops::Range;
+use stylo_taffy::CopyStyleGetters;
 use thin_vec::ThinVec;
 
 use crate::layout::damage::ALL_DAMAGE;

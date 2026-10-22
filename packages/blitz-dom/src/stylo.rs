@@ -384,7 +384,7 @@ impl selectors::Element for BlitzNode<'_> {
         // Shadow DOM functionality in Stylo.
         let non_null =
             NonNull::new((self.id.as_u64() as usize).wrapping_add(1) as *mut ()).unwrap();
-        OpaqueElement::from_non_null_ptr(non_null)
+        OpaqueElement::from_ptr(non_null)
     }
 
     fn parent_element(&self) -> Option<Self> {
@@ -779,6 +779,8 @@ impl<'a> TElement for BlitzNode<'a> {
     fn may_have_animations(&self) -> bool {
         true
     }
+
+    fn set_may_have_animations(&self) {}
 
     fn has_animations(&self, context: &SharedStyleContext) -> bool {
         self.has_css_animations(context, None) || self.has_css_transitions(context, None)

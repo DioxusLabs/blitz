@@ -1,6 +1,7 @@
 use blitz_traits::node_id::NodeId;
 #[cfg(feature = "svg")]
 use markup5ever::local_name;
+use stylo_taffy::CopyStyleGetters;
 
 use crate::net::ResourceHandler;
 use crate::node::{Node, NodeFlags};

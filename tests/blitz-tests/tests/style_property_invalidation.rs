@@ -11,6 +11,7 @@
 //! the stale bit, the root was never marked dirty, and the style traversal
 //! was skipped entirely.
 
+use blitz_dom::CopyStyleGetters;
 use blitz_dom::{BaseDocument, DocumentConfig};
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::shell::{ColorScheme, Viewport};

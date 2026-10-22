@@ -2,6 +2,7 @@ use super::{ElementCx, to_image_quality, to_peniko_image};
 use crate::color::{Color, ToColorColor};
 use crate::gradient::to_peniko_gradient;
 use anyrender::PaintScene;
+use blitz_dom::CopyStyleGetters;
 use blitz_dom::NodeId;
 use blitz_dom::node::{ImageData, ImageResourceData, SpecialElementData};
 use kurbo::{self, Affine, BezPath, Point, Rect, Shape, Size, Vec2};
@@ -13,7 +14,6 @@ use style::{
             background_attachment::single_value::computed_value::T as StyloBackgroundAttachment,
             background_clip::single_value::computed_value::T as StyloBackgroundClip,
             background_origin::single_value::computed_value::T as StyloBackgroundOrigin,
-            mask_origin::single_value::computed_value::T as StyloMaskOrigin,
         },
         style_structs::{Background, SVG},
     },
@@ -55,22 +55,13 @@ impl From<StyloBackgroundClip> for BoxModelBox {
     }
 }
 
+// Also covers MaskOrigin as the type is the same
 impl From<StyloBackgroundOrigin> for BoxModelBox {
     fn from(value: StyloBackgroundOrigin) -> Self {
         match value {
             StyloBackgroundOrigin::BorderBox => Self::BorderBox,
             StyloBackgroundOrigin::PaddingBox => Self::PaddingBox,
             StyloBackgroundOrigin::ContentBox => Self::ContentBox,
-        }
-    }
-}
-
-impl From<StyloMaskOrigin> for BoxModelBox {
-    fn from(value: StyloMaskOrigin) -> Self {
-        match value {
-            StyloMaskOrigin::BorderBox => Self::BorderBox,
-            StyloMaskOrigin::PaddingBox => Self::PaddingBox,
-            StyloMaskOrigin::ContentBox => Self::ContentBox,
         }
     }
 }

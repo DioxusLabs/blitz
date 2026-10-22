@@ -3,6 +3,7 @@ use crate::{
 };
 use accesskit::{Node as AccessKitNode, NodeId, Role, TreeId, TreeInfo, TreeUpdate};
 use style::properties::longhands::visibility;
+use stylo_taffy::CopyStyleGetters;
 
 impl BaseDocument {
     pub fn build_accessibility_tree(&self) -> TreeUpdate {

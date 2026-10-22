@@ -5,6 +5,7 @@ use style::values::{
     computed::{BaselineSource, CSSPixelLength, Contain},
     generics::text::GenericTextIndent,
 };
+use stylo_taffy::CopyStyleGetters;
 use taffy::{
     AvailableSpace, AxisStaticPosition, BlockContainerStyle, BlockContext, BlockFormattingContext,
     BoxSizing, CollapsibleMarginSet, CompactLength, CoreStyle as _, Direction, LayoutInput,
@@ -420,7 +421,7 @@ impl LayoutPassState<'_> {
                 style.effective_display().inside(),
                 DisplayInside::Flow | DisplayInside::FlowRoot
             );
-            let baseline_source = box_style.clone_baseline_source();
+            let baseline_source = box_style.slow_clone_baseline_source();
             let uses_last_baseline = match baseline_source {
                 BaselineSource::Auto => is_flow,
                 BaselineSource::First => false,
@@ -432,7 +433,7 @@ impl LayoutPassState<'_> {
                 && !style
                     .flags
                     .intersects(StyleFlags::IS_BUTTON | StyleFlags::IS_BUTTON_INPUT);
-            let contain_layout = box_style.clone_contain().contains(Contain::LAYOUT);
+            let contain_layout = box_style.slow_clone_contain().contains(Contain::LAYOUT);
             let exports_baseline = !(baseline_source == BaselineSource::Auto
                 && is_block_axis_scroll_container)
                 && !contain_layout;
@@ -481,7 +482,7 @@ impl LayoutPassState<'_> {
 
         let text_indent = self.nodes[node_id]
             .primary_styles()
-            .map(|s| s.clone_text_indent())
+            .map(|s| s.slow_clone_text_indent())
             .unwrap_or_else(GenericTextIndent::zero);
         let indent_options = IndentOptions {
             each_line: text_indent.each_line,

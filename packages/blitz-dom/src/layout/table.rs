@@ -2,6 +2,7 @@ use blitz_traits::node_id::NodeId;
 use std::{ops::Range, sync::Arc};
 use style::logical_geometry::WritingMode;
 use style::properties::ComputedValues;
+use stylo_taffy::CopyStyleGetters;
 
 use atomic_refcell::AtomicRefCell;
 use markup5ever::local_name;
@@ -590,7 +591,7 @@ fn collect_table_cells(
             cursor.start_row();
 
             let height = node.primary_styles().and_then(|style| {
-                let height = stylo_taffy::convert::dimension(&style.clone_height());
+                let height = stylo_taffy::convert::dimension(style.get_height());
                 (height.tag() == taffy::CompactLength::LENGTH_TAG).then(|| height.value())
             });
             rows.push(TableRow {
@@ -738,7 +739,8 @@ fn collect_table_cells(
         DisplayInside::Flow
         | DisplayInside::FlowRoot
         | DisplayInside::Flex
-        | DisplayInside::Grid => {
+        | DisplayInside::Grid
+        | DisplayInside::GridLanes => {
             node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
             // Probably a table caption: ignore
             // println!(

@@ -1,3 +1,4 @@
+use blitz_dom::CopyStyleGetters;
 use std::time::Duration;
 
 use blitz_dom::{BaseDocument, Document as _, Node, NodeId};

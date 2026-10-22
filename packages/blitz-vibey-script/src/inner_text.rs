@@ -2,6 +2,7 @@
 //!
 //! Self-contained so that it can move into `blitz-dom` later.
 
+use blitz_dom::CopyStyleGetters;
 use blitz_dom::node::{ListItemLayoutPosition, Marker, TextBrush, TextLayout};
 use blitz_dom::{Node, NodeId};
 use markup5ever::local_name;

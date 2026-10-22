@@ -4,6 +4,7 @@
 use blitz_traits::events::{BlitzScrollEvent, DomEvent, DomEventData};
 use blitz_traits::node_id::NodeId;
 use style::values::computed::Overflow;
+use stylo_taffy::CopyStyleGetters;
 use web_time::{SystemTime, UNIX_EPOCH};
 
 use crate::BaseDocument;
