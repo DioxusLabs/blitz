@@ -3462,3 +3462,87 @@ mod font_face_override_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod clip_hit_tests {
+    use super::*;
+    use crate::{Attribute, ScrollBehavior, qual_name};
+    use blitz_traits::shell::ColorScheme;
+
+    /// `<body margin:0>` containing a 40px `#bar`, a 200px `#view` with
+    /// `overflow-y:auto` + `position:relative` holding one hundred 20px rows,
+    /// and a 40px `#below`. Positioning `#view` puts it in a higher paint
+    /// level than both in-flow neighbours, so it hit-tests first — letting
+    /// clipped rows on either side of it take clicks they shouldn't
+    /// (<https://github.com/DioxusLabs/blitz/issues/1182>).
+    ///
+    /// Layout: bar y=0..40, view y=40..240, below y=240..280.
+    fn make_doc() -> (BaseDocument, NodeId, NodeId, NodeId, Vec<NodeId>) {
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
+            incremental: Some(false),
+            ..Default::default()
+        });
+        // Mutator-built docs get no implicit UA sheet — install a minimal
+        // one so the elements are display:block (DEFAULT_CSS's @namespace
+        // rule wouldn't match namespace-less mutator elements).
+        doc.add_user_agent_stylesheet(UserAgentStylesheet::parse(
+            "html, body, div { display: block; }",
+        ));
+        let root_id = doc.root_node().id;
+        let style = |value: &str| Attribute {
+            name: qual_name!("style"),
+            value: value.to_string(),
+        };
+
+        let mut mutator = doc.mutate();
+        let html = mutator.create_element(qual_name!("html"), vec![]);
+        let body = mutator.create_element(qual_name!("body"), vec![style("margin:0")]);
+        let bar = mutator.create_element(qual_name!("div"), vec![style("height:40px")]);
+        let view = mutator.create_element(
+            qual_name!("div"),
+            vec![style("height:200px;overflow-y:auto;position:relative")],
+        );
+        let below = mutator.create_element(qual_name!("div"), vec![style("height:40px")]);
+        let rows: Vec<NodeId> = (0..100)
+            .map(|_| mutator.create_element(qual_name!("div"), vec![style("height:20px")]))
+            .collect();
+        mutator.append_children(view, &rows);
+        mutator.append_children(body, &[bar, view, below]);
+        mutator.append_children(html, &[body]);
+        mutator.append_children(root_id, &[html]);
+        drop(mutator);
+
+        doc.resolve(0.0);
+        (doc, bar, view, below, rows)
+    }
+
+    /// Scrolled-down rows clipped above the box must not take clicks from the
+    /// sibling painted over them.
+    #[test]
+    fn scrolled_rows_do_not_hit_over_sibling_above() {
+        let (mut doc, bar, view, _below, _rows) = make_doc();
+        doc.scroll_to(view, 0.0, 1000.0, ScrollBehavior::Instant);
+        // (100, 20) is inside #bar — and inside *unscrolled* rows of #view.
+        assert_eq!(doc.element_from_point(100.0, 20.0), Some(bar));
+    }
+
+    /// Rows past the box's bottom edge are clipped on paint — and must be on
+    /// hit-testing too, even though their box still intersects the point in
+    /// unscrolled coordinates.
+    #[test]
+    fn clipped_rows_below_box_do_not_hit_over_next_sibling() {
+        let (doc, _bar, _view, below, _rows) = make_doc();
+        assert_eq!(doc.element_from_point(100.0, 245.0), Some(below));
+    }
+
+    /// Points inside the scrollport must keep hitting the row painted there.
+    #[test]
+    fn scrolled_rows_still_hit_inside_the_scrollport() {
+        let (mut doc, _bar, view, _below, rows) = make_doc();
+        doc.scroll_to(view, 0.0, 1000.0, ScrollBehavior::Instant);
+        // Viewport y=100 -> unscrolled content y = 100 - 40 + 1000 = 1060 ->
+        // row index 53 (20px rows).
+        assert_eq!(doc.element_from_point(100.0, 100.0), Some(rows[53]));
+    }
+}
