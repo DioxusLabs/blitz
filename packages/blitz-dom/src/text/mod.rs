@@ -28,10 +28,12 @@ pub(crate) use document::{DocumentText, TextContext};
 pub use document::{FaceDescriptors, FontContext, TextFonts, build_single_font_ctx};
 pub(crate) use editing::EditEngine;
 pub use editing::{Edit, EditableText, EditorMetrics, Motion, TextEditor, TextInputDriver};
+#[cfg_attr(feature = "floats", allow(unused_imports))]
+pub(crate) use inline::NoLineExclusions;
 pub(crate) use inline::{
     BoxMeasure, ContentWidths, FloatClear, FloatRequest, FloatSide, InlineBoxKind, InlineBuilder,
-    InlineLayoutEngine, LineExclusions, LineSlot, LinesExtent, MarkerEngine, NoLineExclusions,
-    PlacedFloat, Placement, SpanKind,
+    InlineLayoutEngine, LineExclusions, LineSlot, LinesExtent, MarkerEngine, PlacedFloat, Placement,
+    SpanKind,
 };
 pub use inline::{InlineText, MarkerLayout, TextLayout};
 
