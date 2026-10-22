@@ -130,6 +130,8 @@ fn enable_stylo_prefs() {
         true
     );
     style_config::set_pref!("layout.css.word-break.break-word.enabled", true);
+    // `::first-line`, which winkin lays out; Parley ignores its styles.
+    style_config::set_pref!("layout.css.first-line.enabled", true);
     // The `writing-mode` feature lays out vertical boxes and winkin
     // vertical lines; without either the property stays unparsed.
     #[cfg(any(feature = "writing-mode", text_winkin))]
