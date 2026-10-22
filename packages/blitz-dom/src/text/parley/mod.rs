@@ -3,7 +3,7 @@
 mod document;
 mod editing;
 mod inline;
-pub(crate) mod style;
+pub(crate) mod stylo_to_parley;
 
 use blitz_traits::node_id::NodeId;
 

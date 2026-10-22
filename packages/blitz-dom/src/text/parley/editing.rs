@@ -9,7 +9,7 @@ use parley::{PlainEditor, PlainEditorDriver, StyleProperty};
 use style::properties::ComputedValues;
 use stylo_taffy::CopyStyleGetters;
 
-use super::{TextBrush, TextContext, style as stylo_to_parley};
+use super::{TextBrush, TextContext, stylo_to_parley};
 use crate::text::{Edit, EditEngine, EditableText, EditorMetrics, Motion};
 
 /// The text of an `<input>` or `<textarea>`, edited and laid out by Parley.

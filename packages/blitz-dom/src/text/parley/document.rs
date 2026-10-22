@@ -45,7 +45,7 @@ fn query_for_font_styles<'a>(
 #[cfg(feature = "parallel-construct")]
 use thread_local::ThreadLocal;
 
-use super::{TextBrush, style as stylo_to_parley};
+use super::{TextBrush, stylo_to_parley};
 use crate::net::FontFaceOverrides;
 use crate::text::{DocumentText, TextFonts};
 
