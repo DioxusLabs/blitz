@@ -1,6 +1,5 @@
 //! Selection API bindings and DOM-to-rendered text offset mapping.
 
-use blitz_dom::CopyStyleGetters;
 use std::cell::Cell;
 
 use blitz_dom::text::InlineText as _;
