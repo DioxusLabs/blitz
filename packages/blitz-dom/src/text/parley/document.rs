@@ -20,28 +20,6 @@ use style::{
     values::computed::{CSSPixelLength, font::QueryFontMetricsFlags},
 };
 
-/// Query fontique for the fonts matching `font_styles` (family list and attributes).
-fn query_for_font_styles<'a>(
-    font_ctx: &'a mut FontContext,
-    font_styles: &'a FontStyles,
-) -> parley::fontique::Query<'a> {
-    use parley::fontique::Attributes;
-
-    let mut query = font_ctx.collection.query(&mut font_ctx.source_cache);
-    let families = font_styles
-        .font_family
-        .families
-        .iter()
-        .map(stylo_to_parley::query_font_family);
-    query.set_families(families);
-    query.set_attributes(Attributes {
-        width: stylo_to_parley::font_width(font_styles.font_width),
-        weight: stylo_to_parley::font_weight(font_styles.font_weight),
-        style: stylo_to_parley::font_style(font_styles.font_style),
-    });
-    query
-}
-
 #[cfg(feature = "parallel-construct")]
 use thread_local::ThreadLocal;
 
@@ -316,6 +294,28 @@ impl FontMetricsProvider for BlitzFontMetricsProvider {
         };
         style::values::computed::Length::from(Au::from_f32_px(size))
     }
+}
+
+/// Query fontique for the fonts matching `font_styles` (family list and attributes).
+fn query_for_font_styles<'a>(
+    font_ctx: &'a mut FontContext,
+    font_styles: &'a FontStyles,
+) -> parley::fontique::Query<'a> {
+    use parley::fontique::Attributes;
+
+    let mut query = font_ctx.collection.query(&mut font_ctx.source_cache);
+    let families = font_styles
+        .font_family
+        .families
+        .iter()
+        .map(stylo_to_parley::query_font_family);
+    query.set_families(families);
+    query.set_attributes(Attributes {
+        width: stylo_to_parley::font_width(font_styles.font_width),
+        weight: stylo_to_parley::font_weight(font_styles.font_weight),
+        style: stylo_to_parley::font_style(font_styles.font_style),
+    });
+    query
 }
 
 #[cfg(test)]
