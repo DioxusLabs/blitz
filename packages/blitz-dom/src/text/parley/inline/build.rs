@@ -10,9 +10,10 @@ use style::properties::ComputedValues;
 use style::values::computed::TextTransform;
 use stylo_taffy::CopyStyleGetters;
 
+use super::super::{TextBrush, TextContext, style as stylo_to_parley};
 use super::source_map::SourceMapRecorder;
 use super::text_transform::{CaseTransform, PushedText, TextTransformer};
-use super::{MarkerLayout, TextBrush, TextContext, TextLayout, style as stylo_to_parley};
+use super::{MarkerLayout, TextLayout};
 use crate::Node;
 use crate::layout::inline::push_inline_content;
 use crate::node::Marker;

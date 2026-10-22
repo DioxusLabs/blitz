@@ -8,8 +8,9 @@ use std::sync::{Arc, Mutex};
 
 use app_units::Au;
 use blitz_traits::net::Bytes;
+pub use parley::FontContext;
 use parley::fontique::{Blob, Collection, CollectionOptions, GenericFamily, SourceCache};
-use parley::{FontContext, FontVariation, LayoutContext};
+use parley::{FontVariation, LayoutContext};
 use skrifa::MetadataProvider as _;
 use skrifa::charmap::Charmap;
 use style::properties::style_structs::Font as FontStyles;
@@ -41,9 +42,23 @@ fn query_for_font_styles<'a>(
     query
 }
 
-use super::{TextContext, style as stylo_to_parley};
+#[cfg(feature = "parallel-construct")]
+use thread_local::ThreadLocal;
+
+use super::{TextBrush, style as stylo_to_parley};
 use crate::net::FontFaceOverrides;
 use crate::text::{DocumentText, TextFonts};
+
+/// What a document keeps for its text under Parley.
+pub struct TextContext {
+    /// A Parley font context
+    pub(crate) font_ctx: Arc<Mutex<FontContext>>,
+    #[cfg(feature = "parallel-construct")]
+    /// Thread-and-document-local copies to the font context
+    pub(crate) thread_font_contexts: ThreadLocal<RefCell<Box<FontContext>>>,
+    /// A Parley layout context
+    pub(crate) layout_ctx: LayoutContext<TextBrush>,
+}
 
 impl TextFonts for FontContext {
     fn with_single_font(font_data: &[u8]) -> Self {
