@@ -4,6 +4,7 @@ use markup5ever::local_name;
 use style::properties::ComputedValues;
 use style::values::computed::Display;
 use style::values::specified::box_::{DisplayInside, DisplayOutside};
+use stylo_taffy::CopyStyleGetters;
 
 use crate::layout::replaced::is_inline_box_element;
 use crate::node::{ListItemLayout, ListItemLayoutPosition};

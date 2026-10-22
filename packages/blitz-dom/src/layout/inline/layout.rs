@@ -12,7 +12,7 @@ use taffy::{
 #[cfg(feature = "floats")]
 use taffy::{BlockItemStyle as _, Clear, Float};
 
-use stylo_taffy::StyleFlags;
+use stylo_taffy::{CopyStyleGetters, StyleFlags};
 
 use super::Frame;
 use crate::layout::{LayoutPassState, resolve_calc_value};
@@ -1013,7 +1013,7 @@ impl LayoutPassState<'_> {
                 style.effective_display().inside(),
                 DisplayInside::Flow | DisplayInside::FlowRoot
             );
-            let baseline_source = box_style.clone_baseline_source();
+            let baseline_source = box_style.slow_clone_baseline_source();
             let uses_last_baseline = match baseline_source {
                 BaselineSource::Auto => is_flow,
                 BaselineSource::First => false,
@@ -1025,7 +1025,7 @@ impl LayoutPassState<'_> {
                 && !style
                     .flags
                     .intersects(StyleFlags::IS_BUTTON | StyleFlags::IS_BUTTON_INPUT);
-            let contain_layout = box_style.clone_contain().contains(Contain::LAYOUT);
+            let contain_layout = box_style.slow_clone_contain().contains(Contain::LAYOUT);
             let exports_baseline = !(baseline_source == BaselineSource::Auto
                 && is_block_axis_scroll_container)
                 && !contain_layout;
@@ -1104,7 +1104,7 @@ fn reads_own_baseline(style: &style::properties::ComputedValues) -> bool {
     use style::values::computed::length_percentage::Unpacked;
     use style::values::generics::box_::{BaselineShiftKeyword, GenericBaselineShift};
     let box_style = style.get_box();
-    match box_style.clone_baseline_shift() {
+    match box_style.get_baseline_shift() {
         GenericBaselineShift::Keyword(BaselineShiftKeyword::Top | BaselineShiftKeyword::Bottom) => {
             return false;
         }
@@ -1116,7 +1116,7 @@ fn reads_own_baseline(style: &style::properties::ComputedValues) -> bool {
         },
     }
     !matches!(
-        box_style.clone_alignment_baseline(),
+        box_style.slow_clone_alignment_baseline(),
         AlignmentBaseline::TextTop | AlignmentBaseline::TextBottom
     )
 }

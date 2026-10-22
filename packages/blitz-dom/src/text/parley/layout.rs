@@ -2,9 +2,9 @@
 
 use blitz_traits::node_id::NodeId;
 use parley::{AlignmentOptions, BreakReason, IndentOptions};
-use stylo_taffy::CopyStyleGetters;
 use style::properties::ComputedValues;
 use style::values::{computed::CSSPixelLength, generics::text::GenericTextIndent};
+use stylo_taffy::CopyStyleGetters;
 
 #[cfg(feature = "floats")]
 use parley::YieldData;

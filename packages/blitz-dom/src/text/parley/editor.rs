@@ -7,6 +7,7 @@ use blitz_traits::node_id::NodeId;
 use kurbo::{Rect, Size};
 use parley::{PlainEditor, PlainEditorDriver, StyleProperty};
 use style::properties::ComputedValues;
+use stylo_taffy::CopyStyleGetters;
 
 use super::{TextBrush, TextContext, style as stylo_to_parley};
 use crate::text::{Edit, EditEngine, EditableText, EditorMetrics, Motion};
