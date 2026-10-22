@@ -437,7 +437,6 @@ impl BaseDocument {
         style_config::set_pref!("layout.css.writing-mode.enabled", true);
 
         // Properties that were previously enabled by the `layout.unimplemented` pref
-        style_config::set_pref!("layout.css.anchor-positioning.enabled", true);
         style_config::set_pref!("layout.css.appearance.enabled", true);
         style_config::set_pref!("layout.css.backdrop-filter.enabled", true);
         style_config::set_pref!("layout.css.contain.enabled", true);
