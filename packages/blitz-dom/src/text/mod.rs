@@ -31,8 +31,8 @@ pub use editing::{Edit, EditableText, EditorMetrics, Motion, TextEditor, TextInp
 #[cfg_attr(feature = "floats", allow(unused_imports))]
 pub(crate) use inline::NoLineExclusions;
 pub(crate) use inline::{
-    BoxMeasure, ContentWidths, FloatClear, FloatSide, InlineBoxKind, InlineBuilder, InlineLayoutEngine,
-    LineExclusions, LinesExtent, MarkerEngine, Placement, SpanKind,
+    BoxMeasure, ContentWidths, FloatClear, FloatSide, InlineBoxKind, InlineBuilder,
+    InlineLayoutEngine, LineExclusions, LinesExtent, MarkerEngine, Placement, SpanKind,
 };
 #[cfg_attr(not(feature = "floats"), allow(unused_imports))]
 pub(crate) use inline::{FloatRequest, LineSlot, PlacedFloat};
