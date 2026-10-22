@@ -1,6 +1,11 @@
 //! Measuring, breaking and placing an inline formatting context with Parley.
 
+#[cfg(feature = "parallel-construct")]
+use std::cell::RefCell;
+
 use blitz_traits::node_id::NodeId;
+#[cfg(feature = "parallel-construct")]
+use parley::LayoutContext;
 use parley::{AlignmentOptions, BreakReason, IndentOptions};
 use style::properties::ComputedValues;
 use style::values::{computed::CSSPixelLength, generics::text::GenericTextIndent};
@@ -9,10 +14,107 @@ use stylo_taffy::CopyStyleGetters;
 #[cfg(feature = "floats")]
 use parley::YieldData;
 
-use super::{TextLayout, style as stylo_to_parley};
+#[cfg(feature = "parallel-construct")]
+use super::super::TextBrush;
+use super::super::{TextContext, style as stylo_to_parley};
+use super::{TextLayout, build};
 #[cfg(feature = "floats")]
 use crate::text::FloatRequest;
-use crate::text::{BoxMeasure, ContentWidths, LineExclusions, LinesExtent, Placement};
+use crate::text::{
+    BoxMeasure, ContentWidths, InlineLayoutEngine, LineExclusions, LinesExtent, Placement,
+};
+
+// FIXME: static thread_local FontCtx isn't necessarily correct in multi-document context.
+// Should use thread_local crate with ThreadLocal value store in the Document.
+#[cfg(feature = "parallel-construct")]
+thread_local! {
+    static LAYOUT_CTX: RefCell<Option<Box<LayoutContext<TextBrush>>>> = const { RefCell::new(None) };
+}
+
+impl InlineLayoutEngine for TextLayout {
+    fn build_layouts(
+        cx: &mut TextContext,
+        nodes: &crate::NodeTree,
+        scale: f32,
+        layouts: &mut [(NodeId, Box<Self>)],
+    ) {
+        #[cfg(feature = "parallel-construct")]
+        {
+            use rayon::prelude::*;
+            let cx = &*cx;
+            layouts.par_iter_mut().for_each(|(node_id, layout)| {
+                let mut layout_ctx = LAYOUT_CTX
+                    .take()
+                    .unwrap_or_else(|| Box::new(LayoutContext::new()));
+                let mut font_ctx = cx
+                    .thread_font_contexts
+                    .get_or(|| RefCell::new(Box::new(cx.font_ctx.lock().unwrap().clone())))
+                    .borrow_mut();
+                build::build_inline_layout_into(
+                    nodes,
+                    &mut layout_ctx,
+                    &mut font_ctx,
+                    layout,
+                    scale,
+                    *node_id,
+                );
+                LAYOUT_CTX.set(Some(layout_ctx));
+            });
+        }
+        #[cfg(not(feature = "parallel-construct"))]
+        for (node_id, layout) in layouts {
+            build::build_inline_layout_into(
+                nodes,
+                &mut cx.layout_ctx,
+                &mut cx.font_ctx.lock().unwrap(),
+                layout,
+                scale,
+                *node_id,
+            );
+        }
+    }
+
+    #[inline]
+    fn is_empty(&self) -> bool {
+        self.holds_nothing()
+    }
+
+    fn prepare(
+        &mut self,
+        sizes: &[BoxMeasure],
+        style: Option<&::style::properties::ComputedValues>,
+    ) {
+        self.prepare_lines(sizes, style);
+    }
+
+    #[inline]
+    fn content_widths(&mut self) -> ContentWidths {
+        self.widths()
+    }
+
+    fn break_lines(
+        &mut self,
+        width: f32,
+        style: Option<&::style::properties::ComputedValues>,
+        exclusions: &mut impl LineExclusions,
+    ) {
+        self.break_into_lines(width, style, exclusions);
+    }
+
+    #[inline]
+    fn extent(&self) -> LinesExtent {
+        self.lines_extent()
+    }
+
+    #[inline]
+    fn set_block_offset(&mut self, offset: f32) {
+        self.block_offset = offset;
+    }
+
+    fn placements(&self) -> impl Iterator<Item = Placement> {
+        self.box_placements()
+    }
+}
 
 impl TextLayout {
     /// Whether the content holds no text and no inline boxes.
