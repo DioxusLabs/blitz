@@ -31,10 +31,11 @@ pub use editing::{Edit, EditableText, EditorMetrics, Motion, TextEditor, TextInp
 #[cfg_attr(feature = "floats", allow(unused_imports))]
 pub(crate) use inline::NoLineExclusions;
 pub(crate) use inline::{
-    BoxMeasure, ContentWidths, FloatClear, FloatRequest, FloatSide, InlineBoxKind, InlineBuilder,
-    InlineLayoutEngine, LineExclusions, LineSlot, LinesExtent, MarkerEngine, PlacedFloat, Placement,
-    SpanKind,
+    BoxMeasure, ContentWidths, FloatClear, FloatSide, InlineBoxKind, InlineBuilder, InlineLayoutEngine,
+    LineExclusions, LinesExtent, MarkerEngine, Placement, SpanKind,
 };
+#[cfg_attr(not(feature = "floats"), allow(unused_imports))]
+pub(crate) use inline::{FloatRequest, LineSlot, PlacedFloat};
 pub use inline::{InlineText, MarkerLayout, TextLayout};
 
 #[cfg(feature = "parley")]
