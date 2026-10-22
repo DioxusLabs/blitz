@@ -812,10 +812,7 @@ impl<'a> TElement for BlitzNode<'a> {
         let key = AnimationSetKey::new_for_non_pseudo(TNode::opaque(&TElement::as_node(self)));
         context
             .animations
-            .sets
-            .read()
-            .get(&key)
-            .is_some_and(|set| set.has_active_animation() || set.has_active_transition())
+            .has_active_animations_or_transitions(&key)
     }
 
     fn has_css_animations(
