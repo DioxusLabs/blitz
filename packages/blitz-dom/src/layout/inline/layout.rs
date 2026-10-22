@@ -918,13 +918,10 @@ impl LayoutPassState<'_> {
         inline_layout.block_offset = block_offset;
         let line_box_top = container_pb.top + block_offset;
 
-        // Store sizes and positions of inline boxes. Walking a line's items builds every
-        // glyph run on it, so lines are only walked when there are boxes to find.
+        // Store sizes and positions of inline boxes
         let mut ibox_order: u32 = 0;
         let mut span_cb_flags = StyleFlags::empty();
-        let has_inline_boxes = inline_layout.layout.inline_boxes().len() > 0;
-        let lines = has_inline_boxes.then(|| inline_layout.layout.lines());
-        for line in lines.into_iter().flatten() {
+        for line in inline_layout.layout.lines() {
             for item in line.items() {
                 if let parley::layout::PositionedLayoutItem::InlineBox(ibox) = item {
                     let order = ibox_order;
