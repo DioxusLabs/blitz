@@ -28,6 +28,7 @@ mod focus_within;
 mod focusability_updates;
 mod fragment_navigation;
 mod harness_smoke;
+mod hit_inline_embedded_box;
 mod hover_dom_ancestors;
 mod incremental_oracle;
 mod inline_bfc_padding;
