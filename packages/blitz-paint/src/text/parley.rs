@@ -5,7 +5,7 @@ use blitz_dom::node::Marker;
 use blitz_dom::text::InlineText as _;
 use blitz_dom::text::parley::parley::{Line, PositionedLayoutItem};
 use blitz_dom::text::parley::{MarkerLayout, TextBrush, TextEditor, TextLayout};
-use blitz_dom::{BaseDocument, NodeId};
+use blitz_dom::{BaseDocument, CopyStyleGetters, NodeId};
 use kurbo::{Affine, Point, Rect};
 use peniko::Fill;
 
