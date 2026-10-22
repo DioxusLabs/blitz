@@ -983,6 +983,38 @@ impl<'a> TElement for BlitzNode<'a> {
             Some(LengthPercentage::Length(length))
         }
 
+        /// Parse the value of an SVG `fill`/`stroke` presentation attribute as a CSS `<paint>`
+        /// value (`none | <color> | url(..) [none | <color>]? | context-fill | context-stroke`),
+        /// via the same grammar as the `fill`/`stroke` CSS properties -- SVG presentation
+        /// attributes accept the full `<paint>` production, not just a `<color>`.
+        fn parse_svg_paint_attr(value: &str) -> Option<style::values::specified::SVGPaint> {
+            use cssparser::Parser;
+            use style::parser::{Parse, ParserContext};
+            use style::servo_arc::Arc as ServoArc;
+            use style::stylesheets::{CssRuleType, Origin, UrlExtraData};
+            use style_traits::ParsingMode;
+            use url::Url;
+
+            // `fill`/`stroke` can only reference a `url(#id)` fragment within the same
+            // document, so any base URL will do here.
+            let url_data = UrlExtraData(ServoArc::new(Url::parse("about:blank").unwrap()));
+            let context = ParserContext::new(
+                Origin::Author,
+                &url_data,
+                Some(CssRuleType::Style),
+                ParsingMode::DEFAULT,
+                QuirksMode::NoQuirks,
+                Default::default(),
+                None,
+                None,
+                Default::default(),
+            );
+            let mut parser = Parser::new(value);
+            parser
+                .parse_entirely(|p| style::values::specified::SVGPaint::parse(&context, p))
+                .ok()
+        }
+
         // `<input type=image>` is the only input type that is replaced
         // content, and it is the only one that takes the embedded-content
         // presentational attributes. The type attribute is matched ASCII
@@ -1119,6 +1151,29 @@ impl<'a> TElement for BlitzNode<'a> {
                         PropertyDeclaration::Width(size)
                     } else {
                         PropertyDeclaration::Height(size)
+                    });
+                }
+            }
+
+            // https://svgwg.org/svg2-draft/painting.html#SpecifyingFillPaint
+            // https://svgwg.org/svg2-draft/painting.html#SpecifyingStrokePaint
+            // `fill`/`stroke` presentation attributes participate in the cascade as the
+            // lowest-priority declarations, just like any other presentation attribute -- a CSS
+            // class/id/tag rule for `fill`/`stroke` must win over a literal attribute on the
+            // same element. `svg_source()` (node/serialize.rs) relies on this: it always emits
+            // the *computed* `fill`/`stroke` as the literal SVG attribute passed to `usvg`, so
+            // without this hint a class-based `fill`/`stroke` rule would never reach an inline
+            // `<svg>`'s internal elements (the computed value would just be the CSS-initial
+            // `fill:black`/`stroke:none`, ignoring any literal attribute), while an attribute
+            // with no competing CSS rule must still resolve back to its own literal value.
+            if elem.name.ns == ns!(svg)
+                && (*name == local_name!("fill") || *name == local_name!("stroke"))
+            {
+                if let Some(paint) = parse_svg_paint_attr(value) {
+                    push_style(if *name == local_name!("fill") {
+                        PropertyDeclaration::Fill(Box::new(paint))
+                    } else {
+                        PropertyDeclaration::Stroke(Box::new(paint))
                     });
                 }
             }
