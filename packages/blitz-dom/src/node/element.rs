@@ -833,6 +833,23 @@ impl ElementData {
         std::mem::take(&mut self.inline_layout_data)
     }
 
+    /// The [`stylo_taffy::StyleFlags`] that follow from the element's name and attributes
+    /// (replaced element, `<button>`, button-type `<input>`).
+    pub(crate) fn layout_style_flags(&self) -> stylo_taffy::StyleFlags {
+        use stylo_taffy::StyleFlags;
+        let mut flags = StyleFlags::empty();
+        if crate::layout::replaced::is_replaced_element(&self.name.local) {
+            flags |= StyleFlags::IS_REPLACED;
+        }
+        if self.name.local == local_name!("button") {
+            flags |= StyleFlags::IS_BUTTON;
+        }
+        if self.is_button_input() {
+            flags |= StyleFlags::IS_BUTTON_INPUT;
+        }
+        flags
+    }
+
     pub(crate) fn is_button_input(&self) -> bool {
         self.name.local == local_name!("input")
             && matches!(
