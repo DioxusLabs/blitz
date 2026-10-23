@@ -187,7 +187,25 @@ impl crate::document::BaseDocument {
                 transition.is_new = false;
             }
         }
-        sets.retain(|_, state| !state.is_empty());
+        let mut finished = Vec::new();
+        sets.retain(|key, state| {
+            let keep = !state.is_empty();
+            if !keep {
+                finished.push(key.node);
+            }
+            keep
+        });
+        // Clear `may_have_animations` on elements whose last set (including
+        // their pseudo-elements' sets) was just removed.
+        for node in finished {
+            if sets.keys().any(|key| key.node == node) {
+                continue;
+            }
+            let node_id = NodeId::from_u64(node.id() as u64);
+            if let Some(data) = self.nodes.get(node_id).and_then(|node| node.element_data()) {
+                data.may_have_animations.store(false, Ordering::Relaxed);
+            }
+        }
         self.has_active_animations = sets.values().any(|state| state.needs_animation_ticks());
 
         // Maybe run garbage collection. Stylo has internal to determine whether to run or not.
@@ -777,13 +795,24 @@ impl<'a> TElement for BlitzNode<'a> {
     }
 
     fn may_have_animations(&self) -> bool {
-        true
+        self.element_data()
+            .is_some_and(|data| data.may_have_animations.load(Ordering::Relaxed))
     }
 
-    fn set_may_have_animations(&self) {}
+    fn set_may_have_animations(&self) {
+        if let Some(data) = self.element_data() {
+            data.may_have_animations.store(true, Ordering::Relaxed);
+        }
+    }
 
     fn has_animations(&self, context: &SharedStyleContext) -> bool {
-        self.has_css_animations(context, None) || self.has_css_transitions(context, None)
+        if !self.may_have_animations() {
+            return false;
+        }
+        let key = AnimationSetKey::new_for_non_pseudo(TNode::opaque(&TElement::as_node(self)));
+        context
+            .animations
+            .has_active_animations_or_transitions(&key)
     }
 
     fn has_css_animations(
@@ -791,6 +820,9 @@ impl<'a> TElement for BlitzNode<'a> {
         context: &SharedStyleContext,
         pseudo_element: Option<PseudoElement>,
     ) -> bool {
+        if !self.may_have_animations() {
+            return false;
+        }
         let key = AnimationSetKey::new(TNode::opaque(&TElement::as_node(self)), pseudo_element);
         context.animations.has_active_animations(&key)
     }
@@ -800,6 +832,9 @@ impl<'a> TElement for BlitzNode<'a> {
         context: &SharedStyleContext,
         pseudo_element: Option<PseudoElement>,
     ) -> bool {
+        if !self.may_have_animations() {
+            return false;
+        }
         let key = AnimationSetKey::new(TNode::opaque(&TElement::as_node(self)), pseudo_element);
         context.animations.has_active_transitions(&key)
     }
