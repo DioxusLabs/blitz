@@ -54,7 +54,7 @@ dioxus-native-dom = { version = "0.7.0", path = "./packages/dioxus-native-dom", 
 debug_timer = { version = "0.1.2", path = "./packages/debug_timer" }
 accesskit_xplat = { version = "0.2", path = "./packages/accesskit_xplat", default-features = false }
 browser-persistence = { path = "./apps/browser/persistence" }
-blitz-test-harness = { path = "./packages/blitz-test-harness" }
+blitz-test-harness = { path = "./packages/blitz-test-harness", default-features = false }
 
 # Servo dependencies
 # servo/stylo main (633f43ad) plus a fix for building on wasm32-unknown-unknown (disables rand's getrandom dependency)
@@ -108,6 +108,8 @@ taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "802e497b69689e1c93
     "calc",
     "detailed_layout_info",
 ] }
+# The font value types shared by the text backends, from Parley's release
+parlance = { version = "0.1.1", default-features = false, features = ["std"] }
 parley = { version = "0.12", default-features = false, features = ["std"] }
 skrifa = { version = "0.44", default-features = false, features = [
     "std",
@@ -257,13 +259,16 @@ publish = false
 log-times = ["log-frame-times", "log-phase-times"]
 log-frame-times = ["dioxus-native/log-frame-times"]
 log-phase-times = ["dioxus-native/log-phase-times"]
+# The text backend, which is Parley: on by default, and required.
+default = ["parley"]
+parley = ["dioxus-native/parley"]
 
 [dev-dependencies]
 anyrender = { workspace = true }
 anyrender_vello = { workspace = true }
 anyrender_vello_cpu = { workspace = true, features = ["multithreading"] }
 anyrender_vello_hybrid = { workspace = true }
-blitz-dom = { workspace = true, features = ["default"] }
+blitz-dom = { workspace = true, features = ["svg", "woff", "accessibility", "system-fonts", "file-input", "custom-widget", "text-transform-icu"] }
 blitz-html = { workspace = true }
 blitz-traits = { workspace = true }
 blitz-paint = { workspace = true }

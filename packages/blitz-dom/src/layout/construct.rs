@@ -4,7 +4,6 @@ use std::sync::Arc;
 use stylo_taffy::CopyStyleGetters;
 
 use markup5ever::{QualName, local_name, ns};
-use parley::StyleProperty;
 use style::{
     computed_values::position::T as PositionProperty,
     data::ElementData as StyloElementData,
@@ -22,8 +21,9 @@ use crate::{
         CONSTRUCT_BOX, CONSTRUCT_DESCENDENT, CONSTRUCT_FC, sort_layout_children_by_order,
     },
     node::{NodeFlags, NodeKind, SpecialElementData, TextInputData, TextLayout},
-    qual_name, stylo_to_parley,
-    traversal::{iter_children, iter_children_and_pseudos},
+    qual_name,
+    text::EditEngine as _,
+    traversal::iter_children_and_pseudos,
 };
 
 use super::{
@@ -39,17 +39,8 @@ pub(crate) struct ConstructionTask {
     pub(crate) data: ConstructionTaskData,
 }
 
-pub(crate) struct ConstructionTaskResult {
-    pub(crate) node_id: NodeId,
-    pub(crate) data: ConstructionTaskResultData,
-}
-
 #[derive(Clone)]
 pub(crate) enum ConstructionTaskData {
-    InlineLayout(Box<TextLayout>),
-}
-
-pub(crate) enum ConstructionTaskResultData {
     InlineLayout(Box<TextLayout>),
 }
 
@@ -605,7 +596,7 @@ fn collect_layout_children_with_wrap(
                 let existing_layout = doc.nodes[container_node_id]
                     .element_data_mut()
                     .and_then(|el| el.inline_layout_data.take());
-                let layout = existing_layout.unwrap_or_else(|| Box::new(TextLayout::new()));
+                let layout = existing_layout.unwrap_or_default();
 
                 // Queue node for inline layout construction. Deferring construction of inline layouts to a
                 // dedicated phase allows us to multithread the expensive text shaping step.
@@ -848,19 +839,7 @@ fn collect_complex_layout_children(
 
 fn create_text_editor(doc: &mut BaseDocument, input_element_id: NodeId, is_multiline: bool) {
     let node = &mut doc.nodes[input_element_id];
-    let parley_style = node
-        .primary_styles()
-        .as_ref()
-        .map(|s| stylo_to_parley::style(node.id, s))
-        .unwrap_or_default();
-    let alignment = node
-        .primary_styles()
-        .map(|s| stylo_to_parley::text_align(s.clone_text_align()))
-        .unwrap_or(parley::layout::Alignment::Start);
-    let base_direction = node
-        .primary_styles()
-        .map(|s| stylo_to_parley::base_direction(s.clone_direction(), s.clone_unicode_bidi()))
-        .unwrap_or(parley::BaseDirection::Auto);
+    let style = node.primary_styles().map(|s| (*s).clone());
 
     let initial_text = if is_multiline {
         node.text_content()
@@ -870,8 +849,7 @@ fn create_text_editor(doc: &mut BaseDocument, input_element_id: NodeId, is_multi
     let element = &mut node.data.downcast_element_mut().unwrap();
     if !matches!(element.special_data, SpecialElementData::TextInput(_)) {
         let mut text_input_data = TextInputData::new(is_multiline);
-        let editor = &mut text_input_data.editor;
-        editor.set_text(&initial_text);
+        text_input_data.editor.set_initial_text(&initial_text);
         element.special_data = SpecialElementData::TextInput(text_input_data);
     }
 
@@ -879,33 +857,16 @@ fn create_text_editor(doc: &mut BaseDocument, input_element_id: NodeId, is_multi
         unreachable!();
     };
 
-    let editor = &mut text_input_data.editor;
-    editor.set_scale(doc.viewport.scale_f64() as f32);
-    editor.set_width(None);
-
-    let styles = editor.edit_styles();
-    styles.retain(|_| false);
-    styles.insert(StyleProperty::FontFamily(parley_style.font_family));
-    styles.insert(StyleProperty::FontSize(parley_style.font_size));
-    styles.insert(StyleProperty::FontWidth(parley_style.font_width));
-    styles.insert(StyleProperty::FontStyle(parley_style.font_style));
-    styles.insert(StyleProperty::FontWeight(parley_style.font_weight));
-    styles.insert(StyleProperty::FontVariations(parley_style.font_variations));
-    styles.insert(StyleProperty::FontFeatures(parley_style.font_features));
-    styles.insert(StyleProperty::LineHeight(parley_style.line_height));
-    styles.insert(StyleProperty::WordSpacing(parley_style.word_spacing));
-    styles.insert(StyleProperty::LetterSpacing(parley_style.letter_spacing));
-    styles.insert(StyleProperty::WordBreak(parley_style.word_break));
-    styles.insert(StyleProperty::OverflowWrap(parley_style.overflow_wrap));
-    styles.insert(StyleProperty::TextWrapMode(parley_style.text_wrap_mode));
-    styles.insert(StyleProperty::WhiteSpaceCollapse(
-        parley_style.white_space_collapse,
-    ));
-    styles.insert(StyleProperty::Brush(parley_style.brush));
-    editor.set_alignment(alignment);
-    editor.set_base_direction(base_direction);
-
-    editor.refresh_layout(&mut doc.font_ctx.lock().unwrap(), &mut doc.layout_ctx);
+    text_input_data.editor.set_style(
+        input_element_id,
+        style.as_deref(),
+        doc.viewport.scale_f64() as f32,
+    );
+    // A single-line input never wraps, so its text is laid out now. A textarea's is laid out once
+    // layout knows its width.
+    if !is_multiline {
+        text_input_data.editor.refresh(&mut doc.text);
+    }
 }
 
 fn create_checkbox_input(doc: &mut BaseDocument, input_element_id: NodeId) {
@@ -983,7 +944,7 @@ pub(crate) fn find_inline_layout_embedded_boxes(
                     }
                     (DisplayOutside::None, DisplayInside::Contents) => {
                         node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
-                        iter_children!(nodes[node_id], |child_id| {
+                        iter_children_and_pseudos!(nodes[node_id], |child_id| {
                             find_inline_layout_embedded_boxes_recursive(
                                 nodes,
                                 parent_id,

@@ -1,18 +1,12 @@
 //! Selection API bindings and DOM-to-rendered text offset mapping.
 
-use blitz_dom::CopyStyleGetters;
 use std::cell::Cell;
 
+use blitz_dom::text::InlineText as _;
 use blitz_dom::{BaseDocument, Node, NodeId, node::NodeData};
 use boa_engine::{
     Context, Finalize, JsData, JsNativeError, JsResult, JsValue, Trace, object::JsObject,
 };
-use icu_properties::{
-    CodePointMapData,
-    props::{GeneralCategory, GeneralCategoryGroup},
-};
-use style::properties::longhands::white_space_collapse::computed_value::T as WhiteSpaceCollapse;
-use style::values::computed::TextTransform;
 
 use super::{define_method, dom_ctx, dom_exception, js_str, node_id_of_value};
 
@@ -194,18 +188,21 @@ fn rendered_point(doc: &BaseDocument, point: Point) -> Option<Point> {
             .element_data()?
             .inline_layout_data
             .as_ref()?;
-        let mut mapper = OffsetMapper {
-            doc,
-            root,
-            text: &layout.text,
-            cursor: 0,
-            collapsed_space: false,
-            point,
-            result: None,
-        };
-        mapper.visit(root);
-        if let Some(offset) = mapper.result {
-            return Some((root, offset));
+        // The layout maps a text node's own offsets; a point between nodes takes the
+        // adjacent text's, below.
+        if let NodeData::Text(data) = &node.data {
+            let offset = utf16_to_byte_offset(&data.content, point.1);
+            return layout
+                .source_offset(node.id, offset)
+                .map(|offset| (root, offset));
+        }
+        // A point in a node with neither text nor children, such as a comment, stands
+        // where the node does.
+        if node.children.is_empty() {
+            if let Some(parent) = node.parent.and_then(|id| doc.get_node(id)) {
+                let index = parent.children.iter().position(|&id| id == node.id)?;
+                return rendered_point(doc, (parent.id, index + 1));
+            }
         }
     }
 
@@ -220,6 +217,18 @@ fn rendered_point(doc: &BaseDocument, point: Point) -> Option<Point> {
                 .rev()
                 .find_map(|&id| subtree_point(doc, id, true))
         })
+}
+
+/// The byte offset in `text` of UTF-16 offset `units`, clamped to its end.
+fn utf16_to_byte_offset(text: &str, units: usize) -> usize {
+    let mut count = 0;
+    for (index, c) in text.char_indices() {
+        if count >= units {
+            return index;
+        }
+        count += c.len_utf16();
+    }
+    text.len()
 }
 
 fn inline_root(doc: &BaseDocument, mut id: NodeId) -> Option<NodeId> {
@@ -255,164 +264,4 @@ fn subtree_point(doc: &BaseDocument, id: NodeId, end: bool) -> Option<Point> {
             .iter()
             .find_map(|&id| subtree_point(doc, id, end))
     }
-}
-
-struct OffsetMapper<'a> {
-    doc: &'a BaseDocument,
-    root: NodeId,
-    text: &'a str,
-    cursor: usize,
-    collapsed_space: bool,
-    point: Point,
-    result: Option<usize>,
-}
-
-impl OffsetMapper<'_> {
-    fn visit(&mut self, id: NodeId) {
-        let Some(node) = self.doc.get_node(id) else {
-            return;
-        };
-        if node
-            .primary_styles()
-            .is_some_and(|style| style.clone_display() == style::values::computed::Display::None)
-        {
-            return;
-        }
-        if id != self.root
-            && node
-                .element_data()
-                .is_some_and(|element| element.inline_layout_data.is_some())
-        {
-            return;
-        }
-        if let NodeData::Text(data) = &node.data {
-            let style = node
-                .parent
-                .and_then(|id| self.doc.get_node(id))
-                .and_then(Node::primary_styles);
-            let transform = style
-                .as_ref()
-                .map_or(TextTransform::NONE, |style| style.clone_text_transform());
-            let whitespace = style
-                .as_ref()
-                .map_or(WhiteSpaceCollapse::Collapse, |style| {
-                    style.clone_white_space_collapse()
-                });
-            let mut units = 0;
-            for c in data.content.chars() {
-                if id == self.point.0 && units >= self.point.1 {
-                    self.result = Some(self.cursor);
-                    return;
-                }
-                self.advance(c, transform, whitespace);
-                units += c.len_utf16();
-            }
-            if id == self.point.0 {
-                self.result = Some(self.cursor);
-            }
-            return;
-        }
-        if node
-            .element_data()
-            .is_some_and(|element| element.name.local == blitz_dom::local_name!("br"))
-        {
-            self.advance('\n', TextTransform::NONE, WhiteSpaceCollapse::Preserve);
-            return;
-        }
-        if let Some(before) = node.before() {
-            self.visit(before);
-        }
-        for (index, &child) in node.children.iter().enumerate() {
-            if id == self.point.0 && index == self.point.1 {
-                self.result = Some(self.cursor);
-                return;
-            }
-            self.visit(child);
-            if self.result.is_some() {
-                return;
-            }
-        }
-        if id == self.point.0 {
-            self.result = Some(self.cursor);
-            return;
-        }
-        if let Some(after) = node.after() {
-            self.visit(after);
-        }
-    }
-
-    fn advance(&mut self, c: char, transform: TextTransform, whitespace: WhiteSpaceCollapse) {
-        let remaining = &self.text[self.cursor..];
-        let collapsible = match whitespace {
-            WhiteSpaceCollapse::Collapse => c.is_ascii_whitespace(),
-            WhiteSpaceCollapse::PreserveBreaks => matches!(c, ' ' | '\t'),
-            _ => false,
-        };
-        if collapsible {
-            if !self.collapsed_space {
-                if remaining.starts_with(' ') {
-                    self.cursor += 1;
-                } else if transform.contains(TextTransform::FULL_WIDTH)
-                    && remaining.starts_with('\u{3000}')
-                {
-                    self.cursor += '\u{3000}'.len_utf8();
-                }
-            }
-            self.collapsed_space = true;
-            return;
-        }
-        self.collapsed_space = false;
-        let mut bytes = [0; 4];
-        let original = c.encode_utf8(&mut bytes);
-        if remaining.starts_with(&*original) {
-            self.cursor += original.len();
-            return;
-        }
-        // Consume case expansions only when they occur in the actual layout text.
-        let map_width = |c| {
-            let c = if transform.contains(TextTransform::FULL_WIDTH) {
-                blitz_dom::full_width(c)
-            } else {
-                c
-            };
-            if transform.contains(TextTransform::FULL_SIZE_KANA) {
-                blitz_dom::full_size_kana(c)
-            } else {
-                c
-            }
-        };
-        let mapped = if transform.contains(TextTransform::UPPERCASE)
-            || transform.contains(TextTransform::CAPITALIZE)
-        {
-            matching_prefix(remaining, c.to_uppercase().map(map_width))
-        } else if transform.contains(TextTransform::LOWERCASE) {
-            matching_prefix(remaining, c.to_lowercase().map(map_width))
-        } else {
-            None
-        };
-        if let Some(bytes) = mapped {
-            self.cursor += bytes;
-        } else if !transform.is_empty()
-            && GeneralCategoryGroup::Mark
-                .contains(CodePointMapData::<GeneralCategory>::new().get(c))
-        {
-            // Tailored casing can remove combining marks (e.g. Greek uppercase acute).
-        } else if let Some(rendered) = remaining.chars().next() {
-            // math-auto, full-width, full-size-kana and one-to-one tailored case mappings preserve
-            // character count.
-            self.cursor += rendered.len_utf8();
-        }
-    }
-}
-
-fn matching_prefix(text: &str, mapped: impl Iterator<Item = char>) -> Option<usize> {
-    let mut text = text.chars();
-    let mut bytes = 0;
-    for c in mapped {
-        if text.next() != Some(c) {
-            return None;
-        }
-        bytes += c.len_utf8();
-    }
-    Some(bytes)
 }
