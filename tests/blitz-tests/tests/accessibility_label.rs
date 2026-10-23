@@ -2268,13 +2268,17 @@ fn does_not_use_content_as_label_of_elements_not_named_from_content() -> TestRes
     let tree_update = document.build_accessibility_tree();
 
     verify_that!(
-        tree_update
-            .nodes
-            .iter()
-            .filter(|(_, node)| node.role() != Role::TextRun)
-            .map(|(_, node)| node.label())
-            .collect::<Vec<_>>(),
-        each(none())
+        tree_update.nodes,
+        each(
+            (
+                anything(),
+                matches_pattern!(AccessKitNode { label(): none() })
+            )
+                .or((
+                    anything(),
+                    matches_pattern!(AccessKitNode { role(): eq(Role::TextRun) })
+                ))
+        )
     )
 }
 
@@ -2289,12 +2293,11 @@ fn does_not_populate_labelled_by_from_text_content() -> TestResult<()> {
     let tree_update = document.build_accessibility_tree();
 
     verify_that!(
-        tree_update
-            .nodes
-            .iter()
-            .map(|(_, node)| node.labelled_by().len())
-            .collect::<Vec<_>>(),
-        each(eq(0))
+        tree_update.nodes,
+        each((
+            anything(),
+            matches_pattern!(AccessKitNode { *labelled_by(): is_empty() })
+        ))
     )
 }
 
