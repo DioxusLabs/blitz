@@ -2,30 +2,9 @@ use accesskit::{Node as AccessKitNode, NodeId, Role, TreeUpdate};
 use blitz_dom::{DocumentConfig, QualName, local_name, ns};
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::shell::{ColorScheme, Viewport};
+use rstest::rstest;
 use std::sync::Arc;
 use test_that::prelude::*;
-
-#[test]
-fn includes_aria_label_as_label() -> TestResult<()> {
-    let mut document = HtmlDocument::from_html(
-        r#"<html><div role="button" aria-label="A node"></div></html>"#,
-        default_document_config(),
-    );
-    document.resolve(0.0);
-
-    let tree_update = document.build_accessibility_tree();
-
-    verify_that!(
-        tree_update.nodes,
-        contains((
-            anything(),
-            matches_pattern!(AccessKitNode {
-                role(): eq(Role::Button),
-                label(): some(eq("A node")),
-            })
-        ))
-    )
-}
 
 #[test]
 fn includes_aria_labelledby_as_labelled_by_for_one_node() -> TestResult<()> {
@@ -108,33 +87,6 @@ fn ignores_labelledby_element_which_does_not_correspond_to_element_in_the_dom() 
 }
 
 #[test]
-fn uses_text_of_aria_labelledby_targets_as_label() -> TestResult<()> {
-    let mut document = HtmlDocument::from_html(
-        r#"<html>
-          <div role="button" aria-labelledby="second first"></div>
-          <span id="first">  First </span>
-          <span id="second">Second
-            label</span>
-        </html>"#,
-        default_document_config(),
-    );
-    document.resolve(0.0);
-
-    let tree_update = document.build_accessibility_tree();
-
-    verify_that!(
-        tree_update.nodes,
-        contains((
-            anything(),
-            matches_pattern!(AccessKitNode {
-                role(): eq(Role::Button),
-                label(): some(eq("Second label First")),
-            })
-        ))
-    )
-}
-
-#[test]
 fn aria_labelledby_takes_precedence_over_aria_label_and_content() -> TestResult<()> {
     let mut document = HtmlDocument::from_html(
         r#"<html>
@@ -190,31 +142,6 @@ fn includes_self_reference_and_nested_text_in_aria_labelledby() -> TestResult<()
 }
 
 #[test]
-fn uses_aria_label_of_aria_labelledby_target() -> TestResult<()> {
-    let mut document = HtmlDocument::from_html(
-        r#"<html>
-          <div role="button" aria-labelledby="label"></div>
-          <span id="label" aria-label="From aria-label">From content</span>
-        </html>"#,
-        default_document_config(),
-    );
-    document.resolve(0.0);
-
-    let tree_update = document.build_accessibility_tree();
-
-    verify_that!(
-        tree_update.nodes,
-        contains((
-            anything(),
-            matches_pattern!(AccessKitNode {
-                role(): eq(Role::Button),
-                label(): some(eq("From aria-label")),
-            })
-        ))
-    )
-}
-
-#[test]
 fn uses_hidden_aria_labelledby_targets_for_label_without_referencing_them() -> TestResult<()> {
     let mut document = HtmlDocument::from_html(
         r#"<html>
@@ -236,31 +163,6 @@ fn uses_hidden_aria_labelledby_targets_for_label_without_referencing_them() -> T
                 role(): eq(Role::Button),
                 label(): some(eq("Save file")),
                 *labelled_by(): is_empty(),
-            })
-        ))
-    )
-}
-
-#[test]
-fn falls_back_to_aria_label_when_aria_labelledby_targets_have_no_text() -> TestResult<()> {
-    let mut document = HtmlDocument::from_html(
-        r#"<html>
-          <div role="button" aria-label="Fallback" aria-labelledby="empty"></div>
-          <span id="empty"></span>
-        </html>"#,
-        default_document_config(),
-    );
-    document.resolve(0.0);
-
-    let tree_update = document.build_accessibility_tree();
-
-    verify_that!(
-        tree_update.nodes,
-        contains((
-            anything(),
-            matches_pattern!(AccessKitNode {
-                role(): eq(Role::Button),
-                label(): some(eq("Fallback")),
             })
         ))
     )
@@ -311,31 +213,6 @@ fn populates_labelled_by_from_label_element() -> TestResult<()> {
             matches_pattern!(AccessKitNode {
                 role(): eq(Role::Button),
                 *labelled_by(): container_eq([label_node_id]),
-            })
-        ))
-    )
-}
-
-#[test]
-fn uses_text_of_label_element_as_label_of_target() -> TestResult<()> {
-    let mut document = HtmlDocument::from_html(
-        r#"<html>
-          <button id="arbitrary-button"></button>
-          <label for="arbitrary-button">  Button   label </label>
-        </html>"#,
-        default_document_config(),
-    );
-    document.resolve(0.0);
-
-    let tree_update = document.build_accessibility_tree();
-
-    verify_that!(
-        tree_update.nodes,
-        contains((
-            anything(),
-            matches_pattern!(AccessKitNode {
-                role(): eq(Role::Button),
-                label(): some(eq("Button label")),
             })
         ))
     )
@@ -430,31 +307,6 @@ fn labels_each_target_with_its_own_label_element() -> TestResult<()> {
                 })
             ))
         )
-    )
-}
-
-#[test]
-fn uses_text_of_nested_elements_in_label_element() -> TestResult<()> {
-    let mut document = HtmlDocument::from_html(
-        r#"<html>
-          <button id="arbitrary-button"></button>
-          <label for="arbitrary-button">Save <span>the file</span> now</label>
-        </html>"#,
-        default_document_config(),
-    );
-    document.resolve(0.0);
-
-    let tree_update = document.build_accessibility_tree();
-
-    verify_that!(
-        tree_update.nodes,
-        contains((
-            anything(),
-            matches_pattern!(AccessKitNode {
-                role(): eq(Role::Button),
-                label(): some(eq("Save the file now")),
-            })
-        ))
     )
 }
 
@@ -856,57 +708,6 @@ fn ignores_invalid_idrefs_among_valid_aria_labelledby_idrefs() -> TestResult<()>
 }
 
 #[test]
-fn does_not_follow_aria_labelledby_of_aria_labelledby_target() -> TestResult<()> {
-    let mut document = HtmlDocument::from_html(
-        r#"<html>
-          <div role="button" aria-labelledby="first"></div>
-          <span id="first" aria-labelledby="second">First</span>
-          <span id="second">Second</span>
-        </html>"#,
-        default_document_config(),
-    );
-    document.resolve(0.0);
-
-    let tree_update = document.build_accessibility_tree();
-
-    verify_that!(
-        tree_update.nodes,
-        contains((
-            anything(),
-            matches_pattern!(AccessKitNode {
-                role(): eq(Role::Button),
-                label(): some(eq("First")),
-            })
-        ))
-    )
-}
-
-#[test]
-fn uses_text_of_aria_hidden_aria_labelledby_target_as_label() -> TestResult<()> {
-    let mut document = HtmlDocument::from_html(
-        r#"<html>
-          <div role="button" aria-labelledby="hidden-element"></div>
-          <span id="hidden-element" aria-hidden="true">Save</span>
-        </html>"#,
-        default_document_config(),
-    );
-    document.resolve(0.0);
-
-    let tree_update = document.build_accessibility_tree();
-
-    verify_that!(
-        tree_update.nodes,
-        contains((
-            anything(),
-            matches_pattern!(AccessKitNode {
-                role(): eq(Role::Button),
-                label(): some(eq("Save")),
-            })
-        ))
-    )
-}
-
-#[test]
 fn ignores_blank_aria_label() -> TestResult<()> {
     let mut document = HtmlDocument::from_html(
         r#"<html>
@@ -1160,82 +961,6 @@ fn does_not_use_figcaption_for_img_outside_figure_with_figcaption() -> TestResul
             matches_pattern!(AccessKitNode {
                 role(): eq(Role::Image),
                 label(): none(),
-            })
-        ))
-    )
-}
-
-#[test]
-fn includes_img_alt_in_label_element_text() -> TestResult<()> {
-    let mut document = HtmlDocument::from_html(
-        r#"<html>
-          <button id="arbitrary-button"></button>
-          <label for="arbitrary-button">Save <img alt="the file"> now</label>
-        </html>"#,
-        default_document_config(),
-    );
-    document.resolve(0.0);
-
-    let tree_update = document.build_accessibility_tree();
-
-    verify_that!(
-        tree_update.nodes,
-        contains((
-            anything(),
-            matches_pattern!(AccessKitNode {
-                role(): eq(Role::Button),
-                label(): some(eq("Save the file now")),
-            })
-        ))
-    )
-}
-
-#[test]
-fn includes_img_alt_in_aria_labelledby_target_text() -> TestResult<()> {
-    let mut document = HtmlDocument::from_html(
-        r#"<html>
-          <div role="button" aria-labelledby="nested-img direct-img"></div>
-          <span id="nested-img">Save <img alt="logo"></span>
-          <img id="direct-img" alt="now" aria-label="">
-        </html>"#,
-        default_document_config(),
-    );
-    document.resolve(0.0);
-
-    let tree_update = document.build_accessibility_tree();
-
-    verify_that!(
-        tree_update.nodes,
-        contains((
-            anything(),
-            matches_pattern!(AccessKitNode {
-                role(): eq(Role::Button),
-                label(): some(eq("Save logo now")),
-            })
-        ))
-    )
-}
-
-#[test]
-fn prefers_img_aria_label_over_alt_in_label_element_text() -> TestResult<()> {
-    let mut document = HtmlDocument::from_html(
-        r#"<html>
-          <button id="arbitrary-button"></button>
-          <label for="arbitrary-button"><img alt="Alt text" aria-label="Aria label"></label>
-        </html>"#,
-        default_document_config(),
-    );
-    document.resolve(0.0);
-
-    let tree_update = document.build_accessibility_tree();
-
-    verify_that!(
-        tree_update.nodes,
-        contains((
-            anything(),
-            matches_pattern!(AccessKitNode {
-                role(): eq(Role::Button),
-                label(): some(eq("Aria label")),
             })
         ))
     )
@@ -1571,305 +1296,6 @@ fn aria_label_of_wrapped_target_takes_precedence_over_wrapping_label_element() -
 }
 
 #[test]
-fn excludes_hidden_descendants_of_visible_aria_labelledby_target() -> TestResult<()> {
-    let mut document = HtmlDocument::from_html(
-        r#"<html>
-          <div role="button" aria-labelledby="target"></div>
-          <span id="target">Save
-            <span style="display: none">secret</span>
-            <span aria-hidden="true">hidden</span>
-            <span style="visibility: hidden">invisible</span>
-            file</span>
-        </html>"#,
-        default_document_config(),
-    );
-    document.resolve(0.0);
-
-    let tree_update = document.build_accessibility_tree();
-
-    verify_that!(
-        tree_update.nodes,
-        contains((
-            anything(),
-            matches_pattern!(AccessKitNode {
-                role(): eq(Role::Button),
-                label(): some(eq("Save file")),
-            })
-        ))
-    )
-}
-
-#[test]
-fn excludes_hidden_descendants_of_label_element() -> TestResult<()> {
-    let mut document = HtmlDocument::from_html(
-        r#"<html>
-          <button id="arbitrary-button"></button>
-          <label for="arbitrary-button">Save <span style="display: none">secret</span> file</label>
-        </html>"#,
-        default_document_config(),
-    );
-    document.resolve(0.0);
-
-    let tree_update = document.build_accessibility_tree();
-
-    verify_that!(
-        tree_update.nodes,
-        contains((
-            anything(),
-            matches_pattern!(AccessKitNode {
-                role(): eq(Role::Button),
-                label(): some(eq("Save file")),
-            })
-        ))
-    )
-}
-
-#[test]
-fn includes_hidden_descendants_of_hidden_aria_labelledby_target() -> TestResult<()> {
-    let mut document = HtmlDocument::from_html(
-        r#"<html>
-          <div role="button" aria-labelledby="target"></div>
-          <div id="target" style="visibility: hidden">Save
-            <span style="display: none">file</span></div>
-        </html>"#,
-        default_document_config(),
-    );
-    document.resolve(0.0);
-
-    let tree_update = document.build_accessibility_tree();
-
-    verify_that!(
-        tree_update.nodes,
-        contains((
-            anything(),
-            matches_pattern!(AccessKitNode {
-                role(): eq(Role::Button),
-                label(): some(eq("Save file")),
-            })
-        ))
-    )
-}
-
-#[test]
-fn uses_aria_label_of_descendants_of_aria_labelledby_target() -> TestResult<()> {
-    let mut document = HtmlDocument::from_html(
-        r#"<html>
-          <div role="button" aria-labelledby="target"></div>
-          <span id="target">Save <span aria-label="the file">ignored</span> now
-            <b aria-label="  ">blank aria-label is ignored</b></span>
-        </html>"#,
-        default_document_config(),
-    );
-    document.resolve(0.0);
-
-    let tree_update = document.build_accessibility_tree();
-
-    verify_that!(
-        tree_update.nodes,
-        contains((
-            anything(),
-            matches_pattern!(AccessKitNode {
-                role(): eq(Role::Button),
-                label(): some(eq("Save the file now blank aria-label is ignored")),
-            })
-        ))
-    )
-}
-
-#[test]
-fn uses_aria_label_of_descendants_of_label_element() -> TestResult<()> {
-    let mut document = HtmlDocument::from_html(
-        r#"<html>
-          <button id="arbitrary-button"></button>
-          <label for="arbitrary-button">Save <span aria-label="the file">ignored</span></label>
-        </html>"#,
-        default_document_config(),
-    );
-    document.resolve(0.0);
-
-    let tree_update = document.build_accessibility_tree();
-
-    verify_that!(
-        tree_update.nodes,
-        contains((
-            anything(),
-            matches_pattern!(AccessKitNode {
-                role(): eq(Role::Button),
-                label(): some(eq("Save the file")),
-            })
-        ))
-    )
-}
-
-#[test]
-fn uses_value_of_embedded_text_inputs() -> TestResult<()> {
-    let mut document = HtmlDocument::from_html(
-        r#"<html>
-          <div role="button" aria-labelledby="target"></div>
-          <span id="target">Flash <input value="5"> times and
-            <textarea>notes</textarea> then <input type="password" value="secret"> done</span>
-        </html>"#,
-        default_document_config(),
-    );
-    document.resolve(0.0);
-
-    let tree_update = document.build_accessibility_tree();
-
-    verify_that!(
-        tree_update.nodes,
-        contains((
-            anything(),
-            matches_pattern!(AccessKitNode {
-                role(): eq(Role::Button),
-                label(): some(eq("Flash 5 times and notes then done")),
-            })
-        ))
-    )
-}
-
-#[test]
-fn uses_value_of_directly_referenced_text_input() -> TestResult<()> {
-    let mut document = HtmlDocument::from_html(
-        r#"<html>
-          <div role="button" aria-labelledby="referenced"></div>
-          <input id="referenced" value="Entered" aria-label="Ignored">
-        </html>"#,
-        default_document_config(),
-    );
-    document.resolve(0.0);
-
-    let tree_update = document.build_accessibility_tree();
-
-    verify_that!(
-        tree_update.nodes,
-        contains((
-            anything(),
-            matches_pattern!(AccessKitNode {
-                role(): eq(Role::Button),
-                label(): some(eq("Entered")),
-            })
-        ))
-    )
-}
-
-#[test]
-fn uses_value_of_embedded_text_input_in_label_element_for_other_target() -> TestResult<()> {
-    let mut document = HtmlDocument::from_html(
-        r#"<html>
-          <label for="target">Flash <input value="5"> times</label>
-          <button id="target"></button>
-        </html>"#,
-        default_document_config(),
-    );
-    document.resolve(0.0);
-
-    let tree_update = document.build_accessibility_tree();
-
-    verify_that!(
-        tree_update.nodes,
-        contains((
-            anything(),
-            matches_pattern!(AccessKitNode {
-                role(): eq(Role::Button),
-                label(): some(eq("Flash 5 times")),
-            })
-        ))
-    )
-}
-
-#[test]
-fn uses_value_of_embedded_range_controls() -> TestResult<()> {
-    let mut document = HtmlDocument::from_html(
-        r#"<html>
-          <div role="button" aria-labelledby="target"></div>
-          <span id="target">
-            <div role="slider" aria-valuenow="3" aria-valuetext="three"></div>
-            <div role="spinbutton" aria-valuenow="4" aria-valuemin="0"></div>
-            <input type="range" value="7">
-          </span>
-        </html>"#,
-        default_document_config(),
-    );
-    document.resolve(0.0);
-
-    let tree_update = document.build_accessibility_tree();
-
-    verify_that!(
-        tree_update.nodes,
-        contains((
-            anything(),
-            matches_pattern!(AccessKitNode {
-                role(): eq(Role::Button),
-                label(): some(eq("three 4 7")),
-            })
-        ))
-    )
-}
-
-#[test]
-fn uses_chosen_option_of_embedded_select() -> TestResult<()> {
-    let mut document = HtmlDocument::from_html(
-        r#"<html>
-          <div role="button" aria-labelledby="target"></div>
-          <span id="target">
-            Send
-            <select><option>One</option><option selected>Two</option></select>
-            and
-            <select><option>Three</option><option>Four</option></select>
-          </span>
-        </html>"#,
-        default_document_config(),
-    );
-    document.resolve(0.0);
-
-    let tree_update = document.build_accessibility_tree();
-
-    verify_that!(
-        tree_update.nodes,
-        contains((
-            anything(),
-            matches_pattern!(AccessKitNode {
-                role(): eq(Role::Button),
-                label(): some(eq("Send Two and Three")),
-            })
-        ))
-    )
-}
-
-#[test]
-fn includes_generated_content_of_aria_labelledby_target_and_descendants() -> TestResult<()> {
-    let mut document = HtmlDocument::from_html(
-        r#"<html>
-          <head><style>
-            #target::before { content: "Before-"; }
-            #target::after { content: "-after"; }
-            #inner::before { content: "["; }
-            #inner::after { content: "]"; }
-          </style></head>
-          <body>
-            <div role="button" aria-labelledby="target"></div>
-            <span id="target">text <span id="inner">inner</span></span>
-          </body>
-        </html>"#,
-        default_document_config(),
-    );
-    document.resolve(0.0);
-
-    let tree_update = document.build_accessibility_tree();
-
-    verify_that!(
-        tree_update.nodes,
-        contains((
-            anything(),
-            matches_pattern!(AccessKitNode {
-                role(): eq(Role::Button),
-                label(): some(eq("Before-text [inner]-after")),
-            })
-        ))
-    )
-}
-
-#[test]
 fn uses_alt_of_image_input_as_label() -> TestResult<()> {
     let mut document = HtmlDocument::from_html(
         r#"<html>
@@ -2172,52 +1598,6 @@ fn uses_content_as_label_of_elements_named_from_content() -> TestResult<()> {
 }
 
 #[test]
-fn includes_img_alt_in_label_from_content() -> TestResult<()> {
-    let mut document = HtmlDocument::from_html(
-        r#"<html><button><img alt="Save"> Draft</button></html>"#,
-        default_document_config(),
-    );
-    document.resolve(0.0);
-
-    let tree_update = document.build_accessibility_tree();
-
-    verify_that!(
-        tree_update.nodes,
-        contains((
-            anything(),
-            matches_pattern!(AccessKitNode {
-                role(): eq(Role::Button),
-                label(): some(eq("Save Draft")),
-            })
-        ))
-    )
-}
-
-#[test]
-fn excludes_hidden_descendants_from_label_from_content() -> TestResult<()> {
-    let mut document = HtmlDocument::from_html(
-        r#"<html>
-          <button>Visible <span style="display: none">secret</span> <span aria-hidden="true">hidden</span>text</button>
-        </html>"#,
-        default_document_config(),
-    );
-    document.resolve(0.0);
-
-    let tree_update = document.build_accessibility_tree();
-
-    verify_that!(
-        tree_update.nodes,
-        contains((
-            anything(),
-            matches_pattern!(AccessKitNode {
-                role(): eq(Role::Button),
-                label(): some(eq("Visible text")),
-            })
-        ))
-    )
-}
-
-#[test]
 fn aria_label_takes_precedence_over_content() -> TestResult<()> {
     let mut document = HtmlDocument::from_html(
         r#"<html>
@@ -2302,68 +1682,6 @@ fn does_not_populate_labelled_by_from_text_content() -> TestResult<()> {
 }
 
 #[test]
-fn separates_chosen_options_of_embedded_multiple_select() -> TestResult<()> {
-    let mut document = HtmlDocument::from_html(
-        r#"<html>
-          <div role="button" aria-labelledby="target"></div>
-          <span id="target">Pick
-            <select multiple>
-              <option selected>One</option>
-              <option>Two</option>
-              <option selected>Three</option>
-            </select>
-            now</span>
-        </html>"#,
-        default_document_config(),
-    );
-    document.resolve(0.0);
-
-    let tree_update = document.build_accessibility_tree();
-
-    verify_that!(
-        tree_update.nodes,
-        contains((
-            anything(),
-            matches_pattern!(AccessKitNode {
-                role(): eq(Role::Button),
-                label(): some(eq("Pick One Three now")),
-            })
-        ))
-    )
-}
-
-#[test]
-fn separates_selected_options_of_embedded_listbox() -> TestResult<()> {
-    let mut document = HtmlDocument::from_html(
-        r#"<html>
-          <div role="button" aria-labelledby="target"></div>
-          <span id="target">Pick
-            <div role="listbox">
-              <div role="option" aria-selected="true">One</div>
-              <div role="option" aria-selected="false">Two</div>
-              <div role="option" aria-selected="true">Three</div>
-            </div>
-            now</span>
-        </html>"#,
-        default_document_config(),
-    );
-    document.resolve(0.0);
-
-    let tree_update = document.build_accessibility_tree();
-
-    verify_that!(
-        tree_update.nodes,
-        contains((
-            anything(),
-            matches_pattern!(AccessKitNode {
-                role(): eq(Role::Button),
-                label(): some(eq("Pick One Three now")),
-            })
-        ))
-    )
-}
-
-#[test]
 fn aria_labelledby_references_first_element_in_tree_order_with_duplicate_id() -> TestResult<()> {
     let mut document = HtmlDocument::from_html(
         r#"<html>
@@ -2424,6 +1742,335 @@ fn label_element_labels_first_element_in_tree_order_with_duplicate_id() -> TestR
                 })
             ))
         )
+    )
+}
+
+#[rstest]
+#[case::includes_aria_label_as_label(
+    r#"<html><div role="button" aria-label="A node"></div></html>"#,
+    "A node"
+)]
+#[case::uses_text_of_aria_labelledby_targets_as_label(
+    r#"<html>
+          <div role="button" aria-labelledby="second first"></div>
+          <span id="first">  First </span>
+          <span id="second">Second
+            label</span>
+        </html>"#,
+    "Second label First"
+)]
+#[case::uses_aria_label_of_aria_labelledby_target(
+    r#"<html>
+          <div role="button" aria-labelledby="label"></div>
+          <span id="label" aria-label="From aria-label">From content</span>
+        </html>"#,
+    "From aria-label"
+)]
+#[case::falls_back_to_aria_label_when_aria_labelledby_targets_have_no_text(
+    r#"<html>
+          <div role="button" aria-label="Fallback" aria-labelledby="empty"></div>
+          <span id="empty"></span>
+        </html>"#,
+    "Fallback"
+)]
+#[case::uses_text_of_label_element_as_label_of_target(
+    r#"<html>
+          <button id="arbitrary-button"></button>
+          <label for="arbitrary-button">  Button   label </label>
+        </html>"#,
+    "Button label"
+)]
+#[case::uses_text_of_nested_elements_in_label_element(
+    r#"<html>
+          <button id="arbitrary-button"></button>
+          <label for="arbitrary-button">Save <span>the file</span> now</label>
+        </html>"#,
+    "Save the file now"
+)]
+#[case::does_not_follow_aria_labelledby_of_aria_labelledby_target(
+    r#"<html>
+          <div role="button" aria-labelledby="first"></div>
+          <span id="first" aria-labelledby="second">First</span>
+          <span id="second">Second</span>
+        </html>"#,
+    "First"
+)]
+#[case::uses_text_of_aria_hidden_aria_labelledby_target_as_label(
+    r#"<html>
+          <div role="button" aria-labelledby="hidden-element"></div>
+          <span id="hidden-element" aria-hidden="true">Save</span>
+        </html>"#,
+    "Save"
+)]
+#[case::includes_img_alt_in_label_element_text(
+    r#"<html>
+          <button id="arbitrary-button"></button>
+          <label for="arbitrary-button">Save <img alt="the file"> now</label>
+        </html>"#,
+    "Save the file now"
+)]
+#[case::includes_img_alt_in_aria_labelledby_target_text(
+    r#"<html>
+          <div role="button" aria-labelledby="nested-img direct-img"></div>
+          <span id="nested-img">Save <img alt="logo"></span>
+          <img id="direct-img" alt="now" aria-label="">
+        </html>"#,
+    "Save logo now"
+)]
+#[case::prefers_img_aria_label_over_alt_in_label_element_text(
+    r#"<html>
+          <button id="arbitrary-button"></button>
+          <label for="arbitrary-button"><img alt="Alt text" aria-label="Aria label"></label>
+        </html>"#,
+    "Aria label"
+)]
+#[case::concatenates_elements_with_space_between_them_when_markup_does_not_include_whitespace(
+    "<html><button><div>Node</div><div>content</div></button></html>",
+    "Node content"
+)]
+#[case::separates_text_from_following_block_element_within_inline_parent(
+    r#"<html><div role="button" aria-labelledby="target"></div><span id="target">Save<div>file</div></span></html>"#,
+    "Save file"
+)]
+#[case::does_not_separate_adjacent_inline_content_in_block_parent(
+    "<html><button>Sa<b>ve</b></button></html>",
+    "Save"
+)]
+#[case::does_not_separate_text_around_comment(
+    "<html><button>Sa<!-- arbitrary comment -->ve</button></html>",
+    "Save"
+)]
+#[case::does_not_separate_text_around_display_none_element(
+    r#"<html><button>Sa<span style="display: none">arbitrary</span>ve</button></html>"#,
+    "Save"
+)]
+#[case::does_not_separate_text_around_display_contents_inline_element(
+    r#"<html><button>Sa<span style="display: contents">v</span>e</button></html>"#,
+    "Save"
+)]
+#[case::separates_table_cells(
+    "<html><button><table><tr><td>First</td><td>second</td></tr></table></button></html>",
+    "First second"
+)]
+#[case::separates_elements_with_display_table_cell(
+    r#"<html><button><span style="display: table-cell">First</span><span style="display: table-cell">second</span></button></html>"#,
+    "First second"
+)]
+#[case::separates_floated_element_from_surrounding_text(
+    r#"<html><button><span style="float: left">First</span>second</button></html>"#,
+    "First second"
+)]
+#[case::separates_absolutely_positioned_element_from_surrounding_text(
+    r#"<html><button><span style="position: absolute">First</span>second</button></html>"#,
+    "First second"
+)]
+#[case::separates_img_alt_from_adjacent_text(
+    r#"<html><button>Save<img alt="the">file</button></html>"#,
+    "Save the file"
+)]
+#[case::separates_embedded_input_value_from_adjacent_text(
+    r#"<html><button>Flash<input value="5">times</button></html>"#,
+    "Flash 5 times"
+)]
+#[case::separates_inline_block_element_from_adjacent_text(
+    r#"<html><button>Save<span style="display: inline-block">the</span>file</button></html>"#,
+    "Save the file"
+)]
+#[case::does_not_separate_text_around_inline_element_containing_only_aria_hidden_block(
+    r#"<html><button>Sa<span><div aria-hidden="true">arbitrary</div></span>ve</button></html>"#,
+    "Save"
+)]
+#[case::separates_text_around_line_break(
+    "<html><button>First<br>second</button></html>",
+    "First second"
+)]
+#[case::does_not_separate_text_around_hidden_line_break(
+    r#"<html><button>First<br style="display: none;">second</button></html>"#,
+    "Firstsecond"
+)]
+#[case::separates_block_before_pseudo_element_from_content(
+    r#"<html>
+          <style>.arbitrary::before { content: "First"; display: block; }</style>
+          <button><div class="arbitrary">second</div></button>
+        </html>"#,
+    "First second"
+)]
+#[case::separates_block_after_pseudo_element_from_content(
+    r#"<html>
+          <style>.arbitrary::after { content: "second"; display: block; }</style>
+          <button><div class="arbitrary">First</div></button>
+        </html>"#,
+    "First second"
+)]
+#[case::separates_inline_block_pseudo_element_from_content(
+    r#"<html>
+          <style>.arbitrary::before { content: "First"; display: inline-block; }</style>
+          <button><span class="arbitrary">second</span></button>
+        </html>"#,
+    "First second"
+)]
+#[case::joins_inline_pseudo_elements_to_content_without_space(
+    r#"<html>
+          <style>
+            .arbitrary::before { content: "Sa"; }
+            .arbitrary::after { content: "e"; }
+          </style>
+          <button><span class="arbitrary">v</span></button>
+        </html>"#,
+    "Save"
+)]
+#[case::excludes_hidden_descendants_of_visible_aria_labelledby_target(
+    r#"<html>
+          <div role="button" aria-labelledby="target"></div>
+          <span id="target">Save
+            <span style="display: none">secret</span>
+            <span aria-hidden="true">hidden</span>
+            <span style="visibility: hidden">invisible</span>
+            file</span>
+        </html>"#,
+    "Save file"
+)]
+#[case::excludes_hidden_descendants_of_label_element(
+    r#"<html>
+          <button id="arbitrary-button"></button>
+          <label for="arbitrary-button">Save <span style="display: none">secret</span> file</label>
+        </html>"#,
+    "Save file"
+)]
+#[case::includes_hidden_descendants_of_hidden_aria_labelledby_target(
+    r#"<html>
+          <div role="button" aria-labelledby="target"></div>
+          <div id="target" style="visibility: hidden">Save
+            <span style="display: none">file</span></div>
+        </html>"#,
+    "Save file"
+)]
+#[case::uses_aria_label_of_descendants_of_aria_labelledby_target(
+    r#"<html>
+          <div role="button" aria-labelledby="target"></div>
+          <span id="target">Save <span aria-label="the file">ignored</span> now
+            <b aria-label="  ">blank aria-label is ignored</b></span>
+        </html>"#,
+    "Save the file now blank aria-label is ignored"
+)]
+#[case::uses_aria_label_of_descendants_of_label_element(
+    r#"<html>
+          <button id="arbitrary-button"></button>
+          <label for="arbitrary-button">Save <span aria-label="the file">ignored</span></label>
+        </html>"#,
+    "Save the file"
+)]
+#[case::uses_value_of_embedded_text_inputs(
+    r#"<html>
+          <div role="button" aria-labelledby="target"></div>
+          <span id="target">Flash <input value="5"> times and
+            <textarea>notes</textarea> then <input type="password" value="secret"> done</span>
+        </html>"#,
+    "Flash 5 times and notes then done"
+)]
+#[case::uses_value_of_directly_referenced_text_input(
+    r#"<html>
+          <div role="button" aria-labelledby="referenced"></div>
+          <input id="referenced" value="Entered" aria-label="Ignored">
+        </html>"#,
+    "Entered"
+)]
+#[case::uses_value_of_embedded_text_input_in_label_element_for_other_target(
+    r#"<html>
+          <label for="target">Flash <input value="5"> times</label>
+          <button id="target"></button>
+        </html>"#,
+    "Flash 5 times"
+)]
+#[case::uses_value_of_embedded_range_controls(
+    r#"<html>
+          <div role="button" aria-labelledby="target"></div>
+          <span id="target">
+            <div role="slider" aria-valuenow="3" aria-valuetext="three"></div>
+            <div role="spinbutton" aria-valuenow="4" aria-valuemin="0"></div>
+            <input type="range" value="7">
+          </span>
+        </html>"#,
+    "three 4 7"
+)]
+#[case::uses_chosen_option_of_embedded_select(
+    r#"<html>
+          <div role="button" aria-labelledby="target"></div>
+          <span id="target">
+            Send
+            <select><option>One</option><option selected>Two</option></select>
+            and
+            <select><option>Three</option><option>Four</option></select>
+          </span>
+        </html>"#,
+    "Send Two and Three"
+)]
+#[case::includes_generated_content_of_aria_labelledby_target_and_descendants(
+    r#"<html>
+          <head><style>
+            #target::before { content: "Before-"; }
+            #target::after { content: "-after"; }
+            #inner::before { content: "["; }
+            #inner::after { content: "]"; }
+          </style></head>
+          <body>
+            <div role="button" aria-labelledby="target"></div>
+            <span id="target">text <span id="inner">inner</span></span>
+          </body>
+        </html>"#,
+    "Before-text [inner]-after"
+)]
+#[case::includes_img_alt_in_label_from_content(
+    r#"<html><button><img alt="Save"> Draft</button></html>"#,
+    "Save Draft"
+)]
+#[case::excludes_hidden_descendants_from_label_from_content(
+    r#"<html>
+          <button>Visible <span style="display: none">secret</span> <span aria-hidden="true">hidden</span>text</button>
+        </html>"#,
+    "Visible text"
+)]
+#[case::separates_chosen_options_of_embedded_multiple_select(
+    r#"<html>
+          <div role="button" aria-labelledby="target"></div>
+          <span id="target">Pick
+            <select multiple>
+              <option selected>One</option>
+              <option>Two</option>
+              <option selected>Three</option>
+            </select>
+            now</span>
+        </html>"#,
+    "Pick One Three now"
+)]
+#[case::separates_selected_options_of_embedded_listbox(
+    r#"<html>
+          <div role="button" aria-labelledby="target"></div>
+          <span id="target">Pick
+            <div role="listbox">
+              <div role="option" aria-selected="true">One</div>
+              <div role="option" aria-selected="false">Two</div>
+              <div role="option" aria-selected="true">Three</div>
+            </div>
+            now</span>
+        </html>"#,
+    "Pick One Three now"
+)]
+fn button_has_label(#[case] html: &str, #[case] expected_label: &str) -> TestResult<()> {
+    let mut document = HtmlDocument::from_html(html, default_document_config());
+    document.resolve(0.0);
+
+    let tree_update = document.build_accessibility_tree();
+
+    verify_that!(
+        tree_update.nodes,
+        contains((
+            anything(),
+            matches_pattern!(AccessKitNode {
+                role(): eq(Role::Button),
+                label(): some(eq(expected_label)),
+            })
+        ))
     )
 }
 
