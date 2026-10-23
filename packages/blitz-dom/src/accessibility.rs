@@ -1,10 +1,14 @@
 use crate::{
-    BaseDocument, ElementData, Node as BlitzDomNode, NodeData, NodeId as BlitzDomNodeId, local_name,
+    BaseDocument, ElementData, Node as BlitzDomNode, NodeData, NodeId as BlitzDomNodeId,
+    layout::replaced::is_inline_box_element, local_name,
 };
 use accesskit::{Node as AccessKitNode, NodeId, Role, TreeId, TreeInfo, TreeUpdate};
 use markup5ever::LocalName;
 use std::borrow::Cow;
-use style::properties::longhands::visibility;
+use style::{
+    properties::longhands::visibility,
+    values::specified::box_::{DisplayInside, DisplayOutside},
+};
 use stylo_taffy::CopyStyleGetters;
 
 /// An element together with the nodes which provide its label.
@@ -331,6 +335,10 @@ impl BlitzDomNode {
             out.push(aria_label);
             return;
         }
+        if element_data.name.local == local_name!("br") {
+            out.break_word();
+            return;
+        }
         if element_data.name.local == local_name!("img") {
             if let Some(alt) = non_blank(element_data.attr(local_name!("alt"))) {
                 out.push(alt);
@@ -339,16 +347,48 @@ impl BlitzDomNode {
         }
 
         // Generated content is part of the content of the element: `::before` comes before the
-        // children and `::after` after them, without a space.
-        if let Some(before_id) = self.before() {
-            self.with(before_id).write_flat_text_content(out, context);
+        // children and `::after` after them. The accname spec joins it to the content of the
+        // element without a space, and so do we, unless the pseudo-element is itself block-level
+        // or an atomic inline. Those are separated like any other child; the spec leaves this
+        // open (https://github.com/w3c/accname/issues/225).
+        let before = self.before();
+        let after = self.after();
+        for &child_id in before
+            .iter()
+            .chain(self.children.iter())
+            .chain(after.iter())
+        {
+            let child = self.with(child_id);
+            let separate_child_from_siblings = child.should_separate_from_siblings();
+            if separate_child_from_siblings {
+                out.break_word();
+            }
+            child.write_flat_text_content(out, context);
+            if separate_child_from_siblings {
+                out.break_word();
+            }
         }
-        for &child_id in &self.children {
-            self.with(child_id).write_flat_text_content(out, context);
-        }
-        if let Some(after_id) = self.after() {
-            self.with(after_id).write_flat_text_content(out, context);
-        }
+    }
+
+    fn should_separate_from_siblings(&self) -> bool {
+        (self.is_block_or_atomic_inline() || self.is_inline_box_element())
+            && !self.is_hidden_for_naming()
+    }
+
+    fn is_block_or_atomic_inline(&self) -> bool {
+        self.display_style()
+            .is_some_and(|display| match display.outside() {
+                DisplayOutside::Block
+                | DisplayOutside::TableCaption
+                | DisplayOutside::InternalTable => true,
+                DisplayOutside::Inline => display.inside() != DisplayInside::Flow,
+                DisplayOutside::None => false,
+            })
+    }
+
+    fn is_inline_box_element(&self) -> bool {
+        self.element_data()
+            .is_some_and(|element_data| is_inline_box_element(&element_data.name.local))
     }
 
     /// Writes the value of this element, if it is a control the user can adjust, in place of
