@@ -115,6 +115,7 @@ impl BaseDocument {
             nodes.insert(node_id, (id, builder));
         }
 
+        let mut description = FlatText::default();
         for node_id in described_by_nodes {
             let Some(id_refs) = self.nodes[node_id].attr(local_name!("aria-describedby")) else {
                 continue;
@@ -122,10 +123,16 @@ impl BaseDocument {
             let Some((id, mut builder)) = nodes.remove(&node_id) else {
                 continue;
             };
+            description.clear();
             for target in self.referenced_dom_ids_to_node_ids(id_refs) {
                 if target == node_id || nodes.contains_key(&target) {
                     builder.push_described_by(NodeId(target.as_u64()));
                 }
+                self.nodes[target].write_text_alternative(&mut description, None);
+                description.break_word();
+            }
+            if !description.text.is_empty() {
+                builder.set_description(description.text.as_str());
             }
             nodes.insert(node_id, (id, builder));
         }
