@@ -388,7 +388,7 @@ pub fn Cells() -> Element {
                                                 selected.set(None);
                                             },
                                             onkeydown: move |evt| {
-                                                if evt.key() == Key::Enter {
+                                                if evt.key() == Key::Named(NamedKey::Enter) {
                                                     sheet.write().raw.insert((r, c), edit_val());
                                                     selected.set(None);
                                                 }

@@ -376,15 +376,15 @@ pub fn Toolbar(
                     onkeydown: move |evt| {
                         let key = evt.key();
                         match &key {
-                            Key::ArrowDown => {
+                            Key::Named(NamedKey::ArrowDown) => {
                                 evt.prevent_default();
                                 move_selection_down(());
                             }
-                            Key::ArrowUp => {
+                            Key::Named(NamedKey::ArrowUp) => {
                                 evt.prevent_default();
                                 move_selection_up(());
                             }
-                            Key::Escape => {
+                            Key::Named(NamedKey::Escape) => {
                                 evt.prevent_default();
                                 blur_urlbar(());
                             }

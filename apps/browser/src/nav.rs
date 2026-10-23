@@ -1,6 +1,6 @@
 use blitz_traits::navigation::NavigationOptions;
 use blitz_traits::net::{Method, Request, Url};
-use dioxus_native::prelude::Key;
+use dioxus_native::prelude::{Key, NamedKey};
 
 pub fn req_from_string(url_s: &str) -> Option<Request> {
     if let Ok(url) = Url::parse(url_s) {
@@ -40,5 +40,5 @@ pub fn open_in_external_browser(req: &Request) {
 }
 
 pub fn is_enter_key(key: &Key) -> bool {
-    matches!(key, Key::Enter) || matches!(key, Key::Character(s) if s == "\n")
+    matches!(key, Key::Named(NamedKey::Enter)) || matches!(key, Key::Character(s) if s == "\n")
 }
