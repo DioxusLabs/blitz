@@ -1,0 +1,15 @@
+[package]
+name = "keyboard-types-07-08"
+description = "Two-way conversions between keyboard-types v0.7 and v0.8 types"
+documentation = "https://docs.rs/keyboard-types-07-08"
+version = "0.1.0"
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+categories.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+kt07 = { package = "keyboard-types", version = "0.7" }
+kt08 = { package = "keyboard-types", version = "0.8" }
