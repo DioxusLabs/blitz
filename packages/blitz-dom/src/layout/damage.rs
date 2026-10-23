@@ -77,9 +77,19 @@ impl BaseDocument {
         }
 
         let mut damage_from_children = RestyleDamage::empty();
+        let mut columns_changed = false;
         let children = std::mem::take(&mut self.nodes[node_id].children);
         for child in children.iter() {
-            damage_from_children |= self.propagate_damage_flags(*child);
+            let child_damage = self.propagate_damage_flags(*child);
+            // Columns build no box of their own, so their computed display says what they are.
+            columns_changed |= !child_damage.is_empty()
+                && self.nodes[*child].primary_styles().is_some_and(|styles| {
+                    matches!(
+                        styles.get_box().display.inside(),
+                        DisplayInside::TableColumn | DisplayInside::TableColumnGroup
+                    )
+                });
+            damage_from_children |= child_damage;
         }
         if let Some(before_id) = self.nodes[node_id].before() {
             damage_from_children |= self.propagate_damage_flags(before_id);
@@ -113,6 +123,16 @@ impl BaseDocument {
         let mut damage_for_parent = damage; // & RestyleDamage::RELAYOUT;
 
         if reorder {
+            damage.insert(CONSTRUCT_BOX);
+            damage_for_parent.insert(CONSTRUCT_DESCENDENT);
+        }
+
+        // A table bakes the sizes of its columns into the grid it is laid out as when its
+        // boxes are built, so a column or column group whose style changed has the table build
+        // them again. As with reordering, its own box is unchanged.
+        if columns_changed
+            && self.nodes[node_id].display_constructed_as().inside() == DisplayInside::Table
+        {
             damage.insert(CONSTRUCT_BOX);
             damage_for_parent.insert(CONSTRUCT_DESCENDENT);
         }

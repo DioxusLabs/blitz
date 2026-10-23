@@ -15,6 +15,7 @@ mod background_size;
 mod br_trailing_line;
 mod button_alignment;
 mod checked_attribute;
+mod column_style_change;
 mod comment_layout;
 mod custom_widget_layout;
 mod detached_attribute;
