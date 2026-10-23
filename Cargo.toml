@@ -79,23 +79,23 @@ smallvec = "1"
 thin-vec = "0.2"
 
 # DioxusLabs dependencies
-dioxus = { version = "0.7.3" }
-dioxus-core = { version = "0.7.3" }
-dioxus-html = { version = "0.7.3" }
-dioxus-hooks = { version = "0.7.3" }
-dioxus-signals = { version = "0.7.3" }
-dioxus-stores = { version = "0.7.3" }
-dioxus-asset-resolver = { version = "0.7.3" }
-manganis = { version = "0.7.3" }
-dioxus-document = { version = "0.7.3" }
-dioxus-history = { version = "0.7.3" }
+dioxus = { version = "0.8.0-alpha.3" }
+dioxus-core = { version = "0.8.0-alpha.3" }
+dioxus-html = { version = "0.8.0-alpha.3" }
+dioxus-hooks = { version = "0.8.0-alpha.3" }
+dioxus-signals = { version = "0.8.0-alpha.3" }
+dioxus-stores = { version = "0.8.0-alpha.3" }
+dioxus-asset-resolver = { version = "0.8.0-alpha.3" }
+manganis = { version = "0.8.0-alpha.3" }
+dioxus-document = { version = "0.8.0-alpha.3" }
+dioxus-history = { version = "0.8.0-alpha.3" }
 
 # Dioxus hot reload
-dioxus-devtools = { version = "0.7.3" }
-dioxus-cli-config = { version = "0.7.3" }
+dioxus-devtools = { version = "0.8.0-alpha.3" }
+dioxus-cli-config = { version = "0.8.0-alpha.3" }
 
 # Dioxus Prelude
-dioxus-core-macro = { version = "0.7.3" }
+dioxus-core-macro = { version = "0.8.0-alpha.3" }
 
 # Taffy + Parley + Fontations
 taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "802e497b69689e1c93be2d16e9d53a973971bcb2", default-features = false, features = [
