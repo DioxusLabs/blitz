@@ -30,6 +30,7 @@ mod fragment_navigation;
 mod harness_smoke;
 mod hit_test_dropped_nodes;
 mod hover_dom_ancestors;
+mod hover_moved_subtree;
 mod incremental_oracle;
 mod inline_bfc_padding;
 mod inline_box_baseline;
