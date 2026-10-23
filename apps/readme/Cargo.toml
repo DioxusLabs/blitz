@@ -10,7 +10,10 @@ repository.workspace = true
 publish = true
 
 [features]
-default = ["hybrid", "comrak", "floats", "scrollbars"]
+default = ["hybrid", "comrak", "floats", "scrollbars", "parley"]
+# The text backend: Parley (the default) or winkin. With both, Parley is used.
+parley = ["blitz-dom/parley", "blitz-html/parley", "blitz-paint/parley", "blitz-shell/parley"]
+winkin = ["blitz-dom/winkin", "blitz-html/winkin", "blitz-paint/winkin", "blitz-shell/winkin"]
 
 # Renderers
 gpu = ["dep:anyrender_vello"]
@@ -43,11 +46,11 @@ tracing = ["dep:tracing-subscriber", "blitz-shell/tracing", "blitz-net/tracing",
 
 [dependencies]
 blitz-traits = { workspace = true }
-blitz-dom = { workspace = true, features = ["default", "parallel-construct"] }
+blitz-dom = { workspace = true, features = ["svg", "woff", "accessibility", "system-fonts", "file-input", "custom-widget", "text-transform-icu", "parallel-construct"] }
 blitz-html = { workspace = true }
-blitz-paint = { workspace = true, features = ["default"] }
+blitz-paint = { workspace = true, features = ["svg"] }
 blitz-net = { workspace = true, features = ["cookies"] }
-blitz-shell = { workspace = true, features = ["default"] }
+blitz-shell = { workspace = true, features = ["accessibility", "clipboard", "file-dialog"] }
 anyrender_vello = { workspace = true, optional = true }
 anyrender_skia = { workspace = true, optional = true }
 anyrender_vello_cpu = { workspace = true, features = ["multithreading"], optional = true }

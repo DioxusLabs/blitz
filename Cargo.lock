@@ -314,7 +314,7 @@ dependencies = [
  "anyrender",
  "image",
  "peniko",
- "read-fonts",
+ "read-fonts 0.41.0",
  "serde",
  "serde_json",
  "sha2",
@@ -910,6 +910,7 @@ dependencies = [
  "cursor-icon",
  "debug_timer 0.1.3",
  "euclid",
+ "fontwich",
  "html-escape",
  "icu_casemap",
  "icu_locale_core",
@@ -921,6 +922,7 @@ dependencies = [
  "linebender_resource_handle",
  "markup5ever",
  "objc2 0.6.5",
+ "parlance",
  "parley",
  "percent-encoding",
  "rayon",
@@ -941,6 +943,7 @@ dependencies = [
  "url",
  "usvg",
  "web-time",
+ "winkin",
  "writeable",
  "wuff",
 ]
@@ -1021,7 +1024,6 @@ dependencies = [
  "color",
  "euclid",
  "kurbo",
- "parley",
  "peniko",
  "skrifa",
  "smallvec",
@@ -1085,6 +1087,7 @@ dependencies = [
  "dioxus-core",
  "dioxus-native-dom",
  "keyboard-types 0.8.3",
+ "kurbo",
  "markup5ever",
  "stylo",
  "taffy",
@@ -3297,9 +3300,27 @@ dependencies = [
  "objc2-core-text",
  "objc2-foundation 0.3.2",
  "parlance",
- "read-fonts",
+ "read-fonts 0.41.0",
  "roxmltree 0.21.1",
  "smallvec",
+ "windows",
+ "windows-core",
+ "yeslogic-fontconfig-sys",
+]
+
+[[package]]
+name = "fontwich"
+version = "0.0.1"
+source = "git+https://github.com/dfrg/winkin?rev=7eb1c68aad93f87947eae7b604a0024b146e220a#7eb1c68aad93f87947eae7b604a0024b146e220a"
+dependencies = [
+ "hashbrown 0.17.1",
+ "memmap2 0.9.11",
+ "objc2-core-foundation",
+ "objc2-core-text",
+ "parlance",
+ "read-fonts 0.45.0",
+ "roxmltree 0.21.1",
+ "spin",
  "windows",
  "windows-core",
  "yeslogic-fontconfig-sys",
@@ -3800,8 +3821,22 @@ checksum = "c03d949a14aa089bbb282f7dd76a498a7f684428e4257202efc119ec010376f9"
 dependencies = [
  "bitflags 2.13.2",
  "bytemuck",
- "read-fonts",
+ "read-fonts 0.41.0",
  "smallvec",
+]
+
+[[package]]
+name = "harfrust"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "86aa776d6d32b072119e1f1650f4db843ff4382a4aaa6a2c9c4e35703cd377cb"
+dependencies = [
+ "bitflags 2.13.2",
+ "bytemuck",
+ "core_maths",
+ "read-fonts 0.45.0",
+ "smallvec",
+ "spin",
 ]
 
 [[package]]
@@ -6071,7 +6106,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b74c0d373e462e504ad4436710a39f099e18e848e1ee711f70cd2dcd5a69b290"
 dependencies = [
  "fontique",
- "harfrust",
+ "harfrust 0.12.0",
  "hashbrown 0.17.1",
  "icu_locale_core",
  "icu_normalizer",
@@ -6535,6 +6570,8 @@ version = "0.8.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e058c7de0b26af77780c769414d6257830bb240f3c38477dbc2c16e5f54d6d4c"
 dependencies = [
+ "libc",
+ "rand_chacha 0.3.1",
  "rand_core 0.6.4",
 ]
 
@@ -6544,7 +6581,7 @@ version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b9ef1d0d795eb7d84685bca4f72f3649f064e6641543d3a8c415898726a57b41"
 dependencies = [
- "rand_chacha",
+ "rand_chacha 0.9.0",
  "rand_core 0.9.5",
 ]
 
@@ -6557,6 +6594,16 @@ dependencies = [
  "chacha20",
  "getrandom 0.4.3",
  "rand_core 0.10.1",
+]
+
+[[package]]
+name = "rand_chacha"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e6c10a63a0fa32252be49d21e7709d4d4baf8d231c2dbce1eaa8141b9b127d88"
+dependencies = [
+ "ppv-lite86",
+ "rand_core 0.6.4",
 ]
 
 [[package]]
@@ -6574,6 +6621,9 @@ name = "rand_core"
 version = "0.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ec0be4795e2f6a28069bec0b5ff3e2ac9bafc99e6a9a7dc3547996c5c816922c"
+dependencies = [
+ "getrandom 0.2.17",
+]
 
 [[package]]
 name = "rand_core"
@@ -6624,7 +6674,7 @@ dependencies = [
  "paste",
  "profiling",
  "rand 0.9.5",
- "rand_chacha",
+ "rand_chacha 0.9.0",
  "simd_helpers",
  "thiserror 2.0.21",
  "v_frame",
@@ -6729,6 +6779,19 @@ dependencies = [
  "bytemuck",
  "font-types 0.12.6",
  "once_cell",
+]
+
+[[package]]
+name = "read-fonts"
+version = "0.45.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8a5b7bed3d16ab428d8fa533640ab805ff50e7ad8a4d00649de1259e70023282"
+dependencies = [
+ "bytemuck",
+ "core_maths",
+ "font-types 0.12.6",
+ "once_cell",
+ "yoke",
 ]
 
 [[package]]
@@ -7144,7 +7207,7 @@ dependencies = [
 [[package]]
 name = "selectors"
 version = "0.41.0"
-source = "git+https://github.com/DioxusLabs/stylo?rev=d6502e0002e9c40c43a0a4776f9e7eb93be360e3#d6502e0002e9c40c43a0a4776f9e7eb93be360e3"
+source = "git+https://github.com/dfrg/stylo?branch=style-more#b2a820dbbcfc067dca0489a30d4fb444f91b29bc"
 dependencies = [
  "bitflags 2.13.2",
  "cssparser",
@@ -7284,7 +7347,7 @@ dependencies = [
 [[package]]
 name = "servo_arc"
 version = "0.5.0"
-source = "git+https://github.com/DioxusLabs/stylo?rev=d6502e0002e9c40c43a0a4776f9e7eb93be360e3#d6502e0002e9c40c43a0a4776f9e7eb93be360e3"
+source = "git+https://github.com/dfrg/stylo?branch=style-more#b2a820dbbcfc067dca0489a30d4fb444f91b29bc"
 dependencies = [
  "serde",
  "stable_deref_trait",
@@ -7468,7 +7531,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "819ab7d62b1d3e72d9d9dea5650bac30424f9111364bb94928dbf5ecad1baa68"
 dependencies = [
  "bytemuck",
- "read-fonts",
+ "read-fonts 0.41.0",
 ]
 
 [[package]]
@@ -7631,6 +7694,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "spin"
+version = "0.12.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0134f9043ed38b087ac4f7d4af44c79e2c9e5094421fe3164f435ce585953b10"
+
+[[package]]
 name = "spirv"
 version = "0.4.0+sdk-1.4.341.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7744,7 +7813,7 @@ dependencies = [
 [[package]]
 name = "stylo"
 version = "0.22.0"
-source = "git+https://github.com/DioxusLabs/stylo?rev=d6502e0002e9c40c43a0a4776f9e7eb93be360e3#d6502e0002e9c40c43a0a4776f9e7eb93be360e3"
+source = "git+https://github.com/dfrg/stylo?branch=style-more#b2a820dbbcfc067dca0489a30d4fb444f91b29bc"
 dependencies = [
  "app_units",
  "arrayvec",
@@ -7802,7 +7871,7 @@ dependencies = [
 [[package]]
 name = "stylo_atoms"
 version = "0.22.0"
-source = "git+https://github.com/DioxusLabs/stylo?rev=d6502e0002e9c40c43a0a4776f9e7eb93be360e3#d6502e0002e9c40c43a0a4776f9e7eb93be360e3"
+source = "git+https://github.com/dfrg/stylo?branch=style-more#b2a820dbbcfc067dca0489a30d4fb444f91b29bc"
 dependencies = [
  "string_cache 0.11.0",
  "string_cache_codegen",
@@ -7811,7 +7880,7 @@ dependencies = [
 [[package]]
 name = "stylo_derive"
 version = "0.22.0"
-source = "git+https://github.com/DioxusLabs/stylo?rev=d6502e0002e9c40c43a0a4776f9e7eb93be360e3#d6502e0002e9c40c43a0a4776f9e7eb93be360e3"
+source = "git+https://github.com/dfrg/stylo?branch=style-more#b2a820dbbcfc067dca0489a30d4fb444f91b29bc"
 dependencies = [
  "darling 0.20.11",
  "proc-macro2",
@@ -7823,7 +7892,7 @@ dependencies = [
 [[package]]
 name = "stylo_dom"
 version = "0.22.0"
-source = "git+https://github.com/DioxusLabs/stylo?rev=d6502e0002e9c40c43a0a4776f9e7eb93be360e3#d6502e0002e9c40c43a0a4776f9e7eb93be360e3"
+source = "git+https://github.com/dfrg/stylo?branch=style-more#b2a820dbbcfc067dca0489a30d4fb444f91b29bc"
 dependencies = [
  "bitflags 2.13.2",
  "stylo_malloc_size_of",
@@ -7832,7 +7901,7 @@ dependencies = [
 [[package]]
 name = "stylo_malloc_size_of"
 version = "0.22.0"
-source = "git+https://github.com/DioxusLabs/stylo?rev=d6502e0002e9c40c43a0a4776f9e7eb93be360e3#d6502e0002e9c40c43a0a4776f9e7eb93be360e3"
+source = "git+https://github.com/dfrg/stylo?branch=style-more#b2a820dbbcfc067dca0489a30d4fb444f91b29bc"
 dependencies = [
  "app_units",
  "cssparser",
@@ -7851,7 +7920,7 @@ dependencies = [
 [[package]]
 name = "stylo_static_prefs"
 version = "0.22.0"
-source = "git+https://github.com/DioxusLabs/stylo?rev=d6502e0002e9c40c43a0a4776f9e7eb93be360e3#d6502e0002e9c40c43a0a4776f9e7eb93be360e3"
+source = "git+https://github.com/dfrg/stylo?branch=style-more#b2a820dbbcfc067dca0489a30d4fb444f91b29bc"
 dependencies = [
  "toml",
 ]
@@ -7869,7 +7938,7 @@ dependencies = [
 [[package]]
 name = "stylo_traits"
 version = "0.22.0"
-source = "git+https://github.com/DioxusLabs/stylo?rev=d6502e0002e9c40c43a0a4776f9e7eb93be360e3#d6502e0002e9c40c43a0a4776f9e7eb93be360e3"
+source = "git+https://github.com/dfrg/stylo?branch=style-more#b2a820dbbcfc067dca0489a30d4fb444f91b29bc"
 dependencies = [
  "app_units",
  "bitflags 2.13.2",
@@ -8292,7 +8361,7 @@ checksum = "fd3ca314f692efd6c868f8408f53fe444634a845f96c028b97d35f6a1f79f0ee"
 [[package]]
 name = "to_shmem"
 version = "0.6.0"
-source = "git+https://github.com/DioxusLabs/stylo?rev=d6502e0002e9c40c43a0a4776f9e7eb93be360e3#d6502e0002e9c40c43a0a4776f9e7eb93be360e3"
+source = "git+https://github.com/dfrg/stylo?branch=style-more#b2a820dbbcfc067dca0489a30d4fb444f91b29bc"
 dependencies = [
  "cssparser",
  "hashbrown 0.17.1",
@@ -8306,7 +8375,7 @@ dependencies = [
 [[package]]
 name = "to_shmem_derive"
 version = "0.2.0"
-source = "git+https://github.com/DioxusLabs/stylo?rev=d6502e0002e9c40c43a0a4776f9e7eb93be360e3#d6502e0002e9c40c43a0a4776f9e7eb93be360e3"
+source = "git+https://github.com/dfrg/stylo?branch=style-more#b2a820dbbcfc067dca0489a30d4fb444f91b29bc"
 dependencies = [
  "darling 0.20.11",
  "proc-macro2",
@@ -8754,7 +8823,7 @@ dependencies = [
  "data-url",
  "flate2",
  "fontdb",
- "harfrust",
+ "harfrust 0.12.0",
  "imagesize",
  "kurbo",
  "log",
@@ -10325,6 +10394,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "winkin"
+version = "0.0.1"
+source = "git+https://github.com/dfrg/winkin?rev=7eb1c68aad93f87947eae7b604a0024b146e220a#7eb1c68aad93f87947eae7b604a0024b146e220a"
+dependencies = [
+ "fontwich",
+ "harfrust 0.14.0",
+ "hashbrown 0.17.1",
+ "icu_locale_core",
+ "icu_segmenter",
+ "parlance",
+ "read-fonts 0.45.0",
+ "spin",
+]
+
+[[package]]
 name = "winnow"
 version = "0.7.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10374,7 +10458,6 @@ dependencies = [
  "mimalloc",
  "os_info",
  "owo-colors",
- "parley",
  "peniko",
  "png 0.17.16",
  "pollster",
@@ -10413,7 +10496,7 @@ checksum = "cae90d1d9f6d1d36ef116b0b1e651a6d7c12ba925439d4d06ff9adc94662a3d8"
 dependencies = [
  "font-types 0.12.6",
  "log",
- "read-fonts",
+ "read-fonts 0.41.0",
 ]
 
 [[package]]

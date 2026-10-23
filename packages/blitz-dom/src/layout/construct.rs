@@ -1,10 +1,8 @@
 use blitz_traits::node_id::NodeId;
 use core::str;
 use std::sync::Arc;
-use stylo_taffy::CopyStyleGetters;
 
 use markup5ever::{QualName, local_name, ns};
-use parley::StyleProperty;
 use style::{
     computed_values::position::T as PositionProperty,
     data::ElementData as StyloElementData,
@@ -22,8 +20,9 @@ use crate::{
         CONSTRUCT_BOX, CONSTRUCT_DESCENDENT, CONSTRUCT_FC, sort_layout_children_by_order,
     },
     node::{NodeFlags, NodeKind, SpecialElementData, TextInputData, TextLayout},
-    qual_name, stylo_to_parley,
-    traversal::{iter_children, iter_children_and_pseudos},
+    qual_name,
+    text::EditEngine as _,
+    traversal::iter_children_and_pseudos,
 };
 
 use super::{
@@ -39,17 +38,8 @@ pub(crate) struct ConstructionTask {
     pub(crate) data: ConstructionTaskData,
 }
 
-pub(crate) struct ConstructionTaskResult {
-    pub(crate) node_id: NodeId,
-    pub(crate) data: ConstructionTaskResultData,
-}
-
 #[derive(Clone)]
 pub(crate) enum ConstructionTaskData {
-    InlineLayout(Box<TextLayout>),
-}
-
-pub(crate) enum ConstructionTaskResultData {
     InlineLayout(Box<TextLayout>),
 }
 
@@ -313,9 +303,12 @@ fn classify_flow_children(
     let node = &doc.nodes[container_node_id];
     // ::before/::after pseudos with display:contents are transparent for box
     // generation, so their children (e.g. generated text) participate in the
-    // container's formatting context and vote in the classification. Pseudos
-    // with any other display value generate their own box, which every
-    // construction arm already pushes explicitly, so they cast no vote.
+    // container's formatting context and vote in the classification. A
+    // block-level pseudo votes as any block child does: inline siblings go
+    // into anonymous blocks around it rather than setting it as an atomic
+    // inline on their line. Pseudos with any other display value generate
+    // their own box, which every construction arm already pushes explicitly,
+    // so they cast no vote.
     let pseudo_ids = node
         .before()
         .into_iter()
@@ -325,6 +318,7 @@ fn classify_flow_children(
                 .display_style()
                 .unwrap_or(Display::inline());
             matches!(display.inside(), DisplayInside::Contents)
+                || matches!(display.outside(), DisplayOutside::Block)
         });
     let child_ids = node.children.iter().copied().chain(pseudo_ids);
     for child_id in child_ids {
@@ -354,9 +348,9 @@ fn classify_flow_children(
             continue;
         } else {
             let position = style
-                .map(|s| s.clone_position())
+                .map(|s| s.slow_clone_position())
                 .unwrap_or(PositionProperty::Static);
-            let float = style.map(|s| s.clone_float()).unwrap_or(Float::None);
+            let float = style.map(|s| s.slow_clone_float()).unwrap_or(Float::None);
 
             // Ignore nodes whose whitespace is entirely collapsed away
             if child.is_collapsible_whitespace_node() {
@@ -439,7 +433,20 @@ fn collect_layout_children_with_wrap(
                 return;
             } else if matches!(
                 type_attr,
-                None | Some("text" | "password" | "email" | "number" | "search" | "tel" | "url")
+                None | Some(
+                    "text"
+                        | "password"
+                        | "email"
+                        | "number"
+                        | "search"
+                        | "tel"
+                        | "url"
+                        | "date"
+                        | "month"
+                        | "week"
+                        | "time"
+                        | "datetime-local"
+                )
             ) {
                 create_text_editor(doc, container_node_id, false);
                 return;
@@ -605,7 +612,7 @@ fn collect_layout_children_with_wrap(
                 let existing_layout = doc.nodes[container_node_id]
                     .element_data_mut()
                     .and_then(|el| el.inline_layout_data.take());
-                let layout = existing_layout.unwrap_or_else(|| Box::new(TextLayout::new()));
+                let layout = existing_layout.unwrap_or_default();
 
                 // Queue node for inline layout construction. Deferring construction of inline layouts to a
                 // dedicated phase allows us to multithread the expensive text shaping step.
@@ -789,6 +796,45 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: NodeId) {
     }
 }
 
+/// Whether the `display: contents` node `node_id` holds in-flow inline content and nothing
+/// block-level, looking through nested `display: contents` children and pseudo-elements.
+fn contents_holds_only_inlines(doc: &BaseDocument, node_id: NodeId) -> bool {
+    fn walk(doc: &BaseDocument, node_id: NodeId, found: &mut bool) -> bool {
+        let node = &doc.nodes[node_id];
+        let children = node
+            .before()
+            .into_iter()
+            .chain(node.children.iter().copied())
+            .chain(node.after());
+        for child_id in children {
+            let child = &doc.nodes[child_id];
+            match child.data.kind() {
+                NodeKind::Comment => continue,
+                NodeKind::Text => {
+                    *found |= !child.is_whitespace_node();
+                    continue;
+                }
+                _ => {}
+            }
+            let display = child.display_style().unwrap_or(Display::inline());
+            if display.inside() == DisplayInside::Contents {
+                if !walk(doc, child_id, found) {
+                    return false;
+                }
+            } else if display.outside() != DisplayOutside::None {
+                // A table part is not inline content: the container wraps it in a table.
+                if child.is_or_contains_block() || display.outside() != DisplayOutside::Inline {
+                    return false;
+                }
+                *found = true;
+            }
+        }
+        true
+    }
+    let mut found = false;
+    walk(doc, node_id, &mut found) && found
+}
+
 /// Handles the cases where there are text nodes or inline nodes that need to be wrapped in an anonymous block node
 fn collect_complex_layout_children(
     doc: &mut BaseDocument,
@@ -822,6 +868,15 @@ fn collect_complex_layout_children(
         if child_node_kind == NodeKind::Comment || (hide_whitespace && is_whitespace_node) {
             // return;
         }
+        // A `display: contents` node in block flow that holds only inline
+        // content goes into the anonymous block whole, so that its text
+        // keeps the style it inherits from the node.
+        else if display_inside == DisplayInside::Contents
+            && !hide_whitespace
+            && contents_holds_only_inlines(doc, child_id)
+        {
+            out.push_wrapped(container_node_id, child_id, doc);
+        }
         // Recurse into `Display::Contents` nodes, wrapping hoisted text and
         // inline children as if they were direct children of this container
         else if display_inside == DisplayInside::Contents {
@@ -848,19 +903,11 @@ fn collect_complex_layout_children(
 
 fn create_text_editor(doc: &mut BaseDocument, input_element_id: NodeId, is_multiline: bool) {
     let node = &mut doc.nodes[input_element_id];
-    let parley_style = node
-        .primary_styles()
-        .as_ref()
-        .map(|s| stylo_to_parley::style(node.id, s))
-        .unwrap_or_default();
-    let alignment = node
-        .primary_styles()
-        .map(|s| stylo_to_parley::text_align(s.clone_text_align()))
-        .unwrap_or(parley::layout::Alignment::Start);
-    let base_direction = node
-        .primary_styles()
-        .map(|s| stylo_to_parley::base_direction(s.clone_direction(), s.clone_unicode_bidi()))
-        .unwrap_or(parley::BaseDirection::Auto);
+    let style = node.primary_styles().map(|s| (*s).clone());
+    let is_password = !is_multiline
+        && node
+            .attr(local_name!("type"))
+            .is_some_and(|kind| kind.eq_ignore_ascii_case("password"));
 
     let initial_text = if is_multiline {
         node.text_content()
@@ -870,42 +917,25 @@ fn create_text_editor(doc: &mut BaseDocument, input_element_id: NodeId, is_multi
     let element = &mut node.data.downcast_element_mut().unwrap();
     if !matches!(element.special_data, SpecialElementData::TextInput(_)) {
         let mut text_input_data = TextInputData::new(is_multiline);
-        let editor = &mut text_input_data.editor;
-        editor.set_text(&initial_text);
+        text_input_data.editor.set_initial_text(&initial_text);
         element.special_data = SpecialElementData::TextInput(text_input_data);
     }
 
     let SpecialElementData::TextInput(text_input_data) = &mut element.special_data else {
         unreachable!();
     };
+    text_input_data.is_password = is_password;
 
-    let editor = &mut text_input_data.editor;
-    editor.set_scale(doc.viewport.scale_f64() as f32);
-    editor.set_width(None);
-
-    let styles = editor.edit_styles();
-    styles.retain(|_| false);
-    styles.insert(StyleProperty::FontFamily(parley_style.font_family));
-    styles.insert(StyleProperty::FontSize(parley_style.font_size));
-    styles.insert(StyleProperty::FontWidth(parley_style.font_width));
-    styles.insert(StyleProperty::FontStyle(parley_style.font_style));
-    styles.insert(StyleProperty::FontWeight(parley_style.font_weight));
-    styles.insert(StyleProperty::FontVariations(parley_style.font_variations));
-    styles.insert(StyleProperty::FontFeatures(parley_style.font_features));
-    styles.insert(StyleProperty::LineHeight(parley_style.line_height));
-    styles.insert(StyleProperty::WordSpacing(parley_style.word_spacing));
-    styles.insert(StyleProperty::LetterSpacing(parley_style.letter_spacing));
-    styles.insert(StyleProperty::WordBreak(parley_style.word_break));
-    styles.insert(StyleProperty::OverflowWrap(parley_style.overflow_wrap));
-    styles.insert(StyleProperty::TextWrapMode(parley_style.text_wrap_mode));
-    styles.insert(StyleProperty::WhiteSpaceCollapse(
-        parley_style.white_space_collapse,
-    ));
-    styles.insert(StyleProperty::Brush(parley_style.brush));
-    editor.set_alignment(alignment);
-    editor.set_base_direction(base_direction);
-
-    editor.refresh_layout(&mut doc.font_ctx.lock().unwrap(), &mut doc.layout_ctx);
+    text_input_data.editor.set_style(
+        input_element_id,
+        style.as_deref(),
+        doc.viewport.scale_f64() as f32,
+    );
+    // A single-line input never wraps, so its text is laid out now. A textarea's is laid out once
+    // layout knows its width.
+    if !is_multiline {
+        text_input_data.editor.refresh(&mut doc.text);
+    }
 }
 
 fn create_checkbox_input(doc: &mut BaseDocument, input_element_id: NodeId) {
@@ -983,7 +1013,7 @@ pub(crate) fn find_inline_layout_embedded_boxes(
                     }
                     (DisplayOutside::None, DisplayInside::Contents) => {
                         node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
-                        iter_children!(nodes[node_id], |child_id| {
+                        iter_children_and_pseudos!(nodes[node_id], |child_id| {
                             find_inline_layout_embedded_boxes_recursive(
                                 nodes,
                                 parent_id,

@@ -463,6 +463,8 @@ fn reflect_point(last_control: Option<Point>, cur: Point) -> Point {
 
 /// Resolve an AxisEndPoint to an absolute value.
 /// `ToPosition` is absolute; `ByCoordinate` is relative to `cur_val`.
+/// Position keywords arrive computed to percentages, which `resolve` takes
+/// against the reference box axis.
 fn resolve_axis_endpoint<N>(
     endpoint: &AxisEndPoint<N, N>,
     cur_val: f64,
