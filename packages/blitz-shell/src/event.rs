@@ -25,6 +25,12 @@ pub enum BlitzShellEvent {
         doc_id: usize,
     },
 
+    /// Windows WindowEvent::RedrawRequested are very unreliable and do not get pushed into event loop when redraw is requested
+    #[cfg(target_os = "windows")]
+    RequestWindowRedraw {
+        window_id: WindowId,
+    },
+
     /// Close a window programmatically (e.g. a custom titlebar close button).
     /// Handled identically to `WindowEvent::CloseRequested`.
     CloseWindow {
