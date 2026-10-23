@@ -53,6 +53,7 @@ mod pre_overflow_scroll;
 mod pseudo_element_update;
 mod rem_after_viewport_change;
 mod render_blocking_stylesheet;
+mod replaced_min_max_specified_axis;
 mod resize_restyle;
 mod rotate_z_axis;
 mod scoped_query_selector;
