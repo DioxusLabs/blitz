@@ -681,6 +681,11 @@ impl BaseDocument {
             .or(self.try_root_element().map(|el| el.id))
     }
 
+    /// Returns the currently explicitly focused node, or None if focus is cleared.
+    pub fn active_focus_node_id(&self) -> Option<NodeId> {
+        self.focus_node_id
+    }
+
     pub fn mutate<'doc>(&'doc mut self) -> DocumentMutator<'doc> {
         DocumentMutator::new(self)
     }
