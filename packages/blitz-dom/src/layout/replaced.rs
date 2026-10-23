@@ -141,8 +141,16 @@ pub fn compute_replaced_layout(
     // element get no preferred aspect ratio at all.
     let is_usable_ratio = |ratio: &f32| ratio.is_finite() && *ratio > 0.0;
     let intrinsic = context.intrinsic_sizes;
-    let style_aspect_ratio = style.aspect_ratio().filter(is_usable_ratio);
-    let aspect_ratio: Option<f32> = style_aspect_ratio.or(intrinsic.ratio.filter(is_usable_ratio));
+    //
+    // With `auto && <ratio>`, a natural aspect ratio wins over the property's ratio, which then
+    // applies to the content box.
+    let style_aspect_ratio = style.aspect_ratio();
+    let intrinsic_ratio = intrinsic.ratio.filter(is_usable_ratio);
+    let style_ratio = style_aspect_ratio
+        .ratio()
+        .filter(is_usable_ratio)
+        .filter(|_| !(style_aspect_ratio.is_auto() && intrinsic_ratio.is_some()));
+    let aspect_ratio: Option<f32> = style_ratio.or(intrinsic_ratio);
 
     // Concrete object size per the CSS default sizing algorithm with no
     // specified size (https://drafts.csswg.org/css-images/#default-sizing):
@@ -154,7 +162,6 @@ pub fn compute_replaced_layout(
     //
     // Only the intrinsic ratio participates here: the `aspect-ratio` property
     // affects the sizing of the box, not the natural dimensions of its content.
-    let intrinsic_ratio = intrinsic.ratio.filter(is_usable_ratio);
     let default_size = context.default_object_size;
     let inherent_size = match (intrinsic.width, intrinsic.height) {
         (Some(w), Some(h)) => Size {
@@ -200,11 +207,16 @@ pub fn compute_replaced_layout(
     };
     // The `aspect-ratio` property coerces the natural height to match the natural width, in the
     // box-sizing box (https://github.com/w3c/csswg-drafts/issues/11236).
-    let inherent_size = match style_aspect_ratio {
+    let ratio_box_adjustment = if style_aspect_ratio.is_auto() {
+        Size::ZERO
+    } else {
+        box_sizing_adjustment
+    };
+    let inherent_size = match style_ratio {
         Some(ratio) => Size {
             width: inherent_size.width,
-            height: ((inherent_size.width + box_sizing_adjustment.width) / ratio
-                - box_sizing_adjustment.height)
+            height: ((inherent_size.width + ratio_box_adjustment.width) / ratio
+                - ratio_box_adjustment.height)
                 .max(0.0),
         },
         None => inherent_size,
