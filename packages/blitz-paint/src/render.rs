@@ -1069,6 +1069,21 @@ impl ElementCx<'_, '_> {
                 } else {
                     parent_style_transform
                 };
+                // A positioned box passed through by the static block containers
+                // between it and this element is placed by its containing block chain.
+                let child_transform = if child.containing_block() != Some(self.node.id) {
+                    let position = blitz_dom::hoisted_child_position(
+                        self.context.dom.as_ref().tree(),
+                        self.node.id,
+                        *child_id,
+                    );
+                    child_transform.pre_translate(kurbo::Vec2 {
+                        x: position.x as f64 * self.scale,
+                        y: position.y as f64 * self.scale,
+                    })
+                } else {
+                    child_transform
+                };
                 self.render_node(scene, *child_id, child_transform, clip_rect);
             }
         }

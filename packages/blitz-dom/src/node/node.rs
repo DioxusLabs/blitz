@@ -120,6 +120,13 @@ pub struct Node {
     /// stacking context on its last (non-skipped) paint-tree build. Replayed
     /// when the subtree is skipped as clean. Empty for stacking-context roots.
     pub sc_contribution_cache: RefCell<ThinVec<HoistedPaintChild>>,
+    /// The positioned boxes this static block container passed through to the
+    /// nearest collecting ancestor on its last (non-skipped) paint-tree build.
+    /// Replayed when the subtree is skipped as clean.
+    pub lifted_contribution_cache: RefCell<ThinVec<NodeId>>,
+    /// Whether this node passed its positioned boxes through on its last
+    /// paint-tree build.
+    pub passes_positioned_through: std::cell::Cell<bool>,
 
     // Flags
     pub flags: NodeFlags,
@@ -421,6 +428,8 @@ impl Node {
             paint_children: RefCell::new(None),
             stacking_context: None,
             sc_contribution_cache: RefCell::new(ThinVec::new()),
+            lifted_contribution_cache: RefCell::new(ThinVec::new()),
+            passes_positioned_through: std::cell::Cell::new(false),
 
             flags: NodeFlags::empty(),
             out_of_flow: AtomicBool::new(false),
@@ -1539,6 +1548,17 @@ impl Node {
                     child_x -= viewport_scroll.x as f32;
                     child_y -= viewport_scroll.y as f32;
                 }
+            }
+            // A positioned box passed through by the static block containers
+            // between it and this node is placed by its containing block chain.
+            if child.containing_block() != Some(self.id) {
+                let pos = crate::layout::paint_tree::hoisted_child_position(
+                    self.tree(),
+                    self.id,
+                    *child_id,
+                );
+                child_x -= pos.x;
+                child_y -= pos.y;
             }
             if let Some(hit) = child.hit_inner(child_x, child_y, scale, scrollbar) {
                 return Some(hit);
