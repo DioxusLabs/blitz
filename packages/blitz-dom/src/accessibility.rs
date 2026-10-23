@@ -36,6 +36,7 @@ impl BaseDocument {
         let mut hidden_nodes = std::collections::HashSet::new();
         let mut labelled_by_nodes: Vec<LabelSources> = Vec::new();
         let mut described_by_nodes = Vec::new();
+        let mut titled_nodes = Vec::new();
 
         self.visit(|node_id, node| {
             if node.is_hidden_from_accessibility_tree()
@@ -83,6 +84,9 @@ impl BaseDocument {
             }
             if node.attr(local_name!("aria-describedby")).is_some() {
                 described_by_nodes.push(node_id);
+            }
+            if node.attr(local_name!("title")).is_some() {
+                titled_nodes.push(node_id);
             }
             nodes.insert(node_id, (id, builder));
         });
@@ -134,6 +138,40 @@ impl BaseDocument {
             if !description.text.is_empty() {
                 builder.set_description(description.text.as_str());
             }
+            nodes.insert(node_id, (id, builder));
+        }
+
+        for node_id in titled_nodes {
+            let Some(element_data) = self.nodes.get(node_id).and_then(|node| node.element_data())
+            else {
+                continue;
+            };
+            let Some(title_attr) = element_data.attr(local_name!("title")) else {
+                continue;
+            };
+
+            let mut title = FlatText::default();
+            title.push(title_attr);
+
+            if title.text.is_empty() {
+                continue;
+            }
+
+            let Some((id, mut builder)) = nodes.remove(&node_id) else {
+                continue;
+            };
+
+            if (builder.label().is_some()
+                || role_prohibits_naming(builder.role())
+                || (builder.role() == Role::Image
+                    && element_data
+                        .attr(local_name!("alt"))
+                        .is_some_and(|s| s.trim_ascii().is_empty())))
+                && builder.description().is_none()
+            {
+                builder.set_description(title.text.as_str());
+            }
+
             nodes.insert(node_id, (id, builder));
         }
 
@@ -243,7 +281,11 @@ impl BaseDocument {
                 builder.set_label(content);
             }
             if let Some(aria_description) = element_data.attr(local_name!("aria-description")) {
-                builder.set_description(aria_description);
+                let mut description = FlatText::default();
+                description.push(aria_description);
+                if !description.text.is_empty() {
+                    builder.set_description(description.text);
+                }
             }
             if let Some(aria_level) = element_data.attr(local_name!("aria-level"))
                 && let Ok(aria_level) = aria_level.parse::<usize>()
@@ -835,6 +877,7 @@ fn role_from_element_data(element_data: &ElementData) -> Option<Role> {
         "fieldset" => Some(Role::Group),
         "form" => Some(Role::Form),
         "div" => Some(Role::GenericContainer),
+        "span" => Some(Role::GenericContainer),
 
         // Tables
         "table" => Some(Role::Table),
@@ -896,4 +939,19 @@ fn role_from_element_data(element_data: &ElementData) -> Option<Role> {
         }
         _ => None,
     }
+}
+
+// ARIA 1.2, §5.2.8.6 (https://www.w3.org/TR/wai-aria-1.2/#namefromprohibited)
+fn role_prohibits_naming(role: Role) -> bool {
+    matches!(
+        role,
+        Role::Caption
+            | Role::Code
+            | Role::ContentDeletion
+            | Role::ContentInsertion
+            | Role::Emphasis
+            | Role::GenericContainer
+            | Role::Paragraph
+            | Role::Strong
+    )
 }

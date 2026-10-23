@@ -29,6 +29,28 @@ fn includes_aria_description_as_description() -> TestResult<()> {
 }
 
 #[test]
+fn normalises_aria_description() -> TestResult<()> {
+    let mut document = HtmlDocument::from_html(
+        r#"<html><div role="button" aria-description=" A  description "></div></html>"#,
+        default_document_config(),
+    );
+    document.resolve(0.0);
+
+    let tree_update = document.build_accessibility_tree();
+
+    verify_that!(
+        tree_update.nodes,
+        contains((
+            anything(),
+            matches_pattern!(AccessKitNode {
+                role(): eq(Role::Button),
+                description(): some(eq("A description")),
+            })
+        ))
+    )
+}
+
+#[test]
 fn includes_aria_describedby_targets_as_described_by_in_order() -> TestResult<()> {
     let mut document = HtmlDocument::from_html(
         r#"<html>
@@ -259,6 +281,189 @@ fn uses_text_of_hidden_aria_describedby_target_without_referencing_it() -> TestR
                 role(): eq(Role::Button),
                 description(): some(eq("Hidden")),
                 *described_by(): is_empty(),
+            })
+        ))
+    )
+}
+
+#[test]
+fn uses_title_as_description_of_img_with_alt() -> TestResult<()> {
+    let mut document = HtmlDocument::from_html(
+        r#"<html><img alt="Alt text" title="Title text"></html>"#,
+        default_document_config(),
+    );
+    document.resolve(0.0);
+
+    let tree_update = document.build_accessibility_tree();
+
+    verify_that!(
+        tree_update.nodes,
+        contains((
+            anything(),
+            matches_pattern!(AccessKitNode {
+                role(): eq(Role::Image),
+                label(): some(eq("Alt text")),
+                description(): some(eq("Title text")),
+            })
+        ))
+    )
+}
+
+#[test]
+fn uses_title_as_description_of_input_named_by_label_element() -> TestResult<()> {
+    let mut document = HtmlDocument::from_html(
+        r#"<html>
+          <label for="arbitrary-input">Name</label>
+          <input id="arbitrary-input" title="Hint">
+        </html>"#,
+        default_document_config(),
+    );
+    document.resolve(0.0);
+
+    let tree_update = document.build_accessibility_tree();
+
+    verify_that!(
+        tree_update.nodes,
+        contains((
+            anything(),
+            matches_pattern!(AccessKitNode {
+                role(): eq(Role::TextInput),
+                label(): some(eq("Name")),
+                description(): some(eq("Hint")),
+            })
+        ))
+    )
+}
+
+#[test]
+fn does_not_use_title_as_description_when_it_provides_the_name() -> TestResult<()> {
+    let mut document = HtmlDocument::from_html(
+        r#"<html><button title="Tip text"></button></html>"#,
+        default_document_config(),
+    );
+    document.resolve(0.0);
+
+    let tree_update = document.build_accessibility_tree();
+
+    verify_that!(
+        tree_update.nodes,
+        contains((
+            anything(),
+            matches_pattern!(AccessKitNode {
+                role(): eq(Role::Button),
+                description(): none(),
+            })
+        ))
+    )
+}
+
+#[test]
+fn uses_title_as_description_of_element_whose_role_prohibits_naming() -> TestResult<()> {
+    let mut document = HtmlDocument::from_html(
+        r#"<html><div title="Tip">text</div></html>"#,
+        default_document_config(),
+    );
+    document.resolve(0.0);
+
+    let tree_update = document.build_accessibility_tree();
+
+    verify_that!(
+        tree_update.nodes,
+        contains((
+            anything(),
+            matches_pattern!(AccessKitNode {
+                html_tag(): some(eq("div")),
+                label(): none(),
+                description(): some(eq("Tip")),
+            })
+        ))
+    )
+}
+
+#[test]
+fn uses_title_as_description_of_img_with_empty_alt() -> TestResult<()> {
+    let mut document = HtmlDocument::from_html(
+        r#"<html><img alt="" title="Title text"></html>"#,
+        default_document_config(),
+    );
+    document.resolve(0.0);
+
+    let tree_update = document.build_accessibility_tree();
+
+    verify_that!(
+        tree_update.nodes,
+        contains((
+            anything(),
+            matches_pattern!(AccessKitNode {
+                html_tag(): some(eq("img")),
+                label(): none(),
+                description(): some(eq("Title text")),
+            })
+        ))
+    )
+}
+
+#[test]
+fn does_not_use_title_as_description_of_img_without_alt() -> TestResult<()> {
+    let mut document = HtmlDocument::from_html(
+        r#"<html><img title="Title text"></html>"#,
+        default_document_config(),
+    );
+    document.resolve(0.0);
+
+    let tree_update = document.build_accessibility_tree();
+
+    verify_that!(
+        tree_update.nodes,
+        contains((
+            anything(),
+            matches_pattern!(AccessKitNode {
+                html_tag(): some(eq("img")),
+                description(): none(),
+            })
+        ))
+    )
+}
+
+#[test]
+fn uses_title_as_description_when_aria_descrpition_is_blank() -> TestResult<()> {
+    let mut document = HtmlDocument::from_html(
+        r#"<html><div aria-description="  " title="Title text"></div></html>"#,
+        default_document_config(),
+    );
+    document.resolve(0.0);
+
+    let tree_update = document.build_accessibility_tree();
+
+    verify_that!(
+        tree_update.nodes,
+        contains((
+            anything(),
+            matches_pattern!(AccessKitNode {
+                html_tag(): some(eq("div")),
+                description(): some(eq("Title text")),
+            })
+        ))
+    )
+}
+
+#[test]
+fn ignores_blank_title_as_description() -> TestResult<()> {
+    let mut document = HtmlDocument::from_html(
+        r#"<html><button title="   ">Save</button></html>"#,
+        default_document_config(),
+    );
+    document.resolve(0.0);
+
+    let tree_update = document.build_accessibility_tree();
+
+    verify_that!(
+        tree_update.nodes,
+        contains((
+            anything(),
+            matches_pattern!(AccessKitNode {
+                role(): eq(Role::Button),
+                description(): none(),
             })
         ))
     )
@@ -573,6 +778,29 @@ fn uses_text_of_hidden_aria_describedby_target_without_referencing_it() -> TestR
           </body>
         </html>"#,
     "Before-text [inner]-after"
+)]
+#[case::uses_title_as_description_when_name_comes_from_content(
+    r#"<html><button title="Tip text">Save</button></html>"#,
+    "Tip text"
+)]
+#[case::uses_title_as_description_when_name_comes_from_aria_label(
+    r#"<html><button title="Tip text" aria-label="Label">x</button></html>"#,
+    "Tip text"
+)]
+#[case::aria_describedby_takes_precedence_over_title(
+    r#"<html>
+          <div role="button" title="Ignored" aria-describedby="target"></div>
+          <span id="target">Referenced</span>
+        </html>"#,
+    "Referenced"
+)]
+#[case::aria_description_takes_precedence_over_title(
+    r#"<html><button title="Ignored" aria-description="Description">Save</button></html>"#,
+    "Description"
+)]
+#[case::collapses_whitespace_in_title_used_as_description(
+    r#"<html><button title="  Tip   text ">Save</button></html>"#,
+    "Tip text"
 )]
 fn button_has_description(
     #[case] html: &str,
