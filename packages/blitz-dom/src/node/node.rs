@@ -1316,6 +1316,18 @@ impl Node {
             .unwrap_or(0)
     }
 
+    pub fn effective_z_index(&self, is_flex_or_grid_item: bool) -> i32 {
+        let Some(style) = self.primary_styles() else {
+            return 0;
+        };
+        let position = style.clone_position();
+        if position != Position::Static || is_flex_or_grid_item {
+            style.clone_z_index().integer_or(0)
+        } else {
+            0
+        }
+    }
+
     // https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_positioned_layout/Stacking_context#features_creating_stacking_contexts
     pub fn is_stacking_context_root(&self, is_flex_or_grid_item: bool) -> bool {
         let Some(style) = self.primary_styles() else {
