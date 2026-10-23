@@ -508,6 +508,13 @@ impl ElementCx<'_, '_> {
             });
         let tile_rect = Rect::new(0.0, 0.0, x.rect_len, y.rect_len);
 
+        // `Repeat` and `Round` fill the whole area with one rect and let the
+        // brush repeat the image, so those axes need `Extend::Repeat`. The
+        // other axes paint each tile once and keep the `<img>` brush's `Pad`.
+        let mut brush = to_peniko_image(image_data, quality);
+        brush.sampler.x_extend = brush_extend(*repeat_x);
+        brush.sampler.y_extend = brush_extend(*repeat_y);
+
         for hc in 0..y.count {
             for wc in 0..x.count {
                 let transform = transform.then_translate(Vec2 {
@@ -518,7 +525,7 @@ impl ElementCx<'_, '_> {
                 scene.fill(
                     peniko::Fill::NonZero,
                     transform,
-                    to_peniko_image(image_data, quality).as_ref(),
+                    brush.as_ref(),
                     None,
                     &tile_rect,
                 );
@@ -830,6 +837,15 @@ struct AxisTiling {
 ///
 /// The fill rect is in image pixel coordinates (the drawing transform is
 /// pre-scaled by `ratio`), while translations are in device pixels.
+fn brush_extend(repeat: BackgroundRepeatKeyword) -> peniko::Extend {
+    use BackgroundRepeatKeyword::*;
+
+    match repeat {
+        Repeat | Round => peniko::Extend::Repeat,
+        Space | NoRepeat => peniko::Extend::Pad,
+    }
+}
+
 fn raster_axis_tiling(
     repeat: BackgroundRepeatKeyword,
     origin_start: f64,

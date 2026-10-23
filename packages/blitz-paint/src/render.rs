@@ -686,7 +686,16 @@ fn svg_viewport_affine(svg: &blitz_dom::node::SvgImageData, width: f32, height: 
     Affine::new([t.sx, t.ky, t.kx, t.sy, t.tx, t.ty].map(f64::from))
 }
 
-/// Ensure that the `resized_image` field has a correctly sized image
+/// The brush an `<img>` is painted with.
+///
+/// The image is clamped (`Extend::Pad`), not repeated: a replaced element is
+/// painted exactly once, and when it is drawn at a non-integer scale the
+/// samples nearest its edges are interpolated with whatever lies beyond
+/// them. With `Repeat` that is the *opposite* edge of the same image, which
+/// shows up as a one pixel line of the far edge's colour along each side
+/// (a dark line along the right of a framed image, a line across the top
+/// of a button whose bottom row is dark). Pad interpolates with the edge
+/// itself, which is what every browser does for `<img>`.
 fn to_peniko_image(image: &RasterImageData, quality: peniko::ImageQuality) -> peniko::ImageBrush {
     peniko::ImageBrush {
         image: ImageData {
@@ -697,8 +706,8 @@ fn to_peniko_image(image: &RasterImageData, quality: peniko::ImageQuality) -> pe
             alpha_type: peniko::ImageAlphaType::Alpha,
         },
         sampler: ImageSampler {
-            x_extend: peniko::Extend::Repeat,
-            y_extend: peniko::Extend::Repeat,
+            x_extend: peniko::Extend::Pad,
+            y_extend: peniko::Extend::Pad,
             quality,
             alpha: 1.0,
         },
