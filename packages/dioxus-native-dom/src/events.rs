@@ -7,9 +7,9 @@ use blitz_traits::events::{
     BlitzWheelEvent, MouseEventButton,
 };
 use dioxus_html::{
-    AnimationData, CancelData, ClipboardData, CompositionData, DragData, FocusData, FormData,
-    FormValue, HasFileData, HasFocusData, HasFormData, HasKeyboardData, HasMouseData,
-    HasPointerData, HasScrollData, HasTouchData, HasTouchPointData, HasWheelData,
+    AnimationData, BeforeInputData, CancelData, ClipboardData, CompositionData, DragData,
+    FocusData, FormData, FormValue, HasFileData, HasFocusData, HasFormData, HasKeyboardData,
+    HasMouseData, HasPointerData, HasScrollData, HasTouchData, HasTouchPointData, HasWheelData,
     HtmlEventConverter, ImageData, KeyboardData, MediaData, MountedData, MountedError,
     MountedResult, MouseData, PlatformEventData, PointerData, RenderedElementBacking, ResizeData,
     ScrollBehavior, ScrollData, ScrollLogicalPosition, ScrollToOptions, SelectionData, ToggleData,
@@ -24,7 +24,7 @@ use dioxus_html::{
         InteractionElementOffset, InteractionLocation, ModifiersInteraction, PointerInteraction,
     },
 };
-use dioxus_html::{Code, Key, Location, Modifiers};
+use keyboard_types::{Code, Key, Location, Modifiers};
 use std::{
     any::Any,
     cell::{Ref, RefCell, RefMut},
@@ -35,7 +35,6 @@ use std::{
 };
 
 use crate::NodeId;
-use crate::keyboard_compat::{convert_code, convert_key, convert_location, convert_modifiers};
 
 pub struct NativeConverter {}
 
@@ -70,6 +69,12 @@ impl HtmlEventConverter for NativeConverter {
 
     fn convert_animation_data(&self, _event: &PlatformEventData) -> AnimationData {
         unimplemented!("todo: convert_animation_data in dioxus-native. requires support in blitz")
+    }
+
+    fn convert_before_input_data(&self, _event: &PlatformEventData) -> BeforeInputData {
+        unimplemented!(
+            "todo: convert_before_input_data in dioxus-native. requires support in blitz"
+        )
     }
 
     fn convert_clipboard_data(&self, _event: &PlatformEventData) -> ClipboardData {
@@ -341,21 +346,21 @@ pub(crate) struct BlitzKeyboardData(pub(crate) BlitzKeyEvent);
 
 impl ModifiersInteraction for BlitzKeyboardData {
     fn modifiers(&self) -> Modifiers {
-        convert_modifiers(self.0.modifiers)
+        self.0.modifiers
     }
 }
 
 impl HasKeyboardData for BlitzKeyboardData {
     fn key(&self) -> Key {
-        convert_key(&self.0.key)
+        self.0.key.clone()
     }
 
     fn code(&self) -> Code {
-        convert_code(self.0.code)
+        self.0.code
     }
 
     fn location(&self) -> Location {
-        convert_location(self.0.location)
+        self.0.location
     }
 
     fn is_auto_repeating(&self) -> bool {
@@ -396,7 +401,7 @@ impl InteractionElementOffset for NativePointerData {
 
 impl ModifiersInteraction for NativePointerData {
     fn modifiers(&self) -> Modifiers {
-        convert_modifiers(self.0.mods)
+        self.0.mods
     }
 }
 
@@ -482,7 +487,7 @@ pub struct NativeTouchData(pub(crate) BlitzPointerEvent);
 
 impl ModifiersInteraction for NativeTouchData {
     fn modifiers(&self) -> Modifiers {
-        convert_modifiers(self.0.mods)
+        self.0.mods
     }
 }
 
@@ -634,7 +639,7 @@ impl PointerInteraction for NativeWheelData {
 
 impl ModifiersInteraction for NativeWheelData {
     fn modifiers(&self) -> Modifiers {
-        convert_modifiers(self.0.mods)
+        self.0.mods
     }
 }
 
@@ -658,7 +663,7 @@ impl InteractionLocation for NativeWheelData {
     }
 }
 
-pub fn synthetic_click_event(node: &Node, modifiers: keyboard_types::Modifiers) -> Box<dyn Any> {
+pub fn synthetic_click_event(node: &Node, modifiers: Modifiers) -> Box<dyn Any> {
     Box::new(NativePointerData(
         node.synthetic_click_event_data(modifiers),
     ))

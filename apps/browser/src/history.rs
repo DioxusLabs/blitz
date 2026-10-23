@@ -21,35 +21,31 @@ impl History {
 
 #[store]
 impl<Lens> Store<History, Lens> {
-    fn current_idx(&self) -> usize {
+    pub(crate) fn current_idx(&self) -> usize {
         *self.current().read()
     }
 
-    fn current_url(&self) -> impl Readable<Target = Request> {
-        self.urls().get(self.current_idx()).unwrap()
-    }
-
-    fn has_back(&self) -> bool {
+    pub(crate) fn has_back(&self) -> bool {
         self.current_idx() > 0
     }
 
-    fn has_forward(&self) -> bool {
+    pub(crate) fn has_forward(&self) -> bool {
         self.current_idx() < self.urls().len() - 1
     }
 
-    fn go_back(&mut self) {
+    pub(crate) fn go_back(&mut self) {
         if self.has_back() {
             *self.current().write() -= 1;
         }
     }
 
-    fn go_forward(&mut self) {
+    pub(crate) fn go_forward(&mut self) {
         if self.has_forward() {
             *self.current().write() += 1;
         }
     }
 
-    fn navigate(&self, req: Request)
+    pub(crate) fn navigate(&self, req: Request)
     where
         Lens: Writable,
     {
@@ -74,7 +70,7 @@ pub trait HistoryNav {
 
 impl HistoryNav for SyncStore<History> {
     fn current_url(&self) -> impl Readable<Target = Request> {
-        HistoryStoreImplExt::current_url(self)
+        self.urls().get(self.current_idx()).unwrap()
     }
 
     fn has_back(&self) -> bool {

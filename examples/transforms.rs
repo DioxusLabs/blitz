@@ -60,7 +60,7 @@ fn app() -> Element {
         let coords = evt.client_coordinates();
         if evt
             .held_buttons()
-            .contains(dioxus_elements::input_data::MouseButton::Auxiliary)
+            .contains(dioxus_html::input_data::MouseButton::Auxiliary)
         {
             active_pointer.set(true);
             last.set([coords.x as f32, coords.y as f32]);
@@ -88,13 +88,9 @@ fn app() -> Element {
         let sensitivity = 0.001;
 
         let delta = match e.delta() {
-            dioxus_elements::geometry::WheelDelta::Pixels(data) => data.y as f32 * sensitivity,
-            dioxus_elements::geometry::WheelDelta::Lines(data) => {
-                data.y as f32 * sensitivity * 16.0
-            }
-            dioxus_elements::geometry::WheelDelta::Pages(data) => {
-                data.y as f32 * sensitivity * 400.0
-            }
+            dioxus_html::geometry::WheelDelta::Pixels(data) => data.y as f32 * sensitivity,
+            dioxus_html::geometry::WheelDelta::Lines(data) => data.y as f32 * sensitivity * 16.0,
+            dioxus_html::geometry::WheelDelta::Pages(data) => data.y as f32 * sensitivity * 400.0,
         };
 
         let factor = (1.0 + delta).clamp(0.8, 1.2);

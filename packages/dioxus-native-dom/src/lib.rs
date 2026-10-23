@@ -11,7 +11,7 @@
 
 mod dioxus_document;
 mod events;
-mod keyboard_compat;
+mod mutation_buffer;
 mod mutation_writer;
 mod write_once_attr;
 pub use blitz_dom::DocumentConfig;
