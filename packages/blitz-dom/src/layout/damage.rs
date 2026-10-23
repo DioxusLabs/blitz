@@ -627,3 +627,53 @@ impl BaseDocument {
         }
     }
 }
+
+#[cfg(test)]
+mod visibility_hit_tests {
+    use crate::{Attribute, BaseDocument, DocumentConfig, qual_name};
+    use blitz_traits::shell::{ColorScheme, Viewport};
+
+    fn style(value: &str) -> Attribute {
+        Attribute {
+            name: qual_name!("style"),
+            value: value.to_string(),
+        }
+    }
+
+    /// CSS Display §4: a `visibility: hidden` element is not a hit target, but
+    /// a descendant that sets `visibility: visible` is.
+    #[test]
+    fn a_visible_child_of_a_hidden_element_is_hit() {
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
+            ..Default::default()
+        });
+        let root_id = doc.root_node().id;
+        let mut mutator = doc.mutate();
+        let html = mutator.create_element(qual_name!("html"), vec![]);
+        let body =
+            mutator.create_element(qual_name!("body"), vec![style("display:block;margin:0")]);
+        let hidden = mutator.create_element(
+            qual_name!("div"),
+            vec![style(
+                "display:block;visibility:hidden;width:200px;height:100px",
+            )],
+        );
+        let shown = mutator.create_element(
+            qual_name!("div"),
+            vec![style(
+                "display:block;visibility:visible;width:50px;height:50px",
+            )],
+        );
+        mutator.append_children(hidden, &[shown]);
+        mutator.append_children(body, &[hidden]);
+        mutator.append_children(html, &[body]);
+        mutator.append_children(root_id, &[html]);
+        drop(mutator);
+        doc.resolve(0.0);
+
+        let at = |x: f32, y: f32| doc.hit(x, y).map(|hit| hit.node_id);
+        assert_eq!(at(10.0, 10.0), Some(shown));
+        assert_ne!(at(150.0, 80.0), Some(hidden));
+    }
+}
