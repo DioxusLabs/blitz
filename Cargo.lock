@@ -1083,6 +1083,7 @@ dependencies = [
  "cursor-icon",
  "dioxus",
  "dioxus-core",
+ "dioxus-native",
  "dioxus-native-dom",
  "keyboard-types 0.8.3",
  "markup5ever",
