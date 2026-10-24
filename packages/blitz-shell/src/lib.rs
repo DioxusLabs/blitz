@@ -159,7 +159,6 @@ impl ShellProvider for BlitzShellProvider {
         let _ = self.window.drag_window();
     }
 
-    #[cfg(feature = "clipboard")]
     fn request_clipboard_text(&self) -> Result<(), blitz_traits::shell::ClipboardError> {
         self.proxy
             .send_event(BlitzShellEvent::RequestClipboardText {
@@ -168,7 +167,6 @@ impl ShellProvider for BlitzShellProvider {
         Ok(())
     }
 
-    #[cfg(feature = "clipboard")]
     fn set_clipboard_text(&self, text: String) -> Result<(), blitz_traits::shell::ClipboardError> {
         self.proxy
             .send_event(BlitzShellEvent::SetClipboardText { text });

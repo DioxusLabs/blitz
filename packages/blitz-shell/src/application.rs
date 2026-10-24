@@ -8,7 +8,6 @@ use winit::event::WindowEvent;
 use winit::event_loop::ActiveEventLoop;
 use winit::window::WindowId;
 
-#[cfg(feature = "clipboard")]
 use winit::{
     data_transfer::{DataTransferSendBuilder, TypeHint},
     event_loop::AsyncRequestSerial,
@@ -24,7 +23,6 @@ pub struct BlitzApplication<Rend: WindowRenderer> {
     pub pending_windows: Vec<WindowConfig<Rend>>,
     pub proxy: BlitzShellProxy,
     pub event_queue: Receiver<BlitzShellEvent>,
-    #[cfg(feature = "clipboard")]
     pending_clipboard: HashMap<AsyncRequestSerial, WindowId>,
 }
 
@@ -35,7 +33,6 @@ impl<Rend: WindowRenderer> BlitzApplication<Rend> {
             pending_windows: Vec::new(),
             proxy,
             event_queue,
-            #[cfg(feature = "clipboard")]
             pending_clipboard: HashMap::new(),
         }
     }
@@ -54,7 +51,6 @@ impl<Rend: WindowRenderer> BlitzApplication<Rend> {
         event: BlitzShellEvent,
     ) {
         match event {
-            #[cfg(feature = "clipboard")]
             BlitzShellEvent::SetClipboardText { text } => {
                 let data = DataTransferSendBuilder::new(text)
                     .with_type(TypeHint::Plaintext, |text, _| Some(text.clone()))
@@ -64,7 +60,6 @@ impl<Rend: WindowRenderer> BlitzApplication<Rend> {
                     tracing::error!("Failed to set clipboard: {_error}");
                 }
             }
-            #[cfg(feature = "clipboard")]
             BlitzShellEvent::RequestClipboardText { window_id } => {
                 if let Ok(Some(id)) = event_loop.clipboard()
                     && let Ok(serial) = event_loop.fetch_data_transfer(id, &TypeHint::Plaintext)
@@ -175,7 +170,6 @@ impl<Rend: WindowRenderer> ApplicationHandler for BlitzApplication<Rend> {
         window_id: WindowId,
         event: WindowEvent,
     ) {
-        #[cfg(feature = "clipboard")]
         if let WindowEvent::DataTransferReceived { serial, value, .. } = &event
             && let Some(&requesting_window) = self.pending_clipboard.get(serial)
         {

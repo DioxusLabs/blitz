@@ -11,13 +11,12 @@ edition.workspace = true
 rust-version.workspace = true
 
 [features]
-default = ["accessibility", "clipboard", "file-dialog"]
+default = ["accessibility", "file-dialog"]
 accessibility = [
     "dep:accesskit",
     "dep:accesskit_xplat",
     "blitz-dom/accessibility",
 ]
-clipboard = []
 tracing = ["dep:tracing", "blitz-dom/tracing"]
 file-dialog = ["dep:rfd"]
 # Enables a data-uri-only NetProvider. Only needed if you aren't using the regular NetProvider
