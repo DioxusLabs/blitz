@@ -87,16 +87,23 @@ pub fn current_android_app() -> android_activity::AndroidApp {
 pub struct BlitzShellProvider {
     window: Arc<dyn Window>,
     proxy: BlitzShellProxy,
+    doc_id: usize,
 }
 impl BlitzShellProvider {
-    pub fn new(window: Arc<dyn Window>, proxy: BlitzShellProxy) -> Self {
-        Self { window, proxy }
+    pub fn new(window: Arc<dyn Window>, proxy: BlitzShellProxy, doc_id: usize) -> Self {
+        Self {
+            window,
+            proxy,
+            doc_id,
+        }
     }
 }
 
 impl ShellProvider for BlitzShellProvider {
     fn request_redraw(&self) {
-        self.window.request_redraw();
+        self.proxy.send_event(BlitzShellEvent::RequestRedraw {
+            doc_id: self.doc_id,
+        });
     }
     fn set_cursor(&self, icon: Option<CursorIcon>) {
         match icon {
