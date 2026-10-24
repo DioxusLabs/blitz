@@ -779,6 +779,7 @@ impl TextInputData {
                 Some(GeneratedTextInputEvent::PreEditChange)
             }
             BlitzImeEvent::Commit(text) => {
+                driver.clear_compose();
                 driver.insert_or_replace_selection(&text);
                 Some(GeneratedTextInputEvent::Input)
             }
@@ -800,5 +801,45 @@ impl TextInputData {
                 None
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ime_commit_replaces_preedit() {
+        for committed in ["完成", ""] {
+            for cursor in [Some((3, 3)), None] {
+                let mut input = TextInputData::new(false);
+                let mut font_ctx = FontContext::new();
+                let mut layout_ctx = LayoutContext::new();
+                input.apply_ime_event(
+                    &mut font_ctx,
+                    &mut layout_ctx,
+                    BlitzImeEvent::Preedit("仮".into(), cursor),
+                );
+                input.apply_ime_event(
+                    &mut font_ctx,
+                    &mut layout_ctx,
+                    BlitzImeEvent::Commit(committed.into()),
+                );
+                assert_eq!(input.editor.text(), committed);
+                input.apply_ime_event(&mut font_ctx, &mut layout_ctx, BlitzImeEvent::Disabled);
+                assert_eq!(input.editor.text(), committed);
+            }
+        }
+    }
+
+    #[test]
+    fn ime_commit_without_preedit() {
+        let mut input = TextInputData::new(false);
+        input.apply_ime_event(
+            &mut FontContext::new(),
+            &mut LayoutContext::new(),
+            BlitzImeEvent::Commit("text".into()),
+        );
+        assert_eq!(input.editor.text(), "text");
     }
 }
