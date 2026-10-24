@@ -175,32 +175,32 @@ impl<Rend: WindowRenderer> ApplicationHandler for BlitzApplication<Rend> {
         window_id: WindowId,
         event: WindowEvent,
     ) {
-        // Exit the app when window close is requested.
         #[cfg(feature = "clipboard")]
-        if let WindowEvent::DataTransferReceived { serial, value, .. } = &event {
-            if let Some(&requesting_window) = self.pending_clipboard.get(serial) {
-                let result = value.try_as_string();
-                if result
-                    .as_ref()
-                    .is_err_and(|error| error.kind() == std::io::ErrorKind::WouldBlock)
-                {
-                    return;
-                }
-                self.pending_clipboard.remove(serial);
-                if let Ok(text) = result
-                    && let Some(window) = self.windows.get_mut(&requesting_window)
-                {
-                    window
-                        .doc
-                        .handle_ui_event(blitz_traits::events::UiEvent::Paste(text));
-                    window.request_redraw();
-                    self.proxy.send_event(BlitzShellEvent::Poll {
-                        window_id: requesting_window,
-                    });
-                }
+        if let WindowEvent::DataTransferReceived { serial, value, .. } = &event
+            && let Some(&requesting_window) = self.pending_clipboard.get(serial)
+        {
+            let result = value.try_as_string();
+            if result
+                .as_ref()
+                .is_err_and(|error| error.kind() == std::io::ErrorKind::WouldBlock)
+            {
+                return;
+            }
+            self.pending_clipboard.remove(serial);
+            if let Ok(text) = result
+                && let Some(window) = self.windows.get_mut(&requesting_window)
+            {
+                window
+                    .doc
+                    .handle_ui_event(blitz_traits::events::UiEvent::Paste(text));
+                window.request_redraw();
+                self.proxy.send_event(BlitzShellEvent::Poll {
+                    window_id: requesting_window,
+                });
             }
             return;
         }
+        // Exit the app when window close is requested.
         if matches!(event, WindowEvent::CloseRequested) {
             // Drop window before exiting event loop
             // See https://github.com/rust-windowing/winit/issues/4135

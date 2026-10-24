@@ -26,4 +26,12 @@ fn paste_dispatches_input_only_with_focused_text_input() {
             .dispatch_recorded([UiEvent::Paste("ignored".into())])
             .is_empty()
     );
+    let mut harness =
+        Harness::from_html("<html><body><button autofocus>Button</button></body></html>");
+    assert_eq!(harness.focused(), Some(harness.node("button")));
+    assert!(
+        harness
+            .dispatch_recorded([UiEvent::Paste("ignored".into())])
+            .is_empty()
+    );
 }
