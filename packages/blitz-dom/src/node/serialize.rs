@@ -123,7 +123,15 @@ impl Node {
             .then(|| self.primary_styles())
             .flatten()
             .map(|style| style.clone_color())
-            .map(|color| color.to_css_string());
+            // usvg's attribute color parser only understands the legacy CSS Color syntax
+            // (`#rrggbb`, `rgb()`/`rgba()`, named colors); a computed `color` that uses modern
+            // CSS Color 4 function syntax (`color(srgb ..)`, `oklch(..)`, etc. -- which Stylo
+            // always produces for e.g. `color-mix()`, see `color::mix::mix_many`'s
+            // `RESULT_IN_MODERN_SYNTAX` flag) would otherwise be silently dropped by usvg,
+            // falling back to each SVG property's own initial value instead of the resolved
+            // color. Force the legacy syntax here so the substitution always round-trips
+            // through usvg regardless of how the color was computed.
+            .map(|color| color.into_srgb_legacy().to_css_string());
 
         match &self.data {
             NodeData::Document(_) => {}
@@ -222,5 +230,61 @@ impl Node {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{Attribute, BaseDocument, DocumentConfig, qual_name};
+    use blitz_traits::shell::{ColorScheme, Viewport};
+
+    /// `svg_source()`'s `currentColor` substitution must round-trip through usvg's attribute
+    /// color parser, which only understands the legacy CSS Color syntax (`#rrggbb`,
+    /// `rgb()`/`rgba()`, named colors). A computed `color` that resolves through a
+    /// `color-mix()` always serializes in the modern `color(srgb ..)` function syntax (Stylo
+    /// sets `RESULT_IN_MODERN_SYNTAX` for every `color-mix()`, regardless of its inputs) --
+    /// without forcing the legacy syntax here, this value would be silently dropped by usvg.
+    #[test]
+    fn svg_source_resolves_current_color_through_color_mix() {
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(400, 200, 1.0, ColorScheme::Light)),
+            ..Default::default()
+        });
+        let root_id = doc.root_node().id;
+        let mut mutator = doc.mutate();
+        let html = mutator.create_element(qual_name!("html"), vec![]);
+        let body = mutator.create_element(qual_name!("body"), vec![]);
+        let svg = mutator.create_element(
+            qual_name!("svg", svg),
+            vec![Attribute {
+                name: qual_name!("style"),
+                value: "color: color-mix(in srgb, #5b8def 70%, #fff)".to_string(),
+            }],
+        );
+        let circle = mutator.create_element(
+            qual_name!("circle", svg),
+            vec![Attribute {
+                name: qual_name!("fill"),
+                value: "currentColor".to_string(),
+            }],
+        );
+        mutator.append_children(svg, &[circle]);
+        mutator.append_children(body, &[svg]);
+        mutator.append_children(html, &[body]);
+        mutator.append_children(root_id, &[html]);
+        drop(mutator);
+        doc.resolve(0.0);
+
+        let source = doc.nodes[svg].svg_source();
+        // color-mix(in srgb, #5b8def 70%, #fff) = rgb(140, 175, 244); must appear in legacy
+        // rgb() syntax, never as `color(srgb ..)`.
+        assert!(
+            source.contains("fill=\"rgb(140, 175, 244)\""),
+            "expected legacy rgb() currentColor substitution, got: {source}"
+        );
+        assert!(
+            !source.contains("color("),
+            "modern color() syntax leaked into svg_source(), usvg cannot parse it: {source}"
+        );
     }
 }
