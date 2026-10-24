@@ -224,6 +224,7 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
             UiEvent::KeyUp(_) => focussed_node_id,
             UiEvent::KeyDown(_) => focussed_node_id,
             UiEvent::Ime(_) => focussed_node_id,
+            UiEvent::Paste(_) => focussed_node_id,
             UiEvent::AppleStandardKeybinding(_) => focussed_node_id,
         };
         // Fall back to the root element. A document without a root element (e.g. an
@@ -285,6 +286,14 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
             }
             UiEvent::Ime(data) => {
                 self.handle_dom_event(DomEvent::new(target, DomEventData::Ime(data)))
+            }
+            UiEvent::Paste(text) => {
+                super::ime::handle_ime_event(
+                    &mut self.doc.inner_mut(),
+                    blitz_traits::events::BlitzImeEvent::Commit(text),
+                    |event| self.queue.push_back(event),
+                );
+                self.process_queue();
             }
             UiEvent::AppleStandardKeybinding(data) => {
                 let mut dom_event =
@@ -423,5 +432,69 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
     fn run_default_action(&mut self, event: &mut DomEvent) {
         let mut doc = self.doc.inner_mut();
         doc.handle_dom_event(event, |new_evt| self.queue.push_back(new_evt));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{BaseDocument, DocumentConfig};
+    use markup5ever::{QualName, local_name, ns};
+
+    #[test]
+    fn paste_targets_focused_input() {
+        let mut doc = BaseDocument::new(DocumentConfig::default());
+        let root = doc.root_node().id;
+        let mut mutator = doc.mutate();
+        let html =
+            mutator.create_element(QualName::new(None, ns!(html), local_name!("html")), vec![]);
+        let input =
+            mutator.create_element(QualName::new(None, ns!(html), local_name!("input")), vec![]);
+        mutator.append_children(html, &[input]);
+        mutator.append_children(root, &[html]);
+        drop(mutator);
+        doc.resolve(0.0);
+
+        EventDriver::new(&mut doc, NoopEventHandler)
+            .handle_ui_event(UiEvent::Paste("ignored".into()));
+        assert_eq!(
+            doc.nodes[input]
+                .element_data()
+                .unwrap()
+                .text_input_data()
+                .unwrap()
+                .editor
+                .text(),
+            ""
+        );
+
+        doc.focus_node_id = Some(input);
+        EventDriver::new(&mut doc, NoopEventHandler)
+            .handle_ui_event(UiEvent::Paste("pasted".into()));
+        EventDriver::new(&mut doc, NoopEventHandler).handle_ui_event(UiEvent::Paste(String::new()));
+        assert_eq!(
+            doc.nodes[input]
+                .element_data()
+                .unwrap()
+                .text_input_data()
+                .unwrap()
+                .editor
+                .text(),
+            "pasted"
+        );
+
+        doc.focus_node_id = Some(html);
+        EventDriver::new(&mut doc, NoopEventHandler)
+            .handle_ui_event(UiEvent::Paste("ignored".into()));
+        assert_eq!(
+            doc.nodes[input]
+                .element_data()
+                .unwrap()
+                .text_input_data()
+                .unwrap()
+                .editor
+                .text(),
+            "pasted"
+        );
     }
 }

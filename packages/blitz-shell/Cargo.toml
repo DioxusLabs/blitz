@@ -17,7 +17,7 @@ accessibility = [
     "dep:accesskit_xplat",
     "blitz-dom/accessibility",
 ]
-clipboard = ["dep:arboard"]
+clipboard = []
 tracing = ["dep:tracing", "blitz-dom/tracing"]
 file-dialog = ["dep:rfd"]
 # Enables a data-uri-only NetProvider. Only needed if you aren't using the regular NetProvider
@@ -52,10 +52,6 @@ wasm-bindgen = { workspace = true }
 
 [target.'cfg(target_os = "android")'.dependencies]
 android-activity = { version = "0.6.0" }
-
-[target.'cfg(any(target_os = "windows",target_os = "macos",target_os = "linux",target_os = "dragonfly", target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))'.dependencies]
-arboard = { workspace = true, optional = true }
-
 
 [target.'cfg(any(target_os = "windows",target_os = "macos",target_os = "linux",target_os = "freebsd", target_os = "dragonfly", target_os = "netbsd", target_os = "openbsd"))'.dependencies]
 rfd = { workspace = true, optional = true, features = ["xdg-portal"] }

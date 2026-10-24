@@ -10,6 +10,14 @@ use accesskit_xplat::WindowEvent as AccessKitEvent;
 
 #[derive(Debug, Clone)]
 pub enum BlitzShellEvent {
+    #[cfg(feature = "clipboard")]
+    SetClipboardText {
+        text: String,
+    },
+    #[cfg(feature = "clipboard")]
+    RequestClipboardText {
+        window_id: WindowId,
+    },
     Poll {
         window_id: WindowId,
     },

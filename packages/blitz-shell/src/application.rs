@@ -8,6 +8,12 @@ use winit::event::WindowEvent;
 use winit::event_loop::ActiveEventLoop;
 use winit::window::WindowId;
 
+#[cfg(feature = "clipboard")]
+use winit::{
+    data_transfer::{DataTransferSendBuilder, TypeHint},
+    event_loop::AsyncRequestSerial,
+};
+
 #[cfg(target_os = "macos")]
 use winit::platform::macos::ApplicationHandlerExtMacOS;
 
@@ -18,6 +24,8 @@ pub struct BlitzApplication<Rend: WindowRenderer> {
     pub pending_windows: Vec<WindowConfig<Rend>>,
     pub proxy: BlitzShellProxy,
     pub event_queue: Receiver<BlitzShellEvent>,
+    #[cfg(feature = "clipboard")]
+    pending_clipboard: HashMap<AsyncRequestSerial, WindowId>,
 }
 
 impl<Rend: WindowRenderer> BlitzApplication<Rend> {
@@ -27,6 +35,8 @@ impl<Rend: WindowRenderer> BlitzApplication<Rend> {
             pending_windows: Vec::new(),
             proxy,
             event_queue,
+            #[cfg(feature = "clipboard")]
+            pending_clipboard: HashMap::new(),
         }
     }
 
@@ -44,6 +54,24 @@ impl<Rend: WindowRenderer> BlitzApplication<Rend> {
         event: BlitzShellEvent,
     ) {
         match event {
+            #[cfg(feature = "clipboard")]
+            BlitzShellEvent::SetClipboardText { text } => {
+                let data = DataTransferSendBuilder::new(text)
+                    .with_type(TypeHint::Plaintext, |text, _| Some(text.clone()))
+                    .build();
+                if let Err(_error) = event_loop.set_clipboard(data) {
+                    #[cfg(feature = "tracing")]
+                    tracing::error!("Failed to set clipboard: {_error}");
+                }
+            }
+            #[cfg(feature = "clipboard")]
+            BlitzShellEvent::RequestClipboardText { window_id } => {
+                if let Ok(Some(id)) = event_loop.clipboard()
+                    && let Ok(serial) = event_loop.fetch_data_transfer(id, &TypeHint::Plaintext)
+                {
+                    self.pending_clipboard.insert(serial, window_id);
+                }
+            }
             BlitzShellEvent::Poll { window_id } => {
                 if let Some(window) = self.windows.get_mut(&window_id) {
                     window.poll();
@@ -148,6 +176,31 @@ impl<Rend: WindowRenderer> ApplicationHandler for BlitzApplication<Rend> {
         event: WindowEvent,
     ) {
         // Exit the app when window close is requested.
+        #[cfg(feature = "clipboard")]
+        if let WindowEvent::DataTransferReceived { serial, value, .. } = &event {
+            if let Some(&requesting_window) = self.pending_clipboard.get(serial) {
+                let result = value.try_as_string();
+                if result
+                    .as_ref()
+                    .is_err_and(|error| error.kind() == std::io::ErrorKind::WouldBlock)
+                {
+                    return;
+                }
+                self.pending_clipboard.remove(serial);
+                if let Ok(text) = result
+                    && let Some(window) = self.windows.get_mut(&requesting_window)
+                {
+                    window
+                        .doc
+                        .handle_ui_event(blitz_traits::events::UiEvent::Paste(text));
+                    window.request_redraw();
+                    self.proxy.send_event(BlitzShellEvent::Poll {
+                        window_id: requesting_window,
+                    });
+                }
+            }
+            return;
+        }
         if matches!(event, WindowEvent::CloseRequested) {
             // Drop window before exiting event loop
             // See https://github.com/rust-windowing/winit/issues/4135
