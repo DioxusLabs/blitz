@@ -190,7 +190,8 @@ impl<Rend: WindowRenderer> View<Rend> {
         let viewport = Viewport::new(viewport_width, viewport_height, scale, color_scheme);
 
         // Create shell provider
-        let shell_provider = BlitzShellProvider::new(winit_window.clone(), proxy.clone());
+        let shell_provider =
+            BlitzShellProvider::new(winit_window.clone(), proxy.clone(), config.doc.id());
 
         let mut doc = config.doc;
         let mut inner = doc.inner_mut();
