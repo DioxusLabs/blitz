@@ -291,9 +291,37 @@ pub(crate) fn build_inline_layout_into(
                 // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
                 // dbg!(&data.content);
 
+                // `display: contents` generates no box, but its children still inherit
+                // from it. Text nodes carry no computed style of their own, so when a
+                // contents element's text is laid out directly (including when it has
+                // been hoisted into an anonymous block) it would otherwise use the
+                // style of the nearest ancestor that generated a box. Push the contents
+                // element's style around the text so inherited properties (color,
+                // font-size, letter-spacing, ...) apply as they do in other engines.
+                let contents_style = node.parent.and_then(|parent_id| {
+                    let parent = &nodes[parent_id];
+                    if parent
+                        .display_style()
+                        .is_some_and(|display| display.inside() == DisplayInside::Contents)
+                    {
+                        parent
+                            .primary_styles()
+                            .map(|s| stylo_to_parley::style(parent_id, &s))
+                    } else {
+                        None
+                    }
+                });
+                if let Some(style) = contents_style.as_ref() {
+                    builder.push_style_span(style.clone());
+                }
+
                 let text =
                     text_transformer.transform(&data.content, parent_text_transform, builder);
                 builder.push_text(text);
+
+                if contents_style.is_some() {
+                    builder.pop_style_span();
+                }
             }
             NodeData::Comment { .. } => {
                 // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
