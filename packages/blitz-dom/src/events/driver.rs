@@ -224,6 +224,7 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
             UiEvent::KeyUp(_) => focussed_node_id,
             UiEvent::KeyDown(_) => focussed_node_id,
             UiEvent::Ime(_) => focussed_node_id,
+            UiEvent::Paste(_) => focussed_node_id,
             UiEvent::AppleStandardKeybinding(_) => focussed_node_id,
         };
         // Fall back to the root element. A document without a root element (e.g. an
@@ -285,6 +286,14 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
             }
             UiEvent::Ime(data) => {
                 self.handle_dom_event(DomEvent::new(target, DomEventData::Ime(data)))
+            }
+            UiEvent::Paste(text) => {
+                super::ime::handle_ime_event(
+                    &mut self.doc.inner_mut(),
+                    blitz_traits::events::BlitzImeEvent::Commit(text),
+                    |event| self.queue.push_back(event),
+                );
+                self.process_queue();
             }
             UiEvent::AppleStandardKeybinding(data) => {
                 let mut dom_event =

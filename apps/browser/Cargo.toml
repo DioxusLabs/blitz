@@ -47,7 +47,6 @@ dioxus-native = { workspace = true, features = [
   "svg",
   "system-fonts",
   "net",
-  "clipboard",
   "prelude",
   "hot-reload"
 ] }

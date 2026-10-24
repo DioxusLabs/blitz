@@ -71,6 +71,7 @@ pub enum UiEvent {
     KeyDown(BlitzKeyEvent),
     Ime(BlitzImeEvent),
     AppleStandardKeybinding(SmolStr),
+    Paste(String),
 }
 impl UiEvent {
     pub fn discriminant(&self) -> u8 {

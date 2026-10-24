@@ -10,7 +10,7 @@ homepage = "https://dioxuslabs.com/learn/0.7/getting_started"
 keywords = ["dom", "ui", "gui", "react"]
 
 [features]
-default = ["accessibility", "hot-reload", "net", "html", "svg", "system-fonts", "clipboard", "file-dialog", "vello-hybrid", "woff", "text-transform-icu", "apple-font-embolden"]
+default = ["accessibility", "hot-reload", "net", "html", "svg", "system-fonts", "file-dialog", "vello-hybrid", "woff", "text-transform-icu", "apple-font-embolden"]
 prelude = ["dep:dioxus-core-macro", "dep:dioxus-hooks", "dep:dioxus-signals", "dep:dioxus-stores", "dep:manganis"]
 
 # DOM features
@@ -27,7 +27,6 @@ text-transform-icu = ["blitz-dom/text-transform-icu"]
 writing-mode = ["blitz-dom/writing-mode", "dioxus-native-dom/writing-mode"]
 
 # Shell Features
-clipboard = ["blitz-shell/clipboard"]
 file-dialog = ["blitz-shell/file-dialog"]
 accessibility = ["blitz-shell/accessibility", "blitz-dom/accessibility"]
 data-uri = ["blitz-shell/data-uri"]

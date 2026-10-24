@@ -233,8 +233,8 @@ impl TextInputData {
                         }
                     }
                     "v" => {
-                        let text = shell_provider.get_clipboard_text().unwrap_or_default();
-                        driver.insert_or_replace_selection(&text)
+                        let _ = shell_provider.request_clipboard_text();
+                        return None;
                     }
                     _ => unreachable!(),
                 }
