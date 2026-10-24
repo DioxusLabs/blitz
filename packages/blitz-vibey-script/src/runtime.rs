@@ -9,6 +9,7 @@ use std::rc::Rc;
 use blitz_dom::{BaseDocument, NodeId};
 use blitz_traits::events::{DomEvent, DomEventData, EventState};
 use boa_engine::builtins::promise::PromiseState;
+use boa_engine::context::HostHooks;
 use boa_engine::module::{Module, ModuleLoader, ModuleRequest, Referrer};
 use boa_engine::object::{JsObject, ObjectInitializer};
 use boa_engine::property::Attribute;
@@ -1276,10 +1277,27 @@ pub(crate) struct ScriptRuntime {
 }
 
 impl ScriptRuntime {
+    #[allow(dead_code)]
     pub fn new(
         doc: Rc<RefCell<BaseDocument>>,
         base_url: Option<&Url>,
         fetcher: Rc<RefCell<Box<dyn ScriptFetcher>>>,
+    ) -> Self {
+        Self::with_host_hooks(
+            doc,
+            base_url,
+            fetcher,
+            Rc::new(boa_engine::context::DefaultHooks),
+        )
+    }
+
+    /// Like [`new`](Self::new), but with custom Boa [`HostHooks`] (e.g. to fix
+    /// the timezone `Date` reports, independent of the machine's locale).
+    pub fn with_host_hooks<H: HostHooks + 'static>(
+        doc: Rc<RefCell<BaseDocument>>,
+        base_url: Option<&Url>,
+        fetcher: Rc<RefCell<Box<dyn ScriptFetcher>>>,
+        host_hooks: Rc<H>,
     ) -> Self {
         let module_loader = Rc::new(BlitzModuleLoader {
             fetcher: Rc::clone(&fetcher),
@@ -1296,6 +1314,7 @@ impl ScriptRuntime {
         // (possibly virtual) time as timers
         let clock = ctx.state.borrow().clock.clone();
         let mut context = Context::builder()
+            .host_hooks(host_hooks)
             .module_loader(module_loader.clone())
             .clock(Rc::new(crate::clock::BoaClockAdapter::new(clock)))
             .build()
@@ -1692,6 +1711,36 @@ impl ScriptRuntime {
         }
 
         any_called
+    }
+
+    /// Dispatch a plain `Event` named `name` at `node_id`, to listeners
+    /// registered with `addEventListener` and to `on<name>` handlers, along
+    /// the ancestor chain when `bubbles`. For events the embedder knows about
+    /// but Blitz does not raise itself (an image that finished loading, say).
+    /// Returns `true` if any listener was invoked.
+    pub fn dispatch_simple_event(&mut self, node_id: NodeId, name: &str, bubbles: bool) -> bool {
+        let chain = {
+            let doc = self.ctx.doc.borrow();
+            let mut chain = vec![node_id];
+            let mut current = node_id;
+            while let Some(parent) = doc.get_node(current).and_then(|node| node.parent) {
+                chain.push(parent);
+                current = parent;
+            }
+            chain
+        };
+        let mut event_state = EventState::default();
+        let called = self.dispatch_event_inner(
+            &chain,
+            name,
+            bubbles,
+            |ctx, target, context| create_event(ctx, name, bubbles, false, target, context),
+            &mut event_state,
+        );
+        if called {
+            self.run_jobs("event microtasks");
+        }
+        called
     }
 
     fn target_is_checkbox_or_radio(&self, node_id: NodeId) -> bool {
