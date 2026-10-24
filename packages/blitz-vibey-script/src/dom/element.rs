@@ -1,112 +1,163 @@
-//! The `Element` prototype: attributes, DOM properties (`value`, `checked`, ...),
-//! `style`, `innerHTML` and friends.
+//! Element prototype installation and tree navigation.
 
-use crate::dom::define_value;
-use blitz_dom::{LocalName, NodeId, QualName, ScrollBehavior, ScrollLogicalPosition};
-use boa_engine::object::{JsObject, ObjectInitializer};
-use boa_engine::property::Attribute as PropAttribute;
-use boa_engine::value::JsValue;
-use boa_engine::{Context, JsNativeError, JsResult, js_string};
+use blitz_dom::NodeId;
+use boa_engine::object::JsObject;
+use boa_engine::{Context, JsResult, JsValue};
 
-use super::{
-    define_accessor, define_method, dom_ctx, js_str, node_or_null, node_wrapper, this_node_id,
-    to_rust_string,
-};
-use crate::state::DomCtx;
+use super::{define_accessor, define_method, dom_ctx, js_str, node_wrapper, this_node_id};
 
-/// Construct a `QualName` for an attribute (no namespace)
-pub(crate) fn attr_name(local: &str) -> QualName {
-    QualName::new(None, markup5ever::ns!(), LocalName::from(local))
-}
+mod attributes;
+mod form_controls;
+mod geometry;
+mod markup;
+mod scrolling;
+mod selectors;
+
+pub(crate) use attributes::{attr_name, read_attr, write_attr};
+pub(crate) use scrolling::parse_scroll_to_args;
 
 pub(crate) fn init_element_proto(proto: &JsObject, context: &mut Context) {
     define_accessor(proto, "tagName", Some(tag_name), None, context);
     define_accessor(proto, "localName", Some(local_name), None, context);
     define_accessor(proto, "namespaceURI", Some(namespace_uri), None, context);
-    define_accessor(proto, "id", Some(get_id), Some(set_id), context);
+    define_accessor(
+        proto,
+        "id",
+        Some(attributes::get_id),
+        Some(attributes::set_id),
+        context,
+    );
     define_accessor(
         proto,
         "className",
-        Some(get_class_name),
-        Some(set_class_name),
+        Some(attributes::get_class_name),
+        Some(attributes::set_class_name),
         context,
     );
-    define_accessor(proto, "value", Some(get_value), Some(set_value), context);
+    define_accessor(
+        proto,
+        "value",
+        Some(form_controls::get_value),
+        Some(form_controls::set_value),
+        context,
+    );
     define_accessor(
         proto,
         "checked",
-        Some(get_checked),
-        Some(set_checked),
+        Some(form_controls::get_checked),
+        Some(form_controls::set_checked),
         context,
     );
     define_accessor(
         proto,
         "disabled",
-        Some(get_disabled),
-        Some(set_disabled),
+        Some(attributes::get_disabled),
+        Some(attributes::set_disabled),
         context,
     );
-    define_accessor(proto, "hidden", Some(get_hidden), Some(set_hidden), context);
-    define_accessor(proto, "width", Some(get_width), Some(set_width), context);
-    define_accessor(proto, "height", Some(get_height), Some(set_height), context);
+    define_accessor(
+        proto,
+        "hidden",
+        Some(attributes::get_hidden),
+        Some(attributes::set_hidden),
+        context,
+    );
+    define_accessor(
+        proto,
+        "width",
+        Some(attributes::get_width),
+        Some(attributes::set_width),
+        context,
+    );
+    define_accessor(
+        proto,
+        "height",
+        Some(attributes::get_height),
+        Some(attributes::set_height),
+        context,
+    );
     define_accessor(
         proto,
         "selectionStart",
-        Some(get_selection_start),
-        Some(set_selection_start),
+        Some(form_controls::get_selection_start),
+        Some(form_controls::set_selection_start),
         context,
     );
     define_accessor(
         proto,
         "selectionEnd",
-        Some(get_selection_end),
-        Some(set_selection_end),
+        Some(form_controls::get_selection_end),
+        Some(form_controls::set_selection_end),
         context,
     );
-    define_method(proto, "setSelectionRange", 2, set_selection_range, context);
+    define_method(
+        proto,
+        "setSelectionRange",
+        2,
+        form_controls::set_selection_range,
+        context,
+    );
     define_accessor(
         proto,
         "placeholder",
-        Some(get_placeholder),
-        Some(set_placeholder),
+        Some(form_controls::get_placeholder),
+        Some(form_controls::set_placeholder),
         context,
     );
-    define_accessor(proto, "type", Some(get_type), Some(set_type), context);
+    define_accessor(
+        proto,
+        "type",
+        Some(form_controls::get_type),
+        Some(form_controls::set_type),
+        context,
+    );
     define_accessor(
         proto,
         "autofocus",
-        Some(get_autofocus),
-        Some(set_autofocus),
+        Some(form_controls::get_autofocus),
+        Some(form_controls::set_autofocus),
         context,
     );
     // `style` is `[PutForwards=cssText]`: assignment sets `style.cssText`
     define_accessor(
         proto,
         "style",
-        Some(get_style),
+        Some(markup::get_style),
         Some(super::style::set_css_text),
         context,
     );
-    define_accessor(proto, "sheet", Some(get_sheet), None, context);
+    define_accessor(proto, "sheet", Some(markup::get_sheet), None, context);
     define_accessor(
         proto,
         "innerHTML",
-        Some(get_inner_html),
-        Some(set_inner_html),
+        Some(markup::get_inner_html),
+        Some(markup::set_inner_html),
         context,
     );
-    define_accessor(proto, "outerHTML", Some(get_outer_html), None, context);
+    define_accessor(
+        proto,
+        "outerHTML",
+        Some(markup::get_outer_html),
+        None,
+        context,
+    );
     // The setter is approximated with `textContent` semantics (no `<br>` insertion)
     define_accessor(
         proto,
         "innerText",
-        Some(get_inner_text),
+        Some(markup::get_inner_text),
         Some(super::node::set_text_content),
         context,
     );
     // The `outerText` getter is the same as `innerText`'s
-    define_accessor(proto, "outerText", Some(get_inner_text), None, context);
-    define_accessor(proto, "content", Some(get_content), None, context);
+    define_accessor(
+        proto,
+        "outerText",
+        Some(markup::get_inner_text),
+        None,
+        context,
+    );
+    define_accessor(proto, "content", Some(markup::get_content), None, context);
     define_accessor(proto, "children", Some(children), None, context);
     define_accessor(
         proto,
@@ -143,52 +194,148 @@ pub(crate) fn init_element_proto(proto: &JsObject, context: &mut Context) {
         None,
         context,
     );
-    define_accessor(proto, "offsetWidth", Some(offset_width), None, context);
-    define_accessor(proto, "offsetHeight", Some(offset_height), None, context);
-    define_accessor(proto, "offsetLeft", Some(offset_left), None, context);
-    define_accessor(proto, "offsetTop", Some(offset_top), None, context);
-    define_accessor(proto, "clientWidth", Some(client_width), None, context);
-    define_accessor(proto, "clientTop", Some(client_top), None, context);
-    define_accessor(proto, "clientLeft", Some(client_left), None, context);
-    define_accessor(proto, "offsetParent", Some(offset_parent), None, context);
-    define_accessor(proto, "clientHeight", Some(client_height), None, context);
-    define_accessor(proto, "scrollWidth", Some(scroll_width), None, context);
-    define_accessor(proto, "scrollHeight", Some(scroll_height), None, context);
+    define_accessor(
+        proto,
+        "offsetWidth",
+        Some(geometry::offset_width),
+        None,
+        context,
+    );
+    define_accessor(
+        proto,
+        "offsetHeight",
+        Some(geometry::offset_height),
+        None,
+        context,
+    );
+    define_accessor(
+        proto,
+        "offsetLeft",
+        Some(geometry::offset_left),
+        None,
+        context,
+    );
+    define_accessor(
+        proto,
+        "offsetTop",
+        Some(geometry::offset_top),
+        None,
+        context,
+    );
+    define_accessor(
+        proto,
+        "clientWidth",
+        Some(geometry::client_width),
+        None,
+        context,
+    );
+    define_accessor(
+        proto,
+        "clientTop",
+        Some(geometry::client_top),
+        None,
+        context,
+    );
+    define_accessor(
+        proto,
+        "clientLeft",
+        Some(geometry::client_left),
+        None,
+        context,
+    );
+    define_accessor(
+        proto,
+        "offsetParent",
+        Some(geometry::offset_parent),
+        None,
+        context,
+    );
+    define_accessor(
+        proto,
+        "clientHeight",
+        Some(geometry::client_height),
+        None,
+        context,
+    );
+    define_accessor(
+        proto,
+        "scrollWidth",
+        Some(geometry::scroll_width),
+        None,
+        context,
+    );
+    define_accessor(
+        proto,
+        "scrollHeight",
+        Some(geometry::scroll_height),
+        None,
+        context,
+    );
     define_accessor(
         proto,
         "scrollTop",
-        Some(get_scroll_top),
-        Some(set_scroll_top),
+        Some(scrolling::get_scroll_top),
+        Some(scrolling::set_scroll_top),
         context,
     );
     define_accessor(
         proto,
         "scrollLeft",
-        Some(get_scroll_left),
-        Some(set_scroll_left),
+        Some(scrolling::get_scroll_left),
+        Some(scrolling::set_scroll_left),
         context,
     );
-    define_method(proto, "scroll", 2, scroll_to_method, context);
-    define_method(proto, "scrollTo", 2, scroll_to_method, context);
-    define_method(proto, "scrollBy", 2, scroll_by_method, context);
-    define_method(proto, "scrollIntoView", 0, scroll_into_view, context);
+    define_method(proto, "scroll", 2, scrolling::scroll_to_method, context);
+    define_method(proto, "scrollTo", 2, scrolling::scroll_to_method, context);
+    define_method(proto, "scrollBy", 2, scrolling::scroll_by_method, context);
+    define_method(
+        proto,
+        "scrollIntoView",
+        0,
+        scrolling::scroll_into_view,
+        context,
+    );
 
-    define_method(proto, "getAttribute", 1, get_attribute, context);
-    define_method(proto, "setAttribute", 2, set_attribute, context);
-    define_method(proto, "removeAttribute", 1, remove_attribute, context);
-    define_method(proto, "hasAttribute", 1, has_attribute, context);
-    define_method(proto, "getAttributeNames", 0, get_attribute_names, context);
-    define_accessor(proto, "attributes", Some(attributes), None, context);
-    define_method(proto, "focus", 0, focus, context);
-    define_method(proto, "blur", 0, blur, context);
+    define_method(proto, "getAttribute", 1, attributes::get_attribute, context);
+    define_method(proto, "setAttribute", 2, attributes::set_attribute, context);
+    define_method(
+        proto,
+        "removeAttribute",
+        1,
+        attributes::remove_attribute,
+        context,
+    );
+    define_method(proto, "hasAttribute", 1, attributes::has_attribute, context);
+    define_method(
+        proto,
+        "getAttributeNames",
+        0,
+        attributes::get_attribute_names,
+        context,
+    );
+    define_accessor(
+        proto,
+        "attributes",
+        Some(attributes::attributes),
+        None,
+        context,
+    );
+    define_method(proto, "focus", 0, form_controls::focus, context);
+    define_method(proto, "blur", 0, form_controls::blur, context);
     define_method(
         proto,
         "getBoundingClientRect",
         0,
-        get_bounding_client_rect,
+        geometry::get_bounding_client_rect,
         context,
     );
-    define_method(proto, "getClientRects", 0, get_client_rects, context);
+    define_method(
+        proto,
+        "getClientRects",
+        0,
+        geometry::get_client_rects,
+        context,
+    );
     // ParentNode mixin mutation helpers
     define_method(proto, "append", 1, super::node::append, context);
     define_method(proto, "prepend", 1, super::node::prepend, context);
@@ -200,67 +347,43 @@ pub(crate) fn init_element_proto(proto: &JsObject, context: &mut Context) {
         context,
     );
 
-    define_method(proto, "querySelector", 1, query_selector, context);
-    define_method(proto, "querySelectorAll", 1, query_selector_all, context);
-    define_method(proto, "matches", 1, matches, context);
-    define_method(proto, "webkitMatchesSelector", 1, matches, context);
-    define_method(proto, "closest", 1, closest, context);
+    define_method(
+        proto,
+        "querySelector",
+        1,
+        selectors::query_selector,
+        context,
+    );
+    define_method(
+        proto,
+        "querySelectorAll",
+        1,
+        selectors::query_selector_all,
+        context,
+    );
+    define_method(proto, "matches", 1, selectors::matches, context);
+    define_method(
+        proto,
+        "webkitMatchesSelector",
+        1,
+        selectors::matches,
+        context,
+    );
+    define_method(proto, "closest", 1, selectors::closest, context);
     define_method(
         proto,
         "getElementsByTagName",
         1,
-        get_elements_by_tag_name,
+        selectors::get_elements_by_tag_name,
         context,
     );
     define_method(
         proto,
         "getElementsByClassName",
         1,
-        get_elements_by_class_name,
+        selectors::get_elements_by_class_name,
         context,
     );
-}
-
-// === Attribute helpers ===
-
-pub(crate) fn read_attr(ctx: &DomCtx, node_id: NodeId, name: &str) -> Option<String> {
-    let doc = ctx.doc.borrow();
-    let node = doc.get_node(node_id)?;
-    let element = node.element_data()?;
-    element
-        .attrs()
-        .iter()
-        .find(|attr| &*attr.name.local == name)
-        .map(|attr| attr.value.clone())
-}
-
-pub(crate) fn write_attr(ctx: &DomCtx, node_id: NodeId, name: &str, value: &str) {
-    let mut doc = ctx.doc.borrow_mut();
-    doc.mutate().set_attribute(node_id, attr_name(name), value);
-}
-
-fn clear_attr(ctx: &DomCtx, node_id: NodeId, name: &str) {
-    let mut doc = ctx.doc.borrow_mut();
-    doc.mutate().clear_attribute(node_id, attr_name(name));
-}
-
-fn attr_getter(name: &str, this: &JsValue, context: &mut Context) -> JsResult<JsValue> {
-    let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
-    Ok(js_str(&read_attr(&ctx, node_id, name).unwrap_or_default()))
-}
-
-fn attr_setter(
-    name: &str,
-    this: &JsValue,
-    args: &[JsValue],
-    context: &mut Context,
-) -> JsResult<JsValue> {
-    let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
-    let value = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
-    write_attr(&ctx, node_id, name, &value);
-    Ok(JsValue::undefined())
 }
 
 // === Basic element info ===
@@ -403,1160 +526,4 @@ fn previous_element_sibling(
     let node_id = this_node_id(this)?;
     let sibling_id = element_sibling(&ctx.doc.borrow(), node_id, -1);
     Ok(super::node_or_null(&ctx, sibling_id, context))
-}
-
-// === Attributes ===
-
-fn get_attribute(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
-    let name = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?
-        .to_ascii_lowercase();
-    match read_attr(&ctx, node_id, &name) {
-        Some(value) => Ok(js_str(&value)),
-        None => Ok(JsValue::null()),
-    }
-}
-
-/// All attributes of the element as `(name, value)` pairs, in order.
-fn read_attrs(ctx: &DomCtx, node_id: NodeId) -> Vec<(String, String)> {
-    let doc = ctx.doc.borrow();
-    doc.get_node(node_id)
-        .and_then(|node| node.element_data())
-        .map(|element| {
-            element
-                .attrs()
-                .iter()
-                .map(|attr| (attr.name.local.to_string(), attr.value.clone()))
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
-fn get_attribute_names(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
-    let names: Vec<JsValue> = read_attrs(&ctx, node_id)
-        .into_iter()
-        .map(|(name, _)| js_str(&name))
-        .collect();
-    Ok(boa_engine::object::builtins::JsArray::from_iter(names, context).into())
-}
-
-/// `element.attributes`: a snapshot `NamedNodeMap` — an array-like of
-/// `Attr`-shaped objects (`name`, `value`, `nodeName`, `nodeValue`), which is
-/// what jQuery's `.data()` walks to collect `data-*` attributes.
-fn attributes(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
-    let items: Vec<JsValue> = read_attrs(&ctx, node_id)
-        .into_iter()
-        .map(|(name, value)| {
-            let attr = JsObject::with_object_proto(context.intrinsics());
-            define_value(&attr, "name", js_str(&name), context);
-            define_value(&attr, "nodeName", js_str(&name), context);
-            define_value(&attr, "localName", js_str(&name), context);
-            define_value(&attr, "value", js_str(&value), context);
-            define_value(&attr, "nodeValue", js_str(&value), context);
-            define_value(&attr, "specified", JsValue::from(true), context);
-            attr.into()
-        })
-        .collect();
-    let map = boa_engine::object::builtins::JsArray::from_iter(items.iter().cloned(), context);
-    Ok(map.into())
-}
-
-fn set_attribute(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
-    let name = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?
-        .to_ascii_lowercase();
-    let value = to_rust_string(args.get(1).unwrap_or(&JsValue::undefined()), context)?;
-    write_attr(&ctx, node_id, &name, &value);
-    Ok(JsValue::undefined())
-}
-
-fn remove_attribute(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
-    let name = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?
-        .to_ascii_lowercase();
-    clear_attr(&ctx, node_id, &name);
-    Ok(JsValue::undefined())
-}
-
-fn has_attribute(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
-    let name = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?
-        .to_ascii_lowercase();
-    Ok(JsValue::from(read_attr(&ctx, node_id, &name).is_some()))
-}
-
-// === Reflected DOM properties ===
-
-fn get_id(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    let _ = args;
-    attr_getter("id", this, context)
-}
-fn set_id(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    attr_setter("id", this, args, context)
-}
-
-fn get_class_name(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    let _ = args;
-    attr_getter("class", this, context)
-}
-fn set_class_name(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    attr_setter("class", this, args, context)
-}
-
-fn get_placeholder(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    let _ = args;
-    attr_getter("placeholder", this, context)
-}
-fn set_placeholder(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    attr_setter("placeholder", this, args, context)
-}
-
-fn get_type(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    let _ = args;
-    attr_getter("type", this, context)
-}
-fn set_type(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    attr_setter("type", this, args, context)
-}
-
-fn get_autofocus(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
-    Ok(JsValue::from(
-        read_attr(&ctx, node_id, "autofocus").is_some(),
-    ))
-}
-fn set_autofocus(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
-    let value = args.first().map(JsValue::to_boolean).unwrap_or(false);
-    if value {
-        write_attr(&ctx, node_id, "autofocus", "true");
-    } else {
-        clear_attr(&ctx, node_id, "autofocus");
-    }
-    Ok(JsValue::undefined())
-}
-
-fn get_value(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
-    let value = {
-        let doc = ctx.doc.borrow();
-        doc.get_node(node_id)
-            .and_then(|node| node.element_data())
-            .map(|element| match element.text_input_data() {
-                Some(input_data) => input_data.editor.raw_text().to_string(),
-                None => element
-                    .attrs()
-                    .iter()
-                    .find(|attr| &*attr.name.local == "value")
-                    .map(|attr| attr.value.clone())
-                    .unwrap_or_default(),
-            })
-            .unwrap_or_default()
-    };
-    Ok(js_str(&value))
-}
-
-fn set_value(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    attr_setter("value", this, args, context)
-}
-
-fn get_checked(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
-    let checked = {
-        let doc = ctx.doc.borrow();
-        doc.get_node(node_id)
-            .and_then(|node| node.element_data())
-            .map(|element| {
-                element
-                    .checkbox_input_checked()
-                    .unwrap_or_else(|| element.attr(blitz_dom::local_name!("checked")).is_some())
-            })
-            .unwrap_or(false)
-    };
-    Ok(JsValue::from(checked))
-}
-
-fn set_checked(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
-    let checked = args.first().map(JsValue::to_boolean).unwrap_or(false);
-    // blitz-dom's checked handling parses the value as a boolean
-    write_attr(
-        &ctx,
-        node_id,
-        "checked",
-        if checked { "true" } else { "false" },
-    );
-    Ok(JsValue::undefined())
-}
-
-/// `HTMLStyleElement.disabled` / `HTMLLinkElement.disabled` control the
-/// disabled flag of the element's associated stylesheet rather than (only) a
-/// content attribute.
-fn is_stylesheet_owner_tag(tag: &LocalName) -> bool {
-    matches!(&**tag, "style" | "link")
-}
-
-fn get_disabled(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
-    if element_local_name(&ctx, node_id).is_some_and(|tag| is_stylesheet_owner_tag(&tag)) {
-        return Ok(JsValue::from(ctx.doc.borrow().stylesheet_disabled(node_id)));
-    }
-    Ok(JsValue::from(
-        read_attr(&ctx, node_id, "disabled").is_some(),
-    ))
-}
-
-fn set_disabled(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
-    let disabled = args.first().map(JsValue::to_boolean).unwrap_or(false);
-    if let Some(tag) = element_local_name(&ctx, node_id) {
-        if is_stylesheet_owner_tag(&tag) {
-            ctx.doc
-                .borrow_mut()
-                .set_stylesheet_disabled(node_id, disabled);
-            if &*tag == "style" {
-                return Ok(JsValue::undefined());
-            }
-        }
-    }
-    if disabled {
-        write_attr(&ctx, node_id, "disabled", "");
-    } else {
-        clear_attr(&ctx, node_id, "disabled");
-    }
-    Ok(JsValue::undefined())
-}
-
-fn get_hidden(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
-    Ok(JsValue::from(read_attr(&ctx, node_id, "hidden").is_some()))
-}
-
-fn set_hidden(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
-    let hidden = args.first().map(JsValue::to_boolean).unwrap_or(false);
-    if hidden {
-        write_attr(&ctx, node_id, "hidden", "");
-    } else {
-        clear_attr(&ctx, node_id, "hidden");
-    }
-    Ok(JsValue::undefined())
-}
-
-// === `width`/`height` (`unsigned long` reflected content attributes) ===
-//
-// Only the elements whose `width`/`height` content attributes are reflected as
-// numbers by their IDL interface (`HTMLCanvasElement`, `HTMLImageElement`, ...)
-// get the reflected property. A canvas defaults to its 300x150 bitmap size.
-
-fn element_local_name(ctx: &DomCtx, node_id: NodeId) -> Option<LocalName> {
-    let doc = ctx.doc.borrow();
-    let element = doc.get_node(node_id)?.element_data()?;
-    Some(element.name.local.clone())
-}
-
-fn dimension_attr_default(tag: &LocalName, attr: &str) -> Option<u32> {
-    match &**tag {
-        "canvas" => Some(if attr == "width" { 300 } else { 150 }),
-        "img" | "video" | "iframe" | "embed" | "object" => Some(0),
-        _ => None,
-    }
-}
-
-/// Parse a reflected `unsigned long` content attribute (HTML "rules for parsing
-/// non-negative integers"), falling back to `default` on a missing/invalid value
-fn parse_unsigned_long_attr(value: Option<String>, default: u32) -> u32 {
-    value
-        .as_deref()
-        .map(str::trim)
-        .and_then(|value| {
-            let value = value.strip_prefix('+').unwrap_or(value);
-            let digits: &str = value
-                .split(|c: char| !c.is_ascii_digit())
-                .next()
-                .unwrap_or("");
-            digits.parse::<u32>().ok()
-        })
-        .filter(|value| *value <= 2147483647)
-        .unwrap_or(default)
-}
-
-fn dimension_getter(attr: &str, this: &JsValue, context: &mut Context) -> JsResult<JsValue> {
-    let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
-    let Some(tag) = element_local_name(&ctx, node_id) else {
-        return Ok(JsValue::undefined());
-    };
-    let Some(default) = dimension_attr_default(&tag, attr) else {
-        return Ok(JsValue::undefined());
-    };
-    let value = parse_unsigned_long_attr(read_attr(&ctx, node_id, attr), default);
-    Ok(JsValue::from(value))
-}
-
-fn dimension_setter(
-    attr: &str,
-    this: &JsValue,
-    args: &[JsValue],
-    context: &mut Context,
-) -> JsResult<JsValue> {
-    let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
-    let Some(tag) = element_local_name(&ctx, node_id) else {
-        return Ok(JsValue::undefined());
-    };
-    let Some(default) = dimension_attr_default(&tag, attr) else {
-        // Not a reflected attribute on this element: behave like a plain
-        // expando property so `div.width = x` still round-trips.
-        if let Some(obj) = this.as_object() {
-            obj.create_data_property_or_throw(
-                boa_engine::JsString::from(attr),
-                args.first().cloned().unwrap_or_default(),
-                context,
-            )?;
-        }
-        return Ok(JsValue::undefined());
-    };
-    // WebIDL `unsigned long` conversion: ToNumber, then modulo 2^32; values
-    // outside the (0, 2^31) range fall back to the default
-    let number = args
-        .first()
-        .unwrap_or(&JsValue::undefined())
-        .to_number(context)?;
-    let value = if number.is_finite() {
-        let value = number.trunc().rem_euclid(4294967296.0) as u32;
-        if value > 2147483647 { default } else { value }
-    } else {
-        0
-    };
-    write_attr(&ctx, node_id, attr, &value.to_string());
-    Ok(JsValue::undefined())
-}
-
-fn get_width(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    dimension_getter("width", this, context)
-}
-fn set_width(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    dimension_setter("width", this, args, context)
-}
-fn get_height(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    dimension_getter("height", this, context)
-}
-fn set_height(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    dimension_setter("height", this, args, context)
-}
-
-// === Text input selection (`selectionStart`/`selectionEnd`) ===
-//
-// Backed by the text input's real editor selection. Offsets are in UTF-16 code
-// units, per spec. Returns null for elements without a text editor. React
-// snapshots these around controlled-input re-renders and restores the caret
-// via `setSelectionRange()`.
-
-/// Convert a byte offset in `text` to a UTF-16 code-unit offset
-fn byte_to_utf16(text: &str, byte_offset: usize) -> usize {
-    text[..byte_offset.min(text.len())]
-        .chars()
-        .map(char::len_utf16)
-        .sum()
-}
-
-/// Convert a UTF-16 code-unit offset to a byte offset in `text` (clamped)
-fn utf16_to_byte(text: &str, utf16_offset: usize) -> usize {
-    let mut units = 0;
-    for (byte_offset, ch) in text.char_indices() {
-        if units >= utf16_offset {
-            return byte_offset;
-        }
-        units += ch.len_utf16();
-    }
-    text.len()
-}
-
-/// The current selection of the node's text editor as UTF-16 offsets
-fn selection_utf16_range(doc: &blitz_dom::BaseDocument, node_id: NodeId) -> Option<(usize, usize)> {
-    let input = doc.get_node(node_id)?.element_data()?.text_input_data()?;
-    let text = input.editor.raw_text();
-    let range = input.editor.raw_selection().text_range();
-    Some((
-        byte_to_utf16(text, range.start),
-        byte_to_utf16(text, range.end),
-    ))
-}
-
-/// Set the node's text editor selection from UTF-16 offsets
-fn set_selection_utf16_range(
-    doc: &mut blitz_dom::BaseDocument,
-    node_id: NodeId,
-    start: usize,
-    end: usize,
-) {
-    doc.with_text_input(node_id, |mut driver| {
-        let text = driver.editor.raw_text().to_string();
-        let start_byte = utf16_to_byte(&text, start);
-        let end_byte = utf16_to_byte(&text, start.max(end));
-        driver.select_byte_range(start_byte, end_byte);
-    });
-}
-
-fn get_inner_text(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
-    let mut doc = ctx.doc.borrow_mut();
-    doc.resolve(0.0);
-    let text = doc
-        .get_node(node_id)
-        .map(crate::inner_text::inner_text)
-        .unwrap_or_default();
-    Ok(js_str(&text))
-}
-
-fn get_selection_start(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
-    let mut doc = ctx.doc.borrow_mut();
-    // The text editor is created during layout construction
-    doc.resolve(0.0);
-    Ok(match selection_utf16_range(&doc, node_id) {
-        Some((start, _)) => JsValue::from(start as u32),
-        None => JsValue::null(),
-    })
-}
-
-fn get_selection_end(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
-    let mut doc = ctx.doc.borrow_mut();
-    // The text editor is created during layout construction
-    doc.resolve(0.0);
-    Ok(match selection_utf16_range(&doc, node_id) {
-        Some((_, end)) => JsValue::from(end as u32),
-        None => JsValue::null(),
-    })
-}
-
-fn set_selection_start(
-    this: &JsValue,
-    args: &[JsValue],
-    context: &mut Context,
-) -> JsResult<JsValue> {
-    let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
-    let start = args
-        .first()
-        .unwrap_or(&JsValue::undefined())
-        .to_number(context)?
-        .max(0.0) as usize;
-    let mut doc = ctx.doc.borrow_mut();
-    doc.resolve(0.0);
-    if let Some((_, end)) = selection_utf16_range(&doc, node_id) {
-        set_selection_utf16_range(&mut doc, node_id, start, end.max(start));
-    }
-    Ok(JsValue::undefined())
-}
-
-fn set_selection_end(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
-    let end = args
-        .first()
-        .unwrap_or(&JsValue::undefined())
-        .to_number(context)?
-        .max(0.0) as usize;
-    let mut doc = ctx.doc.borrow_mut();
-    doc.resolve(0.0);
-    if let Some((start, _)) = selection_utf16_range(&doc, node_id) {
-        set_selection_utf16_range(&mut doc, node_id, start.min(end), end);
-    }
-    Ok(JsValue::undefined())
-}
-
-fn set_selection_range(
-    this: &JsValue,
-    args: &[JsValue],
-    context: &mut Context,
-) -> JsResult<JsValue> {
-    let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
-    let start = args
-        .first()
-        .unwrap_or(&JsValue::undefined())
-        .to_number(context)?
-        .max(0.0) as usize;
-    let end = args
-        .get(1)
-        .unwrap_or(&JsValue::undefined())
-        .to_number(context)?
-        .max(0.0) as usize;
-    let mut doc = ctx.doc.borrow_mut();
-    doc.resolve(0.0);
-    set_selection_utf16_range(&mut doc, node_id, start, end);
-    Ok(JsValue::undefined())
-}
-
-// === Style ===
-
-fn get_style(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
-    let proto = ctx.state.borrow().protos().style.clone();
-    let obj = JsObject::from_proto_and_data(Some(proto), super::NodeRef { node_id });
-    Ok(super::wrap_style_object(obj, context))
-}
-
-/// `HTMLStyleElement.sheet` / `HTMLLinkElement.sheet`: the `CSSStyleSheet`
-/// object (built by the JS bootstrap) for the element's stylesheet, or `null`
-fn get_sheet(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    this_node_id(this)?;
-    let sheet = super::call_js_helper(
-        "__blitz_sheet_for_node",
-        std::slice::from_ref(this),
-        context,
-    )?;
-    Ok(if sheet.is_undefined() {
-        JsValue::null()
-    } else {
-        sheet
-    })
-}
-
-// === innerHTML / outerHTML ===
-
-fn get_inner_html(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
-    let doc = ctx.doc.borrow();
-    let mut html = String::new();
-    if let Some(node) = doc.get_node(node_id) {
-        for child_id in &node.children {
-            if let Some(child) = doc.get_node(*child_id) {
-                child.write_outer_html(&mut html);
-            }
-        }
-    }
-    Ok(js_str(&html))
-}
-
-fn set_inner_html(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
-    let html = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
-
-    let mut doc = ctx.doc.borrow_mut();
-    let mut mutr = doc.mutate();
-    // Detach (rather than drop) any existing children so that JS wrappers
-    // referencing them remain valid.
-    for child_id in mutr.child_ids(node_id) {
-        mutr.remove_node(child_id);
-    }
-    mutr.set_inner_html(node_id, &html);
-    Ok(JsValue::undefined())
-}
-
-/// `HTMLTemplateElement.content`: the template's inert contents fragment.
-/// Returns `undefined` for non-template elements.
-fn get_content(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
-
-    let is_template = ctx
-        .doc
-        .borrow()
-        .get_node(node_id)
-        .and_then(|node| node.element_data())
-        .is_some_and(|element| element.name.local == blitz_dom::local_name!("template"));
-    if !is_template {
-        return Ok(JsValue::undefined());
-    }
-
-    // Lazily create the contents fragment for templates created by script
-    let contents_id = ctx.doc.borrow_mut().mutate().template_contents(node_id);
-    Ok(node_wrapper(&ctx, contents_id, context).into())
-}
-
-fn get_outer_html(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
-    let doc = ctx.doc.borrow();
-    let html = doc
-        .get_node(node_id)
-        .map(|node| node.outer_html())
-        .unwrap_or_default();
-    Ok(js_str(&html))
-}
-
-// === Focus ===
-
-fn focus(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
-    ctx.doc.borrow_mut().set_focus_to(node_id);
-    Ok(JsValue::undefined())
-}
-
-fn blur(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    let ctx = dom_ctx(context)?;
-    let _ = this_node_id(this)?;
-    ctx.doc.borrow_mut().clear_focus();
-    Ok(JsValue::undefined())
-}
-
-// === Geometry ===
-
-/// Look up a node and compute a geometry value from its layout, resolving
-/// style/layout first so that the values reflect any recent DOM mutations.
-/// Returns 0.0 if the node does not exist.
-fn layout_value(
-    this: &JsValue,
-    context: &mut Context,
-    f: impl FnOnce(&blitz_dom::Node) -> f32,
-) -> JsResult<JsValue> {
-    let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
-    let mut doc = ctx.doc.borrow_mut();
-    doc.resolve(0.0);
-    let value = doc.get_node(node_id).map(f).unwrap_or(0.0);
-    Ok(JsValue::from(value as f64))
-}
-
-/// `offsetLeft`/`offsetTop`/`offsetWidth`/`offsetHeight`: the node's border box
-/// relative to the padding edge of its `offsetParent` (blitz-dom's `offset_rect`
-/// implements the offsetParent resolution and the fragment bounding box of
-/// non-atomic inline elements)
-fn offset_value(
-    this: &JsValue,
-    context: &mut Context,
-    f: impl FnOnce(&blitz_dom::BoundingRect) -> f64,
-) -> JsResult<JsValue> {
-    let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
-    let mut doc = ctx.doc.borrow_mut();
-    doc.resolve(0.0);
-    let value = doc.offset_rect(node_id).map(|rect| f(&rect)).unwrap_or(0.0);
-    Ok(JsValue::from(value.round()))
-}
-
-fn offset_width(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    offset_value(this, context, |rect| rect.width)
-}
-
-fn offset_height(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    offset_value(this, context, |rect| rect.height)
-}
-
-fn offset_left(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    offset_value(this, context, |rect| rect.x)
-}
-
-fn offset_top(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    offset_value(this, context, |rect| rect.y)
-}
-
-/// `clientWidth`/`clientHeight`. For the root element (in no-quirks mode, which
-/// is all Blitz supports) these are the viewport dimensions minus scrollbars.
-fn client_size(
-    this: &JsValue,
-    context: &mut Context,
-    axis: impl FnOnce(&blitz_dom::Node) -> f32,
-    viewport_axis: impl FnOnce(&blitz_dom::Node, (f32, f32)) -> f32,
-) -> JsResult<JsValue> {
-    let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
-    let mut doc = ctx.doc.borrow_mut();
-    doc.resolve(0.0);
-    let Some(node) = doc.get_node(node_id) else {
-        return Ok(JsValue::from(0.0));
-    };
-    let value = if node_id == doc.root_element().id {
-        let viewport = doc.viewport();
-        let scale = viewport.scale();
-        let size = (
-            viewport.window_size.0 as f32 / scale,
-            viewport.window_size.1 as f32 / scale,
-        );
-        viewport_axis(node, size)
-    } else {
-        axis(node)
-    };
-    Ok(JsValue::from(value.round() as f64))
-}
-
-fn client_width(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    client_size(
-        this,
-        context,
-        |node| node.client_width(),
-        |node, (w, _)| w - node.final_layout().scrollbar_size.width,
-    )
-}
-
-/// `offsetParent`: the nearest positioned ancestor (or `body`/table cell), as
-/// resolved by blitz-dom; `null` when there is none.
-fn offset_parent(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
-    let parent_id = {
-        let mut doc = ctx.doc.borrow_mut();
-        doc.resolve(0.0);
-        doc.get_node(node_id)
-            .and_then(|node| node.offset_parent())
-            .map(|parent| parent.id)
-    };
-    Ok(node_or_null(&ctx, parent_id, context))
-}
-
-// `clientTop`/`clientLeft`: the border widths (jQuery's `.offset()` subtracts
-// the root element's from `getBoundingClientRect`).
-
-fn client_top(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    layout_value(this, context, |node| node.final_layout().border.top.round())
-}
-
-fn client_left(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    layout_value(this, context, |node| {
-        node.final_layout().border.left.round()
-    })
-}
-
-fn client_height(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    client_size(
-        this,
-        context,
-        |node| node.client_height(),
-        |node, (_, h)| h - node.final_layout().scrollbar_size.height,
-    )
-}
-
-fn scroll_width(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    layout_value(this, context, |node| node.scroll_width().round())
-}
-
-fn scroll_height(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    layout_value(this, context, |node| node.scroll_height().round())
-}
-
-// === Scrolling ===
-
-/// The current scroll offset of an element. The root element scrolls the
-/// viewport (per the CSS overflow propagation rules), so its offset is the
-/// viewport scroll offset.
-fn current_scroll_offset(doc: &blitz_dom::BaseDocument, node_id: NodeId) -> blitz_dom::Point<f64> {
-    if doc
-        .try_root_element()
-        .is_some_and(|root| root.id == node_id)
-    {
-        doc.viewport_scroll()
-    } else {
-        doc.get_node(node_id)
-            .filter(|node| node.element_data().is_some())
-            .map(|node| *node.scroll_offset())
-            .unwrap_or(blitz_dom::Point { x: 0.0, y: 0.0 })
-    }
-}
-
-/// Convert a JS value to a scroll coordinate: WebIDL `unrestricted double`,
-/// with non-finite values normalized to 0 per the cssom-view spec.
-fn scroll_coord(value: &JsValue, context: &mut Context) -> JsResult<f64> {
-    let number = value.to_number(context)?;
-    Ok(if number.is_finite() { number } else { 0.0 })
-}
-
-/// Parse a WebIDL `ScrollBehavior` enumeration value (`undefined` maps to the
-/// default, "auto"; other invalid values throw a `TypeError`)
-fn parse_scroll_behavior(value: &JsValue, context: &mut Context) -> JsResult<ScrollBehavior> {
-    if value.is_undefined() {
-        return Ok(ScrollBehavior::Auto);
-    }
-    let string = to_rust_string(value, context)?;
-    match string.as_str() {
-        "auto" => Ok(ScrollBehavior::Auto),
-        "instant" => Ok(ScrollBehavior::Instant),
-        "smooth" => Ok(ScrollBehavior::Smooth),
-        _ => Err(JsNativeError::typ()
-            .with_message(format!(
-                "{string:?} is not a valid value for enumeration ScrollBehavior"
-            ))
-            .into()),
-    }
-}
-
-/// Parsed arguments of the `scrollTo(x, y)` / `scrollTo(options)` overloads
-/// shared by the `Element` and `Window` scroll methods. `None` coordinates
-/// were not specified (and default to the current position for `scrollTo`,
-/// or a zero delta for `scrollBy`).
-pub(crate) struct ScrollToArgs {
-    pub(crate) left: Option<f64>,
-    pub(crate) top: Option<f64>,
-    pub(crate) behavior: ScrollBehavior,
-}
-
-/// Parse the WebIDL `scrollTo(x, y)` / `scrollTo(options)` overloads: two or
-/// more arguments are coordinates; a single argument must be a `ScrollToOptions`
-/// dictionary (a single non-object argument throws a `TypeError`, per WebIDL
-/// dictionary conversion).
-pub(crate) fn parse_scroll_to_args(
-    args: &[JsValue],
-    context: &mut Context,
-) -> JsResult<ScrollToArgs> {
-    if args.len() >= 2 {
-        return Ok(ScrollToArgs {
-            left: Some(scroll_coord(&args[0], context)?),
-            top: Some(scroll_coord(&args[1], context)?),
-            behavior: ScrollBehavior::Auto,
-        });
-    }
-    match args.first() {
-        None => Ok(ScrollToArgs {
-            left: None,
-            top: None,
-            behavior: ScrollBehavior::Auto,
-        }),
-        Some(value) if value.is_null_or_undefined() => Ok(ScrollToArgs {
-            left: None,
-            top: None,
-            behavior: ScrollBehavior::Auto,
-        }),
-        Some(value) => {
-            let Some(options) = value.as_object() else {
-                return Err(JsNativeError::typ()
-                    .with_message("value cannot be converted to a ScrollToOptions dictionary")
-                    .into());
-            };
-            let left = options.get(js_string!("left"), context)?;
-            let left = (!left.is_undefined())
-                .then(|| scroll_coord(&left, context))
-                .transpose()?;
-            let top = options.get(js_string!("top"), context)?;
-            let top = (!top.is_undefined())
-                .then(|| scroll_coord(&top, context))
-                .transpose()?;
-            let behavior = options.get(js_string!("behavior"), context)?;
-            let behavior = parse_scroll_behavior(&behavior, context)?;
-            Ok(ScrollToArgs {
-                left,
-                top,
-                behavior,
-            })
-        }
-    }
-}
-
-fn get_scroll_top(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
-    let doc = ctx.doc.borrow();
-    Ok(JsValue::from(current_scroll_offset(&doc, node_id).y))
-}
-
-fn get_scroll_left(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
-    let doc = ctx.doc.borrow();
-    Ok(JsValue::from(current_scroll_offset(&doc, node_id).x))
-}
-
-fn set_scroll_top(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    let value = scroll_coord(args.first().unwrap_or(&JsValue::undefined()), context)?;
-    let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
-    let mut doc = ctx.doc.borrow_mut();
-    doc.resolve(0.0);
-    let current = current_scroll_offset(&doc, node_id);
-    doc.scroll_to(node_id, current.x, value, ScrollBehavior::Auto);
-    Ok(JsValue::undefined())
-}
-
-fn set_scroll_left(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    let value = scroll_coord(args.first().unwrap_or(&JsValue::undefined()), context)?;
-    let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
-    let mut doc = ctx.doc.borrow_mut();
-    doc.resolve(0.0);
-    let current = current_scroll_offset(&doc, node_id);
-    doc.scroll_to(node_id, value, current.y, ScrollBehavior::Auto);
-    Ok(JsValue::undefined())
-}
-
-fn scroll_to_method(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    let parsed = parse_scroll_to_args(args, context)?;
-    let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
-    let mut doc = ctx.doc.borrow_mut();
-    doc.resolve(0.0);
-    let current = current_scroll_offset(&doc, node_id);
-    doc.scroll_to(
-        node_id,
-        parsed.left.unwrap_or(current.x),
-        parsed.top.unwrap_or(current.y),
-        parsed.behavior,
-    );
-    Ok(JsValue::undefined())
-}
-
-fn scroll_by_method(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    let parsed = parse_scroll_to_args(args, context)?;
-    let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
-    let mut doc = ctx.doc.borrow_mut();
-    doc.resolve(0.0);
-    doc.scroll_by(
-        node_id,
-        parsed.left.unwrap_or(0.0),
-        parsed.top.unwrap_or(0.0),
-        parsed.behavior,
-    );
-    Ok(JsValue::undefined())
-}
-
-/// Parse a WebIDL `ScrollLogicalPosition` enumeration value (`undefined` maps
-/// to the given default; other invalid values throw a `TypeError`)
-fn parse_scroll_logical_position(
-    value: &JsValue,
-    default: ScrollLogicalPosition,
-    context: &mut Context,
-) -> JsResult<ScrollLogicalPosition> {
-    if value.is_undefined() {
-        return Ok(default);
-    }
-    let string = to_rust_string(value, context)?;
-    match string.as_str() {
-        "start" => Ok(ScrollLogicalPosition::Start),
-        "center" => Ok(ScrollLogicalPosition::Center),
-        "end" => Ok(ScrollLogicalPosition::End),
-        "nearest" => Ok(ScrollLogicalPosition::Nearest),
-        _ => Err(JsNativeError::typ()
-            .with_message(format!(
-                "{string:?} is not a valid value for enumeration ScrollLogicalPosition"
-            ))
-            .into()),
-    }
-}
-
-fn scroll_into_view(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    let arg = args.first().cloned().unwrap_or_default();
-    // WebIDL `(boolean or ScrollIntoViewOptions)`: objects (and null/undefined)
-    // convert to the options dictionary, everything else converts to a boolean
-    // (`true` aligns to the start, `false` to the end).
-    let (behavior, block, inline) = if let Some(options) = arg.as_object() {
-        let behavior = options.get(js_string!("behavior"), context)?;
-        let behavior = parse_scroll_behavior(&behavior, context)?;
-        let block = options.get(js_string!("block"), context)?;
-        let block = parse_scroll_logical_position(&block, ScrollLogicalPosition::Start, context)?;
-        let inline = options.get(js_string!("inline"), context)?;
-        let inline =
-            parse_scroll_logical_position(&inline, ScrollLogicalPosition::Nearest, context)?;
-        (behavior, block, inline)
-    } else if arg.is_null_or_undefined() || arg.to_boolean() {
-        (
-            ScrollBehavior::Auto,
-            ScrollLogicalPosition::Start,
-            ScrollLogicalPosition::Nearest,
-        )
-    } else {
-        (
-            ScrollBehavior::Auto,
-            ScrollLogicalPosition::End,
-            ScrollLogicalPosition::Nearest,
-        )
-    };
-
-    let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
-    let mut doc = ctx.doc.borrow_mut();
-    doc.resolve(0.0);
-    doc.scroll_into_view(node_id, behavior, block, inline);
-    Ok(JsValue::undefined())
-}
-
-/// Build a `DOMRect`-shaped object
-fn make_rect_object(context: &mut Context, x: f64, y: f64, width: f64, height: f64) -> JsObject {
-    ObjectInitializer::new(context)
-        .property(js_string!("x"), x, PropAttribute::all())
-        .property(js_string!("y"), y, PropAttribute::all())
-        .property(js_string!("width"), width, PropAttribute::all())
-        .property(js_string!("height"), height, PropAttribute::all())
-        .property(js_string!("left"), x, PropAttribute::all())
-        .property(js_string!("top"), y, PropAttribute::all())
-        .property(js_string!("right"), x + width, PropAttribute::all())
-        .property(js_string!("bottom"), y + height, PropAttribute::all())
-        .build()
-}
-
-/// Does the node generate any boxes? (`getClientRects()` returns an empty list
-/// for boxless nodes, e.g. `display: none` or detached elements)
-fn node_has_boxes(doc: &blitz_dom::BaseDocument, node_id: NodeId) -> bool {
-    doc.get_node(node_id).is_some_and(|node| node.has_boxes())
-}
-
-fn get_bounding_client_rect(
-    this: &JsValue,
-    _: &[JsValue],
-    context: &mut Context,
-) -> JsResult<JsValue> {
-    let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
-    ctx.doc.borrow_mut().resolve(0.0);
-    let rect = ctx.doc.borrow().get_client_bounding_rect(node_id);
-    let (x, y, width, height) = match rect {
-        Some(rect) => (rect.x, rect.y, rect.width, rect.height),
-        None => (0.0, 0.0, 0.0, 0.0),
-    };
-    Ok(make_rect_object(context, x, y, width, height).into())
-}
-
-fn get_client_rects(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
-    ctx.doc.borrow_mut().resolve(0.0);
-
-    // One rect per box fragment: a single border-box rect for nodes with their
-    // own layout box, one rect per line box for non-atomic inline elements,
-    // and an empty list for boxless (e.g. `display: none`) elements
-    let rects = {
-        let doc = ctx.doc.borrow();
-        if node_has_boxes(&doc, node_id) {
-            doc.node_client_rects(node_id)
-        } else {
-            Vec::new()
-        }
-    };
-
-    let rect_objects: Vec<JsValue> = rects
-        .into_iter()
-        .map(|rect| make_rect_object(context, rect.x, rect.y, rect.width, rect.height).into())
-        .collect();
-    Ok(boa_engine::object::builtins::JsArray::from_iter(rect_objects, context).into())
-}
-
-// === Scoped selector queries ===
-
-/// A `DOMException` for an unparseable selector, per the spec for
-/// `querySelector`/`matches`/`closest` and friends
-fn invalid_selector_error(context: &mut Context, selector: &str) -> boa_engine::JsError {
-    super::dom_exception(
-        context,
-        "SyntaxError",
-        &format!("{selector:?} is not a valid selector"),
-    )
-}
-
-fn query_selector(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
-    let selector = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
-
-    let result = ctx.doc.borrow().query_selector_in(node_id, &selector);
-    let result = match result {
-        Ok(result) => result,
-        Err(_) => return Err(invalid_selector_error(context, &selector)),
-    };
-    Ok(super::node_or_null(&ctx, result, context))
-}
-
-fn query_selector_all(
-    this: &JsValue,
-    args: &[JsValue],
-    context: &mut Context,
-) -> JsResult<JsValue> {
-    let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
-    let selector = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
-
-    let matches = ctx.doc.borrow().query_selector_all_in(node_id, &selector);
-    let matches = match matches {
-        Ok(matches) => matches,
-        Err(_) => return Err(invalid_selector_error(context, &selector)),
-    };
-    let wrappers: Vec<JsValue> = matches
-        .into_iter()
-        .map(|match_id| node_wrapper(&ctx, match_id, context).into())
-        .collect();
-    Ok(boa_engine::object::builtins::JsArray::from_iter(wrappers, context).into())
-}
-
-fn matches(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
-    let selector = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
-
-    match ctx.doc.borrow().matches_selector(node_id, &selector) {
-        Ok(matches) => Ok(JsValue::from(matches)),
-        Err(_) => Err(invalid_selector_error(context, &selector)),
-    }
-}
-
-fn closest(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
-    let selector = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
-
-    let result = ctx.doc.borrow().closest(node_id, &selector);
-    match result {
-        Ok(result) => Ok(super::node_or_null(&ctx, result, context)),
-        Err(_) => Err(invalid_selector_error(context, &selector)),
-    }
-}
-
-fn get_elements_by_tag_name(
-    this: &JsValue,
-    args: &[JsValue],
-    context: &mut Context,
-) -> JsResult<JsValue> {
-    let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
-    let tag = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?
-        .to_ascii_lowercase();
-    let match_all = tag == "*";
-
-    let matches = super::collect_matching_descendants(&ctx.doc.borrow(), node_id, |element| {
-        match_all || &*element.name.local == tag.as_str()
-    });
-
-    let wrappers: Vec<JsValue> = matches
-        .into_iter()
-        .map(|match_id| node_wrapper(&ctx, match_id, context).into())
-        .collect();
-    Ok(boa_engine::object::builtins::JsArray::from_iter(wrappers, context).into())
-}
-
-fn get_elements_by_class_name(
-    this: &JsValue,
-    args: &[JsValue],
-    context: &mut Context,
-) -> JsResult<JsValue> {
-    let ctx = dom_ctx(context)?;
-    let node_id = this_node_id(this)?;
-    let class_arg = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
-    let class_names: Vec<&str> = class_arg.split_whitespace().collect();
-
-    let matches = if class_names.is_empty() {
-        Vec::new()
-    } else {
-        super::collect_matching_descendants(&ctx.doc.borrow(), node_id, |element| {
-            super::matches_class_names(element, &class_names)
-        })
-    };
-
-    let wrappers: Vec<JsValue> = matches
-        .into_iter()
-        .map(|match_id| node_wrapper(&ctx, match_id, context).into())
-        .collect();
-    Ok(boa_engine::object::builtins::JsArray::from_iter(wrappers, context).into())
 }
