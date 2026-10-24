@@ -38,11 +38,6 @@ pub(crate) fn winit_ime_to_blitz(event: Ime) -> BlitzImeEvent {
             before_bytes,
             after_bytes,
         },
-        _ => {
-            #[cfg(feature = "tracing")]
-            tracing::error!("unsupported Ime variant: {event:?}");
-            BlitzImeEvent::Disabled
-        }
     }
 }
 
