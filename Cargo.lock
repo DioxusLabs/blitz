@@ -950,8 +950,10 @@ dependencies = [
  "env_logger",
  "euclid",
  "image",
+ "mimalloc",
  "peniko",
  "png 0.18.1",
+ "rayon",
  "reqwest",
  "rustc-hash 2.1.3",
  "tokio",
@@ -2078,7 +2080,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d045de693cb712d0b22c6a64be5b953f67b3ce00ab5ad3dd5d8b441886ab8e1a"
 dependencies = [
  "quote",
- "syn 3.0.6",
+ "syn 2.0.119",
 ]
 
 [[package]]
@@ -7960,8 +7962,9 @@ dependencies = [
 [[package]]
 name = "taffy"
 version = "0.15.0"
-source = "git+https://github.com/DioxusLabs/taffy?rev=802e497b69689e1c93be2d16e9d53a973971bcb2#802e497b69689e1c93be2d16e9d53a973971bcb2"
+source = "git+https://github.com/DioxusLabs/taffy?rev=a2b0f009f3425f0c9d1fd09fa49d0df36ef19736#a2b0f009f3425f0c9d1fd09fa49d0df36ef19736"
 dependencies = [
+ "fearless_simd 1.1.0",
  "serde",
  "slotmap",
  "smallvec",
@@ -8003,7 +8006,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix 1.1.5",
  "windows-sys 0.61.2",

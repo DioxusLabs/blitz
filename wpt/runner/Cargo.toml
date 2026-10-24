@@ -10,6 +10,8 @@ publish = false
 default = ["cpu"]
 gpu = ["dep:anyrender_vello"]
 cpu = ["dep:anyrender_vello_cpu"]
+# PROTOTYPE: lay out sibling subtrees in parallel
+parallel-layout = ["blitz-dom/parallel-layout"]
 
 [dependencies]
 mimalloc = "0.1.48"
