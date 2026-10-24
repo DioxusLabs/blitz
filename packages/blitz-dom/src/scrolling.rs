@@ -5,7 +5,7 @@ use blitz_traits::events::{BlitzScrollEvent, DomEvent, DomEventData};
 use blitz_traits::node_id::NodeId;
 use style::values::computed::Overflow;
 use stylo_taffy::CopyStyleGetters;
-use web_time::{SystemTime, UNIX_EPOCH};
+use web_time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crate::BaseDocument;
 use crate::util::Point;
@@ -82,9 +82,72 @@ pub(crate) struct ScrollRequest {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct FlingState {
     pub(crate) target: NodeId,
-    pub(crate) last_seen_time: f64,
-    pub(crate) x_velocity: f64,
-    pub(crate) y_velocity: f64,
+    start: Instant,
+    duration: f64,
+    distance: f64,
+    velocity: Point<f64>,
+    previous_distance: f64,
+}
+
+const FLING_FRICTION: f64 = 0.015;
+const INFLEXION: f64 = 0.35;
+const PHYSICAL_COEFF: f64 = 9.80665 * 39.37 * 160.0 * 0.84;
+const FLYWHEEL_TIMEOUT: Duration = Duration::from_millis(500);
+
+fn deceleration_rate() -> f64 {
+    0.78_f64.ln() / 0.9_f64.ln()
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct CarriedFling {
+    pub(crate) time: Instant,
+    pub(crate) velocity: Point<f64>,
+}
+
+impl CarriedFling {
+    pub(crate) fn boost(&self, now: Instant, velocity: Point<f64>) -> Point<f64> {
+        let same_sign = |a: f64, b: f64| a == 0.0 && b == 0.0 || a * b > 0.0;
+        if now.duration_since(self.time) <= FLYWHEEL_TIMEOUT
+            && same_sign(velocity.x, self.velocity.x)
+            && same_sign(velocity.y, self.velocity.y)
+        {
+            Point {
+                x: velocity.x + self.velocity.x,
+                y: velocity.y + self.velocity.y,
+            }
+        } else {
+            velocity
+        }
+    }
+}
+
+impl FlingState {
+    pub(crate) fn new(target: NodeId, now: Instant, velocity: Point<f64>) -> Self {
+        let speed = velocity.x.hypot(velocity.y);
+        let rate = deceleration_rate();
+        let reference_velocity = FLING_FRICTION * PHYSICAL_COEFF / INFLEXION;
+        let duration = rate * INFLEXION * (speed / reference_velocity).powf(1.0 / (rate - 1.0));
+        Self {
+            target,
+            start: now,
+            duration,
+            distance: speed * duration / rate,
+            velocity,
+            previous_distance: 0.0,
+        }
+    }
+
+    fn progress(&self, now: Instant) -> f64 {
+        (now.duration_since(self.start).as_secs_f64() / self.duration).clamp(0.0, 1.0)
+    }
+
+    pub(crate) fn velocity_at(&self, now: Instant) -> Point<f64> {
+        let factor = (1.0 - self.progress(now)).powf(deceleration_rate() - 1.0);
+        Point {
+            x: self.velocity.x * factor,
+            y: self.velocity.y * factor,
+        }
+    }
 }
 
 /// State driving a smooth (animated) scroll towards a target offset. Used for
@@ -723,26 +786,17 @@ impl BaseDocument {
     pub fn resolve_scroll_animation(&mut self) {
         match &mut self.scroll_animation {
             ScrollAnimationState::Fling(fling_state) => {
-                let time_ms = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap()
-                    .as_millis() as u64 as f64;
-
-                let time_diff_ms = time_ms - fling_state.last_seen_time;
-
-                // 0.95 @ 60fps normalized to actual frame times
-                let deceleration = 1.0 - ((0.05 / 16.66666) * time_diff_ms);
-
-                fling_state.x_velocity *= deceleration;
-                fling_state.y_velocity *= deceleration;
-                fling_state.last_seen_time = time_ms;
-                let fling_state = fling_state.clone();
-
-                let dx = fling_state.x_velocity * time_diff_ms;
-                let dy = fling_state.y_velocity * time_diff_ms;
-
-                self.scroll_chain_by(Some(fling_state.target), dx, dy, &mut |_| {});
-                if fling_state.x_velocity.abs() < 0.1 && fling_state.y_velocity.abs() < 0.1 {
+                let progress = fling_state.progress(Instant::now());
+                let distance =
+                    fling_state.distance * (1.0 - (1.0 - progress).powf(deceleration_rate()));
+                let delta = distance - fling_state.previous_distance;
+                fling_state.previous_distance = distance;
+                let speed = fling_state.velocity.x.hypot(fling_state.velocity.y);
+                let dx = delta * fling_state.velocity.x / speed;
+                let dy = delta * fling_state.velocity.y / speed;
+                let target = fling_state.target;
+                let moved = self.scroll_chain_by(Some(target), dx, dy, &mut |_| {});
+                if progress >= 1.0 || !moved {
                     self.scroll_animation = ScrollAnimationState::None;
                 }
             }
@@ -777,5 +831,54 @@ impl BaseDocument {
                 // Do nothing
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod fling_tests {
+    use super::*;
+
+    #[test]
+    fn spline_matches_flutter() {
+        let now = Instant::now();
+        for (speed, expected_distance, expected_duration) in
+            [(1000.0, 194.3, 0.458), (8000.0, 7186.4, 2.119)]
+        {
+            let fling = FlingState::new(NodeId::default(), now, Point { x: speed, y: 0.0 });
+            let rate = deceleration_rate();
+            let log_velocity = (INFLEXION * speed / (FLING_FRICTION * PHYSICAL_COEFF)).ln();
+            let distance =
+                FLING_FRICTION * PHYSICAL_COEFF * (log_velocity * rate / (rate - 1.0)).exp();
+            assert!((fling.distance - distance).abs() < 1e-8);
+            assert!((fling.distance - expected_distance).abs() < 1.0);
+            assert!((fling.duration - expected_duration).abs() < 0.002);
+            assert_eq!(fling.velocity_at(now).x, speed);
+            assert_eq!(
+                fling
+                    .velocity_at(
+                        now + Duration::from_secs_f64(fling.duration) + Duration::from_nanos(1)
+                    )
+                    .x,
+                0.0
+            );
+        }
+    }
+
+    #[test]
+    fn flywheel_direction_and_timeout() {
+        let now = Instant::now();
+        let carried = CarriedFling {
+            time: now,
+            velocity: Point { x: 1000.0, y: 0.0 },
+        };
+        let velocity = Point { x: 500.0, y: 0.0 };
+        assert_eq!(carried.boost(now, velocity).x, 1500.0);
+        assert_eq!(carried.boost(now, Point { x: -500.0, y: 0.0 }).x, -500.0);
+        assert_eq!(
+            carried.boost(now + FLYWHEEL_TIMEOUT + Duration::from_nanos(1), velocity),
+            velocity
+        );
+        let perpendicular = Point { x: 0.0, y: 500.0 };
+        assert_eq!(carried.boost(now, perpendicular), perpendicular);
     }
 }
