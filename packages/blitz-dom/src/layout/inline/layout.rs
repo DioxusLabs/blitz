@@ -11,7 +11,7 @@ use taffy::{
     BoxSizing, CollapsibleMarginSet, CompactLength, CoreStyle as _, Direction, LayoutInput,
     LayoutOutput, LayoutPartialTree as _, MaybeMath as _, MaybeResolve as _, OofCandidate,
     OofCandidates, OofItemStyle, OofPositioningArea, Overflow, Point, RequestedAxis,
-    ResolveOrZero as _, RunMode, Size, SizingMode,
+    RequestedBaselines, ResolveOrZero as _, RunMode, Size, SizingMode,
 };
 
 #[cfg(feature = "floats")]
@@ -445,14 +445,27 @@ impl LayoutPassState<'_> {
                 ibox.height = 0.0;
                 ibox.baseline = None;
             } else {
-                let output = self.compute_child_layout(taffy::NodeId::from(ibox.id), box_inputs);
+                // The baseline positions the box within its line, so it is only needed when the
+                // line heights are.
+                let is_width_only_pass = inputs.run_mode == RunMode::ComputeSize
+                    && inputs.axis == RequestedAxis::Horizontal;
+                let requested_baselines = if !exports_baseline || is_width_only_pass {
+                    RequestedBaselines::NONE
+                } else if uses_last_baseline {
+                    RequestedBaselines::LAST
+                } else {
+                    RequestedBaselines::FIRST
+                };
+                let output = self.compute_child_layout(
+                    taffy::NodeId::from(ibox.id),
+                    LayoutInput {
+                        requested_baselines,
+                        ..box_inputs
+                    },
+                );
                 ibox.width = (margin.left + margin.right + output.size.width) * scale;
                 ibox.baseline = if exports_baseline {
-                    let baseline = if uses_last_baseline {
-                        output.baselines.last.or(output.baselines.first)
-                    } else {
-                        output.baselines.first.or(output.baselines.last)
-                    };
+                    let baseline = output.baselines.get(uses_last_baseline);
                     baseline.map(|baseline| {
                         let baseline = if is_scroll_container {
                             baseline.clamp(0.0, output.size.height)
@@ -1150,10 +1163,7 @@ impl LayoutPassState<'_> {
                     bottom: content_extent.height + block_offset.max(0.0),
                 }
             },
-            baselines: taffy::Baselines {
-                first: first_baseline,
-                last: last_baseline,
-            },
+            baselines: taffy::Baselines::new(first_baseline, last_baseline),
             top_margin: CollapsibleMarginSet::ZERO,
             bottom_margin: CollapsibleMarginSet::ZERO,
             margins_can_collapse_through: !has_styles_preventing_being_collapsed_through
