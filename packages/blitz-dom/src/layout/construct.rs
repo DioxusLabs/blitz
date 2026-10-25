@@ -311,21 +311,11 @@ fn classify_flow_children(
     classification: &mut FlowClassification,
 ) {
     let node = &doc.nodes[container_node_id];
-    // ::before/::after pseudos with display:contents are transparent for box
-    // generation, so their children (e.g. generated text) participate in the
-    // container's formatting context and vote in the classification. Pseudos
-    // with any other display value generate their own box, which every
-    // construction arm already pushes explicitly, so they cast no vote.
-    let pseudo_ids = node
-        .before()
-        .into_iter()
-        .chain(node.after())
-        .filter(|pe_id| {
-            let display = doc.nodes[*pe_id]
-                .display_style()
-                .unwrap_or(Display::inline());
-            matches!(display.inside(), DisplayInside::Contents)
-        });
+    // ::before/::after pseudos vote like children: a pseudo with display:contents is
+    // transparent for box generation, so its children (e.g. generated text) participate
+    // in the container's formatting context, and any other pseudo generates its own
+    // inline or block box in that formatting context.
+    let pseudo_ids = node.before().into_iter().chain(node.after());
     let child_ids = node.children.iter().copied().chain(pseudo_ids);
     for child_id in child_ids {
         let child = &doc.nodes[child_id];
