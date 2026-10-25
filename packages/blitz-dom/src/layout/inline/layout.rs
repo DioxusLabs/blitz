@@ -547,6 +547,12 @@ impl LayoutPassState<'_> {
             let contain_layout = box_style.slow_clone_contain().contains(Contain::LAYOUT);
             let exports_baseline = !(contain_layout
                 || (baseline_source == BaselineSource::Auto && is_block_axis_scroll_container));
+            // `top`, `bottom`, `middle`, `text-top` and `text-bottom` position the box by its
+            // edges or centre, so its baseline is not needed for them.
+            let vertical_align_uses_baseline = ibox.vertical_align.alignment
+                == parley::AlignmentBaseline::Baseline
+                && !ibox.vertical_align.is_line_relative();
+            let needs_baseline = exports_baseline && vertical_align_uses_baseline;
             let box_inputs = inline_box_inputs(style.size().width, margin, child_inputs);
             drop(style);
 
@@ -559,7 +565,7 @@ impl LayoutPassState<'_> {
                 // line heights are.
                 let is_width_only_pass = inputs.run_mode == RunMode::ComputeSize
                     && inputs.axis == RequestedAxis::Horizontal;
-                let requested_baselines = if !exports_baseline || is_width_only_pass {
+                let requested_baselines = if !needs_baseline || is_width_only_pass {
                     RequestedBaselines::NONE
                 } else if uses_last_baseline {
                     RequestedBaselines::LAST
@@ -574,7 +580,7 @@ impl LayoutPassState<'_> {
                     },
                 );
                 ibox.width = (margin.left + margin.right + output.size.width) * scale;
-                ibox.baseline = if exports_baseline {
+                ibox.baseline = if needs_baseline {
                     let baseline = output.baselines.get(uses_last_baseline);
                     baseline.map(|baseline| {
                         let baseline = if is_scroll_container {
