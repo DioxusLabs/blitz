@@ -149,7 +149,20 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
 
       - name: Bundle browser
-        run: dx bundle --package browser --release --profile production --target ${{ matrix.platform.target }} --locked --verbose --trace ${{ matrix.platform.args }}
+        shell: bash
+        run: |
+          attempts=${{ startsWith(matrix.platform.os, 'macos') && 3 || 1 }}
+          for ((attempt = 1; attempt <= attempts; attempt++)); do
+            if dx bundle --package browser --release --profile production --target ${{ matrix.platform.target }} --locked --verbose --trace ${{ matrix.platform.args }}; then
+              exit 0
+            else
+              status=$?
+            fi
+            if ((attempt == attempts)); then
+              exit "$status"
+            fi
+            sleep 30
+          done
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
