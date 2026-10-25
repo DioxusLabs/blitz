@@ -1915,25 +1915,59 @@ mod test {
         m.create_element(qual_name!("div"), attrs)
     }
 
-    /// Tag and layout of every element, in tree order.
-    fn element_layouts(doc: &BaseDocument) -> Vec<(String, [f32; 4])> {
+    /// Tag, layout and resolved style of every element and `::before`/`::after`, in tree order.
+    type Snapshot = Vec<(String, [f32; 4], Vec<String>)>;
+
+    fn snapshot(doc: &BaseDocument) -> Snapshot {
         let mut out = Vec::new();
-        let mut stack = vec![doc.root_node().id];
-        while let Some(id) = stack.pop() {
+        let mut stack = vec![(doc.root_node().id, "")];
+        while let Some((id, pseudo)) = stack.pop() {
             let node = doc.get_node(id).unwrap();
             if let Some(el) = node.element_data() {
                 let l = node.final_layout();
                 let rect = [l.location.x, l.location.y, l.size.width, l.size.height];
-                out.push((el.name.local.to_string(), rect));
+                let style = crate::resolved_style_property_names()
+                    .iter()
+                    .map(|name| doc.resolved_style_value(id, name))
+                    .collect();
+                out.push((format!("{}{pseudo}", el.name.local), rect, style));
             }
-            stack.extend(node.children.iter().rev());
+            stack.extend(node.after().map(|id| (id, "::after")));
+            stack.extend(node.children.iter().rev().map(|id| (*id, "")));
+            stack.extend(node.before().map(|id| (id, "::before")));
         }
         out
     }
 
+    /// Asserts that the incremental result matches the fresh one, element by element,
+    /// naming the first differing property.
+    fn assert_matches_fresh(incremental: &Snapshot, fresh: &Snapshot) {
+        let boxes = |s: &Snapshot| -> Vec<(String, [f32; 4])> {
+            s.iter().map(|(n, r, _)| (n.clone(), *r)).collect()
+        };
+        assert_eq!(
+            boxes(incremental),
+            boxes(fresh),
+            "incremental layout differs from a fresh layout of the mutated document"
+        );
+        for (i, ((name, _, inc), (_, _, fre))) in incremental.iter().zip(fresh).enumerate() {
+            let differing: Vec<String> = crate::resolved_style_property_names()
+                .iter()
+                .zip(inc.iter().zip(fre))
+                .filter(|(_, (a, b))| a != b)
+                .map(|(property, (a, b))| format!("{property}: {a:?} vs {b:?}"))
+                .collect();
+            assert!(
+                differing.is_empty(),
+                "resolved style of {name} (element {i}) differs from a fresh layout of the mutated document: {}",
+                differing.join(", ")
+            );
+        }
+    }
+
     /// Checks that a document mutated after its first layout ends up with the same layout
-    /// as a document built directly in the mutated state. `build` returns the node ids that
-    /// `mutate` operates on; the mutation must change the layout.
+    /// and styles as a document built directly in the mutated state. `build` returns the
+    /// node ids that `mutate` operates on; the mutation must change the layout or styles.
     fn check_incremental_restyle(
         css: &str,
         build: impl Fn(&mut DocumentMutator<'_>) -> Vec<NodeId>,
@@ -1959,20 +1993,19 @@ mod test {
 
         let (mut incremental, ids) = new_document();
         incremental.resolve(0.0);
-        let before = element_layouts(&incremental);
+        let before = snapshot(&incremental);
         mutate(&mut incremental.mutate(), &ids);
         incremental.resolve(0.0);
-        let after = element_layouts(&incremental);
+        let after = snapshot(&incremental);
 
         let (mut fresh, ids) = new_document();
         mutate(&mut fresh.mutate(), &ids);
         fresh.resolve(0.0);
-        assert_eq!(
-            after,
-            element_layouts(&fresh),
-            "incremental layout differs from a fresh layout of the mutated document"
+        assert_matches_fresh(&after, &snapshot(&fresh));
+        assert_ne!(
+            before, after,
+            "the mutation should change the layout or styles"
         );
-        assert_ne!(before, after, "the mutation should change the layout");
     }
 
     fn parent_with_children(m: &mut DocumentMutator<'_>, count: usize) -> Vec<NodeId> {
@@ -2176,6 +2209,72 @@ mod test {
         );
     }
 
+    #[test]
+    fn class_change_recolors_descendants() {
+        check_incremental_restyle(
+            "div { height: 10px; width: 100px } .x div { color: red }",
+            |m| parent_with_children(m, 1),
+            |m, ids| m.set_attribute(ids[0], qual_name!("class"), "x"),
+        );
+    }
+
+    const PSEUDO_CSS: &str = "div { height: 10px; width: 100px } \
+        .x > div::before { content: 'a'; display: block; height: 20px }";
+
+    #[test]
+    fn class_change_creates_before_pseudo_on_children() {
+        check_incremental_restyle(
+            PSEUDO_CSS,
+            |m| parent_with_children(m, 1),
+            |m, ids| m.set_attribute(ids[0], qual_name!("class"), "x"),
+        );
+    }
+
+    #[test]
+    fn class_removal_removes_before_pseudo_on_children() {
+        check_incremental_restyle(
+            PSEUDO_CSS,
+            |m| {
+                let ids = parent_with_children(m, 1);
+                m.set_attribute(ids[0], qual_name!("class"), "x");
+                ids
+            },
+            |m, ids| m.clear_attribute(ids[0], qual_name!("class")),
+        );
+    }
+
+    #[test]
+    fn attribute_change_creates_after_pseudo_on_later_siblings() {
+        check_incremental_restyle(
+            "div { height: 10px; width: 100px } \
+             [data-a] ~ div::after { content: 'a'; display: block; height: 20px }",
+            |m| parent_with_children(m, 2),
+            |m, ids| m.set_attribute(ids[1], qual_name("data-a"), ""),
+        );
+    }
+
+    #[test]
+    fn class_change_recolors_before_pseudo_on_children() {
+        check_incremental_restyle(
+            "div { height: 10px; width: 100px } \
+             div::before { content: 'a'; display: block; height: 20px } \
+             .x > div::before { color: red }",
+            |m| parent_with_children(m, 1),
+            |m, ids| m.set_attribute(ids[0], qual_name!("class"), "x"),
+        );
+    }
+
+    #[test]
+    fn attribute_change_recolors_after_pseudo_on_later_siblings() {
+        check_incremental_restyle(
+            "div { height: 10px; width: 100px } \
+             div::after { content: 'a'; display: block; height: 20px } \
+             [data-a] ~ div::after { color: red }",
+            |m| parent_with_children(m, 2),
+            |m, ids| m.set_attribute(ids[1], qual_name("data-a"), ""),
+        );
+    }
+
     /// Like `check_incremental_restyle`, with the focus on `ids[focus]` before the first layout.
     fn check_incremental_restyle_with_focus(
         css: &str,
@@ -2204,20 +2303,19 @@ mod test {
 
         let (mut incremental, ids) = new_document();
         incremental.resolve(0.0);
-        let before = element_layouts(&incremental);
+        let before = snapshot(&incremental);
         mutate(&mut incremental.mutate(), &ids);
         incremental.resolve(0.0);
-        let after = element_layouts(&incremental);
+        let after = snapshot(&incremental);
 
         let (mut fresh, ids) = new_document();
         mutate(&mut fresh.mutate(), &ids);
         fresh.resolve(0.0);
-        assert_eq!(
-            after,
-            element_layouts(&fresh),
-            "incremental layout differs from a fresh layout"
+        assert_matches_fresh(&after, &snapshot(&fresh));
+        assert_ne!(
+            before, after,
+            "the mutation should change the layout or styles"
         );
-        assert_ne!(before, after, "the mutation should change the layout");
     }
 
     /// `html > [container > [sibling, holder > [input]], other]`, ids in that order.
