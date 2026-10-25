@@ -668,6 +668,42 @@ mod tests {
     }
 
     #[test]
+    // Regression test: an input focused from `onmounted` (as in TodoMVC) is focused before its
+    // text editor is created by layout. IME must still end up enabled, as on macOS the standard
+    // key bindings (e.g. `deleteBackward:` for Backspace) are only delivered while it is.
+    fn input_focused_on_mount_enables_ime() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        #[derive(Default)]
+        struct ImeShellProvider(AtomicBool);
+        impl blitz_traits::shell::ShellProvider for ImeShellProvider {
+            fn set_ime_enabled(&self, is_enabled: bool) {
+                self.0.store(is_enabled, Ordering::SeqCst);
+            }
+        }
+
+        fn app() -> Element {
+            rsx!(input {
+                r#type: "text",
+                onmounted: async move |evt| evt.set_focus(true).await.unwrap(),
+            })
+        }
+
+        let shell_provider = std::sync::Arc::new(ImeShellProvider::default());
+        let config = DocumentConfig {
+            shell_provider: Some(shell_provider.clone() as _),
+            ..Default::default()
+        };
+        let mut doc = DioxusDocument::new(VirtualDom::new(app), config);
+        doc.initial_build();
+        poll_until_idle(&mut doc);
+        doc.inner.borrow_mut().resolve(0.0);
+
+        assert!(doc.inner.borrow().get_focussed_node_id().is_some());
+        assert!(shell_provider.0.load(Ordering::SeqCst));
+    }
+
+    #[test]
     // Regression test for a panic. Tasks are polled while the vdom renders, at which point
     // the document must not be borrowed.
     fn task_polled_during_render_can_access_document() {
