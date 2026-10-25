@@ -1,7 +1,8 @@
 use blitz_traits::node_id::NodeId;
+use markup5ever::LocalName;
 use std::collections::HashSet;
 use std::mem;
-use std::ops::{Deref, DerefMut};
+use std::ops::{Deref, DerefMut, Range};
 
 use crate::layout::damage::ALL_DAMAGE;
 use crate::net::{ImageHandler, ResourceHandler, StylesheetHandler};
@@ -12,6 +13,7 @@ use crate::{
     Attribute, BaseDocument, Document, ElementData, Node, NodeData, QualName, local_name, qual_name,
 };
 use blitz_traits::shell::Viewport;
+use selectors::matching::ElementSelectorFlags;
 use style::Atom;
 use style::invalidation::element::restyle_hints::RestyleHint;
 use style::stylesheets::OriginSet;
@@ -269,31 +271,9 @@ impl DocumentMutator<'_> {
     pub fn set_attribute(&mut self, node_id: NodeId, name: QualName, value: &str) {
         let node_is_in_document = self.doc.nodes[node_id].flags.is_in_document();
         if node_is_in_document {
-            self.doc.snapshot_node(node_id);
+            self.doc.snapshot_node(node_id, &name.local);
 
-            let node = &mut self.doc.nodes[node_id];
-            if let Some(mut data) = node.try_stylo_element_data_mut().and_then(|s| s.get_mut()) {
-                data.hint |= RestyleHint::restyle_subtree();
-                data.damage.insert(ALL_DAMAGE);
-            }
-            node.mark_damaged();
-
-            // TODO: make this fine grained / conditional based on ElementSelectorFlags
-            let parent = node.parent;
-            if let Some(parent_id) = parent {
-                let parent = &mut self.doc.nodes[parent_id];
-                if let Some(mut data) = parent
-                    .try_stylo_element_data_mut()
-                    .and_then(|s| s.get_mut())
-                {
-                    data.hint |= RestyleHint::restyle_subtree();
-                }
-            }
-
-            // Mark ancestors dirty so the style traversal visits this subtree.
-            // Without this, the traversal may skip nodes with pending RestyleHint/damage
-            // because it uses dirty_descendants flags to determine which subtrees to visit.
-            self.doc.nodes[node_id].mark_ancestors_dirty();
+            self.restyle_for_attribute_change(node_id, &name.local);
         }
 
         if name.local == local_name!("id") && node_is_in_document {
@@ -407,19 +387,9 @@ impl DocumentMutator<'_> {
     pub fn clear_attribute(&mut self, node_id: NodeId, name: QualName) {
         let node_is_in_document = self.doc.nodes[node_id].flags.is_in_document();
         if node_is_in_document {
-            self.doc.snapshot_node(node_id);
+            self.doc.snapshot_node(node_id, &name.local);
 
-            let node = &mut self.doc.nodes[node_id];
-
-            if let Some(mut data) = node.try_stylo_element_data_mut().and_then(|s| s.get_mut()) {
-                data.hint |= RestyleHint::restyle_subtree();
-                data.damage.insert(ALL_DAMAGE);
-            }
-            node.mark_damaged();
-
-            // Mark ancestors dirty so the style traversal visits this subtree.
-            // Without this, the traversal may skip nodes with pending RestyleHint/damage.
-            node.mark_ancestors_dirty();
+            self.restyle_for_attribute_change(node_id, &name.local);
         }
 
         if name.local == local_name!("id") && node_is_in_document {
@@ -561,9 +531,11 @@ impl DocumentMutator<'_> {
             self.mutations_occurred |= node_is_in_document;
             let parent = &mut self.doc.nodes[parent_id];
             parent.insert_damage(ALL_DAMAGE);
-            // Mark ancestors dirty so the style traversal visits this subtree.
-            parent.mark_ancestors_dirty();
+            let index = parent.index_of_child(node_id).unwrap_or(0);
             parent.children.retain(|id| *id != node_id);
+            if node_is_in_document {
+                self.restyle_for_child_list_change(parent_id, index..index);
+            }
             self.maybe_record_node(parent_id);
         }
     }
@@ -590,20 +562,13 @@ impl DocumentMutator<'_> {
             let parent = &mut self.doc.nodes[parent_id];
             parent.insert_damage(ALL_DAMAGE);
             let parent_is_in_doc = parent.flags.is_in_document();
+            let index = parent.index_of_child(node_id).unwrap_or(0);
+            parent.children.retain(|id| *id != node_id);
 
-            // TODO: make this fine grained / conditional based on ElementSelectorFlags
             if parent_is_in_doc {
-                if let Some(mut data) = parent
-                    .try_stylo_element_data_mut()
-                    .and_then(|s| s.get_mut())
-                {
-                    data.hint |= RestyleHint::restyle_subtree();
-                }
-                // Mark ancestors dirty so the style traversal visits this subtree.
-                parent.mark_ancestors_dirty();
+                self.restyle_for_child_list_change(parent_id, index..index);
             }
 
-            parent.children.retain(|id| *id != node_id);
             self.maybe_record_node(parent_id);
         }
 
@@ -613,26 +578,105 @@ impl DocumentMutator<'_> {
     pub fn remove_and_drop_all_children(&mut self, node_id: NodeId) {
         let parent = &mut self.doc.nodes[node_id];
         let parent_is_in_doc = parent.flags.is_in_document();
-
-        // TODO: make this fine grained / conditional based on ElementSelectorFlags
-        if parent_is_in_doc {
-            if let Some(mut data) = parent
-                .try_stylo_element_data_mut()
-                .and_then(|s| s.get_mut())
-            {
-                data.hint |= RestyleHint::restyle_subtree();
-            }
-            // Mark ancestors dirty so the style traversal visits this subtree.
-            parent.mark_ancestors_dirty();
-        }
-
         let children = mem::take(&mut parent.children);
         self.mutations_occurred |= parent_is_in_doc && !children.is_empty();
+
+        if parent_is_in_doc {
+            self.restyle_for_child_list_change(node_id, 0..0);
+        }
+
         for child_id in children {
             self.process_removed_subtree(child_id);
             let _ = self.doc.drop_node_ignoring_parent(child_id);
         }
         self.maybe_record_node(node_id);
+    }
+
+    /// Restyle an in-document element whose attribute is about to change. Only the element
+    /// is hinted: its snapshot lets Stylo's invalidator find the siblings and descendants
+    /// whose selectors depend on the attribute. `style`, `class` and `id` reach layout only
+    /// through the computed style (whose diff yields the damage); other attributes may not.
+    fn restyle_for_attribute_change(&mut self, node_id: NodeId, attr: &LocalName) {
+        let node = &mut self.doc.nodes[node_id];
+        let is_style = *attr == local_name!("style");
+        let style_only = is_style || *attr == local_name!("class") || *attr == local_name!("id");
+        if let Some(mut data) = node.try_stylo_element_data_mut().and_then(|s| s.get_mut()) {
+            data.hint |= if is_style {
+                RestyleHint::RESTYLE_STYLE_ATTRIBUTE
+            } else {
+                RestyleHint::RESTYLE_SELF
+            };
+            if !style_only {
+                data.damage.insert(ALL_DAMAGE);
+            }
+        }
+        if !style_only {
+            node.mark_damaged();
+        }
+        // Mark ancestors dirty so the style traversal visits this subtree.
+        node.mark_ancestors_dirty();
+    }
+
+    /// Restyle an in-document element whose child list changed, `changed` being the position
+    /// of the inserted children (empty, at the former position of a removed child). New
+    /// children are styled by the traversal regardless; the element and its other children
+    /// only need restyling where its selector flags record a selector that depends on them.
+    fn restyle_for_child_list_change(&mut self, parent_id: NodeId, changed: Range<usize>) {
+        let parent = &self.doc.nodes[parent_id];
+        let flags = parent.selector_flags().get();
+        let mut hint = RestyleHint::empty();
+        if flags.intersects(
+            ElementSelectorFlags::HAS_EMPTY_SELECTOR
+                | ElementSelectorFlags::ANCHORS_RELATIVE_SELECTOR
+                | ElementSelectorFlags::ANCHORS_RELATIVE_SELECTOR_NON_SUBJECT,
+        ) {
+            hint |= RestyleHint::RESTYLE_SELF;
+        }
+        if flags.intersects(
+            ElementSelectorFlags::HAS_SLOW_SELECTOR
+                | ElementSelectorFlags::HAS_SLOW_SELECTOR_NTH_OF
+                | ElementSelectorFlags::MAY_HAVE_TREE_COUNTING_FUNCTION,
+        ) {
+            hint |= RestyleHint::RESTYLE_DESCENDANTS;
+        } else {
+            let children = &parent.children;
+            let later = if flags.contains(ElementSelectorFlags::HAS_SLOW_SELECTOR_LATER_SIBLINGS) {
+                changed.end..children.len()
+            } else {
+                0..0
+            };
+            // The children that were first/last before an insertion, or are after a removal.
+            let mut edge = [None, None];
+            if flags.contains(ElementSelectorFlags::HAS_EDGE_CHILD_SELECTOR) {
+                if changed.start == 0 {
+                    edge[0] = children.get(changed.end).copied();
+                }
+                if changed.end == children.len() {
+                    edge[1] = changed.start.checked_sub(1).map(|i| children[i]);
+                }
+            }
+            let ids: Vec<NodeId> = children[later]
+                .iter()
+                .copied()
+                .chain(edge.into_iter().flatten())
+                .collect();
+            for id in ids {
+                self.doc.nodes[id].set_restyle_hint(RestyleHint::restyle_subtree());
+            }
+        }
+
+        let parent = &mut self.doc.nodes[parent_id];
+        if !hint.is_empty() {
+            if let Some(mut data) = parent
+                .try_stylo_element_data_mut()
+                .and_then(|s| s.get_mut())
+            {
+                data.hint |= hint;
+            }
+        }
+        // The traversal only descends into an element flagged as having dirty descendants.
+        parent.set_dirty_descendants();
+        parent.mark_ancestors_dirty();
     }
 
     // Tree mutation methods
@@ -657,7 +701,9 @@ impl DocumentMutator<'_> {
     /// Remove all of the children from old_parent_id and append them to new_parent_id
     pub fn append_children(&mut self, parent_id: NodeId, child_ids: &[NodeId]) {
         self.add_children_to_parent(parent_id, child_ids, &|parent, child_ids| {
+            let index = parent.children.len();
             parent.children.extend_from_slice(child_ids);
+            index
         });
     }
 
@@ -668,6 +714,7 @@ impl DocumentMutator<'_> {
             parent
                 .children
                 .splice(node_child_idx..node_child_idx, child_ids.iter().copied());
+            node_child_idx
         });
     }
 
@@ -675,7 +722,7 @@ impl DocumentMutator<'_> {
         &mut self,
         parent_id: NodeId,
         child_ids: &[NodeId],
-        insert_children_fn: &dyn Fn(&mut Node, &[NodeId]),
+        insert_children_fn: &dyn Fn(&mut Node, &[NodeId]) -> usize,
     ) {
         let new_parent_is_in_document = self.doc.nodes[parent_id].flags.is_in_document();
         self.mutations_occurred |= new_parent_is_in_document && !child_ids.is_empty();
@@ -706,44 +753,32 @@ impl DocumentMutator<'_> {
 
             let old_parent = &mut self.doc.nodes[old_parent_id];
             old_parent.insert_damage(ALL_DAMAGE);
+            let index = old_parent.index_of_child(child_id).unwrap_or(0);
+            old_parent.children.retain(|id| *id != child_id);
 
-            // TODO: make this fine grained / conditional based on ElementSelectorFlags
             if child_was_in_doc {
-                if let Some(mut data) = old_parent
-                    .try_stylo_element_data_mut()
-                    .and_then(|s| s.get_mut())
-                {
-                    data.hint |= RestyleHint::restyle_subtree();
-                }
-                // Mark ancestors dirty so the style traversal visits this subtree.
-                old_parent.mark_ancestors_dirty();
+                self.restyle_for_child_list_change(old_parent_id, index..index);
             }
 
-            old_parent.children.retain(|id| *id != child_id);
             self.maybe_record_node(old_parent_id);
         }
 
         let new_parent = &mut self.doc.nodes[parent_id];
         new_parent.insert_damage(ALL_DAMAGE);
+        let index = insert_children_fn(new_parent, child_ids);
 
-        // TODO: make this fine grained / conditional based on ElementSelectorFlags
         if new_parent_is_in_document {
-            if let Some(mut data) = new_parent
-                .try_stylo_element_data_mut()
-                .and_then(|s| s.get_mut())
-            {
-                data.hint |= RestyleHint::restyle_subtree();
-            }
-            // Mark ancestors dirty so the style traversal visits this subtree.
-            new_parent.mark_ancestors_dirty();
+            self.restyle_for_child_list_change(parent_id, index..index + child_ids.len());
         }
-
-        insert_children_fn(new_parent, child_ids);
 
         for child_id in child_ids.iter().copied() {
             let child = &mut self.doc.nodes[child_id];
             let child_was_in_doc = child.flags.is_in_document();
             child.parent = Some(parent_id);
+            // A moved subtree keeps its styles, but everything above it has changed.
+            if child_was_in_doc && new_parent_is_in_document {
+                child.set_restyle_hint(RestyleHint::restyle_subtree());
+            }
 
             if new_parent_is_in_document && !child_was_in_doc {
                 self.process_added_subtree(child_id);
@@ -1412,6 +1447,7 @@ mod test {
 
     use blitz_traits::shell::{ColorScheme, ShellProvider, Viewport};
 
+    use super::{DocumentMutator, NodeId};
     use crate::{Attribute, BaseDocument, DocumentConfig, ElementData, NodeData, qual_name};
 
     #[test]
@@ -1861,5 +1897,282 @@ mod test {
             assert_eq!(in_rule_tree.read_with(&guard).declarations().len(), 2);
             assert_eq!(after_remove.read_with(&guard).declarations().len(), 1);
         }
+    }
+
+    fn qual_name(name: &str) -> crate::QualName {
+        crate::QualName::new(None, crate::ns!(), crate::LocalName::from(name))
+    }
+
+    fn attr(name: &str, value: &str) -> Attribute {
+        Attribute {
+            name: qual_name(name),
+            value: value.to_string(),
+        }
+    }
+
+    fn div(m: &mut DocumentMutator<'_>, attrs: &[(&str, &str)]) -> NodeId {
+        let attrs = attrs.iter().map(|(k, v)| attr(k, v)).collect();
+        m.create_element(qual_name!("div"), attrs)
+    }
+
+    /// Tag and layout of every element, in tree order.
+    fn element_layouts(doc: &BaseDocument) -> Vec<(String, [f32; 4])> {
+        let mut out = Vec::new();
+        let mut stack = vec![doc.root_node().id];
+        while let Some(id) = stack.pop() {
+            let node = doc.get_node(id).unwrap();
+            if let Some(el) = node.element_data() {
+                let l = node.final_layout();
+                let rect = [l.location.x, l.location.y, l.size.width, l.size.height];
+                out.push((el.name.local.to_string(), rect));
+            }
+            stack.extend(node.children.iter().rev());
+        }
+        out
+    }
+
+    /// Checks that a document mutated after its first layout ends up with the same layout
+    /// as a document built directly in the mutated state. `build` returns the node ids that
+    /// `mutate` operates on; the mutation must change the layout.
+    fn check_incremental_restyle(
+        css: &str,
+        build: impl Fn(&mut DocumentMutator<'_>) -> Vec<NodeId>,
+        mutate: impl Fn(&mut DocumentMutator<'_>, &[NodeId]),
+    ) {
+        let new_document = || {
+            let mut doc = BaseDocument::new(DocumentConfig {
+                viewport: Some(Viewport::new(800, 600, 1.0, ColorScheme::Light)),
+                ..Default::default()
+            });
+            doc.add_user_agent_stylesheet(crate::UserAgentStylesheet::parse(&format!(
+                "html, div {{ display: block }} {css}"
+            )));
+            let root_id = doc.root_node().id;
+            let ids = {
+                let mut m = doc.mutate();
+                let html = m.create_element(qual_name!("html"), vec![]);
+                m.append_children(root_id, &[html]);
+                build(&mut m)
+            };
+            (doc, ids)
+        };
+
+        let (mut incremental, ids) = new_document();
+        incremental.resolve(0.0);
+        let before = element_layouts(&incremental);
+        mutate(&mut incremental.mutate(), &ids);
+        incremental.resolve(0.0);
+        let after = element_layouts(&incremental);
+
+        let (mut fresh, ids) = new_document();
+        mutate(&mut fresh.mutate(), &ids);
+        fresh.resolve(0.0);
+        assert_eq!(
+            after,
+            element_layouts(&fresh),
+            "incremental layout differs from a fresh layout of the mutated document"
+        );
+        assert_ne!(before, after, "the mutation should change the layout");
+    }
+
+    fn parent_with_children(m: &mut DocumentMutator<'_>, count: usize) -> Vec<NodeId> {
+        let root_id = m.doc.root_element().id;
+        let parent = div(m, &[]);
+        let children: Vec<NodeId> = (0..count).map(|_| div(m, &[])).collect();
+        m.append_children(parent, &children);
+        m.append_children(root_id, &[parent]);
+        std::iter::once(parent).chain(children).collect()
+    }
+
+    #[test]
+    fn class_change_restyles_descendants() {
+        check_incremental_restyle(
+            "div { height: 10px; width: 100px } .wide div { width: 300px }",
+            |m| parent_with_children(m, 1),
+            |m, ids| m.set_attribute(ids[0], qual_name!("class"), "wide"),
+        );
+    }
+
+    #[test]
+    fn class_removal_restyles_descendants() {
+        check_incremental_restyle(
+            "div { height: 10px; width: 100px } .wide div { width: 300px }",
+            |m| {
+                let ids = parent_with_children(m, 1);
+                m.set_attribute(ids[0], qual_name!("class"), "wide");
+                ids
+            },
+            |m, ids| m.clear_attribute(ids[0], qual_name!("class")),
+        );
+    }
+
+    #[test]
+    fn id_change_restyles_children() {
+        check_incremental_restyle(
+            "div { height: 10px; width: 100px } #x > div { height: 50px }",
+            |m| parent_with_children(m, 2),
+            |m, ids| m.set_attribute(ids[0], qual_name!("id"), "x"),
+        );
+    }
+
+    #[test]
+    fn attribute_change_restyles_later_siblings() {
+        check_incremental_restyle(
+            "div { height: 10px; width: 50px } [data-a] ~ div { width: 200px }",
+            |m| parent_with_children(m, 3),
+            |m, ids| m.set_attribute(ids[1], qual_name("data-a"), "1"),
+        );
+    }
+
+    #[test]
+    fn style_attribute_change_restyles_inheriting_descendants() {
+        check_incremental_restyle(
+            "div { height: 10px } .em { width: 2em }",
+            |m| {
+                let root_id = m.doc.root_element().id;
+                let parent = div(m, &[]);
+                let child = div(m, &[("class", "em")]);
+                m.append_children(parent, &[child]);
+                m.append_children(root_id, &[parent]);
+                vec![parent, child]
+            },
+            |m, ids| m.set_attribute(ids[0], qual_name!("style"), "font-size: 40px"),
+        );
+    }
+
+    #[test]
+    fn style_width_change_relayouts_descendants() {
+        check_incremental_restyle(
+            "div { height: 10px } .half { width: 50% }",
+            |m| {
+                let root_id = m.doc.root_element().id;
+                let parent = div(m, &[("style", "width: 400px")]);
+                let child = div(m, &[("class", "half")]);
+                m.append_children(parent, &[child]);
+                m.append_children(root_id, &[parent]);
+                vec![parent, child]
+            },
+            |m, ids| m.set_style_property(ids[0], "width", "200px"),
+        );
+    }
+
+    #[test]
+    fn appending_a_child_restyles_empty_parent() {
+        check_incremental_restyle(
+            "div { height: 10px; width: 100px } div:empty { height: 30px }",
+            |m| parent_with_children(m, 0),
+            |m, ids| {
+                let child = div(m, &[]);
+                m.append_children(ids[0], &[child]);
+            },
+        );
+    }
+
+    #[test]
+    fn removing_the_last_child_restyles_empty_parent() {
+        check_incremental_restyle(
+            "div { height: 10px; width: 100px } div:empty { height: 30px }",
+            |m| parent_with_children(m, 1),
+            |m, ids| {
+                m.remove_and_drop_node(ids[1]);
+            },
+        );
+    }
+
+    #[test]
+    fn inserting_a_child_restyles_nth_child_siblings() {
+        check_incremental_restyle(
+            "div { height: 10px; width: 50px } div:nth-child(2n) { width: 200px }",
+            |m| parent_with_children(m, 3),
+            |m, ids| {
+                let child = div(m, &[]);
+                m.insert_nodes_before(ids[1], &[child]);
+            },
+        );
+    }
+
+    #[test]
+    fn removing_a_child_restyles_nth_child_siblings() {
+        check_incremental_restyle(
+            "div { height: 10px; width: 50px } div:nth-child(2n) { width: 200px }",
+            |m| parent_with_children(m, 3),
+            |m, ids| {
+                m.remove_and_drop_node(ids[1]);
+            },
+        );
+    }
+
+    #[test]
+    fn appending_a_child_restyles_previous_last_child() {
+        check_incremental_restyle(
+            "div { height: 10px; width: 50px } div:last-child { width: 200px }",
+            |m| parent_with_children(m, 2),
+            |m, ids| {
+                let child = div(m, &[]);
+                m.append_children(ids[0], &[child]);
+            },
+        );
+    }
+
+    #[test]
+    fn removing_the_first_child_restyles_new_first_child() {
+        check_incremental_restyle(
+            "div { height: 10px; width: 50px } div:first-child { width: 200px }",
+            |m| parent_with_children(m, 2),
+            |m, ids| {
+                m.remove_and_drop_node(ids[1]);
+            },
+        );
+    }
+
+    #[test]
+    fn inserting_a_sibling_restyles_later_siblings() {
+        check_incremental_restyle(
+            "div { height: 10px; width: 50px } .a ~ div { width: 200px }",
+            |m| parent_with_children(m, 2),
+            |m, ids| {
+                let child = div(m, &[("class", "a")]);
+                m.insert_nodes_before(ids[1], &[child]);
+            },
+        );
+    }
+
+    #[test]
+    fn style_change_on_inline_element_rebuilds_inline_layout() {
+        check_incremental_restyle(
+            "div { width: 300px; font-size: 20px }",
+            |m| {
+                let root_id = m.doc.root_element().id;
+                let block = div(m, &[]);
+                let before = m.create_text_node("Text is available under the ");
+                let link = m.create_element(qual_name!("a"), vec![]);
+                let link_text =
+                    m.create_text_node("Creative Commons Attribution-ShareAlike 4.0 License");
+                let after = m.create_text_node("; additional terms may apply.");
+                m.append_children(link, &[link_text]);
+                m.append_children(block, &[before, link, after]);
+                m.append_children(root_id, &[block]);
+                vec![block, link]
+            },
+            |m, ids| m.set_attribute(ids[1], qual_name!("style"), "font-size: 40px"),
+        );
+    }
+
+    #[test]
+    fn moving_a_child_restyles_both_parents() {
+        check_incremental_restyle(
+            "div { height: 10px; width: 50px } div:empty { height: 30px } div:last-child { width: 200px }",
+            |m| {
+                let root_id = m.doc.root_element().id;
+                let a = div(m, &[]);
+                let b = div(m, &[]);
+                let child = div(m, &[]);
+                let other = div(m, &[]);
+                m.append_children(a, &[child, other]);
+                m.append_children(root_id, &[a, b]);
+                vec![a, b, child]
+            },
+            |m, ids| m.append_children(ids[1], &[ids[2]]),
+        );
     }
 }

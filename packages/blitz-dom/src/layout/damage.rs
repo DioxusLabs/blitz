@@ -440,6 +440,24 @@ pub(crate) fn compute_layout_damage(old: &ComputedValues, new: &ComputedValues) 
         false
     };
 
+    // Table layout bakes the sizes of the table and its internal boxes into the table
+    // context when the table is constructed.
+    let table_needs_rebuild = || {
+        matches!(
+            new.get_box().display.inside(),
+            DisplayInside::Table
+                | DisplayInside::TableRowGroup
+                | DisplayInside::TableColumn
+                | DisplayInside::TableColumnGroup
+                | DisplayInside::TableHeaderGroup
+                | DisplayInside::TableFooterGroup
+                | DisplayInside::TableRow
+                | DisplayInside::TableCell
+        ) && (old.get_position() != new.get_position()
+            || old.get_padding() != new.get_padding()
+            || old.get_border() != new.get_border())
+    };
+
     #[allow(
         clippy::if_same_then_else,
         reason = "these branches will soon be different"
@@ -447,6 +465,8 @@ pub(crate) fn compute_layout_damage(old: &ComputedValues, new: &ComputedValues) 
     if box_tree_needs_rebuild() {
         ALL_DAMAGE
     } else if text_shaping_needs_recollect() {
+        ALL_DAMAGE
+    } else if table_needs_rebuild() {
         ALL_DAMAGE
     } else if old.get_position().order != new.get_position().order
         // `position` is unchanged here (else the box tree would be rebuilt), so
