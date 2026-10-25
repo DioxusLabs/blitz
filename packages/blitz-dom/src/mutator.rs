@@ -775,8 +775,8 @@ impl DocumentMutator<'_> {
             let child = &mut self.doc.nodes[child_id];
             let child_was_in_doc = child.flags.is_in_document();
             child.parent = Some(parent_id);
-            // A moved subtree keeps its styles, but everything above it has changed.
-            if child_was_in_doc && new_parent_is_in_document {
+            // A moved or re-attached subtree keeps its styles, but everything above it changed.
+            if new_parent_is_in_document && child.primary_styles().is_some() {
                 child.set_restyle_hint(RestyleHint::restyle_subtree());
             }
 
@@ -2173,6 +2173,86 @@ mod test {
                 vec![a, b, child]
             },
             |m, ids| m.append_children(ids[1], &[ids[2]]),
+        );
+    }
+
+    /// Like `check_incremental_restyle`, with the focus on `ids[focus]` before the first layout.
+    fn check_incremental_restyle_with_focus(
+        css: &str,
+        focus: usize,
+        build: impl Fn(&mut DocumentMutator<'_>) -> Vec<NodeId>,
+        mutate: impl Fn(&mut DocumentMutator<'_>, &[NodeId]),
+    ) {
+        let new_document = || {
+            let mut doc = BaseDocument::new(DocumentConfig {
+                viewport: Some(Viewport::new(800, 600, 1.0, ColorScheme::Light)),
+                ..Default::default()
+            });
+            doc.add_user_agent_stylesheet(crate::UserAgentStylesheet::parse(&format!(
+                "html, div {{ display: block }} {css}"
+            )));
+            let root_id = doc.root_node().id;
+            let ids = {
+                let mut m = doc.mutate();
+                let html = m.create_element(qual_name!("html"), vec![]);
+                m.append_children(root_id, &[html]);
+                build(&mut m)
+            };
+            doc.set_focus_to(ids[focus]);
+            (doc, ids)
+        };
+
+        let (mut incremental, ids) = new_document();
+        incremental.resolve(0.0);
+        let before = element_layouts(&incremental);
+        mutate(&mut incremental.mutate(), &ids);
+        incremental.resolve(0.0);
+        let after = element_layouts(&incremental);
+
+        let (mut fresh, ids) = new_document();
+        mutate(&mut fresh.mutate(), &ids);
+        fresh.resolve(0.0);
+        assert_eq!(
+            after,
+            element_layouts(&fresh),
+            "incremental layout differs from a fresh layout"
+        );
+        assert_ne!(before, after, "the mutation should change the layout");
+    }
+
+    /// `html > [container > [sibling, holder > [input]], other]`, ids in that order.
+    fn focus_tree(m: &mut DocumentMutator<'_>) -> Vec<NodeId> {
+        let root_id = m.doc.root_element().id;
+        let container = div(m, &[]);
+        let sibling = div(m, &[]);
+        let holder = div(m, &[]);
+        let input = m.create_element(qual_name!("input"), vec![]);
+        let other = div(m, &[]);
+        m.append_children(holder, &[input]);
+        m.append_children(container, &[sibling, holder]);
+        m.append_children(root_id, &[container, other]);
+        vec![container, sibling, holder, input, other]
+    }
+
+    #[test]
+    fn removing_the_focused_subtree_restyles_focus_within_ancestors() {
+        check_incremental_restyle_with_focus(
+            "div { height: 10px; width: 100px } div:focus-within { height: 30px }",
+            3,
+            focus_tree,
+            |m, ids| {
+                m.remove_and_drop_node(ids[0]);
+            },
+        );
+    }
+
+    #[test]
+    fn moving_the_focused_element_restyles_focus_within_ancestors() {
+        check_incremental_restyle_with_focus(
+            "div { height: 10px; width: 100px } div:focus-within { height: 30px }",
+            3,
+            focus_tree,
+            |m, ids| m.append_children(ids[4], &[ids[3]]),
         );
     }
 }
