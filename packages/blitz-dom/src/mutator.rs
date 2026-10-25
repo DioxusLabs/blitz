@@ -1973,6 +1973,19 @@ mod test {
         build: impl Fn(&mut DocumentMutator<'_>) -> Vec<NodeId>,
         mutate: impl Fn(&mut DocumentMutator<'_>, &[NodeId]),
     ) {
+        check_incremental_restyle_steps(css, build, &[&mutate]);
+    }
+
+    /// One mutation batch of [`check_incremental_restyle_steps`].
+    type Step<'a> = &'a dyn Fn(&mut DocumentMutator<'_>, &[NodeId]);
+
+    /// Like [`check_incremental_restyle`], but each step is a separate mutation batch
+    /// with a layout in between; the fresh document applies all steps before its layout.
+    fn check_incremental_restyle_steps(
+        css: &str,
+        build: impl Fn(&mut DocumentMutator<'_>) -> Vec<NodeId>,
+        steps: &[Step<'_>],
+    ) {
         let new_document = || {
             let mut doc = BaseDocument::new(DocumentConfig {
                 viewport: Some(Viewport::new(800, 600, 1.0, ColorScheme::Light)),
@@ -1994,12 +2007,16 @@ mod test {
         let (mut incremental, ids) = new_document();
         incremental.resolve(0.0);
         let before = snapshot(&incremental);
-        mutate(&mut incremental.mutate(), &ids);
-        incremental.resolve(0.0);
+        for mutate in steps {
+            mutate(&mut incremental.mutate(), &ids);
+            incremental.resolve(0.0);
+        }
         let after = snapshot(&incremental);
 
         let (mut fresh, ids) = new_document();
-        mutate(&mut fresh.mutate(), &ids);
+        for mutate in steps {
+            mutate(&mut fresh.mutate(), &ids);
+        }
         fresh.resolve(0.0);
         assert_matches_fresh(&after, &snapshot(&fresh));
         assert_ne!(
@@ -2015,6 +2032,156 @@ mod test {
         m.append_children(parent, &children);
         m.append_children(root_id, &[parent]);
         std::iter::once(parent).chain(children).collect()
+    }
+
+    /// `html > parent.hidden > [child, child]`, ids in that order; `.hidden` is `display: none`.
+    fn hidden_parent_with_children(m: &mut DocumentMutator<'_>, count: usize) -> Vec<NodeId> {
+        let ids = parent_with_children(m, count);
+        m.set_attribute(ids[0], qual_name!("class"), "hidden");
+        ids
+    }
+
+    const HIDDEN_CSS: &str = "div { height: 10px; width: 100px } .hidden { display: none }";
+
+    fn unhide(m: &mut DocumentMutator<'_>, ids: &[NodeId]) {
+        m.clear_attribute(ids[0], qual_name!("class"));
+    }
+
+    #[test]
+    fn attribute_change_in_hidden_subtree_then_unhide() {
+        check_incremental_restyle_steps(
+            &format!("{HIDDEN_CSS} [data-a] ~ div {{ width: 200px; color: red }}"),
+            |m| hidden_parent_with_children(m, 3),
+            &[
+                &|m, ids| m.set_attribute(ids[1], qual_name("data-a"), "1"),
+                &unhide,
+            ],
+        );
+    }
+
+    #[test]
+    fn class_change_in_hidden_subtree_then_unhide() {
+        check_incremental_restyle_steps(
+            &format!("{HIDDEN_CSS} .x {{ width: 200px }} .x div {{ color: red }}"),
+            |m| {
+                let ids = hidden_parent_with_children(m, 1);
+                let grandchild = div(m, &[]);
+                m.append_children(ids[1], &[grandchild]);
+                ids
+            },
+            &[
+                &|m, ids| m.set_attribute(ids[1], qual_name!("class"), "x"),
+                &unhide,
+            ],
+        );
+    }
+
+    #[test]
+    fn style_change_in_hidden_subtree_then_unhide() {
+        check_incremental_restyle_steps(
+            &format!("{HIDDEN_CSS} .half {{ width: 50% }}"),
+            |m| {
+                let ids = hidden_parent_with_children(m, 1);
+                let grandchild = div(m, &[("class", "half")]);
+                m.append_children(ids[1], &[grandchild]);
+                ids
+            },
+            &[
+                &|m, ids| m.set_attribute(ids[1], qual_name!("style"), "width: 400px"),
+                &unhide,
+            ],
+        );
+    }
+
+    #[test]
+    fn insert_in_hidden_subtree_then_unhide() {
+        check_incremental_restyle_steps(
+            &format!("{HIDDEN_CSS} div:last-child {{ height: 30px }} div:empty {{ width: 20px }}"),
+            |m| hidden_parent_with_children(m, 1),
+            &[
+                &|m, ids| {
+                    let child = div(m, &[]);
+                    m.append_children(ids[0], &[child]);
+                },
+                &unhide,
+            ],
+        );
+    }
+
+    #[test]
+    fn remove_in_hidden_subtree_then_unhide() {
+        check_incremental_restyle_steps(
+            &format!("{HIDDEN_CSS} div:first-child {{ height: 30px }}"),
+            |m| hidden_parent_with_children(m, 2),
+            &[
+                &|m, ids| {
+                    m.remove_and_drop_node(ids[1]);
+                },
+                &unhide,
+            ],
+        );
+    }
+
+    #[test]
+    fn pseudo_rule_matched_in_hidden_subtree_then_unhide() {
+        check_incremental_restyle_steps(
+            &format!(
+                "{HIDDEN_CSS} .x > div::before {{ content: 'a'; display: block; height: 20px }}"
+            ),
+            |m| {
+                let ids = hidden_parent_with_children(m, 1);
+                let grandchild = div(m, &[]);
+                m.append_children(ids[1], &[grandchild]);
+                ids
+            },
+            &[
+                &|m, ids| m.set_attribute(ids[1], qual_name!("class"), "x"),
+                &unhide,
+            ],
+        );
+    }
+
+    #[test]
+    fn unhide_and_attribute_change_in_one_batch() {
+        check_incremental_restyle(
+            &format!("{HIDDEN_CSS} [data-a] ~ div {{ width: 200px; color: red }}"),
+            |m| hidden_parent_with_children(m, 3),
+            |m, ids| {
+                unhide(m, ids);
+                m.set_attribute(ids[1], qual_name("data-a"), "1");
+            },
+        );
+    }
+
+    #[test]
+    fn hide_and_attribute_change_then_unhide() {
+        check_incremental_restyle_steps(
+            &format!("{HIDDEN_CSS} [data-a] ~ div {{ width: 200px; color: red }}"),
+            |m| parent_with_children(m, 3),
+            &[
+                &|m, ids| {
+                    m.set_attribute(ids[0], qual_name!("class"), "hidden");
+                    m.set_attribute(ids[1], qual_name("data-a"), "1");
+                },
+                &unhide,
+            ],
+        );
+    }
+
+    #[test]
+    fn hide_then_mutate_then_unhide() {
+        check_incremental_restyle_steps(
+            &format!("{HIDDEN_CSS} .x {{ color: red }} div:empty {{ width: 20px }}"),
+            |m| parent_with_children(m, 2),
+            &[
+                &|m, ids| m.set_attribute(ids[0], qual_name!("class"), "hidden"),
+                &|m, ids| {
+                    m.set_attribute(ids[1], qual_name!("class"), "x");
+                    m.remove_and_drop_node(ids[2]);
+                },
+                &unhide,
+            ],
+        );
     }
 
     #[test]
