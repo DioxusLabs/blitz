@@ -103,6 +103,26 @@ impl TextInputData {
         }
     }
 
+    /// For single-line inputs, the offset (in CSS pixels) that vertically centers the text
+    /// within the input's content box of height `content_box_height`.
+    pub fn v_centering_offset(&self, content_box_height: f32) -> f32 {
+        if self.is_multiline {
+            return 0.0;
+        }
+        let Some(layout) = self.editor.try_layout() else {
+            return 0.0;
+        };
+        ((content_box_height - layout.height() / layout.scale()) / 2.0).max(0.0)
+    }
+
+    /// The baseline of the input's first line of text (where it is painted), relative to the top
+    /// of the input's content box of height `content_box_height`, in CSS pixels.
+    pub fn first_baseline(&self, content_box_height: f32) -> Option<f32> {
+        let layout = self.editor.try_layout()?;
+        let line = layout.lines().next()?;
+        Some(self.v_centering_offset(content_box_height) + line.metrics().baseline / layout.scale())
+    }
+
     /// Recompute [`Self::scroll_offset`] so that the caret stays visible within the input's
     /// content box.
     ///
