@@ -157,8 +157,9 @@ impl LayoutPassState<'_> {
             .maybe_max(padding_border_size);
 
         // Short-circuit layout if the container's size is fully determined by the container's size and the run mode
-        // is ComputeSize (and thus the container's size is all that we're interested in)
-        if run_mode == RunMode::ComputeSize {
+        // is ComputeSize (and thus the container's size is all that we're interested in), unless baselines were
+        // requested, since those require laying out the content
+        if run_mode == RunMode::ComputeSize && inputs.requested_baselines.is_empty() {
             if let Size {
                 width: Some(width),
                 height: Some(height),
