@@ -27,8 +27,8 @@ use crate::node::Node;
 use stylo_taffy::WritingMode;
 use stylo_taffy::WritingModeExt;
 use taffy::{
-    AvailableSpace, AxisStaticEdge, AxisStaticPosition, Layout, LayoutInput, LayoutOutput, NodeId,
-    Point, RoundTree, RunMode, Size, TraversePartialTree,
+    AvailableSpace, AxisStaticEdge, AxisStaticPosition, CoreStyle, Layout, LayoutInput,
+    LayoutOutput, NodeId, Point, RoundTree, RunMode, Size, TraversePartialTree,
 };
 
 impl BaseDocument {
@@ -218,7 +218,16 @@ impl LayoutPassState<'_> {
         parent_pos: Point<f32>,
         rounded_parent_pos: Point<f32>,
     ) {
-        let unrounded = physical_layout(self.get_unrounded_layout(node_id), placer_wm, placer_size);
+        let node = &self.doc.nodes[dom_node_id(node_id)];
+        let overflow = node.layout_style().overflow();
+        let is_scroll_container =
+            overflow.x.is_scroll_container() || overflow.y.is_scroll_container();
+        let unrounded = physical_layout(
+            self.get_unrounded_layout(node_id),
+            placer_wm,
+            placer_size,
+            is_scroll_container,
+        );
 
         let pos = Point {
             x: parent_pos.x + unrounded.location.x,
@@ -262,13 +271,16 @@ impl LayoutPassState<'_> {
             top: from_top(unrounded.padding.top),
             bottom: from_bottom(unrounded.padding.bottom),
         };
-        let overflow = unrounded.scrollable_overflow_rect;
-        layout.scrollable_overflow_rect = taffy::Rect {
-            left: from_left(overflow.left),
-            right: from_left(overflow.right),
-            top: from_top(overflow.top),
-            bottom: from_top(overflow.bottom),
-        };
+        let overflow = unrounded.scrollable_overflow_rect.rect();
+        layout.scrollable_overflow_rect = taffy::ScrollableOverflow::new(
+            taffy::Rect {
+                left: from_left(overflow.left),
+                right: from_left(overflow.right),
+                top: from_top(overflow.top),
+                bottom: from_top(overflow.bottom),
+            },
+            unrounded.scrollable_overflow_rect.is_reversed(),
+        );
 
         // `unrounded_layout` is left in the placer's writing mode: Taffy's cache may skip re-placing
         // this node on a later layout, and only `final_layout` is read downstream.
@@ -344,9 +356,26 @@ fn mirror_static_position(position: AxisStaticPosition, extent: f32) -> AxisStat
 
 /// `logical`, written by a placing algorithm running in `placer_wm` within a box of physical size
 /// `placer_size`, in physical coordinates.
-fn physical_layout(logical: Layout, placer_wm: WritingMode, placer_size: Size<f32>) -> Layout {
+fn physical_layout(
+    logical: Layout,
+    placer_wm: WritingMode,
+    placer_size: Size<f32>,
+    is_scroll_container: bool,
+) -> Layout {
     if !placer_wm.is_vertical() {
         return logical;
+    }
+    let mut rect = logical.scrollable_overflow_rect.rect().transpose();
+    let mut reversed = logical.scrollable_overflow_rect.is_reversed().transpose();
+    if !placer_wm.is_vertical_lr() {
+        let client_width = logical.size.height
+            - logical.border.top
+            - logical.border.bottom
+            - logical.scrollbar_size.height;
+        let left = client_width - rect.right;
+        rect.right = (client_width - rect.left).max(0.0);
+        rect.left = left.min(0.0);
+        reversed.x = is_scroll_container && !reversed.x;
     }
     Layout {
         location: Point {
@@ -359,7 +388,7 @@ fn physical_layout(logical: Layout, placer_wm: WritingMode, placer_size: Size<f3
         },
         size: logical.size.transpose(),
         scrollbar_size: logical.scrollbar_size.transpose(),
-        scrollable_overflow_rect: logical.scrollable_overflow_rect.transpose(),
+        scrollable_overflow_rect: taffy::ScrollableOverflow::new(rect, reversed),
         border: placer_wm.physical_rect(logical.border),
         padding: placer_wm.physical_rect(logical.padding),
         margin: placer_wm.physical_rect(logical.margin),
@@ -394,7 +423,13 @@ impl BaseDocument {
         let root_id = self.try_root_element().map(|root| root.id);
         let node = &self.nodes[node_id];
         let (mut pos, placer_wm, placer_size) = self.placer_geometry(node, node_id, root_id);
-        let layout = physical_layout(*node.unrounded_layout(), placer_wm, placer_size);
+        let overflow = node.layout_style().overflow();
+        let layout = physical_layout(
+            *node.unrounded_layout(),
+            placer_wm,
+            placer_size,
+            overflow.x.is_scroll_container() || overflow.y.is_scroll_container(),
+        );
         pos.x += layout.location.x - node.scroll_offset().x as f32;
         pos.y += layout.location.y - node.scroll_offset().y as f32;
         (pos, layout)
@@ -423,7 +458,13 @@ impl BaseDocument {
         let (mut pos, grand_wm, grand_size) = self.placer_geometry(placer, placer_id, root_id);
         let logical = placer.unrounded_layout();
         let (location, size) = if grand_wm.is_vertical() {
-            let physical = physical_layout(*logical, grand_wm, grand_size);
+            let overflow = placer.layout_style().overflow();
+            let physical = physical_layout(
+                *logical,
+                grand_wm,
+                grand_size,
+                overflow.x.is_scroll_container() || overflow.y.is_scroll_container(),
+            );
             (physical.location, physical.size)
         } else {
             (logical.location, logical.size)
