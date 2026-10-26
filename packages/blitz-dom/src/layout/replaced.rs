@@ -82,8 +82,8 @@ pub fn compute_replaced_layout(
         Size::ZERO
     };
 
-    // The scrollable overflow rect is measured from the scroll origin at the
-    // padding-box corner: the content-box size offset by the start padding. A
+    // The scrollable overflow rect is measured from the client area's
+    // top-left corner: the content-box size offset by the start padding. A
     // scroll container's own padding at the end of the content is part of its
     // scrollable overflow region, so it is included. Boxes that are not scroll
     // containers do not extend their overflow region by their own padding.
@@ -95,24 +95,35 @@ pub fn compute_replaced_layout(
     let overflow_rect_for = |content_box_size: Size<f32>| {
         let start_padding = if is_rtl { padding.right } else { padding.left };
         let end_padding = if is_rtl { padding.left } else { padding.right };
-        taffy::Rect {
-            left: 0.0,
-            right: start_padding
-                + content_box_size.width
-                + if is_scroll_container {
-                    end_padding
+        let client_width = content_box_size.width + padding.left + padding.right;
+        taffy::ScrollableOverflow::new(
+            taffy::Rect {
+                left: 0.0,
+                right: if is_rtl {
+                    client_width
                 } else {
-                    0.0
+                    start_padding
+                        + content_box_size.width
+                        + if is_scroll_container {
+                            end_padding
+                        } else {
+                            0.0
+                        }
                 },
-            top: 0.0,
-            bottom: padding.top
-                + content_box_size.height
-                + if is_scroll_container {
-                    padding.bottom
-                } else {
-                    0.0
-                },
-        }
+                top: 0.0,
+                bottom: padding.top
+                    + content_box_size.height
+                    + if is_scroll_container {
+                        padding.bottom
+                    } else {
+                        0.0
+                    },
+            },
+            taffy::Point {
+                x: is_scroll_container && is_rtl,
+                y: false,
+            },
+        )
     };
 
     // Return early if both width and height are known

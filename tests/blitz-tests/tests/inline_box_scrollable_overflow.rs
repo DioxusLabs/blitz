@@ -165,3 +165,21 @@ fn negative_margins_do_not_extend_normal_origin_scroll_dimensions() {
     assert_eq!(node.scroll_width(), node.client_width());
     assert_eq!(node.scroll_height(), node.client_height());
 }
+
+#[test]
+fn rtl_negative_margin_scroll_width_comes_from_taffy() {
+    let doc = reverse_scroll_doc(
+        "display:flow-root;direction:rtl;width:80px;height:80px;overflow:hidden;padding:1px 4px 8px 16px;border-style:solid;border-width:1px 50px 40px 4px",
+        r#"<div style="margin:-100px;width:300px;height:300px"></div>"#,
+    );
+    let id = doc.query_selector("#scroller").unwrap().unwrap();
+    let node = doc.get_node(id).unwrap();
+    let layout = node.final_layout();
+    assert_eq!(
+        node.client_width() + layout.scroll_width(),
+        204.0,
+        "Taffy output: {:?}; Blitz scrollWidth: {}",
+        layout,
+        node.scroll_width(),
+    );
+}
