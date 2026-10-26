@@ -436,7 +436,10 @@ impl BaseDocument {
         style_config::set_pref!("layout.css.text-indent-keywords.enabled", true);
         style_config::set_pref!("layout.css.word-break.break-word.enabled", true);
         #[cfg(feature = "writing-mode")]
-        style_config::set_pref!("layout.css.writing-mode.enabled", true);
+        {
+            style_config::set_pref!("layout.css.writing-mode.enabled", true);
+            style_config::set_pref!("layout.css.writing-mode.sideways.enabled", true);
+        }
 
         // Properties that were previously enabled by the `layout.unimplemented` pref
         style_config::set_pref!("layout.css.appearance.enabled", true);
