@@ -639,7 +639,7 @@ impl DocumentMutator<'_> {
         ) {
             hint |= RestyleHint::RESTYLE_DESCENDANTS;
         } else {
-            let children = &parent.children;
+            let children = mem::take(&mut self.doc.nodes[parent_id].children);
             let later = if flags.contains(ElementSelectorFlags::HAS_SLOW_SELECTOR_LATER_SIBLINGS) {
                 changed.end..children.len()
             } else {
@@ -655,13 +655,10 @@ impl DocumentMutator<'_> {
                     edge[1] = changed.start.checked_sub(1).map(|i| children[i]);
                 }
             }
-            for i in later {
-                let id = self.doc.nodes[parent_id].children[i];
-                self.doc.nodes[id].set_restyle_hint(RestyleHint::restyle_subtree());
+            for id in children[later].iter().chain(edge.iter().flatten()) {
+                self.doc.nodes[*id].set_restyle_hint(RestyleHint::restyle_subtree());
             }
-            for id in edge.into_iter().flatten() {
-                self.doc.nodes[id].set_restyle_hint(RestyleHint::restyle_subtree());
-            }
+            self.doc.nodes[parent_id].children = children;
         }
 
         let parent = &mut self.doc.nodes[parent_id];
