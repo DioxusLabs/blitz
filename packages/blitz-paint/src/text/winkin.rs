@@ -1397,8 +1397,7 @@ impl DrawTextContext {
             scale,
             &self.deco_boxes,
             &mut self.win_ascent_ratios,
-            NodeId::from_u64(0),
-            bar.baseline,
+            None,
             drawn,
         );
         self.deco_boxes.clear();

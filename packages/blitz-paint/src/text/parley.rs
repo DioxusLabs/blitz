@@ -475,8 +475,7 @@ fn stroke_text<'a>(
             scale,
             deco_boxes,
             win_ascent_ratios,
-            inline_root_id,
-            line.metrics().baseline,
+            Some((inline_root_id, line.metrics().baseline)),
             TextDecorationLine::all(),
         );
         if let Some(composing) = composing.take() {
@@ -486,8 +485,7 @@ fn stroke_text<'a>(
                 scale,
                 std::slice::from_ref(&composing),
                 win_ascent_ratios,
-                inline_root_id,
-                line.metrics().baseline,
+                Some((inline_root_id, line.metrics().baseline)),
                 TextDecorationLine::all(),
             );
         }

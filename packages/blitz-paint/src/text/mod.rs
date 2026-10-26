@@ -381,16 +381,17 @@ fn draw_decoration_line(
 
 /// Paint the decorations accumulated for one line, one line per decorating box.
 ///
-/// Only the kinds of line in `drawn` are painted: a caller painting the lines
-/// under the text apart from the one through it asks for each in turn.
+/// `root_baseline` is the inline root and the line's baseline, where the root's decoration
+/// is positioned from it rather than from the first run it covers. Only the kinds of line
+/// in `drawn` are painted: a caller painting the lines under the text apart from the one
+/// through it asks for each in turn.
 fn flush_line_decorations(
     scene: &mut impl PaintScene,
     transform: Affine,
     scale: f64,
     deco_boxes: &[LineDecoration],
     win_ascent_ratios: &mut WinAscentCache,
-    inline_root_id: NodeId,
-    line_baseline: f32,
+    root_baseline: Option<(NodeId, f32)>,
     drawn: TextDecorationLine,
 ) {
     // Draw innermost boxes first so ancestors' decorations paint on top, matching the
@@ -405,7 +406,9 @@ fn flush_line_decorations(
                 // A descendant run's baseline may be shifted by `vertical-align`, but the
                 // decoration is positioned from the decorating box's own baseline. For the
                 // inline root that is the line's baseline.
-                if acc.node_id == inline_root_id {
+                if let Some((inline_root_id, line_baseline)) = root_baseline
+                    && acc.node_id == inline_root_id
+                {
                     geom.baseline = line_baseline;
                 }
                 geom
