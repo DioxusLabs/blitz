@@ -1,5 +1,5 @@
 use kurbo::{Arc, BezPath, Insets, PathEl, Point, Rect, Shape as _, Vec2};
-use std::{f64::consts::FRAC_PI_2, f64::consts::PI};
+use std::f64::consts::{FRAC_PI_2, FRAC_PI_4, PI};
 
 use super::non_uniform_radii::NonUniformRoundedRectRadii;
 use super::{Corner, CssBoxKind, Direction, Edge, add_insets, get_corner_insets};
@@ -614,6 +614,13 @@ impl BuildBezpath for BezPath {
 
 /// Get the start angle of the arc based on the border width and the radii
 fn start_angle(bt_width: f64, br_width: f64, radii: Vec2) -> f64 {
+    match (bt_width, br_width) {
+        (0.0, 0.0) => return FRAC_PI_4,
+        (0.0, _) => return FRAC_PI_2,
+        (_, 0.0) => return 0.0,
+        _ => {}
+    }
+
     // slope of the border intersection split
     let w = bt_width / br_width;
     let x = radii.y / (w * radii.x);
@@ -661,6 +668,59 @@ fn start_angle(bt_width: f64, br_width: f64, radii: Vec2) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn zero_width_borders_have_finite_start_angles() {
+        for radii in [Vec2::new(8.0, 8.0), Vec2::new(8.0, 4.0)] {
+            for (bt, br, expected) in [
+                (0.0, 0.0, FRAC_PI_4),
+                (0.0, 1.0, FRAC_PI_2),
+                (1.0, 0.0, 0.0),
+            ] {
+                assert_eq!(start_angle(bt, br, radii), expected);
+            }
+        }
+    }
+
+    #[test]
+    fn rounded_border_with_missing_sides_keeps_remaining_edges() {
+        for border in [
+            Insets::new(1.0, 0.0, 1.0, 1.0),
+            Insets::new(0.0, 1.0, 1.0, 1.0),
+            Insets::new(1.0, 1.0, 0.0, 1.0),
+            Insets::new(1.0, 1.0, 1.0, 0.0),
+            Insets::ZERO,
+        ] {
+            let radius = Vec2::new(8.0, 8.0);
+            let b = CssBox::new(
+                Rect::new(0.0, 0.0, 100.0, 60.0),
+                border,
+                Insets::ZERO,
+                0.0,
+                NonUniformRoundedRectRadii {
+                    top_left: radius,
+                    top_right: radius,
+                    bottom_right: radius,
+                    bottom_left: radius,
+                },
+            );
+            for (edge, width, point) in [
+                (Edge::Top, border.y0, Point::new(50.0, 0.5)),
+                (Edge::Right, border.x1, Point::new(99.5, 30.0)),
+                (Edge::Bottom, border.y1, Point::new(50.0, 59.5)),
+                (Edge::Left, border.x0, Point::new(0.5, 30.0)),
+            ] {
+                let mut path = b.border_edge_shape(edge);
+                path.close_path();
+                assert!(path.is_finite(), "{edge:?} with {border:?}");
+                if width > 0.0 {
+                    assert_ne!(path.winding(point), 0, "{edge:?} with {border:?}");
+                } else {
+                    assert!(path.area().abs() < 1e-6, "{edge:?} with {border:?}");
+                }
+            }
+        }
+    }
 
     /// `start_angle` must return the angle `t` at which the border colour split
     /// line crosses the corner ellipse, i.e. the solution of
