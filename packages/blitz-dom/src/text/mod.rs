@@ -956,6 +956,10 @@ pub fn build_single_font_ctx(font_data: &[u8]) -> FontContext {
     FontContext::with_single_font(font_data)
 }
 
+#[doc(hidden)]
+pub static PERF_COUNTS: [core::sync::atomic::AtomicUsize; 2] =
+    [const { core::sync::atomic::AtomicUsize::new(0) }; 2];
+
 #[cfg(test)]
 mod tests {
     use style::stylesheets::{CssRule, Origin, StylesheetInDocument as _};
@@ -1022,7 +1026,3 @@ mod tests {
         assert_eq!(BACKEND, expected);
     }
 }
-
-#[doc(hidden)]
-pub static PERF_COUNTS: [core::sync::atomic::AtomicUsize; 2] =
-    [const { core::sync::atomic::AtomicUsize::new(0) }; 2];
