@@ -822,3 +822,95 @@ fn computed_style_used_values() {
          10px -10px -10px 10px|62px 47px|31px 70.5px|10%|11px 12px"
     );
 }
+
+/// Write `files` into a fresh temporary directory, returning its path
+fn temp_dir_with_files(name: &str, files: &[(&str, &str)]) -> std::path::PathBuf {
+    let dir =
+        std::env::temp_dir().join(format!("blitz-vibey-script-{name}-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    for (file, contents) in files {
+        std::fs::write(dir.join(file), contents).unwrap();
+    }
+    dir
+}
+
+const FILE_LOAD_TEST_HTML: &str = r#"
+    <html><body>
+        <div id="classic"></div>
+        <div id="module"></div>
+        <div id="fetch"></div>
+        <script src="FILE_DIR/classic.js"></script>
+        <script type="module">
+            import { value } from "FILE_DIR/module.js";
+            document.getElementById("module").textContent = value;
+        </script>
+        <script>
+            fetch("FILE_DIR/data.txt").then(
+                (r) => r.text().then((text) => {
+                    document.getElementById("fetch").textContent = text;
+                }),
+                (e) => {
+                    document.getElementById("fetch").textContent =
+                        "rejected " + (e instanceof TypeError);
+                },
+            );
+        </script>
+    </body></html>
+"#;
+
+const FILE_LOAD_TEST_FILES: &[(&str, &str)] = &[
+    (
+        "classic.js",
+        r#"document.getElementById("classic").textContent = "classic";"#,
+    ),
+    ("module.js", r#"export const value = "module";"#),
+    ("data.txt", "secret"),
+];
+
+#[test]
+fn remote_document_cannot_load_file_urls() {
+    let dir = temp_dir_with_files("remote", FILE_LOAD_TEST_FILES);
+    let dir_url = url::Url::from_directory_path(&dir).unwrap();
+    let html = FILE_LOAD_TEST_HTML.replace("FILE_DIR/", dir_url.as_str());
+
+    let mut doc = ScriptDocument::from_html(
+        &html,
+        DocumentConfig {
+            base_url: Some("https://example.test/page.html".to_string()),
+            ..Default::default()
+        },
+    );
+    assert_eq!(doc.external_script_urls(), Vec::<url::Url>::new());
+    doc.execute_scripts();
+    let errors = doc.take_js_errors();
+    assert_eq!(errors.len(), 2, "{errors:?}");
+    assert!(errors[0].contains("classic.js"), "{errors:?}");
+    assert!(errors[1].contains("module.js"), "{errors:?}");
+    assert_eq!(text_of_selector(&doc, "#classic"), "");
+    assert_eq!(text_of_selector(&doc, "#module"), "");
+    assert_eq!(text_of_selector(&doc, "#fetch"), "rejected true");
+
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn file_document_can_load_sibling_file_urls() {
+    let dir = temp_dir_with_files("local", FILE_LOAD_TEST_FILES);
+    let dir_url = url::Url::from_directory_path(&dir).unwrap();
+    let html = FILE_LOAD_TEST_HTML.replace("FILE_DIR/", "");
+
+    let mut doc = ScriptDocument::from_html(
+        &html,
+        DocumentConfig {
+            base_url: Some(dir_url.join("page.html").unwrap().to_string()),
+            ..Default::default()
+        },
+    );
+    doc.execute_scripts();
+    assert_eq!(doc.take_js_errors(), Vec::<String>::new());
+    assert_eq!(text_of_selector(&doc, "#classic"), "classic");
+    assert_eq!(text_of_selector(&doc, "#module"), "module");
+    assert_eq!(text_of_selector(&doc, "#fetch"), "secret");
+
+    std::fs::remove_dir_all(dir).unwrap();
+}
