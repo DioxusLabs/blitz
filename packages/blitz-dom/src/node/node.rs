@@ -17,7 +17,6 @@ use std::fmt::Write;
 use std::ops::Deref;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-#[cfg(feature = "writing-mode")]
 use style::computed_values::flex_direction::T as FlexDirection;
 use style::computed_values::isolation::T as Isolation;
 use style::computed_values::white_space_collapse::T as WhiteSpaceCollapse;
@@ -36,6 +35,7 @@ use style::values::specified::box_::{DisplayInside, DisplayOutside};
 use style_dom::ElementState;
 use style_traits::values::ToCss;
 use stylo_taffy::CopyStyleGetters;
+use stylo_taffy::WritingModeExt;
 use taffy::{Cache, prelude::Layout};
 use thin_vec::ThinVec;
 
@@ -1448,16 +1448,40 @@ impl Node {
         }
 
         let size = self.final_layout().size;
-        let matches_self = !(x < 0.0
+        let matches_self = !(x < self.scroll_offset().x as f32
             || x > size.width + self.scroll_offset().x as f32
-            || y < 0.0
+            || y < self.scroll_offset().y as f32
             || y > size.height + self.scroll_offset().y as f32);
 
-        let overflow_rect = self.final_layout().scrollable_overflow_rect;
-        let matches_content = !(x < 0.0
-            || x > overflow_rect.right + self.scroll_offset().x as f32
-            || y < 0.0
-            || y > overflow_rect.bottom + self.scroll_offset().y as f32);
+        let layout = self.final_layout();
+        let overflow_rect = layout.scrollable_overflow_rect;
+        let is_rtl = taffy::CoreStyle::direction(&self.layout_style()).is_rtl();
+        let (gutter_left, gutter_top) = (is_rtl, false);
+        #[cfg(feature = "writing-mode")]
+        let (gutter_left, gutter_top) = {
+            let wm = self.layout_data().writing_mode;
+            if wm.swaps_axes() {
+                (wm.block_left_is_end(), wm.direction().is_rtl())
+            } else {
+                (gutter_left, gutter_top)
+            }
+        };
+        let client_x = layout.border.left
+            + if gutter_left {
+                layout.scrollbar_size.width
+            } else {
+                0.0
+            };
+        let client_y = layout.border.top
+            + if gutter_top {
+                layout.scrollbar_size.height
+            } else {
+                0.0
+            };
+        let matches_content = !(x < overflow_rect.left() + client_x
+            || x > overflow_rect.right() + client_x
+            || y < overflow_rect.top() + client_y
+            || y > overflow_rect.bottom() + client_y);
 
         let matches_hoisted_content = match &self.stacking_context {
             Some(sc) => {
@@ -1905,15 +1929,94 @@ impl Node {
     /// CSSOM View's `scrollWidth`: the width of the node's content, including
     /// content not visible due to overflow
     pub fn scroll_width(&self) -> f32 {
-        self.client_width()
-            .max(self.final_layout().scrollable_overflow_rect.right)
+        self.cssom_scroll_size().width
     }
 
     /// CSSOM View's `scrollHeight`: the height of the node's content, including
     /// content not visible due to overflow
     pub fn scroll_height(&self) -> f32 {
-        self.client_height()
-            .max(self.final_layout().scrollable_overflow_rect.bottom)
+        self.cssom_scroll_size().height
+    }
+
+    fn cssom_scroll_size(&self) -> taffy::Size<f32> {
+        let layout = self.final_layout();
+        if self.primary_styles().is_none() {
+            return taffy::Size {
+                width: self.client_width() + layout.scroll_width(),
+                height: self.client_height() + layout.scroll_height(),
+            };
+        }
+        let overflow = taffy::CoreStyle::overflow(&self.layout_style());
+        if overflow.x.is_scroll_container() || overflow.y.is_scroll_container() {
+            return taffy::Size {
+                width: self.client_width() + layout.scroll_width(),
+                height: self.client_height() + layout.scroll_height(),
+            };
+        }
+
+        // Non-scroll containers retain both sides for propagation and hit testing, but do not
+        // carry scroll-origin flags. CSSOM still measures their scrolling area from its origin.
+        let mut inline = false;
+        let mut block = false;
+        let mut vertical = false;
+        if let Some(style) = self.primary_styles() {
+            let wm = style.writing_mode;
+            inline = wm.direction().is_rtl();
+            block = wm.block_left_is_end();
+            vertical = wm.swaps_axes();
+            if self.taffy_display() == taffy::Display::Flex {
+                let position = style.get_position();
+                let row = matches!(
+                    position.flex_direction,
+                    FlexDirection::Row | FlexDirection::RowReverse
+                );
+                let reverse = matches!(
+                    position.flex_direction,
+                    FlexDirection::RowReverse | FlexDirection::ColumnReverse
+                );
+                let wrap_reverse = position
+                    .flex_wrap
+                    .contains(style::values::computed::FlexWrap::WRAP_REVERSE);
+                inline ^= if row { reverse } else { wrap_reverse };
+                block ^= if row { wrap_reverse } else { reverse };
+            }
+        }
+        let (reverse_x, reverse_y) = if vertical {
+            (block, inline)
+        } else {
+            (inline, block)
+        };
+        let overflow = layout.scrollable_overflow_rect;
+        taffy::Size {
+            width: if reverse_x {
+                self.client_width() - overflow.left()
+            } else {
+                self.client_width().max(overflow.right())
+            },
+            height: if reverse_y {
+                self.client_height() - overflow.top()
+            } else {
+                self.client_height().max(overflow.bottom())
+            },
+        }
+    }
+
+    /// Signed CSSOM scroll offsets, with zero at the initial scroll position.
+    pub(crate) fn scroll_range(&self) -> (crate::Point<f64>, crate::Point<f64>) {
+        let layout = self.final_layout();
+        let reversed = layout.scrollable_overflow_rect.is_reversed();
+        let width = layout.scroll_width() as f64;
+        let height = layout.scroll_height() as f64;
+        (
+            crate::Point {
+                x: if reversed.x { -width } else { 0.0 },
+                y: if reversed.y { -height } else { 0.0 },
+            },
+            crate::Point {
+                x: if reversed.x { 0.0 } else { width },
+                y: if reversed.y { 0.0 } else { height },
+            },
+        )
     }
 
     /// Does the node generate any boxes? (e.g. `getClientRects()` returns an empty
