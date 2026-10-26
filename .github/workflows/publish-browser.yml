@@ -57,7 +57,9 @@ jobs:
             artifact_path: ./target/dx/blitz/bundle/windows/nsis/Blitz_0.0.0_arm64-setup.exe
           - job_name: macOS (x86_64)
             target: x86_64-apple-darwin
-            os: macos-15-intel
+            # Cross-compiled on Apple Silicon: `xcrun stapler` on the Intel runners
+            # frequently loses its connection to Apple's ticket service (Error 68).
+            os: macos-latest
             use_git_cli: false
             artifact_name: "Blitz_0.0.0_macos_x86_64.dmg"
             artifact_path: "./target/dx/blitz/bundle/macos/macos/Blitz_0.0.0_x86_64.dmg"
@@ -98,6 +100,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
+          key: "${{ matrix.platform.target }}"
           cache-all-crates: "true"
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-bin: ${{ startsWith(matrix.platform.os, 'macos') }} # works around https://github.com/Swatinem/rust-cache/issues/341
@@ -150,19 +153,7 @@ jobs:
 
       - name: Bundle browser
         shell: bash
-        run: |
-          attempts=${{ startsWith(matrix.platform.os, 'macos') && 3 || 1 }}
-          for ((attempt = 1; attempt <= attempts; attempt++)); do
-            if dx bundle --package browser --release --profile production --target ${{ matrix.platform.target }} --locked --verbose --trace ${{ matrix.platform.args }}; then
-              exit 0
-            else
-              status=$?
-            fi
-            if ((attempt == attempts)); then
-              exit "$status"
-            fi
-            sleep 30
-          done
+        run: dx bundle --package browser --release --profile production --target ${{ matrix.platform.target }} --locked --verbose --trace ${{ matrix.platform.args }}
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
