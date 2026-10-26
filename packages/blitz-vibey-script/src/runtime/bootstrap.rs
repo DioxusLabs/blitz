@@ -99,6 +99,12 @@ pub(super) fn register_globals(ctx: &DomCtx, base_url: Option<&Url>, context: &m
     // CSS property support check, used by the style Proxy's `has` trap
     register_global_fn(
         context,
+        "__blitz_css_property_names",
+        0,
+        css::css_property_names,
+    );
+    register_global_fn(
+        context,
         "__blitz_css_property_supported",
         1,
         css::css_property_supported,

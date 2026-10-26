@@ -452,6 +452,40 @@ fn style_bindings() {
     assert_eq!(text_of_selector(&doc, "#out"), "color: red;|blue");
 }
 
+#[test]
+fn style_property_accessors() {
+    let doc = doc_from_html(
+        r#"
+        <html><body><div id="box"></div><div id="out"></div><script>
+            const style = document.getElementById("box").style;
+            const parts = [];
+            for (const declaration of [style, getComputedStyle(document.body)]) {
+                const proto = Object.getPrototypeOf(declaration);
+                for (const name of ["margin-block-start", "marginBlockStart", "margin",
+                                    "-webkit-transform", "webkitTransform", "WebkitTransform", "cssFloat"]) {
+                    const descriptor = Reflect.getOwnPropertyDescriptor(proto, name);
+                    parts.push(!!descriptor && typeof descriptor.get === "function" &&
+                        typeof descriptor.set === "function" && descriptor.enumerable &&
+                        descriptor.configurable && Reflect.ownKeys(proto).includes(name));
+                }
+                parts.push(!Object.hasOwn(proto, "not-a-css-property"));
+            }
+            parts.push(style.marginBlockStart === "");
+            style.marginBlockStart = "12px";
+            parts.push(style["margin-block-start"] === "12px");
+            style.marginBlockStart = "invalid";
+            parts.push(style.marginBlockStart === "12px");
+            style.marginBlockStart = null;
+            parts.push(style.marginBlockStart === "");
+            const computed = getComputedStyle(document.body);
+            parts.push(Array.from(computed).includes("margin-block-start"));
+            document.getElementById("out").textContent = parts.every(Boolean);
+        </script></body></html>
+        "#,
+    );
+    assert_eq!(text_of_selector(&doc, "#out"), "true");
+}
+
 // Dispatched events expose `getModifierState`, callable from listeners
 // (React's synthetic events call it on the native event).
 #[test]
