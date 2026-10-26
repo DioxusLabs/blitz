@@ -726,6 +726,11 @@ pub(crate) fn handle_click(
                     if let Some(target_node_id) =
                         doc.label_bound_input_element(node_id).map(|n| n.id)
                     {
+                        if std::iter::successors(Some(target), |id| doc.nodes[*id].parent)
+                            .any(|id| id == target_node_id)
+                        {
+                            break 'matched true;
+                        }
                         // Apply default click event action for target node
                         let target_node = doc.get_node_mut(target_node_id).unwrap();
                         let syn_event = target_node.synthetic_click_event_data(event.mods);
