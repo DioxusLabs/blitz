@@ -58,6 +58,43 @@ fn reverse_scroll_doc(style: &str, items: &str) -> HtmlDocument {
 }
 
 #[test]
+fn non_scroll_containers_measure_overflow_from_the_cssom_origin() {
+    for overflow in ["visible", "clip"] {
+        for (style, expected) in [
+            ("display:flow-root;direction:rtl", (204.0, 201.0)),
+            ("display:grid;direction:rtl", (204.0, 201.0)),
+            ("display:flex;direction:rtl", (184.0, 201.0)),
+            (
+                "display:flex;direction:rtl;flex-direction:row-reverse",
+                (196.0, 201.0),
+            ),
+            ("display:flow-root;direction:ltr", (216.0, 201.0)),
+        ] {
+            let doc = reverse_scroll_doc(
+                &format!(
+                    "{style};width:80px;height:80px;overflow:{overflow};padding:1px 4px 8px 16px;border-style:solid;border-width:1px 50px 40px 4px"
+                ),
+                r#"<div style="margin:-100px;width:300px;height:300px"></div>"#,
+            );
+            let id = doc.query_selector("#scroller").unwrap().unwrap();
+            let node = doc.get_node(id).unwrap();
+            assert_eq!(
+                (node.scroll_width(), node.scroll_height()),
+                expected,
+                "{style} {overflow}"
+            );
+            assert_eq!(
+                node.final_layout().scrollable_overflow_rect.is_reversed(),
+                taffy::Point { x: false, y: false }
+            );
+        }
+    }
+    let doc = reverse_scroll_doc("display:flow-root;direction:rtl;overflow:visible", "");
+    let id = doc.query_selector("#scroller").unwrap().unwrap();
+    assert_eq!(doc.get_node(id).unwrap().scroll_width(), 100.0);
+}
+
+#[test]
 fn reversed_flex_origins_scroll_to_negative_offsets_and_hit_the_painted_child() {
     for (style, horizontal) in [
         ("flex-wrap:wrap-reverse", false),
