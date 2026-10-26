@@ -11,10 +11,14 @@ use blitz_traits::shell::{ColorScheme, Viewport};
 use std::sync::Arc;
 
 fn layout_doc(html: &str) -> HtmlDocument {
+    layout_doc_at_scale(html, 1.0)
+}
+
+fn layout_doc_at_scale(html: &str, scale: f32) -> HtmlDocument {
     let mut doc = HtmlDocument::from_html(
         html,
         DocumentConfig {
-            viewport: Some(Viewport::new(800, 600, 1.0, ColorScheme::Light)),
+            viewport: Some(Viewport::new(800, 600, scale, ColorScheme::Light)),
             html_parser_provider: Some(Arc::new(HtmlProvider) as _),
             font_ctx: Some(FontContext::new()),
             ..Default::default()
@@ -74,4 +78,32 @@ fn trailing_br_does_not_move_last_baseline() {
     let (b_y, _) = rect(&doc, "#b");
     assert_eq!(a_height, 20.0);
     assert_eq!(a_y, b_y);
+}
+
+#[test]
+fn inline_box_baselines_are_snapped_in_physical_pixels() {
+    for scale in [1.0, 1.25, 2.0] {
+        let doc = layout_doc_at_scale(
+            &format!(
+                r#"{STYLE}<div id="line"><span style="padding-top: 0.3px; margin-top: 0.2px">X</span><span></span><span style="contain: layout">X</span></div>"#
+            ),
+            scale,
+        );
+        let id = doc.query_selector("#line").unwrap().unwrap();
+        let inline = doc
+            .get_node(id)
+            .unwrap()
+            .element_data()
+            .unwrap()
+            .inline_layout_data
+            .as_ref()
+            .unwrap();
+        let baselines: Vec<_> = inline.layout.inline_boxes().map(|b| b.baseline).collect();
+        assert_eq!(baselines.len(), 3);
+        let baseline = baselines[0].expect("text exports a baseline");
+        assert!(baseline > 0.0);
+        assert_eq!(baseline, baseline.round(), "scale {scale}");
+        assert_eq!(baselines[1], None);
+        assert_eq!(baselines[2], None);
+    }
 }
