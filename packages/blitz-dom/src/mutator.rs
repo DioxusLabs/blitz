@@ -655,12 +655,11 @@ impl DocumentMutator<'_> {
                     edge[1] = changed.start.checked_sub(1).map(|i| children[i]);
                 }
             }
-            let ids: Vec<NodeId> = children[later]
-                .iter()
-                .copied()
-                .chain(edge.into_iter().flatten())
-                .collect();
-            for id in ids {
+            for i in later {
+                let id = self.doc.nodes[parent_id].children[i];
+                self.doc.nodes[id].set_restyle_hint(RestyleHint::restyle_subtree());
+            }
+            for id in edge.into_iter().flatten() {
                 self.doc.nodes[id].set_restyle_hint(RestyleHint::restyle_subtree());
             }
         }
