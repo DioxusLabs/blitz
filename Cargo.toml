@@ -57,13 +57,20 @@ browser-persistence = { path = "./apps/browser/persistence" }
 blitz-test-harness = { path = "./packages/blitz-test-harness", default-features = false }
 
 # Servo dependencies
-# servo/stylo main (de0f23c5)
-style = { version = "0.22.0", git = "https://github.com/servo/stylo", rev = "de0f23c546cd2ab62eee816f00ecc5d35da4b48d", package = "stylo" }
-style_traits = { version = "0.22.0", git = "https://github.com/servo/stylo", rev = "de0f23c546cd2ab62eee816f00ecc5d35da4b48d", package = "stylo_traits" }
-style_atoms = { version = "0.22.0", git = "https://github.com/servo/stylo", rev = "de0f23c546cd2ab62eee816f00ecc5d35da4b48d", package = "stylo_atoms" }
-style_config = { version = "0.22.0", git = "https://github.com/servo/stylo", rev = "de0f23c546cd2ab62eee816f00ecc5d35da4b48d", package = "stylo_static_prefs" }
-style_dom = { version = "0.22.0", git = "https://github.com/servo/stylo", rev = "de0f23c546cd2ab62eee816f00ecc5d35da4b48d", package = "stylo_dom" }
-selectors = { version = "0.41.0", git = "https://github.com/servo/stylo", rev = "de0f23c546cd2ab62eee816f00ecc5d35da4b48d", package = "selectors" }
+# The stylo fork with the gates relaxed on properties its servo build
+# declines to compute. They are gated because servo's layout does not
+# implement them, not because they need gecko: the values are plain Rust.
+# Un-gating them is what lets winkin lay out, and the WPT suites reach,
+# writing modes, ruby, emphasis marks, line clamping and the rest of the
+# text properties winkin implements: dfrg/stylo's `style-more` (b2a820db,
+# on servo/stylo main 633f43ad) plus the fix for building on
+# wasm32-unknown-unknown (disables rand's getrandom dependency).
+style = { version = "0.22.0", git = "https://github.com/DioxusLabs/stylo", rev = "206c5299d8ef4622ed36110a0cf3bffcf6ee21d0", package = "stylo" }
+style_traits = { version = "0.22.0", git = "https://github.com/DioxusLabs/stylo", rev = "206c5299d8ef4622ed36110a0cf3bffcf6ee21d0", package = "stylo_traits" }
+style_atoms = { version = "0.22.0", git = "https://github.com/DioxusLabs/stylo", rev = "206c5299d8ef4622ed36110a0cf3bffcf6ee21d0", package = "stylo_atoms" }
+style_config = { version = "0.22.0", git = "https://github.com/DioxusLabs/stylo", rev = "206c5299d8ef4622ed36110a0cf3bffcf6ee21d0", package = "stylo_static_prefs" }
+style_dom = { version = "0.22.0", git = "https://github.com/DioxusLabs/stylo", rev = "206c5299d8ef4622ed36110a0cf3bffcf6ee21d0", package = "stylo_dom" }
+selectors = { version = "0.41.0", git = "https://github.com/DioxusLabs/stylo", rev = "206c5299d8ef4622ed36110a0cf3bffcf6ee21d0", package = "selectors" }
 cssparser = { version = "0.38.0" }
 
 # HTML5ever dependencies
@@ -306,21 +313,6 @@ vello_common = "0.3"
 wgpu = { workspace = true }
 wgpu_context = { workspace = true }
 rustc-hash = { workspace = true }
-
-# The stylo fork with the gates relaxed on properties its servo build
-# declines to compute. They are gated because servo's layout does not
-# implement them, not because they need gecko: the values are plain Rust.
-# Un-gating them is what lets winkin lay out, and the WPT suites reach,
-# writing modes, ruby, emphasis marks, line clamping and the rest of the
-# text properties winkin implements. Every crate of the stylo family is
-# patched together, or Blitz would see two `Atom` types.
-[patch."https://github.com/DioxusLabs/stylo"]
-stylo = { git = "https://github.com/dfrg/stylo", branch = "style-more" }
-stylo_traits = { git = "https://github.com/dfrg/stylo", branch = "style-more" }
-stylo_atoms = { git = "https://github.com/dfrg/stylo", branch = "style-more" }
-stylo_dom = { git = "https://github.com/dfrg/stylo", branch = "style-more" }
-stylo_static_prefs = { git = "https://github.com/dfrg/stylo", branch = "style-more" }
-selectors = { git = "https://github.com/dfrg/stylo", branch = "style-more" }
 
 # [patch.crates-io]
 # anyrender = { path = "../anyrender/crates/anyrender" }
