@@ -462,7 +462,7 @@ impl LayoutPassState<'_> {
                         } else {
                             baseline
                         };
-                        (margin.top + baseline) * scale
+                        ((margin.top + baseline) * scale).round()
                     })
                 } else {
                     None
