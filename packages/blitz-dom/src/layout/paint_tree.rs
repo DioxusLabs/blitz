@@ -57,7 +57,7 @@ pub fn hoisted_child_position(tree: &NodeTree, sc_root_id: NodeId, child_id: Nod
         let Some(node) = tree.get(id) else {
             break;
         };
-        let location = node.final_layout().location;
+        let location = node.final_layout().location + node.sticky_offset();
         let scroll_offset = *node.scroll_offset();
         position.x += location.x - scroll_offset.x as f32;
         position.y += location.y - scroll_offset.y as f32;

@@ -152,3 +152,49 @@ fn empty_reversed_scroller_and_clipped_overflow_cannot_scroll() {
         assert_eq!((node.scroll_offset().x, node.scroll_offset().y), (0.0, 0.0));
     }
 }
+
+#[test]
+fn negative_margins_do_not_extend_normal_origin_scroll_dimensions() {
+    let doc = reverse_scroll_doc(
+        "flex-direction:column;height:auto;padding:10px 20px;overflow:visible",
+        &r#"<div style="flex:none;width:20px;height:20px;margin:-5px -7px"></div>"#.repeat(4),
+    );
+    let id = doc.query_selector("#scroller").unwrap().unwrap();
+    let node = doc.get_node(id).unwrap();
+    assert_eq!(node.client_height(), 60.0);
+    assert_eq!(node.scroll_width(), node.client_width());
+    assert_eq!(node.scroll_height(), node.client_height());
+}
+
+#[test]
+fn sticky_bottom_tracks_a_reversed_scrollport_without_changing_its_range() {
+    let mut doc = reverse_scroll_doc(
+        "flex-direction:column-reverse;scrollbar-width:none",
+        r#"<div id="sticky" style="position:sticky;bottom:0;flex:none;width:50px;height:50px"></div><div style="flex:none;height:400px"></div>"#,
+    );
+    let scroller = doc.query_selector("#scroller").unwrap().unwrap();
+    let sticky = doc.query_selector("#sticky").unwrap().unwrap();
+    assert_eq!(doc.get_node(sticky).unwrap().sticky_offset().y, 0.0);
+    for scroll in [-100.0, -1000.0, 0.0] {
+        doc.scroll_to(scroller, 0.0, scroll, ScrollBehavior::Instant);
+        let node = doc.get_node(scroller).unwrap();
+        let scroll = node.scroll_offset().y;
+        assert_eq!(node.scroll_height(), 450.0);
+        let node = doc.get_node(sticky).unwrap();
+        assert_eq!(node.sticky_offset().y, scroll as f32);
+        assert_eq!(node.absolute_position(0.0, 0.0).y, 50.0);
+        assert_eq!(doc.element_from_point(25.0, 75.0), Some(sticky));
+    }
+}
+
+#[test]
+fn reversed_scrolling_without_a_sticky_inset_keeps_normal_positioning() {
+    let mut doc = reverse_scroll_doc(
+        "flex-direction:column-reverse",
+        r#"<div id="sticky" style="position:sticky;flex:none;height:200px"></div>"#,
+    );
+    let scroller = doc.query_selector("#scroller").unwrap().unwrap();
+    let sticky = doc.query_selector("#sticky").unwrap().unwrap();
+    doc.scroll_to(scroller, 0.0, -1000.0, ScrollBehavior::Instant);
+    assert_eq!(doc.get_node(sticky).unwrap().sticky_offset().y, 0.0);
+}
