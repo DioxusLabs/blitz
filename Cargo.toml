@@ -111,12 +111,12 @@ taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "c25605620351786eb6
 # The font value types shared by the text backends, from Parley's release
 parlance = { version = "0.1.1", default-features = false, features = ["std"] }
 parley = { version = "0.12", default-features = false, features = ["std"] }
-# Its `dictionaries` feature, ICU's line and word dictionaries, is blitz-dom's
-# `complex-scripts`.
-winkin = { git = "https://github.com/dfrg/winkin", rev = "7eb1c68aad93f87947eae7b604a0024b146e220a", default-features = false, features = ["std"] }
+# Its `dictionaries` feature, cleft's word dictionaries of the scripts that
+# break by dictionary, is blitz-dom's `complex-scripts`.
+winkin = { version = "0.1.0", default-features = false, features = ["std"] }
 # The fonts winkin chooses from. Its `system` feature, the platform's font
 # APIs, is blitz-dom's `system-fonts`.
-fontwich = { git = "https://github.com/dfrg/winkin", rev = "7eb1c68aad93f87947eae7b604a0024b146e220a", default-features = false, features = ["std"] }
+fontwich = { version = "0.1.0", default-features = false, features = ["std"] }
 skrifa = { version = "0.44", default-features = false, features = [
     "std",
 ] } # Should match parley and vello versions
