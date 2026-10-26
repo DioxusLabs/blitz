@@ -2,7 +2,7 @@ use blitz_traits::node_id::NodeId;
 use cssparser::Parser;
 use kurbo::{Affine, Rect as KurboRect};
 use linebender_resource_handle::Blob;
-use markup5ever::{LocalName, QualName, local_name};
+use markup5ever::{LocalName, QualName, local_name, ns};
 use selectors::matching::{ElementSelectorFlags, QuirksMode};
 use std::cell::Cell;
 use std::str::FromStr;
@@ -530,10 +530,15 @@ impl ElementData {
     }
 
     pub fn flush_open_state(&mut self) {
-        let is_open = matches!(
-            self.name.local,
-            local_name!("details") | local_name!("dialog")
-        ) && self.has_attr(local_name!("open"));
+        let is_open = self.name.ns == ns!(html)
+            && matches!(
+                self.name.local,
+                local_name!("details") | local_name!("dialog")
+            )
+            && self
+                .attrs
+                .iter()
+                .any(|attr| attr.name.ns == ns!() && attr.name.local == local_name!("open"));
         self.element_state.set(ElementState::OPEN, is_open);
     }
 

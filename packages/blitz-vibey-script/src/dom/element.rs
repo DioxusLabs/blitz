@@ -57,6 +57,13 @@ pub(crate) fn init_element_proto(proto: &JsObject, context: &mut Context) {
     );
     define_accessor(
         proto,
+        "open",
+        Some(attributes::get_open),
+        Some(attributes::set_open),
+        context,
+    );
+    define_accessor(
+        proto,
         "hidden",
         Some(attributes::get_hidden),
         Some(attributes::set_hidden),

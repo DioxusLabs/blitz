@@ -510,6 +510,42 @@ fn element_hidden_reflection() {
     assert_eq!(text_of_selector(&doc, "#out"), "false|true|false");
 }
 
+#[test]
+fn details_and_dialog_open_reflection() {
+    let doc = doc_from_html(
+        r#"<html><body><div id="out"></div><script>
+            const results = [];
+            for (const tag of ["details", "dialog"]) {
+                const el = document.createElement(tag);
+                results.push(el.open);
+                el.open = true;
+                results.push(el.open, el.getAttribute("open"));
+                el.open = false;
+                results.push(el.open, el.hasAttribute("open"));
+                el.setAttribute("open", "false");
+                results.push(el.open);
+                el.removeAttribute("open");
+                results.push(el.open);
+                el.open = "truthy";
+                results.push(el.open);
+                el.open = 0;
+                results.push(el.open);
+            }
+            const div = document.createElement("div");
+            div.open = true;
+            results.push(String(div.open), div.hasAttribute("open"));
+            const svg = document.createElementNS("http://www.w3.org/2000/svg", "details");
+            svg.open = true;
+            results.push(String(svg.open), svg.hasAttribute("open"));
+            document.getElementById("out").textContent = results.join("|");
+        </script></body></html>"#,
+    );
+    assert_eq!(
+        text_of_selector(&doc, "#out"),
+        "false|true||false|false|true|false|true|false|false|true||false|false|true|false|true|false|undefined|false|undefined|false"
+    );
+}
+
 // `selectionStart`/`selectionEnd` read and write the text input's real editor
 // selection (in UTF-16 code units); `setSelectionRange` sets both. Non-input
 // elements report null. React snapshots/restores the caret around controlled
