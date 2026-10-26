@@ -25,6 +25,32 @@ use crate::layout::LayoutPassState;
 use crate::layout::resolve_calc_value;
 use crate::stylo_to_parley;
 
+/// Transfers `size` through `aspect_ratio` into an unset axis, unless that axis has an automatic
+/// minimum (`min-*: auto` and not a scroll container in that axis): it then stays content-sized, and its
+/// transferred size is returned as its minimum (<https://drafts.csswg.org/css-sizing-4/#aspect-ratio-minimum>).
+/// Returns `(size, aspect_ratio_minimum)`.
+fn transfer_aspect_ratio(
+    style: &impl taffy::CoreStyle,
+    size: Size<Option<f32>>,
+    aspect_ratio: Option<f32>,
+) -> (Size<Option<f32>>, Size<Option<f32>>) {
+    let transferred = size.maybe_apply_aspect_ratio(aspect_ratio);
+    let min_size = style.min_size();
+    let overflow = style.overflow();
+    let has_automatic_minimum = Size {
+        width: size.width.is_none()
+            && min_size.width.is_auto()
+            && !overflow.x.is_scroll_container(),
+        height: size.height.is_none()
+            && min_size.height.is_auto()
+            && !overflow.y.is_scroll_container(),
+    };
+    (
+        transferred.zip_map(has_automatic_minimum, |size, auto| size.filter(|_| !auto)),
+        transferred.zip_map(has_automatic_minimum, |size, auto| size.filter(|_| auto)),
+    )
+}
+
 /// Subtract a child's margins from the definite axes of the available space it is laid out in.
 /// Taffy's convention is that the parent subtracts a child's margins from the available space
 /// before passing it to the child, and that the child does not subtract them again.
@@ -124,11 +150,12 @@ impl LayoutPassState<'_> {
             }
             SizingMode::InherentSize => {
                 let aspect_ratio = style.aspect_ratio().ratio();
-                let style_size = style
-                    .size()
-                    .maybe_resolve(parent_size, resolve_calc_value)
-                    .maybe_apply_aspect_ratio(aspect_ratio)
-                    .maybe_add(box_sizing_adjustment);
+                let (style_size, aspect_ratio_minimum) = transfer_aspect_ratio(
+                    &style,
+                    style.size().maybe_resolve(parent_size, resolve_calc_value),
+                    aspect_ratio,
+                );
+                let style_size = style_size.maybe_add(box_sizing_adjustment);
                 let style_min_size = style
                     .min_size()
                     .maybe_resolve(parent_size, resolve_calc_value)
@@ -138,6 +165,11 @@ impl LayoutPassState<'_> {
                     .max_size()
                     .maybe_resolve(parent_size, resolve_calc_value)
                     .maybe_add(box_sizing_adjustment);
+                // An axis with an automatic minimum is sized by its content, floored by the transferred size
+                let style_min_size = aspect_ratio_minimum
+                    .maybe_add(box_sizing_adjustment)
+                    .maybe_clamp(style_min_size, style_max_size)
+                    .zip_map(style_min_size, |ratio_min, min| ratio_min.or(min));
 
                 let node_size =
                     known_dimensions.or(style_size.maybe_clamp(style_min_size, style_max_size));
@@ -305,11 +337,12 @@ impl LayoutPassState<'_> {
             }
             SizingMode::InherentSize => {
                 let aspect_ratio = style.aspect_ratio().ratio();
-                let style_size = style
-                    .size()
-                    .maybe_resolve(parent_size, resolve_calc_value)
-                    .maybe_apply_aspect_ratio(aspect_ratio)
-                    .maybe_add(box_sizing_adjustment);
+                let (style_size, aspect_ratio_minimum) = transfer_aspect_ratio(
+                    &style,
+                    style.size().maybe_resolve(parent_size, resolve_calc_value),
+                    aspect_ratio,
+                );
+                let style_size = style_size.maybe_add(box_sizing_adjustment);
                 let style_min_size = style
                     .min_size()
                     .maybe_resolve(parent_size, resolve_calc_value)
@@ -319,6 +352,11 @@ impl LayoutPassState<'_> {
                     .max_size()
                     .maybe_resolve(parent_size, resolve_calc_value)
                     .maybe_add(box_sizing_adjustment);
+                // An axis with an automatic minimum is sized by its content, floored by the transferred size
+                let style_min_size = aspect_ratio_minimum
+                    .maybe_add(box_sizing_adjustment)
+                    .maybe_clamp(style_min_size, style_max_size)
+                    .zip_map(style_min_size, |ratio_min, min| ratio_min.or(min));
 
                 let node_size =
                     known_dimensions.or(style_size.maybe_clamp(style_min_size, style_max_size));
@@ -899,6 +937,7 @@ impl LayoutPassState<'_> {
             height: f32_max(
                 clamped_size.height,
                 aspect_ratio
+                    .filter(|_| node_size.height.is_none())
                     .map(|ratio| clamped_size.width / ratio)
                     .unwrap_or(0.0),
             ),
