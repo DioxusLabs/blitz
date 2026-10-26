@@ -568,13 +568,13 @@ impl LayoutPassState<'_> {
                     }
 
                     // HACK: Cap scrollable overflow at node size to prevent scrolling
-                    let rect = output.scrollable_overflow_rect.rect();
+                    let overflow = output.scrollable_overflow_rect;
                     output.scrollable_overflow_rect = taffy::ScrollableOverflow::new(
                         taffy::Rect {
                             left: 0.0,
                             top: 0.0,
-                            right: rect.right.min(output.size.width),
-                            bottom: rect.bottom.min(output.size.height),
+                            right: overflow.right().min(output.size.width),
+                            bottom: overflow.bottom().min(output.size.height),
                         },
                         output.scrollable_overflow_rect.is_reversed(),
                     );
