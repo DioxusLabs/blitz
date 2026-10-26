@@ -782,14 +782,8 @@ mod tests {
             for cursor in [Some((3, 3)), None] {
                 let mut input = TextInputData::new(false);
                 let mut text_ctx = TextContext::new(Some(FontContext::default()));
-                input.apply_ime_event(
-                    &mut text_ctx,
-                    BlitzImeEvent::Preedit("仮".into(), cursor),
-                );
-                input.apply_ime_event(
-                    &mut text_ctx,
-                    BlitzImeEvent::Commit(committed.into()),
-                );
+                input.apply_ime_event(&mut text_ctx, BlitzImeEvent::Preedit("仮".into(), cursor));
+                input.apply_ime_event(&mut text_ctx, BlitzImeEvent::Commit(committed.into()));
                 assert_eq!(input.editor.raw_text(), committed);
                 input.apply_ime_event(&mut text_ctx, BlitzImeEvent::Disabled);
                 assert_eq!(input.editor.raw_text(), committed);
