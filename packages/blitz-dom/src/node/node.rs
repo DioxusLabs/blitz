@@ -30,7 +30,6 @@ use style::stylesheets::UrlExtraData;
 use style::values::computed::CSSPixelLength;
 use style::values::computed::Display as StyloDisplay;
 use style::values::computed::Rotate;
-use style::values::computed::position::Inset;
 use style::values::generics::transform::{Scale, Translate};
 use style::values::specified::box_::{DisplayInside, DisplayOutside};
 use style_dom::ElementState;
@@ -287,126 +286,6 @@ impl Node {
     #[inline]
     pub fn scroll_offset_mut(&mut self) -> &mut crate::Point<f64> {
         &mut self.layout_data_mut().scroll_offset
-    }
-
-    /// Sticky displacement in a reversed-origin scrollport, in physical CSS pixels.
-    pub fn sticky_offset(&self) -> taffy::Point<f32> {
-        let mut offset = taffy::Point::ZERO;
-        let Some(style) = self
-            .primary_styles()
-            .filter(|s| s.get_box().position == Position::Sticky)
-        else {
-            return offset;
-        };
-        let Some(parent_id) = self.layout_parent.get() else {
-            return offset;
-        };
-        let layout = self.final_layout();
-        let mut position = layout.location;
-        let mut current = self.with(parent_id);
-        loop {
-            let is_scrollport = current.primary_styles().is_some_and(|s| {
-                use style::values::computed::Overflow;
-                matches!(
-                    s.clone_overflow_x(),
-                    Overflow::Auto | Overflow::Scroll | Overflow::Hidden
-                ) || matches!(
-                    s.clone_overflow_y(),
-                    Overflow::Auto | Overflow::Scroll | Overflow::Hidden
-                )
-            });
-            if is_scrollport {
-                break;
-            }
-            position.x += current.final_layout().location.x - current.scroll_offset().x as f32;
-            position.y += current.final_layout().location.y - current.scroll_offset().y as f32;
-            let Some(parent) = current.layout_parent.get() else {
-                return offset;
-            };
-            current = self.with(parent);
-        }
-        let (reverse_x, reverse_y) = current.reversed_scroll_axes();
-        let port = current.final_layout();
-        let parent = self.with(parent_id);
-        let parent_layout = parent.final_layout();
-        let parent_origin = taffy::Point {
-            x: position.x - layout.location.x,
-            y: position.y - layout.location.y,
-        };
-        let (min, max) = if parent_id == current.id {
-            current.scroll_range()
-        } else {
-            (crate::Point::ZERO, crate::Point::ZERO)
-        };
-        let inset = style.get_position();
-        let resolve = |value: &Inset, basis| match value {
-            Inset::LengthPercentage(value) => Some(value.resolve(CSSPixelLength::new(basis)).px()),
-            _ => None,
-        };
-        let axis_offset = |reversed: bool,
-                           position: f32,
-                           size: f32,
-                           scroll: f64,
-                           start: f32,
-                           length: f32,
-                           start_inset: Option<f32>,
-                           end_inset: Option<f32>,
-                           cb_start: f32,
-                           cb_end: f32,
-                           margin_start: f32,
-                           margin_end: f32| {
-            if !reversed {
-                return 0.0;
-            }
-            let mut delta = 0.0;
-            let end_inset =
-                end_inset.map(|end| end.min(length - start_inset.unwrap_or(0.0) - size));
-            if let Some(end) = end_inset {
-                delta = (start + length - end - size - position + scroll as f32).min(0.0);
-            }
-            if let Some(inset) = start_inset {
-                delta = delta.max((start + inset - position + scroll as f32).max(0.0));
-            }
-            delta.clamp(
-                (cb_start + margin_start - position).min(0.0),
-                (cb_end - margin_end - size - position).max(0.0),
-            )
-        };
-        offset.x = axis_offset(
-            reverse_x,
-            position.x,
-            layout.size.width,
-            current.scroll_offset().x,
-            port.border.left,
-            current.client_width(),
-            resolve(&inset.left, current.client_width()),
-            resolve(&inset.right, current.client_width()),
-            parent_origin.x + parent_layout.border.left + parent_layout.padding.left + min.x as f32,
-            parent_origin.x + parent_layout.size.width
-                - parent_layout.border.right
-                - parent_layout.padding.right
-                + max.x as f32,
-            layout.margin.left,
-            layout.margin.right,
-        );
-        offset.y = axis_offset(
-            reverse_y,
-            position.y,
-            layout.size.height,
-            current.scroll_offset().y,
-            port.border.top,
-            current.client_height(),
-            resolve(&inset.top, current.client_height()),
-            resolve(&inset.bottom, current.client_height()),
-            parent_origin.y + parent_layout.border.top + parent_layout.padding.top + min.y as f32,
-            parent_origin.y + parent_layout.size.height
-                - parent_layout.border.bottom
-                - parent_layout.padding.bottom
-                + max.y as f32,
-            layout.margin.top,
-            layout.margin.bottom,
-        );
-        offset
     }
 
     #[inline]
@@ -1558,9 +1437,8 @@ impl Node {
             .primary_styles()
             .is_some_and(|style| style.clone_pointer_events() == PointerEvents::None);
 
-        let sticky = self.sticky_offset();
-        let mut x = x - self.final_layout().location.x - sticky.x + self.scroll_offset().x as f32;
-        let mut y = y - self.final_layout().location.y - sticky.y + self.scroll_offset().y as f32;
+        let mut x = x - self.final_layout().location.x + self.scroll_offset().x as f32;
+        let mut y = y - self.final_layout().location.y + self.scroll_offset().y as f32;
 
         if let Some(t) = self.transform().as_deref() {
             let p = t.inverse() * kurbo::Point::new(x as f64 * scale, y as f64 * scale);
@@ -1813,9 +1691,8 @@ impl Node {
 
     /// Computes the Document-relative coordinates of the `Node`
     pub fn absolute_position(&self, x: f32, y: f32) -> crate::util::Point<f32> {
-        let sticky = self.sticky_offset();
-        let x = x + self.final_layout().location.x + sticky.x - self.scroll_offset().x as f32;
-        let y = y + self.final_layout().location.y + sticky.y - self.scroll_offset().y as f32;
+        let x = x + self.final_layout().location.x - self.scroll_offset().x as f32;
+        let y = y + self.final_layout().location.y - self.scroll_offset().y as f32;
 
         // Recurse up the positioning hierarchy
         self.containing_block()
