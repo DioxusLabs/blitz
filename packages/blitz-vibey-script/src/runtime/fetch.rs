@@ -4,9 +4,11 @@ use boa_engine::{Context, JsNativeError, JsResult, JsString, JsValue};
 use url::Url;
 
 use crate::dom::dom_ctx;
+use crate::fetch::{FetchError, document_may_load};
 
 /// `__blitz_fetch_sync(url)`: resolve `url` against the document base URL and
-/// fetch it via the document's [`ScriptFetcher`](crate::fetch::ScriptFetcher). Returns `[status, url, text]`:
+/// fetch it via the document's [`ScriptFetcher`](crate::fetch::ScriptFetcher) if the
+/// document may load it ([`document_may_load`]). Returns `[status, url, text]`:
 /// a missing resource yields a 404 (like an HTTP server would), any other
 /// failure throws a `TypeError` (a network error, in `fetch()` terms).
 pub(super) fn fetch_sync(
@@ -35,11 +37,14 @@ pub(super) fn fetch_sync(
     let fetcher =
         fetcher.ok_or_else(|| JsNativeError::typ().with_message("fetch is unavailable"))?;
 
-    let (status, text) = match fetcher.borrow().fetch(&url) {
+    let result = if document_may_load(base_url.as_ref(), &url) {
+        fetcher.borrow().fetch(&url)
+    } else {
+        Err(FetchError::Forbidden(url.clone()))
+    };
+    let (status, text) = match result {
         Ok(text) => (200, text),
-        Err(crate::fetch::FetchError::Io(error))
-            if error.kind() == std::io::ErrorKind::NotFound =>
-        {
+        Err(FetchError::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => {
             (404, String::new())
         }
         Err(error) => {
