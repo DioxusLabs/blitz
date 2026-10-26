@@ -94,10 +94,10 @@ impl BaseDocument {
             y = layout.location.y,
             width = layout.size.width,
             height = layout.size.height,
-            ol = layout.scrollable_overflow_rect.left,
-            or = layout.scrollable_overflow_rect.right,
-            ot = layout.scrollable_overflow_rect.top,
-            ob = layout.scrollable_overflow_rect.bottom,
+            ol = layout.scrollable_overflow_rect.rect().left,
+            or = layout.scrollable_overflow_rect.rect().right,
+            ot = layout.scrollable_overflow_rect.rect().top,
+            ob = layout.scrollable_overflow_rect.rect().bottom,
         );
         println!(
             "  border: l:{l} r:{r} t:{t} b:{b}",
