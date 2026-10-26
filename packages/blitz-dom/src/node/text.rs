@@ -774,27 +774,25 @@ impl TextInputData {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::text::{DocumentText as _, FontContext};
 
     #[test]
     fn ime_commit_replaces_preedit() {
         for committed in ["完成", ""] {
             for cursor in [Some((3, 3)), None] {
                 let mut input = TextInputData::new(false);
-                let mut font_ctx = FontContext::new();
-                let mut layout_ctx = LayoutContext::new();
+                let mut text_ctx = TextContext::new(Some(FontContext::default()));
                 input.apply_ime_event(
-                    &mut font_ctx,
-                    &mut layout_ctx,
+                    &mut text_ctx,
                     BlitzImeEvent::Preedit("仮".into(), cursor),
                 );
                 input.apply_ime_event(
-                    &mut font_ctx,
-                    &mut layout_ctx,
+                    &mut text_ctx,
                     BlitzImeEvent::Commit(committed.into()),
                 );
-                assert_eq!(input.editor.text(), committed);
-                input.apply_ime_event(&mut font_ctx, &mut layout_ctx, BlitzImeEvent::Disabled);
-                assert_eq!(input.editor.text(), committed);
+                assert_eq!(input.editor.raw_text(), committed);
+                input.apply_ime_event(&mut text_ctx, BlitzImeEvent::Disabled);
+                assert_eq!(input.editor.raw_text(), committed);
             }
         }
     }
@@ -803,10 +801,9 @@ mod tests {
     fn ime_commit_without_preedit() {
         let mut input = TextInputData::new(false);
         input.apply_ime_event(
-            &mut FontContext::new(),
-            &mut LayoutContext::new(),
+            &mut TextContext::new(Some(FontContext::default())),
             BlitzImeEvent::Commit("text".into()),
         );
-        assert_eq!(input.editor.text(), "text");
+        assert_eq!(input.editor.raw_text(), "text");
     }
 }
