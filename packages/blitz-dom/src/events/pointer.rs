@@ -188,9 +188,9 @@ fn touch_action_pan_axes(doc: &BaseDocument, node_id: NodeId) -> (bool, bool) {
             }
 
             let scrolls_x = matches!(style.clone_overflow_x(), Overflow::Scroll | Overflow::Auto)
-                && node.final_layout().scroll_width() > 0.0;
+                && node.scroll_width() > node.client_width();
             let scrolls_y = matches!(style.clone_overflow_y(), Overflow::Scroll | Overflow::Auto)
-                && node.final_layout().scroll_height() > 0.0;
+                && node.scroll_height() > node.client_height();
             done_x |= scrolls_x;
             done_y |= scrolls_y;
 
