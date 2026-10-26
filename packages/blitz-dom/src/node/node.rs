@@ -1454,7 +1454,7 @@ impl Node {
             || y > size.height + self.scroll_offset().y as f32);
 
         let layout = self.final_layout();
-        let overflow_rect = layout.scrollable_overflow_rect.rect();
+        let overflow_rect = layout.scrollable_overflow_rect;
         let is_rtl = taffy::CoreStyle::direction(&self.layout_style()).is_rtl();
         let (gutter_left, gutter_top) = (is_rtl, false);
         #[cfg(feature = "writing-mode")]
@@ -1478,10 +1478,10 @@ impl Node {
             } else {
                 0.0
             };
-        let matches_content = !(x < overflow_rect.left + client_x
-            || x > overflow_rect.right + client_x
-            || y < overflow_rect.top + client_y
-            || y > overflow_rect.bottom + client_y);
+        let matches_content = !(x < overflow_rect.left() + client_x
+            || x > overflow_rect.right() + client_x
+            || y < overflow_rect.top() + client_y
+            || y > overflow_rect.bottom() + client_y);
 
         let matches_hoisted_content = match &self.stacking_context {
             Some(sc) => {
@@ -1986,17 +1986,17 @@ impl Node {
         } else {
             (inline, block)
         };
-        let rect = layout.scrollable_overflow_rect.rect();
+        let overflow = layout.scrollable_overflow_rect;
         taffy::Size {
             width: if reverse_x {
-                self.client_width() - rect.left
+                self.client_width() - overflow.left()
             } else {
-                self.client_width().max(rect.right)
+                self.client_width().max(overflow.right())
             },
             height: if reverse_y {
-                self.client_height() - rect.top
+                self.client_height() - overflow.top()
             } else {
-                self.client_height().max(rect.bottom)
+                self.client_height().max(overflow.bottom())
             },
         }
     }
