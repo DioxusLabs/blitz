@@ -49,7 +49,7 @@ blitz-dom = { workspace = true, features = ["svg", "woff", "accessibility", "sys
 blitz-html = { workspace = true }
 blitz-paint = { workspace = true, features = ["svg"] }
 blitz-net = { workspace = true, features = ["cookies"] }
-blitz-shell = { workspace = true, features = ["accessibility", "clipboard", "file-dialog"] }
+blitz-shell = { workspace = true, features = ["accessibility", "file-dialog"] }
 anyrender_vello = { workspace = true, optional = true }
 anyrender_skia = { workspace = true, optional = true }
 anyrender_vello_cpu = { workspace = true, features = ["multithreading"], optional = true }
