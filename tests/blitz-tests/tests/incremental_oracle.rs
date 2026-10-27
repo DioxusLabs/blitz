@@ -498,6 +498,25 @@ fn cached_same_bfc_child_replays_floats() {
 }
 
 #[test]
+fn cached_inline_root_moves_below_floats() {
+    let mut oracle = Oracle::new(
+        r#"<!doctype html><style>
+        body { margin:0; width:400px; }
+        #float { float:right; width:150px; height:100px; }
+        #spacer { height:150px; }
+        </style><div id=float></div><div id=spacer></div>
+        <p><span>Some text after the float. Some text after the float.
+        Some text after the float. Some text after the float.</span></p>"#,
+    );
+    oracle.step("move beside float", |doc| {
+        set_style(doc, "#spacer", "height:0px");
+    });
+    oracle.step("move below float", |doc| {
+        set_style(doc, "#spacer", "height:150px");
+    });
+}
+
+#[test]
 fn cached_atomic_inline_measurement_preserves_baselines() {
     let html = r#"<!doctype html><style>
         body { margin:0; font-size:16px; line-height:20px; }

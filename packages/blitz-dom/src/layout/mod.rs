@@ -169,6 +169,16 @@ impl LayoutPassState<'_> {
         let contains_floats = node
             .primary_styles()
             .is_some_and(|style| style.clone_float() != style::values::computed::Float::None);
+        if node.flags.is_inline_root()
+            && node.element_data().is_some_and(|element| {
+                element
+                    .inline_layout_data
+                    .as_ref()
+                    .is_some_and(|layout| layout.layout.inline_boxes().len() == 0)
+            })
+        {
+            return contains_floats;
+        }
         let children: Vec<_> = node
             .children
             .iter()
@@ -818,12 +828,18 @@ impl taffy::LayoutBlockContainer for LayoutPassState<'_> {
         inputs: taffy::LayoutInput,
         block_ctx: Option<&mut BlockContext<'_>>,
     ) -> taffy::LayoutOutput {
-        // Float state is not part of LayoutInput. Even an empty context must replay
-        // floats introduced by descendants. Nested BFCs are conservatively included.
+        // Inline roots query float slots at nonnegative offsets. Block descendants
+        // can reach above their parent through negative margins.
         #[cfg(feature = "floats")]
         if block_ctx.as_ref().is_some_and(|ctx| {
-            ctx.has_floats() || self.subtree_contains_floats(dom_node_id(node_id))
+            let affected_by_floats = if self.node_from_id(node_id).flags.is_inline_root() {
+                ctx.has_active_floats(0.0)
+            } else {
+                ctx.has_floats()
+            };
+            affected_by_floats || self.subtree_contains_floats(dom_node_id(node_id))
         }) {
+            self.node_from_id_mut(node_id).clear_layout_cache();
             return self.compute_child_layout_internal(node_id, inputs, block_ctx);
         }
         compute_cached_layout(self, node_id, inputs, |tree, node_id, inputs| {
