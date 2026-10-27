@@ -480,10 +480,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             None,
         );
 
-        cx.draw_outline(scene);
-        cx.draw_outset_box_shadow(scene);
-
-        // clip-path clip ayer
+        // clip-path clips all of the element's painting, including outlines and shadows.
         self.layer_manager.maybe_with_layer(
             scene,
             has_clip_path,
@@ -493,6 +490,9 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             None,
             None,
             |scene| {
+                cx.draw_outline(scene);
+                cx.draw_outset_box_shadow(scene);
+
                 // If the element has a CSS `mask`, then push an isolation layer for the
                 // masked content. The mask is applied when the layer is popped below.
                 let mask_layer_pushed = cx.maybe_push_css_mask_layer(scene);
