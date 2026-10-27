@@ -476,7 +476,6 @@ impl BaseDocument {
             });
         let font_ctx = Arc::new(Mutex::new(font_ctx));
 
-
         let viewport = config.viewport.unwrap_or_default();
         let media_type = config.media_type.unwrap_or_else(MediaType::screen);
         let device = make_device(&viewport, media_type.clone(), font_ctx.clone());
