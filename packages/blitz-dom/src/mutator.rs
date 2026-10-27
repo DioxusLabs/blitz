@@ -599,18 +599,35 @@ impl DocumentMutator<'_> {
     fn restyle_for_attribute_change(&mut self, node_id: NodeId, attr: &LocalName) {
         let node = &mut self.doc.nodes[node_id];
         let is_style = *attr == local_name!("style");
-        let style_only = is_style || *attr == local_name!("class") || *attr == local_name!("id");
+        // Attributes that box construction or layout read directly. Any other attribute only
+        // reaches layout through the cascade, so its damage comes from the computed-style diff.
+        let read_by_layout = matches!(
+            *attr,
+            local_name!("type")
+                | local_name!("value")
+                | local_name!("checked")
+                | local_name!("width")
+                | local_name!("height")
+                | local_name!("colspan")
+                | local_name!("rowspan")
+                | local_name!("rows")
+                | local_name!("cols")
+                | local_name!("start")
+                | local_name!("reversed")
+                | local_name!("src")
+                | local_name!("srcdoc")
+        );
         if let Some(mut data) = node.try_stylo_element_data_mut().and_then(|s| s.get_mut()) {
             data.hint |= if is_style {
                 RestyleHint::RESTYLE_STYLE_ATTRIBUTE
             } else {
                 RestyleHint::RESTYLE_SELF
             };
-            if !style_only {
+            if read_by_layout {
                 data.damage.insert(ALL_DAMAGE);
             }
         }
-        if !style_only {
+        if read_by_layout {
             node.mark_damaged();
         }
         // Mark ancestors dirty so the style traversal visits this subtree.
