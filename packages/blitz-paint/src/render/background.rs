@@ -387,14 +387,16 @@ impl ElementCx<'_, '_> {
             return;
         }
 
-        let (origin_rect, base_transform) = if self.layer_is_fixed(layer) {
-            self.fixed_positioning_area()
+        let (origin_rect, base_transform, clip_rect) = if self.layer_is_fixed(layer) {
+            let (viewport_rect, transform) = self.fixed_positioning_area();
+            (viewport_rect, transform, viewport_rect)
         } else {
-            (self.box_rect(layer.origin), self.transform)
+            (
+                self.box_rect(layer.origin),
+                self.transform,
+                self.box_rect(layer.clip),
+            )
         };
-
-        let frame_w = (origin_rect.width() / self.scale) as f32;
-        let frame_h = (origin_rect.height() / self.scale) as f32;
 
         // Size the SVG per the CSS default sizing algorithm
         // (https://drafts.csswg.org/css-images/#default-sizing). An SVG image
@@ -409,41 +411,73 @@ impl ElementCx<'_, '_> {
         }
         .filter(|r| r.is_finite() && *r > 0.0);
 
-        let bg_size = compute_layer_size(
+        let (bg_pos, bg_size) = compute_layer_position_and_size(
             layer,
-            frame_w,
-            frame_h,
+            origin_rect.width() / self.scale,
+            origin_rect.height() / self.scale,
             BackgroundSizeComputeMode::Intrinsic {
                 width: intrinsic_width,
                 height: intrinsic_height,
                 ratio: aspect_ratio,
             },
         );
-
-        if bg_size.width <= 0.0 || bg_size.height <= 0.0 {
+        let bg_pos = (bg_pos.to_vec2() * self.scale).to_point();
+        let bg_size = bg_size * self.scale;
+        if !bg_size.width.is_finite()
+            || !bg_size.height.is_finite()
+            || bg_size.width <= 0.0
+            || bg_size.height <= 0.0
+        {
             return;
         }
 
-        let viewport = super::svg_viewport_affine(
-            svg,
-            (bg_size.width * self.scale) as f32,
-            (bg_size.height * self.scale) as f32,
+        let BackgroundRepeat(repeat_x, repeat_y) = layer.repeat;
+        let x = explicit_axis_tiling(
+            *repeat_x,
+            origin_rect.x0,
+            origin_rect.width(),
+            clip_rect.x0,
+            clip_rect.width(),
+            bg_pos.x,
+            bg_size.width,
+        );
+        let y = explicit_axis_tiling(
+            *repeat_y,
+            origin_rect.y0,
+            origin_rect.height(),
+            clip_rect.y0,
+            clip_rect.height(),
+            bg_pos.y,
+            bg_size.height,
         );
 
-        let bg_pos = compute_layer_position(
-            layer,
-            frame_w - bg_size.width as f32,
-            frame_h - bg_size.height as f32,
-        );
+        // Match the gradient path's limit on explicit tiles. A near-zero
+        // background-size must not produce an unbounded scene.
+        if x.count as u64 * y.count as u64 > 500 {
+            return;
+        }
 
-        let transform = base_transform
-            * kurbo::Affine::translate((
-                origin_rect.x0 + bg_pos.x * self.scale,
-                origin_rect.y0 + bg_pos.y * self.scale,
-            ))
-            * viewport;
-
-        anyrender_svg::render_svg_tree(scene, &svg.tree, transform);
+        let viewport = super::svg_viewport_affine(svg, bg_size.width as f32, bg_size.height as f32);
+        let tile_rect = Rect::from_origin_size(Point::ZERO, bg_size);
+        for row in 0..y.count {
+            for col in 0..x.count {
+                let transform = base_transform
+                    * Affine::translate((
+                        x.translate + col as f64 * x.stride,
+                        y.translate + row as f64 * y.stride,
+                    ));
+                self.context.layer_manager.maybe_with_layer(
+                    scene,
+                    true,
+                    1.0,
+                    transform,
+                    &tile_rect,
+                    None,
+                    None,
+                    |scene| anyrender_svg::render_svg_tree(scene, &svg.tree, transform * viewport),
+                );
+            }
+        }
     }
 
     fn draw_raster_image_layer(&self, scene: &mut impl PaintScene, layer: &ImageLayerStyles) {
@@ -558,7 +592,7 @@ impl ElementCx<'_, '_> {
 
         let BackgroundRepeat(repeat_x, repeat_y) = layer.repeat;
 
-        let x = gradient_axis_tiling(
+        let x = explicit_axis_tiling(
             *repeat_x,
             origin_rect.x0,
             origin_rect.width(),
@@ -567,7 +601,7 @@ impl ElementCx<'_, '_> {
             bg_pos.x,
             bg_size.width,
         );
-        let y = gradient_axis_tiling(
+        let y = explicit_axis_tiling(
             *repeat_y,
             origin_rect.y0,
             origin_rect.height(),
@@ -627,35 +661,49 @@ fn compute_layer_position_and_size(
 ) -> (Point, Size) {
     use BackgroundRepeatKeyword::*;
 
-    let bg_size = compute_layer_size(layer, container_w as f32, container_h as f32, size_mode);
+    let has_intrinsic_ratio = matches!(
+        &size_mode,
+        BackgroundSizeComputeMode::Size(..)
+            | BackgroundSizeComputeMode::Intrinsic { ratio: Some(_), .. }
+    );
+    let mut bg_size = compute_layer_size(layer, container_w as f32, container_h as f32, size_mode);
+    let original_size = bg_size;
+    let BackgroundRepeat(repeat_x, repeat_y) = layer.repeat;
 
+    if matches!(repeat_x, Round) && bg_size.width > 0.0 {
+        let count = (container_w / bg_size.width).round().max(1.0);
+        bg_size.width = container_w / count;
+    }
+    if matches!(repeat_y, Round) && bg_size.height > 0.0 {
+        let count = (container_h / bg_size.height).round().max(1.0);
+        bg_size.height = container_h / count;
+    }
+    if has_intrinsic_ratio {
+        if let BackgroundSize::ExplicitSize { width, height } = layer.size {
+            // When only one axis is rounded, an auto-sized other axis retains
+            // the image's aspect ratio (CSS Backgrounds 3, background-repeat).
+            if matches!(repeat_x, Round)
+                && !matches!(repeat_y, Round)
+                && height.is_auto()
+                && original_size.width > 0.0
+            {
+                bg_size.height *= bg_size.width / original_size.width;
+            }
+            if matches!(repeat_y, Round)
+                && !matches!(repeat_x, Round)
+                && width.is_auto()
+                && original_size.height > 0.0
+            {
+                bg_size.width *= bg_size.height / original_size.height;
+            }
+        }
+    }
+    // Percentage positions depend on the final tile size, including round's adjustment.
     let bg_pos = compute_layer_position(
         layer,
         (container_w - bg_size.width) as f32,
         (container_h - bg_size.height) as f32,
     );
-
-    let BackgroundRepeat(repeat_x, repeat_y) = layer.repeat;
-
-    let bg_size = if matches!(repeat_x, Round) && matches!(repeat_y, Round) {
-        let count = (container_w / bg_size.width).round();
-        let width = container_w / count;
-
-        let count = (container_h / bg_size.height).round();
-        let height = container_h / count;
-
-        Size::new(width, height)
-    } else if matches!(repeat_x, Round) {
-        let count = (container_w / bg_size.width).round();
-        let width = container_w / count;
-        Size::new(width, bg_size.height)
-    } else if matches!(repeat_y, Round) {
-        let count = (container_h / bg_size.height).round();
-        let height = container_h / count;
-        Size::new(bg_size.width, height)
-    } else {
-        bg_size
-    };
 
     (bg_pos, bg_size)
 }
@@ -869,11 +917,11 @@ fn raster_axis_tiling(
     }
 }
 
-/// Per-axis placement and tiling for a gradient layer. Unlike raster images,
-/// gradients cannot rely on brush repetition, so `Repeat`/`Round` also produce
+/// Per-axis placement and tiling for gradient and SVG layers. Unlike raster images,
+/// these cannot rely on brush repetition, so `Repeat`/`Round` also produce
 /// explicit tiles. When the clip box extends beyond the origin box, tiling
 /// starts from the clip box edge so the pattern covers the whole clipped area.
-fn gradient_axis_tiling(
+fn explicit_axis_tiling(
     repeat: BackgroundRepeatKeyword,
     origin_start: f64,
     origin_len: f64,

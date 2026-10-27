@@ -66,6 +66,7 @@ mod stale_interaction_state;
 mod stale_node_mapping;
 mod style_property_invalidation;
 mod svg_attr_sizing;
+mod svg_background_repeat;
 mod svg_background_size;
 mod text_selection_anonymous_block;
 mod text_transform;
