@@ -649,14 +649,13 @@ impl DocumentMutator<'_> {
         ) {
             hint |= RestyleHint::RESTYLE_SELF;
         }
-        // A removal with no earlier element sibling restyles all children rather than each later
-        // sibling, so removing children front to back stays linear.
-        let front_removal = changed.is_empty()
-            && flags.contains(ElementSelectorFlags::HAS_SLOW_SELECTOR_LATER_SIBLINGS)
+        // A change with no earlier element sibling restyles all children with one hint rather
+        // than hinting each later sibling, so inserting or removing at the front stays linear.
+        let front_change = flags.contains(ElementSelectorFlags::HAS_SLOW_SELECTOR_LATER_SIBLINGS)
             && !parent.children[..changed.start]
                 .iter()
                 .any(|id| self.doc.nodes[*id].is_element());
-        if front_removal
+        if front_change
             || flags.intersects(
                 ElementSelectorFlags::HAS_SLOW_SELECTOR
                     | ElementSelectorFlags::HAS_SLOW_SELECTOR_NTH_OF
@@ -2622,6 +2621,18 @@ mod test {
             |m, ids| {
                 m.remove_node(ids[1]);
                 m.remove_node(ids[2]);
+            },
+        );
+    }
+
+    #[test]
+    fn inserting_at_the_front_restyles_adjacent_sibling_rules() {
+        check_incremental_restyle(
+            "div + div { color: red } div > div:nth-child(2) { width: 200px }",
+            |m| parent_with_text_and_children(m, 3),
+            |m, ids| {
+                let new = div(m, &[("class", "a")]);
+                m.insert_nodes_before(ids[1], &[new]);
             },
         );
     }
