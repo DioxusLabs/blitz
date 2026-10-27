@@ -11,7 +11,7 @@ use boa_engine::{Context, JsError, JsNativeError, JsResult, Source};
 use url::Url;
 
 use super::{ScriptRuntime, events::report_js_error};
-use crate::fetch::ScriptFetcher;
+use crate::fetch::{FetchError, ScriptFetcher, document_may_load};
 
 /// A [`ModuleLoader`] which fetches ES module imports synchronously via the
 /// document's [`ScriptFetcher`], resolving specifiers as URLs (relative to the
@@ -74,7 +74,12 @@ impl ModuleLoader for BlitzModuleLoader {
         if let Some(module) = self.get(&url) {
             return Ok(module);
         }
-        let code = self.fetcher.borrow().fetch(&url).map_err(|error| {
+        let result = if document_may_load(self.base_url.as_ref(), &url) {
+            self.fetcher.borrow().fetch(&url)
+        } else {
+            Err(FetchError::Forbidden(url.clone()))
+        };
+        let code = result.map_err(|error| {
             JsError::from(
                 JsNativeError::typ().with_message(format!("failed to fetch module {url}: {error}")),
             )

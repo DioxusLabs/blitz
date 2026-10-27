@@ -7,6 +7,9 @@ use url::Url;
 #[derive(Debug)]
 pub enum FetchError {
     UnsupportedScheme(String),
+    /// The requesting document is not allowed to load this URL
+    /// (see [`document_may_load`])
+    Forbidden(Url),
     Io(std::io::Error),
     InvalidData(String),
 }
@@ -17,6 +20,7 @@ impl fmt::Display for FetchError {
             Self::UnsupportedScheme(scheme) => {
                 write!(f, "unsupported URL scheme for script: {scheme}")
             }
+            Self::Forbidden(url) => write!(f, "not allowed to load {url} from this document"),
             Self::Io(error) => write!(f, "IO error fetching script: {error}"),
             Self::InvalidData(msg) => write!(f, "invalid script data: {msg}"),
         }
@@ -31,6 +35,14 @@ impl std::error::Error for FetchError {}
 /// scripts to execute in document order, blocking parsing.
 pub trait ScriptFetcher: 'static {
     fn fetch(&self, url: &Url) -> Result<String, FetchError>;
+}
+
+/// Whether a document at `document_url` may load `url` (via `<script src>`,
+/// `import` or `fetch()`). `file:` URLs may only be loaded by `file:` documents,
+/// so that remote pages cannot read local files.
+pub fn document_may_load(document_url: Option<&Url>, url: &Url) -> bool {
+    url.scheme() != "file"
+        || document_url.is_some_and(|document_url| document_url.scheme() == "file")
 }
 
 /// The default [`ScriptFetcher`]: supports `file:` and `data:` URLs.
