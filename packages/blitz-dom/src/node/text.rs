@@ -33,6 +33,22 @@ pub struct TextLayout {
     /// containing block (as `SPAN_*_CB` flags). The inline root claims those boxes in its place.
     /// Set by each `RunMode::PerformLayout` run of inline layout.
     pub span_cb_flags: stylo_taffy::StyleFlags,
+    /// How the last `RunMode::PerformLayout` run broke and aligned the lines: the lines that are
+    /// painted. A measuring run breaks them again at the width it measures with (min-content,
+    /// say); when the final layout then comes from Taffy's cache, nothing would break them back,
+    /// and the text would be painted as measured. See `compute_inline_layout_inner`.
+    pub performed: Option<PerformedLines>,
+}
+
+/// See [`TextLayout::performed`].
+#[derive(Clone, Copy, Debug)]
+pub struct PerformedLines {
+    /// The line width (scaled), as passed to `break_all_lines`.
+    pub width: f32,
+    pub text_indent: f32,
+    pub indent_options: parley::IndentOptions,
+    pub alignment: parley::layout::Alignment,
+    pub last_line_alignment: Option<parley::layout::Alignment>,
 }
 
 impl TextLayout {
