@@ -6,6 +6,8 @@ use std::sync::mpsc::Receiver;
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
 use winit::event_loop::ActiveEventLoop;
+#[cfg(not(any(target_os = "ios", target_arch = "wasm32")))]
+use winit::event_loop::ControlFlow;
 use winit::window::WindowId;
 
 use winit::{
@@ -221,6 +223,24 @@ impl<Rend: WindowRenderer> ApplicationHandler for BlitzApplication<Rend> {
     #[cfg(target_os = "macos")]
     fn macos_handler(&mut self) -> Option<&mut dyn ApplicationHandlerExtMacOS> {
         Some(self)
+    }
+
+    /// Draws the animation frames that are due, and wakes up for the next one.
+    #[cfg(not(any(target_os = "ios", target_arch = "wasm32")))]
+    fn about_to_wait(&mut self, event_loop: &dyn ActiveEventLoop) {
+        let now = web_time::Instant::now();
+        let mut next = None;
+        for window in self.windows.values_mut() {
+            match window.next_animation_frame {
+                Some(due) if due <= now => {
+                    window.next_animation_frame = None;
+                    window.request_redraw();
+                }
+                Some(due) => next = Some(next.map_or(due, |next: web_time::Instant| next.min(due))),
+                None => {}
+            }
+        }
+        event_loop.set_control_flow(next.map_or(ControlFlow::Wait, ControlFlow::WaitUntil));
     }
 
     #[cfg(target_os = "ios")]
