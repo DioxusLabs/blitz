@@ -3,6 +3,7 @@
 
 use std::path::PathBuf;
 
+use blitz_dom::text::EditableText as _;
 use blitz_dom::{Document, DocumentConfig, NodeId};
 use blitz_traits::events::{BlitzKeyEvent, DomEvent, KeyState, UiEvent};
 use blitz_vibey_script::ScriptDocument;

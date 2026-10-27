@@ -11,7 +11,6 @@ use icu_locale_core::LanguageIdentifier;
 use icu_properties::props::{GeneralCategory, GeneralCategoryGroup};
 use icu_properties::{CodePointMapData, CodePointMapDataBorrowed};
 use icu_segmenter::{WordSegmenter, WordSegmenterBorrowed, options::WordBreakInvariantOptions};
-use parley::{Brush, TreeBuilder};
 use style::computed_values::white_space_collapse::T as WhiteSpaceCollapse;
 use style::properties::ComputedValues;
 use style::values::computed::TextTransform;
@@ -99,12 +98,20 @@ fn casing_language(lang: LanguageIdentifier) -> LanguageIdentifier {
     }
 }
 
+/// The text pushed so far to a text backend's builder, which `capitalize` reads as context.
+pub(crate) trait PushedText {
+    /// The text pushed so far.
+    fn text(&self) -> &str;
+    /// Whether collapsible white space is pending at the end of the text, which ends a word.
+    fn has_pending_whitespace(&self) -> bool;
+}
+
 /// Applies text transforms to the sequence of text nodes in an inline formatting context.
 ///
 /// `capitalize` operates on words, which may span multiple text nodes, so the text already
-/// pushed to the [`TreeBuilder`] is used as context for word segmentation. Only look-behind
-/// is needed: whether a word boundary precedes a letter never depends on the text that
-/// follows it.
+/// pushed to the builder ([`PushedText`]) is used as context for word segmentation. Only
+/// look-behind is needed: whether a word boundary precedes a letter never depends on the text
+/// that follows it.
 #[derive(Default)]
 pub(crate) struct TextTransformer {
     /// The offset in the builder's text of the last forced word boundary.
@@ -117,17 +124,17 @@ pub(crate) struct TextTransformer {
 
 impl TextTransformer {
     /// Forces a word boundary (e.g. at an atomic inline or a forced line break).
-    pub(crate) fn word_break<B: Brush>(&mut self, builder: &TreeBuilder<'_, B>) {
+    pub(crate) fn word_break(&mut self, builder: &impl PushedText) {
         self.context_start = builder.text().len();
     }
 
     /// Transforms the content of a text node that is about to be pushed to `builder`.
     #[inline]
-    pub(crate) fn transform<'a, B: Brush>(
+    pub(crate) fn transform<'a>(
         &'a mut self,
         text: &'a str,
         transform: &CaseTransform,
-        builder: &TreeBuilder<'_, B>,
+        builder: &impl PushedText,
     ) -> &'a str {
         if transform.text_transform.is_empty() {
             return text;
@@ -135,11 +142,11 @@ impl TextTransformer {
         self.transform_nonempty(text, transform, builder)
     }
 
-    fn transform_nonempty<'a, B: Brush>(
+    fn transform_nonempty<'a>(
         &'a mut self,
         text: &'a str,
         transform: &CaseTransform,
-        builder: &TreeBuilder<'_, B>,
+        builder: &impl PushedText,
     ) -> &'a str {
         let case = transform.text_transform.case();
         if text.is_ascii()
@@ -250,7 +257,7 @@ fn is_collapsible(white_space_collapse: WhiteSpaceCollapse, c: char) -> bool {
 /// Maps `c` to its full-width form: the reverse of its `<wide>` decomposition mapping or its
 /// `<narrow>` decomposition mapping, if any.
 /// <https://drafts.csswg.org/css-text-3/#text-transform-mapping>
-pub fn full_width(c: char) -> char {
+pub(crate) fn full_width(c: char) -> char {
     const HALFWIDTH_KATAKANA: [char; 63] = [
         '\u{3002}', '\u{300C}', '\u{300D}', '\u{3001}', '\u{30FB}', '\u{30F2}', '\u{30A1}',
         '\u{30A3}', '\u{30A5}', '\u{30A7}', '\u{30A9}', '\u{30E3}', '\u{30E5}', '\u{30E7}',
@@ -293,7 +300,7 @@ pub fn full_width(c: char) -> char {
 
 /// Maps small kana to full-size kana.
 /// <https://drafts.csswg.org/css-text-3/#small-kana>
-pub fn full_size_kana(c: char) -> char {
+pub(crate) fn full_size_kana(c: char) -> char {
     const SMALL_KATAKANA_EXTENSIONS: [char; 16] = [
         '\u{30AF}', '\u{30B7}', '\u{30B9}', '\u{30C8}', '\u{30CC}', '\u{30CF}', '\u{30D2}',
         '\u{30D5}', '\u{30D8}', '\u{30DB}', '\u{30E0}', '\u{30E9}', '\u{30EA}', '\u{30EB}',
@@ -539,10 +546,10 @@ fn ceil_char_boundary(s: &str, mut index: usize) -> usize {
     index
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "parley"))]
 mod tests {
     use super::*;
-    use parley::{FontContext, LayoutContext, TextStyle};
+    use parley::{FontContext, LayoutContext, TextStyle, TreeBuilder};
 
     fn transform(kind: TextTransform, lang: &str, texts: &[&str]) -> Vec<String> {
         let transform = CaseTransform {
