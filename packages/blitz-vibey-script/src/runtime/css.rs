@@ -5,6 +5,18 @@ use boa_engine::{Context, JsNativeError, JsResult, JsValue, js_string};
 
 use crate::dom::{NodeRef, dom_ctx, node_id_of_value, to_rust_string, wrap_style_object};
 
+pub(super) fn css_property_names(
+    _: &JsValue,
+    _: &[JsValue],
+    context: &mut Context,
+) -> JsResult<JsValue> {
+    let names = style::properties::NonCustomPropertyId::iter()
+        .map(|id| id.name())
+        .filter(|name| blitz_dom::css_property_is_supported(name))
+        .map(|name| JsValue::from(js_string!(name)));
+    Ok(boa_engine::object::builtins::JsArray::from_iter(names, context).into())
+}
+
 pub(super) fn css_property_supported(
     _: &JsValue,
     args: &[JsValue],

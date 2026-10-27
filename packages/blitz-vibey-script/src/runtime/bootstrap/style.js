@@ -22,7 +22,32 @@
     const styleIterator = function* () {
         for (let i = 0; i < this.length; i++) yield this.item(i);
     };
+    const stylePrototypes = new WeakSet();
+    const installStyleProperties = (proto) => {
+        if (stylePrototypes.has(proto)) return;
+        for (const name of __blitz_css_property_names()) {
+            const camel = name.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+            const attributes = [name, camel];
+            if (name.startsWith("-webkit-")) {
+                attributes.push(camel[0].toLowerCase() + camel.slice(1));
+            }
+            if (name === "float") attributes.push("cssFloat");
+            for (const attribute of attributes) {
+                if (Object.hasOwn(proto, attribute)) continue;
+                Object.defineProperty(proto, attribute, {
+                    get() { return this.getPropertyValue(name); },
+                    set(value) {
+                        this.setProperty(name, value == null ? "" : String(value));
+                    },
+                    enumerable: true,
+                    configurable: true,
+                });
+            }
+        }
+        stylePrototypes.add(proto);
+    };
     globalThis.__blitz_wrap_style = function (native) {
+        installStyleProperties(Object.getPrototypeOf(native));
         return new Proxy(native, {
             get(target, prop) {
                 if (isIndexed(target)) {

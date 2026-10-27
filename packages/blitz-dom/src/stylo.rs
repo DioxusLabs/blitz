@@ -246,12 +246,15 @@ impl crate::document::BaseDocument {
             snapshot_map: &self.snapshots,
             registered_speculative_painters: &RegisteredPaintersImpl,
         };
-        let mut thread_local = ThreadLocalStyleContext::new();
-        let mut context = StyleContext {
-            shared: &shared,
-            thread_local: &mut thread_local,
+        // The thread-local context's sequential task list asserts the LAYOUT state when dropped
+        let styles = {
+            let mut thread_local = ThreadLocalStyleContext::new();
+            let mut context = StyleContext {
+                shared: &shared,
+                thread_local: &mut thread_local,
+            };
+            resolve_style(&mut context, node, RuleInclusion::All, None, None)
         };
-        let styles = resolve_style(&mut context, node, RuleInclusion::All, None, None);
 
         style::thread_state::exit(ThreadState::LAYOUT);
 
@@ -783,7 +786,12 @@ impl<'a> TElement for BlitzNode<'a> {
     }
 
     fn borrow_data(&self) -> Option<ElementDataRef<'_>> {
-        self.try_stylo_element_data().and_then(|s| s.get())
+        // Stylo reads the existence of element data as "has been styled" (its invalidator
+        // unwraps the primary style of every element with data it descends into), but an
+        // element here can carry data before it has styles.
+        self.try_stylo_element_data()
+            .and_then(|s| s.get())
+            .filter(|data| data.styles.primary.is_some())
     }
 
     fn mutate_data(&self) -> Option<ElementDataMut<'_>> {
