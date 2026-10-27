@@ -1455,7 +1455,11 @@ impl Node {
 
         let layout = self.final_layout();
         let overflow_rect = layout.scrollable_overflow_rect;
-        let is_rtl = taffy::CoreStyle::direction(&self.layout_style()).is_rtl();
+        // Not `layout_style()`: hit testing also reaches elements that have no computed styles
+        // yet (a pointer event before the first resolve). Those count as left-to-right.
+        let is_rtl = self.primary_styles().is_some_and(|style| {
+            style.clone_direction() == style::computed_values::direction::T::Rtl
+        });
         let (gutter_left, gutter_top) = (is_rtl, false);
         #[cfg(feature = "writing-mode")]
         let (gutter_left, gutter_top) = {
