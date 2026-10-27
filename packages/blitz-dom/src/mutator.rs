@@ -1791,6 +1791,24 @@ mod test {
         );
     }
 
+    /// Hit testing before the first resolve reaches elements that have no computed styles
+    /// yet: a pointer already over a window as it opens.
+    #[test]
+    fn hit_testing_before_the_first_resolve() {
+        let mut document = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(800, 600, 1.0, ColorScheme::Light)),
+            ..Default::default()
+        });
+        let root_id = document.root_node().id;
+        {
+            let mut mutator = document.mutate();
+            let html = mutator.create_element(qual_name!("html", html), vec![]);
+            mutator.append_children(root_id, &[html]);
+        }
+        // Nothing is laid out yet, so nothing is hit; what matters is that it doesn't panic.
+        assert!(document.hit(10.0, 10.0).is_none());
+    }
+
     #[test]
     fn style_property_mutation_copies_blocks_in_rule_tree() {
         let mut document = BaseDocument::new(DocumentConfig {
