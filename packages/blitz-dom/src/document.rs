@@ -1107,6 +1107,7 @@ impl BaseDocument {
             self.nodes[child_id].parent = Some(new_node_id);
         }
         self.nodes[new_node_id].children = new_children;
+        self.nodes.reindex_children(new_node_id, 0);
 
         new_node_id
     }

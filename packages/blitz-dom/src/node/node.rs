@@ -94,6 +94,10 @@ pub struct Node {
     pub parent: Option<NodeId>,
     // What are our children?
     pub children: ThinVec<NodeId>,
+    /// Position in the parent's `children`. `None` for a node that has a parent but is not in
+    /// its child list (pseudo-elements, anonymous blocks). Kept up to date by every child-list
+    /// edit via `NodeTree::reindex_children`.
+    pub(crate) child_idx: Option<usize>,
     /// Our parent in the layout hierachy: a separate list that includes anonymous collections of inline elements
     pub layout_parent: Cell<Option<NodeId>>,
     /// A separate child list that includes anonymous collections of inline elements
@@ -413,6 +417,7 @@ impl Node {
             id,
             parent: None,
             children: ThinVec::new(),
+            child_idx: None,
             layout_parent: Cell::new(None),
             oof_containing_block: Cell::new(None),
             layout_children: RefCell::new(None),
@@ -1012,17 +1017,22 @@ impl Node {
         }
     }
 
-    // Get the index of the current node in the parents child list
+    // Get the index of the given node in this node's child list
     pub fn index_of_child(&self, child_id: NodeId) -> Option<usize> {
-        self.children.iter().position(|id| *id == child_id)
+        let child = &self.tree()[child_id];
+        let index = child.child_idx.filter(|_| child.parent == Some(self.id));
+        debug_assert_eq!(index, self.children.iter().position(|id| *id == child_id));
+        index
     }
 
     // Get the index of the current node in the parents child list
     pub fn child_index(&self) -> Option<usize> {
-        self.tree()[self.parent?]
-            .children
-            .iter()
-            .position(|id| *id == self.id)
+        let parent = &self.tree()[self.parent?];
+        debug_assert_eq!(
+            self.child_idx,
+            parent.children.iter().position(|id| *id == self.id)
+        );
+        self.child_idx
     }
 
     // Get the nth node in the parents child list

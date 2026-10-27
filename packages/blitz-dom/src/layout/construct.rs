@@ -705,6 +705,7 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: NodeId) {
                 let text_node_id = doc.create_text_node(&text);
                 doc.nodes[text_node_id].parent = Some(new_node_id);
                 doc.nodes[new_node_id].children.push(text_node_id);
+                doc.nodes.reindex_children(new_node_id, 0);
             }
 
             doc.nodes[new_node_id].record_out_of_flow(pe_style);
@@ -750,6 +751,7 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: NodeId) {
                     let text_node_id = doc.create_text_node(&new_text);
                     doc.nodes[text_node_id].parent = Some(pe_node_id);
                     doc.nodes[pe_node_id].children.push(text_node_id);
+                    doc.nodes.reindex_children(pe_node_id, 0);
                     doc.nodes[node_id].insert_damage(ALL_DAMAGE);
                 }
                 (Some(text_node_id), None) => {

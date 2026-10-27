@@ -10,7 +10,8 @@ use crate::node::{CanvasData, NodeFlags, SpecialElementData};
 use crate::stylo_device::DeviceChanges;
 use crate::util::ImageType;
 use crate::{
-    Attribute, BaseDocument, Document, ElementData, Node, NodeData, QualName, local_name, qual_name,
+    Attribute, BaseDocument, Document, ElementData, Node, NodeData, NodeTree, QualName, local_name,
+    qual_name,
 };
 use blitz_traits::shell::Viewport;
 use selectors::matching::ElementSelectorFlags;
@@ -536,11 +537,12 @@ impl DocumentMutator<'_> {
 
         // Update child_idx values
         if let Some(parent_id) = node.parent.take() {
+            let index = node.child_idx.unwrap_or(0);
             self.mutations_occurred |= node_is_in_document;
             let parent = &mut self.doc.nodes[parent_id];
             parent.insert_damage(ALL_DAMAGE);
-            let index = parent.index_of_child(node_id).unwrap_or(0);
             parent.children.retain(|id| *id != node_id);
+            self.doc.nodes.reindex_children(parent_id, index);
             if node_is_in_document {
                 self.restyle_for_child_list_change(parent_id, index..index);
             }
@@ -567,11 +569,12 @@ impl DocumentMutator<'_> {
 
         // Update child_idx values
         if let Some(parent_id) = node.as_ref().and_then(|node| node.parent) {
+            let index = node.as_ref().and_then(|node| node.child_idx).unwrap_or(0);
             let parent = &mut self.doc.nodes[parent_id];
             parent.insert_damage(ALL_DAMAGE);
             let parent_is_in_doc = parent.flags.is_in_document();
-            let index = parent.index_of_child(node_id).unwrap_or(0);
             parent.children.retain(|id| *id != node_id);
+            self.doc.nodes.reindex_children(parent_id, index);
 
             if parent_is_in_doc {
                 self.restyle_for_child_list_change(parent_id, index..index);
@@ -735,7 +738,8 @@ impl DocumentMutator<'_> {
 
     /// Remove all of the children from old_parent_id and append them to new_parent_id
     pub fn append_children(&mut self, parent_id: NodeId, child_ids: &[NodeId]) {
-        self.add_children_to_parent(parent_id, child_ids, &|parent, child_ids| {
+        self.add_children_to_parent(parent_id, child_ids, &|nodes, parent_id, child_ids| {
+            let parent = &mut nodes[parent_id];
             let index = parent.children.len();
             parent.children.extend_from_slice(child_ids);
             index
@@ -744,9 +748,9 @@ impl DocumentMutator<'_> {
 
     pub fn insert_nodes_before(&mut self, anchor_node_id: NodeId, new_node_ids: &[NodeId]) {
         let parent_id = self.doc.nodes[anchor_node_id].parent.unwrap();
-        self.add_children_to_parent(parent_id, new_node_ids, &|parent, child_ids| {
-            let node_child_idx = parent.index_of_child(anchor_node_id).unwrap();
-            parent
+        self.add_children_to_parent(parent_id, new_node_ids, &|nodes, parent_id, child_ids| {
+            let node_child_idx = nodes[parent_id].index_of_child(anchor_node_id).unwrap();
+            nodes[parent_id]
                 .children
                 .splice(node_child_idx..node_child_idx, child_ids.iter().copied());
             node_child_idx
@@ -757,7 +761,7 @@ impl DocumentMutator<'_> {
         &mut self,
         parent_id: NodeId,
         child_ids: &[NodeId],
-        insert_children_fn: &dyn Fn(&mut Node, &[NodeId]) -> usize,
+        insert_children_fn: &dyn Fn(&mut NodeTree, NodeId, &[NodeId]) -> usize,
     ) {
         let new_parent_is_in_document = self.doc.nodes[parent_id].flags.is_in_document();
         self.mutations_occurred |= new_parent_is_in_document && !child_ids.is_empty();
@@ -785,11 +789,12 @@ impl DocumentMutator<'_> {
             let Some(old_parent_id) = child.parent.take() else {
                 continue;
             };
+            let index = child.child_idx.unwrap_or(0);
 
             let old_parent = &mut self.doc.nodes[old_parent_id];
             old_parent.insert_damage(ALL_DAMAGE);
-            let index = old_parent.index_of_child(child_id).unwrap_or(0);
             old_parent.children.retain(|id| *id != child_id);
+            self.doc.nodes.reindex_children(old_parent_id, index);
 
             if child_was_in_doc {
                 self.restyle_for_child_list_change(old_parent_id, index..index);
@@ -798,9 +803,9 @@ impl DocumentMutator<'_> {
             self.maybe_record_node(old_parent_id);
         }
 
-        let new_parent = &mut self.doc.nodes[parent_id];
-        new_parent.insert_damage(ALL_DAMAGE);
-        let index = insert_children_fn(new_parent, child_ids);
+        self.doc.nodes[parent_id].insert_damage(ALL_DAMAGE);
+        let index = insert_children_fn(&mut self.doc.nodes, parent_id, child_ids);
+        self.doc.nodes.reindex_children(parent_id, index);
 
         if new_parent_is_in_document {
             self.restyle_for_child_list_change(parent_id, index..index + child_ids.len());

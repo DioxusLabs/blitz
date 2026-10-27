@@ -52,6 +52,16 @@ impl NodeTree {
         }
     }
 
+    /// Re-derives `child_idx` for `parent_id`'s children from position `from` on, after an
+    /// edit of its child list.
+    pub(crate) fn reindex_children(&mut self, parent_id: NodeId, from: usize) {
+        let mut i = from;
+        while let Some(&child_id) = self[parent_id].children.get(i) {
+            self[child_id].child_idx = Some(i);
+            i += 1;
+        }
+    }
+
     pub fn viewport_scroll(&self) -> crate::Point<f64> {
         self.viewport_scroll
     }
