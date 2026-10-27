@@ -649,11 +649,20 @@ impl DocumentMutator<'_> {
         ) {
             hint |= RestyleHint::RESTYLE_SELF;
         }
-        if flags.intersects(
-            ElementSelectorFlags::HAS_SLOW_SELECTOR
-                | ElementSelectorFlags::HAS_SLOW_SELECTOR_NTH_OF
-                | ElementSelectorFlags::MAY_HAVE_TREE_COUNTING_FUNCTION,
-        ) {
+        // A removal with no earlier element sibling restyles all children rather than each later
+        // sibling, so removing children front to back stays linear.
+        let front_removal = changed.is_empty()
+            && flags.contains(ElementSelectorFlags::HAS_SLOW_SELECTOR_LATER_SIBLINGS)
+            && !parent.children[..changed.start]
+                .iter()
+                .any(|id| self.doc.nodes[*id].is_element());
+        if front_removal
+            || flags.intersects(
+                ElementSelectorFlags::HAS_SLOW_SELECTOR
+                    | ElementSelectorFlags::HAS_SLOW_SELECTOR_NTH_OF
+                    | ElementSelectorFlags::MAY_HAVE_TREE_COUNTING_FUNCTION,
+            )
+        {
             hint |= RestyleHint::RESTYLE_DESCENDANTS;
         } else {
             let children = mem::take(&mut self.doc.nodes[parent_id].children);
@@ -2593,6 +2602,27 @@ mod test {
             "div > div:last-child { width: 200px }",
             |m| parent_with_text_and_children(m, 2),
             |m, ids| m.remove_node(ids[2]),
+        );
+    }
+
+    #[test]
+    fn removing_the_first_child_restyles_nth_child_siblings() {
+        check_incremental_restyle(
+            "div > div:nth-child(2) { width: 200px }",
+            |m| parent_with_children(m, 3),
+            |m, ids| m.remove_node(ids[1]),
+        );
+    }
+
+    #[test]
+    fn removing_children_front_to_back_restyles_nth_child_siblings() {
+        check_incremental_restyle(
+            "div > div:nth-child(2) { width: 200px } div + div { color: red }",
+            |m| parent_with_text_and_children(m, 4),
+            |m, ids| {
+                m.remove_node(ids[1]);
+                m.remove_node(ids[2]);
+            },
         );
     }
 }
