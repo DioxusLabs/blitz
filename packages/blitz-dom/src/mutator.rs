@@ -662,14 +662,20 @@ impl DocumentMutator<'_> {
             } else {
                 0..0
             };
-            // The children that were first/last before an insertion, or are after a removal.
+            // The element children that were first/last before an insertion, or are after a
+            // removal; text nodes don't count for `:first-child`/`:last-child`.
             let mut edge = [None, None];
             if flags.contains(ElementSelectorFlags::HAS_EDGE_CHILD_SELECTOR) {
-                if changed.start == 0 {
-                    edge[0] = children.get(changed.end).copied();
+                let is_element = |id: &NodeId| self.doc.nodes[*id].is_element();
+                if !children[..changed.start].iter().any(is_element) {
+                    edge[0] = children[changed.end..].iter().copied().find(is_element);
                 }
-                if changed.end == children.len() {
-                    edge[1] = changed.start.checked_sub(1).map(|i| children[i]);
+                if !children[changed.end..].iter().any(is_element) {
+                    edge[1] = children[..changed.start]
+                        .iter()
+                        .rev()
+                        .copied()
+                        .find(is_element);
                 }
             }
             for id in children[later].iter().chain(edge.iter().flatten()) {
@@ -2531,6 +2537,62 @@ mod test {
             3,
             focus_tree,
             |m, ids| m.append_children(ids[4], &[ids[3]]),
+        );
+    }
+
+    /// `html > parent > [" ", child, child, " "]`, ids `[parent, child, child]`.
+    fn parent_with_text_and_children(m: &mut DocumentMutator<'_>, count: usize) -> Vec<NodeId> {
+        let root_id = m.doc.root_element().id;
+        let parent = div(m, &[]);
+        let leading = m.create_text_node(" ");
+        let children: Vec<NodeId> = (0..count).map(|_| div(m, &[])).collect();
+        let trailing = m.create_text_node(" ");
+        m.append_children(parent, &[leading]);
+        m.append_children(parent, &children);
+        m.append_children(parent, &[trailing]);
+        m.append_children(root_id, &[parent]);
+        std::iter::once(parent).chain(children).collect()
+    }
+
+    #[test]
+    fn inserting_before_the_first_element_child_restyles_it_across_text() {
+        check_incremental_restyle(
+            "div > div:first-child { width: 200px }",
+            |m| parent_with_text_and_children(m, 2),
+            |m, ids| {
+                let new = div(m, &[]);
+                m.insert_nodes_before(ids[1], &[new]);
+            },
+        );
+    }
+
+    #[test]
+    fn inserting_after_the_last_element_child_restyles_it_across_text() {
+        check_incremental_restyle(
+            "div > div:last-child { width: 200px }",
+            |m| parent_with_text_and_children(m, 2),
+            |m, ids| {
+                let new = div(m, &[]);
+                m.insert_nodes_after(ids[2], &[new]);
+            },
+        );
+    }
+
+    #[test]
+    fn removing_the_first_element_child_restyles_the_next_across_text() {
+        check_incremental_restyle(
+            "div > div:first-child { width: 200px }",
+            |m| parent_with_text_and_children(m, 2),
+            |m, ids| m.remove_node(ids[1]),
+        );
+    }
+
+    #[test]
+    fn removing_the_last_element_child_restyles_the_previous_across_text() {
+        check_incremental_restyle(
+            "div > div:last-child { width: 200px }",
+            |m| parent_with_text_and_children(m, 2),
+            |m, ids| m.remove_node(ids[2]),
         );
     }
 }
