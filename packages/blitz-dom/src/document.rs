@@ -39,7 +39,9 @@ use std::rc::Rc;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
-use std::sync::{Arc, LazyLock, Mutex, MutexGuard, OnceLock, RwLockReadGuard, RwLockWriteGuard};
+use std::sync::{
+    Arc, LazyLock, Mutex, MutexGuard, Once, OnceLock, RwLockReadGuard, RwLockWriteGuard,
+};
 use std::task::{Context as TaskContext, Waker};
 use style::Atom;
 use style::animation::DocumentAnimationSet;
@@ -80,8 +82,54 @@ use thread_local::ThreadLocal;
 #[derive(Clone, Debug, PartialEq)]
 pub struct UserAgentStylesheet(DocumentStyleSheet);
 
+pub(crate) fn init_stylo_prefs() {
+    static INIT: Once = Once::new();
+    INIT.call_once(|| {
+        style_config::set_pref!("layout.css.flexbox-balance.enabled", true);
+        style_config::set_pref!("layout.css.columns.enabled", true);
+        style_config::set_pref!("layout.css.basic-shape-shape.enabled", true);
+        style_config::set_pref!("layout.css.tree-counting-functions.enabled", true);
+        style_config::set_pref!("layout.css.progress-function.enabled", true);
+        style_config::set_pref!("layout.css.font-variations.enabled", true);
+        style_config::set_pref!("layout.css.text-indent-keywords.enabled", true);
+        style_config::set_pref!("layout.css.word-break.break-word.enabled", true);
+        #[cfg(feature = "writing-mode")]
+        {
+            style_config::set_pref!("layout.css.writing-mode.enabled", true);
+            style_config::set_pref!("layout.css.writing-mode.sideways.enabled", true);
+        }
+
+        // Properties that were previously enabled by the `layout.unimplemented` pref
+        style_config::set_pref!("layout.css.appearance.enabled", true);
+        style_config::set_pref!("layout.css.backdrop-filter.enabled", true);
+        style_config::set_pref!("layout.css.contain.enabled", true);
+        style_config::set_pref!("layout.css.content.alt-text.enabled", true);
+        style_config::set_pref!("layout.css.corner-shape.enabled", true);
+        style_config::set_pref!("layout.css.counters.enabled", true);
+        style_config::set_pref!("layout.css.font-size-adjust.enabled", true);
+        style_config::set_pref!("layout.css.forced-color-adjust.enabled", true);
+        style_config::set_pref!("layout.css.masking.enabled", true);
+        style_config::set_pref!("layout.css.math-properties.enabled", true);
+        style_config::set_pref!("layout.css.motion-path.enabled", true);
+        style_config::set_pref!("layout.css.overscroll-behavior.enabled", true);
+        style_config::set_pref!("layout.css.scroll-driven-animations.enabled", true);
+        style_config::set_pref!("layout.css.scroll-behavior.enabled", true);
+        style_config::set_pref!("layout.css.scrollbar-styling.enabled", true);
+        style_config::set_pref!("layout.css.text-decoration-inset.enabled", true);
+        style_config::set_pref!("layout.css.text-overflow.enabled", true);
+        style_config::set_pref!("layout.css.text-underline.enabled", true);
+        style_config::set_pref!("layout.css.view-transitions.enabled", true);
+        style_config::set_pref!("layout.css.writing-mode.text-orientation.enabled", true);
+        style_config::set_pref!("layout.css.zoom.enabled", true);
+        style_config::set_pref!("layout.threads", -1);
+    });
+}
+
 impl UserAgentStylesheet {
     pub fn parse(css: &str) -> Self {
+        // Pref-gated UA declarations must be enabled before parsing.
+        init_stylo_prefs();
+
         let lock = SharedRwLock::read_only();
         let data = Stylesheet::from_str(
             css,
@@ -396,6 +444,8 @@ pub struct BaseDocument {
 impl BaseDocument {
     /// Create a new (empty) [`BaseDocument`] with the specified configuration
     pub fn new(config: DocumentConfig) -> Self {
+        init_stylo_prefs();
+
         static ID_GENERATOR: AtomicUsize = AtomicUsize::new(1);
 
         let id = ID_GENERATOR.fetch_add(1, Ordering::SeqCst);
@@ -426,44 +476,6 @@ impl BaseDocument {
             });
         let font_ctx = Arc::new(Mutex::new(font_ctx));
 
-        // Make sure we turn on stylo features *before* creating the Stylist
-        style_config::set_pref!("layout.css.flexbox-balance.enabled", true);
-        style_config::set_pref!("layout.css.columns.enabled", true);
-        style_config::set_pref!("layout.css.basic-shape-shape.enabled", true);
-        style_config::set_pref!("layout.css.tree-counting-functions.enabled", true);
-        style_config::set_pref!("layout.css.progress-function.enabled", true);
-        style_config::set_pref!("layout.css.font-variations.enabled", true);
-        style_config::set_pref!("layout.css.text-indent-keywords.enabled", true);
-        style_config::set_pref!("layout.css.word-break.break-word.enabled", true);
-        #[cfg(feature = "writing-mode")]
-        {
-            style_config::set_pref!("layout.css.writing-mode.enabled", true);
-            style_config::set_pref!("layout.css.writing-mode.sideways.enabled", true);
-        }
-
-        // Properties that were previously enabled by the `layout.unimplemented` pref
-        style_config::set_pref!("layout.css.appearance.enabled", true);
-        style_config::set_pref!("layout.css.backdrop-filter.enabled", true);
-        style_config::set_pref!("layout.css.contain.enabled", true);
-        style_config::set_pref!("layout.css.content.alt-text.enabled", true);
-        style_config::set_pref!("layout.css.corner-shape.enabled", true);
-        style_config::set_pref!("layout.css.counters.enabled", true);
-        style_config::set_pref!("layout.css.font-size-adjust.enabled", true);
-        style_config::set_pref!("layout.css.forced-color-adjust.enabled", true);
-        style_config::set_pref!("layout.css.masking.enabled", true);
-        style_config::set_pref!("layout.css.math-properties.enabled", true);
-        style_config::set_pref!("layout.css.motion-path.enabled", true);
-        style_config::set_pref!("layout.css.overscroll-behavior.enabled", true);
-        style_config::set_pref!("layout.css.scroll-driven-animations.enabled", true);
-        style_config::set_pref!("layout.css.scroll-behavior.enabled", true);
-        style_config::set_pref!("layout.css.scrollbar-styling.enabled", true);
-        style_config::set_pref!("layout.css.text-decoration-inset.enabled", true);
-        style_config::set_pref!("layout.css.text-overflow.enabled", true);
-        style_config::set_pref!("layout.css.text-underline.enabled", true);
-        style_config::set_pref!("layout.css.view-transitions.enabled", true);
-        style_config::set_pref!("layout.css.writing-mode.text-orientation.enabled", true);
-        style_config::set_pref!("layout.css.zoom.enabled", true);
-        style_config::set_pref!("layout.threads", -1);
 
         let viewport = config.viewport.unwrap_or_default();
         let media_type = config.media_type.unwrap_or_else(MediaType::screen);
