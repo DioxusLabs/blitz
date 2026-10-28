@@ -54,6 +54,26 @@ input {
     display: inline-block;
 }
 
+select:not([multiple]):not([size]),
+select:not([multiple])[size="1"],
+select:not([multiple])[size="0"] {
+    display: inline-block;
+    border: 1px solid #999;
+    padding: 2px 22px 2px 4px;
+    background-color: white;
+    white-space: normal;
+    cursor: default;
+    user-select: none;
+}
+
+select > span {
+    white-space: pre;
+}
+
+select > optgroup {
+    display: none;
+}
+
 /* https://html.spec.whatwg.org/#hidden-elements */
 input[type="hidden" i] {
     display: none !important;

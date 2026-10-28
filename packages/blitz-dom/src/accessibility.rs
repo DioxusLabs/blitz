@@ -138,6 +138,9 @@ impl BaseDocument {
             {
                 builder.set_expanded(aria_expanded);
             }
+            if let crate::node::SpecialElementData::Select(data) = &element_data.special_data {
+                builder.set_expanded(data.open);
+            }
 
             if element_data.attr(local_name!("aria-disabled")) == Some("true") {
                 builder.set_disabled();

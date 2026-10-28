@@ -380,12 +380,32 @@ pub enum SpecialElementData {
     TextInput(TextInputData),
     /// Checkbox checked state
     CheckboxInput(bool),
+    Select(SelectData),
     /// Selected files
     #[cfg(feature = "file-input")]
     FileInput(FileData),
     /// No data (for nodes that don't need any node-specific data)
     #[default]
     None,
+}
+
+#[derive(Clone)]
+pub struct SelectData {
+    pub selected: Option<NodeId>,
+    pub open: bool,
+    pub highlighted: Option<NodeId>,
+    pub scroll_offset: usize,
+    pub(crate) text_node: NodeId,
+    pub(crate) options: Vec<SelectOptionSnapshot>,
+    pub(crate) value: Option<String>,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct SelectOptionSnapshot {
+    pub(crate) node_id: NodeId,
+    pub(crate) selected: bool,
+    pub(crate) disabled: bool,
+    pub(crate) value: String,
 }
 
 impl Clone for SpecialElementData {
@@ -400,6 +420,7 @@ impl Clone for SpecialElementData {
             Self::TableRoot(data) => Self::TableRoot(data.clone()),
             Self::TextInput(data) => Self::TextInput(data.clone()),
             Self::CheckboxInput(data) => Self::CheckboxInput(*data),
+            Self::Select(data) => Self::Select(data.clone()),
             #[cfg(feature = "file-input")]
             Self::FileInput(data) => Self::FileInput(data.clone()),
             Self::None => Self::None,
@@ -940,6 +961,7 @@ impl std::fmt::Debug for SpecialElementData {
             SpecialElementData::TableRoot(_) => f.write_str("NodeSpecificData::TableRoot"),
             SpecialElementData::TextInput(_) => f.write_str("NodeSpecificData::TextInput"),
             SpecialElementData::CheckboxInput(_) => f.write_str("NodeSpecificData::CheckboxInput"),
+            SpecialElementData::Select(_) => f.write_str("NodeSpecificData::Select"),
             #[cfg(feature = "file-input")]
             SpecialElementData::FileInput(_) => f.write_str("NodeSpecificData::FileInput"),
             SpecialElementData::None => f.write_str("NodeSpecificData::None"),

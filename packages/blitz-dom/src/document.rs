@@ -390,6 +390,10 @@ pub struct BaseDocument {
     pub(crate) stylesheet_generation: u64,
     /// Map from form control node ID's to their associated forms node ID's
     pub(crate) controls_to_form: HashMap<NodeId, NodeId>,
+    pub(crate) select_nodes: HashSet<NodeId>,
+    pub(crate) dirty_select_nodes: HashSet<NodeId>,
+    pub open_select: Option<NodeId>,
+    pub(crate) select_pointer_capture: bool,
     /// Nodes that contain sub documents
     pub(crate) sub_document_nodes: HashSet<NodeId>,
     /// Load state (abort controller and in-flight request id) for each
@@ -557,6 +561,10 @@ impl BaseDocument {
             pending_style_image_nodes: Vec::new(),
             pending_critical_resources: HashSet::new(),
             controls_to_form: HashMap::new(),
+            select_nodes: HashSet::new(),
+            dirty_select_nodes: HashSet::new(),
+            open_select: None,
+            select_pointer_capture: false,
             net_provider,
             navigation_provider,
             shell_provider,
@@ -1748,6 +1756,7 @@ impl BaseDocument {
 
     /// Clear the focussed node
     pub fn clear_focus(&mut self) {
+        self.close_select();
         if let Some(id) = self.focus_node_id {
             let shell_provider = self.shell_provider.clone();
             self.snapshot_node_and(id, ElementState::FOCUS | ElementState::FOCUSRING, |node| {
@@ -1773,6 +1782,7 @@ impl BaseDocument {
         if Some(focus_node_id) == self.focus_node_id {
             return false;
         }
+        self.close_select();
         // A node that is not in the document cannot be focused
         if !self.nodes[focus_node_id].flags.is_in_document() {
             return false;

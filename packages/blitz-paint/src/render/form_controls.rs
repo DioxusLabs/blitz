@@ -9,6 +9,33 @@ use style::dom::TElement as _;
 
 impl ElementCx<'_, '_> {
     pub(super) fn draw_input(&self, scene: &mut impl PaintScene) {
+        if matches!(
+            self.element.special_data,
+            blitz_dom::node::SpecialElementData::Select(_)
+        ) {
+            let frame = self.frame.border_box;
+            let font_size = self
+                .style
+                .get_font()
+                .slow_clone_font_size()
+                .used_size()
+                .px() as f64;
+            let width = font_size * self.scale * 0.3;
+            let x = frame.x1 - 12.0 * self.scale;
+            let y = frame.center().y;
+            let mut path = BezPath::new();
+            path.move_to((x - width / 2.0, y - width / 4.0));
+            path.line_to((x, y + width / 4.0));
+            path.line_to((x + width / 2.0, y - width / 4.0));
+            scene.stroke(
+                &Stroke::new(font_size * self.scale * 0.08),
+                self.transform,
+                self.style.clone_color().as_srgb_color(),
+                None,
+                &path,
+            );
+            return;
+        }
         if self.node.local_name() != "input" {
             return;
         }

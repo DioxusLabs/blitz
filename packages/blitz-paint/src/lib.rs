@@ -11,6 +11,7 @@ mod gradient;
 mod kurbo_css;
 mod layers;
 mod render;
+mod select_overlay;
 mod sizing;
 mod text;
 
@@ -69,6 +70,7 @@ pub fn paint_scene(
         &custom_widget_scenes,
     );
     generator.paint_scene(scene);
+    select_overlay::paint_select_overlay(scene, doc, scale, x_offset, y_offset);
 
     // println!(
     //     "Rendered using {} clips (depth: {}) (wanted: {})",
