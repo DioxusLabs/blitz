@@ -3406,7 +3406,7 @@ mod hover_invalidation_tests {
 #[cfg(test)]
 mod picture_display_tests {
     use super::*;
-    use crate::{Attribute, qual_name};
+    use crate::qual_name;
     use blitz_traits::shell::ColorScheme;
 
     /// `<picture>` must generate a box (inline, as in browsers): the
