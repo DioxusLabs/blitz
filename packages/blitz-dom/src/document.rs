@@ -3439,6 +3439,79 @@ mod picture_display_tests {
 }
 
 #[cfg(test)]
+mod inline_with_only_block_children_tests {
+    use super::*;
+    use crate::qual_name;
+    use blitz_traits::shell::ColorScheme;
+
+    #[test]
+    fn inline_with_only_block_children_is_detected() {
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
+            ..Default::default()
+        });
+        doc.add_user_agent_stylesheet(crate::UserAgentStylesheet::parse(
+            "html, body, div { display: block }",
+        ));
+        let root_id = doc.root_node().id;
+        let mut mutator = doc.mutate();
+        let html = mutator.create_element(qual_name!("html"), vec![]);
+        mutator.append_children(root_id, &[html]);
+        let body = mutator.create_element(qual_name!("body"), vec![]);
+        mutator.append_children(html, &[body]);
+
+        let inline_with_block = mutator.create_element(qual_name!("span"), vec![]);
+        mutator.append_children(body, &[inline_with_block]);
+        let block_child = mutator.create_element(qual_name!("div"), vec![]);
+        mutator.append_children(inline_with_block, &[block_child]);
+
+        let inline_with_whitespace_and_block = mutator.create_element(qual_name!("span"), vec![]);
+        mutator.append_children(body, &[inline_with_whitespace_and_block]);
+        let whitespace = mutator.create_text_node("\n  ");
+        mutator.append_children(inline_with_whitespace_and_block, &[whitespace]);
+        let block_child = mutator.create_element(qual_name!("div"), vec![]);
+        mutator.append_children(inline_with_whitespace_and_block, &[block_child]);
+
+        let inline_with_text_and_block = mutator.create_element(qual_name!("span"), vec![]);
+        mutator.append_children(body, &[inline_with_text_and_block]);
+        let text = mutator.create_text_node("text");
+        mutator.append_children(inline_with_text_and_block, &[text]);
+        let block_child = mutator.create_element(qual_name!("div"), vec![]);
+        mutator.append_children(inline_with_text_and_block, &[block_child]);
+
+        let inline_with_inline_and_block = mutator.create_element(qual_name!("span"), vec![]);
+        mutator.append_children(body, &[inline_with_inline_and_block]);
+        let nested_inline = mutator.create_element(qual_name!("span"), vec![]);
+        mutator.append_children(inline_with_inline_and_block, &[nested_inline]);
+        let block_child = mutator.create_element(qual_name!("div"), vec![]);
+        mutator.append_children(nested_inline, &[block_child]);
+
+        let inline_with_text = mutator.create_element(qual_name!("span"), vec![]);
+        mutator.append_children(body, &[inline_with_text]);
+        let text = mutator.create_text_node("text");
+        mutator.append_children(inline_with_text, &[text]);
+
+        let empty_inline = mutator.create_element(qual_name!("span"), vec![]);
+        mutator.append_children(body, &[empty_inline]);
+
+        let block_with_block = mutator.create_element(qual_name!("div"), vec![]);
+        mutator.append_children(body, &[block_with_block]);
+        let nested_block = mutator.create_element(qual_name!("div"), vec![]);
+        mutator.append_children(block_with_block, &[nested_block]);
+        drop(mutator);
+
+        doc.resolve(0.0);
+        assert!(doc.nodes[inline_with_block].is_inline_with_only_block_children());
+        assert!(doc.nodes[inline_with_whitespace_and_block].is_inline_with_only_block_children());
+        assert!(!doc.nodes[inline_with_text_and_block].is_inline_with_only_block_children());
+        assert!(!doc.nodes[inline_with_inline_and_block].is_inline_with_only_block_children());
+        assert!(!doc.nodes[inline_with_text].is_inline_with_only_block_children());
+        assert!(!doc.nodes[empty_inline].is_inline_with_only_block_children());
+        assert!(!doc.nodes[block_with_block].is_inline_with_only_block_children());
+    }
+}
+
+#[cfg(test)]
 mod font_face_override_tests {
     use super::*;
     use crate::net::{FontFaceOverrides, Resource, ResourceLoadResponse};

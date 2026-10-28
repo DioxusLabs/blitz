@@ -526,6 +526,43 @@ impl Node {
         }
     }
 
+    /// An inline box whose in-flow content is block-level only, ignoring collapsible whitespace.
+    /// It is laid out as a block box, so its own background and borders must not be painted
+    /// over that content. Inline text or inline children keep the painting.
+    pub fn is_inline_with_only_block_children(&self) -> bool {
+        if !self
+            .display_style()
+            .is_some_and(|display| display.is_inline_flow())
+        {
+            return false;
+        }
+        let mut has_block_child = false;
+        for child in self.children.iter().map(|&child_id| &self.tree()[child_id]) {
+            if child.is_collapsible_whitespace_node() {
+                continue;
+            }
+            let style = child.primary_styles();
+            let out_of_flow = style.as_ref().is_some_and(|style| {
+                !matches!(
+                    style.clone_position(),
+                    Position::Static | Position::Relative | Position::Sticky
+                ) || style.clone_float().is_floating()
+            });
+            let outside = child
+                .display_style()
+                .unwrap_or(StyloDisplay::inline())
+                .outside();
+            if out_of_flow || outside == DisplayOutside::None {
+                continue;
+            }
+            if outside != DisplayOutside::Block {
+                return false;
+            }
+            has_block_child = true;
+        }
+        has_block_child
+    }
+
     pub fn is_whitespace_node(&self) -> bool {
         match &self.data {
             NodeData::Text(data) => data.content.chars().all(|c| c.is_ascii_whitespace()),
