@@ -61,7 +61,7 @@ pub use {
 };
 
 use blitz_dom::StyleThreading;
-pub use blitz_dom::{FontContext, Widget, build_single_font_ctx};
+pub use blitz_dom::{FontContext, Widget, WidgetCx, build_single_font_ctx};
 pub use config::Config;
 pub use event_handlers::WinitEventHandlerId;
 pub use hooks::{use_back_button, use_window_event};

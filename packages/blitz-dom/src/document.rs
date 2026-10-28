@@ -870,11 +870,12 @@ impl BaseDocument {
 
     #[cfg(feature = "custom-widget")]
     pub fn set_custom_widget(&mut self, node_id: NodeId, widget: Box<dyn crate::Widget>) {
-        self.nodes[node_id]
+        let cx = self.nodes[node_id]
             .element_data_mut()
             .unwrap()
             .set_custom_widget(widget);
         self.custom_widget_nodes.insert(node_id);
+        self.apply_widget_requests(node_id, cx);
     }
 
     #[cfg(feature = "custom-widget")]
