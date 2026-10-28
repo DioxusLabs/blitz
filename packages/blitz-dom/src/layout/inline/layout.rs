@@ -327,9 +327,6 @@ impl LayoutPassState<'_> {
         };
 
         let suppresses_baseline = style.contain().suppresses_baseline();
-        let overflow = style.overflow();
-        let is_scroll_container =
-            overflow.x.is_scroll_container() || overflow.y.is_scroll_container();
         drop(style);
 
         // Short circuit if inline context contains no text or inline boxes
@@ -1146,30 +1143,12 @@ impl LayoutPassState<'_> {
                     width: content_width,
                     height: measured_size.height,
                 } + padding.sum_axes();
-                let mut rect = taffy::Rect {
+                taffy::Rect {
                     left: 0.0,
                     right: content_extent.width,
                     top: 0.0,
                     bottom: content_extent.height + block_offset.max(0.0),
-                };
-                let client_width =
-                    final_size.width - border.left - border.right - scrollbar_gutter.x;
-                let is_rtl = container_direction.is_rtl();
-                if is_rtl {
-                    rect.left = (client_width - rect.right).min(0.0);
-                    rect.right = client_width.max(0.0);
                 }
-                if is_scroll_container {
-                    rect.left = if is_rtl { rect.left } else { 0.0 };
-                    rect.top = 0.0;
-                }
-                taffy::ScrollableOverflow::new(
-                    rect,
-                    taffy::Point {
-                        x: is_scroll_container && is_rtl,
-                        y: false,
-                    },
-                )
             },
             baselines: taffy::Baselines {
                 first: first_baseline,
