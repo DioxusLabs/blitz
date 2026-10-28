@@ -2,6 +2,8 @@
 
 use html_escape::{encode_quoted_attribute_to_string, encode_text_to_string};
 use markup5ever::{QualName, ns};
+use style::values::computed::Color;
+use style::values::computed::svg::{SVGPaint, SVGPaintKind};
 use style_traits::values::ToCss;
 use stylo_taffy::CopyStyleGetters;
 
@@ -114,6 +116,27 @@ impl Node {
         output
     }
 
+    /// The computed `fill` and `stroke` of this element as presentation attributes. Paint servers and
+    /// context values are left out, so the authored attribute stays in place.
+    fn svg_paint_attrs(&self, current_color: Option<&str>) -> Vec<(&'static str, String)> {
+        let Some(style) = self.primary_styles() else {
+            return Vec::new();
+        };
+        let svg = style.get_inherited_svg();
+        [("fill", svg.fill.clone()), ("stroke", svg.stroke.clone())]
+            .into_iter()
+            .filter_map(|(name, paint): (_, SVGPaint)| {
+                let value = match &paint.kind {
+                    SVGPaintKind::None => "none".to_owned(),
+                    SVGPaintKind::Color(Color::Absolute(color)) => color.to_css_string(),
+                    SVGPaintKind::Color(Color::CurrentColor) => current_color?.to_owned(),
+                    _ => return None,
+                };
+                Some((name, value))
+            })
+            .collect()
+    }
+
     fn write_outer_html_in_style(&self, writer: &mut String, opts: SerializeOpts, nesting: usize) {
         const INDENT: &str = "  ";
         let style = opts.style;
@@ -124,6 +147,11 @@ impl Node {
             .flatten()
             .map(|style| style.clone_color())
             .map(|color| color.to_css_string());
+        let paint_attrs = if opts.resolve_current_color {
+            self.svg_paint_attrs(current_color.as_deref())
+        } else {
+            Vec::new()
+        };
 
         match &self.data {
             NodeData::Document(_) => {}
@@ -181,6 +209,13 @@ impl Node {
                 }
 
                 for attr in data.attrs() {
+                    if attr.name.ns == ns!()
+                        && paint_attrs
+                            .iter()
+                            .any(|(name, _)| &*attr.name.local == *name)
+                    {
+                        continue;
+                    }
                     writer.push(' ');
                     write_attr_name(&attr.name, writer);
                     writer.push_str("=\"");
@@ -193,6 +228,13 @@ impl Node {
                     } else {
                         encode_quoted_attribute_to_string(&attr.value, writer);
                     }
+                    writer.push('"');
+                }
+                for (name, value) in &paint_attrs {
+                    writer.push(' ');
+                    writer.push_str(name);
+                    writer.push_str("=\"");
+                    encode_quoted_attribute_to_string(value, writer);
                     writer.push('"');
                 }
                 if !has_children {
