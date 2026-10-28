@@ -102,7 +102,9 @@ css/css-scroll-snap/snap-events/scrollsnapchange/scrollsnapchange-scrolling-non-
 css/css-scroll-snap/snap-events/snapevents-at-document-bubble-to-window.html scroll-events
 css/css-scroll-snap/snap-into-covering-area.html testdriver
 css/css-shapes/spec-examples/shape-outside-018.html font-loading-events
+css/css-sizing/responsive-iframe/responsive-iframe-allow-origins.html dynamic-load-events
 css/css-sizing/responsive-iframe/responsive-iframe-dom-content-loaded.html dynamic-load-events
+css/css-sizing/responsive-iframe/responsive-iframe-navigation-unsized.html dynamic-load-events
 css/css-sizing/responsive-iframe/responsive-iframe-request-resize-error.html dynamic-load-events
 css/css-transitions/before-load-001.html transition-events
 css/css-transitions/disconnected-element-001.html transition-events
