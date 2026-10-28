@@ -36,8 +36,7 @@ use style::{
         style_structs::Font,
     },
     values::{
-        computed::{CSSPixelLength, Contain, Overflow},
-        specified::box_::{DisplayInside, DisplayOutside},
+        computed::{CSSPixelLength, Overflow},
         specified::image::ImageRendering,
     },
 };
@@ -329,20 +328,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         // TODO: account for overflow_x vs overflow_y
         let overflow_x = styles.get_box().overflow_x;
         let overflow_y = styles.get_box().overflow_y;
-        // `contain: paint` (and stronger values like `strict`/`content`) clips the element's
-        // contents to its padding box. Paint containment does not apply to non-atomic inlines
-        // or internal table boxes other than table-cell.
-        let contain_paint = styles
-            .get_box()
-            .slow_clone_contain()
-            .contains(Contain::PAINT)
-            && {
-                let display = styles.clone_display();
-                let is_internal_table_box_other_than_cell = display.outside()
-                    == DisplayOutside::InternalTable
-                    && display.inside() != DisplayInside::TableCell;
-                !display.is_inline_flow() && !is_internal_table_box_other_than_cell
-            };
+        let contain_paint = node.has_paint_containment();
         let is_image = node
             .element_data()
             .and_then(|e| e.raster_image_data())
