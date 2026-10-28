@@ -1740,7 +1740,10 @@ impl Node {
                     if id == self.id {
                         continue;
                     }
-                    let offset = self.with(id).sticky_offset();
+                    let offset = self
+                        .tree()
+                        .get(id)
+                        .map_or(crate::Point { x: 0.0, y: 0.0 }, Node::sticky_offset);
                     if offset.x == 0.0 && offset.y == 0.0 {
                         continue;
                     }
@@ -1764,7 +1767,10 @@ impl Node {
             Cluster::from_point(layout, x, y)
         }?;
         let id = hit.0.style().brush.id;
-        let offset = self.with(id).sticky_offset();
+        let offset = self
+            .tree()
+            .get(id)
+            .map_or(crate::Point { x: 0.0, y: 0.0 }, Node::sticky_offset);
         if exact && id != self.id && (offset.x != 0.0 || offset.y != 0.0) {
             return None;
         }
