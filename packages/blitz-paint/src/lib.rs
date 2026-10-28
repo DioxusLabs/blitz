@@ -18,7 +18,9 @@ mod text;
 use std::collections::HashMap;
 
 use anyrender::{PaintScene, Scene};
-use blitz_dom::{BaseDocument, NodeId, util::Color};
+#[cfg(feature = "custom-widget")]
+use blitz_dom::NodeId;
+use blitz_dom::{BaseDocument, util::Color};
 use render::BlitzDomPainter;
 
 const FONT_EMBOLDEN_ENABLED: bool = cfg!(any(
@@ -31,10 +33,12 @@ const FONT_EMBOLDEN_ENABLED: bool = cfg!(any(
 const SELECTION_COLOR: Color = Color::from_rgb8(180, 213, 255);
 
 /// Pre-computed `Scene`s for each CustomWidget, keyed by `(document id, node id)`
+#[cfg(feature = "custom-widget")]
 type CustomWidgetSceneMap = HashMap<(usize, NodeId), Scene>;
 
 #[derive(Default)]
 pub(crate) struct PaintResources {
+    #[cfg(feature = "custom-widget")]
     custom_widget_scenes: CustomWidgetSceneMap,
     select_overlays: HashMap<usize, Scene>,
 }

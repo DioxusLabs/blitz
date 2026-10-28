@@ -196,6 +196,107 @@ fn open(h: &mut Harness) {
 }
 
 #[test]
+fn select_closed_hit_area_is_its_border_box() {
+    for options in [
+        "<option>MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM</option><option>An even longer dropdown option label</option>",
+        "<option>A</option><option>MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM</option>",
+        "",
+    ] {
+        for scale in [1.0, 2.0] {
+            let mut h = Harness::from_html_with(
+                &format!(
+                    r#"<body style="margin:20px"><select id="s" style="width:60px;height:32px;font:16px sans-serif;overflow:visible">{options}</select></body>"#,
+                ),
+                HarnessOptions {
+                    scale,
+                    ..Default::default()
+                },
+            );
+            let s = h.node("#s");
+            let rect = h.layout_rect("#s");
+            let (x, y) = (rect.x + rect.width + 5.0, rect.y + rect.height / 2.0);
+            assert_eq!(h.base().open_select, None);
+            click(&mut h, x, y);
+            assert_eq!(
+                h.base().open_select,
+                None,
+                "a click right of the closed border box must not open the select"
+            );
+            assert_ne!(h.hit(x, y).map(|hit| hit.node_id), Some(s));
+            let (x, y) = rect.center();
+            let hit = h.hit(x, y).unwrap();
+            assert_eq!(hit.node_id, s);
+            click(&mut h, x, y);
+            assert_eq!(h.base().open_select, Some(s));
+        }
+    }
+}
+
+#[test]
+fn select_hovering_disabled_row_clears_highlight() {
+    for commit in [Key::Named(NamedKey::Enter), Key::Character(" ".into())] {
+        for (direction, expected) in [(NamedKey::ArrowUp, "#a"), (NamedKey::ArrowDown, "#d")] {
+            let mut h = fixture();
+            let s = h.node("#s");
+            let c = h.node("#c");
+            let d = h.node("#d");
+            h.base_mut().set_selected_option(s, Some(c));
+            h.pump();
+            open(&mut h);
+            key(&mut h, NamedKey::End);
+            let overlay = h.base_mut().select_overlay().unwrap();
+            assert!(
+                overlay
+                    .rows
+                    .iter()
+                    .any(|row| row.option == d && row.highlighted)
+            );
+            let disabled = overlay.rows.iter().find(|row| row.disabled).unwrap();
+            h.move_mouse_to(
+                (disabled.rect.x + 5.0) as f32,
+                (disabled.rect.y + 5.0) as f32,
+            );
+            assert!(
+                h.base_mut()
+                    .select_overlay()
+                    .unwrap()
+                    .rows
+                    .iter()
+                    .all(|row| !row.highlighted)
+            );
+            assert_eq!(h.base().selected_option(s), Some(c));
+            key(&mut h, direction);
+            let overlay = h.base_mut().select_overlay().unwrap();
+            assert!(
+                overlay
+                    .rows
+                    .iter()
+                    .any(|row| row.option == h.node(expected) && row.highlighted),
+                "keyboard navigation resumes from selected Charlie"
+            );
+            let disabled = overlay.rows.iter().find(|row| row.disabled).unwrap();
+            h.move_mouse_to(
+                (disabled.rect.x + 5.0) as f32,
+                (disabled.rect.y + 5.0) as f32,
+            );
+            let events = h.dispatch_recorded([UiEvent::KeyDown(key_event(
+                commit.clone(),
+                KeyState::Pressed,
+                Modifiers::default(),
+            ))]);
+            h.pump();
+            assert_eq!(h.base().open_select, None);
+            assert_eq!(h.base().selected_option(s), Some(c));
+            assert!(
+                !events
+                    .iter()
+                    .any(|event| event == "input" || event == "change")
+            );
+        }
+    }
+}
+
+#[test]
 fn select_pointer_overlay_selection_and_events() {
     let mut h = fixture();
     open(&mut h);

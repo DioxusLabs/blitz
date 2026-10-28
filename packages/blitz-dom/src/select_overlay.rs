@@ -318,18 +318,15 @@ impl BaseDocument {
             match event {
                 UiEvent::PointerMove(pointer) => {
                     if let Some(overlay) = self.select_overlay() {
-                        let option = overlay
+                        let row = overlay
                             .rows
                             .iter()
-                            .find(|r| {
-                                !r.disabled
-                                    && contains(&r.rect, pointer.client_x(), pointer.client_y())
-                            })
-                            .map(|r| r.option);
-                        if let Some(option) = option {
+                            .find(|r| contains(&r.rect, pointer.client_x(), pointer.client_y()));
+                        if let Some(row) = row {
+                            let highlight = (!row.disabled).then_some(row.option);
                             let data = self.select_data_mut(id).unwrap();
-                            if data.highlighted != Some(option) {
-                                data.highlighted = Some(option);
+                            if data.highlighted != highlight {
+                                data.highlighted = highlight;
                                 self.shell_provider.request_redraw();
                             }
                         }
@@ -418,7 +415,9 @@ impl BaseDocument {
             .filter(|&o| !self.option_disabled(o))
             .collect();
         let current = if open {
-            self.select_data_mut(id).and_then(|d| d.highlighted)
+            self.select_data_mut(id)
+                .and_then(|d| d.highlighted)
+                .or_else(|| self.selected_option(id))
         } else {
             self.selected_option(id)
         };
