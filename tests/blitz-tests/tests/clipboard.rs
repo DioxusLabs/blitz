@@ -1,3 +1,4 @@
+use blitz_dom::text::EditableText as _;
 use blitz_test_harness::Harness;
 use blitz_traits::events::UiEvent;
 

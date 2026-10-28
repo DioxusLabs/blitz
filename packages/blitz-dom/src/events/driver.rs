@@ -288,11 +288,9 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
                 self.handle_dom_event(DomEvent::new(target, DomEventData::Ime(data)))
             }
             UiEvent::Paste(text) => {
-                super::ime::handle_ime_event(
-                    &mut self.doc.inner_mut(),
-                    blitz_traits::events::BlitzImeEvent::Commit(text),
-                    |event| self.queue.push_back(event),
-                );
+                super::ime::handle_paste(&mut self.doc.inner_mut(), text, |event| {
+                    self.queue.push_back(event)
+                });
                 self.process_queue();
             }
             UiEvent::AppleStandardKeybinding(data) => {

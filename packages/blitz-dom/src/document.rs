@@ -6,11 +6,15 @@ use crate::mutator::ViewportMut;
 use crate::net::{
     Resource, ResourceHandler, ResourceLoadResponse, StylesheetHandler, StylesheetLoader,
 };
-use crate::node::{ImageData, NodeFlags, RasterImageData, SpecialElementData, Status, TextBrush};
+use crate::node::{ImageData, NodeFlags, RasterImageData, SpecialElementData, Status};
 use crate::scrolling::ScrollAnimationState;
 use crate::selection::TextSelection;
 use crate::stylo_device::{DeviceChanges, make_device};
 use crate::stylo_to_cursor_icon::stylo_to_cursor_icon;
+use crate::text::{
+    DocumentText as _, Edit, EditEngine as _, EditableText as _, InlineText as _, TextContext,
+    TextInputDriver,
+};
 use crate::traversal::TreeTraverser;
 use crate::url::DocumentUrl;
 use crate::util::ImageType;
@@ -26,9 +30,7 @@ use blitz_traits::net::{AbortSignal, DummyNetProvider, NetProvider, Request};
 use blitz_traits::node_id::NodeId;
 use blitz_traits::shell::{DummyShellProvider, ShellProvider, Viewport};
 use cursor_icon::CursorIcon;
-use linebender_resource_handle::Blob;
 use markup5ever::{LocalName, local_name};
-use parley::{FontContext, PlainEditorDriver};
 use selectors::{Element, matching::QuirksMode};
 use smallvec::SmallVec;
 use std::any::Any;
@@ -39,9 +41,7 @@ use std::rc::Rc;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
-use std::sync::{
-    Arc, LazyLock, Mutex, MutexGuard, Once, OnceLock, RwLockReadGuard, RwLockWriteGuard,
-};
+use std::sync::{Arc, LazyLock, MutexGuard, Once, OnceLock, RwLockReadGuard, RwLockWriteGuard};
 use std::task::{Context as TaskContext, Waker};
 use style::Atom;
 use style::animation::DocumentAnimationSet;
@@ -72,9 +72,6 @@ use thin_vec::ThinVec;
 use url::Url;
 use web_time::Instant;
 
-#[cfg(feature = "parallel-construct")]
-use thread_local::ThreadLocal;
-
 /// A user-agent stylesheet, parsed with a read-only lock so that it can be shared between documents.
 ///
 /// Documents with the same user-agent stylesheets (in the same order) also share Stylo's
@@ -91,15 +88,7 @@ pub(crate) fn init_stylo_prefs() {
         style_config::set_pref!("layout.css.tree-counting-functions.enabled", true);
         style_config::set_pref!("layout.css.progress-function.enabled", true);
         style_config::set_pref!("layout.css.font-variations.enabled", true);
-        style_config::set_pref!("layout.css.text-indent-keywords.enabled", true);
-        style_config::set_pref!("layout.css.word-break.break-word.enabled", true);
-        #[cfg(feature = "writing-mode")]
-        {
-            style_config::set_pref!("layout.css.writing-mode.enabled", true);
-            style_config::set_pref!("layout.css.writing-mode.sideways.enabled", true);
-        }
-
-        // Properties that were previously enabled by the `layout.unimplemented` pref
+        // The properties Stylo once gated together as unimplemented.
         style_config::set_pref!("layout.css.appearance.enabled", true);
         style_config::set_pref!("layout.css.backdrop-filter.enabled", true);
         style_config::set_pref!("layout.css.contain.enabled", true);
@@ -121,6 +110,40 @@ pub(crate) fn init_stylo_prefs() {
         style_config::set_pref!("layout.css.view-transitions.enabled", true);
         style_config::set_pref!("layout.css.writing-mode.text-orientation.enabled", true);
         style_config::set_pref!("layout.css.zoom.enabled", true);
+        // Text properties and values both text backends compute.
+        style_config::set_pref!("layout.css.dominant-baseline.enabled", true);
+        style_config::set_pref!("layout.css.font-synthesis.enabled", true);
+        style_config::set_pref!("layout.css.font-variant-caps.all-values.enabled", true);
+        style_config::set_pref!("layout.css.font-variant-emoji.enabled", true);
+        style_config::set_pref!("layout.css.hyphens.enabled", true);
+        style_config::set_pref!("layout.css.initial-letter.enabled", true);
+        style_config::set_pref!("layout.css.ruby.enabled", true);
+        style_config::set_pref!("layout.css.text-box.enabled", true);
+        style_config::set_pref!("layout.css.text-combine-upright.enabled", true);
+        style_config::set_pref!("layout.css.text-emphasis.enabled", true);
+        style_config::set_pref!("layout.css.text-indent-keywords.enabled", true);
+        style_config::set_pref!("layout.css.text-wrap-style.balance.enabled", true);
+        style_config::set_pref!("layout.css.text-wrap-style.pretty.enabled", true);
+        style_config::set_pref!(
+            "layout.css.white-space-collapse.preserve-spaces.enabled",
+            true
+        );
+        style_config::set_pref!("layout.css.word-break.break-word.enabled", true);
+        // `::first-line`, which winkin lays out; Parley ignores its styles.
+        style_config::set_pref!("layout.css.first-line.enabled", true);
+        // The `writing-mode` feature lays out vertical boxes and winkin
+        // vertical lines; without either the property stays unparsed.
+        #[cfg(any(feature = "writing-mode", text_winkin))]
+        {
+            style_config::set_pref!("layout.css.writing-mode.enabled", true);
+            style_config::set_pref!("layout.css.writing-mode.sideways.enabled", true);
+        }
+        // The text properties only winkin lays out.
+        #[cfg(text_winkin)]
+        {
+            style_config::set_pref!("layout.css.line-clamp.enabled", true);
+            style_config::set_pref!("layout.css.text-autospace.enabled", true);
+        }
         style_config::set_pref!("layout.threads", -1);
     });
 }
@@ -324,14 +347,8 @@ pub struct BaseDocument {
     /// Stylo invalidation map. We insert into this map prior to mutating nodes.
     pub(crate) snapshots: SnapshotMap,
 
-    // Parley contexts
-    /// A Parley font context
-    pub(crate) font_ctx: Arc<Mutex<parley::FontContext>>,
-    #[cfg(feature = "parallel-construct")]
-    /// Thread-and-document-local copies to the font context
-    pub(crate) thread_font_contexts: ThreadLocal<RefCell<Box<FontContext>>>,
-    /// A Parley layout context
-    pub(crate) layout_ctx: parley::LayoutContext<TextBrush>,
+    /// The document's fonts, and the contexts the text backend lays out text in
+    pub(crate) text: TextContext,
 
     /// The real (non-anonymous) node which is currently hovered (if any).
     /// This is never a layout-generated (anonymous) node, so it remains valid
@@ -364,6 +381,13 @@ pub struct BaseDocument {
     /// When each scroll container's overlay scrollbars were last shown
     /// (scrolled, or the pointer left the thumb); drives their fade-out
     pub(crate) scrollbar_activity: HashMap<NodeId, Instant>,
+    /// How long a password field shows the character typed last in the clear
+    /// ([`DocumentConfig::reveal_typed_password_character`]).
+    pub(crate) reveal_typed_password: Option<web_time::Duration>,
+    /// The password field showing a character in the clear, and when it masks it.
+    pub(crate) password_reveal: Option<(NodeId, Instant)>,
+    /// When a password field in a subdocument next masks the character it shows in the clear.
+    pub(crate) subdoc_text_input_deadline: Option<Instant>,
     /// Whether and what kind of scroll animation is currently in progress
     pub(crate) scroll_animation: ScrollAnimationState,
 
@@ -450,35 +474,11 @@ impl BaseDocument {
 
         let id = ID_GENERATOR.fetch_add(1, Ordering::SeqCst);
 
-        let font_ctx = config
-            .font_ctx
-            .map(|mut font_ctx| {
-                font_ctx.source_cache.make_shared();
-                // font_ctx.collection.make_shared();
-                font_ctx
-            })
-            .unwrap_or_else(|| {
-                use parley::fontique::{Collection, CollectionOptions, SourceCache};
-                let mut font_ctx = FontContext {
-                    source_cache: SourceCache::new_shared(),
-                    collection: Collection::new(CollectionOptions {
-                        shared: false,
-                        system_fonts: cfg!(all(
-                            feature = "system-fonts",
-                            not(target_arch = "wasm32")
-                        )),
-                    }),
-                };
-                font_ctx
-                    .collection
-                    .register_fonts(Blob::new(Arc::new(crate::BULLET_FONT) as _), None);
-                font_ctx
-            });
-        let font_ctx = Arc::new(Mutex::new(font_ctx));
+        let text = TextContext::new(config.font_ctx);
 
         let viewport = config.viewport.unwrap_or_default();
         let media_type = config.media_type.unwrap_or_else(MediaType::screen);
-        let device = make_device(&viewport, media_type.clone(), font_ctx.clone());
+        let device = make_device(&viewport, media_type.clone(), text.font_metrics_provider());
         let stylist = Stylist::new(device, QuirksMode::NoQuirks);
         let snapshots = SnapshotMap::new();
         let nodes = Box::new(NodeTree::new());
@@ -527,10 +527,7 @@ impl BaseDocument {
             url: base_url,
             nodes_to_stylesheet: BTreeMap::new(),
             stylesheet_generation: 0,
-            font_ctx,
-            #[cfg(feature = "parallel-construct")]
-            thread_font_contexts: ThreadLocal::new(),
-            layout_ctx: parley::LayoutContext::new(),
+            text,
 
             hover_node_id: None,
             hover_hit_node_id: None,
@@ -568,6 +565,9 @@ impl BaseDocument {
             drag_mode: DragMode::None,
             hovered_scrollbar: None,
             scrollbar_activity: HashMap::new(),
+            reveal_typed_password: config.reveal_typed_password_character,
+            password_reveal: None,
+            subdoc_text_input_deadline: None,
             scroll_animation: ScrollAnimationState::None,
             text_selection: TextSelection::default(),
         };
@@ -1402,40 +1402,7 @@ impl BaseDocument {
                 self.apply_iframe_html(node_id, res.request_id, res.resolved_url, &html);
             }
             Resource::Font(bytes, overrides) => {
-                let font = Blob::new(Arc::new(bytes));
-
-                // Build a `FontInfoOverride` from the `@font-face` descriptors
-                // captured during stylesheet parsing. Without this, parley
-                // reads the family name from the TTF's own metadata, which
-                // means CSS `font-family: 'Avenir Book'` won't match a font
-                // file that internally identifies as `Avenir 45 Book`.
-                let weight_override = overrides.weight.map(parley::fontique::FontWeight::new);
-                let info_override = parley::fontique::FontInfoOverride {
-                    family_name: overrides.family_name.as_deref(),
-                    weight: weight_override,
-                    style: overrides.style,
-                    ..Default::default()
-                };
-
-                // TODO: Investigate eliminating double-box
-                let mut global_font_ctx = self.font_ctx.lock().unwrap();
-                global_font_ctx
-                    .collection
-                    .register_fonts(font.clone(), Some(info_override));
-
-                #[cfg(feature = "parallel-construct")]
-                {
-                    rayon::broadcast(|_ctx| {
-                        let mut font_ctx = self
-                            .thread_font_contexts
-                            .get_or(|| RefCell::new(Box::new(global_font_ctx.clone())))
-                            .borrow_mut();
-                        font_ctx
-                            .collection
-                            .register_fonts(font.clone(), Some(info_override));
-                    });
-                }
-                drop(global_font_ctx);
+                self.text.add_web_font(bytes, &overrides);
 
                 // TODO: see if we can only invalidate if resolved fonts may have changed
                 self.invalidate_inline_contexts();
@@ -1748,6 +1715,7 @@ impl BaseDocument {
 
     /// Clear the focussed node
     pub fn clear_focus(&mut self) {
+        self.conceal_password();
         if let Some(id) = self.focus_node_id {
             let shell_provider = self.shell_provider.clone();
             self.snapshot_node_and(id, ElementState::FOCUS | ElementState::FOCUSRING, |node| {
@@ -1784,6 +1752,7 @@ impl BaseDocument {
         let shell_provider = self.shell_provider.clone();
 
         // Remove focus from the old node
+        self.conceal_password();
         if let Some(id) = self.focus_node_id {
             self.snapshot_node_and(id, ElementState::FOCUS | ElementState::FOCUSRING, |node| {
                 node.blur(shell_provider.clone())
@@ -2158,6 +2127,62 @@ impl BaseDocument {
             .and_then(|el| el.sub_doc_data_mut())
     }
 
+    /// Returns when a password field next masks the character it shows in the clear
+    /// ([`DocumentConfig::reveal_typed_password_character`]), for a shell to wake and redraw at.
+    /// Redrawing runs [`expire_text_input_timers`](Self::expire_text_input_timers).
+    pub fn text_input_deadline(&self) -> Option<Instant> {
+        let own = self.password_reveal.map(|(_, deadline)| deadline);
+        match (own, self.subdoc_text_input_deadline) {
+            (Some(own), Some(subdoc)) => Some(own.min(subdoc)),
+            (own, subdoc) => own.or(subdoc),
+        }
+    }
+
+    /// Masks the character a password field shows in the clear where its time is up at `now`,
+    /// and returns whether it did.
+    pub fn expire_text_input_timers(&mut self, now: Instant) -> bool {
+        let expired = self
+            .password_reveal
+            .is_some_and(|(_, deadline)| deadline <= now);
+        if expired {
+            self.conceal_password();
+        }
+        expired
+    }
+
+    /// Records when the password field `node_id` masks the character it shows in the clear, after
+    /// an edit at `now`: none where it shows none.
+    pub(crate) fn note_password_reveal(&mut self, node_id: NodeId, now: Instant) {
+        let revealed = self
+            .get_node(node_id)
+            .and_then(|node| node.element_data())
+            .and_then(|element| element.text_input_data())
+            .is_some_and(|input| input.editor.revealed_range().is_some());
+        self.password_reveal = self
+            .reveal_typed_password
+            .filter(|_| revealed)
+            .map(|duration| (node_id, now + duration));
+    }
+
+    /// Masks the character a password field shows in the clear, where one does.
+    pub(crate) fn conceal_password(&mut self) {
+        let Some((node_id, _)) = self.password_reveal.take() else {
+            return;
+        };
+        let Some(input) = self
+            .nodes
+            .get_mut(node_id)
+            .and_then(|node| node.element_data_mut())
+            .and_then(|element| element.text_input_data_mut())
+        else {
+            return;
+        };
+        if input.editor.revealed_range().is_some() {
+            input.editor.edit(&mut self.text, Edit::Conceal);
+            self.shell_provider.request_redraw();
+        }
+    }
+
     pub fn is_animating(&self) -> bool {
         #[cfg(feature = "custom-widget")]
         let custom_widget_is_animating = self.custom_widget_nodes.iter().any(|&node_id| {
@@ -2198,7 +2223,7 @@ impl BaseDocument {
         self.set_stylist_device(make_device(
             &self.viewport,
             self.media_type.clone(),
-            self.font_ctx.clone(),
+            self.text.font_metrics_provider(),
         ));
         self.scroll_viewport_by(0.0, 0.0); // Clamp scroll offset
 
@@ -2547,11 +2572,8 @@ impl BaseDocument {
         self.find_element_by_tag_name(&local_name!("title"))
     }
 
-    pub fn with_text_input(
-        &mut self,
-        node_id: NodeId,
-        cb: impl FnOnce(PlainEditorDriver<TextBrush>),
-    ) {
+    /// Calls `cb` with the editor of the text input at `node_id`, if it is one.
+    pub fn with_text_input(&mut self, node_id: NodeId, cb: impl FnOnce(TextInputDriver<'_>)) {
         let Some(node) = self.nodes.get_mut(node_id) else {
             return;
         };
@@ -2560,10 +2582,10 @@ impl BaseDocument {
             .element_data_mut()
             .and_then(|el| el.text_input_data_mut())
         {
-            let mut font_ctx = self.font_ctx.lock().unwrap();
-            let layout_ctx = &mut self.layout_ctx;
-            let driver = text_input.editor.driver(&mut font_ctx, layout_ctx);
-            cb(driver)
+            cb(TextInputDriver {
+                editor: &mut text_input.editor,
+                cx: &mut self.text,
+            })
         }
     }
 
@@ -2742,14 +2764,14 @@ impl BaseDocument {
             let element_data = node.element_data()?;
             let inline_layout = element_data.inline_layout_data.as_ref()?;
 
-            if *end > inline_layout.text.len() {
+            let mut pieces = inline_layout.selected_text(*start, *end).peekable();
+            if pieces.peek().is_none() {
                 continue;
             }
-
             if !result.is_empty() {
                 result.push(' ');
             }
-            result.push_str(&inline_layout.text[*start..*end]);
+            result.extend(pieces);
         }
 
         if result.is_empty() {
@@ -2845,7 +2867,7 @@ impl BaseDocument {
                 continue;
             };
 
-            let text_len = inline_layout.text.len();
+            let text_len = inline_layout.text_len();
 
             if node_id == first_node && node_id == last_node {
                 let start = first_offset.min(last_offset);
@@ -3103,7 +3125,7 @@ mod hover_invalidation_tests {
     fn text_color(doc: &BaseDocument, id: NodeId) -> String {
         format!(
             "{:?}",
-            doc.nodes[id].primary_styles().unwrap().clone_color()
+            doc.nodes[id].primary_styles().unwrap().slow_clone_color()
         )
     }
 
@@ -3648,78 +3670,5 @@ mod inline_with_only_block_children_tests {
         drop(mutator);
         doc.resolve(0.0);
         assert!(!doc.nodes[span].is_inline_with_only_block_children());
-    }
-}
-
-#[cfg(test)]
-mod font_face_override_tests {
-    use super::*;
-    use crate::net::{FontFaceOverrides, Resource, ResourceLoadResponse};
-
-    /// Regression-pin for the `@font-face` descriptor-honouring fix.
-    ///
-    /// The bug was that `Resource::Font` carried only the raw font bytes,
-    /// so `load_resource` registered fonts with `info_override = None` and
-    /// parley fell back to the TTF's internal `name` table. After the fix,
-    /// `Resource::Font` carries `FontFaceOverrides` and `load_resource`
-    /// builds a `FontInfoOverride` from them — meaning a CSS-declared
-    /// `font-family` alias wins over the file's own metadata.
-    ///
-    /// We drive `load_resource` directly with a fabricated response rather
-    /// than go through HTML parsing → `fetch_font_face`, because the
-    /// downstream HTML parser lives in `blitz-html` (would be a circular
-    /// crate dependency). The mapping from `@font-face` descriptors into
-    /// `FontFaceOverrides` is covered by the unit tests in `net.rs`; this
-    /// test pins the load-side of the pipeline.
-    #[test]
-    fn font_face_overrides_alias_family_name() {
-        const ALIAS: &str = "AliasedFamily";
-
-        let mut document = BaseDocument::new(DocumentConfig::default());
-
-        // Sanity: the alias name is not registered before we feed the font.
-        {
-            let mut ctx = document.font_ctx.lock().unwrap();
-            assert!(
-                ctx.collection.family_id(ALIAS).is_none(),
-                "alias must not exist before registration",
-            );
-        }
-
-        // Drive `load_resource` with a `Resource::Font` whose overrides
-        // assert the CSS-side family name. We use the bullet font as a
-        // valid font payload — its internal `name` table is irrelevant to
-        // the assertion; what matters is whether the override wins.
-        let response = ResourceLoadResponse {
-            request_id: 0,
-            node_id: None,
-            resolved_url: Some(String::from("test://aliased-family")),
-            result: Ok(Resource::Font(
-                blitz_traits::net::Bytes::from_static(crate::BULLET_FONT),
-                FontFaceOverrides {
-                    family_name: Some(String::from(ALIAS)),
-                    weight: Some(800.0),
-                    style: Some(parley::fontique::FontStyle::Italic),
-                },
-            )),
-        };
-        document.load_resource(response);
-
-        // The override must have taken effect: parley's `Collection` now
-        // resolves the CSS-declared alias to a registered family.
-        let mut ctx = document.font_ctx.lock().unwrap();
-        let family_id = ctx
-            .collection
-            .family_id(ALIAS)
-            .expect("CSS-declared family name should be registered as a family alias");
-        let resolved_name = ctx
-            .collection
-            .family_name(family_id)
-            .expect("family id should resolve back to a name");
-        assert_eq!(
-            resolved_name, ALIAS,
-            "registered family should report the CSS-declared name, \
-             not the font file's internal `name` table entry",
-        );
     }
 }

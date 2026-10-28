@@ -4,6 +4,7 @@ use super::attributes::{attr_getter, attr_setter, clear_attr, read_attr, write_a
 use crate::dom::js_str;
 use crate::dom::{dom_ctx, this_node_id};
 use blitz_dom::NodeId;
+use blitz_dom::text::EditableText as _;
 use boa_engine::{Context, JsResult, JsValue};
 
 pub(super) fn get_placeholder(
@@ -164,7 +165,7 @@ fn utf16_to_byte(text: &str, utf16_offset: usize) -> usize {
 fn selection_utf16_range(doc: &blitz_dom::BaseDocument, node_id: NodeId) -> Option<(usize, usize)> {
     let input = doc.get_node(node_id)?.element_data()?.text_input_data()?;
     let text = input.editor.raw_text();
-    let range = input.editor.raw_selection().text_range();
+    let range = input.editor.selection();
     Some((
         byte_to_utf16(text, range.start),
         byte_to_utf16(text, range.end),
@@ -179,7 +180,7 @@ fn set_selection_utf16_range(
     end: usize,
 ) {
     doc.with_text_input(node_id, |mut driver| {
-        let text = driver.editor.raw_text().to_string();
+        let text = driver.raw_text().to_string();
         let start_byte = utf16_to_byte(&text, start);
         let end_byte = utf16_to_byte(&text, start.max(end));
         driver.select_byte_range(start_byte, end_byte);

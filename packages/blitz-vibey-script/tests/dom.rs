@@ -260,6 +260,34 @@ fn microtasks_run_after_script_execution() {
 }
 
 #[test]
+fn url_search_params_parse_and_serialize_a_query() {
+    let doc = doc_from_html(
+        r#"
+        <html><body>
+            <div id="out"></div>
+            <script>
+                const params = new URLSearchParams("?class=a+b&x=%41&x=2&flag");
+                params.append("y", "c d");
+                params.set("x", "3");
+                document.getElementById("out").textContent = [
+                    params.get("class"),
+                    params.getAll("x").join(","),
+                    params.has("flag"),
+                    params.get("missing"),
+                    params.size,
+                    params.toString(),
+                ].join("|");
+            </script>
+        </body></html>
+        "#,
+    );
+    assert_eq!(
+        text_of_selector(&doc, "#out"),
+        "a b|3|true||4|class=a+b&x=3&flag=&y=c+d"
+    );
+}
+
+#[test]
 fn timers_run_on_poll() {
     let mut doc = doc_from_html(
         r#"
@@ -318,6 +346,41 @@ fn input_value_property() {
         "#,
     );
     assert_eq!(text_of_selector(&doc, "#out"), "initial|updated");
+}
+
+/// A password field's `value` is the text typed into it, which it draws masked.
+#[test]
+fn password_value_is_the_typed_text() {
+    use blitz_traits::events::{BlitzKeyEvent, KeyState, UiEvent};
+    use keyboard_types::{Code, Key, Location};
+
+    let mut doc = doc_from_html(
+        r#"
+        <html><body>
+            <input id="field" type="password">
+            <div id="out"></div>
+        </body></html>
+        "#,
+    );
+    doc.inner_mut().resolve(0.0);
+    let field = doc.inner().query_selector("#field").unwrap().unwrap();
+    doc.inner_mut().set_focus_to(field);
+    for ch in ["a", "b", "c", "\u{e9}"] {
+        doc.handle_ui_event(UiEvent::KeyDown(BlitzKeyEvent {
+            key: Key::Character(ch.into()),
+            code: Code::KeyC,
+            modifiers: Modifiers::empty(),
+            location: Location::Standard,
+            is_auto_repeating: false,
+            is_composing: false,
+            state: KeyState::Pressed,
+            text: Some(ch.into()),
+        }));
+    }
+    doc.eval(
+        r#"document.getElementById("out").textContent = document.getElementById("field").value;"#,
+    );
+    assert_eq!(text_of_selector(&doc, "#out"), "abc\u{e9}");
 }
 
 #[test]

@@ -52,7 +52,7 @@ impl Node {
     /// The node's computed `scrollbar-width`.
     pub fn scrollbar_width(&self) -> ScrollbarWidth {
         self.primary_styles()
-            .map(|style| style.clone_scrollbar_width())
+            .map(|style| style.slow_clone_scrollbar_width())
             .unwrap_or(ScrollbarWidth::Auto)
     }
 
@@ -88,11 +88,11 @@ impl Node {
         }
         let (overflow, scroll_extent) = match axis {
             AbsoluteAxis::Horizontal => (
-                style.clone_overflow_x(),
+                style.slow_clone_overflow_x(),
                 (self.scroll_width() - self.client_width()) as f64,
             ),
             AbsoluteAxis::Vertical => (
-                style.clone_overflow_y(),
+                style.slow_clone_overflow_y(),
                 (self.scroll_height() - self.client_height()) as f64,
             ),
         };

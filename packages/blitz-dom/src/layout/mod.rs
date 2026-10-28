@@ -5,6 +5,7 @@
 //! This is slower, yes, but happens fast enough that it's not a huge issue.
 
 use crate::node::{ComputedStyleRef, ImageData, NodeData, SpecialElementData};
+use crate::text::EditEngine as _;
 use crate::{document::BaseDocument, dom_node_id, node::Node, taffy_node_id};
 use markup5ever::{LocalName, local_name};
 use std::cell::Ref;
@@ -30,6 +31,8 @@ pub(crate) mod list;
 pub(crate) mod paint_tree;
 pub(crate) mod replaced;
 pub(crate) mod table;
+// winkin applies `text-transform` itself: only Parley's builder runs the transformer.
+#[cfg_attr(text_winkin, allow(dead_code))]
 pub(crate) mod text_transform;
 #[cfg(feature = "writing-mode")]
 pub(crate) mod writing_mode;
@@ -83,7 +86,7 @@ pub(crate) fn resolve_calc_value(calc_ptr: *const (), parent_size: f32) -> f32 {
 /// Per-pass layout state: wraps the document for the duration of a layout pass and carries
 /// the Taffy tree trait implementations. Derefs to [`BaseDocument`].
 pub(crate) struct LayoutPassState<'doc> {
-    doc: &'doc mut BaseDocument,
+    pub(crate) doc: &'doc mut BaseDocument,
     /// The writing mode of the box whose layout algorithm is currently running (see
     /// `layout::writing_mode`). Child styles read during that algorithm are expressed in its axes.
     #[cfg(feature = "writing-mode")]
@@ -318,10 +321,7 @@ impl LayoutPassState<'_> {
                             .and_then(|el| el.text_input_data_mut())
                         {
                             input.editor.set_width(Some(content_width * scale));
-                            input.editor.refresh_layout(
-                                &mut doc.font_ctx.lock().unwrap(),
-                                &mut doc.layout_ctx,
-                            );
+                            input.editor.refresh(&mut doc.text);
                         }
                     }
                     return output;
@@ -356,7 +356,24 @@ impl LayoutPassState<'_> {
                                 },
                             );
                         }
-                        None | Some("text" | "password" | "email" | "tel" | "url" | "search") => {
+                        // A slider is 129px along its inline axis and 16px across it, as Chrome
+                        // sizes one.
+                        Some("range") => {
+                            return compute_leaf_layout(
+                                inputs,
+                                &node.layout_style(),
+                                resolve_calc_value,
+                                |_known_size, _available_space| taffy::Size {
+                                    width: 129.0,
+                                    height: 16.0,
+                                },
+                            );
+                        }
+                        None
+                        | Some(
+                            "text" | "password" | "email" | "tel" | "url" | "search" | "number"
+                            | "date" | "month" | "week" | "time" | "datetime-local",
+                        ) => {
                             return compute_leaf_layout(
                                 inputs,
                                 &node.layout_style(),
