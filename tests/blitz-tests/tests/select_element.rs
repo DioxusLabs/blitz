@@ -309,6 +309,19 @@ fn select_intrinsic_sizing_and_clipped_overflow() {
 }
 
 #[test]
+fn select_layout_containment_suppresses_baseline() {
+    let h = Harness::from_html(
+        r#"<div style="display:flex;align-items:baseline">
+        <canvas id="canvas" style="width:20px;height:50px;contain:layout"></canvas>
+        <select id="s" style="contain:layout"><option>Label</option></select>
+    </div>"#,
+    );
+    let canvas = h.layout_rect("#canvas");
+    let select = h.layout_rect("#s");
+    assert_eq!(canvas.y + canvas.height, select.y + select.height);
+}
+
+#[test]
 fn select_anonymous_label_uses_select_text_styles() {
     let mut h = Harness::from_html(
         r#"<select id="s" style="text-transform:uppercase"><option label="Alpha  label">Fallback</option><option>Beta</option></select>"#,

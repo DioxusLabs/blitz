@@ -86,7 +86,11 @@ impl LayoutPassState<'_> {
                 (width + pb.horizontal_axis_sum()).min(max_width.unwrap_or(f32::INFINITY));
             output.size.width = output.size.width.max(min_width);
         }
-        if let Some(line) = layout.layout.get(0) {
+        if let Some(line) = layout
+            .layout
+            .get(0)
+            .filter(|_| !style.contain().suppresses_baseline())
+        {
             let baseline = pb.top + line.metrics().baseline / scale;
             output.baselines = taffy::Baselines {
                 first: Some(baseline),
