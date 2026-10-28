@@ -3404,6 +3404,41 @@ mod hover_invalidation_tests {
 }
 
 #[cfg(test)]
+mod picture_display_tests {
+    use super::*;
+    use crate::qual_name;
+    use blitz_traits::shell::ColorScheme;
+
+    /// `<picture>` must generate a box (inline, as in browsers): the
+    /// aspect-ratio wrapper pattern relies on it for its absolutely positioned
+    /// child. `display: contents` would leave the `<img>` in flow instead.
+    #[test]
+    fn picture_is_not_display_contents() {
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
+            ..Default::default()
+        });
+        let root_id = doc.root_node().id;
+        let mut mutator = doc.mutate();
+        let html = mutator.create_element(qual_name!("html"), vec![]);
+        let body = mutator.create_element(qual_name!("body"), vec![]);
+        let picture = mutator.create_element(qual_name!("picture"), vec![]);
+        mutator.append_children(body, &[picture]);
+        mutator.append_children(html, &[body]);
+        mutator.append_children(root_id, &[html]);
+        drop(mutator);
+
+        doc.resolve(0.0);
+        let display = doc.nodes[picture]
+            .primary_styles()
+            .expect("picture should be styled")
+            .get_box()
+            .display;
+        assert!(!display.is_contents());
+    }
+}
+
+#[cfg(test)]
 mod font_face_override_tests {
     use super::*;
     use crate::net::{FontFaceOverrides, Resource, ResourceLoadResponse};
