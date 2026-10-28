@@ -19,7 +19,7 @@ fn includes_aria_labelledby_as_labelled_by_for_one_node() -> TestResult<()> {
 
     let tree_update = document.build_accessibility_tree();
 
-    let label_node_id = node_id_with_role(&tree_update, Role::Label);
+    let label_node_id = node_id_with_role(&tree_update, Role::Label)?;
     verify_that!(
         tree_update.nodes,
         contains((
@@ -49,8 +49,8 @@ fn includes_aria_labelledby_as_labelled_by_for_two_nodes() -> TestResult<()> {
     // The order of the IDs is the order of the IDs in the aria-labelledby attribute, which is
     // important to the assertion.
     let expected_node_ids = [
-        node_id_with_role(&tree_update, Role::Navigation),
-        node_id_with_role(&tree_update, Role::Label),
+        node_id_with_role(&tree_update, Role::Navigation)?,
+        node_id_with_role(&tree_update, Role::Label)?,
     ];
     verify_that!(
         tree_update.nodes,
@@ -99,7 +99,7 @@ fn aria_labelledby_takes_precedence_over_aria_label_and_content() -> TestResult<
 
     let tree_update = document.build_accessibility_tree();
 
-    let span_node_id = node_id_with_tag(&tree_update, "span");
+    let span_node_id = node_id_with_tag(&tree_update, "span")?;
     verify_that!(
         tree_update.nodes,
         contains((
@@ -126,8 +126,8 @@ fn includes_self_reference_and_nested_text_in_aria_labelledby() -> TestResult<()
 
     let tree_update = document.build_accessibility_tree();
 
-    let button_node_id = node_id_with_role(&tree_update, Role::Button);
-    let span_node_id = node_id_with_tag(&tree_update, "span");
+    let button_node_id = node_id_with_role(&tree_update, Role::Button)?;
+    let span_node_id = node_id_with_tag(&tree_update, "span")?;
     verify_that!(
         tree_update.nodes,
         contains((
@@ -205,7 +205,7 @@ fn populates_labelled_by_from_label_element() -> TestResult<()> {
 
     let tree_update = document.build_accessibility_tree();
 
-    let label_node_id = node_id_with_role(&tree_update, Role::Label);
+    let label_node_id = node_id_with_role(&tree_update, Role::Label)?;
     verify_that!(
         tree_update.nodes,
         contains((
@@ -231,7 +231,7 @@ fn populates_labelled_by_when_label_element_precedes_target() -> TestResult<()> 
 
     let tree_update = document.build_accessibility_tree();
 
-    let label_node_id = node_id_with_role(&tree_update, Role::Label);
+    let label_node_id = node_id_with_role(&tree_update, Role::Label)?;
     verify_that!(
         tree_update.nodes,
         contains((
@@ -259,8 +259,8 @@ fn includes_all_label_elements_referencing_the_same_target_in_document_order() -
 
     let tree_update = document.build_accessibility_tree();
 
-    let first_label_id = label_node_id_with_value(&tree_update, "First");
-    let second_label_id = label_node_id_with_value(&tree_update, "Second");
+    let first_label_id = label_node_id_with_value(&tree_update, "First")?;
+    let second_label_id = label_node_id_with_value(&tree_update, "Second")?;
     verify_that!(
         tree_update.nodes,
         contains((
@@ -323,7 +323,7 @@ fn label_element_takes_precedence_over_content_of_target() -> TestResult<()> {
 
     let tree_update = document.build_accessibility_tree();
 
-    let label_node_id = node_id_with_role(&tree_update, Role::Label);
+    let label_node_id = node_id_with_role(&tree_update, Role::Label)?;
     verify_that!(
         tree_update.nodes,
         contains((
@@ -351,7 +351,7 @@ fn aria_labelledby_takes_precedence_over_label_element() -> TestResult<()> {
 
     let tree_update = document.build_accessibility_tree();
 
-    let span_node_id = node_id_with_tag(&tree_update, "span");
+    let span_node_id = node_id_with_tag(&tree_update, "span")?;
     verify_that!(
         tree_update.nodes,
         contains((
@@ -549,7 +549,7 @@ fn blank_aria_label_does_not_take_precedence_over_label_element() -> TestResult<
 
     let tree_update = document.build_accessibility_tree();
 
-    let label_node_id = node_id_with_role(&tree_update, Role::Label);
+    let label_node_id = node_id_with_role(&tree_update, Role::Label)?;
     verify_that!(
         tree_update.nodes,
         contains((
@@ -598,7 +598,7 @@ fn aria_labelledby_takes_precedence_over_img_alt() -> TestResult<()> {
 
     let tree_update = document.build_accessibility_tree();
 
-    let span_node_id = node_id_with_tag(&tree_update, "span");
+    let span_node_id = node_id_with_tag(&tree_update, "span")?;
     verify_that!(
         tree_update.nodes,
         contains((
@@ -693,7 +693,7 @@ fn ignores_invalid_idrefs_among_valid_aria_labelledby_idrefs() -> TestResult<()>
 
     let tree_update = document.build_accessibility_tree();
 
-    let span_node_id = node_id_with_tag(&tree_update, "span");
+    let span_node_id = node_id_with_tag(&tree_update, "span")?;
     verify_that!(
         tree_update.nodes,
         contains((
@@ -1096,7 +1096,7 @@ fn populates_label_from_label_element_wrapping_the_target() -> TestResult<()> {
 
     let tree_update = document.build_accessibility_tree();
 
-    let label_node_id = node_id_with_role(&tree_update, Role::Label);
+    let label_node_id = node_id_with_role(&tree_update, Role::Label)?;
     verify_that!(
         tree_update.nodes,
         contains((
@@ -1257,8 +1257,8 @@ fn combines_wrapping_and_for_label_elements_in_document_order() -> TestResult<()
 
     let tree_update = document.build_accessibility_tree();
 
-    let outer_label_id = label_node_id_with_value(&tree_update, "Outer");
-    let second_label_id = label_node_id_with_value(&tree_update, "Second");
+    let outer_label_id = label_node_id_with_value(&tree_update, "Outer")?;
+    let second_label_id = label_node_id_with_value(&tree_update, "Second")?;
     verify_that!(
         tree_update.nodes,
         contains((
@@ -2098,14 +2098,14 @@ fn assign_duplicate_id_in_reverse_tree_order(
 }
 
 /// The ID of the only node in the tree with the role.
-fn node_id_with_role(tree_update: &TreeUpdate, role: Role) -> NodeId {
+fn node_id_with_role(tree_update: &TreeUpdate, role: Role) -> TestResult<NodeId> {
     node_id_where(tree_update, &format!("Node with role {role:?}"), |node| {
         node.role() == role
     })
 }
 
 /// The ID of the only node in the tree with the HTML tag.
-fn node_id_with_tag(tree_update: &TreeUpdate, html_tag: &str) -> NodeId {
+fn node_id_with_tag(tree_update: &TreeUpdate, html_tag: &str) -> TestResult<NodeId> {
     node_id_where(
         tree_update,
         &format!("Node with tag {html_tag:?}"),
@@ -2115,7 +2115,7 @@ fn node_id_with_tag(tree_update: &TreeUpdate, html_tag: &str) -> NodeId {
 
 /// The ID of the only node in the tree with the role `Role::Label` which has the given value,
 /// which is its text.
-fn label_node_id_with_value(tree_update: &TreeUpdate, value: &str) -> NodeId {
+fn label_node_id_with_value(tree_update: &TreeUpdate, value: &str) -> TestResult<NodeId> {
     node_id_where(
         tree_update,
         &format!("Label with value {value:?}"),
@@ -2129,20 +2129,19 @@ fn node_id_where(
     tree_update: &TreeUpdate,
     description: &str,
     predicate: impl Fn(&AccessKitNode) -> bool,
-) -> NodeId {
+) -> TestResult<NodeId> {
     let mut ids = tree_update
         .nodes
         .iter()
         .filter(|(_, node)| predicate(node))
         .map(|(id, _)| *id);
-    let id = ids
-        .next()
-        .unwrap_or_else(|| panic!("{description} must be present in accessibility tree"));
-    assert!(
-        ids.next().is_none(),
-        "{description} must be unique in accessibility tree"
-    );
-    id
+    let Some(id) = ids.next() else {
+        fail!("Expected to find {description}, but not found. Tree is:\n{tree_update:#?}")?;
+        unreachable!();
+    };
+    verify_that!(ids.next(), none())
+        .with_failure_message(|| format!("{description} must be unique in accessibility tree"))?;
+    Ok(id)
 }
 
 /// The labels of the nodes with the given HTML tag in the tree, in no particular order.
