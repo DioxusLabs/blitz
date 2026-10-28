@@ -528,6 +528,7 @@ impl selectors::Element for BlitzNode<'_> {
 
             NonTSPseudoClass::InRange => false,
             NonTSPseudoClass::Modal => false,
+            NonTSPseudoClass::MozInert => self.element_state().contains(ElementState::INERT),
             NonTSPseudoClass::Open => self.element_state().contains(ElementState::OPEN),
             NonTSPseudoClass::Optional => false,
             NonTSPseudoClass::OutOfRange => false,
