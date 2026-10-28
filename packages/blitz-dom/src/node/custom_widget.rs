@@ -80,6 +80,8 @@ pub trait Widget {
     /// The widget was removed from the DOM
     fn disconnected(&mut self) {}
     /// One of the widget's attributes changed
+    ///
+    /// Existing attributes are replayed on attachment with no old value.
     fn attribute_changed(&mut self, name: &str, old_value: Option<&str>, new_value: Option<&str>) {
         let _ = (name, old_value, new_value);
     }
