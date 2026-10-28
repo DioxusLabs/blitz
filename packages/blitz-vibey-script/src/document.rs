@@ -197,6 +197,7 @@ impl ScriptDocument {
         self.runtime
             .set_ready_state(crate::state::ReadyState::Interactive);
         self.runtime.dispatch_document_event("DOMContentLoaded");
+        self.runtime.dispatch_iframe_load_events();
         self.runtime
             .set_ready_state(crate::state::ReadyState::Complete);
         self.runtime.install_body_onload_attribute();
@@ -440,6 +441,7 @@ impl Document for ScriptDocument {
             ran = true;
         }
 
+        ran |= self.runtime.dispatch_iframe_load_events();
         ran |= self.runtime.run_due_timers();
         self.arm_timer_thread();
         ran

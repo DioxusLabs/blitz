@@ -373,6 +373,24 @@ impl ScriptRuntime {
         any_called
     }
 
+    /// Dispatch non-bubbling load events for completed iframe navigations.
+    pub fn dispatch_iframe_load_events(&mut self) -> bool {
+        let nodes = self.ctx.doc.borrow_mut().take_pending_iframe_load_events();
+        let had_events = !nodes.is_empty();
+        for node_id in nodes {
+            let mut event_state = EventState::default();
+            self.dispatch_event_inner(
+                &[node_id],
+                "load",
+                false,
+                |ctx, target, context| create_event(ctx, "load", false, false, target, context),
+                &mut event_state,
+            );
+            self.run_jobs("iframe load microtasks");
+        }
+        had_events
+    }
+
     /// Dispatch a simple event (e.g. `DOMContentLoaded`) targeting the document node
     pub fn dispatch_document_event(&mut self, name: &str) -> bool {
         let root_id = self.ctx.doc.borrow().root_node().id;

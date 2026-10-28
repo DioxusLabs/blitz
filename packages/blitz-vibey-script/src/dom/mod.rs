@@ -10,6 +10,7 @@ pub(crate) mod document;
 pub(crate) mod element;
 pub(crate) mod event;
 pub(crate) mod hyperlink;
+mod iframe;
 pub(crate) mod node;
 pub(crate) mod selection;
 pub(crate) mod style;
@@ -68,7 +69,7 @@ pub(crate) fn node_wrapper(ctx: &DomCtx, node_id: NodeId, context: &mut Context)
         return wrapper.clone();
     }
 
-    let (proto, is_body) = {
+    let (proto, is_body, is_iframe) = {
         let doc = ctx.doc.borrow();
         let state = ctx.state.borrow();
         let protos = state.protos();
@@ -89,12 +90,20 @@ pub(crate) fn node_wrapper(ctx: &DomCtx, node_id: NodeId, context: &mut Context)
                 if element.name.local == blitz_dom::local_name!("body")
                     || element.name.local == blitz_dom::local_name!("frameset")
         );
-        (proto, is_body)
+        let is_iframe = matches!(
+            node_data,
+            Some(NodeData::Element(element))
+                if element.name.local == blitz_dom::local_name!("iframe")
+        );
+        (proto, is_body, is_iframe)
     };
 
     let wrapper = JsObject::from_proto_and_data(Some(proto), NodeRef { node_id });
     if is_body {
         define_window_forwarding_handlers(&wrapper, context);
+    }
+    if is_iframe {
+        iframe::init_iframe(&wrapper, context);
     }
     ctx.state
         .borrow_mut()

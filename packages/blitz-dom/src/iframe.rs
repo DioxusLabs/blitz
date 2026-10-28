@@ -24,6 +24,7 @@ pub(crate) const MAX_SUBDOCUMENT_DEPTH: usize = 10;
 pub(crate) struct IframeLoad {
     pub(crate) request_id: Option<usize>,
     pub(crate) abort_controller: AbortController,
+    pending_load_event: bool,
 }
 
 /// A [`NavigationProvider`] given to iframe sub-documents. It routes
@@ -89,6 +90,7 @@ impl BaseDocument {
             IframeLoad {
                 request_id,
                 abort_controller,
+                pending_load_event: false,
             },
         );
         signal
@@ -109,7 +111,39 @@ impl BaseDocument {
             .clone()
             .parse_document(html, config);
         self.set_sub_document(node_id, sub_doc);
+        if let Some(load) = self.iframe_loads.get_mut(&node_id) {
+            load.pending_load_event = true;
+        }
         self.shell_provider.request_redraw();
+    }
+
+    /// Take completed iframe loads for dispatch by a scripting host. Replaced
+    /// or removed iframe generations do not produce events.
+    pub fn take_pending_iframe_load_events(&mut self) -> Vec<NodeId> {
+        self.handle_messages();
+        let mut ready = Vec::new();
+        for (&node_id, load) in &mut self.iframe_loads {
+            if !load.pending_load_event {
+                continue;
+            }
+            let Some(node) = self.nodes.get_mut(node_id) else {
+                continue;
+            };
+            if !node.flags.is_in_document() {
+                continue;
+            }
+            let Some(sub_doc) = node.subdoc_mut() else {
+                continue;
+            };
+            let mut sub_doc = sub_doc.inner_mut();
+            sub_doc.handle_messages();
+            if sub_doc.has_pending_critical_resources() {
+                continue;
+            }
+            load.pending_load_event = false;
+            ready.push(node_id);
+        }
+        ready
     }
 
     /// Attach a sub-document parsed from the iframe's `srcdoc` attribute.
