@@ -215,24 +215,6 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         let bg_width = (self.width as f32).max(root_element.final_layout().size.width);
         let bg_height = (self.height as f32).max(root_element.final_layout().size.height);
 
-        // The root element group has a transparent backdrop, independent of the
-        // surface onto which the document is being painted.
-        let root_layer_pushed = self.layer_manager.maybe_push_layer(
-            scene,
-            true,
-            BlendMode::default(),
-            1.0 - f32::EPSILON,
-            Affine::IDENTITY,
-            &Rect::new(
-                self.initial_x,
-                self.initial_y,
-                self.initial_x + self.width as f64,
-                self.initial_y + self.height as f64,
-            ),
-            None,
-            None,
-        );
-
         let background_color = {
             let html_styles = root_element.primary_styles();
             let html_color = html_styles
@@ -286,8 +268,6 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             }),
             viewport_clip_rect,
         );
-
-        self.layer_manager.maybe_pop_layer(scene, root_layer_pushed);
 
         // Render debug overlay
         if self.dom.devtools().highlight_hover {

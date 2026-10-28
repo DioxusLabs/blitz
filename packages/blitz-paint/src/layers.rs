@@ -15,85 +15,6 @@ pub(crate) struct LayerManager {
     layer_depth_used: Cell<u32>,
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use anyrender::{Scene, recording::RenderCommand};
-    use kurbo::Rect;
-    use peniko::{Compose, Mix};
-
-    #[test]
-    fn blend_layers_are_not_replaced_by_clips() {
-        for blend in [
-            Mix::Multiply.into(),
-            BlendMode::new(Mix::Normal, Compose::PlusLighter),
-        ] {
-            let manager = LayerManager::default();
-            let mut scene = Scene::new();
-            manager.maybe_with_layer(
-                &mut scene,
-                true,
-                blend,
-                1.0,
-                Affine::IDENTITY,
-                &Rect::ZERO,
-                None,
-                None,
-                |_| {},
-            );
-            assert!(
-                matches!(&scene.commands[0], RenderCommand::PushLayer(layer) if layer.blend == blend)
-            );
-            assert!(matches!(scene.commands[1], RenderCommand::PopLayer));
-        }
-    }
-
-    #[test]
-    fn normal_layers_clip_unless_isolation_is_forced() {
-        for (opacity, isolated) in [(1.0, false), (1.0 - f32::EPSILON, true)] {
-            let manager = LayerManager::default();
-            let mut scene = Scene::new();
-            manager.maybe_with_layer(
-                &mut scene,
-                true,
-                BlendMode::default(),
-                opacity,
-                Affine::IDENTITY,
-                &Rect::ZERO,
-                None,
-                None,
-                |_| {},
-            );
-            assert_eq!(
-                matches!(scene.commands[0], RenderCommand::PushLayer(_)),
-                isolated
-            );
-            assert!(matches!(scene.commands[1], RenderCommand::PopLayer));
-        }
-    }
-
-    #[test]
-    fn disabled_or_exhausted_layers_do_not_pop() {
-        let manager = LayerManager::default();
-        let mut scene = Scene::new();
-        for condition in [false, true] {
-            manager.layers_used.set(LAYER_LIMIT + 1);
-            manager.maybe_with_layer(
-                &mut scene,
-                condition,
-                Mix::Multiply.into(),
-                1.0,
-                Affine::IDENTITY,
-                &Rect::ZERO,
-                None,
-                None,
-                |_| {},
-            );
-        }
-        assert!(scene.commands.is_empty());
-    }
-}
-
 impl LayerManager {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn maybe_with_layer<S: PaintScene, F: FnOnce(&mut S)>(
@@ -177,5 +98,84 @@ impl LayerManager {
             scene.pop_layer();
             self.layer_depth.update(|x| x - 1);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use anyrender::{Scene, recording::RenderCommand};
+    use kurbo::Rect;
+    use peniko::{Compose, Mix};
+
+    #[test]
+    fn blend_layers_are_not_replaced_by_clips() {
+        for blend in [
+            Mix::Multiply.into(),
+            BlendMode::new(Mix::Normal, Compose::PlusLighter),
+        ] {
+            let manager = LayerManager::default();
+            let mut scene = Scene::new();
+            manager.maybe_with_layer(
+                &mut scene,
+                true,
+                blend,
+                1.0,
+                Affine::IDENTITY,
+                &Rect::ZERO,
+                None,
+                None,
+                |_| {},
+            );
+            assert!(
+                matches!(&scene.commands[0], RenderCommand::PushLayer(layer) if layer.blend == blend)
+            );
+            assert!(matches!(scene.commands[1], RenderCommand::PopLayer));
+        }
+    }
+
+    #[test]
+    fn normal_layers_clip_unless_isolation_is_forced() {
+        for (opacity, isolated) in [(1.0, false), (1.0 - f32::EPSILON, true)] {
+            let manager = LayerManager::default();
+            let mut scene = Scene::new();
+            manager.maybe_with_layer(
+                &mut scene,
+                true,
+                BlendMode::default(),
+                opacity,
+                Affine::IDENTITY,
+                &Rect::ZERO,
+                None,
+                None,
+                |_| {},
+            );
+            assert_eq!(
+                matches!(scene.commands[0], RenderCommand::PushLayer(_)),
+                isolated
+            );
+            assert!(matches!(scene.commands[1], RenderCommand::PopLayer));
+        }
+    }
+
+    #[test]
+    fn disabled_or_exhausted_layers_do_not_pop() {
+        let manager = LayerManager::default();
+        let mut scene = Scene::new();
+        for condition in [false, true] {
+            manager.layers_used.set(LAYER_LIMIT + 1);
+            manager.maybe_with_layer(
+                &mut scene,
+                condition,
+                Mix::Multiply.into(),
+                1.0,
+                Affine::IDENTITY,
+                &Rect::ZERO,
+                None,
+                None,
+                |_| {},
+            );
+        }
+        assert!(scene.commands.is_empty());
     }
 }
