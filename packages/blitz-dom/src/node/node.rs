@@ -58,6 +58,8 @@ bitflags! {
         const IS_TABLE_ROOT = 0b00000010;
         /// Whether the node is "in the document" (~= has a parent and isn't a template node)
         const IS_IN_DOCUMENT = 0b00000100;
+        /// Whether the node is an inline box whose in-flow content is block-level only
+        const IS_INLINE_WITH_ONLY_BLOCK_CHILDREN = 0b00001000;
     }
 }
 
@@ -81,6 +83,7 @@ impl NodeFlags {
     pub fn reset_construction_flags(&mut self) {
         self.remove(Self::IS_INLINE_ROOT);
         self.remove(Self::IS_TABLE_ROOT);
+        self.remove(Self::IS_INLINE_WITH_ONLY_BLOCK_CHILDREN);
     }
 }
 
@@ -526,10 +529,16 @@ impl Node {
         }
     }
 
+    /// Whether box-tree construction found this to be an inline box with block-level in-flow content only.
+    pub fn is_inline_with_only_block_children(&self) -> bool {
+        self.flags
+            .contains(NodeFlags::IS_INLINE_WITH_ONLY_BLOCK_CHILDREN)
+    }
+
     /// An inline box whose in-flow content is block-level only, ignoring collapsible whitespace.
     /// It is laid out as a block box, so its own background and borders must not be painted
     /// over that content. Inline text or inline children keep the painting.
-    pub fn is_inline_with_only_block_children(&self) -> bool {
+    pub(crate) fn compute_inline_with_only_block_children(&self) -> bool {
         if !self
             .display_style()
             .is_some_and(|display| display.is_inline_flow())

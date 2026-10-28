@@ -410,6 +410,11 @@ fn collect_layout_children_with_wrap(
     doc.nodes[container_node_id]
         .flags
         .reset_construction_flags();
+    if doc.nodes[container_node_id].compute_inline_with_only_block_children() {
+        doc.nodes[container_node_id]
+            .flags
+            .insert(NodeFlags::IS_INLINE_WITH_ONLY_BLOCK_CHILDREN);
+    }
     if let Some(element_data) = doc.nodes[container_node_id].element_data_mut() {
         element_data.take_inline_layout();
     }

@@ -3509,6 +3509,77 @@ mod inline_with_only_block_children_tests {
         assert!(!doc.nodes[empty_inline].is_inline_with_only_block_children());
         assert!(!doc.nodes[block_with_block].is_inline_with_only_block_children());
     }
+
+    #[test]
+    fn inline_with_only_block_children_follows_child_edits() {
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
+            ..Default::default()
+        });
+        doc.add_user_agent_stylesheet(crate::UserAgentStylesheet::parse(
+            "html, body, div { display: block }",
+        ));
+        let root_id = doc.root_node().id;
+        let mut mutator = doc.mutate();
+        let html = mutator.create_element(qual_name!("html"), vec![]);
+        mutator.append_children(root_id, &[html]);
+        let body = mutator.create_element(qual_name!("body"), vec![]);
+        mutator.append_children(html, &[body]);
+        let span = mutator.create_element(qual_name!("span"), vec![]);
+        mutator.append_children(body, &[span]);
+        let text = mutator.create_text_node("text");
+        mutator.append_children(span, &[text]);
+        let block_child = mutator.create_element(qual_name!("div"), vec![]);
+        mutator.append_children(span, &[block_child]);
+        drop(mutator);
+        doc.resolve(0.0);
+        assert!(!doc.nodes[span].is_inline_with_only_block_children());
+
+        let mut mutator = doc.mutate();
+        mutator.remove_and_drop_node(text);
+        drop(mutator);
+        doc.resolve(0.0);
+        assert!(doc.nodes[span].is_inline_with_only_block_children());
+
+        let mut mutator = doc.mutate();
+        let inline_child = mutator.create_element(qual_name!("span"), vec![]);
+        mutator.append_children(span, &[inline_child]);
+        drop(mutator);
+        doc.resolve(0.0);
+        assert!(!doc.nodes[span].is_inline_with_only_block_children());
+    }
+
+    #[test]
+    fn inline_with_only_block_children_follows_text_edits() {
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
+            ..Default::default()
+        });
+        doc.add_user_agent_stylesheet(crate::UserAgentStylesheet::parse(
+            "html, body, div { display: block }",
+        ));
+        let root_id = doc.root_node().id;
+        let mut mutator = doc.mutate();
+        let html = mutator.create_element(qual_name!("html"), vec![]);
+        mutator.append_children(root_id, &[html]);
+        let body = mutator.create_element(qual_name!("body"), vec![]);
+        mutator.append_children(html, &[body]);
+        let span = mutator.create_element(qual_name!("span"), vec![]);
+        mutator.append_children(body, &[span]);
+        let whitespace = mutator.create_text_node("\n  ");
+        mutator.append_children(span, &[whitespace]);
+        let block_child = mutator.create_element(qual_name!("div"), vec![]);
+        mutator.append_children(span, &[block_child]);
+        drop(mutator);
+        doc.resolve(0.0);
+        assert!(doc.nodes[span].is_inline_with_only_block_children());
+
+        let mut mutator = doc.mutate();
+        mutator.append_text_to_node(whitespace, "x").unwrap();
+        drop(mutator);
+        doc.resolve(0.0);
+        assert!(!doc.nodes[span].is_inline_with_only_block_children());
+    }
 }
 
 #[cfg(test)]

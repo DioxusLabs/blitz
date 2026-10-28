@@ -239,10 +239,14 @@ impl DocumentMutator<'_> {
         let node = &mut self.doc.nodes[node_id];
         node.insert_damage(ALL_DAMAGE);
         node.mark_ancestors_dirty();
+        let parent_id = node.parent;
         match node.text_data_mut() {
             Some(data) => {
                 data.content += text;
                 self.mutations_occurred |= node_is_in_document;
+                if let Some(parent_id) = parent_id {
+                    self.doc.nodes[parent_id].insert_damage(ALL_DAMAGE);
+                }
                 Ok(())
             }
             None => Err(AppendTextErr::NotTextNode),
