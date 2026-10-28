@@ -286,7 +286,6 @@ impl NetProvider for Provider {
 
         let waker = self.waker.clone();
         spawn(async move {
-            #[cfg(feature = "tracing")]
             let url = request.url.to_string();
 
             let signal = request.signal.take();
@@ -302,8 +301,6 @@ impl NetProvider for Provider {
                 Self::fetch_inner(client, request, per_host_limits).await
             };
 
-            waker.wake(doc_id);
-
             match result {
                 Ok((response_url, bytes)) => {
                     handler.bytes(response_url, bytes);
@@ -313,10 +310,10 @@ impl NetProvider for Provider {
                 Err(e) => {
                     #[cfg(feature = "tracing")]
                     tracing::error!(url = url.as_str(), error = ?e, "Error fetching");
-                    #[cfg(not(feature = "tracing"))]
-                    let _ = e;
+                    handler.error(url, e.to_string());
                 }
             };
+            waker.wake(doc_id);
         });
     }
 }
@@ -463,4 +460,87 @@ impl ReqwestExt for RequestBuilder {
 struct DummyNetWaker;
 impl NetWaker for DummyNetWaker {
     fn wake(&self, _client_id: usize) {}
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{Read, Write};
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    struct Handler {
+        tx: tokio::sync::oneshot::Sender<Result<Bytes, String>>,
+        completed: Arc<AtomicBool>,
+    }
+
+    impl NetHandler for Handler {
+        fn bytes(self: Box<Self>, _url: String, bytes: Bytes) {
+            self.completed.store(true, Ordering::SeqCst);
+            self.tx.send(Ok(bytes)).unwrap();
+        }
+
+        fn error(self: Box<Self>, _url: String, error: String) {
+            self.completed.store(true, Ordering::SeqCst);
+            self.tx.send(Err(error)).unwrap();
+        }
+    }
+
+    fn fetch(url: &str) -> Result<Bytes, String> {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            let completed = Arc::new(AtomicBool::new(false));
+            let observed = completed.clone();
+            let provider = Provider::new(Some(Arc::new(move |doc_id| {
+                assert_eq!(doc_id, 42);
+                assert!(observed.load(Ordering::SeqCst));
+            })));
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            provider.fetch(
+                42,
+                Request::get(url.parse().unwrap()),
+                Box::new(Handler { tx, completed }),
+            );
+            tokio::time::timeout(std::time::Duration::from_secs(5), rx)
+                .await
+                .expect("fetch must complete")
+                .expect("handler must be called, not dropped")
+        })
+    }
+
+    #[test]
+    fn delivers_successful_and_empty_responses() {
+        assert_eq!(
+            fetch("data:text/css,body%7Bcolor:red%7D").unwrap(),
+            "body{color:red}"
+        );
+        assert!(fetch("data:text/css,").unwrap().is_empty());
+    }
+
+    #[test]
+    fn delivers_network_and_bad_url_errors() {
+        assert!(fetch("file:///dev/null/missing.css").is_err());
+        assert!(fetch("unsupported://example.com/missing.css").is_err());
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        drop(listener);
+        assert!(fetch(&format!("http://{addr}/missing.css")).is_err());
+    }
+
+    #[test]
+    fn http_error_body_is_not_delivered_as_css() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0; 4096];
+            stream.read(&mut request).unwrap();
+            stream.write_all(b"HTTP/1.1 404 Not Found\r\nContent-Type: text/css\r\nContent-Length: 15\r\nConnection: close\r\n\r\nbody{color:red}").unwrap();
+        });
+        let error = fetch(&format!("http://{addr}/missing.css")).unwrap_err();
+        assert!(error.contains("404"), "{error}");
+        server.join().unwrap();
+    }
 }
