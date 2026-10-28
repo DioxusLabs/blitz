@@ -35,6 +35,7 @@ pub(crate) struct Frame {
     pub(crate) available_space: Size<AvailableSpace>,
     pub(crate) collapses_through: bool,
     pub(crate) suppresses_baseline: bool,
+    pub(crate) is_scroll_container: bool,
     pub(crate) scale: f32,
 }
 
@@ -367,6 +368,9 @@ impl LayoutPassState<'_> {
         };
 
         let suppresses_baseline = style.contain().suppresses_baseline();
+        let overflow = style.overflow();
+        let is_scroll_container =
+            overflow.x.is_scroll_container() || overflow.y.is_scroll_container();
         drop(style);
 
         // Compute available space
@@ -429,6 +433,7 @@ impl LayoutPassState<'_> {
             available_space,
             collapses_through: has_styles_preventing_being_collapsed_through,
             suppresses_baseline,
+            is_scroll_container,
             scale,
         };
         self.lay_out_lines(node_id, inline_layout, frame, block_ctx)

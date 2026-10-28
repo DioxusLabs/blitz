@@ -54,6 +54,7 @@ impl LayoutPassState<'_> {
             available_space,
             collapses_through,
             suppresses_baseline,
+            is_scroll_container,
             scale,
         } = frame;
         let known_dimensions = inputs.known_dimensions;
@@ -404,12 +405,30 @@ impl LayoutPassState<'_> {
                     width: content_width,
                     height: measured_size.height,
                 } + padding.sum_axes();
-                taffy::Rect {
+                let mut rect = taffy::Rect {
                     left: 0.0,
                     right: content_extent.width,
                     top: 0.0,
                     bottom: content_extent.height + block_offset.max(0.0),
+                };
+                let client_width =
+                    final_size.width - border.left - border.right - scrollbar_gutter.x;
+                let is_rtl = container_direction.is_rtl();
+                if is_rtl {
+                    rect.left = (client_width - rect.right).min(0.0);
+                    rect.right = client_width.max(0.0);
                 }
+                if is_scroll_container {
+                    rect.left = if is_rtl { rect.left } else { 0.0 };
+                    rect.top = 0.0;
+                }
+                taffy::ScrollableOverflow::new(
+                    rect,
+                    taffy::Point {
+                        x: is_scroll_container && is_rtl,
+                        y: false,
+                    },
+                )
             },
             baselines: taffy::Baselines {
                 first: first_baseline,
@@ -874,12 +893,15 @@ impl LayoutPassState<'_> {
         let content_extent = measured_size + padding.sum_axes();
         LayoutOutput {
             size: final_size,
-            scrollable_overflow_rect: taffy::Rect {
-                left: 0.0,
-                right: content_extent.width,
-                top: 0.0,
-                bottom: content_extent.height,
-            },
+            scrollable_overflow_rect: taffy::ScrollableOverflow::new(
+                taffy::Rect {
+                    left: 0.0,
+                    right: content_extent.width,
+                    top: 0.0,
+                    bottom: content_extent.height,
+                },
+                taffy::Point { x: false, y: false },
+            ),
             baselines: taffy::Baselines {
                 first: None,
                 last: None,
