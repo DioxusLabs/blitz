@@ -3,6 +3,7 @@ use std::any::Any;
 use anyrender::ResourceId;
 use blitz_traits::events::UiEvent;
 pub use style::properties::ComputedValues as ComputedStyles;
+use style::selector_parser::RestyleDamage;
 // use accesskit::Node as AccessKitNode;
 // use taffy::{LayoutInput, LayoutOutput};
 
@@ -41,7 +42,7 @@ impl BaseDocument {
         if cx.relayout {
             let node = &mut self.nodes[node_id];
             node.clear_layout_cache();
-            node.insert_damage(crate::layout::damage::ALL_DAMAGE);
+            node.insert_damage(RestyleDamage::RELAYOUT);
         }
         if cx.redraw || cx.relayout {
             self.shell_provider.request_redraw();
