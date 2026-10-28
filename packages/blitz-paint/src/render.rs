@@ -11,6 +11,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use super::kurbo_css::CssBox;
+use crate::blend::convert_blend_mode;
 use crate::color::{Color, ToColorColor};
 use crate::debug_overlay::render_debug_overlay;
 use crate::filters::convert_filters;
@@ -42,33 +43,10 @@ use style::{
 };
 
 use kurbo::{self, Affine, Insets, Point, Rect, Shape, Size, Stroke, Vec2};
-use peniko::{self, BlendMode, Compose, Fill, ImageData, ImageSampler, Mix};
-use style::computed_values::{isolation::T as Isolation, mix_blend_mode::T as StyloBlend};
+use peniko::{self, BlendMode, Fill, ImageData, ImageSampler};
+use style::computed_values::isolation::T as Isolation;
 use style::values::generics::color::GenericColor;
 use taffy::Layout;
-
-fn to_blend_mode(blend: StyloBlend) -> BlendMode {
-    match blend {
-        StyloBlend::Normal => Mix::Normal,
-        StyloBlend::Multiply => Mix::Multiply,
-        StyloBlend::Screen => Mix::Screen,
-        StyloBlend::Overlay => Mix::Overlay,
-        StyloBlend::Darken => Mix::Darken,
-        StyloBlend::Lighten => Mix::Lighten,
-        StyloBlend::ColorDodge => Mix::ColorDodge,
-        StyloBlend::ColorBurn => Mix::ColorBurn,
-        StyloBlend::HardLight => Mix::HardLight,
-        StyloBlend::SoftLight => Mix::SoftLight,
-        StyloBlend::Difference => Mix::Difference,
-        StyloBlend::Exclusion => Mix::Exclusion,
-        StyloBlend::Hue => Mix::Hue,
-        StyloBlend::Saturation => Mix::Saturation,
-        StyloBlend::Color => Mix::Color,
-        StyloBlend::Luminosity => Mix::Luminosity,
-        StyloBlend::PlusLighter => return BlendMode::new(Mix::Normal, Compose::PlusLighter),
-    }
-    .into()
-}
 
 /// A view of the track positions reported by taffy in physical (left-to-right /
 /// top-to-bottom) order. Taffy reports tracks in logical order, which for RTL grid
@@ -507,11 +485,11 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
 
         // Use the viewport in scene coordinates so outlines, shadows and overflowing
         // descendants are not clipped to the element's border box.
-        let blend = to_blend_mode(effects.mix_blend_mode);
+        let blend = convert_blend_mode(effects.mix_blend_mode);
         let isolate = styles.get_box().isolation == Isolation::Isolate;
         let blend_layer_pushed = self.layer_manager.maybe_push_layer(
             scene,
-            blend != BlendMode::default() || isolate,
+            isolate || blend != BlendMode::default(),
             blend,
             if isolate { 1.0 - f32::EPSILON } else { 1.0 },
             Affine::IDENTITY,
