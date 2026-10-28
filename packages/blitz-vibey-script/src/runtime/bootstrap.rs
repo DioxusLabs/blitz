@@ -15,6 +15,8 @@ pub(super) const GEOMETRY_JS: &str = include_str!("../geometry.js");
 // order, and short-circuiting on errors. Geometry remains a separate evaluation.
 pub(super) const BOOTSTRAP_JS: &str = concat!(
     "\n(function () {\n",
+    include_str!("bootstrap/url_search_params.js"),
+    "\n",
     include_str!("bootstrap/window.js"),
     "\n",
     include_str!("bootstrap/fetch.js"),
@@ -36,6 +38,12 @@ pub(super) const BOOTSTRAP_JS: &str = concat!(
 );
 
 pub(super) fn register_globals(ctx: &DomCtx, base_url: Option<&Url>, context: &mut Context) {
+    register_global_fn(
+        context,
+        "__blitz_parse_search_params",
+        1,
+        parse_search_params,
+    );
     // `document`
     let root_id = ctx.doc.borrow().root_node().id;
     let document_wrapper = node_wrapper(ctx, root_id, context);
@@ -154,6 +162,25 @@ pub(super) fn register_globals(ctx: &DomCtx, base_url: Option<&Url>, context: &m
         )
         .build();
     register_global(context, "CSS", css_namespace.into());
+}
+
+fn parse_search_params(_: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    use boa_engine::object::builtins::JsArray;
+
+    let input = args[0].to_string(context)?.to_std_string_lossy();
+    let pairs = url::form_urlencoded::parse(input.as_bytes())
+        .map(|(name, value)| {
+            JsArray::from_iter(
+                [
+                    JsValue::from(JsString::from(name.as_ref())),
+                    JsValue::from(JsString::from(value.as_ref())),
+                ],
+                context,
+            )
+            .into()
+        })
+        .collect::<Vec<JsValue>>();
+    Ok(JsArray::from_iter(pairs, context).into())
 }
 
 fn register_global(context: &mut Context, name: &str, value: JsValue) {
