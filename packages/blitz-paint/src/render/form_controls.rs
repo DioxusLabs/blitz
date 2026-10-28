@@ -9,10 +9,15 @@ use style::dom::TElement as _;
 
 impl ElementCx<'_, '_> {
     pub(super) fn draw_input(&self, scene: &mut impl PaintScene) {
-        if matches!(
-            self.element.special_data,
-            blitz_dom::node::SpecialElementData::Select(_)
-        ) {
+        if self.element.name.ns == blitz_dom::ns!(html)
+            && matches!(
+                self.element.special_data,
+                blitz_dom::node::SpecialElementData::Select(_)
+            )
+        {
+            if self.style.slow_clone_appearance() == style::values::specified::Appearance::None {
+                return;
+            }
             let frame = self.frame.border_box;
             let font_size = self
                 .style

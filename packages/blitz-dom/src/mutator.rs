@@ -1087,7 +1087,7 @@ impl<'doc> DocumentMutator<'doc> {
 
             // Custom post-processing by element tag name
             let tag = element.name.local.as_ref();
-            if tag == "select" {
+            if tag == "select" && element.name.ns == markup5ever::ns!(html) {
                 doc.select_nodes.insert(node_id);
                 doc.dirty_select_nodes.insert(node_id);
             }

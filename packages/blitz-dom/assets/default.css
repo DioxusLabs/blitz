@@ -58,16 +58,14 @@ select:not([multiple]):not([size]),
 select:not([multiple])[size="1"],
 select:not([multiple])[size="0"] {
     display: inline-block;
+    box-sizing: border-box;
+    appearance: auto;
     border: 1px solid #999;
     padding: 2px 22px 2px 4px;
     background-color: white;
     white-space: normal;
     cursor: default;
     user-select: none;
-}
-
-select > span {
-    white-space: pre;
 }
 
 select > optgroup {

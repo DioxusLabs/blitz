@@ -395,7 +395,7 @@ pub struct SelectData {
     pub open: bool,
     pub highlighted: Option<NodeId>,
     pub scroll_offset: usize,
-    pub(crate) text_node: NodeId,
+    pub(crate) label: String,
     pub(crate) options: Vec<SelectOptionSnapshot>,
     pub(crate) value: Option<String>,
 }

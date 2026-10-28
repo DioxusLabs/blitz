@@ -355,6 +355,12 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             .element_data()
             .and_then(|el| el.text_input_data())
             .is_some();
+        let is_select = node.element_data().is_some_and(|el| {
+            matches!(
+                el.special_data,
+                blitz_dom::node::SpecialElementData::Select(_)
+            )
+        });
         // The root element's overflow is propagated to the viewport (which is clipped by the
         // window/surface bounds), so the root element must not clip its own overflow.
         let is_root_element = self.root_element_id == Some(node_id);
@@ -601,7 +607,17 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                                 cx.draw_sub_document(scene);
                                 cx.draw_input(scene);
                                 cx.draw_text_input_text(scene, content_position);
-                                cx.draw_inline_layout(scene, content_position);
+                                self.layer_manager.maybe_with_layer(
+                                    scene,
+                                    is_select,
+                                    BlendMode::default(),
+                                    1.0,
+                                    cx.transform,
+                                    &cx.frame.content_box_path(),
+                                    None,
+                                    None,
+                                    |scene| cx.draw_inline_layout(scene, content_position),
+                                );
                                 cx.draw_marker(scene, content_position);
                                 cx.draw_children(scene, cx.transform, child_clip_rect);
                             },

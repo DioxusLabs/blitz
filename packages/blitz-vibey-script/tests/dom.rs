@@ -38,6 +38,47 @@ fn executes_inline_scripts() {
 }
 
 #[test]
+fn computed_widget_dimensions_preserve_fractional_layout() {
+    let mut doc = doc_from_html(
+        r#"<div style="width:500px"><textarea id="t" style="font-size:13px"></textarea><br><select id="s"><option>Label</option></select></div>"#,
+    );
+    doc.inner_mut().resolve(0.0);
+    let t = doc.inner().query_selector("#t").unwrap().unwrap();
+    let s = doc.inner().query_selector("#s").unwrap().unwrap();
+    let height = doc
+        .inner()
+        .get_node(t)
+        .unwrap()
+        .unrounded_layout()
+        .size
+        .height;
+    let y = doc
+        .inner()
+        .get_node(s)
+        .unwrap()
+        .unrounded_layout()
+        .location
+        .y;
+    let html = r#"<div style="width:500px"><textarea id="t" style="font-size:13px"></textarea><br><select id="s"><option>Label</option></select></div><script>
+        for (const id of ['t', 's']) {
+            const el = document.getElementById(id);
+            const computed = getComputedStyle(el);
+            const width = computed.width;
+            const height = computed.height;
+            el.style.width = width;
+            el.style.height = height;
+        }
+    </script>"#;
+    let mut roundtrip = doc_from_html(html);
+    roundtrip.inner_mut().resolve(0.0);
+    let inner = roundtrip.inner();
+    let t = inner.query_selector("#t").unwrap().unwrap();
+    let s = inner.query_selector("#s").unwrap().unwrap();
+    assert!((inner.get_node(t).unwrap().unrounded_layout().size.height - height).abs() < 0.001);
+    assert!((inner.get_node(s).unwrap().unrounded_layout().location.y - y).abs() < 0.001);
+}
+
+#[test]
 fn scripts_run_in_document_order_and_share_globals() {
     let doc = doc_from_html(
         r#"
@@ -340,13 +381,23 @@ fn select_value_property_uses_selected_option() {
     let select = inner.query_selector("#field").unwrap().unwrap();
     let selected = inner.selected_option(select).unwrap();
     assert_eq!(inner.option_label(selected), "Gamma");
-    assert!(
-        inner
-            .get_node(select)
-            .unwrap()
-            .text_content()
-            .ends_with("Gamma")
+    assert!(inner.query_selector("#field > span").unwrap().is_none());
+}
+
+#[test]
+fn select_label_does_not_change_dom_queries_or_text() {
+    let doc = doc_from_html(
+        r#"<select id="field"><option value="a">Alpha</option><option value="b">Beta</option></select><div id="out"></div><script>
+        const field = document.getElementById('field');
+        const before = [field.children.length, field.childNodes.length, field.textContent, field.innerHTML].join('|');
+        field.value = 'b';
+        const after = [field.children.length, field.childNodes.length, field.textContent, field.innerHTML].join('|');
+        const missingSpan = document.querySelector('#field > span') === null;
+        field.value = 'missing';
+        document.getElementById('out').textContent = [before === after, missingSpan, field.value, field.children.length].join('|');
+    </script>"#,
     );
+    assert_eq!(text_of_selector(&doc, "#out"), "true|true||2");
 }
 
 #[test]
@@ -363,13 +414,11 @@ fn select_value_setter_selects_first_match() {
             inner.selected_option(select),
             Some(inner.select_options(select)[1])
         );
-        assert!(
-            inner
-                .get_node(select)
-                .unwrap()
-                .text_content()
-                .ends_with("Beta")
+        assert_eq!(
+            inner.option_label(inner.selected_option(select).unwrap()),
+            "Beta"
         );
+        assert!(inner.query_selector("#field > span").unwrap().is_none());
     }
 }
 

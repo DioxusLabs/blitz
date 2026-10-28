@@ -1,6 +1,7 @@
+use crate::layout::damage::ALL_DAMAGE;
 use crate::mutator::DocumentMutator;
 use crate::node::{SelectData, SelectOptionSnapshot, SpecialElementData};
-use crate::{BaseDocument, local_name, qual_name};
+use crate::{BaseDocument, local_name};
 use blitz_traits::node_id::NodeId;
 
 impl BaseDocument {
@@ -73,6 +74,7 @@ impl BaseDocument {
         if option.is_some_and(|id| !self.select_options(select).contains(&id)) {
             return false;
         }
+        let label = option.map(|id| self.option_label(id)).unwrap_or_default();
         let Some(element) = self.nodes[select].element_data_mut() else {
             return false;
         };
@@ -80,9 +82,10 @@ impl BaseDocument {
             return false;
         };
         data.selected = option;
-        let text_node = data.text_node;
-        let label = option.map(|id| self.option_label(id)).unwrap_or_default();
-        self.mutate().set_node_text(text_node, &label);
+        data.label = label;
+        self.nodes[select].insert_damage(ALL_DAMAGE);
+        self.nodes[select].mark_ancestors_dirty();
+        self.shell_provider.request_redraw();
         true
     }
 }
@@ -110,7 +113,8 @@ impl DocumentMutator<'_> {
                 self.doc.close_select();
             }
             let node = &self.doc.nodes[id];
-            let supported = node.attr(local_name!("multiple")).is_none()
+            let supported = node.element_data().unwrap().name.ns == markup5ever::ns!(html)
+                && node.attr(local_name!("multiple")).is_none()
                 && node
                     .attr(local_name!("size"))
                     .and_then(|s| s.parse::<u32>().ok())
@@ -120,18 +124,13 @@ impl DocumentMutator<'_> {
                 if self.doc.open_select == Some(id) {
                     self.doc.close_select();
                 }
-                let node = &self.doc.nodes[id];
-                if let SpecialElementData::Select(data) = &node.element_data().unwrap().special_data
-                {
-                    if let Some(wrapper) = self
-                        .doc
-                        .get_node(data.text_node)
-                        .and_then(|node| node.parent)
-                    {
-                        self.remove_and_drop_node(wrapper);
-                    }
+                if matches!(
+                    &self.doc.nodes[id].element_data().unwrap().special_data,
+                    SpecialElementData::Select(_)
+                ) {
                     self.doc.nodes[id].element_data_mut().unwrap().special_data =
                         SpecialElementData::None;
+                    self.doc.nodes[id].insert_damage(ALL_DAMAGE);
                 }
                 self.doc.dirty_select_nodes.remove(&id);
                 continue;
@@ -178,18 +177,8 @@ impl DocumentMutator<'_> {
             let label = selected
                 .map(|option| self.doc.option_label(option))
                 .unwrap_or_default();
-            let text_node = match previous {
-                SpecialElementData::Select(data) if self.doc.get_node(data.text_node).is_some() => {
-                    data.text_node
-                }
-                _ => {
-                    let wrapper = self.create_element(qual_name!("span", html), vec![]);
-                    let text = self.create_text_node("");
-                    self.append_children(wrapper, &[text]);
-                    self.append_children(id, &[wrapper]);
-                    text
-                }
-            };
+            let label_changed =
+                !matches!(previous, SpecialElementData::Select(data) if data.label == label);
             let open = matches!(
                 &self.doc.nodes[id].element_data().unwrap().special_data,
                 SpecialElementData::Select(SelectData { open: true, .. })
@@ -210,11 +199,14 @@ impl DocumentMutator<'_> {
                     open,
                     highlighted,
                     scroll_offset,
-                    text_node,
+                    label,
                     options,
                     value,
                 });
-            self.set_node_text(text_node, &label);
+            if label_changed {
+                self.doc.nodes[id].insert_damage(ALL_DAMAGE);
+                self.doc.nodes[id].mark_ancestors_dirty();
+            }
             self.doc.dirty_select_nodes.remove(&id);
         }
     }
@@ -223,7 +215,7 @@ impl DocumentMutator<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::DocumentConfig;
+    use crate::{DocumentConfig, qual_name};
 
     fn fixture() -> (BaseDocument, NodeId, NodeId, NodeId) {
         let mut doc = BaseDocument::new(DocumentConfig::default());
@@ -272,7 +264,7 @@ mod tests {
         else {
             panic!()
         };
-        assert_eq!(doc.nodes[data.text_node].text_content(), "Displayed label");
+        assert_eq!(data.label, "Displayed label");
     }
 
     #[test]
@@ -364,6 +356,44 @@ mod tests {
     }
 
     #[test]
+    fn select_label_is_not_a_dom_child() {
+        let (mut doc, select, first, second) = fixture();
+        assert_eq!(&*doc.nodes[select].children, &[first, second]);
+        assert!(doc.set_selected_option(select, Some(second)));
+        assert_eq!(&*doc.nodes[select].children, &[first, second]);
+        assert!(!doc.set_selected_option(select, Some(doc.root_node_id)));
+        assert_eq!(doc.selected_option(select), Some(second));
+        assert!(doc.set_selected_option(select, None));
+        let SpecialElementData::Select(data) =
+            &doc.nodes[select].element_data().unwrap().special_data
+        else {
+            panic!()
+        };
+        assert!(data.label.is_empty());
+        assert_eq!(&*doc.nodes[select].children, &[first, second]);
+    }
+
+    #[test]
+    fn select_non_html_namespace_is_not_registered() {
+        let mut doc = BaseDocument::new(DocumentConfig::default());
+        let root = doc.root_node_id;
+        let select;
+        {
+            let mut m = doc.mutate();
+            select = m.create_element(qual_name!("select", svg), vec![]);
+            m.append_children(root, &[select]);
+            m.set_attribute(select, qual_name!("value"), "value");
+        }
+        assert!(!doc.select_nodes.contains(&select));
+        assert!(matches!(
+            doc.nodes[select].element_data().unwrap().special_data,
+            SpecialElementData::None
+        ));
+        assert!(!doc.open_select(select));
+        assert!(!doc.set_selected_option(select, None));
+    }
+
+    #[test]
     fn select_option_text_mutations_update_label() {
         let (mut doc, select, _, second) = fixture();
         assert!(doc.set_selected_option(select, Some(second)));
@@ -379,7 +409,7 @@ mod tests {
         else {
             panic!()
         };
-        assert_eq!(doc.nodes[data.text_node].text_content(), "Changed text");
+        assert_eq!(data.label, "Changed text");
         assert!(doc.dirty_select_nodes.is_empty());
     }
 }
