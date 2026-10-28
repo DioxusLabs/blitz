@@ -39,6 +39,7 @@ impl ElementCx<'_, '_> {
         self.context.layer_manager.maybe_with_layer(
             scene,
             needs_clip,
+            Mix::Normal.into(),
             1.0,
             self.transform,
             &self.frame.shadow_clip(max_shadow_rect),

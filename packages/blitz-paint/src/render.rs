@@ -42,9 +42,33 @@ use style::{
 };
 
 use kurbo::{self, Affine, Insets, Point, Rect, Shape, Size, Stroke, Vec2};
-use peniko::{self, Fill, ImageData, ImageSampler};
+use peniko::{self, BlendMode, Compose, Fill, ImageData, ImageSampler, Mix};
+use style::computed_values::{isolation::T as Isolation, mix_blend_mode::T as StyloBlend};
 use style::values::generics::color::GenericColor;
 use taffy::Layout;
+
+fn to_blend_mode(blend: StyloBlend) -> BlendMode {
+    match blend {
+        StyloBlend::Normal => Mix::Normal,
+        StyloBlend::Multiply => Mix::Multiply,
+        StyloBlend::Screen => Mix::Screen,
+        StyloBlend::Overlay => Mix::Overlay,
+        StyloBlend::Darken => Mix::Darken,
+        StyloBlend::Lighten => Mix::Lighten,
+        StyloBlend::ColorDodge => Mix::ColorDodge,
+        StyloBlend::ColorBurn => Mix::ColorBurn,
+        StyloBlend::HardLight => Mix::HardLight,
+        StyloBlend::SoftLight => Mix::SoftLight,
+        StyloBlend::Difference => Mix::Difference,
+        StyloBlend::Exclusion => Mix::Exclusion,
+        StyloBlend::Hue => Mix::Hue,
+        StyloBlend::Saturation => Mix::Saturation,
+        StyloBlend::Color => Mix::Color,
+        StyloBlend::Luminosity => Mix::Luminosity,
+        StyloBlend::PlusLighter => return BlendMode::new(Mix::Normal, Compose::PlusLighter),
+    }
+    .into()
+}
 
 /// A view of the track positions reported by taffy in physical (left-to-right /
 /// top-to-bottom) order. Taffy reports tracks in logical order, which for RTL grid
@@ -191,6 +215,24 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         let bg_width = (self.width as f32).max(root_element.final_layout().size.width);
         let bg_height = (self.height as f32).max(root_element.final_layout().size.height);
 
+        // The root element group has a transparent backdrop, independent of the
+        // surface onto which the document is being painted.
+        let root_layer_pushed = self.layer_manager.maybe_push_layer(
+            scene,
+            true,
+            BlendMode::default(),
+            1.0 - f32::EPSILON,
+            Affine::IDENTITY,
+            &Rect::new(
+                self.initial_x,
+                self.initial_y,
+                self.initial_x + self.width as f64,
+                self.initial_y + self.height as f64,
+            ),
+            None,
+            None,
+        );
+
         let background_color = {
             let html_styles = root_element.primary_styles();
             let html_color = html_styles
@@ -244,6 +286,8 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             }),
             viewport_clip_rect,
         );
+
+        self.layer_manager.maybe_pop_layer(scene, root_layer_pushed);
 
         // Render debug overlay
         if self.dom.devtools().highlight_hover {
@@ -473,9 +517,30 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         let css_clip_layer_pushed = self.layer_manager.maybe_push_layer(
             scene,
             css_clip_rect.is_some(),
+            BlendMode::default(),
             1.0,
             cx.transform,
             &css_clip_rect.unwrap_or(Rect::ZERO),
+            None,
+            None,
+        );
+
+        // Use the viewport in scene coordinates so outlines, shadows and overflowing
+        // descendants are not clipped to the element's border box.
+        let blend = to_blend_mode(effects.mix_blend_mode);
+        let isolate = styles.get_box().isolation == Isolation::Isolate;
+        let blend_layer_pushed = self.layer_manager.maybe_push_layer(
+            scene,
+            blend != BlendMode::default() || isolate,
+            blend,
+            if isolate { 1.0 - f32::EPSILON } else { 1.0 },
+            Affine::IDENTITY,
+            &Rect::new(
+                self.initial_x,
+                self.initial_y,
+                self.initial_x + self.width as f64,
+                self.initial_y + self.height as f64,
+            ),
             None,
             None,
         );
@@ -487,6 +552,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         self.layer_manager.maybe_with_layer(
             scene,
             has_clip_path,
+            BlendMode::default(),
             1.0,
             cx.transform,
             &clip_path_for_layer,
@@ -527,6 +593,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                 self.layer_manager.maybe_with_layer(
                     scene,
                     has_opacity || filter.is_some() || backdrop_filter.is_some(),
+                    BlendMode::default(),
                     opacity,
                     cx.transform,
                     &effect_layer_clip,
@@ -551,6 +618,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                         self.layer_manager.maybe_with_layer(
                             scene,
                             should_clip,
+                            BlendMode::default(),
                             1.0, // opacity
                             cx.transform,
                             clip,
@@ -597,6 +665,8 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             },
         );
 
+        self.layer_manager
+            .maybe_pop_layer(scene, blend_layer_pushed);
         self.layer_manager
             .maybe_pop_layer(scene, css_clip_layer_pushed);
     }
@@ -1171,6 +1241,7 @@ impl ElementCx<'_, '_> {
         self.context.layer_manager.maybe_with_layer(
             scene,
             overflows,
+            BlendMode::default(),
             1.0,
             self.transform,
             &self.frame.content_box_path(),
