@@ -1229,7 +1229,9 @@ impl<'doc> DocumentMutator<'doc> {
             return;
         }
 
-        let url = self.doc.resolve_url(href);
+        let Some(url) = self.doc.url.resolve_relative(href) else {
+            return;
+        };
         let handler = ResourceHandler::new(
             self.doc.tx.clone(),
             self.doc.id(),

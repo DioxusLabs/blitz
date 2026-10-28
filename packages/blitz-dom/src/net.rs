@@ -141,6 +141,10 @@ pub struct StylesheetHandler {
 }
 
 impl NetHandler for ResourceHandler<StylesheetHandler> {
+    fn error(self: Box<Self>, url: String, error: String) {
+        self.respond(url, Err(error));
+    }
+
     fn bytes(self: Box<Self>, resolved_url: String, bytes: Bytes) {
         let Ok(css) = std::str::from_utf8(&bytes) else {
             return self.respond(resolved_url, Err(String::from("Invalid UTF8")));
