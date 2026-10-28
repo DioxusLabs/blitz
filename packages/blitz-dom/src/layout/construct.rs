@@ -841,7 +841,7 @@ fn create_text_editor(doc: &mut BaseDocument, input_element_id: NodeId, is_multi
     let parley_style = node
         .primary_styles()
         .as_ref()
-        .map(|s| stylo_to_parley::style(node.id, s))
+        .map(|s| stylo_to_parley::style(node.id, s, &mut doc.font_ctx.lock().unwrap()))
         .unwrap_or_default();
     let alignment = node
         .primary_styles()
@@ -892,6 +892,7 @@ fn create_text_editor(doc: &mut BaseDocument, input_element_id: NodeId, is_multi
     styles.insert(StyleProperty::LineHeight(parley_style.line_height));
     styles.insert(StyleProperty::WordSpacing(parley_style.word_spacing));
     styles.insert(StyleProperty::LetterSpacing(parley_style.letter_spacing));
+    styles.insert(StyleProperty::TabSize(parley_style.tab_size));
     styles.insert(StyleProperty::WordBreak(parley_style.word_break));
     styles.insert(StyleProperty::OverflowWrap(parley_style.overflow_wrap));
     styles.insert(StyleProperty::TextWrapMode(parley_style.text_wrap_mode));

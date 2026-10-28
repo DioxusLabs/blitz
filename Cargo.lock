@@ -3249,8 +3249,7 @@ dependencies = [
 [[package]]
 name = "fontique"
 version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bbf1df16263783918b7da396077521f92b729ef7c429444dfcf03581f1448b77"
+source = "git+https://github.com/WilliamDGH/parley?rev=4065fffb533c37a02a4ee5fe2df513db362a6bf4#4065fffb533c37a02a4ee5fe2df513db362a6bf4"
 dependencies = [
  "hashbrown 0.17.1",
  "linebender_resource_handle",
@@ -5976,8 +5975,7 @@ dependencies = [
 [[package]]
 name = "parlance"
 version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "73072a9470554c8e794778acece2312661218aaabb635600957d952cf01c716e"
+source = "git+https://github.com/WilliamDGH/parley?rev=4065fffb533c37a02a4ee5fe2df513db362a6bf4#4065fffb533c37a02a4ee5fe2df513db362a6bf4"
 dependencies = [
  "bytemuck",
 ]
@@ -5985,8 +5983,7 @@ dependencies = [
 [[package]]
 name = "parley"
 version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "61bd0c0c1737f0b3d3726dc06b225083af213b61913e4fbae1670613a106c6ce"
+source = "git+https://github.com/WilliamDGH/parley?rev=4065fffb533c37a02a4ee5fe2df513db362a6bf4#4065fffb533c37a02a4ee5fe2df513db362a6bf4"
 dependencies = [
  "fontique",
  "hashbrown 0.17.1",
@@ -5999,8 +5996,7 @@ dependencies = [
 [[package]]
 name = "parley_data"
 version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c43b63f808f6cc8f4a3b07de0d62a977bddd2e0bb5c232bd9e93ba8ef92e5e4b"
+source = "git+https://github.com/WilliamDGH/parley?rev=4065fffb533c37a02a4ee5fe2df513db362a6bf4#4065fffb533c37a02a4ee5fe2df513db362a6bf4"
 dependencies = [
  "icu_collections",
  "icu_properties",
@@ -6009,14 +6005,12 @@ dependencies = [
 [[package]]
 name = "parley_emoji"
 version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9c4482d912d7671a7cd2089794f90ef3bb5f5f8c738230fb0fcd50fa020f0ed3"
+source = "git+https://github.com/WilliamDGH/parley?rev=4065fffb533c37a02a4ee5fe2df513db362a6bf4#4065fffb533c37a02a4ee5fe2df513db362a6bf4"
 
 [[package]]
 name = "parley_engine"
 version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b74c0d373e462e504ad4436710a39f099e18e848e1ee711f70cd2dcd5a69b290"
+source = "git+https://github.com/WilliamDGH/parley?rev=4065fffb533c37a02a4ee5fe2df513db362a6bf4#4065fffb533c37a02a4ee5fe2df513db362a6bf4"
 dependencies = [
  "fontique",
  "harfrust",
@@ -6024,6 +6018,7 @@ dependencies = [
  "icu_locale_core",
  "icu_normalizer",
  "icu_properties",
+ "icu_provider",
  "icu_segmenter",
  "linebender_resource_handle",
  "parlance",

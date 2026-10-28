@@ -13,6 +13,25 @@ fn inline<'a>(doc: &'a BaseDocument, selector: &str) -> &'a TextLayout {
 }
 
 #[test]
+fn tab_size_uses_number_length_spacing_and_inline_styles() {
+    let harness = Harness::from_html(
+        "<style>div { white-space: pre; font: 20px monospace; letter-spacing: 2px; word-spacing: 3px }</style>\
+         <div id='number' style='tab-size:4'>\tX</div>\
+         <div id='spaces'>    X</div>\
+         <div id='length' style='tab-size:80px'>\tX</div>\
+         <div id='zero' style='tab-size:0'>\tX</div>\
+         <div id='plain'>X</div>\
+         <div id='contents' style='tab-size:80px'><span style='display:contents;tab-size:0'>\t</span>X</div>",
+    );
+    let doc = harness.base();
+    let width = |selector| inline(&doc, selector).layout.full_width();
+    assert!((width("#number") - width("#spaces")).abs() < 0.1);
+    assert!((width("#length") - width("#plain") - 80.0).abs() < 0.1);
+    assert!((width("#zero") - width("#plain")).abs() < 0.1);
+    assert!((width("#contents") - width("#plain")).abs() < 0.1);
+}
+
+#[test]
 fn pre_line_collapses_across_spans_and_preserves_breaks() {
     let harness = Harness::from_html(
         "<div id='test' style='white-space:pre-line'>a \t <span> b \t\n c </span> d<br> e  f</div>",
