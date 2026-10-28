@@ -331,7 +331,9 @@ impl BaseDocument {
             None
         };
         let (own_x, own_y, width, height, margin) = if let Some(root) = inline_root {
-            let rects = self.inline_fragment_rects_with_offsets(id, false)?;
+            let rects: Vec<_> = self
+                .inline_fragment_rects_with_offsets(id, false)?
+                .collect();
             if rects.is_empty() {
                 return None;
             }
@@ -345,7 +347,7 @@ impl BaseDocument {
                 .iter()
                 .map(|r| r.y + r.height)
                 .fold(f64::NEG_INFINITY, f64::max);
-            let origin = root.unrounded_absolute_position(0.0, 0.0);
+            let origin = self.physical_unrounded_geometry(root.id).0;
             let scroll = self.viewport_scroll();
             self.inline_shift_targets(id, &mut shift_targets);
             (
@@ -388,7 +390,7 @@ impl BaseDocument {
             let anc = self.nodes.get(a)?;
             if let Some(s) = anc.primary_styles() {
                 let b = s.get_box();
-                let position = s.clone_position();
+                let position = b.position;
                 if (scrolls(b.overflow_x) || scrolls(b.overflow_y))
                     && self.canonical_scroll_target(ScrollTarget::Node(a)) != ScrollTarget::Viewport
                 {
@@ -721,9 +723,9 @@ impl BaseDocument {
 /// out directly in the table's grid (`layout/table.rs`).
 fn is_boxless_table_part(node: &crate::node::Node) -> bool {
     use style::values::specified::box_::DisplayInside;
-    node.primary_styles().is_some_and(|s| {
+    node.display_style().is_some_and(|display| {
         matches!(
-            s.clone_display().inside(),
+            display.inside(),
             DisplayInside::TableRow
                 | DisplayInside::TableRowGroup
                 | DisplayInside::TableHeaderGroup
