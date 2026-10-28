@@ -412,7 +412,6 @@ pub(crate) fn vertical_align(style: &stylo::ComputedValues) -> parley::VerticalA
 pub(crate) fn style(
     span_id: NodeId,
     style: &stylo::ComputedValues,
-    font_ctx: &mut ::parley::FontContext,
 ) -> parley::TextStyle<'static, 'static, TextBrush> {
     let font_styles = style.get_font();
     let itext_styles = style.get_inherited_text();
@@ -438,12 +437,10 @@ pub(crate) fn style(
         .px();
 
     let tab_size = match itext_styles.tab_size {
-        style::values::generics::length::LengthOrNumber::Number(n) => {
-            let space = crate::font_metrics::space_advance(font_ctx, font_styles)
-                .unwrap_or(font_size * 0.5);
-            n.0 * (space + letter_spacing + word_spacing).max(0.0)
+        style::values::generics::length::LengthOrNumber::Number(n) => parley::TabSize::spaces(n.0),
+        style::values::generics::length::LengthOrNumber::Length(length) => {
+            parley::TabSize::new(length.0.px())
         }
-        style::values::generics::length::LengthOrNumber::Length(length) => length.0.px(),
     };
 
     // Convert Bold/Italic
@@ -525,7 +522,7 @@ pub(crate) fn style(
         vertical_align,
         word_spacing,
         letter_spacing,
-        tab_size: parley::TabSize::new(tab_size),
+        tab_size,
         text_wrap_mode,
         white_space_collapse: white_space_collapse(itext_styles.white_space_collapse),
         overflow_wrap,

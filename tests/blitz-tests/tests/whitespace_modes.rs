@@ -21,7 +21,8 @@ fn tab_size_uses_number_length_spacing_and_inline_styles() {
          <div id='length' style='tab-size:80px'>\tX</div>\
          <div id='zero' style='tab-size:0'>\tX</div>\
          <div id='plain'>X</div>\
-         <div id='contents' style='tab-size:80px'><span style='display:contents;tab-size:0'>\t</span>X</div>",
+         <div id='contents' style='tab-size:80px'><span style='display:contents;tab-size:0'>\t</span>X</div>\
+         <div id='nested'><span style='font-size:40px;letter-spacing:20px;word-spacing:20px;tab-size:4'>\t</span>X</div>",
     );
     let doc = harness.base();
     let width = |selector| inline(&doc, selector).layout.full_width();
@@ -29,6 +30,7 @@ fn tab_size_uses_number_length_spacing_and_inline_styles() {
     assert!((width("#length") - width("#plain") - 80.0).abs() < 0.1);
     assert!((width("#zero") - width("#plain")).abs() < 0.1);
     assert!((width("#contents") - width("#plain")).abs() < 0.1);
+    assert!((width("#nested") - width("#number")).abs() < 0.1);
 }
 
 #[test]

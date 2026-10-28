@@ -34,43 +34,6 @@ fn query_for_font_styles<'a>(
     query
 }
 
-pub(crate) fn space_advance(font_ctx: &mut FontContext, font_styles: &FontStyles) -> Option<f32> {
-    use parley::fontique::QueryStatus;
-    use skrifa::instance::{LocationRef, Size};
-    use skrifa::metrics::{GlyphMetrics, Metrics};
-
-    let mut query = query_for_font_styles(font_ctx, font_styles);
-    let mut result = None;
-    query.matches_with(|font| {
-        let Ok(font_ref) = skrifa::FontRef::from_index(font.blob.as_ref(), font.index) else {
-            return QueryStatus::Continue;
-        };
-        let Some(glyph) = font_ref.charmap().map(' ') else {
-            return QueryStatus::Continue;
-        };
-        let variations = stylo_to_parley::font_variations(&font_styles.font_variation_settings);
-        let location = font_ref.axes().location(
-            variations
-                .iter()
-                .map(|v| (skrifa::Tag::from_be_bytes(v.tag.to_bytes()), v.value)),
-        );
-        let location = LocationRef::from(&location);
-        let upem = Metrics::new(&font_ref, Size::unscaled(), location).units_per_em;
-        if upem == 0 {
-            return QueryStatus::Continue;
-        }
-        result = GlyphMetrics::new(&font_ref, Size::unscaled(), location)
-            .advance_width(glyph)
-            .map(|advance| advance * font_styles.font_size.used_size.0.px() / upem as f32);
-        if result.is_some() {
-            QueryStatus::Stop
-        } else {
-            QueryStatus::Continue
-        }
-    });
-    result
-}
-
 #[derive(Clone)]
 pub(crate) struct BlitzFontMetricsProvider {
     pub(crate) font_ctx: Arc<Mutex<FontContext>>,

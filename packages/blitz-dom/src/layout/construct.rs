@@ -841,7 +841,7 @@ fn create_text_editor(doc: &mut BaseDocument, input_element_id: NodeId, is_multi
     let parley_style = node
         .primary_styles()
         .as_ref()
-        .map(|s| stylo_to_parley::style(node.id, s, &mut doc.font_ctx.lock().unwrap()))
+        .map(|s| stylo_to_parley::style(node.id, s))
         .unwrap_or_default();
     let alignment = node
         .primary_styles()

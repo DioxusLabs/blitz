@@ -37,10 +37,9 @@ pub(crate) fn build_inline_layout_into(
             .and_then(|parent_id| nodes[parent_id].primary_styles())
     });
 
-    let mut metrics_font_ctx = font_ctx.clone();
     let parley_style = root_node_style
         .as_ref()
-        .map(|s| stylo_to_parley::style(inline_context_root_node_id, s, &mut metrics_font_ctx))
+        .map(|s| stylo_to_parley::style(inline_context_root_node_id, s))
         .unwrap_or_else(|| parley::TextStyle {
             white_space_collapse: WhiteSpaceCollapse::Collapse,
             ..Default::default()
@@ -91,7 +90,6 @@ pub(crate) fn build_inline_layout_into(
         build_inline_layout_recursive(
             &mut builder,
             &mut text_transformer,
-            &mut metrics_font_ctx,
             nodes,
             before_id,
             &text_transform,
@@ -101,7 +99,6 @@ pub(crate) fn build_inline_layout_into(
         build_inline_layout_recursive(
             &mut builder,
             &mut text_transformer,
-            &mut metrics_font_ctx,
             nodes,
             child_id,
             &text_transform,
@@ -111,7 +108,6 @@ pub(crate) fn build_inline_layout_into(
         build_inline_layout_recursive(
             &mut builder,
             &mut text_transformer,
-            &mut metrics_font_ctx,
             nodes,
             after_id,
             &text_transform,
@@ -124,7 +120,6 @@ pub(crate) fn build_inline_layout_into(
     fn build_inline_layout_recursive(
         builder: &mut TreeBuilder<TextBrush>,
         text_transformer: &mut TextTransformer,
-        font_ctx: &mut FontContext,
         nodes: &crate::NodeTree,
         node_id: NodeId,
         parent_text_transform: &CaseTransform,
@@ -176,7 +171,7 @@ pub(crate) fn build_inline_layout_into(
                                     stylo_to_parley::text_wrap_mode(s.clone_text_wrap_mode()),
                                 ),
                                 parley::StyleProperty::TabSize(
-                                    stylo_to_parley::style(node.id, s, font_ctx).tab_size,
+                                    stylo_to_parley::style(node.id, s).tab_size,
                                 ),
                             ]
                         });
@@ -190,7 +185,6 @@ pub(crate) fn build_inline_layout_into(
                             build_inline_layout_recursive(
                                 builder,
                                 text_transformer,
-                                font_ctx,
                                 nodes,
                                 child_id,
                                 &text_transform,
@@ -234,7 +228,7 @@ pub(crate) fn build_inline_layout_into(
                             // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
                             let style = node
                                 .primary_styles()
-                                .map(|s| stylo_to_parley::style(node.id, &s, font_ctx))
+                                .map(|s| stylo_to_parley::style(node.id, &s))
                                 .unwrap_or_else(|| parley::TextStyle {
                                     white_space_collapse: WhiteSpaceCollapse::Collapse,
                                     ..Default::default()
@@ -246,7 +240,6 @@ pub(crate) fn build_inline_layout_into(
                                 build_inline_layout_recursive(
                                     builder,
                                     text_transformer,
-                                    font_ctx,
                                     nodes,
                                     before_id,
                                     &text_transform,
@@ -257,7 +250,6 @@ pub(crate) fn build_inline_layout_into(
                                 build_inline_layout_recursive(
                                     builder,
                                     text_transformer,
-                                    font_ctx,
                                     nodes,
                                     child_id,
                                     &text_transform,
@@ -267,7 +259,6 @@ pub(crate) fn build_inline_layout_into(
                                 build_inline_layout_recursive(
                                     builder,
                                     text_transformer,
-                                    font_ctx,
                                     nodes,
                                     after_id,
                                     &text_transform,
