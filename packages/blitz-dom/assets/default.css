@@ -147,10 +147,6 @@ option {
     display: none;
 }
 
-picture {
-    display: contents;
-}
-
 source {
     display: none;
 }
