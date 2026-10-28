@@ -8,6 +8,7 @@ fn main() {
 
 fn app() -> Element {
     let mut checkbox_checked = use_signal(|| false);
+    let mut fruit = use_signal(|| String::from("banana"));
 
     rsx! {
         div { class: "container",
@@ -92,8 +93,37 @@ fn app() -> Element {
                     }
                     label { r#for: "file2", "File Select Multiple" }
                 }
+                div {
+                    label { r#for: "select1", "Select (controlled) " }
+                    select {
+                        id: "select1",
+                        name: "fruit",
+                        value: "{fruit}",
+                        onchange: move |ev| fruit.set(ev.value()),
+                        option { value: "apple", "Apple" }
+                        option { value: "banana", "Banana" }
+                        option { value: "cherry", disabled: true, "Cherry (disabled)" }
+                        option { value: "dragonfruit", "Dragon fruit" }
+                    }
+                }
+                div {
+                    label { r#for: "select2", "Select (uncontrolled, optgroups) " }
+                    select { id: "select2", name: "city",
+                        optgroup { label: "Europe",
+                            option { "Amsterdam" }
+                            option { selected: true, "Berlin" }
+                            option { "Copenhagen" }
+                        }
+                        optgroup { label: "Asia", disabled: true,
+                            option { "Tokyo" }
+                            option { "Seoul" }
+                        }
+                        option { "Somewhere else" }
+                    }
+                }
             }
             div { "Checkbox 1 checked: {checkbox_checked}" }
+            div { "Selected fruit: {fruit}" }
         }
     }
 }
