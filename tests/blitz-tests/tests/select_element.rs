@@ -158,9 +158,13 @@ fn select_empty_and_scrolling_overlay() {
     let options = (0..30)
         .map(|i| format!("<option>Option {i}</option>"))
         .collect::<String>();
-    let mut h = Harness::from_html(&format!(
-        "<select id='s'>{options}</select><select id='empty'></select>"
-    ));
+    let mut h = Harness::from_html_with(
+        &format!("<select id='s'>{options}</select><select id='empty'></select>"),
+        HarnessOptions {
+            height: 1200,
+            ..Default::default()
+        },
+    );
     let s = h.node("#s");
     assert!(h.base_mut().open_select(s));
     let overlay = h.base_mut().select_overlay().unwrap();
@@ -208,11 +212,11 @@ fn select_overlay_tracks_transforms_scroll_and_scale() {
     let s = h.node("#s");
     let scroller = h.node("#scroller");
     assert!(h.base().get_node(scroller).unwrap().scroll_offset().y > 0.0);
-    let anchor = h.base().get_client_bounding_rect(s).unwrap();
+    let anchor = h.layout_rect("#s");
     assert!(h.base_mut().open_select(s));
     let overlay = h.base_mut().select_overlay().unwrap();
-    assert!((overlay.rect.x - anchor.x - 20.0).abs() < 0.1);
-    assert!((overlay.rect.y - anchor.y - anchor.height - 10.0).abs() < 0.1);
+    assert!((overlay.rect.x - anchor.x as f64 - 20.0).abs() < 0.1);
+    assert!((overlay.rect.y - anchor.y as f64 - anchor.height as f64 - 10.0).abs() < 0.1);
     let second = overlay.rows[1].option;
     let row = &overlay.rows[1].rect;
     click(&mut h, (row.x + 5.0) as f32, (row.y + 5.0) as f32);
