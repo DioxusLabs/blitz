@@ -1355,7 +1355,9 @@ impl Node {
             return true;
         }
 
-        // TODO: mix-blend-mode
+        if style.get_effects().mix_blend_mode != style::computed_values::mix_blend_mode::T::Normal {
+            return true;
+        }
         // TODO: contain
 
         false

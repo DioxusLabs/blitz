@@ -11,6 +11,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use super::kurbo_css::CssBox;
+use crate::blend::convert_blend_mode;
 use crate::color::{Color, ToColorColor};
 use crate::debug_overlay::render_debug_overlay;
 use crate::filters::convert_filters;
@@ -42,7 +43,8 @@ use style::{
 };
 
 use kurbo::{self, Affine, Insets, Point, Rect, Shape, Size, Stroke, Vec2};
-use peniko::{self, Fill, ImageData, ImageSampler};
+use peniko::{self, BlendMode, Fill, ImageData, ImageSampler};
+use style::computed_values::isolation::T as Isolation;
 use style::values::generics::color::GenericColor;
 use taffy::Layout;
 
@@ -473,9 +475,30 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         let css_clip_layer_pushed = self.layer_manager.maybe_push_layer(
             scene,
             css_clip_rect.is_some(),
+            BlendMode::default(),
             1.0,
             cx.transform,
             &css_clip_rect.unwrap_or(Rect::ZERO),
+            None,
+            None,
+        );
+
+        // Use the viewport in scene coordinates so outlines, shadows and overflowing
+        // descendants are not clipped to the element's border box.
+        let blend = convert_blend_mode(effects.mix_blend_mode);
+        let isolate = styles.get_box().isolation == Isolation::Isolate;
+        let blend_layer_pushed = self.layer_manager.maybe_push_layer(
+            scene,
+            isolate || blend != BlendMode::default(),
+            blend,
+            if isolate { 1.0 - f32::EPSILON } else { 1.0 },
+            Affine::IDENTITY,
+            &Rect::new(
+                self.initial_x,
+                self.initial_y,
+                self.initial_x + self.width as f64,
+                self.initial_y + self.height as f64,
+            ),
             None,
             None,
         );
@@ -487,6 +510,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         self.layer_manager.maybe_with_layer(
             scene,
             has_clip_path,
+            BlendMode::default(),
             1.0,
             cx.transform,
             &clip_path_for_layer,
@@ -527,6 +551,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                 self.layer_manager.maybe_with_layer(
                     scene,
                     has_opacity || filter.is_some() || backdrop_filter.is_some(),
+                    BlendMode::default(),
                     opacity,
                     cx.transform,
                     &effect_layer_clip,
@@ -551,6 +576,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                         self.layer_manager.maybe_with_layer(
                             scene,
                             should_clip,
+                            BlendMode::default(),
                             1.0, // opacity
                             cx.transform,
                             clip,
@@ -597,6 +623,8 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             },
         );
 
+        self.layer_manager
+            .maybe_pop_layer(scene, blend_layer_pushed);
         self.layer_manager
             .maybe_pop_layer(scene, css_clip_layer_pushed);
     }
@@ -1171,6 +1199,7 @@ impl ElementCx<'_, '_> {
         self.context.layer_manager.maybe_with_layer(
             scene,
             overflows,
+            BlendMode::default(),
             1.0,
             self.transform,
             &self.frame.content_box_path(),
