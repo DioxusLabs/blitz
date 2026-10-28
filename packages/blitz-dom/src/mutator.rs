@@ -609,22 +609,28 @@ impl DocumentMutator<'_> {
         let is_style = *attr == local_name!("style");
         // Attributes that box construction or layout read directly. Any other attribute only
         // reaches layout through the cascade, so its damage comes from the computed-style diff.
-        let read_by_layout = matches!(
-            *attr,
-            local_name!("type")
-                | local_name!("value")
-                | local_name!("checked")
-                | local_name!("width")
-                | local_name!("height")
-                | local_name!("colspan")
-                | local_name!("rowspan")
-                | local_name!("rows")
-                | local_name!("cols")
-                | local_name!("start")
-                | local_name!("reversed")
-                | local_name!("src")
-                | local_name!("srcdoc")
-        );
+        // Inline SVG is rendered from its serialized source, so every SVG attribute counts.
+        let is_svg = node
+            .element_data()
+            .is_some_and(|element| element.name.ns == markup5ever::ns!(svg));
+        let read_by_layout = is_svg
+            || matches!(
+                *attr,
+                local_name!("type")
+                    | local_name!("value")
+                    | local_name!("checked")
+                    | local_name!("width")
+                    | local_name!("height")
+                    | local_name!("colspan")
+                    | local_name!("rowspan")
+                    | local_name!("rows")
+                    | local_name!("cols")
+                    | local_name!("start")
+                    | local_name!("reversed")
+                    | local_name!("src")
+                    | local_name!("srcdoc")
+                    | local_name!("span")
+            );
         if let Some(mut data) = node.try_stylo_element_data_mut().and_then(|s| s.get_mut()) {
             data.hint |= if is_style {
                 RestyleHint::RESTYLE_STYLE_ATTRIBUTE
