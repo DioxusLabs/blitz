@@ -33,6 +33,12 @@ const SELECTION_COLOR: Color = Color::from_rgb8(180, 213, 255);
 /// Pre-computed `Scene`s for each CustomWidget, keyed by `(document id, node id)`
 type CustomWidgetSceneMap = HashMap<(usize, NodeId), Scene>;
 
+#[derive(Default)]
+pub(crate) struct PaintResources {
+    custom_widget_scenes: CustomWidgetSceneMap,
+    select_overlays: HashMap<usize, Scene>,
+}
+
 /// Paint a [`blitz_dom::BaseDocument`] by pushing drawing commands into
 /// an impl [`anyrender::PaintScene`].
 ///
@@ -55,10 +61,10 @@ pub fn paint_scene(
     // This helps us avoid borrow-checker issues as we recurse down the tree (`.paint()` require `&mut self`).
     //
     // TODO: Take widget and sub-document visibility into account
-    #[allow(unused_mut)]
-    let mut custom_widget_scenes: CustomWidgetSceneMap = HashMap::new();
+    let mut resources = PaintResources::default();
     #[cfg(feature = "custom-widget")]
-    build_custom_widget_scenes(&mut custom_widget_scenes, doc, scene, scale);
+    build_custom_widget_scenes(&mut resources.custom_widget_scenes, doc, scene, scale);
+    select_overlay::build_select_overlay_scenes(&mut resources.select_overlays, doc, scale);
 
     let generator = BlitzDomPainter::new(
         doc,
@@ -67,10 +73,9 @@ pub fn paint_scene(
         height,
         x_offset as f64,
         y_offset as f64,
-        &custom_widget_scenes,
+        &resources,
     );
     generator.paint_scene(scene);
-    select_overlay::paint_select_overlay(scene, doc, scale, x_offset, y_offset);
 
     // println!(
     //     "Rendered using {} clips (depth: {}) (wanted: {})",

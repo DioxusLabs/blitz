@@ -22,6 +22,145 @@ fn fixture() -> Harness {
     )
 }
 
+#[test]
+fn select_sub_document_paint_focus_keyboard_and_redraw() {
+    use anyrender::render_to_buffer;
+    use anyrender_vello_cpu::VelloCpuImageRenderer;
+    use blitz_dom::{DocumentConfig, PlainDocument, UserAgentStylesheet};
+    use blitz_html::HtmlDocument;
+    use blitz_traits::shell::ShellProvider;
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+
+    #[derive(Default)]
+    struct Window(AtomicUsize);
+    impl ShellProvider for Window {
+        fn request_redraw(&self) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    let window = Arc::new(Window::default());
+    let config = || DocumentConfig {
+        shell_provider: Some(window.clone()),
+        ua_stylesheets: vec![UserAgentStylesheet::default_sheet()],
+        ..Default::default()
+    };
+    let parent = HtmlDocument::from_html(
+        r#"<body style="margin:0;background:white"><div id="host" style="position:absolute;left:60px;top:50px;width:200px;height:180px"></div></body>"#,
+        config(),
+    );
+    let child = HtmlDocument::from_html(
+        r#"<body style="margin:0;background:#eee"><div style="position:absolute;left:10px;top:140px;width:180px;height:30px;overflow:hidden"><select id="s" style="width:180px;font:16px sans-serif"><option id="a">Alpha</option><option disabled>Disabled</option><option id="c">Charlie</option></select></div></body>"#,
+        config(),
+    ).into_inner();
+    let s = child.query_selector("#s").unwrap().unwrap();
+    let c = child.query_selector("#c").unwrap().unwrap();
+    let mut h = Harness::wrap(parent);
+    h.set_viewport_size(320, 280);
+    let host = h.node("#host");
+    h.base_mut()
+        .set_sub_document(host, Box::new(PlainDocument(child)));
+    h.pump();
+
+    let count = window.0.load(Ordering::SeqCst);
+    click(&mut h, 100.0, 200.0);
+    assert_eq!(h.focused(), Some(host));
+    assert!(window.0.load(Ordering::SeqCst) > count);
+    let overlay = {
+        let mut parent = h.base_mut();
+        let mut child = parent.subdoc_mut(host).unwrap().inner_mut();
+        assert_eq!(child.get_focussed_node_id(), Some(s));
+        assert_eq!(child.open_select, Some(s));
+        child.select_overlay().unwrap()
+    };
+    assert!(overlay.rect.y < 140.0);
+    assert!(overlay.rect.x >= 0.0 && overlay.rect.x + overlay.rect.width <= 200.0);
+    let buffer = render_to_buffer::<VelloCpuImageRenderer, _>(
+        |scene| blitz_paint::paint_scene(scene, &mut h.base_mut(), 1.0, 320, 280, 0, 0),
+        320,
+        280,
+    );
+    let mut highlighted_pixels = 0;
+    for (i, pixel) in buffer.chunks_exact(4).enumerate() {
+        if pixel[2] > 150 && pixel[0] < 80 && pixel[1] < 130 {
+            highlighted_pixels += 1;
+            let (x, y) = (i % 320, i / 320);
+            assert!((60..260).contains(&x) && (50..230).contains(&y));
+            assert!(
+                y < 190,
+                "overlay escapes the select's overflow-hidden wrapper"
+            );
+        }
+    }
+    assert!(
+        highlighted_pixels > 500,
+        "sub-document overlay must be painted"
+    );
+
+    let row = overlay.rows.iter().find(|row| row.option == c).unwrap();
+    let count = window.0.load(Ordering::SeqCst);
+    h.move_mouse_to(
+        60.0 + row.rect.x as f32 + 5.0,
+        50.0 + row.rect.y as f32 + 5.0,
+    );
+    assert!(window.0.load(Ordering::SeqCst) > count);
+    {
+        let mut parent = h.base_mut();
+        let mut child = parent.subdoc_mut(host).unwrap().inner_mut();
+        assert!(
+            child
+                .select_overlay()
+                .unwrap()
+                .rows
+                .iter()
+                .any(|row| row.option == c && row.highlighted)
+        );
+    }
+    key(&mut h, NamedKey::Home);
+    let count = window.0.load(Ordering::SeqCst);
+    key(&mut h, NamedKey::ArrowDown);
+    assert!(window.0.load(Ordering::SeqCst) > count);
+    key(&mut h, NamedKey::Enter);
+    {
+        let parent = h.base();
+        let child = parent.subdoc(host).unwrap().inner();
+        assert_eq!(child.selected_option(s), Some(c));
+        assert_eq!(child.open_select, None);
+    }
+    let closed = render_to_buffer::<VelloCpuImageRenderer, _>(
+        |scene| blitz_paint::paint_scene(scene, &mut h.base_mut(), 1.0, 320, 280, 0, 0),
+        320,
+        280,
+    );
+    assert!(
+        !closed
+            .chunks_exact(4)
+            .any(|p| p[2] > 150 && p[0] < 80 && p[1] < 130)
+    );
+
+    click(&mut h, 100.0, 200.0);
+    let count = window.0.load(Ordering::SeqCst);
+    key(&mut h, NamedKey::Escape);
+    assert!(window.0.load(Ordering::SeqCst) > count);
+    assert_eq!(h.base().subdoc(host).unwrap().inner().open_select, None);
+
+    {
+        let mut parent = h.base_mut();
+        let mut child = parent.subdoc_mut(host).unwrap().inner_mut();
+        child.mutate().set_attribute(
+            s,
+            blitz_dom::QualName::new(None, blitz_dom::ns!(), "disabled".into()),
+            "",
+        );
+    }
+    h.pump();
+    click(&mut h, 100.0, 200.0);
+    assert_eq!(h.base().subdoc(host).unwrap().inner().open_select, None);
+}
+
 fn pointer(x: f32, y: f32) -> blitz_traits::events::BlitzPointerEvent {
     pointer_event(
         BlitzPointerId::Mouse,

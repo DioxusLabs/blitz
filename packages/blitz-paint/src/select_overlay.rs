@@ -1,21 +1,32 @@
 use crate::color::ToColorColor;
-use anyrender::PaintScene;
+use anyrender::{PaintScene, Scene};
 use blitz_dom::{BaseDocument, CopyStyleGetters};
 use kurbo::{Affine, Rect, Vec2};
 use parley::layout::PositionedLayoutItem;
 use peniko::{Fill, color::AlphaColor};
 
-pub(crate) fn paint_select_overlay(
-    scene: &mut impl PaintScene,
+pub(crate) fn build_select_overlay_scenes(
+    scenes: &mut std::collections::HashMap<usize, Scene>,
     doc: &mut BaseDocument,
     scale: f64,
-    x_offset: u32,
-    y_offset: u32,
 ) {
+    if doc.open_select.is_some() {
+        let mut scene = Scene::new();
+        paint_select_overlay(&mut scene, doc, scale);
+        scenes.insert(doc.id(), scene);
+    }
+    for node_id in doc.sub_document_node_ids() {
+        if let Some(sub_doc) = doc.get_node_mut(node_id).and_then(|node| node.subdoc_mut()) {
+            build_select_overlay_scenes(scenes, &mut sub_doc.inner_mut(), scale);
+        }
+    }
+}
+
+fn paint_select_overlay(scene: &mut impl PaintScene, doc: &mut BaseDocument, scale: f64) {
     let Some(overlay) = doc.select_overlay() else {
         return;
     };
-    let transform = Affine::translate((x_offset as f64, y_offset as f64)) * Affine::scale(scale);
+    let transform = Affine::scale(scale);
     let frame = Rect::new(
         overlay.rect.x,
         overlay.rect.y,
