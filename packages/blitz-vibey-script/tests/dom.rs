@@ -38,44 +38,28 @@ fn executes_inline_scripts() {
 }
 
 #[test]
-fn computed_widget_dimensions_preserve_fractional_layout() {
+fn computed_widget_dimensions_use_rounded_layout() {
     let mut doc = doc_from_html(
-        r#"<div style="width:500px"><textarea id="t" style="font-size:13px"></textarea><br><select id="s"><option>Label</option></select></div>"#,
+        r#"<style>
+        textarea, select { display:block; box-sizing:border-box; width:123.4px; height:45.6px }
+        </style><textarea id="t"></textarea><select id="s"><option>Label</option></select>
+        <div id="out"></div><script>
+            document.getElementById('out').textContent = ['t', 's'].map(id => {
+                const computed = getComputedStyle(document.getElementById(id));
+                return computed.width + '|' + computed.height;
+            }).join('|');
+        </script>"#,
     );
     doc.inner_mut().resolve(0.0);
-    let t = doc.inner().query_selector("#t").unwrap().unwrap();
-    let s = doc.inner().query_selector("#s").unwrap().unwrap();
-    let height = doc
-        .inner()
-        .get_node(t)
-        .unwrap()
-        .unrounded_layout()
-        .size
-        .height;
-    let y = doc
-        .inner()
-        .get_node(s)
-        .unwrap()
-        .unrounded_layout()
-        .location
-        .y;
-    let html = r#"<div style="width:500px"><textarea id="t" style="font-size:13px"></textarea><br><select id="s"><option>Label</option></select></div><script>
-        for (const id of ['t', 's']) {
-            const el = document.getElementById(id);
-            const computed = getComputedStyle(el);
-            const width = computed.width;
-            const height = computed.height;
-            el.style.width = width;
-            el.style.height = height;
-        }
-    </script>"#;
-    let mut roundtrip = doc_from_html(html);
-    roundtrip.inner_mut().resolve(0.0);
-    let inner = roundtrip.inner();
-    let t = inner.query_selector("#t").unwrap().unwrap();
-    let s = inner.query_selector("#s").unwrap().unwrap();
-    assert!((inner.get_node(t).unwrap().unrounded_layout().size.height - height).abs() < 0.001);
-    assert!((inner.get_node(s).unwrap().unrounded_layout().location.y - y).abs() < 0.001);
+    let expected = ["#t", "#s"].map(|selector| {
+        let inner = doc.inner();
+        let id = inner.query_selector(selector).unwrap().unwrap();
+        let node = inner.get_node(id).unwrap();
+        let size = node.final_layout().size;
+        assert_ne!(node.unrounded_layout().size.width, size.width);
+        format!("{}px|{}px", size.width, size.height)
+    });
+    assert_eq!(text_of_selector(&doc, "#out"), expected.join("|"));
 }
 
 #[test]
