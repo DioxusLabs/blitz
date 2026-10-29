@@ -36,7 +36,21 @@ type RequestBuilder = reqwest_middleware::RequestBuilder;
 type RequestBuilder = reqwest::RequestBuilder;
 
 #[cfg(feature = "cache")]
+static CACHE_DIR: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+
+/// Keep the HTTP cache in `path` instead of the default folder. Call it before the first
+/// `Provider` is created; later calls are ignored. An embedder with several profiles uses
+/// this so one profile's cached responses are never served to another.
+#[cfg(feature = "cache")]
+pub fn set_cache_dir(path: std::path::PathBuf) {
+    let _ = CACHE_DIR.set(path);
+}
+
+#[cfg(feature = "cache")]
 fn get_cache_path() -> std::path::PathBuf {
+    if let Some(path) = CACHE_DIR.get() {
+        return path.clone();
+    }
     // iOS apps are sandboxed with a per-app Caches directory, and the sandbox
     // only permits paths that case-match its canonical layout, so the
     // ProjectDirs convention (a mixed-case bundle-id directory) cannot be
