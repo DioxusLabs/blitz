@@ -21,7 +21,7 @@ use crate::{
     layout::damage::{
         CONSTRUCT_BOX, CONSTRUCT_DESCENDENT, CONSTRUCT_FC, sort_layout_children_by_order,
     },
-    node::{NodeFlags, NodeKind, SpecialElementData, TextInputData, TextLayout},
+    node::{NodeFlags, NodeKind, PlaceholderText, SpecialElementData, TextInputData, TextLayout},
     qual_name, stylo_to_parley,
     traversal::{iter_children, iter_children_and_pseudos},
 };
@@ -921,6 +921,77 @@ fn create_text_editor(doc: &mut BaseDocument, input_element_id: NodeId, is_multi
     editor.set_base_direction(base_direction);
 
     editor.refresh_layout(&mut doc.font_ctx.lock().unwrap(), &mut doc.layout_ctx);
+
+    let placeholder = layout_placeholder(doc, input_element_id, is_multiline, alignment);
+    if let Some(SpecialElementData::TextInput(text_input_data)) = doc.nodes[input_element_id]
+        .data
+        .downcast_element_mut()
+        .map(|element| &mut element.special_data)
+    {
+        text_input_data.placeholder = placeholder;
+    }
+}
+
+/// Lay out an input's `placeholder` attribute in its `::placeholder` style. It is painted while
+/// the input is empty.
+fn layout_placeholder(
+    doc: &mut BaseDocument,
+    input_element_id: NodeId,
+    is_multiline: bool,
+    alignment: parley::layout::Alignment,
+) -> Option<Box<PlaceholderText>> {
+    use style::selector_parser::PseudoElement;
+    use style::stylist::RuleInclusion;
+
+    let node = &doc.nodes[input_element_id];
+    let text = node.attr(local_name!("placeholder"))?;
+    // A single-line input shows the placeholder with its line breaks stripped.
+    let text: String = if is_multiline {
+        text.to_string()
+    } else {
+        text.chars().filter(|c| !matches!(c, '\n' | '\r')).collect()
+    };
+    if text.is_empty() {
+        return None;
+    }
+    let input_style = node.primary_styles()?.clone();
+    let read_guard = doc.guard.read();
+    let guards = StylesheetGuards::same(&read_guard);
+    let style = doc
+        .stylist
+        .lazily_compute_pseudo_element_style(
+            &guards,
+            node,
+            &PseudoElement::Placeholder,
+            RuleInclusion::All,
+            &input_style,
+            false,
+            None,
+        )
+        .unwrap_or(input_style);
+    drop(read_guard);
+
+    let mut parley_style = stylo_to_parley::style(input_element_id, &style);
+    // A textarea keeps the placeholder's line breaks and spaces, as its editor keeps the value's.
+    if is_multiline {
+        parley_style.white_space_collapse = parley::WhiteSpaceCollapse::Preserve;
+    }
+    let scale = doc.viewport.scale_f64() as f32;
+    let mut layout = parley::Layout::new();
+    {
+        let mut font_ctx = doc.font_ctx.lock().unwrap();
+        let mut builder = doc
+            .layout_ctx
+            .tree_builder(&mut font_ctx, scale, true, &parley_style);
+        builder.push_text(&text);
+        builder.build_into(&mut layout);
+    }
+    layout.break_all_lines(None);
+    layout.align(alignment, parley::AlignmentOptions::default());
+    Some(Box::new(PlaceholderText {
+        layout,
+        color: style.clone_color(),
+    }))
 }
 
 fn create_checkbox_input(doc: &mut BaseDocument, input_element_id: NodeId) {

@@ -90,6 +90,10 @@ textarea {
     font-family: monospace;
 }
 
+::placeholder {
+    color: #757575;
+}
+
 input:focus,
 textarea:focus {
     outline: 2px solid #4D90FE;

@@ -993,17 +993,35 @@ impl ElementCx<'_, '_> {
                 };
             }
 
-            // Render text
+            // Render text, or the placeholder while the input is empty
             let mut draw_text_context = self.context.draw_text_context.borrow_mut();
-            crate::text::stroke_text(
-                scene,
-                input_data.editor.try_layout().unwrap().lines(),
-                self.context.dom,
-                transform,
-                self.scale,
-                self.node.id,
-                &mut draw_text_context,
-            );
+            let placeholder = input_data
+                .placeholder
+                .as_deref()
+                .filter(|_| input_data.editor.raw_text().is_empty());
+            if let Some(placeholder) = placeholder {
+                draw_text_context.color_override = Some(placeholder.color.as_srgb_color());
+                crate::text::stroke_text(
+                    scene,
+                    placeholder.layout.lines(),
+                    self.context.dom,
+                    transform,
+                    self.scale,
+                    self.node.id,
+                    &mut draw_text_context,
+                );
+                draw_text_context.color_override = None;
+            } else {
+                crate::text::stroke_text(
+                    scene,
+                    input_data.editor.try_layout().unwrap().lines(),
+                    self.context.dom,
+                    transform,
+                    self.scale,
+                    self.node.id,
+                    &mut draw_text_context,
+                );
+            }
         }
     }
 
