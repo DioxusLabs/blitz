@@ -72,6 +72,59 @@ pub struct TextInputData {
     /// vertical offset. It is kept up to date so that the caret remains visible within the
     /// input's content box.
     pub scroll_offset: f32,
+    /// The `placeholder` attribute laid out in the `::placeholder` style, painted while the
+    /// input is empty.
+    pub placeholder: Option<Box<PlaceholderText>>,
+}
+
+/// An input's placeholder text and the colour it is painted in.
+#[derive(Clone)]
+pub struct PlaceholderText {
+    pub layout: parley::Layout<TextBrush>,
+    pub color: style::color::AbsoluteColor,
+    text: String,
+    style: parley::TextStyle<'static, 'static, TextBrush>,
+    alignment: parley::Alignment,
+    /// The width the placeholder wraps at, in device pixels; `None` for a single line.
+    width: Option<f32>,
+}
+
+impl PlaceholderText {
+    pub(crate) fn new(
+        text: String,
+        style: parley::TextStyle<'static, 'static, TextBrush>,
+        alignment: parley::Alignment,
+        color: style::color::AbsoluteColor,
+    ) -> Self {
+        Self {
+            layout: parley::Layout::new(),
+            color,
+            text,
+            style,
+            alignment,
+            width: None,
+        }
+    }
+
+    /// Wrap at `width` device pixels (a textarea's content width) from the next layout.
+    pub(crate) fn set_width(&mut self, width: Option<f32>) {
+        self.width = width;
+    }
+
+    /// Shape and break the text again, after the fonts, the scale or the width changed.
+    pub(crate) fn relayout(
+        &mut self,
+        font_ctx: &mut FontContext,
+        layout_ctx: &mut LayoutContext<TextBrush>,
+        scale: f32,
+    ) {
+        let mut builder = layout_ctx.tree_builder(font_ctx, scale, true, &self.style);
+        builder.push_text(&self.text);
+        builder.build_into(&mut self.layout);
+        self.layout.break_all_lines(self.width);
+        self.layout
+            .align(self.alignment, parley::AlignmentOptions::default());
+    }
 }
 
 // FIXME: Implement Clone for PlainEditor
@@ -88,6 +141,7 @@ impl TextInputData {
             editor,
             is_multiline,
             scroll_offset: 0.0,
+            placeholder: None,
         }
     }
 
