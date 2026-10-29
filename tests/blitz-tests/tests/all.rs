@@ -39,6 +39,7 @@ mod inline_fragment_rects;
 mod inline_svg_restyle;
 mod inline_svg_serialize;
 mod inner_html_leak;
+mod inset_box_shadow_zero_blur;
 mod interaction_state_canonicalization;
 mod interaction_state_teardown;
 mod lang_attribute;
