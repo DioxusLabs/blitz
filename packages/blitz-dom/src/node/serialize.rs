@@ -1,7 +1,7 @@
 //! Serialization of nodes to HTML, and of inline `<svg>` subtrees to SVG source for usvg.
 
 use html_escape::{encode_quoted_attribute_to_string, encode_text_to_string};
-use markup5ever::{QualName, ns};
+use markup5ever::{QualName, local_name, ns};
 use style_traits::values::ToCss;
 use stylo_taffy::CopyStyleGetters;
 
@@ -20,6 +20,9 @@ struct SerializeOpts {
     resolve_current_color: bool,
     /// Declare the `xlink` prefix on the root element so that the output is well-formed XML
     declare_xlink_ns: bool,
+    /// Write an expanded SVG `<use>` (see `crate::svg_use`) as a `<g>` around its clone
+    #[cfg(feature = "svg")]
+    expand_svg_use: bool,
 }
 
 impl SerializeOpts {
@@ -28,6 +31,8 @@ impl SerializeOpts {
             style,
             resolve_current_color: false,
             declare_xlink_ns: false,
+            #[cfg(feature = "svg")]
+            expand_svg_use: false,
         }
     }
 }
@@ -101,7 +106,9 @@ impl Node {
     }
 
     /// Serializes this `<svg>` subtree as a standalone SVG document for usvg, with
-    /// `currentColor` resolved against each element's computed `color`.
+    /// `currentColor` resolved against each element's computed `color`. Elements it references
+    /// by `url(#id)` or `href="#id"` that are defined elsewhere in the document (a gradient or
+    /// filter in an icon sprite) are copied into a trailing `<defs>`.
     #[cfg(feature = "svg")]
     pub(crate) fn svg_source(&self) -> String {
         let mut output = String::new();
@@ -109,9 +116,128 @@ impl Node {
             style: OutputStyle::Normal,
             resolve_current_color: true,
             declare_xlink_ns: true,
+            expand_svg_use: true,
         };
         self.write_outer_html_in_style(&mut output, opts, 0);
+
+        let mut defined = std::collections::HashSet::new();
+        let mut referenced = Vec::new();
+        self.collect_svg_ids(&mut defined, &mut referenced);
+        let mut defs = String::new();
+        while let Some(id) = referenced.pop() {
+            if !defined.insert(id.clone()) {
+                continue;
+            }
+            if let Some(node) = self.find_element_by_id(&id) {
+                node.write_outer_html_in_style(&mut defs, opts, 1);
+                node.collect_svg_ids(&mut defined, &mut referenced);
+            }
+        }
+        if !defs.is_empty() {
+            let close = output.rfind("</").unwrap_or(output.len());
+            output.insert_str(close, &format!("<defs>{defs}</defs>"));
+        }
         output
+    }
+
+    /// The ids this subtree defines, and those it references by `url(#id)` or by `href="#id"`
+    /// (except on an expanded `<use>`, whose clone is written in its place).
+    #[cfg(feature = "svg")]
+    fn collect_svg_ids(
+        &self,
+        defined: &mut std::collections::HashSet<String>,
+        referenced: &mut Vec<String>,
+    ) {
+        if self.is_dropped_svg_use() {
+            return;
+        }
+        if let Some(data) = self.element_data() {
+            if let Some(id) = data.id.as_deref() {
+                defined.insert(id.to_string());
+            }
+            let expanded_use = self.is_expanded_svg_use();
+            for attr in data.attrs() {
+                let mut rest = attr.value.as_str();
+                while let Some(start) = rest.find("url(") {
+                    rest = &rest[start + 4..];
+                    let inner = rest.split(')').next().unwrap_or("");
+                    let inner = inner.trim().trim_matches(|c| c == '"' || c == '\'');
+                    if let Some(id) = inner.strip_prefix('#') {
+                        referenced.push(id.to_string());
+                    }
+                }
+                if attr.name.local == local_name!("href") && !expanded_use {
+                    if let Some(id) = attr.value.strip_prefix('#') {
+                        referenced.push(id.to_string());
+                    }
+                }
+            }
+        }
+        for &child_id in &self.children {
+            self.tree()[child_id].collect_svg_ids(defined, referenced);
+        }
+    }
+
+    /// The first element in tree order with this `id`.
+    #[cfg(feature = "svg")]
+    fn find_element_by_id(&self, id: &str) -> Option<&Node> {
+        let mut root = self;
+        while let Some(parent) = root.parent {
+            root = &self.tree()[parent];
+        }
+        let mut stack = vec![root.id];
+        while let Some(node_id) = stack.pop() {
+            let node = &self.tree()[node_id];
+            if node
+                .element_data()
+                .is_some_and(|el| el.id.as_deref() == Some(id))
+            {
+                return Some(node);
+            }
+            stack.extend(node.children.iter().rev().copied());
+        }
+        None
+    }
+
+    /// Whether this is an SVG `<use>` element expanded by `crate::svg_use`.
+    #[cfg(feature = "svg")]
+    fn is_expanded_svg_use(&self) -> bool {
+        self.element_data()
+            .is_some_and(|el| el.name.ns == ns!(svg) && el.name.local == local_name!("use"))
+            && self
+                .children
+                .iter()
+                .any(|&id| self.tree()[id].is_svg_use_clone())
+    }
+
+    /// Whether this is an SVG `<use>` inside a clone that was left unexpanded: a circular
+    /// reference, which renders nothing.
+    #[cfg(feature = "svg")]
+    fn is_dropped_svg_use(&self) -> bool {
+        let is_use = self
+            .element_data()
+            .is_some_and(|el| el.name.ns == ns!(svg) && el.name.local == local_name!("use"));
+        if !is_use || self.is_expanded_svg_use() {
+            return false;
+        }
+        let mut current = self.parent;
+        while let Some(id) = current {
+            let node = &self.tree()[id];
+            if node.is_svg_use_clone() {
+                return true;
+            }
+            current = node.parent;
+        }
+        false
+    }
+
+    #[cfg(feature = "svg")]
+    fn is_svg_use_clone(&self) -> bool {
+        self.element_data().is_some_and(|el| {
+            el.attrs()
+                .iter()
+                .any(|attr| *attr.name.local == *crate::svg_use::USE_CLONE_ATTR)
+        })
     }
 
     fn write_outer_html_in_style(&self, writer: &mut String, opts: SerializeOpts, nesting: usize) {
@@ -168,8 +294,18 @@ impl Node {
                         writer.push_str(INDENT);
                     }
                 }
+                #[cfg(feature = "svg")]
+                if opts.expand_svg_use && self.is_dropped_svg_use() {
+                    return;
+                }
+                #[cfg(feature = "svg")]
+                let expanded_use = opts.expand_svg_use && self.is_expanded_svg_use();
+                #[cfg(not(feature = "svg"))]
+                let expanded_use = false;
+                // An expanded `<use>` is a group around its clone, translated by its `x`/`y`.
+                let tag: &str = if expanded_use { "g" } else { &data.name.local };
                 writer.push('<');
-                writer.push_str(&data.name.local);
+                writer.push_str(tag);
 
                 if opts.declare_xlink_ns
                     && nesting == 0
@@ -181,6 +317,23 @@ impl Node {
                 }
 
                 for attr in data.attrs() {
+                    #[cfg(feature = "svg")]
+                    if opts.expand_svg_use
+                        && attr.name.ns == ns!()
+                        && *attr.name.local == *crate::svg_use::USE_CLONE_ATTR
+                    {
+                        continue;
+                    }
+                    if expanded_use
+                        && (attr.name.local == local_name!("href")
+                            || (attr.name.ns == ns!()
+                                && matches!(
+                                    &*attr.name.local,
+                                    "x" | "y" | "width" | "height" | "transform"
+                                )))
+                    {
+                        continue;
+                    }
                     writer.push(' ');
                     write_attr_name(&attr.name, writer);
                     writer.push_str("=\"");
@@ -193,6 +346,26 @@ impl Node {
                     } else {
                         encode_quoted_attribute_to_string(&attr.value, writer);
                     }
+                    writer.push('"');
+                }
+                if expanded_use {
+                    let attr = |name: &str| {
+                        data.attrs()
+                            .iter()
+                            .find(|attr| attr.name.ns == ns!() && &*attr.name.local == name)
+                            .map(|attr| attr.value.trim())
+                    };
+                    let translate = format!(
+                        "translate({} {})",
+                        attr("x").unwrap_or("0"),
+                        attr("y").unwrap_or("0")
+                    );
+                    let transform = match attr("transform") {
+                        Some(transform) => format!("{transform} {translate}"),
+                        None => translate,
+                    };
+                    writer.push_str(" transform=\"");
+                    encode_quoted_attribute_to_string(&transform, writer);
                     writer.push('"');
                 }
                 if !has_children {
@@ -214,7 +387,7 @@ impl Node {
                         }
                     }
                     writer.push_str("</");
-                    writer.push_str(&data.name.local);
+                    writer.push_str(tag);
                     writer.push('>');
                     if matches!(style, OutputStyle::Pretty) {
                         writer.push('\n');

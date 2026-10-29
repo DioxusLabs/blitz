@@ -64,6 +64,10 @@ pub struct DocumentMutator<'doc> {
     /// Whether any mutation that affects rendered output has been performed
     mutations_occurred: bool,
 
+    /// Whether an SVG `<use>` element, or an SVG element it may reference, has been added
+    #[cfg(feature = "svg")]
+    svg_use_targets_changed: bool,
+
     /// The (latest) node which has been mounted in and had autofocus=true, if any
     #[cfg(feature = "autofocus")]
     node_to_autofocus: Option<NodeId>,
@@ -88,6 +92,8 @@ impl DocumentMutator<'_> {
             form_nodes: HashSet::new(),
             recompute_is_animating: false,
             mutations_occurred: false,
+            #[cfg(feature = "svg")]
+            svg_use_targets_changed: false,
             #[cfg(feature = "autofocus")]
             node_to_autofocus: None,
         }
@@ -1022,6 +1028,11 @@ impl<'doc> DocumentMutator<'doc> {
             self.doc.reset_form_owner(id);
         }
 
+        #[cfg(feature = "svg")]
+        if std::mem::take(&mut self.svg_use_targets_changed) {
+            self.doc.expand_svg_use_elements();
+        }
+
         #[cfg(feature = "autofocus")]
         if let Some(node_id) = self.node_to_autofocus.take() {
             if self.doc.get_node(node_id).is_some() {
@@ -1079,6 +1090,13 @@ impl<'doc> DocumentMutator<'doc> {
             let has_custom_widget = element.custom_widget_data().is_some();
             #[cfg(not(feature = "custom-widget"))]
             let has_custom_widget = false;
+
+            #[cfg(feature = "svg")]
+            if element.name.ns == markup5ever::ns!(svg)
+                && (element.name.local == local_name!("use") || element.id.is_some())
+            {
+                self.svg_use_targets_changed = true;
+            }
 
             // Custom post-processing by element tag name
             let tag = element.name.local.as_ref();
