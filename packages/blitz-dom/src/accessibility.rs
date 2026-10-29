@@ -1,17 +1,38 @@
 mod node;
 mod tree_builder;
 
-use crate::{BaseDocument, accessibility::tree_builder::TreeBuilder};
+use crate::{BaseDocument, Node, accessibility::tree_builder::TreeBuilder};
 use accesskit::TreeUpdate;
 use blitz_traits::NodeId;
+use markup5ever::local_name;
 
 impl BaseDocument {
     pub fn build_accessibility_tree(&self) -> TreeUpdate {
-        let mut builder = TreeBuilder::new(self);
-        builder.add_nodes();
-        builder.resolve_names();
-        builder.resolve_descriptions();
-        builder.build()
+        TreeBuilder::new(self).build()
+    }
+
+    fn referenced_dom_ids_to_node_ids<'a>(
+        &'a self,
+        nodes_reference: &'a str,
+    ) -> impl Iterator<Item = NodeId> + 'a {
+        nodes_reference
+            .split_ascii_whitespace()
+            .filter_map(|dom_id| self.get_element_by_id(dom_id))
+    }
+
+    /// The element labelled by the given `<label>` element, if any.
+    ///
+    /// https://html.spec.whatwg.org/multipage/forms.html#dom-label-control
+    fn label_control(&self, label: &Node) -> Option<NodeId> {
+        match label.attr(local_name!("for")) {
+            // The spec restricts which elements can be labelled. If the first element with the id
+            // is not labelable, no later element with the same id is used and the descendants of
+            // the label are not considered either.
+            Some(for_id) => self
+                .get_element_by_id(for_id)
+                .filter(|&target| self.nodes[target].is_labelable()),
+            None => label.first_labelable_descendant(),
+        }
     }
 }
 

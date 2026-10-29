@@ -11,60 +11,51 @@ const DEFAULT_ACCESSKIT_NODE_ID: accesskit::NodeId = accesskit::NodeId(u64::MAX)
 
 pub(super) struct TreeBuilder<'doc> {
     document: &'doc BaseDocument,
-    window: accesskit::Node,
-    nodes: HashMap<NodeId, accesskit::Node>,
     relations: HashMap<NodeId, Relations>,
     excluded_nodes: HashSet<NodeId>,
 }
 
 impl<'doc> TreeBuilder<'doc> {
     pub fn new(document: &'doc BaseDocument) -> Self {
-        Self {
-            document,
-            window: accesskit::Node::new(Role::Window),
-            nodes: Default::default(),
-            relations: Default::default(),
-            excluded_nodes: HashSet::new(),
-        }
-    }
-
-    pub fn add_nodes(&mut self) {
-        self.document.visit(|node_id, node| {
+        let mut excluded_nodes = HashSet::new();
+        let mut relations = HashMap::new();
+        document.visit(|node_id, node| {
             if node.is_hidden_from_accessibility_tree()
                 || node
                     .parent
-                    .is_some_and(|parent_id| self.excluded_nodes.contains(&parent_id))
+                    .is_some_and(|parent_id| excluded_nodes.contains(&parent_id))
             {
-                self.excluded_nodes.insert(node_id);
+                excluded_nodes.insert(node_id);
                 return;
             }
-            let parent = node
-                .parent
-                .and_then(|parent_id| self.nodes.get_mut(&parent_id))
-                .unwrap_or(&mut self.window);
-            let mut accesskit_node = node.build_accesskit_node(parent);
-            if accesskit_node.role() == Role::Label {
-                self.set_value_of_label(node, &mut accesskit_node);
-            }
-            self.collect_relations(node_id, node);
-            self.nodes.insert(node_id, accesskit_node);
+            Self::collect_relations(&mut relations, node_id, node, document);
         });
+        Self {
+            document,
+            relations,
+            excluded_nodes,
+        }
     }
 
-    fn collect_relations(&mut self, node_id: NodeId, node: &Node) {
-        let mut relations = self.relations.remove(&node_id).unwrap_or_default();
+    fn collect_relations(
+        relations_map: &mut HashMap<NodeId, Relations>,
+        node_id: NodeId,
+        node: &Node,
+        document: &BaseDocument,
+    ) {
         if let Some(id_refs) = node.attr(local_name!("aria-labelledby")) {
-            let labelled_by =
-                NameSource::AriaLabelledBy(self.referenced_dom_ids_to_node_ids(id_refs).collect());
-            relations.labelled_by = Some(labelled_by);
+            let labelled_by = NameSource::AriaLabelledBy(
+                document.referenced_dom_ids_to_node_ids(id_refs).collect(),
+            );
+            relations_map.entry(node_id).or_default().labelled_by = Some(labelled_by);
         } else if node.is_element_named(local_name!("label"))
-                && let Some(target) = self.label_control(node)
+                && let Some(target) = document.label_control(node)
                 // aria-label on the target takes precedence over <label>.
-                && self.document.nodes[target]
+                && document.nodes[target]
                     .attr(local_name!("aria-label"))
                     .is_none_or(|aria_label| aria_label.trim_ascii().is_empty())
         {
-            match self.relations.entry(target).or_default().labelled_by {
+            match relations_map.entry(target).or_default().labelled_by {
                 // The target has no label yet.
                 ref mut labelled_by @ None => {
                     *labelled_by = Some(NameSource::LabelElements(vec![node_id]));
@@ -82,28 +73,57 @@ impl<'doc> TreeBuilder<'doc> {
         }
 
         if let Some(aria_describedby) = node.attr(local_name!("aria-describedby")) {
-            let described_by = self
+            let described_by = document
                 .referenced_dom_ids_to_node_ids(aria_describedby)
                 .collect();
-            relations.described_by = Some(described_by);
+            relations_map.entry(node_id).or_default().described_by = Some(described_by);
         }
-        self.relations.insert(node_id, relations);
     }
 
-    fn referenced_dom_ids_to_node_ids<'a>(
-        &'a self,
-        nodes_reference: &'a str,
-    ) -> impl Iterator<Item = NodeId> + 'a {
-        nodes_reference
-            .split_ascii_whitespace()
-            .filter_map(|dom_id| self.document.get_element_by_id(dom_id))
+    pub fn build(self) -> TreeUpdate {
+        TreeUpdate {
+            tree_id: TreeId::ROOT,
+            nodes: self.create_nodes(),
+            tree: Some(TreeInfo::new(DEFAULT_ACCESSKIT_NODE_ID)),
+            focus: self
+                .document
+                .focus_node_id
+                .map(to_accesskit_node_id)
+                .unwrap_or(DEFAULT_ACCESSKIT_NODE_ID),
+        }
+    }
+
+    fn create_nodes(&self) -> Vec<(accesskit::NodeId, accesskit::Node)> {
+        let mut window = accesskit::Node::new(Role::Window);
+        let mut nodes = HashMap::new();
+        self.document.visit(|node_id, node| {
+            if self.excluded_nodes.contains(&node_id) {
+                return;
+            }
+            let parent = node
+                .parent
+                .and_then(|parent_id| nodes.get_mut(&parent_id))
+                .unwrap_or(&mut window);
+            let mut accesskit_node = node.build_accesskit_node(parent);
+            if accesskit_node.role() == Role::Label {
+                self.set_value_of_label(node, &mut accesskit_node);
+            }
+            self.resolve_name(node_id, &mut accesskit_node);
+            self.resolve_description(node_id, &mut accesskit_node);
+            nodes.insert(node_id, accesskit_node);
+        });
+        nodes
+            .into_iter()
+            .map(|(id, node)| (to_accesskit_node_id(id), node))
+            .chain([(DEFAULT_ACCESSKIT_NODE_ID, window)])
+            .collect()
     }
 
     fn set_value_of_label(&self, node: &Node, accesskit_node: &mut accesskit::Node) {
         // A control wrapped by a <label> is not part of the text of the label.
         let skip = node
             .is_element_named(local_name!("label"))
-            .then(|| self.label_control(node))
+            .then(|| self.document.label_control(node))
             .flatten();
         let mut text = FlatText::default();
         node.write_text_alternative(&mut text, skip);
@@ -112,103 +132,66 @@ impl<'doc> TreeBuilder<'doc> {
         }
     }
 
-    /// The element labelled by the given `<label>` element, if any.
-    ///
-    /// https://html.spec.whatwg.org/multipage/forms.html#dom-label-control
-    fn label_control(&self, label: &Node) -> Option<NodeId> {
-        match label.attr(local_name!("for")) {
-            // The spec restricts which elements can be labelled. If the first element with the id
-            // is not labelable, no later element with the same id is used and the descendants of
-            // the label are not considered either.
-            Some(for_id) => self
-                .document
-                .get_element_by_id(for_id)
-                .filter(|&target| self.document.nodes[target].is_labelable()),
-            None => label.first_labelable_descendant(),
-        }
-    }
-
-    pub fn resolve_names(&mut self) {
-        for (target_node_id, relation) in &self.relations {
-            let Some(target_builder) = self.nodes.get_mut(target_node_id) else {
-                continue;
-            };
-            let mut label = FlatText::default();
-            if let Some(ref labelled_by) = relation.labelled_by {
-                match labelled_by {
-                    NameSource::AriaLabelledBy(node_ids) => {
-                        target_builder.set_labelled_by(to_accesskit_node_id_vec(
-                            node_ids
-                                .iter()
-                                .filter(|id| !self.excluded_nodes.contains(id)),
-                        ));
-                        for label_node_id in node_ids {
-                            self.document.nodes[*label_node_id]
-                                .write_text_alternative(&mut label, None);
-                            label.break_word();
-                        }
+    fn resolve_name(&self, node_id: NodeId, accesskit_node: &mut accesskit::Node) {
+        let mut label = FlatText::default();
+        if let Some(labelled_by) = self
+            .relations
+            .get(&node_id)
+            .and_then(|r| r.labelled_by.as_ref())
+        {
+            match labelled_by {
+                NameSource::AriaLabelledBy(node_ids) => {
+                    accesskit_node.set_labelled_by(to_accesskit_node_id_vec(
+                        node_ids
+                            .iter()
+                            .filter(|id| !self.excluded_nodes.contains(id)),
+                    ));
+                    for label_node_id in node_ids {
+                        self.document.nodes[*label_node_id]
+                            .write_text_alternative(&mut label, None);
+                        label.break_word();
                     }
-                    NameSource::LabelElements(node_ids) => {
-                        target_builder.set_labelled_by(to_accesskit_node_id_vec(node_ids));
-                        for label_node_id in node_ids {
-                            self.document.nodes[*label_node_id].write_text_alternative(
-                                &mut label,
-                                // A <label> does not contribute the content of the element it labels.
-                                Some(*target_node_id),
-                            );
-                            label.break_word();
-                        }
+                }
+                NameSource::LabelElements(node_ids) => {
+                    accesskit_node.set_labelled_by(to_accesskit_node_id_vec(node_ids));
+                    for label_node_id in node_ids {
+                        self.document.nodes[*label_node_id].write_text_alternative(
+                            &mut label,
+                            // A <label> does not contribute the content of the element it labels.
+                            Some(node_id),
+                        );
+                        label.break_word();
                     }
                 }
             }
-            if !label.text.is_empty() {
-                target_builder.set_label(label.text.as_str());
-            } else {
-                self.document.nodes[*target_node_id].set_label_from_node(target_builder);
-            }
+        }
+        if !label.text.is_empty() {
+            accesskit_node.set_label(label.text.as_str());
+        } else {
+            self.document.nodes[node_id].set_label_from_node(accesskit_node);
         }
     }
 
-    pub fn resolve_descriptions(&mut self) {
-        for (target_node_id, relation) in &self.relations {
-            let Some(target_builder) = self.nodes.get_mut(&target_node_id) else {
-                continue;
-            };
-            let mut description = FlatText::default();
-            if let Some(ref described_by) = relation.described_by {
-                for description_node_id in described_by {
-                    let description_node = &self.document.nodes[*description_node_id];
-                    if !self.excluded_nodes.contains(description_node_id) {
-                        target_builder
-                            .push_described_by(to_accesskit_node_id(*description_node_id));
-                    }
-                    description_node.write_text_alternative(&mut description, None);
-                    description.break_word();
+    fn resolve_description(&self, node_id: NodeId, accesskit_node: &mut accesskit::Node) {
+        let mut description = FlatText::default();
+        if let Some(described_by) = self
+            .relations
+            .get(&node_id)
+            .and_then(|r| r.described_by.as_ref())
+        {
+            for description_node_id in described_by {
+                let description_node = &self.document.nodes[*description_node_id];
+                if !self.excluded_nodes.contains(description_node_id) {
+                    accesskit_node.push_described_by(to_accesskit_node_id(*description_node_id));
                 }
-            }
-            if !description.text.is_empty() {
-                target_builder.set_description(description.text.as_str());
-            } else {
-                self.document.nodes[*target_node_id].set_description_from_node(target_builder);
+                description_node.write_text_alternative(&mut description, None);
+                description.break_word();
             }
         }
-    }
-
-    pub fn build(self) -> TreeUpdate {
-        TreeUpdate {
-            tree_id: TreeId::ROOT,
-            nodes: self
-                .nodes
-                .into_iter()
-                .map(|(id, node)| (to_accesskit_node_id(id), node))
-                .chain([(DEFAULT_ACCESSKIT_NODE_ID, self.window)])
-                .collect(),
-            tree: Some(TreeInfo::new(DEFAULT_ACCESSKIT_NODE_ID)),
-            focus: self
-                .document
-                .focus_node_id
-                .map(to_accesskit_node_id)
-                .unwrap_or(DEFAULT_ACCESSKIT_NODE_ID),
+        if !description.text.is_empty() {
+            accesskit_node.set_description(description.text.as_str());
+        } else {
+            self.document.nodes[node_id].set_description_from_node(accesskit_node);
         }
     }
 }

@@ -347,11 +347,11 @@ impl Node {
             out.push(aria_label);
             return;
         }
-        if element_data.name.local == local_name!("br") {
+        if self.is_element_named(local_name!("br")) {
             out.break_word();
             return;
         }
-        if element_data.name.local == local_name!("img") {
+        if self.is_element_named(local_name!("img")) {
             if let Some(alt) = is_non_blank(element_data.attr(local_name!("alt"))) {
                 out.push(alt);
             }
