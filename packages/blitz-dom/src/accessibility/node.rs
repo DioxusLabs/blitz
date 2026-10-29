@@ -1,6 +1,6 @@
 use crate::{
     ElementData, Node, NodeData,
-    accessibility::{FlatText, normalize, to_accesskit_node_id},
+    accessibility::{FlatText, normalize},
     layout::replaced::is_inline_box_element,
 };
 use accesskit::Role;
@@ -14,9 +14,7 @@ use style::{
 use stylo_taffy::CopyStyleGetters as _;
 
 impl Node {
-    pub(super) fn build_accesskit_node(&self, parent: &mut accesskit::Node) -> accesskit::Node {
-        let id = to_accesskit_node_id(self.id);
-
+    pub(super) fn build_accesskit_node(&self) -> accesskit::Node {
         let mut accesskit_node = accesskit::Node::default();
         if self.parent.is_none() {
             accesskit_node.set_role(Role::Window)
@@ -69,8 +67,6 @@ impl Node {
                 accesskit_node.set_value(text);
             }
         }
-
-        parent.push_child(id);
 
         accesskit_node
     }

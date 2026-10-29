@@ -104,7 +104,8 @@ impl<'doc> TreeBuilder<'doc> {
                 .parent
                 .and_then(|parent_id| nodes.get_mut(&parent_id))
                 .unwrap_or(&mut window);
-            let mut accesskit_node = node.build_accesskit_node(parent);
+            parent.push_child(to_accesskit_node_id(node_id));
+            let mut accesskit_node = node.build_accesskit_node();
             if accesskit_node.role() == Role::Label {
                 self.set_value_of_label(node, &mut accesskit_node);
             }
