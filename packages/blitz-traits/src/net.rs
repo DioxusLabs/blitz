@@ -60,6 +60,20 @@ pub struct Request {
     pub headers: HeaderMap,
     pub body: Body,
     pub signal: Option<AbortSignal>,
+    /// Which cookies may go with it (`SameSite`), for a provider that keeps cookies.
+    pub cookies: CookieScope,
+}
+
+/// Where a request comes from, as `SameSite` cookies see it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CookieScope {
+    /// From the same site, or typed by the user: every cookie.
+    #[default]
+    SameSite,
+    /// A top-level GET navigation from another site: no `SameSite=Strict` cookies.
+    CrossSiteNavigation,
+    /// Any other request from another site: only cookies without `SameSite=Strict` or `Lax`.
+    CrossSite,
 }
 impl Request {
     /// A get request to the specified Url and an empty body
@@ -71,6 +85,7 @@ impl Request {
             headers: HeaderMap::new(),
             body: Body::Empty,
             signal: None,
+            cookies: CookieScope::SameSite,
         }
     }
 
