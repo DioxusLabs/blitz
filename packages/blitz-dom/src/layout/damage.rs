@@ -527,6 +527,10 @@ impl BaseDocument {
                 input.editor.set_scale(scale);
                 let mut font_ctx = font_ctx.lock().unwrap();
                 input.editor.refresh_layout(&mut font_ctx, layout_ctx);
+                // A web font that arrives after construction reaches the placeholder too.
+                if let Some(placeholder) = input.placeholder.as_deref_mut() {
+                    placeholder.relayout(&mut font_ctx, layout_ctx, scale);
+                }
                 node.insert_damage(ONLY_RELAYOUT);
             }
         }

@@ -133,3 +133,27 @@ fn input_without_a_placeholder_has_none() {
         None
     );
 }
+
+#[test]
+fn textarea_placeholder_wraps_at_the_content_width() {
+    let doc = document(
+        "",
+        "<textarea placeholder='one two three four five six seven eight' \
+         style='width:120px;padding:0;border:0;font:20px sans-serif'></textarea>",
+    );
+    let id = doc.query_selector("textarea").unwrap().unwrap();
+    let input = doc.get_node(id).unwrap().element_data().unwrap();
+    let layout = &input
+        .text_input_data()
+        .unwrap()
+        .placeholder
+        .as_ref()
+        .unwrap()
+        .layout;
+    assert!(layout.len() > 1, "placeholder stayed on one line");
+    assert!(
+        layout.width() <= 120.0,
+        "placeholder is {}px wide",
+        layout.width()
+    );
+}

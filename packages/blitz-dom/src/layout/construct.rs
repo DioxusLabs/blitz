@@ -977,21 +977,13 @@ fn layout_placeholder(
         parley_style.white_space_collapse = parley::WhiteSpaceCollapse::Preserve;
     }
     let scale = doc.viewport.scale_f64() as f32;
-    let mut layout = parley::Layout::new();
-    {
-        let mut font_ctx = doc.font_ctx.lock().unwrap();
-        let mut builder = doc
-            .layout_ctx
-            .tree_builder(&mut font_ctx, scale, true, &parley_style);
-        builder.push_text(&text);
-        builder.build_into(&mut layout);
-    }
-    layout.break_all_lines(None);
-    layout.align(alignment, parley::AlignmentOptions::default());
-    Some(Box::new(PlaceholderText {
-        layout,
-        color: style.clone_color(),
-    }))
+    let mut placeholder = PlaceholderText::new(text, parley_style, alignment, style.clone_color());
+    placeholder.relayout(
+        &mut doc.font_ctx.lock().unwrap(),
+        &mut doc.layout_ctx,
+        scale,
+    );
+    Some(Box::new(placeholder))
 }
 
 fn create_checkbox_input(doc: &mut BaseDocument, input_element_id: NodeId) {
