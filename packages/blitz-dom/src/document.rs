@@ -332,6 +332,10 @@ pub struct BaseDocument {
     pub(crate) thread_font_contexts: ThreadLocal<RefCell<Box<FontContext>>>,
     /// A Parley layout context
     pub(crate) layout_ctx: parley::LayoutContext<TextBrush>,
+    /// The font database for inline SVG text: the system fonts plus this document's
+    /// `@font-face` fonts. `None` until a web font loads.
+    #[cfg(feature = "svg")]
+    pub(crate) svg_fontdb: Option<Arc<usvg::fontdb::Database>>,
 
     /// The real (non-anonymous) node which is currently hovered (if any).
     /// This is never a layout-generated (anonymous) node, so it remains valid
@@ -531,6 +535,8 @@ impl BaseDocument {
             #[cfg(feature = "parallel-construct")]
             thread_font_contexts: ThreadLocal::new(),
             layout_ctx: parley::LayoutContext::new(),
+            #[cfg(feature = "svg")]
+            svg_fontdb: None,
 
             hover_node_id: None,
             hover_hit_node_id: None,
@@ -1402,6 +1408,8 @@ impl BaseDocument {
                 self.apply_iframe_html(node_id, res.request_id, res.resolved_url, &html);
             }
             Resource::Font(bytes, overrides) => {
+                #[cfg(feature = "svg")]
+                self.register_svg_font(bytes.clone(), &overrides);
                 let font = Blob::new(Arc::new(bytes));
 
                 // Build a `FontInfoOverride` from the `@font-face` descriptors
@@ -3700,6 +3708,7 @@ mod font_face_override_tests {
                     family_name: Some(String::from(ALIAS)),
                     weight: Some(800.0),
                     style: Some(parley::fontique::FontStyle::Italic),
+                    unicode_range: None,
                 },
             )),
         };
