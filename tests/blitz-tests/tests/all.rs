@@ -31,6 +31,7 @@ mod fragment_navigation;
 mod harness_smoke;
 mod hit_test_dropped_nodes;
 mod hover_dom_ancestors;
+mod import_unresolvable_url;
 mod incremental_oracle;
 mod inline_bfc_padding;
 mod inline_box_baseline;
