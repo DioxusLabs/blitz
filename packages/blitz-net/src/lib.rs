@@ -89,6 +89,45 @@ impl reqwest::cookie::CookieStore for SharedCookies {
     }
 }
 
+/// Whether `ip` is on the public internet: not loopback, private, link-local, shared
+/// (carrier-grade NAT), unspecified or unique-local.
+pub fn is_public_ip(ip: std::net::IpAddr) -> bool {
+    use std::net::IpAddr;
+    match ip {
+        IpAddr::V4(v4) => {
+            let [a, b, ..] = v4.octets();
+            !(v4.is_loopback() || v4.is_private() || v4.is_link_local() || v4.is_unspecified() || v4.is_broadcast() || (a == 100 && (64..128).contains(&b)) || a == 0)
+        }
+        IpAddr::V6(v6) => match v6.to_ipv4_mapped() {
+            Some(v4) => is_public_ip(IpAddr::V4(v4)),
+            None => {
+                let first = v6.segments()[0];
+                !(v6.is_loopback() || v6.is_unspecified() || (first & 0xfe00) == 0xfc00 || (first & 0xffc0) == 0xfe80)
+            }
+        },
+    }
+}
+
+/// `host`'s public addresses; an error if it has none (it resolves only to this machine or the
+/// local network).
+pub async fn resolve_public(host: &str) -> std::io::Result<Vec<std::net::SocketAddr>> {
+    let addrs: Vec<std::net::SocketAddr> = tokio::net::lookup_host((host, 0)).await?.filter(|a| is_public_ip(a.ip())).collect();
+    if addrs.is_empty() {
+        return Err(std::io::Error::other(format!("{host} resolves only to private or local addresses, which a public page can't reach")));
+    }
+    Ok(addrs)
+}
+
+/// A resolver that drops non-public addresses, and fails if none are left.
+struct PublicOnly;
+
+impl reqwest::dns::Resolve for PublicOnly {
+    fn resolve(&self, name: reqwest::dns::Name) -> reqwest::dns::Resolving {
+        let host = name.as_str().to_string();
+        Box::pin(async move { Ok(Box::new(resolve_public(&host).await?.into_iter()) as reqwest::dns::Addrs) })
+    }
+}
+
 /// A response as `fetch_once` returns it: whatever the status, with its headers.
 #[derive(Debug, Clone)]
 pub struct Response {
@@ -148,10 +187,11 @@ where
 pub struct Provider {
     /// One client per `CookieScope` (they share the HTTP cache).
     clients: [Client; 3],
-    /// For `fetch_once`: no cache, no redirects (the caller follows them), with cookies.
-    single_client: reqwest::Client,
+    /// For `fetch_once`: no cache, no redirects (the caller follows them), with cookies;
+    /// then the same refusing private addresses (`public_only`).
+    single_client: [reqwest::Client; 2],
     /// The same without cookies (a credentialless request).
-    anonymous_client: reqwest::Client,
+    anonymous_client: [reqwest::Client; 2],
     waker: Arc<dyn NetWaker>,
     per_host_limits: HostLimits,
     #[cfg(feature = "cache")]
@@ -196,16 +236,22 @@ impl Provider {
             client
         };
         let clients = [client(CookieScope::SameSite), client(CookieScope::CrossSiteNavigation), client(CookieScope::CrossSite)];
-        let single = || reqwest::Client::builder().redirect(reqwest::redirect::Policy::none());
-        let anonymous_client = single().build().unwrap();
-        #[cfg(feature = "cookies")]
-        let single_client = match COOKIE_STORES.get() {
-            Some(stores) => single().cookie_provider(Arc::new(SharedCookies(stores[0].clone()))),
-            None => single(),
+        let single = |public_only: bool| {
+            let builder = reqwest::Client::builder().redirect(reqwest::redirect::Policy::none());
+            if public_only { builder.dns_resolver(Arc::new(PublicOnly)) } else { builder }
         };
-        #[cfg(not(feature = "cookies"))]
-        let single_client = single();
-        let single_client = single_client.build().unwrap();
+        let anonymous_client = [single(false).build().unwrap(), single(true).build().unwrap()];
+        let with_cookies = |public_only: bool| {
+            #[cfg(feature = "cookies")]
+            let builder = match COOKIE_STORES.get() {
+                Some(stores) => single(public_only).cookie_provider(Arc::new(SharedCookies(stores[0].clone()))),
+                None => single(public_only),
+            };
+            #[cfg(not(feature = "cookies"))]
+            let builder = single(public_only);
+            builder.build().unwrap()
+        };
+        let single_client = [with_cookies(false), with_cookies(true)];
 
         let waker = waker.unwrap_or(Arc::new(DummyNetWaker));
         Self {
@@ -331,14 +377,18 @@ impl Provider {
     /// so, otherwise as it arrives, never buffered past the limit); the whole request has
     /// `timeout`; it stops when the request's abort signal fires; and it waits its turn under
     /// the same per-host limit as other requests.
-    pub async fn fetch_once(&self, request: Request, credentials: bool, max_body: usize, timeout: std::time::Duration) -> Result<Response, ProviderError> {
+    ///
+    /// With `public_only`, names that resolve only to loopback, private or link-local
+    /// addresses are refused (DNS rebinding: a public site's page reaching the local network).
+    pub async fn fetch_once(&self, request: Request, credentials: bool, public_only: bool, max_body: usize, timeout: std::time::Duration) -> Result<Response, ProviderError> {
         let signal = request.signal.clone();
         let host_key = request.url.host_str().map(str::to_owned).unwrap_or_default();
         let semaphore = {
             let mut map = self.per_host_limits.lock().unwrap();
             map.entry(host_key).or_insert_with(|| Arc::new(Semaphore::new(PER_HOST_MAX_CONCURRENT))).clone()
         };
-        let client = if credentials { self.single_client.clone() } else { self.anonymous_client.clone() };
+        let clients = if credentials { &self.single_client } else { &self.anonymous_client };
+        let client = clients[usize::from(public_only)].clone();
         let work = async move {
             let _permit = semaphore.acquire().await.expect("per-host semaphore was closed");
             let mut req = client.request(request.method, request.url).headers(request.headers).header("User-Agent", USER_AGENT);
