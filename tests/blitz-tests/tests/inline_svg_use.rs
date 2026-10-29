@@ -120,3 +120,25 @@ fn use_added_after_parsing_is_expanded() {
     doc.resolve(0.0);
     assert_eq!(fill(&icon_paths(&doc)[0]), Some((255, 0, 0)));
 }
+
+#[test]
+fn clone_keeps_its_target_id_for_selectors() {
+    // `#half { … }` rules match the clone as they match the original, as in browsers. (Author
+    // CSS paint reaching usvg is the separate fill/stroke serialization work.)
+    let doc = load(&format!(
+        r##"<html><body>{SPRITE}<svg id="icon" width="20" height="20"><use href="#half"/></svg></body></html>"##
+    ));
+    assert!(doc.query_selector("#icon use > #half").unwrap().is_some());
+}
+
+#[test]
+fn a_later_use_resolves_to_the_original_not_a_clone() {
+    // The clone keeps the target's id, but references still resolve to the original.
+    let doc = load(&format!(
+        r##"<html><body><svg width="20" height="20"><use href="#half"/></svg>{SPRITE}
+            <svg id="icon" width="20" height="20"><use href="#half" x="6"/></svg></body></html>"##
+    ));
+    let paths = icon_paths(&doc);
+    assert_eq!(paths.len(), 1);
+    assert_eq!(paths[0].abs_bounding_box().x(), 6.0);
+}
