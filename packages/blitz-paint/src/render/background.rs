@@ -51,6 +51,7 @@ impl From<StyloBackgroundClip> for BoxModelBox {
 
             // TODO: support BorderArea
             StyloBackgroundClip::BorderArea => Self::BorderBox,
+            StyloBackgroundClip::Text => unimplemented!(),
         }
     }
 }
