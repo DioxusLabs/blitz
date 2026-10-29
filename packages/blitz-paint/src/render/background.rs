@@ -578,14 +578,60 @@ impl ElementCx<'_, '_> {
             bg_size.height,
         );
 
+        let tile_rect = Rect::new(0.0, 0.0, x.rect_len, y.rect_len);
+        let current_color = self.style.clone_color();
+
+        let transform = base_transform.then_translate(Vec2 {
+            x: x.translate,
+            y: y.translate,
+        });
+
+        // Fast path: a non-repeating linear gradient parallel to a tile axis
+        // repeats with a period of exactly one tile along its gradient line and
+        // is constant along the other axis, so `repeat`/`round` tiling
+        // (CSS Backgrounds 3 §2.4) is exactly a single fill over all the tiles
+        // with a repeating brush anchored at the first tile. (`round` has
+        // already adjusted the tile size so that the stride equals the tile.)
+        // This paints any number of tiles at the cost of one fill.
+        let repeats = |repeat| {
+            matches!(
+                repeat,
+                BackgroundRepeatKeyword::Repeat | BackgroundRepeatKeyword::Round
+            )
+        };
+        if repeats(*repeat_x) && repeats(*repeat_y) && is_axis_aligned_linear_gradient(gradient) {
+            // The gradient line is centred on the gradient box, which is the
+            // tile (CSS Images 3 §3.1.1), so that the period starts at the tile
+            // origin.
+            let (mut gradient, gradient_transform) =
+                to_peniko_gradient(gradient, tile_rect, tile_rect, self.scale, &current_color);
+            gradient.extend = peniko::Extend::Repeat;
+
+            let area = Rect::new(
+                0.0,
+                0.0,
+                x.count as f64 * x.stride,
+                y.count as f64 * y.stride,
+            );
+            scene.fill(
+                peniko::Fill::NonZero,
+                transform,
+                anyrender::Paint::Gradient(&gradient),
+                gradient_transform,
+                &area,
+            );
+            return;
+        }
+
+        // Other gradients (diagonal, radial, conic, `repeating-*`, or tiled
+        // with `space`/`no-repeat`) are painted one tile at a time, which is
+        // only feasible for a bounded number of tiles.
         // FIXME: https://wpt.live/css/css-backgrounds/background-size/background-size-near-zero-gradient.html
         if x.count as u64 * y.count as u64 > 500 {
             return;
         }
 
-        let tile_rect = Rect::new(0.0, 0.0, x.rect_len, y.rect_len);
         let bounding_box = self.frame.border_box.bounding_box();
-        let current_color = self.style.clone_color();
 
         let (gradient, gradient_transform) = to_peniko_gradient(
             gradient,
@@ -595,11 +641,6 @@ impl ElementCx<'_, '_> {
             &current_color,
         );
         let brush = anyrender::Paint::Gradient(&gradient);
-
-        let transform = base_transform.then_translate(Vec2 {
-            x: x.translate,
-            y: y.translate,
-        });
 
         for hc in 0..y.count {
             for wc in 0..x.count {
@@ -871,8 +912,9 @@ fn raster_axis_tiling(
 }
 
 /// Per-axis placement and tiling for a gradient layer. Unlike raster images,
-/// gradients cannot rely on brush repetition, so `Repeat`/`Round` also produce
-/// explicit tiles. When the clip box extends beyond the origin box, tiling
+/// gradients cannot in general rely on brush repetition, so `Repeat`/`Round`
+/// also produce explicit tiles (see `is_axis_aligned_linear_gradient` for the
+/// exception). When the clip box extends beyond the origin box, tiling
 /// starts from the clip box edge so the pattern covers the whole clipped area.
 fn gradient_axis_tiling(
     repeat: BackgroundRepeatKeyword,
@@ -920,6 +962,32 @@ fn gradient_axis_tiling(
             count: 1,
             stride: 0.0,
         },
+    }
+}
+
+/// Whether `gradient` is a non-repeating linear gradient whose gradient line is
+/// parallel to the x or y axis. Such a gradient spans exactly one tile along its
+/// gradient line and is constant perpendicular to it, so a tiled layer of it can
+/// be painted with a single repeating brush.
+///
+/// `repeating-linear-gradient` is excluded: its own period need not divide the
+/// tile, and it restarts at every tile boundary.
+fn is_axis_aligned_linear_gradient(gradient: &StyloGradient) -> bool {
+    use style::values::computed::LineDirection;
+    use style::values::generics::image::{GenericGradient, GradientFlags};
+
+    match gradient {
+        GenericGradient::Linear {
+            direction, flags, ..
+        } => {
+            !flags.contains(GradientFlags::REPEATING)
+                && match direction {
+                    LineDirection::Horizontal(_) | LineDirection::Vertical(_) => true,
+                    LineDirection::Angle(angle) => angle.degrees().rem_euclid(90.0) == 0.0,
+                    LineDirection::Corner(..) => false,
+                }
+        }
+        GenericGradient::Radial { .. } | GenericGradient::Conic { .. } => false,
     }
 }
 
