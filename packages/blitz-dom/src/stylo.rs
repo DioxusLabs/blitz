@@ -14,10 +14,11 @@ use markup5ever::{LocalName, LocalNameStaticSet, Namespace, NamespaceStaticSet, 
 use selectors::bloom::BLOOM_HASH_MASK;
 use selectors::{
     Element, OpaqueElement,
-    attr::{AttrSelectorOperation, NamespaceConstraint},
+    attr::{AttrSelectorOperation, CaseSensitivity, NamespaceConstraint},
     matching::{ElementSelectorFlags, MatchingContext, VisitedHandlingMode},
     sink::Push,
 };
+use smallvec::SmallVec;
 use style::CaseSensitivityExt;
 use style::animation::AnimationSetKey;
 use style::animation::AnimationState;
@@ -33,6 +34,12 @@ use style::global_style_data::STYLE_THREAD_POOL;
 /// flight on the shared pool at once panic with `already mutably borrowed`
 /// (<https://github.com/DioxusLabs/blitz/issues/430>).
 static PARALLEL_TRAVERSAL_LOCK: Mutex<()> = Mutex::new(());
+use style::invalidation::element::element_wrapper::{ElementSnapshot, ElementWrapper, Snapshots};
+use style::invalidation::element::invalidation_map::{Dependency, InvalidationMap};
+use style::invalidation::element::invalidator::{InvalidationResult, SiblingTraversalMap};
+use style::invalidation::element::relative_selector::{
+    DomMutationOperation, RelativeSelectorDependencyCollector, RelativeSelectorInvalidator,
+};
 use style::invalidation::element::restyle_hints::RestyleHint;
 use style::properties::ComputedValues;
 use style::properties::{Importance, PropertyDeclaration};
@@ -130,6 +137,10 @@ impl crate::document::BaseDocument {
             }
         }
         drop(sets);
+
+        // `:has()` anchors are found by walking up from the changed elements,
+        // which the traversal's snapshot-based invalidation does not do.
+        self.invalidate_relative_selectors_for_snapshots();
 
         // Build the style context used by the style traversal
         let context = SharedStyleContext {
@@ -259,6 +270,320 @@ impl crate::document::BaseDocument {
         style::thread_state::exit(ThreadState::LAYOUT);
 
         Some(styles.primary().clone())
+    }
+}
+
+/// Relative selector (`:has()`) invalidation.
+///
+/// Stylo's snapshot-driven invalidation run by the style traversal does not
+/// handle relative selectors: a change inside a `:has()` argument must be
+/// propagated *up* (to ancestors and earlier siblings) to find the anchors
+/// whose match may have changed. As in Gecko (`Servo_StyleSet_MaybeInvalidate
+/// RelativeSelector*` in `ports/geckolib/glue.rs`), this is done separately
+/// with Stylo's `RelativeSelectorInvalidator`, which sets restyle hints on the
+/// affected anchors (Selectors 4 §4.5).
+impl crate::document::BaseDocument {
+    /// Whether any stylesheet contains a relative selector. Documents without
+    /// `:has()` rules skip relative selector invalidation entirely.
+    fn has_relative_selector_dependencies(&self) -> bool {
+        self.stylist
+            .iter_origins()
+            .any(|(data, _)| data.relative_invalidation_map_attributes().used)
+    }
+
+    /// Invalidate `:has()` anchors affected by the state and attribute changes
+    /// recorded in the document's snapshots. Must run before the style
+    /// traversal consumes the snapshots.
+    fn invalidate_relative_selectors_for_snapshots(&self) {
+        if self.snapshots.is_empty() || !self.has_relative_selector_dependencies() {
+            return;
+        }
+        let snapshots = Snapshots::new(&self.snapshots);
+        let quirks_mode = self.stylist.quirks_mode();
+        for opaque in self.snapshots.keys() {
+            let id = NodeId::from_u64(opaque.id() as u64);
+            let Some(element) = self.nodes.get(id) else {
+                continue;
+            };
+            if !element.is_element() || !element.flags.is_in_document() {
+                continue;
+            }
+            let invalidator = RelativeSelectorInvalidator {
+                element,
+                quirks_mode,
+                snapshots: Some(&snapshots),
+                invalidated: relative_selector_invalidated,
+                sibling_traversal_map: SiblingTraversalMap::default(),
+            };
+            invalidator.invalidate_relative_selectors_for_this(
+                &self.stylist,
+                |element, scope, data, quirks_mode, collector| {
+                    collect_snapshot_dependencies(
+                        element,
+                        scope,
+                        data.relative_selector_invalidation_map(),
+                        quirks_mode,
+                        &snapshots,
+                        collector,
+                    );
+                },
+            );
+        }
+    }
+
+    /// Invalidate `:has()` anchors affected by inserting `node_id` (and its
+    /// subtree) into the document. Call after the node is attached.
+    pub(crate) fn invalidate_relative_selectors_for_insertion(&self, node_id: NodeId) {
+        let element = &self.nodes[node_id];
+        if !element.is_element() || !self.has_relative_selector_dependencies() {
+            return;
+        }
+        let inherited = inherit_relative_selector_search_direction(
+            Element::parent_element(&element),
+            element.prev_sibling_element(),
+        );
+        if inherited.is_empty() {
+            return;
+        }
+        let quirks_mode = self.stylist.quirks_mode();
+        // The element may have been inserted between two siblings that were
+        // connected through a next-sibling combinator (`.a:has(+ .b)`).
+        if let (Some(prev), Some(next)) = (
+            element.prev_sibling_element(),
+            element.next_sibling_element(),
+        ) {
+            if prev
+                .relative_selector_search_direction()
+                .intersects(ElementSelectorFlags::RELATIVE_SELECTOR_SEARCH_DIRECTION_SIBLING)
+            {
+                element.apply_selector_flags(
+                    ElementSelectorFlags::RELATIVE_SELECTOR_SEARCH_DIRECTION_SIBLING,
+                );
+                // Pretend the inserted element isn't there.
+                let map = SiblingTraversalMap::new(prev, prev.prev_sibling_element(), Some(next));
+                self.invalidate_relative_selector_side_effect(
+                    prev,
+                    map,
+                    DomMutationOperation::SideEffectPrevSibling,
+                );
+                let map = SiblingTraversalMap::new(next, Some(prev), next.next_sibling_element());
+                self.invalidate_relative_selector_side_effect(
+                    next,
+                    map,
+                    DomMutationOperation::SideEffectNextSibling,
+                );
+            }
+        }
+        RelativeSelectorInvalidator {
+            element,
+            quirks_mode,
+            snapshots: None,
+            invalidated: relative_selector_invalidated,
+            sibling_traversal_map: SiblingTraversalMap::default(),
+        }
+        .invalidate_relative_selectors_for_dom_mutation(
+            true,
+            &self.stylist,
+            inherited,
+            DomMutationOperation::Insert,
+        );
+    }
+
+    /// Invalidate `:has()` anchors affected by removing `node_id` (and its
+    /// subtree) from the document. Call while the node is still attached.
+    pub(crate) fn invalidate_relative_selectors_for_removal(&self, node_id: NodeId) {
+        let element = &self.nodes[node_id];
+        if !element.is_element() || !self.has_relative_selector_dependencies() {
+            return;
+        }
+        // An in-document element off the relative selector search path can't
+        // affect any `:has()` match.
+        let search_direction = element.relative_selector_search_direction();
+        if search_direction.is_empty() {
+            return;
+        }
+        let (prev, next) = (
+            element.prev_sibling_element(),
+            element.next_sibling_element(),
+        );
+        let inherited =
+            inherit_relative_selector_search_direction(Element::parent_element(&element), prev);
+        if inherited.is_empty() {
+            return;
+        }
+        if let Some(next) = next {
+            // The removed element may have been the one that matched, so the
+            // search continues on its next sibling.
+            next.apply_selector_flags(search_direction);
+        }
+        if let (Some(prev), Some(next)) = (prev, next) {
+            // Pretend the removed element isn't there.
+            let map = SiblingTraversalMap::new(prev, prev.prev_sibling_element(), Some(next));
+            self.invalidate_relative_selector_side_effect(
+                prev,
+                map,
+                DomMutationOperation::SideEffectPrevSibling,
+            );
+            let map = SiblingTraversalMap::new(next, Some(prev), next.next_sibling_element());
+            self.invalidate_relative_selector_side_effect(
+                next,
+                map,
+                DomMutationOperation::SideEffectNextSibling,
+            );
+        }
+        RelativeSelectorInvalidator {
+            element,
+            quirks_mode: self.stylist.quirks_mode(),
+            snapshots: None,
+            invalidated: relative_selector_invalidated,
+            sibling_traversal_map: SiblingTraversalMap::default(),
+        }
+        .invalidate_relative_selectors_for_dom_mutation(
+            true,
+            &self.stylist,
+            inherited,
+            DomMutationOperation::Remove,
+        );
+    }
+
+    fn invalidate_relative_selector_side_effect<'a>(
+        &'a self,
+        element: BlitzNode<'a>,
+        sibling_traversal_map: SiblingTraversalMap<BlitzNode<'a>>,
+        operation: DomMutationOperation,
+    ) {
+        RelativeSelectorInvalidator {
+            element,
+            quirks_mode: self.stylist.quirks_mode(),
+            snapshots: None,
+            invalidated: relative_selector_invalidated,
+            sibling_traversal_map,
+        }
+        .invalidate_relative_selectors_for_dom_mutation(
+            false,
+            &self.stylist,
+            ElementSelectorFlags::empty(),
+            operation,
+        );
+    }
+}
+
+/// Collect the relative selector dependencies of `element` affected by the
+/// changes between its snapshot and its current state and attributes. Mirrors
+/// the change detection of Stylo's `StateAndAttrInvalidationProcessor`.
+fn collect_snapshot_dependencies<'a>(
+    element: BlitzNode<'a>,
+    scope: Option<OpaqueElement>,
+    map: &'a InvalidationMap,
+    quirks_mode: QuirksMode,
+    snapshots: &Snapshots<'_>,
+    collector: &mut RelativeSelectorDependencyCollector<'a, BlitzNode<'a>>,
+) {
+    let wrapper = ElementWrapper::new(element, snapshots);
+    let state_changes = wrapper.state_changes();
+    let Some(snapshot) = wrapper.snapshot() else {
+        return;
+    };
+
+    let mut add = |dependency: &'a Dependency| collector.add_dependency(dependency, element, scope);
+
+    let mut removed_id = None;
+    if snapshot.id_changed() {
+        let old_id = snapshot.id_attr();
+        let new_id = element.id();
+        if old_id != new_id {
+            removed_id = old_id;
+            for id in [old_id, new_id].into_iter().flatten() {
+                map.id_to_selector
+                    .get(id, quirks_mode)
+                    .into_iter()
+                    .flatten()
+                    .for_each(&mut add);
+            }
+        }
+    }
+
+    let mut classes_removed = SmallVec::<[Atom; 8]>::new();
+    if snapshot.class_changed() {
+        let mut classes_changed = SmallVec::<[Atom; 8]>::new();
+        snapshot.each_class(|c| {
+            if !element.has_class(c, CaseSensitivity::CaseSensitive) {
+                classes_removed.push(c.0.clone());
+            }
+        });
+        element.each_class(|c| {
+            if !snapshot.has_class(c, CaseSensitivity::CaseSensitive) {
+                classes_changed.push(c.0.clone());
+            }
+        });
+        for class in classes_changed.iter().chain(classes_removed.iter()) {
+            map.class_to_selector
+                .get(class, quirks_mode)
+                .into_iter()
+                .flatten()
+                .for_each(&mut add);
+        }
+    }
+
+    snapshot.each_attr_changed(|attr| {
+        map.other_attribute_affecting_selectors
+            .get(attr)
+            .into_iter()
+            .flatten()
+            .for_each(&mut add);
+    });
+
+    if !state_changes.is_empty() {
+        map.state_affecting_selectors.lookup_with_additional(
+            element,
+            quirks_mode,
+            removed_id,
+            &classes_removed,
+            state_changes,
+            |dependency| {
+                if dependency.state.intersects(state_changes) {
+                    add(&dependency.dep);
+                }
+                true
+            },
+        );
+    }
+}
+
+/// The search directions a newly attached element (or the next sibling of a
+/// removed one) inherits from its parent and previous sibling.
+fn inherit_relative_selector_search_direction(
+    parent: Option<BlitzNode>,
+    prev_sibling: Option<BlitzNode>,
+) -> ElementSelectorFlags {
+    let mut inherited = ElementSelectorFlags::empty();
+    if let Some(parent) = parent {
+        inherited |= parent
+            .relative_selector_search_direction()
+            .intersection(ElementSelectorFlags::RELATIVE_SELECTOR_SEARCH_DIRECTION_ANCESTOR);
+    }
+    if let Some(sibling) = prev_sibling {
+        // Inherit both, e.g. for a sibling with `:has(~ .sibling .descendant)`.
+        inherited |= sibling.relative_selector_search_direction().intersection(
+            ElementSelectorFlags::RELATIVE_SELECTOR_SEARCH_DIRECTION_ANCESTOR_SIBLING,
+        );
+    }
+    inherited
+}
+
+/// Called by `RelativeSelectorInvalidator` once it has set restyle hints on an
+/// anchor (and possibly its descendants or siblings): mark the ancestors dirty
+/// so the style traversal reaches the invalidated elements.
+fn relative_selector_invalidated(element: BlitzNode, result: &InvalidationResult) {
+    if result.has_invalidated_self()
+        || result.has_invalidated_descendants()
+        || result.has_invalidated_siblings()
+    {
+        // Siblings share the anchor's parent, which this marks too.
+        element.mark_ancestors_dirty();
+    }
+    if result.has_invalidated_descendants() {
+        element.set_dirty_descendants();
     }
 }
 
@@ -1268,7 +1593,7 @@ impl<'a> TElement for BlitzNode<'a> {
     where
         F: FnMut(&AtomIdent),
     {
-        todo!()
+        // Custom states (`:state()`) need custom elements, which aren't supported.
     }
 
     fn has_selector_flags(&self, flags: ElementSelectorFlags) -> bool {

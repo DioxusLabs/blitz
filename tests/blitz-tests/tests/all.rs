@@ -30,6 +30,7 @@ mod focusability_updates;
 mod fragment_navigation;
 mod harness_smoke;
 mod has_selector;
+mod has_selector_invalidation;
 mod hit_test_dropped_nodes;
 mod hover_dom_ancestors;
 mod incremental_oracle;
