@@ -18,7 +18,8 @@ use http_cache_reqwest::{
     CACacheManager, Cache, CacheMode, CacheOptions, HttpCache, HttpCacheOptions,
 };
 
-const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/81.0";
+/// The `User-Agent` every request carries.
+pub const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/81.0";
 
 /// Matches real browsers' per-origin cap of 6.
 const PER_HOST_MAX_CONCURRENT: usize = 6;
@@ -44,6 +45,49 @@ static CACHE_DIR: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock:
 #[cfg(feature = "cache")]
 pub fn set_cache_dir(path: std::path::PathBuf) {
     let _ = CACHE_DIR.set(path);
+}
+
+/// The cookie jar to use instead of reqwest's own. Like `set_cache_dir`, call it before the
+/// first `Provider` is created. An embedder that persists cookies, or lets page code read
+/// them (`document.cookie`), supplies its own so the network stack and the page share it.
+#[cfg(feature = "cookies")]
+static COOKIE_STORE: std::sync::OnceLock<Arc<dyn reqwest::cookie::CookieStore>> = std::sync::OnceLock::new();
+
+#[cfg(feature = "cookies")]
+pub use reqwest::cookie::CookieStore;
+#[cfg(feature = "cookies")]
+pub use reqwest::header::HeaderValue;
+
+#[cfg(feature = "cookies")]
+pub fn set_cookie_store(store: Arc<dyn reqwest::cookie::CookieStore>) {
+    let _ = COOKIE_STORE.set(store);
+}
+
+/// The embedder's store, as reqwest wants one (a sized type).
+#[cfg(feature = "cookies")]
+struct SharedCookies(Arc<dyn reqwest::cookie::CookieStore>);
+
+#[cfg(feature = "cookies")]
+impl reqwest::cookie::CookieStore for SharedCookies {
+    fn set_cookies(&self, headers: &mut dyn Iterator<Item = &HeaderValue>, url: &reqwest::Url) {
+        self.0.set_cookies(headers, url)
+    }
+    fn cookies(&self, url: &reqwest::Url) -> Option<HeaderValue> {
+        self.0.cookies(url)
+    }
+}
+
+/// A response as `fetch_once` returns it: whatever the status, with its headers.
+#[derive(Debug, Clone)]
+pub struct Response {
+    /// The URL that answered.
+    pub url: String,
+    pub status: u16,
+    /// The reason phrase (`OK`, `Not Found`).
+    pub status_text: String,
+    /// Lowercase names, in the order received.
+    pub headers: Vec<(String, String)>,
+    pub body: Bytes,
 }
 
 #[cfg(feature = "cache")]
@@ -91,6 +135,10 @@ where
 
 pub struct Provider {
     client: Client,
+    /// For `fetch_once`: no cache, no redirects (the caller follows them), with cookies.
+    single_client: reqwest::Client,
+    /// The same without cookies (a credentialless request).
+    anonymous_client: reqwest::Client,
     waker: Arc<dyn NetWaker>,
     per_host_limits: HostLimits,
     #[cfg(feature = "cache")]
@@ -100,8 +148,21 @@ impl Provider {
     pub fn new(waker: Option<Arc<dyn NetWaker>>) -> Self {
         let builder = reqwest::Client::builder();
         #[cfg(feature = "cookies")]
-        let builder = builder.cookie_store(true);
+        let builder = match COOKIE_STORE.get() {
+            Some(store) => builder.cookie_provider(Arc::new(SharedCookies(store.clone()))),
+            None => builder.cookie_store(true),
+        };
         let client = builder.build().unwrap();
+        let single = || reqwest::Client::builder().redirect(reqwest::redirect::Policy::none());
+        let anonymous_client = single().build().unwrap();
+        #[cfg(feature = "cookies")]
+        let single_client = match COOKIE_STORE.get() {
+            Some(store) => single().cookie_provider(Arc::new(SharedCookies(store.clone()))),
+            None => single(),
+        };
+        #[cfg(not(feature = "cookies"))]
+        let single_client = single();
+        let single_client = single_client.build().unwrap();
 
         #[cfg(feature = "cache")]
         let cache_manager = CACacheManager::new(get_cache_path(), true);
@@ -132,6 +193,8 @@ impl Provider {
         let waker = waker.unwrap_or(Arc::new(DummyNetWaker));
         Self {
             client,
+            single_client,
+            anonymous_client,
             waker,
             per_host_limits: Arc::new(Mutex::new(HashMap::new())),
             #[cfg(feature = "cache")]
@@ -239,6 +302,39 @@ impl Provider {
         Err(ProviderError::HttpStatus {
             status,
             url: final_url,
+        })
+    }
+
+    /// One HTTP(S) request, answered whatever its status: redirects aren't followed (a 3xx
+    /// comes back as itself, so the caller can check where it leads before following it), and
+    /// the HTTP cache isn't used. Cookies are sent and stored only with `credentials`, and only
+    /// when a cookie store was given (`set_cookie_store`).
+    pub async fn fetch_once(&self, request: Request, credentials: bool) -> Result<Response, ProviderError> {
+        let client = if credentials { &self.single_client } else { &self.anonymous_client };
+        let mut req = client
+            .request(request.method, request.url)
+            .headers(request.headers)
+            .header("User-Agent", USER_AGENT);
+        if let Some(content_type) = request.content_type.as_ref() {
+            req = req.header("Content-Type", content_type);
+        }
+        if let Body::Bytes(bytes) = request.body {
+            req = req.body(bytes);
+        }
+        let response = req.send().await?;
+        let status = response.status();
+        let url = response.url().to_string();
+        let headers = response
+            .headers()
+            .iter()
+            .map(|(name, value)| (name.as_str().to_string(), String::from_utf8_lossy(value.as_bytes()).into_owned()))
+            .collect();
+        Ok(Response {
+            url,
+            status: status.as_u16(),
+            status_text: status.canonical_reason().unwrap_or_default().to_string(),
+            headers,
+            body: response.bytes().await?,
         })
     }
 
