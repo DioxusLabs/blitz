@@ -578,7 +578,13 @@ impl ImageHandler {
             .expect("IO errors impossible with Cursor")
             .decode()
         {
-            Ok(image) => {
+            Ok(mut image) => {
+                // The GPU renderer's image atlas can't hold anything larger than this, and
+                // panics if asked to; scale such images down to fit, keeping their shape.
+                const MAX_SIDE: u32 = 4096;
+                if image.width() > MAX_SIDE || image.height() > MAX_SIDE {
+                    image = image.resize(MAX_SIDE, MAX_SIDE, image::imageops::FilterType::Triangle);
+                }
                 let width = image.width();
                 let height = image.height();
                 let raw_rgba8_data = image.into_rgba8().into_raw();
