@@ -19,6 +19,9 @@ pub struct DevtoolSettings {
     /// the page) and reported to a remote devtools inspector so the user
     /// can pick an element by hovering/clicking it
     pub element_picker: bool,
+    /// The node last clicked while [`highlight_hover`](Self::highlight_hover) was on, for an
+    /// embedder's inspector to take and select
+    pub picked_node: Option<NodeId>,
 }
 
 impl DevtoolSettings {

@@ -566,7 +566,9 @@ pub(crate) fn handle_pointerup<F: FnMut(DomEvent)>(
                 node = doc.get_node(parent_id).unwrap();
             }
         }
-        doc.debug_log_node(node.id);
+        let picked = node.id;
+        doc.debug_log_node(picked);
+        doc.devtools_mut().picked_node = Some(picked);
         doc.devtools_mut().highlight_hover = false;
         return;
     }
