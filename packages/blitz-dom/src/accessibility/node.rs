@@ -100,9 +100,6 @@ impl Node {
             && let Some(normalized_aria_label) = normalize(aria_label)
         {
             accesskit_node.set_label(normalized_aria_label);
-        }
-
-        if accesskit_node.label().is_some() {
             return;
         }
 
@@ -135,29 +132,19 @@ impl Node {
             && let Some(normalized_description) = normalize(aria_description)
         {
             accesskit_node.set_description(normalized_description);
-        }
-
-        if accesskit_node.description().is_some() {
             return;
         }
 
-        if let Some(title_attr) = element_data.attr(local_name!("title")) {
-            let mut title = FlatText::default();
-            title.push(title_attr);
-
-            if title.text.is_empty() {
-                return;
-            }
-
-            if accesskit_node.label().is_some()
+        if let Some(title_attr) = element_data.attr(local_name!("title"))
+            && let Some(title) = normalize(title_attr)
+            && (accesskit_node.label().is_some()
                 || role_prohibits_naming(accesskit_node.role())
                 || (accesskit_node.role() == Role::Image
                     && element_data
                         .attr(local_name!("alt"))
-                        .is_some_and(|s| s.trim_ascii().is_empty()))
-            {
-                accesskit_node.set_description(title.text.as_str());
-            }
+                        .is_some_and(|s| s.trim_ascii().is_empty())))
+        {
+            accesskit_node.set_description(title);
         }
     }
 
