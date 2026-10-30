@@ -171,7 +171,7 @@ impl<'doc> TreeBuilder<'doc> {
         if !label.text.is_empty() {
             accesskit_node.set_label(label.text.as_str());
         } else {
-            node.set_label_from_node(accesskit_node);
+            node.set_accesskit_node_label(accesskit_node);
         }
     }
 
@@ -199,7 +199,7 @@ impl<'doc> TreeBuilder<'doc> {
         if !description.text.is_empty() {
             accesskit_node.set_description(description.text.as_str());
         } else {
-            node.set_description_from_node(accesskit_node);
+            node.set_accesskit_node_description(accesskit_node);
         }
     }
 }

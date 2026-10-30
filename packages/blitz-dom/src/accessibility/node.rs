@@ -63,13 +63,17 @@ impl Node {
             }
         } else if self.is_text_node() {
             accesskit_node.set_role(Role::TextRun);
-            accesskit_node.set_value(&self.text_content());
+            accesskit_node.set_value(self.text_content());
         }
 
         accesskit_node
     }
 
-    pub(super) fn set_label_from_node(&self, accesskit_node: &mut accesskit::Node) {
+    /// Sets the label in the given [accesskit::Node] using only data in this node itself.
+    ///
+    /// This does not take into account relations between nodes, such as `<label>` elements or
+    /// the `aria-labelledby` attribute.
+    pub(super) fn set_accesskit_node_label(&self, accesskit_node: &mut accesskit::Node) {
         let Some(element_data) = self.element_data() else {
             return;
         };
@@ -95,7 +99,11 @@ impl Node {
         }
     }
 
-    pub(super) fn set_description_from_node(&self, accesskit_node: &mut accesskit::Node) {
+    /// Sets the description in the given [accesskit::Node] using only data in this node itself.
+    ///
+    /// This does not take into account relations between nodes, such as the `aria-describedby`
+    /// attribute.
+    pub(super) fn set_accesskit_node_description(&self, accesskit_node: &mut accesskit::Node) {
         let Some(element_data) = self.element_data() else {
             return;
         };
