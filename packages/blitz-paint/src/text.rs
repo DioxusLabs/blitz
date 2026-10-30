@@ -391,16 +391,26 @@ fn draw_decoration_line(
     }
 }
 
+#[derive(Clone, Copy)]
+pub(crate) struct TextPaintOptions {
+    pub scale: f64,
+    pub brush_override: Option<Color>,
+}
+
 /// Paint the decorations accumulated for one line, one line per decorating box.
 fn flush_line_decorations(
     scene: &mut impl PaintScene,
     transform: Affine,
-    scale: f64,
+    options: TextPaintOptions,
     deco_boxes: &[LineDecoration],
     win_ascent_ratios: &mut WinAscentCache,
     inline_root_id: NodeId,
     line_baseline: f32,
 ) {
+    let TextPaintOptions {
+        scale,
+        brush_override,
+    } = options;
     // Draw innermost boxes first so ancestors' decorations paint on top, matching the
     // per-run drawing order this replaced (`stack.iter().rev()`).
     for acc in deco_boxes.iter().rev() {
@@ -425,7 +435,7 @@ fn flush_line_decorations(
         if width <= 0.0 {
             continue;
         }
-        let brush = anyrender::Paint::from(deco.color);
+        let brush = anyrender::Paint::from(brush_override.unwrap_or(deco.color));
 
         // `text-decoration-inset` shortens (or, when negative, extends) the line from the
         // inline-start/end edges. Percentages resolve against the decoration line length
@@ -568,10 +578,14 @@ pub(crate) fn stroke_text<'a>(
     lines: impl Iterator<Item = Line<'a, TextBrush>>,
     doc: &BaseDocument,
     transform: Affine,
-    scale: f64,
+    options: TextPaintOptions,
     inline_root_id: NodeId,
     context: &mut DrawTextContext,
 ) {
+    let TextPaintOptions {
+        scale,
+        brush_override,
+    } = options;
     let DrawTextContext {
         stack,
         path_scratch,
@@ -636,7 +650,8 @@ pub(crate) fn stroke_text<'a>(
 
                 // The glyph colour comes from the run's own node (the stack top): `color`
                 // inherits, so the innermost inline element already carries the right value.
-                let text_color = stack.last().map(|e| e.text_color).unwrap_or(Color::BLACK);
+                let text_color = brush_override
+                    .unwrap_or_else(|| stack.last().map(|e| e.text_color).unwrap_or(Color::BLACK));
 
                 let embolden = if FONT_EMBOLDEN_ENABLED {
                     let fs = font_size as f64 / scale;
@@ -719,7 +734,7 @@ pub(crate) fn stroke_text<'a>(
         flush_line_decorations(
             scene,
             transform,
-            scale,
+            options,
             deco_boxes,
             win_ascent_ratios,
             inline_root_id,
