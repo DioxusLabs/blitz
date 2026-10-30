@@ -443,12 +443,17 @@ pub fn direction(input: stylo::Direction) -> taffy::Direction {
 }
 
 #[inline]
-pub fn aspect_ratio(input: stylo::AspectRatio) -> Option<f32> {
+pub fn aspect_ratio(input: stylo::AspectRatio) -> taffy::AspectRatio {
     match input.ratio {
         // A degenerate ratio (either side zero) behaves as `auto`:
         // <https://drafts.csswg.org/css-sizing-4/#aspect-ratio>
-        stylo::PreferredRatio::Ratio(val) if !val.is_degenerate() => Some(val.0.0 / val.1.0),
-        _ => None,
+        stylo::PreferredRatio::Ratio(val) if !val.is_degenerate() && input.auto => {
+            taffy::AspectRatio::auto_and(val.0.0 / val.1.0)
+        }
+        stylo::PreferredRatio::Ratio(val) if !val.is_degenerate() => {
+            taffy::AspectRatio::new(val.0.0 / val.1.0)
+        }
+        _ => taffy::AspectRatio::NONE,
     }
 }
 
