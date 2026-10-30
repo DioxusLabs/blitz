@@ -16,10 +16,10 @@ use stylo_taffy::CopyStyleGetters as _;
 impl Node {
     /// Builds an [accesskit::Node] with data from this instance alone.
     ///
-    /// For an element, this sets the role, the HTML tag, the level, and the flags for
-    /// `aria-hidden`, `aria-expanded`, `aria-disabled`, and `aria-selected`. For a text node, it
-    /// sets the text as the value. The node without a parent, which is the document, gets the role
-    /// [Role::Window].
+    /// For an element, this sets the role, the HTML tag, the level, the placeholder, and the flags
+    /// for `aria-hidden`, `aria-expanded`, `aria-disabled`, and `aria-selected`. For a text node,
+    /// it sets the text as the value. The node without a parent, which is the document, gets the
+    /// role [Role::Window].
     ///
     /// It does not set the properties which depend on other nodes or on the results above. In
     /// particular, the following are left to
@@ -73,12 +73,69 @@ impl Node {
             {
                 accesskit_node.set_selected(aria_selected);
             }
+
+            if self.supports_placeholder(element_data)
+                && let Some(placeholder) = element_data.attr(local_name!("placeholder"))
+                && let Some(normalized_placeholder) = normalize(placeholder)
+            {
+                accesskit_node.set_placeholder(normalized_placeholder);
+            } else if self.supports_aria_placeholder(role)
+                && let Some(placeholder) = element_data.attr(local_name!("aria-placeholder"))
+                && let Some(normalized_placeholder) = normalize(placeholder)
+            {
+                accesskit_node.set_placeholder(normalized_placeholder);
+            }
         } else if self.is_text_node() {
             accesskit_node.set_role(Role::TextRun);
             accesskit_node.set_value(self.text_content());
         }
 
         accesskit_node
+    }
+
+    // <https://html.spec.whatwg.org/multipage/input.html#the-placeholder-attribute>
+    fn supports_placeholder(&self, element_data: &ElementData) -> bool {
+        if self.is_element_named(local_name!("textarea")) {
+            return true;
+        }
+        if !self.is_element_named(local_name!("input")) {
+            return false;
+        }
+
+        let Some(t) = element_data.attr(local_name!("type")) else {
+            return true;
+        };
+        !matches!(
+            ascii_lowercase(t).as_ref(),
+            "checkbox"
+                | "radio"
+                | "range"
+                | "color"
+                | "date"
+                | "datetime-local"
+                | "time"
+                | "month"
+                | "week"
+                | "file"
+                | "image"
+                | "button"
+                | "submit"
+                | "reset"
+        )
+    }
+
+    // <https://www.w3.org/TR/wai-aria-1.2/#aria-placeholder>
+    fn supports_aria_placeholder(&self, role: Role) -> bool {
+        matches!(
+            role,
+            Role::TextInput
+                | Role::MultilineTextInput
+                | Role::SearchInput
+                | Role::EmailInput
+                | Role::PhoneNumberInput
+                | Role::PasswordInput
+                | Role::NumberInput
+        )
     }
 
     /// Sets the label in the given [accesskit::Node] to the accessible name computed from this
@@ -98,17 +155,14 @@ impl Node {
             && let Some(normalized_aria_label) = normalize(aria_label)
         {
             accesskit_node.set_label(normalized_aria_label);
-            return;
-        }
-
-        if let Some(host_language_label) = self.host_language_label(element_data) {
+        } else if let Some(host_language_label) = self.host_language_label(element_data) {
             accesskit_node.set_label(host_language_label);
-        } else if names_from_content(accesskit_node.role(), element_data) {
-            let mut content = FlatText::default();
-            self.write_text_alternative(&mut content, None);
-            if !content.text.is_empty() {
-                accesskit_node.set_label(content.text);
-            }
+        } else if names_from_content(accesskit_node.role(), element_data)
+            && let Some(content) = self.text_alternative(None)
+        {
+            accesskit_node.set_label(content);
+        } else if let Some(placeholder) = accesskit_node.placeholder() {
+            accesskit_node.set_label(placeholder.to_string());
         }
     }
 
@@ -331,6 +385,16 @@ impl Node {
                 child.first_labelable_descendant()
             }
         })
+    }
+
+    fn text_alternative(&self, skip: Option<NodeId>) -> Option<String> {
+        let mut out = FlatText::default();
+        self.write_text_alternative(&mut out, skip);
+        if out.text.is_empty() {
+            None
+        } else {
+            Some(out.text)
+        }
     }
 
     /// Writes the text alternative of this node, leaving out the content of the node `skip`.
@@ -563,7 +627,7 @@ fn is_non_blank(text: Option<&str>) -> Option<&str> {
 fn element_role(element_data: &ElementData) -> Role {
     element_data
         .attr(local_name!("role"))
-        .and_then(role_from_name)
+        .and_then(|r| r.split_ascii_whitespace().find_map(role_from_name))
         .or_else(|| role_from_element_data(element_data))
         .unwrap_or(Role::Unknown)
 }
@@ -571,7 +635,7 @@ fn element_role(element_data: &ElementData) -> Role {
 /// The role which the value of a `role` attribute names, if it is one of the supported roles.
 /// Other values give `None`, and the element then has its native role.
 fn role_from_name(name: &str) -> Option<Role> {
-    match name {
+    match ascii_lowercase(name).as_ref() {
         "alert" => Some(Role::Alert),
         "alertdialog" => Some(Role::AlertDialog),
         "button" => Some(Role::Button),
@@ -603,6 +667,7 @@ fn role_from_name(name: &str) -> Option<Role> {
         "menu" => Some(Role::Menu),
         "menubar" => Some(Role::MenuBar),
         "radiogroup" => Some(Role::RadioGroup),
+        "searchbox" => Some(Role::SearchInput),
         "tablist" => Some(Role::TabList),
         "tree" => Some(Role::Tree),
         "treegrid" => Some(Role::TreeGrid),
@@ -709,13 +774,16 @@ fn role_from_element_data(element_data: &ElementData) -> Option<Role> {
 
         "input" => {
             let ty = element_data.attr(local_name!("type")).unwrap_or("text");
-            match ty {
+            match ascii_lowercase(ty).as_ref() {
                 "button" | "submit" | "reset" => Some(Role::Button),
                 "checkbox" => Some(Role::CheckBox),
                 "color" => Some(Role::ColorWell),
                 "date" => Some(Role::DateInput),
                 "datetime-local" => Some(Role::DateTimeInput),
                 "email" => Some(Role::EmailInput),
+                "file" => Some(Role::Button),
+                "image" => Some(Role::Button),
+                "month" => Some(Role::MonthInput),
                 "number" => Some(Role::NumberInput),
                 "password" => Some(Role::PasswordInput),
                 "radio" => Some(Role::RadioButton),
@@ -723,6 +791,7 @@ fn role_from_element_data(element_data: &ElementData) -> Option<Role> {
                 "search" => Some(Role::SearchInput),
                 "tel" => Some(Role::PhoneNumberInput),
                 "time" => Some(Role::TimeInput),
+                "week" => Some(Role::WeekInput),
                 _ => Some(Role::TextInput),
             }
         }
@@ -810,4 +879,19 @@ fn role_prohibits_naming(role: Role) -> bool {
             | Role::Paragraph
             | Role::Strong
     )
+}
+
+/// Converts a string to ASCII lowercase if that would actually change its content, otherwise
+/// returns the original string reference.
+///
+/// People mostly use lower case for attribute values, but the HTML spec says they must be compared
+/// case-insensitively. So this is a way to support it with a minimum of overhead.
+///
+/// <https://html.spec.whatwg.org/multipage/common-microsyntaxes.html#keywords-and-enumerated-attributes>
+fn ascii_lowercase(text: &str) -> Cow<'_, str> {
+    if text.bytes().any(|b| b.is_ascii_uppercase()) {
+        Cow::Owned(text.to_ascii_lowercase())
+    } else {
+        Cow::Borrowed(text)
+    }
 }

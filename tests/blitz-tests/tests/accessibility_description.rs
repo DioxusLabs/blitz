@@ -823,6 +823,31 @@ fn button_has_description(
     )
 }
 
+/// HTML-AAM no longer uses the placeholder for the accessible description.
+#[rstest]
+#[case::input(r#"<html><input placeholder="Arbitrary placeholder"></html>"#)]
+#[case::textarea(r#"<html><textarea placeholder="Arbitrary placeholder"></textarea></html>"#)]
+#[case::aria_placeholder(r#"<html><input aria-placeholder="Arbitrary placeholder"></html>"#)]
+#[case::input_named_by_label_element(
+    r#"<html><label for="arbitrary-input">Label element</label><input id="arbitrary-input" placeholder="Arbitrary placeholder"></html>"#
+)]
+fn does_not_use_placeholder_as_description(#[case] html: &str) -> TestResult<()> {
+    let mut document = HtmlDocument::from_html(html, default_document_config());
+    document.resolve(0.0);
+
+    let tree_update = document.build_accessibility_tree();
+
+    verify_that!(
+        tree_update.nodes,
+        not(contains((
+            anything(),
+            matches_pattern!(AccessKitNode {
+                description(): some(anything()),
+            })
+        )))
+    )
+}
+
 fn default_document_config() -> DocumentConfig {
     DocumentConfig {
         viewport: Some(Viewport::new(800, 600, 1.0, ColorScheme::Light)),

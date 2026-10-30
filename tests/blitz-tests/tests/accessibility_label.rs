@@ -2074,9 +2074,384 @@ fn button_has_label(#[case] html: &str, #[case] expected_label: &str) -> TestRes
     )
 }
 
-/// Gives the elements matching the two selectors the same id, assigning it to the one which is
-/// later in tree order first. This makes the order in which the document records the elements
-/// differ from the tree order.
+#[rstest]
+#[case::text("text")]
+#[case::search("search")]
+#[case::tel("tel")]
+#[case::url("url")]
+#[case::email("email")]
+#[case::password("password")]
+#[case::number("number")]
+#[case::unknown_type("arbitrary-unknown-type")]
+fn uses_native_placeholder_as_name_of_input_of_type_which_supports_it(
+    #[case] input_type: &str,
+) -> TestResult<()> {
+    let tree_update = tree_of(&format!(
+        r#"<html><input type="{input_type}" placeholder="Arbitrary placeholder"></html>"#
+    ));
+
+    verify_that!(
+        tree_update.nodes,
+        contains((
+            anything(),
+            matches_pattern!(AccessKitNode {
+                html_tag(): some(eq("input")),
+                label(): some(eq("Arbitrary placeholder")),
+            })
+        ))
+    )
+}
+
+#[rstest]
+#[case::text("text")]
+#[case::search("search")]
+#[case::tel("tel")]
+#[case::url("url")]
+#[case::email("email")]
+#[case::password("password")]
+#[case::number("number")]
+fn uses_aria_placeholder_as_name_of_input_of_type_which_supports_it(
+    #[case] input_type: &str,
+) -> TestResult<()> {
+    let tree_update = tree_of(&format!(
+        r#"<html><input type="{input_type}" aria-placeholder="Arbitrary placeholder"></html>"#
+    ));
+
+    verify_that!(
+        tree_update.nodes,
+        contains((
+            anything(),
+            matches_pattern!(AccessKitNode {
+                html_tag(): some(eq("input")),
+                label(): some(eq("Arbitrary placeholder")),
+            })
+        ))
+    )
+}
+
+#[rstest]
+#[case::native_placeholder(
+    r#"<html><textarea placeholder="Arbitrary placeholder"></textarea></html>"#
+)]
+#[case::aria_placeholder(
+    r#"<html><textarea aria-placeholder="Arbitrary placeholder"></textarea></html>"#
+)]
+fn uses_placeholder_as_name_of_textarea(#[case] html: &str) -> TestResult<()> {
+    let tree_update = tree_of(html);
+
+    verify_that!(
+        tree_update.nodes,
+        contains((
+            anything(),
+            matches_pattern!(AccessKitNode {
+                html_tag(): some(eq("textarea")),
+                label(): some(eq("Arbitrary placeholder")),
+            })
+        ))
+    )
+}
+
+#[test]
+fn uses_native_placeholder_as_name_in_preference_to_aria_placeholder() -> TestResult<()> {
+    let tree_update = tree_of(
+        r#"<html><input placeholder="Native placeholder" aria-placeholder="Aria placeholder"></html>"#,
+    );
+
+    verify_that!(
+        tree_update.nodes,
+        contains((
+            anything(),
+            matches_pattern!(AccessKitNode {
+                html_tag(): some(eq("input")),
+                label(): some(eq("Native placeholder")),
+            })
+        ))
+    )
+}
+
+#[rstest]
+#[case::empty_native_placeholder(
+    r#"<html><input placeholder="" aria-placeholder="Aria placeholder"></html>"#
+)]
+#[case::blank_native_placeholder(
+    r#"<html><input placeholder="   " aria-placeholder="Aria placeholder"></html>"#
+)]
+fn uses_aria_placeholder_as_name_when_native_placeholder_is_blank(
+    #[case] html: &str,
+) -> TestResult<()> {
+    let tree_update = tree_of(html);
+
+    verify_that!(
+        tree_update.nodes,
+        contains((
+            anything(),
+            matches_pattern!(AccessKitNode {
+                html_tag(): some(eq("input")),
+                label(): some(eq("Aria placeholder")),
+            })
+        ))
+    )
+}
+
+#[rstest]
+#[case::no_placeholder(r#"<html><input></html>"#)]
+#[case::empty_placeholders(r#"<html><input placeholder="" aria-placeholder=""></html>"#)]
+#[case::blank_placeholders(r#"<html><input placeholder="  " aria-placeholder="&#9;"></html>"#)]
+#[case::blank_native_placeholder(r#"<html><input placeholder="  "></html>"#)]
+#[case::blank_aria_placeholder(r#"<html><input aria-placeholder="  "></html>"#)]
+fn has_no_name_when_there_is_no_usable_placeholder(#[case] html: &str) -> TestResult<()> {
+    let tree_update = tree_of(html);
+
+    verify_that!(
+        tree_update.nodes,
+        contains((
+            anything(),
+            matches_pattern!(AccessKitNode {
+                html_tag(): some(eq("input")),
+                label(): none(),
+            })
+        ))
+    )
+}
+
+#[rstest]
+#[case::native_with_spaces(
+    r#"<html><input placeholder="  Arbitrary   placeholder  "></html>"#,
+    "input",
+    "Arbitrary placeholder"
+)]
+#[case::aria_with_spaces(
+    r#"<html><input aria-placeholder="  Arbitrary   placeholder  "></html>"#,
+    "input",
+    "Arbitrary placeholder"
+)]
+#[case::native_with_tab(
+    r#"<html><input placeholder="Arbitrary&#9;placeholder"></html>"#,
+    "input",
+    "Arbitrary placeholder"
+)]
+#[case::textarea_with_line_break(
+    r#"<html><textarea placeholder="First line&#10;Second line"></textarea></html>"#,
+    "textarea",
+    "First line Second line"
+)]
+fn normalizes_the_name_taken_from_the_placeholder(
+    #[case] html: &str,
+    #[case] html_tag: &str,
+    #[case] expected: &str,
+) -> TestResult<()> {
+    let tree_update = tree_of(html);
+
+    verify_that!(
+        tree_update.nodes,
+        contains((
+            anything(),
+            matches_pattern!(AccessKitNode {
+                html_tag(): some(eq(html_tag)),
+                label(): some(eq(expected)),
+            })
+        ))
+    )
+}
+
+#[rstest]
+#[case::aria_labelledby(
+    r#"<html><span id="arbitrary-element">Labelled by</span><input aria-labelledby="arbitrary-element" placeholder="Arbitrary placeholder"></html>"#,
+    "Labelled by"
+)]
+#[case::aria_label(
+    r#"<html><input aria-label="Aria label" placeholder="Arbitrary placeholder"></html>"#,
+    "Aria label"
+)]
+#[case::label_element(
+    r#"<html><label for="arbitrary-input">Label element</label><input id="arbitrary-input" placeholder="Arbitrary placeholder"></html>"#,
+    "Label element"
+)]
+#[case::aria_label_over_label_element(
+    r#"<html><label for="arbitrary-input">Label element</label><input id="arbitrary-input" aria-label="Aria label" placeholder="Arbitrary placeholder"></html>"#,
+    "Aria label"
+)]
+#[case::aria_placeholder_below_label_element(
+    r#"<html><label for="arbitrary-input">Label element</label><input id="arbitrary-input" aria-placeholder="Arbitrary placeholder"></html>"#,
+    "Label element"
+)]
+fn prefers_other_name_sources_to_the_placeholder(
+    #[case] html: &str,
+    #[case] expected: &str,
+) -> TestResult<()> {
+    let tree_update = tree_of(html);
+
+    verify_that!(
+        tree_update.nodes,
+        contains((
+            anything(),
+            matches_pattern!(AccessKitNode {
+                html_tag(): some(eq("input")),
+                label(): some(eq(expected)),
+            })
+        ))
+    )
+}
+
+#[test]
+fn keeps_the_placeholder_property_when_another_name_source_wins() -> TestResult<()> {
+    let tree_update = tree_of(
+        r#"<html><input aria-label="Aria label" placeholder="Arbitrary placeholder"></html>"#,
+    );
+
+    verify_that!(
+        tree_update.nodes,
+        contains((
+            anything(),
+            matches_pattern!(AccessKitNode {
+                html_tag(): some(eq("input")),
+                placeholder(): some(eq("Arbitrary placeholder")),
+            })
+        ))
+    )
+}
+
+#[rstest]
+#[case::blank_aria_label(
+    r#"<html><input aria-label="   " placeholder="Arbitrary placeholder"></html>"#
+)]
+#[case::aria_labelledby_without_matching_element(
+    r#"<html><input aria-labelledby="missing-element" placeholder="Arbitrary placeholder"></html>"#
+)]
+#[case::aria_labelledby_with_blank_element(
+    r#"<html><span id="blank-element">   </span><input aria-labelledby="blank-element" placeholder="Arbitrary placeholder"></html>"#
+)]
+#[case::label_element_without_text(
+    r#"<html><label for="arbitrary-input">   </label><input id="arbitrary-input" placeholder="Arbitrary placeholder"></html>"#
+)]
+fn falls_back_to_the_placeholder_when_other_name_source_is_empty(
+    #[case] html: &str,
+) -> TestResult<()> {
+    let tree_update = tree_of(html);
+
+    verify_that!(
+        tree_update.nodes,
+        contains((
+            anything(),
+            matches_pattern!(AccessKitNode {
+                html_tag(): some(eq("input")),
+                label(): some(eq("Arbitrary placeholder")),
+            })
+        ))
+    )
+}
+
+#[test]
+#[ignore = "title for name not yet implemented"]
+fn does_not_use_placeholder_as_name_when_title_provides_the_name() -> TestResult<()> {
+    let tree_update = tree_of(
+        r#"<html><input title="Arbitrary title" placeholder="Arbitrary placeholder"></html>"#,
+    );
+
+    verify_that!(
+        tree_update.nodes,
+        contains((
+            anything(),
+            matches_pattern!(AccessKitNode {
+                html_tag(): some(eq("input")),
+                label(): none(),
+                description(): none(),
+                placeholder(): some(eq("Arbitrary placeholder")),
+            })
+        ))
+    )
+}
+
+#[rstest]
+#[case::checkbox("checkbox")]
+#[case::radio("radio")]
+#[case::range("range")]
+#[case::color("color")]
+#[case::date("date")]
+#[case::datetime_local("datetime-local")]
+#[case::time("time")]
+#[case::month("month")]
+#[case::week("week")]
+#[case::file("file")]
+#[case::image("image")]
+#[case::button("button")]
+#[case::submit("submit")]
+#[case::reset("reset")]
+fn does_not_use_placeholder_as_name_of_input_of_type_which_does_not_support_it(
+    #[case] input_type: &str,
+) -> TestResult<()> {
+    let tree_update = tree_of(&format!(
+        r#"<html><input type="{input_type}" placeholder="Arbitrary placeholder" aria-placeholder="Arbitrary placeholder"></html>"#
+    ));
+
+    verify_that!(
+        tree_update.nodes,
+        contains((
+            anything(),
+            matches_pattern!(AccessKitNode {
+                html_tag(): some(eq("input")),
+                label(): none(),
+            })
+        ))
+    )
+}
+
+#[rstest]
+#[case::div(
+    r#"<html><div placeholder="Arbitrary placeholder"></div></html>"#,
+    "div"
+)]
+#[case::textbox_on_div(
+    r#"<html><div role="textbox" placeholder="Arbitrary placeholder"></div></html>"#,
+    "div"
+)]
+#[case::searchbox_on_span(
+    r#"<html><span role="searchbox" placeholder="Arbitrary placeholder"></span></html>"#,
+    "span"
+)]
+#[case::button(
+    r#"<html><button placeholder="Arbitrary placeholder"></button></html>"#,
+    "button"
+)]
+#[case::select(
+    r#"<html><select placeholder="Arbitrary placeholder"><option>One</option></select></html>"#,
+    "select"
+)]
+fn does_not_use_placeholder_as_name_of_element_which_does_not_support_it(
+    #[case] html: &str,
+    #[case] html_tag: &str,
+) -> TestResult<()> {
+    let tree_update = tree_of(html);
+
+    verify_that!(
+        tree_update.nodes,
+        contains((
+            anything(),
+            matches_pattern!(AccessKitNode {
+                html_tag(): some(eq(html_tag)),
+                label(): none(),
+            })
+        ))
+    )
+}
+
+#[test]
+fn uses_placeholder_as_name_of_input_whatever_its_role() -> TestResult<()> {
+    let tree_update =
+        tree_of(r#"<html><input role="button" placeholder="Arbitrary placeholder"></html>"#);
+
+    verify_that!(
+        tree_update.nodes,
+        contains((
+            anything(),
+            matches_pattern!(AccessKitNode {
+                role(): eq(Role::Button),
+                label(): some(eq("Arbitrary placeholder")),
+            })
+        ))
+    )
+}
+
 fn assign_duplicate_id_in_reverse_tree_order(
     document: &mut HtmlDocument,
     id: &str,
@@ -2155,6 +2530,12 @@ fn labels_of_elements_with_tag<'a>(
         .filter(|(_, node)| node.html_tag() == Some(html_tag))
         .map(|(_, node)| node.label())
         .collect()
+}
+
+fn tree_of(html: &str) -> TreeUpdate {
+    let mut document = HtmlDocument::from_html(html, default_document_config());
+    document.resolve(0.0);
+    document.build_accessibility_tree()
 }
 
 fn default_document_config() -> DocumentConfig {
