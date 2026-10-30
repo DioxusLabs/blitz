@@ -36,8 +36,7 @@ use style::{
         style_structs::Font,
     },
     values::{
-        computed::{CSSPixelLength, Contain, Overflow},
-        specified::box_::{DisplayInside, DisplayOutside},
+        computed::{CSSPixelLength, Overflow},
         specified::image::ImageRendering,
     },
 };
@@ -304,13 +303,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
 
     fn should_clip_node(&self, node: &Node, styles: &ComputedValues) -> bool {
         let box_style = styles.get_box();
-        let contain_paint = box_style.slow_clone_contain().contains(Contain::PAINT) && {
-            let display = styles.clone_display();
-            let is_internal_table_box_other_than_cell = display.outside()
-                == DisplayOutside::InternalTable
-                && display.inside() != DisplayInside::TableCell;
-            !display.is_inline_flow() && !is_internal_table_box_other_than_cell
-        };
+        let contain_paint = node.has_paint_containment();
         let element = node.element_data();
         self.root_element_id != Some(node.id)
             && (element.and_then(|e| e.raster_image_data()).is_some()
