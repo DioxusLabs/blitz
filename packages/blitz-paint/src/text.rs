@@ -41,17 +41,41 @@ pub(crate) fn draw_inline_backgrounds<'a>(
                 continue;
             }
 
-            let Some(styles) = doc.get_node(node_id).and_then(|node| node.primary_styles()) else {
-                continue;
-            };
-
-            let current_color = styles.clone_color();
-            let bg_color = styles
-                .get_background()
-                .background_color
-                .resolve_to_absolute(&current_color)
-                .as_srgb_color();
-            if bg_color == Color::TRANSPARENT {
+            // Text brushes point at the innermost inline. Its transparent
+            // background must not hide backgrounds on enclosing inline boxes.
+            let mut backgrounds = Vec::new();
+            let mut current = Some(node_id);
+            while let Some(id) = current {
+                if id == inline_root_id {
+                    break;
+                }
+                let Some(node) = doc.get_node(id) else {
+                    break;
+                };
+                if let Some(styles) = node.primary_styles() {
+                    let display = styles.clone_display();
+                    if display.is_contents() {
+                        current = node.parent;
+                        continue;
+                    }
+                    // Anonymous inline roots are not in the DOM parent chain.
+                    // Stop at the first block/atomic box instead of repainting it.
+                    if !display.is_inline_flow() {
+                        break;
+                    }
+                    let current_color = styles.clone_color();
+                    let color = styles
+                        .get_background()
+                        .background_color
+                        .resolve_to_absolute(&current_color)
+                        .as_srgb_color();
+                    if color != Color::TRANSPARENT {
+                        backgrounds.push(color);
+                    }
+                }
+                current = node.parent;
+            }
+            if backgrounds.is_empty() {
                 continue;
             }
 
@@ -63,7 +87,9 @@ pub(crate) fn draw_inline_backgrounds<'a>(
             let y1 = baseline + metrics.descent as f64;
             let rect = Rect::new(x, y0, x + w, y1);
 
-            scene.fill(Fill::NonZero, transform, bg_color, None, &rect);
+            for color in backgrounds.into_iter().rev() {
+                scene.fill(Fill::NonZero, transform, color, None, &rect);
+            }
         }
     }
 }
