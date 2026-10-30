@@ -14,6 +14,20 @@ use style::{
 use stylo_taffy::CopyStyleGetters as _;
 
 impl Node {
+    /// Builds an [accesskit::Node] with data from this instance alone.
+    ///
+    /// For an element, this sets the role, the HTML tag, the level, and the flags for
+    /// `aria-hidden`, `aria-expanded`, `aria-disabled`, and `aria-selected`. For a text node, it
+    /// sets the text as the value. The node without a parent, which is the document, gets the role
+    /// [Role::Window].
+    ///
+    /// It does not set the properties which depend on other nodes or on the results above. In
+    /// particular, the following are left to
+    /// [TreeBuilder](super::tree_builder::TreeBuilder):
+    ///
+    /// - label, `labelled_by`, and the value of nodes with the role [Role::Label]
+    /// - description and `described_by`
+    /// - children
     pub(super) fn build_accesskit_node(&self) -> accesskit::Node {
         let mut accesskit_node = accesskit::Node::default();
         if self.parent.is_none() {
@@ -69,10 +83,14 @@ impl Node {
         accesskit_node
     }
 
-    /// Sets the label in the given [accesskit::Node] using only data in this node itself.
+    /// Sets the label in the given [accesskit::Node] to the accessible name computed from this
+    /// node, its subtree and, for images, the enclosing `figure`. It does not take into account
+    /// the nodes which refer to this node. [TreeBuilder](super::tree_builder::TreeBuilder) handles
+    /// those first and falls back to this method.
     ///
-    /// This does not take into account relations between nodes, such as `<label>` elements or
-    /// the `aria-labelledby` attribute.
+    /// The role of `accesskit_node` must already be set. Call [Node::build_accesskit_node] first.
+    ///
+    /// <https://www.w3.org/TR/accname-1.2/#computation-steps>
     pub(super) fn set_accesskit_node_label(&self, accesskit_node: &mut accesskit::Node) {
         let Some(element_data) = self.element_data() else {
             return;
@@ -99,10 +117,15 @@ impl Node {
         }
     }
 
-    /// Sets the description in the given [accesskit::Node] using only data in this node itself.
+    /// Sets the description in the given [accesskit::Node] from the attributes of this node. It
+    /// does not take into account `aria-describedby`.
+    /// [TreeBuilder](super::tree_builder::TreeBuilder) handles that first and falls back to this
+    /// method.
     ///
-    /// This does not take into account relations between nodes, such as the `aria-describedby`
-    /// attribute.
+    /// The label of `accesskit_node` must already be resolved, since `title` is only the
+    /// description when it did not provide the name. See [Node::set_accesskit_node_label].
+    ///
+    /// <https://www.w3.org/TR/accname-1.2/#mapping_additional_nd_description>
     pub(super) fn set_accesskit_node_description(&self, accesskit_node: &mut accesskit::Node) {
         let Some(element_data) = self.element_data() else {
             return;
@@ -138,16 +161,16 @@ impl Node {
         }
     }
 
-    /// The text alternative provided by the host language markup of this element itself, such as
-    /// the `alt` text of an `img`.
+    /// The text alternative provided by the host language markup of this element itself.
     ///
-    /// Sources which AccessKit exposes through other properties than `label`, namely `title` and
-    /// `placeholder`, are not covered, nor are the strings which user agents supply for
-    /// `input` elements of the submit, reset and image types lacking any other source. `area`
-    /// elements, whose `alt` is also a source, are never exposed in the accessibility tree
-    /// because the user agent stylesheet hides them.
+    /// The `title` attribute is deliberately not used here. AccessKit expects a name which comes
+    /// only from a tooltip in `Node::tooltip`, not `Node::label`, and that is not set yet. The
+    /// `title` is used as the description; see [Node::set_accesskit_node_description]. Also not
+    /// covered are `placeholder` and the strings which user agents supply for `input` elements of
+    /// the submit, reset and image types lacking any other source. `area` elements are never
+    /// exposed in the accessibility tree because the user agent stylesheet hides them.
     ///
-    /// https://www.w3.org/TR/html-aam-1.0/#accessible-name-and-description-computation
+    /// <https://www.w3.org/TR/html-aam-1.0/#accessible-name-and-description-computation>
     fn host_language_label<'a>(&'a self, element_data: &'a ElementData) -> Option<Cow<'a, str>> {
         match &*element_data.name.local {
             "img" => match element_data.attr(local_name!("alt")) {
@@ -190,8 +213,10 @@ impl Node {
         }
     }
 
-    /// The text of the `figcaption` of the closest `figure` ancestor of this element, provided
-    /// that this element and the `figcaption` are the only non-whitespace content of that `figure`.
+    /// The text of the `figcaption` which names this element, if any. That is the first
+    /// `figcaption` child of the closest `figure` ancestor, provided that this element and the
+    /// `figcaption` are the only content of the `figure`. Any other element counts as content,
+    /// even an empty one.
     fn figcaption_text(&self) -> Option<String> {
         let mut path_to_figure = Vec::new();
         let mut current = self.parent;
@@ -251,6 +276,8 @@ impl Node {
         })
     }
 
+    /// Whether this node or any of its ancestors is hidden for naming; see
+    /// [Node::is_hidden_for_naming].
     pub(super) fn is_in_hidden_subtree(&self) -> bool {
         let mut node = self;
         loop {
@@ -264,13 +291,24 @@ impl Node {
         }
     }
 
-    // https://www.w3.org/TR/accname-1.2/#comp_hidden_not_referenced
+    /// Whether this node is hidden from the accessibility tree (see
+    /// [Node::is_hidden_from_accessibility_tree]) or has `aria-hidden="true"`. Only this node is
+    /// considered, not its ancestors.
+    ///
+    /// <https://www.w3.org/TR/accname-1.2/#comp_hidden_not_referenced>
     fn is_hidden_for_naming(&self) -> bool {
         self.is_hidden_from_accessibility_tree()
             || self.attr(local_name!("aria-hidden")) == Some("true")
     }
 
-    // https://www.w3.org/TR/wai-aria-1.2/#tree_exclusion
+    /// Whether the style of this node excludes it from the accessibility tree, with
+    /// `display: none` or `visibility: hidden`. This does not look at the ancestors.
+    /// [TreeBuilder](super::tree_builder::TreeBuilder) excludes the descendants of such nodes.
+    ///
+    /// Nodes with `aria-hidden="true"` stay in the tree, flagged as hidden. See
+    /// [Node::is_hidden_for_naming].
+    ///
+    /// <https://www.w3.org/TR/wai-aria-1.2/#tree_exclusion>
     pub(super) fn is_hidden_from_accessibility_tree(&self) -> bool {
         self.try_stylo_element_data()
             .as_ref()
@@ -288,7 +326,7 @@ impl Node {
     /// be recognized here. `input type="hidden"` is not labelable either, but it is never exposed
     /// in the accessibility tree, so it needs no handling.
     ///
-    /// https://html.spec.whatwg.org/multipage/forms.html#category-label
+    /// <https://html.spec.whatwg.org/multipage/forms.html#category-label>
     pub(super) fn is_labelable(&self) -> bool {
         self.element_data().is_some_and(|element_data| {
             matches!(
@@ -312,8 +350,10 @@ impl Node {
 
     /// Writes the text alternative of this node, leaving out the content of the node `skip`.
     ///
-    /// If this node is itself hidden, as is possible when it is referenced by `aria-labelledby`,
-    /// its whole subtree is included, hidden parts and all.
+    /// Hidden nodes are left out, unless this node or one of its ancestors is hidden. Then the
+    /// whole subtree is included.
+    ///
+    /// <https://www.w3.org/TR/accname-1.2/#comp_hidden_not_referenced>
     pub(super) fn write_text_alternative(&self, out: &mut FlatText, skip: Option<NodeId>) {
         let context = TextContext {
             skip,
@@ -323,8 +363,12 @@ impl Node {
     }
 
     /// Writes the text alternative of this node, following the steps of
-    /// https://www.w3.org/TR/accname-1.2/#computation-steps which apply to a node reached by
+    /// <https://www.w3.org/TR/accname-1.2/#computation-steps> which apply to a node reached by
     /// `aria-labelledby` or by name from content.
+    ///
+    /// `context` says which node to leave out and whether hidden nodes count. Where the
+    /// specification says nothing about it, words are separated by a space around block-level
+    /// boxes, atomic inlines, and line breaks, but not around plain inline content.
     fn write_flat_text_content(&self, out: &mut FlatText, context: TextContext) {
         if context.skip == Some(self.id) {
             return;
@@ -384,11 +428,17 @@ impl Node {
         }
     }
 
+    /// Whether the text of this node is separated by a space from the text around it. This is the
+    /// case for visible block-level boxes, atomic inlines, and inline box elements. The
+    /// specification leaves this open: <https://github.com/w3c/accname/issues/225>
     fn should_separate_from_siblings(&self) -> bool {
         (self.is_block_or_atomic_inline() || self.is_inline_box_element())
             && !self.is_hidden_for_naming()
     }
 
+    /// Whether this node generates a block-level box, a table caption or internal table box, or
+    /// an atomic inline such as `inline-block` or `inline-flex`. Plain inline boxes, and nodes
+    /// with `display: none` or `display: contents`, do not.
     fn is_block_or_atomic_inline(&self) -> bool {
         self.display_style()
             .is_some_and(|display| match display.outside() {
@@ -400,6 +450,8 @@ impl Node {
             })
     }
 
+    /// Whether this is an element which is laid out as an inline box: a replaced element such as
+    /// `img`, an `input`, a `textarea`, or a `button`.
     fn is_inline_box_element(&self) -> bool {
         self.element_data()
             .is_some_and(|element_data| is_inline_box_element(&element_data.name.local))
@@ -410,7 +462,7 @@ impl Node {
     ///
     /// Password inputs are deliberately not included, so as not to expose their value.
     ///
-    /// https://www.w3.org/TR/accname-1.2/#comp_embedded_control
+    /// <https://www.w3.org/TR/accname-1.2/#comp_embedded_control>
     fn write_embedded_control_text(&self, element_data: &ElementData, out: &mut FlatText) -> bool {
         let role = element_role(element_data);
         match role {
@@ -491,12 +543,16 @@ impl Node {
     }
 
     /// The text alternative of the subtree of this node, if it is not empty.
+    ///
+    /// Unlike [Node::write_text_alternative], hidden nodes are always left out, including this
+    /// node itself.
     fn subtree_text(&self) -> Option<String> {
         let mut text = FlatText::default();
         self.write_flat_text_content(&mut text, TextContext::default());
         (!text.text.is_empty()).then_some(text.text)
     }
 
+    /// Returns whether this instance has the given [LocalName] as HTML tag.
     pub(super) fn is_element_named(&self, name: LocalName) -> bool {
         self.element_data()
             .is_some_and(|element_data| element_data.name.local == name)
@@ -509,10 +565,11 @@ struct TextContext {
     /// A node whose content is left out.
     skip: Option<NodeId>,
     /// Whether hidden nodes are included. This is the case when the root of the computation is
-    /// itself hidden.
+    /// itself hidden or inside a hidden subtree, and for the chosen options of a `select`.
     include_hidden: bool,
 }
 
+/// The given text, if it contains something other than ASCII whitespace.
 fn is_non_blank(text: Option<&str>) -> Option<&str> {
     text.filter(|text| !text.trim_ascii().is_empty())
 }
@@ -526,6 +583,8 @@ fn element_role(element_data: &ElementData) -> Role {
         .unwrap_or(Role::Unknown)
 }
 
+/// The role which the value of a `role` attribute names, if it is one of the supported roles.
+/// Other values give `None`, and the element then has its native role.
 fn role_from_name(name: &str) -> Option<Role> {
     match name {
         "alert" => Some(Role::Alert),
@@ -590,6 +649,9 @@ fn role_from_name(name: &str) -> Option<Role> {
     }
 }
 
+/// The native role of an element as given by HTML-AAM, or `None` if there is no mapping.
+///
+/// <https://www.w3.org/TR/html-aam-1.0/>
 fn role_from_element_data(element_data: &ElementData) -> Option<Role> {
     // <https://www.w3.org/TR/html-aam-1.0/>
     match &*element_data.name.local {
@@ -683,6 +745,8 @@ fn role_from_element_data(element_data: &ElementData) -> Option<Role> {
     }
 }
 
+/// The default level of a heading element. AccessKit levels are zero-based, while ARIA levels are
+/// one-based.
 fn default_level_for_tag(name: &str) -> Option<usize> {
     // Accesskit levels are 0-based, while ARIA levels are 1-based
     // See https://docs.rs/accesskit/latest/accesskit/struct.Node.html#method.level
@@ -697,6 +761,8 @@ fn default_level_for_tag(name: &str) -> Option<usize> {
     }
 }
 
+/// The implicit level of an element with the given role, if its role has one. AccessKit levels
+/// are zero-based, while ARIA levels are one-based.
 fn default_level_for_role(role: Role) -> Option<usize> {
     match role {
         // ARIA specifies an implicit level of 2 for the heading role. Accesskit levels are 0-based,
@@ -708,7 +774,7 @@ fn default_level_for_role(role: Role) -> Option<usize> {
 
 /// Whether the name of an element with the given role is computed from its content.
 ///
-/// https://www.w3.org/TR/wai-aria-1.2/#namefromcontent
+/// <https://www.w3.org/TR/wai-aria-1.2/#namefromcontent>
 ///
 /// HTML-AAM names the native `tr`, `td` and `th` elements from their `title` only, so they are
 /// exceptions unless a `role` attribute gives them a role.
@@ -744,7 +810,9 @@ fn names_from_content(role: Role, element_data: &ElementData) -> bool {
         )
 }
 
-// ARIA 1.2, §5.2.8.6 (https://www.w3.org/TR/wai-aria-1.2/#namefromprohibited)
+/// Whether an element with the given role cannot be named.
+///
+/// <https://www.w3.org/TR/wai-aria-1.2/#namefromprohibited>
 fn role_prohibits_naming(role: Role) -> bool {
     matches!(
         role,

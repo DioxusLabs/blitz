@@ -7,15 +7,26 @@ use blitz_traits::NodeId;
 use markup5ever::local_name;
 use rustc_hash::{FxHashMap, FxHashSet};
 
+/// The ID of the window node, which is the root of the tree. It is also the focus when no node is
+/// focused.
 const DEFAULT_ACCESSKIT_NODE_ID: accesskit::NodeId = accesskit::NodeId(u64::MAX);
 
+/// A utility to build accesskit trees out of [BaseDocument].
+///
+/// To use this, construct an instance with [TreeBuilder::new], then invoke [TreeBuilder::build] on
+/// it.
 pub(super) struct TreeBuilder<'doc> {
+    /// The document whose tree is built.
     document: &'doc BaseDocument,
+    /// How the name and the description of a node derive from other nodes, by the ID of the node.
     relations: FxHashMap<NodeId, Relations>,
+    /// The nodes which are not in the tree: those hidden with CSS, and their descendants.
     excluded_nodes: FxHashSet<NodeId>,
 }
 
 impl<'doc> TreeBuilder<'doc> {
+    /// Collects what building needs: the nodes which are excluded from the tree and the relations
+    /// between nodes. This traverses the whole document.
     pub fn new(document: &'doc BaseDocument) -> Self {
         let mut excluded_nodes = FxHashSet::default();
         let mut relations = FxHashMap::default();
@@ -37,6 +48,11 @@ impl<'doc> TreeBuilder<'doc> {
         }
     }
 
+    /// Records in `relations_map` the nodes which name or describe `node`. A `<label>` is recorded
+    /// on the element which it labels, not on itself. How the sources take precedence over one
+    /// another follows the specification.
+    ///
+    /// <https://www.w3.org/TR/accname-1.2/#computation-steps>
     fn collect_relations(
         relations_map: &mut FxHashMap<NodeId, Relations>,
         node_id: NodeId,
@@ -80,6 +96,7 @@ impl<'doc> TreeBuilder<'doc> {
         }
     }
 
+    /// Builds the tree update.
     pub fn build(self) -> TreeUpdate {
         TreeUpdate {
             tree_id: TreeId::ROOT,
@@ -93,6 +110,8 @@ impl<'doc> TreeBuilder<'doc> {
         }
     }
 
+    /// The AccessKit nodes in document order, followed by the window node. The children of each
+    /// node are its children in the DOM except for the excluded ones.
     fn create_nodes(&self) -> Vec<(accesskit::NodeId, accesskit::Node)> {
         let mut window = accesskit::Node::new(Role::Window);
         window.push_child(to_accesskit_node_id(self.document.root_node_id));
@@ -122,6 +141,9 @@ impl<'doc> TreeBuilder<'doc> {
             .collect()
     }
 
+    /// Sets the value of a node with the role [accesskit::Role::Label] to its text. AccessKit
+    /// expects the text of such a node in its value, not its label, and `accesskit_consumer` reads
+    /// it there when the node labels another node. A control wrapped by the `<label>` is left out.
     fn set_value_of_label(&self, node: &Node, accesskit_node: &mut accesskit::Node) {
         // A control wrapped by a <label> is not part of the text of the label.
         let skip = node
@@ -135,6 +157,14 @@ impl<'doc> TreeBuilder<'doc> {
         }
     }
 
+    /// Sets the label of `accesskit_node`, and `labelled_by` if other nodes name it. The text of
+    /// those nodes takes precedence. Without any, this falls back to
+    /// [Node::set_accesskit_node_label].
+    ///
+    /// The `labelled_by` of an `aria-labelledby` leaves out the targets which are not in the tree,
+    /// but their text still counts.
+    ///
+    /// <https://www.w3.org/TR/accname-1.2/#comp_hidden_not_referenced>
     fn resolve_name(&self, node_id: NodeId, node: &Node, accesskit_node: &mut accesskit::Node) {
         let mut label = FlatText::default();
         if let Some(labelled_by) = self
@@ -175,6 +205,15 @@ impl<'doc> TreeBuilder<'doc> {
         }
     }
 
+    /// Sets the description of `accesskit_node`, and `described_by` if `aria-describedby` refers
+    /// to other nodes. Their text takes precedence. Without any, this falls back to
+    /// [Node::set_accesskit_node_description].
+    ///
+    /// The `described_by` leaves out the targets which are not in the tree, but their text still
+    /// counts. This must come after [TreeBuilder::resolve_name], since the description of a node
+    /// can depend on its label.
+    ///
+    /// <https://www.w3.org/TR/accname-1.2/#mapping_additional_nd_description>
     fn resolve_description(
         &self,
         node_id: NodeId,
@@ -204,14 +243,20 @@ impl<'doc> TreeBuilder<'doc> {
     }
 }
 
+/// The nodes which name or describe a node, other than the node itself.
 #[derive(Default, Debug)]
 struct Relations {
+    /// What provides the name, if anything.
     labelled_by: Option<NameSource>,
+    /// The targets of `aria-describedby`, in order.
     described_by: Option<Vec<NodeId>>,
 }
 
+/// What provides the name of a node, other than the node itself.
 #[derive(Debug)]
 enum NameSource {
+    /// The targets of `aria-labelledby`, in order. IDs which match no element are left out.
     AriaLabelledBy(Vec<NodeId>),
+    /// The `<label>` elements which label the node, in document order.
     LabelElements(Vec<NodeId>),
 }
