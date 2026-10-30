@@ -1,4 +1,4 @@
-use super::{ElementCx, to_image_quality, to_peniko_image};
+use super::{ALMOST_OPAQUE, ElementCx, to_image_quality, to_peniko_image};
 use crate::color::{Color, ToColorColor};
 use crate::gradient::to_peniko_gradient;
 use anyrender::PaintScene;
@@ -6,7 +6,7 @@ use blitz_dom::CopyStyleGetters;
 use blitz_dom::NodeId;
 use blitz_dom::node::{ImageData, ImageResourceData, SpecialElementData};
 use kurbo::{self, Affine, BezPath, Point, Rect, Shape, Size, Vec2};
-use peniko::{self, Fill};
+use peniko::{self, BlendMode, Compose, Fill, Mix};
 use style::{
     computed_values::border_collapse::T as BorderCollapse,
     properties::{
@@ -51,7 +51,7 @@ impl From<StyloBackgroundClip> for BoxModelBox {
 
             // TODO: support BorderArea
             StyloBackgroundClip::BorderArea => Self::BorderBox,
-            StyloBackgroundClip::Text => unimplemented!(),
+            StyloBackgroundClip::Text => Self::BorderBox,
         }
     }
 }
@@ -81,6 +81,7 @@ pub(super) struct ImageLayerStyles<'a> {
     pub repeat: &'a BackgroundRepeat,
     pub size: &'a BackgroundSize,
     pub clip: BoxModelBox,
+    pub text_clip: bool,
     pub origin: BoxModelBox,
     pub attachment: StyloBackgroundAttachment,
 }
@@ -99,6 +100,7 @@ impl<'a> ImageLayerStyles<'a> {
             repeat: get_cyclic(&bg_styles.background_repeat.0, idx),
             size: get_cyclic(&bg_styles.background_size.0, idx),
             clip: (*get_cyclic(&bg_styles.background_clip.0, idx)).into(),
+            text_clip: *get_cyclic(&bg_styles.background_clip.0, idx) == StyloBackgroundClip::Text,
             origin: (*get_cyclic(&bg_styles.background_origin.0, idx)).into(),
             attachment: *get_cyclic(&bg_styles.background_attachment.0, idx),
         }
@@ -117,6 +119,7 @@ impl<'a> ImageLayerStyles<'a> {
             repeat: get_cyclic(&svg_styles.mask_repeat.0, idx),
             size: get_cyclic(&svg_styles.mask_size.0, idx),
             clip: (*get_cyclic(&svg_styles.mask_clip.0, idx)).into(),
+            text_clip: false,
             origin: (*get_cyclic(&svg_styles.mask_origin.0, idx)).into(),
             // There is no `mask-attachment` property
             attachment: StyloBackgroundAttachment::Scroll,
@@ -131,15 +134,27 @@ impl ElementCx<'_, '_> {
         let layer_count = bg_styles.background_image.0.len();
 
         // The background color is clipped by the clip of the last layer in the list
-        let background_clip: BoxModelBox =
-            (*get_cyclic(&bg_styles.background_clip.0, layer_count - 1)).into();
+        let last_clip = *get_cyclic(&bg_styles.background_clip.0, layer_count - 1);
+        let background_clip: BoxModelBox = last_clip.into();
         let background_clip_path = self.box_path(background_clip);
 
         // Draw background color (if any)
+        let mut text_run = last_clip == StyloBackgroundClip::Text;
+        if text_run {
+            self.begin_text_clip_group(scene);
+        }
         self.draw_solid_bg(scene, &background_clip_path);
 
         for idx in (0..layer_count).rev() {
             let layer = ImageLayerStyles::from_background(bg_styles, image_data, idx);
+            if layer.text_clip != text_run {
+                if text_run {
+                    self.end_text_clip_group(scene);
+                } else {
+                    self.begin_text_clip_group(scene);
+                }
+                text_run = layer.text_clip;
+            }
             if layer_paints_nothing(&layer) {
                 continue;
             }
@@ -159,6 +174,41 @@ impl ElementCx<'_, '_> {
                 },
             );
         }
+        if text_run {
+            self.end_text_clip_group(scene);
+        }
+    }
+
+    /// Starts an isolated group for `background-clip: text` layers; layers drawn
+    /// until [`end_text_clip_group`](Self::end_text_clip_group) are clipped to text.
+    fn begin_text_clip_group(&self, scene: &mut impl PaintScene) {
+        scene.push_layer(
+            Fill::NonZero,
+            Mix::Normal,
+            ALMOST_OPAQUE,
+            self.transform,
+            &self.frame.border_box_path(),
+            None,
+            None,
+        );
+    }
+
+    /// Ends the group started by [`begin_text_clip_group`](Self::begin_text_clip_group):
+    /// draws the text mask in a `DestIn` layer, then pops both layers.
+    fn end_text_clip_group(&self, scene: &mut impl PaintScene) {
+        scene.push_layer(
+            Fill::NonZero,
+            BlendMode::new(Mix::Normal, Compose::DestIn),
+            1.0,
+            self.transform,
+            &self.frame.border_box_path(),
+            None,
+            None,
+        );
+        self.context
+            .draw_text_mask(scene, self.node.id, self.transform, true);
+        scene.pop_layer();
+        scene.pop_layer();
     }
 
     /// The path of the given CSS box model box for this element
