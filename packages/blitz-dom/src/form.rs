@@ -267,11 +267,19 @@ fn construct_entry_list(doc: &BaseDocument, form_id: NodeId, submitter_id: NodeI
             continue;
         };
 
-        // TODO: If the field element is a select element,
-        //  then for each option element in the select element's
-        //  list of options whose selectedness is true and that is not disabled,
-        //  create an entry with name and the value of the option element,
-        //  and append it to entry list.
+        if element.name.local == local_name!("select") {
+            if let Some(option) = doc
+                .selected_option(control_id)
+                .filter(|&id| !doc.option_disabled(id))
+            {
+                let value = doc.nodes[option]
+                    .attr(local_name!("value"))
+                    .map(str::to_owned)
+                    .unwrap_or_else(|| doc.option_text(option));
+                create_entry(name, EntryValue::String(value));
+            }
+            continue;
+        }
 
         // Otherwise, if the field element is an input element whose type attribute is in the Checkbox state or the Radio Button state, then:
         if element.name.local == local_name!("input")
@@ -460,4 +468,42 @@ fn encode_text_plain<T: AsRef<str>, U: AsRef<str>>(input: &[(T, U)]) -> String {
         out.push_str("\r\n");
     }
     out
+}
+
+#[cfg(test)]
+mod select_tests {
+    use super::*;
+    use crate::{DocumentConfig, qual_name};
+
+    #[test]
+    fn select_form_data() {
+        let mut doc = BaseDocument::new(DocumentConfig::default());
+        let root = doc.root_node_id;
+        let (form, select, option);
+        {
+            let mut m = doc.mutate();
+            form = m.create_element(qual_name!("form", html), vec![]);
+            select = m.create_element(qual_name!("select", html), vec![]);
+            option = m.create_element(qual_name!("option", html), vec![]);
+            let text = m.create_text_node("  Text\n value ");
+            m.set_attribute(select, qual_name!("name"), "choice");
+            m.append_children(option, &[text]);
+            m.append_children(select, &[option]);
+            m.append_children(form, &[select]);
+            m.append_children(root, &[form]);
+        }
+        let data = construct_entry_list(&doc, form, form);
+        assert_eq!(data.0.len(), 1);
+        assert_eq!(data.0[0].name, "choice");
+        assert!(matches!(&data.0[0].value, EntryValue::String(value) if value == "Text value"));
+        doc.mutate()
+            .set_attribute(option, qual_name!("value"), "explicit");
+        let data = construct_entry_list(&doc, form, form);
+        assert!(matches!(&data.0[0].value, EntryValue::String(value) if value == "explicit"));
+        doc.mutate()
+            .set_attribute(option, qual_name!("disabled"), "");
+        assert!(construct_entry_list(&doc, form, form).0.is_empty());
+        doc.mutate().remove_and_drop_node(option);
+        assert!(construct_entry_list(&doc, form, form).0.is_empty());
+    }
 }

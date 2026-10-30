@@ -29,6 +29,7 @@ pub(crate) mod inline;
 pub(crate) mod list;
 pub(crate) mod paint_tree;
 pub(crate) mod replaced;
+mod select;
 pub(crate) mod table;
 pub(crate) mod text_transform;
 #[cfg(feature = "writing-mode")]
@@ -224,6 +225,14 @@ impl LayoutPassState<'_> {
         block_ctx: Option<&mut BlockContext<'_>>,
     ) -> taffy::tree::LayoutOutput {
         let orthogonal_percent_basis = self.orthogonal_percent_basis_of(dom_node_id(node_id));
+        if matches!(
+            self.nodes[dom_node_id(node_id)]
+                .element_data()
+                .map(|el| &el.special_data),
+            Some(SpecialElementData::Select(_))
+        ) {
+            return self.compute_select_layout(dom_node_id(node_id), inputs);
+        }
         let node = &mut self.nodes[dom_node_id(node_id)];
 
         let font_styles = node.primary_styles().map(|style| {

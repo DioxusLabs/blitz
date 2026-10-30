@@ -421,6 +421,22 @@ fn collect_layout_children_with_wrap(
 
     flush_pseudo_elements(doc, container_node_id);
 
+    if matches!(
+        doc.nodes[container_node_id]
+            .element_data()
+            .map(|el| &el.special_data),
+        Some(SpecialElementData::Select(_))
+    ) {
+        doc.deferred_construction_nodes.push(ConstructionTask {
+            node_id: container_node_id,
+            data: ConstructionTaskData::InlineLayout(Box::new(TextLayout::new())),
+        });
+        doc.nodes[container_node_id]
+            .flags
+            .insert(NodeFlags::IS_INLINE_ROOT);
+        return;
+    }
+
     if let Some(el) = doc.nodes[container_node_id].data.downcast_element() {
         // Handle text inputs
         let tag_name = el.name.local.as_ref();

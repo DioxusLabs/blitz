@@ -1,9 +1,9 @@
 //! Tests for the JavaScript DOM APIs exposed by blitz-vibey-script
 
 use blitz_dom::{Document, DocumentConfig};
-use blitz_traits::events::DomEvent;
+use blitz_traits::events::{BlitzKeyEvent, DomEvent, DomEventData, KeyState};
 use blitz_vibey_script::ScriptDocument;
-use keyboard_types::Modifiers;
+use keyboard_types::{Code, Key, Location, Modifiers, NamedKey};
 
 fn doc_from_html(html: &str) -> ScriptDocument {
     let mut doc = ScriptDocument::from_html(html, DocumentConfig::default());
@@ -35,6 +35,31 @@ fn executes_inline_scripts() {
         "#,
     );
     assert_eq!(text_of_selector(&doc, "#root > h1"), "Hello from JS");
+}
+
+#[test]
+fn computed_widget_dimensions_use_unrounded_layout() {
+    let mut doc = doc_from_html(
+        r#"<style>
+        textarea, select { display:block; box-sizing:border-box; width:123.4px; height:45.6px }
+        </style><textarea id="t"></textarea><select id="s"><option>Label</option></select>
+        <div id="out"></div><script>
+            document.getElementById('out').textContent = ['t', 's'].map(id => {
+                const computed = getComputedStyle(document.getElementById(id));
+                return computed.width + '|' + computed.height;
+            }).join('|');
+        </script>"#,
+    );
+    doc.inner_mut().resolve(0.0);
+    let expected = ["#t", "#s"].map(|selector| {
+        let inner = doc.inner();
+        let id = inner.query_selector(selector).unwrap().unwrap();
+        let node = inner.get_node(id).unwrap();
+        let size = node.unrounded_layout().size;
+        assert_ne!(node.final_layout().size.width, size.width);
+        format!("{}px|{}px", size.width, size.height)
+    });
+    assert_eq!(text_of_selector(&doc, "#out"), expected.join("|"));
 }
 
 #[test]
@@ -299,6 +324,119 @@ fn request_animation_frame_runs_on_poll() {
     std::thread::sleep(std::time::Duration::from_millis(30));
     doc.poll(None);
     assert_eq!(text_of_selector(&doc, "#out"), "frame");
+}
+
+#[test]
+fn select_value_property_uses_selected_option() {
+    let doc = doc_from_html(
+        r#"<body>
+        <select id="field" value="b">
+            <option value="a">Alpha</option>
+            <option value="b">Beta</option>
+            <option value="b">Duplicate</option>
+            <option>Gamma</option>
+        </select>
+        <select id="empty"></select><div id="out"></div>
+        <script>
+            const field = document.getElementById('field');
+            const log = [field.value, document.getElementById('empty').value];
+            let events = 0;
+            field.addEventListener('input', () => events++);
+            field.addEventListener('change', () => events++);
+            field.value = 'a';
+            log.push(field.value, field.getAttribute('value'));
+            field.value = 'missing';
+            log.push(field.value);
+            field.value = 'b';
+            log.push(field.value);
+            field.value = 'Gamma';
+            log.push(field.value, events);
+            try {
+                field.value = { toString() { throw new Error('conversion failed'); } };
+            } catch (_) {
+                log.push(field.value);
+            }
+            document.getElementById('out').textContent = log.join('|');
+        </script>
+    </body>"#,
+    );
+    assert_eq!(text_of_selector(&doc, "#out"), "b||a|b||b|Gamma|0|Gamma");
+    let inner = doc.inner();
+    let select = inner.query_selector("#field").unwrap().unwrap();
+    let selected = inner.selected_option(select).unwrap();
+    assert_eq!(inner.option_label(selected), "Gamma");
+    assert!(inner.query_selector("#field > span").unwrap().is_none());
+}
+
+#[test]
+fn select_label_does_not_change_dom_queries_or_text() {
+    let doc = doc_from_html(
+        r#"<select id="field"><option value="a">Alpha</option><option value="b">Beta</option></select><div id="out"></div><script>
+        const field = document.getElementById('field');
+        const before = [field.children.length, field.childNodes.length, field.textContent, field.innerHTML].join('|');
+        field.value = 'b';
+        const after = [field.children.length, field.childNodes.length, field.textContent, field.innerHTML].join('|');
+        const missingSpan = document.querySelector('#field > span') === null;
+        field.value = 'missing';
+        document.getElementById('out').textContent = [before === after, missingSpan, field.value, field.children.length].join('|');
+    </script>"#,
+    );
+    assert_eq!(text_of_selector(&doc, "#out"), "true|true||2");
+}
+
+#[test]
+fn select_value_setter_selects_first_match() {
+    let doc = doc_from_html(
+        r#"<body><select id="field">
+        <option value="a">Alpha</option><option value="b">Beta</option><option value="b" selected>Duplicate</option>
+        </select><script>document.getElementById('field').value = 'b';</script></body>"#,
+    );
+    {
+        let inner = doc.inner();
+        let select = inner.query_selector("#field").unwrap().unwrap();
+        assert_eq!(
+            inner.selected_option(select),
+            Some(inner.select_options(select)[1])
+        );
+        assert_eq!(
+            inner.option_label(inner.selected_option(select).unwrap()),
+            "Beta"
+        );
+        assert!(inner.query_selector("#field > span").unwrap().is_none());
+    }
+}
+
+#[test]
+fn select_keyboard_events_expose_live_value_without_duplicate_change() {
+    let mut doc = doc_from_html(
+        r#"<body><select id="field"><option value="a">Alpha</option><option value="b">Beta</option></select><div id="out"></div>
+        <script>
+            const field = document.getElementById('field');
+            const log = [];
+            document.body.addEventListener('input', () => log.push('input:' + field.value));
+            document.body.addEventListener('change', () => {
+                log.push('change:' + field.value);
+                document.getElementById('out').textContent = log.join(',');
+            });
+        </script></body>"#,
+    );
+    doc.inner_mut().resolve(0.0);
+    let select = doc.inner().query_selector("#field").unwrap().unwrap();
+    doc.inner_mut().set_focus_to(select);
+    doc.dispatch_dom_event(DomEvent::new(
+        select,
+        DomEventData::KeyDown(BlitzKeyEvent {
+            key: Key::Named(NamedKey::ArrowDown),
+            code: Code::ArrowDown,
+            modifiers: Modifiers::empty(),
+            location: Location::Standard,
+            is_auto_repeating: false,
+            is_composing: false,
+            state: KeyState::Pressed,
+            text: None,
+        }),
+    ));
+    assert_eq!(text_of_selector(&doc, "#out"), "input:b,change:b");
 }
 
 #[test]

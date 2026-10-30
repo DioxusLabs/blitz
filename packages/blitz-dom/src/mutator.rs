@@ -235,6 +235,7 @@ impl DocumentMutator<'_> {
         node_id: NodeId,
         text: &str,
     ) -> Result<(), AppendTextErr> {
+        self.mark_select_dirty(node_id);
         let node_is_in_document = self.doc.nodes[node_id].flags.is_in_document();
         let node = &mut self.doc.nodes[node_id];
         node.insert_damage(ALL_DAMAGE);
@@ -273,6 +274,7 @@ impl DocumentMutator<'_> {
     }
 
     pub fn set_attribute(&mut self, node_id: NodeId, name: QualName, value: &str) {
+        self.mark_select_dirty(node_id);
         let node_is_in_document = self.doc.nodes[node_id].flags.is_in_document();
         if node_is_in_document {
             self.doc.snapshot_node(node_id, &name.local);
@@ -393,6 +395,7 @@ impl DocumentMutator<'_> {
     }
 
     pub fn clear_attribute(&mut self, node_id: NodeId, name: QualName) {
+        self.mark_select_dirty(node_id);
         let node_is_in_document = self.doc.nodes[node_id].flags.is_in_document();
         if node_is_in_document {
             self.doc.snapshot_node(node_id, &name.local);
@@ -623,6 +626,11 @@ impl DocumentMutator<'_> {
                 local_name!("type")
                     | local_name!("value")
                     | local_name!("checked")
+                    | local_name!("selected")
+                    | local_name!("label")
+                    | local_name!("disabled")
+                    | local_name!("multiple")
+                    | local_name!("size")
                     | local_name!("width")
                     | local_name!("height")
                     | local_name!("colspan")
@@ -1004,6 +1012,7 @@ impl DocumentMutator<'_> {
 
 impl<'doc> DocumentMutator<'doc> {
     pub fn flush(&mut self) {
+        self.refresh_selects();
         if self.recompute_is_animating {
             self.doc.has_canvas = self.doc.compute_has_canvas();
         }
@@ -1082,6 +1091,10 @@ impl<'doc> DocumentMutator<'doc> {
 
             // Custom post-processing by element tag name
             let tag = element.name.local.as_ref();
+            if tag == "select" && element.name.ns == markup5ever::ns!(html) {
+                doc.select_nodes.insert(node_id);
+                doc.dirty_select_nodes.insert(node_id);
+            }
             match tag {
                 "title" => self.title_node = Some(node_id),
                 "style" => {
@@ -1122,6 +1135,11 @@ impl<'doc> DocumentMutator<'doc> {
 
     fn process_removed_subtree(&mut self, node_id: NodeId) {
         self.doc.iter_subtree_mut(node_id, |node_id, doc| {
+            if doc.open_select == Some(node_id) {
+                doc.close_select();
+            }
+            doc.select_nodes.remove(&node_id);
+            doc.dirty_select_nodes.remove(&node_id);
             doc.nodes[node_id]
                 .flags
                 .set(NodeFlags::IS_IN_DOCUMENT, false);
@@ -1179,6 +1197,7 @@ impl<'doc> DocumentMutator<'doc> {
                 SpecialElementData::TableRoot(_) => {}
                 SpecialElementData::TextInput(_) => {}
                 SpecialElementData::CheckboxInput(_) => {}
+                SpecialElementData::Select(_) => {}
                 #[cfg(feature = "file-input")]
                 SpecialElementData::FileInput(_) => {}
                 SpecialElementData::None => {}
@@ -1192,6 +1211,8 @@ impl<'doc> DocumentMutator<'doc> {
         let Some(node_id) = node_id.into() else {
             return;
         };
+
+        self.mark_select_dirty(node_id);
 
         let Some(tag_name) = self.doc.nodes[node_id]
             .data

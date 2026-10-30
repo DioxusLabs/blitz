@@ -19,7 +19,7 @@ use crate::kurbo_css::NonUniformRoundedRectRadii;
 use crate::layers::LayerManager;
 use crate::sizing::compute_object_fit;
 use crate::text::{DrawTextContext, TextPaintOptions};
-use crate::{CustomWidgetSceneMap, SELECTION_COLOR};
+use crate::{PaintResources, SELECTION_COLOR};
 use anyrender::{PaintScene, Scene};
 use blitz_dom::node::{
     ListItemLayout, ListItemLayoutPosition, Marker, NodeData, RasterImageData, TextInputData,
@@ -136,19 +136,19 @@ pub struct BlitzDomPainter<'dom, 'a> {
     pub(crate) selection_ranges: HashMap<NodeId, (usize, usize)>,
 
     // Pre-computed `Scene`s for each CustomWidget
-    pub(crate) custom_widget_scenes: &'a CustomWidgetSceneMap,
+    resources: &'a PaintResources,
 }
 
 impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
     /// Create a new BlitzDomPainter for the given document
-    pub fn new(
+    pub(crate) fn new(
         dom: &'dom BaseDocument,
         scale: f64,
         width: u32,
         height: u32,
         initial_x: f64,
         initial_y: f64,
-        custom_widget_scenes: &'a CustomWidgetSceneMap,
+        resources: &'a PaintResources,
     ) -> Self {
         let selection_ranges: HashMap<NodeId, (usize, usize)> = dom
             .get_text_selection_ranges()
@@ -174,7 +174,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             layer_manager,
             draw_text_context: RefCell::new(DrawTextContext::default()),
             selection_ranges,
-            custom_widget_scenes,
+            resources,
         }
     }
 
@@ -285,6 +285,17 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                     self.initial_y,
                 );
             }
+        }
+        self.paint_select_overlay(scene);
+    }
+
+    fn paint_select_overlay(&self, scene: &mut impl PaintScene) {
+        if let Some(overlay) = self.resources.select_overlays.get(&self.dom.id()) {
+            let transform = Affine::translate((self.initial_x, self.initial_y));
+            let viewport = Rect::new(0.0, 0.0, self.width as f64, self.height as f64);
+            scene.push_clip_layer(Fill::NonZero, transform, &viewport);
+            scene.append_scene(overlay.clone(), transform);
+            scene.pop_layer();
         }
     }
 
@@ -447,6 +458,12 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             .element_data()
             .and_then(|el| el.text_input_data())
             .is_some();
+        let is_select = node.element_data().is_some_and(|el| {
+            matches!(
+                el.special_data,
+                blitz_dom::node::SpecialElementData::Select(_)
+            )
+        });
 
         // Apply padding/border offset to inline root
         let taffy::Layout {
@@ -516,7 +533,10 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         }
 
         #[cfg(feature = "custom-widget")]
-        let custom_widget_scene = self.custom_widget_scenes.get(&(self.dom.id(), node_id));
+        let custom_widget_scene = self
+            .resources
+            .custom_widget_scenes
+            .get(&(self.dom.id(), node_id));
         #[cfg(not(feature = "custom-widget"))]
         let custom_widget_scene = None;
 
@@ -686,7 +706,17 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                                 cx.draw_sub_document(scene);
                                 cx.draw_input(scene);
                                 cx.draw_text_input_text(scene, content_position);
-                                cx.draw_inline_layout(scene, content_position);
+                                self.layer_manager.maybe_with_layer(
+                                    scene,
+                                    is_select,
+                                    BlendMode::default(),
+                                    1.0,
+                                    cx.transform,
+                                    &cx.frame.content_box_path(),
+                                    None,
+                                    None,
+                                    |scene| cx.draw_inline_layout(scene, content_position),
+                                );
                                 cx.draw_marker(scene, content_position);
                                 cx.draw_children(scene, cx.transform, child_clip_rect);
                             },
@@ -1387,7 +1417,7 @@ impl ElementCx<'_, '_> {
                 height,
                 initial_x,
                 initial_y,
-                self.custom_widget_scenes,
+                self.context.resources,
             );
             painter.paint_scene(scene);
         }
