@@ -453,12 +453,13 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             size,
             border,
             padding,
-            location,
             ..
         } = *node.final_layout();
-        let box_position = Vec2::new(location.x as f64, location.y as f64) * self.scale;
-        let box_size = Size::new(size.width as f64, size.height as f64);
-        let border_box = Rect::from_origin_size(box_position.to_point(), box_size);
+        let box_size = Size::new(
+            size.width as f64 * self.scale,
+            size.height as f64 * self.scale,
+        );
+        let border_box = Rect::from_origin_size(Point::ORIGIN, box_size);
         let scaled_pb = (padding + border).map(f64::from);
         let content_position = kurbo::Point {
             x: scaled_pb.left,
