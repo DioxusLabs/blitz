@@ -38,7 +38,7 @@ fn executes_inline_scripts() {
 }
 
 #[test]
-fn computed_widget_dimensions_use_rounded_layout() {
+fn computed_widget_dimensions_use_unrounded_layout() {
     let mut doc = doc_from_html(
         r#"<style>
         textarea, select { display:block; box-sizing:border-box; width:123.4px; height:45.6px }
@@ -55,8 +55,8 @@ fn computed_widget_dimensions_use_rounded_layout() {
         let inner = doc.inner();
         let id = inner.query_selector(selector).unwrap().unwrap();
         let node = inner.get_node(id).unwrap();
-        let size = node.final_layout().size;
-        assert_ne!(node.unrounded_layout().size.width, size.width);
+        let size = node.unrounded_layout().size;
+        assert_ne!(node.final_layout().size.width, size.width);
         format!("{}px|{}px", size.width, size.height)
     });
     assert_eq!(text_of_selector(&doc, "#out"), expected.join("|"));

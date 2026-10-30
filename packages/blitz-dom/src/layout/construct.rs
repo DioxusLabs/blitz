@@ -288,6 +288,8 @@ struct FlowClassification {
     all_inline: bool,
     all_out_of_flow: bool,
     has_contents: bool,
+    /// An in-flow inline-level child that is laid out in an anonymous block (text, or an inline box without block content).
+    has_inline_level: bool,
 }
 
 impl Default for FlowClassification {
@@ -297,6 +299,7 @@ impl Default for FlowClassification {
             all_inline: true,
             all_out_of_flow: true,
             has_contents: false,
+            has_inline_level: false,
         }
     }
 }
@@ -379,6 +382,8 @@ fn classify_flow_children(
                     // We need the "complex" tree fixing when an inline contains a block
                     if child.is_or_contains_block() {
                         classification.all_inline = false;
+                    } else {
+                        classification.has_inline_level = true;
                     }
                 }
             }
@@ -594,6 +599,19 @@ fn collect_layout_children_with_wrap(
         _ => {
             let mut classification = FlowClassification::default();
             classify_flow_children(doc, container_node_id, &mut classification);
+
+            // Inline box whose in-flow content is block-level only: it is laid out as block
+            // boxes, so paint must not draw its own box over them.
+            if doc.nodes[container_node_id]
+                .display_style()
+                .is_some_and(|display| display.is_inline_flow())
+                && !classification.all_inline
+                && !classification.has_inline_level
+            {
+                doc.nodes[container_node_id]
+                    .flags
+                    .insert(NodeFlags::IS_INLINE_WITH_ONLY_BLOCK_CHILDREN);
+            }
 
             if classification.all_out_of_flow {
                 // Contents-transparent: a display:contents child may be

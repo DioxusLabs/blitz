@@ -240,10 +240,14 @@ impl DocumentMutator<'_> {
         let node = &mut self.doc.nodes[node_id];
         node.insert_damage(ALL_DAMAGE);
         node.mark_ancestors_dirty();
+        let parent_id = node.parent;
         match node.text_data_mut() {
             Some(data) => {
                 data.content += text;
                 self.mutations_occurred |= node_is_in_document;
+                if let Some(parent_id) = parent_id {
+                    self.doc.nodes[parent_id].insert_damage(ALL_DAMAGE);
+                }
                 Ok(())
             }
             None => Err(AppendTextErr::NotTextNode),
@@ -1513,6 +1517,79 @@ mod test {
 
     use super::{DocumentMutator, NodeId};
     use crate::{Attribute, BaseDocument, DocumentConfig, ElementData, NodeData, qual_name};
+
+    #[cfg(feature = "custom-widget")]
+    #[test]
+    fn custom_widget_replays_initial_attributes() {
+        use std::sync::Mutex;
+
+        type AttributeChange = (String, Option<String>, Option<String>);
+        struct RecordingWidget(Arc<Mutex<Vec<AttributeChange>>>);
+
+        impl crate::Widget for RecordingWidget {
+            fn attribute_changed(&mut self, name: &str, old: Option<&str>, new: Option<&str>) {
+                self.0.lock().unwrap().push((
+                    name.to_owned(),
+                    old.map(str::to_owned),
+                    new.map(str::to_owned),
+                ));
+            }
+        }
+
+        for via_mutator in [false, true] {
+            for initially_empty in [false, true] {
+                let mut document = BaseDocument::new(DocumentConfig::default());
+                let attrs = if initially_empty {
+                    vec![]
+                } else {
+                    vec![
+                        Attribute {
+                            name: qual_name!("title"),
+                            value: "initial".into(),
+                        },
+                        Attribute {
+                            name: qual_name!("lang"),
+                            value: "".into(),
+                        },
+                    ]
+                };
+                let id = document.create_node(NodeData::Element(Box::new(ElementData::new(
+                    qual_name!("div"),
+                    attrs,
+                ))));
+                let calls = Arc::new(Mutex::new(Vec::new()));
+                let widget = Box::new(RecordingWidget(Arc::clone(&calls)));
+                if via_mutator {
+                    document.mutate().set_custom_widget(id, widget);
+                } else {
+                    document.set_custom_widget(id, widget);
+                }
+
+                let mut expected = if initially_empty {
+                    vec![]
+                } else {
+                    vec![
+                        ("title".into(), None, Some("initial".into())),
+                        ("lang".into(), None, Some("".into())),
+                    ]
+                };
+                assert_eq!(*calls.lock().unwrap(), expected);
+
+                let mut mutator = document.mutate();
+                mutator.set_attribute(id, qual_name!("title"), "updated");
+                mutator.clear_attribute(id, qual_name!("title"));
+                expected.extend([
+                    (
+                        "title".into(),
+                        (!initially_empty).then(|| "initial".into()),
+                        Some("updated".into()),
+                    ),
+                    ("title".into(), Some("updated".into()), None),
+                ]);
+                assert_eq!(*calls.lock().unwrap(), expected);
+            }
+        }
+    }
 
     #[test]
     fn media_type_defaults_to_screen() {
