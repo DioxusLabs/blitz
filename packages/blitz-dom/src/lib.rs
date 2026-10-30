@@ -88,7 +88,7 @@ pub use crate::layout::paint_tree::{HoistedPaintChild, StackingContext, hoisted_
 pub use crate::layout::replaced::IntrinsicSizes;
 pub use crate::layout::text_transform::{full_size_kana, full_width};
 #[cfg(feature = "custom-widget")]
-pub use crate::node::Widget;
+pub use crate::node::{Widget, WidgetCx};
 
 pub use blitz_traits::node_id::NodeId;
 // Re-export taffy: it is part of blitz-dom's public API (e.g. `Node::style`,

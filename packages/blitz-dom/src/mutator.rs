@@ -299,15 +299,23 @@ impl DocumentMutator<'_> {
         };
 
         self.mutations_occurred |= node_is_in_document;
+        #[cfg(feature = "custom-widget")]
+        let mut cx = crate::WidgetCx::new();
         // If element is a CustomWidget, then Ccall attribute_changed on it
         #[cfg(feature = "custom-widget")]
         if let SpecialElementData::CustomWidget(widget_data) = &mut element.special_data {
             let old_value = element.attrs.get(&name).as_ref().map(|attr| &*attr.value);
             widget_data
                 .widget
-                .attribute_changed(&name.local, old_value, Some(value));
+                .attribute_changed(&name.local, old_value, Some(value), &mut cx);
         }
 
+        #[cfg(feature = "custom-widget")]
+        self.doc.apply_widget_requests(node_id, cx);
+        let node = &mut self.doc.nodes[node_id];
+        let NodeData::Element(ref mut element) = node.data else {
+            return;
+        };
         element.attrs.set(name.clone(), value);
 
         // Focusability is cached on the element and comes from these
@@ -422,15 +430,23 @@ impl DocumentMutator<'_> {
         }
         self.mutations_occurred |= node_is_in_document;
 
+        #[cfg(feature = "custom-widget")]
+        let mut cx = crate::WidgetCx::new();
         // If element is a CustomWidget, then call attribute_changed on it
         #[cfg(feature = "custom-widget")]
         if let SpecialElementData::CustomWidget(widget_data) = &mut element.special_data {
             let old_value = removed_attr.as_ref().map(|attr| &*attr.value);
             widget_data
                 .widget
-                .attribute_changed(&name.local, old_value, None);
+                .attribute_changed(&name.local, old_value, None, &mut cx);
         }
 
+        #[cfg(feature = "custom-widget")]
+        self.doc.apply_widget_requests(node_id, cx);
+        let node = &mut self.doc.nodes[node_id];
+        let NodeData::Element(ref mut element) = node.data else {
+            return;
+        };
         if name.local == local_name!("id") {
             element.id = None;
         }
@@ -1506,7 +1522,13 @@ mod test {
         struct RecordingWidget(Arc<Mutex<Vec<AttributeChange>>>);
 
         impl crate::Widget for RecordingWidget {
-            fn attribute_changed(&mut self, name: &str, old: Option<&str>, new: Option<&str>) {
+            fn attribute_changed(
+                &mut self,
+                name: &str,
+                old: Option<&str>,
+                new: Option<&str>,
+                _cx: &mut crate::WidgetCx,
+            ) {
                 self.0.lock().unwrap().push((
                     name.to_owned(),
                     old.map(str::to_owned),
