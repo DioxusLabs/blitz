@@ -146,9 +146,9 @@ struct ResolvedDecoration {
 /// consecutive runs doesn't re-resolve them.
 struct DecorationStackEntry {
     node_id: NodeId,
-    /// This node's (inherited) text colour, used for the glyphs of runs whose
+    /// This node's (inherited) text fill colour, used for the glyphs of runs whose
     /// innermost node is this one.
-    text_color: Color,
+    fill_color: Color,
     /// The decoration this node introduces as a decorating box, if any.
     decoration: Option<ResolvedDecoration>,
 }
@@ -158,7 +158,7 @@ fn resolve_decoration_entry(doc: &BaseDocument, node_id: NodeId) -> DecorationSt
     let Some(styles) = doc.get_node(node_id).and_then(|node| node.primary_styles()) else {
         return DecorationStackEntry {
             node_id,
-            text_color: Color::BLACK,
+            fill_color: Color::BLACK,
             decoration: None,
         };
     };
@@ -166,6 +166,10 @@ fn resolve_decoration_entry(doc: &BaseDocument, node_id: NodeId) -> DecorationSt
     let itext = styles.get_inherited_text();
     let text = styles.get_text();
     let text_color = itext.color.as_color_color();
+    let fill_color = itext
+        ._webkit_text_fill_color
+        .resolve_to_absolute(&itext.color)
+        .as_srgb_color();
 
     let drawn_lines = TextDecorationLine::UNDERLINE
         | TextDecorationLine::OVERLINE
@@ -201,7 +205,7 @@ fn resolve_decoration_entry(doc: &BaseDocument, node_id: NodeId) -> DecorationSt
 
     DecorationStackEntry {
         node_id,
-        text_color,
+        fill_color,
         decoration,
     }
 }
@@ -648,10 +652,8 @@ pub(crate) fn stroke_text<'a>(
                     stack.push(resolve_decoration_entry(doc, node_id));
                 }
 
-                // The glyph colour comes from the run's own node (the stack top): `color`
-                // inherits, so the innermost inline element already carries the right value.
-                let text_color = brush_override
-                    .unwrap_or_else(|| stack.last().map(|e| e.text_color).unwrap_or(Color::BLACK));
+                let fill_color = brush_override
+                    .unwrap_or_else(|| stack.last().map(|e| e.fill_color).unwrap_or(Color::BLACK));
 
                 let embolden = if FONT_EMBOLDEN_ENABLED {
                     let fs = font_size as f64 / scale;
@@ -668,7 +670,7 @@ pub(crate) fn stroke_text<'a>(
                     normalized_coords,
                     embolden,
                     Fill::NonZero,
-                    &anyrender::Paint::from(text_color),
+                    &anyrender::Paint::from(fill_color),
                     1.0, // alpha
                     transform,
                     glyph_xform,

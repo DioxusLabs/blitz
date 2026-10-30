@@ -57,13 +57,13 @@ browser-persistence = { path = "./apps/browser/persistence" }
 blitz-test-harness = { path = "./packages/blitz-test-harness" }
 
 # Servo dependencies
-# servo/stylo main (de0f23c5)
-style = { version = "0.22.0", git = "https://github.com/servo/stylo", rev = "cd230184a620c3e6c0f25faa07838fddcefec32d", package = "stylo" }
-style_traits = { version = "0.22.0", git = "https://github.com/servo/stylo", rev = "cd230184a620c3e6c0f25faa07838fddcefec32d", package = "stylo_traits" }
-style_atoms = { version = "0.22.0", git = "https://github.com/servo/stylo", rev = "cd230184a620c3e6c0f25faa07838fddcefec32d", package = "stylo_atoms" }
-style_config = { version = "0.22.0", git = "https://github.com/servo/stylo", rev = "cd230184a620c3e6c0f25faa07838fddcefec32d", package = "stylo_static_prefs" }
-style_dom = { version = "0.22.0", git = "https://github.com/servo/stylo", rev = "cd230184a620c3e6c0f25faa07838fddcefec32d", package = "stylo_dom" }
-selectors = { version = "0.41.0", git = "https://github.com/servo/stylo", rev = "cd230184a620c3e6c0f25faa07838fddcefec32d", package = "selectors" }
+# nicoburns/stylo: -webkit-text-fill-color (servo/stylo#504)
+style = { version = "0.22.0", git = "https://github.com/nicoburns/stylo", rev = "78734bf554bb40af9dc11c0eedbe724f6055697c", package = "stylo" }
+style_traits = { version = "0.22.0", git = "https://github.com/nicoburns/stylo", rev = "78734bf554bb40af9dc11c0eedbe724f6055697c", package = "stylo_traits" }
+style_atoms = { version = "0.22.0", git = "https://github.com/nicoburns/stylo", rev = "78734bf554bb40af9dc11c0eedbe724f6055697c", package = "stylo_atoms" }
+style_config = { version = "0.22.0", git = "https://github.com/nicoburns/stylo", rev = "78734bf554bb40af9dc11c0eedbe724f6055697c", package = "stylo_static_prefs" }
+style_dom = { version = "0.22.0", git = "https://github.com/nicoburns/stylo", rev = "78734bf554bb40af9dc11c0eedbe724f6055697c", package = "stylo_dom" }
+selectors = { version = "0.41.0", git = "https://github.com/nicoburns/stylo", rev = "78734bf554bb40af9dc11c0eedbe724f6055697c", package = "selectors" }
 cssparser = { version = "0.38.0" }
 
 # HTML5ever dependencies
