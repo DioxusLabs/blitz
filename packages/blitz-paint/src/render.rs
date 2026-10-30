@@ -289,9 +289,9 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
     }
 
     fn node_transform(&self, node: &Node, parent: Affine) -> Affine {
-        let location = node.final_layout().location;
+        let visual = node.visual_location();
         parent
-            * Affine::translate(Vec2::new(location.x as f64, location.y as f64) * self.scale)
+            * Affine::translate(Vec2::new(visual.x as f64, visual.y as f64) * self.scale)
             * node.transform().as_deref().copied().unwrap_or_default()
     }
 
@@ -991,6 +991,7 @@ impl ElementCx<'_, '_> {
                 self.context.dom,
                 transform,
                 self.node.id,
+                self.scale,
             );
 
             // Render text selection highlight (if any) using cached selection ranges
@@ -1001,6 +1002,8 @@ impl ElementCx<'_, '_> {
                     transform,
                     sel_start,
                     sel_end,
+                    self.context.dom,
+                    self.node.id,
                 );
             }
 
@@ -1180,9 +1183,7 @@ impl ElementCx<'_, '_> {
                 // scroll (applied in `paint_scene`). A fixed box contained by a
                 // transformed ancestor scrolls with it like any out-of-flow box.
                 let child = &self.context.dom.as_ref().tree()[*child_id];
-                let child_transform = if child.taffy_position() == taffy::Position::Fixed
-                    && Some(self.node.id) == self.context.root_element_id
-                {
+                let child_transform = if child.is_fixed_to_viewport() {
                     let scroll = self.context.dom.as_ref().viewport_scroll();
                     parent_style_transform.pre_translate(kurbo::Vec2 {
                         x: scroll.x * self.scale,

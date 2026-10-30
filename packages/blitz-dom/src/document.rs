@@ -384,6 +384,9 @@ pub struct BaseDocument {
     /// May contain multiple nodes for the same id: `get_element_by_id`
     /// returns the first in tree order.
     pub(crate) nodes_to_id: HashMap<String, SmallVec<[NodeId; 1]>>,
+    /// Registered `position: sticky` boxes with their layout-invariant
+    /// constraints, sorted by depth (see `sticky.rs`).
+    pub(crate) sticky_nodes: Vec<crate::sticky::StickyEntry>,
     /// Map of `<style>` and `<link>` node IDs to their associated stylesheet
     pub(crate) nodes_to_stylesheet: BTreeMap<NodeId, DocumentStyleSheet>,
     /// Incremented whenever `nodes_to_stylesheet` changes (a stylesheet is
@@ -519,6 +522,7 @@ impl BaseDocument {
             animations: DocumentAnimationSet::default(),
             snapshots,
             nodes_to_id,
+            sticky_nodes: Vec::new(),
             viewport,
             media_type,
             pending_device_changes: DeviceChanges::empty(),
@@ -1641,9 +1645,11 @@ impl BaseDocument {
         cb(&mut self.nodes[node_id]);
     }
 
-    // Takes (x, y) co-ordinates (relative to the )
+    /// Hit-test viewport-relative coordinates.
     pub fn hit(&self, x: f32, y: f32) -> Option<HitResult> {
-        self.hit_with_scrollbar(x, y).0
+        let scroll = self.viewport_scroll();
+        self.hit_with_scrollbar(x + scroll.x as f32, y + scroll.y as f32)
+            .0
     }
 
     /// The topmost element at viewport coordinates (x, y), or `None` if the point
@@ -2356,6 +2362,7 @@ impl BaseDocument {
 
     pub fn set_viewport_scroll(&mut self, scroll: crate::Point<f64>) {
         self.nodes.set_viewport_scroll(scroll);
+        self.refresh_sticky_offsets();
     }
 
     /// Find the node targeted by a URL fragment (the `#...` part of a URL).
@@ -2386,8 +2393,15 @@ impl BaseDocument {
         let mut current = Some(node_id);
         while let Some(id) = current {
             let node = &self.nodes[id];
-            pos.x += node.unrounded_layout().location.x - node.scroll_offset().x as f32;
-            pos.y += node.unrounded_layout().location.y - node.scroll_offset().y as f32;
+            let visual = node.unrounded_visual_location();
+            pos.x += visual.x - node.scroll_offset().x as f32;
+            pos.y += visual.y - node.scroll_offset().y as f32;
+            if node.is_fixed_to_viewport() {
+                let scroll = self.viewport_scroll();
+                pos.x += scroll.x as f32;
+                pos.y += scroll.y as f32;
+                break;
+            }
             current = node.containing_block();
         }
         (pos, *self.nodes[node_id].unrounded_layout())
@@ -2492,11 +2506,19 @@ impl BaseDocument {
         &self,
         node_id: NodeId,
     ) -> Option<impl Iterator<Item = BoundingRect> + '_> {
+        self.inline_fragment_rects_with_offsets(node_id, true)
+    }
+
+    pub(crate) fn inline_fragment_rects_with_offsets(
+        &self,
+        node_id: NodeId,
+        apply_offsets: bool,
+    ) -> Option<impl Iterator<Item = BoundingRect> + '_> {
         let node = self.get_node(node_id)?;
 
         // Only non-atomic inline elements lack their own layout box: they are
         // flattened into the containing inline root's text layout as style spans.
-        let fragments = node.inline_fragment_boxes()?;
+        let fragments = node.inline_fragment_boxes(apply_offsets)?;
         let inline_root = node.inline_root_ancestor()?;
 
         // Fragment boxes are relative to the inline root's border box.
@@ -2603,11 +2625,11 @@ impl BaseDocument {
 
     // Text selection methods
 
-    /// Find the text position (inline_root_id, byte_offset) at a given point.
+    /// Find the text position (inline_root_id, byte_offset) at a document-relative point.
     /// Uses hit() for proper coordinate transformation, then finds the inline root
     /// and byte offset.
     pub fn find_text_position(&self, x: f32, y: f32) -> Option<(NodeId, usize)> {
-        let hit = self.hit(x, y)?;
+        let hit = self.hit_with_scrollbar(x, y).0?;
         let hit_node = self.get_node(hit.node_id)?;
         let inline_root = hit_node.inline_root_ancestor()?;
         let byte_offset = inline_root.text_offset_at_point(hit.x, hit.y)?;

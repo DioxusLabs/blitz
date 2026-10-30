@@ -315,6 +315,13 @@ pub fn position(input: stylo::Position) -> taffy::Position {
 ///
 /// <https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_positioned_layout/Containing_block#identifying_the_containing_block>
 pub fn establishes_fixed_containing_block(style: &stylo::ComputedValues) -> bool {
+    establishes_fixed_containing_block_for_element(style, false)
+}
+
+pub fn establishes_fixed_containing_block_for_element(
+    style: &stylo::ComputedValues,
+    is_root: bool,
+) -> bool {
     use style::values::computed::{Perspective, Rotate, Scale, Translate};
     use style::values::specified::box_::{Contain, ContainerType, WillChangeBits};
 
@@ -328,10 +335,7 @@ pub fn establishes_fixed_containing_block(style: &stylo::ComputedValues) -> bool
         return true;
     }
     if box_style.will_change.bits.intersects(
-        WillChangeBits::TRANSFORM
-            | WillChangeBits::PERSPECTIVE
-            | WillChangeBits::FIXPOS_CB_NON_SVG
-            | WillChangeBits::CONTAIN,
+        WillChangeBits::TRANSFORM | WillChangeBits::PERSPECTIVE | WillChangeBits::CONTAIN,
     ) {
         return true;
     }
@@ -349,7 +353,13 @@ pub fn establishes_fixed_containing_block(style: &stylo::ComputedValues) -> bool
     }
 
     let effects = style.get_effects();
-    !effects.filter.0.is_empty() || !effects.backdrop_filter.0.is_empty()
+    !is_root
+        && (box_style
+            .will_change
+            .bits
+            .intersects(WillChangeBits::FIXPOS_CB_NON_SVG)
+            || !effects.filter.0.is_empty()
+            || !effects.backdrop_filter.0.is_empty())
 }
 
 /// Whether a style establishes a containing block for `position: absolute` descendants even
@@ -997,7 +1007,16 @@ pub fn to_taffy_style(style: &stylo::ComputedValues) -> taffy::Style<Atom> {
         },
         aspect_ratio: self::aspect_ratio(pos.aspect_ratio),
 
-        inset: self::inset_rect(style),
+        inset: if style.clone_position() == stylo::Position::Sticky {
+            taffy::Rect {
+                left: taffy::LengthPercentageAuto::AUTO,
+                right: taffy::LengthPercentageAuto::AUTO,
+                top: taffy::LengthPercentageAuto::AUTO,
+                bottom: taffy::LengthPercentageAuto::AUTO,
+            }
+        } else {
+            self::inset_rect(style)
+        },
         margin: taffy::Rect {
             left: self::margin(&margin.margin_left),
             right: self::margin(&margin.margin_right),
