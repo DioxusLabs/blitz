@@ -112,8 +112,8 @@ impl<'doc> TreeBuilder<'doc> {
                 .map(|n| to_accesskit_node_id(*n))
                 .collect();
             accesskit_node.set_children(children);
-            self.resolve_name(node_id, &mut accesskit_node);
-            self.resolve_description(node_id, &mut accesskit_node);
+            self.resolve_name(node_id, node, &mut accesskit_node);
+            self.resolve_description(node_id, node, &mut accesskit_node);
             nodes.push((to_accesskit_node_id(node_id), accesskit_node));
         });
         nodes
@@ -135,7 +135,7 @@ impl<'doc> TreeBuilder<'doc> {
         }
     }
 
-    fn resolve_name(&self, node_id: NodeId, accesskit_node: &mut accesskit::Node) {
+    fn resolve_name(&self, node_id: NodeId, node: &Node, accesskit_node: &mut accesskit::Node) {
         let mut label = FlatText::default();
         if let Some(labelled_by) = self
             .relations
@@ -171,11 +171,16 @@ impl<'doc> TreeBuilder<'doc> {
         if !label.text.is_empty() {
             accesskit_node.set_label(label.text.as_str());
         } else {
-            self.document.nodes[node_id].set_label_from_node(accesskit_node);
+            node.set_label_from_node(accesskit_node);
         }
     }
 
-    fn resolve_description(&self, node_id: NodeId, accesskit_node: &mut accesskit::Node) {
+    fn resolve_description(
+        &self,
+        node_id: NodeId,
+        node: &Node,
+        accesskit_node: &mut accesskit::Node,
+    ) {
         let mut description = FlatText::default();
         if let Some(described_by) = self
             .relations
@@ -194,7 +199,7 @@ impl<'doc> TreeBuilder<'doc> {
         if !description.text.is_empty() {
             accesskit_node.set_description(description.text.as_str());
         } else {
-            self.document.nodes[node_id].set_description_from_node(accesskit_node);
+            node.set_description_from_node(accesskit_node);
         }
     }
 }

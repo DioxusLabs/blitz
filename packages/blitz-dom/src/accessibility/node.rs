@@ -19,12 +19,27 @@ impl Node {
         if self.parent.is_none() {
             accesskit_node.set_role(Role::Window)
         } else if let Some(element_data) = self.element_data() {
-            let name = element_data.name.local.to_string();
+            accesskit_node.set_html_tag(element_data.name.local.as_str());
+
             // TODO: The roles of elements with strong native semantics cannot be overridden; see
             // https://www.w3.org/TR/wai-aria-1.2/#host_general_conflict.
             let role = element_role(element_data);
-
             accesskit_node.set_role(role);
+
+            if let Some(aria_level) = element_data.attr(local_name!("aria-level"))
+                && let Ok(aria_level) = aria_level.parse::<usize>()
+                // Accesskit levels are 0-based, while ARIA levels are 1-based
+                // See https://docs.rs/accesskit/latest/accesskit/struct.Node.html#method.level
+                && let Some(aria_level) = aria_level.checked_sub(1)
+            {
+                accesskit_node.set_level(aria_level);
+            } else if let Some(default_level) =
+                default_level_for_tag(element_data.name.local.as_str())
+            {
+                accesskit_node.set_level(default_level);
+            } else if let Some(default_level) = default_level_for_role(role) {
+                accesskit_node.set_level(default_level);
+            }
 
             // https://www.w3.org/TR/wai-aria-1.2/#tree_exclusion
             if element_data.attr(local_name!("aria-hidden")) == Some("true") {
@@ -46,26 +61,9 @@ impl Node {
             {
                 accesskit_node.set_selected(aria_selected);
             }
-
-            if let Some(aria_level) = element_data.attr(local_name!("aria-level"))
-                && let Ok(aria_level) = aria_level.parse::<usize>()
-                // Accesskit levels are 0-based, while ARIA levels are 1-based
-                // See https://docs.rs/accesskit/latest/accesskit/struct.Node.html#method.level
-                && let Some(aria_level) = aria_level.checked_sub(1)
-            {
-                accesskit_node.set_level(aria_level);
-            } else if let Some(default_level) = default_level_for_tag(&name) {
-                accesskit_node.set_level(default_level);
-            } else if let Some(default_level) = default_level_for_role(role) {
-                accesskit_node.set_level(default_level);
-            }
-
-            accesskit_node.set_html_tag(name);
         } else if self.is_text_node() {
             accesskit_node.set_role(Role::TextRun);
-            if let Some(text) = normalize(&self.text_content()) {
-                accesskit_node.set_value(text);
-            }
+            accesskit_node.set_value(&self.text_content());
         }
 
         accesskit_node
