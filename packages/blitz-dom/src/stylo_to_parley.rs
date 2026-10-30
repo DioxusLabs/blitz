@@ -436,6 +436,13 @@ pub(crate) fn style(
         .resolve(Length::new(font_size))
         .px();
 
+    let tab_size = match itext_styles.tab_size {
+        style::values::generics::length::LengthOrNumber::Number(n) => parley::TabSize::spaces(n.0),
+        style::values::generics::length::LengthOrNumber::Length(length) => {
+            parley::TabSize::new(length.0.px())
+        }
+    };
+
     // Convert Bold/Italic
     let font_weight = self::font_weight(font_styles.font_weight);
     let font_style = self::font_style(font_styles.font_style);
@@ -515,6 +522,7 @@ pub(crate) fn style(
         vertical_align,
         word_spacing,
         letter_spacing,
+        tab_size,
         text_wrap_mode,
         white_space_collapse: white_space_collapse(itext_styles.white_space_collapse),
         overflow_wrap,
