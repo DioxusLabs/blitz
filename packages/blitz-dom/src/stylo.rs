@@ -1167,6 +1167,47 @@ impl<'a> TElement for BlitzNode<'a> {
                 }
             }
 
+            // The SVG `fill` and `stroke` presentation attributes map to the
+            // properties of the same name, at presentational-hint precedence so
+            // that author CSS overrides them.
+            if elem.name.ns == ns!(svg)
+                && (*name == local_name!("fill") || *name == local_name!("stroke"))
+            {
+                use style::properties::{
+                    PropertyId, SourcePropertyDeclaration, parse_one_declaration_into,
+                };
+                use style::stylesheets::{CssRuleType, Origin};
+                use style_traits::ParsingMode;
+
+                let property = if *name == local_name!("fill") {
+                    "fill"
+                } else {
+                    "stroke"
+                };
+                if let Ok(property_id) = PropertyId::parse_enabled_for_all_content(property) {
+                    // A paint server's URL is never written back, so its base URL is not used.
+                    let url_data = crate::url::DocumentUrl::default().url_extra_data();
+                    let mut source = SourcePropertyDeclaration::default();
+                    if parse_one_declaration_into(
+                        &mut source,
+                        property_id,
+                        value,
+                        Origin::Author,
+                        &url_data,
+                        None,
+                        ParsingMode::DEFAULT,
+                        QuirksMode::NoQuirks,
+                        CssRuleType::Style,
+                    )
+                    .is_ok()
+                    {
+                        for declaration in source.drain().declarations {
+                            push_style(declaration);
+                        }
+                    }
+                }
+            }
+
             // The `border` attribute maps to the four border widths as a
             // pixel length, plus the four border styles as `solid` -- width
             // alone would compute back to zero against the default
