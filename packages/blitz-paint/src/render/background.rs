@@ -141,7 +141,7 @@ impl ElementCx<'_, '_> {
         // Draw background color (if any)
         let mut text_run = last_clip == StyloBackgroundClip::Text;
         if text_run {
-            self.push_text_clip_isolation(scene);
+            self.begin_text_clip_group(scene);
         }
         self.draw_solid_bg(scene, &background_clip_path);
 
@@ -149,9 +149,9 @@ impl ElementCx<'_, '_> {
             let layer = ImageLayerStyles::from_background(bg_styles, image_data, idx);
             if layer.text_clip != text_run {
                 if text_run {
-                    self.pop_text_clip_isolation(scene);
+                    self.end_text_clip_group(scene);
                 } else {
-                    self.push_text_clip_isolation(scene);
+                    self.begin_text_clip_group(scene);
                 }
                 text_run = layer.text_clip;
             }
@@ -175,11 +175,13 @@ impl ElementCx<'_, '_> {
             );
         }
         if text_run {
-            self.pop_text_clip_isolation(scene);
+            self.end_text_clip_group(scene);
         }
     }
 
-    fn push_text_clip_isolation(&self, scene: &mut impl PaintScene) {
+    /// Starts an isolated group for `background-clip: text` layers; layers drawn
+    /// until [`end_text_clip_group`](Self::end_text_clip_group) are clipped to text.
+    fn begin_text_clip_group(&self, scene: &mut impl PaintScene) {
         scene.push_layer(
             Fill::NonZero,
             Mix::Normal,
@@ -191,7 +193,9 @@ impl ElementCx<'_, '_> {
         );
     }
 
-    fn pop_text_clip_isolation(&self, scene: &mut impl PaintScene) {
+    /// Ends the group started by [`begin_text_clip_group`](Self::begin_text_clip_group):
+    /// draws the text mask in a `DestIn` layer, then pops both layers.
+    fn end_text_clip_group(&self, scene: &mut impl PaintScene) {
         scene.push_layer(
             Fill::NonZero,
             BlendMode::new(Mix::Normal, Compose::DestIn),
