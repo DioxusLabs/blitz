@@ -95,27 +95,29 @@ impl<'doc> TreeBuilder<'doc> {
 
     fn create_nodes(&self) -> Vec<(accesskit::NodeId, accesskit::Node)> {
         let mut window = accesskit::Node::new(Role::Window);
-        let mut nodes = FxHashMap::default();
+        window.push_child(to_accesskit_node_id(self.document.root_node_id));
+        let mut nodes = Vec::new();
         self.document.visit(|node_id, node| {
             if self.excluded_nodes.contains(&node_id) {
                 return;
             }
-            let parent = node
-                .parent
-                .and_then(|parent_id| nodes.get_mut(&parent_id))
-                .unwrap_or(&mut window);
-            parent.push_child(to_accesskit_node_id(node_id));
             let mut accesskit_node = node.build_accesskit_node();
             if accesskit_node.role() == Role::Label {
                 self.set_value_of_label(node, &mut accesskit_node);
             }
+            let children: Vec<_> = node
+                .children
+                .iter()
+                .filter(|n| !self.excluded_nodes.contains(n))
+                .map(|n| to_accesskit_node_id(*n))
+                .collect();
+            accesskit_node.set_children(children);
             self.resolve_name(node_id, &mut accesskit_node);
             self.resolve_description(node_id, &mut accesskit_node);
-            nodes.insert(node_id, accesskit_node);
+            nodes.push((to_accesskit_node_id(node_id), accesskit_node));
         });
         nodes
             .into_iter()
-            .map(|(id, node)| (to_accesskit_node_id(id), node))
             .chain([(DEFAULT_ACCESSKIT_NODE_ID, window)])
             .collect()
     }
