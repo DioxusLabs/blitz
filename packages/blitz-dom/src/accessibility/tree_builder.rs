@@ -5,20 +5,20 @@ use crate::{
 use accesskit::{Role, TreeId, TreeInfo, TreeUpdate};
 use blitz_traits::NodeId;
 use markup5ever::local_name;
-use std::collections::{HashMap, HashSet};
+use rustc_hash::{FxHashMap, FxHashSet};
 
 const DEFAULT_ACCESSKIT_NODE_ID: accesskit::NodeId = accesskit::NodeId(u64::MAX);
 
 pub(super) struct TreeBuilder<'doc> {
     document: &'doc BaseDocument,
-    relations: HashMap<NodeId, Relations>,
-    excluded_nodes: HashSet<NodeId>,
+    relations: FxHashMap<NodeId, Relations>,
+    excluded_nodes: FxHashSet<NodeId>,
 }
 
 impl<'doc> TreeBuilder<'doc> {
     pub fn new(document: &'doc BaseDocument) -> Self {
-        let mut excluded_nodes = HashSet::new();
-        let mut relations = HashMap::new();
+        let mut excluded_nodes = FxHashSet::default();
+        let mut relations = FxHashMap::default();
         document.visit(|node_id, node| {
             if node.is_hidden_from_accessibility_tree()
                 || node
@@ -38,7 +38,7 @@ impl<'doc> TreeBuilder<'doc> {
     }
 
     fn collect_relations(
-        relations_map: &mut HashMap<NodeId, Relations>,
+        relations_map: &mut FxHashMap<NodeId, Relations>,
         node_id: NodeId,
         node: &Node,
         document: &BaseDocument,
@@ -95,7 +95,7 @@ impl<'doc> TreeBuilder<'doc> {
 
     fn create_nodes(&self) -> Vec<(accesskit::NodeId, accesskit::Node)> {
         let mut window = accesskit::Node::new(Role::Window);
-        let mut nodes = HashMap::new();
+        let mut nodes = FxHashMap::default();
         self.document.visit(|node_id, node| {
             if self.excluded_nodes.contains(&node_id) {
                 return;

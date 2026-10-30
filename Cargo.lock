@@ -907,6 +907,7 @@ dependencies = [
  "parley",
  "percent-encoding",
  "rayon",
+ "rustc-hash 2.1.3",
  "selectors",
  "skrifa",
  "slotmap",
