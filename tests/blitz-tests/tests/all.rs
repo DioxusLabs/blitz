@@ -50,6 +50,7 @@ mod paint_order;
 mod paint_tree_bench;
 mod paint_tree_incremental;
 mod pointer_events;
+mod pointer_focus;
 mod pointer_leave;
 mod pre_overflow_scroll;
 mod pseudo_element_flow_classification;
