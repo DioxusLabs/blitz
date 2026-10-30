@@ -180,7 +180,11 @@ impl DioxusDocument {
     pub(crate) fn flush_queued_mounted_events(&mut self) {
         let mut queued_mounted_events = mem::take(&mut self.vdom_state.queued_mounted_events);
         for element_id in queued_mounted_events.drain(..) {
-            let node_id = self.vdom_state.element_to_node_id(element_id);
+            // The element may have been removed again since its mounted event was queued (in the
+            // same render), which unmaps its `ElementId`.
+            let Some(node_id) = self.vdom_state.try_element_to_node_id(element_id) else {
+                continue;
+            };
 
             if self.inner.borrow().get_node(node_id).is_some() {
                 let event = Event::new(
@@ -741,6 +745,50 @@ mod tests {
             focussed.unwrap().attr(crate::LocalName::from("data-focus")),
             Some("true")
         );
+    }
+
+    #[test]
+    // Regression test for a panic. An element whose mounted event is queued can be removed again
+    // within the same render, when a scope rendered after it (here the app, dirtied by the
+    // child) drops it. Its `ElementId` is unmapped by the time the queue is flushed.
+    fn element_removed_before_its_mounted_event_is_flushed() {
+        #[derive(Default)]
+        struct State {
+            child: Cell<Option<ScopeId>>,
+            show: Cell<bool>,
+            hide_child: Cell<bool>,
+            mounted: Cell<usize>,
+        }
+
+        #[component]
+        fn Child() -> Element {
+            let state = consume_context::<Rc<State>>();
+            state.child.set(Some(dioxus_core::current_scope_id()));
+            if !state.show.get() {
+                return rsx!(span {});
+            }
+            state.hide_child.set(true);
+            dioxus_core::schedule_update_any()(ScopeId::APP);
+            rsx!(div {
+                onmounted: move |_| state.mounted.set(state.mounted.get() + 1),
+            })
+        }
+
+        fn app() -> Element {
+            let state = consume_context::<Rc<State>>();
+            rsx!(if !state.hide_child.get() {
+                Child {}
+            })
+        }
+
+        let state = Rc::new(State::default());
+        let vdom = VirtualDom::new(app).with_root_context(Rc::clone(&state));
+        let mut doc = DioxusDocument::new(vdom, DocumentConfig::default());
+        doc.initial_build();
+        state.show.set(true);
+        doc.vdom.mark_dirty(state.child.get().unwrap());
+        poll_until_idle(&mut doc);
+        assert_eq!(state.mounted.get(), 0);
     }
 
     #[test]
