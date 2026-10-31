@@ -1123,6 +1123,28 @@ impl LayoutPassState<'_> {
 
         if inputs.run_mode == RunMode::PerformLayout {
             inline_layout.span_cb_flags = span_cb_flags;
+            inline_layout.performed = Some(crate::node::PerformedLines {
+                width,
+                text_indent: resolved_text_indent * scale,
+                indent_options,
+                alignment,
+                last_line_alignment,
+            });
+        } else if let Some(performed) = inline_layout.performed
+            && performed.width != width
+        {
+            // A measuring run: leave the lines as the last final layout broke them, which are
+            // the ones painted until the next final layout (which may come from the cache).
+            let layout = &mut inline_layout.layout;
+            layout.set_text_indent(performed.text_indent, performed.indent_options);
+            layout.break_all_lines(Some(performed.width));
+            layout.align(
+                performed.alignment,
+                AlignmentOptions {
+                    align_when_overflowing: false,
+                    last_line_alignment: performed.last_line_alignment,
+                },
+            );
         }
 
         // Put layout back
@@ -1195,4 +1217,78 @@ impl LayoutPassState<'_> {
 #[inline(always)]
 fn f32_max(a: f32, b: f32) -> f32 {
     a.max(b)
+}
+
+#[cfg(test)]
+mod tests {
+    use blitz_traits::shell::{ColorScheme, Viewport};
+    use taffy::{AvailableSpace, LayoutInput, RequestedAxis, RunMode, Size, SizingMode};
+
+    use crate::layout::LayoutPassState;
+    use crate::{BaseDocument, DocumentConfig, NodeId, qual_name};
+
+    fn lines(document: &BaseDocument, text: NodeId) -> usize {
+        let node = document.get_node(text).unwrap();
+        let layout = node
+            .element_data()
+            .unwrap()
+            .inline_layout_data
+            .as_ref()
+            .unwrap();
+        layout.layout.lines().count()
+    }
+
+    /// A flex container measures its items again on later passes (at min-content width,
+    /// among others) while their final layout comes from Taffy's cache. A measuring run must
+    /// leave the lines that are painted as the final layout broke them.
+    #[test]
+    fn measuring_keeps_the_lines_of_the_final_layout() {
+        let mut document = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(800, 600, 1.0, ColorScheme::Light)),
+            ..Default::default()
+        });
+        let root_id = document.root_node().id;
+        let text = {
+            let mut m = document.mutate();
+            let html = m.create_element(qual_name!("html", html), vec![]);
+            m.append_children(root_id, &[html]);
+            let text = m.create_element(qual_name!("div", html), vec![]);
+            m.append_children(html, &[text]);
+            let words = m.create_text_node("Hi! Is this still the number for the flat viewing?");
+            m.append_children(text, &[words]);
+            text
+        };
+        document.resolve(0.0);
+        assert_eq!(lines(&document, text), 1);
+
+        // A measuring run at a narrow width, as a flex container sizing its item does.
+        let narrow = 30.0;
+        let measured = LayoutPassState::new(&mut document).compute_inline_layout(
+            text,
+            LayoutInput {
+                run_mode: RunMode::ComputeSize,
+                sizing_mode: SizingMode::ContentSize,
+                axis: RequestedAxis::Vertical,
+                known_dimensions: Size {
+                    width: Some(narrow),
+                    height: None,
+                },
+                available_space: Size {
+                    width: AvailableSpace::Definite(narrow),
+                    height: AvailableSpace::MaxContent,
+                },
+                ..LayoutInput::HIDDEN
+            },
+            None,
+        );
+        assert!(
+            measured.size.height > 50.0,
+            "the narrow text is measured tall"
+        );
+        assert_eq!(
+            lines(&document, text),
+            1,
+            "the painted lines are the final layout's"
+        );
+    }
 }
