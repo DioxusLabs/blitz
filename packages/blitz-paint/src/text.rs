@@ -45,6 +45,13 @@ pub(crate) fn draw_inline_backgrounds<'a>(
                 continue;
             };
 
+            // Runs whose brush is a `display: contents` element carry that element's
+            // text style, but the element generates no box, so it must not paint a
+            // background (or other box decorations) behind the text.
+            if styles.clone_display().is_contents() {
+                continue;
+            }
+
             let current_color = styles.clone_color();
             let bg_color = styles
                 .get_background()
