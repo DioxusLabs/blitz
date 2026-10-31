@@ -2636,6 +2636,7 @@ dependencies = [
  "dioxus-html",
  "futures-util",
  "keyboard-types",
+ "rustc-hash 2.1.3",
  "tracing",
 ]
 
