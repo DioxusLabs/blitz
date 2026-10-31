@@ -7836,6 +7836,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "stylo_web_animations"
+version = "0.3.0-beta.2"
+
+[[package]]
 name = "subsecond"
 version = "0.8.0-alpha.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
