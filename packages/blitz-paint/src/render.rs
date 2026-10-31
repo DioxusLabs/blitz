@@ -1026,7 +1026,7 @@ impl ElementCx<'_, '_> {
         if let Some(input_data) = self.text_input {
             // For single-line inputs, add an offset to vertically center the text input layout
             // within the content box of it's node.
-            let y_offset = self.node.text_input_v_centering_offset(self.scale);
+            let y_offset = self.node.text_input_v_centering_offset();
             let pos = Point {
                 x: pos.x,
                 y: pos.y + y_offset,

@@ -357,9 +357,10 @@ impl LayoutPassState<'_> {
                             );
                         }
                         None | Some("text" | "password" | "email" | "tel" | "url" | "search") => {
-                            return compute_leaf_layout(
+                            let style = node.layout_style();
+                            let output = compute_leaf_layout(
                                 inputs,
-                                &node.layout_style(),
+                                &style,
                                 resolve_calc_value,
                                 |_known_size, _available_space| taffy::Size {
                                     width: match inputs.available_space.width {
@@ -370,6 +371,29 @@ impl LayoutPassState<'_> {
                                     height: resolved_line_height.unwrap_or(16.0),
                                 },
                             );
+
+                            // Export the baseline of the input's text (where it is painted) so
+                            // that the input is aligned by its text when laid out inline.
+                            let pb = style
+                                .padding()
+                                .resolve_or_zero(inputs.parent_size.width, resolve_calc_value)
+                                + style
+                                    .border()
+                                    .resolve_or_zero(inputs.parent_size.width, resolve_calc_value);
+                            let content_box_height =
+                                (output.size.height - pb.vertical_axis_sum()).max(0.0);
+                            let baseline = node
+                                .element_data()
+                                .and_then(|el| el.text_input_data())
+                                .and_then(|input| input.first_baseline(content_box_height))
+                                .map(|baseline| pb.top + baseline);
+                            return taffy::LayoutOutput {
+                                baselines: taffy::Baselines {
+                                    first: baseline,
+                                    last: baseline,
+                                },
+                                ..output
+                            };
                         }
                         _ => {}
                     }
