@@ -85,6 +85,7 @@ writeable = { workspace = true, optional = true }
 # Other dependencies
 slotmap = { workspace = true }
 bitflags = { workspace = true }
+rustc-hash = { workspace = true }
 tracing = { workspace = true, optional = true }
 rayon = { workspace = true }
 
