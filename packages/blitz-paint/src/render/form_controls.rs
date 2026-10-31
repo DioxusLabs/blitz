@@ -6,10 +6,17 @@ use blitz_dom::local_name;
 use kurbo::{Affine, BezPath, Cap, Circle, Join, Point, RoundedRect, Stroke, Vec2};
 use peniko::Fill;
 use style::dom::TElement as _;
+use style::values::computed::Appearance;
 
 impl ElementCx<'_, '_> {
     pub(super) fn draw_input(&self, scene: &mut impl PaintScene) {
         if self.node.local_name() != "input" {
+            return;
+        }
+        // `appearance: none` replaces the native widget with its primitive
+        // appearance, which is just the element's own CSS box.
+        // https://drafts.csswg.org/css-ui-4/#appearance-switching
+        if self.style.get_box().slow_clone_appearance() == Appearance::None {
             return;
         }
         let Some(checked) = self.element.checkbox_input_checked() else {
