@@ -38,6 +38,7 @@ mod inline_box_scrollable_overflow;
 mod inline_fragment_rects;
 mod inline_svg_restyle;
 mod inline_svg_serialize;
+mod inline_svg_web_fonts;
 mod inner_html_leak;
 mod interaction_state_canonicalization;
 mod interaction_state_teardown;

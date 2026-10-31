@@ -52,6 +52,8 @@ pub struct FontFaceOverrides {
     pub weight: Option<f32>,
     /// `font-style` descriptor mapped to fontique's `FontStyle`.
     pub style: Option<parley::fontique::FontStyle>,
+    /// `unicode-range` descriptor as inclusive code point ranges.
+    pub unicode_range: Option<Vec<(u32, u32)>>,
 }
 
 #[derive(Clone, Debug)]
@@ -432,6 +434,12 @@ pub(crate) fn fetch_font_face_rules<'a>(
                         .as_ref()
                         .and_then(|range| range.0.compute().map(|w| w.value())),
                     style: descriptor.font_style.as_ref().map(stylo_to_fontique_style),
+                    unicode_range: descriptor.unicode_range.as_ref().map(|ranges| {
+                        ranges
+                            .iter()
+                            .map(|range| (range.start, range.end))
+                            .collect()
+                    }),
                 };
                 Some((src, overrides))
             }
