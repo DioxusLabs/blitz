@@ -41,6 +41,7 @@ mod inline_svg_serialize;
 mod inner_html_leak;
 mod interaction_state_canonicalization;
 mod interaction_state_teardown;
+mod label_click;
 mod lang_attribute;
 mod line_break;
 mod link_rel_attribute;
