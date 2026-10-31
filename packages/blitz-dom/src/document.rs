@@ -3102,6 +3102,102 @@ mod hover_invalidation_tests {
         )
     }
 
+    #[test]
+    fn details_open_mutator_and_summary_click_restyle_descendant() {
+        use blitz_traits::events::{DomEvent, DomEventData};
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
+            ..Default::default()
+        });
+        doc.add_user_agent_stylesheet(UserAgentStylesheet::parse(
+            "p {color: black} details:open > p {color:red}",
+        ));
+        let root = doc.root_node().id;
+        let mut m = doc.mutate();
+        let html = m.create_element(qual_name!("html", html), vec![]);
+        let body = m.create_element(qual_name!("body", html), vec![]);
+        let details = m.create_element(qual_name!("details", html), vec![]);
+        let summary = m.create_element(qual_name!("summary", html), vec![]);
+        let p = m.create_element(qual_name!("p", html), vec![]);
+        m.append_children(details, &[summary, p]);
+        m.append_children(body, &[details]);
+        m.append_children(html, &[body]);
+        m.append_children(root, &[html]);
+        drop(m);
+        doc.resolve(0.0);
+        let closed = text_color(&doc, p);
+        for mode in ["mutator", "summary click"] {
+            for was_open in [false, true] {
+                if mode == "mutator" {
+                    let mut m = doc.mutate();
+                    if was_open {
+                        m.clear_attribute(details, qual_name!("open"));
+                    } else {
+                        m.set_attribute(details, qual_name!("open"), "");
+                    }
+                } else {
+                    let event = doc.nodes[summary].synthetic_click_event_data(Default::default());
+                    let mut event = DomEvent::new(summary, DomEventData::Click(event));
+                    crate::events::handle_dom_event(&mut doc, &mut event, |_| {});
+                }
+                let snapshot = doc.snapshots.get(&&doc.nodes[details]).unwrap();
+                assert_eq!(
+                    snapshot.state.unwrap().contains(ElementState::OPEN),
+                    was_open
+                );
+                assert_eq!(
+                    doc.nodes[details]
+                        .element_state()
+                        .contains(ElementState::OPEN),
+                    !was_open
+                );
+                doc.resolve(0.0);
+                let color = text_color(&doc, p);
+                if was_open {
+                    assert_eq!(color, closed);
+                } else {
+                    assert_ne!(color, closed);
+                    assert!(color.contains("ColorComponents(1.0, 0.0, 0.0)"));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn open_state_requires_html_element_and_null_namespace_attribute() {
+        use markup5ever::ns;
+        let mut doc = BaseDocument::new(DocumentConfig::default());
+        for tag in ["details", "dialog"] {
+            let attr = |ns| Attribute {
+                name: QualName::new(None, ns, local_name!("open")),
+                value: String::new(),
+            };
+            let mut m = doc.mutate();
+            let svg =
+                m.create_element(QualName::new(None, ns!(svg), tag.into()), vec![attr(ns!())]);
+            let html = m.create_element(
+                QualName::new(None, ns!(html), tag.into()),
+                vec![attr(ns!(svg))],
+            );
+            drop(m);
+            assert!(!doc.nodes[svg].element_state().contains(ElementState::OPEN));
+            assert!(!doc.nodes[html].element_state().contains(ElementState::OPEN));
+            doc.mutate()
+                .set_attribute(html, qual_name!("open"), "false");
+            assert!(doc.nodes[html].element_state().contains(ElementState::OPEN));
+            doc.mutate()
+                .clear_attribute(html, QualName::new(None, ns!(svg), local_name!("open")));
+            assert!(doc.nodes[html].element_state().contains(ElementState::OPEN));
+            doc.mutate().set_attribute(
+                html,
+                QualName::new(None, ns!(svg), local_name!("open")),
+                "",
+            );
+            doc.mutate().clear_attribute(html, qual_name!("open"));
+            assert!(!doc.nodes[html].element_state().contains(ElementState::OPEN));
+        }
+    }
+
     fn text_color(doc: &BaseDocument, id: NodeId) -> String {
         format!(
             "{:?}",
