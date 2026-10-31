@@ -23,7 +23,6 @@ use style::animation::AnimationSetKey;
 use style::animation::AnimationState;
 use style::applicable_declarations::ApplicableDeclarationBlock;
 use style::bloom::each_relevant_element_hash;
-use style::color::AbsoluteColor;
 use style::data::{ElementDataMut, ElementDataRef};
 use style::global_style_data::STYLE_THREAD_POOL;
 
@@ -941,27 +940,15 @@ impl<'a> TElement for BlitzNode<'a> {
             ));
         };
 
-        fn parse_color_attr(value: &str) -> Option<(u8, u8, u8, f32)> {
-            if !value.starts_with('#') {
-                return None;
-            }
-
-            let value = &value[1..];
-            if value.len() == 3 {
-                let r = u8::from_str_radix(&value[0..1], 16).ok()?;
-                let g = u8::from_str_radix(&value[1..2], 16).ok()?;
-                let b = u8::from_str_radix(&value[2..3], 16).ok()?;
-                return Some((r, g, b, 1.0));
-            }
-
-            if value.len() == 6 {
-                let r = u8::from_str_radix(&value[0..2], 16).ok()?;
-                let g = u8::from_str_radix(&value[2..4], 16).ok()?;
-                let b = u8::from_str_radix(&value[4..6], 16).ok()?;
-                return Some((r, g, b, 1.0));
-            }
-
-            None
+        /// The HTML "rules for parsing a legacy colour value" -- Stylo's
+        /// implementation of them. They take more than CSS does: color
+        /// names, `#rgb` as `#rrggbb`, hex digits without the `#`, spaces
+        /// around the value, and any other text read digit by digit.
+        ///
+        /// https://html.spec.whatwg.org/multipage/common-microsyntaxes.html#rules-for-parsing-a-legacy-colour-value
+        fn parse_color_attr(value: &str) -> Option<style::values::specified::Color> {
+            let color = style::servo::attr::parse_legacy_color(value).ok()?;
+            Some(style::values::specified::Color::from_absolute_color(color))
         }
 
         /// The HTML "rules for parsing dimension values" -- Stylo's
@@ -1230,11 +1217,20 @@ impl<'a> TElement for BlitzNode<'a> {
             }
 
             if *name == local_name!("bgcolor") {
-                use style::values::specified::Color;
-                if let Some((r, g, b, a)) = parse_color_attr(value) {
-                    push_style(PropertyDeclaration::BackgroundColor(
-                        Color::from_absolute_color(AbsoluteColor::srgb_legacy(r, g, b, a)),
-                    ));
+                if let Some(color) = parse_color_attr(value) {
+                    push_style(PropertyDeclaration::BackgroundColor(color));
+                }
+            }
+
+            // `font color` and `body text` set the text color:
+            // https://html.spec.whatwg.org/multipage/rendering.html#phrasing-content-3
+            // https://html.spec.whatwg.org/multipage/rendering.html#the-page
+            let sets_text_color = (*tag == local_name!("font") && *name == local_name!("color"))
+                || (*tag == local_name!("body") && *name == local_name!("text"));
+            if sets_text_color {
+                if let Some(color) = parse_color_attr(value) {
+                    use style::values::specified::ColorPropertyValue;
+                    push_style(PropertyDeclaration::Color(ColorPropertyValue(color)));
                 }
             }
 

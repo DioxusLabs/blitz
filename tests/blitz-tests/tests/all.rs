@@ -42,6 +42,7 @@ mod inner_html_leak;
 mod interaction_state_canonicalization;
 mod interaction_state_teardown;
 mod lang_attribute;
+mod legacy_color_attributes;
 mod line_break;
 mod link_rel_attribute;
 mod oof_dynamic_cb;
