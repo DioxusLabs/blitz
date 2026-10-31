@@ -58,6 +58,7 @@ mod rem_after_viewport_change;
 mod render_blocking_stylesheet;
 mod resize_restyle;
 mod rotate_z_axis;
+mod scale_border_restyle;
 mod scoped_query_selector;
 mod scrollbar_drag;
 mod scrollbars;
