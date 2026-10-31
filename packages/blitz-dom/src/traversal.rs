@@ -587,7 +587,7 @@ impl BaseDocument {
     }
 
     /// Check if `ancestor_id` is an ancestor of `descendant_id`
-    fn is_ancestor_of(&self, ancestor_id: NodeId, descendant_id: NodeId) -> bool {
+    pub(crate) fn is_ancestor_of(&self, ancestor_id: NodeId, descendant_id: NodeId) -> bool {
         let mut current = descendant_id;
         while let Some(parent) = self.nodes[current].parent {
             if parent == ancestor_id {
