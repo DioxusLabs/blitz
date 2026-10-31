@@ -391,6 +391,14 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
             vec![event.target]
         };
 
+        // 1. W3C Pre-Dispatch Capture Phase Hook
+        {
+            let doc = self.doc.inner();
+            if let Some(hook) = doc.capture_hook().cloned() {
+                hook(&doc, event, &chain);
+            }
+        }
+
         match &mut event.data {
             DomEventData::PointerMove(data)
             | DomEventData::PointerDown(data)
