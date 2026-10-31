@@ -625,13 +625,18 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                     .unwrap_or(Rect::ZERO);
 
                 let mut effect_layer_clip = cx.frame.border_box_path().bounding_box();
+                // Backdrop filters must remain clipped to the element. Supporting
+                // visible overflow there requires separate backdrop/content layers.
+                if !should_clip && backdrop_filter.is_none() {
+                    effect_layer_clip = effect_layer_clip.union(*node.scrollable_overflow());
+                }
                 effect_layer_clip.x0 += filter_expansion_area.x0;
                 effect_layer_clip.y0 += filter_expansion_area.y0;
                 effect_layer_clip.x1 += filter_expansion_area.x1;
                 effect_layer_clip.y1 += filter_expansion_area.y1;
 
                 // Opacity/Filter layer if box has opacity or a filter.
-                // Clipped to border-box as it needs to include the background and borders.
+                // Include the border box and any visible descendant overflow.
                 self.layer_manager.maybe_with_layer(
                     scene,
                     has_opacity || filter.is_some() || backdrop_filter.is_some(),
@@ -653,7 +658,6 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                         }
                         cx.stroke_devtools(scene);
 
-                        // TODO: allow layers with opacity to be unclipped (overflow: visible)
                         let clip = if is_text_input {
                             &cx.frame.content_box_path()
                         } else {
