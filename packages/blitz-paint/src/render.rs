@@ -1436,7 +1436,9 @@ fn create_css_rect(style: &ComputedValues, layout: &Layout, scale: f64) -> CssBo
     let border_box = Rect::new(0.0, 0.0, width * scale, height * scale);
     let border = insets_from_taffy_rect(layout.border.map(|p| p as f64 * scale));
     let padding = insets_from_taffy_rect(layout.padding.map(|p| p as f64 * scale));
-    let outline_width = style.get_outline().outline_width.0.to_f64_px() * scale;
+    let outline = style.get_outline();
+    let outline_width = outline.outline_width.0.to_f64_px() * scale;
+    let outline_offset = outline.outline_offset.to_f64_px() * scale;
 
     // Resolve the radii to a length. need to downscale since the radii are in document pixels
     let resolve_w = CSSPixelLength::new(width as _);
@@ -1456,4 +1458,5 @@ fn create_css_rect(style: &ComputedValues, layout: &Layout, scale: f64) -> CssBo
     };
 
     CssBox::new(border_box, border, padding, outline_width, border_radii)
+        .with_outline_offset(outline_offset)
 }
