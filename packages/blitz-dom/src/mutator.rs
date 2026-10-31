@@ -1154,6 +1154,9 @@ impl<'doc> DocumentMutator<'doc> {
                 doc.remove_from_id_map(&id_attr, node_id);
             }
 
+            doc.completed_zero_duration_animations
+                .retain(|(id, _)| *id != node_id);
+
             let node = &mut doc.nodes[node_id];
             let NodeData::Element(ref mut element) = node.data else {
                 return;
@@ -1379,6 +1382,7 @@ impl<'doc> DocumentMutator<'doc> {
         }
     }
 
+    #[allow(clippy::needless_return)]
     fn process_button_input(&mut self, target_id: NodeId) {
         let node = &self.doc.nodes[target_id];
         let Some(data) = node.element_data() else {

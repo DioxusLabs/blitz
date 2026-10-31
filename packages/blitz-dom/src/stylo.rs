@@ -1,12 +1,16 @@
 //! Enable the dom to participate in styling by servo
 //!
 
+use blitz_traits::SmolStr;
+use blitz_traits::events::{BlitzAnimationEvent, BlitzTransitionEvent, DomEventData};
 use blitz_traits::node_id::NodeId;
+use cssparser::ToCss as _;
 use std::ptr::NonNull;
 use std::sync::Mutex;
 use std::sync::atomic::Ordering;
 
 use crate::StyleThreading;
+use crate::document::QueuedAnimationEvent;
 use crate::layout::damage::compute_layout_damage;
 use crate::node::Node;
 use crate::node::NodeData;
@@ -21,11 +25,13 @@ use selectors::{
 use style::CaseSensitivityExt;
 use style::animation::AnimationSetKey;
 use style::animation::AnimationState;
+use style::animation::KeyframesIterationState;
 use style::applicable_declarations::ApplicableDeclarationBlock;
 use style::bloom::each_relevant_element_hash;
 use style::color::AbsoluteColor;
 use style::data::{ElementDataMut, ElementDataRef};
 use style::global_style_data::STYLE_THREAD_POOL;
+use style_traits::values::ToCss;
 
 /// Serialises `Parallel` style traversals across documents. Stylo's per-worker
 /// caches (`StyleSharingCache`, `StyleBloom`) live in native thread-locals that
@@ -76,15 +82,18 @@ impl crate::document::BaseDocument {
             ua_or_user: &guard.read(),
         };
 
-        let root = TDocument::as_node(&&self.nodes[self.root_node_id])
-            .first_element_child()
-            .unwrap()
-            .as_element()
-            .unwrap();
+        if let Some(root_node) =
+            TDocument::as_node(&&self.nodes[self.root_node_id]).first_element_child()
+        {
+            if let Some(root) = root_node.as_element() {
+                self.stylist
+                    .flush(&guards)
+                    .process_style(root, Some(&self.snapshots));
+            }
+        }
 
-        self.stylist
-            .flush(&guards)
-            .process_style(root, Some(&self.snapshots));
+        const TIME_EPSILON: f64 = 1e-5;
+        let now_effective = now + TIME_EPSILON;
 
         // Mark actively animating nodes as dirty
         let mut sets = self.animations.sets.write();
@@ -102,6 +111,53 @@ impl crate::document::BaseDocument {
                 .get(node_id)
                 .is_some_and(|node| node.flags.is_in_document());
             if !in_document {
+                if self.get_node(node_id).is_some() {
+                    let pseudo = match &key.pseudo_element {
+                        Some(p) => SmolStr::new(p.to_css_string()),
+                        None => SmolStr::default(),
+                    };
+                    for animation in set.animations.iter() {
+                        if animation.state == AnimationState::Running
+                            || animation.state == AnimationState::Pending
+                        {
+                            let current_iteration = match animation.iteration_state {
+                                KeyframesIterationState::Finite(current, _) => current,
+                                KeyframesIterationState::Infinite(current) => current,
+                            };
+                            let elapsed = ((current_iteration * animation.duration)
+                                + (now - animation.started_at).max(0.0))
+                                as f32;
+                            self.pending_animation_events.push(QueuedAnimationEvent {
+                                node_id,
+                                event: DomEventData::AnimationCancel(BlitzAnimationEvent {
+                                    animation_name: animation.name.as_str().to_string(),
+                                    elapsed_time: elapsed,
+                                    pseudo_element: pseudo.clone(),
+                                }),
+                            });
+                        }
+                    }
+                    for transition in set.transitions.iter() {
+                        if transition.state == AnimationState::Running
+                            || transition.state == AnimationState::Pending
+                        {
+                            let property_name =
+                                transition.property_animation.property_id().to_css_string();
+                            let elapsed = (now - transition.start_time)
+                                .max(0.0)
+                                .min(transition.property_animation.duration)
+                                as f32;
+                            self.pending_animation_events.push(QueuedAnimationEvent {
+                                node_id,
+                                event: DomEventData::TransitionCancel(BlitzTransitionEvent {
+                                    property_name,
+                                    elapsed_time: elapsed,
+                                    pseudo_element: pseudo.clone(),
+                                }),
+                            });
+                        }
+                    }
+                }
                 set.animations.clear();
                 set.transitions.clear();
                 continue;
@@ -109,23 +165,139 @@ impl crate::document::BaseDocument {
 
             self.nodes[node_id].set_restyle_hint(RestyleHint::RESTYLE_SELF);
 
-            for animation in set.animations.iter_mut() {
-                if animation.state == AnimationState::Pending && animation.started_at <= now {
-                    animation.state = AnimationState::Running;
-                }
-                animation.iterate_if_necessary(now);
+            let pseudo = match &key.pseudo_element {
+                Some(p) => SmolStr::new(p.to_css_string()),
+                None => SmolStr::default(),
+            };
 
-                if animation.state == AnimationState::Running && animation.has_ended(now) {
-                    animation.state = AnimationState::Finished;
+            for animation in set.animations.iter_mut() {
+                if animation.state == AnimationState::Pending
+                    && animation.started_at <= now_effective
+                {
+                    animation.state = AnimationState::Running;
+                    let active_duration = match animation.iteration_state {
+                        KeyframesIterationState::Finite(_, max) => max * animation.duration,
+                        KeyframesIterationState::Infinite(_) => {
+                            if animation.duration == 0.0 {
+                                0.0
+                            } else {
+                                f64::INFINITY
+                            }
+                        }
+                    };
+                    let elapsed = (-animation.delay).max(0.0).min(active_duration) as f32;
+                    self.pending_animation_events.push(QueuedAnimationEvent {
+                        node_id,
+                        event: DomEventData::AnimationStart(BlitzAnimationEvent {
+                            animation_name: animation.name.as_str().to_string(),
+                            elapsed_time: elapsed,
+                            pseudo_element: pseudo.clone(),
+                        }),
+                    });
+
+                    if animation.duration == 0.0 || animation.has_ended(now_effective) {
+                        animation.state = AnimationState::Finished;
+                        self.pending_animation_events.push(QueuedAnimationEvent {
+                            node_id,
+                            event: DomEventData::AnimationEnd(BlitzAnimationEvent {
+                                animation_name: animation.name.as_str().to_string(),
+                                elapsed_time: active_duration.max(0.0) as f32,
+                                pseudo_element: pseudo.clone(),
+                            }),
+                        });
+                        continue;
+                    }
+                }
+
+                if animation.state == AnimationState::Running {
+                    let mut iterations_crossed = 0;
+                    let mut last_iteration_elapsed = 0.0f32;
+                    while animation.duration > 0.0 && animation.iterate_if_necessary(now_effective)
+                    {
+                        iterations_crossed += 1;
+                        let current_iteration = match animation.iteration_state {
+                            KeyframesIterationState::Finite(current, _) => current,
+                            KeyframesIterationState::Infinite(current) => current,
+                        };
+                        last_iteration_elapsed = (current_iteration * animation.duration) as f32;
+                    }
+
+                    if animation.has_ended(now_effective) {
+                        animation.state = AnimationState::Finished;
+                        let active_duration = match animation.iteration_state {
+                            KeyframesIterationState::Finite(_, max) => max * animation.duration,
+                            KeyframesIterationState::Infinite(_) => 0.0,
+                        };
+                        self.pending_animation_events.push(QueuedAnimationEvent {
+                            node_id,
+                            event: DomEventData::AnimationEnd(BlitzAnimationEvent {
+                                animation_name: animation.name.as_str().to_string(),
+                                elapsed_time: active_duration as f32,
+                                pseudo_element: pseudo.clone(),
+                            }),
+                        });
+                    } else if iterations_crossed > 0 {
+                        self.pending_animation_events.push(QueuedAnimationEvent {
+                            node_id,
+                            event: DomEventData::AnimationIteration(BlitzAnimationEvent {
+                                animation_name: animation.name.as_str().to_string(),
+                                elapsed_time: last_iteration_elapsed,
+                                pseudo_element: pseudo.clone(),
+                            }),
+                        });
+                    }
                 }
             }
 
             for transition in set.transitions.iter_mut() {
-                if transition.state == AnimationState::Pending && transition.start_time <= now {
+                if transition.state == AnimationState::Pending
+                    && transition.start_time <= now_effective
+                {
                     transition.state = AnimationState::Running;
+                    let elapsed = if transition.delay < 0.0 {
+                        (-transition.delay).min(transition.property_animation.duration) as f32
+                    } else {
+                        0.0
+                    };
+                    let property_name = transition.property_animation.property_id().to_css_string();
+                    self.pending_animation_events.push(QueuedAnimationEvent {
+                        node_id,
+                        event: DomEventData::TransitionStart(BlitzTransitionEvent {
+                            property_name: property_name.clone(),
+                            elapsed_time: elapsed,
+                            pseudo_element: pseudo.clone(),
+                        }),
+                    });
+
+                    if transition.property_animation.duration == 0.0
+                        || transition.has_ended(now_effective)
+                    {
+                        transition.state = AnimationState::Finished;
+                        self.pending_animation_events.push(QueuedAnimationEvent {
+                            node_id,
+                            event: DomEventData::TransitionEnd(BlitzTransitionEvent {
+                                property_name,
+                                elapsed_time: transition.property_animation.duration as f32,
+                                pseudo_element: pseudo.clone(),
+                            }),
+                        });
+                        continue;
+                    }
                 }
-                if transition.state == AnimationState::Running && transition.has_ended(now) {
+
+                if transition.state == AnimationState::Running
+                    && transition.has_ended(now_effective)
+                {
                     transition.state = AnimationState::Finished;
+                    let property_name = transition.property_animation.property_id().to_css_string();
+                    self.pending_animation_events.push(QueuedAnimationEvent {
+                        node_id,
+                        event: DomEventData::TransitionEnd(BlitzTransitionEvent {
+                            property_name,
+                            elapsed_time: transition.property_animation.duration as f32,
+                            pseudo_element: pseudo.clone(),
+                        }),
+                    });
                 }
             }
         }
@@ -144,30 +316,56 @@ impl crate::document::BaseDocument {
             registered_speculative_painters: &RegisteredPaintersImpl,
         };
 
-        // components/layout_2020/lib.rs:983
-        let root = self.root_element();
-        // dbg!(root);
-        let token = RecalcStyle::pre_traverse(root, &context);
-
         let mut nodes_needing_style_image_flush = Vec::new();
-        if token.should_traverse() {
-            // Style the elements, resolving their data
-            let mut traverser = RecalcStyle::new(context);
-            // `Sequential` bypasses Stylo's global pool. See `StyleThreading`.
-            let parallel = matches!(self.style_threading, StyleThreading::Parallel);
-            let _traversal_lock = parallel.then(|| {
-                PARALLEL_TRAVERSAL_LOCK
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-            });
-            let pool_guard = parallel.then(|| STYLE_THREAD_POOL.pool());
-            let rayon_pool = pool_guard.as_ref().and_then(|g| g.as_ref());
-            style::driver::traverse_dom(&traverser, token, rayon_pool);
-            nodes_needing_style_image_flush =
-                std::mem::take(traverser.nodes_needing_style_image_flush.get_mut().unwrap());
+        let mut zero_duration_animations = Vec::new();
+        if let Some(root) = self.try_root_element() {
+            let token = RecalcStyle::pre_traverse(root, &context);
+
+            if token.should_traverse() {
+                // Style the elements, resolving their data
+                let mut traverser = RecalcStyle::new(context);
+                // `Sequential` bypasses Stylo's global pool. See `StyleThreading`.
+                let parallel = matches!(self.style_threading, StyleThreading::Parallel);
+                let _traversal_lock = parallel.then(|| {
+                    PARALLEL_TRAVERSAL_LOCK
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                });
+                let pool_guard = parallel.then(|| STYLE_THREAD_POOL.pool());
+                let rayon_pool = pool_guard.as_ref().and_then(|g| g.as_ref());
+                style::driver::traverse_dom(&traverser, token, rayon_pool);
+                nodes_needing_style_image_flush =
+                    std::mem::take(traverser.nodes_needing_style_image_flush.get_mut().unwrap());
+                zero_duration_animations =
+                    std::mem::take(traverser.zero_duration_animations.get_mut().unwrap());
+            }
         }
         self.pending_style_image_nodes
             .extend(nodes_needing_style_image_flush);
+
+        for (node_id, name) in zero_duration_animations {
+            if self
+                .completed_zero_duration_animations
+                .insert((node_id, name.clone()))
+            {
+                self.pending_animation_events.push(QueuedAnimationEvent {
+                    node_id,
+                    event: DomEventData::AnimationStart(BlitzAnimationEvent {
+                        animation_name: name.clone(),
+                        elapsed_time: 0.0,
+                        pseudo_element: SmolStr::default(),
+                    }),
+                });
+                self.pending_animation_events.push(QueuedAnimationEvent {
+                    node_id,
+                    event: DomEventData::AnimationEnd(BlitzAnimationEvent {
+                        animation_name: name,
+                        elapsed_time: 0.0,
+                        pseudo_element: SmolStr::default(),
+                    }),
+                });
+            }
+        }
 
         for opaque in self.snapshots.keys() {
             let id = NodeId::from_u64(opaque.id() as u64);
@@ -178,14 +376,141 @@ impl crate::document::BaseDocument {
         self.snapshots.clear();
 
         let mut sets = self.animations.sets.write();
-        for set in sets.values_mut() {
-            set.clear_canceled_animations();
-            for animation in set.animations.iter_mut() {
-                animation.is_new = false;
-            }
+        for (key, set) in sets.iter_mut() {
+            let node_id = NodeId::from_u64(key.node.id() as u64);
+            let pseudo = match &key.pseudo_element {
+                Some(p) => SmolStr::new(p.to_css_string()),
+                None => SmolStr::default(),
+            };
+
             for transition in set.transitions.iter_mut() {
-                transition.is_new = false;
+                if transition.is_new {
+                    let property_name = transition.property_animation.property_id().to_css_string();
+                    let elapsed = if transition.delay < 0.0 {
+                        (-transition.delay).min(transition.property_animation.duration) as f32
+                    } else {
+                        0.0
+                    };
+                    self.pending_animation_events.push(QueuedAnimationEvent {
+                        node_id,
+                        event: DomEventData::TransitionRun(BlitzTransitionEvent {
+                            property_name: property_name.clone(),
+                            elapsed_time: elapsed,
+                            pseudo_element: pseudo.clone(),
+                        }),
+                    });
+                    transition.is_new = false;
+
+                    // Newly created transition with delay <= 0: promote to Running and check Finished at creation pass t0
+                    if transition.state == AnimationState::Pending
+                        && transition.start_time <= now_effective
+                    {
+                        transition.state = AnimationState::Running;
+                        self.pending_animation_events.push(QueuedAnimationEvent {
+                            node_id,
+                            event: DomEventData::TransitionStart(BlitzTransitionEvent {
+                                property_name: property_name.clone(),
+                                elapsed_time: elapsed,
+                                pseudo_element: pseudo.clone(),
+                            }),
+                        });
+
+                        if transition.property_animation.duration == 0.0
+                            || transition.has_ended(now_effective)
+                        {
+                            transition.state = AnimationState::Finished;
+                            self.pending_animation_events.push(QueuedAnimationEvent {
+                                node_id,
+                                event: DomEventData::TransitionEnd(BlitzTransitionEvent {
+                                    property_name,
+                                    elapsed_time: transition.property_animation.duration as f32,
+                                    pseudo_element: pseudo.clone(),
+                                }),
+                            });
+                        }
+                    }
+                }
+
+                if transition.state == AnimationState::Canceled {
+                    let property_name = transition.property_animation.property_id().to_css_string();
+                    let elapsed = (now - transition.start_time)
+                        .max(0.0)
+                        .min(transition.property_animation.duration)
+                        as f32;
+                    self.pending_animation_events.push(QueuedAnimationEvent {
+                        node_id,
+                        event: DomEventData::TransitionCancel(BlitzTransitionEvent {
+                            property_name,
+                            elapsed_time: elapsed,
+                            pseudo_element: pseudo.clone(),
+                        }),
+                    });
+                }
             }
+
+            for animation in set.animations.iter_mut() {
+                if animation.is_new {
+                    animation.is_new = false;
+
+                    // Newly created animation with delay <= 0: promote to Running and check Finished at creation pass t0
+                    if animation.state == AnimationState::Pending
+                        && animation.started_at <= now_effective
+                    {
+                        animation.state = AnimationState::Running;
+                        let active_duration = match animation.iteration_state {
+                            KeyframesIterationState::Finite(_, max) => max * animation.duration,
+                            KeyframesIterationState::Infinite(_) => {
+                                if animation.duration == 0.0 {
+                                    0.0
+                                } else {
+                                    f64::INFINITY
+                                }
+                            }
+                        };
+                        let elapsed = (-animation.delay).max(0.0).min(active_duration) as f32;
+                        self.pending_animation_events.push(QueuedAnimationEvent {
+                            node_id,
+                            event: DomEventData::AnimationStart(BlitzAnimationEvent {
+                                animation_name: animation.name.as_str().to_string(),
+                                elapsed_time: elapsed,
+                                pseudo_element: pseudo.clone(),
+                            }),
+                        });
+
+                        if animation.duration == 0.0 || animation.has_ended(now_effective) {
+                            animation.state = AnimationState::Finished;
+                            self.pending_animation_events.push(QueuedAnimationEvent {
+                                node_id,
+                                event: DomEventData::AnimationEnd(BlitzAnimationEvent {
+                                    animation_name: animation.name.as_str().to_string(),
+                                    elapsed_time: active_duration.max(0.0) as f32,
+                                    pseudo_element: pseudo.clone(),
+                                }),
+                            });
+                        }
+                    }
+                }
+
+                if animation.state == AnimationState::Canceled {
+                    let current_iteration = match animation.iteration_state {
+                        KeyframesIterationState::Finite(current, _) => current,
+                        KeyframesIterationState::Infinite(current) => current,
+                    };
+                    let elapsed = ((current_iteration * animation.duration)
+                        + (now - animation.started_at).max(0.0))
+                        as f32;
+                    self.pending_animation_events.push(QueuedAnimationEvent {
+                        node_id,
+                        event: DomEventData::AnimationCancel(BlitzAnimationEvent {
+                            animation_name: animation.name.as_str().to_string(),
+                            elapsed_time: elapsed,
+                            pseudo_element: pseudo.clone(),
+                        }),
+                    });
+                }
+            }
+
+            set.clear_canceled_animations();
         }
         let mut finished = Vec::new();
         sets.retain(|key, state| {
@@ -1360,6 +1685,7 @@ pub struct RecalcStyle<'a> {
     /// dedicated storage on the node (see `flush_image_layers_from_style`)
     /// because their style changed during this traversal.
     nodes_needing_style_image_flush: Mutex<Vec<NodeId>>,
+    zero_duration_animations: Mutex<Vec<(NodeId, String)>>,
 }
 
 impl<'a> RecalcStyle<'a> {
@@ -1367,6 +1693,7 @@ impl<'a> RecalcStyle<'a> {
         RecalcStyle {
             context,
             nodes_needing_style_image_flush: Mutex::new(Vec::new()),
+            zero_duration_animations: Mutex::new(Vec::new()),
         }
     }
 }
@@ -1387,6 +1714,22 @@ impl<'dom> DomTraversal<BlitzNode<'dom>> for RecalcStyle<'_> {
             sync_pseudo_element_styles(el, &data, &self.nodes_needing_style_image_flush);
             if let Some(style) = data.styles.get_primary() {
                 el.record_out_of_flow(style);
+
+                let ui = style.get_ui();
+                for (i, name) in ui.animation_name_iter().enumerate() {
+                    if let Some(atom) = name.as_atom() {
+                        let duration = ui.animation_duration_mod(i).seconds();
+                        let delay = ui.animation_delay_mod(i).seconds();
+                        if duration == 0.0 && delay <= 0.0 {
+                            if self.context.stylist.lookup_keyframes(atom, el).is_some() {
+                                self.zero_duration_animations
+                                    .lock()
+                                    .unwrap()
+                                    .push((el.id, atom.as_str().to_string()));
+                            }
+                        }
+                    }
+                }
             }
 
             if !data.damage.is_empty() {
